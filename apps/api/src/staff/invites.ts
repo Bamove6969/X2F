@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { inviteRegistrationChallenge, keyCheckCode } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { assertNewNames, createAccount } from '../accounts.js';
+import type pg from 'pg';
+import { assertNewNames, assertTermsAccepted, createAccount } from '../accounts.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { lockAccount, withTx } from '../auth/hold.js';
 import { PGP_BODY_LIMIT, checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge } from '../auth/pgp.js';
@@ -9,8 +10,11 @@ import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, type Crede
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
+import type { RetentionJob } from '../retention.js';
+import { SIGNED_BODY_LIMIT, eraseTermsSignature } from '../termsSignature.js';
 import type { StaffDeps } from './app.js';
 import { requireStaff } from './guard.js';
+import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
 import { consumeKeyTap } from './keyTap.js';
 import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type InvitableRole } from './members.js';
 
@@ -25,15 +29,21 @@ import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type In
 //   the token text). The server re-derives that intent from the request and consumes the tap in
 //   the transaction that stores the invite. The token itself is never stored; the link is
 //   `<staffOrigin>/invite/<token>`, shown once.
-// - `DELETE /staff/v1/invites/:id` → 204 (404 when used, cancelled or unknown).
+// - `DELETE /staff/v1/invites/:id` → 204 (404 when used, cancelled or unknown). If the invitee had
+//   picked their names, that half-made account (disabled, never finished) is closed for good here:
+//   its sealed Terms signature is erased (owner 9 Nov 2026, p11-13: "Erase it when the account
+//   closes"). `purgeStaffInviteLeftovers` does the same for an invite that expired instead.
 //
 // The invitee's side (perm `public-invite`, no session; every step checks that the token's invite
 // is unused, not cancelled and not expired, else 404 `invite-invalid`; only then does it spend the
 // process-wide start or register budget, so made-up tokens cannot drain it for a real invitee):
+// - `GET /staff/v1/terms` → `{ version }`: the Terms version to accept (the trader API's `GET /v1/terms`);
 // - `GET /staff/v1/invites/accept/:token` → `{ role, hours, expiresAt }`;
-// - `POST …/:token/account { displayName, loginName }` → 201: the public name and the private login
-//   name (FU-D), once (409 `wrong-state` after that). The account is created disabled: it cannot
-//   log in until `finish`;
+// - `POST …/:token/account { displayName, loginName, acceptedTerms, termsSignature }` → 201: the
+//   public name and the private login name (FU-D), once (409 `wrong-state` after that), with the
+//   Terms accepted and signed (owner 9 Nov 2026, p11-14: everyone who gets a login signs;
+//   `assertTermsAccepted`'s 400s, first). The account is created disabled: it cannot log in until
+//   `finish`;
 // - `POST …/:token/key/start { kind? }` → `{ options }`, challenge `inviteRegistrationChallenge(tokenHash)`
 //   (default kind `security-key`, which must be attested; or `passkey`, PGP's partner for staff);
 // - `POST …/:token/key/finish { kind?, response, label? }` → 201 `{ kind, keyCheckCode }`;
@@ -122,6 +132,33 @@ function newInviteOf(b: Record<string, unknown>, now: Date) {
   return { role, hours, inviteId, token, expiresAt: expiresAt!, at: new Date(at), tapId: tapIdOf(b) };
 }
 
+/** How long past an invite's expiry the sweep waits before it treats the half-made account as closed. */
+export const INVITE_LEFTOVER_GRACE_MS = 3_600_000;
+
+/**
+ * Retention (security review 2026-11-09, minor 3), every 10 minutes with the other jobs
+ * (retentionJobs.ts): erases the sealed Terms signature of every half-made staff account whose
+ * invite will never finish, because it was cancelled or expired over `INVITE_LEFTOVER_GRACE_MS`
+ * ago (owner 9 Nov 2026, p11-13: "Erase it when the account closes"; the account is disabled from
+ * `account` until `finish`, so nothing else ever logs it in). An invite that was used is a staff
+ * member's: their signature stays until removal (staff/members.ts). The hour's grace keeps the
+ * sweep, on the trader process's clock, clear of a `finish` racing the deadline on the staff
+ * process's; a finish past the deadline fails `openInvite` anyway. Cancelled invites are erased at
+ * cancel; the sweep covers them again for rows cancelled before this landed. Returns the rows touched.
+ */
+export const purgeStaffInviteLeftovers: RetentionJob = {
+  name: 'purgeStaffInviteLeftovers',
+  async run(db: pg.Pool, now: Date): Promise<number> {
+    const r = await db.query(
+      `update accounts a set terms_signature = null from staff_invites i
+        where i.account_id = a.id and a.terms_signature is not null and i.used_at is null
+          and (i.cancelled_at is not null or i.expires_at <= $1)`,
+      [new Date(now.getTime() - INVITE_LEFTOVER_GRACE_MS)],
+    );
+    return r.rowCount ?? 0;
+  },
+};
+
 export function staffInviteRoutes(app: FastifyInstance): void {
   const perm = 'staff.manage' as const;
   const opts = { config: { perm }, preHandler: requireStaff(perm) };
@@ -150,8 +187,15 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const id = idParam(req);
     const { db, clock } = req.server.deps;
     await withTx(db, async (c) => {
-      const r = await c.query('update staff_invites set cancelled_at = $2 where id = $1 and used_at is null and cancelled_at is null', [id, clock()]);
-      if ((r.rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
+      const r = await c.query<{ account_id: string | null }>(
+        'update staff_invites set cancelled_at = $2 where id = $1 and used_at is null and cancelled_at is null returning account_id',
+        [id, clock()],
+      );
+      const cancelled = r.rows[0];
+      if (!cancelled) throw new ApiError(404, 'not-found');
+      // The invitee's half-made account, if the names were picked: disabled, and now it never
+      // finishes, so this is its close (owner p11-13). The Terms version and time stay, as at removal.
+      if (cancelled.account_id !== null) await eraseTermsSignature(c, cancelled.account_id);
       await log(c, req, 'staff.invite-cancelled', { inviteId: id });
     });
     return reply.code(204).send();
@@ -161,23 +205,49 @@ export function staffInviteRoutes(app: FastifyInstance): void {
   // The invitee
 
   app.get('/staff/v1/invites/accept/:token', pub, async (req) => {
-    const i = await openInvite(req.server.deps.db, tokenOf(req), req.server.deps.clock());
+    const db = req.server.deps.db;
+    const i = await openInvite(db, tokenOf(req), req.server.deps.clock());
     req.server.budgets.start.take();
-    return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString() };
+    // A return visit (the account was made earlier on this link): what is in so far, so the page
+    // carries on at the keys with the right counts (attested security keys, passkeys, PGP keys).
+    let resume: { keys: number; passkeys: number; pgp: number; keyCheckCode: string | null } | null = null;
+    if (i.account_id !== null) {
+      const { rows } = await db.query<{ passkeys: number; pgp: number; first: Buffer | null }>(
+        `select (select count(*)::int from webauthn_credentials w where w.account_id = $1 and w.kind = 'passkey') as passkeys,
+                (select count(*)::int from pgp_keys p where p.account_id = $1) as pgp,
+                (select w.public_key from webauthn_credentials w where w.account_id = $1 and w.kind = 'security-key' and w.attested
+                  order by w.created_at, w.id limit 1) as first`,
+        [i.account_id],
+      );
+      const r = rows[0]!;
+      resume = { keys: await attestedKeyCount(db, i.account_id), passkeys: r.passkeys, pgp: r.pgp, keyCheckCode: r.first ? keyCheckCode(new Uint8Array(r.first)) : null };
+    }
+    return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString(), resume };
   });
 
-  app.post('/staff/v1/invites/accept/:token/account', pub, async (req, reply) => {
+  // The Terms version an invitee must accept (owner 9 Nov 2026, p11-14: everyone who gets a login
+  // signs): the staff origin's answer to the trader API's `GET /v1/terms`, the same
+  // `X2F_TERMS_VERSION`, so the staff web's Terms step (apps/staff-web, Plan 4 Task 16) checks its
+  // bundled text against it the way the trader app's Terms screen does. Public: it is read before
+  // any account exists, and it names nothing but the version.
+  app.get('/staff/v1/terms', pub, async (req) => ({ version: req.server.deps.config.termsVersion }));
+
+  // The staff web's invite page (apps/staff-web/src/screens/Invite.tsx) shows the Terms with the
+  // signature pad first and sends `acceptedTerms` and `termsSignature` with the names (tripwire in
+  // test/staff/members.test.ts).
+  app.post('/staff/v1/invites/accept/:token/account', { ...pub, bodyLimit: SIGNED_BODY_LIMIT }, async (req, reply) => {
     const deps = req.server.deps;
     const open = await openInvite(deps.db, tokenOf(req), deps.clock());
     if (open.account_id !== null) throw new ApiError(409, 'wrong-state');
     req.server.budgets.register.take();
     const b = body(req);
+    const terms = assertTermsAccepted(deps, b.acceptedTerms, b.termsSignature);
     const names = await assertNewNames(deps.db, b.displayName, b.loginName);
     const now = deps.clock();
     await withTx(deps.db, async (c) => {
       const i = await openInvite(c, tokenOf(req), now, true);
       if (i.account_id !== null) throw new ApiError(409, 'wrong-state');
-      const accountId = await createAccount(c, deps.config, { ...names, kind: 'staff', termsVersion: null, now });
+      const accountId = await createAccount(c, deps.config, { ...names, kind: 'staff', termsVersion: terms.version, termsSignature: terms.signature, now });
       // Disabled until `finish`: a half-made staff login can never log in.
       await c.query('update accounts set disabled_at = $2 where id = $1', [accountId, now]);
       await c.query('update staff_invites set account_id = $2 where id = $1', [i.id, accountId]);
@@ -238,7 +308,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     await withTx(deps.db, async (c) => {
       await lockInvite(c, req, accountId);
-      await insertPgpKey(c, deps.config, { accountId, fingerprint: proved.fingerprint, armored: proved.armored, now });
+      await insertPgpKey(c, deps.config, { accountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved });
     });
     return reply.code(201).send({ ok: true });
   });
@@ -261,6 +331,8 @@ export function staffInviteRoutes(app: FastifyInstance): void {
       const { webauthn, pgp } = rows[0]!;
       if ((i.role === 'mod' || i.role === 'senior') && keys === 0) throw new ApiError(409, 'security-key-required');
       if (!((pgp >= 1 && webauthn >= 1) || pgp >= 2)) throw new ApiError(409, 'two-factors-required');
+      // Owner G3 (7 Nov): a moderator holds all three: a security key, a PGP key and a passkey.
+      if (THREE_METHOD_ROLES.includes(i.role) && !(await holdsAllThree(c, accountId))) throw new ApiError(409, 'all-three-methods-required');
       await c.query('update staff_invites set used_at = $2 where id = $1', [i.id, now]);
       await c.query('update accounts set disabled_at = null where id = $1', [accountId]);
       await c.query(

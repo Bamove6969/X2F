@@ -14,7 +14,6 @@ export type TradeState =
   | 'securing'
   | 'secured'
   | 'paid'
-  | 'refund_requested'
   | 'settling'
   | 'released'
   | 'refunded'
@@ -40,7 +39,16 @@ export interface Trade {
   /** Fixed at take (OD-5). */
   fiatCents: bigint;
   confirmWindowMin: number;
-  /** The offer's limits at take, as fiat totals in lockedRate's currency; a grown trade stays within them. */
+  /**
+   * The buyer's time to pay from "secured", in minutes: the payment method's (owner p9-6, 8 Nov),
+   * fixed at take so a later change to the method's profile never moves a live trade.
+   */
+  payWindowMin: number;
+  /**
+   * The offer's limits at take, as fiat totals in lockedRate's currency; a grown trade stays within
+   * them. `maxFiatCents` is the growth ceiling the API fixed at take: the offer's maximum, clamped
+   * so a grown trade stays within the launch cap (apps/api take.ts `growthCeiling`).
+   */
   minFiatCents: bigint;
   maxFiatCents: bigint;
   /**
@@ -74,7 +82,6 @@ export interface Trade {
   extensions: number;
   paidAt: Date | null;
   confirmBy: Date | null;
-  finalAlertAt: Date | null;
   cancelProposedBy: Party | null;
   settling: SettleKind | null;
   settleFrom: TradeState | null;
@@ -103,11 +110,10 @@ export interface Trade {
    */
   cancelConfirmableAt: Date | null;
   /**
-   * When the seller first nudged the buyer in this trade after the escrow was secured (owner G2,
-   * 7 Nov; g66). Written by the nudge route (apps/api nudge/routes.ts), never by an event: the
-   * seller's `request-refund` is refused until it is set, so the refund unlocks only after the
-   * 90 minutes from full funding AND at least one nudge. Later nudges (one per 15 min, as many as
-   * the seller likes) leave it as it is.
+   * When the seller first nudged the buyer in this trade after the escrow was secured (migration
+   * 119). Written by the nudge route (apps/api nudge/routes.ts), never by an event. Nudges are
+   * optional (owner 8 Nov, p6-1, reversing G2 / g66): no rule here reads it; it is kept as a
+   * record only. Later nudges (one per 15 min, no cap) leave it as it is.
    */
   sellerNudgedAt: Date | null;
 }
@@ -142,9 +148,16 @@ export type TradeEvent =
   | { type: 'release-claimed' }
   | { type: 'pause' }
   | { type: 'resume' }
+  /**
+   * The server cancels a trade whose escrow is not funded and cannot be yet (hold model v3, owner
+   * 1-2 Nov 2026: a recovery-code login cancels the account's unfunded trades). Only in `setup`, or
+   * in `funding` before the seller tapped "Fund escrow" and before any coins were seen: the same
+   * bounds as the seller's walk-away. Accepted while paused.
+   */
+  | { type: 'system-cancel' }
   | { type: 'tick' };
 
-export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'release-claimed', 'pause', 'resume', 'tick', 'return-confirmed'] as const;
+export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'release-claimed', 'pause', 'resume', 'tick', 'return-confirmed', 'system-cancel'] as const;
 export const CLIENT_EVENTS = [
   'mark-paid',
   'extend',
@@ -184,19 +197,30 @@ const CLIENT = new Set<string>(CLIENT_EVENTS);
  */
 const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 /** States from which the buyer's cancel becomes a refund settlement (never `paid`, Revision 2026-10-29b). */
-const BUYER_CANCEL_SETTLE: readonly TradeState[] = ['securing', 'secured', 'refund_requested'];
-const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+const BUYER_CANCEL_SETTLE: readonly TradeState[] = ['securing', 'secured'];
+/** The closed states (a trade in one of these is done; its escrow holds nothing to settle). */
+export const CLOSED_STATES: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+const CLOSED = CLOSED_STATES;
 /** States in which a settlement seen on chain is recorded: every open state an escrow can hold coins in. */
-const SETTLED_FROM: readonly TradeState[] = ['funding', 'securing', 'secured', 'settling', 'disputed', 'paid', 'refund_requested', 'lapsed'];
+const SETTLED_FROM: readonly TradeState[] = ['funding', 'securing', 'secured', 'settling', 'disputed', 'paid', 'lapsed'];
 /** States in which extra XMR grows the trade: before "I've paid" and before any refund or settlement starts. */
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 /**
- * Client events still accepted during maintenance: the buyer's own payment and cancel, and the
- * seller's "Fund escrow" record (it only takes the seller's walk-away away; their wallet opens anyway).
+ * Client events still accepted while a trade is paused (maintenance, or a party's account hold):
+ * the buyer's own payment and cancel, the seller's "Fund escrow" record (it only takes the seller's
+ * walk-away away; their wallet opens anyway), the seller's walk-away before funding (nothing has
+ * moved), and opening a dispute (owner G7, 7 Nov: a paused trade's parties still reach a moderator;
+ * no money moves until the moderator decides; lead hold v3 review item 5).
  */
-const WHILE_PAUSED: readonly string[] = ['mark-paid', 'buyer-cancel', 'fund-started'];
-/** The longest seller confirm window (wires, 24 h). */
-const MAX_CONFIRM_WINDOW_MIN = 1440;
+const WHILE_PAUSED: readonly string[] = ['mark-paid', 'buyer-cancel', 'fund-started', 'walk-away', 'open-dispute'];
+/**
+ * The longest seller confirm window, which is also the buyer's wait before a dispute: 4 days, for
+ * the slowest payment types (owner F9, 7 Nov: instant 90 min, same or next day 24 h, slow 48 h to
+ * 4 days, "raise the 24 h maximum").
+ */
+export const MAX_CONFIRM_WINDOW_MIN = 5760;
+/** The longest time to pay a payment method may have: 24 hours (the slowest to send, cash by mail). */
+export const MAX_PAY_WINDOW_MIN = 1440;
 
 /** A new trade at take: amounts, fee and the fiat total are fixed here (OD-5). */
 export function newTrade(
@@ -210,6 +234,8 @@ export function newTrade(
     amountAtomic: bigint;
     lockedRate: Price;
     confirmWindowMin: number;
+    /** The method's time to pay; TIMERS.payMin (the instant methods' 90 min) when not given. */
+    payWindowMin?: number;
     minFiatCents: bigint;
     maxFiatCents: bigint;
   },
@@ -218,6 +244,10 @@ export function newTrade(
   checkNow(now);
   if (!Number.isSafeInteger(a.confirmWindowMin) || a.confirmWindowMin <= 0 || a.confirmWindowMin > MAX_CONFIRM_WINDOW_MIN) {
     throw new RangeError('bad confirm window');
+  }
+  const payWindowMin = a.payWindowMin ?? TIMERS.payMin;
+  if (!Number.isSafeInteger(payWindowMin) || payWindowMin <= 0 || payWindowMin > MAX_PAY_WINDOW_MIN) {
+    throw new RangeError('bad pay window');
   }
   if (a.sellerId === a.buyerId) throw new RangeError('seller and buyer must differ');
   const plan = escrowPlan({ amountAtomic: a.amountAtomic, poster: a.poster });
@@ -238,6 +268,7 @@ export function newTrade(
     lockedRate: { currency: a.lockedRate.currency, centsPerXmr: a.lockedRate.centsPerXmr },
     fiatCents: fiat,
     confirmWindowMin: a.confirmWindowMin,
+    payWindowMin,
     minFiatCents: a.minFiatCents,
     maxFiatCents: a.maxFiatCents,
     grown: null,
@@ -258,7 +289,6 @@ export function newTrade(
     extensions: 0,
     paidAt: null,
     confirmBy: null,
-    finalAlertAt: null,
     cancelProposedBy: null,
     settling: null,
     settleFrom: null,
@@ -333,7 +363,8 @@ function onChain(t: Trade, e: Extract<TradeEvent, { type: 'chain' }>, now: Date)
     next = { ...next, state: 'securing', fundingSeenAt: next.fundingSeenAt ?? now };
   }
   if (next.state === 'securing' && funded && releasable) {
-    next = { ...next, state: 'secured', securedAt: now, payBy: addMin(base(t, now), TIMERS.payMin) };
+    // The time to pay is the payment method's, fixed at take (owner p9-6).
+    next = { ...next, state: 'secured', securedAt: now, payBy: addMin(base(t, now), t.payWindowMin) };
   }
   if (next.state === 'settling') {
     if (!releasable) next = { ...next, settleBy: null };
@@ -345,7 +376,8 @@ function onChain(t: Trade, e: Extract<TradeEvent, { type: 'chain' }>, now: Date)
 /**
  * Extra XMR before "I've paid" (spec 11.1, owner 2026-10-20): when the escrow
  * holds more than the trade needs and the grown trade's fiat total, at the same
- * locked rate, stays within the offer's maximum, the amount, fee and fiat total
+ * locked rate, stays within `maxFiatCents` (the offer's maximum, clamped to the
+ * launch cap at take), the amount, fee and fiat total
  * grow to what was funded. Otherwise nothing changes and the surplus goes to
  * the seller at settlement (payoutsFor).
  *
@@ -363,7 +395,7 @@ function grow(t: Trade, now: Date): Trade {
   let amountAtomic = fromAtomic;
   if (basis > escrowPlan({ amountAtomic: fromAtomic, poster: t.poster }).sellerFundsAtomic) {
     const candidate = amountForFunds(basis, t.poster);
-    // Above the offer maximum the trade keeps the size it already has; that size is covered by basis.
+    // Above the ceiling (`maxFiatCents`) the trade keeps the size it already has; that size is covered by basis.
     if (candidate > fromAtomic) amountAtomic = fiatFor(candidate, t.lockedRate) <= t.maxFiatCents ? candidate : t.amountAtomic;
   }
   if (amountAtomic === t.amountAtomic) return t;
@@ -390,7 +422,10 @@ function onTick(t: Trade, now: Date): Trade {
       return { ...t, state: 'lapsed', lapsedAt: now, closedAt: t.receivedAtomic === 0n ? now : null };
     case 'settling':
       // A claimed release is not reverted (lead decision b): only the sweep or the fallback ends it.
-      if (t.releaseClaimedAt !== null || !past(now, t.settleBy)) return t;
+      // Nor is the seller's cancel (owner 8 Nov, p6-1): once the escrower cancels, the refund goes
+      // ahead and the buyer can no longer tap "I've paid"; the seller's device keeps building it,
+      // and the watcher's 6 h `spend-unshown` fallback sends one that never lands to a person.
+      if (t.releaseClaimedAt !== null || t.settling === 'auto-refund' || !past(now, t.settleBy)) return t;
       return { ...t, state: t.settleFrom ?? fail('wrong-state'), settling: null, settleFrom: null, settleBy: null };
     case 'refunded':
       // The seller never tapped Confirm cancel: it closes as cancelled by itself (owner 2026-10-29).
@@ -407,9 +442,9 @@ function onResume(t: Trade, now: Date): Trade {
   // Every deadline still running at the pause moves by the pause's length. One set during
   // the pause was counted from pausedAt (see `base`), so it now runs from the resume.
   const move = (d: Date | null): Date | null => (d !== null && d.getTime() >= pausedAt ? new Date(d.getTime() + shift) : d);
-  // The final alert and the lapse are timestamps, but each opens a window that is a deadline
-  // (the auto-refund window, the lapse co-sign window): shift the timestamp when its window
-  // was still open at the pause, so finalAlertAt > payBy still holds and the co-sign timer is frozen too.
+  // The lapse and the Confirm-cancel moment are timestamps, but each opens a window that is a
+  // deadline (the lapse co-sign window, the 48 h auto-close): shift the timestamp when its window
+  // was still open at the pause, so those timers are frozen too.
   const opens = (d: Date | null, windowMin: number): Date | null =>
     d !== null && addMin(d, windowMin).getTime() >= pausedAt ? new Date(d.getTime() + shift) : d;
   return {
@@ -420,7 +455,6 @@ function onResume(t: Trade, now: Date): Trade {
     payBy: move(t.payBy),
     confirmBy: move(t.confirmBy),
     settleBy: move(t.settleBy),
-    finalAlertAt: opens(t.finalAlertAt, TIMERS.finalAlertMin),
     lapsedAt: opens(t.lapsedAt, TIMERS.lapseCosignMin),
     cancelConfirmableAt: opens(t.cancelConfirmableAt, SELLER_CONFIRM_CANCEL_TIMEOUT_H * 60),
   };
@@ -431,11 +465,25 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
   switch (t.state) {
     case 'securing':
     case 'secured':
+      // Not the buyer before "I've paid" (design proto review P1, 8 Nov): nothing has happened a
+      // moderator could rule on, and until then the buyer can cancel (g67). After it, the wait below.
+      if (by === 'buyer') return fail('too-early');
       return open();
     case 'paid':
-      if (by === 'buyer' && (t.confirmBy === null || now.getTime() < t.confirmBy.getTime())) return fail('too-early');
+      // Either side waits the payment method's full time from "I've paid" (confirmBy, moved by
+      // maintenance) before a dispute (owner p9-4, 8 Nov; the seller used to dispute at once).
+      if (t.confirmBy === null || now.getTime() < t.confirmBy.getTime()) return fail('too-early');
       return open();
     case 'settling':
+      // Owner 8 Nov (p9-2): the seller cancelled after the time to pay and the refund to them has
+      // started; a buyer who paid late anyway may dispute at once. Usually the refund lands anyway:
+      // the moderator co-signs in its first pass after the cancel (about 5 s) and a refund already
+      // handed out is never taken back, so the case goes on as an after-refund dispute (the seller is
+      // asked to send the XMR; see `settled` and review I1). Only a dispute that beats that pass
+      // stops the co-signing (the API shows `disputed`) and keeps the coins in escrow for a ruling.
+      if (by === 'buyer' && t.settling === 'auto-refund') return open();
+      // Past settleBy either side may dispute; for the seller's own cancel that is their deliberate
+      // exit from a refund that never builds (it blocks the armed refund until a ruling; review M3).
       if (t.settleBy === null || !past(now, t.settleBy)) return fail('too-early');
       return open();
     case 'refunded': {
@@ -464,7 +512,7 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     if (by !== 'system') return fail('wrong-party');
   } else if (CLIENT.has(e.type)) {
     if (by === 'system') return fail('wrong-party');
-    // Maintenance: only the buyer's own payment and cancel go through.
+    // Paused (maintenance or a hold): only WHILE_PAUSED goes through.
     if (t.pausedAt !== null && !WHILE_PAUSED.includes(e.type)) return fail('wrong-state');
   } else {
     throw new RangeError('unknown event');
@@ -490,10 +538,31 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     case 'resume':
       return onResume(t, now);
 
+    case 'system-cancel':
+      if (s === 'setup') return close(t, 'cancelled', now);
+      if (s === 'funding' && t.fundStartedAt === null && t.receivedAtomic === 0n && t.fundingSeenAt === null) return close(t, 'cancelled', now);
+      return fail('wrong-state');
+
     case 'settled': {
       if (typeof e.txHash !== 'string' || e.txHash === '') throw new RangeError('bad tx hash');
       if (!SETTLED_FROM.includes(s)) return fail('wrong-state');
       if (!SETTLE_KINDS.includes(e.kind)) throw new RangeError('unknown settle kind');
+      // The seller's cancel refund that lands after a dispute was opened on it (review I1, 8 Nov):
+      // the moderator nearly always handed it out before the dispute, so it completes anyway. The
+      // trade stays `disputed` and open with the tx on record, the same shape as a buyer's dispute
+      // opened after the refund landed; the API marks the dispute after-refund in the same
+      // transaction. The same tx reported again changes nothing; a different tx is refused (the
+      // escrow paid out once; re-verify 43fbbb2f, R-M1), never a close as `refunded` with the
+      // dispute still open.
+      // NEEDS_PLAN_4_RULING_PAYOUT (R-M2): on this shape any sweep is counted as `auto-refund`
+      // (settleKindFor). Before ruling payouts are executed, they must report their own kind
+      // (`RulingKind` in payouts.ts), checked ahead of this branch, so a ruling's escrow payout is
+      // never recorded as the cancel refund (nor flips the dispute to after-refund in the API).
+      if (s === 'disputed' && t.settling === 'auto-refund' && e.kind === 'auto-refund') {
+        if (t.txHash === e.txHash) return t;
+        if (t.txHash === null) return { ...t, settleBy: null, txHash: e.txHash };
+        return fail('wrong-state');
+      }
       const state = e.kind === 'release' ? 'released' : 'refunded';
       return { ...t, state, settling: e.kind, settleBy: null, txHash: e.txHash, closedAt: now };
     }
@@ -501,9 +570,9 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     case 'escalate': {
       // Only when the escrow holds coins: a lapse nobody refunded, late funds after the end, or a
       // settlement the moderator was not shown spending the escrow 6 h after it started (Task 9 I/O),
-      // or a requested refund the moderator may not sign alone (Task 10: no seen-receipt for the
-      // buyer's final alert, or its own records disagree with the API's).
-      if (s !== 'lapsed' && s !== 'settling' && s !== 'refund_requested' && !CLOSED.includes(s)) return fail('wrong-state');
+      // or a seller's cancel refund the moderator may not sign alone (Task 10: its own records
+      // disagree with the API's, e.g. it opened the buyer's `trade.paid`).
+      if (s !== 'lapsed' && s !== 'settling' && !CLOSED.includes(s)) return fail('wrong-state');
       // A buyer's cancel whose refund never showed all its confirmations (Task 39 review M3) goes to a
       // moderator whatever the escrow reads: nobody knows where the coins are.
       if (t.receivedAtomic <= 0n && !awaitingCancelConfirm(t)) return fail('wrong-state');
@@ -521,12 +590,10 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       // "I've paid" only once the escrow is secured, 10 of 10 confirmations and the coins unlocked
       // (owner Q12, 2026-11-06): while it is still securing the buyer is told to wait, not refused as moved on.
       if (s === 'securing') return fail('too-early');
-      if (s !== 'secured' && s !== 'refund_requested') return fail('wrong-state');
-      // Once the auto-refund may run (autoRefundDecision: now >= finalAlertAt + 15 min) it is too late.
-      // The window is frozen during maintenance, so a paused trade counts from the pause.
-      if (s === 'refund_requested' && t.finalAlertAt !== null && base(t, now).getTime() >= addMin(t.finalAlertAt, TIMERS.finalAlertMin).getTime()) {
-        return fail('too-late');
-      }
+      // The time to pay is not a hard end (owner 8 Nov, p9-2): after payBy the buyer may still tap
+      // "I've paid" until the seller cancels. Once the seller's cancel is in (the trade `settling`
+      // as `auto-refund`), it is wrong-state: the trade row decides which tap came first.
+      if (s !== 'secured') return fail('wrong-state');
       if (typeof e.fiatCents !== 'bigint') throw new RangeError('bad fiat total');
       // The buyer confirms the total they sent; a trade that grew since their screen showed it is refused.
       if (e.fiatCents !== t.fiatCents) return fail('total-changed');
@@ -535,7 +602,6 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
         state: 'paid',
         paidAt: now,
         confirmBy: addMin(base(t, now), t.confirmWindowMin),
-        finalAlertAt: null,
         // No cancel after "I've paid" (Revision 2026-10-29b): any open proposal is withdrawn here.
         cancelProposedBy: null,
       };
@@ -548,15 +614,16 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       return { ...t, payBy: addMin(now, TIMERS.extendMin), extensions: t.extensions + 1 };
 
     case 'request-refund':
+      // The seller's "Cancel and get refund" (owner 8 Nov, p6-1 and p9-2, reversing G2 / g66 and the
+      // 15-minute final alert): once the buyer's time to pay (the method's payWindowMin from secured, plus any
+      // extension) has passed without "I've paid", the refund starts at once: the trade settles as
+      // `auto-refund` (the seller builds it, the moderator co-signs on its own facts, Task 10). No
+      // nudge is needed and the buyer gets no final warning. Once "I've paid" is in, it is
+      // wrong-state (no cancel after "I've paid", p9-4). Refused during maintenance (not WHILE_PAUSED).
       if (by !== 'seller') return fail('wrong-party');
       if (s !== 'secured' || t.paidAt !== null) return fail('wrong-state');
-      // Owner G2 / g66: locked until the buyer's 90 minutes (from full funding, plus any extension)
-      // have passed AND the seller has nudged at least once since the escrow was secured.
       if (!past(now, t.payBy)) return fail('too-early');
-      // The 15-minute final alert below stays (lead, 7 Nov) until the owner rules on it (page 6).
-      // The 90 minutes count from secured (payBy = securedAt + 90 min): the buyer cannot pay before (Q12); lead default.
-      if (t.sellerNudgedAt === null || t.securedAt === null || t.sellerNudgedAt.getTime() < t.securedAt.getTime()) return fail('too-early');
-      return { ...t, state: 'refund_requested', finalAlertAt: now };
+      return startSettling(t, 'auto-refund', now);
 
     case 'buyer-cancel':
       if (by !== 'buyer') return fail('wrong-party');
@@ -635,10 +702,8 @@ export function nextDeadline(t: Trade): Date | null {
       return t.payBy;
     case 'paid':
       return t.confirmBy;
-    case 'refund_requested':
-      return t.finalAlertAt === null ? null : addMin(t.finalAlertAt, TIMERS.finalAlertMin);
     case 'settling':
-      return t.releaseClaimedAt !== null ? null : t.settleBy;
+      return t.releaseClaimedAt !== null || t.settling === 'auto-refund' ? null : t.settleBy;
     case 'refunded':
       return cancelAutoCloseAt(t);
     default:

@@ -91,19 +91,15 @@ async function login(
 const get = (url: string, token: string) => app.inject({ method: 'GET', url, cookies: { [SESSION_COOKIE]: token } });
 
 describe('sessionPolicy', () => {
-  it('gives traders their chosen idle time (default 12 h) / 30 d, staff and owner 2 h / 12 h, recovery 25 h / 48 h', () => {
-    expect(sessionPolicy('trader', 'full')).toEqual({ idleMs: 12 * HOUR, absoluteMs: 30 * DAY });
-    for (const h of [2, 4, 6, 8, 10, 12] as const) {
-      expect(sessionPolicy('trader', 'full', h)).toEqual({ idleMs: h * HOUR, absoluteMs: 30 * DAY });
-    }
+  it('gives staff and owner 2 h idle / 12 h absolute and recovery 25 h / 48 h; a full trader session lasts its chosen length (null)', () => {
+    // Owner, 2 Nov 2026: a trader's full session ends at the length chosen at login (expires_at),
+    // extended only by "Stay logged in?"; no idle rule and no fixed maximum.
+    expect(sessionPolicy('trader', 'full')).toBeNull();
     for (const k of ['staff', 'owner'] as const) {
-      // A staff or owner account cannot choose: its idle time stays 2 hours whatever is stored.
       expect(sessionPolicy(k, 'full')).toEqual({ idleMs: 2 * HOUR, absoluteMs: 12 * HOUR });
-      expect(sessionPolicy(k, 'full', 12)).toEqual({ idleMs: 2 * HOUR, absoluteMs: 12 * HOUR });
     }
     for (const k of ['trader', 'staff', 'owner'] as const) {
       expect(sessionPolicy(k, 'recovery')).toEqual({ idleMs: 25 * HOUR, absoluteMs: 48 * HOUR });
-      expect(sessionPolicy(k, 'recovery', 2)).toEqual({ idleMs: 25 * HOUR, absoluteMs: 48 * HOUR });
     }
   });
 });
@@ -127,40 +123,19 @@ describe('sessions', () => {
     expect((await get('/t/me', 'not a token')).statusCode).toBe(401);
   });
 
-  it('ends a trader session after 12 hours idle by default, and touches last_seen_at on use', async () => {
+  it('ends a trader session at its length however much it is used, and touches last_seen_at on use', async () => {
     const id = await seedAccount(deps, { loginName: name() });
-    const { token } = await login(id);
-    setNow(new Date(T0.getTime() + 11 * HOUR));
+    const { token, sessionId } = await login(id);
+    // No length chosen yet: the shortest choice, 2 hours from the login.
+    const row = async () =>
+      (await deps.db.query<{ expires_at: Date; last_seen_at: Date }>('select expires_at, last_seen_at from sessions where id = $1', [sessionId])).rows[0]!;
+    expect((await row()).expires_at).toEqual(new Date(T0.getTime() + 2 * HOUR));
+    setNow(new Date(T0.getTime() + HOUR));
     expect((await get('/t/me', token)).statusCode).toBe(200);
-    // Used at 11:00, so 22:59 is 11 h 59 min idle.
-    setNow(new Date(T0.getTime() + 23 * HOUR - MIN));
+    expect(await row()).toEqual({ expires_at: new Date(T0.getTime() + 2 * HOUR), last_seen_at: new Date(T0.getTime() + HOUR) });
+    setNow(new Date(T0.getTime() + 2 * HOUR - MIN));
     expect((await get('/t/me', token)).statusCode).toBe(200);
-    setNow(new Date(T0.getTime() + 35 * HOUR - MIN));
-    expect((await get('/t/me', token)).statusCode).toBe(401);
-  });
-
-  it('ends a trader session at the idle time the account chose', async () => {
-    const id = await seedAccount(deps, { loginName: name() });
-    await deps.db.query('update accounts set idle_hours = 4 where id = $1', [id]);
-    const kept = await login(id);
-    expect((await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [kept.sessionId])).rows[0]!.expires_at)
-      .toEqual(new Date(T0.getTime() + 4 * HOUR));
-    setNow(new Date(T0.getTime() + 4 * HOUR - MIN));
-    expect((await get('/t/me', kept.token)).statusCode).toBe(200);
-    setNow(T0);
-    const idle = await login(id);
-    setNow(new Date(T0.getTime() + 4 * HOUR));
-    expect((await get('/t/me', idle.token)).statusCode).toBe(401);
-  });
-
-  it('ends a trader session at 30 days even when used every few hours', async () => {
-    const id = await seedAccount(deps, { loginName: name() });
-    const { token } = await login(id);
-    for (let h = 10; h < 30 * 24; h += 10) {
-      setNow(new Date(T0.getTime() + h * HOUR));
-      expect((await get('/t/me', token)).statusCode).toBe(200);
-    }
-    setNow(new Date(T0.getTime() + 30 * DAY));
+    setNow(new Date(T0.getTime() + 2 * HOUR));
     expect((await get('/t/me', token)).statusCode).toBe(401);
   });
 
@@ -190,9 +165,8 @@ describe('sessions', () => {
     expect((await get('/t/me', long.token)).statusCode).toBe(401);
   });
 
-  it('applies the owner policy too (2 h idle), whatever idle time is stored on the account', async () => {
+  it('applies the owner policy too (2 h idle)', async () => {
     const id = await seedAccount(deps, { loginName: name('boss'), kind: 'owner' });
-    await deps.db.query('update accounts set idle_hours = 12 where id = $1', [id]);
     const { token } = await login(id);
     setNow(new Date(T0.getTime() + 2 * HOUR));
     expect((await get('/t/me', token)).statusCode).toBe(401);
@@ -209,26 +183,24 @@ describe('sessions', () => {
     expect((await get('/t/recovery-ok', idle.token)).statusCode).toBe(401);
   });
 
-  it('moves expires_at to the idle deadline on use, so idle sessions get purged (M1)', async () => {
-    const id = await seedAccount(deps, { loginName: name() });
+  it('moves a staff session\'s expires_at to the idle deadline on use, so idle sessions get purged (M1)', async () => {
+    const id = await seedAccount(deps, { loginName: name('staffer'), kind: 'staff' });
     const { token, sessionId } = await login(id);
     const expiresAt = async () =>
       (await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [sessionId])).rows[0]?.expires_at;
-    expect(await expiresAt()).toEqual(new Date(T0.getTime() + 12 * HOUR));
-    setNow(new Date(T0.getTime() + 10 * HOUR));
+    expect(await expiresAt()).toEqual(new Date(T0.getTime() + 2 * HOUR));
+    setNow(new Date(T0.getTime() + HOUR));
     expect((await get('/t/me', token)).statusCode).toBe(200);
-    expect(await expiresAt()).toEqual(new Date(T0.getTime() + 22 * HOUR));
+    expect(await expiresAt()).toEqual(new Date(T0.getTime() + 3 * HOUR));
     // Near the end the absolute limit wins.
-    for (let h = 20; h <= 30 * 24 - 2; h += 10) {
+    for (let h = 2; h <= 11; h++) {
       setNow(new Date(T0.getTime() + h * HOUR));
       expect((await get('/t/me', token)).statusCode).toBe(200);
     }
-    setNow(new Date(T0.getTime() + (30 * 24 - 2) * HOUR));
-    expect((await get('/t/me', token)).statusCode).toBe(200);
-    expect(await expiresAt()).toEqual(new Date(T0.getTime() + 30 * DAY));
-    // An idle session is past expires_at and purged an idle hour after that.
+    expect(await expiresAt()).toEqual(new Date(T0.getTime() + 12 * HOUR));
+    // An idle session is past expires_at and purged an hour after that.
     const other = await login(id);
-    const stale = new Date(now0().getTime() + 12 * HOUR + HOUR + MIN);
+    const stale = new Date(now0().getTime() + 2 * HOUR + HOUR + MIN);
     await purgeExpired.run(deps.db, stale);
     expect((await deps.db.query('select 1 from sessions where id = $1', [other.sessionId])).rows).toHaveLength(0);
   });

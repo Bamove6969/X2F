@@ -26,7 +26,12 @@ export interface Price {
   centsPerXmr: bigint;
 }
 
-export type Pricing = { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
+/**
+ * How an offer is priced: always the market price moved by a margin (owner Q1, 6 Nov 2026: "all
+ * offers are going to be market + whatever percentage"; F1, 7 Nov: above or below, at most 50%).
+ * There is no fixed-price offer.
+ */
+export type Pricing = { mode: 'market'; marginBps: number };
 
 /** n / d rounded half up, for n >= 0 and d > 0. */
 function divHalfUp(n: bigint, d: bigint): bigint {
@@ -61,15 +66,11 @@ export function atomicForFiat(cents: bigint, rate: Price): bigint {
 }
 
 /**
- * The offer's price per XMR. A market offer needs a current feed price in the
- * same currency and returns null without one; a fixed offer ignores the feed.
+ * The offer's price per XMR: the market price moved by the margin. It needs a current feed price
+ * in the same currency and returns null without one. Any other pricing mode is refused (there is
+ * no fixed price, owner Q1).
  */
 export function offerRate(p: Pricing, currency: string, market: Price | null): Price | null {
-  if (p.mode === 'fixed') {
-    const rate = { currency, centsPerXmr: p.centsPerXmr };
-    checkPrice(rate);
-    return rate;
-  }
   if (p.mode !== 'market') throw new RangeError('unknown pricing mode');
   if (market === null || market.currency !== currency) return null;
   return rateFor(market, p.marginBps);
@@ -86,6 +87,18 @@ export function formatXmr(atomic: bigint, decimals = 6): string {
   const whole = abs / ATOMIC_PER_XMR;
   const frac = (abs % ATOMIC_PER_XMR).toString().padStart(XMR_DECIMALS, '0').slice(0, decimals);
   return decimals === 0 ? `${sign}${whole}` : `${sign}${whole}.${frac}`;
+}
+
+/**
+ * XMR exact to the atomic unit, for any figure the user must send (or a remainder to send): at
+ * least 6 places, and more (up to all 12) only when the digits past the 6th are non-zero,
+ * trailing zeros trimmed. 0.610529733574 stays 0.610529733574 (formatXmr would show 0.610529, and
+ * a seller who typed that would come up short); 1.25 reads 1.250000, as on the boards.
+ */
+export function formatXmrExact(atomic: bigint): string {
+  const full = formatXmr(atomic, XMR_DECIMALS).replace(/0+$/, '');
+  const places = full.length - full.indexOf('.') - 1;
+  return places >= 6 ? full : formatXmr(atomic, 6);
 }
 
 /** Fiat cents as a currency string, e.g. 41250n USD → "$412.50". Exact for any bigint. */

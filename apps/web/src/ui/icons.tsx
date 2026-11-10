@@ -8,6 +8,34 @@ const SHAPES = {
   'chevron-left': <path d="M15 18l-6-6 6-6" />,
   'chevron-right': <path d="M9 6l6 6-6 6" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,
+  // AccountFrozen board (D-016): the "Trading frozen" chip, and the paused rows.
+  snowflake: (
+    <>
+      <path d="M12 2v20M4 7l16 10M20 7L4 17" />
+      <path d="M9 4l3 2 3-2M9 20l3-2 3 2" />
+    </>
+  ),
+  'pause-circle': (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M10 9v6M14 9v6" />
+    </>
+  ),
+  swap: (
+    <>
+      <path d="M4 8h13l-3-3" />
+      <path d="M20 16H7l3 3" />
+    </>
+  ),
+  // BuyQuote / SellQuote / OfferAd boards (j31a): the "What applies to you" tile.
+  'list-check': (
+    <>
+      <path d="M4 6l1.5 1.5L8 5" />
+      <path d="M4 12l1.5 1.5L8 11" />
+      <path d="M4 18l1.5 1.5L8 17" />
+      <path d="M11 6h9M11 12h9M11 18h9" />
+    </>
+  ),
   close: <path d="M6 6l12 12M18 6L6 18" />,
   // Main board: the search box; BuyQuote board: the Chat button.
   search: (
@@ -31,6 +59,13 @@ const SHAPES = {
     </>
   ),
   check: <path d="M5 12l4 4 10-10" />,
+  // Refunded board: the XMR went back.
+  undo: (
+    <>
+      <path d="M9 14l-5-5 5-5" />
+      <path d="M4 9h11a5 5 0 010 10h-3" />
+    </>
+  ),
   shield: <path d={SHIELD} />,
   // LoginApprove board: a blocked login.
   'shield-x': (
@@ -121,6 +156,13 @@ const SHAPES = {
       <path d="M10.3 21a1.94 1.94 0 003.4 0" />
     </>
   ),
+  // Two ticks (News board "Mark all as read").
+  'check-double': (
+    <>
+      <path d="M2 12l5 5L18 6" />
+      <path d="M12 16l1 1 9-11" />
+    </>
+  ),
   // The ringing bell (SellerRefund board "Nudge mira.k").
   'bell-ring': (
     <>
@@ -161,6 +203,24 @@ const SHAPES = {
       <path d="M4 21c1-4 4-6 8-6s7 2 8 6" />
     </>
   ),
+  // The *-Wide boards' rail: Settings and Help.
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1" />
+    </>
+  ),
+  help: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5" />
+      <path d="M12 17h.01" />
+    </>
+  ),
+  // BuyQuote's "This offer's bands" card (canvas v142): its 40 px tile, and the clip lines' arrows.
+  bands: <path d="M4 20V14M10 20V9M16 20V12M22 20V5" />,
+  'arrow-up-right': <path d="M7 17L17 7M9 7h8v8" />,
+  'arrow-down-right': <path d="M7 7l10 10M17 9v8H9" />,
 } satisfies Record<string, ReactElement>;
 
 export type IconName = keyof typeof SHAPES;

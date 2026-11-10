@@ -249,19 +249,29 @@ describe('policy', () => {
     expect(pairAllowed('owner', pgp('a'), pk)).toBe(false);
   });
 
-  it('pairAllowed: staff need PGP plus an attested key, a passkey or a PGP key with no fingerprint in common', () => {
+  it('pairAllowed: staff need two of PGP, an attested key and a passkey (owner G3); a helper may use two PGP keys with no fingerprint in common, a moderator never', () => {
     expect(pairAllowed('staff', pgp('a'), sk())).toBe(true);
     expect(pairAllowed('staff', sk(), pgp('a'))).toBe(true);
     expect(pairAllowed('staff', pgp('a'), pk)).toBe(true);
     expect(pairAllowed('staff', pk, pgp('a'))).toBe(true);
-    expect(pairAllowed('staff', pgp('a'), pgp('b'))).toBe(true);
+    // Owner G3 (review P-I2): two PGP keys are one method, never a moderator's pair; a helper keeps
+    // them until the owner says otherwise (the staff app sets `pgpPair: false` by role).
+    expect(pairAllowed('staff', pgp('a'), pgp('b'), { pgpPair: false })).toBe(false);
+    expect(pairAllowed('staff', pgp('a'), sk(), { pgpPair: false })).toBe(true);
+    expect(pairAllowed('staff', pgp('a'), pk, { pgpPair: false })).toBe(true);
+    expect(pairAllowed('staff', sk(), pk, { pgpPair: false })).toBe(true);
+    expect(pairAllowed('staff', pgp('a'), pgp('b'))).toBe(true); // a helper
+    expect(pairAllowed('member', pgp('a'), pgp('b'), { pgpPair: false })).toBe(true); // team members are not staff roles
     expect(pairAllowed('staff', pgp('a'), pgp('a'))).toBe(false);
     expect(pairAllowed('staff', pgp('a', 'b'), pgp('b'))).toBe(false); // the first proved "a or b"
     expect(pairAllowed('staff', pgp('a'), pgp('c', 'a'))).toBe(false);
     expect(pairAllowed('staff', pgp(), pgp('a'))).toBe(false); // no fingerprint proves nothing
     expect(pairAllowed('staff', pgp('a'), sk(false))).toBe(false);
-    expect(pairAllowed('staff', sk(), pk)).toBe(false);
-    expect(pairAllowed('staff', pk, sk())).toBe(false);
+    // Owner G3 (7 Nov): a security key and a passkey are a pair for staff (any two of the three).
+    expect(pairAllowed('staff', sk(), pk)).toBe(true);
+    expect(pairAllowed('staff', pk, sk())).toBe(true);
+    expect(pairAllowed('staff', sk(false), pk)).toBe(false);
+    expect(pairAllowed('member', sk(), pk)).toBe(false);
     expect(pairAllowed('staff', pk, pk)).toBe(false);
     expect(pairAllowed('staff', sk(), sk())).toBe(false);
     expect(pairAllowed('trader', pgp('a'), sk())).toBe(false);
@@ -273,8 +283,12 @@ describe('policy', () => {
     expect(needsAfter('owner', sk(false))).toEqual([]);
     expect(needsAfter('owner', pk)).toEqual([]);
     expect(needsAfter('staff', pgp('a'))).toEqual(['pgp', 'security-key', 'passkey']);
-    expect(needsAfter('staff', sk())).toEqual(['pgp']);
-    expect(needsAfter('staff', pk)).toEqual(['pgp']);
+    // Owner G3 (review P-I2): a moderator is never offered a second PGP key.
+    expect(needsAfter('staff', pgp('a'), { pgpPair: false })).toEqual(['security-key', 'passkey']);
+    expect(needsAfter('staff', sk(), { pgpPair: false })).toEqual(['pgp', 'passkey']);
+    expect(needsAfter('staff', sk())).toEqual(['pgp', 'passkey']);
+    expect(needsAfter('staff', pk)).toEqual(['pgp', 'security-key']);
+    expect(needsAfter('member', sk())).toEqual(['pgp']);
     expect(needsAfter('trader', pgp('a'))).toEqual([]);
   });
 });
@@ -416,6 +430,34 @@ describe('removing a login method', () => {
     }
     const { rows } = await deps.db.query('select used_at from confirm_tokens where account_id = $1', [id]);
     expect(rows[0].used_at).toBeNull();
+  });
+
+  it("owner G13: a vendor's last passkey, security key or PGP key can't go, even with a password; after adding another it can", async () => {
+    const { id } = await account();
+    await addPassword(id);
+    const pgpId = await addPgp(id, await genKey());
+    await deps.db.query("update accounts set account_type = 'vendor', vendor_since = $2 where id = $1", [id, now]);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'pgp', id: pgpId });
+    const refused = await b.del(`/v1/account/methods/pgp/${pgpId}`, { confirmToken: t });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'last-login-method']);
+    await addCredential(id, 'passkey', false);
+    const t2 = await token(b, id, { kind: 'remove-method', method: 'pgp', id: pgpId });
+    expect((await b.del(`/v1/account/methods/pgp/${pgpId}`, { confirmToken: t2 })).statusCode).toBe(200);
+    expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
+  });
+
+  it('owner G13 (security review 8 Nov M3): an expired PGP key does not count, so a vendor with one and a passkey keeps the passkey', async () => {
+    const { id } = await account();
+    await addPassword(id);
+    // Expired a day after it was made, long before `now`.
+    await addPgp(id, await genKey({ keyExpirationTime: 86_400 }));
+    const passkey = await addCredential(id, 'passkey', false);
+    await deps.db.query("update accounts set account_type = 'vendor', vendor_since = $2 where id = $1", [id, now]);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
+    const refused = await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'last-login-method']);
   });
 
   it('a trader whose only primary method is a password keeps it; TOTP and recovery codes can go', async () => {
@@ -688,9 +730,9 @@ describe('staff and owner: no password, TOTP or recovery codes (R2)', () => {
 // ---------------------------------------------------------------------------------------------
 // Two factors for staff and the owner (R1)
 
-/** A PGP login step: by the pasted key (`_username` is kept for symmetry with `keyStep`; PGP login needs no name). */
-async function pgpStep(b: Browser, _username: string, key: Pair, pendingId?: string, mount = TRADER_LOGIN) {
-  const s = await b.post(`${mount}/pgp/start`, { key: key.publicKey, ...(pendingId ? { pendingId } : {}) });
+/** A PGP login step: by the pasted key, with the username on the trader login (owner G6; the staff login takes the key alone). */
+async function pgpStep(b: Browser, username: string, key: Pair, pendingId?: string, mount = TRADER_LOGIN) {
+  const s = await b.post(`${mount}/pgp/start`, { key: key.publicKey, ...(mount === TRADER_LOGIN ? { loginName: username } : {}), ...(pendingId ? { pendingId } : {}) });
   expect(s.statusCode).toBe(200);
   const code = codeOf(await decrypt(s.json().encryptedMessage, key.privateKey));
   return b.post(`${mount}/pgp/finish`, { challengeId: s.json().challengeId, code, deviceLabel: 'Desk', ...(pendingId ? { pendingId } : {}) });
@@ -803,7 +845,7 @@ describe('two factors for staff and the owner (R1)', () => {
     expect(await sessionCount(id)).toBe(0);
   });
 
-  it('staff: a security key then a passkey or a second security key is no pair', async () => {
+  it('staff: a security key then a passkey is a pair (owner G3); a second security key is not', async () => {
     const { id, username } = await account('staff');
     const k1 = await addCredential(id, 'security-key', true);
     const k2 = await addCredential(id, 'security-key', true);
@@ -811,21 +853,19 @@ describe('two factors for staff and the owner (R1)', () => {
     await addPgp(id, keys[0]!);
     const b = new Browser();
     const first = await keyStep(b, username, k1.auth, undefined, STAFF_LOGIN);
-    expect(first.res.json()).toMatchObject({ status: 'second-factor', needs: ['pgp'] });
+    expect(first.res.json()).toMatchObject({ status: 'second-factor', needs: ['pgp', 'passkey'] });
     const pendingId = first.res.json().pendingId as string;
-    // A passkey is offered only after PGP (Task 8), so its answer fails the WebAuthn check first.
+    // After a security key, the passkey is offered and completes the pair.
     const viaPasskey = await keyStep(b, username, pk.auth, pendingId, STAFF_LOGIN);
-    expect(viaPasskey.options.allowCredentials.map((c: { id: string }) => c.id)).not.toContain(pk.auth.credentialId);
-    expect(viaPasskey.res.statusCode).toBe(401);
-    // Forced through completeLogin, security key + passkey is refused by the pairing rule.
-    const forced = await b.post('/t/complete', { accountId: id, factor: { method: 'passkey', credentialId: pk.auth.credentialId, attested: false }, pendingId });
-    expect(errorOf(forced)).toBe('method-not-allowed');
+    expect(viaPasskey.options.allowCredentials.map((c: { id: string }) => c.id)).toContain(pk.auth.credentialId);
+    expect(viaPasskey.res.json()).toEqual({ status: 'ok' });
+    expect(await sessionCount(id)).toBe(1);
+    await deps.db.query('update sessions set revoked_at = now() where account_id = $1', [id]);
 
     const again = (await keyStep(b, username, k1.auth, undefined, STAFF_LOGIN)).res.json().pendingId as string;
     const second = await keyStep(b, username, k2.auth, again, STAFF_LOGIN);
     expect(second.res.statusCode).toBe(403);
     expect(errorOf(second.res)).toBe('method-not-allowed');
-    expect(await sessionCount(id)).toBe(0);
   });
 
   it('a pendingId from another device or another account, or at 5:00, → challenge-expired', async () => {

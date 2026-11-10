@@ -124,7 +124,7 @@ describe('the new device (ApproveOnDevice)', () => {
 
 const VIEW: ApprovalView = {
   id: '22222222-2222-4222-8222-222222222222', deviceLabel: 'Chrome on Windows', choices: [31, 47, 86],
-  createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: false, oneDevice: false,
+  createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: false, oneDevice: false, keysOffered: false,
 };
 
 describe('the logged-in device (LoginApprove)', () => {

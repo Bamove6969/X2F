@@ -44,6 +44,7 @@ const TRADE: Record<`trade.${TradeEvent['type']}`, Schema> = {
   'trade.release-claimed': {},
   'trade.pause': {},
   'trade.resume': {},
+  'trade.system-cancel': {},
   'trade.tick': {},
   // Plan 3 Tasks 38-39 (cancel rules): counts only, no addresses.
   'trade.fund-started': {},
@@ -70,14 +71,23 @@ const BAN: Schema = { accountId: 'uuid', until: 'iso', reasonCode: 'id', permane
 
 export const LOG_ACTIONS = {
   ...TRADE,
+  // Hold model v3 (lead review 8 Nov I5): the partner's buyer-cancel on a held funded trade is
+  // recorded; `trade.buyer-cancel` is logged when it is carried out at the hold's end.
+  'trade.buyer-cancel-recorded': {},
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
-  'dispute.assigned': { staffId: 'uuid' },
+  // G37 (owner 7 Nov): taking a case is logged at once, who (the actor) and when (the entry's time).
+  'dispute.assigned': { staffId: 'uuid', tradeOpenedAt: 'iso' },
   // A switched-off or removed member's open case goes back to the queue (Task 7 x Task 10).
   'dispute.unassigned': { staffId: 'uuid' },
+  // Re-verify 43fbbb2f, R-I1: the seller's cancel refund landed on a dispute already past `open`
+  // (an escrow ruling proposed or published); the case is raised for staff to re-rule.
+  'dispute.refund-after-ruling': { seq: 'number', status: 'id' },
   'case.opened': {},
   'chat.read': {},
-  'chat.message-sent': {},
+  // Review 8 Nov M-2: requested (before moderation seals it) and sent (in the transaction that stores it).
+  'chat.message-requested': {},
+  'chat.message-sent': { envelopeId: 'id' },
   'proof.unblurred-requested': { side: 'id' },
   'proof.unblurred-opened': {},
   // Rulings and appeals (Tasks 12, 24). `ruling.final` records "Decision overruled" or "stands".
@@ -94,7 +104,13 @@ export const LOG_ACTIONS = {
   // Holds, freezes and the ban stages (Tasks 11, 12, 27; the single `account.banned` is replaced).
   'hold.placed': { accountId: 'uuid', side: 'id', kind: 'id' },
   'hold.lifted': { accountId: 'uuid', side: 'id', kind: 'id' },
-  'account.frozen': { accountId: 'uuid' },
+  // Owner 2026-11-02: a moderator freezes a party who ignored the dispute or a ruling (Task 11),
+  // or a ruling's account action does (Task 12, which writes only `accountId`).
+  'account.frozen': { accountId: 'uuid', side: 'id', reason: 'id' },
+  'account.freeze-lifted': { accountId: 'uuid', side: 'id' },
+  // A recovery-code hold extended or ended by staff (lead hold v3 review; owner G35).
+  'hold.extended': { accountId: 'uuid', holdUntil: 'iso' },
+  'hold.ended': { accountId: 'uuid' },
   'account.trade-banned': BAN,
   'account.site-banned': BAN,
   'account.ban-lifted': { accountId: 'uuid', kind: 'id' },
@@ -144,6 +160,9 @@ export const LOG_ACTIONS = {
   'owner.key-added': { credentialId: 'id' },
   'owner.key-removed': { credentialId: 'id' },
   'settings.changed': { field: 'id', from: 'setting', to: 'setting' },
+  // The fee wallet's sweep to the owner's cold wallet (B-006): amounts and the tx id, never the address.
+  'treasury.swept': { amountAtomic: 'amount', txHash: 'hex64' },
+  'treasury.sweep-failed': { amountAtomic: 'amount', reason: 'id' },
   // Site controls (Tasks 8, 28).
   'site.stopped': {},
   'site.resumed': {},
@@ -151,6 +170,11 @@ export const LOG_ACTIONS = {
   'site.banner-removed': {},
   'site.maintenance-on': { kind: 'id' },
   'site.maintenance-off': {},
+  // J-04 (owner G19): a planned maintenance announced (its start and end) or withdrawn; never the message.
+  'site.maintenance-planned': { startsAt: 'iso', endsAt: 'iso' },
+  'site.maintenance-plan-removed': {},
+  // Security review 8 Nov M1: the owner turns the 60-day close back on after it switched itself off.
+  'site.auto-close-resumed': {},
   'news.published': { newsId: 'id' },
   'news.edited': { newsId: 'id' },
   'news.deleted': { newsId: 'id' },
@@ -164,7 +188,7 @@ export const LOG_ACTIONS = {
 export type LogAction = keyof typeof LOG_ACTIONS;
 
 /** Action prefixes that the staff log scope never shows (Task 3; Task 33's pay and shifts too). */
-export const OWNER_ONLY_PREFIXES = ['staff.', 'settings.', 'owner.', 'site.', 'shift.', 'pay.', 'news.'] as const;
+export const OWNER_ONLY_PREFIXES = ['staff.', 'settings.', 'owner.', 'site.', 'shift.', 'pay.', 'news.', 'treasury.'] as const;
 
 export class LogDetailError extends Error {
   constructor(message: string) {

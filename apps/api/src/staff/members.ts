@@ -5,10 +5,12 @@ import { lockAccount, withTx } from '../auth/hold.js';
 import { endAllSessions } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { eraseTermsSignature } from '../termsSignature.js';
 import { appendLog } from '../log/append.js';
 import type { LogAction } from '../log/actions.js';
 import { requireStaff } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
+import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
 
 // Plan 4 Task 7: the owner's staff management (perm `staff.manage`).
 //
@@ -18,7 +20,9 @@ import { consumeKeyTap } from './keyTap.js';
 //   removes power): `accounts.disabled_at` and `switched_off_at` set and logged in one transaction,
 //   then every session ended (`endAllSessions` with the app's bus). Already off: 409 `wrong-state`.
 // - `POST /staff/v1/members/:id/switch-on { tapId }` (tap `switch-on`, bound to the person and
-//   their current role) → `{ status: 'active' }`.
+//   their current role) → `{ status: 'active' }`. A moderator or senior must hold all three methods
+//   (owner G3; 409 `all-three-methods-required`, the tap left unused).
+//   `GET /staff/v1/members` lists, per moderator and senior, the methods they still lack (`missingMethods`).
 // - `PUT /staff/v1/members/:id/hours { hours }` → `{ hours }` (`validateHours`; 400 `bad-request`).
 // - `PUT /staff/v1/members/:id/role { role, tapId }` (tap `set-role`) → `{ role }`. A senior or mod
 //   role needs an attested security key (409 `security-key-required`): they rule or approve.
@@ -130,14 +134,23 @@ export interface MemberRow {
   lastActiveAt: string | null;
   openCases: number;
   expiresAt: string | null;
+  /**
+   * Owner G3 (review P-m2): the methods a moderator or senior moderator lacks of the three (an
+   * attested security key, a PGP key, a passkey), so the owner can follow up with those who joined
+   * before G3; empty for everyone else and for invites.
+   */
+  missingMethods: Array<'security-key' | 'pgp' | 'passkey'>;
 }
 
 export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]> {
   const { rows: staff } = await db.query<{
     account_id: string; display_name: string; role: StaffRole; hours: unknown; switched_off_at: Date | null; joined_at: Date; last_active: Date | null;
-    open_cases: number;
+    open_cases: number; keys: number; pgp: number; passkeys: number;
   }>(
     `select m.account_id, a.display_name, m.role, m.hours, m.switched_off_at, m.joined_at,
+            (select count(*)::int from webauthn_credentials w where w.account_id = m.account_id and w.kind = 'security-key' and w.attested) as keys,
+            (select count(*)::int from pgp_keys p where p.account_id = m.account_id) as pgp,
+            (select count(*)::int from webauthn_credentials w where w.account_id = m.account_id and w.kind = 'passkey') as passkeys,
             (select max(s.last_seen_at) from sessions s where s.account_id = m.account_id and s.app = 'staff') as last_active,
             (select count(*)::int from disputes d where d.assignee = m.account_id and d.status = any($1::text[])) as open_cases
        from staff_members m join accounts a on a.id = m.account_id
@@ -157,10 +170,13 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
       accountId: r.account_id, inviteId: null, displayName: r.display_name, role: r.role,
       status: r.switched_off_at === null ? 'active' : 'switched-off', hours: r.hours,
       joinedAt: r.joined_at.toISOString(), lastActiveAt: r.last_active?.toISOString() ?? null, openCases: r.open_cases, expiresAt: null,
+      missingMethods: THREE_METHOD_ROLES.includes(r.role)
+        ? [...(r.keys > 0 ? [] : ['security-key' as const]), ...(r.pgp > 0 ? [] : ['pgp' as const]), ...(r.passkeys > 0 ? [] : ['passkey' as const])]
+        : [],
     })),
     ...invites.map((r): MemberRow => ({
       accountId: null, inviteId: r.id, displayName: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
-      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(),
+      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(), missingMethods: [],
     })),
   ];
 }
@@ -197,6 +213,8 @@ export function staffMemberRoutes(app: FastifyInstance): void {
     await withTx(db, async (c) => {
       const target = await lockTarget(c, id);
       if (!target.switchedOff) throw new ApiError(409, 'wrong-state');
+      // Owner G3 (review P-m2): a moderator or senior is switched on only holding all three methods.
+      if (THREE_METHOD_ROLES.includes(target.role) && !(await holdsAllThree(c, id))) throw new ApiError(409, 'all-three-methods-required');
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'switch-on', accountId: id, role: target.role as InvitableRole }, now, { sessionId: req.auth.sessionId });
       await c.query('update accounts set disabled_at = null where id = $1', [id]);
       await c.query('update staff_members set switched_off_at = null where account_id = $1', [id]);
@@ -226,6 +244,8 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       const target = await lockTarget(c, id);
       const keys = await attestedKeyCount(c, id);
       if ((role === 'mod' || role === 'senior') && keys === 0) throw new ApiError(409, 'security-key-required');
+      // Owner G3 (7 Nov): a moderator or senior holds all three methods.
+      if (THREE_METHOD_ROLES.includes(role) && !(await holdsAllThree(c, id))) throw new ApiError(409, 'all-three-methods-required');
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-role', accountId: id, role }, now, { sessionId: req.auth.sessionId });
       await c.query('update staff_members set role = $2, has_security_key = $3 where account_id = $1', [id, role, keys > 0]);
       await log(c, req, 'staff.role-set', { staffId: id, from: target.role, to: role });
@@ -255,14 +275,19 @@ export function staffMemberRoutes(app: FastifyInstance): void {
     return { grants };
   });
 
+  // Owner G4 (7 Nov): a permanent removal is tapped (`remove-staff` bound to the person).
   app.delete('/staff/v1/members/:id', opts, async (req, reply) => {
     const id = idParam(req);
+    const tapId = tapIdOf(body(req));
     const { db, clock } = req.server.deps;
     const now = clock();
     await withTx(db, async (c) => {
       const target = await lockTarget(c, id);
+      await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'remove-staff', accountId: id }, now, { sessionId: req.auth.sessionId });
       await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
       await c.query('update staff_members set switched_off_at = coalesce(switched_off_at, $2), removed_at = $2 where account_id = $1', [id, now]);
+      // Removal closes the staff login for good (switch-off can be undone, so it keeps it).
+      await eraseTermsSignature(c, id);
       if (!target.switchedOff) await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.removed', { staffId: id });
     });

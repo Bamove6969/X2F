@@ -14,7 +14,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
     "fake-indexeddb": "6.2.5",
-    "happy-dom": "20.14.6",
+    "happy-dom": "21.0.4",
     "vite": "8.3.3"
   },
   "dependencies": {
@@ -25,6 +25,7 @@
     "@x2f/auth-client": "0.0.0",
     "@x2f/core": "0.0.0",
     "@x2f/escrow": "0.0.0",
+    "@x2f/proof": "0.0.0",
     "@x2f/protocol": "0.0.0",
     "@x2f/trade": "0.0.0",
     "libsodium-wrappers": "0.8.4",

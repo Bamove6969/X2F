@@ -205,6 +205,8 @@ export function tradeView(over: Record<string, unknown> = {}): Record<string, un
     maxFiatCents: '50000',
     settling: null,
     paidAt: null,
+    // The time to pay the API sends with every trade (owner p9-6); the attestation below signs the same.
+    payWindowMin: 90,
     ...over,
   };
 }
@@ -229,6 +231,7 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
       issuedAt: '2026-10-23T12:00:00.000Z',
       terms: {
         deal: { poster: d.poster, takeAmountAtomic: d.takeAmountAtomic.toString(), currency: d.currency, centsPerXmr: d.centsPerXmr.toString(), maxFiatCents: d.maxFiatCents.toString() },
+        payWindowMin: 90,
         buyerPayout: ADDR.buyer,
         sellerRefund: ADDR.seller,
       },

@@ -1,16 +1,17 @@
 import type { Side } from '@x2f/trade';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
-import { liveOfferStats, viewer } from '../offers/routes.js';
-import { catalog, isAvailable, type CatalogMethod } from './profiles.js';
+import { liveOfferStats } from '../offers/routes.js';
+import { catalog, isAvailable, tradeProfile, type CatalogMethod } from './profiles.js';
 
 /** Which live offers to count: the ads' own side (what the poster does with XMR) and currency. */
 export interface LiveOfferQuery {
   side: Side;
   currency: string;
   /**
-   * The signed-in trader asking, or null (logged out). Offers between them and someone either of
+   * The signed-in trader asking (null only for callers other than `GET /v1/methods`). Offers between them and someone either of
    * them blocked are not counted, nor their rates (Task 37 review I1).
    */
   viewerId?: string | null;
@@ -34,6 +35,14 @@ export interface MethodRow {
   giftCard: boolean;
   offers: number;
   bestRate: string | null;
+  /**
+   * How long the method's money can take to arrive, in minutes: the method's confirm window (or
+   * the Custom method's), which is also the wait from "I've paid" before a dispute (owner p9-4:
+   * "FYI this payment method can take up to 12 hours", shown where the method is picked).
+   */
+  upToMin: number;
+  /** The buyer's time to pay with this method, in minutes (owner p9-6), as the take fixes it. */
+  payWindowMin: number;
 }
 
 const SORTS = ['buyers', 'rate', 'az'] as const;
@@ -74,20 +83,23 @@ function compareRate(side: Side, a: bigint | null, b: bigint | null): number {
 }
 
 export function methodListRoutes(app: FastifyInstance): void {
-  // Browsing needs no session (P3-M9).
-  app.get('/v1/methods', async (req: FastifyRequest, reply: FastifyReply) => {
+  // Behind the front door (owner, 8 Nov 2026; open to anyone before, P3-M9): the counts and best
+  // rates are marketplace data.
+  app.get('/v1/methods', { preHandler: requireInside }, async (req: FastifyRequest) => {
     const q = parseQuery(req);
     const source = req.server.deps.liveOffers ?? liveOfferStats(req.server.deps);
-    const viewerId = await viewer(req.server, req, reply);
+    const viewerId = req.auth!.accountId;
     const stats = await source({ side: q.side, currency: q.currency, viewerId });
     const byId = new Map<string, LiveOfferStat>();
     for (const s of stats) if (s.offers > 0 && isAvailable(s.methodId) && !byId.has(s.methodId)) byId.set(s.methodId, s);
 
     const row = (m: CatalogMethod): MethodRow => {
       const s = byId.get(m.id);
+      const p = tradeProfile(m.id);
       return {
         id: m.id, name: m.name, group: m.group, giftCard: m.giftCard,
         offers: s?.offers ?? 0, bestRate: s?.bestCentsPerXmr === null || s === undefined ? null : s.bestCentsPerXmr.toString(),
+        upToMin: p.confirmWindowMin, payWindowMin: p.payWindowMin,
       };
     };
     const available = catalog().filter((m) => isAvailable(m.id));

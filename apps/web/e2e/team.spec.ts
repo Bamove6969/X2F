@@ -9,6 +9,7 @@
 import { expect, test, type Browser, type CDPSession, type Page, type Request, type Route } from '@playwright/test';
 import { sellerView } from './refundViews.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 
 const LOCAL = `http://localhost:${process.env.X2F_E2E_PORT ?? 4317}`;
 /** A 32-byte invite code, base64url (43 characters), as the API makes them. */
@@ -181,9 +182,10 @@ async function joinApi(page: Page, o: { invite?: { status: number; body: unknown
   await page.route('**/v1/account/me', (r) => (signedIn ? json(memberMe(['trades']))(r) : json({ error: 'not-authenticated' }, 401)(r)));
   await page.route('**/v1/team/invite', (r) => {
     record(r);
-    const a = o.invite ?? { status: 200, body: { team: 'Calcium', displayName: 'Aurora', roles: ['trades'], expiresAt: LATER } };
+    const a = o.invite ?? { status: 200, body: { displayName: 'Aurora', roles: ['trades'], expiresAt: LATER } };
     return json(a.body, a.status)(r);
   });
+  await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
   await page.route('**/v1/team/join/start', (r) => (record(r), json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: LATER })(r)));
   await page.route('**/v1/team/join/finish', (r) => {
     record(r);
@@ -218,6 +220,20 @@ async function joinApi(page: Page, o: { invite?: { status: number; body: unknown
   return seen;
 }
 
+/** Reads the Terms box to its end, ticks and accepts (as setup.spec does). */
+async function acceptTerms(page: Page): Promise<void> {
+  await expect(page.locator('[data-screen="team-join-terms"]')).toBeVisible();
+  await page.locator('[data-part="terms-text"]').evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+    el.dispatchEvent(new Event('scroll'));
+  });
+  await page.check('[data-part="terms-tick"]');
+  // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs (the typed form, for brevity).
+  await page.click('[data-part="signature-type"]');
+  await page.fill('[data-part="signature-name"]', 'AK');
+  await page.click('[data-part="terms-accept"]');
+}
+
 async function proveFirstKey(page: Page): Promise<void> {
   await page.getByLabel('Your private login name').fill('aurora_login');
   await page.locator('#join-key').fill(FAKE_KEY);
@@ -240,7 +256,10 @@ for (const [second, viewport] of [['security-key', '390x844'], ['passkey', '360x
       const all = watchRequests(page);
       const seen = await joinApi(page);
       await page.goto(`${LOCAL}/team/join#${CODE}`);
-      await expect(page.locator('[data-part="invite-who"]')).toHaveText('Calcium invited you as Aurora, for Trades.');
+      // Review 2026-11-08 F1: the member signs the Terms first; F3: the invite never names the vendor.
+      await acceptTerms(page);
+      await expect(page.locator('[data-part="invite-who"]')).toHaveText('You are invited to a team as Aurora, for Trades.');
+      await expect(page.locator('main')).not.toContainText('Calcium');
       expect(page.url()).not.toContain('#');
       expect(await page.evaluate(() => location.hash)).toBe('');
       await expectPhoneLayout(page);
@@ -261,7 +280,8 @@ for (const [second, viewport] of [['security-key', '390x844'], ['passkey', '360x
       // Signed in as the member: the app's home.
       await expect(page).toHaveURL(/\/sell$/);
       expect(seen.bodies['/v1/team/invite']).toEqual([{ invite: CODE }]);
-      expect(seen.bodies['/v1/team/join/start']).toEqual([{ invite: CODE, loginName: 'aurora_login', publicKey: FAKE_KEY.trim() }]);
+      expect(seen.bodies['/v1/team/join/start']).toEqual([{ invite: CODE, loginName: 'aurora_login', publicKey: FAKE_KEY.trim(), acceptedTerms: TERMS_TEXT_VERSION }]);
+      expect(seen.bodies['/v1/team/join/finish']).toEqual([{ challengeId: 'c1', code: '12345678', termsSignature: { kind: 'typed', name: 'AK' } }]);
       if (second === 'pgp') {
         expect(seen.bodies['/v1/team/join/second/pgp/finish']).toEqual([{ setupId: 's1', challengeId: 'c2', code: '87654321', deviceLabel: expect.any(String) }]);
       } else {
@@ -307,6 +327,8 @@ test('two browsers finishing the same invite: one wins, the other is told and st
     await joinApi(b.page, { finish });
     await a.page.goto(`/team/join#${CODE}`);
     await b.page.goto(`/team/join#${CODE}`);
+    await acceptTerms(a.page);
+    await acceptTerms(b.page);
     await proveFirstKey(a.page);
     await expect(a.page.locator('[data-part="join-second"]')).toBeVisible();
     await proveFirstKey(b.page);
@@ -358,6 +380,7 @@ test("a member logs in with PGP first, then a security key; a member's passkey a
   webauthnStarts = [];
   await page.goto(`${LOCAL}/login?returnTo=%2Fprofile%2Foffers`);
   await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'desk_ana');
   await page.fill('#pgp-key', FAKE_KEY);
   await page.click('text=Send me a login message');
   await page.fill('[aria-label="Login code"]', '12345678');
@@ -389,8 +412,9 @@ async function postApi(page: Page, roles: string[], post: { status: number; body
 
 async function postOffer(page: Page): Promise<void> {
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await page.getByRole('button', { name: 'Post offer' }).click();
 }
 
@@ -507,7 +531,7 @@ for (const viewport of PHONE_VIEWPORTS) {
 }
 
 for (const viewport of PHONE_VIEWPORTS) {
-  test(`a Trades member proposes a mutual cancel from the seller's room, and may open a dispute; no escrow (${viewport})`, async ({ page }) => {
+  test(`a Trades member in the seller's waiting room may open a dispute, and has no Propose cancel; no escrow (${viewport})`, async ({ page }) => {
     // Review round 2, n3: the escrow-free steps a member may take (owner question 13(d)).
     const later = new Date(Date.now() + 25 * 60_000).toISOString();
     let view = { ...sellerView(), payBy: later, nextDeadline: later, serverNow: new Date().toISOString() };
@@ -531,9 +555,9 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expect(room.getByRole('link', { name: 'Open dispute' })).toHaveAttribute('href', `/trade/${encodeURIComponent(TRADE)}/dispute`);
     await expect(room.getByRole('button', { name: /I've paid/ })).toHaveCount(0);
     await expectPhoneLayout(page);
-    await room.getByRole('button', { name: 'Propose cancel' }).click();
-    await expect(room.getByRole('button', { name: 'Withdraw' })).toBeVisible();
-    expect(posted).toEqual([{ type: 'propose-cancel' }]);
+    // No Propose cancel while waiting (design proto review P2).
+    await expect(room.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
+    expect(posted).toEqual([]);
     expect(identity).toEqual([]);
     await expectPhoneLayout(page);
   });
@@ -571,7 +595,7 @@ test('the owner changes roles and removes a member; the member is then signed ou
     await m.page.unroute(/\/v1\/team.*/);
     await m.page.route(/\/v1\/team.*/, json({ error: 'not-authenticated' }, 401));
     await m.page.reload();
-    await expect(m.page).toHaveURL(/\/login\?returnTo=%2Fsettings%2Fteam|\/settings\/team/);
+    await expect(m.page).toHaveURL(/\/\?returnTo=%2Fsettings%2Fteam|\/settings\/team/);
     await expect(m.page.locator('[data-part="cant-do-that"]')).toHaveCount(0);
   } finally {
     await m.context.close();
@@ -582,7 +606,7 @@ test('the owner changes roles and removes a member; the member is then signed ou
     { id: 's-own', deviceLabel: 'Pixel 8', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: true, member: null },
     { id: 's-m', deviceLabel: 'Firefox on Linux', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: false, member: 'Basil' },
   ]));
-  await page.route(/\/v1\/account\/security.*/, json({ idleHours: 12, adjustable: true }));
+  await page.route('**/v1/account/security/devices', json({ oneDevice: false, maxDevices: 3 }));
   await page.goto('/settings/devices');
   // C2-D1 (Devices board): members' sessions are their own card.
   const row = page.locator('[data-part="team-sessions"] li[data-member="Basil"]');

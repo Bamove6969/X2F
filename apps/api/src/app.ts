@@ -4,10 +4,13 @@ import type pg from 'pg';
 import type { Config } from './config.js';
 import { methodRoutes } from './auth/methods.js';
 import { originHook } from './auth/origin.js';
+import { nameCheckRoutes } from './auth/nameCheck.js';
 import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
+import { holdRoutes } from './auth/holdRoutes.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
+import { chatKeyRoutes } from './auth/chatKeys.js';
 import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, runsWithSession, type SessionRealm } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
@@ -33,6 +36,10 @@ import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { teamRoutes } from './routes/team.js';
+import { accountTypeRoutes } from './routes/accountType.js';
+import { jabberRoutes } from './jabber/routes.js';
+import type { JabberSender } from './jabber/sender.js';
+import { noteRoutes } from './team/notes.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
 import { chatRoutes } from './chat/routes.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -81,6 +88,11 @@ export interface Deps {
   liveOffers?: LiveOfferStats;
   /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
   nudges: NudgeWiring;
+  /**
+   * Owner rule p5-7: X2F's Jabber sender (the XMPP account in `config.xmpp`, jabber/xmpp.ts; tests
+   * pass a fake). Without it the Jabber set-up answers 503 `jabber-unavailable`.
+   */
+  jabberSender?: JabberSender;
 }
 
 declare module 'fastify' {
@@ -93,6 +105,8 @@ declare module 'fastify' {
     events: EventBus;
     /** Task 19: the generic Web Push (`send(accountId, kind)`; true when a push service answered 201). */
     push: { send(accountId: string, kind: PushKind, opts?: PushOptions): Promise<boolean> };
+    /** Task 19's trade event delivery, for system events applied outside the trade routes (hold model v3: held trades paused and resumed). */
+    tradePublish: TradePublisher;
     /**
      * Every route other than GET (and HEAD) that runs behind `requireSession`, as `METHOD /path`
      * (Tasks 16-17 review round 5 M1: the tripwire that each is classified, `LIVE_SESSION_ROUTES` or
@@ -224,6 +238,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.decorate('push', {
     send: (accountId: string, kind: PushKind, opts?: PushOptions) => sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind, opts),
   });
+  // Plan 3, Task 6/19: one trade event publisher for every route that applies trade events.
+  const tradePublish = options.tradePublish ?? tradeEventPublisher({ events, push: app.push });
+  app.decorate('tradePublish', tradePublish);
   app.decorate('sessionRealm', TRADER_REALM);
   app.decorateRequest('auth', null as never);
   app.decorateRequest('confirmedAction', null);
@@ -269,25 +286,35 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   });
 
   app.get('/healthz', async () => ({ ok: true }));
-  // Plan 4, Task 8: the banner, the emergency stop and maintenance as every visitor sees them.
+  // Plan 4, Task 8: the banner, the emergency stop and maintenance. Only an inside session (requireInside)
+  // sees them in full; anyone else gets only whether maintenance is on, and its kind (front door, 8 Nov 2026).
   siteRoutes(app);
   logoutRoute(app);
   passwordRoutes(app);
+  // The sign-up's live "is available" tick for the private username (limits in nameCheck.ts).
+  nameCheckRoutes(app);
   await pgpRoutes(app);
   totpRoutes(app);
   recoveryRoutes(app);
+  // Hold model v3: the account's hold and the changes waiting their 24 h.
+  holdRoutes(app);
   methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
+  // Owner 2 Nov 2026: Trader and Vendor accounts.
+  accountTypeRoutes(app);
   // Plan 2 Task 16: new-device approval (the new device's poll and the logged-in device's decision).
   approvalRoutes(app);
+  // J-23 groundwork: the chat-key courier between a person's own strong devices (ciphertext only).
+  chatKeyRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   // Staff accounts log in only on the staff API (owner 2026-11-03): see `TRADER_LOGIN_KINDS`.
   webauthnRoutes(app);
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: [...TRADER_LOGIN_KINDS] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
-  // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.
+  // Plan 3 Task 3: method lists, suggestions and the price; the owner's price health. Browsing (the methods,
+  // the offers and the price) is behind the front door: requireInside (owner, 8 Nov 2026).
   methodListRoutes(app);
   offerRoutes(app);
   priceRoutes(app);
@@ -295,7 +322,6 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   eventRoutes(app, events, options.events);
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
-  const tradePublish = options.tradePublish ?? tradeEventPublisher({ events, push: app.push });
   tradeRoutes(app, { publish: tradePublish, ...(options.txConfirmations ? { txConfirmations: options.txConfirmations } : {}) });
   // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
   disputeRoutes(app, { publish: tradePublish });
@@ -308,7 +334,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   nudgeRoutes(app);
   // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
   confirmationsRoute(app, options.txConfirmations, tradePublish);
-  // Plan 4, Task 28: the News inbox (reading needs no session).
+  // Plan 4, Task 28: the News inbox, behind the front door (requireInside, owner 8 Nov 2026).
   newsRoutes(app);
   // Plan 3 Task 39 (owner 2026-10-29): records when a buyer's cancel refund is fully confirmed, so
   // the seller's Confirm cancel is available and the 48-hour auto-close starts (cancelReturn.ts).
@@ -330,6 +356,10 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pastRepRoutes(app);
   // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
   teamRoutes(app);
+  // Owner rule p5-7: secure Jabber account-change alerts (boards JabberSetup, Alerts).
+  jabberRoutes(app);
+  // Job 1c (J-10, S-094): notes on traders.
+  noteRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
   feedbackRoutes(app);
 

@@ -6,6 +6,7 @@ import type { StaffRoutePerm } from '../../src/staff/guard.js';
 
 const EVERY_ROLE = ['owner', 'senior', 'mod', 'helper'] as const satisfies readonly StaffRole[];
 const OWNER = ['owner'] as const satisfies readonly StaffRole[];
+const MODERATORS = ['owner', 'senior', 'mod'] as const satisfies readonly StaffRole[];
 
 export interface StaffRouteRow {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -65,6 +66,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'PUT', url: '/staff/v1/members/:id/grants', perm: 'staff.manage', allowed: OWNER, body: { grants: [] } },
   { method: 'PUT', url: '/staff/v1/members/:id/role', perm: 'staff.manage', allowed: OWNER, body: { role: 'mod' } },
   { method: 'DELETE', url: '/staff/v1/members/:id', perm: 'staff.manage', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/terms', perm: 'public-invite', allowed: 'public' },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { displayName: 'Matrix1', loginName: 'matrix1' } },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/key/start', perm: 'public-invite', allowed: 'public', body: {} },
@@ -75,6 +77,14 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/owner/keys', perm: 'self', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/owner/keys/start', perm: 'self', allowed: OWNER, body: {} },
   { method: 'POST', url: '/staff/v1/owner/keys/finish', perm: 'self', allowed: OWNER, body: {} },
+  // Plan 4 Task 6: owner first-run setup (public; 404 setup-locked once locked, and here: an owner exists).
+  { method: 'POST', url: '/staff/v1/setup/code', perm: 'public-setup', allowed: 'public', body: { code: 'AAAA-AAAA-AAAA' } },
+  { method: 'POST', url: '/staff/v1/setup/account', perm: 'public-setup', allowed: 'public', body: { displayName: 'matrix.owner', loginName: 'matrix-login' } },
+  { method: 'POST', url: '/staff/v1/setup/key/start', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/key/finish', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/pgp/start', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/pgp/finish', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/finish', perm: 'public-setup', allowed: 'public', body: {} },
   // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
   { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER, body: { firstResponseH: 5 } },
@@ -84,7 +94,12 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER, body: { text: 'Matrix is down for an hour.', kind: 'info' } },
   { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', allowed: OWNER, body: { on: false } },
-  // Plan 4 Task 28: News, written by the owner.
+  // J-04 (owner G19): a planned maintenance announced ahead.
+  { method: 'PUT', url: '/staff/v1/site/maintenance/planned', perm: 'site.control', allowed: OWNER, body: { startsAt: '2099-01-01T00:00:00.000Z', endsAt: '2099-01-01T02:00:00.000Z' } },
+  { method: 'DELETE', url: '/staff/v1/site/maintenance/planned', perm: 'site.control', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/site/auto-close/resume', perm: 'site.control', allowed: OWNER, body: {} },
+  // Plan 4 Task 28: News, written by the owner (the list: Task 16's NewsEditor).
+  { method: 'GET', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'Edited.' } },
   { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER },
@@ -92,8 +107,25 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/price-health', perm: 'stats.read', allowed: OWNER },
   // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
   { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
+  // Lead hold v3 review (owner G35): a recovery-code hold extended or ended by staff, logged.
+  { method: 'POST', url: '/staff/v1/accounts/:id/hold/extend', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
+  { method: 'POST', url: '/staff/v1/accounts/:id/hold/end', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
   // Owner Q60: senior moderators by role, moderators and helpers by grant.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
+  // incident ID: 404 past the guard).
+  { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/disputes/next', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
+  { method: 'POST', url: '/staff/v1/disputes/:code/take', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
+  { method: 'GET', url: '/staff/v1/disputes/:code', perm: 'disputes.handle', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/disputes/:code/messages', perm: 'disputes.handle', allowed: MODERATORS, body: { text: 'Hello' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/proof-request', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'buyer' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/freeze', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', on: true, reason: 'no-reply' } },
+  // Plan 4 Task 32: the owner's revenue totals (the internal revenue ledger).
+  { method: 'GET', url: '/staff/v1/revenue', perm: 'earnings.read', allowed: OWNER },
+  // B-006: the fee wallet's sweep settings (a body that changes nothing needs no tap).
+  { method: 'GET', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER, body: { thresholdAtomic: null, floatAtomic: null, coldAddress: null, tapId: '00000000-0000-4000-8000-000000000000' } },
 ];

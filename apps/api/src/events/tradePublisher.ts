@@ -1,18 +1,18 @@
 import type { By, Trade, TradeEvent } from '@x2f/trade';
 import type { TradePublisher } from '../trades/store.js';
+import type { PushKind } from '../push/send.js';
 import type { EventBus } from './bus.js';
-import { recordFinalAlert, type FinalAlertDeps } from './finalAlert.js';
 
-export interface TradePublisherDeps extends FinalAlertDeps {
+export interface TradePublisherDeps {
   events: Pick<EventBus, 'publish'>;
+  push: { send(accountId: string, kind: PushKind): Promise<boolean> };
 }
 
 /**
- * Task 19's delivery of a committed trade event (the store's `publish` hook):
- * - `request-refund`: the buyer's final alert (`recordFinalAlert`); the seller gets the live event.
- *   Nothing is stored here: only the buyer's seen-receipt sets `trades.final_alert_delivered`.
- * - any other event: `{type:'trade', code, state}` to both sides' open streams, and the generic
- *   trade push to each side that did not cause it and has no stream open.
+ * Task 19's delivery of a committed trade event (the store's `publish` hook): `{type:'trade', code,
+ * state}` to both sides' open streams, and the generic trade push to each side that did not cause
+ * it and has no stream open. The seller's cancel (`request-refund`) is delivered like any other
+ * event: no final alert (owner 8 Nov, p6-1).
  */
 export function tradeEventPublisher(deps: TradePublisherDeps): TradePublisher {
   return async (t: Trade, e: TradeEvent, by: By) => {
@@ -22,11 +22,6 @@ export function tradeEventPublisher(deps: TradePublisherDeps): TradePublisher {
       // ("Your input is needed to cancel this trade.") goes to the seller when no stream is open.
       deps.events.publish(t.buyerId, ev);
       if (deps.events.publish(t.sellerId, ev) === 0) await deps.push.send(t.sellerId, 'cancel-confirm');
-      return;
-    }
-    if (e.type === 'request-refund') {
-      deps.events.publish(t.sellerId, ev);
-      await recordFinalAlert(deps, t.code, t.buyerId);
       return;
     }
     const sides: Array<['buyer' | 'seller', string]> = [['seller', t.sellerId], ['buyer', t.buyerId]];

@@ -1,17 +1,32 @@
+import { currencyChoices } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../app.js';
+import { requireInside } from '../auth/frontDoor.js';
 import { ApiError } from '../errors.js';
-import { currencyExponent } from './currencies.js';
+import { CURRENCY_EXPONENTS, currencyExponent } from './currencies.js';
 
 /**
- * `GET /v1/price?currency=EUR` (no session, P3-M9) → `{ currency, centsPerXmr, exponent, at,
+ * `GET /v1/price?currency=EUR` (behind the front door, `requireInside`; open before 8 Nov 2026, P3-M9) → `{ currency, centsPerXmr, exponent, at,
  * usdCentsPerXmr }`: the market price in the currency's minor units (the XMR/USD median times
  * the USD→X rate in use, spec 11.6) with its ISO 4217 exponent (Revision 2026-10-20), the time of
  * the median's oldest quote, and the same XMR's US-dollar value in cents. 503 `price-unavailable`
  * when that currency's market prices are paused (Review Focus 5). An unknown currency is 400.
  */
 export function priceRoutes(app: FastifyInstance): void {
-  app.get('/v1/price', async (req) => {
+  /**
+   * `GET /v1/currencies` (behind the front door, `requireInside`, as every marketplace read: which
+   * currencies have a price now is market data) → `{ currencies: { code, flag, available }[] }` (J-16; owner
+   * Q28, O-019; Q24, O-020): every currency the price feed knows, USD, EUR, GBP, CAD, AUD, JPY first
+   * and the rest A-Z, each with its flag; `available` is whether it has a market price right now, so
+   * a currency whose rate stops is kept (marked) and is available again on the next call after its
+   * rate is back. How the web shows an unavailable one is design's pick.
+   */
+  app.get('/v1/currencies', { preHandler: requireInside }, async (req) => {
+    const prices = req.server.deps.prices;
+    return { currencies: currencyChoices(Object.keys(CURRENCY_EXPONENTS), (c) => prices.current(c) !== null) };
+  });
+
+  app.get('/v1/price', { preHandler: requireInside }, async (req) => {
     const currency = (req.query as Record<string, unknown> | null)?.currency;
     if (typeof currency !== 'string' || currencyExponent(currency) === null) throw new ApiError(400, 'bad-request');
     const q = req.server.deps.prices.quote(currency);

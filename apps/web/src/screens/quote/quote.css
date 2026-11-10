@@ -151,8 +151,27 @@
   background: var(--x2f-surface-raised);
 }
 
+/* Focus (design review 8 Nov item 4): a soft 1 px ink border on the field, as on the boards, in
+   place of the global 2 px outline drawn around the bare input (a hard white box inside the field). */
+.x2f-quote__box:has(input:focus-visible) {
+  border-color: var(--x2f-ink);
+}
+
+.x2f-quote__box input:focus-visible {
+  outline: none;
+}
+
 .x2f-quote__box[data-bad] {
   border-color: var(--x2f-danger);
+}
+
+/* In error the border stays danger; focus thickens it to 2 px so it still shows: a 1 px outline
+   just inside the border (kit 1.5 keeps box-shadow for the nav-current lines only, kit-tokens.test).
+   The forced-colors block below restates the Highlight outline for this case, since this rule
+   outranks `.x2f-quote__box:focus-within` there. */
+.x2f-quote__box[data-bad]:has(input:focus-visible) {
+  outline: 1px solid var(--x2f-danger);
+  outline-offset: -2px;
 }
 
 .x2f-quote__box input {
@@ -252,6 +271,16 @@
   outline-offset: 2px;
 }
 
+/* Before login: one plain row saying the wallet comes with the account (nothing to pick). */
+.x2f-quote__wallet--none {
+  cursor: default;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__wallet--none > svg {
+  flex-shrink: 0;
+}
+
 .x2f-quote__wallet-text {
   display: flex;
   flex-direction: column;
@@ -305,6 +334,13 @@
   font-weight: 500;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* An exact figure past 6 places (SellQuote, up to 12): smaller, so it fits a 360 px card. */
+.x2f-quote__xmr[data-long] {
+  font-size: 26px;
+  line-height: 32px;
 }
 
 .x2f-quote__xmr-unit {
@@ -314,6 +350,198 @@
   font-weight: var(--x2f-heading-weight);
   letter-spacing: 0;
   color: var(--x2f-monero-ink);
+}
+
+/*
+ * "This offer's bands" (BuyQuote board, canvas v142): a 20 px padded surface card, a 40 px icon
+ * tile beside an 18/24 title and a 13/18 sub-line; the With markup / Without chips; bands as 12 px
+ * surface-raised rows (10/12 padding), the one holding the amount ringed in 2 px ink; the clip
+ * lines at 14/20 ink; the freshness line at 13/18 muted.
+ */
+.x2f-quote__bands {
+  gap: 12px;
+}
+
+.x2f-quote__bands-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.x2f-quote__bands-tile {
+  display: flex;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__bands-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.x2f-quote__bands-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.x2f-quote__band-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-quote__band {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-quote__band[aria-current='true'] {
+  border-color: var(--x2f-ink);
+}
+
+.x2f-quote__band-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0 var(--x2f-space-2);
+}
+
+.x2f-quote__band-name {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-quote__band-label {
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-here {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--x2f-ink);
+  color: var(--x2f-ground);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.x2f-quote__band-rate {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+  white-space: nowrap;
+}
+
+.x2f-quote__band-rate .x2f-quote__mono {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__band-range {
+  font-size: 15px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.x2f-quote__band-range .x2f-quote__mono {
+  font-weight: 500;
+}
+
+.x2f-quote__band-unit {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-markup {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+  white-space: nowrap;
+}
+
+.x2f-quote__band-markup .x2f-quote__mono {
+  color: var(--x2f-escrow);
+}
+
+.x2f-quote__band-xmr-unit {
+  font-weight: 600;
+  color: var(--x2f-monero-ink);
+}
+
+.x2f-quote__band-clip {
+  display: flex;
+  gap: var(--x2f-space-2);
+  align-items: flex-start;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__band-clip > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+/* Forced colors (High Contrast) replaces border colours and drops box-shadow, and the input has no
+   outline, so the box draws one (WCAG 2.4.7; review I1). */
+@media (forced-colors: active) {
+  .x2f-quote__box:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* The error field's 1 px inner outline is more specific than the rule above: same Highlight. */
+  .x2f-quote__box[data-bad]:has(input:focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  .x2f-quote__band[aria-current='true'] {
+    border-color: CanvasText;
+  }
 }
 
 /* The rows: one 12 px surface-raised block, 48 px rows, a 1 px inset rule between rows. */
@@ -419,3 +647,193 @@
     margin: 0;
   }
 }
+
+/* Wide (Job 3; SellQuote-Wide): two columns, 560 and 360, 24 apart, under the header. The amount,
+   what you get and the notes are the first column; Trade and its fine print open the second, so
+   Trade is in view without scrolling (design review 8 Nov 2026, item 2). No pinned footer and no
+   full-height screen: the rail frame scrolls the page. */
+[data-shell='desktop'] .x2f-quote {
+  display: grid;
+  grid-template-columns: minmax(0, 560px) minmax(280px, 360px);
+  column-gap: var(--x2f-space-6);
+  align-content: start;
+  align-items: start;
+  min-height: 0;
+  background: transparent;
+}
+
+[data-shell='desktop'] .x2f-quote > :not(.x2f-quote__main, .x2f-quote__footer) {
+  grid-column: 1 / -1;
+}
+
+[data-shell='desktop'] .x2f-quote__header {
+  padding: 0 0 var(--x2f-space-6);
+}
+
+[data-shell='desktop'] .x2f-quote__main {
+  grid-column: 1;
+  padding: 0;
+  gap: var(--x2f-space-6);
+}
+
+[data-shell='desktop'] .x2f-quote__footer {
+  grid-column: 2;
+  position: sticky;
+  top: 32px;
+  padding: 0;
+  gap: var(--x2f-space-2);
+  border-top: 0;
+  background: transparent;
+}
+
+/* Review I1: the rail plus 944 px of columns needs 1280 px; below 1232 px of window the quote
+   is one column and Trade follows the notes. */
+@media (max-width: 1231px) {
+  [data-shell='desktop'] .x2f-quote {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-shell='desktop'] .x2f-quote__footer {
+    grid-column: 1;
+    position: static;
+  }
+}
+
+/* "What applies to you" (j31a section 1; BuyQuote / SellQuote / OfferAd boards): a surface card,
+   a 40 px tile and the title, then the three groups on surface-raised, divided by 1 px of surface. */
+.x2f-wa {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--x2f-space-5);
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+}
+
+.x2f-wa__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.x2f-wa__tile {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-wa__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.x2f-wa__sub {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-wa__groups {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-wa__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: 12px 14px;
+}
+
+.x2f-wa__group + .x2f-wa__group {
+  border-top: 1px solid var(--x2f-surface);
+}
+
+.x2f-wa__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-wa__group-title {
+  margin: 0;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-wa__count {
+  font-family: var(--x2f-font-mono);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-wa__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-wa__line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink);
+}
+
+.x2f-wa__dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  margin-top: 8px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-ink-muted);
+}
+
+.x2f-wa__mono {
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-wa__toggle {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  margin-left: -2px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--x2f-radius-md);
+  background: transparent;
+  color: var(--x2f-monero-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.x2f-wa__toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+

@@ -10,10 +10,13 @@
  * sessionStorage through the log-in round trip; it is dropped once sent. After Send, focus moves to
  * the thank-you heading (review M7).
  *
- * No board exists for this screen yet (Claude Design brief 2026-10-29, item 5): it is built from the
- * existing kit classes only, with no styling of its own, and is matched to the board when it lands
- * (tripwire NEEDS_DESIGN_CANTDOTHAT). The owner's words are used where he gave them (the checkbox
- * and the thank-you); the rest is marked COPY-UNSIGNED.
+ * Laid out from the Feedback board (origin/wip/design-brief docs/design-boards/Feedback.dc.html,
+ * views form and sent; design review 1 Nov shots 62-63) with UI-kit parts only: the back header,
+ * "Tell us what you think", a 9-row message box with its count, "Send anonymously" as a 24px box in
+ * a 44px row, and the thank-you with "Sent as <name>." and Write another. The kind is not on the
+ * board and has no choice (design build review 7 Nov): a draft keeps its kind, a new message is
+ * feedback. The owner's words are used where he
+ * gave them (the checkbox and the thank-you); board copy is used as drawn; the rest is COPY-UNSIGNED.
  */
 import { FEEDBACK_FORM_DAILY } from '@x2f/core';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
@@ -22,6 +25,9 @@ import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { displayNameOf, useSession } from '../session/useSession.js';
 import { clearFeedbackDraft, loadFeedbackDraft, saveFeedbackDraft } from './feedbackDraft.js';
 import { Button } from '../ui/Button.js';
+import { CheckRow } from '../ui/CheckRow.js';
+import { FlowScreen } from '../ui/FlowScreen.js';
+import { Icon } from '../ui/icons.js';
 import { waitSentence } from './auth/refusals.js';
 import './screens.css';
 
@@ -29,8 +35,11 @@ export type FeedbackKind = 'complaint' | 'feedback' | 'recommendation';
 
 export const FEEDBACK_TEXT_MAX = 2000;
 
-/** The anonymous hint (review M1: only what is strictly true). COPY-UNSIGNED */
-export const FEEDBACK_ANON_HINT = "Sent without your username. We don't record who sent it, so nobody can ask you about it.";
+/** The anonymous hint (design session 2 Nov; still only what is strictly true, review M1). COPY-UNSIGNED */
+// not-a-refusal: says what an anonymous message means for a reply, nothing is refused
+export const FEEDBACK_ANON_HINT = "Your username isn't attached, so we can't follow up with you.";
+/** The named hint (design session 2 Nov). COPY-UNSIGNED */
+export const FEEDBACK_NAMED_HINT = 'Your username is attached, so we can reply in the app.';
 /** A 400 from the form. COPY-UNSIGNED */
 export const FEEDBACK_BAD_TEXT = 'Your comment has a hidden character the form does not take. Retype it, or paste it as plain text.';
 
@@ -42,6 +51,10 @@ export const FEEDBACK_DAILY_LIMIT = `You've sent ${FEEDBACK_FORM_DAILY} today, t
 
 /** The owner's wording, exactly (2026-10-29). copy-lint lets this one sentence keep its "!". */
 export const FEEDBACK_THANKS = 'Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all.';
+/** The Feedback board sets the owner's sentence as the heading "Thank you!" and the line under it. */
+const THANKS_SPLIT = FEEDBACK_THANKS.search(/[.!?] /) + 1;
+const THANKS_HEAD = FEEDBACK_THANKS.slice(0, THANKS_SPLIT);
+const THANKS_BODY = FEEDBACK_THANKS.slice(THANKS_SPLIT + 1);
 
 
 /** The refusal code from `?from=`, when it has the API's shape; anything else is dropped. */
@@ -74,7 +87,12 @@ export function Feedback() {
   const [anonymous, setAnonymous] = useState(draft?.anonymous ?? false);
   const [state, setState] = useState<State>({ kind: 'idle' });
   const textId = useId();
-  const hintId = useId();
+  const countId = useId();
+  const formId = useId();
+  const box = useRef<HTMLTextAreaElement>(null);
+  const focusBox = useRef(false);
+  // Who the last message went as, for the thank-you's "Sent as <name>." (Feedback board).
+  const [sentAnonymously, setSentAnonymously] = useState(false);
   const thanks = useRef<HTMLHeadingElement>(null);
 
   // Once the account is known, a draft written by a different account is dropped.
@@ -92,6 +110,10 @@ export function Feedback() {
   }, [kind, text, anonymous, state.kind, owner, session.status, draft]);
   useEffect(() => {
     if (state.kind === 'sent') thanks.current?.focus();
+    else if (focusBox.current) {
+      focusBox.current = false;
+      box.current?.focus();
+    }
   }, [state.kind]);
   const signedOut = session.status === 'signed-out' || state.kind === 'signed-out';
   const loginHref = `/login?returnTo=${encodeURIComponent(safeReturnTo(pathname + search))}`;
@@ -106,6 +128,7 @@ export function Feedback() {
     try {
       await sendFeedback({ kind, text: clean, anonymous, from });
       clearFeedbackDraft();
+      setSentAnonymously(anonymous);
       setState({ kind: 'sent' });
     } catch (err) {
       if (err instanceof ApiCallError && err.status === 401) setState({ kind: 'signed-out' });
@@ -119,61 +142,111 @@ export function Feedback() {
     }
   };
 
+  const back = () => void (key === 'default' ? navigate('/sell') : navigate(-1));
+  const backControl = { label: 'Back', onClick: back };
+
   if (state.kind === 'sent') {
     return (
-      <main className="x2f-screen" data-screen="feedback">
-        <h1 className="x2f-screen__title" tabIndex={-1} ref={thanks} data-part="feedback-thanks-heading">
-          Feedback sent
-        </h1>
-        <p role="status" data-part="feedback-thanks">
-          {FEEDBACK_THANKS}
-        </p>
-        <Button variant="primary" onClick={() => void (key === 'default' ? navigate('/sell') : navigate(-1))}>
-          Done
-        </Button>
-      </main>
+      <FlowScreen
+        screen="feedback"
+        title="Feedback"
+        titleAs="label"
+        back={backControl}
+        footer={
+          <>
+            <Button variant="primary" onClick={back}>
+              Done
+            </Button>
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setText('');
+                setState({ kind: 'idle' });
+                // Review N3: focus goes to the new message box, not lost with the button.
+                focusBox.current = true;
+              }}
+            >
+              Write another
+            </Button>
+          </>
+        }
+      >
+        <div className="x2f-done">
+          <span className="x2f-done__mark">
+            <Icon name="check" size={32} stroke={2} />
+          </span>
+          <div className="x2f-done__text" data-part="feedback-thanks" role="status">
+            <h1 className="x2f-h2 x2f-done__title" tabIndex={-1} ref={thanks} data-part="feedback-thanks-heading">
+              {THANKS_HEAD}
+            </h1>{' '}
+            <p className="x2f-body">{THANKS_BODY}</p>
+          </div>
+          {/* The board's line under the thanks: who it was sent as. */}
+          <p className="x2f-fine" data-part="feedback-sent-as">
+            {sentAnonymously || owner === null ? 'Sent anonymously.' : `Sent as ${owner}.`}
+          </p>
+        </div>
+      </FlowScreen>
     );
   }
 
   return (
-    <main className="x2f-screen" data-screen="feedback">
-      {/* The Feedback board (design build review 7 Nov): no "What is it?" choice; every message is sent as feedback. */}
-      <h1 className="x2f-screen__title">Tell us what you think</h1>
-      {/* COPY-UNSIGNED */}
-      <p className="x2f-screen__lead">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
-      {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
-        <p className="x2f-note" data-part="feedback-login-first">
-          {/* COPY-UNSIGNED */}
-          <Link className="x2f-link" to={loginHref}>
-            Log in
-          </Link>{' '}
-          to send feedback. You can write it first: it is kept while you log in.
-        </p>
-      ) : null}
-      <form className="x2f-stack" onSubmit={(e) => void submit(e)}>
+    <FlowScreen
+      screen="feedback"
+      title="Feedback"
+      titleAs="label"
+      back={backControl}
+      footer={
+        <Button variant="primary" type="submit" form={formId} disabled={clean === '' || tooLong || state.kind === 'sending' || signedOut} aria-busy={state.kind === 'sending'}>
+          Send
+        </Button>
+      }
+    >
+      <form id={formId} onSubmit={(e) => void submit(e)}>
+        <section className="x2f-stack">
+          <h1 className="x2f-h2">Tell us what you think</h1>
+          <p className="x2f-lead">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
+        </section>
+        {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
+          <p className="x2f-note" data-part="feedback-login-first">
+            {/* COPY-UNSIGNED */}
+            <Link className="x2f-link" to={loginHref}>
+              Log in
+            </Link>{' '}
+            to send feedback. You can write it first: it is kept while you log in.
+          </p>
+        ) : null}
+        {/* The Feedback board (design build review 7 Nov): no "What is it?" choice; a new message is sent as feedback. */}
         <div className="x2f-field">
-          <label htmlFor={textId} className="x2f-label">
+          <label htmlFor={textId} className="x2f-field-label">
             Your message
           </label>
           <textarea
             id={textId}
-            className="x2f-input"
-            rows={6}
+            ref={box}
+            className="x2f-input x2f-input--message"
+            rows={9}
             value={text}
             maxLength={FEEDBACK_TEXT_MAX}
+            placeholder="Write anything you like"
+            aria-describedby={countId}
             onChange={(e) => setText(e.target.value)}
           />
+          {/* Counts what maxLength counts (review N8). */}
+          <span id={countId} className="x2f-field-count" data-part="feedback-count">
+            <span className="x2f-when">{text.length}</span> of {FEEDBACK_TEXT_MAX} characters
+          </span>
         </div>
-        <label className="x2f-row">
-          <input type="checkbox" checked={anonymous} aria-describedby={hintId} onChange={(e) => setAnonymous(e.target.checked)} />
-          Send anonymously
-        </label>
         {/* COPY-UNSIGNED */}
-        <p id={hintId} className="x2f-note" data-part="anon-hint">
-          {anonymous
-            ? FEEDBACK_ANON_HINT
-            : 'Sent with your username, so X2F staff can message you for details.'}
-        </p>
+        <CheckRow
+          boxed
+          part="feedback-anon"
+          hintPart="anon-hint"
+          checked={anonymous}
+          onChange={setAnonymous}
+          title="Send anonymously"
+          hint={anonymous ? FEEDBACK_ANON_HINT : FEEDBACK_NAMED_HINT}
+        />
         {state.kind === 'signed-out' ? (
           <p className="x2f-error" role="alert">
             <Link className="x2f-link" to={loginHref}>
@@ -187,10 +260,7 @@ export function Feedback() {
             {state.message}
           </p>
         ) : null}
-        <Button variant="primary" type="submit" disabled={clean === '' || tooLong || state.kind === 'sending' || signedOut} aria-busy={state.kind === 'sending'}>
-          Send
-        </Button>
       </form>
-    </main>
+    </FlowScreen>
   );
 }

@@ -77,14 +77,42 @@ test('PGP login (paste key, decrypt message, paste code) lands on returnTo', asy
 
   await page.goto('/login?returnTo=%2Fbuy');
   await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'nightowl');
   await page.fill('#pgp-key', FAKE_KEY);
   await page.click('text=Send me a login message');
   await expect(page.locator('[data-part="pgp-message"]')).toContainText('BEGIN PGP MESSAGE');
   await page.fill('[aria-label="Login code"]', '12345678');
   await page.click('[data-part="pgp-login"]');
   await expect(page).toHaveURL(/\/buy$/);
-  // FU-A: PGP login takes the key alone, never a login name.
-  expect(startBody).toEqual({ key: FAKE_KEY.trim() });
+  // Owner G6 (7 Nov): the login name goes with the key.
+  expect(startBody).toEqual({ loginName: 'nightowl', key: FAKE_KEY.trim() });
+});
+
+test('owner G58: a strong login while changes wait shows them first, with Approve now, then Continue goes on', async ({ page }) => {
+  const due = '2099-01-02T15:00:00.000Z';
+  await page.route('**/v1/account/me', json(overview({ pendingChanges: { count: 1, takesEffectAt: due }, changesWait: false, member: null })));
+  await page.route('**/v1/login/pgp/start', json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' }));
+  await page.route('**/v1/login/pgp/finish', json({ status: 'ok' }));
+  await page.route('**/v1/account/hold', json({
+    accountHold: null,
+    changes: { count: 1, takesEffectAt: due, items: [{ id: '11111111-1111-4111-8111-111111111111', kind: 'password', createdAt: due, submittedAt: due, by: 'Chrome on Windows', mine: false }] },
+    drafts: [],
+    changesWait: false,
+  }));
+  await page.goto('/login?returnTo=%2Fbuy');
+  await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'nightowl');
+  await page.fill('#pgp-key', FAKE_KEY);
+  await page.click('text=Send me a login message');
+  await page.fill('[aria-label="Login code"]', '12345678');
+  await page.click('[data-part="pgp-login"]');
+  await expect(page).toHaveURL(/\/settings\/changes\?returnTo=%2Fbuy$/);
+  await expect(page.locator('[data-part="changes-waiting"] [data-part="change"]')).toContainText('After A new password');
+  await expect(page.locator('[data-part="waiting-approve"]')).toHaveText('Approve now');
+  await expect(page.locator('[data-part="waiting-cancel-all"]')).toHaveText('Cancel all changes');
+  await expect(page.locator('[data-part="waiting-make-changes"]')).toHaveText('Make changes');
+  await page.click('[data-part="changes-continue"]');
+  await expect(page).toHaveURL(/\/buy$/);
 });
 
 test('PGP login: an expired code offers a new message, and a second step goes on to the security key', async ({ page }) => {
@@ -111,6 +139,7 @@ test('PGP login: an expired code offers a new message, and a second step goes on
   await page.goto(`${LOCAL}/login?returnTo=%2Fbuy`);
   await virtualAuthenticator(page);
   await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'nightowl');
   await page.fill('#pgp-key', FAKE_KEY);
   await page.click('text=Send me a login message');
   await page.fill('[aria-label="Login code"]', '11111111');
@@ -292,6 +321,9 @@ test('an expired session routes to /login and returns to the same screen after l
   await page.route('**/v1/login/webauthn/finish', json({ status: 'ok' }));
 
   await page.goto(`${LOCAL}/settings/security`);
+  // The Landing board first (design review 2026-11-08 item 1); its Log in keeps where they were going.
+  await expect(page).toHaveURL(/\/\?returnTo=%2Fsettings%2Fsecurity$/);
+  await page.click('[data-part="landing-login"]');
   await expect(page).toHaveURL(/\/login\?returnTo=%2Fsettings%2Fsecurity$/);
 
   await virtualAuthenticator(page);
@@ -321,6 +353,7 @@ test('PGP login: an expired or revoked key is turned away with the reason, a wai
   await page.route('**/v1/login/pgp/start', (r) => answers.shift()!(r));
   await page.goto('/login');
   await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'nightowl');
   await page.fill('#pgp-key', FAKE_KEY);
   await page.click('text=Send me a login message');
   await expect(page.locator('[role="alert"]')).toHaveText('That key has expired. Extend it in your PGP app, then paste it again.');
@@ -336,6 +369,7 @@ test('PGP login: an expired message says so (not "wrong code") and a new message
   await page.route('**/v1/login/pgp/finish', json({ error: 'challenge-expired' }, 400));
   await page.goto('/login');
   await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'nightowl');
   await page.fill('#pgp-key', FAKE_KEY);
   await page.click('text=Send me a login message');
   await page.fill('[aria-label="Login code"]', '11111111');
@@ -373,35 +407,39 @@ test('security-key login: a second step that needs PGP asks for the PGP key, wit
   await page.click('[data-part="security-key-login"]');
   await expect(page.locator('[data-part="second-step"]')).toContainText('This account also needs its PGP key.');
   await expect(page.locator('[data-part="security-key-login"]')).toHaveCount(0);
+  // Owner G6: the second step reuses the first step's login name.
+  await expect(page.locator('#pgp-login-name')).toHaveCount(0);
   await page.fill('#pgp-key', FAKE_KEY);
   await page.click('text=Send me a login message');
-  expect(pgpStart).toEqual({ key: FAKE_KEY.trim(), pendingId: 'p7' });
+  expect(pgpStart).toEqual({ loginName: 'nightowl', key: FAKE_KEY.trim(), pendingId: 'p7' });
   await page.fill('[aria-label="Login code"]', '22222222');
   await page.click('[data-part="pgp-login"]');
   await expect(page).toHaveURL(/\/buy$/);
 });
 
-test('a TOTP backup login says when changes can be made, then carries on', async ({ page }) => {
+test('a recovery-code backup login says when changes can be made, then carries on', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview({ level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' })));
   await page.route('**/v1/login/backup', json({ status: 'ok', level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' }));
   await page.goto('/login/backup?returnTo=%2Fbuy');
-  await page.click('[data-kind="totp"]');
+  // Design build gaps Job 1: a recovery code is the only backup; there is no authenticator choice.
+  await expect(page.locator('[data-kind="totp"]')).toHaveCount(0);
   await page.fill('#backup-login-name', 'nightowl');
-  await page.fill('#backup-code', '123456');
+  await page.fill('#backup-code', 'ABCD-EFGH-JKMN-PQRT');
   await page.click('[data-part="backup-login"]');
   await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
   await expect(page).toHaveURL(/\/login\/backup/);
   await page.click('[data-part="hold-continue"]');
-  await expect(page).toHaveURL(/\/buy$/);
+  // A recovery session never reaches the marketplace (front door, 8 Nov 2026): it lands on Security,
+  // where a new login method can be added.
+  await expect(page).toHaveURL(/\/settings\/security$/);
 });
 
-test('the TOTP backup daily cap says when to try again', async ({ page }) => {
+test('a paced backup login says when to try again', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview(), 401));
   await page.route('**/v1/login/backup', json({ error: 'slow-down', retryAfterSeconds: 5 * 3600 }, 429));
   await page.goto('/login/backup');
-  await page.click('[data-kind="totp"]');
   await page.fill('#backup-login-name', 'nightowl');
-  await page.fill('#backup-code', '123456');
+  await page.fill('#backup-code', 'ABCD-EFGH-JKMN-PQRT');
   await page.click('[data-part="backup-login"]');
   await expect(page.locator('[role="alert"]')).toContainText('Too many tries. Try again after');
 });
@@ -493,3 +531,28 @@ for (const viewport of PHONE_VIEWPORTS) {
     }
   });
 }
+
+// Session length (owner, 2 Nov 2026; SessionLength board): after every login the person picks how
+// long the session lasts, nothing pre-selected, then goes on to where the login was going.
+test('after login a session with no length asks for one, then lands on the default screen', async ({ page }) => {
+  const session = { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: '2099-01-01T02:00:00.000Z', canExtend: true, serverNow: '2099-01-01T00:00:00.000Z' };
+  await page.route('**/v1/account/me', json(overview({ session })));
+  await page.route('**/v1/login/password', json({ status: 'ok' }));
+  let saved: unknown = null;
+  await page.route('**/v1/account/session/length', (r) => {
+    saved = JSON.parse(r.request().postData() ?? '{}');
+    return json({ ...session, lengthHours: 8, expiresAt: '2099-01-01T08:00:00.000Z' })(r);
+  });
+  await page.goto('/login');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'nightowl');
+  await page.fill('#login-password', 'Correct-Horse-9!');
+  await page.click('[data-part="password-login"]');
+  await expect(page).toHaveURL(/\/session-length\?returnTo=/);
+  await expect(page.locator('[data-part="session-length-select"]')).toHaveValue('');
+  await expect(page.locator('[data-part="session-length-continue"]')).toBeDisabled();
+  await page.selectOption('[data-part="session-length-select"]', '8');
+  await page.click('[data-part="session-length-continue"]');
+  await expect(page).toHaveURL(/\/sell$/);
+  expect(saved).toEqual({ hours: 8 });
+});

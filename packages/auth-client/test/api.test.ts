@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SIG } from './helpers/routes.js';
 import { AuthApiError, MISSES_BEFORE_SENDING_AWAY, PASSWORD_LOGIN_MISMATCH, createAuthApi, shouldSendAway } from '../src/index.js';
 
 interface Sent {
@@ -33,19 +34,19 @@ afterEach(() => {
 describe('createAuthApi requests', () => {
   it('posts JSON to the route on the same origin by default, with same-origin credentials', async () => {
     const { sent, fetch } = recorder();
-    await createAuthApi({ fetch }).loginPgpStart({ key: 'KEY' });
+    await createAuthApi({ fetch }).loginPgpStart({ loginName: 'sample.login', key: 'KEY' });
     expect(sent).toHaveLength(1);
     const s = sent[0]!;
     expect(s.url).toBe('/v1/login/pgp/start');
     expect(s.init.method).toBe('POST');
     expect(s.init.credentials).toBe('same-origin');
     expect(headersOf(s).get('content-type')).toBe('application/json');
-    expect(bodyOf(s)).toEqual({ key: 'KEY' });
+    expect(bodyOf(s)).toEqual({ loginName: 'sample.login', key: 'KEY' });
   });
 
   it('puts baseUrl in front of the path', async () => {
     const { sent, fetch } = recorder();
-    await createAuthApi({ baseUrl: 'http://127.0.0.1:4000', fetch }).loginPgpStart({ key: 'KEY' });
+    await createAuthApi({ baseUrl: 'http://127.0.0.1:4000', fetch }).loginPgpStart({ loginName: 'sample.login', key: 'KEY' });
     expect(sent[0]!.url).toBe('http://127.0.0.1:4000/v1/login/pgp/start');
   });
 
@@ -128,16 +129,35 @@ describe('createAuthApi requests', () => {
     expect(headersOf(sent[0]!).get('content-type')).toBe('application/json');
   });
 
-  it('uses PUT for setting the password and the logout timer', async () => {
-    const { sent, fetch } = recorder(() => Response.json({ idleHours: 6, adjustable: true }));
+  it('uses PUT for setting the password and the session length, POST for staying logged in', async () => {
+    const info = { lengthHours: 8, choices: [2, 4, 8, 12], expiresAt: '2026-11-02T18:00:00.000Z', canExtend: true, serverNow: '2026-11-02T12:00:00.000Z' };
+    const { sent, fetch } = recorder(() => Response.json(info));
     const api = createAuthApi({ fetch });
     await api.setPassword({ password: 'x' });
-    await expect(api.setLogoutTimer({ idleHours: 6 })).resolves.toEqual({ idleHours: 6, adjustable: true });
+    await expect(api.setSessionLength({ hours: 8 })).resolves.toEqual(info);
+    await expect(api.extendSession({ confirmToken: 't' })).resolves.toEqual(info);
+    // Owner Q73: the extend picks one of the login choices.
+    await expect(api.extendSession({ confirmToken: 'u', hours: 12 })).resolves.toEqual(info);
     expect(sent.map((s) => [s.init.method, s.url])).toEqual([
       ['PUT', '/v1/account/password'],
-      ['PUT', '/v1/account/security/logout-timer'],
+      ['PUT', '/v1/account/session/length'],
+      ['POST', '/v1/account/session/extend'],
+      ['POST', '/v1/account/session/extend'],
     ]);
-    expect(bodyOf(sent[1]!)).toEqual({ idleHours: 6 });
+    expect(bodyOf(sent[1]!)).toEqual({ hours: 8 });
+    expect(bodyOf(sent[2]!)).toEqual({ confirmToken: 't' });
+    expect(bodyOf(sent[3]!)).toEqual({ confirmToken: 'u', hours: 12 });
+  });
+
+  it('sets the idle reminder with PUT (owner Q75): minutes, or null for off', async () => {
+    const { sent, fetch } = recorder(() => Response.json({ idleReminderMinutes: 30 }));
+    const api = createAuthApi({ fetch });
+    await expect(api.setIdleReminder({ minutes: 30 })).resolves.toEqual({ idleReminderMinutes: 30 });
+    await api.setIdleReminder({ minutes: null });
+    expect(sent.map((s) => [s.init.method, s.url, bodyOf(s)])).toEqual([
+      ['PUT', '/v1/account/idle-reminder', { minutes: 30 }],
+      ['PUT', '/v1/account/idle-reminder', { minutes: null }],
+    ]);
   });
 
   it('returns the parsed JSON body of a 2xx and undefined for a 204', async () => {
@@ -146,12 +166,12 @@ describe('createAuthApi requests', () => {
       status: 'second-factor', pendingId: 'p', needs: ['totp'],
     });
     const empty = recorder(() => new Response(null, { status: 204 }));
-    await expect(createAuthApi({ fetch: empty.fetch }).acceptTerms({ version: 'v' })).resolves.toBeUndefined();
+    await expect(createAuthApi({ fetch: empty.fetch }).acceptTerms({ version: 'v', signature: SIG })).resolves.toBeUndefined();
   });
 
   it('refuses redirects instead of following them', async () => {
     const { sent, fetch } = recorder();
-    await createAuthApi({ fetch }).loginPgpStart({ key: 'KEY' });
+    await createAuthApi({ fetch }).loginPgpStart({ loginName: 'sample.login', key: 'KEY' });
     await createAuthApi({ fetch }).me();
     expect(sent.map((s) => s.init.redirect)).toEqual(['error', 'error']);
   });

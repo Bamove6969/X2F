@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import { boardBuyOffers, boardSellOffers } from '../src/fixtures/boards.js';
-import { parseOffers, sortOffers, type Offer } from '../src/screens/browse/api.js';
+import { ApiShapeError, parseOffers, sortOffers, type Offer } from '../src/screens/browse/api.js';
 import { BUY_COPY } from '../src/screens/browse/BuyCopy.js';
 import { OfferCard } from '../src/screens/browse/OfferCard.js';
 import { SELL_COPY } from '../src/screens/browse/SellCopy.js';
@@ -23,6 +23,7 @@ function card(offer: Offer, o: { market?: bigint | null; primary?: boolean; copy
 
 const spans = (host: HTMLElement) => [...host.querySelectorAll('span')].map((s) => s.textContent);
 const margin = (host: HTMLElement) => host.querySelector<HTMLElement>('.x2f-offer__margin');
+const label = (host: HTMLElement) => host.querySelector('.x2f-offer__markup-label')?.textContent;
 
 describe('BUY_COPY: the BuyMain and BuyOffers words', () => {
   it('reads like the boards', () => {
@@ -49,40 +50,51 @@ describe('OfferCard on the buy side', () => {
     const { host } = card(byName('satoshi_ghost'), { primary: true });
     expect(spans(host)).toContain('Online · 340 trades · 99% positive');
     expect(spans(host)).toContain('$330.00');
-    expect(spans(host)).toContain('$50 – $1,500Releases in ~8 min');
+    // The range in fiat (the poster's own unit) and in XMR (owner, 8 Nov), then the time.
+    expect(spans(host)).toContain('$50 – $1,500 USD');
+    // The time sits on the price row, right of the price (boards v142).
+    expect(host.querySelector('.x2f-offer__price')!.textContent).toBe('$330.00Releases in ~8 min');
+    expect(host.querySelector('.x2f-offer__limits [data-part="range-fiat"]')!.textContent).toBe('$50 – $1,500 USD');
     expect(host.querySelector('[data-primary]')!.getAttribute('aria-label')).toBe('Trade with satoshi_ghost');
   });
 
-  it('a fixed-price offer reads its difference from the market price', () => {
+  it("satoshi_ghost's offer reads its markup as a percentage of the market (owner Q1: no fixed-price offers)", () => {
     const { host } = card(byName('satoshi_ghost'));
-    expect(margin(host)!.textContent).toBe('$0.10 above market');
+    expect(margin(host)!.textContent).toBe('0.03%');
+    expect(label(host)).toBe('above market');
+    expect(host.querySelector('[data-part="markup"]')?.textContent).toBe('0.03% above market');
     // Above market costs the buyer more: not in the escrow (good) tone.
     expect(margin(host)!.hasAttribute('data-tone')).toBe(false);
   });
 
-  it('a fixed price below market is good for the buyer', () => {
+  it('there is no fixed price: an offer priced as fixed does not parse (owner Q1)', () => {
+    const [raw] = boardBuyOffers(NOW);
+    expect(() => parseOffers([{ ...raw, pricing: { mode: 'fixed', centsPerXmr: '33000' } }])).toThrow(ApiShapeError);
+  });
+
+  it('50% below the market, the lowest an offer goes (owner F1), is good for the buyer', () => {
     const s = byName('satoshi_ghost');
-    const { host } = card({ ...s, rate: 32900n, pricing: { mode: 'fixed', centsPerXmr: 32900n } });
-    expect(margin(host)!.textContent).toBe('$0.90 below market');
+    const { host } = card({ ...s, rate: 16495n, pricing: { mode: 'market', marginBps: -5000 } });
+    expect(margin(host)!.textContent).toBe('50%');
+    expect(label(host)).toBe('below market');
     expect(margin(host)!.getAttribute('data-tone')).toBe('escrow');
   });
 
-  it('a fixed price equal to the market reads "At market"', () => {
+  it('a 0% margin reads "at market" with no figure; with no price now (the feed is down) there is no markup', () => {
     const s = byName('satoshi_ghost');
-    const { host } = card({ ...s, rate: MARKET, pricing: { mode: 'fixed', centsPerXmr: MARKET } });
-    expect(margin(host)!.textContent).toBe('At market');
-  });
-
-  it('a fixed price with no market price now reads "Fixed price"', () => {
-    const { host } = card(byName('satoshi_ghost'), { market: null });
-    expect(margin(host)!.textContent).toBe('Fixed price');
+    const at = card({ ...s, rate: MARKET, pricing: { mode: 'market', marginBps: 0 } }).host;
+    expect(margin(at)).toBeNull();
+    expect(label(at)).toBe('at market');
+    expect(at.querySelector('[data-part="markup"]')?.textContent).toBe('at market');
+    expect(margin(card({ ...s, rate: null }, { market: null }).host)).toBeNull();
   });
 
   it('a market offer above market is muted for the buyer, below market is in the escrow tone', () => {
     expect(margin(card(byName('kettle.moss')).host)!.hasAttribute('data-tone')).toBe(false);
     const k = byName('kettle.moss');
     const below = card({ ...k, pricing: { mode: 'market', marginBps: -50 } }).host;
-    expect(margin(below)!.textContent).toBe('0.5% below market');
+    expect(margin(below)!.textContent).toBe('0.5%');
+    expect(below.querySelector('[data-part="markup"]')?.textContent).toBe('0.5% below market');
     expect(margin(below)!.getAttribute('data-tone')).toBe('escrow');
   });
 

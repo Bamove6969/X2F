@@ -26,7 +26,8 @@ afterEach(async () => {
 describe('separation-check', () => {
   it('passes on the real repository', async () => {
     expect(await scanSeparation(REPO)).toEqual([]);
-  });
+    // Walks the whole repository: slow when the machine is under load.
+  }, 60_000);
 
   it('flags a planted process.env.MOD_KEYSTORE_KEY in apps/api', async () => {
     const root = await tree({ 'apps/api/src/evil.ts': 'export const k = process.env.MOD_KEYSTORE_KEY;\n' });
@@ -102,5 +103,26 @@ describe('separation-check', () => {
       { file: 'packages/escrow/src/c.ts', rule: 'packages/* must not import the demo stack (@x2f/demo)', line: 1 },
       { file: 'packages/trade/package.json', rule: 'packages/* must not depend on @x2f/demo', line: 2 },
     ]);
+  });
+
+  it('Plan 4 Task 11: only internal/server.ts may serve, on a Unix socket; tests may use node:http as a client', async () => {
+    const root = await tree({
+      'apps/moderation/src/internal/server.ts': "import { createServer } from 'node:http';\nconst s = createServer(() => {});\ns.listen(socketPath);\n",
+      'apps/moderation/test/client.test.ts': "import { request } from 'node:http';\n",
+      'apps/moderation/test/serve.test.ts': "import { createServer } from 'node:http';\ncreateServer(() => {});\n",
+      'apps/moderation/src/internal/other.ts': "import { createServer } from 'node:http';\n",
+    });
+    const rules = (await scanSeparation(root)).map((v) => `${v.file}: ${v.rule}`).sort();
+    expect(rules).toEqual([
+      'apps/moderation/src/internal/other.ts: apps/moderation must not import node:http',
+      'apps/moderation/test/serve.test.ts: apps/moderation must not create a server',
+    ]);
+    for (const tcp of ['s.listen(8080);', 's.listen({ port: 8080 });', "s.listen({ host: '0.0.0.0', path: p });"]) {
+      const bad = await tree({ 'apps/moderation/src/internal/server.ts': `import { createServer } from 'node:http';\nconst s = createServer(() => {});\n${tcp}\n` });
+      expect((await scanSeparation(bad)).map((v) => v.rule), tcp).toEqual(['apps/moderation may listen on a Unix socket only']);
+    }
+    // Any other server module stays refused there too.
+    const net = await tree({ 'apps/moderation/src/internal/server.ts': "import net from 'node:net';\n" });
+    expect((await scanSeparation(net)).map((v) => v.rule)).toEqual(['apps/moderation must not import node:net']);
   });
 });

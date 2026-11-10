@@ -39,8 +39,9 @@ async function noSideScroll(page: Page): Promise<void> {
 test('a refusal opens CantDoThat; its feedback link leads to the form; an anonymous send gets the thank-you', async ({ page }) => {
   const sent = await stub(page);
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await page.getByRole('button', { name: 'Post offer' }).click();
 
   const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
@@ -64,7 +65,7 @@ test('a refusal opens CantDoThat; its feedback link leads to the form; an anonym
   await page.getByRole('button', { name: 'Post offer' }).click();
   await page.getByRole('dialog').getByRole('link', { name: 'feedback' }).click();
   await expect(page).toHaveURL(/\/feedback\?from=trading-hold$/);
-  await expect(page.getByRole('heading', { name: 'Tell us what you think' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Tell us what you think' })).toBeVisible();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await noSideScroll(page);
 
@@ -93,20 +94,13 @@ test('a named send carries the refusal code; the form works at desktop width too
   await noSideScroll(page);
 });
 
-test('signed out: told before typing, and the draft is kept through the log-in round trip', async ({ page }) => {
+test('signed out, the form never opens: the front door (the Landing board) takes the visitor, keeping where they were going (owner, 8 Nov 2026)', async ({ page }) => {
   await stub(page);
   await page.unroute('**/v1/account/me');
-  let signedIn = false;
-  await page.route('**/v1/account/me', (r) => (signedIn ? json(ME)(r) : json({ error: 'not-authenticated' }, 401)(r)));
+  await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
   await page.goto('/feedback?from=trading-hold');
-  await expect(page.locator('[data-part="feedback-login-first"]')).toContainText('Log in to send feedback');
-  await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
-  await page.getByLabel('Your message').fill('Hold rules are unclear.');
-  signedIn = true;
-  // The person logs in elsewhere in this tab and comes back: the words are still there.
-  await page.goto('/feedback?from=trading-hold');
-  await expect(page.getByLabel('Your message')).toHaveValue('Hold rules are unclear.');
-  await expect(page.locator('[data-part="feedback-login-first"]')).toHaveCount(0);
+  await expect(page).toHaveURL(`/?returnTo=${encodeURIComponent('/feedback?from=trading-hold')}`);
+  await expect(page.getByLabel('Your message')).toHaveCount(0);
 });
 
 // C11 review M1/M2: a real touch drag (CDP touch events, so the browser decides pan vs pointer) down
@@ -118,8 +112,9 @@ test.describe('CantDoThat: swipe down from the handle on a touch screen', () => 
   async function openPopup(page: Page) {
     await stub(page);
     await page.goto('/post?method=ZELLE');
-    await page.getByLabel('Smallest trade').fill('$50');
-    await page.getByLabel('Largest trade').fill('$2,000');
+    await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+    await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+    await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
     await page.getByRole('button', { name: 'Post offer' }).click();
     const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
     await expect(popup).toBeVisible();
@@ -150,8 +145,9 @@ test('CantDoThat on the wide dialog: no handle, and a mouse drag over the messag
   await stub(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await page.getByRole('button', { name: 'Post offer' }).click();
   const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
   await expect(popup).toBeVisible();

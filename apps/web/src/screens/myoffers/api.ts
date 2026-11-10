@@ -18,12 +18,26 @@ export interface MyOffer {
   methodName: string;
   currency: string;
   rate: bigint | null;
-  pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
-  minFiatCents: bigint;
-  maxFiatCents: bigint;
+  /** Always the market price moved by the margin (owner Q1, F1: there are no fixed-price offers). */
+  pricing: { mode: 'market'; marginBps: number };
+  /**
+   * The unit the range was set in (owner, 8 Nov): that pair is exact; the API sends the other at the
+   * offer's rate now, or null with no rate.
+   */
+  amountUnit: 'xmr' | 'fiat';
+  minAtomic: bigint | null;
+  maxAtomic: bigint | null;
+  minFiatCents: bigint | null;
+  maxFiatCents: bigint | null;
   minTrades: number;
   country?: string;
+  /** J-16: every currency of the offer in the poster's order (`currency` is the first). */
+  currencies: string[];
+  /** J-16: every payment method's name in the poster's order (`methodName` is the first). */
+  methodNames: string[];
   status: OfferState;
+  /** The buyer's time to pay with this method, in minutes (owner p9-6); missing from an older API. */
+  payWindowMin?: number;
   /** A live offer nobody can see right now, and why (review M4). */
   hidden?: (typeof HIDDEN_REASONS)[number];
 }
@@ -45,6 +59,19 @@ function big(v: unknown): bigint {
   return BigInt(v);
 }
 
+const bigOrNull = (v: unknown): bigint | null => (v === null ? null : big(v));
+
+/** The range: an answer without `amountUnit` is in fiat (before 8 Nov); the own pair is required, in order. */
+function amounts(o: Record<string, unknown>): Pick<MyOffer, 'amountUnit' | 'minAtomic' | 'maxAtomic' | 'minFiatCents' | 'maxFiatCents'> {
+  if (o.amountUnit === undefined) return { amountUnit: 'fiat', minAtomic: null, maxAtomic: null, minFiatCents: big(o.minFiatCents), maxFiatCents: big(o.maxFiatCents) };
+  if (o.amountUnit !== 'xmr' && o.amountUnit !== 'fiat') throw shape();
+  for (const k of ['minAtomic', 'maxAtomic', 'minFiatCents', 'maxFiatCents']) if (!(k in o)) throw shape();
+  const out = { amountUnit: o.amountUnit as 'xmr' | 'fiat', minAtomic: bigOrNull(o.minAtomic), maxAtomic: bigOrNull(o.maxAtomic), minFiatCents: bigOrNull(o.minFiatCents), maxFiatCents: bigOrNull(o.maxFiatCents) };
+  const [lo, hi] = out.amountUnit === 'xmr' ? [out.minAtomic, out.maxAtomic] : [out.minFiatCents, out.maxFiatCents];
+  if (lo === null || hi === null || lo <= 0n || hi < lo) throw shape();
+  return out;
+}
+
 function state(v: unknown): OfferState {
   if (v !== 'live' && v !== 'paused') throw shape();
   return v;
@@ -55,10 +82,31 @@ function str(v: unknown): string {
   return v;
 }
 
+/** `{ mode: 'market', marginBps }`; any other mode (a fixed price, owner Q1) does not parse. */
 function parsePricing(v: unknown): MyOffer['pricing'] {
   if (isRecord(v) && v.mode === 'market' && typeof v.marginBps === 'number' && Number.isInteger(v.marginBps)) return { mode: 'market', marginBps: v.marginBps };
-  if (isRecord(v) && v.mode === 'fixed') return { mode: 'fixed', centsPerXmr: big(v.centsPerXmr) };
   throw shape();
+}
+
+/** J-16's `currencies`: `{ currency, rate, tiers }[]`, read for the codes; absent (before J-16): the one `currency`. */
+function currencyList(v: unknown, first: string): string[] {
+  if (v === undefined) return [first];
+  if (!Array.isArray(v) || v.length === 0) throw shape();
+  return v.map((c: unknown) => {
+    if (!isRecord(c) || !('rate' in c) || !Array.isArray(c.tiers)) throw shape();
+    return str(c.currency);
+  });
+}
+
+/** J-16's `methods`: `{ methodId, methodName, … }[]`, read for the names; absent (before J-16): the one `methodName`. */
+function methodNames(v: unknown, first: string): string[] {
+  if (v === undefined) return [first];
+  if (!Array.isArray(v) || v.length === 0) throw shape();
+  return v.map((m: unknown) => {
+    if (!isRecord(m)) throw shape();
+    str(m.methodId);
+    return str(m.methodName);
+  });
 }
 
 export function parseMyOffers(raw: unknown): MyOffer[] {
@@ -66,7 +114,8 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
   return raw.map((o: unknown) => {
     if (!isRecord(o)) throw shape();
     if (o.side !== 'sell' && o.side !== 'buy') throw shape();
-    if (typeof o.minTrades !== 'number') throw shape();
+    // Null is no minimum (owner, 8 Nov), read as 0 as before.
+    if (o.minTrades !== null && typeof o.minTrades !== 'number') throw shape();
     const out: MyOffer = {
       id: str(o.id),
       side: o.side,
@@ -75,12 +124,17 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
       currency: str(o.currency),
       rate: o.rate === null ? null : big(o.rate),
       pricing: parsePricing(o.pricing),
-      minFiatCents: big(o.minFiatCents),
-      maxFiatCents: big(o.maxFiatCents),
-      minTrades: o.minTrades,
+      ...amounts(o),
+      minTrades: o.minTrades ?? 0,
+      currencies: currencyList(o.currencies, str(o.currency)),
+      methodNames: methodNames(o.methods, str(o.methodName)),
       status: state(o.status),
     };
     if (o.country !== undefined) out.country = str(o.country);
+    if (o.payWindowMin !== undefined) {
+      if (typeof o.payWindowMin !== 'number' || !Number.isInteger(o.payWindowMin) || o.payWindowMin <= 0) throw shape();
+      out.payWindowMin = o.payWindowMin;
+    }
     if (o.hidden !== undefined) {
       const hidden = HIDDEN_REASONS.find((h) => h === o.hidden);
       if (hidden === undefined) throw shape();

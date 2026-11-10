@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { keyCheckCode, type LoginHours } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { recordBannedValues } from '../../src/bans.js';
 import { verifyLogChain } from '../../src/log/verify.js';
 import { codeOf, decrypt, genKey, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
@@ -10,7 +11,12 @@ import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, log
 import { seedAccount } from '../helpers/accounts.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
-import { attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
+import { RETENTION_JOBS } from '../../src/retentionJobs.js';
+import { purgeStaffInviteLeftovers } from '../../src/staff/invites.js';
+import { openTermsSignature, sealTermsSignature } from '../../src/termsSignature.js';
+import { SIG } from '../helpers/signature.js';
+import { KEY_AAGUID, addPgpKey, attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
+import { createSoftAuthenticator } from '../helpers/softAuthenticator.js';
 
 const MON_NOON = new Date('2026-11-02T12:00:00Z');
 const HOUR = 3_600_000;
@@ -46,9 +52,12 @@ async function createInvite(role: 'senior' | 'mod' | 'helper', hours: LoginHours
 const invitee = () => new StaffBrowser(t.app);
 const acceptUrl = (token: string, step = '') => `/staff/v1/invites/accept/${token}${step}`;
 
+/** The Terms every staff invitee accepts and signs with their names (owner 9 Nov 2026, p11-14). */
+const signed = () => ({ acceptedTerms: t.deps.config.termsVersion, termsSignature: SIG });
+
 async function pickNames(b: StaffBrowser, token: string) {
   const n = loginName();
-  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Mod${n}`, loginName: n });
+  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Mod${n}`, loginName: n, ...signed() });
   return { res, loginName: n, displayName: `Mod${n}` };
 }
 
@@ -66,8 +75,11 @@ async function addInvitePgp(b: StaffBrowser, token: string, pair: Pair) {
   return b.post(acceptUrl(token, '/pgp/finish'), { challengeId, code });
 }
 
-/** A whole sign-up: names, a security key (unless `noKey`), one PGP key (two with `twoPgp`), finish. */
-async function signUp(token: string, o: { noKey?: boolean; twoPgp?: boolean } = {}) {
+/**
+ * A whole sign-up: names, a security key (unless `noKey`), one PGP key (two with `twoPgp`), a passkey
+ * with `passkey` (owner G3: a moderator holds all three), finish.
+ */
+async function signUp(token: string, o: { noKey?: boolean; twoPgp?: boolean; passkey?: boolean } = {}) {
   const b = invitee();
   const names = await pickNames(b, token);
   expect(names.res.statusCode, names.res.body).toBe(201);
@@ -75,6 +87,7 @@ async function signUp(token: string, o: { noKey?: boolean; twoPgp?: boolean } = 
   if (!o.noKey) expect((await addInviteKey(b, token, key)).statusCode).toBe(201);
   expect((await addInvitePgp(b, token, await genKey())).statusCode).toBe(201);
   if (o.twoPgp) expect((await addInvitePgp(b, token, await genKey())).statusCode).toBe(201);
+  if (o.passkey) expect((await addInviteKey(b, token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
   const finish = await b.post(acceptUrl(token, '/finish'), {});
   return { b, key, finish, ...names };
 }
@@ -100,12 +113,12 @@ describe('invites', () => {
     expect(await logEntries(t.deps, 'staff.invite-created')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ inviteId: inv.inviteId, role: 'mod' }) });
 
     const view = await invitee().get(acceptUrl(inv.token));
-    expect(view.json()).toEqual({ role: 'mod', hours: OFFICE, expiresAt: inv.expiresAt });
+    expect(view.json()).toEqual({ role: 'mod', hours: OFFICE, expiresAt: inv.expiresAt, resume: null });
 
-    const s = await signUp(inv.token);
+    const s = await signUp(inv.token, { passkey: true });
     expect(s.finish.statusCode, s.finish.body).toBe(201);
     const id = await accountOf(s.loginName);
-    const { rows: cred } = await t.deps.db.query<{ public_key: Buffer }>('select public_key from webauthn_credentials where account_id = $1', [id]);
+    const { rows: cred } = await t.deps.db.query<{ public_key: Buffer }>("select public_key from webauthn_credentials where account_id = $1 and kind = 'security-key'", [id]);
     expect(s.finish.json()).toEqual({ keyCheckCode: keyCheckCode(new Uint8Array(cred[0]!.public_key)) });
     const { rows: m } = await t.deps.db.query('select role, hours, has_security_key, switched_off_at from staff_members where account_id = $1', [id]);
     expect(m).toEqual([{ role: 'mod', hours: OFFICE, has_security_key: true, switched_off_at: null }]);
@@ -148,19 +161,103 @@ describe('invites', () => {
     expect(errorOf(await invitee().get(acceptUrl('A'.repeat(43))))).toBe('invite-invalid');
   });
 
+  // Owner 9 Nov 2026 (p11-13): "Erase it when the account closes." A half-made staff account (the
+  // names picked, the invite not finished) is disabled and never logs in once its invite is
+  // cancelled or has expired: that is its close, so the sealed signature goes with it (security
+  // review 2026-11-09, minor 3). The Terms version and acceptance time stay, as at removal.
+  const signatureOf = async (id: string) =>
+    (await t.deps.db.query<{ terms_signature: Buffer | null; terms_version: string | null }>('select terms_signature, terms_version from accounts where id = $1', [id])).rows[0]!;
+
+  it('cancelling an invite erases the half-made account\'s Terms signature (owner p11-13)', async () => {
+    const inv = await createInvite('helper');
+    const n = await pickNames(invitee(), inv.token);
+    expect(n.res.statusCode).toBe(201);
+    const id = await accountOf(n.loginName);
+    expect((await signatureOf(id)).terms_signature).not.toBeNull();
+    // Another half-made account, on an invite that stays open: untouched.
+    const other = await createInvite('helper');
+    const o = await pickNames(invitee(), other.token);
+    const otherId = await accountOf(o.loginName);
+    expect((await owner.browser.send('DELETE', `/staff/v1/invites/${inv.inviteId}`)).statusCode).toBe(204);
+    const row = await signatureOf(id);
+    expect(row.terms_signature).toBeNull();
+    expect(row.terms_version).toBe(t.deps.config.termsVersion);
+    expect((await signatureOf(otherId)).terms_signature).not.toBeNull();
+    // Cancelling before the names (no account yet) is still a plain 204.
+    const bare = await createInvite('helper');
+    expect((await owner.browser.send('DELETE', `/staff/v1/invites/${bare.inviteId}`)).statusCode).toBe(204);
+  });
+
+  it('the retention sweep erases the signature of a half-made account whose invite expired over an hour ago; a finished one keeps it', async () => {
+    expect(RETENTION_JOBS).toContain(purgeStaffInviteLeftovers);
+    // Half-made: the names picked, nothing more.
+    const half = await createInvite('helper');
+    const n = await pickNames(invitee(), half.token);
+    expect(n.res.statusCode).toBe(201);
+    const halfId = await accountOf(n.loginName);
+    // Finished on the same expiry: a staff member, whose signature stays until removal.
+    const done = await createInvite('helper');
+    const d = await signUp(done.token, { noKey: true, twoPgp: true });
+    expect(d.finish.statusCode, d.finish.body).toBe(201);
+    const doneId = await accountOf(d.loginName);
+    // Expired, but less than an hour ago: nothing yet (the margin keeps the sweep clear of a finish
+    // racing the deadline on another process's clock).
+    t.setNow(new Date(MON_NOON.getTime() + 24 * HOUR + 30 * 60_000));
+    await purgeStaffInviteLeftovers.run(t.deps.db, t.deps.clock());
+    expect((await signatureOf(halfId)).terms_signature).not.toBeNull();
+    expect((await signatureOf(doneId)).terms_signature).not.toBeNull();
+    // Over an hour past expiry: the half-made account's goes; the staff member's stays.
+    t.setNow(new Date(MON_NOON.getTime() + 25 * HOUR + 60_000));
+    expect(await purgeStaffInviteLeftovers.run(t.deps.db, t.deps.clock())).toBeGreaterThanOrEqual(1);
+    const row = await signatureOf(halfId);
+    expect(row.terms_signature).toBeNull();
+    expect(row.terms_version).toBe(t.deps.config.termsVersion);
+    expect((await signatureOf(doneId)).terms_signature).not.toBeNull();
+    // Nothing left to touch for these two: a second sweep does not count them again.
+    const before = await t.deps.db.query<{ n: number }>(
+      "select count(*)::int as n from accounts a join staff_invites i on i.account_id = a.id where i.used_at is null and a.terms_signature is not null and i.expires_at <= $1",
+      [new Date(t.deps.clock().getTime() - HOUR)],
+    );
+    expect(before.rows[0]!.n).toBe(0);
+  });
+
   it('a moderator invitee with only PGP gets security-key-required; a helper with two PGP keys joins', async () => {
     const mod = await createInvite('mod');
     const m = await signUp(mod.token, { noKey: true, twoPgp: true });
     expect(m.finish.statusCode).toBe(409);
     expect(errorOf(m.finish)).toBe('security-key-required');
-    // Still open: adding a key now finishes.
+    // Still open: with a key, a moderator still needs all three (owner G3); adding a passkey finishes.
     expect((await addInviteKey(m.b, mod.token, t.newKey())).statusCode).toBe(201);
+    const noPasskey = await m.b.post(acceptUrl(mod.token, '/finish'), {});
+    expect([noPasskey.statusCode, errorOf(noPasskey)]).toEqual([409, 'all-three-methods-required']);
+    expect((await addInviteKey(m.b, mod.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
     expect((await m.b.post(acceptUrl(mod.token, '/finish'), {})).statusCode).toBe(201);
 
     const helper = await createInvite('helper');
     const h = await signUp(helper.token, { noKey: true, twoPgp: true });
     expect(h.finish.statusCode, h.finish.body).toBe(201);
     expect(h.finish.json()).toEqual({ keyCheckCode: null });
+  });
+
+  it('owner G3 (review P-m1): a passkey that reports a security-key model is refused (passkey-is-security-key)', async () => {
+    const mod = await createInvite('mod');
+    const b = invitee();
+    expect((await pickNames(b, mod.token)).res.statusCode).toBe(201);
+    expect((await addInviteKey(b, mod.token, t.newKey())).statusCode).toBe(201);
+    // The same model registered again as a resident passkey: with the attestation stripped (the
+    // AAGUID still reported), or with the full attestation statement.
+    const stripped = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: KEY_AAGUID, none: true } });
+    for (const key of [stripped, t.newKey()]) {
+      const res = await addInviteKey(b, mod.token, key, 'passkey');
+      expect([res.statusCode, errorOf(res)]).toEqual([409, 'passkey-is-security-key']);
+    }
+    const { rows } = await t.deps.db.query<{ kind: string }>(
+      "select w.kind from webauthn_credentials w join staff_invites i on i.account_id = w.account_id where i.id = $1",
+      [mod.inviteId],
+    );
+    expect(rows.map((r) => r.kind)).toEqual(['security-key']);
+    // Another device (a phone's passkey, no allowlisted AAGUID) is accepted.
+    expect((await addInviteKey(b, mod.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
   });
 
   it('every staff login is two factors: one PGP key alone gets two-factors-required', async () => {
@@ -173,18 +270,56 @@ describe('invites', () => {
     expect((await h.b.post(acceptUrl(helper.token, '/finish'), {})).statusCode).toBe(201);
   });
 
-  it('the account cannot log in before finish, and the names are picked once', async () => {
+  it('the account cannot log in before finish, and the names are picked once, with the Terms signed (owner 9 Nov 2026, p11-14)', async () => {
     const inv = await createInvite('mod');
     const b = invitee();
+    // Everyone who gets a login signs: the names step refuses without the current version and a
+    // signature, and makes nothing (the same invite takes the names after).
+    for (const [extra, error] of [
+      [{}, 'terms-not-accepted'],
+      [{ acceptedTerms: '2020-01-01', termsSignature: SIG }, 'terms-not-accepted'],
+      [{ acceptedTerms: t.deps.config.termsVersion }, 'signature-required'],
+      [{ acceptedTerms: t.deps.config.termsVersion, termsSignature: { kind: 'typed', name: '' } }, 'signature-invalid'],
+    ] as const) {
+      const res = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Unsigned1x', loginName: 'unsignedlogin1x', ...extra });
+      expect(res.statusCode, res.body).toBe(400);
+      expect(errorOf(res)).toBe(error);
+    }
     const n = await pickNames(b, inv.token);
     const id = await accountOf(n.loginName);
+    const signedRow = await t.deps.db.query<{ terms_version: string | null; terms_accepted_at: Date | null; terms_signature: Buffer | null }>(
+      'select terms_version, terms_accepted_at, terms_signature from accounts where id = $1', [id],
+    );
+    expect(signedRow.rows[0]!.terms_version).toBe(t.deps.config.termsVersion);
+    expect(signedRow.rows[0]!.terms_accepted_at).not.toBeNull();
+    expect(openTermsSignature(t.deps.config, signedRow.rows[0]!.terms_signature!, id)).toEqual(SIG);
     const { rows } = await t.deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [id]);
     expect(rows[0]!.disabled_at).not.toBeNull();
     const again = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Other1x', loginName: 'otherlogin1x' });
     expect(again.statusCode).toBe(409);
+    // A return visit resumes: the account is made, and the keys added so far are counted.
+    const resume = async () => (await invitee().get(acceptUrl(inv.token))).json().resume;
+    expect(await resume()).toEqual({ keys: 0, passkeys: 0, pgp: 0, keyCheckCode: null });
+    expect((await addInviteKey(b, inv.token, t.newKey())).statusCode).toBe(201);
+    expect((await addInviteKey(b, inv.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
+    expect((await addInvitePgp(b, inv.token, await genKey())).statusCode).toBe(201);
+    const { rows: cred } = await t.deps.db.query<{ public_key: Buffer }>("select public_key from webauthn_credentials where account_id = $1 and kind = 'security-key'", [id]);
+    expect(await resume()).toEqual({ keys: 1, passkeys: 1, pgp: 1, keyCheckCode: keyCheckCode(new Uint8Array(cred[0]!.public_key)) });
     // Keys and PGP before the names: refused.
     const fresh = await createInvite('mod');
     expect((await invitee().post(acceptUrl(fresh.token, '/key/start'), { kind: 'security-key' })).statusCode).toBe(409);
+  });
+
+  it('GET /staff/v1/terms answers the Terms version and nothing else; HEAD works (owner 9 Nov 2026, p11-14)', async () => {
+    // The staff origin's answer to the trader API's `GET /v1/terms`: the same X2F_TERMS_VERSION, no
+    // text, no headings, no token (the matrix proves it public; this pins the body).
+    const res = await invitee().get('/staff/v1/terms');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ version: t.deps.config.termsVersion });
+    expect(res.headers['cache-control']).toBe('no-store');
+    const head = await invitee().send('HEAD', '/staff/v1/terms');
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe('');
   });
 
   it('refuses an invite whose tap was for another invite, and a tap reused', async () => {
@@ -218,6 +353,26 @@ describe('invites', () => {
   });
 });
 
+describe('a banned PGP key on a staff invite (lead review 2026-11-06 item 1)', () => {
+  it('pgp/start answers as for any key (no answer before proof); pgp/finish reaches insertPgpKey and refuses 409 key-unavailable', async () => {
+    // A day earlier: the owner's tap starts here stay out of the later tests' 10-minute window (in memory).
+    t.setNow(new Date(MON_NOON.getTime() - 86_400_000));
+    const inv = await createInvite('mod');
+    const b = invitee();
+    expect((await pickNames(b, inv.token)).res.statusCode).toBe(201);
+    const pair = await genKey();
+    await recordBannedValues(t.deps.db, t.deps.config, { kind: 'pgp-fingerprint', values: [pair.fingerprint.toLowerCase()], accountId: null, now: t.deps.clock() });
+    const start = await b.post(acceptUrl(inv.token, '/pgp/start'), { publicKey: pair.publicKey });
+    expect(start.statusCode, start.body).toBe(200);
+    const { challengeId, encryptedMessage } = start.json();
+    const code = codeOf(await decrypt(encryptedMessage, pair.privateKey, undefined, t.deps.clock()));
+    const finish = await b.post(acceptUrl(inv.token, '/pgp/finish'), { challengeId, code });
+    expect(finish.statusCode, finish.body).toBe(409);
+    expect(finish.json()).toEqual({ error: 'key-unavailable' });
+    expect((await t.deps.db.query('select 1 from pgp_keys where fingerprint = $1', [pair.fingerprint.toLowerCase()])).rowCount).toBe(0);
+  });
+});
+
 describe('members', () => {
   it('lists staff and waiting invites', async () => {
     const mod = await staffWithKeys(t, { role: 'mod', hours: OFFICE });
@@ -228,12 +383,18 @@ describe('members', () => {
     expect(rows).toContainEqual({
       accountId: mod.id, inviteId: null, displayName: `D${mod.loginName}`, role: 'mod', status: 'active', hours: OFFICE,
       joinedAt: MON_NOON.toISOString(), lastActiveAt: MON_NOON.toISOString(), openCases: 0, expiresAt: null,
+      // Owner G3 (review P-m2): this moderator holds only a security key so far.
+      missingMethods: ['pgp', 'passkey'],
     });
     expect(rows).toContainEqual({
       accountId: null, inviteId: inv.inviteId, displayName: null, role: 'helper', status: 'waiting', hours: OFFICE,
-      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt,
+      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt, missingMethods: [],
     });
-    expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any' });
+    expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any', missingMethods: [] });
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
+    const after = (await owner.browser.get('/staff/v1/members')).json().members as Array<Record<string, unknown>>;
+    expect(after.find((r) => r.accountId === mod.id)).toMatchObject({ missingMethods: [] });
   });
 
   it('switch-off takes effect at once; past log entries stay and the chain verifies', async () => {
@@ -270,6 +431,14 @@ describe('members', () => {
   it('switch-on needs a tap bound to the person and their role', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
     await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {});
+    // Owner G3 (review P-m2): a moderator who lacks a method (one who joined before G3) is not
+    // switched on, and the tap stays unused.
+    const early = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' });
+    const refused = await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId: early });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'all-three-methods-required']);
+    expect((await t.deps.db.query('select used_at from key_taps where id = $1', [early])).rows).toEqual([{ used_at: null }]);
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
     expect(errorOf(await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, {}))).toBe('tap-invalid');
     const wrongRole = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'senior' });
     expect(errorOf(await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId: wrongRole }))).toBe('tap-invalid');
@@ -291,13 +460,18 @@ describe('members', () => {
     expect(errorOf(await mod.browser.get('/staff/v1/me'))).toBe('outside-login-hours');
   });
 
-  it('sets a role with a tap; a moderator role needs a security key', async () => {
+  it('sets a role with a tap; a moderator role needs a security key, a senior all three methods (owner G3)', async () => {
     const helperOnlyPgp = await seedStaff(t.deps, { role: 'helper' });
     await t.deps.db.query('update staff_members set has_security_key = false where account_id = $1', [helperOnlyPgp.id]);
     const up = await tap(owner, { kind: 'set-role', accountId: helperOnlyPgp.id, role: 'mod' });
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${helperOnlyPgp.id}/role`, { role: 'mod', tapId: up }))).toBe('security-key-required');
 
     const mod = await staffWithKeys(t, { role: 'mod' });
+    // Owner G3: a senior holds all three methods; this moderator has only a security key so far.
+    const early = await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'senior' });
+    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior', tapId: early }))).toBe('all-three-methods-required');
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior' }))).toBe('tap-invalid');
     const wrong = await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'helper' });
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior', tapId: wrong }))).toBe('tap-invalid');
@@ -309,9 +483,15 @@ describe('members', () => {
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'owner', tapId }))).toBe('bad-request');
   });
 
-  it('removes a staff member: switched off for good, gone from the list', async () => {
+  it('removes a staff member with a tap bound to them (owner G4): switched off for good, gone from the list', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
-    const res = await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`);
+    // No tap, or a tap for someone else: refused, nothing removed.
+    expect(errorOf(await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`))).toBe('tap-invalid');
+    const otherTap = await tap(owner, { kind: 'remove-staff', accountId: owner.id });
+    expect(errorOf(await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`, { tapId: otherTap }))).toBe('tap-invalid');
+    expect((await mod.browser.get('/staff/v1/me')).statusCode).toBe(200);
+    const removeTap = await tap(owner, { kind: 'remove-staff', accountId: mod.id });
+    const res = await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`, { tapId: removeTap });
     expect(res.statusCode, res.body).toBe(204);
     expect(errorOf(await mod.browser.get('/staff/v1/me'))).toBe('not-authenticated');
     const { token } = await insertSession(t.deps, mod.id, 'staff');
@@ -320,6 +500,24 @@ describe('members', () => {
     const tapId = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' });
     expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId })).statusCode).toBe(404);
     expect((await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`)).statusCode).toBe(404);
+  });
+
+  it('removal erases the stored Terms signature; switch-off keeps it (owner 9 Nov, p11-13: erase it when the account closes)', async () => {
+    const signature = async (id: string) =>
+      (await t.deps.db.query<{ terms_signature: Buffer | null }>('select terms_signature from accounts where id = $1', [id])).rows[0]!.terms_signature;
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    await t.deps.db.query('update accounts set terms_signature = $2 where id = $1', [mod.id, sealTermsSignature(t.deps.config, SIG, mod.id)]);
+    const other = await staffWithKeys(t, { role: 'helper' });
+    await t.deps.db.query('update accounts set terms_signature = $2 where id = $1', [other.id, sealTermsSignature(t.deps.config, SIG, other.id)]);
+    // Switch-off can be undone: the login is not closed, so its signature stays.
+    expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {})).statusCode).toBe(200);
+    expect(await signature(mod.id)).not.toBeNull();
+    // Removal needs a tap bound to them (owner G4, batch 3).
+    const removeTap = await tap(owner, { kind: 'remove-staff', accountId: mod.id });
+    expect((await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`, { tapId: removeTap })).statusCode).toBe(204);
+    expect(await signature(mod.id)).toBeNull();
+    // Only the removed person's.
+    expect(await signature(other.id)).not.toBeNull();
   });
 
   it('a member route for someone who is not staff: 404', async () => {
@@ -351,13 +549,15 @@ describe('open cases (was NEEDS_P4_CASE_ASSIGNEE)', () => {
 describe('owner Q54: the public name is displayName; a field named username is refused', () => {
   it('the invitee names the account with displayName and loginName; username is not taken', async () => {
     const inv = await createInvite('helper');
-    const res = await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Public1x', loginName: 'secretlogin1x' });
+    const res = await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Public1x', loginName: 'secretlogin1x', ...signed() });
     expect(res.statusCode).toBe(400);
   });
 });
 
 describe('per-person grants (owner Q60)', () => {
   it('the owner ticks feedback for a moderator with a tap bound to the exact list; the moderator then reads feedback', async () => {
+    // 11 minutes on: the owner's earlier tap starts (in memory, 20 per 10 minutes) are out of the window.
+    t.setNow(new Date(MON_NOON.getTime() + 11 * 60_000));
     const mod = await staffWithKeys(t, { role: 'mod' });
     expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
     const put = (grants: unknown, tapId?: string) => owner.browser.send('PUT', `/staff/v1/members/${mod.id}/grants`, { grants, ...(tapId ? { tapId } : {}) });
@@ -399,6 +599,16 @@ describe('Task 7 tripwires (local tree only)', () => {
     // When Task 13's gate lands (apps/moderation/src/gate): give ModerationClient a revoke call and
     // make `switchOff` call it after the commit (revocation needs no signature).
     expect(existsSync(`${ROOT}apps/moderation/src/gate`), 'the ruling gate landed: notify it on switch-off (see this test)').toBe(false);
+  });
+
+  it('NEEDS_P4_TASK16: the staff web invite page signs the Terms before it names the account', () => {
+    // Owner 9 Nov 2026 (p11-14): staff sign too. `POST …/accept/:token/account` needs
+    // `acceptedTerms` and `termsSignature` (staff/invites.ts). When Task 16's staff web lands, its
+    // invite page must show the Terms with the signature pad and send both.
+    const page = `${ROOT}apps/staff-web/src/screens/Invite.tsx`;
+    if (!existsSync(page)) return;
+    const text = readFileSync(page, 'utf8');
+    expect(text.includes('termsSignature') && text.includes('acceptedTerms'), 'the staff invite page must send acceptedTerms and termsSignature').toBe(true);
   });
 
 });

@@ -2,6 +2,7 @@ import { normalizeTradeCode, ROLES, type Role } from '@x2f/core';
 import { canonicalJson, type Participants, type PublicKeys } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
 import { channelFor, CHANNEL_KINDS, type ChannelKind } from './channels.js';
+import { MAX_PAY_WINDOW_MIN } from './machine.js';
 
 /**
  * The moderation service's signed statement of who the three parties to a trade are and which
@@ -24,11 +25,18 @@ export interface Attestation {
 
 /**
  * What the moderator attests about the deal (lead answer 4, docs/coordination.md): the deal fixed
- * at take and both sides' addresses, filled from the trade record. Bigints are decimal strings
- * without leading zeros (canonical JSON has no bigints); the key sets are exact.
+ * at take, the buyer's time to pay fixed at take, and both sides' addresses, filled from the trade
+ * record. Bigints are decimal strings without leading zeros (canonical JSON has no bigints); the
+ * key sets are exact.
  */
 export interface AttestedTerms {
   deal: { poster: 'buyer' | 'seller'; takeAmountAtomic: string; currency: string; centsPerXmr: string; maxFiatCents: string };
+  /**
+   * The buyer's time to pay in minutes, the payment method's, fixed at take (`Trade.payWindowMin`,
+   * owner p9-6): an integer from 1 to MAX_PAY_WINDOW_MIN. The moderation service's shadow trade
+   * runs on it, so it never co-signs a seller's refund before the buyer's own time to pay is over.
+   */
+  payWindowMin: number;
   /** The buyer's payout address. */
   buyerPayout: string;
   /** The seller's refund address. */
@@ -57,9 +65,15 @@ function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
 }
 
-/** Exactly the `AttestedTerms` shape: exact key sets, positive decimal strings, non-empty bounded strings. */
+/** A time to pay as the trade machine allows it: whole minutes, 1 to MAX_PAY_WINDOW_MIN. */
+function isPayWindowMin(x: unknown): x is number {
+  return typeof x === 'number' && Number.isSafeInteger(x) && x >= 1 && x <= MAX_PAY_WINDOW_MIN;
+}
+
+/** Exactly the `AttestedTerms` shape: exact key sets, positive decimal strings, a valid time to pay, non-empty bounded strings. */
 export function isAttestedTerms(t: unknown): t is AttestedTerms {
-  if (!isRecord(t) || !exactKeys(t, ['deal', 'buyerPayout', 'sellerRefund'])) return false;
+  if (!isRecord(t) || !exactKeys(t, ['deal', 'payWindowMin', 'buyerPayout', 'sellerRefund'])) return false;
+  if (!isPayWindowMin(t.payWindowMin)) return false;
   for (const a of [t.buyerPayout, t.sellerRefund]) if (typeof a !== 'string' || a.length === 0 || a.length > MAX_ADDRESS) return false;
   const d = t.deal;
   if (!isRecord(d) || !exactKeys(d, ['poster', 'takeAmountAtomic', 'currency', 'centsPerXmr', 'maxFiatCents'])) return false;
@@ -175,6 +189,13 @@ export interface AttestationSelf {
   deal?: ConfirmedDeal;
   /** Trade context: this app's own address (the buyer's payout, the seller's refund). Required there. */
   ownAddress?: string;
+  /**
+   * Trade context, optional: the time to pay this app was shown for the trade (the API's trade
+   * view). When given, the attested `payWindowMin` must equal it (`wrong-terms`), so the window the
+   * moderation service enforces is the one the buyer sees. Not given: the attested value is only
+   * checked for shape.
+   */
+  payWindowMin?: number;
 }
 
 /**
@@ -184,7 +205,8 @@ export interface AttestationSelf {
  * (`not-me`); that the attestation is for `me.trade` (`wrong-trade`); and that the channels are
  * EXACTLY the set for the context (trade: escrow + signals; chat: chat), each equal to
  * `channelFor(trade, kind)` (`wrong-channel`); and, for a trade, that `terms` are present and their
- * deal and this app's own address equal `me.deal` and `me.ownAddress`, both required (`wrong-terms`).
+ * deal and this app's own address equal `me.deal` and `me.ownAddress`, both required, and their
+ * `payWindowMin` equals `me.payWindowMin` when that is given (`wrong-terms`).
  * A chat attestation must carry no terms (`wrong-terms`).
  *
  * Deviation from the plan's signature (review of Task 8): `me` also carries `trade`, `boxPublic`
@@ -242,4 +264,5 @@ export async function verifyAttestation(
   if (t === undefined || !isRecord(me.deal) || typeof me.ownAddress !== 'string' || me.ownAddress === '') throw new AttestationError('wrong-terms');
   if (!sameDeal(t.deal, me.deal)) throw new AttestationError('wrong-terms');
   if ((me.role === 'buyer' ? t.buyerPayout : t.sellerRefund) !== me.ownAddress) throw new AttestationError('wrong-terms');
+  if (me.payWindowMin !== undefined && t.payWindowMin !== me.payWindowMin) throw new AttestationError('wrong-terms');
 }

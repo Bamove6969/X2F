@@ -27,6 +27,8 @@ export interface DisputeTrade {
   currency: string;
   paidAt: string | null;
   confirmBy: string | null;
+  /** The trade's confirm window in minutes (owner 2026-11-07 F9: per payment type; p9-4: either side's wait before a dispute), for the wording. */
+  confirmWindowMin: number;
   settleBy: string | null;
   closedAt: string | null;
   dispute: { by: 'buyer' | 'seller' | 'system'; at: string } | null;
@@ -47,6 +49,13 @@ export interface RulingView {
 }
 
 export interface DisputeView {
+  /**
+   * Plan 4 Task 11 (G37, owner 7 Nov): the dispute's incident ID, nine characters, shown to both
+   * traders at the top of the trade (where and how is design's: DESIGNER-REVIEW). Absent from an older view.
+   */
+  incidentId?: string | null;
+  /** Plan 4 Task 11: the moderator asked THIS trader for the unblurred proof (who, when). */
+  proofRequest?: { username: string; at: string } | null;
   /** 'system' when the trade was escalated (late funds after it ended, a lapse nobody refunded). */
   openedBy: Party | 'system';
   reason: DisputeReason;
@@ -70,6 +79,12 @@ export interface DisputeView {
    * atomic units, sent only to the side that owes it (Task 12's fees_owed; NEEDS_TASK_12_FEES_OWED).
    */
   feeOwedAtomic?: string | null;
+  /**
+   * Owner g63 (7 Nov), in the poster's view only: the 1% after the ruling. `poster-pays` (the trade
+   * completes), `none` (a full reversal), `waits` (an appeal is pending), null before a ruling.
+   * Not shown yet: the explanation's words are design's (TODO, owner g63).
+   */
+  fee?: 'poster-pays' | 'none' | 'waits' | null;
   status: 'open' | 'ruled' | 'appealed' | 'final' | 'closed';
   moderator: { name: string; joinedAt: string } | null;
   ruling: RulingView | null;
@@ -110,6 +125,8 @@ const PARTIES = ['buyer', 'seller'] as const;
 /** A Task 10 field: absent (an older view) reads as null; present, it must have the right shape. */
 const later = <T>(v: unknown, read: (v: unknown) => T): T | null => (v === undefined || v === null ? null : read(v));
 const ATOMIC = /^[0-9]{1,30}$/;
+/** An incident ID as the API stores it (@x2f/staff `isIncidentId` checks its check character too). */
+const INCIDENT = /^[0-9A-HJKMNP-TV-Z]{9}$/;
 
 /**
  * The dispute screens' view of a trade, mapped from Task 22's TradeView (one parser of the trade
@@ -129,6 +146,7 @@ export function tradeFromView(v: TradeView): DisputeTrade {
     currency: v.lockedRate.currency,
     paidAt: v.paidAt,
     confirmBy: v.confirmBy,
+    confirmWindowMin: v.confirmWindowMin,
     settleBy: v.settleBy,
     closedAt: v.closedAt,
     dispute: v.dispute,
@@ -173,6 +191,14 @@ export function parseDispute(v: unknown): DisputeView {
     appeal = { by: oneOf(a.by, PARTIES, 'appeal.by'), at: iso(a.at, 'appeal.at') };
   }
   return {
+    incidentId: later(d.incidentId, (v) => {
+      if (typeof v !== 'string' || !INCIDENT.test(v)) throw new ShapeError('incidentId');
+      return v;
+    }),
+    proofRequest: later(d.proofRequest, (v) => {
+      const p = rec(v, 'proofRequest');
+      return { username: str(p.username, 'proofRequest.username'), at: iso(p.at, 'proofRequest.at') };
+    }),
     openedBy: oneOf(d.openedBy, ['buyer', 'seller', 'system'] as const, 'openedBy'),
     reason: oneOf(d.reason, ['paid', 'silent', 'terms', 'other', 'escalated'] as const, 'reason'),
     openedAt: iso(d.openedAt, 'openedAt'),
@@ -189,6 +215,7 @@ export function parseDispute(v: unknown): DisputeView {
       if (typeof v !== 'string' || !ATOMIC.test(v)) throw new ShapeError('feeOwedAtomic');
       return v;
     }),
+    fee: later(d.fee, (v) => oneOf(v, ['poster-pays', 'none', 'waits'] as const, 'fee')),
     status: oneOf(d.status, ['open', 'ruled', 'appealed', 'final', 'closed'] as const, 'status'),
     moderator,
     ruling,

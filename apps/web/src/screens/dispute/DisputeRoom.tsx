@@ -160,6 +160,10 @@ export function DisputeRoom({
                 Moderator <span className="dispute-mod-name">{dispute.moderator.name}</span> joined this dispute
               </span>
               <span className="dispute-muted">They can read this whole chat, including messages from before the trade. Moderators only ever contact you here.</span>
+              {/* D-069 (build spec j31b): the board's "She may ask ...", with "They" as the line above. COPY-UNSIGNED */}
+              <span className="dispute-cooperate" data-part="cooperate">
+                They may ask either of you questions. Please answer them here: if someone doesn't help, the ruling can go against them.
+              </span>
             </span>
           </section>
         ) : null}

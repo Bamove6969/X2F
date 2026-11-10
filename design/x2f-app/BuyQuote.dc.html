@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
+a{color:#ff6600}a:hover{color:#ff8533}
 button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
 input::placeholder{color:#9aa4b2}
 </style>
@@ -43,7 +43,7 @@ input::placeholder{color:#9aa4b2}
       <legend style="padding: 0 0 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #9aa4b2;">Which wallet gets paid?</legend>
       <sc-for list="{{wallets}}" as="w" hint-placeholder-count="3">
         <label style="{{w.style}}">
-          <input type="radio" name="wallet" checked="{{w.on}}" onChange="{{w.pick}}" style="width: 20px; height: 20px; margin: 0; accent-color: #ff7a1a; flex-shrink: 0;">
+          <input type="radio" name="wallet" checked="{{w.on}}" onChange="{{w.pick}}" style="width: 20px; height: 20px; margin: 0; accent-color: #ff6600; flex-shrink: 0;">
           <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
             <span style="font-size: 15px; font-weight: 600;">{{w.name}}</span>
             <span style="font-size: 13px; color: #9aa4b2;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{w.addr}}</span>{{w.note}}</span>
@@ -56,7 +56,7 @@ input::placeholder{color:#9aa4b2}
     <section aria-label="What you get" style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border-radius: 12px; background: #171b22;">
       <div style="display: flex; flex-direction: column; gap: 4px;">
         <span style="font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #9aa4b2;">You receive</span>
-        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; font-variant-numeric: tabular-nums;">{{xmr}} <span style="color: #ff7a1a; font-size: 18px;">XMR</span></span>
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; font-variant-numeric: tabular-nums;">{{xmr}} <span style="color: #ff6600; font-size: 18px;">XMR</span></span>
         <span style="font-size: 13px; color: #9aa4b2;">In {{walletName}}, address ending <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{walletAddr}}</span></span>
       </div>
       <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px;">
@@ -72,7 +72,7 @@ input::placeholder{color:#9aa4b2}
 
   <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid #20262f;">
     <sc-if value="{{ok}}" hint-placeholder-val="{{true}}">
-      <a href="BuyerPay.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-size: 18px; font-weight: 600; text-decoration: none;">Trade</a>
+      <a href="BuyerPay.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: #ff6600; color: #1a0e05; font-size: 18px; font-weight: 600; text-decoration: none;">Trade</a>
     </sc-if>
     <sc-if value="{{notOk}}" hint-placeholder-val="{{false}}">
       <button type="button" disabled style="height: 56px; border-radius: 12px; border: 1px solid #6b7584; background: transparent; color: #9aa4b2; font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">Trade</button>
@@ -100,7 +100,7 @@ class Component extends DCLogic {
     const pick = this.state.wallet;
     const wallets = defs.map((d) => ({ ...d,
       on: pick === d.id,
-      style: 'display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 14px; border-radius: 12px; cursor: pointer; ' + (pick === d.id ? 'border: 2px solid #ff7a1a; background: #171b22;' : 'border: 2px solid #20262f; background: transparent;'),
+      style: 'display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 14px; border-radius: 12px; cursor: pointer; ' + (pick === d.id ? 'border: 2px solid #ff6600; background: #171b22;' : 'border: 2px solid #20262f; background: transparent;'),
       pick: () => this.setState({ wallet: d.id }) }));
     const w = defs.find((d) => d.id === pick);
     let help = 'satoshi_ghost sells $50 to $1,500 per trade.';

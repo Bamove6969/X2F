@@ -5,18 +5,24 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { assertNotBlocked, blockedEitherWay, blocksBetween, hasBlocked } from '../src/traders/blocks.js';
 import { applyEvent } from '../src/trades/store.js';
+import { makeVendor } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
+import { flexBody } from './helpers/offers.js';
 
 // Plan 3 Task 37: the trader-to-trader block (spec 2.4). Real Postgres, one database for the file.
 
 const DAY = 86_400_000;
 
+/**
+ * USD at $330.00 per XMR; every other currency at 3,300,000 minor units (offers are market ± %, owner
+ * Q1). Every currency has a price: posting converts each band's top edge to US dollars and fails
+ * closed without a price (the launch cap, owner p11-6).
+ */
 function quote(currency: string): MarketQuote | null {
-  if (currency !== 'USD') return null;
   return {
-    price: { currency, centsPerXmr: 33_000n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
+    price: { currency, centsPerXmr: currency === 'USD' ? 33_000n : 3_300_000n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
     usdCentsPerXmr: 33_000n, fx: null,
   };
 }
@@ -48,6 +54,8 @@ type Who = Awaited<ReturnType<typeof trader>>;
 /** A trader with a usable payout wallet, so they can post. */
 async function poster(): Promise<Who> {
   const t = await trader();
+  // Owner 2 Nov 2026: only vendors post.
+  await makeVendor(deps, t.id);
   const now = deps.clock();
   await deps.db.query(
     `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $4)`,
@@ -64,11 +72,11 @@ const ownCurrency = (): string => {
   return c;
 };
 
-async function post(who: Who, currency: string, centsPerXmr = '3300000'): Promise<string> {
-  const res = await who.browser.post('/v1/offers', {
-    side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'fixed', centsPerXmr },
-    minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, terms: 'Zelle only.',
-  });
+async function post(who: Who, currency: string, marginBps = 0): Promise<string> {
+  const res = await who.browser.post('/v1/offers', flexBody({
+    side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'market', marginBps },
+    minFiatCents: '5000', maxFiatCents: '200000', minTrades: null, terms: 'Zelle only.',
+  }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
@@ -163,25 +171,26 @@ describe('a block stops business both ways (Task 37)', () => {
     const c = await poster();
     const other = await trader();
     // a's offer is the cheapest (sell ads: lowest is best).
-    await post(a, cur, '3000000');
-    await post(c, cur, '3500000');
+    // 3,300,000 −10% = 2,970,000; +5% = 3,465,000.
+    await post(a, cur, -1000);
+    await post(c, cur, 500);
     const zelle = async (who: Browser) => {
       const res = await who.get(`/v1/methods?side=sell&currency=${cur}`);
       expect(res.statusCode, res.body).toBe(200);
       return (res.json() as { live: { id: string; offers: number; bestRate: string | null }[] }).live.find((m) => m.id === 'ZELLE');
     };
-    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '2970000' });
     await block(a, b);
     // The blocked person: only c's offer, at c's price, matching the list they would open.
-    expect(await zelle(b.browser)).toMatchObject({ offers: 1, bestRate: '3500000' });
+    expect(await zelle(b.browser)).toMatchObject({ offers: 1, bestRate: '3465000' });
     expect(await listed(b.browser, cur)).toHaveLength(1);
     // The blocker: their own offer counts, c's too (c is not blocked).
-    expect(await zelle(a.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
-    // Everyone else and logged out: unchanged.
-    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
-    expect(await zelle(anon)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    expect(await zelle(a.browser)).toMatchObject({ offers: 2, bestRate: '2970000' });
+    // Everyone else: unchanged. Logged out: nothing at all (the front door, owner 8 Nov 2026).
+    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '2970000' });
+    expect((await anon.get(`/v1/methods?side=sell&currency=${cur}`)).statusCode).toBe(401);
     await unblock(a, b);
-    expect(await zelle(b.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    expect(await zelle(b.browser)).toMatchObject({ offers: 2, bestRate: '2970000' });
   });
 
   it("GET /v1/offers/:id answers 404 not-found either way, the same as an offer that does not exist", async () => {
@@ -271,16 +280,16 @@ describe('a block stops business both ways (Task 37)', () => {
     expect((await blocksBetween(deps.db, b.id, a.id)).length).toBe(2);
   });
 
-  it('a logged-out view is not a block: it cannot be identified, so it gets the coarse public presence (decision, Task 37)', async () => {
+  it('logging out does not get round a block: a logged-out view gets nothing at all (the front door, owner 8 Nov 2026; before, Task 37 accepted a coarse public view)', async () => {
     const cur = ownCurrency();
     const a = await poster();
     const b = await poster();
     const aOffer = await post(a, cur);
     await block(a, b);
-    // Floored to 5 minutes and bucketed, exactly as Task 4 shows anyone logged out; never finer.
-    const card = ((await anon.get(`/v1/offers/${aOffer}`)).json() as { poster: { lastSeenAt: string | null } }).poster;
-    expect(card.lastSeenAt).not.toBeNull();
-    expect(Date.parse(card.lastSeenAt!) % (5 * 60_000)).toBe(0);
-    expect(await listed(anon, cur)).toEqual([aOffer]);
+    for (const url of [`/v1/offers/${aOffer}`, `/v1/offers?side=sell&method=ZELLE&currency=${cur}&sort=online`]) {
+      const res = await anon.get(url);
+      expect(res.statusCode, url).toBe(401);
+      expect(res.json(), url).toEqual({ error: 'not-authenticated' });
+    }
   });
 });

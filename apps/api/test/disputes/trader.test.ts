@@ -56,9 +56,16 @@ async function tradeIn(state: Parameters<typeof driveTo>[2], from = START) {
   return { seller, buyer, t };
 }
 
-/** A secured trade the buyer disputed at `from`. */
+/**
+ * A trade the buyer disputed at `from`: marked paid at the seller's confirm window (120 min in
+ * seedTrade) before `from`, since the buyer can't dispute before "I've paid" nor before the
+ * window ends (design proto review P1, 8 Nov).
+ */
 async function disputed(from = START) {
-  const x = await tradeIn('secured', from);
+  const x = await tradeIn('paid', new Date(from.getTime() - 120 * MIN));
+  expect(x.t.confirmBy).toEqual(from);
+  setNow(from);
+  await relogin(x.seller, x.buyer);
   const res = await x.buyer.browser.post(dispute(x.t.code), { reason: 'paid', note: '' });
   expect(res.statusCode, res.body).toBe(200);
   return x;
@@ -284,21 +291,21 @@ describe('startDisputeTimers', () => {
   });
 
   it('maintenance pauses the appeal window: nothing closes while it is on, and every running deadline moves by its length', async () => {
-    await deps.db.query('update site_flags set maintenance_since = null');
+    await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     const base = 500 * H;
     const a = await disputed(at(base));
     const b = await disputed(at(base));
     await publishRuling(deps, b.t.code, { outcome: 'release-to-buyer' });
     try {
       setNow(at(base + H));
-      await deps.db.query('update site_flags set maintenance_since = $1', [at(base + H)]);
+      await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [at(base + H)]);
       await tick();
       // Past b's original appeal end (base + 48 h), still in maintenance: it stays open to appeal.
       setNow(at(base + 49 * H));
       await tick();
       expect((await loadDispute(deps.db, b.t.code))!.status).toBe('published');
     } finally {
-      await deps.db.query('update site_flags set maintenance_since = null');
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     }
     await tick();
     expect((await loadDispute(deps.db, a.t.code))!.replyDueAt).toEqual(at(base + 4 * H + 48 * H));
@@ -306,15 +313,15 @@ describe('startDisputeTimers', () => {
   });
 
   it('2 hours of maintenance move replyDueAt and appealEndsAt by 2 hours (A7)', async () => {
-    await deps.db.query('update site_flags set maintenance_since = null');
+    await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     const base = 1000 * H;
     const c = await disputed(at(base));
     await publishRuling(deps, c.t.code, { outcome: 'release-to-buyer' });
     setNow(at(base + H));
-    await deps.db.query('update site_flags set maintenance_since = $1', [at(base + H)]);
+    await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [at(base + H)]);
     await tick();
     setNow(at(base + 3 * H));
-    await deps.db.query('update site_flags set maintenance_since = null');
+    await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     await tick();
     const d = (await loadDispute(deps.db, c.t.code))!;
     expect(d.replyDueAt).toEqual(at(base + 6 * H));

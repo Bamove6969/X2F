@@ -23,5 +23,7 @@ describe('Task 28 stand-ins', () => {
     // Until then: no News stylesheet and no inline styles.
     expect(existsSync(`${ROOT}apps/web/src/screens/news.css`) || existsSync(`${ROOT}apps/web/src/screens/News.css`)).toBe(false);
     expect(readFileSync(`${ROOT}apps/web/src/screens/News.tsx`, 'utf8')).not.toMatch(/style=\{/);
+    // The post itself lives in NewsPost.tsx (shared with the staff NewsEditor's preview, design 10 Nov 2026).
+    expect(readFileSync(`${ROOT}apps/web/src/screens/NewsPost.tsx`, 'utf8')).not.toMatch(/style=\{/);
   });
 });

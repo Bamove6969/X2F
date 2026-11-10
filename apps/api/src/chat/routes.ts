@@ -26,7 +26,8 @@
  * (Task 19's bus): a hint to re-read, carrying nothing but the chat code.
  *
  * Every chat route needs a trader session; a chat that does not exist or does not include the
- * caller is the same 404 `not-found`. Nothing here logs a chat code, a key or a ciphertext.
+ * caller is the same 404 `not-found`, except a chat purged under the caller: 410 `chat-purged`
+ * (its member mark, kept CHAT_PURGED_MARK_DAYS), on which the device erases its copy (p11-10). Nothing here logs a chat code, a key or a ciphertext.
  *
  * Blocks (Task 37, traders/blocks.ts): while either trader has blocked the other, a chat between
  * them answers the same 404 on every route and leaves `GET /v1/chats`, and `POST /v1/chats`
@@ -37,9 +38,12 @@
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { purgedTagSql } from './retention.js';
+import { MARKET_PRICED } from '../offers/routes.js';
 import { assertNotBlocked, blockedEitherWaySql } from '../traders/blocks.js';
 import { traderSummaries, type TraderSummary } from '../traders/summary.js';
 
@@ -57,6 +61,12 @@ export interface ChatView {
   tradeCode: string | null;
   /** A dispute is open on the linked trade: only then may the moderator post (spec 6.6). */
   disputeOpen: boolean;
+  /**
+   * When the linked trade's escrow was secured, or null (no trade, or not yet). Owner Q12 (J-08):
+   * the seller's payment details reach the buyer only once the escrow is secured, so the trader
+   * app shows a packaged-details message only from then on.
+   */
+  tradeSecuredAt: string | null;
   /** The moderation service's attestation is ready. */
   attested: boolean;
   /**
@@ -85,9 +95,14 @@ export const ENVELOPE_PAGE = 100;
 /** Chats listed by GET /v1/chats. */
 const CHAT_LIST_LIMIT = 200;
 
-/** An offer anyone may see (Task 4's LISTED): live, and its poster neither disabled nor on hold. */
-const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
-  and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)`;
+/**
+ * An offer anyone may see (Task 4's LISTED): market-priced (an offer stored as fixed before the
+ * owner's market-only rule is not found, offers/routes.ts MARKET_PRICED), live, and its poster
+ * neither disabled nor on hold (a trading hold or a recovery-code hold).
+ */
+const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
+  and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+  and not ${recoveryHoldHidesSql('o.account_id')}`;
 
 interface ChatRow {
   code: string;
@@ -117,7 +132,15 @@ export async function roleInChat(db: Queryable, raw: string, accountId: string):
     [code],
   );
   const row = rows[0];
-  if (!row) throw notFound();
+  if (!row) {
+    // A chat purged under the caller (123's mark): 410, so the device erases its copy (p11-10).
+    // Only a member's own session matches the tag; everyone else gets the same 404 as ever.
+    if (UUID.test(accountId)) {
+      const gone = await db.query(`select 1 from chat_purged_marks where tag = ${purgedTagSql('$1::text', '$2::uuid')}`, [code, accountId]);
+      if (gone.rows.length > 0) throw new ApiError(410, 'chat-purged');
+    }
+    throw notFound();
+  }
   const role: ChatRole | null = row.buyer_account_id === accountId ? 'buyer' : row.seller_account_id === accountId ? 'seller' : null;
   if (role === null) throw notFound();
   if (!(await tradeOpen(db, row.trade_code))) await assertNotBlocked(db, accountId, role === 'buyer' ? row.seller_account_id : row.buyer_account_id);
@@ -301,10 +324,11 @@ export function chatRoutes(app: FastifyInstance): void {
     const other = role === 'buyer' ? row.seller_account_id : row.buyer_account_id;
     // Presence through the viewer-aware summary: hidden from a trader the other side blocked (review M5).
     const names = await traderSummaries(deps.db, [other], deps.clock(), req.auth.accountId);
-    const facts = await deps.db.query<{ disputed: boolean; attested: boolean; mine: string | null }>(
+    const facts = await deps.db.query<{ disputed: boolean; attested: boolean; mine: string | null; secured_at: Date | null }>(
       `select exists (select 1 from trades t where t.code = $2 and t.state = 'disputed') as disputed,
               exists (select 1 from chat_attestations a where a.chat = $1) as attested,
-              (select sign_public from chat_identities i where i.chat = $1 and i.role = $3) as mine`,
+              (select sign_public from chat_identities i where i.chat = $1 and i.role = $3) as mine,
+              (select t.secured_at from trades t where t.code = $2) as secured_at`,
       [row.code, row.trade_code, role],
     );
     const view: ChatView = {
@@ -314,6 +338,7 @@ export function chatRoutes(app: FastifyInstance): void {
       counterparty: names.get(other) ?? null,
       tradeCode: row.trade_code,
       disputeOpen: facts.rows[0]!.disputed,
+      tradeSecuredAt: facts.rows[0]!.secured_at?.toISOString() ?? null,
       attested: facts.rows[0]!.attested,
       mySignPublic: facts.rows[0]!.mine,
       createdAt: row.created_at.toISOString(),

@@ -1,10 +1,10 @@
 /**
  * The seller's two actions on SellerRefund (plan Task 25), as ordered steps:
  *
- * - Cancel & get refund: `request-refund` to the API (the server clock decides; this starts the
- *   buyer's final alert), then the `trade.refund-request` signal to the moderation service, then
- *   `buildRefund()` (Task 12 settles `payoutsFor('auto-refund')` with builder seller and cosigner
- *   mod; the moderator signs only once its own guard allows, Task 10).
+ * - Cancel & get refund: `request-refund` to the API (the server clock decides; the refund starts
+ *   at once, owner 8 Nov: no final alert), then the `trade.refund-request` signal to the moderation
+ *   service, then `buildRefund()` (Task 12 settles `payoutsFor('auto-refund')` with builder seller
+ *   and cosigner mod; the moderator signs only once its own guard allows, Task 10).
  * - Give 30 more min: `extend`, then the `trade.extend` signal.
  *
  * Nothing after a refused step runs, so no signal and no refund leave the device unless the API
@@ -13,11 +13,12 @@
  * shares the run in flight.
  *
  * The Cancel & get refund run outlives the screen that started it (`refundRun`): once the API has
- * accepted request-refund the trade is `refund_requested` and the room swaps the "window ended"
- * view for the "final alert sent" view, which must still finish the signal and the tx set (the
- * seller's device is the builder; without its set the moderator has nothing to co-sign). Review
- * 2026-10-27 I1. The cursor lives in this module for the life of the page; a reload loses it
- * (follow-up: persist it in Task 12's store).
+ * accepted request-refund the trade is `settling` as `auto-refund` and the room swaps the "window
+ * ended" view for the "refund in progress" view, which must still finish the signal and the tx set
+ * (the seller's device is the builder; without its set the moderator has nothing to co-sign).
+ * Review 2026-10-27 I1. The cursor lives in this module for the life of the page; after a reload
+ * the refund view sends the signal and asks for the tx set again (`refundResume`): both are safe
+ * to repeat (the moderator keeps one request, the escrow one outcome).
  */
 import type { RefundEscrow } from './refundSlot.js';
 
@@ -84,7 +85,7 @@ const refundRuns = new Map<string, RefundRunEntry>();
  * finished but before the room re-read the trade posts nothing (a trade is refunded once). Each call
  * records `deps` as the ones the run uses from now on. Call it at the tap, not at render: a run that
  * was created but never started is not pending (review item 8), so a refund requested from another
- * device, or one whose response was lost, is not re-posted from step 0 by the refund_requested view.
+ * device, or one whose response was lost, is not re-posted from step 0 by the refund view.
  * Tests call `forgetRefundRuns()` between trades.
  */
 export function refundRun(code: string, deps: RefundFlowDeps): Steps {
@@ -110,7 +111,35 @@ export function pendingRefundRun(code: string, deps?: RefundFlowDeps): Steps | n
   return entry.steps;
 }
 
+/** The run for `code` if it was started on this page, done or not (a done run is a no-op); `deps` (when given) are recorded as above. */
+export function startedRefundRun(code: string, deps?: RefundFlowDeps): Steps | null {
+  const entry = refundRuns.get(code);
+  if (entry === undefined || !entry.steps.started()) return null;
+  if (deps !== undefined) entry.deps = deps;
+  return entry.steps;
+}
+
+const resumeRuns = new Map<string, RefundRunEntry>();
+
+/**
+ * The refund view's own run when this page did not start the cancel (a reload, another device):
+ * the `trade.refund-request` signal, then `buildRefund()`, once per page per trade (a done run is a
+ * no-op). Never posts `request-refund`: the API already took the cancel.
+ */
+export function refundResume(code: string, deps: RefundFlowDeps): Steps {
+  let entry = resumeRuns.get(code);
+  if (entry === undefined) {
+    const e: RefundRunEntry = { deps, steps: null as unknown as Steps };
+    e.steps = steps([() => e.deps.escrow.signal('trade.refund-request'), () => e.deps.escrow.buildRefund()]);
+    resumeRuns.set(code, e);
+    entry = e;
+  }
+  entry.deps = deps;
+  return entry.steps;
+}
+
 /** Drops every run (tests). */
 export function forgetRefundRuns(): void {
   refundRuns.clear();
+  resumeRuns.clear();
 }

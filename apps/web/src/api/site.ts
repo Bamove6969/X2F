@@ -2,33 +2,64 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, setMaintenanceListener } from './client.js';
 
 /**
- * Plan 4 Task 8: `GET /v1/site` (no session), the banner, the emergency stop and maintenance as
- * every visitor sees them. Only well-formed parts are kept; anything else reads as "off".
+ * Plan 4 Task 8: `GET /v1/site`, the banner, the trading stop, maintenance and an announced plan. It
+ * answers anyone, but outside the front door (owner, 8 Nov 2026) only whether the site is in
+ * maintenance and its kind, plus the announced plan (lead default, owner p11-120: a planned
+ * maintenance is shown to everyone, inside and outside the door): the banner and the trading pause
+ * come with a signed-in, set-up session (App.tsx reads it again on login and logout). Only
+ * well-formed parts are kept; anything else reads as "off".
  */
 export interface SiteBannerInfo {
   text: string;
   kind: 'info' | 'warning';
 }
+/**
+ * Owner G19 (7 Nov): maintenance is planned or unplanned; "emergency" is known only internally and
+ * never reaches a trader.
+ */
+export type MaintenanceKind = 'planned' | 'unplanned';
+export interface SiteMaintenance {
+  message: string | null;
+  kind: MaintenanceKind;
+  /** ISO times: when it began, and when it should be back (unplanned: the best guess; planned: the plan's end). */
+  since: string | null;
+  backBy: string | null;
+}
+/** A planned maintenance announced ahead (owner G19: "try and give 24-hour notice"), ISO times. */
+export interface PlannedMaintenanceInfo {
+  startsAt: string;
+  endsAt: string;
+  message: string | null;
+}
 export interface SiteInfo {
   banner: SiteBannerInfo | null;
   tradingPaused: boolean;
-  maintenance: { message: string | null; kind: 'planned' | 'emergency' } | null;
+  maintenance: SiteMaintenance | null;
+  plannedMaintenance: PlannedMaintenanceInfo | null;
 }
 
-export const SITE_OFF: SiteInfo = { banner: null, tradingPaused: false, maintenance: null };
+export const SITE_OFF: SiteInfo = { banner: null, tradingPaused: false, maintenance: null, plannedMaintenance: null };
 /** How often the shell re-reads the site state (and, during maintenance, checks whether it is over). */
 export const SITE_POLL_MS = 60_000;
 
 const rec = (v: unknown): Record<string, unknown> | null => (v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 
+const text = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+const isoTime = (v: unknown): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v) && !Number.isNaN(Date.parse(v)) ? v : null);
+
 export function parseSite(raw: unknown): SiteInfo {
   const r = rec(raw) ?? {};
   const b = rec(r.banner);
   const m = rec(r.maintenance);
+  const p = rec(r.plannedMaintenance);
+  const startsAt = p ? isoTime(p.startsAt) : null;
+  const endsAt = p ? isoTime(p.endsAt) : null;
   return {
     banner: b && typeof b.text === 'string' && b.text !== '' && (b.kind === 'info' || b.kind === 'warning') ? { text: b.text, kind: b.kind } : null,
     tradingPaused: r.tradingPaused === true,
-    maintenance: m ? { message: typeof m.message === 'string' && m.message !== '' ? m.message : null, kind: m.kind === 'planned' ? 'planned' : 'emergency' } : null,
+    // An unknown or missing kind is unplanned: nobody announced it (owner G19: never "emergency").
+    maintenance: m ? { message: text(m.message), kind: m.kind === 'planned' ? 'planned' : 'unplanned', since: isoTime(m.since), backBy: isoTime(m.backBy) } : null,
+    plannedMaintenance: p && startsAt !== null && endsAt !== null ? { startsAt, endsAt, message: text(p.message) } : null,
   };
 }
 

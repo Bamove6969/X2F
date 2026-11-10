@@ -16,7 +16,7 @@ import { canonicalTimeZone, formatClock, inQuietHours, parseClock } from './quie
 export const NUDGE_GAP_MS = 15 * 60_000;
 /**
  * At most 3 nudges received per hour from everyone combined: past it, nudges are dropped silently
- * (`recipient-busy`). Not for a nudge about a trade that is secured, refund_requested or paid:
+ * (`recipient-busy`). Not for a nudge about a trade that is secured or paid:
  * there the owner's rule is one per 15 minutes with no cap on the number (7 Nov; lead default for
  * the states), so only the sender's gap limits them.
  */
@@ -105,7 +105,7 @@ function deliver(app: FastifyInstance, toId: string, ev: NudgeEvent): void {
 }
 
 /** Trade states in which the 3-per-hour recipient cap is lifted for a trade nudge (lead default, review finding 4). */
-const UNCAPPED_STATES: readonly string[] = ['secured', 'refund_requested', 'paid'];
+const UNCAPPED_STATES: readonly string[] = ['secured', 'paid'];
 
 /**
  * The open trade a trade nudge is about (the trade, or the trade a chat is linked to), between
@@ -113,10 +113,10 @@ const UNCAPPED_STATES: readonly string[] = ['secured', 'refund_requested', 'paid
  * nudge's transaction, before the accounts are locked, so the lock order is the trade events'
  * (trade row, then account; review finding 2) and the two cannot deadlock.
  *
- * Owner G2 / g66: the seller's refund unlocks only after at least one nudge since the escrow was
- * secured. An accepted nudge from the trade's seller to its buyer sets `trades.seller_nudged_at`
- * while the trade is `secured` (the only state the refund is asked in, so the time is never
- * before `secured_at`). It is written in the same transaction, so a 429 or any later error rolls
+ * Nudges are optional (owner 8 Nov, p6-1, reversing G2 / g66): the seller's cancel needs none. An
+ * accepted nudge from the trade's seller to its buyer still records its first time in
+ * `trades.seller_nudged_at` while the trade is `secured` (a record only: no trade rule reads it).
+ * It is written in the same transaction, so a 429 or any later error rolls
  * it back. Set whether or not the nudge is delivered: the seller did nudge, and the answer is the
  * same 202 either way. A later nudge leaves it as is.
  */

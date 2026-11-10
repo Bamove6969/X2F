@@ -4,7 +4,7 @@
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { moneroUri } from '@x2f/trade';
+import { escrowPlan, formatXmrExact, moneroUri } from '@x2f/trade';
 import type { TradeView } from '../src/api/trade.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -58,8 +58,7 @@ const base: TradeView = {
   payBy: null,
   paidAt: null,
   confirmBy: null,
-  finalAlertAt: null,
-  finalAlertSeenAt: null,
+  confirmWindowMin: 90,
   settleBy: null,
   releaseClaimedAt: null,
   pausedAt: null,
@@ -219,6 +218,18 @@ describe('escrow check and the security check', () => {
     current = { ...base, role: 'buyer', funding: null, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
     host = await room();
     expect(host.textContent).toContain("Escrow check: four words. They match on satoshi_ghost's screen.");
+  });
+
+  it('the four words render as a numbered list, never run together (design proto review P2: "1. amber2. lotus3. ceda4r. violet")', async () => {
+    const host = await room();
+    const list = host.querySelector('[data-escrow-check] ol')!;
+    expect([...list.children].map((li) => li.tagName)).toEqual(['LI', 'LI', 'LI', 'LI']);
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/trade/trade.css'), 'utf8');
+    const rule = /\.x2f-escrow-check__words\s*\{([^}]*)\}/.exec(css)![1]!;
+    // A flex row put each outside marker over the word before it; a grid with the numbers inside each item can't.
+    expect(rule).not.toMatch(/display:\s*flex/);
+    expect(rule).toMatch(/display:\s*grid/);
+    expect(rule).toMatch(/list-style-position:\s*inside/);
   });
 
   for (const error of ['participants-mismatch', 'deal-mismatch'] as const) {
@@ -542,6 +553,99 @@ describe('after a short payment the seller funds only the remainder (review 2026
   });
 });
 
+describe('figures to send are exact, never truncated to 6 places (review kit round 1, finding 1)', () => {
+  // A real trade: atomicForFiat floors to the atomic unit, so the amount has 12 places.
+  const ODD = 610_529_733_574n;
+  const ODD_DEAL = { ...TAKER_DEAL, takeAmountAtomic: ODD };
+  const odd: TradeView = { ...base, amountAtomic: String(ODD), funding: { ...base.funding!, sellerFundsAtomic: String(ODD) } };
+  const desktop = () => vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (X11; Linux x86_64)', maxTouchPoints: 0 });
+  const phone = () => vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+  const buttons = (host: HTMLElement) => [...host.querySelectorAll('button')];
+  const shownSend = (host: HTMLElement) => host.querySelector('.x2f-fund-exact .x2f-mono')!.textContent!.replace(/ XMR$/, '');
+  const copyAmount = async (host: HTMLElement): Promise<string[]> => {
+    const copied: string[] = [];
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: async (t: string) => void copied.push(t) } });
+    await act(async () => buttons(host).find((b) => b.textContent === 'Copy amount')!.click());
+    await flush();
+    return copied;
+  };
+
+  it('desktop: "Send exactly this amount: 0.610529733574 XMR", the same figure the copy, QR and link carry', async () => {
+    desktop();
+    current = odd;
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL }));
+    const host = await room();
+    expect(host.textContent).toContain('Send exactly this amount: 0.610529733574 XMR');
+    expect(host.textContent).not.toContain('0.610529 XMR');
+    expect(host.querySelector('[data-qr] path')!.getAttribute('d')).toBe(qrPath(moneroUri(ADDRESS, ODD)).d);
+    const copied = await copyAmount(host);
+    expect(copied).toEqual(['0.610529733574']);
+    expect(shownSend(host)).toBe(copied[0]);
+  });
+
+  it('"You send to escrow" shows the exact amount; the fee line stays at 6 places', async () => {
+    current = odd;
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL }));
+    let host = await room();
+    expect(host.querySelector('.x2f-trade-quote__head .x2f-amount')?.textContent).toBe('0.610529733574 XMR');
+    const plan = escrowPlan({ amountAtomic: ODD, poster: 'seller' });
+    current = { ...odd, poster: 'seller', fee: { atomic: String(plan.feeAtomic) }, funding: { ...odd.funding!, sellerFundsAtomic: String(plan.sellerFundsAtomic) } };
+    setTradeEscrowHook(() => verified({ deal: { ...ODD_DEAL, poster: 'seller' } }));
+    host = await room();
+    expect(host.querySelector('.x2f-trade-quote__head .x2f-amount')?.textContent).toBe(`${formatXmrExact(plan.sellerFundsAtomic)} XMR`);
+    expect(formatXmrExact(plan.sellerFundsAtomic)).toBe('0.616635030909');
+    expect(host.textContent).toContain('Includes X2F fee (1%, your ad)0.006105 XMR');
+  });
+
+  it('short by less than 0.000001: the rest is shown in full, never "Send the rest: 0.000000 XMR"', async () => {
+    desktop();
+    current = { ...odd, receivedAtomic: '610529000000' };
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: 610_529_000_000n }));
+    const host = await room();
+    expect(host.textContent).toContain('Received 0.610529 of 0.610529733574 XMR, send the rest');
+    expect(host.textContent).toContain('Send the rest: 0.000000733574 XMR');
+    expect(host.textContent).not.toContain('0.000000 XMR');
+    expect(host.querySelector('[data-qr] path')!.getAttribute('d')).toBe(qrPath(moneroUri(ADDRESS, 733_574n)).d);
+    const copied = await copyAmount(host);
+    expect(copied).toEqual(['0.000000733574']);
+    expect(shownSend(host)).toBe(copied[0]);
+  });
+
+  it('a received amount with digits past the 6th: "Received" is exact too, so the two figures never read the same', async () => {
+    desktop();
+    current = { ...odd, receivedAtomic: '610529700000' };
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: 610_529_700_000n }));
+    const host = await room();
+    expect(host.textContent).toContain('Received 0.6105297 of 0.610529733574 XMR, send the rest');
+    expect(host.textContent).toContain('Send the rest: 0.000000033574 XMR');
+  });
+
+  it('the rest with no device reading yet (address only) is exact too', async () => {
+    current = { ...odd, receivedAtomic: '610529000000' };
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: null }));
+    const host = await room();
+    expect(host.textContent).toContain('Send the rest: 0.000000733574 XMR');
+  });
+
+  it('phone: the wallet hint names the exact amount the link fills in', async () => {
+    phone();
+    current = { ...odd, receivedAtomic: '610529000000' };
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: 610_529_000_000n }));
+    const host = await room();
+    expect(host.textContent).toContain('the escrow address and 0.000000733574 XMR filled in');
+    expect(host.querySelector('[data-wallet-link]')?.getAttribute('href')).toBe(moneroUri(ADDRESS, 733_574n));
+  });
+
+  it('an aligned amount: the shown figure and the copied one are the same amount', async () => {
+    desktop();
+    const host = await room();
+    expect(shownSend(host)).toBe('1.250000');
+    const copied = await copyAmount(host);
+    expect(copied).toEqual(['1.25']);
+    expect(Number(shownSend(host))).toBe(Number(copied[0]));
+  });
+});
+
 describe('review 2026-10-27 minors', () => {
   const phone = () => vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
 
@@ -666,6 +770,88 @@ describe('the buyer before funding', () => {
     expect(host.textContent).toContain('Waiting for satoshi_ghost to fund');
     expect(host.textContent).toContain('$412.50 USD');
     noFundingTraces(host);
+  });
+});
+
+describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', () => {
+  const buyerView = (over: Partial<TradeView> = {}): TradeView => ({
+    ...base,
+    role: 'buyer',
+    funding: null,
+    counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' },
+    ...over,
+  });
+  const button = (host: HTMLElement, label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent === label);
+
+  it('offers Chat and Cancel trade at once, and says what happens if the time runs out', async () => {
+    current = buyerView();
+    const host = await room();
+    expect(button(host, 'Chat')).toBeDefined();
+    expect(button(host, 'Cancel trade')).toBeDefined();
+    expect(host.textContent).toContain('If satoshi_ghost doesn\'t fund it in time, the trade is cancelled. You can cancel at any time before then.');
+  });
+
+  it('Cancel trade asks once ("Cancelling is likely final"; nothing funded yet: nothing needs refunding), then posts buyer-cancel with no escrow step', async () => {
+    current = buyerView();
+    const buyerCancel = vi.fn(async () => undefined);
+    setTradeEscrowHook(() => verified({ buyerCancel }));
+    const host = await room();
+    await act(async () => button(host, 'Cancel trade')!.click());
+    const sheet = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
+    // Design final call (10 Nov 2026): the T-049 sheet keeps its title; before anything is in the escrow its
+    // first line is the unfunded variant, and no XMR figure is named (there is nothing to return).
+    expect(document.querySelector('[role="dialog"] h2')?.textContent).toBe('Cancelling is likely final');
+    expect(sheet.textContent).toContain('Nothing is in escrow yet, so nothing needs refunding.');
+    expect(sheet.textContent).not.toContain('in escrow is returned');
+    expect(sheet.textContent).not.toContain('1.250000');
+    expect(sheet.textContent).toContain("Be sure before you cancel. Don't send any money after you cancel.");
+    const confirm = [...sheet.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!;
+    await act(async () => confirm.click());
+    await flush();
+    expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'buyer-cancel' } }]);
+    expect(buyerCancel).not.toHaveBeenCalled();
+  });
+
+  it('with coins already in the escrow, the cancel also starts the refund on this device', async () => {
+    current = buyerView({ receivedAtomic: '600000000000' });
+    const buyerCancel = vi.fn(async () => undefined);
+    setTradeEscrowHook(() => verified({ buyerCancel }));
+    const host = await room();
+    await act(async () => button(host, 'Cancel trade')!.click());
+    const sheet = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
+    // Lead, batch 4: the escrow-held figure (0.6 XMR received so far), trade-copy's T-049 wording; design
+    // final call 10 Nov keeps it once anything is held.
+    expect(sheet.textContent).toContain('The 0.600000 XMR in escrow is returned and this trade closes.');
+    expect(sheet.textContent).not.toContain('Nothing is in escrow yet');
+    await act(async () => [...sheet.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!.click());
+    await flush();
+    expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'buyer-cancel' } }]);
+    expect(buyerCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('once the time to fund is over, the screen says the trade is being cancelled (the server cancels it)', async () => {
+    current = buyerView({ serverNow: '2026-10-25T11:40:05.000Z' });
+    const host = await room();
+    expect(host.querySelector('[data-fund-over]')?.textContent).toBe("The time to fund ran out. The seller didn't fund the escrow in time, so X2F is cancelling this trade. Don't send any money.");
+    expect(button(host, 'Cancel trade')).toBeUndefined();
+  });
+
+  it('after the server cancelled it (lapsed): a neutral Cancelled chip and why, with Chat gone', async () => {
+    current = buyerView({ state: 'lapsed', closedAt: '2026-10-25T11:40:30.000Z', serverNow: '2026-10-25T11:41:00.000Z' });
+    const host = await room();
+    expect(host.querySelector('.x2f-chip')?.getAttribute('data-tone')).toBe('neutral');
+    expect(host.querySelector('.x2f-chip')?.textContent).toBe('Cancelled');
+    expect(host.textContent).toContain('The time to fund ran out');
+    expect(host.textContent).toContain("The seller didn't fund the escrow in time, so X2F cancelled this trade. You don't need to do anything.");
+    expect(button(host, 'Cancel trade')).toBeUndefined();
+  });
+
+  it('a trade cancelled before funding: "This trade is cancelled", neutral chip', async () => {
+    current = buyerView({ state: 'cancelled', closedAt: '2026-10-25T11:20:00.000Z' });
+    const host = await room();
+    expect(host.querySelector('.x2f-chip')?.textContent).toBe('Cancelled');
+    expect(host.textContent).toContain('This trade is cancelled');
+    expect(host.textContent).toContain('Nothing was funded, so nothing needs to go back.');
   });
 });
 

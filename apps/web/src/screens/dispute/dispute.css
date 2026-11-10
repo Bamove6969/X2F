@@ -75,10 +75,11 @@
 }
 .dispute-title {
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
   overflow-wrap: anywhere;
 }
 .dispute-lead,
@@ -407,20 +408,26 @@
   padding: 12px;
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  border: 1px solid var(--x2f-moderator);
+  border: 1px solid var(--x2f-mod);
   font-size: 14px;
   line-height: 20px;
 }
 .dispute-joined > svg {
   flex-shrink: 0;
-  color: var(--x2f-moderator);
+  color: var(--x2f-mod);
 }
 .dispute-joined .dispute-muted {
   font-size: 14px;
   line-height: 20px;
 }
+/* D-069: the cooperate line under the read-access line, in ink (not muted, not danger). */
+.dispute-cooperate {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink);
+}
 .dispute-mod-name {
-  color: var(--x2f-moderator);
+  color: var(--x2f-mod);
   font-weight: 600;
 }
 .dispute-see-ruling,
@@ -482,7 +489,7 @@
   padding: var(--x2f-space-4);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  border: 1px solid var(--x2f-moderator);
+  border: 1px solid var(--x2f-mod);
 }
 .dispute-row-between {
   display: flex;

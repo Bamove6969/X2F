@@ -46,8 +46,8 @@ describe('team calls', () => {
     await api.teamAudit();
     await api.teamAudit({ member: 'id1', from: '2026-10-01T00:00:00.000Z' });
     await api.readInvite({ invite: 'code' });
-    await api.joinStart({ invite: 'code', loginName: 'aurora1', publicKey: 'KEY' });
-    await api.joinFinish({ challengeId: 'c', code: '123' });
+    await api.joinStart({ invite: 'code', loginName: 'aurora1', publicKey: 'KEY', acceptedTerms: '2026-10-17' });
+    await api.joinFinish({ challengeId: 'c', code: '123', termsSignature: { kind: 'typed', name: 'A' } });
     await api.joinSecondPgpStart({ setupId: 's', publicKey: 'KEY2' });
     await api.joinSecondPgpFinish({ setupId: 's', challengeId: 'c2', code: '456', deviceLabel: 'Phone' });
     await api.joinSecondWebAuthnStart({ setupId: 's', kind: 'security-key' });
@@ -69,6 +69,8 @@ describe('team calls', () => {
     expect(bodyOf(sent[2]!)).toEqual({ roles: ['offers'], confirmToken: 't2' });
     // The confirm token goes in the body, never the URL (R17).
     expect(bodyOf(sent[3]!)).toEqual({ confirmToken: 't3' });
+    // Owner 9 Nov 2026 (p11-14): the member's signature goes with the join finish.
+    expect(bodyOf(sent[8]!)).toEqual({ challengeId: 'c', code: '123', termsSignature: { kind: 'typed', name: 'A' } });
   });
 });
 

@@ -1,12 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { DEFAULT_IDLE_HOURS, type AccountKind, type IdleHours } from '@x2f/accounts';
+import { UNCHOSEN_SESSION_HOURS, type AccountKind } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import type { EventBus } from '../events/bus.js';
 import { ApiError } from '../errors.js';
-import { hasRole, type MemberAccess, type TeamRole } from '../team/perms.js';
+import { hasAbility } from '../team/abilities.js';
+import type { MemberAccess } from '../team/perms.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
 import type { LoginStrength } from './strength.js';
 
@@ -61,7 +62,11 @@ export interface AuthContext {
   kind: AccountKind;
   level: SessionLevel;
   onboardingUntil: Date | null;
-  /** When the session expires if nothing touches it again (the stored deadline or the idle rule, whichever is sooner). */
+  /**
+   * When the session ends: a full trader session at the end of its chosen length (session length,
+   * owner 2 Nov 2026); other sessions if nothing touches them again (the stored deadline or the
+   * idle rule, whichever is sooner).
+   */
   expiresAt: Date;
   /**
    * Plan 2 Task 18: the team member acting, or null for the account owner. A member's session
@@ -69,8 +74,8 @@ export interface AuthContext {
    * to it; only routes that pass `member` to `requireSession` let it through.
    */
   memberId: string | null;
-  /** The member's roles (empty for the account owner, who has every permission). */
-  memberRoles: readonly TeamRole[];
+  /** The member's ticked boxes (team/abilities.ts; empty for the account owner, who has every permission). */
+  memberAbilities: readonly string[];
   /** The member's name as the chat label shows it; null for the account owner. */
   memberName: string | null;
 }
@@ -86,17 +91,20 @@ declare module 'fastify' {
 export const STAFF_IDLE_HOURS = 2;
 
 /**
- * Idle and absolute lifetimes: traders their chosen logout timer (`idleHours`, 2-12 hours,
- * default 12; owner, 2026-10-23) / 30 d; staff and owner a fixed 2 h / 12 h whatever the account
- * stores; recovery 25 h / 48 h.
+ * How long the browser keeps a full trader session's cookie. The server ends the session at its
+ * chosen length; each "Stay logged in" sets the cookie again, so a session with no fixed maximum
+ * keeps its cookie.
  */
-export function sessionPolicy(
-  kind: AccountKind,
-  level: SessionLevel,
-  idleHours: IdleHours = DEFAULT_IDLE_HOURS,
-): { idleMs: number; absoluteMs: number } {
+export const TRADER_COOKIE_MS = 30 * DAY;
+
+/**
+ * Idle and absolute lifetimes: staff and owner a fixed 2 h / 12 h; recovery 25 h / 48 h. A full
+ * trader session has neither (null): it lasts the length chosen at login (`expires_at`), extended
+ * only by "Stay logged in?" with a login method, and has no fixed maximum (owner, 2 Nov 2026).
+ */
+export function sessionPolicy(kind: AccountKind, level: SessionLevel): { idleMs: number; absoluteMs: number } | null {
   if (level === 'recovery') return { idleMs: 25 * HOUR, absoluteMs: 48 * HOUR };
-  if (kind === 'trader') return { idleMs: idleHours * HOUR, absoluteMs: 30 * DAY };
+  if (kind === 'trader') return null;
   return { idleMs: STAFF_IDLE_HOURS * HOUR, absoluteMs: 12 * HOUR };
 }
 
@@ -105,6 +113,31 @@ const tokenHash = (token: string): Buffer => createHash('sha256').update(token).
 function presentedToken(req: FastifyRequest): string | null {
   const v = req.cookies?.[realmOf(req).cookie];
   return typeof v === 'string' && TOKEN.test(v) ? v : null;
+}
+
+/**
+ * Review S-m1: "Stay logged in" gives the session a new token, inside the extend's transaction
+ * (`db` a client after `begin`, the account locked by `requireLiveSessionInTx`). The token before
+ * it is kept as `prev_token_hash` until `oldEnd`, the end the session had before this extend: a tab
+ * whose request still carries it (sent before the new cookie arrived) is not logged out by the swap,
+ * and a copied cookie dies at that old end instead of riding every extend. A token older than that
+ * is dropped at once. Returns `after`, which sets the new cookie (fresh `TRADER_COOKIE_MS`
+ * lifetime); the caller runs it once the transaction has committed. The session id is unchanged, so
+ * its streams, confirm tokens and device row go on.
+ */
+export async function rotateSessionToken(
+  db: Queryable,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  sessionId: string,
+  oldEnd: Date,
+): Promise<() => void> {
+  const token = randomBytes(32).toString('base64url');
+  await db.query(
+    'update sessions set prev_token_hash = token_hash, prev_token_until = $3, token_hash = $2 where id = $1',
+    [sessionId, tokenHash(token), oldEnd],
+  );
+  return () => void reply.setCookie(realmOf(req).cookie, token, { ...COOKIE_ATTRS, maxAge: Math.floor(TRADER_COOKIE_MS / 1000) });
 }
 
 /** The hash of the well-formed session cookie this request carries, else null (Task 16's device count). */
@@ -135,8 +168,8 @@ export interface NewSession {
   firstSession: boolean;
   holdUntil?: Date;
   /**
-   * Task 17: how strong the login was (`loginStrength`). Default: a passkey or security key alone
-   * is strong; anything else single waits (`pgp-single` for a PGP key, else `weak-single`). A
+   * Task 17: how strong the login was (`loginStrength`). Default: a passkey, security key or (Q81,
+   * owner 6 Nov 2026) PGP key alone is strong; anything else single waits (`weak-single`). A
    * password with its TOTP code passes 'strong'.
    */
   strength?: LoginStrength;
@@ -159,7 +192,7 @@ export async function openSession(
   a: NewSession,
 ): Promise<{ sessionId: string; after: () => void }> {
   const strength: LoginStrength =
-    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' ? 'strong' : a.method === 'pgp' ? 'pgp-single' : 'weak-single');
+    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' || a.method === 'pgp' ? 'strong' : 'weak-single');
   const now = deps.clock();
   const token = randomBytes(32).toString('base64url');
   const label = cleanLabel(a.deviceLabel);
@@ -168,7 +201,7 @@ export async function openSession(
   const presented = presentedToken(req);
   const realm = realmOf(req);
 
-  const acct = await db.query<{ kind: AccountKind; idle_hours: IdleHours }>('select kind, idle_hours from accounts where id = $1', [a.accountId]);
+  const acct = await db.query<{ kind: AccountKind }>('select kind from accounts where id = $1', [a.accountId]);
   let row = acct.rows[0];
   if (!row) throw new ApiError(401, 'not-authenticated');
   /** Set for a team member's login (Plan 2 Task 18). */
@@ -178,8 +211,17 @@ export async function openSession(
   // that runs at the same time wait, so it then ends this session too.
   if (row.kind === 'member') {
     if (a.level !== 'full') throw new ApiError(401, 'not-authenticated');
-    const tm = await db.query<{ id: string; account_id: string; display_name: string; kind: AccountKind; idle_hours: IdleHours; disabled_at: Date | null }>(
-      `select tm.id, tm.account_id, tm.display_name, t.kind, t.idle_hours, t.disabled_at
+    // Hold model v3: the team account's lock first (the order of every account write; a
+    // recovery-code login logs the team out under it), then no member logs in while the team
+    // account is held (403 `recovery-hold`).
+    const team = await db.query<{ account_id: string }>('select account_id from team_members where member_account_id = $1', [a.accountId]);
+    if (team.rows[0]) {
+      await db.query('select 1 from accounts where id = $1 for no key update', [team.rows[0].account_id]);
+      const held = await db.query<{ hold_until: Date }>('select hold_until from account_holds where account_id = $1 and hold_until > $2', [team.rows[0].account_id, now]);
+      if (held.rows[0]) throw new ApiError(403, 'recovery-hold', { holdUntil: held.rows[0].hold_until.toISOString() });
+    }
+    const tm = await db.query<{ id: string; account_id: string; display_name: string; kind: AccountKind; disabled_at: Date | null }>(
+      `select tm.id, tm.account_id, tm.display_name, t.kind, t.disabled_at
          from team_members tm join accounts t on t.id = tm.account_id
         where tm.member_account_id = $1 and tm.removed_at is null and tm.joined_at is not null
         for share of tm`,
@@ -189,22 +231,23 @@ export async function openSession(
     if (!m || m.kind !== 'trader') throw new ApiError(403, 'account-disabled');
     if (m.disabled_at !== null) throw new ApiError(403, 'account-disabled');
     member = { id: m.id, teamId: m.account_id, name: m.display_name };
-    row = { kind: m.kind, idle_hours: m.idle_hours };
+    row = { kind: m.kind };
   }
-  const policy = sessionPolicy(row.kind, a.level, row.idle_hours);
-  const expiresAt = deadline(now, now, policy);
+  const policy = sessionPolicy(row.kind, a.level);
+  // A full trader session lasts the shortest choice until its person picks a length (`setSessionLength`).
+  const expiresAt = policy ? deadline(now, now, policy) : new Date(now.getTime() + UNCHOSEN_SESSION_HOURS * HOUR);
   /** The session this browser's cookie named, revoked by this login (its streams end too). */
   let replaced: { id: string; account_id: string } | null = null;
   if (presented) {
     const old = await db.query<{ id: string; account_id: string }>(
-      'update sessions set revoked_at = $2 where token_hash = $1 and app = $3 and revoked_at is null returning id, account_id',
+      'update sessions set revoked_at = $2 where (token_hash = $1 or prev_token_hash = $1) and app = $3 and revoked_at is null returning id, account_id',
       [tokenHash(presented), now, realm.app],
     );
     replaced = old.rows[0] ?? null;
   }
   const { rows } = await db.query<{ id: string }>(
-    `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until, strength, member_id, app)
-     values ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11) returning id`,
+    `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, period_started_at, expires_at, hold_until, strength, member_id, app)
+     values ($1, $2, $3, $4, $5, $6, $6, $6, $7, $8, $9, $10, $11) returning id`,
     [
       member ? member.teamId : a.accountId, tokenHash(token), a.level, label,
       // A member's session never gets the sign-up window (its exemptions are the account owner's).
@@ -218,6 +261,9 @@ export async function openSession(
     ],
   );
   const sessionId = rows[0]!.id;
+  // Owner answer Q77 (6 Nov 2026): a vendor account not logged into for 60 days closes
+  // (accountInactivity.ts). Every login counts; a member's login counts for the team account.
+  await db.query('update accounts set last_login_at = $2 where id = $1', [member ? member.teamId : a.accountId, now]);
   // A member's device is trusted for the member's own login only, never for the account owner's.
   if (device) await trustDevice({ db, clock: deps.clock }, a.accountId, device);
   if (member) {
@@ -237,7 +283,7 @@ export async function openSession(
     // Task 17 (owner, 2026-10-29): every new login is pushed to the account's other devices. A
     // member's login is an alert to the account owner instead (Task 18).
     if (!a.firstSession && !member) void req.server.push.send(a.accountId, 'new-login', { exceptSession: sessionId }).catch(() => undefined);
-    void reply.setCookie(realm.cookie, token, { ...COOKIE_ATTRS, maxAge: Math.floor(policy.absoluteMs / 1000) });
+    void reply.setCookie(realm.cookie, token, { ...COOKIE_ATTRS, maxAge: Math.floor((policy ? policy.absoluteMs : TRADER_COOKIE_MS) / 1000) });
   };
   return { sessionId, after };
 }
@@ -277,16 +323,18 @@ interface SessionRow {
   expires_at: Date;
   revoked_at: Date | null;
   kind: AccountKind;
-  idle_hours: IdleHours;
   disabled_at: Date | null;
   terms_version: string | null;
   hold_until: Date | null;
   member_id: string | null;
   member_live: boolean | null;
-  member_roles: TeamRole[] | null;
+  member_abilities: string[] | null;
   member_name: string | null;
   member_disabled: boolean | null;
+  member_terms_version: string | null;
   app: SessionRealm['app'];
+  /** Set when the request carried the token before the last extend (review S-m1): its own end. */
+  prev_until: Date | null;
 }
 
 /** Marks the preHandlers `requireSession` returns, so the app can list the routes that run with a session. */
@@ -294,7 +342,7 @@ const SESSION_HOOK = Symbol('requireSession');
 
 /**
  * preHandler for routes that need a logged-in account. Defaults to full sessions of any kind.
- * 401 `not-authenticated` (missing, revoked, idle- or absolute-expired); 403 `account-disabled`
+ * 401 `not-authenticated` (missing, revoked, past its chosen length, idle- or absolute-expired); 403 `account-disabled`
  * (checked on every request); 403 `recovery-session` unless `allowRecovery`; 403
  * `wrong-account-kind` when `kinds` excludes the account; 403 `terms-required` `{ version }` for a
  * trader on a stale Terms version unless `allowStaleTerms` (R10: only logout, me, terms, methods
@@ -302,7 +350,7 @@ const SESSION_HOOK = Symbol('requireSession');
  * shut offers off or read my own: `GET /v1/account/offers`, `POST /v1/account/offers/status`
  * (turning on still checks the Terms) and `PATCH /v1/offers/:id` (relisting still checks them)). Touches `last_seen_at` (and moves `expires_at`) unless `touch: false`:
  * a long-lived or self-reconnecting request such as `GET /v1/events` must never count as activity,
- * or an open tab would keep an idle session alive past its logout timer (review 2026-10-27, I1).
+ * or an open tab would keep an idle staff session alive past its idle time (review 2026-10-27, I1).
  *
  * The 24-hour hold of a TOTP backup login fails closed (Task 9, P2-I1): a recovery session whose
  * `hold_until` is still ahead gets 403 `recovery-hold` `{ holdUntil }` on every recovery-allowed
@@ -326,7 +374,8 @@ export function requireSession(
     /**
      * Plan 2 Task 18: which team members may pass. Left out, a member's session gets 403
      * `owner-only` (fail closed: a route is the account owner's until it says otherwise); `any`
-     * lets every member through; a role lets through members holding it (others 403 `forbidden`).
+     * lets every member through; an ability (or a list: any one of them) lets through members
+     * holding it (others 403 `forbidden`). Job 1c: team/abilities.ts.
      */
     member?: MemberAccess;
   } = {},
@@ -337,29 +386,34 @@ export function requireSession(
     if (!token) throw new ApiError(401, 'not-authenticated');
     const { rows } = await deps.db.query<SessionRow>(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
-              s.hold_until, a.kind, a.idle_hours, a.disabled_at, a.terms_version, s.member_id,
+              s.hold_until, a.kind, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
-              tm.roles as member_roles, tm.display_name as member_name, ma.disabled_at is not null as member_disabled, s.app
+              tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
+              ma.terms_version as member_terms_version, s.app,
+              case when s.token_hash = $1 then null else s.prev_token_until end as prev_until
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
          left join accounts ma on ma.id = tm.member_account_id
-        where s.token_hash = $1`,
+        where s.token_hash = $1 or s.prev_token_hash = $1`,
       [tokenHash(token)],
     );
-    const row = rows[0];
+    const found = rows[0];
     const now = deps.clock();
-    if (!row || row.revoked_at !== null) throw new ApiError(401, 'not-authenticated');
+    if (!found || found.revoked_at !== null) throw new ApiError(401, 'not-authenticated');
+    // Review S-m1: the token before the last extend lasts to the end it had then, never longer
+    // than the session itself (a later shortening or expiry ends it too).
+    const row: SessionRow =
+      found.prev_until !== null && found.prev_until.getTime() < found.expires_at.getTime() ? { ...found, expires_at: found.prev_until } : found;
     // Plan 4 Task 4: only this app's sessions (a staff session on the trader API, or the reverse).
     if (row.app !== realmOf(req).app) throw new ApiError(401, 'not-authenticated');
     // Task 18 review M9(c): a member's sessions are rows of the team account (`startSession`); a
     // session of a member login account itself is never valid, whatever inserted it.
     if (row.kind === 'member') throw new ApiError(401, 'not-authenticated');
-    // The account's current logout timer: a change applies to every live session at its next request.
-    const policy = sessionPolicy(row.kind, row.level, row.idle_hours);
+    const policy = sessionPolicy(row.kind, row.level);
     if (
       now.getTime() >= row.expires_at.getTime() ||
-      now.getTime() - row.last_seen_at.getTime() >= policy.idleMs ||
-      now.getTime() - row.created_at.getTime() >= policy.absoluteMs
+      (policy !== null &&
+        (now.getTime() - row.last_seen_at.getTime() >= policy.idleMs || now.getTime() - row.created_at.getTime() >= policy.absoluteMs))
     ) {
       throw new ApiError(401, 'not-authenticated');
     }
@@ -368,33 +422,29 @@ export function requireSession(
     if (row.disabled_at !== null || row.member_disabled === true) throw new ApiError(403, 'account-disabled');
     if (row.member_id !== null) {
       if (opts.member === undefined) throw new ApiError(403, 'owner-only');
-      if (!hasRole(row.member_roles ?? [], opts.member)) throw new ApiError(403, 'forbidden');
+      if (!hasAbility(row.member_abilities ?? [], opts.member)) throw new ApiError(403, 'forbidden');
     }
     if (row.level === 'recovery' && !opts.allowRecovery) throw new ApiError(403, 'recovery-session');
     if (row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime() && !opts.allowHeld) {
       throw new ApiError(403, 'recovery-hold', { holdUntil: row.hold_until.toISOString() });
     }
     if (opts.kinds && !opts.kinds.includes(row.kind)) throw new ApiError(403, 'wrong-account-kind');
-    if (row.kind === 'trader' && row.terms_version !== deps.config.termsVersion && !opts.allowStaleTerms) {
+    // Review 2026-11-08 F1 (the front door: nobody gets in without signing the agreement): a team
+    // member must have accepted the current Terms on their own login account too; the team
+    // account's acceptance is the account owner's and never stands in for theirs.
+    if (
+      row.kind === 'trader' && !opts.allowStaleTerms &&
+      (row.terms_version !== deps.config.termsVersion || (row.member_id !== null && row.member_terms_version !== deps.config.termsVersion))
+    ) {
       throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
     }
-    // expires_at is the idle deadline capped by the absolute one (created_at + absolute), so
-    // purgeExpired removes idle sessions too.
+    // For staff, owner and recovery sessions expires_at is the idle deadline capped by the absolute
+    // one (created_at + absolute), so purgeExpired removes idle sessions too. A full trader
+    // session's end is its chosen length: a touch records the activity and never moves it.
     if (opts.touch === false) {
       // Read-only check: the request is not the user's activity.
-    } else if (row.kind === 'trader' && row.level === 'full') {
-      // The logout timer can change while this request runs (PUT /v1/account/security/logout-timer
-      // moves every session's deadline in its transaction). The idle hours are read again here,
-      // under a share lock, so this touch never writes back a deadline from the timer read above:
-      // a share lock waits for a pending change and then sees the committed value.
-      await deps.db.query(
-        `update sessions s
-            set last_seen_at = $2,
-                expires_at = least($3::timestamptz,
-                  $2::timestamptz + (select a.idle_hours from accounts a where a.id = s.account_id for share) * interval '1 hour')
-          where s.id = $1 and s.last_seen_at < $2`,
-        [row.id, now, new Date(row.created_at.getTime() + policy.absoluteMs)],
-      );
+    } else if (policy === null) {
+      await deps.db.query('update sessions set last_seen_at = $2 where id = $1 and last_seen_at < $2', [row.id, now]);
     } else {
       await deps.db.query(
         'update sessions set last_seen_at = $2, expires_at = $3 where id = $1 and last_seen_at < $2',
@@ -407,17 +457,29 @@ export function requireSession(
       kind: row.kind,
       level: row.level,
       onboardingUntil: row.onboarding_until,
-      // The deadline as the row had it (an untouched request did not move it); the idle rule above
-      // may be stricter than the stored deadline after a logout-timer change, so take the earlier.
-      expiresAt: new Date(Math.min(row.expires_at.getTime(), row.last_seen_at.getTime() + policy.idleMs)),
+      // The deadline as the row had it (an untouched request did not move it).
+      expiresAt: policy === null ? row.expires_at : new Date(Math.min(row.expires_at.getTime(), row.last_seen_at.getTime() + policy.idleMs)),
       memberId: row.member_id,
-      memberRoles: row.member_id !== null ? (row.member_roles ?? []) : [],
+      memberAbilities: row.member_id !== null ? (row.member_abilities ?? []) : [],
       memberName: row.member_id !== null ? row.member_name : null,
     };
   };
   (handler as unknown as Record<symbol, true>)[SESSION_HOOK] = true;
   if (opts.member !== undefined) MEMBER_GUARDS.set(handler, opts.member);
   return handler;
+}
+
+/**
+ * The person behind a session: the account itself, or for a team member's session (a session of the
+ * team account, Task 18) the member's own login account. Their login methods and personal settings
+ * (the idle reminder) live there. 401 `not-authenticated` when the member row is gone.
+ */
+export async function personAccountId(db: Queryable, auth: { accountId: string; memberId: string | null }): Promise<string> {
+  if (auth.memberId === null) return auth.accountId;
+  const { rows } = await db.query<{ member_account_id: string | null }>('select member_account_id from team_members where id = $1', [auth.memberId]);
+  const id = rows[0]?.member_account_id;
+  if (!id) throw new ApiError(401, 'not-authenticated');
+  return id;
 }
 
 /** True when a route's preHandler (one hook or a list) includes `requireSession`. */
@@ -499,7 +561,7 @@ export function logoutRoute(app: FastifyInstance, url = '/v1/logout', config: Re
     if (token) {
       const { db, clock } = req.server.deps;
       const r = await db.query<{ id: string; account_id: string }>(
-        'update sessions set revoked_at = $2 where token_hash = $1 and app = $3 and revoked_at is null returning id, account_id',
+        'update sessions set revoked_at = $2 where (token_hash = $1 or prev_token_hash = $1) and app = $3 and revoked_at is null returning id, account_id',
         [tokenHash(token), clock(), realmOf(req).app],
       );
       for (const row of r.rows) req.server.events.closeSession(row.account_id, row.id);

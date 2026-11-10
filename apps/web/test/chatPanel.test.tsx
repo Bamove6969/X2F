@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CHAT_NOTICE, ChatPanel, OfferChatPanel, OTHER_DEVICE, TradeChatPanel } from '../src/chat/ChatPanel.js';
+import { CHAT_NOTICE, ChatPanel, MISSING_LINE, OfferChatPanel, OTHER_DEVICE, TradeChatPanel } from '../src/chat/ChatPanel.js';
 import { ChatFailed, setChatClient, type ChatClient, type ChatSnapshot } from '../src/chat/client.js';
 import { emitChatLive } from '../src/chat/live.js';
 import { render } from './render.js';
@@ -15,13 +15,14 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
   role: 'buyer',
   counterparty: 'Sam',
   disputeOpen: false,
+  paySecured: true,
   lines: [],
   more: false,
   ...over,
 });
 
 let current: ChatSnapshot;
-let client: { sync: ReturnType<typeof vi.fn<ChatClient['sync']>>; send: ReturnType<typeof vi.fn<ChatClient['send']>> };
+let client: { sync: ReturnType<typeof vi.fn<ChatClient['sync']>>; send: ReturnType<typeof vi.fn<ChatClient['send']>>; sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>> };
 
 const flush = async (): Promise<void> => {
   await act(async () => {
@@ -31,7 +32,7 @@ const flush = async (): Promise<void> => {
 
 beforeEach(() => {
   current = snap();
-  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current) };
+  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current) };
   setChatClient(client);
 });
 
@@ -76,12 +77,27 @@ describe('ChatPanel', () => {
     const items = [...host.querySelectorAll('li')].map((li) => li.textContent);
     expect(items).toEqual(['You: Sent', 'Sam: Not yet', 'A message is missing here.', 'Sam: Got it', 'X2F Moderator: Moderator here']);
     expect(host.querySelector('[data-from="seller"] [data-username]')?.textContent).toBe('Sam');
-    expect(host.querySelector('[data-from="mod"] .x2f-moderator-badge')).not.toBeNull();
-    expect(host.querySelectorAll('.x2f-moderator-badge')).toHaveLength(1);
+    expect(host.querySelector('[data-from="mod"] .x2f-tag[data-role="mod"]')).not.toBeNull();
+    expect(host.querySelectorAll('.x2f-tag[data-role="mod"]')).toHaveLength(1);
     // The room shows its own dispute notices.
     expect(host.querySelector('[data-system="dispute"]')).toBeNull();
     // The panel never adds a second primary action to the screen it sits in.
     expect(host.querySelector('[data-primary]')).toBeNull();
+  });
+
+  it('review I2: a line the server no longer serves stays in place as a note with its sender and time, never as its text', async () => {
+    current = snap({
+      lines: [
+        { id: '1', from: 'seller', text: '', at: '2026-11-06T15:00:00.000Z', mine: false, gapBefore: false, missing: true },
+        { id: '2', from: 'buyer', text: 'Paid', at: null, mine: true, gapBefore: false },
+      ],
+    });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    const items = [...host.querySelectorAll('li')].map((li) => li.textContent);
+    expect(items).toEqual([`Sam: ${MISSING_LINE} Sent 6 Nov 2026, 15:00 UTC.`, 'You: Paid']);
+    expect(host.querySelector('li[data-missing] time')?.getAttribute('dateTime')).toBe('2026-11-06T15:00:00.000Z');
+    expect(host.querySelectorAll('li[data-missing]')).toHaveLength(1);
   });
 
   it('outside the dispute room a moderator line reads "Moderator", with no badge, and the panel says a dispute is open', async () => {
@@ -89,12 +105,12 @@ describe('ChatPanel', () => {
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
     await flush();
     expect([...host.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Moderator: Moderator here']);
-    expect(host.querySelector('.x2f-moderator-badge')).toBeNull();
+    expect(host.querySelector('.x2f-tag[data-role="mod"]')).toBeNull();
     expect(host.querySelector('[data-system="dispute"]')?.textContent).toBe('A dispute is open. A moderator can read this conversation and write here.');
     // No moderator on the dispute record: no badge in the room either.
     const room = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: null }} />);
     await flush();
-    expect(room.host.querySelector('.x2f-moderator-badge')).toBeNull();
+    expect(room.host.querySelector('.x2f-tag[data-role="mod"]')).toBeNull();
   });
 
   it('another device of the account reads the conversation-elsewhere notice and has no composer', async () => {
@@ -262,7 +278,7 @@ describe('ChatPanel: block (Task 37)', () => {
     expect(order.map((e) => e.className || 'block')).toEqual(['x2f-chat__notice', expect.stringContaining('x2f-button'), 'x2f-chat__lines']);
     const before = client.sync.mock.calls.length;
     act(() => open!.click());
-    act(() => host.querySelector<HTMLButtonElement>('[data-part="block-confirm"]')!.click());
+    act(() => document.querySelector<HTMLButtonElement>('[data-part="block-confirm"]')!.click());
     await flush();
     expect(fetch).toHaveBeenCalledWith('/v1/account/blocks', expect.objectContaining({ method: 'POST' }));
     expect(host.querySelector('[data-part="block-done"]')?.textContent).toContain('You blocked Sam.');
@@ -322,5 +338,225 @@ describe('OfferChatPanel', () => {
     expect(popup?.textContent).toContain('This is your own offer.');
     expect(host.querySelector('textarea')).toBeNull();
     expect(client.sync).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J-08, S-090; owner p7-3)', () => {
+  const INTERAC = { methodId: 'INTERAC_E_TRANSFER' };
+  const PAY = { v: 2 as const, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
+  const TEXT = 'Payment details\nFull name: Jane Doe\nEmail: jane@example.ca';
+  const boxes = (host: HTMLElement) => host.querySelector<HTMLFormElement>('form[data-pay-boxes]');
+  const field = (host: HTMLElement, key: string) => host.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-pay-field="${key}"]`);
+  function fill(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+    act(() => {
+      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+  const submit = (form: HTMLFormElement) => act(() => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+
+  it("the seller (who receives the payment) sees the method's boxes: Interac is full name, email, phone, with email-or-phone said", async () => {
+    current = snap({ role: 'seller' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    const form = boxes(host)!;
+    expect(form).not.toBeNull();
+    expect([...form.querySelectorAll('[data-pay-field]')].map((e) => e.getAttribute('data-pay-field'))).toEqual(['name', 'email', 'phone']);
+    expect(field(host, 'email')!.getAttribute('type')).toBe('email');
+    expect(field(host, 'phone')!.getAttribute('type')).toBe('tel');
+    const labels = [...form.querySelectorAll('label')].map((l) => l.textContent);
+    expect(labels).toEqual(['Full name', 'Email', 'Mobile number']);
+    expect(form.textContent).toContain('Fill in at least one of: Email, Mobile number.');
+    // The text composer is still there, and the screen keeps one primary (none in the panel).
+    expect(host.querySelector('textarea.x2f-chat__input')).not.toBeNull();
+    expect(host.querySelector('[data-primary]')).toBeNull();
+  });
+
+  it('the buyer (who pays) gets no boxes, nor does anyone in a chat with no method (a pre-trade chat), nor while the chat is not ready', async () => {
+    current = snap({ role: 'buyer' });
+    expect(boxes(render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />).host)).toBeNull();
+    await flush();
+    current = snap({ role: 'seller' });
+    const noMethod = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    expect(boxes(noMethod.host)).toBeNull();
+    current = snap({ role: 'seller', phase: 'waiting' });
+    const waiting = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    expect(boxes(waiting.host)).toBeNull();
+  });
+
+  it('owner Q12: before the escrow is secured the boxes show but Send is closed and says why; nothing is sent', async () => {
+    current = snap({ role: 'seller', paySecured: false });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    const form = boxes(host)!;
+    expect(form).not.toBeNull();
+    const send = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(send.disabled).toBe(true);
+    const why = host.querySelector<HTMLElement>('[data-pay-block="not-secured"]')!;
+    expect(why.textContent).toBe('You can send these once the escrow is secured.');
+    expect(send.getAttribute('aria-describedby')).toBe(why.id);
+    fill(field(host, 'name')!, 'Jane Doe');
+    fill(field(host, 'email')!, 'jane@example.ca');
+    submit(form);
+    await flush();
+    expect(client.sendPay).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-pay-error]')).toBeNull();
+    // Secured (the next sync says so): Send opens, the typed boxes are kept, and the why-line goes.
+    current = snap({ role: 'seller', paySecured: true });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+    expect(host.querySelector('[data-pay-block]')).toBeNull();
+    expect(field(host, 'name')!.value).toBe('Jane Doe');
+    submit(form);
+    await flush();
+    expect(client.sendPay).toHaveBeenCalledTimes(1);
+  });
+
+  it('a gift card or cash method: the seller sees no boxes, only the nothing-to-send line (payee fields, 10 Nov 2026)', async () => {
+    current = snap({ role: 'seller' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'STEAM_GIFT_CARD' }} />);
+    await flush();
+    expect(boxes(host)).toBeNull();
+    expect(host.querySelector('[data-pay-field]')).toBeNull();
+    expect(host.querySelector('[data-pay-nothing]')?.textContent).toBe('Nothing to send: the buyer sends the card or cash details here in the chat.');
+    // The text composer stays, and the buyer sees neither.
+    expect(host.querySelector('textarea.x2f-chat__input')).not.toBeNull();
+    current = snap({ role: 'buyer' });
+    const buyer = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'F2F' }} />);
+    await flush();
+    expect(buyer.host.querySelector('[data-pay-nothing]')).toBeNull();
+  });
+
+  it('review F1: before the escrow is secured a gift card or cash seller sees neither the nothing-to-send line nor boxes', async () => {
+    current = snap({ role: 'seller', paySecured: false });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'STEAM_GIFT_CARD' }} />);
+    await flush();
+    expect(host.querySelector('[data-pay-nothing]')).toBeNull();
+    expect(boxes(host)).toBeNull();
+    expect(host.querySelector('[data-pay-field]')).toBeNull();
+    // Secured: the line comes.
+    current = snap({ role: 'seller', paySecured: true });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(host.querySelector('[data-pay-nothing]')).not.toBeNull();
+  });
+
+  it('a mailing address is a multi-line box', async () => {
+    current = snap({ role: 'seller' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'PAY_BY_MAIL' }} />);
+    await flush();
+    expect(field(host, 'address')).toBeInstanceOf(HTMLTextAreaElement);
+    expect(field(host, 'name')).toBeInstanceOf(HTMLInputElement);
+  });
+
+  it('Send packages the filled boxes through the chat client (never fetch) and clears them; the sent line is a card', async () => {
+    current = snap({ role: 'seller' });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    fill(field(host, 'name')!, ' Jane Doe ');
+    fill(field(host, 'email')!, 'jane@example.ca');
+    client.sendPay.mockResolvedValueOnce(snap({ role: 'seller', lines: [{ id: '1', from: 'seller', text: TEXT, pay: PAY, at: null, mine: true, gapBefore: false }] }));
+    submit(boxes(host)!);
+    await flush();
+    expect(client.sendPay).toHaveBeenCalledWith(CHAT, PAY);
+    expect(client.send).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(field(host, 'name')!.value).toBe('');
+    const card = host.querySelector('li[data-mine] [data-pay-card]')!;
+    expect(card.getAttribute('data-pay-card')).toBe('INTERAC_E_TRANSFER');
+    expect([...card.querySelectorAll('dt')].map((d) => d.textContent)).toEqual(['Full name', 'Email']);
+    expect([...card.querySelectorAll('dd')].map((d) => d.textContent)).toEqual(['Jane Doe', 'jane@example.ca']);
+  });
+
+  it('says which box is missing, and sends nothing, when a required box or the one-of group is empty', async () => {
+    current = snap({ role: 'seller' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    fill(field(host, 'email')!, 'jane@example.ca');
+    submit(boxes(host)!);
+    await flush();
+    expect(host.querySelector('[data-pay-error]')?.textContent).toBe('Fill in Full name.');
+    fill(field(host, 'name')!, 'Jane Doe');
+    fill(field(host, 'email')!, '');
+    submit(boxes(host)!);
+    await flush();
+    expect(host.querySelector('[data-pay-error]')?.textContent).toBe('Fill in at least one of: Email, Mobile number.');
+    expect(client.sendPay).not.toHaveBeenCalled();
+    // A refusal from the engine (hidden characters) is said too.
+    fill(field(host, 'phone')!, '+1 416 555 0100');
+    client.sendPay.mockRejectedValueOnce(new ChatFailed('bad-text'));
+    submit(boxes(host)!);
+    await flush();
+    expect(client.sendPay).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-pay-error]')?.textContent).toBe('Leave out hidden characters.');
+    expect(field(host, 'name')!.value).toBe('Jane Doe');
+  });
+
+  it('review M6 (pay details): a tab or a hidden character in an account box is refused on the page, by box, and nothing is sent', async () => {
+    current = snap({ role: 'seller' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    fill(field(host, 'name')!, 'Jane Doe');
+    fill(field(host, 'email')!, 'jane\u200d@example.ca');
+    submit(boxes(host)!);
+    await flush();
+    expect(host.querySelector('[data-pay-error]')?.textContent).toBe("Email can't have tabs or hidden characters.");
+    fill(field(host, 'email')!, '');
+    fill(field(host, 'phone')!, '+1 416\t555 0100');
+    submit(boxes(host)!);
+    await flush();
+    expect(host.querySelector('[data-pay-error]')?.textContent).toBe("Mobile number can't have tabs or hidden characters.");
+    expect(client.sendPay).not.toHaveBeenCalled();
+  });
+
+  it("review M2 (pay details): the worker's own refusal of a package before the escrow is secured (not-ready) is said as the secured line", async () => {
+    current = snap({ role: 'seller' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    fill(field(host, 'name')!, 'Jane Doe');
+    fill(field(host, 'email')!, 'jane@example.ca');
+    client.sendPay.mockRejectedValueOnce(new ChatFailed('not-ready'));
+    submit(boxes(host)!);
+    await flush();
+    expect(client.sendPay).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-pay-error]')?.textContent).toBe('You can send these once the escrow is secured.');
+    expect(field(host, 'name')!.value).toBe('Jane Doe');
+  });
+
+  it("the payer sees the seller's package as a card with the boxes, and the announcement reads its plain text", async () => {
+    current = snap({ role: 'buyer' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    current = snap({ role: 'buyer', lines: [{ id: '7', from: 'seller', text: TEXT, pay: PAY, at: null, mine: false, gapBefore: false }] });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    const line = host.querySelector('li[data-from="seller"]')!;
+    const card = line.querySelector('[data-pay-card]')!;
+    expect(card).not.toBeNull();
+    expect(card.querySelector('.x2f-chat__paycard-title')?.textContent).toBe('Payment details');
+    expect([...card.querySelectorAll('dt')].map((d) => d.textContent)).toEqual(['Full name', 'Email']);
+    expect([...card.querySelectorAll('dd')].map((d) => d.textContent)).toEqual(['Jane Doe', 'jane@example.ca']);
+    expect(line.querySelector('.x2f-chat__who')?.textContent).toBe('Sam: ');
+    expect(host.querySelector('[data-chat-announce]')?.textContent).toBe(`Sam: ${TEXT}`);
+    // The buyer never gets the boxes, even with the method known.
+    expect(boxes(host)).toBeNull();
+  });
+
+  it("review R1: the screen reader reads a package with this reader's own labels, never the line's text", async () => {
+    current = snap({ role: 'buyer' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    const spoofed = 'Payment details\nFull name: Jane Doe\nIBAN DE00999 instead of Email: jane@example.ca';
+    current = snap({ role: 'buyer', lines: [{ id: '8', from: 'seller', text: spoofed, pay: PAY, at: null, mine: false, gapBefore: false }] });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(host.querySelector('[data-chat-announce]')?.textContent).toBe(`Sam: ${TEXT}`);
+    expect(host.textContent).not.toContain('DE00999');
   });
 });

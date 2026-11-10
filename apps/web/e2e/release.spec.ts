@@ -100,7 +100,7 @@ function view(over: View = {}): View {
     payBy: '2026-10-25T11:55:00.000Z',
     paidAt: '2026-10-25T11:52:00.000Z',
     confirmBy: '2026-10-25T13:52:00.000Z',
-    finalAlertAt: null,
+    confirmWindowMin: 120,
     settleBy: null,
     pausedAt: null,
     closedAt: null,
@@ -233,10 +233,14 @@ test.describe('SellerConfirm', () => {
     await expect(page.getByRole('button', { name: /to confirm$/ })).toHaveText('1 h 52 min to confirm');
   });
 
-  test('the release warning (Task 38, board Warn-Release) comes first; the hold works only after "It\'s in my account", once per trade', async ({ page }) => {
+  test('the release warning (Task 38, board Warn-Release) opens only on "Payment received" (the hold); the release waits for "It\'s in my account", once per trade', async ({ page }) => {
     const posts = await stub(page, { trade: view() });
     await open(page, '', { warned: false });
     const warn = page.getByRole('alertdialog');
+    await expect(warn).toHaveCount(0);
+    await box(page).check();
+    await expect(warn).toHaveCount(0);
+    await holdFor(page, 1700);
     await expect(warn).toBeVisible();
     await expect(warn).toContainText('Before you release');
     await expect(warn).toContainText('Is the $412.50 really in your account?');
@@ -245,17 +249,13 @@ test.describe('SellerConfirm', () => {
     await expect(warn).toContainText("Once released, the 1.250000 XMR (about $412.50) goes to mira.k and can't be taken back.");
     await page.getByRole('button', { name: "I'll check again" }).click();
     await expect(warn).toHaveCount(0);
-    await box(page).check();
+    expect(posts).toHaveLength(0);
+    await expect(hold(page)).toBeEnabled();
+    await holdFor(page, 1700);
     await expect(warn).toBeVisible();
-    // The warning's own primary button is open over the page: the hold is the screen's.
-    await expect(page.locator('[data-screen="seller-confirm"] button[data-primary]')).toBeDisabled();
     await page.getByRole('button', { name: "It's in my account" }).click();
     await expect(warn).toHaveCount(0);
-    await expect(hold(page)).toBeEnabled();
-    expect(posts).toHaveLength(0);
-    await page.reload();
-    await expect(page.locator('[data-screen="seller-confirm"]')).toBeVisible();
-    await expect(warn).toHaveCount(0);
+    await expect.poll(() => posts.map((p) => (p.postDataJSON() as { type: string }).type)).toEqual(['release-started']);
   });
 
   test('release is locked until the box is ticked, and while the escrow is not releasable', async ({ page }) => {
@@ -362,9 +362,14 @@ test.describe('SellerConfirm', () => {
     await expect(page.getByRole('dialog', { name: 'Chat with mira.k' }).locator('#msg')).toBeVisible();
   });
 
-  test('"Payment not received" goes to the dispute screen', async ({ page }) => {
+  test('"Payment not received" says to check first before the confirm window ends, then goes to the dispute screen', async ({ page }) => {
     await stub(page, { trade: view() });
     await open(page);
+    await page.getByRole('button', { name: 'Payment not received' }).click();
+    await expect(page.locator('[data-not-received]')).toContainText("If the money still isn't there at");
+    await expect(page).toHaveURL(`${BASE}/trade/${CODE}`);
+    await stub(page, { trade: view({ confirmBy: new Date(Date.parse(NOW) - 60_000).toISOString() }) });
+    await page.reload();
     await page.getByRole('link', { name: 'Payment not received' }).click();
     await expect(page).toHaveURL(`${BASE}/trade/${CODE}/dispute`);
   });

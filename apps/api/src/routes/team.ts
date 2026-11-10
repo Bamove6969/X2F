@@ -4,23 +4,38 @@
  * The account owner's side (a full trader session of the account owner; a member gets 403
  * `owner-only` from `requireSession`, which lets no member through unless a route says so):
  * - `GET /v1/team` → `{ members, max }`.
- * - `POST /v1/team/invites { displayName, roles, confirmToken }` (confirm `team-invite`, bound to the name and roles) → 201
- *   `{ id, invite, expiresAt }`: `invite` is the one-time code, shown once.
- * - `PATCH /v1/team/members/:id { roles, confirmToken }` (confirm `team-roles`) → the member.
+ * - `POST /v1/team/invites { displayName, abilities, confirmToken }` (confirm `team-invite-abilities`,
+ *   bound to the name and the boxes) → 201 `{ id, invite, expiresAt }`: `invite` is the one-time
+ *   code, shown once. The old body `{ displayName, roles }` (confirm `team-invite`) still works: each
+ *   role ticks the boxes it allowed (`ROLE_ABILITIES`).
+ * - `PATCH /v1/team/members/:id { abilities, confirmToken }` (confirm `team-abilities`) → the member;
+ *   the old `{ roles }` (confirm `team-roles`) still works. A box the owner's hard rules keep
+ *   owner-only, an always-on one or an unknown id is 400 `bad-request` (team/abilities.ts). From a
+ *   username-and-password session either shape is staged as the same boxes (`team-abilities`).
  * - `DELETE /v1/team/members/:id { confirmToken }` (confirm `team-remove`) → 204; the member's
  *   sessions end at once.
  * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
  *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent). Owner
- *   1 Nov 2026 (landing review I1): an invite or a role change needs a strong session, at any time
- *   (403 `weak-session`, before the confirm token is spent); a removal does not.
+ *   1 Nov 2026 (landing review I1): an invite needs a strong session, at any time (403
+ *   `weak-session`, before the confirm token is spent); a removal does not. Hold model v3 (owner
+ *   2 Nov 2026): a role change by a username-and-password session is staged like the other changes of
+ *   such a session (202 `{ status: 'staged', changeId }`, applied 24 h after it is submitted;
+ *   hold.ts); inside the sign-up window it is still refused (403 `weak-session`). Owner 2 Nov 2026:
+ *   team members are for vendor accounts only, so an invite or a role change by a trader account
+ *   is 403 `not-vendor` (first, before the confirm token is spent; again under the lock).
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
+ * - `GET /v1/team/permissions` (the owner and every member) → the abilities catalogue: groups,
+ *   each box with its risk, availability, ruling and presets, the presets, and the hard rules.
  *
  * The member's side (no session; every answer gives the browser a device cookie, and every step
  * after the first is bound to the device that took it):
- * - `POST /v1/team/invite { invite }` → `{ team, displayName, roles, expiresAt }` (404 for a
- *   wrong, used or expired code).
- * - `POST /v1/team/join/start { invite, loginName, publicKey }` → a PGP challenge to the key.
- * - `POST /v1/team/join/finish { challengeId, code }` → `{ setupId, needs, setupUntil }`: the
+ * - `POST /v1/team/invite { invite }` → `{ displayName, roles, expiresAt }` (404 for a wrong, used
+ *   or expired code). It never names the team account: the vendor is named only inside the door
+ *   (review 2026-11-08 F3).
+ * - `POST /v1/team/join/start { invite, loginName, publicKey, acceptedTerms }` → a PGP challenge to
+ *   the key; 400 `terms-not-accepted` `{ version }` unless `acceptedTerms` is the current version
+ *   (the member signs the Terms themselves, review 2026-11-08 F1).
+ * - `POST /v1/team/join/finish { challengeId, code, termsSignature }` → `{ setupId, needs, setupUntil }`: the
  *   member's login exists with that key and the invite is used up; no session yet.
  * - `POST /v1/team/join/second/webauthn/start { setupId, kind }` and
  *   `.../finish { setupId, challengeId, response, deviceLabel, label? }`, or
@@ -31,17 +46,19 @@
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
-import { openNames, sealNames } from '../accounts.js';
+import { assertTermsVersion, openNames, sealNames } from '../accounts.js';
+import { SIGNED_BODY_LIMIT, checkTermsSignature } from '../termsSignature.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
-import { requireNotHeld, settleOf, weakRefusal } from '../auth/hold.js';
+import { gateChange, requireNotHeld, settleOf, stagedReply, weakRefusal } from '../auth/hold.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT } from '../auth/pgp.js';
 import { requireSession, startSession } from '../auth/sessions.js';
 import { waits, type LoginStrength } from '../auth/strength.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
+import { assertVendor, requireVendor } from './accountType.js';
 import {
   type Caller,
   checkMemberLoginName,
@@ -49,14 +66,16 @@ import {
   createInvite,
   finishMember,
   inviteView,
+  liveMember,
   listMembers,
   memberNames,
   openInvite,
   removeMember,
-  setRoles,
+  setAbilities,
   startMember,
 } from '../team/members.js';
-import { MAX_TEAM_MEMBERS, parseRoles, type TeamRole } from '../team/perms.js';
+import { catalogueView, parseAbilities, parseRoles, rolesToAbilities, type TeamRole } from '../team/abilities.js';
+import { MAX_TEAM_MEMBERS } from '../team/perms.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -98,26 +117,42 @@ async function inTransaction<T>(db: pg.Pool, fn: (c: pg.PoolClient) => Promise<T
   }
 }
 
-/** The input of an invite or a roles change, checked before `requireConfirm` (a refusal never uses up a token, R17). */
-const checked = new WeakMap<FastifyRequest, { name?: { name: string; key: string }; roles: TeamRole[] }>();
+/**
+ * The input of an invite or a boxes change, checked before `requireConfirm` (a refusal never uses
+ * up a token, R17): `abilities` (the boxes), or the old `roles` (each role's boxes); never both.
+ */
+interface Checked {
+  name?: { name: string; key: string };
+  abilities: string[];
+  /** Set when the body used the old `roles` (the confirm is then the old `team-invite` / `team-roles`). */
+  roles?: TeamRole[];
+}
+const checked = new WeakMap<FastifyRequest, Checked>();
+
+function boxes(b: Record<string, unknown>): Pick<Checked, 'abilities' | 'roles'> {
+  if (b.abilities !== undefined && b.roles !== undefined) throw new ApiError(400, 'bad-request');
+  if (b.abilities !== undefined) return { abilities: parseAbilities(b.abilities) };
+  const roles = parseRoles(b.roles);
+  return { abilities: rolesToAbilities(roles), roles };
+}
 
 const checkInvite: preHandlerAsyncHookHandler = async function (req) {
   const b = body(req);
-  const roles = parseRoles(b.roles);
+  const set = boxes(b);
   const name = await checkMemberName(req.server.deps.db, b.displayName);
-  checked.set(req, { name, roles });
+  checked.set(req, { name, ...set });
 };
 
 const checkRoles: preHandlerAsyncHookHandler = async function (req) {
   idParam(req);
-  checked.set(req, { roles: parseRoles(body(req).roles) });
+  checked.set(req, boxes(body(req)));
 };
 
 const checkId: preHandlerAsyncHookHandler = async function (req) {
   idParam(req);
 };
 
-function input(req: FastifyRequest): { name?: { name: string; key: string }; roles: TeamRole[] } {
+function input(req: FastifyRequest): Checked {
   const v = checked.get(req);
   if (!v) throw new ApiError(400, 'bad-request');
   return v;
@@ -169,29 +204,67 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.post(
     '/v1/team/invites',
-    { preHandler: [owner, checkInvite, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
+    {
+      preHandler: [owner, checkInvite, requireVendor, requireNotHeld, requireStrongSession, requireConfirm((req) => {
+        const i = input(req);
+        return i.roles
+          ? { kind: 'team-invite', name: i.name!.name, roles: i.roles.join(',') }
+          : { kind: 'team-invite-abilities', name: i.name!.name, abilities: i.abilities.join(',') };
+      })],
+    },
     async (req, reply) => {
       const deps = req.server.deps;
-      const { name, roles } = input(req);
-      const r = await createInvite(deps, caller(req), { name: name!, roles });
+      const { name, abilities } = input(req);
+      const r = await createInvite(deps, caller(req), { name: name!, abilities });
       return reply.code(201).send({ id: r.id, invite: r.code, expiresAt: r.expiresAt });
     },
   );
 
   app.patch(
     '/v1/team/members/:id',
-    { preHandler: [owner, checkRoles, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
-    async (req) => setRoles({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), input(req).roles),
+    {
+      preHandler: [owner, checkRoles, requireVendor, requireNotHeld, requireConfirm((req) => {
+        const i = input(req);
+        return i.roles
+          ? { kind: 'team-roles', memberId: idParam(req), roles: i.roles.join(',') }
+          : { kind: 'team-abilities', memberId: idParam(req), abilities: i.abilities.join(',') };
+      })],
+    },
+    async (req, reply) => {
+      const deps = req.server.deps;
+      // Both body shapes end here as the same boxes (`{ roles }` mapped by `rolesToAbilities`), so
+      // the strength decision below is one branch for both: a weak `{ abilities }` cannot skip it.
+      const { abilities } = input(req);
+      const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
+      if (!waits(rows[0]?.strength)) return setAbilities({ ...deps, events: req.server.events }, caller(req), idParam(req), abilities);
+      // Hold model v3: staged under the account lock (`gateChange`), for a live member only, and
+      // (owner 2 Nov 2026) for a vendor account only, checked again under that lock. The set is
+      // checked again when it applies (`applyAbilities`).
+      const staged = await inTransaction(deps.db, async (c) => {
+        const g = await gateChange(c, req, { kind: 'team-abilities', memberId: idParam(req), abilities });
+        if (g === null) throw weakRefusal();
+        await assertVendor(c, req.auth.accountId);
+        if (!(await liveMember(c, req.auth.accountId, idParam(req), deps.clock()))) throw new ApiError(404, 'not-found');
+        return g;
+      });
+      return reply.code(202).send(stagedReply(staged));
+    },
   );
 
   app.delete(
     '/v1/team/members/:id',
     { preHandler: [owner, checkId, requireNotHeld, requireConfirm((req) => ({ kind: 'team-remove', memberId: idParam(req) }))] },
     async (req, reply) => {
-      await removeMember({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req));
+      // Owner p5-7: from a username-and-password session the removal is staged (202) and waits 24 h.
+      const staged = await removeMember({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), (c) =>
+        gateChange(c, req, { kind: 'team-remove', memberId: idParam(req) }));
+      if (staged !== null) return reply.code(202).send(stagedReply(staged));
       return reply.code(204).send();
     },
   );
+
+  // The catalogue the boxes come from: static, for the owner's screen and for a member to see what they may do.
+  app.get('/v1/team/permissions', { preHandler: requireSession({ kinds: ['trader'], allowStaleTerms: true, touch: false, member: 'any' }) }, async () => catalogueView());
 
   app.get('/v1/team/audit', { preHandler: owner }, async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
@@ -225,30 +298,40 @@ export function teamRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     const b = body(req);
     const invite = await openInvite(deps.db, { code: b.invite }, deps.clock());
+    // Review 2026-11-08 F1: a member signs the agreement like every trader (the front door), before
+    // anything is made; the version rides in the challenge to the account `join/finish` creates.
+    const terms = assertTermsVersion(deps, b.acceptedTerms);
     const loginName = await checkMemberLoginName(deps.db, b.loginName);
     // FU-D: the login name waits in the challenge only sealed, never in clear.
     const names = sealNames(deps.config, memberNames(loginName.key));
     return issueTeamJoinChallenge(deps, req, {
-      accountId: null, publicKey: str(b, 'publicKey'), payload: { step: 'first', inviteId: invite.id, names },
+      accountId: null, publicKey: str(b, 'publicKey'), payload: { step: 'first', inviteId: invite.id, names, terms },
     });
   });
 
-  app.post('/v1/team/join/finish', async (req: FastifyRequest, reply: FastifyReply) => {
+  // Owner 9 Nov 2026 (p11-14): the member's signature comes with the finish, as a trader's does
+  // with their register finish; it is sealed to the login account made here, never kept in the
+  // challenge.
+  app.post('/v1/team/join/finish', { bodyLimit: SIGNED_BODY_LIMIT }, async (req: FastifyRequest, reply: FastifyReply) => {
     ensureDeviceCookie(req, reply);
     req.server.budgets.register.take();
     const deps = req.server.deps;
     const b = body(req);
+    // The signature is checked before the code is used, so a bad one costs the member no new code.
+    const signature = checkTermsSignature(b.termsSignature);
     const proved = await checkTeamJoinCode(deps, req, str(b, 'challengeId'), str(b, 'code'), null);
-    const p = proved.payload as { step?: unknown; inviteId?: unknown; names?: unknown };
+    const p = proved.payload as { step?: unknown; inviteId?: unknown; names?: unknown; terms?: unknown };
     if (p.step !== 'first' || typeof p.inviteId !== 'string') throw new ApiError(400, 'challenge-expired');
+    // The Terms accepted at `join/start` must still be the current ones.
+    const terms = { version: assertTermsVersion(deps, p.terms), signature };
     const names = openNames(deps.config, p.names);
     const inviteId = p.inviteId;
     const now = deps.clock();
     const device = deviceHash(req)!;
     const setup = await inTransaction(deps.db, async (c) => {
       const m = await startMember(c, deps.config, {
-        inviteId, names, now,
-        addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now }),
+        inviteId, names, now, terms,
+        addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved }),
       });
       const { rows } = await c.query<{ id: string }>(
         `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
@@ -335,7 +418,7 @@ export function teamRoutes(app: FastifyInstance): void {
     await inTransaction(deps.db, async (c) => {
       await useSetup(c, setup.id, now);
       // A second, different key: the same fingerprint is `key-in-use` (two PGP factors need disjoint keys).
-      await insertPgpKey(c, deps.config, { accountId: setup.memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now });
+      await insertPgpKey(c, deps.config, { accountId: setup.memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved });
       await finishMember(c, setup.memberAccountId, now);
     });
     // Landing review M1: two PGP keys were just proven, so the member's first session is strong.

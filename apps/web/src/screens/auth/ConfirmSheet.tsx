@@ -13,7 +13,7 @@
  * security key) works at once; a password or authenticator code means the wait, shared by a batch.
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { confirmWithWebAuthn, describeAction, type ConfirmAction, type MethodType, type PgpChallenge, type WalletRule } from '@x2f/auth-client';
+import { confirmWithWebAuthn, describeAction, needsStrongConfirm, type ConfirmAction, type MethodType, type PgpChallenge, type WalletRule } from '@x2f/auth-client';
 import { Button, type ButtonVariant } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { authApi } from './authApi.js';
@@ -57,7 +57,8 @@ export function walletWaitNote(rule: WalletRule, batch: boolean): string {
     const strong = `Confirm with your ${orList(rule.strongMethods.map((m) => STRONG_WORDS[m]))} and ${it} ${batch ? 'work' : 'works'} at once.`;
     return rule.password === 'waits' ? `${strong} Confirming with your password instead means a ${wait}${batch ? ', shared by all of them' : ''}.` : strong;
   }
-  return `You only have a password, so ${it} will work ${rule.waitHours} hours after you add ${batch ? 'them, all on one shared wait' : 'it'}. Add a passkey, security key or PGP key first to skip the wait.`;
+  // DESIGN: wording (owner 6 Nov 2026, Q14: never "password only")
+  return `You have no passkey, security key or PGP key yet, so ${it} will work ${rule.waitHours} hours after you add ${batch ? 'them, all on one shared wait' : 'it'}. Add one first to skip the wait.`;
 }
 
 function WalletWaitNote({ batch }: { batch: boolean }) {
@@ -93,8 +94,38 @@ export function ConfirmSheet({
   onToken: (token: string) => void;
   onCancel: () => void;
 }) {
-  const hasPassword = methods.includes('password');
-  const hasTotp = methods.includes('totp');
+  const walletAdd = action.kind === 'add-wallet' || action.kind === 'add-wallets';
+  return (
+    <Sheet open title="Confirm it's you" onClose={onCancel}>
+      <p className="x2f-sheet__body" data-part="action">
+        To {describeAction(action)}, confirm it's you.
+      </p>
+      {walletAdd ? <WalletWaitNote batch={action.kind === 'add-wallets'} /> : null}
+      <ConfirmMethods action={action} methods={methods} onToken={onToken} />
+    </Sheet>
+  );
+}
+
+/**
+ * The account's own login methods for one action-bound confirm, with their errors: the body of
+ * `ConfirmSheet`, and of "Stay logged in?" (`SessionPrompt`, owner 2 Nov 2026), which names the
+ * password's button `submitLabel`. `onToken` gets the single-use token.
+ */
+export function ConfirmMethods({
+  action,
+  methods,
+  onToken,
+  submitLabel = 'Confirm',
+}: {
+  action: ConfirmAction;
+  methods: MethodType[];
+  onToken: (token: string) => void | Promise<void>;
+  submitLabel?: string;
+}) {
+  // Owner 2 Nov 2026: some actions (switching to vendor) only a passkey, security key or PGP key confirms.
+  const hasPassword = methods.includes('password') && !needsStrongConfirm(action);
+  // Owner G10 (7 Nov 2026): the password alone keeps you logged in, authenticator app or not.
+  const hasTotp = methods.includes('totp') && action.kind !== 'extend-session';
   const [busy, setBusy] = useState<MethodType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -108,7 +139,7 @@ export function ConfirmSheet({
       setBusy(method);
       setError(null);
       try {
-        onToken(await fn());
+        await onToken(await fn());
       } catch (e) {
         // A held backup session or too many tries says so; a plain miss reads `wrong`.
         setError(refusalText(e, wrong));
@@ -141,7 +172,7 @@ export function ConfirmSheet({
       'That code did not work. It may have expired: get a new message and try again.',
     );
 
-  // With an authenticator app the server needs its code with the password (a password alone is a
+  // With an authenticator app the server needs its code with the password (the password without it is a
   // miss and counts as one), so Confirm waits for both and always sends the code.
   const passwordReady = password !== '' && (!hasTotp || totp.trim() !== '');
 
@@ -154,15 +185,9 @@ export function ConfirmSheet({
 
   // Exactly one primary in the sheet: the PGP Confirm while a PGP challenge is up, else the password Confirm.
   const pgpPrimary = pgp !== null;
-  const walletAdd = action.kind === 'add-wallet' || action.kind === 'add-wallets';
 
   return (
-    <Sheet open title="Confirm it's you" onClose={onCancel}>
-      <p className="x2f-sheet__body" data-part="action">
-        To {describeAction(action)}, confirm it's you.
-      </p>
-      {walletAdd ? <WalletWaitNote batch={action.kind === 'add-wallets'} /> : null}
-
+    <>
       {error !== null ? (
         <p className="x2f-error" role="alert">
           {error}
@@ -233,13 +258,18 @@ export function ConfirmSheet({
                 />
               </>
             ) : null}
-            <Button variant={pgpPrimary ? 'secondary' : 'primary'} disabled={busy !== null || !passwordReady} onClick={finishPassword}>
-              Confirm
+            <Button
+              variant={pgpPrimary ? 'secondary' : 'primary'}
+              disabled={busy !== null || !passwordReady}
+              onClick={finishPassword}
+              data-part="confirm-password"
+            >
+              {submitLabel}
             </Button>
           </div>
         ) : null}
       </div>
-    </Sheet>
+    </>
   );
 }
 

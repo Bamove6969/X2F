@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
+import { STREAM_ABILITY } from '../team/perms.js';
 import { ApiError } from '../errors.js';
 import type { EventBus } from './bus.js';
 
@@ -38,7 +39,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
   const heartbeatMs = o.heartbeatMs ?? HEARTBEAT_MS;
   const maxStreamMs = o.maxStreamMs ?? MAX_STREAM_MS;
   // The account owner, or a team member with Trades (Plan 2 Task 18): the stream carries the account's trade events.
-  const requireTrader = requireSession({ kinds: ['trader'], touch: false, member: 'trades' });
+  const requireTrader = requireSession({ kinds: ['trader'], touch: false, member: STREAM_ABILITY });
 
   app.get('/v1/events', { preHandler: requireTrader }, async (req: FastifyRequest, reply: FastifyReply) => {
     const raw = reply.raw;
@@ -82,11 +83,16 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
     await o.afterAttach?.();
     const { db, clock } = req.server.deps;
     let live = false;
+    // Review S-m2: the stream lives to the earlier of the end requireTrader read and the end now
+    // stored, so a session shortened before attach (its closeSession found nothing) stops on time.
+    let endsAt = req.auth.expiresAt;
     try {
-      const { rows } = await db.query('select 1 from sessions where id = $1 and revoked_at is null and expires_at > $2', [
-        req.auth.sessionId, clock(),
-      ]);
+      const { rows } = await db.query<{ expires_at: Date }>(
+        'select expires_at from sessions where id = $1 and revoked_at is null and expires_at > $2',
+        [req.auth.sessionId, clock()],
+      );
       live = rows.length > 0;
+      if (rows[0] && rows[0].expires_at.getTime() < endsAt.getTime()) endsAt = rows[0].expires_at;
     } catch (e) {
       end();
       throw e;
@@ -117,7 +123,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
     heartbeat = setInterval(() => {
       if (!ended && !raw.destroyed) raw.write(':\n\n');
     }, heartbeatMs);
-    lifetime = setTimeout(end, Math.max(0, Math.min(maxStreamMs, req.auth.expiresAt.getTime() - clock().getTime())));
+    lifetime = setTimeout(end, Math.max(0, Math.min(maxStreamMs, endsAt.getTime() - clock().getTime())));
     // The response's 'close' fires when the client goes away (the request's own 'close' fires as
     // soon as its empty body has been read, so it is not used).
     raw.on('close', end);

@@ -54,6 +54,7 @@ function termsOf(t: SeededTrade): AttestedTerms {
       centsPerXmr: RATE.centsPerXmr.toString(),
       maxFiatCents: t.trade.maxFiatCents.toString(),
     },
+    payWindowMin: t.trade.payWindowMin,
     buyerPayout: t.sides.buyerPayout!,
     sellerRefund: t.sides.sellerRefund!,
   };
@@ -76,10 +77,13 @@ function dealOf(t: AttestedTerms): ConfirmedDeal {
 }
 
 /** A fresh trade with a buyer and seller account, each with a browser; returns the stored code. */
-async function freshTrade(sides: Partial<SeededTrade['sides']> = {}): Promise<{ code: string; buyer: { id: string; b: Browser }; seller: { id: string; b: Browser } }> {
+async function freshTrade(
+  sides: Partial<SeededTrade['sides']> = {},
+  extra: { payWindowMin?: number } = {},
+): Promise<{ code: string; buyer: { id: string; b: Browser }; seller: { id: string; b: Browser } }> {
   const buyer = await trader();
   const seller = await trader();
-  const seeded = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', ...sides });
+  const seeded = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', ...sides, ...extra });
   if (seeded.sides.buyerPayout !== null && seeded.sides.sellerRefund !== null) termsByCode.set(seeded.code, termsOf(seeded));
   return { code: seeded.code, buyer, seller };
 }
@@ -440,18 +444,53 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
       { ...real, deal: { ...real.deal, currency: 'EUR' } },
       { ...real, deal: { ...real.deal, centsPerXmr: '1' } },
       { ...real, deal: { ...real.deal, maxFiatCents: '1' } },
+      { ...real, payWindowMin: real.payWindowMin === 90 ? 1440 : 90 },
     ]) {
       const res = await post(terms);
       expect(res.statusCode).toBe(409);
       expect(res.json()).toMatchObject({ error: 'terms-mismatch' });
     }
-    for (const terms of [undefined, { ...real, extra: 1 }, { ...real, deal: { ...real.deal, centsPerXmr: '01' } }]) {
+    const { payWindowMin: _p, ...noPayWindow } = real;
+    for (const terms of [undefined, { ...real, extra: 1 }, { ...real, deal: { ...real.deal, centsPerXmr: '01' } }, noPayWindow, { ...real, payWindowMin: 0 }]) {
       const res = await post(terms);
       expect(res.statusCode).toBe(400);
       expect(res.json()).toMatchObject({ error: 'bad-attestation' });
     }
     expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(202);
     expect((await post(real)).statusCode).toBe(201);
+    expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(200);
+  });
+
+  it("serves the trade's own time to pay in the work item's terms and stores only an attestation that signs it (owner p9-6)", async () => {
+    const { code, buyer, seller } = await freshTrade({}, { payWindowMin: 1440 }); // a 24-hour method (cash by mail)
+    const buyerId = identityFor(code, 'buyer');
+    const sellerId = identityFor(code, 'seller');
+    await buyer.b.post(`/v1/trades/${code}/identity`, buyerId.body);
+    await seller.b.post(`/v1/trades/${code}/identity`, sellerId.body);
+    const work = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string; terms: AttestedTerms }> };
+    const item = work.work.find((w) => w.trade === code)!;
+    expect(item.terms.payWindowMin).toBe(1440);
+    expect(item.terms).toEqual(termsByCode.get(code));
+    // Signed with the machine default instead: refused, nothing stored.
+    const mod = stubModKeys();
+    const attestation: Attestation = {
+      v: 1,
+      trade: code,
+      channels: { escrow: await channelFor(code, 'escrow'), signals: await channelFor(code, 'signals') },
+      participants: {
+        buyer: { signPublic: buyerId.id.signPublic, boxPublic: buyerId.id.boxPublic },
+        seller: { signPublic: sellerId.id.signPublic, boxPublic: sellerId.id.boxPublic },
+        mod: { signPublic: mod.signPublic, boxPublic: mod.boxPublic },
+      },
+      issuedAt: now.toISOString(),
+      terms: { ...item.terms, payWindowMin: 90 },
+    };
+    const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), modSign.secret));
+    const res = await signedInject('POST', '/internal/v1/reports', { kind: 'attestation', attestation, sig });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: 'terms-mismatch' });
+    expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(202);
+    await attestAndPost(code, buyerId.id, sellerId.id, item.terms);
     expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(200);
   });
 

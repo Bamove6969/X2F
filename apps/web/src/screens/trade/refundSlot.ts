@@ -26,19 +26,11 @@ export type RefundSignal = Exclude<UserSignal, 'trade.paid'>;
 /**
  * The parts of the room's escrow handle (Task 12's `UseEscrow`) these screens use: `signal` and
  * `buildRefund` (the runtime's `signal` and `build-refund` actions; the latter settles
- * `payoutsFor('auto-refund')`, builder seller, cosigner mod, once the view is `refund_requested`),
- * and `amountAtomic`, the trade amount this device accepts (`EscrowStatus.amountAtomic`), shown in
- * place of the API's amount when the device has one.
+ * `payoutsFor('auto-refund')`, builder seller, cosigner mod, once the view is settling as
+ * `auto-refund`, the seller's cancel), and `amountAtomic`, the trade amount this device accepts
+ * (`EscrowStatus.amountAtomic`), shown in place of the API's amount when the device has one.
  */
-export type RefundEscrow = Pick<UseEscrow, 'buildRefund' | 'signal' | 'amountAtomic' | PaidStepKeys>;
-
-/**
- * What FinalAlert's I've paid sheet (Task 23's PaidFlowSheet) reads from the same handle: the
- * device's total (`fiatCents`, `deal`), whether the escrow can take the tap (`phase`, `error`,
- * `retryable`, and `refusal`: any but `amount-out-of-range` blocks the tap, Task 23 round 2 I1) and
- * `markPaid` (the `trade.paid` signal). `mark-paid` is accepted in `refund_requested` (machine.ts).
- */
-type PaidStepKeys = 'phase' | 'error' | 'retryable' | 'refusal' | 'fiatCents' | 'deal' | 'markPaid';
+export type RefundEscrow = Pick<UseEscrow, 'buildRefund' | 'signal' | 'amountAtomic'>;
 
 /** Task 22's `TradeScreenProps` with the narrower escrow. */
 export type RefundScreenProps = Omit<TradeScreenProps, 'escrow'> & { escrow: RefundEscrow };

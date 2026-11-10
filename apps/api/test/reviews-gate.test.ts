@@ -6,9 +6,11 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { hasPendingReview } from '../src/reviews/gate.js';
 import { loadTradeRow } from '../src/trades/store.js';
+import { makeVendor } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
+import { flexBody } from './helpers/offers.js';
 
 // Plan 5 Task 3: the rate-first gate (spec 5.1, P5-A4; Review Focus 5). A trader with a reviewable
 // trade they have not rated cannot take an offer, cannot be taken as a poster, cannot set up a trade
@@ -70,11 +72,14 @@ async function released(who: Who, role: 'buyer' | 'seller' = 'buyer'): Promise<s
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: 0, terms: 'Zelle only.',
+  // At most $5,000 (the launch cap, owner p11-6), in USD and in EUR (€4,500 is $5,000 here).
+  minFiatCents: '1000', maxFiatCents: '450000', minTrades: null, terms: 'Zelle only.',
 };
 
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {
-  const res = await who.browser.post('/v1/offers', { ...OFFER, ...over });
+  // Owner 2 Nov 2026: only vendor accounts post offers.
+  await makeVendor(deps, who.id);
+  const res = await who.browser.post('/v1/offers', flexBody({ ...OFFER, ...over }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
@@ -82,14 +87,16 @@ async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<
 const tenth = XMR / 10n;
 const takeBody = (who: Who) => ({
   amountAtomic: tenth.toString(), walletId: who.wallet, centsPerXmr: '33000', fiatCents: fiatCents(tenth, { currency: 'USD', centsPerXmr: 33_000n }).toString(),
+  methodId: 'ZELLE', currency: 'USD',
 });
 const take = (who: Who, offer: string) => who.browser.post(`/v1/offers/${offer}/take`, takeBody(who));
 const refusal = (res: { statusCode: number; json(): unknown }) => ({ status: res.statusCode, ...(res.json() as object) });
 const rate = (who: Who, code: string, body: unknown = { neutral: true }) => who.browser.post(`/v1/trades/${code}/review`, body);
 const skip = (who: Who, code: string) => who.browser.post(`/v1/trades/${code}/review/skip`, {});
+/** Whether `offer` is listed to `viewer`, or to a bystander (a trader with no ties) by default. */
 const listed = async (offer: string, viewer?: Who) => {
   const url = '/v1/offers?side=sell&method=ZELLE&currency=USD';
-  const res = viewer ? await viewer.browser.get(url) : await app.inject({ method: 'GET', url });
+  const res = await (viewer ?? (await trader())).browser.get(url);
   expect(res.statusCode).toBe(200);
   return (res.json() as { id: string }[]).some((c) => c.id === offer);
 };

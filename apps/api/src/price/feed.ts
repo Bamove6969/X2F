@@ -23,7 +23,10 @@ export interface PriceFeedOptions {
   pollMs: number;
   /** Each source gets this long per poll; its `signal` aborts then. */
   timeoutMs?: number;
-  /** A quote further than this from the median does not count towards `minSources` (Review Focus 5). */
+  /**
+   * A quote further than this from the median does not count towards `minSources` (Review Focus 5;
+   * owner 6 Nov 2026, Q7: 3%, past which the currency has no price).
+   */
   maxSpreadBps?: number;
   /**
    * The spread used instead when only two sources quote a currency in a poll (re-review): with two,
@@ -40,7 +43,7 @@ export interface PriceFeedOptions {
 }
 
 export const PRICE_FEED_DEFAULTS = Object.freeze({
-  minSources: 2, maxAgeMs: 300_000, pollMs: 60_000, timeoutMs: 5_000, maxSpreadBps: 500, pairSpreadBps: 200, frozenAfterMs: 30 * 60_000,
+  minSources: 2, maxAgeMs: 300_000, pollMs: 60_000, timeoutMs: 5_000, maxSpreadBps: 300, pairSpreadBps: 200, frozenAfterMs: 30 * 60_000,
 }) satisfies Required<Omit<PriceFeedOptions, 'clock'>>;
 
 export interface FeedQuote {

@@ -25,19 +25,32 @@
  *   panel drops its composer with "This chat has been closed."; the chat of a trade still
  *   open stays usable until the trade closes.
  *
+ * - The payee's payment details boxes (J-08, S-090; owner p7-3: "those boxes can appear in the
+ *   chat window on the person's side who is sending that payment type ... they just have to click
+ *   send, and it sends it all nicely packaged over to the other person"): in a trade's chat, the
+ *   seller (who receives the payment) gets the method's boxes (packages/trade payFields.ts) above
+ *   the composer; Send packages them through the worker (`chatClient().sendPay`), sealed like any
+ *   line. Both sides see a package as a card (`PayCard`); its plain text is what is announced.
+ *   The buyer never gets the boxes. Owner Q12: Send is closed, and says why, until the escrow is
+ *   secured (`snapshot.paySecured`); the engine refuses a package sent early on the reading side. Each snapshot of a trade's chat is handed to payDetailsFeed, so
+ *   the buyer's "Send exactly" card follows the chat.
+ *
  * `TradeChatPanel` resolves a trade's chat (`POST /v1/trades/:code/chat`) and is the component
- * Task 23's `setTradeChat` seam takes (`{ code, name }`); `OfferChatPanel` opens the pre-trade chat
- * on an offer (the quote's Chat button).
+ * Task 23's `setTradeChat` seam takes (`{ code, name, methodId }`); `OfferChatPanel` opens the
+ * pre-trade chat on an offer (the quote's Chat button).
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
+import { formatDateTime as utcDateTime } from '../ui/dates.js';
 import { CANT_DO_TITLE, chatCantDoText, isCantDoCode, type CantDoCode } from '../ui/cantDoCodes.js';
 import { ModeratorTag } from '../screens/dispute/ModeratorTag.js';
 import { BlockAction } from '../screens/settings/BlockAction.js';
 import { useTradeLive } from '../screens/trade/seams.js';
 import { ChatFailed, chatClient, openOfferChat, openTradeChat, type ChatFailure, type ChatSnapshot } from './client.js';
 import { useChatLive } from './live.js';
+import { panelPublishing, publishPaySnapshot } from './payDetailsFeed.js';
 import './chat.css';
 
 /** The spec 6.6 notice, word for word (P3-M2). */
@@ -45,12 +58,17 @@ export const CHAT_NOTICE = 'Chats are encrypted. If a dispute is opened, a moder
 export const OTHER_DEVICE = 'This conversation is open on another device';
 /** A chat that answers 404: purged, or (silently) a block between the two outside an open trade. */
 export const CHAT_CLOSED = 'This chat has been closed.';
+/** Review I2: a line this device took earlier whose envelope the server no longer serves as it was. */
+// COPY-UNSIGNED (chat shred review I2: the gap line). not-a-refusal: a note in place of a chat line, not a rule the user ran into
+export const MISSING_LINE = 'A message you saw earlier is no longer on the server.';
 /** How often an open panel syncs with no live event: quickly while the chat is being secured. */
 export const CHAT_POLL_MS = { waiting: 3_000, ready: 15_000 } as const;
 
 const SEND_ERRORS: Record<ChatFailure, string> = {
   'not-ready': "This chat isn't ready yet. Try again in a moment.",
   'bad-text': 'Type a message first, and leave out hidden characters.',
+  // COPY-UNSIGNED (J-08): the worker refused the package (a box the page's own check let through).
+  'bad-details': 'Check the details and try again.',
   'too-large': 'This message is too long.',
   'slow-down': "You're sending messages too fast. Wait a minute and try again.",
   refused: "Couldn't send. Check your connection and try again.",
@@ -71,9 +89,14 @@ export interface ChatPanelProps {
    * room shows its own dispute notices, and moderator lines get ModeratorTag's badge.
    */
   dispute?: { moderator: string | null } | undefined;
+  /**
+   * The trade's payment method (J-08): the payee's side (the seller, who receives the payment) gets
+   * that method's boxes. Absent for a pre-trade chat.
+   */
+  pay?: { methodId: string } | undefined;
 }
 
-export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
+export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProps) {
   const [snap, setSnap] = useState<ChatSnapshot | null>(null);
   const [loadFailed, setLoadFailed] = useState<ChatFailure | null>(null);
   const [draft, setDraft] = useState('');
@@ -99,7 +122,8 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
       if (newest === null || id > newest) newest = id;
     }
     const grew = newest !== seen.current;
-    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'Moderator' : nameRef.current}: ${incoming.text}`);
+    // Review R1: a package is read with this reader's own labels, never the line's text.
+    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'Moderator' : nameRef.current}: ${incoming.pay !== undefined ? announcePay(incoming.pay) : incoming.text}`);
     seen.current = newest ?? -1n;
     return grew;
   }, []);
@@ -111,6 +135,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
       if (alive.current && mine === seq.current) {
         const grew = take(s);
         setSnap(s);
+        if (tradeCode) publishPaySnapshot(tradeCode, s);
         setLoadFailed(null);
         // Stopped at the page cap: read on at once, but only while it keeps finding new lines.
         if (s.more && grew) void sync();
@@ -119,7 +144,19 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
       // A failed re-sync keeps the last lines on screen.
       if (alive.current && mine === seq.current) setLoadFailed(failureOf(e));
     }
-  }, [chat, take]);
+  }, [chat, take, tradeCode]);
+
+  /** A send (a line or a package) answered with the chat as it now stands. */
+  const sent = useCallback(
+    (s: ChatSnapshot): void => {
+      seq.current++;
+      if (!alive.current) return;
+      take(s);
+      setSnap(s);
+      if (tradeCode) publishPaySnapshot(tradeCode, s);
+    },
+    [take, tradeCode],
+  );
 
   useEffect(() => {
     alive.current = true;
@@ -140,6 +177,8 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
   useTradeLive(tradeCode ?? '', () => {
     if (tradeCode) void sync();
   });
+  // While this panel is open it publishes every snapshot, so the trade room's feed pauses its own poll (review M5).
+  useEffect(() => (tradeCode ? panelPublishing(tradeCode) : undefined), [tradeCode]);
 
   // Keep the list at its newest line.
   const lineCount = snap?.lines.length ?? 0;
@@ -156,10 +195,8 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
     setSendError(null);
     try {
       const s = await chatClient().send(chat, draft);
-      seq.current++;
+      sent(s);
       if (!alive.current) return;
-      take(s);
-      setSnap(s);
       setDraft('');
     } catch (err) {
       if (alive.current) setSendError(failureOf(err));
@@ -203,7 +240,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
             );
           }
           items.push(
-            <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined}>
+            <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined} data-missing={l.missing ? '' : undefined}>
               <span className="x2f-chat__who">
                 {l.from === 'mod' ? (
                   dispute !== undefined && snap?.disputeOpen === true && dispute.moderator ? (
@@ -214,7 +251,27 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
                 ) : l.mine ? 'You' : <span data-username="">{name}</span>}
                 <span className="x2f-chat__hidden">: </span>
               </span>
-              <span className="x2f-chat__text">{l.text}</span>
+              {/* A line this device showed before that the server no longer serves (review I2): a gap, not a silence. */}
+              {l.pay !== undefined ? (
+                <PayCard pay={l.pay} />
+              ) : (
+                <span className="x2f-chat__text">
+                  {l.missing ? (
+                    <>
+                      {MISSING_LINE}
+                      {l.at !== null && !Number.isNaN(new Date(l.at).getTime()) ? (
+                        <>
+                          {/* COPY-UNSIGNED (chat shred review I2): the gap line's "Sent <time>." suffix. */}
+                          {' Sent '}
+                          <time dateTime={l.at}>{utcDateTime(new Date(l.at))}</time>.
+                        </>
+                      ) : null}
+                    </>
+                  ) : (
+                    l.text
+                  )}
+                </span>
+              )}
             </li>,
           );
           return items;
@@ -243,6 +300,19 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
         </p>
       ) : null}
 
+      {phase === 'ready' && !gone && pay !== undefined && snap?.role === 'seller' ? (
+        payeeGivesNothing(pay.methodId) ? (
+          // Review F1: like the boxes' Send, only once the escrow is secured (owner Q12).
+          snap.paySecured ? (
+            // COPY-UNSIGNED (payee fields, 10 Nov 2026): a gift card, ATM or face-to-face cash method has no boxes.
+            <p className="x2f-chat__pay-hint" data-pay-nothing="">
+              Nothing to send: the buyer sends the card or cash details here in the chat.
+            </p>
+          ) : null
+        ) : (
+          <PayBoxes chat={chat} name={name} methodId={pay.methodId} secured={snap.paySecured} onSent={sent} />
+        )
+      ) : null}
       {phase === 'ready' && !gone ? (
         <form className="x2f-chat__composer" onSubmit={(e) => void onSubmit(e)}>
           <label className="x2f-chat__label">
@@ -269,6 +339,168 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
         </form>
       ) : null}
     </section>
+  );
+}
+
+/** A package's plain text with this reader's labels (renderPayDetailsText); the title alone if a box is unknown here. */
+function announcePay(pay: PayDetailsPayload): string {
+  try {
+    return renderPayDetailsText(pay);
+  } catch {
+    return PAY_DETAILS_TITLE;
+  }
+}
+
+/** A package as a card, on both sides: the title and one row per filled box, labelled from the method table. */
+function PayCard({ pay }: { pay: PayDetailsPayload }) {
+  const spec = payFieldsFor(pay.method);
+  return (
+    <div className="x2f-chat__paycard x2f-chat__text" data-pay-card={pay.method}>
+      <span className="x2f-chat__paycard-title">{PAY_DETAILS_TITLE}</span>
+      <dl className="x2f-chat__paycard-rows">
+        {pay.fields.map((f) => (
+          <div key={f.key} className="x2f-chat__paycard-row">
+            <dt className="x2f-ink-muted">{spec.find((s) => s.key === f.key)?.label ?? f.key}</dt>
+            <dd className="x2f-mono">{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+const inputType = (kind: PayFieldSpec['kind']): string => (kind === 'email' ? 'email' : kind === 'phone' ? 'tel' : 'text');
+
+/** The one-of groups of a method, each with its labels in table order. */
+function groupsOf(spec: readonly PayFieldSpec[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const f of spec) if (typeof f.need === 'object') groups.set(f.need.oneOf, [...(groups.get(f.need.oneOf) ?? []), f.label]);
+  return groups;
+}
+
+// COPY-UNSIGNED (J-08, owner Q12): why Send is closed while the escrow is securing (and the worker's own refusal of an early package).
+const PAY_NOT_SECURED = 'You can send these once the escrow is secured.';
+// COPY-UNSIGNED (J-08): the boxes' own words. `joinLabels` reads "Email, Phone number".
+const joinLabels = (labels: string[]): string => labels.join(', ');
+const oneOfHint = (labels: string[]): string => `Fill in at least one of: ${joinLabels(labels)}.`;
+
+/** What a refused package says, by box. Never a value. */
+function payErrorText(e: unknown, spec: readonly PayFieldSpec[]): string {
+  if (e instanceof PayDetailsError) {
+    const field = spec.find((f) => f.key === e.key);
+    const label = field?.label ?? 'this box';
+    switch (e.code) {
+      case 'missing':
+        return `Fill in ${label}.`;
+      case 'one-of':
+        return oneOfHint(groupsOf(spec).get(e.key ?? '') ?? []);
+      case 'too-long':
+        return `${label} is too long.`;
+      case 'bad-value':
+        // not-a-refusal: an input check on a payment-details box (a field hint, J-08), not a rule
+        return field?.kind === 'postal' ? `${label} has too many lines.` : `${label} can't have line breaks.`;
+      case 'bad-chars':
+        // COPY-UNSIGNED (J-08, pay-details review M6): a tab, joiner, separator or other hidden character in an account box.
+        // not-a-refusal: an input check on a payment-details box (a field hint, J-08), not a rule
+        return `${label} can't have tabs or hidden characters.`;
+      default:
+        return SEND_ERRORS['bad-details'];
+    }
+  }
+  if (e instanceof ChatFailed && e.code === 'bad-text') return 'Leave out hidden characters.';
+  // The worker's own gate (owner Q12, pay-details review M2): the boxes only show in a ready chat, so not-ready here means not secured.
+  if (e instanceof ChatFailed && e.code === 'not-ready') return PAY_NOT_SECURED;
+  return SEND_ERRORS[failureOf(e)];
+}
+
+/**
+ * The payee's boxes for the trade's method (owner p7-3), above the composer. Send checks them on
+ * the page (checkPayDetails: the same rule the worker applies again), packages the filled ones and
+ * hands them to the worker, which seals them like any line; the boxes clear once the package is in
+ * the chat. Values never leave the page except inside that sealed envelope.
+ */
+function PayBoxes({ chat, name, methodId, secured, onSent }: { chat: string; name: string; methodId: string; secured: boolean; onSent: (s: ChatSnapshot) => void }) {
+  const spec = payFieldsFor(methodId);
+  const whyId = useId();
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const groups = groupsOf(spec);
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    // Owner Q12: nothing is sent before the escrow is secured (the button is closed; a submit by key is not).
+    if (sending || !secured) return;
+    setError(null);
+    let pay: PayDetailsPayload;
+    try {
+      pay = { v: PAY_DETAILS_V, method: methodId, fields: checkPayDetails(methodId, values) };
+    } catch (err) {
+      setError(payErrorText(err, spec));
+      return;
+    }
+    setSending(true);
+    try {
+      const s = await chatClient().sendPay(chat, pay);
+      onSent(s);
+      if (alive.current) setValues({});
+    } catch (err) {
+      if (alive.current) setError(payErrorText(err, spec));
+    } finally {
+      if (alive.current) setSending(false);
+    }
+  };
+  return (
+    <form className="x2f-chat__pay" data-pay-boxes="" aria-label="Your payment details" onSubmit={(e) => void onSubmit(e)}>
+      {/* COPY-UNSIGNED (J-08): the boxes' title and lead. */}
+      <p className="x2f-chat__pay-title">Your payment details</p>
+      <p className="x2f-chat__pay-lead">Fill these in and send them to {name} here, encrypted.</p>
+      {spec.map((f) => {
+        const id = `pay-${chat}-${f.key}`;
+        const common = {
+          id,
+          className: 'x2f-chat__pay-input',
+          value: values[f.key] ?? '',
+          readOnly: sending,
+          'aria-disabled': sending ? ('true' as const) : undefined,
+          'data-pay-field': f.key,
+          onChange: (ev: { target: { value: string } }) => setValues((v) => ({ ...v, [f.key]: ev.target.value })),
+        };
+        return (
+          <div key={f.key} className="x2f-chat__pay-box">
+            <label htmlFor={id} className="x2f-chat__pay-label">
+              {f.label}
+              {f.need === 'no' ? <span className="x2f-ink-muted"> (optional)</span> : null}
+            </label>
+            {f.kind === 'postal' ? <textarea {...common} rows={3} /> : <input {...common} type={inputType(f.kind)} />}
+          </div>
+        );
+      })}
+      {[...groups.values()].map((labels) => (
+        <p key={labels.join('|')} className="x2f-chat__pay-hint">
+          {oneOfHint(labels)}
+        </p>
+      ))}
+      <button type="submit" className="x2f-chat__send" disabled={!secured} aria-disabled={sending ? 'true' : undefined} aria-describedby={secured ? undefined : whyId}>
+        Send payment details
+      </button>
+      {secured ? null : (
+        <p id={whyId} className="x2f-chat__pay-hint" data-pay-block="not-secured">
+          {PAY_NOT_SECURED}
+        </p>
+      )}
+      {error !== null ? (
+        <p role="alert" className="x2f-chat__error" data-pay-error="">
+          {error}
+        </p>
+      ) : null}
+    </form>
   );
 }
 
@@ -311,9 +543,9 @@ function useResolvedChat(open: () => Promise<string>, key: string): Resolved {
   return r;
 }
 
-function Resolving({ r, name, tradeCode, dispute }: { r: Resolved; name: string; tradeCode?: string; dispute?: ChatPanelProps['dispute'] }) {
+function Resolving({ r, name, tradeCode, dispute, pay }: { r: Resolved; name: string; tradeCode?: string; dispute?: ChatPanelProps['dispute']; pay?: ChatPanelProps['pay'] }) {
   const [closed, setClosed] = useState(false);
-  if (r.kind === 'ready') return <ChatPanel chat={r.chat} name={name} tradeCode={tradeCode} dispute={dispute} />;
+  if (r.kind === 'ready') return <ChatPanel chat={r.chat} name={name} tradeCode={tradeCode} dispute={dispute} pay={pay} />;
   return (
     <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={r.kind === 'loading' ? 'loading' : 'failed'}>
       <p className="x2f-chat__notice">{CHAT_NOTICE}</p>
@@ -332,10 +564,10 @@ function Resolving({ r, name, tradeCode, dispute }: { r: Resolved; name: string;
   );
 }
 
-/** A trade's chat (Task 23's `TradeChatProps`: the trade code and the counterparty's public name). */
-export function TradeChatPanel({ code, name, dispute }: { code: string; name: string; dispute?: ChatPanelProps['dispute'] }) {
+/** A trade's chat (Task 23's `TradeChatProps`: the trade code, the counterparty's public name and the payment method). */
+export function TradeChatPanel({ code, name, methodId, dispute }: { code: string; name: string; methodId?: string | undefined; dispute?: ChatPanelProps['dispute'] }) {
   const r = useResolvedChat(() => openTradeChat(code), code);
-  return <Resolving r={r} name={name} tradeCode={code} dispute={dispute} />;
+  return <Resolving r={r} name={name} tradeCode={code} dispute={dispute} pay={methodId === undefined ? undefined : { methodId }} />;
 }
 
 /** The pre-trade chat with an offer's poster (the quote's Chat button). */

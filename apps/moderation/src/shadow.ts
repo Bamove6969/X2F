@@ -1,20 +1,36 @@
-import { apply, newTrade, TradeRuleError, type AttestedTerms, type By, type Trade, type TradeEvent } from '@x2f/trade';
+import { apply, isAttestedTerms, MAX_CONFIRM_WINDOW_MIN, newTrade, TradeRuleError, type AttestedTerms, type By, type Trade, type TradeEvent } from '@x2f/trade';
 
 /**
  * The moderation service's shadow Trade (Plan 3 Task 10): its own copy of the trade, built from the
  * deal it attested and fed ONLY by its own chain watcher (setup-done, chain, settled) and by
  * signals it opened itself (trade.paid, trade.extend, trade.refund-request, trade.cancel), through
- * the same pure `apply` the API uses, on this service's clock. The auto-refund guard reads payBy,
- * paidAt and finalAlertAt from here, never from the API: a lying API can delay a refund, never
- * cause one.
+ * the same pure `apply` the API uses, on this service's clock. The seller-cancel refund guard reads
+ * payBy, paidAt and the shadow's own settling from here, never from the API: a lying API can delay
+ * a refund, never cause one.
  *
  * Fields the attested deal does not carry are filled so they can never loosen a rule: the offer's
  * minimum (1 minor unit: only growth reads the limits, and it reads the maximum), the confirm window
- * (the longest, 24 h; only disputes after paid read it), placeholder ids. The trade's code is the
+ * (the longest the machine allows, MAX_CONFIRM_WINDOW_MIN; only disputes after paid read it), placeholder ids. The trade's code is the
  * real one.
+ *
+ * The time to pay is the trade's own, from the attested terms (`terms.payWindowMin`, the payment
+ * method's, fixed at take, owner p9-6), never the machine's default TIMERS.payMin: for a method
+ * whose time to pay is longer (bank transfers 3 h, cash by mail 24 h) a lying API cannot get this
+ * service to co-sign the seller's refund after 90 minutes while the buyer is still inside their
+ * window. The API fills it from the trade record and refuses an attestation whose value differs
+ * (409 terms-mismatch); the trader apps check it against the trade view they were shown.
+ *
+ * Deploy note: an attestation signed before `payWindowMin` joined the terms has no such key, so
+ * isAttestedTerms refuses it everywhere (the work item is skipped as BadTerms, the API answers 400
+ * bad-attestation, the moderator party refuses its stored terms, newShadow below builds no shadow
+ * (so no refund is co-signed), and a trader app holding one stops the trade). This is pre-launch
+ * with no real trades, so there is nothing to migrate.
  */
 export function newShadow(code: string, terms: AttestedTerms, takenAt: Date): Trade {
   const d = terms.deal;
+  // Never the machine's default for terms without the trade's own time to pay (signed before it
+  // joined the terms): newTrade would fill in TIMERS.payMin. Refused instead; no shadow, no refund.
+  if (!isAttestedTerms(terms)) throw new RangeError('shadow: bad attested terms');
   return newTrade(
     {
       code,
@@ -25,7 +41,8 @@ export function newShadow(code: string, terms: AttestedTerms, takenAt: Date): Tr
       methodId: 'shadow',
       amountAtomic: BigInt(d.takeAmountAtomic),
       lockedRate: { currency: d.currency, centsPerXmr: BigInt(d.centsPerXmr) },
-      confirmWindowMin: 1440,
+      confirmWindowMin: MAX_CONFIRM_WINDOW_MIN,
+      payWindowMin: terms.payWindowMin,
       minFiatCents: 1n,
       maxFiatCents: BigInt(d.maxFiatCents),
     },

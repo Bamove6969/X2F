@@ -28,16 +28,28 @@ function stubApi(page: Page, o: { signedIn?: boolean; offers?: (currency: string
 }
 
 test.describe('/sell (Main board)', () => {
-  test('matches the Main board: live buyers first, then every method A–Z', async ({ page }) => {
+  test('matches the Main board: live buyers first (one card with a method picker), then every method A–Z', async ({ page }) => {
     await stubApi(page);
     await page.goto('/sell');
     const headings = page.locator('main h2');
     await expect(headings).toHaveText(['Buyers paying in USD', 'All payment methods']);
-    const live = page.locator('section', { has: page.getByRole('heading', { name: 'Buyers paying in USD' }) }).locator('a');
-    await expect(live.first()).toContainText('Zelle');
-    await expect(live.first()).toContainText('34 buyers paying in USD · up to $331.20');
-    const rest = page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) }).locator('a [data-part="name"]');
+    const live = page.locator('section', { has: page.getByRole('heading', { name: 'Buyers paying in USD' }) });
+    await expect(live.getByRole('button', { name: 'Payment method: Zelle' })).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(live.locator('a')).toHaveCount(1);
+    await expect(live.getByRole('link', { name: 'Zelle 34 buyers paying in USD · up to $331.20' })).toHaveAttribute('href', '/sell/ZELLE?currency=USD');
+    // The methods with no buyers are folded into one row until opened (design review 8 Nov, item 7).
+    const all = page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) });
+    const rest = all.locator('a [data-part="name"]');
+    await expect(rest).toHaveCount(0);
+    const toggle = all.getByRole('button', { name: /more payment methods/ });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toContainText('No USD buyers right now · post an offer');
+    expect((await toggle.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(rest.first()).toBeVisible();
     const names = await rest.allTextContents();
+    expect(names.length).toBeGreaterThan(50);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'en')));
     expect(names).not.toContain('Zelle');
     await expect(page.getByRole('searchbox', { name: 'Search payment methods' })).toHaveAttribute('placeholder', `Search ${CATALOG.length} payment methods`);
@@ -53,7 +65,77 @@ test.describe('/sell (Main board)', () => {
     await page.getByRole('radio', { name: 'Best rate' }).click();
     await expect(page.getByRole('radio', { name: 'Best rate' })).toHaveAttribute('aria-checked', 'true');
     await expect.poll(() => seen.requests.some((r) => /\/v1\/methods\?.*sort=rate/.test(r.url()))).toBe(true);
-    await expect(page.locator('section').first().locator('a').first()).toContainText('Cash by mail');
+    await expect(page.locator('section').first().getByRole('button', { name: 'Payment method: Cash by mail' })).toBeVisible();
+  });
+
+  test('the live card is a picker of every method with buyers in the currency; picking one changes the card and its offers', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/sell');
+    const pick = page.getByRole('button', { name: 'Payment method: Zelle' });
+    await expect(pick).toHaveAttribute('aria-expanded', 'false');
+    await pick.click();
+    await expect(pick).toHaveAttribute('aria-expanded', 'true');
+    const sheet = page.getByRole('dialog', { name: 'Buyers paying in USD' });
+    const options = sheet.getByRole('radiogroup', { name: 'Buyers paying in USD' }).getByRole('radio');
+    await expect(options).toHaveCount(BOARD_SELL_LIVE_USD.length);
+    await expect(sheet.getByRole('radio', { name: 'Zelle' })).toBeChecked();
+    await expect(sheet.locator('[data-part="method-option"]').nth(1)).toHaveText('Cash App27 buyers paying in USD · up to $332.10');
+    // Every option is a 44 px+ tap target.
+    for (const box of await sheet.locator('[data-part="method-option"]').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(box).toBeGreaterThanOrEqual(44);
+    await sheet.getByRole('radio', { name: 'Cash App' }).click();
+    await expect(sheet).toHaveCount(0);
+    const card = page.getByRole('link', { name: 'Cash App 27 buyers paying in USD · up to $332.10' });
+    await expect(card).toHaveAttribute('href', '/sell/CASH_APP?currency=USD');
+    await expect(page.getByRole('button', { name: 'Payment method: Cash App' })).toBeFocused();
+    // The methods with no buyers stay listed under All payment methods; the picked one is not there.
+    await expect(page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) }).getByText('Cash App', { exact: true })).toHaveCount(0);
+    await card.click();
+    await expect(page).toHaveURL(/\/sell\/CASH_APP\?currency=USD$/);
+  });
+
+  test('the method picker works from the keyboard: arrows move the choice, Enter closes on it, Escape closes', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/sell');
+    const pick = page.getByRole('button', { name: 'Payment method: Zelle' });
+    await pick.focus();
+    await page.keyboard.press('Enter');
+    const sheet = page.getByRole('dialog', { name: 'Buyers paying in USD' });
+    // The sheet opens with focus already on the checked radio: no Tab past Close first.
+    await expect(sheet.getByRole('radio', { name: 'Zelle' })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(sheet.getByRole('radio', { name: 'Cash App' })).toBeChecked();
+    await expect(sheet).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    await expect(sheet.getByRole('radio', { name: 'Cash by mail' })).toBeChecked();
+    await page.keyboard.press('Enter');
+    await expect(sheet).toHaveCount(0);
+    const now = page.getByRole('button', { name: 'Payment method: Cash by mail' });
+    await expect(now).toBeFocused();
+    await expect(page.getByRole('link', { name: /^Cash by mail 21 buyers paying in USD/ })).toHaveAttribute('href', '/sell/PAY_BY_MAIL?currency=USD');
+    await page.keyboard.press('Space');
+    await expect(sheet).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    await expect(now).toBeFocused();
+  });
+
+  test('with one method with buyers, the picker still opens and lists it', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/sell?currency=EUR');
+    await page.getByRole('button', { name: 'Payment method: SEPA' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Buyers paying in EUR' });
+    await expect(sheet.getByRole('radio')).toHaveCount(1);
+    await expect(sheet.getByRole('radio', { name: 'SEPA' })).toBeChecked();
+  });
+
+  test('on the Desktop layout the picker opens as a centred dialog', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await stubApi(page);
+    await page.goto('/sell');
+    await page.getByRole('button', { name: 'Payment method: Zelle' }).click();
+    const box = (await page.getByRole('dialog', { name: 'Buyers paying in USD' }).boundingBox())!;
+    expect(box.width).toBe(520);
+    expect(Math.abs(box.x + box.width / 2 - 640)).toBeLessThan(2);
   });
 
   test('a search with no match shows the board copy, and "Suggest it" posts a suggestion', async ({ page }) => {
@@ -181,6 +263,11 @@ test.describe('/sell/:methodId (SellOffers board)', () => {
     await expect(page.locator('main h2').first()).toHaveText('Buyers paying in EUR');
     await page.getByRole('link', { name: /^SEPA 3 buyers/ }).click();
     await expect(page).toHaveURL(/\/sell\/SEPA\?currency=EUR$/);
+    // The click leaves the mouse where the SEPA link was; on the list, the card's "+3" badges button
+    // can render under it, and a mouse hover opens the badge tooltip, which names the poster again
+    // (a second [data-username]). Park the mouse off the cards so the card is read as it rests.
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
     await expect(page.locator('article')).toHaveCount(1);
     await expect(page.locator('article [data-username]')).toHaveText(['euro_buyer']);
     await expect(page.locator('article')).toContainText('€305.00');
@@ -195,22 +282,17 @@ test.describe('/sell/:methodId (SellOffers board)', () => {
     }
   });
 
-  test('logged out, the lists render and no browse request fails', async ({ page }) => {
+  test('logged out, the lists never open: the front door (the Landing board) takes the visitor, keeping the path (owner, 8 Nov 2026)', async ({ page }) => {
     const seen = await stubApi(page, { signedIn: false });
-    const failed: string[] = [];
-    // GET /v1/site is the app shell's (Plan 4 Task 8: banner, maintenance), not a browse request.
-    page.on('response', (r) => {
-      const path = new URL(r.url()).pathname;
-      if (path.startsWith('/v1/') && path !== '/v1/account/me' && path !== '/v1/site' && r.status() >= 400) failed.push(`${r.status()} ${path}`);
-    });
     await page.goto('/sell');
-    await expect(page.locator('main a').first()).toBeVisible();
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fsell$/);
+    await expect(page.locator('[data-screen="landing"]')).toBeVisible();
     await page.goto('/sell/ZELLE');
-    await expect(page.locator('article')).toHaveCount(3);
-    await expect(page.getByRole('button', { name: 'Trade with mira.k' })).toBeEnabled();
-    expect(failed).toEqual([]);
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fsell%2FZELLE$/);
+    await expect(page.locator('article')).toHaveCount(0);
+    expect(await page.locator('body').innerText()).not.toContain('mira.k');
     const paths = new Set(seen.requests.map((r) => new URL(r.url()).pathname));
-    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(true);
+    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(false);
   });
 
   test('starter limits: an offer the viewer cannot take yet is greyed with "Opens at Building"', async ({ page }) => {
@@ -255,9 +337,21 @@ for (const viewport of PHONE_VIEWPORTS) {
     test('Main: parity and phone layout', async ({ page }) => {
       await stubApi(page);
       await page.goto('/sell');
-      await expect(page.locator('main a').first()).toContainText('Zelle');
+      await expect(page.getByRole('button', { name: 'Payment method: Zelle' })).toBeVisible();
       await expectPhoneLayout(page);
       await expectParity(page, 'Main', { viewport, primary: false });
+    });
+
+    test('Main with the method picker open: a bottom sheet, phone layout', async ({ page }) => {
+      await stubApi(page);
+      await page.goto('/sell');
+      await page.getByRole('button', { name: 'Payment method: Zelle' }).click();
+      const sheet = page.getByRole('dialog', { name: 'Buyers paying in USD' });
+      await expect(sheet.getByRole('radio')).toHaveCount(BOARD_SELL_LIVE_USD.length);
+      const box = (await sheet.boundingBox())!;
+      const vh = page.viewportSize()!.height;
+      expect(Math.abs(box.y + box.height - vh)).toBeLessThan(2);
+      await expectPhoneLayout(page);
     });
 
     test('Main with a search that has no match: phone layout', async ({ page }) => {

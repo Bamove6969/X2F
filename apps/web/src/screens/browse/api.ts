@@ -6,6 +6,7 @@
 // 3 and 4 (with the 2026-10-24 starter-limits revision); test/browse-tripwire.test.ts marks the
 // ones still guessed. The browser never works out a stage, a cap or who may take an offer: it shows
 // `poster.stage` and `opensAt` as the API sends them.
+import type { AmountUnit } from '@x2f/trade';
 import { api } from '../../api/client.js';
 
 /** What the person browsing does with XMR. */
@@ -27,6 +28,11 @@ export interface MethodRow {
   offers: number;
   /** The best rate among the live offers, in minor units per XMR, or null when none has a price now. */
   bestRate: bigint | null;
+  /**
+   * How long the method's money can take to arrive, in minutes (owner p9-4: shown up front where
+   * the method is picked); null from an older API, and then no line is shown.
+   */
+  upToMin: number | null;
 }
 
 export interface MethodLists {
@@ -61,19 +67,56 @@ export interface TraderSummary {
   imported: { site: string; overUsd: number }[];
 }
 
-export type Pricing = { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
+/** Always the market price moved by the margin (owner Q1, F1: there are no fixed-price offers). */
+export type Pricing = { mode: 'market'; marginBps: number };
 
 export interface Offer {
   id: string;
   poster: TraderSummary;
-  /** The offer's price now, in minor units per XMR; null for a market offer while the feed is down. */
+  /** The offer's price now, in minor units per XMR; null while the feed is down. */
   rate: bigint | null;
   pricing: Pricing;
-  minFiatCents: bigint;
-  maxFiatCents: bigint;
+  /**
+   * The unit the poster set the range in (owner, 8 Nov: "Offer amounts in XMR or fiat"); that pair is
+   * exact. The API sends the other pair converted at the offer's rate now, or null with no rate (the
+   * feed is down). XMR in atomic units, fiat in the currency's minor units.
+   */
+  amountUnit: AmountUnit;
+  minAtomic: bigint | null;
+  maxAtomic: bigint | null;
+  minFiatCents: bigint | null;
+  maxFiatCents: bigint | null;
+  /** The completed trades a taker needs; 0 for no minimum (the API sends null, owner 8 Nov). */
   minTrades: number;
   /** Set for a signed-in viewer whose cap is below the offer's minimum: the stage that opens it. */
   opensAt?: OpensAt;
+  /**
+   * J-16 (flexible offers, apps/api/src/offers/routes.ts OfferCard): the listed currency's bands, as
+   * covered ranges in `amountUnit`'s minor units, by start; [] in an answer from before J-16 (the
+   * card is then one band, its range and `pricing`).
+   */
+  tiers: OfferTier[];
+  /** The payment methods offered in the listed currency with their price change; [] before J-16. */
+  methods: OfferMethod[];
+  /** Every currency of the offer in the poster's order; [] before J-16. */
+  currencies: string[];
+  /** The signed-in viewer's completed trades, which the take picks the band by; null signed out or before J-16. */
+  viewerTrades: number | null;
+}
+
+/** One band of a card (J-16): both ends included, its margin and its trade rule (null: no minimum); `methodIds` null: every method. */
+export interface OfferTier {
+  min: bigint;
+  max: bigint;
+  marginBps: number;
+  minTrades: number | null;
+  methodIds: string[] | null;
+}
+
+/** A payment method on a card (J-16): its price change over the band's price, in basis points of the market. */
+export interface OfferMethod {
+  methodId: string;
+  adjustBps: number;
 }
 
 /** A response that is not the shape the screens were built for. */
@@ -149,6 +192,7 @@ function parseRow(v: unknown, at: string): MethodRow {
     giftCard: optional(o, 'giftCard', at, bool, false),
     offers: num(o, 'offers', at),
     bestRate: orNull(o, 'bestRate', at, big),
+    upToMin: optional<number | null>(o, 'upToMin', at, num, null),
   };
 }
 
@@ -192,10 +236,67 @@ function parsePoster(v: unknown, at: string): TraderSummary {
   };
 }
 
+/** `{ mode: 'market', marginBps }`; any other mode (a fixed price, owner Q1) does not parse. */
 function parsePricing(v: unknown, at: string): Pricing {
   const o = obj(v, at);
-  const mode = oneOf(o, 'mode', at, ['market', 'fixed'] as const);
-  return mode === 'market' ? { mode, marginBps: num(o, 'marginBps', at) } : { mode, centsPerXmr: big(o, 'centsPerXmr', at) };
+  const mode = oneOf(o, 'mode', at, ['market'] as const);
+  return { mode, marginBps: num(o, 'marginBps', at) };
+}
+
+/** `minTrades`: null is no minimum (owner, 8 Nov), read as 0; the key must be there. */
+export function minTradesOf(o: Obj, at: string): number {
+  if (!('minTrades' in o)) throw new ApiShapeError(`${at}.minTrades`);
+  return o.minTrades === null ? 0 : num(o, 'minTrades', at);
+}
+
+const UNITS = ['xmr', 'fiat'] as const;
+
+/**
+ * The trade size: `amountUnit` and both pairs, the poster's own pair required, the other a string or
+ * null. An answer without `amountUnit` is a fiat range (the API before 8 Nov), with no XMR pair.
+ */
+function parseAmounts(o: Obj, at: string): Pick<Offer, 'amountUnit' | 'minAtomic' | 'maxAtomic' | 'minFiatCents' | 'maxFiatCents'> {
+  if (o.amountUnit === undefined) {
+    return { amountUnit: 'fiat', minAtomic: null, maxAtomic: null, minFiatCents: big(o, 'minFiatCents', at), maxFiatCents: big(o, 'maxFiatCents', at) };
+  }
+  const amountUnit = oneOf(o, 'amountUnit', at, UNITS);
+  const out = {
+    amountUnit,
+    minAtomic: orNull(o, 'minAtomic', at, big),
+    maxAtomic: orNull(o, 'maxAtomic', at, big),
+    minFiatCents: orNull(o, 'minFiatCents', at, big),
+    maxFiatCents: orNull(o, 'maxFiatCents', at, big),
+  };
+  const [lo, hi] = amountUnit === 'xmr' ? [out.minAtomic, out.maxAtomic] : [out.minFiatCents, out.maxFiatCents];
+  if (lo === null || hi === null || lo <= 0n || hi < lo) throw new ApiShapeError(`${at}.amountUnit`);
+  return out;
+}
+
+function strings(v: unknown, at: string): string[] {
+  return list(v, at).map((x, i) => {
+    if (typeof x !== 'string') throw new ApiShapeError(`${at}[${i}]`);
+    return x;
+  });
+}
+
+function parseTier(v: unknown, at: string): OfferTier {
+  const o = obj(v, at);
+  const min = big(o, 'min', at);
+  const max = big(o, 'max', at);
+  if (min <= 0n || max < min) throw new ApiShapeError(`${at}.max`);
+  if (!('minTrades' in o) || !('methodIds' in o)) throw new ApiShapeError(at);
+  return {
+    min,
+    max,
+    marginBps: num(o, 'marginBps', at),
+    minTrades: o.minTrades === null ? null : num(o, 'minTrades', at),
+    methodIds: o.methodIds === null ? null : strings(o.methodIds, `${at}.methodIds`),
+  };
+}
+
+function parseOfferMethod(v: unknown, at: string): OfferMethod {
+  const o = obj(v, at);
+  return { methodId: str(o, 'methodId', at), adjustBps: num(o, 'adjustBps', at) };
 }
 
 export function parseOffers(v: unknown): Offer[] {
@@ -207,9 +308,12 @@ export function parseOffers(v: unknown): Offer[] {
       poster: parsePoster(o.poster, `${at}.poster`),
       rate: orNull(o, 'rate', at, big),
       pricing: parsePricing(o.pricing, `${at}.pricing`),
-      minFiatCents: big(o, 'minFiatCents', at),
-      maxFiatCents: big(o, 'maxFiatCents', at),
-      minTrades: num(o, 'minTrades', at),
+      ...parseAmounts(o, at),
+      minTrades: minTradesOf(o, at),
+      tiers: o.tiers === undefined ? [] : list(o.tiers, `${at}.tiers`).map((t, j) => parseTier(t, `${at}.tiers[${j}]`)),
+      methods: o.methods === undefined ? [] : list(o.methods, `${at}.methods`).map((m, j) => parseOfferMethod(m, `${at}.methods[${j}]`)),
+      currencies: o.currencies === undefined ? [] : strings(o.currencies, `${at}.currencies`),
+      viewerTrades: o.viewerTrades === undefined ? null : num(o, 'viewerTrades', at),
     };
     if (o.opensAt !== undefined) offer.opensAt = oneOf(o, 'opensAt', at, OPENS_AT);
     return offer;

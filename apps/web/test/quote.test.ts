@@ -1,8 +1,11 @@
 // Task 18: the quote maths as the screens use it. Every money figure comes from @x2f/trade (Task 1);
 // these tests pin what the quote shows against those functions, so the UI never grows its own maths.
 import { describe, expect, it } from 'vitest';
-import { atomicForFiat, escrowPlan, fiatCents, formatXmr, offerRate } from '@x2f/trade';
-import { amountText, currencyExponent, fiatWhole, formatMinor, parseAmount, quote, quoteExponent, xmrText, type QuoteOffer } from '../src/screens/quote/quoteModel.js';
+import { atomicForFiat, escrowPlan, fiatCents, formatXmr, offerRate, rangeAllows, rateFor } from '@x2f/trade';
+import { boardSellOffers } from '../src/fixtures/boards.js';
+import { parseOffers } from '../src/screens/browse/api.js';
+import { quoteOffer } from '../src/screens/quote/api.js';
+import { amountText, currencyExponent, dealMaxFiat, fiatWhole, formatMinor, maxText, parseAmount, quote, quoteExponent, rangeText, xmrText, type QuoteOffer } from '../src/screens/quote/quoteModel.js';
 import { takeRefusal } from '../src/screens/quote/takeErrors.js';
 import { ApiCallError } from '../src/api/client.js';
 
@@ -15,9 +18,17 @@ const SELL_AD: QuoteOffer = {
   currency: 'USD',
   poster: { displayName: 'satoshi_ghost', stage: 'graduated' },
   pricing: { mode: 'market', marginBps: 0 },
+  amountUnit: 'fiat',
+  minAtomic: null,
+  maxAtomic: null,
   minFiatCents: 5_000n,
   maxFiatCents: 150_000n,
   minTrades: 0,
+  methodId: 'ZELLE',
+  adjustBps: 0,
+  // An answer from before J-16: no bands, priced from `pricing` and the range.
+  tiers: [],
+  viewerTrades: null,
 };
 
 const BUY_AD: QuoteOffer = { ...SELL_AD, id: 'offer-mira', side: 'buy', poster: { displayName: 'mira.k', stage: 'graduated' } };
@@ -65,8 +76,8 @@ describe('exponent-aware fiat text', () => {
     expect(amountText(150_000n, 'fiat', { currency: 'USD', centsPerXmr: 33_000n }, 2)).toBe('1500.00');
   });
 
-  it("the exponent comes from /v1/price when the feed is up, else from the currency itself (a fixed-price offer with the feed down)", () => {
-    const jpy = { ...SELL_AD, currency: 'JPY', pricing: { mode: 'fixed' as const, centsPerXmr: 33_000n } };
+  it("the exponent comes from /v1/price when the feed is up, else from the currency itself (the offer's own range with the feed down)", () => {
+    const jpy = { ...SELL_AD, currency: 'JPY' };
     expect(quoteExponent(jpy, { centsPerXmr: 33_000n, usdCentsPerXmr: 33_000n, exponent: 0 })).toBe(0);
     expect(quoteExponent(jpy, null)).toBe(0);
     expect(currencyExponent('JPY')).toBe(0);
@@ -124,15 +135,15 @@ describe('quote', () => {
     expect(sell.sellerFundsAtomic).toBe(sell.amountAtomic);
   });
 
-  it('a fixed-price offer quotes with the feed down; a market offer does not', () => {
-    const fixed = { ...SELL_AD, pricing: { mode: 'fixed' as const, centsPerXmr: 34_000n } };
-    const q = quote({ offer: fixed, market: null, text: '340', unit: 'fiat' });
-    expect(q.kind).toBe('ok');
-    if (q.kind === 'ok') {
-      expect(q.rate.centsPerXmr).toBe(34_000n);
-      expect(q.usdCents).toBeNull();
+  it('with the feed down no offer quotes, at any margin: there is no fixed price (owner Q1)', () => {
+    for (const marginBps of [-5000, 0, 5000]) {
+      expect(quote({ offer: { ...SELL_AD, pricing: { mode: 'market', marginBps } }, market: null, text: '340', unit: 'fiat' }).kind, String(marginBps)).toBe('price-unavailable');
     }
     expect(quote({ offer: SELL_AD, market: null, text: '340', unit: 'fiat' }).kind).toBe('price-unavailable');
+    // A fixed pricing is never priced from its own number, with or without the feed.
+    const fixed = { ...SELL_AD, pricing: { mode: 'fixed', centsPerXmr: 34_000n } as unknown as QuoteOffer['pricing'] };
+    expect(() => quote({ offer: fixed, market: null, text: '340', unit: 'fiat' })).toThrow(RangeError);
+    expect(() => quote({ offer: fixed, market: MARKET_USD, text: '340', unit: 'fiat' })).toThrow(RangeError);
   });
 
   it('checks the offer range on the fiat total, for either unit', () => {
@@ -162,7 +173,7 @@ describe('quote', () => {
     expect(usd.kind === 'ok' && usd.usdCents).toBeNull();
   });
 
-  it("the US-dollar figures are the trade's own figures at the exchange rate: the offer's margin or fixed price applies to them too", () => {
+  it("the US-dollar figures are the trade's own figures at the exchange rate: the offer's margin applies to them too", () => {
     // A EUR market offer at +5%: €300.00 / XMR market, €315.00 / XMR offered; $330.00 / XMR market.
     const margin = quote({ offer: { ...SELL_AD, currency: 'EUR', pricing: { mode: 'market', marginBps: 500 } }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '315', unit: 'fiat' });
     if (margin.kind !== 'ok') throw new Error('expected a quote');
@@ -171,13 +182,14 @@ describe('quote', () => {
     // 1 XMR at the offer's €315.00 is $346.50 / XMR in dollars, and the €315.00 total is about $346.50.
     expect(margin.usdPerXmrCents).toBe(34_650n);
     expect(margin.usdCents).toBe(34_650n);
-    // A fixed-price EUR offer far from market: €400.00 / XMR is $440.00 / XMR in dollars.
-    const fixed = quote({ offer: { ...SELL_AD, currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: 40_000n } }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '200', unit: 'fiat' });
-    if (fixed.kind !== 'ok') throw new Error('expected a quote');
-    expect(fixed.usdPerXmrCents).toBe(44_000n);
-    expect(fixed.usdCents).toBe(22_000n);
+    // 50% below, the furthest an offer goes (owner F1): €150.00 / XMR is $165.00 / XMR in dollars.
+    const half = quote({ offer: { ...SELL_AD, currency: 'EUR', pricing: { mode: 'market', marginBps: -5000 } }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '150', unit: 'fiat' });
+    if (half.kind !== 'ok') throw new Error('expected a quote');
+    expect(half.rate.centsPerXmr).toBe(15_000n);
+    expect(half.usdPerXmrCents).toBe(16_500n);
+    expect(half.usdCents).toBe(16_500n);
     // Half up, as every other figure: €1.00 at €300.00 and $330.00 is $1.10; €0.01 at €3.00 / $1.00 is $0.00 (0.33 cents).
-    const tiny = quote({ offer: { ...SELL_AD, currency: 'EUR', minFiatCents: 0n }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '1', unit: 'fiat' });
+    const tiny = quote({ offer: { ...SELL_AD, currency: 'EUR', minFiatCents: 1n }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '1', unit: 'fiat' });
     expect(tiny.kind === 'ok' && tiny.usdCents).toBe(110n);
   });
 });
@@ -192,6 +204,136 @@ describe('xmrText', () => {
     expect(xmrText(1_000_000_100_000n)).toBe('1.0000001');
     // Never rounds: formatXmr(…, 6) would hide the 9 below.
     expect(xmrText(999_999_900_000n)).toBe('0.9999999');
+  });
+});
+
+describe('an offer set in XMR (review M1): the quote checks what the take checks, the XMR range at the rate now', () => {
+  const XMR = 1_000_000_000_000n;
+  // 0.1 - 0.5 XMR at CA$15,000.33: the card shows ≈ CA$1,500.03 - CA$7,500.17.
+  const CAD = { centsPerXmr: 1_500_033n, usdCentsPerXmr: 1_100_000n, exponent: 2 };
+  const rate = { currency: 'CAD', centsPerXmr: CAD.centsPerXmr };
+  const XMR_AD: QuoteOffer = { ...SELL_AD, currency: 'CAD', amountUnit: 'xmr', minAtomic: XMR / 10n, maxAtomic: XMR / 2n, minFiatCents: null, maxFiatCents: null };
+  const q = (text: string, unit: 'fiat' | 'xmr') => quote({ offer: XMR_AD, market: CAD, text, unit });
+
+  it('typed in XMR: the bounds themselves pass, one atomic unit past either is refused', () => {
+    expect(q('0.1', 'xmr').kind).toBe('ok');
+    expect(q('0.5', 'xmr').kind).toBe('ok');
+    expect(q('0.099999999999', 'xmr').kind).toBe('too-low');
+    expect(q('0.500000000001', 'xmr').kind).toBe('too-high');
+  });
+
+  it('typed in fiat: the card\'s shown edges quote the exact XMR bounds; a cent beyond is refused', () => {
+    const lo = q('1500.03', 'fiat');
+    expect(lo.kind).toBe('ok');
+    if (lo.kind === 'ok') expect(lo.amountAtomic).toBe(XMR / 10n);
+    const hi = q('7500.17', 'fiat');
+    expect(hi.kind).toBe('ok');
+    if (hi.kind === 'ok') expect(hi.amountAtomic).toBe(XMR / 2n);
+    expect(q('1500.02', 'fiat').kind).toBe('too-low');
+    expect(q('7500.18', 'fiat').kind).toBe('too-high');
+    // Inside the range nothing is moved.
+    const mid = q('3000', 'fiat');
+    if (mid.kind === 'ok') expect(mid.amountAtomic).toBe(atomicForFiat(300_000n, rate));
+  });
+
+  it('every amount the quote passes, the take would pass (rangeAllows at the same rate)', () => {
+    for (const t of ['1500.03', '1500.04', '2222.22', '7500.16', '7500.17']) {
+      const r = q(t, 'fiat');
+      expect(r.kind, t).toBe('ok');
+      if (r.kind === 'ok') expect(rangeAllows({ unit: 'xmr', min: XMR / 10n, max: XMR / 2n }, r.amountAtomic, rate), t).toBe('ok');
+    }
+  });
+
+  it('shows the range in the unit the poster set; Max fills the exact maximum in either unit', () => {
+    expect(rangeText(XMR_AD, 2)).toEqual({ min: '0.100000 XMR', max: '0.500000 XMR' });
+    expect(rangeText(SELL_AD, 2)).toEqual({ min: '$50', max: '$1,500' });
+    for (const unit of ['xmr', 'fiat'] as const) {
+      const r = q(maxText(XMR_AD, unit, rate, 2), unit);
+      expect(r.kind, unit).toBe('ok');
+      if (r.kind === 'ok') expect(r.amountAtomic, unit).toBe(XMR / 2n);
+    }
+    expect(maxText(SELL_AD, 'fiat', { currency: 'USD', centsPerXmr: 33_000n }, 2)).toBe('1500.00');
+  });
+
+  it('the trade room is handed the limit the take records: the XMR maximum at the rate', () => {
+    expect(dealMaxFiat(XMR_AD, rate)).toBe(750_017n);
+    expect(dealMaxFiat(SELL_AD, rate)).toBe(150_000n);
+  });
+
+  it('with the feed down, a market offer set in XMR is price-unavailable (review L2), not gone', () => {
+    expect(quote({ offer: XMR_AD, market: null, text: '0.2', unit: 'xmr' }).kind).toBe('price-unavailable');
+    const parsed = parseOffers([{ ...boardSellOffers(new Date('2026-10-24T12:00:00Z'))[0]!, rate: null, amountUnit: 'xmr', minAtomic: '100000000000', maxAtomic: '500000000000', minFiatCents: null, maxFiatCents: null }])[0]!;
+    expect(quoteOffer(parsed, 'sell', 'USD', 'ZELLE')).toMatchObject({ amountUnit: 'xmr', minAtomic: XMR / 10n, maxAtomic: XMR / 2n, minFiatCents: null, maxFiatCents: null });
+  });
+});
+
+describe('J-16: a flexible offer is quoted from the band the take will use', () => {
+  const MARKET = { centsPerXmr: 33_000n, usdCentsPerXmr: 33_000n, exponent: 2 };
+  const at = (bps: number) => rateFor({ currency: 'USD', centsPerXmr: 33_000n }, bps);
+  // 200-500 at +1% and 501-800 at market, as the API covers them (200.00-500.99, 501.00-800.00); PayPal +2%.
+  const BANDED: QuoteOffer = {
+    ...SELL_AD,
+    minFiatCents: 20_000n,
+    maxFiatCents: 80_000n,
+    methodId: 'PAYPAL',
+    adjustBps: 200,
+    tiers: [
+      { min: 20_000n, max: 50_099n, marginBps: 100, minTrades: null },
+      { min: 50_100n, max: 80_000n, marginBps: 0, minTrades: null },
+    ],
+  };
+
+  it('each amount at its own band\'s price (band margin + method change); the band is the range the trade records', () => {
+    const low = quote({ offer: BANDED, market: MARKET, text: '300', unit: 'fiat' });
+    expect(low.kind).toBe('ok');
+    if (low.kind !== 'ok') return;
+    expect(low.rate).toEqual(at(300));
+    expect(low.range).toEqual({ unit: 'fiat', min: 20_000n, max: 50_099n });
+    expect(dealMaxFiat(BANDED, low.rate, low.range)).toBe(50_099n);
+    const high = quote({ offer: BANDED, market: MARKET, text: '600', unit: 'fiat' });
+    expect(high.kind === 'ok' && [high.rate, high.range.max]).toEqual([at(200), 80_000n]);
+    expect(quote({ offer: BANDED, market: MARKET, text: '150', unit: 'fiat' }).kind).toBe('too-low');
+    expect(quote({ offer: BANDED, market: MARKET, text: '900', unit: 'fiat' }).kind).toBe('too-high');
+  });
+
+  it('bands on the same amounts: the best for the taker among those whose rule they meet (as the take)', () => {
+    const SAME: QuoteOffer = {
+      ...BANDED,
+      adjustBps: 0,
+      tiers: [
+        { min: 20_000n, max: 80_000n, marginBps: 100, minTrades: null },
+        { min: 20_000n, max: 80_000n, marginBps: -100, minTrades: 10 },
+      ],
+    };
+    const rateWith = (viewerTrades: number | null, side: 'sell' | 'buy' = 'sell') => {
+      const q = quote({ offer: { ...SAME, side, viewerTrades }, market: MARKET, text: '300', unit: 'fiat' });
+      return q.kind === 'ok' ? q.rate : null;
+    };
+    expect(rateWith(12)).toEqual(at(-100));
+    expect(rateWith(3)).toEqual(at(100));
+    expect(rateWith(null)).toEqual(at(100));
+    // A buy ad's best for the taker (who sells) is the higher price.
+    expect(rateWith(12, 'buy')).toEqual(at(100));
+  });
+
+  it('the card keeps only the bands offered with the method it was opened under, and that method\'s change', () => {
+    const card = parseOffers([
+      {
+        ...boardSellOffers(new Date('2026-10-24T12:00:00Z'))[0]!,
+        tiers: [
+          { min: '5000', max: '150000', marginBps: 0, minTrades: null, methodIds: null },
+          { min: '5000', max: '150000', marginBps: -200, minTrades: null, methodIds: ['ZELLE'] },
+        ],
+        methods: [{ methodId: 'ZELLE', adjustBps: 0 }, { methodId: 'PAYPAL', adjustBps: 300 }],
+        currencies: ['USD', 'CAD'],
+        viewerTrades: 4,
+      },
+    ])[0]!;
+    expect(card.currencies).toEqual(['USD', 'CAD']);
+    const viaPaypal = quoteOffer(card, 'sell', 'USD', 'PAYPAL');
+    expect(viaPaypal).toMatchObject({ methodId: 'PAYPAL', adjustBps: 300, viewerTrades: 4 });
+    expect(viaPaypal.tiers.map((t) => t.marginBps)).toEqual([0]);
+    expect(quoteOffer(card, 'sell', 'USD', 'ZELLE').tiers.map((t) => t.marginBps)).toEqual([0, -200]);
   });
 });
 

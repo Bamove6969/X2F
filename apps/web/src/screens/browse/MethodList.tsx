@@ -1,14 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { Icon } from '../../ui/icons.js';
+import { Logo } from '../../ui/Logo.js';
 import { ApiShapeError, CURRENCIES, adSide, currencyFrom, fetchMethods, formatMinor, type MethodLists, type MethodRow, type MethodSort, type Side } from './api.js';
+import { MethodPicker, methodShown } from './MethodPicker.js';
+import { methodUpToLine } from './methodTime.js';
 import { RadioChips } from './RadioChips.js';
 import type { BrowseCopy } from './SellCopy.js';
 import { SuggestMethodSheet } from './SuggestMethodSheet.js';
 import './browse.css';
+import { NewsBell } from '../../ui/NewsBell.js';
 
-// The Main board (/sell) and, with side="buy", the BuyMain board (/buy): the methods with live offers
-// in the chosen currency first, then every other method A–Z, a currency picker, search and Sort.
+// The Main board (/sell) and, with side="buy", the BuyMain board (/buy): one card for the methods with
+// live offers in the chosen currency (a picker of them, MethodPicker.tsx; owner 2026-11-08), then every
+// other method A–Z, a currency picker, search and Sort. Search lists every match as rows.
 
 /** The sort ids in the order of `copy.methodSorts`. */
 const SORT_IDS: readonly MethodSort[] = ['buyers', 'rate', 'az'];
@@ -17,6 +22,18 @@ const SORT_IDS: readonly MethodSort[] = ['buyers', 'rate', 'az'];
 // rows stay hidden rather than read with the new currency's words and symbol. A sort change keeps
 // showing the old order until the new one lands.
 type Load = { kind: 'loading' } | { kind: 'ready'; side: Side; currency: string; lists: MethodLists } | { kind: 'failed'; shape: boolean };
+
+/**
+ * A section: `pick` is the live card (MethodPicker); `collapsed` is All payment methods, the methods
+ * with no live offer here, folded into one line until opened (design review 8 Nov, item 7: the ~106
+ * "No USD buyers right now" rows read as a dead list).
+ */
+type Section = { title: string; rows: MethodRow[]; pick?: boolean; collapsed?: { more: boolean } };
+
+/** COPY-UNSIGNED: the folded line, "106 more payment methods" under live ones, else "106 payment methods". */
+export function allMethodsLine(n: number, more: boolean): string {
+  return `${n.toLocaleString('en-US')} ${more ? 'more ' : ''}payment ${n === 1 ? 'method' : 'methods'}`;
+}
 
 /** The order the API uses for `sort`, for search hits (taken from `all`). */
 function compareFor(sort: MethodSort, side: Side): (a: MethodRow, b: MethodRow) => number {
@@ -42,6 +59,8 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
   const [query, setQuery] = useState('');
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [suggesting, setSuggesting] = useState(false);
+  // The method picked on the live card; null (or one with no live offer here) shows the first.
+  const [picked, setPicked] = useState<string | null>(null);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -58,7 +77,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
   }, [side, currency, sort]);
 
   const q = query.trim();
-  const sections = useMemo(() => {
+  const sections = useMemo((): Section[] => {
     if (load.kind !== 'ready' || load.side !== side || load.currency !== currency) return [];
     const { live, all } = load.lists;
     if (q !== '') {
@@ -69,13 +88,17 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
     const liveIds = new Set(live.map((m) => m.id));
     const rest = all.filter((m) => !liveIds.has(m.id));
     return [
-      ...(live.length > 0 ? [{ title: copy.liveTitle(currency), rows: live }] : []),
-      { title: 'All payment methods', rows: rest },
+      ...(live.length > 0 ? [{ title: copy.liveTitle(currency), rows: live, pick: true }] : []),
+      ...(rest.length > 0 ? [{ title: 'All payment methods', rows: rest, collapsed: { more: live.length > 0 } }] : []),
     ];
   }, [load, q, sort, side, currency, copy]);
+  const [allOpen, setAllOpen] = useState(false);
+  const allId = useId();
 
   const sub = (m: MethodRow) =>
     m.offers > 0 ? copy.liveRow(m.offers, currency, m.bestRate === null ? null : formatMinor(m.bestRate, currency)) : copy.emptyRow(currency);
+  // Owner p9-4: how long the method can take, up front where it is picked.
+  const upTo = (m: MethodRow) => (m.upToMin === null ? null : methodUpToLine(m.upToMin));
   const withCurrency = (path: string) => `${path}?currency=${currency}`;
   const total = load.kind === 'ready' ? load.lists.all.length : null;
   const current = load.kind === 'ready' && load.side === side && load.currency === currency;
@@ -84,7 +107,12 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
     <div className="x2f-browse">
       <header className="x2f-browse__header">
         <div className="x2f-browse__bar">
-          <span className="x2f-wordmark">X2F</span>
+          <span className="x2f-brand x2f-browse__brand">
+            <span className="x2f-browse__logo">
+              <Logo size={24} />
+            </span>
+            <NewsBell />
+          </span>
           <div role="tablist" aria-label="Buy or sell" className="x2f-segment">
             {(['buy', 'sell'] as const).map((s) => (
               <button
@@ -145,17 +173,54 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
         {sections.map((sec) => (
           <section key={sec.title} className="x2f-browse__section">
             <h2 className="x2f-browse__section-title x2f-section-title">{sec.title}</h2>
-            {sec.rows.map((m) => (
-              <Link key={m.id} to={withCurrency(`/${side}/${encodeURIComponent(m.id)}`)} className="x2f-method">
+            {sec.pick ? (
+              <MethodPicker
+                live={sec.rows}
+                value={methodShown(sec.rows, picked)!}
+                onChange={setPicked}
+                title={sec.title}
+                sub={sub}
+                upTo={upTo}
+                href={(m) => withCurrency(`/${side}/${encodeURIComponent(m.id)}`)}
+              />
+            ) : null}
+            {sec.collapsed ? (
+              <button
+                type="button"
+                className="x2f-method x2f-browse__all-toggle"
+                aria-expanded={allOpen}
+                aria-controls={allId}
+                onClick={() => setAllOpen((o) => !o)}
+              >
                 <span className="x2f-method__text">
-                  <span className="x2f-method__name" data-part="name">
-                    {m.name}
-                  </span>
-                  <span className="x2f-method__sub">{sub(m)}</span>
+                  <span className="x2f-method__name">{allMethodsLine(sec.rows.length, sec.collapsed.more)}</span>
+                  <span className="x2f-method__sub">{copy.emptyRow(currency)}</span>
                 </span>
-                <Icon name="chevron-right" size={18} />
-              </Link>
-            ))}
+                <Icon name="chevron-down" size={18} />
+              </button>
+            ) : null}
+            {sec.pick || (sec.collapsed && !allOpen) ? null : (
+              <div id={sec.collapsed ? allId : undefined} className="x2f-browse__rows">
+                {sec.rows.map((m) => (
+                  <Link key={m.id} to={withCurrency(`/${side}/${encodeURIComponent(m.id)}`)} className="x2f-method">
+                    <span className="x2f-method__text">
+                      <span className="x2f-method__name" data-part="name">
+                        {m.name}
+                      </span>
+                      {/* Opened, the folded rows drop the line the toggle already said once. */}
+                      {sec.collapsed ? null : <span className="x2f-method__sub">{sub(m)}</span>}
+                      {/* Owner p9-4: how long the method can take, where it is picked. */}
+                      {upTo(m) === null ? null : (
+                        <span className="x2f-method__sub" data-part="up-to">
+                          {upTo(m)}
+                        </span>
+                      )}
+                    </span>
+                    <Icon name="chevron-right" size={18} />
+                  </Link>
+                ))}
+              </div>
+            )}
           </section>
         ))}
         {current && q !== '' && sections.length === 0 ? (

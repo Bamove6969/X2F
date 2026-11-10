@@ -3,7 +3,7 @@
 //
 // - "!" is refused in user-visible text: JSX text, string literals (JSX attribute values included)
 //   and the text parts of template literals in JS/TS files (.ts/.tsx/.js/.jsx/.mjs/.cjs/.mts/.cts)
-//   under apps/web/src, with HTML entities decoded as React does in JSX (`Done&#33;`, `&excl;`).
+//   under apps/web/src and apps/staff-web/src (Plan 4 Task 16), with HTML entities decoded as React does in JSX (`Done&#33;`, `&excl;`).
 //   Code operators (!x, !==, a!) are syntax, not text, so they never reach the check; comments
 //   and regex literals are skipped too.
 // - An emoji code point is refused anywhere in any file under apps/web/src, comments included:
@@ -19,7 +19,8 @@
 //   piece of user text that words a refusal (REFUSAL_WORDS: "can't", "unable", "too many",
 //   "already have", ...) and every string literal equal to one of the API's refusal codes
 //   (CANT_DO_CODES in apps/web/src/ui/cantDoCodes.ts) is judged on its own. It passes only when:
-//     - it lives in the refusal text map itself (ui/cantDoCodes.ts) or in ui/CantDoThat.tsx;
+//     - it lives in the refusal text map itself (ui/cantDoCodes.ts; the staff app's is
+//       apps/staff-web/src/refusals.ts) or in ui/CantDoThat.tsx;
 //     - it is written straight into a `<CantDoThat title=... body=... from=...>` attribute; or
 //     - a real comment (not text inside a string) on the same line, or ending on the line above,
 //       says `not-a-refusal: <why>` (an explanation, an input check, a fault, not a rule that
@@ -35,6 +36,8 @@ import { parseAst } from 'rolldown/parseAst';
 import { CANT_DO_CODES } from '../apps/web/src/ui/cantDoCodes.js';
 
 export const WEB_SRC = fileURLToPath(new URL('../apps/web/src/', import.meta.url));
+/** Plan 4 Task 16: the staff app's copy follows the same rules. */
+export const STAFF_WEB_SRC = fileURLToPath(new URL('../apps/staff-web/src/', import.meta.url));
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 
 export interface Finding {
@@ -68,8 +71,8 @@ const FAULT_OPENER = /^\s*(?:(?:(?!you\b)\S+\s+){0,5}?could(?:n['’]t| not)\b|y
 const STRONG_RULE = /\b(?:sorry|limited|only|once every|maximum|at most|hold|not allowed|not permitted|already have|can['’]t post)\b/i;
 const isFault = (t: string): boolean => FAULT_OPENER.test(t) && !STRONG_RULE.test(t);
 const CODES: ReadonlySet<string> = new Set(CANT_DO_CODES);
-/** The two files that hold refusal wording by design: the text map and the popup. */
-const CANT_DO_HOME = /(?:^|\/)apps\/web\/src\/ui\/(?:cantDoCodes\.ts|CantDoThat\.tsx)$|^(?:cantDoCodes\.ts|CantDoThat\.tsx)$/;
+/** The files that hold refusal wording by design: the text maps (trader and staff) and the popup. */
+const CANT_DO_HOME = /(?:^|\/)apps\/web\/src\/ui\/(?:cantDoCodes\.ts|CantDoThat\.tsx)$|(?:^|\/)apps\/staff-web\/src\/refusals\.ts$|^(?:cantDoCodes\.ts|CantDoThat\.tsx)$/;
 export const PRAGMA = 'not-a-refusal:';
 /** A refusal still shown inline, waiting to move into CantDoThat (counted by a ratchet test). */
 export const TODO_PRAGMA = 'cant-do-that-todo:';
@@ -268,8 +271,8 @@ export function lintTree(root: string): Finding[] {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const root = process.argv[2] ? resolve(process.argv[2]) : WEB_SRC;
-  const found = lintTree(root);
+  const roots = process.argv[2] ? [resolve(process.argv[2])] : [WEB_SRC, STAFF_WEB_SRC];
+  const found = roots.flatMap((r) => lintTree(r));
   for (const f of found) {
     const what =
       f.rule === 'exclamation'
@@ -285,5 +288,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.error(`copy-lint: ${found.length} problem${found.length === 1 ? '' : 's'}`);
     process.exit(1);
   }
-  console.log(`copy-lint: ${relative(REPO, root) || root} is clean`);
+  console.log(`copy-lint: ${roots.map((r) => relative(REPO, r) || r).join(', ')} clean`);
 }

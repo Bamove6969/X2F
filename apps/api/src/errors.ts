@@ -30,6 +30,16 @@ export type ApiErrorCode =
   | 'confirm-invalid'
   | 'recovery-session'
   | 'recovery-hold'
+  // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key,
+  // the staged changes are not the ones reviewed, too many changes, the trade partner's account has
+  // a temporary problem (never "hold" to the partner). No semicolon inside this type: the web's
+  // cantDoThat-lint reads the union up to the first one.
+  | 'approval-unavailable'
+  | 'changes-changed'
+  | 'too-many-changes'
+  // Notes on traders (review 2026-11-09 m4): the account's notes are at NOTES_PER_ACCOUNT.
+  | 'too-many-notes'
+  | 'counterparty-unavailable'
   | 'method-not-allowed'
   | 'last-login-method'
   | 'webauthn-failed'
@@ -40,6 +50,10 @@ export type ApiErrorCode =
   | 'wallet-exists'
   | 'terms-not-accepted'
   | 'terms-required'
+  // Owner, 8 Nov 2026: the signature given with the Terms (src/termsSignature.ts).
+  | 'signature-required'
+  | 'signature-invalid'
+  | 'signature-too-large'
   // Plan 2 Task 16: new-device approval.
   | 'approval-ended'
   | 'too-many-devices'
@@ -72,6 +86,8 @@ export type ApiErrorCode =
   | 'ad-busy'
   | 'price-changed'
   | 'starter-limit'
+  // Owner p11-6: the launch cap on one trade's USD value (trades/launchCap.ts), at post and take.
+  | 'launch-cap'
   | 'offer-busy'
   // Plan 4, Task 5: a security-key tap that is missing, expired, used, another account's or for another intent.
   | 'tap-invalid'
@@ -91,6 +107,8 @@ export type ApiErrorCode =
   | 'wrong-channel'
   | 'wrong-sender'
   | 'chat-unavailable'
+  // Design 2026-11-08 section 5: a chat purged under the caller (its member mark); the device erases its copy.
+  | 'chat-purged'
   // Plan 3, Task 27: a second dispute on one trade.
   | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.
@@ -118,6 +136,11 @@ export type ApiErrorCode =
   | 'forbidden'
   | 'too-many-members'
   | 'member-cannot-sign'
+  // Owner 2 Nov 2026: Trader and Vendor accounts (only a vendor posts offers or has a team; the
+  // switch needs a passkey, security key or PGP key), and the ban list (a banned PGP key).
+  | 'not-vendor'
+  | 'vendor-needs-key'
+  | 'key-unavailable'
   // Plan 4, Task 4: staff login hours (a login, or an open session, outside the window).
   | 'outside-login-hours'
   // Plan 4, Task 7: staff invites and the owner's protections.
@@ -126,6 +149,15 @@ export type ApiErrorCode =
   | 'two-factors-required'
   | 'owner-protected'
   | 'owner-needs-two-keys'
+  // Owner G3 (7 Nov): a moderator holds a security key, a PGP key and a passkey.
+  | 'all-three-methods-required'
+  // Owner G4 (7 Nov): adding or removing an owner key needs taps by both owner keys.
+  | 'both-owner-keys-required'
+  // Owner G3 (review P-m1): a staff passkey that reports a security-key model is that key again.
+  | 'passkey-is-security-key'
+  // Plan 4, Task 6: owner first-run setup.
+  | 'setup-locked'
+  | 'owner-needs-pgp'
   // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
   | 'not-live'
   // Plan 5, Task 10: past reputation claims.
@@ -136,7 +168,18 @@ export type ApiErrorCode =
   | 'wrong-key'
   | 'challenge-used'
   | 'site-claimed'
-  | 'fingerprint-claimed';
+  | 'fingerprint-claimed'
+  // Plan 4, Task 11: the moderator's case work. `forbidden-case`: not the assignee (nor a senior
+  // moderator or the owner), or involved in round 1 of an appealed case; `freeze-not-allowed`: the
+  // party has not ignored the dispute or the ruling; the moderation process's own answers.
+  | 'forbidden-case'
+  | 'freeze-not-allowed'
+  | 'no-chat'
+  | 'no-proof'
+  | 'moderation-unavailable'
+  // Owner rule p5-7: secure Jabber account-change alerts.
+  | 'jabber-unavailable'
+  | 'jabber-address-invalid';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

@@ -39,6 +39,10 @@ export function boardViewport(board: string, boardsDir = BOARDS_DIR): ParityView
 /** The ratio of differing pixels at which the (reported) screenshot comparison counts as a difference. */
 export const MAX_DIFF_PIXEL_RATIO = 0.03;
 
+/** Why a board's dates differ from the page's (KNOWN_EXCEPTIONS below). */
+const DATE_FORMAT =
+  "One date format (design review M1, ui/dates.ts): the page says the same moment as '16 Oct 2026, 10:14 UTC' (times of day as '10:14 UTC'), not the board's local weekday form.";
+
 /**
  * Board texts that are known to be out of date and are not required on the page. The phone boards
  * win over the Desktop board where they disagree (lead ruling; HANDOFF: the desktop view is still
@@ -57,19 +61,56 @@ const TRADER_CARD = 'Trader card from the shared kit (design gap list Job 2), no
  * XMR"). Those are gap list Job 4 (trade screens to the boards), not the cancel sheet; the sheet's
  * own copy is checked in full.
  */
+const NO_DISPUTE_BEFORE_PAID =
+  'Design proto review P1 (8 Nov): the buyer gets no dispute before "I\'ve paid" (the machine refuses it, too-early); the board, drawn before that, still shows Open dispute on the unpaid pay step.';
 const PAY_STEP_V2 = 'The secured pay step under the sheet in its v2 layout (design gap list Job 4, trade screens to the boards); not part of the cancel sheet (owner G56), whose copy is checked in full.';
 
+/** Build spec j31a section 3 (owner p5-2, T-049, 9 Nov): drawn on wip/design-brief b5bb4faa; this repo's copy of the board predates it. */
+const CANCEL_T049 =
+  'T-049 (owner p5-2, build spec j31a section 3, boards on wip/design-brief b5bb4faa): the sheet reads "Cancelling is likely final" and its body no longer names the seller. design/x2f-app still has the 7 Nov board.';
+
+const AD_CARD_V142 =
+  'Owner #11 (8 Nov), boards v142 on wip/design-brief: the ad card shows the price bottom-left ("0.4%" over "above market", design final call 10 Nov, ui/margin.ts) and the range as two rows, XMR and fiat, each with its unit; the time moved to the price row. design/x2f-app still has the earlier card.';
+/** Design final call (10 Nov 2026): one price wording everywhere, "0.4% above market" / "at market" (ui/margin.ts), never a signed figure. */
+const PRICE_WORDING = 'Design final call (10 Nov 2026), ui/margin.ts: an offer with no margin reads "at market" (lower case, the same words as "0.4% above market"), so the board\'s "At market" is not on the card.';
+
+/**
+ * J-16 (Plan 3 Tasks 34/35): PostOffer lists up to 5 currencies with up to 3 bands each and up to 5
+ * payment methods, so the board's one "Payment method" select, one "Currency" select (USD/EUR/GBP),
+ * one market line and one "Who can trade with you" section are now pickers, chips, a market line
+ * per currency and a "Minimum completed trades" choice per band. The board is still Task 21's.
+ */
+const FLEX_BOARD_PENDING = 'J-16 flex offers; board recapture pending (design)';
+
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
-  BuyerPay: ['SG', 'Vendor', 'Online · replies in about 4 min', 'Online', '4', '1,284', 'trades', '99.4%', 'positive', '275.4', 'XMR traded', 'Trusted', 'Fast', '+3'].map(
-    (text) => ({ text, why: TRADER_CARD }),
-  ),
-  SellerRefund: ['MK', 'Last seen 1 h ago', '1', '212', 'trades', '99%', 'positive', '41.7', 'XMR traded', 'Trusted', 'PGP verified', '+3'].map(
-    (text) => ({ text, why: TRADER_CARD }),
-  ),
+  BuyOffers: [
+    { text: '$0.10 above market', why: 'Owner Q1 (6 Nov): every offer is the market +/- %, so the card reads "0.03% above market" (ui/margin.ts), never a fixed amount over it.' },
+    ...['$50 – $1,500Releases in ~8 min', '$100 – $3,000Releases in ~20 min', '$20 – $400Releases in ~30 min'].map((text) => ({ text, why: AD_CARD_V142 })),
+  ],
+  BuyerPay: [
+    ...['SG', 'Vendor', 'Online · replies in about 4 min', 'Online', '4', '1,284', 'trades', '99.4%', 'positive', '275.4', 'XMR traded', 'Trusted', 'Fast', '+3'].map(
+      (text) => ({ text, why: TRADER_CARD }),
+    ),
+    { text: 'Open dispute', why: NO_DISPUTE_BEFORE_PAID },
+  ],
+  SellerRefund: [
+    ...['MK', 'Last seen 1 h ago', '1', '212', 'trades', '99%', 'positive', '41.7', 'XMR traded', 'Trusted', 'PGP verified', '+3'].map((text) => ({ text, why: TRADER_CARD })),
+    // Owner 8 Nov (p6-1): nudges are optional, so the board's locked state (Cancel waits for 90 min
+    // AND one nudge) is retired; the board predates the reversal and awaits a redraw.
+    ...['No word from mira.k? After 90 min and at least one nudge, you can cancel and get your 1.250000 XMR back.', '90'].map((text) => ({
+      text,
+      why: "The board's nudge lock, retired by the owner 8 Nov (p6-1: nudges are optional, Cancel is available as soon as the time to pay passes); board redraw owed.",
+    })),
+  ],
   CancelRequest: [
+    { text: 'Open dispute', why: NO_DISPUTE_BEFORE_PAID },
     ...['61', 'min', 'of 90 min · ends 1 Nov 2026, 15:21 UTC', '90', '1 Nov 2026, 15:21 UTC', '$412.50', 'for 1.250000 XMR', '1.250000', 'XMR'].map(
       (text) => ({ text, why: PAY_STEP_V2 }),
     ),
+    ...[
+      'Cancelling is final',
+      "The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead.",
+    ].map((text) => ({ text, why: CANCEL_T049 })),
     {
       text: '•••-•••-4471',
       why: 'The board\'s masked "Zelle to" value is an example; what the row shows is still open for the owner (board note "Open · owner to choose"), and the page shows the seller\'s details the fixture serves.',
@@ -85,6 +126,18 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'P3-M12: the seller pays the funding fee in their own wallet (spec 11.1), so the row reads "Network fee · set in your wallet".',
     },
     { text: '0.000062 XMR', why: 'The value of the replaced network-fee row (P3-M12): X2F does not set the funding fee.' },
+  ],
+  Main: [
+    {
+      text: 'X2F',
+      why: 'The browse header shows logo D (an SVG mark), not the X2F wordmark: owner G-015 / design 9 Nov ("the pre-login mark is logo D"), built by the wide shell (Job 3). The Main board still carries the text wordmark until design redraws it.',
+    },
+  ],
+  BuyMain: [
+    {
+      text: 'X2F',
+      why: 'As Main: the header mark is logo D, not the X2F wordmark (owner G-015 / design 9 Nov); the BuyMain board still carries the text until design redraws it.',
+    },
   ],
   Desktop: [
     {
@@ -106,6 +159,25 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     {
       text: "Private details are blurred automatically for you to check next. It's best-effort, so please double-check before sending. Location and device info are removed.",
       why: 'The proof slot hint on the BuyerPay phone board reads "Private details are blurred for you to check next. Location and device info are removed."; the phone board wins.',
+    },
+    { text: 'Open dispute', why: NO_DISPUTE_BEFORE_PAID },
+  ],
+  // Owner S-017 (1 Nov 2026, lead job J-09): the recovery codes are required, so the backup step
+  // first shows "Save your recovery codes" and only then the board's optional choice. setup.spec
+  // checks the board on that second view, which keeps the board's options, "Add …" and "Skip for
+  // now"; the board itself is not updated yet (its copy here is COPY-UNSIGNED, for design).
+  SetupBackup: [
+    {
+      text: 'Add a backup way to log in',
+      why: 'S-017: by the time the optional backups show, a recovery code is already saved, so the heading reads "Add another backup (optional)" (COPY-UNSIGNED); the board predates S-017.',
+    },
+    {
+      text: 'We recommend it. X2F has no email address or phone number for you, so if you lose your key or forget your password, we have no way to let you back in.',
+      why: 'S-017: the recommendation moved to the required recovery-code view before it ("…a recovery code is your emergency way back in", COPY-UNSIGNED); the optional view says a security key or second PGP key also gets you back in. The board predates S-017.',
+    },
+    {
+      text: "Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.",
+      why: 'S-017: shown, word for word, on the required recovery-code view before the one checked here, not again once a backup exists. The board predates S-017.',
     },
   ],
   SetupTerms: [
@@ -145,6 +217,18 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: 'End of Terms. Version [DATE].',
       why: 'The page shows the real version from GET /v1/terms in place of [DATE] (Task 28).',
     },
+    {
+      text: 'Please read to the end. The key points first:',
+      why: 'Superseded on the canvas (design 9 Nov, p11-15, ea2a9ca8): the intro now reads "Read to the end. If you agree to X2F\'s rules and terms, …"; this repo\'s mirror of the board is from 26 Oct.',
+    },
+    {
+      text: 'I accept',
+      why: 'Superseded on the canvas (design 9 Nov, p11-15): the button reads "Start creating my account"; this repo\'s mirror of the board is from 26 Oct.',
+    },
+    {
+      text: 'Dispute records are kept for 30 days.',
+      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling): two key points, "Completed trades are erased on day 30." and "Disputed trades are kept up to 90 days, …"; this repo\'s mirror of the board is from 26 Oct.',
+    },
   ],
   SetupPgpKey: [
     {
@@ -166,10 +250,27 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The inner value of "Expires in 4:12": the page\'s masked Countdown already stands for it in that sentence, and one masked element covers one board text (Task 28).',
     },
   ],
+  // Design real-app review item 6 (766747ea, owner Q54): this step now asks for the ONE private
+  // username, and the public display name has its own screen after it (DisplayName.tsx). The board
+  // still draws the old public username; it is not updated yet (the page's copy is for design).
   SetupUsername: [
     {
       text: 'lumen.k is available',
-      why: 'No API answers whether a name is free before sign-up (Plan 2 and FU-A have none), so the page cannot claim it; a taken name comes back from the register call and returns the person to this screen. The page shows how the name will look instead (Task 28; open question for the lead).',
+      why: "The board's example name. The page's live tick (POST /v1/register/name-check) says the same sentence for the name typed (\"lumen-login-7 is available\" in setup.spec), which is not the board's public example.",
+    },
+    {
+      text: 'This is how traders see you. No email or phone number needed, now or ever.',
+      why: 'Item 6: the username here is private ("You type this to log in. Only you see it. …"); "This is how traders see you" moved to the display-name screen. The board predates item 6.',
+    },
+    {
+      text: "5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real name or used elsewhere.",
+      why: 'Item 6: split between the two names. The username\'s help keeps the rules and "Pick something that isn\'t your real name or used elsewhere."; "It shows exactly as you type it." is on the display-name screen, the name traders see. The board predates item 6.',
+    },
+  ],
+  SetupWelcome: [
+    {
+      text: 'Authenticator app',
+      why: 'The board\'s example backup login. An authenticator app is no backup login any more (design build gaps Job 1, 5fee431d), and the recovery codes are required at sign-up (owner S-017), so after the backup step the summary reads "Recovery codes" (asserted in setup.spec). The board predates both.',
     },
   ],
   SetupWallet: [
@@ -183,12 +284,34 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: '$20 – $200Deposit required',
       why: 'Buyer deposits were removed (plan Revision 2026-10-18, spec 2.5); the card shows its range and, when the API knows it, the typical time ("Pays in ~N min").',
     },
+    ...['$50 – $2,000Pays in ~6 min', '$100 – $5,000Pays in ~15 min'].map((text) => ({ text, why: AD_CARD_V142 })),
+    { text: 'At market', why: PRICE_WORDING },
   ],
   PostOffer: [
     {
       text: 'Bank transfer (ACH)',
       why: 'The board names ACH differently from the catalog ("ACH bank transfer (US)", data/payment-methods.json); the board fix is a design to-do (lead, 2026-10-27).',
     },
+    ...['Anyone', '5+', '10+', '50+'].map((text) => ({
+      text,
+      why: 'Owner, 8 Nov ("This will be 5, 10, 25, 50"): Minimum completed trades is a segmented choice, No minimum / 5 / 10 / 25 / 50; the board still draws the old select (design to-do).',
+    })),
+    {
+      text: '$50 – $2,000',
+      why: 'Owner #11 (8 Nov), boards v142: the preview shows the range in both units, each row with its unit ("$50 – $2,000 USD"); design/x2f-app still has the one-row preview.',
+    },
+    ...['−', '+'].map((text) => ({
+      text,
+      why: 'Owner F1 (7 Nov): the vendor picks Above or Below market and types the percentage, at most 50% (J-02); the board still draws the ±0.1% stepper buttons (design to-do).',
+    })),
+    ...[
+      'Payment method',
+      'Currency',
+      'EUR',
+      'GBP',
+      "Market $329.90 / XMR right now. Your price follows the market, so it's always {{priceNow}} at today's rate.",
+      'Who can trade with you',
+    ].map((text) => ({ text, why: FLEX_BOARD_PENDING })),
   ],
   // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).
   DisputeOpen: [
@@ -199,6 +322,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     { text: 'Zelle screenshot', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
     { text: 'Already in this trade, blurred', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
     { text: 'Included', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+    { text: 'A moderator looks at what happened and decides where the 1.25 XMR goes. It stays locked in escrow until then.', why: 'Design kit handoff 1.5 and kit review 5 (8 Nov): prose XMR has 6 places, so the page reads 1.250000 XMR; the board predates the rule (design to re-export).' },
   ],
   DisputeRoom: [
     { text: '1.25 XMR locked in escrow', why: 'Board v119 (design 7 Nov, not in this repo yet): the amount is an inner block, six decimals.' },
@@ -222,8 +346,14 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     { text: "sarah.v asked you for the unblurred proof. Only she will see it. satoshi_ghost won't.", why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
     { text: 'Send unblurred proof to sarah.v', why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
+    { text: 'Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)', why: DATE_FORMAT },
+    { text: 'Fri 16 Oct, 10:14', why: DATE_FORMAT },
+    { text: "10:14 · You opened a dispute: I paid, but the seller hasn't released", why: DATE_FORMAT },
+    { text: '10:52 · Moderator sarah.v joined this dispute', why: DATE_FORMAT },
   ],
   DisputeRuling: [
+    { text: 'sarah.v · Thu 15 Oct, 14:30', why: DATE_FORMAT },
+    { text: '1.25 XMR goes to you', why: 'Design kit handoff 1.5 and kit review 5 (8 Nov): prose XMR has 6 places, so the page reads 1.250000 XMR; the board predates the rule (design to re-export).' },
     {
       text: 'To Cake Wallet, address ending …k3Fz, once the appeal window closes.',
       why: 'Superseded (design review 2026-11-01 fix 2; board DisputeRuling on wip/design-brief; Plan 4 "A1 dropped"): no wait for the window. The newer board reads "Sent to …", but nothing executes the payout yet (C11 review I1, NEEDS_PLAN_4_RULING_PAYOUT), so the page reads "Goes to Cake Wallet, address ending …k3Fz." (COPY-UNSIGNED) until the API reports it executed.',
@@ -390,6 +520,7 @@ const escapeRe = (p: string) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** A board text with MASKs (runtime-filled {{…}} placeholders): each MASK matches any text. */
 function boardPattern(s: string): RegExp {
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- test harness, inputs are board/page text in our own fixtures, escaped by escapeRe
   return new RegExp(`^${s.split(MASK).map(escapeRe).join('.+?')}$`);
 }
 
@@ -398,6 +529,7 @@ function boardPattern(s: string): RegExp {
  * value-shaped piece (VALUE), so the mask never absorbs words of the board text around it.
  */
 function pagePattern(s: string): RegExp {
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- test harness, inputs are board/page text in our own fixtures, escaped by escapeRe
   return new RegExp(`^${s.split(MASK).map(escapeRe).join(VALUE)}$`);
 }
 

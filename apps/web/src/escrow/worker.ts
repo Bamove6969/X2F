@@ -8,15 +8,17 @@
  * tested without a Worker.
  */
 import { MoneroMultisigEngine, runParty, wsTransport, type EscrowNetwork } from '@x2f/escrow';
-import { generateIdentity } from '@x2f/protocol';
+import { generateBoxKeyPair, generateIdentity } from '@x2f/protocol';
 import { httpEscrowApi } from './adapters.js';
 import { installMoneroWorker } from './moneroWorker.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowAction, type EscrowRuntime, type EscrowStatus, type RuntimeDeps } from './runtime.js';
 import { openEscrowStore } from './store.js';
+import { createAckKeeper } from '../chat/ack.js';
 import { createChatEngine } from '../chat/engine.js';
 import { httpChatApi } from '../chat/http.js';
 import { chatConfig, serveChat, type ChatPort } from '../chat/serve.js';
-import { openChatStore } from '../chat/store.js';
+import { serveChatKeys, type ChatKeysPort } from '../chat/serveKeys.js';
+import { openChatStore, type ChatStore } from '../chat/store.js';
 
 export type ToWorker =
   | { t: 'start'; code: string; confirmed?: ConfirmedTrade }
@@ -130,10 +132,18 @@ export function workerConfig(env: Record<string, string | undefined>): RuntimeDe
 const scope = globalThis as unknown as { WorkerGlobalScope?: unknown; postMessage?: unknown };
 if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage === 'function') {
   // The chat runs whether or not the escrow config is complete; it needs only the moderation key.
+  // One chat store for the engine and the chat-key keeper (J-23): both live in this worker. A store
+  // that fails to open is tried again by the next message of either half (as before).
+  let chatStore: Promise<ChatStore> | null = null;
+  const sharedChatStore = (): Promise<ChatStore> => {
+    chatStore ??= openChatStore();
+    chatStore.catch(() => (chatStore = null));
+    return chatStore;
+  };
   serveChat(globalThis as unknown as ChatPort, async () =>
     createChatEngine({
       api: httpChatApi(),
-      store: await openChatStore(),
+      store: await sharedChatStore(),
       newIdentity: generateIdentity,
       // Named, never the whole env object (see below): only this one key is inlined.
       ...chatConfig({ VITE_MOD_SIGNING_PUBLIC: import.meta.env.VITE_MOD_SIGNING_PUBLIC as string | undefined }),
@@ -141,6 +151,8 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
   );
   // Before any wallet exists: monero-ts's own worker, bundled with the app (moneroWorker.ts).
   installMoneroWorker();
+  // J-23 groundwork: the account chat key keeper (chat/ack.ts); keys never leave this worker.
+  serveChatKeys(globalThis as unknown as ChatKeysPort, async () => createAckKeeper({ store: await sharedChatStore(), newBoxKeyPair: generateBoxKeyPair }));
   serveEscrow(globalThis as unknown as Port, async (onStatus) => {
     // Each key is named, so the build inlines only these five and never the whole env object
     // (which would carry VITE_FIXTURES and any other VITE_ variable into the production worker).

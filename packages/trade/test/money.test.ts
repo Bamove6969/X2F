@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { amountForFunds, atomicForFiat, escrowPlan, fiatCents, formatFiat, formatXmr, offerRate, posterRole, rateFor } from '../src/index.js';
+import { amountForFunds, atomicForFiat, escrowPlan, fiatCents, formatFiat, formatXmr, formatXmrExact, offerRate, posterRole, rateFor, type Pricing } from '../src/index.js';
 
 const XMR = 1_000_000_000_000n;
 
@@ -73,9 +73,19 @@ describe('fiatCents and atomicForFiat', () => {
 describe('offerRate', () => {
   const market = { currency: 'USD', centsPerXmr: 32990n };
 
-  test('fixed mode ignores the feed', () => {
-    expect(offerRate({ mode: 'fixed', centsPerXmr: 34000n }, 'USD', null)).toEqual({ currency: 'USD', centsPerXmr: 34000n });
-    expect(offerRate({ mode: 'fixed', centsPerXmr: 34000n }, 'USD', market)).toEqual({ currency: 'USD', centsPerXmr: 34000n });
+  // Owner Q1 (6 Nov) and F1 (7 Nov): offers are market ± % only; there is no fixed price to fall back on.
+  test('there is no fixed mode: a fixed price is refused, with or without the feed', () => {
+    const fixed = { mode: 'fixed', centsPerXmr: 34000n } as unknown as Pricing;
+    expect(() => offerRate(fixed, 'USD', null)).toThrow(RangeError);
+    expect(() => offerRate(fixed, 'USD', market)).toThrow(RangeError);
+  });
+
+  test('the margin is at most 50% either way: 50% is taken, 50.01% is refused', () => {
+    const at = (marginBps: number) => offerRate({ mode: 'market', marginBps }, 'USD', { currency: 'USD', centsPerXmr: 10_000n });
+    expect(at(5_000)).toEqual({ currency: 'USD', centsPerXmr: 15_000n });
+    expect(at(-5_000)).toEqual({ currency: 'USD', centsPerXmr: 5_000n });
+    expect(() => at(5_001)).toThrow(RangeError);
+    expect(() => at(-5_001)).toThrow(RangeError);
   });
 
   test('market mode needs the feed', () => {
@@ -85,10 +95,6 @@ describe('offerRate', () => {
 
   test('market mode refuses a feed price in another currency', () => {
     expect(offerRate({ mode: 'market', marginBps: 40 }, 'EUR', market)).toBeNull();
-  });
-
-  test('fixed mode rejects a non-positive price', () => {
-    expect(() => offerRate({ mode: 'fixed', centsPerXmr: 0n }, 'USD', null)).toThrow(RangeError);
   });
 });
 
@@ -113,6 +119,33 @@ describe('formatXmr and formatFiat', () => {
     expect(formatXmr(-12_500_000_000n)).toBe('-0.012500');
   });
 
+  // Design kit handoff 1.5: every XMR string is /^\d+\.\d{6}$/, money is never rounded up.
+  test('kit: always exactly 6 places, trailing zeros kept', () => {
+    for (const a of [0n, 1n, 999_999n, 1_000_000n, 1_250_000_000_000n, 275_400_000_000_000n, 10n ** 18n]) {
+      expect(formatXmr(a)).toMatch(/^\d+\.\d{6}$/);
+    }
+    expect(formatXmr(1_250_000_000_000n)).toBe('1.250000');
+    expect(formatXmr(1_000_000_000_000n)).toBe('1.000000');
+  });
+
+  test('kit: digits past the sixth are cut, never rounded (half, nine and just-under cases)', () => {
+    expect(formatXmr(1_250_000_500_000n)).toBe('1.250000'); // exactly half of the 6th place
+    expect(formatXmr(1_250_000_999_999n)).toBe('1.250000'); // would round up to 1.250001
+    expect(formatXmr(999_999_999_999n)).toBe('0.999999'); // would round up to 1.000000
+    expect(formatXmr(1_262_500_000_000n)).toBe('1.262500');
+  });
+
+  test('kit: very small amounts', () => {
+    expect(formatXmr(1n)).toBe('0.000000'); // one atomic unit is below the 6th place
+    expect(formatXmr(999_999n)).toBe('0.000000');
+    expect(formatXmr(1_000_000n)).toBe('0.000001'); // the smallest amount 6 places can show
+  });
+
+  test('kit: very large amounts stay exact past Number precision', () => {
+    expect(formatXmr(18_446_744_073_709_551_615n)).toBe('18446744.073709'); // 2^64 - 1 atomic
+    expect(formatXmr(9_007_199_254_740_993_000_000n)).toBe('9007199254.740993');
+  });
+
   test('fiat', () => {
     expect(formatFiat(41250n, 'USD')).toBe('$412.50');
     expect(formatFiat(5n, 'USD')).toBe('$0.05');
@@ -122,6 +155,39 @@ describe('formatXmr and formatFiat', () => {
 
   test('fiat beyond Number precision stays exact', () => {
     expect(formatFiat(9_007_199_254_740_993n, 'USD')).toBe('$90,071,992,547,409.93');
+  });
+});
+
+describe('formatXmrExact (figures the user must send: exact to the atomic unit)', () => {
+  test('at least 6 places: an aligned amount reads like formatXmr', () => {
+    expect(formatXmrExact(1_250_000_000_000n)).toBe('1.250000');
+    expect(formatXmrExact(0n)).toBe('0.000000');
+    expect(formatXmrExact(5n * XMR)).toBe('5.000000');
+  });
+
+  test('more places when the digits past the 6th are non-zero, trailing zeros trimmed', () => {
+    expect(formatXmrExact(610_529_733_574n)).toBe('0.610529733574');
+    expect(formatXmrExact(1_000_000_900_000n)).toBe('1.0000009');
+    expect(formatXmrExact(1_000_000_000_001n)).toBe('1.000000000001');
+    expect(formatXmrExact(999_999_900_000n)).toBe('0.9999999');
+  });
+
+  test('a remainder under 0.000001 is never shown as zero', () => {
+    expect(formatXmrExact(733_574n)).toBe('0.000000733574');
+    expect(formatXmrExact(1n)).toBe('0.000000000001');
+    expect(formatXmr(733_574n)).toBe('0.000000');
+  });
+
+  test('round-trips: the shown figure is the atomic amount', () => {
+    for (const a of [1n, 733_574n, 610_529_733_574n, 1_262_500_000_000n, 18_446_744_073_709_551_615n]) {
+      const [whole, frac] = formatXmrExact(a).split('.');
+      expect(BigInt(whole!) * XMR + BigInt(frac!.padEnd(12, '0'))).toBe(a);
+    }
+  });
+
+  test('negative amounts keep the sign', () => {
+    expect(formatXmrExact(-733_574n)).toBe('-0.000000733574');
+    expect(formatXmrExact(-12_500_000_000n)).toBe('-0.012500');
   });
 });
 

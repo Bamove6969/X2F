@@ -9,6 +9,7 @@ import type { TradeView } from '../src/api/trade.js';
 import { startFixtures } from './fixtures-serve.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { BOARD, SERVER_NOW, sellerView } from './refundViews.js';
+import { signedIn } from './session.js';
 
 const PORT = 4321;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -24,6 +25,10 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => {
   await server?.close();
+});
+// The room is behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader.
+test.beforeEach(async ({ page }) => {
+  await signedIn(page);
 });
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -50,16 +55,20 @@ const buyerRefunded = (over: Partial<TradeView> = {}) =>
 
 test('the buyer\'s refunded trade says the payment time ran out and offers "Open a dispute"', async ({ page }) => {
   await openRoom(page, buyerRefunded());
-  await expect(page.getByRole('heading', { name: 'The payment time ran out' })).toBeVisible();
-  await expect(page.getByText('Payment time ran out, the seller cancelled; everything in escrow went back to the original owner.')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open a dispute' })).toHaveAttribute('href', `/trade/${CODE}/dispute`);
+  await expect(page.getByRole('heading', { name: 'Payment time ran out' })).toBeVisible();
+  // The time-ran-out lead: the owner's Decision 7 wording, saying "the seller", never the name (lead
+  // 8 Nov, 99d80281), and while the dispute card shows, the line that points to it.
+  await expect(
+    page.getByText(/^Payment time ran out, the seller cancelled; everything in escrow went back to the original owner\. X2F took nothing from you\. If you already sent the payment, open a dispute below\.$/),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open dispute', exact: true })).toHaveAttribute('href', `/trade/${CODE}/dispute`);
 });
 
 test('a refund decided by a dispute says so and links to the dispute, not a new one', async ({ page }) => {
   await openRoom(page, buyerRefunded({ settling: 'mutual-cancel', dispute: { by: 'buyer', at: at(-5 * DAY) } }));
   await expect(page.getByRole('heading', { name: 'Refunded by the dispute decision' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Go to the dispute' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open a dispute' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Open dispute', exact: true })).toHaveCount(0);
 });
 
 test('a disputed trade shows the dispute room inside the trade room, from GET …/dispute', async ({ page }) => {
@@ -85,9 +94,9 @@ for (const viewport of PHONE_VIEWPORTS) {
   test(`the buyer's refunded view fits a ${viewport} phone`, async ({ page }) => {
     await openRoom(page, buyerRefunded());
     await setPhone(page, viewport);
-    await expect(page.getByRole('heading', { name: 'The payment time ran out' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Payment time ran out' })).toBeVisible();
     await expectPhoneLayout(page);
-    const a = page.getByRole('link', { name: 'Open a dispute' });
+    const a = page.getByRole('link', { name: 'Open dispute', exact: true });
     await a.scrollIntoViewIfNeeded();
     await expect(a).toBeInViewport({ ratio: 1 });
   });

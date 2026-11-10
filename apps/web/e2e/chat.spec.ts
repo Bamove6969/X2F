@@ -13,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import { startFixtures } from './fixtures-serve.js';
 import { BOARD, sellerView } from './refundViews.js';
+import { signedIn } from './session.js';
 
 const PORT = 4323;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -43,6 +44,10 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => {
   await server?.close();
+});
+// The room is behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader.
+test.beforeEach(async ({ page }) => {
+  await signedIn(page);
 });
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });

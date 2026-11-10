@@ -9,6 +9,8 @@ import { isLoginNameClash } from '../src/routes/account.js';
 import { currentLoginTag, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser } from './helpers/totp.js';
+import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 const T0 = new Date('2026-10-17T12:00:00Z');
 const MIN = 60_000;
@@ -105,7 +107,7 @@ interface Me {
   methods: string[];
   hasBackup: boolean;
   suggestions: string[];
-  logoutTimer: { idleHours: number; adjustable: boolean };
+  session: { lengthHours: number | null; choices: number[]; expiresAt: string; canExtend: boolean; serverNow: string } | null;
   termsCurrent: boolean;
 }
 
@@ -211,7 +213,10 @@ describe('GET /v1/account/me', () => {
     expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
       displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', methods: ['password'], hasBackup: false,
-      suggestions: ['add-authenticator', 'add-backup'], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true, accountHoldUntil: null, member: null,
+      suggestions: ['add-authenticator', 'add-backup'], termsCurrent: true, accountHoldUntil: null, pendingChanges: null, changesWait: false, recoveryCodeToShow: false, member: null, teamHold: null,
+      session: { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: at(2 * HOUR).toISOString(), canExtend: true, serverNow: now.toISOString() },
+      idleReminderMinutes: null,
+      accountType: 'trader',
     });
     await addTotp(id);
     const after = await me(b);
@@ -235,13 +240,9 @@ describe('GET /v1/account/me', () => {
     expect((await me(b)).methods).toEqual(['pgp', 'passkey', 'security-key', 'password', 'totp', 'recovery-codes']);
   });
 
-  it('shows the logout timer: the trader’s choice, or a fixed 2 hours for staff', async () => {
-    const { id } = await account();
-    await addPgp(id);
-    await deps.db.query('update accounts set idle_hours = 4 where id = $1', [id]);
-    expect((await me(await loggedIn(id))).logoutTimer).toEqual({ idleHours: 4, adjustable: true });
+  it('shows no session length for staff (their sessions keep fixed rules; sessionLength.test.ts has the rest)', async () => {
     const staff = await account('staff');
-    expect((await me(await loggedIn(staff.id))).logoutTimer).toEqual({ idleHours: 2, adjustable: false });
+    expect((await me(await loggedIn(staff.id))).session).toBeNull();
   });
 
   it('a held recovery session sees its level and hold; at the hold time it is no longer held', async () => {
@@ -395,6 +396,8 @@ describe('alerts', () => {
     await addPgp(id);
     for (let i = 0; i < 52; i++) await addAlert(deps.db, id, 'new-login', { method: 'pgp', deviceLabel: `D${i}` }, at(i * MIN));
     const b = await loggedIn(id);
+    // The session outlives the hours this test moves through (session length, owner 2 Nov 2026).
+    expect((await b.put('/v1/account/session/length', { hours: 12 })).statusCode).toBe(200);
     const res = await b.get('/v1/account/alerts');
     expect(res.statusCode).toBe(200);
     const list = res.json() as Array<{ id: string; kind: string; detail: { deviceLabel: string }; createdAt: string; seenAt: string | null }>;
@@ -450,182 +453,6 @@ describe('alerts', () => {
   });
 });
 
-describe('logout timer (owner, 2026-10-23)', () => {
-  const URL = '/v1/account/security/logout-timer';
-  const setTimer = (b: Browser, idleHours: unknown) => b.put(URL, { idleHours });
-
-  it('reads 12 hours by default and sets each allowed choice', async () => {
-    const { id } = await account();
-    const b = await loggedIn(id);
-    const res = await b.get(URL);
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ idleHours: 12, adjustable: true });
-    for (const h of [2, 4, 6, 8, 10, 12]) {
-      const put = await setTimer(b, h);
-      expect(put.statusCode).toBe(200);
-      expect(put.json()).toEqual({ idleHours: h, adjustable: true });
-      expect((await b.get(URL)).json()).toEqual({ idleHours: h, adjustable: true });
-    }
-  });
-
-  it('refuses any other value with 400 bad-request and keeps the setting', async () => {
-    const { id } = await account();
-    const b = await loggedIn(id);
-    expect((await setTimer(b, 6)).statusCode).toBe(200);
-    for (const v of [0, 1, 3, 5, 7, 11, 13, 14, 24, 2.5, -2, '6', null, true, [6], { h: 6 }]) {
-      const res = await setTimer(b, v);
-      expect(res.statusCode, JSON.stringify(v)).toBe(400);
-      expect(res.json()).toEqual({ error: 'bad-request' });
-    }
-    expect((await b.put(URL, {})).json()).toEqual({ error: 'bad-request' });
-    expect((await b.get(URL)).json()).toEqual({ idleHours: 6, adjustable: true });
-  });
-
-  it('applies a shorter timer to the current session at once', async () => {
-    const { id } = await account();
-    const b = await loggedIn(id);
-    expect((await setTimer(b, 2)).statusCode).toBe(200);
-    setNow(at(2 * HOUR - MIN));
-    expect((await b.get(URL)).statusCode).toBe(200);
-    setNow(at(2 * HOUR - MIN));
-    expect((await b.get(URL)).statusCode).toBe(200);
-    setNow(at(2 * HOUR));
-    expect(errorOf(await b.get(URL))).toBe('not-authenticated');
-    const { rows } = await deps.db.query<{ expires_at: Date; last_seen_at: Date }>(
-      'select expires_at, last_seen_at from sessions where id = $1',
-      [b.sessionId],
-    );
-    expect(rows[0]!.expires_at.getTime()).toBe(rows[0]!.last_seen_at.getTime() + 2 * HOUR);
-  });
-
-  it('applies a longer timer to the current session at once, and to the account’s other sessions', async () => {
-    const { id } = await account();
-    const b = await loggedIn(id);
-    const other = await loggedIn(id);
-    expect((await setTimer(b, 2)).statusCode).toBe(200);
-    setNow(at(HOUR));
-    expect((await setTimer(b, 12)).statusCode).toBe(200);
-    const { rows } = await deps.db.query<{ id: string; expires_at: Date; last_seen_at: Date }>(
-      'select id, expires_at, last_seen_at from sessions where account_id = $1',
-      [id],
-    );
-    for (const r of rows) expect(r.expires_at.getTime(), r.id).toBe(r.last_seen_at.getTime() + 12 * HOUR);
-    // The other session was last used an hour ago; it now lasts 12 hours from then.
-    setNow(at(11 * HOUR - MIN));
-    expect((await other.get(URL)).statusCode).toBe(200);
-    expect((await b.get(URL)).statusCode).toBe(200);
-    setNow(at(12 * HOUR));
-    expect(errorOf(await other.get(URL))).toBe('not-authenticated');
-  });
-
-  it('a shorter timer also ends the account’s other sessions that have been idle that long', async () => {
-    const { id } = await account();
-    const b = await loggedIn(id);
-    const other = await loggedIn(id);
-    setNow(at(3 * HOUR));
-    expect((await setTimer(b, 2)).statusCode).toBe(200);
-    expect(errorOf(await other.get(URL))).toBe('not-authenticated');
-    expect((await b.get(URL)).statusCode).toBe(200);
-  });
-
-  it('a request racing a timer change never writes back the old, shorter deadline', async () => {
-    const { id } = await account();
-    const b = await loggedIn(id);
-    expect((await setTimer(b, 2)).statusCode).toBe(200);
-    setNow(at(MIN));
-    // Stand in for a PUT in flight: the timer and this session's deadline change in an open transaction.
-    const other = await deps.db.connect();
-    let pending;
-    try {
-      await other.query('begin');
-      await other.query('update accounts set idle_hours = 12 where id = $1', [id]);
-      await other.query(`update sessions set expires_at = last_seen_at + interval '12 hours' where id = $1`, [b.sessionId]);
-      const { rows: [me] } = await other.query<{ pid: number }>('select pg_backend_pid() as pid');
-      // The request reads the old timer (2 h) before the change commits, then touches the session.
-      pending = b.get(URL);
-      const deadline = Date.now() + 10_000;
-      for (;;) {
-        const { rows } = await deps.db.query(
-          `select 1 from pg_stat_activity where wait_event_type = 'Lock' and pid <> $1 and datname = current_database()`,
-          [me!.pid],
-        );
-        if (rows.length > 0) break;
-        if (Date.now() > deadline) throw new Error('the touch never waited on the change');
-        await new Promise((r) => setTimeout(r, 20));
-      }
-      await other.query('commit');
-    } finally {
-      other.release();
-    }
-    expect((await pending).statusCode).toBe(200);
-    const { rows } = await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [b.sessionId]);
-    expect(rows[0]!.expires_at).toEqual(at(12 * HOUR));
-    setNow(at(3 * HOUR));
-    expect((await b.get(URL)).statusCode).toBe(200);
-  });
-
-  it('leaves recovery sessions alone: they keep 25 hours idle when the timer is set to 2', async () => {
-    const { id } = await account();
-    await addPgp(id);
-    const full = await loggedIn(id);
-    const recovery = await loggedIn(id, { level: 'recovery' });
-    const expires = async (sessionId: string) =>
-      (await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [sessionId])).rows[0]!.expires_at;
-    const before = await expires(recovery.sessionId);
-    expect((await setTimer(full, 2)).statusCode).toBe(200);
-    expect(await expires(recovery.sessionId)).toEqual(before);
-    setNow(at(3 * HOUR));
-    expect((await recovery.get(URL)).statusCode).toBe(200);
-    expect(errorOf(await full.get(URL))).toBe('not-authenticated');
-  });
-
-  it('keeps the 30-day absolute cap whatever the timer', async () => {
-    const { id } = await account();
-    const b = await loggedIn(id);
-    const start = now;
-    for (let h = 10; h < 30 * 24; h += 10) {
-      setNow(new Date(start.getTime() + h * HOUR));
-      expect((await b.get(URL)).statusCode, `${h} h`).toBe(200);
-    }
-    setNow(new Date(start.getTime() + 30 * DAY));
-    expect(errorOf(await b.get(URL))).toBe('not-authenticated');
-  });
-
-  it('staff cannot change theirs (403 wrong-account-kind) and read a fixed 2 hours', async () => {
-    const { id } = await account('staff');
-    const b = await loggedIn(id);
-    expect((await b.get(URL)).json()).toEqual({ idleHours: 2, adjustable: false });
-    const res = await setTimer(b, 12);
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'wrong-account-kind' });
-    const { rows } = await deps.db.query<{ idle_hours: number }>('select idle_hours from accounts where id = $1', [id]);
-    expect(rows[0]!.idle_hours).toBe(12);
-    setNow(at(2 * HOUR));
-    expect(errorOf(await b.get(URL))).toBe('not-authenticated');
-  });
-
-  it('a recovery session, held or not, can read the timer but not change it', async () => {
-    const { id } = await account();
-    await addPgp(id);
-    await addTotp(id);
-    for (const o of [{ level: 'recovery' as const, holdUntil: at(DAY) }, { level: 'recovery' as const }]) {
-      const b = await loggedIn(id, o);
-      expect((await b.get(URL)).json()).toEqual({ idleHours: 12, adjustable: true });
-      const res = await setTimer(b, 2);
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toEqual({ error: 'recovery-session' });
-    }
-    const { rows } = await deps.db.query<{ idle_hours: number }>('select idle_hours from accounts where id = $1', [id]);
-    expect(rows[0]!.idle_hours).toBe(12);
-  });
-
-  it('needs a session', async () => {
-    const b = new Browser(app);
-    expect(errorOf(await b.get(URL))).toBe('not-authenticated');
-    expect(errorOf(await setTimer(b, 2))).toBe('not-authenticated');
-  });
-});
-
 describe('Terms of Service (R10)', () => {
   it('GET /v1/terms needs no session', async () => {
     const res = await new Browser(app).get('/v1/terms');
@@ -650,22 +477,39 @@ describe('Terms of Service (R10)', () => {
       expect((await me(b)).termsCurrent).toBe(false);
       expect((await b.get('/v1/account/sessions')).statusCode).toBe(200);
 
-      const wrong = await b.post('/v1/account/terms', { version: oldVersion });
+      const wrong = await b.post('/v1/account/terms', { version: oldVersion, signature: SIG });
       expect(wrong.statusCode).toBe(400);
       expect(wrong.json()).toEqual({ error: 'terms-not-accepted', version: newVersion });
       for (const bad of [{}, { version: 7 }, { version: null }]) {
-        const r = await b.post('/v1/account/terms', bad);
+        const r = await b.post('/v1/account/terms', { ...bad, signature: SIG });
         expect(r.statusCode).toBe(400);
         expect(errorOf(r)).toBe('terms-not-accepted');
       }
+      // A new version asks for a new signature too (owner, 8 Nov 2026).
+      const unsigned: [unknown, string][] = [
+        [undefined, 'signature-required'],
+        [{ kind: 'typed', name: ' ' }, 'signature-invalid'],
+        [{ kind: 'drawn', width: 320, height: 120, path: `M0 0${'L100 100'.repeat(8300)}` }, 'signature-too-large'],
+      ];
+      for (const [signature, error] of unsigned) {
+        const r = await b.post('/v1/account/terms', { version: newVersion, signature });
+        expect(r.statusCode, error).toBe(400);
+        expect(r.json()).toEqual({ error });
+      }
+      expect((await me(b)).termsCurrent).toBe(false);
 
       setNow(at(MIN));
-      const ok = await b.post('/v1/account/terms', { version: newVersion });
+      const typed = { kind: 'typed', name: 'Mira K' };
+      const ok = await b.post('/v1/account/terms', { version: newVersion, signature: typed });
       expect(ok.statusCode).toBe(204);
-      const { rows } = await deps.db.query<{ terms_version: string; terms_accepted_at: Date }>(
-        'select terms_version, terms_accepted_at from accounts where id = $1', [id],
+      const { rows } = await deps.db.query<{ terms_version: string; terms_accepted_at: Date; terms_signature: Buffer }>(
+        'select terms_version, terms_accepted_at, terms_signature from accounts where id = $1', [id],
       );
-      expect(rows[0]).toEqual({ terms_version: newVersion, terms_accepted_at: now });
+      expect(rows[0]!.terms_version).toBe(newVersion);
+      expect(rows[0]!.terms_accepted_at).toEqual(now);
+      expect(openTermsSignature(deps.config, rows[0]!.terms_signature, id)).toEqual(typed);
+      // The signature is never sent back (it is not in me).
+      expect(JSON.stringify(await me(b))).not.toContain('Mira K');
       expect((await b.get('/v1/account/alerts')).statusCode).toBe(200);
       expect((await me(b)).termsCurrent).toBe(true);
 
@@ -677,8 +521,41 @@ describe('Terms of Service (R10)', () => {
     }
   });
 
+  // Security review 2026-11-08, finding 5.
+  it('a session cannot replace the signature at the version already signed', async () => {
+    const { id } = await account();
+    await addPgp(id);
+    const b = await loggedIn(id);
+    const row = async () =>
+      (await deps.db.query<{ terms_accepted_at: Date; terms_signature: Buffer }>('select terms_accepted_at, terms_signature from accounts where id = $1', [id])).rows[0]!;
+    const oldVersion = deps.config.termsVersion;
+    const newVersion = '2026-11-02';
+    deps.config.termsVersion = newVersion;
+    try {
+      const first = { kind: 'typed', name: 'First Signer' };
+      expect((await b.post('/v1/account/terms', { version: newVersion, signature: first })).statusCode).toBe(204);
+      const before = await row();
+      setNow(at(MIN));
+      // Answers the same as a first signing, and changes nothing.
+      expect((await b.post('/v1/account/terms', { version: newVersion, signature: { kind: 'typed', name: 'Someone Else' } })).statusCode).toBe(204);
+      const after = await row();
+      expect(after.terms_accepted_at).toEqual(before.terms_accepted_at);
+      expect(after.terms_signature.equals(before.terms_signature)).toBe(true);
+      expect(openTermsSignature(deps.config, after.terms_signature, id)).toEqual(first);
+
+      // A later version is signed afresh.
+      const later = '2026-11-03';
+      deps.config.termsVersion = later;
+      const second = { kind: 'typed', name: 'Second Signer' };
+      expect((await b.post('/v1/account/terms', { version: later, signature: second })).statusCode).toBe(204);
+      expect(openTermsSignature(deps.config, (await row()).terms_signature, id)).toEqual(second);
+    } finally {
+      deps.config.termsVersion = oldVersion;
+    }
+  });
+
   it('accepting needs a session', async () => {
-    const res = await new Browser(app).post('/v1/account/terms', { version: deps.config.termsVersion });
+    const res = await new Browser(app).post('/v1/account/terms', { version: deps.config.termsVersion, signature: SIG });
     expect(res.statusCode).toBe(401);
   });
 });

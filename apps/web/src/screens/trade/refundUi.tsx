@@ -1,12 +1,15 @@
-// Small pieces shared by SellerRefund and FinalAlert.
+// Small pieces shared by SellerRefund and SellerCancelled.
 import { formatXmr } from '@x2f/trade';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.js';
 
-/** "1.25" for 1.25 XMR: the boards' prose amounts (the view's strings or the escrow status's bigints), exact to the atomic unit with trailing zeros dropped. */
+/**
+ * "1.250000" for 1.25 XMR: prose amounts (the view's strings or the escrow status's bigints) with
+ * the kit's 6 places, trailing zeros kept (design kit handoff 1.5). Digits past the sixth are cut,
+ * never rounded up, so the figure never shows more than exists.
+ */
 export function xmrText(atomic: string | bigint): string {
-  const full = formatXmr(BigInt(atomic), 12);
-  return full.replace(/\.?0+$/, '');
+  return formatXmr(BigInt(atomic));
 }
 
 /** The server's time now, re-read every second (Review Focus 3: never the device clock alone). */

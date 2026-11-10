@@ -13,14 +13,14 @@
  *   that the button is closed and the details are a locked card (board Warn-IvePaid, Task 38's
  *   pay warning, is superseded by Q12 and gone).
  * - Cancel trade (buyer, spec 2.3; owner G56 and g67): before "I've paid" it opens the
- *   "Cancelling is final" sheet (CancelFinalSheet.tsx), whose Cancel trade posts `buyer-cancel`,
+ *   "Cancelling is likely final" sheet (CancelFinalSheet.tsx), whose Cancel trade posts `buyer-cancel`,
  *   then `escrow.buyerCancel()`, which sends `trade.cancel`. After "I've paid" there is no cancel
  *   at all (owner, Revision 2026-10-29b; Task 39): the link is gone and the API refuses it.
- * - The seller never cancels alone: Propose cancel / Withdraw (mutual cancel); the buyer gets an
- *   accept/decline card, and Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
+ * - The seller's waiting room offers no cancel (design proto review P2, 8 Nov: no Propose cancel);
+ *   a proposal that already stands can be withdrawn, and the buyer gets an accept/decline card for
+ *   it, where Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
  */
 import { useEffect, useId, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Link } from 'react-router';
 import { formatXmr } from '@x2f/trade';
 import { ApiCallError } from '../../api/client.js';
 import { getTrade } from '../../api/trade.js';
@@ -28,19 +28,21 @@ import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
 import { MethodExplainer } from '../../ui/MethodExplainer.js';
-import { Sheet } from '../../ui/Sheet.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { CancelFinalSheet } from './CancelFinalSheet.js';
 import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
-import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { buyerCancelMode, escrowChip, finishBlock, PAY_MIN, payBlock, paySecured, payTimeOver, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { PaidWaitingActions, PaidWaitingBody } from './PaidWaiting.js';
+import { GiftCardEvidence } from '../giftcard/GiftCardRules.js';
+import { minutesText } from '../browse/methodTime.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
-import { focusChatPane, registerTradeScreen, useChatPane, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
+import { registerTradeScreen, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
+import { ChatButton, ChatSlot } from './TradeChatButton.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
 import './pay.css';
 
@@ -120,8 +122,9 @@ function TradeSub({ view, method }: { view: TradeView; method: MethodInfo }) {
 
 const CONFIRM_TIP =
   "The seller's XMR is already locked in the escrow. It's secured once the Monero network confirms it 10 times, about 20 min in total. For the safest trade, wait until this finishes before you pay. If you're comfortable with this seller, feel free to move the trade along now.";
-const PAY_TIP =
-  "You get 90 minutes to send the money and tap I've paid. The clock starts once the escrow has settled, so waiting for it never costs you time. If time runs out without that tap, the seller can cancel and get a refund, or give you more time.";
+/** The time to pay is the payment method's (owner p9-6); 90 minutes for instant methods. */
+const payTip = (min: number) =>
+  `You get ${minutesText(min)} to send the money and tap I've paid. The clock starts once the escrow has settled, so waiting for it never costs you time. If time runs out without that tap, the seller can cancel and get a refund, or give you more time.`;
 
 /**
  * A help tip (BuyerPay board): a mouse shows it on hover; a tap or click opens it (never toggles,
@@ -224,7 +227,9 @@ const RING_C = 2 * Math.PI * RING_R;
 /** "Time to pay": 90 min not started while securing (with when it starts), then the countdown. */
 function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
   const tip = useTip();
+  useTick(15_000);
   const t = payTimer(view, serverClock().getTime());
+  const over = payTimeOver(view, serverClock().getTime());
   const ring = t.started ? (
     <svg width="56" height="56" viewBox="0 0 56 56" role="img" aria-label={`${t.leftMin} of ${t.totalMin} minutes left`} className="x2f-pay-timer__ring">
       <circle cx="28" cy="28" r={RING_R} fill="none" className="x2f-pay-timer__ring-track" strokeWidth="6" />
@@ -248,10 +253,11 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
     <section aria-label="Payment timer" className="x2f-card x2f-pay-timer" data-fold-glance="timer">
       <button type="button" className="x2f-pay-timer__text" aria-describedby="tip-pay" {...tip.trigger}>
         <span className="x2f-pay-timer__label">
-          Time to pay
+          {/* COPY-UNSIGNED: "is over" (owner 8 Nov p6-1: the time to pay is not a hard end). */}
+          {over ? 'Time to pay is over' : 'Time to pay'}
           <InfoIcon />
         </span>
-        {t.started ? (
+        {over ? null : t.started ? (
           <span className="x2f-pay-timer__value">
             <Countdown deadline={t.payBy} serverClock={serverClock} format="minutes" />
           </span>
@@ -278,7 +284,7 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
       </button>
       {tip.open ? (
         <span id="tip-pay" role="tooltip" className="x2f-tip">
-          {PAY_TIP}
+          {payTip(view.payWindowMin ?? PAY_MIN)}
         </span>
       ) : null}
       {ring}
@@ -359,6 +365,8 @@ function SendExactlyCard({ view, method, total, rate }: { view: TradeView; metho
           <strong>{GIFT_CARD_WARNING}</strong>
         </p>
       ) : null}
+      {/* J-17 (G50, G52): the buyer sends the card; what they keep for a dispute. */}
+      {method.giftCard ? <GiftCardEvidence role="sender" /> : null}
     </section>
   );
 }
@@ -380,46 +388,6 @@ function ProofSlot({ wide }: { wide: boolean }) {
         <input id="proof" type="file" accept="image/*" disabled className="x2f-visually-hidden" />
       </label>
     </section>
-  );
-}
-
-/** The chat for the trade (Task 20's ChatPanel through the seam), or nothing until it is installed. */
-function ChatSlot({ view }: { view: TradeView }) {
-  const Chat = useTradeChat();
-  return Chat ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
-}
-
-function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
-  const [open, setOpen] = useState(false);
-  // With the room's chat pane showing (Task 40), the chat is already beside the screen: the sheet
-  // closes on unfold (one draft, one composer), and the primary Chat moves the focus there.
-  const paned = useChatPane(view);
-  useEffect(() => {
-    if (!paned || !open) return;
-    setOpen(false);
-    // The sheet already closed (`open && !paned`) and handed the focus back to the header Chat,
-    // hidden now under [data-chat-link]: give it to the pane's composer, which holds the same
-    // draft, once the pane is laid out (round-2 review m4).
-    requestAnimationFrame(() => focusChatPane());
-  }, [paned, open]);
-  const onChat = () => (paned ? focusChatPane() : setOpen(true));
-  return (
-    <>
-      {primary ? (
-        <Button variant="primary" onClick={onChat}>
-          Chat
-        </Button>
-      ) : (
-        <button type="button" className="x2f-room__chat" onClick={onChat} data-chat-link="">
-          Chat
-        </button>
-      )}
-      <Sheet open={open && !paned} title={`Chat with ${publicName(view.counterparty)}`} onClose={() => setOpen(false)}>
-        <div className="x2f-sheet__body">
-          <ChatSlot view={view} />
-        </div>
-      </Sheet>
-    </>
   );
 }
 
@@ -447,6 +415,30 @@ function WideRoom({ view, method, title, chip, children }: { view: TradeView; me
   );
 }
 
+/** Re-renders every `ms` so a time written into the text stays true (the Countdown does this for its own). */
+function useTick(ms: number): void {
+  const [, setN] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setN((n) => n + 1), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+}
+
+/**
+ * After the time to pay (owner 8 Nov, p6-1): not a hard end. "I've paid" and the details stay
+ * until the seller cancels, and the buyer is told the seller may now cancel at any moment (design
+ * proto review P1). It appears by itself when payBy passes on screen. COPY-UNSIGNED (no board yet).
+ */
+function PayOverNote({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
+  useTick(15_000);
+  if (!payTimeOver(view, serverClock().getTime())) return null;
+  return (
+    <p className="x2f-room__error" role="status" data-pay-over="">
+      The time to pay is over. <Name view={view} /> may now cancel this trade at any moment. If you've sent the money, tap I've paid now.
+    </p>
+  );
+}
+
 // ---- BuyerPay ----
 
 /**
@@ -466,7 +458,16 @@ function GrownNote({ view, escrow, children }: { view: TradeView; escrow: Pick<T
 
 /** Focuses the composer of the chat beside the wide room, if one is installed. */
 function focusAsideChat(from: HTMLElement): void {
-  from.closest('.x2f-room')?.querySelector<HTMLElement>('.x2f-room__chat-panel :is(input, textarea, [contenteditable="true"])')?.focus();
+  // The first input that is not one of the payee's payment-detail boxes (`[data-pay-boxes]`, J-08):
+  // the same selection as TradeRoom's composerIn(). Those boxes are not in this panel today.
+  const room = from.closest('.x2f-room');
+  if (room === null) return;
+  for (const el of room.querySelectorAll<HTMLElement>('.x2f-room__chat-panel :is(input, textarea, [contenteditable="true"])')) {
+    if (el.closest('[data-pay-boxes]') === null) {
+      el.focus();
+      return;
+    }
+  }
 }
 
 
@@ -491,7 +492,7 @@ export function BuyerPay(p: TradeScreenProps) {
   const finishOk = finishBlocked === null;
   // Owner Q12: no "I've paid" before the escrow is secured (`not-secured`), so no warning in front of it.
   const payWhenId = useId();
-  // Owner G56: the buyer's cancel asks once, "Cancelling is final".
+  // Owner G56: the buyer's cancel asks once, "Cancelling is likely final" (T-049).
   const [cancelSheet, setCancelSheet] = useState(false);
   const onIvePaid = () => {
     if (block !== null) return;
@@ -539,9 +540,10 @@ export function BuyerPay(p: TradeScreenProps) {
     <Button variant="primary" disabled={!finishOk || finishing} aria-busy={finishing || undefined} onClick={() => void finish()}>
       Finish marking as paid
     </Button>
-  ) : (
+  ) : escrow.paidRecorded ? null : (
+    // While this device records the tap; once it has, the paid status card says so (BuyerPaidWaiting board).
     <Button variant="primary" disabled aria-live="polite">
-      {escrow.paidRecorded ? 'Marked as paid' : 'Marking as paid…'}
+      Marking as paid…
     </Button>
   );
   const cancel =
@@ -550,17 +552,9 @@ export function BuyerPay(p: TradeScreenProps) {
         Cancel trade
       </Button>
     );
-  // The buyer's dispute in paid opens at confirmBy (machine.ts: too-early before it; review Minor 7).
-  const disputeWait = paid && view.confirmBy !== null && serverClock().getTime() < Date.parse(view.confirmBy);
-  const dispute = disputeWait ? (
-    <span className="x2f-room__dispute-wait">
-      Dispute opens in <Countdown deadline={view.confirmBy!} serverClock={serverClock} format="minutes" />
-    </span>
-  ) : (
-    <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger">
-      Open dispute
-    </Link>
-  );
+  // No dispute here: none for the buyer before "I've paid" (machine.ts: too-early in securing and
+  // secured; design proto review P1). In paid it is PaidWaitingActions': from confirmBy, the
+  // method's wait from the tap (owner p9-4, F9), locked with its time until then.
   const refusal = refusalText(escrow.refusal);
   const notices = (
     <>
@@ -569,6 +563,7 @@ export function BuyerPay(p: TradeScreenProps) {
           you now pay
         </GrownNote>
       ) : null}
+      {!paid ? <PayOverNote view={view} serverClock={serverClock} /> : null}
       {showProposal(view) ? (
         <CancelProposalCard view={view} busy={action.busy} onAccept={() => void action.run({ type: 'accept-cancel' }, () => escrow.proposeCancelSign())} />
       ) : null}
@@ -630,6 +625,57 @@ export function BuyerPay(p: TradeScreenProps) {
     </>
   );
 
+  // After "I've paid": the BuyerPaidWaiting board (status, the seller's confirm window, what happens
+  // next, the payment folded away; Nudge and the dispute below).
+  if (paid) {
+    const actions = (
+      <>
+        {primary}
+        <PaidWaitingActions view={view} serverClock={serverClock} wide={wide} />
+      </>
+    );
+    if (wide) {
+      return (
+        <>
+          <WideRoom view={view} method={method} title={title} chip={null}>
+            {notices}
+            <PaidWaitingBody
+              view={view}
+              escrow={escrow}
+              method={method}
+              total={total}
+              serverClock={serverClock}
+              wide
+              actions={
+                <div className="x2f-paid-actions" data-part="paid-actions">
+                  {actions}
+                </div>
+              }
+              chatAction={
+                <button type="button" className="x2f-inline-action" onClick={(e) => focusAsideChat(e.currentTarget)} data-part="paid-chat">
+                  <Icon name="chat" size={20} />
+                  Message {publicName(view.counterparty)} in chat
+                </button>
+              }
+            />
+          </WideRoom>
+          {sheets}
+        </>
+      );
+    }
+    return (
+      <div className="x2f-pay" data-layout="phone" data-screen-part="paid-waiting">
+        <TradeHeader title={title} code={view.code} method={method} backTo="/trades" action={<ChatButton view={view} />} heading />
+        <div className="x2f-pay__main">
+          {notices}
+          <PaidWaitingBody view={view} escrow={escrow} method={method} total={total} serverClock={serverClock} wide={false} chatAction={<ChatButton view={view} link />} />
+        </div>
+        <footer className="x2f-pay__footer">{actions}</footer>
+        {sheets}
+      </div>
+    );
+  }
+
   if (wide) {
     return (
       <>
@@ -645,7 +691,6 @@ export function BuyerPay(p: TradeScreenProps) {
             {primary}
             {cancel}
             <span className="x2f-room__spacer" />
-            {dispute}
           </div>
         </WideRoom>
         {sheets}
@@ -667,7 +712,6 @@ export function BuyerPay(p: TradeScreenProps) {
         {primary}
         <div className="x2f-pay__footer-row">
           {cancel ?? <span />}
-          {dispute}
         </div>
       </footer>
       {sheets}
@@ -782,7 +826,12 @@ export function BuyerCancelling(p: TradeScreenProps) {
 
 // ---- The seller's room while the buyer pays ----
 
-/** The seller in `secured` (before payBy; SellerRefund takes over after it, Task 25): wait, chat, or propose a mutual cancel. */
+/**
+ * The seller in `secured` (before payBy; SellerRefund takes over after it, Task 25): wait and chat.
+ * No Propose cancel (design proto review P2, 8 Nov): a proposal the buyer's "I've paid" silently
+ * withdrew left the seller not knowing what happened; the seller's cancel comes after the time to
+ * pay (SellerRefund). Withdraw stays for a proposal that already stands.
+ */
 export function SellerWaiting(p: TradeScreenProps) {
   const { view, escrow, serverClock, wide } = p;
   const method = payMethodOf(view);
@@ -791,12 +840,7 @@ export function SellerWaiting(p: TradeScreenProps) {
   const total = deviceTotal(view, escrow);
   const chatInstalled = useTradeChat() !== null;
   const cancel = (
-    <SellerCancelControls
-      view={view}
-      busy={action.busy}
-      onPropose={() => void action.run({ type: 'propose-cancel' })}
-      onWithdraw={() => void action.run({ type: 'withdraw-cancel' })}
-    />
+    <SellerCancelControls view={view} busy={action.busy} onWithdraw={() => void action.run({ type: 'withdraw-cancel' })} />
   );
   const waiting = (
     <section aria-label="Waiting for payment" className="x2f-card x2f-wait">
@@ -880,15 +924,14 @@ export function SellerWaiting(p: TradeScreenProps) {
 
 /**
  * SellerWaiting on a team member's device (Plan 2 Task 18 review round 2, n3): no escrow there, so
- * no device total, escrow status or chat; the waiting card, the owner's-device notice, and Propose
- * cancel / Withdraw (a mutual cancel only records a choice; if the buyer accepts, the account
- * owner's device co-signs the refund). Kit parts only (NEEDS_DESIGN_TEAM).
+ * no device total, escrow status or chat; the waiting card, the owner's-device notice, and Withdraw
+ * for a standing proposal (no Propose cancel, design proto review P2). Kit parts only (NEEDS_DESIGN_TEAM).
  */
 export function SellerWaitingMember({ code, view, refresh, serverClock }: MemberScreenProps) {
   const method = payMethodOf(view);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const run = async (type: 'propose-cancel' | 'withdraw-cancel') => {
+  const run = async (type: 'withdraw-cancel') => {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -935,7 +978,7 @@ export function SellerWaitingMember({ code, view, refresh, serverClock }: Member
       </div>
       <footer className="x2f-pay__footer">
         <div className="x2f-pay__footer-row">
-          <SellerCancelControls view={view} busy={busy} onPropose={() => void run('propose-cancel')} onWithdraw={() => void run('withdraw-cancel')} />
+          <SellerCancelControls view={view} busy={busy} onWithdraw={() => void run('withdraw-cancel')} />
         </div>
       </footer>
     </div>
@@ -943,5 +986,3 @@ export function SellerWaitingMember({ code, view, refresh, serverClock }: Member
 }
 
 for (const slot of TASK23_SLOTS) registerTradeScreen(slot);
-// Task 25's FinalAlert: its I've paid is this same paid step (refund-tripwires NEEDS_TASK_23).
-setFinalAlertPaidSheet(PaidFlowSheet);

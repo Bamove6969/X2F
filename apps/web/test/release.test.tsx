@@ -15,6 +15,7 @@ import { screenFor, TradeRoom } from '../src/screens/trade/TradeRoom.js';
 import { POLL_MS, setTradeEscrowHook, type TradeEscrow } from '../src/screens/trade/seams.js';
 import { advance, pointer, render } from './render.js';
 import { resetWarned, setWarned } from '../src/screens/trade/warned.js';
+import { resetConfirmSkips, setConfirmUser } from '../src/screens/trade/confirmSkip.js';
 
 const ZELLE = { name: 'Zelle', giftCard: false, whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.' };
 const PROFILE = {
@@ -107,10 +108,10 @@ function escrowStub(order: string[] = [], over: Partial<ReleaseEscrow> = {}): St
   };
 }
 
-function sellerConfirm(t: ReleaseTrade, escrow = escrowStub(), onTrade = vi.fn()) {
+function sellerConfirm(t: ReleaseTrade, escrow = escrowStub(), onTrade = vi.fn(), method: typeof ZELLE = ZELLE) {
   const ui = (tr: ReleaseTrade, e: ReleaseEscrow) => (
     <MemoryRouter>
-      <SellerConfirm escrowCode={tr.code} trade={tr} method={ZELLE} escrow={e} onTrade={onTrade} />
+      <SellerConfirm escrowCode={tr.code} trade={tr} method={method} escrow={e} onTrade={onTrade} />
     </MemoryRouter>
   );
   const r = render(ui(t, escrow));
@@ -122,6 +123,13 @@ function sellerConfirm(t: ReleaseTrade, escrow = escrowStub(), onTrade = vi.fn()
 }
 
 describe('SellerConfirm', () => {
+  it('a gift card shows the seller what to keep from the check (J-17, G50); no other method does', () => {
+    const gift = sellerConfirm(trade(), escrowStub(), vi.fn(), { ...ZELLE, name: 'Steam gift card', giftCard: true });
+    expect([...gift.host.querySelectorAll('[data-part="gift-card-evidence"] [data-evidence]')].map((e) => e.getAttribute('data-evidence'))).toEqual(['check-result']);
+    gift.unmount();
+    expect(sellerConfirm(trade()).host.querySelector('[data-part="gift-card-evidence"]')).toBeNull();
+  });
+
   it('shows the board copy from the profile, the method and the buyer, the name exactly as set', () => {
     const s = sellerConfirm(trade());
     expect(s.text()).toContain('Selling to mira.k');
@@ -137,42 +145,125 @@ describe('SellerConfirm', () => {
     expect(s.host.querySelectorAll('[data-primary]')).toHaveLength(1);
   });
 
-  it('the release warning (Task 38, board Warn-Release) opens first and keeps the hold locked until "It\'s in my account", once per trade', () => {
-    resetWarned();
-    localStorage.clear();
+  describe('the release warning opens only on "Payment received" (design proto review P2; owner p7-2)', () => {
     const alert = () => document.body.querySelector<HTMLElement>('[role="alertdialog"]');
     const btn = (label: string) => [...document.body.querySelectorAll('button')].find((b) => b.textContent === label)!;
+    const label = (text: string) => [...document.body.querySelectorAll('label')].find((l) => (l.textContent ?? '').trim() === text)!;
+    const releaseOrder: string[] = [];
+    beforeEach(() => {
+      resetWarned();
+      localStorage.clear();
+      resetConfirmSkips();
+      releaseOrder.length = 0;
+      answer = (c) => {
+        releaseOrder.push(`${c.method} ${c.url} ${JSON.stringify(c.body)}`);
+        return { status: 200, body: trade({ state: 'settling', settling: 'release' }) };
+      };
+    });
+    afterEach(() => resetConfirmSkips());
+    const fullHold = async (s: ReturnType<typeof sellerConfirm>) => {
+      pointer(s.hold(), 'pointerdown');
+      advance(1500, vi);
+      await flush();
+    };
+
+    it('nothing opens with the screen or on the tick; the hold opens it, and only "It\'s in my account" releases', async () => {
+      vi.useFakeTimers();
+      const s = sellerConfirm(trade(), escrowStub(releaseOrder));
+      expect(alert()).toBeNull();
+      act(() => s.box().click());
+      expect(alert()).toBeNull();
+      expect(s.hold().disabled).toBe(false);
+      await fullHold(s);
+      expect(alert()).not.toBeNull();
+      const t = (alert()!.textContent ?? '').replace(/\s+/g, ' ');
+      expect(t).toContain('Before you release');
+      expect(t).toContain('Is the $412.50 really in your account?');
+      expect(t).toContain("Once released, the 1.250000 XMR (about $412.50) goes to mira.k and can't be taken back.");
+      // The safe action has focus (review M5); nothing is sent while it is open.
+      expect(document.activeElement?.textContent).toBe("I'll check again");
+      expect(calls).toHaveLength(0);
+      act(() => btn("I'll check again").click());
+      expect(alert()).toBeNull();
+      expect(calls).toHaveLength(0);
+      expect(s.hold().disabled).toBe(false);
+      await fullHold(s);
+      act(() => btn("It's in my account").click());
+      await flush();
+      expect(releaseOrder).toEqual(['POST /v1/trades/K7M2-9QXA-4FTR-8WPN/events {"type":"release-started"}', 'release()']);
+      s.unmount();
+      // Once per trade on this device (warned.ts): a reload releases on the hold alone.
+      resetWarned();
+      releaseOrder.length = 0;
+      const again = sellerConfirm(trade(), escrowStub(releaseOrder));
+      act(() => again.box().click());
+      await fullHold(again);
+      expect(alert()).toBeNull();
+      expect(releaseOrder).toEqual(['POST /v1/trades/K7M2-9QXA-4FTR-8WPN/events {"type":"release-started"}', 'release()']);
+    });
+
+    it('"Do not show me this warning again", ticked, skips it on every trade for this user on this device', async () => {
+      vi.useFakeTimers();
+      setConfirmUser('satoshi_ghost');
+      const s = sellerConfirm(trade(), escrowStub(releaseOrder));
+      act(() => s.box().click());
+      await fullHold(s);
+      const box = label('Do not show me this warning again').querySelector('input')!;
+      expect(box.checked).toBe(false);
+      act(() => box.click());
+      act(() => btn("It's in my account").click());
+      await flush();
+      expect(localStorage.getItem('x2f.noconfirm.release.satoshi_ghost')).toBe('1');
+      s.unmount();
+      releaseOrder.length = 0;
+      const other = sellerConfirm(trade({ code: 'ZZZZ-9QXA-4FTR-8WPN' }), escrowStub(releaseOrder));
+      act(() => other.box().click());
+      await fullHold(other);
+      expect(alert()).toBeNull();
+      expect(releaseOrder).toEqual(['POST /v1/trades/ZZZZ-9QXA-4FTR-8WPN/events {"type":"release-started"}', 'release()']);
+      other.unmount();
+      // Another account on the same device still gets it.
+      setConfirmUser('kettle.moss');
+      const third = sellerConfirm(trade({ code: 'YYYY-9QXA-4FTR-8WPN' }), escrowStub());
+      act(() => third.box().click());
+      await fullHold(third);
+      expect(alert()).not.toBeNull();
+    });
+  });
+
+  it('"Payment not received" before the confirm window ends says to check first, and opens no dispute; after it, the dispute screen', () => {
+    // confirmBy 13:52 UTC, now 12:00 (the board's 1 h 52 min).
     const s = sellerConfirm(trade());
-    expect(alert()).not.toBeNull();
-    const t = (alert()!.textContent ?? '').replace(/\s+/g, ' ');
-    expect(t).toContain('Before you release');
-    expect(t).toContain('Is the $412.50 really in your account?');
-    expect(t).toContain('Only release once the money is really in your account.');
-    expect(t).toContain('Check your own bank or Zelle app, not a screenshot. Screenshots can be faked.');
-    expect(t).toContain("Once released, the 1.250000 XMR (about $412.50) goes to mira.k and can't be taken back.");
-    act(() => btn("I'll check again").click());
-    expect(alert()).toBeNull();
-    act(() => s.box().click());
-    // Ticking before going past the warning brings it back; the hold stays locked.
-    expect(alert()).not.toBeNull();
-    expect(s.hold().disabled).toBe(true);
-    act(() => btn("I'll check again").click());
-    // Review M6: the caption names the warning, and it can be shown again from there.
-    expect(s.text()).toContain('Read the warning before you release');
-    act(() => btn('Show the warning again').click());
-    expect(alert()).not.toBeNull();
-    // Review M5: the safe action has focus, and the warning text describes the dialog.
-    expect(document.activeElement?.textContent).toBe("I'll check again");
-    expect(document.getElementById(alert()!.getAttribute('aria-describedby')!)?.textContent).toContain('Only release once the money is really in your account.');
-    act(() => btn("It's in my account").click());
-    expect(alert()).toBeNull();
-    expect(s.hold().disabled).toBe(false);
+    expect([...s.host.querySelectorAll('a')].some((a) => a.textContent === 'Payment not received')).toBe(false);
+    act(() => s.button('Payment not received')!.click());
+    expect(s.host.querySelector('[data-not-received]')?.textContent).toBe(
+      "Payments can take a while to arrive. Check your bank account again. If the money still isn't there at 13:52 UTC, tap Payment not received again to ask a moderator.",
+    );
+    expect(calls).toHaveLength(0);
+    // Open dispute is locked with its UTC time too (owner p9-4: the seller waits the method's full time).
+    expect([...s.host.querySelectorAll('a')].some((a) => a.textContent === 'Open dispute')).toBe(false);
+    const locked = s.button('Open dispute')!;
+    expect(locked.disabled).toBe(true);
+    expect(document.getElementById(locked.getAttribute('aria-describedby')!)!.textContent).toBe('Available from 13:52 UTC · in 112 min');
     s.unmount();
-    // Once per trade: a reload (memory gone, store kept) shows it no more.
-    resetWarned();
-    const again = sellerConfirm(trade());
-    expect(alert()).toBeNull();
-    again.unmount();
+    const late = sellerConfirm(trade({ confirmBy: '2026-10-25T11:59:00.000Z' }));
+    expect([...late.host.querySelectorAll('a')].find((a) => a.textContent === 'Open dispute')?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN/dispute');
+    const link = [...late.host.querySelectorAll('a')].find((a) => a.textContent === 'Payment not received');
+    expect(link?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN/dispute');
+  });
+
+  it('opens the dispute ways by themselves when the confirm window ends on screen, without a reload (owner p9-4)', () => {
+    vi.useFakeTimers();
+    const s = sellerConfirm(trade({ confirmBy: '2026-10-25T12:02:00.000Z' }));
+    const link = (name: string) => [...s.host.querySelectorAll('a')].find((a) => a.textContent === name);
+    expect(link('Open dispute')).toBeUndefined();
+    expect(s.button('Open dispute')!.disabled).toBe(true);
+    advance(119_000, vi);
+    expect(link('Open dispute')).toBeUndefined();
+    advance(2_000, vi);
+    expect(link('Open dispute')?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN/dispute');
+    expect(link('Payment not received')?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN/dispute');
+    expect(s.button('Open dispute')).toBeNull();
   });
 
   it('keeps the release locked until the box is ticked', () => {
@@ -394,7 +485,8 @@ describe('SellerConfirm', () => {
   it('"Payment not received" and "Open dispute" clear the release marker, so a later settling view signs nothing (round-3 Minor 1)', async () => {
     for (const label of ['Payment not received', 'Open dispute']) {
       markReleaseAsked('K7M2-9QXA-4FTR-8WPN');
-      const s = sellerConfirm(trade());
+      // After the confirm window, where "Payment not received" goes to the dispute (proto review P2).
+      const s = sellerConfirm(trade({ confirmBy: '2026-10-25T11:59:00.000Z' }));
       const link = [...s.host.querySelectorAll('a')].find((a) => a.textContent === label)!;
       act(() => link.click());
       expect(releaseAsked('K7M2-9QXA-4FTR-8WPN')).toBe(false);
@@ -489,8 +581,8 @@ describe('SellerConfirm', () => {
     expect(s.text()).toContain('The XMR in escrow needs more confirmations before it can be released.');
   });
 
-  it('sends "Payment not received" and "Open dispute" to the dispute screen', () => {
-    const s = sellerConfirm(trade());
+  it('sends "Payment not received" (after the confirm window) and "Open dispute" to the dispute screen', () => {
+    const s = sellerConfirm(trade({ confirmBy: '2026-10-25T11:59:00.000Z' }));
     const links = [...s.host.querySelectorAll('a')].filter((a) => /Payment not received|Open dispute/.test(a.textContent ?? ''));
     expect(links.map((a) => a.getAttribute('href'))).toEqual(['/trade/K7M2-9QXA-4FTR-8WPN/dispute', '/trade/K7M2-9QXA-4FTR-8WPN/dispute']);
   });

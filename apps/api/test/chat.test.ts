@@ -15,14 +15,15 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { purgeChats } from '../src/chat/retention.js';
+import { CHAT_PURGED_MARK_DAYS, purgeChats } from '../src/chat/retention.js';
 import { CHAT_OPEN_BUCKET, CHAT_POST_BUCKET } from '../src/limits.js';
 import { buildInternalListener } from '../src/internal/routes.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
-import { seedTrade } from './helpers/trades.js';
+import { driveTo, seedTrade } from './helpers/trades.js';
+import { insertOffer } from './helpers/offers.js';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -47,12 +48,9 @@ async function trader(): Promise<{ id: string; b: Browser }> {
 
 /** A live offer posted directly in the table (Task 4's route needs a wallet and prices). */
 async function seedOffer(accountId: string, side: 'sell' | 'buy' = 'sell', status = 'live'): Promise<string> {
-  const { rows } = await deps.db.query<{ id: string }>(
-    `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-     values ($1, $2, 'zelle', 'USD', 'market', 100, 1000, 100000, 0, '', $3, $4, $4) returning id`,
-    [accountId, side, status, now],
-  );
-  return rows[0]!.id;
+  return insertOffer(deps.db, {
+    accountId, side, methodId: 'zelle', currency: 'USD', marginBps: 100, min: 1000, max: 100000, status: status as 'live' | 'paused' | 'removed', at: now,
+  });
 }
 
 function keyPair(): Identity {
@@ -190,6 +188,19 @@ describe('POST /v1/chats', () => {
     expect((await other.b.post('/v1/chats', {})).statusCode).toBe(400);
   });
 
+  it('an offer stored as fixed before the market-only rule (owner Q1) is not found', async () => {
+    const poster = await trader();
+    const other = await trader();
+    // Migration 345 refuses new fixed rows; lift it for this one insert, as a row from before the rule.
+    await deps.db.query('alter table offers drop constraint if exists offers_market_only');
+    const legacy = await insertOffer(deps.db, { accountId: poster.id, side: 'sell', methodId: 'zelle', currency: 'USD', min: 1000, max: 100000, at: now });
+    await deps.db.query(`update offers set price_mode = 'fixed', fixed_cents_per_xmr = 34000 where id = $1`, [legacy]);
+    await deps.db.query(`alter table offers add constraint offers_market_only check (price_mode = 'market' and fixed_cents_per_xmr is null) not valid`);
+    const res = await other.b.post('/v1/chats', { offerId: legacy });
+    expect(res.statusCode, res.body).toBe(404);
+    expect(res.json()).toEqual({ error: 'not-found' });
+  });
+
   it('needs a session', async () => {
     const poster = await trader();
     const offerId = await seedOffer(poster.id);
@@ -204,7 +215,7 @@ describe('GET /v1/chats/:chat', () => {
     const res = await o.taker.b.get(`/v1/chats/${o.chat}`);
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
-    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, attested: false, mySignPublic: null });
+    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, tradeSecuredAt: null, attested: false, mySignPublic: null });
     expect((body.counterparty as { displayName: string }).displayName).toMatch(/^Dchl/);
     expect(JSON.stringify(body)).not.toContain(`"chl`);
     const stranger = await trader();
@@ -213,6 +224,27 @@ describe('GET /v1/chats/:chat', () => {
     const unknown = await stranger.b.get(`/v1/chats/${newTradeCode()}`);
     expect(unknown.statusCode).toBe(404);
     expect(miss.json()).toEqual(unknown.json());
+  });
+
+  it("review M8 (pay details): a chat linked to a secured trade carries that trade's secured_at, the same for both parties; a stranger still gets 404", async () => {
+    const o = await openChat();
+    const { trade } = await seedTrade(deps, { sellerId: o.poster.id, buyerId: o.taker.id, poster: 'seller', offerId: o.offerId });
+    expect((await o.taker.b.post(`/v1/trades/${trade.code}/chat`, {})).json()).toEqual({ chat: o.chat, role: 'buyer' });
+    // Linked, not yet secured: still null.
+    const linked = (await o.taker.b.get(`/v1/chats/${o.chat}`)).json() as { tradeCode: string; tradeSecuredAt: string | null };
+    expect(linked).toMatchObject({ tradeCode: trade.code, tradeSecuredAt: null });
+    await driveTo(deps, trade, 'secured');
+    const { rows } = await deps.db.query<{ secured_at: Date | null }>('select secured_at from trades where code = $1', [trade.code]);
+    const at = rows[0]!.secured_at!.toISOString();
+    expect(at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const buyer = (await o.taker.b.get(`/v1/chats/${o.chat}`)).json() as { tradeSecuredAt: string | null };
+    const seller = (await o.poster.b.get(`/v1/chats/${o.chat}`)).json() as { tradeSecuredAt: string | null };
+    expect(buyer.tradeSecuredAt).toBe(at);
+    expect(seller.tradeSecuredAt).toBe(at);
+    const stranger = await trader();
+    const miss = await stranger.b.get(`/v1/chats/${o.chat}`);
+    expect(miss.statusCode).toBe(404);
+    expect(miss.body).not.toContain(at.slice(0, 10));
   });
 
   it("hides the other side's online status from a trader they blocked (review M5: presence through the viewer-aware summary)", async () => {
@@ -553,14 +585,14 @@ describe('purgeChats', () => {
   }
   const exists = async (chat: string): Promise<boolean> => (await deps.db.query('select 1 from chats where code = $1', [chat])).rows.length === 1;
 
-  it('deletes pre-trade chats after 7 idle days and trade chats 90 days after close; keeps a disputed chat past 90 days', async () => {
+  it('deletes pre-trade chats after 7 idle days and undisputed trade chats 30 days after close; keeps a disputed chat', async () => {
     const t0 = new Date('2026-06-01T00:00:00Z');
     const idle = await chatAt(t0);
     const talked = await chatAt(t0, { lastMessage: new Date(t0.getTime() + 20 * DAY) });
     const closed = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
     const disputed = await chatAt(t0, { trade: { state: 'disputed', closedAt: null } });
     const open = await chatAt(t0, { trade: { state: 'secured', closedAt: null } });
-    const at = new Date(t0.getTime() + 91 * DAY);
+    const at = new Date(t0.getTime() + 31 * DAY);
     await purgeChats(deps.db, new Date(t0.getTime() + 8 * DAY));
     expect(await exists(idle)).toBe(false);
     expect(await exists(talked)).toBe(true);
@@ -569,6 +601,133 @@ describe('purgeChats', () => {
     expect(await exists(closed)).toBe(false);
     expect(await exists(disputed)).toBe(true);
     expect(await exists(open)).toBe(true);
+  });
+
+  /** A dispute row on the chat's trade, as the dispute machine leaves it at `status`. */
+  async function addDispute(chat: string, seq: number, status: string, o: { openedAt: Date; closedAt?: Date } ): Promise<void> {
+    const { rows } = await deps.db.query<{ trade_code: string }>('select trade_code from chats where code = $1', [chat]);
+    const published = status === 'published' || status === 'final' || status === 'complying' || status === 'closed';
+    await deps.db.query(
+      `insert into disputes (code, seq, opened_by, reason, opened_at, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents,
+         published_at, appeal_ends_at, closed_at)
+       values ($1, $2, 'buyer', 'paid', $3, $4, $3, $3, 0, 100000, $5, $5, $6)`,
+      [rows[0]!.trade_code, seq, o.openedAt, status, published ? o.openedAt : null, o.closedAt ?? null],
+    );
+  }
+  const plusDays = (t: Date, d: number, ms = 0): Date => new Date(t.getTime() + d * DAY + ms);
+
+  it('undisputed: gone only after exactly 30 days past the close, both sides of the boundary', async () => {
+    const t0 = new Date('2026-03-01T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    await purgeChats(deps.db, plusDays(t0, 30));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(t0, 30, 1));
+    expect(await exists(chat)).toBe(false);
+  });
+
+  it('disputed and closed: kept past the 30 days, gone only after 90 days past the dispute closing', async () => {
+    const t0 = new Date('2026-02-01T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    const closedAt = plusDays(t0, 3);
+    await addDispute(chat, 1, 'closed', { openedAt: t0, closedAt });
+    await purgeChats(deps.db, plusDays(t0, 31));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(closedAt, 90));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(closedAt, 90, 1));
+    expect(await exists(chat)).toBe(false);
+  });
+
+  it.each(['open', 'awaiting-approval', 'published', 'appealed', 'final', 'complying'])(
+    'never while a dispute is %s, on a trade that has already closed',
+    async (status) => {
+      const t0 = new Date('2026-01-01T00:00:00Z');
+      const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+      await addDispute(chat, 1, status, { openedAt: t0 });
+      await purgeChats(deps.db, plusDays(t0, 500));
+      expect(await exists(chat)).toBe(true);
+    },
+  );
+
+  it('a later dispute on the same trade: kept while it is open, then 90 days from the last close', async () => {
+    const t0 = new Date('2026-01-05T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    await addDispute(chat, 1, 'closed', { openedAt: t0, closedAt: plusDays(t0, 1) });
+    await addDispute(chat, 2, 'open', { openedAt: plusDays(t0, 2) });
+    await purgeChats(deps.db, plusDays(t0, 500));
+    expect(await exists(chat)).toBe(true);
+    const last = plusDays(t0, 501);
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = (select trade_code from chats where code = $1) and seq = 2`, [chat, last]);
+    await purgeChats(deps.db, plusDays(last, 90));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(last, 90, 1));
+    expect(await exists(chat)).toBe(false);
+  });
+
+  it('a dispute committed while the purge waits on the chat row lock is seen by the re-read under that lock', async () => {
+    const t0 = new Date('2026-01-10T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    await raceThePurge(chat, plusDays(t0, 31), async (q) => {
+      await q.query(
+        `insert into disputes (code, seq, opened_by, reason, opened_at, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents)
+         values ((select trade_code from chats where code = $1), 1, 'system', 'escalated', $2, 'open', $2, $2, 0, 100000)`,
+        [chat, plusDays(t0, 30)],
+      );
+    });
+    expect(await exists(chat)).toBe(true);
+  });
+
+  it('M2: a dispute not yet committed makes the purge wait on the trade, and the chat stays', async () => {
+    const t0 = new Date('2026-01-12T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    const code = (await deps.db.query<{ trade_code: string }>('select trade_code from chats where code = $1', [chat])).rows[0]!.trade_code;
+    const dispute = await deps.db.connect();
+    try {
+      // As applyEvent does when a dispute opens: the trade's row lock, the state, then the dispute row.
+      await dispute.query('begin');
+      await dispute.query('select 1 from trades where code = $1 for update', [code]);
+      await dispute.query(`update trades set state = 'disputed', closed_at = null where code = $1`, [code]);
+      await dispute.query(
+        `insert into disputes (code, seq, opened_by, reason, opened_at, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents)
+         values ($1, 1, 'system', 'escalated', $2, 'open', $2, $2, 0, 100000)`,
+        [code, plusDays(t0, 30)],
+      );
+      const purge = purgeChats(deps.db, plusDays(t0, 31));
+      for (let i = 0; ; i++) {
+        const { rows } = await deps.db.query(
+          `select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%for share%'`,
+        );
+        if (rows.length > 0) break;
+        if (i > 200) throw new Error('the purge never waited on the trade lock');
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      await dispute.query('commit');
+      expect(await purge).toBe(0);
+    } finally {
+      dispute.release();
+    }
+    expect(await exists(chat)).toBe(true);
+  });
+
+  // M3: the rule says due, so the scan and the re-read cannot save the chat: only the delete's own
+  // checks can. One case per check, so that removing either is caught by itself.
+  it.each([
+    ['a dispute row not yet closed, on a trade already closed', { t0: '2026-01-14T00:00:00Z', state: 'released', closed: true, row: true }],
+    ['a trade in dispute with no dispute row', { t0: '2026-01-15T00:00:00Z', state: 'disputed', closed: false, row: false }],
+  ])('the delete keeps a chat the rule calls due: %s', async (_name, c) => {
+    const t0 = new Date(c.t0);
+    const chat = await chatAt(t0, { trade: { state: c.state, closedAt: c.closed ? t0 : null } });
+    if (c.row) await addDispute(chat, 1, 'open', { openedAt: t0 });
+    const seen: boolean[] = [];
+    const removed = await purgeChats(deps.db, plusDays(t0, 500), (facts) => {
+      if (facts.createdAt.getTime() !== t0.getTime()) return false;
+      seen.push(facts.disputeOpen);
+      return true;
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(Boolean)).toBe(true); // what the scan tells the rule: the first guard, by itself
+    expect(removed).toBe(0);
+    expect(await exists(chat)).toBe(true);
   });
 
   /**
@@ -631,6 +790,103 @@ describe('purgeChats', () => {
     expect(await exists(r.chat)).toBe(false);
     expect((await deps.db.query('select 1 from chat_envelopes where chat = $1', [r.chat])).rows).toHaveLength(0);
     expect(RETENTION_JOBS.map((j) => j.name)).toContain('purgeChats');
+  });
+});
+
+describe('the purge leaves a shred order for moderation and a purged mark for devices (design 5, tasks 1 and 2)', () => {
+  /** A ready chat linked to an undisputed trade that closed at `now`, then purged 31 days later. */
+  async function purgedTradeChat(): Promise<Ready & { trade: string; purgedAt: Date }> {
+    const r = await readyChat();
+    const t = await seedTrade(deps, { sellerId: r.poster.id, buyerId: r.taker.id, poster: 'seller' });
+    await deps.db.query(`update trades set state = 'released', closed_at = $2 where code = $1`, [t.code, now]);
+    await deps.db.query('update chats set trade_code = $2 where code = $1', [r.chat, t.code]);
+    await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0));
+    const purgedAt = new Date(now.getTime() + 31 * DAY);
+    await purgeChats(deps.db, purgedAt);
+    expect((await deps.db.query('select 1 from chats where code = $1', [r.chat])).rows).toHaveLength(0);
+    return { ...r, trade: t.code, purgedAt };
+  }
+  const orders = async (): Promise<Array<{ chat: string; trade: string | null; purgedAt: string }>> => {
+    const res = await signedInject('GET', '/internal/v1/chat-shred');
+    expect(res.statusCode).toBe(200);
+    return (res.json() as { orders: Array<{ chat: string; trade: string | null; purgedAt: string }> }).orders;
+  };
+
+  it('a purged chat is on the shred list with its trade code until moderation reports it shredded; a repeat report is still done', async () => {
+    const r = await purgedTradeChat();
+    expect(await orders()).toContainEqual({ chat: r.chat, trade: r.trade, purgedAt: r.purgedAt.toISOString() });
+    const done = await signedInject('POST', '/internal/v1/reports', { kind: 'chat-shredded', chat: r.chat });
+    expect(done.statusCode).toBe(201);
+    expect((await orders()).map((o) => o.chat)).not.toContain(r.chat);
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-shredded', chat: r.chat })).statusCode).toBe(201);
+  });
+
+  it('review M4: the least recently served order comes first, so an order moderation holds does not keep the rest waiting', async () => {
+    const start = now;
+    const page = internal;
+    internal = await buildInternalListener({ db: deps.db, modSigningPublic: modSign.public, now: () => now.getTime(), workLimit: 1 });
+    try {
+      await deps.db.query('delete from chat_shred_orders');
+      const held = await purgedTradeChat();
+      const next = await readyChat();
+      await purgeChats(deps.db, new Date(now.getTime() + 40 * DAY));
+      const served: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        now = new Date(now.getTime() + 1000);
+        served.push(...(await orders()).map((o) => o.chat));
+      }
+      // Held (never reported shredded), yet the order behind it is served on the next pass.
+      expect(served).toEqual([held.chat, next.chat, held.chat]);
+    } finally {
+      await internal.close();
+      internal = page;
+      now = start;
+    }
+  });
+
+  it('a pre-trade chat is ordered shredded too, with no trade', async () => {
+    const r = await readyChat();
+    const purgedAt = new Date(now.getTime() + 8 * DAY);
+    await purgeChats(deps.db, purgedAt);
+    expect(await orders()).toContainEqual({ chat: r.chat, trade: null, purgedAt: purgedAt.toISOString() });
+  });
+
+  it('the shred list and report are signed like every internal route, and the report takes exactly { kind, chat }', async () => {
+    const unsigned = await internal.inject({ method: 'GET', url: '/internal/v1/chat-shred' });
+    expect(unsigned.statusCode).toBe(401);
+    for (const body of [{ kind: 'chat-shredded' }, { kind: 'chat-shredded', chat: 'nope' }, { kind: 'chat-shredded', chat: newTradeCode(), extra: 1 }]) {
+      expect((await signedInject('POST', '/internal/v1/reports', body)).statusCode).toBe(400);
+    }
+  });
+
+  it("a former member gets 410 chat-purged on every chat route (the device erases its copy); anyone else, and an unknown chat, still 404", async () => {
+    const r = await purgedTradeChat();
+    const stranger = await trader();
+    for (const who of [r.taker, r.poster]) {
+      const answers = [
+        await who.b.get(`/v1/chats/${r.chat}`),
+        await who.b.get(`/v1/chats/${r.chat}/envelopes?after=0`),
+        await who.b.get(`/v1/chats/${r.chat}/attestation`),
+        await who.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 1)),
+        await who.b.post(`/v1/chats/${r.chat}/identity`, identityBody(r.chat, 'buyer')),
+      ];
+      expect(answers.map((a) => a.statusCode)).toEqual([410, 410, 410, 410, 410]);
+      expect(answers[0]!.json()).toEqual({ error: 'chat-purged' });
+    }
+    expect((await stranger.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(404);
+    expect((await r.taker.b.get(`/v1/chats/${newTradeCode()}`)).statusCode).toBe(404);
+  });
+
+  it('the mark names neither the chat nor its members, and goes CHAT_PURGED_MARK_DAYS after the purge', async () => {
+    const r = await purgedTradeChat();
+    const { rows } = await deps.db.query<{ tag: Buffer; purged_at: Date }>('select tag, purged_at from chat_purged_marks where purged_at = $1', [r.purgedAt]);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    const dump = rows.map((m) => m.tag.toString('hex') + m.tag.toString('latin1')).join('');
+    for (const secret of [r.chat, r.taker.id, r.poster.id, r.chat.replace(/-/g, '')]) expect(dump).not.toContain(secret);
+    await purgeChats(deps.db, new Date(r.purgedAt.getTime() + CHAT_PURGED_MARK_DAYS * DAY));
+    expect((await r.taker.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(410);
+    await purgeChats(deps.db, new Date(r.purgedAt.getTime() + CHAT_PURGED_MARK_DAYS * DAY + 1));
+    expect((await r.taker.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(404);
   });
 });
 

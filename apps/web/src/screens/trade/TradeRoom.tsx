@@ -52,8 +52,9 @@
  *   mutual-cancel (BuyerCancelling: the buyer's device builds the refund to the seller).
  * - Task 24: seller in `paid`; both in `settling` (release) and `released` (SellerConfirm, Released).
  *   Task 23's guarded buyer × `settling` wins over Task 24's unguarded one for the cancel kinds.
- * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); buyer in `refund_requested` (FinalAlert);
- *   seller in `refund_requested` (the seller's waiting room while the buyer's final alert runs).
+ * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); seller in `settling` and
+ *   `refunded`, and buyer in `settling`, with `when` the seller's cancel (`auto-refund`; SellerRefund's
+ *   refund views, SellerCancelled). Owner 8 Nov: no final alert, the refund starts at once.
  * - Task 27: both in `disputed` (DisputeRoom, DisputeRuling); buyer in `refunded` (the refund with the
  *   48-hour "Open a dispute", owner 2026-10-29; was 90 days).
  * - Task 39: seller in `settling` and `refunded` with `when` buyer-cancel (SellerCancelConfirm: the
@@ -91,8 +92,11 @@ import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { memberOf } from '../../session/member.js';
-import { useSession } from '../../session/useSession.js';
+import { displayNameOf, useSession } from '../../session/useSession.js';
+import { setConfirmUser } from './confirmSkip.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
+import { CourtesySheet } from '../quote/CourtesySheet.js';
+import { courtesyDue, markCourtesyShown } from '../quote/courtesy.js';
 import { tradeFromView } from '../dispute/api.js';
 import { DisputeEntry } from '../dispute/DisputeEntry.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
@@ -233,6 +237,9 @@ export function TradeRoom() {
   const { code = '' } = useParams();
   const location = useLocation();
   const { load, refresh } = useTradeView(code);
+  // Owner p7-2: "Do not show me this warning again" belongs to the signed-in user (confirmSkip.ts).
+  const confirmUser = session.status === 'signed-in' ? displayNameOf(session.me) : null;
+  useEffect(() => setConfirmUser(confirmUser), [confirmUser]);
 
   if (load.kind === 'loading') return <main data-screen="trade" aria-busy="true" />;
   if (load.kind === 'missing') {
@@ -277,8 +284,8 @@ export function TradeRoom() {
  *
  * What a Trades member may still do on the trades the owner's device set up (owner question 13(d),
  * team/perms.ts; review round 2, n3), as far as it needs no escrow here:
- * - the slot's `forMembers` screen, if it has one: the seller's Propose cancel and Withdraw while
- *   the buyer pays (Task 23's SellerWaiting; a mutual cancel only records a choice, and the signing
+ * - the slot's `forMembers` screen, if it has one: the seller's Withdraw of a standing proposal while
+ *   the buyer pays (no Propose cancel, design proto review P2) (Task 23's SellerWaiting; a mutual cancel only records a choice, and the signing
  *   it leads to is the owner's device's), and the seller's Confirm cancel after a buyer's cancel
  *   (Task 39's SellerCancelConfirm, which never touches the escrow);
  * - otherwise the trade's state and a notice that the account owner's device does the rest;
@@ -321,6 +328,14 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   const stored = useMemo(() => (fromState ? null : readConfirmed(code)), [fromState, code]);
   const confirmed = fromState ?? stored ?? undefined;
   const escrow = useTradeEscrow(code, confirmed);
+  // "Trading with more than one person?" (j31a section 2, T-039; design final call 10 Nov 2026) over the
+  // room the first time the taker's new trade opens: arriving from the take (the history state), as the
+  // taker (posters never see it, T-038), unless ticked off on this device or shown for this trade already
+  // (a reload, Back then Forward). A room opened any other way (a new tab, a push) shows none.
+  const [courtesy, setCourtesy] = useState(() => fromState !== undefined && view.role !== view.poster && courtesyDue(code));
+  useEffect(() => {
+    if (courtesy) markCourtesyShown(code);
+  }, [courtesy, code]);
   // Once the escrow has stored the deal, the tab's copy (it holds the payout address) is not needed.
   const hasDeal = escrow.deal !== null;
   useEffect(() => {
@@ -345,7 +360,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   const Screen = broken ? integrityScreen : screenFor(view, clock().getTime());
   const Chat = useTradeChat();
   // The dispute room lays out its own chat (follow-up); a broken trade shows only its refusal.
-  const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
+  const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} methodId={view.methodId} /> : null;
   const chatPane = chatPaneFor(layout, Chat !== null, view, broken);
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role}>
@@ -374,6 +389,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
         sideLabel={`Chat with ${publicName(view.counterparty)}`}
       />
       <ChatHash hash={hash} layout={layout} chat={chat} chatPane={chatPane} name={publicName(view.counterparty)} screen={Screen} />
+      <CourtesySheet open={courtesy} onDone={() => setCourtesy(false)} />
     </main>
   );
 }
@@ -389,14 +405,27 @@ export function useChatPane(view: Pick<TradeView, 'state'>): boolean {
 }
 
 const COMPOSER = ":is(input, textarea, [contenteditable='true'])";
+/** The payee's payment-detail boxes (ChatPanel PayBoxes, J-08): inputs in the chat pane above its composer. */
+const PAY_BOXES = '[data-pay-boxes]';
 /** The room's chat pane (two panes, three, tabletop). */
 const PANE_CHAT = "[data-pane='side']";
 /** A screen's own chat aside in the wide layout (BuyerPay's WideRoom, the Desktop board). */
 const ASIDE_CHAT = "[data-pane='main'] .x2f-room__chat-panel";
 
+/**
+ * The chat's own composer inside `where`: the first input that is not one of the payee's
+ * payment-detail boxes, which sit in the same pane above it (J-08).
+ */
+function composerIn(where: string): HTMLElement | null {
+  for (const el of document.querySelectorAll<HTMLElement>(`${where} ${COMPOSER}`)) {
+    if (el.closest(PAY_BOXES) === null) return el;
+  }
+  return null;
+}
+
 /** Moves the focus to the composer of the room's chat pane. */
 export function focusChatPane(): void {
-  document.querySelector<HTMLElement>(`${PANE_CHAT} ${COMPOSER}`)?.focus();
+  composerIn(PANE_CHAT)?.focus();
 }
 
 /**
@@ -406,7 +435,7 @@ export function focusChatPane(): void {
  * focus from something the user moved it to in the meantime. Returns the cleanup.
  */
 export function focusComposerWhenReady(where: string): () => void {
-  const find = () => document.querySelector<HTMLElement>(`${where} ${COMPOSER}`);
+  const find = () => composerIn(where);
   const now = find();
   if (now) {
     now.focus();

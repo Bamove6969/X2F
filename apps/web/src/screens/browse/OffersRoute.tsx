@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { hasPanes, useFoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
 import { BUY_QUOTE_COPY } from '../quote/BuyQuote.js';
 import { QuoteScreen } from '../quote/Quote.js';
+import { forgetQuote } from '../quote/quoteKept.js';
 import { quotePath } from '../quote/quoteModel.js';
 import { SELL_QUOTE_COPY } from '../quote/SellQuote.js';
 import { adSide, currencyFrom, type Offer, type Side } from './api.js';
@@ -38,25 +39,40 @@ export function OffersRoute({ side, copy }: { side: Side; copy: BrowseCopy }) {
   const currency = currencyFrom(search);
   const quoteCopy = side === 'buy' ? BUY_QUOTE_COPY : SELL_QUOTE_COPY;
   const onTrade = (o: Offer) => void navigate(quotePath(adSide(side), methodId, o.id, currency));
+  // Back from a quote to the list undoes the pick (lead review 2026-11-06 m1): the quote of the
+  // offer shown unpicked starts afresh (a new instance, its kept entry forgotten), so a fold
+  // can't lose it again and its next first input picks it again. Not while its take is in flight.
+  const [fresh, setFresh] = useState(0);
+  const wasPicked = useRef(offerId !== undefined);
+  useLayoutEffect(() => {
+    const back = wasPicked.current && offerId === undefined;
+    wasPicked.current = offerId !== undefined;
+    if (back && first !== null && forgetQuote(first)) setFresh((n) => n + 1);
+  }, [offerId, first]);
 
   if (!hasPanes(layout)) {
     return <Panes layout={layout} main={offerId !== undefined ? <QuoteScreen copy={quoteCopy} /> : <OfferList side={side} copy={copy} onTrade={onTrade} />} />;
   }
 
   const shown = offerId ?? first;
-  const onPick = (o: Offer) => {
-    const now = new URLSearchParams(search);
-    const next = new URLSearchParams(KEPT.flatMap((k) => (now.get(k) !== null ? [[k, now.get(k)!]] : [])));
+  const goTo = (id: string, from: URLSearchParams, replace: boolean) => {
+    const next = new URLSearchParams(KEPT.flatMap((k) => (from.get(k) !== null ? [[k, from.get(k)!]] : [])));
     if (!next.has('currency')) next.set('currency', currency);
-    const path = quotePath(adSide(side), methodId, o.id, currency).split('?')[0]!;
-    // From the list, a step forward (Back returns to the list, as on a phone); between quotes, a swap.
-    void navigate(`${path}?${next}`, { replace: offerId !== undefined });
+    const path = quotePath(adSide(side), methodId, id, currency).split('?')[0]!;
+    void navigate(`${path}?${next}`, { replace });
   };
+  // From the list, a step forward (Back returns to the list, as on a phone); between quotes, a swap.
+  const onPick = (o: Offer) => goTo(o.id, new URLSearchParams(search), offerId !== undefined);
+  // Nothing picked yet, so the pane shows `first` on the list's URL: the first input there picks it,
+  // with the quote's own params (review 2026-11-06 m2), so a fold keeps the quote and its take. A
+  // step forward, like a pick from the list: the list's entry stays, so Back (after a fold, or after
+  // picking another row, which swaps) returns to the list.
+  const onFirstInput = offerId === undefined && first !== null ? (params: URLSearchParams) => goTo(first, params, false) : undefined;
   return (
     <Panes
       layout={layout}
       main={<OfferList side={side} copy={copy} onTrade={onTrade} pick={{ id: shown, onPick, onFirst: setFirst }} />}
-      side={shown !== null ? <QuoteScreen key={shown} copy={quoteCopy} pane={{ methodId, offerId: shown }} /> : null}
+      side={shown !== null ? <QuoteScreen key={`${shown}:${fresh}`} copy={quoteCopy} pane={{ methodId, offerId: shown, onFirstInput }} /> : null}
       sideLabel="Quote"
     />
   );

@@ -1,0 +1,350 @@
+/* The v2 hero, key mark and trade stepper (design kit handoff §4-6). The only gradient in the app. */
+
+.x2f-hero[data-tone='caution'],
+.x2f-keymark[data-tone='caution'],
+.x2f-keytile[data-tone='caution'],
+.x2f-stepper__fill[data-tone='caution'] {
+  --x2f-tone: var(--x2f-caution);
+}
+
+.x2f-hero[data-tone='escrow'],
+.x2f-keymark[data-tone='escrow'],
+.x2f-keytile[data-tone='escrow'],
+.x2f-stepper__fill[data-tone='escrow'] {
+  --x2f-tone: var(--x2f-escrow);
+}
+
+.x2f-hero[data-tone='danger'],
+.x2f-keymark[data-tone='danger'],
+.x2f-keytile[data-tone='danger'],
+.x2f-stepper__fill[data-tone='danger'] {
+  --x2f-tone: var(--x2f-danger);
+}
+
+.x2f-hero[data-tone='mod'],
+.x2f-keymark[data-tone='mod'],
+.x2f-keytile[data-tone='mod'] {
+  --x2f-tone: var(--x2f-mod);
+}
+
+.x2f-hero[data-tone='neutral'],
+.x2f-keymark[data-tone='neutral'],
+.x2f-keytile[data-tone='neutral'] {
+  --x2f-tone: var(--x2f-ink-muted);
+}
+
+.x2f-hero[data-tone='team'],
+.x2f-keymark[data-tone='team'],
+.x2f-keytile[data-tone='team'] {
+  --x2f-tone: var(--x2f-team);
+}
+
+/* ---- 4.1 Container ---- */
+.x2f-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-5);
+  border: 1px solid color-mix(in srgb, var(--x2f-tone) 35%, transparent);
+  border-radius: var(--x2f-radius-lg);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--x2f-tone) 14%, var(--x2f-surface)) 0%, var(--x2f-surface) 140px);
+}
+
+.x2f-hero[data-kind='result'] {
+  gap: var(--x2f-space-5);
+  padding: var(--x2f-space-6) var(--x2f-space-5) var(--x2f-space-5);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--x2f-tone) 14%, var(--x2f-surface)) 0%, var(--x2f-surface) 160px);
+}
+
+@media (min-width: 900px) {
+  .x2f-hero {
+    padding: 28px;
+  }
+}
+
+/* ---- 4.2 Row 1 ---- */
+.x2f-hero__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+/* ---- 4.3 Row 2 ---- */
+.x2f-hero__meaning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-4);
+}
+
+.x2f-hero__number-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  min-width: 0;
+}
+
+.x2f-hero__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x2f-space-1);
+  color: var(--x2f-tone);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
+  text-transform: uppercase;
+}
+
+.x2f-hero-number {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.x2f-hero-number .x2f-countdown__n {
+  color: var(--x2f-ink);
+  font-family: var(--x2f-hero-number-family);
+  font-size: var(--x2f-hero-number-size);
+  line-height: var(--x2f-hero-number-line);
+  font-weight: var(--x2f-hero-number-weight);
+  letter-spacing: var(--x2f-hero-number-tracking);
+}
+
+.x2f-hero-number .x2f-countdown__u {
+  color: var(--x2f-ink-muted);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.x2f-hero__line {
+  color: var(--x2f-ink-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.x2f-hero__line .x2f-digits,
+.x2f-hero__lead .x2f-digits,
+.x2f-hero__lead .x2f-when,
+.x2f-hero__lead .x2f-duration__n {
+  color: var(--x2f-ink);
+}
+
+.x2f-hero__result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.x2f-hero__headline {
+  margin: 0;
+  color: var(--x2f-ink);
+  font-family: var(--x2f-result-headline-family);
+  font-size: var(--x2f-result-headline-size);
+  line-height: var(--x2f-result-headline-line);
+  font-weight: var(--x2f-result-headline-weight);
+  letter-spacing: var(--x2f-result-headline-tracking);
+  text-wrap: balance;
+}
+
+@media (min-width: 900px) {
+  .x2f-hero__headline {
+    font-size: var(--x2f-display-size);
+    line-height: var(--x2f-display-line);
+  }
+}
+
+.x2f-hero__lead {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+  font-size: var(--x2f-body-size);
+  line-height: var(--x2f-body-line);
+}
+
+/* ---- 4.4 Row 3 ---- */
+/* An inner divider (4.1): 1 px of the tone at 25%. */
+.x2f-hero__rule {
+  height: 1px;
+  background: color-mix(in srgb, var(--x2f-tone) 25%, transparent);
+}
+
+/* The inner block of amounts (4.3 Amount, 8.1; Refunded): a stacked amount row, then key/value rows. */
+.x2f-hero__facts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-hero__facts dd {
+  margin: 0;
+}
+
+.x2f-hero__amount {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+}
+
+.x2f-hero__facts-label {
+  color: var(--x2f-ink-muted);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
+  text-transform: uppercase;
+}
+
+.x2f-hero__amount dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+}
+
+.x2f-hero__amount .x2f-num {
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.x2f-hero__amount .x2f-xmr__unit {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.x2f-hero__fiat {
+  color: var(--x2f-ink-muted);
+  font-family: var(--x2f-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.x2f-hero__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  margin: 0 16px;
+  border-top: 1px solid var(--x2f-surface);
+}
+
+.x2f-hero__row dt {
+  color: var(--x2f-ink-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.x2f-hero__row dd {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+.x2f-ring {
+  flex-shrink: 0;
+  color: var(--x2f-tone);
+}
+
+.x2f-segments-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-segments__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  color: var(--x2f-ink-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.x2f-segments {
+  display: grid;
+  gap: 3px;
+  height: 8px;
+}
+
+.x2f-segments__pill {
+  border-radius: var(--x2f-radius-pill);
+  background: color-mix(in srgb, var(--x2f-tone) 18%, var(--x2f-surface-raised));
+}
+
+.x2f-segments__pill[data-done='true'] {
+  background: var(--x2f-tone);
+}
+
+/* ---- 5 Key mark ---- */
+.x2f-keymark {
+  flex-shrink: 0;
+  color: var(--x2f-tone);
+}
+
+.x2f-keytile {
+  display: flex;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--x2f-radius-md);
+  background: color-mix(in srgb, var(--x2f-tone) 14%, transparent);
+}
+
+/* ---- 6 Trade stepper ---- */
+.x2f-stepper {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-stepper__step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.x2f-stepper__track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-stepper__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-escrow);
+}
+
+.x2f-stepper__fill[data-tone] {
+  background: var(--x2f-tone);
+}
+
+.x2f-stepper__label {
+  color: var(--x2f-ink-muted);
+  font-size: 12px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.x2f-stepper__step[data-state='current'] .x2f-stepper__label {
+  color: var(--x2f-ink);
+  font-weight: 600;
+}

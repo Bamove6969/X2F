@@ -10,6 +10,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-14-x2f-design.md` sections 4.1, 6.1–6.6, 8, 9. Review applied: `docs/superpowers/plans/2026-10-15-plans-2-3-review.md`. Builds on Plan 1 (`docs/superpowers/plans/2026-10-15-plan-1-escrow-core.md`): workspace, `tools/check.sh`, `@x2f/core` (`newTradeCode`, `normalizeTradeCode`). Note: `@x2f/core`'s `Role` (`buyer | seller | mod`) is a *trade* role; account kinds here are a separate type, `AccountKind`.
 
+## Revision 2026-11-09 (owner)
+
+Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's answers register of 2026-11-09. Where this list differs from older text, this list wins.
+
+- **24-hour hold (owner p11-26):** the hold is only on the changes being made; everything else (offers, trades, other logins) works as normal. A team member's weak login holds only that member's own changes; the team account never freezes because of a member. Replaces the account-wide effects of 30 Oct (offers hidden, trades cancelled or held). Reach to the recovery-code hold is awaiting the lead.
+
 ## Revision 2026-10-15
 
 Applied every Plan 2 item and cross-plan reconciliation from the review. Authority: spec > review > previous plan.
@@ -104,7 +110,7 @@ Authority: spec (Revision 2026-10-29c) > `rulings-and-lessons.md` (R42) > earlie
 - **Weak:** a password alone, an authenticator (TOTP) code alone, a recovery code alone. `RECOVERY_CODE_ALONE_WAITS` is dropped: a recovery code alone is weak.
 - **What starts the 24-hour hold:** (1) a weak-single session that changes the password or a security setting (login methods, Settings → Security); (2) a weak-single login on a device not trusted for the account while **no** full session is open to approve it (Task 16's no-approval case, which the 29b note left as today).
 - **During the hold** (*lead proposal, owner agreed 2026-10-29:* "ok i will agree with your ideas for the 24 hour holds"): no new trades (`take`), no payout-wallet changes, and no approving new logins or devices (Task 16's approval routes refuse). Trades already open can be finished. *Lead defaults kept from 29b (not among the proposals the owner agreed):* posting or turning on offers and login-method changes are refused too.
-- **A strong login by the real owner ends the hold** (*lead proposal, owner agreed 2026-10-29*; alert `hold-ended`). *Lead reading, OPEN for the owner's confirmation (spec Revision 2026-10-29c):* the hold covers the whole account; the change that started it waits out the 24 hours, as Task 9's built hold already does; the ending login must use a method registered before the hold started, and it cancels that waiting change.
+- **A strong login by the real owner ends the hold** (*lead proposal, owner agreed 2026-10-29*; alert `hold-ended`). *Lead reading, OPEN for the owner's confirmation (spec Revision 2026-10-29c):* ~~the hold covers the whole account~~ (superseded 2026-11-09 by owner p11-26: the hold holds only the changes being made); the change that started it waits out the 24 hours, as Task 9's built hold already does; the ending login must use a method registered before the hold started, and it cancels that waiting change.
 - **Every new login sends a push alert** to the account's other devices (`new-login`), as well as the in-app alert. The real owner finds a thief through the new-device approval prompt (block), these alerts and the Devices list.
 - **PGP alone** ~~is in neither list (*lead reading, OPEN for confirmation*): no hold.~~ **Corrected by the owner, 2026-10-29 14:12:** every account has at least two factors, and only the owner's listed combinations skip the wait: password + authenticator; password + passkey or security key; PGP + passkey or security key; a passkey or security key alone. Everything else, **PGP alone included**, waits 24 hours (`pgp-single` waits exactly like `weak-single`).
 - Staff and owner logins are unaffected (29b lead default stands).

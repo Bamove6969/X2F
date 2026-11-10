@@ -10,14 +10,14 @@
  * Buyer: co-signs a seller-built release (index 0 = its own payout address) or a seller-built
  * lapse refund (only on a lapsed, underfunded escrow, where the buyer was never asked to pay);
  * builds its own buyer-cancel (mod co-signs) and mutual cancel (seller co-signs).
- * Seller: builds the release, the lapse refund and the no-show refund (mod co-signs, only in
- * refund_requested); co-signs a buyer-built mutual cancel; never touches a buyer-cancel.
+ * Seller: builds the release, the lapse refund and the refund of its own cancel after the time to
+ * pay (`auto-refund`, mod co-signs, only while the trade settles it and the buyer never marked paid:
+ * owner 8 Nov); co-signs a buyer-built mutual cancel; never touches a buyer-cancel.
  * Mod-built (Plan 4 rulings, only while disputed): co-signed only when it is exactly the ruling's
- * set for this side at its own address (Plan 4 Task 15, Revision 2026-10-29c "Fees on settled
- * disputes", the poster pays the 1%): `payoutsFor('dispute-buyer')` for the buyer (its payout
- * first, then the exact fee) and `payoutsFor('dispute-seller')` for the seller (poster seller: its
- * refund less the exact fee, then the fee; poster buyer: the whole balance), so no split can move
- * this side's share to the counterparty or change the fee. Whether the ruling allows it at all is
+ * set for this side at its own address (Plan 4 Task 15; owner g63, 7 Nov: the poster pays the 1%
+ * only when the trade completes): `payoutsFor('dispute-buyer')` for the buyer (its payout first,
+ * then the exact fee) and `payoutsFor('dispute-seller')` for the seller (a full reversal: the whole
+ * balance, no fee), so no split can move this side's share to the counterparty or add a fee. Whether the ruling allows it at all is
  * screens/dispute/rules.ts `rulingAllowsCosign`, in front of this.
  *
  * The trade's size is bounded by this device, never set by the API alone: `deal` is what this
@@ -39,6 +39,8 @@ export interface PolicyTrade {
   feeWallet: string;
   /** When the buyer marked paid (the API's view), null before: no cancel of any kind after it (review round 2, N4). */
   paidAt: string | null;
+  /** The settlement in progress (the API's view): the seller's cancel refund only while it is `auto-refund` (owner 8 Nov). */
+  settling: string | null;
 }
 
 /** The trade as this device holds it: signed by both sides at setup, size worked out on the device. */
@@ -105,7 +107,7 @@ export function signsIn(kind: SettleKind, role: 'buyer' | 'seller'): boolean {
 }
 
 /** Open states in which the buyer may cancel alone after funding (Task 2); never `paid` (no cancel after "I've paid", Task 39 review I2). */
-const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'refund_requested', 'settling'];
+const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'settling'];
 const RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling'];
 
 function samePayouts(a: readonly Payout[], b: readonly Payout[]): boolean {
@@ -168,7 +170,7 @@ function check(c: PolicyContext, o: Outcome): boolean {
   }
   if (route('release')) return RELEASE_STATES.includes(state);
   if (route('lapse-refund')) return state === 'lapsed';
-  if (route('auto-refund')) return state === 'refund_requested';
+  if (route('auto-refund')) return state === 'settling' && c.trade.settling === 'auto-refund' && c.trade.paidAt === null;
   if (route('mutual-cancel')) return true;
   return state === 'disputed' && is('dispute-seller', 'mod', 'seller');
 }

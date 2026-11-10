@@ -1,13 +1,29 @@
 import type { ConfirmAction, MethodType } from '@x2f/accounts';
 import { ApiError } from '../errors.js';
+import { parseAbilities, TEAM_ROLES as ROLE_ORDER } from '../team/abilities.js';
 
 const METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password', 'totp', 'recovery-codes'];
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS_END = /^[1-9A-HJ-NP-Za-km-z]{1,6}$/; // base58, as Monero addresses are written
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-// Plan 2 Task 18: a team member's roles, in their fixed order.
-const TEAM_ROLES = /^(offers|trades|offers,trades)$/;
+// Plan 2 Task 18: a team member's roles, in their fixed order (owner p4-8 adds the hold rights):
+// the same list `parseRoles` accepts (team/abilities.ts `TEAM_ROLES`).
+const TEAM_ROLES = {
+  test(v: string): boolean {
+    const parts = v.split(',');
+    const idx = parts.map((p) => (ROLE_ORDER as readonly string[]).indexOf(p));
+    return parts.length >= 1 && idx.every((i, k) => i >= 0 && (k === 0 || i > idx[k - 1]!));
+  },
+};
+// Job 1c (J-10): a member's boxes, as the routes bind them: grantable ids, comma-separated, in catalogue order.
+function teamAbilities(v: string): boolean {
+  try {
+    return parseAbilities(v.split(',')).join(',') === v;
+  } catch {
+    return false;
+  }
+}
 // A member's name as typed (the display-name shape; the full rules run at the invite itself).
 const TEAM_NAME = /^[A-Za-z0-9._-]{1,20}$/;
 // 1 to MAX_WALLET_BATCH (10) address ends, comma-separated.
@@ -26,7 +42,11 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'add-device-key': { signPublicHash: (v) => HEX64.test(v) },
   'team-invite': { name: (v) => TEAM_NAME.test(v), roles: (v) => TEAM_ROLES.test(v) },
   'team-roles': { memberId: (v) => UUID.test(v), roles: (v) => TEAM_ROLES.test(v) },
+  'team-invite-abilities': { name: (v) => TEAM_NAME.test(v), abilities: teamAbilities },
+  'team-abilities': { memberId: (v) => UUID.test(v), abilities: teamAbilities },
   'team-remove': { memberId: (v) => UUID.test(v) },
+  'extend-session': {},
+  'become-vendor': {},
 };
 
 /**

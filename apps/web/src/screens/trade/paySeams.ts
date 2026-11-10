@@ -5,8 +5,10 @@
  * - `postPayEvent`: Task 22's `postTradeEvent` (POST /v1/trades/:code/events, Task 6), narrowed to
  *   the events these screens post.
  * - `payMethodOf`: Task 22's `methodOf` plus the method's `fields` (Task 3's MethodProfile).
- * - `usePaymentDetails`: the seller's own payment details for the method's fields ("Zelle to
- *   <id>"). No API carries them yet. GAP for the lead.
+ * - `usePaymentDetails`: the seller's payment details for the method ("Email: <address>"), from
+ *   the newest package the seller sent in the trade's encrypted chat (J-08, S-090; the source is
+ *   chat/payDetailsFeed.ts, installed by App.tsx). No API ever carries them: they travel only as
+ *   ciphertext inside the chat envelope, like any line.
  * - "Marked as paid" reads `escrow.paidRecorded` (Task 12's EscrowStatus, added for Task 23's
  *   review I3): no moderator ack of `trade.paid` exists anywhere yet (signals.ts GUESS).
  * - `TradeChat`: Task 20's `ChatPanel` for the trade (desktop aside, phone Chat sheet).
@@ -100,6 +102,11 @@ export interface TradeChatProps {
   code: string;
   /** The counterparty's public display name. */
   name: string;
+  /**
+   * The trade's payment method (TradeView.methodId): the payee's side of the chat shows that
+   * method's boxes (J-08, S-090). Absent, no boxes (a fixture, or a chat outside a trade).
+   */
+  methodId?: string | undefined;
 }
 
 let chat: ComponentType<TradeChatProps> | null = null;
@@ -119,4 +126,21 @@ export function useTradeChat(): ComponentType<TradeChatProps> | null {
     },
     () => chat,
   );
+}
+
+/**
+ * Whether the buyer has added a payment proof to this trade (T-079, build spec j31a section 4):
+ * 'attached', 'none' (the proof slot can take one and there is none), or 'unavailable' (no proof
+ * slot yet: Plan 5's proof pipeline installs the source). Only 'none' asks "Mark paid without proof?".
+ */
+export type ProofState = 'attached' | 'none' | 'unavailable';
+let proofSource: ((code: string) => ProofState) | null = null;
+
+/** Installs where the trade's proof state comes from (Plan 5's proof slot, or a test); null removes it. */
+export function setProofSource(s: ((code: string) => ProofState) | null): void {
+  proofSource = s;
+}
+
+export function proofStateOf(code: string): ProofState {
+  return proofSource ? proofSource(code) : 'unavailable';
 }

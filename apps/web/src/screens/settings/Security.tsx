@@ -1,136 +1,29 @@
 /**
  * Settings → Security (Task 30, P3-C4). One screen that gathers: the login methods (list, add,
  * remove, with the last-method guard and TOTP / recovery codes), the payout-wallet wait
- * explanation, a link to Devices and sessions (its own screen since C2-D1), the inactivity logout timer, and the
- * alerts list. All confirm-it's-you prompts across the screen use one shared `ConfirmSheet` (via
+ * explanation, a link to Devices and sessions (its own screen since C2-D1; it holds the session length, which
+ * replaced the inactivity logout timer, owner 2 Nov 2026), and the alerts list. All confirm-it's-you prompts across the screen use one shared `ConfirmSheet` (via
  * `useConfirm`), so there is a single confirm UI (X-4).
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { IDLE_HOURS, isHeld, type IdleHours, type LogoutTimer as Timer } from '@x2f/auth-client';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { heldNote, holdSentence } from '../auth/refusals.js';
+import { holdSentence } from '../auth/refusals.js';
+import { IDLE_COPY, IDLE_REMINDER_PATH } from '../auth/sessionCopy.js';
 import { Icon } from '../../ui/icons.js';
 import { Alerts } from './Alerts.js';
+import { AccountChanges } from './HoldChanges.js';
+import { NewRecoveryCode } from './NewRecoveryCode.js';
 import { BLOCKED_PATH } from './BlockAction.js';
 import { BLOCK_COPY } from './blockCopy.js';
 import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
 import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
 import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
+import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './accountTypeCopy.js';
 import '../screens.css';
 import { OwnerOnly } from './OwnerOnly.js';
-
-const isIdleHours = (n: number): n is IdleHours => (IDLE_HOURS as readonly number[]).includes(n);
-
-/**
- * The inactivity logout timer (owner, 2026-10-23): traders pick 2–12 hours (default 12); staff and
- * the owner are fixed at 2 hours (`adjustable: false`) and see the value without a choice. The
- * saved value is loaded first, so the screen never claims a value it has not read.
- */
-function LogoutTimer() {
-  const [timer, setTimer] = useState<Timer | null>(null);
-  const [status, setStatus] = useState<'loading' | 'idle' | 'saving' | 'saved' | 'held' | 'error' | 'load-error'>('loading');
-  // Plan 2 Task 17: a change from a login with one way of proving it's you waits out the hold.
-  const [heldUntil, setHeldUntil] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    authApi.getLogoutTimer().then(
-      (t) => {
-        if (!live) return;
-        setTimer(t);
-        setStatus('idle');
-      },
-      () => {
-        if (live) setStatus('load-error');
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const change = (value: number) => {
-    if (!isIdleHours(value) || timer === null) return;
-    const before = timer;
-    setTimer({ ...timer, idleHours: value });
-    setStatus('saving');
-    authApi.setLogoutTimer({ idleHours: value }).then(
-      (t) => {
-        if (isHeld(t)) {
-          setTimer(before);
-          setHeldUntil(t.holdUntil);
-          setStatus('held');
-          return;
-        }
-        setTimer(t);
-        setStatus('saved');
-      },
-      () => {
-        setTimer(before);
-        setStatus('error');
-      },
-    );
-  };
-
-  return (
-    <section className="x2f-card" data-part="logout-timer" aria-labelledby="logout-timer-h">
-      <h2 className="x2f-card__title" id="logout-timer-h">
-        Stay logged in
-      </h2>
-      <p className="x2f-sheet__body">Log me out after this long with no activity.</p>
-      {status === 'loading' ? <p className="x2f-note">Loading…</p> : null}
-      {status === 'load-error' ? (
-        <p className="x2f-error" role="alert">
-          Could not load this setting. Reload the page to try again.
-        </p>
-      ) : null}
-      {timer !== null && !timer.adjustable ? (
-        <p className="x2f-sheet__body" data-part="logout-timer-fixed">
-          {timer.idleHours} hours. Staff accounts are fixed at this.
-        </p>
-      ) : null}
-      {timer !== null && timer.adjustable ? (
-        <div className="x2f-field">
-          <label className="x2f-label" htmlFor="logout-timer-select">
-            Inactivity timeout
-          </label>
-          <select
-            className="x2f-select"
-            id="logout-timer-select"
-            value={timer.idleHours}
-            disabled={status === 'saving'}
-            onChange={(e) => change(Number(e.target.value))}
-            data-part="logout-timer-select"
-          >
-            {IDLE_HOURS.map((h) => (
-              <option value={h} key={h}>
-                {h} hours
-              </option>
-            ))}
-          </select>
-          {status === 'saved' ? (
-            <p className="x2f-note" data-part="logout-timer-status">
-              Saved.
-            </p>
-          ) : null}
-          {status === 'held' && heldUntil !== null ? (
-            <p className="x2f-note" role="status" data-part="logout-timer-status">
-              {heldNote(heldUntil)}
-            </p>
-          ) : null}
-          {status === 'error' ? (
-            <p className="x2f-error" role="alert" data-part="logout-timer-status">
-              Could not save that. Try again.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
-  );
-}
 
 /** The latest of these hold end times (the first on a tie), or null for none. */
 export function latestHoldEnd(ends: readonly string[]): string | null {
@@ -185,6 +78,9 @@ function SecurityScreen() {
       <main className="x2f-screen" data-screen="security">
         <h1 className="x2f-screen__title">Security</h1>
         <HoldBanner />
+        {/* Hold model v3 (lead review item 3): a new recovery code to write down, and the account's changes. */}
+        <NewRecoveryCode />
+        <AccountChanges />
         <Methods prove={prove} />
         <PayoutWait />
         {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it. */}
@@ -194,7 +90,6 @@ function SecurityScreen() {
             <Icon name="chevron-right" size={20} />
           </Link>
         </section>
-        <LogoutTimer />
         <Alerts />
         {/* Task 37 review M3: the way to the Blocked list until Plan 5's Profile tab (Block board's Settings, Blocked traders). */}
         <section className="x2f-card" data-part="blocked-link" aria-label={BLOCK_COPY.title}>
@@ -202,6 +97,18 @@ function SecurityScreen() {
             <li className="x2f-list__row">
               <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
                 {BLOCK_COPY.title}
+              </Link>
+            </li>
+            {/* Owner Q75: the idle reminder, until a board places it (DESIGN: placement). */}
+            <li className="x2f-list__row">
+              <Link className="x2f-button x2f-button--quiet" to={IDLE_REMINDER_PATH} data-part="idle-reminder-link">
+                {IDLE_COPY.link}
+              </Link>
+            </li>
+            {/* Owner 2 Nov 2026: Settings > Account type (Trader or Vendor), until the Settings board places it. */}
+            <li className="x2f-list__row">
+              <Link className="x2f-button x2f-button--quiet" to={ACCOUNT_TYPE_PATH} data-part="account-type-link">
+                {ACCOUNT_TYPE_COPY.title}
               </Link>
             </li>
             {/* Plan 2 Task 18: the way to the Team screen until a board places it (NEEDS_DESIGN_TEAM). */}

@@ -1,14 +1,45 @@
-// The violet "X2F Moderator" badge appears only inside a disputed trade's screens (spec 6.6): no
-// file outside the UI kit's own and screens/dispute/ModeratorTag.tsx may import ModeratorBadge,
-// nor draw a look-alike with its class or its words. (That ModeratorTag draws it only for a
-// moderator inside a dispute is rendered in dispute.test.tsx.)
+// The violet moderator look appears only inside a disputed trade's screens (spec 6.6, an
+// anti-impersonation rule) and the trade chat that a dispute opens (review 3, 8 Nov). Every way a
+// screen can draw it is checked: the mod role tag (fixed or a variable role), the moderator tile, an
+// identity row drawn as a moderator, the mod tone on a status chip or hero, the --x2f-mod token, and
+// the tag's words. The kit's own files define these pieces and are not users of them.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const SRC = fileURLToPath(new URL('../src/', import.meta.url));
-const ALLOWED = new Set(['ui/ModeratorBadge.tsx', 'screens/dispute/ModeratorTag.tsx']);
+
+/** The kit and the token file: they define the moderator pieces. */
+const KIT = new Set(['ui/Avatar.tsx', 'ui/Identity.tsx', 'ui/Hero.tsx', 'ui/StatusChip.tsx', 'ui/kit.css', 'ui/hero.css', 'ui/ui.css', 'theme/tokens.css']);
+
+/** Where the moderator look may appear: the dispute screens and the trade chat. */
+const ALLOWED = (p: string) => p.startsWith('screens/dispute/') || p === 'chat/chat.css' || p === 'chat/ChatPanel.tsx';
+
+/** Trade screens that pass a tone variable to a chip from a literal-only table (no `mod`): glancePill's
+ * caution/escrow/danger, the maintenance chip's danger/caution. A new file here needs a reviewer's eye. */
+const TONE_VARIABLE_OK = new Set([
+  'screens/Maintenance.tsx',
+  'screens/trade/BuyerPay.tsx',
+  'screens/trade/TradeGlance.tsx',
+  // A disputed trade's Refunded screen (design review P1-7, design-results 22b73fe3): the hero takes
+  // the mod tone only when trade.dispute is set, i.e. inside a disputed trade (spec 6.6); never on a
+  // plain refund. disputeSlot.test.tsx "the hero takes the moderator tone after a dispute..." pins it.
+  'screens/trade/Refunded.tsx',
+]);
+
+/** Every way to draw the moderator look (JSX props may span lines). */
+const MOD_LOOK: [string, RegExp, Set<string>?][] = [
+  ['mod role tag', /\brole=["']mod["']|data-role=["']mod/],
+  ['role tag with a variable role', /<RoleTag\b[^>]*\brole=\{/],
+  ['moderator tile', /<ModTile\b/],
+  ['identity row as a moderator', /<IdentityRow\b(?:[^>]|=>|(?<=\s)>(?=\s))*\smod\b/],
+  ['moderator tag component', /<ModeratorTag\b/],
+  ['tone from a variable', /<(?:StatusChip|Hero)\b(?:[^>]|=>|(?<=\s)>(?=\s))*\btone=\{\s*(?!["'])/, TONE_VARIABLE_OK],
+  ['mod tone', /\btone=(?:["']mod["']|\{\s*["']mod["']\s*\})|data-tone=["']mod/],
+  ['mod colour token', /--x2f-mod\b/],
+  ["the tag's words", /X2F Moderator|x2f-moderator-badge/i],
+];
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -17,21 +48,42 @@ function files(dir: string): string[] {
   });
 }
 
-describe('ModeratorBadge scope', () => {
-  it('is imported only by ModeratorTag', () => {
-    const users = files(SRC)
-      .filter((p) => /ModeratorBadge/.test(readFileSync(p, 'utf8')))
-      .map((p) => relative(SRC, p).replaceAll('\\', '/'))
-      .filter((p) => !ALLOWED.has(p));
-    expect(users).toEqual([]);
+const sources = files(SRC).map((p) => ({ file: relative(SRC, p).replaceAll('\\', '/'), text: readFileSync(p, 'utf8') }));
+
+describe('moderator look scope', () => {
+  it('each pattern catches its way of drawing the look', () => {
+    const samples = [
+      '<RoleTag role="mod" />',
+      '<RoleTag\n  role={who}\n/>',
+      '<ModTile size={32} />',
+      '<IdentityRow person={p} mod />',
+      '<IdentityRow person={p}\n  mod={true}\n/>',
+      '<StatusChip tone="mod">Moderator decided</StatusChip>',
+      "<Hero tone={'mod'}>",
+      '.x { color: var(--x2f-mod); }',
+      'X2F Moderator',
+      '<IdentityRow person={p} mod={isMod} />',
+      '<IdentityRow person={p} onPick={() => 1 > 0} mod />',
+      '<ModeratorTag />',
+      'const t = "mod" as const; <StatusChip tone={t}>',
+      '<Hero tone={x}>',
+    ];
+    for (const s of samples) expect(MOD_LOOK.some(([, re]) => re.test(s)), s).toBe(true);
+    // Not the look: a data attribute named role, a dialog role, a modal.
+    for (const s of ['<main data-role={view.role}>', "role={x ? 'dialog' : 'alertdialog'}", 'aria-modal="true"', '<IdentityRow person={p} modal />']) {
+      expect(MOD_LOOK.some(([, re]) => re.test(s)), s).toBe(false);
+    }
   });
 
-  it('has its class and its words only in the badge, its style and ModeratorTag', () => {
-    const own = new Set([...ALLOWED, 'ui/ui.css']);
-    const users = files(SRC)
-      .filter((p) => /x2f-moderator-badge|X2F Moderator/i.test(readFileSync(p, 'utf8')))
-      .map((p) => relative(SRC, p).replaceAll('\\', '/'))
-      .filter((p) => !own.has(p));
-    expect(users).toEqual([]);
+  for (const [what, re, exempt] of MOD_LOOK) {
+    it(`${what}: only the dispute screens and the trade chat`, () => {
+      const outside = sources.filter((f) => !KIT.has(f.file) && !ALLOWED(f.file) && !exempt?.has(f.file) && re.test(f.text)).map((f) => f.file);
+      expect(outside).toEqual([]);
+    });
+  }
+
+  it('the X2F Moderator tag is drawn by ModeratorTag alone', () => {
+    const users = sources.filter((f) => !KIT.has(f.file) && /\brole=["']mod["']|X2F Moderator/i.test(f.text)).map((f) => f.file);
+    expect(users).toEqual(['screens/dispute/ModeratorTag.tsx']);
   });
 });

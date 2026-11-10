@@ -7,35 +7,17 @@ import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { requireStaff, type StaffContext } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
+import { SETTINGS_DEFAULTS, type Settings } from './settingsDefaults.js';
 
 /**
  * Plan 4 Task 8: the owner's settings (migration 206, table `settings`, one row). The large-trade
  * limit and the appeal window bind the moderation gate, so changing either needs a security-key
  * tap (intent `settings`); the first-reply time and the links do not. The plan's pay columns are
- * replaced by Task 33 (Revision 2026-10-29c) and are not here.
+ * replaced by Task 33 (Revision 2026-10-29c) and are not here. The `Settings` shape and
+ * `SETTINGS_DEFAULTS` live in `settingsDefaults.ts` (a leaf module, so `disputes/settings.ts` reads
+ * them without this module's imports) and are re-exported here for the callers that had them.
  */
-export interface Settings {
-  /** At or above this USD value a ruling needs two people (Global Constraints). Disputes snapshot it at opening (Task 10). */
-  largeTradeLimitUsd: number;
-  /** Hours a moderator has for the first reply in a dispute. */
-  firstResponseH: number;
-  /** Hours after a ruling in which either side may appeal (48, owner 2026-10-29c). */
-  appealWindowH: number;
-  /** The moderator contact (Matrix preferred, Telegram allowed; Revision 2026-10-29); null = not set. */
-  moderatorContactUrl: string | null;
-  /** The community links (Task 29); null = not set. */
-  communityMatrixUrl: string | null;
-  communityTelegramUrl: string | null;
-}
-
-export const SETTINGS_DEFAULTS: Readonly<Settings> = {
-  largeTradeLimitUsd: 1000,
-  firstResponseH: 4,
-  appealWindowH: 48,
-  moderatorContactUrl: null,
-  communityMatrixUrl: null,
-  communityTelegramUrl: null,
-};
+export { SETTINGS_DEFAULTS, type Settings };
 
 type NumberField = 'largeTradeLimitUsd' | 'firstResponseH' | 'appealWindowH';
 type LinkField = 'moderatorContactUrl' | 'communityMatrixUrl' | 'communityTelegramUrl';

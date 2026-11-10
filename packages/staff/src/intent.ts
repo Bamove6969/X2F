@@ -48,6 +48,8 @@ export type KeyTapIntent =
   | { kind: 'create-invite'; inviteId: string; role: Invitable; tokenHash: string; expiresAt: string }
   | { kind: 'switch-on'; accountId: string; role: Invitable }
   | { kind: 'set-role'; accountId: string; role: Invitable }
+  // Owner G4 (7 Nov): permanently removing a staff member is tapped.
+  | { kind: 'remove-staff'; accountId: string }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number }
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
@@ -56,6 +58,10 @@ export type KeyTapIntent =
   // Owner Q60/Q16: the per-person checkboxes (`grants`, sorted), set by the owner with a tap.
   | { kind: 'set-grants'; accountId: string; grants: string[] }
   | { kind: 'remove-method'; methodType: 'pgp' | 'security-key' | 'passkey'; methodId: string }
+  // Plan 4 Task 9 / B-006 (owner 2026-10-29 q7): the fee wallet's automatic sweep to the owner's
+  // cold address, as it will be after the change (amounts in atomic units as decimal strings; a
+  // null threshold turns the sweep off). It names where X2F's money goes, so it is tapped.
+  | { kind: 'fee-sweep'; thresholdAtomic: string | null; floatAtomic: string | null; coldAddress: string | null }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -74,11 +80,13 @@ export const KEY_TAP_KINDS = [
   'create-invite',
   'switch-on',
   'set-role',
+  'remove-staff',
   'add-owner-key',
   'settings',
   'add-pgp-key',
   'remove-method',
   'set-grants',
+  'fee-sweep',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

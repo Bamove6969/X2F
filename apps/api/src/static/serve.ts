@@ -152,7 +152,11 @@ function trimTrailingDotsAndSpaces(seg: string): string {
   return seg.slice(0, end);
 }
 
-function isApiOrFilePath(url: string): boolean {
+/**
+ * Whether `url` is an API path (first segment `apiSegment`: `v1` on the trader origin, `staff` on the
+ * staff origin, Plan 4 Task 16) or a file-like path, so never the app page.
+ */
+export function isApiOrFilePath(url: string, apiSegment = 'v1'): boolean {
   const raw = url.split('?', 1)[0] ?? '';
   let path: string;
   try {
@@ -164,7 +168,7 @@ function isApiOrFilePath(url: string): boolean {
   // and /v1%20 are judged like /v1/x.
   const segments = path.split('/').filter((seg) => seg !== '');
   const first = trimTrailingDotsAndSpaces(segments[0] ?? '');
-  if (first === 'v1') return true;
+  if (first === apiSegment) return true;
   const last = segments.at(-1) ?? '';
   const dot = last.lastIndexOf('.');
   return dot > 0 && FILE_EXTENSIONS.has(last.slice(dot + 1));

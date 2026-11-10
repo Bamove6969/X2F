@@ -1,8 +1,10 @@
 /**
- * The backup way in (Task 30): a printed recovery code or an authenticator (TOTP) code, with the
- * login name. A password is never a backup (spec §6.2). A TOTP backup opens a recovery session
- * that is held for a day before it can make changes (Plan 2): then this screen says until when
- * before it goes on. Then it follows the usual Terms-then-`returnTo` path.
+ * The backup way in (Task 30; design build gaps Job 1, board Login-Backup: "Your recovery code is
+ * your only backup"): a printed recovery code with the login name. Nothing else is a backup: not a
+ * password (spec §6.2) and, since 8 Nov 2026, not an authenticator (TOTP) code, which stays a
+ * normal login step after a password. A backup login opens a recovery session that is held for a
+ * day before it can make changes (Plan 2): this screen says until when before it goes on. Then it
+ * follows the usual Terms-then-`returnTo` path.
  */
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
@@ -14,13 +16,10 @@ import { LOGIN_RETRY_LATER } from './loginRules.js';
 import { holdSentence, refusalText } from './refusals.js';
 import '../screens.css';
 
-type Kind = 'recovery-code' | 'totp';
-
 export function BackupLogin() {
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = returnToFrom(location.search);
-  const [kind, setKind] = useState<Kind>('recovery-code');
   const [loginName, setLoginName] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,7 +31,7 @@ export function BackupLogin() {
     setBusy(true);
     setError(null);
     try {
-      const result = await authApi.loginBackup({ loginName: loginName.trim(), kind, code: code.trim(), deviceLabel: deviceLabel() });
+      const result = await authApi.loginBackup({ loginName: loginName.trim(), kind: 'recovery-code', code: code.trim(), deviceLabel: deviceLabel() });
       if (result.holdUntil !== null) setHeldUntil(result.holdUntil);
       else await afterLogin((to) => navigate(to), returnTo);
     } catch (e) {
@@ -66,27 +65,6 @@ export function BackupLogin() {
         </p>
       ) : null}
 
-      <div className="x2f-segmented" role="group" aria-label="Backup type">
-        <Button
-          variant="secondary"
-          className={kind === 'recovery-code' ? 'x2f-segmented__on' : ''}
-          aria-pressed={kind === 'recovery-code'}
-          onClick={() => setKind('recovery-code')}
-          data-kind="recovery-code"
-        >
-          Recovery code
-        </Button>
-        <Button
-          variant="secondary"
-          className={kind === 'totp' ? 'x2f-segmented__on' : ''}
-          aria-pressed={kind === 'totp'}
-          onClick={() => setKind('totp')}
-          data-kind="totp"
-        >
-          Authenticator code
-        </Button>
-      </div>
-
       <div className="x2f-field">
         <label className="x2f-label" htmlFor="backup-login-name">
           Your login name
@@ -101,16 +79,9 @@ export function BackupLogin() {
       </div>
       <div className="x2f-field">
         <label className="x2f-label" htmlFor="backup-code">
-          {kind === 'recovery-code' ? 'A recovery code' : 'Authenticator code'}
+          A recovery code
         </label>
-        <input
-          className="x2f-input"
-          id="backup-code"
-          inputMode={kind === 'totp' ? 'numeric' : 'text'}
-          autoComplete={kind === 'totp' ? 'one-time-code' : 'off'}
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-        />
+        <input className="x2f-input" id="backup-code" inputMode="text" autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
       </div>
       <Button variant="primary" disabled={busy || loginName.trim() === '' || code.trim() === ''} onClick={() => void submit()} data-part="backup-login">
         Log in

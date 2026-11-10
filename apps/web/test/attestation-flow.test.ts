@@ -158,6 +158,77 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     expect(t.parties.settles).toEqual([]);
   });
 
+  it("an attested time to pay other than the one the trade view shows (owner p9-6): deal-mismatch on both devices, nothing set up; the same one goes ahead", async () => {
+    // The view shows a 24-hour method (cash by mail); the attestation signs the 90-minute default,
+    // so the moderation service would co-sign the seller's refund long before the buyer's time is up.
+    const t = await setup({ view: tradeView({ payWindowMin: 1440 }) });
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    expect(await buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(t.parties.calls).toEqual([]);
+    expect((await buyer.store.load(CODE))?.failed ?? null).toBeNull(); // not kept: checked again on the next start
+    await buyer.runtime.stopAll();
+    await seller.runtime.stopAll();
+    // The view and the attestation agree: the trade goes ahead.
+    const ok = await setup({ view: tradeView({ payWindowMin: 90 }) });
+    const b2 = await ok.mk('buyer');
+    const s2 = await ok.mk('seller');
+    await b2.runtime.start(CODE);
+    await s2.runtime.start(CODE);
+    await b2.status((s) => s.phase === 'ready');
+    await s2.status((s) => s.phase === 'ready');
+    expect(ok.parties.calls.map((c) => c.role).sort()).toEqual(['buyer', 'seller']);
+  });
+
+  it('a trade view without a time to pay fails closed: deal-mismatch on both devices, nothing set up (launch-rules review F2)', async () => {
+    // The web and the API ship together: only a lying API leaves the field out (or sends 0).
+    for (const payWindowMin of [undefined, 0, '90']) {
+      const t = await setup({ view: tradeView({ payWindowMin }) });
+      const buyer = await t.mk('buyer');
+      const seller = await t.mk('seller');
+      await buyer.runtime.start(CODE);
+      await seller.runtime.start(CODE);
+      expect(await buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+      expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+      expect(t.parties.calls).toEqual([]);
+      expect(t.hub.opened).toEqual([]);
+      // Not kept as failed, and nothing pinned: checked again on the next start.
+      const rec = await buyer.store.load(CODE);
+      expect(rec?.failed ?? null).toBeNull();
+      expect(rec?.payWindowMin ?? null).toBeNull();
+      await buyer.runtime.stopAll();
+      await seller.runtime.stopAll();
+    }
+  });
+
+  it('the first time to pay that verified is kept on the device; a later view and attestation that agree on another are refused (launch-rules review F2)', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await buyer.status((s) => s.phase === 'ready');
+    expect((await buyer.store.load(CODE))?.payWindowMin).toBe(90);
+    await buyer.runtime.stopAll();
+    await seller.runtime.stopAll();
+    // The API now lies consistently: a 24-hour view and an attestation of 24 hours. Even with the
+    // stored attestation gone (so only the pinned value can tell), the device refuses it.
+    const rec = (await buyer.store.load(CODE))!;
+    await buyer.store.save({ ...rec, attestation: null });
+    t.state.view = tradeView({ payWindowMin: 1440 });
+    t.state.tamper = (a) => ({ ...a, terms: { ...a.terms!, payWindowMin: 1440 } });
+    const again = await device('buyer', { api: t.api.forRole('buyer'), hub: t.hub, parties: t.parties, modPublic: t.mod.publicHex, idb: buyer.idb });
+    running.push(again);
+    const calls = t.parties.calls.length;
+    await again.runtime.resumeAll();
+    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(t.parties.calls.length).toBe(calls);
+    expect((await again.store.load(CODE))?.payWindowMin).toBe(90);
+  });
+
   it('a counterparty trade.terms address that differs from the attestation is ignored, never adopted; the attested one is, and the device still settles', async () => {
     const t = await setup();
     // A stand-in seller: its identity is registered, then it signs terms with an address the mod did not attest.
@@ -278,7 +349,12 @@ describe('what this device signs comes from what the user confirmed, never the A
     const rec = (await buyer.store.load(CODE))!;
     await buyer.store.save({ ...rec, failed: 'deal-mismatch' });
     const again = await t.mk('buyer', { idb: buyer.idb });
+    // The dropped failure is on disk before the next step: it was only in memory until a later save,
+    // so the check after "ready" below raced that save (failed under load on 8b0830a2, 7 Nov 2026).
+    const verifying = again.status((s) => s.phase === 'verifying');
     await again.runtime.resumeAll();
+    await verifying;
+    expect((await again.store.load(CODE))?.failed ?? null).toBeNull();
     expect(await again.status((s) => s.phase === 'ready' || s.phase === 'signing')).toMatchObject({ error: null });
     expect((await again.store.load(CODE))?.failed ?? null).toBeNull();
   });
@@ -930,8 +1006,8 @@ describe('settling', () => {
     // No cancel proposed and not settling a mutual cancel: the tap has nothing to sign.
     await expect(t.buyer.runtime.act(CODE, { type: 'propose-cancel-sign' })).rejects.toThrow();
     expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'release', auto: true });
-    // The seller's release tap outside secured/paid (here: refund_requested) is refused too.
-    t.state.view = tradeView({ state: 'refund_requested' });
+    // The seller's release tap outside secured/paid (here: the seller's own cancel settling) is refused too.
+    t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
     await expect(t.seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
   });
 

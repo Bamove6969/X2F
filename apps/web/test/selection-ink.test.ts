@@ -47,12 +47,18 @@ const ACCENT = /var\(--x2f-monero(-ink|-ink-hover)?\)/;
 // Design build review 7 Nov: the dispute reason radio is ink now; nothing is owned elsewhere.
 const OWNED_ELSEWHERE: string[] = [];
 
+/**
+ * Selected states the owner asked to be orange. Owner, 8 Nov 2026 (Post an offer, the range boxes'
+ * XMR / currency switch): "selected unit bold bright orange, the other smaller and muted".
+ */
+const OWNER_RULED: string[] = ["screens/post/PostOffer.css .post-unit button[aria-checked='true']"];
+
 /** Every orange use that is not a selected state: one primary action, links, the XMR unit, the hold. */
 const ORANGE_ALLOWED = [
   // The one primary action per screen and the press-and-hold release button.
   'ui/ui.css .x2f-button--primary',
   'ui/ui.css .x2f-hold',
-  'ui/ui.css .x2f-hold:not(:disabled):hover, .x2f-hold[data-holding=\'true\']',
+  'ui/ui.css .x2f-hold:not(:disabled):hover',
   // Links and text buttons (boards: a { color: var(--monero-ink) }).
   'ui/ui.css .x2f-link',
   'ui/ui.css .x2f-link:hover',
@@ -63,9 +69,19 @@ const ORANGE_ALLOWED = [
   'screens/quote/quote.css .x2f-quote__switch, .x2f-quote__max',
   'screens/quote/quote.css .x2f-quote__add',
   'screens/dispute/dispute.css .dispute-retry',
+  // "Show all N" / "Show less" on "What applies to you" (j31a, BuyQuote / SellQuote boards: --monero-ink).
+  'screens/quote/quote.css .x2f-wa__toggle',
   // The XMR unit label (tokens.json monero-ink usage; BuyQuote board).
   'ui/ui.css .x2f-amount__unit',
+  'ui/ui.css .x2f-xmr__unit',
+  'ui/kit.css .x2f-recipient__unit',
   'screens/quote/quote.css .x2f-quote__xmr-unit',
+  'screens/trade/warn.css .x2f-warn__xmr',
+  // Logo D's dot (docs/brand/svg on wip/design-brief: the dot is #ff6600 in every colour variant).
+  'ui/ui.css .x2f-logo__dot',
+  // The ad card's range rows (BuyOffers / SellOffers boards v142).
+  "screens/browse/browse.css .x2f-offer__unit[data-unit='xmr']",
+  'screens/quote/quote.css .x2f-quote__band-xmr-unit',
 ];
 
 describe('selection is ink, never orange', () => {
@@ -73,7 +89,7 @@ describe('selection is ink, never orange', () => {
     const orange = rules()
       .filter((r) => SELECTED.test(r.selector) && ACCENT.test(r.body))
       .map((r) => `${r.file} ${r.selector}`);
-    expect(orange.sort()).toEqual([...OWNED_ELSEWHERE].sort());
+    expect(orange.sort()).toEqual([...OWNED_ELSEWHERE, ...OWNER_RULED].sort());
   });
 
   it('every checkbox and radio accent is ink', () => {
@@ -86,7 +102,7 @@ describe('selection is ink, never orange', () => {
 
   it('orange is only on the primary action, links, the XMR unit and the release hold', () => {
     const uses = rules()
-      .filter((r) => ACCENT.test(r.body) && !OWNED_ELSEWHERE.includes(`${r.file} ${r.selector}`))
+      .filter((r) => ACCENT.test(r.body) && !OWNED_ELSEWHERE.includes(`${r.file} ${r.selector}`) && !OWNER_RULED.includes(`${r.file} ${r.selector}`))
       .map((r) => `${r.file} ${r.selector}`);
     expect([...new Set(uses)].sort()).toEqual([...ORANGE_ALLOWED].sort());
   });

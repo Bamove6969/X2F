@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { expect, test, type Page } from '@playwright/test';
 import { KNOWN_EXCEPTIONS, boardTexts, expectParity, missingTexts, reportPixels, withoutBoardMarkers } from './parity.js';
+import { signedIn } from './session.js';
 
 const run = promisify(execFile);
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
@@ -346,9 +347,28 @@ test.describe('board texts', () => {
     const desktop = KNOWN_EXCEPTIONS.Desktop ?? [];
     expect(desktop.map((e) => e.text)).toContain('You pay · 62 min left');
     for (const e of desktop) expect(e.why.length).toBeGreaterThan(10);
-    // PostOffer (Task 21 review, lead 2026-10-27): the board's ACH name.
+    // PostOffer: the board's ACH name (Task 21 review, lead 2026-10-27), the old Minimum completed
+    // trades select (owner 8 Nov), the one-row range preview (owner #11, v142) and the ±0.1% stepper's
+    // − and + (owner F1, 7 Nov: above or below and a typed percentage; J-02), and the single-currency
+    // board's six texts the J-16 flex form replaces (Task 34 review: board recapture pending). The
+    // exact list, so a new exception can't pass silently (offer units review 2, M4).
     const post = KNOWN_EXCEPTIONS.PostOffer ?? [];
-    expect(post.map((e) => e.text)).toEqual(['Bank transfer (ACH)']);
+    expect(post.map((e) => e.text)).toEqual([
+      'Bank transfer (ACH)',
+      'Anyone',
+      '5+',
+      '10+',
+      '50+',
+      '$50 – $2,000',
+      '−',
+      '+',
+      'Payment method',
+      'Currency',
+      'EUR',
+      'GBP',
+      "Market $329.90 / XMR right now. Your price follows the market, so it's always {{priceNow}} at today's rate.",
+      'Who can trade with you',
+    ]);
     for (const e of post) expect(e.why.length).toBeGreaterThan(10);
     expect(await boardTexts(page, 'PostOffer')).not.toContain('Bank transfer (ACH)');
     const texts = await boardTexts(page, 'Desktop');
@@ -358,13 +378,18 @@ test.describe('board texts', () => {
   });
 });
 
-test('the 1280×800 header text matches the Desktop board', async ({ page }) => {
+// Job 3: the wide rail. The page name under the logo ("Trade · K7M2" on the board, a trade room) is
+// checked in the room's own Desktop parity (pay.spec.ts); on /sell the rail names "Find a trade".
+test('the 1280×800 rail text matches the Desktop board', async ({ page }) => {
+  // The rail shows behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader.
+  await signedIn(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/sell');
   await expect(page.locator('[data-shell="desktop"]')).toBeAttached();
-  const header = await boardTexts(page, 'Desktop', { within: 'header' });
-  expect(header).toEqual(['X2F', 'Buy', 'Sell', 'My trades', 'Wallets']);
-  expect(await missingTexts(page, header)).toEqual([]);
+  const rail = await boardTexts(page, 'Desktop', { within: 'nav[aria-label="Main"]' });
+  expect(rail).toEqual(['Trade · K7M2', 'K7M2', 'Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+  expect(await missingTexts(page, rail.slice(2))).toEqual([]);
+  await expect(page.locator('nav[aria-label="Main"] .x2f-rail__page')).toHaveText('Find a trade');
 });
 
 test('expectParity at 1280x800 sets the viewport and compares the Desktop board', async ({ page }) => {

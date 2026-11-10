@@ -75,10 +75,11 @@
 
 .x2f-trade-title {
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
   overflow-wrap: anywhere;
 }
 
@@ -253,14 +254,22 @@
   margin: 0;
 }
 
+/* A numbered list in two columns (design proto review P2): the numbers sit inside each item, so
+   no marker can land on the word before it (the flex row ran them together: "1. amber2. lotus"). */
 .x2f-escrow-check__words {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--x2f-space-2) var(--x2f-space-4);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: var(--x2f-space-2) var(--x2f-space-6);
   margin: 0;
-  padding: 0 0 0 20px;
+  padding: 0;
+  list-style: decimal;
+  list-style-position: inside;
   font-size: 18px;
   color: var(--x2f-escrow);
+}
+
+.x2f-escrow-check__words li::marker {
+  color: var(--x2f-ink-muted);
 }
 
 .x2f-fund-footer {
@@ -341,4 +350,11 @@
 
 .x2f-trade-status {
   padding: var(--x2f-space-6) var(--x2f-space-4);
+}
+
+/* The buyer's Cancel trade while waiting for funding (design proto review P1). */
+.x2f-trade-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--x2f-space-2);
 }

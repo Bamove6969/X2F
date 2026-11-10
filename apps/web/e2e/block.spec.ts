@@ -66,7 +66,8 @@ for (const viewport of PHONE_VIEWPORTS) {
       await expect(open).toBeVisible();
       await expectPhoneLayout(page);
       await open.click();
-      await expect(page.locator('[data-part="block-ask"]')).toContainText(`Block ${poster}?`);
+      // The Block board's confirm sheet (design review 64).
+      await expect(page.getByRole('dialog', { name: `Block ${poster}?` })).toBeVisible();
       await expect(page.locator('#block-ask-h')).toBeFocused();
       await expect(page.locator('[data-part="block-ask"]')).toContainText("They won't be told you blocked them.");
       await expectPhoneLayout(page);
@@ -102,7 +103,6 @@ for (const viewport of PHONE_VIEWPORTS) {
         ['**/v1/account/methods', [{ type: 'password', id: 'password', label: 'Password', createdAt: null, lastUsedAt: null }]],
         ['**/v1/account/sessions', []],
         ['**/v1/account/alerts', []],
-        ['**/v1/account/security/logout-timer', { idleHours: 12, adjustable: true }],
       ] as const) {
         await page.route(path, (r) => r.fulfill({ json: body }));
       }
@@ -112,13 +112,14 @@ for (const viewport of PHONE_VIEWPORTS) {
       await expect(page.locator('[data-part="blocked-empty"]')).toHaveText("You haven't blocked anyone.");
     });
 
-    test('logged out: no block action on the quote, and Blocked traders asks to log in', async ({ page }) => {
+    test('logged out: neither the quote nor Blocked traders opens; both go to the Landing board (the front door, owner 8 Nov 2026)', async ({ page }) => {
       const seen = await stubApi(page, { signedIn: false });
       await page.goto(`${BUY}&amount=${B.amount}`);
-      await expect(page.locator('[data-primary]')).toBeVisible();
+      await expect(page).toHaveURL(`/?returnTo=${encodeURIComponent(`${BUY}&amount=${B.amount}`)}`);
       await expect(page.getByRole('button', { name: /^Block / })).toHaveCount(0);
       await page.goto('/settings/blocked');
-      await expect(page.locator('[data-screen="blocked"]')).toContainText('Log in to see the traders you blocked.');
+      await expect(page).toHaveURL('/?returnTo=%2Fsettings%2Fblocked');
+      await expect(page.locator('[data-screen="blocked"]')).toHaveCount(0);
       await expectPhoneLayout(page);
       expect(seen.posts).toEqual([]);
     });

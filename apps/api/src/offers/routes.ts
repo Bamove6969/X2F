@@ -1,29 +1,59 @@
-import { MAX_MARGIN_BPS, offerRate, type Pricing, type Side } from '@x2f/trade';
+import {
+  BAND_DIFFER_DEFAULT,
+  GIFT_CARD_TERMS_VERSION,
+  MAX_CURRENCIES,
+  MAX_MARGIN_BPS,
+  MAX_METHODS,
+  adjustAllowed,
+  atomicForFiat,
+  bandsToTiers,
+  checkBands,
+  fiatCents,
+  giftCardCurrencyOk,
+  headlineTier,
+  rangeInBoth,
+  tierHolds,
+  tierRange,
+  tierRate,
+  type AmountUnit,
+  type Band,
+  type BandDifference,
+  type MinTrades,
+  type Price,
+  type Side,
+  type Tier,
+} from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
+import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
+import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
-import { getMethod, isAvailable } from '../methods/profiles.js';
+import { assertMemberMay } from '../team/perms.js';
+import { getMethod, isAvailable, isGiftCard, tradeProfile } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
+import { offerLaunchCapRefusal, throwLaunchCapRefusal } from '../trades/launchCap.js';
 import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
 import { hasPendingReview, pendingReviewSql } from '../reviews/gate.js';
 import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
 import { usableWallets } from '../wallets/routes.js';
+import { accountTypeOf, assertVendor } from '../routes/accountType.js';
 
 /**
- * Plan 3 Task 4: offers (ads).
+ * Plan 3 Task 4: offers (ads); Tasks 34/35 (J-16): flexible offers.
  *
- * - `POST /v1/offers` (`requireTrader`) → 201 `{ id }`.
+ * - `POST /v1/offers` (`requireTrader`) → 201 `{ id }`. Only a vendor account posts or turns on
+ *   offers (owner 2 Nov 2026; 403 `not-vendor`, routes/accountType.ts).
  * - `PATCH /v1/offers/:id { status }` (the poster only) → `{ id, status }`.
- * - `GET /v1/offers?side&method&currency&sort=best|online|trades` (no session, P3-M9) → `OfferCard[]`.
- * - `GET /v1/offers/:id` (no session) → `OfferDetail`; a paused offer only to its poster.
+ * - `GET /v1/offers?side&method&currency[&amount][&sort=best|online|trades]` (no session, P3-M9) → `OfferCard[]`.
+ * - `GET /v1/offers/:id[?currency][&method][&amount]` (no session) → `OfferDetail`; a paused offer only to its poster.
  * - Task 36: `GET /v1/account/offers` (`requireTrader`) → `MyOffer[]`, and
  *   `POST /v1/account/offers/status { ids: string[] | 'all', status }` → per-offer results.
  *
@@ -32,17 +62,52 @@ import { usableWallets } from '../wallets/routes.js';
  *
  * `side` is the ads' own side, what the poster does with XMR: someone buying XMR browses
  * `side=sell`. Amounts and prices are decimal strings (bigints), fiat in the currency's minor units.
+ *
+ * Flexible offers (J-16, rebuilt from claude2's Task 34; @x2f/trade flexOffer.ts; migration 490):
+ * an offer lists up to 5 currencies (`offer_currencies`), each with up to 3 price bands
+ * (`offer_tiers`), and up to 5 payment methods (`offer_methods`), each offered in some or all of
+ * those currencies with instructions per method and, where they differ, per currency
+ * (`offer_method_currencies`). `POST` takes `{ side, amountUnit?, currencies, methods, terms,
+ * country?, giftCardTerms? }` only: the old single-method shape is 400 (Task 34 review M1). Pricing
+ * is market ± X% only (owner Q1): a band's margin plus the method's adjustment. A gift-card method
+ * among the methods (J-17) needs the card's `country` and the `giftCardTerms` version, and may be
+ * offered only in a currency of that country (T-081; lead ruling 10 Nov 2026).
+ *
+ * Trade size (owner, 8 Nov 2026, "Offer amounts in XMR or fiat"): one unit per offer, `amountUnit`
+ * 'fiat' (the default) or 'xmr'; every band is in it. A card carries its currency's envelope (the
+ * lowest band start to the highest band end) in both units: the poster's own exactly, the other
+ * converted at the card's rate (@x2f/trade `rangeInBoth`), or null without a rate.
+ *
+ * Browsing filters by currency and method (owner 2 Nov). An offer is listed under a currency only
+ * while that currency has a market price (owner Q5); the currency list itself (`GET
+ * /v1/currencies`) keeps such a currency, marked unavailable (owner Q24). A card's `rate` is the
+ * final rate for the card's currency, method and `amount` (fiat minor units; null when no band holds
+ * it), else the best band the viewer qualifies for (Task 34 review M5).
  */
 
 export interface OfferCard {
   id: string;
   poster: TraderSummary;
-  /** The offer's price per XMR now (`offerRate`); null for a market offer while the feed is down. */
+  /** The currency this card is in (the filtered one): its rate, bands and methods. */
+  currency: string;
+  /** Every currency of the offer, in the poster's order. */
+  currencies: string[];
+  /** The final price per XMR now for the card's currency, method and amount; null without a market price, and for an amount no band holds. */
   rate: string | null;
-  pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: string };
-  minFiatCents: string;
-  maxFiatCents: string;
-  minTrades: number;
+  /** The band's margin + the method's adjustment (market ± X% only, owner Q1, F1). */
+  pricing: { mode: 'market'; marginBps: number };
+  /** The unit the poster set the bands in; that pair is exact, the other is converted (see above). */
+  amountUnit: AmountUnit;
+  minAtomic: string | null;
+  maxAtomic: string | null;
+  minFiatCents: string | null;
+  maxFiatCents: string | null;
+  /** The lowest band rule of this currency: 5, 10, 25 or 50, or null for no minimum (owner, 8 Nov). */
+  minTrades: MinTrades;
+  /** This currency's bands as covered ranges in `amountUnit`'s minor units, by start. */
+  tiers: Tier[];
+  /** The methods offered in this currency, in the poster's order; `instructions` (this currency's) only on the poster's own offer. */
+  methods: CardMethod[];
   /** Gift-card offers only: the card's country, ISO 3166-1 alpha-2 (Revision 2026-10-27). */
   country?: string;
   /**
@@ -51,12 +116,24 @@ export interface OfferCard {
    * to convert the minimum to US dollars (the take checks the cap again).
    */
   opensAt?: 'building' | 'graduated';
+  /**
+   * For a signed-in trader on the list: their own completed trades, the count the take picks the
+   * band by (@x2f/trade pickTier), so the quote prices the same band (J-16). Absent signed out.
+   */
+  viewerTrades?: number;
+}
+
+/** A method on a card: public without its instructions (the payment details); the poster sees them on their own offer. */
+export interface CardMethod {
+  methodId: string;
+  adjustBps: number;
+  instructions?: string;
 }
 
 export interface OfferDetail extends OfferCard {
   side: Side;
+  /** The method `rate` and `pricing` are for: the `method` asked for, else the first one shown. */
   methodId: string;
-  currency: string;
   terms: string;
   status: OfferStatus;
 }
@@ -67,33 +144,69 @@ export type OfferStatus = 'live' | 'paused' | 'removed';
 export interface MyOffer {
   id: string;
   side: Side;
+  /** The offer's first method (position 0); every method is in `methods`. */
   methodId: string;
   /** The catalog's name for the method (the id when the catalog no longer has it). */
   methodName: string;
+  /** The offer's first currency (position 0); every currency is in `currencies`. */
   currency: string;
-  /** The offer's price per XMR now (`offerRate`); null for a market offer while the feed is down. */
+  /** The price per XMR now in the first currency, for the first method offered in it and its best band; null without a market price. */
   rate: string | null;
   pricing: OfferCard['pricing'];
-  minFiatCents: string;
-  maxFiatCents: string;
-  minTrades: number;
+  amountUnit: AmountUnit;
+  minAtomic: string | null;
+  maxAtomic: string | null;
+  minFiatCents: string | null;
+  maxFiatCents: string | null;
+  minTrades: MinTrades;
+  /** The first currency's bands; the fields above are their envelope. */
+  tiers: Tier[];
+  /** Every currency in the poster's order, each priced as `rate` is. */
+  currencies: MyOfferCurrency[];
+  /** Every method in the poster's order, with its instructions (these are my own offers). */
+  methods: MyOfferMethod[];
   country?: string;
   status: 'live' | 'paused';
+  /** The buyer's time to pay with the offer's first method, in minutes (owner p9-6), as a take fixes it; each method's own is in `methods`. */
+  payWindowMin: number;
   /**
    * A live offer that nobody can see right now, and why (review M4): the site's emergency stop,
-   * the account's trading hold, a trade it has not rated yet (Plan 5 Task 3, P5-A4; review round 1
-   * M3), or its method under legal review. Absent when the offer is listed or paused.
+   * the account's trading hold, a trade it has not rated yet (Plan 5 Task 3, P5-A4), every one of its
+   * methods under legal review, or none of its currencies with a market price now (Task 34 review
+   * M4). Absent when the offer is listed or paused.
    */
-  hidden?: 'trading-paused' | 'trading-hold' | 'review-pending' | 'method-unavailable';
+  hidden?: 'trading-paused' | 'trading-hold' | 'recovery-hold' | 'review-pending' | 'method-unavailable' | 'no-price';
   createdAt: string;
+}
+
+/** One currency of one of my offers: its rate now (best band, first method in it) and its bands. */
+export interface MyOfferCurrency {
+  currency: string;
+  rate: string | null;
+  tiers: Tier[];
+}
+
+/** One method of one of my offers, as posted: shared instructions, its currencies and the per-currency texts. */
+export interface MyOfferMethod {
+  methodId: string;
+  /** The catalog's name for the method (the id when the catalog no longer has it), as `MyOffer.methodName`. */
+  methodName: string;
+  adjustBps: number;
+  instructions: string;
+  currencies: string[];
+  instructionsByCurrency: Record<string, string>;
+  /** The buyer's time to pay with this method, in minutes (owner p9-6), as a take fixes it. */
+  payWindowMin: number;
 }
 
 /**
  * Why one offer was not switched by `POST /v1/account/offers/status`: the posting guards of
- * relisting (`trading-paused`, `trading-hold`, `no-wallet`, `too-many-offers`, `method-unavailable`),
- * or `not-found` for an id that is not one of my live or paused offers.
+ * relisting (`not-vendor`, `trading-paused`, `trading-hold`, `no-wallet`, `too-many-offers`, `method-unavailable`,
+ * and the launch cap's `launch-cap`, or `price-unavailable` when none of the offer's currencies has
+ * a price to count its bands with), or `not-found` for an id that is not one of my live or paused offers.
  */
-export type OfferSwitchRefusal = 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'not-found';
+export type OfferSwitchRefusal =
+  | 'not-vendor' | 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'launch-cap' | 'price-unavailable' | 'not-found';
 
 /** One offer's outcome: its status after the call, and why it was not switched when it was refused. */
 export interface OfferSwitchResult {
@@ -108,12 +221,19 @@ export const SWITCH_MAX_IDS = 100;
 
 const SORTS = ['best', 'online', 'trades'] as const;
 type Sort = (typeof SORTS)[number];
-const MIN_TRADES = [0, 5, 10, 50] as const;
+const CURRENCY = /^[A-Z]{3}$/;
+/** "Minimum completed trades" (owner, 8 Nov: "5, 10, 25, 50"); null is no minimum. */
+export { BAND_MIN_TRADES as MIN_TRADES_CHOICES } from '@x2f/trade';
+export type { MinTrades } from '@x2f/trade';
+/** A method's instructions: at most this many characters, refused characters as for terms (BAD_TERMS_CHAR). */
+export const INSTRUCTIONS_MAX = 1000;
 const STATUSES = ['live', 'paused', 'removed'] as const;
 export const TERMS_MAX = 4000;
-/** Fiat amounts: at most 14 digits of minor units (the web form takes 12 whole digits and 2 decimals). */
-const FIAT = /^\d{1,14}$/;
-const PRICE = /^\d{1,20}$/;
+/**
+ * A fiat amount query: at most 15 digits of minor units, the most a band can reach (12 whole digits
+ * of a 3-decimal currency such as KWD, Task 34 review M2).
+ */
+const FIAT = /^\d{1,15}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /**
  * Refused in terms (review M2): C0 controls but newline and tab, DEL, C1 controls, and the bidi
@@ -122,45 +242,57 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
  * joiner inside emoji, soft hyphens, tag characters in flags. A CR or CRLF is stored as LF.
  * apps/web/src/screens/post/offerForm.ts mirrors this rule.
  */
-export const BAD_TERMS_CHAR = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
+export const BAD_TERMS_CHAR = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/u;
 /**
  * At most this many cards per list (a backstop: the per-account caps below keep lists short, and
  * the list is sorted by the database before the limit).
  */
 const LIST_LIMIT = 500;
 
-/** Per-account offer caps (review I1), owner settings with these defaults: live and paused offers count. */
-export const OFFER_CAP_DEFAULTS = Object.freeze({ perMarket: 3, total: 20 });
-export const OFFER_CAP_KEYS = Object.freeze({ perMarket: 'offers_max_per_market', total: 'offers_max_total' });
+/**
+ * Per-account offer caps (review I1; owner 6 Nov 2026, Q31): at most this many buying and this many
+ * selling offers per account in all, whatever their methods and currencies (an offer with several
+ * currencies counts once). Live and paused offers count (a paused one is not a way past the cap),
+ * removed ones do not. Owner settings override these defaults.
+ */
+export const OFFER_CAP_DEFAULTS = Object.freeze({ buy: 3, sell: 3 });
+export const OFFER_CAP_KEYS = Object.freeze({ buy: 'offers_max_buy', sell: 'offers_max_sell' });
 const OFFER_CAP_MAX = 1000;
+
+/**
+ * Which differences make two bands of a currency different (owner Q20/F3, not settled: p11-60).
+ * The lead's default; one place to change it until the owner rules (or it moves to owner settings).
+ */
+export const BAND_DIFFER_RULE: readonly BandDifference[] = BAND_DIFFER_DEFAULT;
 
 interface OfferRow {
   id: string;
   account_id: string;
   side: Side;
-  method_id: string;
-  currency: string;
-  price_mode: 'market' | 'fixed';
-  margin_bps: number | null;
-  fixed_cents_per_xmr: string | null;
-  min_fiat_cents: string;
-  max_fiat_cents: string;
-  min_trades: number;
+  amount_unit: AmountUnit;
   terms: string;
   country: string | null;
   status: OfferStatus;
 }
 
-const OFFER_COLUMNS = `o.id, o.account_id, o.side, o.method_id, o.currency, o.price_mode, o.margin_bps, o.fixed_cents_per_xmr,
-  o.min_fiat_cents, o.max_fiat_cents, o.min_trades, o.terms, o.country, o.status`;
+const OFFER_COLUMNS = `o.id, o.account_id, o.side, o.amount_unit, o.terms, o.country, o.status`;
 
 /**
- * An offer anyone may see: live, its poster neither disabled nor on a trading hold, and the site not
+ * Offers are market ± % only (owner Q1, 6 Nov 2026; F1, 7 Nov). A row stored as fixed before that
+ * rule (migration 345 refuses new ones) is kept as data until the owner decides what happens to it
+ * (J-02), but the API treats it as an offer that does not exist: it is never listed or counted,
+ * shown (to its poster neither), switched on or off, relisted or taken (trades/take.ts).
+ */
+export const MARKET_PRICED = `o.price_mode = 'market'`;
+
+/**
+ * An offer anyone may see: market-priced (MARKET_PRICED), live, its poster neither disabled nor on a trading hold, and the site not
  * in an emergency stop (`site_flags.trading_paused`; review M6: during a stop nothing is listed,
  * and only the poster can still open their own offer). No site_flags row counts as stopped.
  */
-const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
+const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+  and not ${recoveryHoldHidesSql('o.account_id')}
   and not coalesce((select f.trading_paused from site_flags f), true)`;
 
 /**
@@ -171,40 +303,202 @@ const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is nul
 const posterRated = (now: string): string => `not ${pendingReviewSql('o.account_id', now)}`;
 
 /**
- * The offer's rate now in SQL, with the currency's market price bound as `param` (null while the feed
- * has none): the same number as @x2f/trade's `offerRate` (rateFor rounds half up:
- * (market × (10000 + margin) × 2 + 10000) div 20000), so the database can sort before the limit.
+ * A rate in SQL, with the currency's market price bound as `param` (null while the feed has none)
+ * and `bps` the basis points over it: the same number as @x2f/trade's `rateFor` (rounded half up:
+ * (market × (10000 + bps) × 2 + 10000) div 20000), so the database can sort before the limit.
  * `div` is exact integer division; numeric `/` rounds its quotient to about 16 significant digits,
- * so from rates near 10^16 a `floor(… / 20000)` came out 1 above offerRate (round-2 review Minor 1).
- * Exported for the parity test.
+ * so from rates near 10^16 a `floor(… / 20000)` came out 1 above the JS rate (Task 4 round-2 review
+ * Minor 1). Exported for the parity test.
  */
-export function rateSql(param: string): string {
-  return `(case when o.price_mode = 'fixed' then o.fixed_cents_per_xmr
-    when ${param}::numeric is null then null
-    else div(${param}::numeric * (10000 + o.margin_bps) * 2 + 10000, 20000) end)`;
+export function rateSql(param: string, bps = 'o.margin_bps'): string {
+  return `(case when ${param}::numeric is null then null
+    else div(${param}::numeric * (10000 + ${bps}) * 2 + 10000, 20000) end)`;
 }
 
-function pricingOf(r: OfferRow): Pricing {
-  return r.price_mode === 'fixed' ? { mode: 'fixed', centsPerXmr: BigInt(r.fixed_cents_per_xmr!) } : { mode: 'market', marginBps: r.margin_bps! };
+/** The final rate in SQL for the band `tier` and the method `method` (aliases of offer_tiers and offer_methods rows). */
+export function finalRateSql(param: string, tier: string, method: string): string {
+  return rateSql(param, `(${tier}.margin_bps + ${method}.adjust_bps)`);
 }
 
-function rateOf(r: OfferRow, prices: MarketPrices): bigint | null {
-  return offerRate(pricingOf(r), r.currency, prices.current(r.currency))?.centsPerXmr ?? null;
+/** One method of an offer: its shared instructions, its adjustment, its currencies and their own instructions. */
+export interface FlexMethod {
+  methodId: string;
+  instructions: string;
+  adjustBps: number;
+  /** The offer currencies it is offered in, in the offer's currency order. */
+  currencies: string[];
+  /** The instructions for a currency where they differ from the shared ones (owner via the lead, 2 Nov, Q3). */
+  byCurrency: Record<string, string>;
 }
 
-function toCard(r: OfferRow, poster: TraderSummary, rate: bigint | null): OfferCard {
-  const p = pricingOf(r);
+/** An offer's currencies (the poster's order) with their bands (by start), and its methods (the poster's order). */
+export interface Flex {
+  currencies: { currency: string; tiers: Tier[] }[];
+  methods: FlexMethod[];
+}
+
+/** The instructions a trade in `currency` with method `m` locks: that currency's own, else the shared ones. */
+export function instructionsFor(m: FlexMethod, currency: string): string {
+  return Object.hasOwn(m.byCurrency, currency) ? m.byCurrency[currency]! : m.instructions;
+}
+
+/** The bands of `currency` on the offer, or null when the offer does not list it. */
+export function tiersOf(flex: Flex, currency: string): Tier[] | null {
+  return flex.currencies.find((c) => c.currency === currency)?.tiers ?? null;
+}
+
+/** The currencies, bands, methods and pairs of `ids`, from offer_currencies, offer_tiers, offer_methods and offer_method_currencies. */
+export async function loadFlex(db: Queryable, ids: readonly string[]): Promise<Map<string, Flex>> {
+  const out = new Map<string, Flex>(ids.map((id) => [id, { currencies: [], methods: [] }]));
+  if (ids.length === 0) return out;
+  const curs = await db.query<{ offer_id: string; currency: string }>(
+    'select offer_id, currency from offer_currencies where offer_id = any($1::uuid[]) order by offer_id, position',
+    [ids],
+  );
+  for (const c of curs.rows) out.get(c.offer_id)?.currencies.push({ currency: c.currency, tiers: [] });
+  const tiers = await db.query<{ offer_id: string; currency: string; min_amount: string; max_amount: string; margin_bps: number; min_trades: number | null; method_ids: string[] | null }>(
+    `select offer_id, currency, min_amount::text as min_amount, max_amount::text as max_amount, margin_bps, min_trades, method_ids
+       from offer_tiers t where t.offer_id = any($1::uuid[]) order by t.offer_id, t.currency, t.position`,
+    [ids],
+  );
+  for (const t of tiers.rows) {
+    out.get(t.offer_id)?.currencies.find((c) => c.currency === t.currency)?.tiers.push({
+      min: t.min_amount, max: t.max_amount, marginBps: t.margin_bps, minTrades: t.min_trades as MinTrades, methodIds: t.method_ids,
+    });
+  }
+  const methods = await db.query<{ offer_id: string; method_id: string; instructions: string; adjust_bps: number }>(
+    'select offer_id, method_id, instructions, adjust_bps from offer_methods where offer_id = any($1::uuid[]) order by offer_id, position',
+    [ids],
+  );
+  for (const m of methods.rows) {
+    out.get(m.offer_id)?.methods.push({ methodId: m.method_id, instructions: m.instructions, adjustBps: m.adjust_bps, currencies: [], byCurrency: {} });
+  }
+  const pairs = await db.query<{ offer_id: string; method_id: string; currency: string; instructions: string | null }>(
+    `select p.offer_id, p.method_id, p.currency, p.instructions from offer_method_currencies p
+       join offer_currencies c on c.offer_id = p.offer_id and c.currency = p.currency
+      where p.offer_id = any($1::uuid[]) order by p.offer_id, c.position`,
+    [ids],
+  );
+  for (const p of pairs.rows) {
+    const m = out.get(p.offer_id)?.methods.find((x) => x.methodId === p.method_id);
+    if (m === undefined) continue;
+    m.currencies.push(p.currency);
+    if (p.instructions !== null) m.byCurrency[p.currency] = p.instructions;
+  }
+  return out;
+}
+
+/** The viewer's completed trades, for the bands they qualify for (Task 34 review M5); 0 when signed out. */
+async function viewerCompleted(db: Queryable, viewerId: string | null): Promise<number> {
+  if (viewerId === null) return 0;
+  const { rows } = await db.query<{ n: number }>(`select ${COMPLETED_TRADES_SQL}::int as n from accounts a where a.id = $1`, [viewerId]);
+  return rows[0]?.n ?? 0;
+}
+
+/**
+ * What a card shows in `currency` for `method`: with an `amount` (a fiat total), the best band for
+ * the viewer among those holding it (an XMR band holds it when the XMR it buys at that band's rate
+ * is inside), else no rate (priced as the headline band so `pricing` is still shown); without one,
+ * the headline band (@x2f/trade `headlineTier`). Its final rate now (null while the currency has no
+ * market price) and that band and method's margin + adjustment.
+ */
+function priceFor(
+  side: Side, unit: AmountUnit, tiers: readonly Tier[], currency: string, method: Pick<FlexMethod, 'methodId' | 'adjustBps'>,
+  amount: bigint | null, prices: MarketPrices, completed: number | null,
+): { rate: bigint | null; pricing: OfferCard['pricing'] } {
+  const market = prices.current(currency);
+  const rateOf = (t: Tier): Price | null => tierRate(currency, t, method, market);
+  const head = headlineTier(tiers, method.methodId, side, completed) ?? tiers[0]!;
+  const pricingOf = (t: Tier): OfferCard['pricing'] => ({ mode: 'market', marginBps: t.marginBps + method.adjustBps });
+  if (amount === null) return { rate: rateOf(head)?.centsPerXmr ?? null, pricing: pricingOf(head) };
+  const holding = tiers.filter((t) => {
+    if (t.methodIds !== null && !t.methodIds.includes(method.methodId)) return false;
+    if (unit === 'fiat') return tierHolds('fiat', t, { amountAtomic: 0n, fiatCents: amount });
+    const r = rateOf(t);
+    return r !== null && tierHolds('xmr', t, { amountAtomic: atomicForFiat(amount, r), fiatCents: amount });
+  });
+  const best = headlineTier(holding, method.methodId, side, completed);
+  if (best === null) return { rate: null, pricing: pricingOf(head) };
+  return { rate: rateOf(best)?.centsPerXmr ?? null, pricing: pricingOf(best) };
+}
+
+/** A currency's envelope in the offer's unit: the lowest band start, the highest band end, the lowest band rule. */
+function envelope(tiers: readonly Tier[]): { min: bigint; max: bigint; minTrades: MinTrades } {
+  let min = BigInt(tiers[0]!.min);
+  let max = BigInt(tiers[0]!.max);
+  for (const t of tiers) {
+    if (BigInt(t.min) < min) min = BigInt(t.min);
+    if (BigInt(t.max) > max) max = BigInt(t.max);
+  }
+  const rules = tiers.map((t) => t.minTrades ?? 0);
+  const lowest = Math.min(...rules);
+  return { min, max, minTrades: lowest === 0 ? null : (lowest as MinTrades) };
+}
+
+/** The envelope in both units for an answer: the poster's own exactly, the other at `rate` (the card's) or null without one. */
+function amountsOf(unit: AmountUnit, tiers: readonly Tier[], currency: string, rate: bigint | null): Pick<OfferCard, 'amountUnit' | 'minAtomic' | 'maxAtomic' | 'minFiatCents' | 'maxFiatCents' | 'minTrades'> {
+  const e = envelope(tiers);
+  const own = unit === 'xmr'
+    ? { minAtomic: e.min.toString(), maxAtomic: e.max.toString(), minFiatCents: null, maxFiatCents: null }
+    : { minAtomic: null, maxAtomic: null, minFiatCents: e.min.toString(), maxFiatCents: e.max.toString() };
+  if (rate === null) return { amountUnit: unit, ...own, minTrades: e.minTrades };
+  const both = rangeInBoth({ unit, min: e.min, max: e.max }, { currency, centsPerXmr: rate });
+  return {
+    amountUnit: unit,
+    minAtomic: both.minAtomic.toString(),
+    maxAtomic: both.maxAtomic.toString(),
+    minFiatCents: both.minFiat.toString(),
+    maxFiatCents: both.maxFiat.toString(),
+    minTrades: e.minTrades,
+  };
+}
+
+/** The smallest trade of a currency's bands in fiat at `rate` (the starter caps' measure), or null without a rate for an XMR offer. */
+function minFiatAt(unit: AmountUnit, tiers: readonly Tier[], currency: string, rate: bigint | null): bigint | null {
+  const e = envelope(tiers);
+  if (unit === 'fiat') return e.min;
+  return rate === null ? null : fiatCents(e.min, { currency, centsPerXmr: rate });
+}
+
+const copyTier = (t: Tier): Tier => ({ ...t, methodIds: t.methodIds === null ? null : [...t.methodIds] });
+
+function toCard(
+  r: OfferRow, poster: TraderSummary, flex: Flex, currency: string, method: FlexMethod, amount: bigint | null,
+  prices: MarketPrices, methods: CardMethod[], completed: number | null,
+): OfferCard {
+  const tiers = tiersOf(flex, currency)!;
+  const { rate, pricing } = priceFor(r.side, r.amount_unit, tiers, currency, method, amount, prices, completed);
   const card: OfferCard = {
     id: r.id,
     poster,
+    currency,
+    currencies: flex.currencies.map((c) => c.currency),
     rate: rate === null ? null : rate.toString(),
-    pricing: p.mode === 'fixed' ? { mode: 'fixed', centsPerXmr: p.centsPerXmr.toString() } : { mode: 'market', marginBps: p.marginBps },
-    minFiatCents: r.min_fiat_cents,
-    maxFiatCents: r.max_fiat_cents,
-    minTrades: r.min_trades,
+    pricing,
+    ...amountsOf(r.amount_unit, tiers, currency, rate),
+    tiers: tiers.map(copyTier),
+    methods,
   };
   if (r.country !== null) card.country = r.country;
   return card;
+}
+
+/** The public view of the methods offered in `currency`: no instructions, only methods that may be offered now (P3-I20). */
+function publicMethods(flex: Flex, currency: string): CardMethod[] {
+  return flex.methods.filter((m) => m.currencies.includes(currency) && isAvailable(m.methodId)).map((m) => ({ methodId: m.methodId, adjustBps: m.adjustBps }));
+}
+
+/** The poster's own view of the methods offered in `currency`, each with its instructions for that currency. */
+function ownMethods(flex: Flex, currency: string): CardMethod[] {
+  return flex.methods.filter((m) => m.currencies.includes(currency)).map((m) => ({ methodId: m.methodId, adjustBps: m.adjustBps, instructions: instructionsFor(m, currency) }));
+}
+
+/** The optional `amount` query (a fiat total in minor units): null when absent, 400 when malformed. */
+function amountParam(q: unknown): bigint | null {
+  if ((q as Record<string, unknown> | null)?.amount === undefined) return null;
+  const v = single(q, 'amount');
+  if (v === undefined || !FIAT.test(v) || BigInt(v) <= 0n) throw bad();
+  return BigInt(v);
 }
 
 /** A query value given exactly once as a string, else undefined (a repeated key arrives as an array). */
@@ -221,58 +515,133 @@ const bad = (): ApiError => new ApiError(400, 'bad-request');
 
 interface NewOffer {
   side: Side;
-  methodId: string;
-  currency: string;
-  pricing: Pricing;
-  minFiatCents: bigint;
-  maxFiatCents: bigint;
-  minTrades: number;
+  unit: AmountUnit;
+  /** The poster's order; each currency's bands as covered ranges, by start. */
+  currencies: { currency: string; tiers: Tier[] }[];
+  methods: FlexMethod[];
   terms: string;
   country: string | null;
+  /** The gift-card terms version the poster ticked (J-17, F13); null on every other method. */
+  giftCardTerms: string | null;
 }
 
-function parsePricing(v: unknown): Pricing {
-  if (!isObject(v)) throw bad();
-  const keys = Object.keys(v).sort().join(',');
-  if (v.mode === 'market' && keys === 'marginBps,mode') {
-    const m = v.marginBps;
-    if (typeof m !== 'number' || !Number.isSafeInteger(m) || Math.abs(m) > MAX_MARGIN_BPS) throw bad();
-    return { mode: 'market', marginBps: m };
-  }
-  if (v.mode === 'fixed' && keys === 'centsPerXmr,mode') {
-    const c = v.centsPerXmr;
-    if (typeof c !== 'string' || !PRICE.test(c) || BigInt(c) <= 0n) throw bad();
-    return { mode: 'fixed', centsPerXmr: BigInt(c) };
-  }
-  throw bad();
+const OFFER_KEYS = ['side', 'currencies', 'methods', 'terms'];
+const OFFER_OPTIONAL = ['amountUnit', 'country', 'giftCardTerms'];
+const METHOD_KEYS = ['methodId', 'adjustBps', 'instructions'];
+const METHOD_OPTIONAL = ['currencies', 'instructionsByCurrency'];
+
+/** Exactly `keys`, plus any of `optional`. */
+function keysAre(o: Record<string, unknown>, keys: readonly string[], optional: readonly string[]): boolean {
+  const own = Object.keys(o);
+  return keys.every((k) => own.includes(k)) && own.every((k) => keys.includes(k) || optional.includes(k));
 }
 
-function fiat(v: unknown): bigint {
-  if (typeof v !== 'string' || !FIAT.test(v)) throw bad();
-  const n = BigInt(v);
-  if (n <= 0n) throw bad();
-  return n;
+/** Terms and instructions: CR and CRLF become LF, trimmed, at most `max` characters, no BAD_TERMS_CHAR. */
+function cleanText(v: unknown, max: number): string {
+  if (typeof v !== 'string') throw bad();
+  const clean = v.replace(/\r\n?/g, '\n').trim();
+  if ([...clean].length > max || BAD_TERMS_CHAR.test(clean)) throw bad();
+  return clean;
 }
 
-/** The body's shape; the method's availability and the gift-card country are checked by the caller. */
-function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown } {
-  if (!isObject(body)) throw bad();
-  const { side, methodId, currency, pricing, minFiatCents, maxFiatCents, minTrades, terms, country, ...rest } = body;
-  if (Object.keys(rest).length > 0) throw bad();
+/**
+ * `methods`: 1 to MAX_METHODS distinct methods (owner Q23: 5), each `{ methodId, adjustBps,
+ * instructions, currencies?, instructionsByCurrency? }`; `adjustBps` is the owner's price change,
+ * −5% to +10% in 0.5% steps (@x2f/trade `adjustAllowed`; review I4); `currencies` (absent: every
+ * offer currency) names offer currencies only, and `instructionsByCurrency` only the method's own
+ * currencies.
+ */
+function parseMethods(v: unknown, offerCurrencies: readonly string[]): FlexMethod[] {
+  if (!Array.isArray(v) || v.length === 0 || v.length > MAX_METHODS) throw bad();
+  const seen = new Set<string>();
+  return v.map((m: unknown) => {
+    if (!isObject(m) || !keysAre(m, METHOD_KEYS, METHOD_OPTIONAL)) throw bad();
+    const { methodId, adjustBps } = m;
+    if (typeof methodId !== 'string' || methodId.length === 0 || methodId.length > 64 || seen.has(methodId)) throw bad();
+    seen.add(methodId);
+    if (!adjustAllowed(adjustBps)) throw bad();
+    let currencies: string[];
+    if (m.currencies === undefined) {
+      currencies = [...offerCurrencies];
+    } else {
+      const list = m.currencies;
+      if (!Array.isArray(list) || list.length === 0 || new Set(list).size !== list.length) throw bad();
+      if (!list.every((c) => typeof c === 'string' && offerCurrencies.includes(c))) throw bad();
+      // Kept in the offer's currency order.
+      currencies = offerCurrencies.filter((c) => (list as string[]).includes(c));
+    }
+    const byCurrency: Record<string, string> = {};
+    if (m.instructionsByCurrency !== undefined) {
+      const by = m.instructionsByCurrency;
+      if (!isObject(by)) throw bad();
+      for (const [c, text] of Object.entries(by)) {
+        if (!currencies.includes(c)) throw bad();
+        byCurrency[c] = cleanText(text, INSTRUCTIONS_MAX);
+      }
+    }
+    return { methodId, adjustBps, instructions: cleanText(m.instructions, INSTRUCTIONS_MAX), currencies, byCurrency };
+  });
+}
+
+/**
+ * A band's `methodIds` as stored: null when absent or naming every method offered in its currency
+ * (the same set, so the band-must-differ rule compares like with like); otherwise in the offer's
+ * method order. 400 for a method not offered in the currency.
+ */
+function bandMethods(ids: readonly string[] | undefined, offered: readonly string[]): string[] | undefined {
+  if (ids === undefined) return undefined;
+  if (!ids.every((m) => offered.includes(m))) throw bad();
+  if (ids.length === offered.length) return undefined;
+  return offered.filter((m) => ids.includes(m));
+}
+
+/**
+ * The body (see the header; Task 34 review M1: the old single-method shape is gone); the methods'
+ * availability and the gift-card country are checked by the caller. `currencies`: 1 to
+ * MAX_CURRENCIES distinct currencies the price feed knows, each `{ currency, bands }` with bands
+ * that pass @x2f/trade `checkBands` in the offer's unit (at most 3, no gap, the band-must-differ
+ * rule BAND_DIFFER_RULE) once their `methodIds` are stored as `bandMethods` gives them. Every offer
+ * currency has a method; every band margin + the adjustment of each method it is for stays within
+ * ±MAX_MARGIN_BPS (rateFor's range).
+ */
+function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown; giftCardTermsGiven: unknown } {
+  if (!isObject(body) || !keysAre(body, OFFER_KEYS, OFFER_OPTIONAL)) throw bad();
+  const { side, terms, country, giftCardTerms } = body;
   if (side !== 'sell' && side !== 'buy') throw bad();
-  if (typeof methodId !== 'string' || methodId.length === 0 || methodId.length > 64) throw bad();
-  if (typeof currency !== 'string' || currencyExponent(currency) === null) throw bad();
-  const min = fiat(minFiatCents);
-  const max = fiat(maxFiatCents);
-  if (min > max) throw bad();
-  if (typeof minTrades !== 'number' || !(MIN_TRADES as readonly number[]).includes(minTrades)) throw bad();
-  if (typeof terms !== 'string') throw bad();
-  const cleanTerms = terms.replace(/\r\n?/g, '\n').trim();
-  if ([...cleanTerms].length > TERMS_MAX || BAD_TERMS_CHAR.test(cleanTerms)) throw bad();
-  return {
-    side, methodId, currency, pricing: parsePricing(pricing), minFiatCents: min, maxFiatCents: max, minTrades,
-    terms: cleanTerms, country: null, countryGiven: country,
-  };
+  const unit = body.amountUnit === undefined ? 'fiat' : body.amountUnit;
+  if (unit !== 'fiat' && unit !== 'xmr') throw bad();
+  const rawCurrencies = body.currencies;
+  if (!Array.isArray(rawCurrencies) || rawCurrencies.length === 0 || rawCurrencies.length > MAX_CURRENCIES) throw bad();
+  const named = rawCurrencies.map((c: unknown) => {
+    if (!isObject(c) || Object.keys(c).sort().join(',') !== 'bands,currency') throw bad();
+    if (typeof c.currency !== 'string' || !CURRENCY.test(c.currency) || currencyExponent(c.currency) === null) throw bad();
+    return { currency: c.currency, bands: c.bands };
+  });
+  if (new Set(named.map((c) => c.currency)).size !== named.length) throw bad();
+  const methods = parseMethods(body.methods, named.map((c) => c.currency));
+  const currencies = named.map(({ currency, bands }) => {
+    const offered = methods.filter((m) => m.currencies.includes(currency));
+    if (offered.length === 0) throw bad();
+    if (!Array.isArray(bands)) throw bad();
+    const ids = offered.map((m) => m.methodId);
+    const normal = bands.map((b: unknown) => {
+      if (!isObject(b)) throw bad();
+      const raw = b.methodIds;
+      if (raw !== undefined && (!Array.isArray(raw) || !raw.every((x) => typeof x === 'string'))) throw bad();
+      const kept = bandMethods(raw as string[] | undefined, ids);
+      const { methodIds: _drop, ...rest } = b;
+      return (kept === undefined ? rest : { ...rest, methodIds: kept }) as unknown as Band;
+    });
+    if (checkBands(normal, unit, BAND_DIFFER_RULE) !== null) throw bad();
+    const tiers = bandsToTiers(normal, unit, currencyExponent(currency)!);
+    for (const t of tiers) {
+      for (const m of offered) {
+        if ((t.methodIds === null || t.methodIds.includes(m.methodId)) && Math.abs(t.marginBps + m.adjustBps) > MAX_MARGIN_BPS) throw bad();
+      }
+    }
+    return { currency, tiers };
+  });
+  return { side, unit, currencies, methods, terms: cleanText(terms, TERMS_MAX), country: null, giftCardTerms: null, countryGiven: country, giftCardTermsGiven: giftCardTerms };
 }
 
 /** 409 when the method may not be offered now (P3-I20: methods awaiting legal review). */
@@ -280,23 +649,31 @@ function assertMethodAvailable(methodId: string): void {
   if (!isAvailable(methodId)) throw new ApiError(409, 'method-unavailable');
 }
 
-async function loadOfferCaps(db: Queryable): Promise<{ perMarket: number; total: number }> {
+async function loadOfferCaps(db: Queryable): Promise<Record<Side, number>> {
   const { rows } = await db.query<{ key: string; value: string }>('select key, value from owner_settings where key = any($1)', [
-    [OFFER_CAP_KEYS.perMarket, OFFER_CAP_KEYS.total],
+    [OFFER_CAP_KEYS.buy, OFFER_CAP_KEYS.sell],
   ]);
   const get = (k: string, d: number) => {
     const n = Number(rows.find((r) => r.key === k)?.value);
     return Number.isInteger(n) && n >= 1 && n <= OFFER_CAP_MAX ? n : d;
   };
-  return { perMarket: get(OFFER_CAP_KEYS.perMarket, OFFER_CAP_DEFAULTS.perMarket), total: get(OFFER_CAP_KEYS.total, OFFER_CAP_DEFAULTS.total) };
+  return { buy: get(OFFER_CAP_KEYS.buy, OFFER_CAP_DEFAULTS.buy), sell: get(OFFER_CAP_KEYS.sell, OFFER_CAP_DEFAULTS.sell) };
+}
+
+/**
+ * 409 `too-many-offers` with the caps that refused it (`{ buy, sell }`, the owner settings in force;
+ * review M2: the web says the API's numbers, not a fixed 3 + 3).
+ */
+function tooManyOffers(caps: Record<Side, number>): ApiError {
+  return new ApiError(409, 'too-many-offers', { buy: caps.buy, sell: caps.sell });
 }
 
 /**
  * Posting or relisting, inside the caller's transaction (review M1): refused while the site's
  * trading is paused (409 `trading-paused`), while the account has a trading hold (409
  * `trading-hold`), without a usable payout wallet (409 `no-wallet`, spec 6.4; a wallet still in
- * its 24-hour wait does not count), and at the account's offer caps (409 `too-many-offers`,
- * review I1; `except` is the offer being relisted).
+ * its 24-hour wait does not count), and at the account's offer cap for the offer's side (409
+ * `too-many-offers` `{ buy, sell }`, owner Q31; `except` is the offer being relisted).
  *
  * The account row is locked `for update` first, so one account's posts and relists run one at a
  * time (the cap cannot be raced) and a hold being inserted (its foreign key takes a key-share lock
@@ -307,21 +684,22 @@ async function assertMayPost(
   client: Queryable,
   auth: AuthContext,
   now: Date,
-  market: { side: Side; methodId: string; currency: string },
+  side: Side,
   except: string | null,
 ): Promise<void> {
   const accountId = auth.accountId;
   await lockAccountLive(client, auth, now);
+  // Owner 2 Nov 2026: only a vendor posts or turns on offers (403 `not-vendor`), before the other guards.
+  await assertVendor(client, accountId);
   const refused = await accountRefusal(client, accountId, now);
   if (refused !== null) throw new ApiError(409, refused);
   const caps = await loadOfferCaps(client);
-  const { rows } = await client.query<{ same: number; total: number }>(
-    `select count(*) filter (where side = $2 and method_id = $3 and currency = $4)::int as same, count(*)::int as total
-       from offers where account_id = $1 and status <> 'removed' and ($5::uuid is null or id <> $5::uuid)`,
-    [accountId, market.side, market.methodId, market.currency, except],
+  const { rows } = await client.query<{ same: number }>(
+    `select count(*)::int as same
+       from offers where account_id = $1 and side = $2 and status <> 'removed' and ($3::uuid is null or id <> $3::uuid)`,
+    [accountId, side, except],
   );
-  const c = rows[0]!;
-  if (c.same >= caps.perMarket || c.total >= caps.total) throw new ApiError(409, 'too-many-offers');
+  if (rows[0]!.same >= caps[side]) throw tooManyOffers(caps);
 }
 
 /**
@@ -342,9 +720,14 @@ async function lockAccountLive(client: Queryable, auth: AuthContext, now: Date):
   await requireLiveSessionInTx(client, auth, now);
 }
 
-/** Why this account may not put any offer live now, or null; run after `lockAccount`. */
-type AccountRefusal = 'trading-paused' | 'trading-hold' | 'no-wallet';
+/**
+ * Why this account may not put any offer live now, or null; run after `lockAccount`. First: only a
+ * vendor posts or turns on offers (owner 2 Nov 2026; 403 `not-vendor`). A trader's offers from
+ * before migration 198 stay listed while live, and can be paused or removed.
+ */
+type AccountRefusal = 'not-vendor' | 'trading-paused' | 'trading-hold' | 'no-wallet';
 async function accountRefusal(client: Queryable, accountId: string, now: Date): Promise<AccountRefusal | null> {
+  if ((await accountTypeOf(client, accountId)) !== 'vendor') return 'not-vendor';
   const flags = await client.query<{ trading_paused: boolean }>('select trading_paused from site_flags for share');
   // No site_flags row fails closed.
   if (flags.rows[0]?.trading_paused !== false) return 'trading-paused';
@@ -370,55 +753,55 @@ async function inTransaction<T>(db: Deps['db'], fn: (client: Queryable) => Promi
   }
 }
 
-// Posting, pausing, relisting and removing: the account owner, or a team member with Offers (Task 18).
-const requireTrader = requireSession({ kinds: ['trader'], member: 'offers' });
+// Posting: the account owner, or a team member with the Post a new offer box (Task 18, Job 1c).
+const requireTrader = requireSession({ kinds: ['trader'], member: 'offers-post' });
 /**
  * Turning offers off, and reading my own offers, work on a stale Terms version too (lead decision
  * 2026-10-29 on R10: shutting things off never waits for new Terms). Anything that puts an offer
  * live still needs the current Terms (`assertTermsCurrent`); removing one is shutting off too
- * (round-2 review m1, lead decision 2026-10-29). A team member with Offers may do these too (Task 18).
+ * (round-2 review m1, lead decision 2026-10-29). A team member may do these too with the box for
+ * each (Task 18, Job 1c): See offers reads, Pause or resume turns offers off and on, Delete an offer
+ * removes one (`PATCH` checks the exact box for the status asked).
  */
-const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers' });
+const requireSeeOffers = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers-see' });
+const requirePauseOffers = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers-pause' });
+const requireSetStatus = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: ['offers-pause', 'offers-delete'] });
 
 /** 403 `terms-required` `{ version }`, as requireSession answers, for a trader on a stale Terms version. */
-async function assertTermsCurrent(deps: Deps, accountId: string): Promise<void> {
-  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [accountId]);
+async function assertTermsCurrent(deps: Deps, auth: { accountId: string; memberId: string | null }): Promise<void> {
+  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [auth.accountId]);
   if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
-}
-// Browsing: a signed-in trader's session, read only (no touch), when there is one; a team member
-// browses as the account it works for.
-const viewerCheck = requireSession({ kinds: ['trader'], touch: false, allowStaleTerms: true, member: 'any' });
-
-/**
- * The signed-in trader browsing, or null for anyone else (logged out, staff, an expired session, a
- * recovery session or one on its recovery hold: every 401 and 403). A null viewer is never treated
- * as blocked (Task 37: it is the accepted residue documented in coordination.md).
- */
-export async function viewer(app: FastifyInstance, req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
-  try {
-    await viewerCheck.call(app, req, reply);
-  } catch (e) {
-    if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return null;
-    throw e;
+  // A team member's own acceptance too (review 2026-11-08 F1, as requireSession checks it).
+  if (auth.memberId !== null) {
+    const m = await deps.db.query<{ terms_version: string | null }>(
+      'select a.terms_version from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+      [auth.memberId],
+    );
+    if (m.rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
   }
-  return req.auth?.accountId ?? null;
 }
-
 /**
  * `/v1/methods`' live-offer counts (Task 3's `LiveOfferStats`), from the offers anyone may see, counted by the database;
  * for a signed-in viewer, without the offers a block hides from them (Task 37 review I1), so the counts and best
- * rates match the lists they open.
+ * rates match the lists they open. J-16: an offer counts once under each method it offers in this currency; its best
+ * rate there is over that currency's bands for that method. A currency with no market price now lists nothing
+ * (owner Q5), as GET /v1/offers.
  */
 export function liveOfferStats(deps: Pick<Deps, 'db' | 'prices' | 'clock'>): LiveOfferStats {
   return async ({ side, currency, viewerId = null }) => {
     const market = deps.prices.current(currency)?.centsPerXmr ?? null;
+    if (market === null) return [];
     const { rows } = await deps.db.query<{ method_id: string; offers: number; lo: string | null; hi: string | null }>(
-      `select o.method_id, count(*)::int as offers, min(r.rate) as lo, max(r.rate) as hi
-         from offers o join accounts a on a.id = o.account_id cross join lateral (select ${rateSql('$3')} as rate) r
-        where ${LISTED} and ${posterRated('$5::timestamptz')} and o.side = $1 and o.currency = $2
+      `select m.method_id, count(distinct o.id)::int as offers, min(r.rate) as lo, max(r.rate) as hi
+         from offers o join accounts a on a.id = o.account_id
+         join offer_method_currencies mc on mc.offer_id = o.id and mc.currency = $2
+         join offer_methods m on m.offer_id = o.id and m.method_id = mc.method_id
+         join offer_tiers t on t.offer_id = o.id and t.currency = $2 and (t.method_ids is null or m.method_id = any(t.method_ids))
+         cross join lateral (select ${finalRateSql('$3', 't', 'm')} as rate) r
+        where ${LISTED} and ${posterRated('$5::timestamptz')} and o.side = $1
           and not ${blockedEitherWaySql('o.account_id', '$4::uuid')}
-        group by o.method_id`,
-      [side, currency, market === null ? null : market.toString(), viewerId, deps.clock()],
+        group by m.method_id`,
+      [side, currency, market.toString(), viewerId, deps.clock()],
     );
     return rows.map((r) => {
       // Buy ads pay the seller: the best is the highest. Sell ads charge the buyer: the lowest.
@@ -428,17 +811,21 @@ export function liveOfferStats(deps: Pick<Deps, 'db' | 'prices' | 'clock'>): Liv
   };
 }
 
-/** Adds `opensAt` to each card above the viewer's cap (Revision 2026-10-24). */
-async function markOpensAt(deps: Deps, viewerId: string, rows: readonly OfferRow[], cards: OfferCard[]): Promise<void> {
+/** Adds `opensAt` to each card above the viewer's cap (Revision 2026-10-24), from the card's currency and smallest trade. */
+async function markOpensAt(deps: Deps, viewerId: string, rows: readonly OfferRow[], flex: Map<string, Flex>, cards: OfferCard[]): Promise<void> {
   const settings = await loadStarterSettings(deps.db);
   const cap = await tradeCap(deps.db, viewerId, deps.clock(), settings);
   if (cap.capUsdCents === null) return;
   rows.forEach((r, i) => {
     // Never on the viewer's own offers (review M7).
     if (r.account_id === viewerId) return;
-    const q = deps.prices.quote(r.currency);
+    const card = cards[i]!;
+    const q = deps.prices.quote(card.currency);
     if (q === null) return;
-    const usd = usdCentsOf(BigInt(r.min_fiat_cents), { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr });
+    // An XMR band's smallest trade in fiat at the card's rate now (the take checks the cap again).
+    const min = minFiatAt(r.amount_unit, tiersOf(flex.get(r.id)!, card.currency)!, card.currency, card.rate === null ? null : BigInt(card.rate));
+    if (min === null) return;
+    const usd = usdCentsOf(min, { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr });
     const at = opensAt(settings, cap.stage, usd);
     if (at !== undefined) cards[i]!.opensAt = at;
   });
@@ -448,51 +835,90 @@ export function offerRoutes(app: FastifyInstance): void {
   app.post('/v1/offers', { preHandler: [requireTrader, requireNotHeld] }, async (req, reply) => {
     const deps = req.server.deps;
     const o = parseNewOffer(req.body);
-    const method = getMethod(o.methodId);
-    if (method === null) throw bad();
-    assertMethodAvailable(o.methodId);
+    const catalog = o.methods.map((m) => getMethod(m.methodId));
+    if (catalog.some((m) => m === null)) throw bad();
+    for (const m of o.methods) assertMethodAvailable(m.methodId);
     // A gift-card offer names the card's country; no other offer has one (Revision 2026-10-27).
-    if (method.giftCard) {
+    // Any gift-card method among its methods makes it a gift-card offer (J-17 on J-16, lead ruling
+    // 10 Nov 2026): the gift-card terms apply to the offer, and each gift-card METHOD may be offered
+    // only in a currency of the card's country (T-081); the offer's other methods and currencies are free.
+    const giftMethods = o.methods.filter((m) => isGiftCard(m.methodId));
+    if (giftMethods.length > 0) {
       if (typeof o.countryGiven !== 'string' || !/^[A-Z]{2}$/.test(o.countryGiven)) throw bad();
+      // J-17 (T-081): the card's currency follows its country, for every currency the card method is offered in.
+      for (const m of giftMethods) for (const c of m.currencies) if (!giftCardCurrencyOk(o.countryGiven, c)) throw bad();
+      // J-17 (F13): the poster ticked the gift-card terms of the version the API has now (a page
+      // showing older words cannot agree to these).
+      if (o.giftCardTermsGiven !== GIFT_CARD_TERMS_VERSION) throw bad();
       o.country = o.countryGiven;
-    } else if (o.countryGiven !== undefined) {
+      o.giftCardTerms = GIFT_CARD_TERMS_VERSION;
+    } else if (o.countryGiven !== undefined || o.giftCardTermsGiven !== undefined) {
       throw bad();
     }
     const accountId = req.auth!.accountId;
     const now = deps.clock();
-    const p = o.pricing;
     const id = await inTransaction(deps.db, async (client) => {
-      await assertMayPost(client, req.auth!, now, o, null);
+      await assertMayPost(client, req.auth!, now, o.side, null);
+      // The launch cap (owner p11-6): every band's top edge in every currency of the offer, in US
+      // dollars at that currency's market rate now (trades/launchCap.ts); a currency with no price
+      // now fails closed (409 price-unavailable). The take checks the trade itself again.
+      throwLaunchCapRefusal(offerLaunchCapRefusal(o.unit, o.currencies, deps.prices, false));
       const { rows } = await client.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, fixed_cents_per_xmr,
-                           min_fiat_cents, max_fiat_cents, min_trades, terms, country, status, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'live', $13, $13) returning id`,
-      [
-        accountId, o.side, o.methodId, o.currency, p.mode, p.mode === 'market' ? p.marginBps : null,
-        p.mode === 'fixed' ? p.centsPerXmr.toString() : null, o.minFiatCents.toString(), o.maxFiatCents.toString(),
-        o.minTrades, o.terms, o.country, now,
-      ],
+        `insert into offers (account_id, side, price_mode, amount_unit, terms, country, gift_card_terms, status, created_at, updated_at)
+         values ($1, $2, 'market', $3, $4, $5, $6, 'live', $7, $7) returning id`,
+        [accountId, o.side, o.unit, o.terms, o.country, o.giftCardTerms, now],
       );
-      // Task 18: a team member's post is in the account owner's audit log, in this transaction.
-      await auditMember(client, req.auth, { action: 'offer-posted', detail: { offerId: rows[0]!.id } }, now);
-      return rows[0]!.id;
+      const offerId = rows[0]!.id;
+      // Same transaction: an offer never exists without its currencies, bands and methods.
+      await client.query(
+        `insert into offer_currencies (offer_id, position, currency)
+         select $1, u.i - 1, u.c from unnest($2::text[]) with ordinality as u(c, i)`,
+        [offerId, o.currencies.map((c) => c.currency)],
+      );
+      const bands = o.currencies.flatMap((c) => c.tiers.map((t, position) => ({ currency: c.currency, position, ...t })));
+      // One row per band; method_ids as a Postgres array literal (or null), parsed by Postgres.
+      for (const b of bands) {
+        await client.query(
+          `insert into offer_tiers (offer_id, currency, position, min_amount, max_amount, margin_bps, min_trades, method_ids)
+           values ($1, $2, $3, $4, $5, $6, $7, $8::text[])`,
+          [offerId, b.currency, b.position, b.min, b.max, b.marginBps, b.minTrades, b.methodIds],
+        );
+      }
+      await client.query(
+        `insert into offer_methods (offer_id, position, method_id, instructions, adjust_bps)
+         select $1, u.i - 1, u.m, u.ins, u.a from unnest($2::text[], $3::text[], $4::int[]) with ordinality as u(m, ins, a, i)`,
+        [offerId, o.methods.map((m) => m.methodId), o.methods.map((m) => m.instructions), o.methods.map((m) => m.adjustBps)],
+      );
+      const pairs = o.methods.flatMap((m) => m.currencies.map((c) => ({ methodId: m.methodId, currency: c, instructions: Object.hasOwn(m.byCurrency, c) ? m.byCurrency[c]! : null })));
+      await client.query(
+        `insert into offer_method_currencies (offer_id, method_id, currency, instructions)
+         select $1, * from unnest($2::text[], $3::text[], $4::text[])`,
+        [offerId, pairs.map((p) => p.methodId), pairs.map((p) => p.currency), pairs.map((p) => p.instructions)],
+      );
+      // Task 18: a team member's post is in the account owner's audit log, in this transaction, with
+      // the offer's terms (review 2026-11-09 M2: `offerId`, not just the id in `detail`).
+      await auditMember(client, req.auth, { action: 'offer-posted', offerId }, now);
+      return offerId;
     });
     return reply.code(201).send({ id });
   });
 
-  app.patch('/v1/offers/:id', { preHandler: requireTraderStaleOk }, async (req) => {
+  app.patch('/v1/offers/:id', { preHandler: requireSetStatus }, async (req) => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     const body = req.body;
     if (!isObject(body) || Object.keys(body).length !== 1) throw bad();
     const status = body.status;
     if (typeof status !== 'string' || !(STATUSES as readonly string[]).includes(status)) throw bad();
+    // Job 1c: removing needs Delete an offer; pausing and relisting need Pause or resume.
+    assertMemberMay(req.auth, status === 'removed' ? 'offers-delete' : 'offers-pause');
     // Pausing and removing work on stale Terms (R10 lead decisions 2026-10-29: shutting off never
     // waits for new Terms); relisting does not.
-    if (status === 'live') await assertTermsCurrent(deps, req.auth!.accountId);
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!);
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
-    const { rows } = await deps.db.query<{ account_id: string; status: OfferStatus; method_id: string }>(
-      'select account_id, status, method_id from offers where id = $1',
+    const { rows } = await deps.db.query<{ account_id: string; status: OfferStatus; methods: string[] }>(
+      `select o.account_id, o.status, array(select m.method_id from offer_methods m where m.offer_id = o.id order by m.position) as methods
+         from offers o where o.id = $1 and ${MARKET_PRICED}`,
       [id],
     );
     const row = rows[0];
@@ -507,32 +933,51 @@ export function offerRoutes(app: FastifyInstance): void {
       // Task 17: an account on its 24-hour hold cannot turn an offer on (pausing or removing one is fine).
       const until = await holdUntil(deps, accountId, req.server.events);
       if (until !== null) throw holdRefusal(until);
-      // Relisting is posting again: the same checks, in one transaction with the write (review M1).
-      assertMethodAvailable(row.method_id);
+      // Relisting is posting again: the same checks (every method may be offered now, as at post),
+      // in one transaction with the write (review M1).
+      for (const m of row.methods) assertMethodAvailable(m);
       await inTransaction(deps.db, async (client) => {
-        const cur = await client.query<{ side: Side; method_id: string; currency: string }>(
-          `select side, method_id, currency from offers where id = $1 and account_id = $2 and status <> 'removed'`,
+        const cur = await client.query<{ side: Side; amount_unit: AmountUnit }>(
+          `select side, amount_unit from offers o where id = $1 and account_id = $2 and status <> 'removed' and ${MARKET_PRICED}`,
           [id, accountId],
         );
         const m = cur.rows[0];
         if (!m) throw new ApiError(404, 'not-found');
-        await assertMayPost(client, req.auth!, now, { side: m.side, methodId: m.method_id, currency: m.currency }, id);
+        await assertMayPost(client, req.auth!, now, m.side, id);
+        // The launch cap, as posting checks it (launch-rules review F1): an offer from before the
+        // cap, or a band whose currency's rate has since moved it above $5,000, does not go live
+        // again. A currency with no price now is skipped and stays hidden until its rate returns
+        // (OWNER QUESTION p11-95, the lead's default; trades/launchCap.ts `offerLaunchCapRefusal`).
+        const flex = (await loadFlex(client, [id])).get(id)!;
+        throwLaunchCapRefusal(offerLaunchCapRefusal(m.amount_unit, flex.currencies, deps.prices, true));
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
-        await auditMember(client, req.auth, { action: 'offer-relisted', detail: { offerId: id } }, now);
+        await auditMember(client, req.auth, { action: 'offer-relisted', offerId: id }, now);
       });
-    } else {
-      // Pausing or removing: no guard but a live session (review round 5 M2), under the account lock.
+    } else if (status === 'removed') {
+      // Task 34 review M3: a removed offer keeps no payment details at rest (a trade keeps its own
+      // locked copy, trades.method_instructions). Same transaction as the removal: the offer row's
+      // lock orders it against a take, which reads the instructions only from a live offer.
       await inTransaction(deps.db, async (client) => {
         await lockAccountLive(client, req.auth!, now);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
-        await auditMember(client, req.auth, { action: status === 'paused' ? 'offer-paused' : 'offer-removed', detail: { offerId: id } }, now);
+        await client.query(`update offer_methods set instructions = '' where offer_id = $1 and instructions <> ''`, [id]);
+        await client.query(`update offer_method_currencies set instructions = null where offer_id = $1 and instructions is not null`, [id]);
+        await auditMember(client, req.auth, { action: 'offer-removed', offerId: id }, now);
+      });
+    } else {
+      // Pausing: no guard but a live session (review round 5 M2), under the account lock.
+      await inTransaction(deps.db, async (client) => {
+        await lockAccountLive(client, req.auth!, now);
+        if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
+        await auditMember(client, req.auth, { action: 'offer-paused', offerId: id }, now);
       });
     }
     return { id, status };
   });
 
-  // Browsing needs no session (P3-M9); a signed-in trader also gets `opensAt`.
-  app.get('/v1/offers', async (req, reply) => {
+  // Browsing is behind the front door (owner, 8 Nov 2026; it was open to anyone under P3-M9): a
+  // live session of a set-up trader account; a team member browses as the account they work for.
+  app.get('/v1/offers', { preHandler: requireInside }, async (req) => {
     const deps = req.server.deps;
     const side = single(req.query, 'side');
     const method = single(req.query, 'method');
@@ -541,97 +986,165 @@ export function offerRoutes(app: FastifyInstance): void {
     const rawSort = single(req.query, 'sort');
     const sort: Sort | undefined = given ? SORTS.find((s) => s === rawSort) : 'best';
     if ((side !== 'sell' && side !== 'buy') || method === undefined || method.length === 0 || method.length > 64) throw bad();
-    if (currency === undefined || !/^[A-Z]{3}$/.test(currency) || sort === undefined) throw bad();
+    if (currency === undefined || !CURRENCY.test(currency) || sort === undefined) throw bad();
+    const amount = amountParam(req.query);
     if (!isAvailable(method)) return [];
+    // Owner Q5 (2 Nov): while this currency has no market price, its offers are hidden (the same
+    // offers still list under their other currencies).
+    const market = deps.prices.current(currency)?.centsPerXmr ?? null;
+    if (market === null) return [];
 
     // Sorted by the database before the limit (review I1): the rate from the bound market price,
     // online from the newest live session (as traderSummaries: by bucket, hidden from someone the
-    // poster blocked), trades from the completed count; ties newest first.
+    // poster blocked), trades from the completed count; ties newest first. The offers taking this
+    // method in this currency; the sort rate is the best of that currency's bands for this method
+    // that the viewer qualifies for (or the lowest rule's) and, for a fiat offer with an amount,
+    // that hold it. A card's own rate is then worked out exactly (priceFor).
     const now = deps.clock();
-    const viewerId = await viewer(app, req, reply);
-    const market = deps.prices.current(currency)?.centsPerXmr ?? null;
+    const viewerId = req.auth!.accountId;
+    const completed = await viewerCompleted(deps.db, viewerId);
     const byRate = `r.rate ${side === 'buy' ? 'desc' : 'asc'} nulls last`;
+    const best = side === 'buy' ? 'max' : 'min';
     const order =
       sort === 'online' ? `ls.online desc, ${byRate}`
       : sort === 'trades' ? `ct.completed desc, ${byRate}`
       : byRate;
+    const forMethod = `t.offer_id = o.id and t.currency = $3 and (t.method_ids is null or $2 = any(t.method_ids))`;
     const { rows } = await deps.db.query<OfferRow>(
       `select ${OFFER_COLUMNS} from offers o join accounts a on a.id = o.account_id
-         cross join lateral (select ${rateSql('$4')} as rate) r
+         join offer_method_currencies mc on mc.offer_id = o.id and mc.currency = $3 and mc.method_id = $2
+         join offer_methods m on m.offer_id = o.id and m.method_id = $2
+         cross join lateral (select ${best}(${finalRateSql('$4', 't', 'm')}) as rate from offer_tiers t
+                              where ${forMethod}
+                                and coalesce(t.min_trades, 0) <= greatest($8::int, (select min(coalesce(t2.min_trades, 0)) from offer_tiers t2
+                                      where t2.offer_id = o.id and t2.currency = $3 and (t2.method_ids is null or $2 = any(t2.method_ids))))
+                                and ($7::numeric is null or o.amount_unit = 'xmr' or $7::numeric between t.min_amount and t.max_amount)) r
          cross join lateral (select coalesce(${lastSeenSql('a.id', '$6::uuid')} >= $5::timestamptz, false) as online) ls
          cross join lateral (select ${COMPLETED_TRADES_SQL} as completed) ct
-        where ${LISTED} and ${posterRated('$7::timestamptz')} and o.side = $1 and o.method_id = $2 and o.currency = $3
+        where ${LISTED} and ${posterRated('$9::timestamptz')} and o.side = $1
+          and exists (select 1 from offer_tiers t where ${forMethod})
           and not ${blockedEitherWaySql('o.account_id', '$6::uuid')}
         order by ${order}, o.created_at desc, o.id limit ${LIST_LIMIT}`,
-      [side, method, currency, market === null ? null : market.toString(), onlineSince(now), viewerId, now],
+      [side, method, currency, market.toString(), onlineSince(now), viewerId, amount === null ? null : amount.toString(), completed, now],
     );
-    const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now, viewerId);
-    const entries = rows.map((r) => ({ r, poster: posters.get(r.account_id)!, rate: rateOf(r, deps.prices) }));
-    const cards = entries.map((e) => toCard(e.r, e.poster, e.rate));
-    if (viewerId !== null) await markOpensAt(deps, viewerId, entries.map((e) => e.r), cards);
+    // A sell ad's poster releases; a buy ad's poster pays (the card's typical time, P5-A8).
+    const role = side === 'sell' ? 'seller' : 'buyer';
+    const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now, viewerId, undefined, new Map(rows.map((r) => [r.account_id, role])));
+    const flex = await loadFlex(deps.db, rows.map((r) => r.id));
+    const cards = rows.map((r) => {
+      const f = flex.get(r.id)!;
+      return toCard(r, posters.get(r.account_id)!, f, currency, f.methods.find((x) => x.methodId === method)!, amount, deps.prices, publicMethods(f, currency), completed);
+    });
+    if (viewerId !== null) {
+      await markOpensAt(deps, viewerId, rows, flex, cards);
+      for (const c of cards) c.viewerTrades = completed;
+    }
     return cards;
   });
 
-  app.get('/v1/offers/:id', async (req, reply): Promise<OfferDetail> => {
+  app.get('/v1/offers/:id', { preHandler: requireInside }, async (req): Promise<OfferDetail> => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
-    const viewerId = await viewer(app, req, reply);
+    const q = req.query as Record<string, unknown> | null;
+    const asked = single(req.query, 'method');
+    if (q?.method !== undefined && (asked === undefined || asked.length === 0 || asked.length > 64)) throw bad();
+    const askedCurrency = single(req.query, 'currency');
+    if (q?.currency !== undefined && (askedCurrency === undefined || !CURRENCY.test(askedCurrency))) throw bad();
+    const amount = amountParam(req.query);
+    const viewerId = req.auth!.accountId;
     const { rows } = await deps.db.query<OfferRow & { listed: boolean; blocked: boolean }>(
       `select ${OFFER_COLUMNS}, (${LISTED} and ${posterRated('$3::timestamptz')}) as listed, ${blockedEitherWaySql('o.account_id', '$2::uuid')} as blocked
-         from offers o join accounts a on a.id = o.account_id where o.id = $1`,
+         from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`,
       [id, viewerId, deps.clock()],
     );
     const r = rows[0];
     if (!r || r.status === 'removed') throw new ApiError(404, 'not-found');
     const mine = viewerId !== null && viewerId === r.account_id;
+    const f = (await loadFlex(deps.db, [r.id])).get(r.id)!;
+    // The currency asked for (404 when the offer does not list it), else its first one. Unlike the
+    // list, a currency with no market price now is shown here, with a null rate (the take refuses).
+    const currency = askedCurrency ?? f.currencies[0]!.currency;
+    if (tiersOf(f, currency) === null) throw new ApiError(404, 'not-found');
+    // Others see only the methods offered in this currency that may be offered now, without their
+    // instructions (payment details: for the poster and, once the escrow is secured, the traders).
+    const shown: CardMethod[] = mine ? ownMethods(f, currency) : publicMethods(f, currency);
     // A block either way looks exactly like an offer that does not exist (Task 37).
-    if (!mine && (r.blocked || !(r.listed && isAvailable(r.method_id)))) throw new ApiError(404, 'not-found');
+    if (!mine && (r.blocked || !(r.listed && shown.length > 0))) throw new ApiError(404, 'not-found');
+    if (shown.length === 0) throw new ApiError(404, 'not-found');
+    const methodId = asked ?? shown[0]!.methodId;
+    const method = f.methods.find((m) => m.methodId === methodId);
+    if (method === undefined || !shown.some((m) => m.methodId === methodId)) throw new ApiError(404, 'not-found');
     const now = deps.clock();
-    const poster = (await traderSummaries(deps.db, [r.account_id], now, viewerId)).get(r.account_id)!;
-    const card = toCard(r, poster, rateOf(r, deps.prices));
-    if (viewerId !== null && !mine) await markOpensAt(deps, viewerId, [r], [card]);
-    return { ...card, side: r.side, methodId: r.method_id, currency: r.currency, terms: r.terms, status: r.status };
+    const poster = (await traderSummaries(deps.db, [r.account_id], now, viewerId, undefined, new Map([[r.account_id, r.side === 'sell' ? 'seller' : 'buyer']]))).get(r.account_id)!;
+    // Review M5: the poster's own view prices every band; anyone else, the bands they qualify for.
+    const card = toCard(r, poster, f, currency, method, amount, deps.prices, shown, mine ? null : await viewerCompleted(deps.db, viewerId));
+    if (viewerId !== null && !mine) await markOpensAt(deps, viewerId, [r], new Map([[r.id, f]]), [card]);
+    return { ...card, side: r.side, methodId, terms: r.terms, status: r.status };
   });
 
   /**
    * Task 36, My offers: every live and paused offer of mine, newest first. Removed offers are gone.
    */
-  app.get('/v1/account/offers', { preHandler: requireTraderStaleOk }, async (req): Promise<MyOffer[]> => {
+  app.get('/v1/account/offers', { preHandler: requireSeeOffers }, async (req): Promise<MyOffer[]> => {
     const deps = req.server.deps;
     const accountId = req.auth!.accountId;
     const { rows } = await deps.db.query<OfferRow & { created_at: Date }>(
       `select ${OFFER_COLUMNS}, o.created_at from offers o
-        where o.account_id = $1 and o.status <> 'removed' order by o.created_at desc, o.id`,
+        where o.account_id = $1 and o.status <> 'removed' and ${MARKET_PRICED} order by o.created_at desc, o.id`,
       [accountId],
     );
     // Why a live offer is not listed now (review M4), in LISTED's terms; no site_flags row is a stop.
-    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean }>(
+    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean; recovery: boolean }>(
       `select not coalesce((select f.trading_paused = false from site_flags f), false) as paused,
-              exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held`,
+              exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held,
+              ${recoveryHoldHidesSql('$1::uuid')} as recovery`,
       [accountId],
     );
+    // Hold model v3's recovery-code hold before main's pending review: the account-wide hold is the
+    // reason while it lasts (its sessions cannot rate a trade meanwhile anyway).
     const accountHidden = why[0]!.paused
       ? 'trading-paused'
       : why[0]!.held
         ? 'trading-hold'
-        : (await hasPendingReview(deps.db, accountId, deps.clock()))
-          ? 'review-pending'
-          : null;
+        : why[0]!.recovery
+          ? 'recovery-hold'
+          : (await hasPendingReview(deps.db, accountId, deps.clock()))
+            ? 'review-pending'
+            : null;
+    const flex = await loadFlex(deps.db, rows.map((r) => r.id));
     return rows.map((r) => {
-      const p = pricingOf(r);
-      const rate = rateOf(r, deps.prices);
+      const f = flex.get(r.id)!;
+      const first = f.methods[0]!;
+      // Each currency priced as a card without an amount: its best band, the first method offered in it.
+      const priced = f.currencies.map((c) => {
+        const m = f.methods.find((x) => x.currencies.includes(c.currency))!;
+        return { currency: c.currency, tiers: c.tiers, ...priceFor(r.side, r.amount_unit, c.tiers, c.currency, m, null, deps.prices, null) };
+      });
+      const head = priced[0]!;
       const out: MyOffer = {
-        id: r.id, side: r.side, methodId: r.method_id, methodName: getMethod(r.method_id)?.name ?? r.method_id,
-        currency: r.currency, rate: rate === null ? null : rate.toString(),
-        pricing: p.mode === 'fixed' ? { mode: 'fixed', centsPerXmr: p.centsPerXmr.toString() } : { mode: 'market', marginBps: p.marginBps },
-        minFiatCents: r.min_fiat_cents,
-        maxFiatCents: r.max_fiat_cents, minTrades: r.min_trades, status: r.status as 'live' | 'paused',
+        id: r.id, side: r.side, methodId: first.methodId, methodName: getMethod(first.methodId)?.name ?? first.methodId,
+        currency: head.currency, rate: head.rate === null ? null : head.rate.toString(),
+        pricing: head.pricing,
+        ...amountsOf(r.amount_unit, head.tiers, head.currency, head.rate),
+        tiers: head.tiers.map(copyTier),
+        currencies: priced.map((c) => ({ currency: c.currency, rate: c.rate === null ? null : c.rate.toString(), tiers: c.tiers.map(copyTier) })),
+        methods: f.methods.map((m) => ({
+          methodId: m.methodId, methodName: getMethod(m.methodId)?.name ?? m.methodId, adjustBps: m.adjustBps, instructions: m.instructions,
+          currencies: [...m.currencies], instructionsByCurrency: { ...m.byCurrency }, payWindowMin: tradeProfile(m.methodId).payWindowMin,
+        })),
+        status: r.status as 'live' | 'paused',
+        payWindowMin: tradeProfile(first.methodId).payWindowMin,
         createdAt: r.created_at.toISOString(),
       };
       if (r.country !== null) out.country = r.country;
       if (r.status === 'live') {
-        const hidden = accountHidden ?? (isAvailable(r.method_id) ? null : 'method-unavailable');
+        // Task 34 review M4: none of its currencies has a market price now, so no list shows it (owner Q5).
+        const hidden =
+          accountHidden ??
+          (!f.methods.some((m) => isAvailable(m.methodId)) ? 'method-unavailable'
+          : f.currencies.every((c) => deps.prices.current(c.currency) === null) ? 'no-price'
+          : null);
         if (hidden !== null) out.hidden = hidden;
       }
       return out;
@@ -646,7 +1159,8 @@ export function offerRoutes(app: FastifyInstance): void {
    * all-or-nothing. Every offer that may switch does, every one that may not stays as it was and is
    * named with its reason; the reply is 200 even when every offer was refused. Turning on runs the
    * relist guards for each offer (paused site, trading hold, no usable wallet, the caps counted as
-   * relisting counts them, the method's availability), in PATCH's order: method, account, caps.
+   * relisting counts them, its methods' availability, the launch cap over every band of every
+   * currency), in PATCH's order: methods, account, caps, launch cap.
    * Turning off has no guard: it always succeeds, under a hold, during an emergency stop and on a
    * stale Terms version too (R10 lead decision 2026-10-29); turning on needs the current Terms
    * (403 `terms-required` for the whole call). The web always sends explicit ids (review M1) in
@@ -657,7 +1171,7 @@ export function offerRoutes(app: FastifyInstance): void {
    * take of the account run one at a time), then site_flags `for share` (turning on only), then the
    * account's offer rows `for update`.
    */
-  app.post('/v1/account/offers/status', { preHandler: requireTraderStaleOk }, async (req) => {
+  app.post('/v1/account/offers/status', { preHandler: requirePauseOffers }, async (req) => {
     const deps = req.server.deps;
     const body = req.body;
     if (!isObject(body) || Object.keys(body).sort().join(',') !== 'ids,status') throw bad();
@@ -672,7 +1186,7 @@ export function offerRoutes(app: FastifyInstance): void {
     } else throw bad();
     const accountId = req.auth!.accountId;
     // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
-    if (status === 'live') await assertTermsCurrent(deps, accountId);
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!);
     // Task 17: no offer goes on during the account's 24-hour hold (403 `recovery-hold` for the whole call).
     if (status === 'live') {
       const until = await holdUntil(deps, accountId, req.server.events);
@@ -685,13 +1199,20 @@ export function offerRoutes(app: FastifyInstance): void {
       const refusedAll = status === 'live' ? await accountRefusal(client, accountId, now) : null;
       const caps = status === 'live' ? await loadOfferCaps(client) : null;
       // Every live or paused offer of mine (the caps count them all), newest first as on the list.
-      const { rows: mine } = await client.query<{ id: string; side: Side; method_id: string; currency: string; status: 'live' | 'paused' }>(
-        `select id, side, method_id, currency, status from offers where account_id = $1 and status <> 'removed'
-          order by created_at desc, id for update`,
+      // An offer's methods are in offer_methods, written once at post (never changed).
+      const { rows: mine } = await client.query<{ id: string; side: Side; amount_unit: AmountUnit; methods: string[]; status: 'live' | 'paused'; market: boolean }>(
+        `select o.id, o.side, o.amount_unit, o.status, ${MARKET_PRICED} as market,
+                array(select m.method_id from offer_methods m where m.offer_id = o.id order by m.position) as methods
+           from offers o where o.account_id = $1 and o.status <> 'removed'
+          order by o.created_at desc, o.id for update of o`,
         [accountId],
       );
-      const byId = new Map(mine.map((o) => [o.id, o]));
-      const targets = wanted === 'all' ? mine.map((o) => o.id) : wanted;
+      // Their currencies and bands, for the launch cap (turning on only; written once at post).
+      const flex = status === 'live' ? await loadFlex(client, mine.map((o) => o.id)) : null;
+      // A row stored as fixed (MARKET_PRICED) is never switched: not-found, as PATCH answers. The caps
+      // still count it, as assertMayPost does (J-02 leaves the caps alone).
+      const byId = new Map(mine.filter((o) => o.market).map((o) => [o.id, o]));
+      const targets = wanted === 'all' ? [...byId.keys()] : wanted;
       const out: OfferSwitchResult[] = [];
       const switched: string[] = [];
       for (const id of targets) {
@@ -705,14 +1226,18 @@ export function offerRoutes(app: FastifyInstance): void {
           continue;
         }
         if (status === 'live') {
-          // PATCH's order (review N1): the method first, then the account's guards, then the caps.
-          let refused: OfferSwitchRefusal | null = isAvailable(o.method_id) ? refusedAll : 'method-unavailable';
+          // PATCH's order (review N1): the methods first (every one may be offered now, as at post),
+          // then the account's guards, then the caps.
+          let refused: OfferSwitchRefusal | null = o.methods.every((m) => isAvailable(m)) ? refusedAll : 'method-unavailable';
           if (refused === null) {
-            // As relisting counts: every other live or paused offer of mine (this one left out).
+            // As relisting counts: every other live or paused offer of mine on this side (this one left out).
             let same = 0;
-            for (const x of mine) if (x.id !== id && x.side === o.side && x.method_id === o.method_id && x.currency === o.currency) same++;
-            if (same >= caps!.perMarket || mine.length - 1 >= caps!.total) refused = 'too-many-offers';
+            for (const x of mine) if (x.id !== id && x.side === o.side) same++;
+            if (same >= caps![o.side]) refused = 'too-many-offers';
           }
+          // Then the launch cap, as relisting checks it (launch-rules review F1): every band of every
+          // currency; an unpriced currency is skipped and stays hidden (OWNER QUESTION p11-95).
+          if (refused === null) refused = offerLaunchCapRefusal(o.amount_unit, flex!.get(id)!.currencies, deps.prices, true);
           if (refused !== null) {
             out.push({ id, status: o.status, refused });
             continue;
@@ -727,7 +1252,7 @@ export function offerRoutes(app: FastifyInstance): void {
         ]);
         // Task 18: one audit row per offer a team member switched, in this transaction.
         for (const id of switched) {
-          await auditMember(client, req.auth!, { action: status === 'paused' ? 'offer-paused' : 'offer-relisted', detail: { offerId: id } }, now);
+          await auditMember(client, req.auth!, { action: status === 'paused' ? 'offer-paused' : 'offer-relisted', offerId: id }, now);
         }
       }
       return out;

@@ -64,13 +64,13 @@ describe('owner lockout', () => {
     // The in-memory start budget refills within a minute; nothing about the owner is stored.
     t.setNow(new Date(MON_NOON.getTime() + 2 * MIN));
     const { b, res } = await ownerLogin(owner.keys[0]!);
-    expect(res.json()).toEqual({ status: 'ok' });
+    expect(res.json(), res.body).toEqual({ status: 'ok' });
     expect((await b.get('/staff/v1/me')).json()).toMatchObject({ role: 'owner' });
   }, 300_000);
 
   it('the owner logs in with the spare key alone', async () => {
     const { res } = await ownerLogin(owner.keys[1]!);
-    expect(res.json()).toEqual({ status: 'ok' });
+    expect(res.json(), res.body).toEqual({ status: 'ok' });
   });
 
   it('switch-off, hours, role and delete targeting the owner each get owner-protected, even from the owner', async () => {
@@ -104,10 +104,14 @@ describe('owner lockout', () => {
     const before = await list();
     expect(before).toHaveLength(2);
     // Removing a key goes through the tapped account route (lead review 7 Nov I-1).
-    const delKey = async (id: string) =>
-      owner.browser.send('DELETE', `/staff/v1/account/methods/security-key/${id}`, {
-        tapId: await tap(owner, { kind: 'remove-method', methodType: 'security-key', methodId: id }, owner.keys[1]),
+    // Owner G4: both owner keys tap (the second by keys[0] unless `second` is false).
+    const delKey = async (id: string, second = true) => {
+      const intent = { kind: 'remove-method' as const, methodType: 'security-key' as const, methodId: id };
+      return owner.browser.send('DELETE', `/staff/v1/account/methods/security-key/${id}`, {
+        tapId: await tap(owner, intent, owner.keys[1]),
+        ...(second ? { secondTapId: await tap(owner, intent, owner.keys[0]) } : {}),
       });
+    };
     expect((await owner.browser.send('DELETE', `/staff/v1/owner/keys/${before[0]!.id}`)).statusCode).toBe(404);
     // Two keys: removing either is refused.
     const del = await delKey(before[0]!.id);
@@ -124,8 +128,15 @@ describe('owner lockout', () => {
     expect(errorOf(noTap)).toBe('tap-invalid');
     const other = await tap(owner, { kind: 'add-owner-key', credentialId: third.credentialId, publicKeySha256: 'b'.repeat(64) });
     expect(errorOf(await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId: other }))).toBe('tap-invalid');
-    const tapId = await tap(owner, { kind: 'add-owner-key', credentialId: third.credentialId, publicKeySha256 }, owner.keys[1]);
-    const fin = await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId });
+    const addIntent = { kind: 'add-owner-key' as const, credentialId: third.credentialId, publicKeySha256 };
+    // Owner G4: one key's tap alone, or the same key twice, is not both keys.
+    const one = await tap(owner, addIntent, owner.keys[1]);
+    expect(errorOf(await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId: one }))).toBe('both-owner-keys-required');
+    const same = [await tap(owner, addIntent, owner.keys[1]), await tap(owner, addIntent, owner.keys[1])];
+    expect(errorOf(await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId: same[0], secondTapId: same[1] }))).toBe('both-owner-keys-required');
+    const tapId = await tap(owner, addIntent, owner.keys[1]);
+    const secondTapId = await tap(owner, addIntent, owner.keys[0]);
+    const fin = await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId, secondTapId });
     expect(fin.statusCode, fin.body).toBe(201);
     expect(fin.json()).toEqual({ id: expect.any(String), keyCheckCode: keyCheckCode(new Uint8Array(third.cosePublicKey)) });
     expect(await logEntries(t.deps, 'owner.key-added')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ credentialId: fin.json().id }) });
@@ -140,7 +151,7 @@ describe('owner lockout', () => {
     expect(before.map((k) => k.id)).toContain(gone);
     expect((await delKey(gone)).statusCode).toBe(204);
     expect(await logEntries(t.deps, 'staff.method-removed')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ method: 'security-key' }) });
-    expect(errorOf(await delKey(fin.json().id))).toBe('owner-needs-two-keys');
+    expect(errorOf(await delKey(fin.json().id, false))).toBe('owner-needs-two-keys');
   });
 
   it('the owner key routes are the owner\'s only', async () => {
@@ -157,9 +168,10 @@ describe('owner lockout', () => {
       const res = await send(method, url, { password: 'correct horse battery staple 1', confirmToken: 'x' });
       expect({ url, error: errorOf(res) }).toEqual({ url, error: 'method-not-allowed' });
     }
-    // The backup login (TOTP or a recovery code) and the password login: the same answer as any
-    // wrong name (no oracle), never a session.
-    for (const kind of ['totp', 'recovery-code']) {
+    // The backup login (a recovery code; an authenticator code is no backup, refused for everyone
+    // before any lookup) and the password login: the same answer as any wrong name (no oracle),
+    // never a session.
+    for (const kind of ['recovery-code']) {
       const res = await t.trader.inject({
         method: 'POST', url: '/v1/login/backup', headers: { origin: 'https://x2f.test' },
         payload: { loginName: owner.loginName, kind, code: '123456', deviceLabel: 'x' },
@@ -182,16 +194,16 @@ describe('owner lockout', () => {
   });
 
   it('maintenance and the emergency stop leave every staff route working', async () => {
-    await t.deps.db.query('update site_flags set trading_paused = true, maintenance_since = $1', [MON_NOON]);
+    await t.deps.db.query("update site_flags set trading_paused = true, maintenance_since = $1, maintenance_kind = 'unplanned'", [MON_NOON]);
     try {
       expect((await owner.browser.get('/staff/v1/me')).statusCode).toBe(200);
       expect((await owner.browser.get('/staff/v1/members')).statusCode).toBe(200);
       expect((await owner.browser.get('/staff/v1/owner/keys')).statusCode).toBe(200);
       // keys[0] was removed by the owner-key test above; the spare logs in.
       const { res } = await ownerLogin(owner.keys[1]!);
-      expect(res.json()).toEqual({ status: 'ok' });
+      expect(res.json(), res.body).toEqual({ status: 'ok' });
     } finally {
-      await t.deps.db.query('update site_flags set trading_paused = false, maintenance_since = null');
+      await t.deps.db.query('update site_flags set trading_paused = false, maintenance_since = null, maintenance_kind = null');
     }
   });
 });

@@ -2,8 +2,9 @@
 // "now" here is the server's clock (useServerClock), never the device's alone (Review Focus 3).
 // Copy is from the DisputeOpen, DisputeRoom and DisputeRuling boards; lines marked COPY-UNSIGNED
 // have no board yet (spec wording or Plan 4 A8) and wait for the owner's sign-off.
-import { TIMERS, escrowPlan, formatXmr } from '@x2f/trade';
-import { formatRemaining } from '../../ui/Countdown.js';
+import { TIMERS, escrowPlan, formatXmr, formatXmrExact } from '@x2f/trade';
+import { formatRemaining, type DurationPart } from '../../ui/Countdown.js';
+import { formatDateTime, formatUtcTime } from '../../ui/dates.js';
 import type { DisputeReason, DisputeTrade, DisputeView, Party, Reason, RulingView } from './api.js';
 
 /** The buyer's reasons, from the DisputeOpen board. */
@@ -48,12 +49,37 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
 /**
  * Whether this side may open a dispute now, mirroring the state machine's `open-dispute` rules
  * (the API decides; this only keeps the screen from sending what would be refused):
- * - securing or secured: either side;
- * - paid: the seller at once, the buyer only from the end of the seller's confirm window;
- * - settling: either side once the signing window has passed;
+ * - securing or secured: the seller only (the buyer can cancel instead until "I've paid");
+ * - paid: either side only from confirmBy, the payment method's full wait from "I've paid"
+ *   (owner p9-4, 8 Nov; the seller used to dispute at once);
+ * - settling: either side once the signing window has passed; the buyer at once while the seller's
+ *   cancel refund settles (`auto-refund`: a buyer who paid late, owner 8 Nov p9-2);
  * - refunded: the buyer, until 48 hours after the refund (owner 2026-10-29; was 90 days).
  * `wait` carries the explanation shown instead of sending anything.
  */
+/**
+ * The wait before a dispute in words, as the owner says them (2026-11-07 F9): "90 minutes", "3 hours",
+ * "24 hours", "2 days", "3 days", "4 days". Whole days from 2 days, whole hours from 2 hours,
+ * otherwise minutes.
+ */
+export function waitInWords(min: number): string {
+  const { n, unit } = waitPart(min);
+  const word = unit === 'd' ? 'days' : unit === 'h' ? 'hours' : n === '1' ? 'minute' : 'minutes';
+  return `${n} ${word}`;
+}
+
+/**
+ * The same wait as one number and unit, the way a Duration writes it: "90 min", "24 h", "4 d" (the
+ * BuyerPaidWaiting board's "90 min" in step 3; the duration rule, design review P1-4). The owner's
+ * units, never "1 h 30 min" for the 90-minute wait.
+ */
+export function waitPart(min: number): DurationPart {
+  const DAY = 24 * 60;
+  if (min >= 2 * DAY && min % DAY === 0) return { n: String(min / DAY), unit: 'd' };
+  if (min >= 120 && min % 60 === 0) return { n: String(min / 60), unit: 'h' };
+  return { n: String(min), unit: 'min' };
+}
+
 export type Entry = { kind: 'open' } | { kind: 'wait'; text: string; until: Date } | { kind: 'opened' } | { kind: 'none' };
 
 export function disputeEntry(t: DisputeTrade, now: Date): Entry {
@@ -62,21 +88,28 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
   switch (t.state) {
     case 'securing':
     case 'secured':
-      return { kind: 'open' };
+      // Never the buyer before "I've paid" (design proto review P1, 8 Nov): the machine refuses it (too-early).
+      return t.role === 'buyer' ? { kind: 'none' } : { kind: 'open' };
     case 'paid': {
-      if (t.role === 'seller') return { kind: 'open' };
+      // Either side from confirmBy, the server's time, which maintenance moves (owner p9-4; 2026-11-06 Q10).
       const by = ms(t.confirmBy);
-      const paid = ms(t.paidAt);
-      if (by === null) return { kind: 'none' };
+      if (ms(t.paidAt) === null || by === null) return { kind: 'none' };
       if (n >= by) return { kind: 'open' };
-      const window = paid === null ? '' : formatRemaining(by - paid, 'minutes');
+      // The rule in working time ("within 90 minutes"), however long a maintenance paused it.
+      // DESIGN: wording (the wait in words only; the sentence is unchanged).
+      const window = waitInWords(t.confirmWindowMin);
       return {
         kind: 'wait',
         until: new Date(by),
-        text: `You can open a dispute if the seller hasn't confirmed within ${window} of your payment.`,
+        text:
+          t.role === 'seller'
+            ? // COPY-UNSIGNED (owner p9-4: the other side waits the method's full time too).
+              `You can open a dispute if the payment hasn't arrived within ${window} of the buyer marking it paid.`
+            : `You can open a dispute if the seller hasn't confirmed within ${window} of your payment.`,
       };
     }
     case 'settling': {
+      if (t.role === 'buyer' && t.settling === 'auto-refund') return { kind: 'open' };
       const by = ms(t.settleBy);
       return by !== null && n > by ? { kind: 'open' } : { kind: 'none' };
     }
@@ -143,37 +176,35 @@ export function isCancelRefund(settling: SettleKind | null, dispute: DisputeTrad
 }
 
 /**
- * An XMR amount inside a sentence, as the boards write it ("1.25 XMR"): six decimals with the
- * trailing zeros dropped, keeping at least two. Amounts shown on their own use `Amount` (six).
+ * An XMR amount inside a sentence ("1.250000 XMR"): the kit's 6 places, trailing zeros kept, cut and
+ * never rounded up (design kit handoff 1.5, kit review 5), like amounts shown on their own.
  */
 export function xmrInText(atomic: string | bigint): string {
-  const six = formatXmr(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
-  const [whole, frac = ''] = six.split('.');
-  const kept = frac.replace(/0+$/, '').padEnd(2, '0');
-  return `${whole}.${kept}`;
+  return formatXmr(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
 }
 
-const pad = (n: number) => String(n).padStart(2, '0');
-
-/** "10:14", in the viewer's own time zone. */
-export function clockTime(d: Date, timeZone?: string): string {
-  const parts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...(timeZone ? { timeZone } : {}) }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('hour')}:${get('minute')}`;
+/**
+ * As xmrInText, but for an amount a side must send (review kit round 1, finding 1): exact to the
+ * atomic unit (formatXmrExact), so 0.610529733574 is never written as 0.610529. Like every XMR
+ * figure (design kit handoff 1.5) it keeps at least 6 places: an aligned amount reads "1.250000".
+ */
+export function xmrInTextExact(atomic: string | bigint): string {
+  return formatXmrExact(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
 }
 
-/** "Fri 16 Oct, 10:14" (the boards' date), in the viewer's own time zone. */
-export function dayTime(d: Date, timeZone?: string): string {
-  const parts = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', ...(timeZone ? { timeZone } : {}) }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('weekday')} ${get('day')} ${get('month')}, ${clockTime(d, timeZone)}`;
+/** "10:14 UTC": a time under a heading that names the day (ui/dates.ts, the one format; review M1). */
+export function clockTime(d: Date): string {
+  return formatUtcTime(d);
+}
+
+/** "16 Oct 2026, 10:14 UTC" (ui/dates.ts, the one date format; review M1). */
+export function dayTime(d: Date): string {
+  return formatDateTime(d);
 }
 
 /** Design X5 (7 Nov): "6 Nov 2026, 15:00 UTC", shown in mono; the same for every viewer. */
 export function utcDateTime(d: Date): string {
-  const parts = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')} ${get('month')} ${get('year')}, ${clockTime(d, 'UTC')} UTC`;
+  return formatDateTime(d);
 }
 
 /** "in 23 h" or "in 40 min" (whole hours down, minutes up, as the DisputeRoom board's "(in 23 h)"). */
@@ -232,7 +263,10 @@ export interface RulingCopy {
 /** The XMR a ruling pays to the side it favours, in atomic units (the escrow fully funded). */
 export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: string, poster: Party): bigint {
   const amount = BigInt(amountAtomic);
-  if (outcome === 'release-to-buyer' && poster === 'buyer') return amount - escrowPlan({ amountAtomic: amount, poster }).feeAtomic;
+  const plan = escrowPlan({ amountAtomic: amount, poster });
+  if (outcome === 'release-to-buyer' && poster === 'buyer') return amount - plan.feeAtomic;
+  // Owner g63 (7 Nov): a full reversal takes no fee, so the seller gets back all it funded.
+  if (outcome === 'refund-to-seller') return plan.sellerFundsAtomic;
   return amount;
 }
 
@@ -253,10 +287,13 @@ export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: stri
 export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date, poster: Party): RulingCopy {
   const r = d.ruling;
   if (r === null) throw new Error('no ruling');
-  const amount = `${xmrInText(amountAtomic)} XMR`;
+  // What the seller must send on a seller-sends-xmr ruling: exact, never cut at 6 places.
+  const amount = `${xmrInTextExact(amountAtomic)} XMR`;
   // Lead review 7 Nov: what the ruling pays out, as `payoutsFor('dispute-buyer' | 'dispute-seller')`
-  // builds it for a fully funded escrow. The poster pays the 1% fee: on a buyer's ad the buyer gets
-  // the amount less the fee; the seller's refund is the amount either way.
+  // builds it for a fully funded escrow. A release completes the trade and the poster pays the 1%:
+  // on a buyer's ad the buyer gets the amount less the fee. A refund is a full reversal (owner g63):
+  // no fee, the seller gets back everything it funded.
+  // TODO(design, owner g63): the explanation of the fee rule for users (DisputeView.fee).
   const paidOut = `${xmrInText(paidOutAtomic(r.outcome, amountAtomic, poster))} XMR`;
   const otherSide: Party = me === 'buyer' ? 'seller' : 'buyer';
   const nameOf = (p: Party) => (p === me ? 'you' : other);

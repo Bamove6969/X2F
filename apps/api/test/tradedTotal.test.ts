@@ -106,7 +106,7 @@ describe('the running totals', () => {
     await applyEvent(deps, plain, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
     expect(await totals(seller.id)).toBeNull();
     const disputed = await trade(seller, buyer, xmr(30), { state: 'secured' });
-    expect((await buyer.browser.post(`/v1/trades/${disputed}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
+    expect((await seller.browser.post(`/v1/trades/${disputed}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     await applyEvent(deps, disputed, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
     expect((await totals(seller.id))!.own_xmr_atomic).toBe(xmr(30).toString());
     expect((await totals(buyer.id))!.own_xmr_atomic).toBe(xmr(30).toString());

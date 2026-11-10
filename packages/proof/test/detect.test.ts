@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { amountBoxes, detectSensitive, detectSensitiveText, type HiddenKind, type OcrWord, padAndMerge, type Region } from '../src/index.js';
-import { type DetectOptions, UPI_IDS } from '../src/detect.js';
+import { type DetectOptions, UPI_IDS, codePattern } from '../src/detect.js';
 import { covered, ocr } from './ocr.js';
 
 const KEEP = { tradeCode: 'K7M2-9QXA-4FTR-8WPN', fiatCents: 41250n, exponent: 2 };
@@ -77,7 +77,7 @@ describe('detectSensitive: account numbers', () => {
   });
 
   it('masks masked tails like ••••1234 and ****1234', () => {
-    expect(masked(ocr('Visa ••••1234'))).toEqual([['••••1234', 'account']]);
+    expect(masked(ocr('Visa ••••1234'))).toEqual([['••••1234', 'card']]); // the label names it (owner G17)
     expect(masked(ocr('From account ****1234'))).toContainEqual(['****1234', 'account']);
   });
 
@@ -307,11 +307,11 @@ describe('review round 1 (2026-10-30)', () => {
   });
 
   it('M1: masked tails with dots, an ellipsis, degree signs or "ending in"', () => {
-    expect(masked(ocr('Card ending ...1234'))).toEqual([['...1234', 'account']]);
-    expect(masked(ocr('Card ending …1234'))).toEqual([['…1234', 'account']]);
-    expect(masked(ocr('Card °°°°1234'))).toEqual([['°°°°1234', 'account']]);
+    expect(masked(ocr('Card ending ...1234'))).toEqual([['...1234', 'card']]); // the label names it (owner G17)
+    expect(masked(ocr('Card ending …1234'))).toEqual([['…1234', 'card']]); // the label names it (owner G17)
+    expect(masked(ocr('Card °°°°1234'))).toEqual([['°°°°1234', 'card']]); // the label names it (owner G17)
     expect(masked(ocr('Account ending in 1234'))).toEqual([['1234', 'account']]);
-    expect(masked(ocr('Card ending 1234'))).toEqual([['1234', 'account']]);
+    expect(masked(ocr('Card ending 1234'))).toEqual([['1234', 'card']]); // the label names it (owner G17)
   });
 
   it('M2: one OCR look-alike inside a digit run does not leave its group visible', () => {
@@ -401,9 +401,10 @@ describe('review round 2 (2026-10-30)', () => {
 
   it('R2-M1: dot and ellipsis tails and "ending" need exactly 4 digits', () => {
     for (const s of ['Waited ... 15 minutes', 'Waited.... 15 minutes', 'ok … 20 min', 'trade ending in 10 minutes']) expect(detectSensitiveText(s), s).toEqual([]);
-    expect(detectSensitiveText('card ending in 1234')).toEqual(['account']);
-    expect(detectSensitiveText('card ...1234')).toEqual(['account']);
-    expect(detectSensitiveText('card …1234')).toEqual(['account']);
+    // The `card` label names the kind (owner G17).
+    expect(detectSensitiveText('card ending in 1234')).toEqual(['card']);
+    expect(detectSensitiveText('card ...1234')).toEqual(['card']);
+    expect(detectSensitiveText('card …1234')).toEqual(['card']);
   });
 
   it('R2-M2: the look-alike pass is not shifted by an emoji', () => {
@@ -589,13 +590,13 @@ describe('review round 3 (2026-10-30)', () => {
   it('R3-M5: spaced dates, date ranges, "ending in" a year, single-x tails', () => {
     for (const s of ['16. 10. 2026', 'from 16.10.2026-17.10.2026', 'from 16.10.2026 – 17.10.2026', 'contract ending in 2026']) expect(detectSensitiveText(s), s).toEqual([]);
     expect(maskedTexts(ocr('Sent 16. 10. 2026'))).toEqual([]);
-    expect(detectSensitiveText('card ending in 1234')).toEqual(['account']);
+    expect(detectSensitiveText('card ending in 1234')).toEqual(['card']); // the label names it (owner G17)
     expect(maskedTexts(ocr('Card ending in 2026'))).toEqual(['2026']);
     expect(masked(ocr('Acc x1234'))).toEqual([['x1234', 'account']]);
   });
 
   it('other masked forms from the round-3 table', () => {
-    expect(masked(ocr('Tel 08031234567'))).toEqual([['08031234567', 'account']]);
+    expect(masked(ocr('Tel 08031234567'))).toEqual([['08031234567', 'phone']]); // the label names it (owner G17)
     expect(detectSensitiveText('call 08031234567')).toEqual(['account']);
   });
 });
@@ -630,7 +631,7 @@ describe('review round 4 (2026-10-30)', () => {
   });
 
   it('R4-I1: format characters in OCR words, with regions on the original columns', () => {
-    expect(masked(ocr('Tel 06\u200b12\u200b34\u200b56\u200b78'))).toEqual([['06\u200b12\u200b34\u200b56\u200b78', 'account']]);
+    expect(masked(ocr('Tel 06\u200b12\u200b34\u200b56\u200b78'))).toEqual([['06\u200b12\u200b34\u200b56\u200b78', 'phone']]); // the `Tel` label (owner G17)
     expect(masked(ocr('Card 4111\u00ad1111\u00ad1111\u00ad1111'))).toEqual([['4111\u00ad1111\u00ad1111\u00ad1111', 'card']]);
     // The kept code, a deleted character, then a number: 29 columns, the number starts at column 21.
     const rs = detectSensitive(ocr('K7M2-9QXA-4FTR-8WPN\u200b/12345678'), KEEP);
@@ -645,9 +646,10 @@ describe('review round 4 (2026-10-30)', () => {
       expect(detectSensitiveText(`card 4111${d}1111${d}1111${d}1111`), d).toEqual(['card']);
     }
     expect(masked(ocr('Tel 090ー1234ー5678'))).toEqual([['090ー1234ー5678', 'phone']]);
-    // `4111⁃ 1111 …` reads as `4111- 1111 …`: masked whole, as a phone, the same as with an ASCII hyphen.
-    expect(masked(ocr('Card 4111- 1111 1111 1111'))).toEqual(['4111-', '1111', '1111', '1111'].map((t) => [t, 'phone']));
-    expect(masked(ocr('Card 4111⁃ 1111 1111 1111'))).toEqual(['4111⁃', '1111', '1111', '1111'].map((t) => [t, 'phone']));
+    // `4111⁃ 1111 …` reads as `4111- 1111 …`: masked whole, the same as with an ASCII hyphen (as a
+    // card, after the `Card` label, owner G17).
+    expect(masked(ocr('Card 4111- 1111 1111 1111'))).toEqual(['4111-', '1111', '1111', '1111'].map((t) => [t, 'card']));
+    expect(masked(ocr('Card 4111⁃ 1111 1111 1111'))).toEqual(['4111⁃', '1111', '1111', '1111'].map((t) => [t, 'card']));
     // Normalisation does not invent details.
     for (const s of ['コーヒー 2 杯、10〜15 分', 'took 10ー15 min', 'Code K7M2ー9QXAー4FTRー8WPN done']) expect(detectSensitiveText(s), s).toEqual([]);
   });
@@ -905,7 +907,7 @@ describe('owner (2026-11-02): the automatic blur never hides the amount', () => 
     [['Fee 1.250.000'], ['1.250.000'], 125000000n, 2],
     [["1'250'000"], ["1'250'000"], 125000000n, 2],
     [['Acct 98765432', '250000'], ['250000'], 25000000n, 2],
-    [['Amount sent to acct 12345678'], ['12345678'], 1234567800n, 2],
+    // Not `Amount sent to acct 12345678`: after `acct` it is the account (owner F15, detect-labels.test.ts).
     [['Ref 1234567890123456'], ['1234567890123456'], 1234567890123456n, 0],
     // Next to details that are masked.
     [['Paid to Mira Kowalski $412.50'], ['$412.50'], 41250n, 2],
@@ -960,7 +962,8 @@ describe('owner (2026-11-02): the automatic blur never hides the amount', () => 
     // The trade amount without a label: "most likely just another spot where the amount is shown".
     const keep = { ...KEEP, fiatCents: 1234567800n };
     expect(maskedTexts(ocr('Ref 12345678'), keep)).toEqual([]);
-    expect(maskedTexts(ocr('Amount sent to acct 12345678'), keep)).toEqual([]);
+    // Owner F15: the words right before the digits decide; after `acct` it is the account.
+    expect(maskedTexts(ocr('Amount sent to acct 12345678'), keep)).toEqual(['12345678']);
     expect(amountBoxes(ocr('Ref 12345678'), keep)).toEqual([{ x0: 40, y0: 0, x1: 120, y1: 16 }]);
   });
 
@@ -1071,5 +1074,13 @@ describe('review RV4-M3: name labels', () => {
     expect(maskedTexts(ocr('Enviado para Ana Souza'))).toEqual(['Ana', 'Souza']);
     expect(maskedTexts(ocr('Para: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
     expect(maskedTexts(ocr('Transferencia Para: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
+  });
+});
+
+describe('codePattern: regex metacharacters', () => {
+  it('matches them literally', () => {
+    const re = codePattern('A.*B');
+    expect(re.test('A.*B')).toBe(true);
+    expect(re.test('AxxB')).toBe(false);
   });
 });

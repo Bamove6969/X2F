@@ -16,13 +16,14 @@ import {
   loginWithSecurityKey,
   walletAction,
   walletsAction,
-  isHeld,
+  isStaged,
   withConfirm,
   type AuthApi,
-  type Held,
+  type Staged,
 } from '../src/index.js';
 import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
+import { SIG } from './helpers/routes.js';
 
 const GOOD = 'Correct-Horse-9';
 const LABEL = 'Browser on Linux';
@@ -66,7 +67,7 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   const username = uniqueName('pgp');
   const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
   await j.api.registerPgpFinish({
-    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version,
+    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG,
   });
   return { username, key };
 }
@@ -100,14 +101,17 @@ describe('onboarding', () => {
     const own = jar();
     const { version } = await own.api.getTerms();
     const username = uniqueName('pass');
-    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
     const me = await own.api.me();
     expect(me.methods).toEqual(['password']);
     expect(me.suggestions).toEqual(['add-authenticator', 'add-backup']);
-    expect(me.logoutTimer).toEqual({ idleHours: 12, adjustable: true });
-    await expect(own.api.setLogoutTimer({ idleHours: 4 })).resolves.toEqual({ idleHours: 4, adjustable: true });
-    await expect(own.api.getLogoutTimer()).resolves.toEqual({ idleHours: 4, adjustable: true });
-    expect((await own.api.me()).logoutTimer).toEqual({ idleHours: 4, adjustable: true });
+    // Session length (owner, 2 Nov 2026): nothing chosen after the login, then the chosen length;
+    // staying logged in re-proves the password through the confirm route.
+    expect(me.session).toMatchObject({ lengthHours: null, choices: [2, 4, 8, 12], canExtend: true });
+    await expect(own.api.setSessionLength({ hours: 4 })).resolves.toMatchObject({ lengthHours: 4 });
+    expect((await own.api.me()).session).toMatchObject({ lengthHours: 4 });
+    const { confirmToken } = await own.api.confirmPassword({ password: GOOD, action: { kind: 'extend-session' } });
+    await expect(own.api.extendSession({ confirmToken })).resolves.toMatchObject({ lengthHours: 4 });
   });
 
   it('a PGP account that adds a password still has no backup (R11)', async () => {
@@ -168,8 +172,8 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
 });
 
 /** Wallets added at once (these sessions' logins are strong or in their sign-up window: never a Task 17 hold). */
-function addedNow<T>(r: T[] | Held): T[] {
-  if (isHeld(r)) throw new Error('the add waited out the 24-hour hold');
+function addedNow<T>(r: T[] | Staged): T[] {
+  if (isStaged(r)) throw new Error('the add was staged for the 24-hour wait');
   return r;
 }
 
@@ -180,7 +184,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     const own = jar();
     const { version } = await own.api.getTerms();
     const login = uniqueName('bat');
-    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
     await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 });
 
     const first = addedNow(await own.api.addWallets({ wallets: drafts([fakeAddress(), fakeAddress()]) }));
@@ -209,7 +213,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     const own = jar();
     const { version } = await own.api.getTerms();
     const login = uniqueName('bat');
-    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
     await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
     const a = [fakeAddress(), fakeAddress()];
     const b = [fakeAddress(), fakeAddress()];
@@ -248,7 +252,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     const own = jar();
     const { version } = await own.api.getTerms();
     const login = uniqueName('bat');
-    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
     const e = apiError(await failure(own.api.addWallets({ wallets: drafts([fakeAddress(), 'not-an-address']) })));
     expect(e.status).toBe(400);
     expect(e.code).toBe('address-invalid');
@@ -265,7 +269,7 @@ describe('new-device approval (Plan 2 Task 16)', () => {
     const own = jar();
     const { version } = await own.api.getTerms();
     const username = uniqueName('appr');
-    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
     return { own, username };
   }
 

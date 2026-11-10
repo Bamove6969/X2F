@@ -24,17 +24,17 @@ type Raw = Record<string, unknown> & { id: string; status: string };
 const RAW: Raw[] = [
   {
     id: A, side: 'sell', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', rate: '33165',
-    pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0,
+    pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: null,
     status: 'live', createdAt: '2026-10-29T10:00:00.000Z',
   },
   {
-    id: B, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '30000',
-    pricing: { mode: 'fixed', centsPerXmr: '30000' }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5,
+    id: B, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '27000',
+    pricing: { mode: 'market', marginBps: -1000 }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5,
     status: 'paused', createdAt: '2026-10-29T09:00:00.000Z',
   },
   {
     id: C, side: 'sell', methodId: 'AMAZON_GC', methodName: 'Amazon gift card', currency: 'USD', rate: null,
-    pricing: { mode: 'market', marginBps: -100 }, minFiatCents: '2500', maxFiatCents: '10000', minTrades: 0,
+    pricing: { mode: 'market', marginBps: -100 }, minFiatCents: '2500', maxFiatCents: '10000', minTrades: null,
     country: 'US', status: 'paused', createdAt: '2026-10-29T08:00:00.000Z',
   },
 ];
@@ -124,13 +124,18 @@ async function click(el: Element): Promise<void> {
 describe('the model', () => {
   it('parses the API answer strictly, hidden included', () => {
     const offers = parseMyOffers([...RAW, { ...RAW[0], id: 'x', hidden: 'trading-hold' }]);
-    expect(offers.map((o) => [o.id, o.status, o.rate])).toEqual([[A, 'live', 33165n], [B, 'paused', 30000n], [C, 'paused', null], ['x', 'live', 33165n]]);
+    expect(offers.map((o) => [o.id, o.status, o.rate])).toEqual([[A, 'live', 33165n], [B, 'paused', 27000n], [C, 'paused', null], ['x', 'live', 33165n]]);
     expect(offers[2]!.country).toBe('US');
     expect(offers[3]!.hidden).toBe('trading-hold');
+    // No minimum is null on the wire (owner, 8 Nov), 0 in the model.
+    expect(offers.map((o) => o.minTrades)).toEqual([0, 5, 0, 0]);
+    expect(() => parseMyOffers([{ ...RAW[0], minTrades: '5' }])).toThrow();
     expect(() => parseMyOffers([{ ...RAW[0], hidden: 'nope' }])).toThrow();
     expect(() => parseMyOffers([{ ...RAW[0], status: 'removed' }])).toThrow();
     expect(() => parseMyOffers([{ ...RAW[0], minFiatCents: 5000 }])).toThrow();
     expect(() => parseMyOffers({})).toThrow();
+    // There are no fixed-price offers (owner Q1): one priced as fixed does not parse.
+    expect(() => parseMyOffers([{ ...RAW[1], pricing: { mode: 'fixed', centsPerXmr: '30000' } }])).toThrow();
     expect(parseSwitch({ status: 'live', results: [{ id: A, status: 'live' }, { id: B, status: 'paused', refused: 'trading-hold' }, { id: C, refused: 'not-found' }] })).toEqual([
       { id: A, status: 'live' }, { id: B, status: 'paused', refused: 'trading-hold' }, { id: C, refused: 'not-found' },
     ]);
@@ -139,11 +144,12 @@ describe('the model', () => {
 
   it("words an offer as the board does, and an On offer nobody can see says why (M4)", () => {
     const [a, b, c] = parseMyOffers(RAW) as [MyOffer, MyOffer, MyOffer];
-    expect([offerTitle(a), offerMethods(a), offerPrice(a), offerLimits(a)]).toEqual(['Selling XMR · USD', 'Zelle', '+0.5% · follows the market', '$50 – $2,000 per trade']);
-    expect([offerTitle(b), offerPrice(b), offerLimits(b)]).toEqual(['Buying XMR · EUR', '€300.00 / XMR · Fixed price', '€12.50 – €500 per trade']);
+    expect([offerTitle(a), offerMethods(a), offerPrice(a), offerLimits(a)]).toEqual(['Selling XMR · USD', 'Zelle', '0.5% above market · follows the market', '$50 – $2,000 per trade']);
+    expect([offerTitle(b), offerPrice(b), offerLimits(b)]).toEqual(['Buying XMR · EUR', '10% below market · follows the market', '€12.50 – €500 per trade']);
     expect(offerMethods(c)).toBe('Amazon gift card (US)');
-    expect(offerPriceParts(a)).toEqual(['+0.5%', 'follows the market']);
-    expect(offerPriceParts(b)).toEqual(['€300.00 / XMR', 'Fixed price']);
+    // Design final call (10 Nov 2026): the margin in the one form everywhere (ui/margin.ts).
+    expect(offerPriceParts(a)).toEqual(['0.5% above market', 'follows the market']);
+    expect(offerPriceParts(b)).toEqual(['10% below market', 'follows the market']);
     expect(statusLine(a)).toEqual({ text: 'On · people can see and take it', tone: 'on' });
     expect(statusLine(b)).toEqual({ text: 'Off · hidden from everyone', tone: 'off' });
     expect(statusLine({ ...a, hidden: 'trading-paused' })).toEqual({ text: 'On, hidden while trading is paused', tone: 'caution' });
@@ -162,6 +168,30 @@ describe('the model', () => {
     expect(isHeld([{ ...a, hidden: 'trading-paused' }, b], false)).toBe(false);
     expect(isHeld([b], true)).toBe(true);
     expect([allHint(0, 3), allHint(3, 3), allHint(2, 3)]).toEqual(['Pick offers to turn them on or off together.', 'All 3 offers selected.', 'Some selected: 2 of 3.']);
+  });
+
+  it('J-16: an offer with several currencies and payment types lists them all; no market price in any is said (Task 34 review M4)', () => {
+    const tier = { min: '5000', max: '200000', marginBps: 50, minTrades: null, methodIds: null };
+    const multi = {
+      ...RAW[0],
+      currencies: [{ currency: 'USD', rate: '33165', tiers: [tier] }, { currency: 'CAD', rate: null, tiers: [tier] }],
+      methods: [
+        { methodId: 'ZELLE', methodName: 'Zelle', adjustBps: 0, instructions: '', currencies: ['USD'], instructionsByCurrency: {} },
+        { methodId: 'PAYPAL', methodName: 'PayPal', adjustBps: 200, instructions: 'pp', currencies: ['USD', 'CAD'], instructionsByCurrency: {} },
+      ],
+    };
+    const [m] = parseMyOffers([multi]) as [MyOffer];
+    expect(m.currencies).toEqual(['USD', 'CAD']);
+    expect(m.methodNames).toEqual(['Zelle', 'PayPal']);
+    expect([offerTitle(m), offerMethods(m)]).toEqual(['Selling XMR · USD, CAD', 'Zelle, PayPal']);
+    // An answer from before J-16 (no lists) reads as its one currency and method.
+    const [a] = parseMyOffers(RAW) as [MyOffer];
+    expect([a.currencies, a.methodNames]).toEqual([['USD'], ['Zelle']]);
+    expect(() => parseMyOffers([{ ...multi, currencies: [{ currency: 'USD' }] }])).toThrow();
+    expect(() => parseMyOffers([{ ...multi, methods: [{ methodId: 'ZELLE' }] }])).toThrow();
+    const hidden = parseMyOffers([{ ...RAW[0], hidden: 'no-price' }])[0]!;
+    expect(hidden.hidden).toBe('no-price');
+    expect(statusLine(hidden).tone).toBe('caution');
   });
 
   it('applies results, words the summary, always sends explicit ids (M1) and batches them (M5)', () => {
@@ -188,12 +218,14 @@ describe('the model', () => {
     }
     // The "can't do that" refusals get a short row line and the popup; the rest are said in the row.
     expect(refusalLine('trading-hold')).toBe('Stayed off: your account has a trading hold.');
-    expect(refusalLine('too-many-offers')).toBe('Stayed off: over the offer limit for this market.');
+    // The cap is per side now (owner 2026-11-01), not per market.
+    expect(refusalLine('too-many-offers')).toBe('Stayed off: over the offer limit.');
     expect(cantDoFor([{ id: A, status: 'paused', refused: 'no-wallet' }])).toBeNull();
     expect(cantDoFor([{ id: A, status: 'paused', refused: 'too-many-offers' }, { id: B, status: 'paused', refused: 'trading-hold' }])).toEqual({ code: 'trading-hold', count: 1 });
     expect(cantDoFor([{ id: A, refused: 'too-many-offers' }, { id: B, refused: 'too-many-offers' }, { id: C, refused: 'trading-hold' }])).toEqual({ code: 'too-many-offers', count: 2 });
-    expect(myOffersCantDoText('too-many-offers', 1)).toContain('turn this one on');
-    expect(myOffersCantDoText('too-many-offers', 2)).toContain('turn these on');
+    expect(myOffersCantDoText('too-many-offers', 1)).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then turn this one on.');
+    expect(myOffersCantDoText('too-many-offers', 2)).toBe('You can have 3 buying and 3 selling offers. Remove ones you no longer need, then turn these on.');
+    for (const n of [1, 2]) expect(myOffersCantDoText('too-many-offers', n)).not.toMatch(/market/);
   });
 });
 
@@ -211,8 +243,8 @@ describe('the My offers screen', () => {
     expect(tick(host, A).closest('label')!.className).toBe('x2f-tickbox');
     // M2: the names carry the method, price and limits. The switch is a real track with no words now.
     expect(sw(host, A).textContent).toBe('');
-    expect(nameOf(sw(host, A))).toBe('Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
-    expect(nameOf(tick(host, A))).toBe('Select Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
+    expect(nameOf(sw(host, A))).toBe('Selling XMR · USD Zelle 0.5% above market · follows the market $50 – $2,000 per trade');
+    expect(nameOf(tick(host, A))).toBe('Select Selling XMR · USD Zelle 0.5% above market · follows the market $50 – $2,000 per trade');
     expect(row(host, A).querySelector('[data-part="status"]')!.textContent).toBe('On · people can see and take it');
     // An Off offer's card is drawn dashed; a ticked one gets the ink ring (never orange).
     expect([row(host, A).getAttribute('data-on'), row(host, B).getAttribute('data-on')]).toEqual(['true', 'false']);
@@ -493,7 +525,9 @@ describe('My offers on a fold: two panes (Fold-MyOffers)', () => {
     expect(q(side, '[data-detail-offer]').getAttribute('data-detail-offer')).toBe(B);
     expect(side.textContent).toContain('Who can trade');
     expect(side.textContent).toContain('5+ completed trades');
-    expect(side.textContent).toContain('A fixed price doesn’t follow the market.');
+    // Owner Q1: every offer follows the market (there is no fixed-price line).
+    expect(side.textContent).toContain('Percent of the market price, updated as the market moves.');
+    expect(side.textContent).not.toContain('fixed price');
     const detailSwitch = q<HTMLButtonElement>(side, '[data-part="detail-switch"]');
     // Review N6: the pane's switch is the kit Switch, the same part as each card's.
     expect(detailSwitch.className).toBe(q(host, '[data-pane="main"] [data-part="switch"]').className);
