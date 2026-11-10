@@ -342,6 +342,7 @@ export const XMR_AMOUNT_ERROR = 'Enter an amount in XMR, like 0.5 or 2.';
 /** COPY-UNSIGNED: a fiat band end (O-018: bands are whole units). */
 export const FIAT_AMOUNT_ERROR = 'Enter an amount, like 50 or 2,000.';
 export const WHOLE_UNITS_ERROR = 'Whole units only, no cents.';
+// not-a-refusal: an input check on the two amounts of a band
 export const MIN_OVER_MAX = "The smallest trade can't be more than the largest.";
 
 // ---------------------------------------------------------------------------------------------
@@ -368,6 +369,7 @@ export const POST_COPY = {
   bandsFull: `That's ${MAX_BANDS} bands, the most one currency can have.`,
   noXmrWithBands: 'To set amounts in XMR, keep one band per currency.',
   bandsSame: 'Two bands cover the same amounts with the same price and the same minimum of completed trades. Change one of them.',
+  // not-a-refusal: an input check on a currency's bands (the API's checkBands rule, in words)
   bandsGap: (start: string) => `Bands can't leave a gap: the next band starts at ${start}.`,
   bandsBad: 'Fix the bands of this currency.',
   methodsHelp: 'Pick every payment method you take. Each one has its own payment instructions and can change the price by a percent.',
@@ -380,6 +382,7 @@ export const POST_COPY = {
   instructionsHint: 'What the other person needs to know to pay you or get paid.',
   instructionsFor: (currency: string) => `What the other person needs to know to pay you in ${currency}.`,
   sameForAll: 'Same for all currencies',
+  // not-a-refusal: an input check on a band's margin plus a method's change (rateFor's range)
   overLimit: "A band's price plus a payment method's price change can't pass 50% either way.",
   whoCanTrade: 'Minimum completed trades',
 } as const;
@@ -487,7 +490,7 @@ export function currencyOptions(loaded: readonly CurrencyChoice[] | null, priced
   return currencyChoices(POST_CURRENCIES, (c) => priced(c) || loaded === null || loaded.some((x) => x.code === c && x.available));
 }
 
-/** An entry's label in the picker: "🇺🇸 USD", or "🇨🇦 CAD · no rate" (DESIGN, J-32: the tag is the lead's interim). */
+/** An entry's label in the picker: the flag, then "USD", or "CAD · no rate" (DESIGN, J-32: the tag is the lead's interim). */
 export function currencyLabel(c: CurrencyChoice): string {
   return `${c.flag} ${c.code}${c.available ? '' : ` · ${POST_COPY.noRate}`}`;
 }
@@ -652,6 +655,10 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: For
 
   const giftCard = ctx.giftCard !== undefined && f.methods.some((m) => ctx.giftCard!(m.methodId));
   if (giftCard && !isCountryCode(f.country)) errors.country = COUNTRY_REQUIRED;
+  // J-17 (T-081) on J-16's form, which offers every method in every picked currency (lead ruling,
+  // 10 Nov 2026: a gift-card method is offered only in a currency of the card's country): with a card
+  // method on the offer, every picked currency must be one of the card's country's.
+  else if (giftCard && errors.currencies === undefined && !f.currencies.every((c) => giftCardCurrencyOk(f.country, c))) errors.currencies = CURRENCY_NOT_CARD;
   // J-17 (F13): every term of the poster's side ticked.
   if (giftCard && !giftCardTermsComplete(posterGiftCardRole(f.side), ctx.giftCardTicked ?? new Set())) errors.giftCardTerms = GIFT_CARD_TERMS_UNTICKED;
   const terms = cleanTerms(f.terms);
@@ -679,8 +686,8 @@ export function refusalText(code: string, extra?: Record<string, unknown>): stri
     case 'trading-paused':
       return 'Trading is paused for maintenance. Your offer was not posted. Try again soon.';
     case 'method-unavailable':
-      // not-a-refusal: a catalog fact (the method is off the list), see NOT_REFUSAL_CODES
       // COPY-UNSIGNED (J-16: an offer has several methods).
+      // not-a-refusal: a catalog fact (the method is off the list), see NOT_REFUSAL_CODES
       return "One of these payment methods isn't available right now. Remove it and post again.";
     case 'price-unavailable':
       // Owner p11-6: without a price for one of its currencies the offer's bands can't be checked

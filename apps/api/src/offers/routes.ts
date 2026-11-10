@@ -1,5 +1,6 @@
 import {
   BAND_DIFFER_DEFAULT,
+  GIFT_CARD_TERMS_VERSION,
   MAX_CURRENCIES,
   MAX_MARGIN_BPS,
   MAX_METHODS,
@@ -8,6 +9,7 @@ import {
   bandsToTiers,
   checkBands,
   fiatCents,
+  giftCardCurrencyOk,
   headlineTier,
   rangeInBoth,
   tierHolds,
@@ -32,7 +34,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
 import { assertMemberMay } from '../team/perms.js';
-import { getMethod, isAvailable, tradeProfile } from '../methods/profiles.js';
+import { getMethod, isAvailable, isGiftCard, tradeProfile } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
@@ -66,8 +68,10 @@ import { accountTypeOf, assertVendor } from '../routes/accountType.js';
  * (`offer_tiers`), and up to 5 payment methods (`offer_methods`), each offered in some or all of
  * those currencies with instructions per method and, where they differ, per currency
  * (`offer_method_currencies`). `POST` takes `{ side, amountUnit?, currencies, methods, terms,
- * country? }` only: the old single-method shape is 400 (Task 34 review M1). Pricing is market ± X%
- * only (owner Q1): a band's margin plus the method's adjustment.
+ * country?, giftCardTerms? }` only: the old single-method shape is 400 (Task 34 review M1). Pricing
+ * is market ± X% only (owner Q1): a band's margin plus the method's adjustment. A gift-card method
+ * among the methods (J-17) needs the card's `country` and the `giftCardTerms` version, and may be
+ * offered only in a currency of that country (T-081; lead ruling 10 Nov 2026).
  *
  * Trade size (owner, 8 Nov 2026, "Offer amounts in XMR or fiat"): one unit per offer, `amountUnit`
  * 'fiat' (the default) or 'xmr'; every band is in it. A card carries its currency's envelope (the
@@ -522,7 +526,7 @@ interface NewOffer {
 }
 
 const OFFER_KEYS = ['side', 'currencies', 'methods', 'terms'];
-const OFFER_OPTIONAL = ['amountUnit', 'country'];
+const OFFER_OPTIONAL = ['amountUnit', 'country', 'giftCardTerms'];
 const METHOD_KEYS = ['methodId', 'adjustBps', 'instructions'];
 const METHOD_OPTIONAL = ['currencies', 'instructionsByCurrency'];
 
@@ -600,9 +604,9 @@ function bandMethods(ids: readonly string[] | undefined, offered: readonly strin
  * currency has a method; every band margin + the adjustment of each method it is for stays within
  * ±MAX_MARGIN_BPS (rateFor's range).
  */
-function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown } {
+function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown; giftCardTermsGiven: unknown } {
   if (!isObject(body) || !keysAre(body, OFFER_KEYS, OFFER_OPTIONAL)) throw bad();
-  const { side, terms, country } = body;
+  const { side, terms, country, giftCardTerms } = body;
   if (side !== 'sell' && side !== 'buy') throw bad();
   const unit = body.amountUnit === undefined ? 'fiat' : body.amountUnit;
   if (unit !== 'fiat' && unit !== 'xmr') throw bad();
@@ -637,7 +641,7 @@ function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown } {
     }
     return { currency, tiers };
   });
-  return { side, unit, currencies, methods, terms: cleanText(terms, TERMS_MAX), country: null, giftCardTerms: null, countryGiven: country };
+  return { side, unit, currencies, methods, terms: cleanText(terms, TERMS_MAX), country: null, giftCardTerms: null, countryGiven: country, giftCardTermsGiven: giftCardTerms };
 }
 
 /** 409 when the method may not be offered now (P3-I20: methods awaiting legal review). */
@@ -835,11 +839,20 @@ export function offerRoutes(app: FastifyInstance): void {
     if (catalog.some((m) => m === null)) throw bad();
     for (const m of o.methods) assertMethodAvailable(m.methodId);
     // A gift-card offer names the card's country; no other offer has one (Revision 2026-10-27).
-    // Any gift-card method among its methods makes it a gift-card offer.
-    if (catalog.some((m) => m!.giftCard)) {
+    // Any gift-card method among its methods makes it a gift-card offer (J-17 on J-16, lead ruling
+    // 10 Nov 2026): the gift-card terms apply to the offer, and each gift-card METHOD may be offered
+    // only in a currency of the card's country (T-081); the offer's other methods and currencies are free.
+    const giftMethods = o.methods.filter((m) => isGiftCard(m.methodId));
+    if (giftMethods.length > 0) {
       if (typeof o.countryGiven !== 'string' || !/^[A-Z]{2}$/.test(o.countryGiven)) throw bad();
+      // J-17 (T-081): the card's currency follows its country, for every currency the card method is offered in.
+      for (const m of giftMethods) for (const c of m.currencies) if (!giftCardCurrencyOk(o.countryGiven, c)) throw bad();
+      // J-17 (F13): the poster ticked the gift-card terms of the version the API has now (a page
+      // showing older words cannot agree to these).
+      if (o.giftCardTermsGiven !== GIFT_CARD_TERMS_VERSION) throw bad();
       o.country = o.countryGiven;
-    } else if (o.countryGiven !== undefined) {
+      o.giftCardTerms = GIFT_CARD_TERMS_VERSION;
+    } else if (o.countryGiven !== undefined || o.giftCardTermsGiven !== undefined) {
       throw bad();
     }
     const accountId = req.auth!.accountId;
@@ -851,9 +864,9 @@ export function offerRoutes(app: FastifyInstance): void {
       // now fails closed (409 price-unavailable). The take checks the trade itself again.
       throwLaunchCapRefusal(offerLaunchCapRefusal(o.unit, o.currencies, deps.prices, false));
       const { rows } = await client.query<{ id: string }>(
-        `insert into offers (account_id, side, price_mode, amount_unit, terms, country, status, created_at, updated_at)
-         values ($1, $2, 'market', $3, $4, $5, 'live', $6, $6) returning id`,
-        [accountId, o.side, o.unit, o.terms, o.country, now],
+        `insert into offers (account_id, side, price_mode, amount_unit, terms, country, gift_card_terms, status, created_at, updated_at)
+         values ($1, $2, 'market', $3, $4, $5, $6, 'live', $7, $7) returning id`,
+        [accountId, o.side, o.unit, o.terms, o.country, o.giftCardTerms, now],
       );
       const offerId = rows[0]!.id;
       // Same transaction: an offer never exists without its currencies, bands and methods.

@@ -54,7 +54,11 @@ export const LAUNCH_PROFILE_IDS = [
 
 /** The profile a method with none of its own uses (its times and its copy): the Custom method's (24 h). */
 export const FALLBACK_PROFILE_ID = 'CUSTOM';
-/** The profile every gift card without one of its own uses (owner G50: 45 minutes to check a card). */
+/**
+ * The profile every gift card without one of its own uses (owner G50: 45 minutes to check a card).
+ * Its time to pay is 90 minutes, as an app payment's: the card's code is sent at once. LEAD DEFAULT
+ * (10 Nov 2026) pending owner p11-130.
+ */
 export const GIFT_CARD_PROFILE_ID = 'OTHER_GIFT_CARD';
 
 export const GIFT_CARD_GROUP = 'Gift cards & vouchers';
