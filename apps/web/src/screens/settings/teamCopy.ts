@@ -2,7 +2,7 @@
 // Claude Design board yet (NEEDS_DESIGN_TEAM in test/team-tripwires.test.ts); the owner signs it
 // off with the board. Refusals (owner-only, a role a member lacks, the member limit, escrow
 // signing) are CantDoThat's, worded in ui/cantDoCodes.ts (teamCantDoText).
-import type { TeamRole } from '@x2f/auth-client';
+import type { TeamRole, TradeBand, WorkingHours } from '@x2f/auth-client';
 import { utcDateTime } from '../../ui/dates.js';
 
 export const TEAM_PATH = '/settings/team';
@@ -49,6 +49,32 @@ const AUDIT_WORDS: Record<string, string> = {
   'hold-changes-cancelled': 'cancelled waiting changes',
   'hold-changes-approved': 'applied waiting changes now',
 };
+
+const ATOMIC_PER_XMR = 1_000_000_000_000n;
+
+/** Atomic units as XMR, exact, trailing zeros trimmed ("0.5", "2"). */
+export function xmrOf(atomic: string): string {
+  const v = BigInt(atomic);
+  const frac = (v % ATOMIC_PER_XMR).toString().padStart(12, '0').replace(/0+$/, '');
+  return frac === '' ? (v / ATOMIC_PER_XMR).toString() : `${v / ATOMIC_PER_XMR}.${frac}`;
+}
+
+/** An XMR amount as typed ("0.5", "2", up to 12 decimals) in atomic units, or null when it is not one. */
+export function atomicOf(xmr: string): string | null {
+  const m = /^(\d{1,18})(?:\.(\d{1,12}))?$/.exec(xmr.trim());
+  if (!m) return null;
+  return (BigInt(m[1]!) * ATOMIC_PER_XMR + BigInt((m[2] ?? '').padEnd(12, '0'))).toString();
+}
+
+// J-20 (owner p7-4, p7-11). COPY-UNSIGNED // DESIGN: wording (no board yet: NOT DRAWN).
+function bandText(b: TradeBand | null | undefined): string {
+  return b === null || b === undefined ? 'Any trade size' : `Trades of ${xmrOf(b.minAtomic)} to ${xmrOf(b.maxAtomic)} XMR`;
+}
+function hoursText(h: WorkingHours | null | undefined): string {
+  if (h === undefined || h === 'any') return 'Any time';
+  if (h === null) return 'Working hours unreadable: no logins until you set them again';
+  return `${h.days.join(', ')} ${h.start} to ${h.end} (${h.tz})`;
+}
 
 export const TEAM_COPY = {
   title: 'Team',
@@ -106,6 +132,26 @@ export const TEAM_COPY = {
   nameInvalid: 'Use 5 to 20 letters, digits, dots, dashes or underscores.',
   nameTaken: 'Someone on your team already has that name.',
   signedOut: 'Log in to manage your team.',
+  // J-20 (owner p7-4, p7-11; p11-27). COPY-UNSIGNED // DESIGN: wording (no board yet: NOT DRAWN).
+  limits: (band: TradeBand | null | undefined, hours: WorkingHours | null | undefined) => `${bandText(band)} · ${hoursText(hours)}`,
+  limitsButton: 'Limits',
+  changeLimits: (name: string) => `Change limits for ${name}`,
+  bandTitle: 'Trade size',
+  bandNone: 'Any trade size',
+  bandMin: 'Smallest trade (XMR)',
+  bandMax: 'Largest trade (XMR)',
+  bandHint: 'Everything this member does on a trade or an offer must fall inside these sizes. Offers priced in fiat are outside any limit.',
+  hoursTitle: 'Working hours',
+  hoursAny: 'Any time',
+  hoursStart: 'From',
+  hoursEnd: 'Until',
+  hoursZone: 'Time zone',
+  hoursHint: 'Outside these hours the member cannot log in, and a logged-in member is logged out.', // not-a-refusal: explains the setting
+  saveLimits: 'Save limits',
+  limitsSaved: (name: string) => `Limits saved for ${name}.`,
+  badBand: 'Enter the smallest and largest trade in XMR, the largest above zero and not below the smallest.',
+  badHours: 'Pick at least one day, and a start and end that differ.',
+  firstLoginNote: 'A new member needs no approval to log in. You are told when they log in for the first time.',
 } as const;
 
 export const JOIN_COPY = {

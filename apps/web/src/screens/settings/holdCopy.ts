@@ -5,7 +5,7 @@
 // Refusals (too-many-changes) are worded in ui/cantDoCodes.ts.
 import type { HoldChangeSummary } from '@x2f/auth-client';
 import { utcDateTime } from '../../ui/dates.js';
-import { rolesText } from './teamCopy.js';
+import { TEAM_COPY, rolesText } from './teamCopy.js';
 import type { TeamRole } from '@x2f/auth-client';
 
 export const CHANGES_PATH = '/settings/changes';
@@ -81,6 +81,11 @@ export function changeWords(c: HoldChangeSummary, names: ReadonlyMap<string, str
       const who = c.memberId !== undefined ? names.get(c.memberId) : undefined;
       const boxes = (c.abilityLabels ?? []).join(', ');
       return { title: who !== undefined ? `${who}'s abilities` : "A team member's abilities", before: 'Their current abilities', after: boxes !== '' ? boxes : 'New abilities' };
+    }
+    // J-20: a member's trade-size band and working hours. COPY-UNSIGNED // DESIGN: wording
+    case 'team-limits': {
+      const who = c.memberId !== undefined ? names.get(c.memberId) : undefined;
+      return { title: who !== undefined ? `${who}'s limits` : "A team member's limits", before: 'Their current limits', after: TEAM_COPY.limits(c.band ?? null, c.hours ?? 'any') };
     }
     default:
       return { title: 'Account setting', before: 'Your current setting', after: 'A new setting' };

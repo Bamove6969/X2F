@@ -62,6 +62,10 @@ export const CANT_DO_CODES = [
   'forbidden',
   'too-many-members',
   'member-cannot-sign',
+  // J-20 (owner p7-4, p7-11; review S-m4): a member outside their trade-size band, and a session
+  // end past their working hours.
+  'outside-trade-band',
+  'past-working-hours',
   // Owner 2 Nov 2026: only vendor accounts post offers or have team members; switching to vendor
   // needs a passkey, security key or PGP key on the account.
   'not-vendor',
@@ -293,9 +297,10 @@ export function postCantDoText(code: CantDoCode): string {
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
       return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
-    // Plan 2 Task 18: a team member without the Offers role.
+    // Plan 2 Task 18: a team member without the Offers role; J-20: an offer outside their band.
     case 'forbidden':
     case 'owner-only':
+    case 'outside-trade-band':
       return teamCantDoText(code);
     case 'not-vendor':
       return NOT_VENDOR_POST_TEXT;
@@ -502,6 +507,12 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
     case 'member-cannot-sign':
       return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
+    // J-20 (owner p7-4). COPY-UNSIGNED // DESIGN: wording
+    case 'outside-trade-band':
+      return 'This is outside the trade sizes the account owner set for you. Ask the account owner to do this step.';
+    // J-20 (owner p7-11, review S-m4). COPY-UNSIGNED // DESIGN: wording
+    case 'past-working-hours':
+      return 'Your working hours end before then, so your session cannot run that long.';
     // Owner 1 Nov 2026: inviting a member needs a strong login (API 403 weak-session). Owner p5-7:
     // role changes and removals from such a device are not refused; they wait 24 hours.
     case 'weak-session':

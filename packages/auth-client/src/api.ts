@@ -49,6 +49,9 @@ export interface HoldChangeSummary {
   abilityLabels?: string[];
   /** A wallet removed (owner p5-7): its label (and `addressEnds` its address's last 6). */
   label?: string;
+  /** J-20 (`team-limits`): a member's new trade-size band (null: none) and working hours. */
+  band?: TradeBand | null;
+  hours?: WorkingHours;
 }
 
 /** Hold model v3: `GET /v1/account/hold`. */
@@ -269,6 +272,15 @@ export function isVendor(me: Pick<AccountOverview, 'accountType'> | null | undef
 /** Plan 2 Task 18: a team member's roles (spec 6.7); owner p4-8 adds the hold rights (each includes the ones before it). */
 export type TeamRole = 'offers' | 'trades' | 'hold-see' | 'hold-cancel' | 'hold-end';
 
+/** J-20 (owner p7-4): a member's trade-size band, XMR atomic units as decimal strings, both ends included. */
+export interface TradeBand {
+  minAtomic: string;
+  maxAtomic: string;
+}
+
+/** J-20 (owner p7-11): a member's working hours: any time, or days and a daily window in an IANA time zone. */
+export type WorkingHours = 'any' | { days: ('Sun' | 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat')[]; start: string; end: string; tz: string };
+
 /** Plan 2 Task 18: one member or open invite, as the account owner sees it (`GET /v1/team`). */
 export interface TeamMember {
   id: string;
@@ -281,6 +293,9 @@ export interface TeamMember {
   /** True when the roles above do not describe the boxes exactly (a custom set): show "Custom", not the roles. */
   custom?: boolean;
   status: 'invited' | 'joining' | 'active';
+  /** J-20: the trade-size band (null: none) and working hours (null: stored value invalid, never inside). Optional: older API builds do not send them. */
+  band?: TradeBand | null;
+  hours?: WorkingHours | null;
   inviteExpiresAt: string | null;
   joinedAt: string | null;
   createdAt: string;
@@ -546,6 +561,8 @@ export interface AuthApi {
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
   /** Owner p5-7: `Staged` (202) from a login with just a username and password: the member keeps access until it applies. */
   removeMember(id: string, b: Token): Promise<Staged | undefined>;
+  /** J-20: confirm `team-limits` (`teamLimitsAction`). From a login that waits (a username and password), 202 `Staged`. */
+  setMemberLimits(id: string, b: { band: TradeBand | null; hours: WorkingHours } & Token): Promise<TeamMember | Staged>;
   /** Newest first, at most 200 rows. */
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
   // The invited person's side (no session yet).
@@ -707,6 +724,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     inviteMember: (b) => post('/v1/team/invites', b),
     setMemberRoles: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
     removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
+    setMemberLimits: (id, b) => call('PUT', `/v1/team/members/${seg(id)}/limits`, b),
     teamAudit: (q = {}) => {
       const p = new URLSearchParams();
       if (q.from !== undefined) p.set('from', q.from);
