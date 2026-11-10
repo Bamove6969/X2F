@@ -72,7 +72,7 @@ const CANCEL_T049 =
 const AD_CARD_V142 =
   'Owner #11 (8 Nov), boards v142 on wip/design-brief: the ad card shows the price bottom-left ("0.4%" over "above market", design final call 10 Nov, ui/margin.ts) and the range as two rows, XMR and fiat, each with its unit; the time moved to the price row. design/x2f-app still has the earlier card.';
 /** Design final call (10 Nov 2026): one price wording everywhere, "0.4% above market" / "at market" (ui/margin.ts), never a signed figure. */
-const PRICE_WORDING = 'Design final call (10 Nov 2026), ui/margin.ts: the price reads "0.5% above market" (the figure without a sign, then the words), so the board\'s signed "+0.5%" is not on the page.';
+const PRICE_WORDING = 'Design final call (10 Nov 2026), ui/margin.ts: an offer with no margin reads "at market" (lower case, the same words as "0.4% above market"), so the board\'s "At market" is not on the card.';
 
 /**
  * J-16 (Plan 3 Tasks 34/35): PostOffer lists up to 5 currencies with up to 3 bands each and up to 5
@@ -285,6 +285,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'Buyer deposits were removed (plan Revision 2026-10-18, spec 2.5); the card shows its range and, when the API knows it, the typical time ("Pays in ~N min").',
     },
     ...['$50 – $2,000Pays in ~6 min', '$100 – $5,000Pays in ~15 min'].map((text) => ({ text, why: AD_CARD_V142 })),
+    { text: 'At market', why: PRICE_WORDING },
   ],
   PostOffer: [
     {
@@ -311,7 +312,6 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       "Market $329.90 / XMR right now. Your price follows the market, so it's always {{priceNow}} at today's rate.",
       'Who can trade with you',
     ].map((text) => ({ text, why: FLEX_BOARD_PENDING })),
-    { text: '+0.5%', why: PRICE_WORDING },
   ],
   // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).
   DisputeOpen: [
