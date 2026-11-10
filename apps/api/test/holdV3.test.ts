@@ -28,6 +28,7 @@ import { siteMaintenanceSince, startTimers } from '../src/trades/timers.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
 import { accountIdByLoginName, makeVendor } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
+import { insertOffer } from './helpers/offers.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { FIAT, driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -1000,14 +1001,11 @@ describe('a recovery-code login', () => {
 
   it("the held account's offers are not listed or taken", async () => {
     const t = await ownerWithCode();
-    const { rows } = await deps.db.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'live', $2, $2) returning id`,
-      [t.id, now],
-    );
+    // Migration 490's shape (J-16): the offer, its currency, one band and one method.
+    const offerId = await insertOffer(deps.db, { accountId: t.id, side: 'sell', methodId: 'ZELLE', currency: 'USD', min: 1000, max: 100000, at: now });
     expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
     const buyer = await trader();
-    expect((await buyer.browser.get(`/v1/offers/${rows[0]!.id}`)).statusCode).toBe(404);
+    expect((await buyer.browser.get(`/v1/offers/${offerId}`)).statusCode).toBe(404);
   });
 
   it('an authenticator code alone is no backup login any more (TOTP-only login is not allowed)', async () => {
