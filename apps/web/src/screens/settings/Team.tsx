@@ -116,7 +116,7 @@ function LimitsEditor({ value, onChange }: { value: LimitsDraft; onChange: (d: L
     <div className="x2f-stack" data-part="limits">
       <fieldset className="x2f-field" data-part="band">
         <legend className="x2f-label">{C.bandTitle}</legend>
-        <label className="x2f-row" htmlFor={`${p}-any-size`}>
+        <label className="x2f-row x2f-team__role" htmlFor={`${p}-any-size`}>
           <input id={`${p}-any-size`} type="checkbox" checked={value.anySize} onChange={(e) => set({ anySize: e.target.checked })} data-part="band-none" />
           {C.bandNone}
         </label>
@@ -136,14 +136,14 @@ function LimitsEditor({ value, onChange }: { value: LimitsDraft; onChange: (d: L
       </fieldset>
       <fieldset className="x2f-field" data-part="hours">
         <legend className="x2f-label">{C.hoursTitle}</legend>
-        <label className="x2f-row" htmlFor={`${p}-any-time`}>
+        <label className="x2f-row x2f-team__role" htmlFor={`${p}-any-time`}>
           <input id={`${p}-any-time`} type="checkbox" checked={value.anyTime} onChange={(e) => set({ anyTime: e.target.checked })} data-part="hours-any" />
           {C.hoursAny}
         </label>
         {!value.anyTime ? (
           <>
             {DAYS.map((d) => (
-              <label className="x2f-row" key={d} htmlFor={`${p}-${d}`}>
+              <label className="x2f-row x2f-team__role" key={d} htmlFor={`${p}-${d}`}>
                 <input
                   id={`${p}-${d}`}
                   type="checkbox"
