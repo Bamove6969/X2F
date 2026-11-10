@@ -11,6 +11,10 @@ import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, log
 import { seedAccount } from '../helpers/accounts.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
+import { RETENTION_JOBS } from '../../src/retentionJobs.js';
+import { purgeStaffInviteLeftovers } from '../../src/staff/invites.js';
+import { openTermsSignature, sealTermsSignature } from '../../src/termsSignature.js';
+import { SIG } from '../helpers/signature.js';
 import { KEY_AAGUID, addPgpKey, attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
 import { createSoftAuthenticator } from '../helpers/softAuthenticator.js';
 
@@ -48,9 +52,12 @@ async function createInvite(role: 'senior' | 'mod' | 'helper', hours: LoginHours
 const invitee = () => new StaffBrowser(t.app);
 const acceptUrl = (token: string, step = '') => `/staff/v1/invites/accept/${token}${step}`;
 
+/** The Terms every staff invitee accepts and signs with their names (owner 9 Nov 2026, p11-14). */
+const signed = () => ({ acceptedTerms: t.deps.config.termsVersion, termsSignature: SIG });
+
 async function pickNames(b: StaffBrowser, token: string) {
   const n = loginName();
-  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Mod${n}`, loginName: n });
+  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Mod${n}`, loginName: n, ...signed() });
   return { res, loginName: n, displayName: `Mod${n}` };
 }
 
@@ -154,6 +161,66 @@ describe('invites', () => {
     expect(errorOf(await invitee().get(acceptUrl('A'.repeat(43))))).toBe('invite-invalid');
   });
 
+  // Owner 9 Nov 2026 (p11-13): "Erase it when the account closes." A half-made staff account (the
+  // names picked, the invite not finished) is disabled and never logs in once its invite is
+  // cancelled or has expired: that is its close, so the sealed signature goes with it (security
+  // review 2026-11-09, minor 3). The Terms version and acceptance time stay, as at removal.
+  const signatureOf = async (id: string) =>
+    (await t.deps.db.query<{ terms_signature: Buffer | null; terms_version: string | null }>('select terms_signature, terms_version from accounts where id = $1', [id])).rows[0]!;
+
+  it('cancelling an invite erases the half-made account\'s Terms signature (owner p11-13)', async () => {
+    const inv = await createInvite('helper');
+    const n = await pickNames(invitee(), inv.token);
+    expect(n.res.statusCode).toBe(201);
+    const id = await accountOf(n.loginName);
+    expect((await signatureOf(id)).terms_signature).not.toBeNull();
+    // Another half-made account, on an invite that stays open: untouched.
+    const other = await createInvite('helper');
+    const o = await pickNames(invitee(), other.token);
+    const otherId = await accountOf(o.loginName);
+    expect((await owner.browser.send('DELETE', `/staff/v1/invites/${inv.inviteId}`)).statusCode).toBe(204);
+    const row = await signatureOf(id);
+    expect(row.terms_signature).toBeNull();
+    expect(row.terms_version).toBe(t.deps.config.termsVersion);
+    expect((await signatureOf(otherId)).terms_signature).not.toBeNull();
+    // Cancelling before the names (no account yet) is still a plain 204.
+    const bare = await createInvite('helper');
+    expect((await owner.browser.send('DELETE', `/staff/v1/invites/${bare.inviteId}`)).statusCode).toBe(204);
+  });
+
+  it('the retention sweep erases the signature of a half-made account whose invite expired over an hour ago; a finished one keeps it', async () => {
+    expect(RETENTION_JOBS).toContain(purgeStaffInviteLeftovers);
+    // Half-made: the names picked, nothing more.
+    const half = await createInvite('helper');
+    const n = await pickNames(invitee(), half.token);
+    expect(n.res.statusCode).toBe(201);
+    const halfId = await accountOf(n.loginName);
+    // Finished on the same expiry: a staff member, whose signature stays until removal.
+    const done = await createInvite('helper');
+    const d = await signUp(done.token, { noKey: true, twoPgp: true });
+    expect(d.finish.statusCode, d.finish.body).toBe(201);
+    const doneId = await accountOf(d.loginName);
+    // Expired, but less than an hour ago: nothing yet (the margin keeps the sweep clear of a finish
+    // racing the deadline on another process's clock).
+    t.setNow(new Date(MON_NOON.getTime() + 24 * HOUR + 30 * 60_000));
+    await purgeStaffInviteLeftovers.run(t.deps.db, t.deps.clock());
+    expect((await signatureOf(halfId)).terms_signature).not.toBeNull();
+    expect((await signatureOf(doneId)).terms_signature).not.toBeNull();
+    // Over an hour past expiry: the half-made account's goes; the staff member's stays.
+    t.setNow(new Date(MON_NOON.getTime() + 25 * HOUR + 60_000));
+    expect(await purgeStaffInviteLeftovers.run(t.deps.db, t.deps.clock())).toBeGreaterThanOrEqual(1);
+    const row = await signatureOf(halfId);
+    expect(row.terms_signature).toBeNull();
+    expect(row.terms_version).toBe(t.deps.config.termsVersion);
+    expect((await signatureOf(doneId)).terms_signature).not.toBeNull();
+    // Nothing left to touch for these two: a second sweep does not count them again.
+    const before = await t.deps.db.query<{ n: number }>(
+      "select count(*)::int as n from accounts a join staff_invites i on i.account_id = a.id where i.used_at is null and a.terms_signature is not null and i.expires_at <= $1",
+      [new Date(t.deps.clock().getTime() - HOUR)],
+    );
+    expect(before.rows[0]!.n).toBe(0);
+  });
+
   it('a moderator invitee with only PGP gets security-key-required; a helper with two PGP keys joins', async () => {
     const mod = await createInvite('mod');
     const m = await signUp(mod.token, { noKey: true, twoPgp: true });
@@ -203,11 +270,29 @@ describe('invites', () => {
     expect((await h.b.post(acceptUrl(helper.token, '/finish'), {})).statusCode).toBe(201);
   });
 
-  it('the account cannot log in before finish, and the names are picked once', async () => {
+  it('the account cannot log in before finish, and the names are picked once, with the Terms signed (owner 9 Nov 2026, p11-14)', async () => {
     const inv = await createInvite('mod');
     const b = invitee();
+    // Everyone who gets a login signs: the names step refuses without the current version and a
+    // signature, and makes nothing (the same invite takes the names after).
+    for (const [extra, error] of [
+      [{}, 'terms-not-accepted'],
+      [{ acceptedTerms: '2020-01-01', termsSignature: SIG }, 'terms-not-accepted'],
+      [{ acceptedTerms: t.deps.config.termsVersion }, 'signature-required'],
+      [{ acceptedTerms: t.deps.config.termsVersion, termsSignature: { kind: 'typed', name: '' } }, 'signature-invalid'],
+    ] as const) {
+      const res = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Unsigned1x', loginName: 'unsignedlogin1x', ...extra });
+      expect(res.statusCode, res.body).toBe(400);
+      expect(errorOf(res)).toBe(error);
+    }
     const n = await pickNames(b, inv.token);
     const id = await accountOf(n.loginName);
+    const signedRow = await t.deps.db.query<{ terms_version: string | null; terms_accepted_at: Date | null; terms_signature: Buffer | null }>(
+      'select terms_version, terms_accepted_at, terms_signature from accounts where id = $1', [id],
+    );
+    expect(signedRow.rows[0]!.terms_version).toBe(t.deps.config.termsVersion);
+    expect(signedRow.rows[0]!.terms_accepted_at).not.toBeNull();
+    expect(openTermsSignature(t.deps.config, signedRow.rows[0]!.terms_signature!, id)).toEqual(SIG);
     const { rows } = await t.deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [id]);
     expect(rows[0]!.disabled_at).not.toBeNull();
     const again = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Other1x', loginName: 'otherlogin1x' });
@@ -223,6 +308,18 @@ describe('invites', () => {
     // Keys and PGP before the names: refused.
     const fresh = await createInvite('mod');
     expect((await invitee().post(acceptUrl(fresh.token, '/key/start'), { kind: 'security-key' })).statusCode).toBe(409);
+  });
+
+  it('GET /staff/v1/terms answers the Terms version and nothing else; HEAD works (owner 9 Nov 2026, p11-14)', async () => {
+    // The staff origin's answer to the trader API's `GET /v1/terms`: the same X2F_TERMS_VERSION, no
+    // text, no headings, no token (the matrix proves it public; this pins the body).
+    const res = await invitee().get('/staff/v1/terms');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ version: t.deps.config.termsVersion });
+    expect(res.headers['cache-control']).toBe('no-store');
+    const head = await invitee().send('HEAD', '/staff/v1/terms');
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe('');
   });
 
   it('refuses an invite whose tap was for another invite, and a tap reused', async () => {
@@ -405,6 +502,24 @@ describe('members', () => {
     expect((await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`)).statusCode).toBe(404);
   });
 
+  it('removal erases the stored Terms signature; switch-off keeps it (owner 9 Nov, p11-13: erase it when the account closes)', async () => {
+    const signature = async (id: string) =>
+      (await t.deps.db.query<{ terms_signature: Buffer | null }>('select terms_signature from accounts where id = $1', [id])).rows[0]!.terms_signature;
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    await t.deps.db.query('update accounts set terms_signature = $2 where id = $1', [mod.id, sealTermsSignature(t.deps.config, SIG, mod.id)]);
+    const other = await staffWithKeys(t, { role: 'helper' });
+    await t.deps.db.query('update accounts set terms_signature = $2 where id = $1', [other.id, sealTermsSignature(t.deps.config, SIG, other.id)]);
+    // Switch-off can be undone: the login is not closed, so its signature stays.
+    expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {})).statusCode).toBe(200);
+    expect(await signature(mod.id)).not.toBeNull();
+    // Removal needs a tap bound to them (owner G4, batch 3).
+    const removeTap = await tap(owner, { kind: 'remove-staff', accountId: mod.id });
+    expect((await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`, { tapId: removeTap })).statusCode).toBe(204);
+    expect(await signature(mod.id)).toBeNull();
+    // Only the removed person's.
+    expect(await signature(other.id)).not.toBeNull();
+  });
+
   it('a member route for someone who is not staff: 404', async () => {
     const res = await owner.browser.post('/staff/v1/members/00000000-0000-4000-8000-000000000000/switch-off', {});
     expect(res.statusCode).toBe(404);
@@ -434,7 +549,7 @@ describe('open cases (was NEEDS_P4_CASE_ASSIGNEE)', () => {
 describe('owner Q54: the public name is displayName; a field named username is refused', () => {
   it('the invitee names the account with displayName and loginName; username is not taken', async () => {
     const inv = await createInvite('helper');
-    const res = await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Public1x', loginName: 'secretlogin1x' });
+    const res = await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Public1x', loginName: 'secretlogin1x', ...signed() });
     expect(res.statusCode).toBe(400);
   });
 });
@@ -484,6 +599,16 @@ describe('Task 7 tripwires (local tree only)', () => {
     // When Task 13's gate lands (apps/moderation/src/gate): give ModerationClient a revoke call and
     // make `switchOff` call it after the commit (revocation needs no signature).
     expect(existsSync(`${ROOT}apps/moderation/src/gate`), 'the ruling gate landed: notify it on switch-off (see this test)').toBe(false);
+  });
+
+  it('NEEDS_P4_TASK16: the staff web invite page signs the Terms before it names the account', () => {
+    // Owner 9 Nov 2026 (p11-14): staff sign too. `POST …/accept/:token/account` needs
+    // `acceptedTerms` and `termsSignature` (staff/invites.ts). When Task 16's staff web lands, its
+    // invite page must show the Terms with the signature pad and send both.
+    const page = `${ROOT}apps/staff-web/src/screens/Invite.tsx`;
+    if (!existsSync(page)) return;
+    const text = readFileSync(page, 'utf8');
+    expect(text.includes('termsSignature') && text.includes('acceptedTerms'), 'the staff invite page must send acceptedTerms and termsSignature').toBe(true);
   });
 
 });

@@ -82,17 +82,19 @@ interface RegisteredRow {
   locked_currency: string;
   locked_cents_per_xmr: string;
   max_fiat_cents: string;
+  pay_window_min: number;
   buyer_payout: string | null;
   seller_refund: string | null;
 }
 
 /**
  * The trade record's columns behind the attested terms (lead answer 4): the deal fixed at take
- * (the amount at take is the pre-growth amount if the trade grew) and both addresses.
+ * (the amount at take is the pre-growth amount if the trade grew), the time to pay fixed at take
+ * (owner p9-6; the moderation shadow runs on it) and both addresses.
  */
 const TERMS_COLUMNS = `t.poster, coalesce(t.grown_from_atomic, t.amount_atomic)::text as take_amount, t.locked_currency,
                 t.locked_cents_per_xmr::text as locked_cents_per_xmr, t.max_fiat_cents::text as max_fiat_cents,
-                t.buyer_payout, t.seller_refund`;
+                t.pay_window_min, t.buyer_payout, t.seller_refund`;
 
 /** The terms the moderation service must sign for this trade, from the trade record. */
 function termsOf(r: RegisteredRow): AttestedTerms {
@@ -104,6 +106,7 @@ function termsOf(r: RegisteredRow): AttestedTerms {
       centsPerXmr: r.locked_cents_per_xmr,
       maxFiatCents: r.max_fiat_cents,
     },
+    payWindowMin: r.pay_window_min,
     buyerPayout: r.buyer_payout ?? '',
     sellerRefund: r.seller_refund ?? '',
   };
@@ -111,7 +114,7 @@ function termsOf(r: RegisteredRow): AttestedTerms {
 
 function sameTerms(a: AttestedTerms, b: AttestedTerms): boolean {
   return (
-    a.buyerPayout === b.buyerPayout && a.sellerRefund === b.sellerRefund &&
+    a.buyerPayout === b.buyerPayout && a.sellerRefund === b.sellerRefund && a.payWindowMin === b.payWindowMin &&
     a.deal.poster === b.deal.poster && a.deal.takeAmountAtomic === b.deal.takeAmountAtomic &&
     a.deal.currency === b.deal.currency && a.deal.centsPerXmr === b.deal.centsPerXmr && a.deal.maxFiatCents === b.deal.maxFiatCents
   );
@@ -338,9 +341,10 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // Also `chat` (chat shred review I1): the code of the chat linked to the trade, or null (none, or
   // purged); moderation records the link while the trade is live and holds a shred by it.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean; lock_held: boolean }>(
+    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean; held: boolean; lock_held: boolean }>(
       `select t.code, c.code as chat, t.state, t.settling, t.paused_at,
               (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused,
+              exists (select 1 from held_trades h where h.code = t.code and h.released_at is null) as held,
               ${tradeHeldSql('t')} as lock_held
          from trades t
          join trade_attestations a on a.code = t.code
@@ -355,8 +359,10 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         chat: r.chat,
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
+        // Lead review 8 Nov C2 (owner G7): a trade a recovery-code hold holds is paused for the
+        // moderator's timers too, until the hold ends or a moderator decides.
         // J-14 (D-059): a trade of a locked account counts as paused from the lock's commit on.
-        paused: r.paused_at !== null || r.site_paused || r.lock_held,
+        paused: r.paused_at !== null || r.site_paused || r.held || r.lock_held,
       })),
     });
   }));

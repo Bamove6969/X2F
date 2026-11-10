@@ -10,7 +10,11 @@
  * `sealProofEnvelope`, which takes no `to` and refuses one, so an unblurred key can never be
  * sealed to a trader by a wrong call site.
  *
- * Neither carries a file name, original type or anything else about the source file.
+ * Neither carries a file name, original type or anything else about the source file, except
+ * `proof.attached`'s `photoTakenAt`: the time the picture was made, read from its own metadata on
+ * the poster's device before cleaning (owner G16), as a UTC instant rounded down to the minute, or null. The
+ * metadata block itself never leaves the device. (Named so as not to be confused with a trade's
+ * `takenAt`, when the trade was taken.)
  * `parseProofPayload` checks an opened envelope's `{type, payload}` exactly.
  */
 import sodium from 'libsodium-wrappers';
@@ -42,6 +46,11 @@ export interface ProofAttachedPayload {
   mime: ProofMime;
   /** What was blurred, each kind at most once. */
   hidden: HiddenKind[];
+  /**
+   * When the picture was made, from its own Exif/XMP date (owner G16): `YYYY-MM-DDTHH:MM:00Z`, or
+   * null. Always written; an envelope without it (a client from before the field) parses as null.
+   */
+  photoTakenAt: string | null;
 }
 
 export interface ProofUnblurredPayload {
@@ -57,7 +66,9 @@ export type ProofEnvelope =
   | { type: 'proof.attached'; payload: ProofAttachedPayload }
   | { type: 'proof.unblurred'; payload: ProofUnblurredPayload };
 
-const ATTACHED_KEYS = ['proofId', 'kind', 'key', 'sha256', 'width', 'height', 'mime', 'hidden'] as const;
+const ATTACHED_KEYS = ['proofId', 'kind', 'key', 'sha256', 'width', 'height', 'mime', 'hidden', 'photoTakenAt'] as const;
+/** `proof.attached` keys an older client leaves out (review 2026-11-10 finding 6: backward compatible). */
+const ATTACHED_OPTIONAL: readonly string[] = ['photoTakenAt'];
 const UNBLURRED_KEYS = ['proofId', 'key', 'sha256', 'width', 'height', 'mime'] as const;
 /** 32 bytes in padded standard base64: 42 data characters, a last one with 2 zero bits, '='. */
 const KEY_B64 = /^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/;
@@ -76,6 +87,33 @@ function common(p: Record<string, unknown>): ProofUnblurredPayload {
   return { proofId, key, sha256, width, height, mime: mime as ProofMime };
 }
 
+const UTC_MINUTE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):00Z$/;
+
+/** `YYYY-MM-DDTHH:MM:00Z` naming a real minute in 1990..2200, as `toUtcMinute` writes it. */
+export function isUtcMinute(s: unknown): s is string {
+  if (typeof s !== 'string') return false;
+  const m = UTC_MINUTE.exec(s);
+  if (!m) return false;
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+  const y = Number(m[1]);
+  return y >= 1990 && y <= 2200 && toUtcMinute(new Date(t)) === s;
+}
+
+/**
+ * A time as `proof.attached` carries it: UTC, rounded down to the minute (`2026-10-16T12:32:00Z`).
+ * The date check has 14 hours of slack, so the seconds tell the other side nothing it needs (review
+ * 2026-11-10 finding 7).
+ */
+export function toUtcMinute(d: Date): string {
+  return d.toISOString().replace(/:\d{2}\.\d{3}Z$/, ':00Z');
+}
+
+function photoTakenAtOf(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (!isUtcMinute(v)) throw fail();
+  return v;
+}
+
 function hiddenList(h: unknown): HiddenKind[] {
   if (!Array.isArray(h) || Object.getPrototypeOf(h) !== Array.prototype || h.length > HIDDEN_KINDS.length) throw fail();
   const seen = new Set<string>();
@@ -90,16 +128,18 @@ function hiddenList(h: unknown): HiddenKind[] {
  * Validate an opened envelope's type and payload. Returns a fresh copy; throws
  * ProofError('bad-payload') for an unknown type, a missing or extra field, a key that is not
  * exactly 32 bytes of canonical base64, a malformed proof id or sha256, a side outside
- * 1..PROOF_MAX_SIDE, a mime other than PNG or JPEG, or `hidden` that is not a set of HiddenKind.
+ * 1..PROOF_MAX_SIDE, a mime other than PNG or JPEG, `hidden` that is not a set of HiddenKind, or a
+ * `photoTakenAt` that is neither null nor `isUtcMinute`. A missing `photoTakenAt` is null.
  */
 export function parseProofPayload(type: string, payload: unknown): ProofEnvelope {
   if (!isPlainObject(payload)) throw fail();
   if (type === 'proof.attached') {
-    if (!hasExactKeys(payload, ATTACHED_KEYS)) throw fail();
+    const missing = ATTACHED_OPTIONAL.filter((k) => !Object.prototype.hasOwnProperty.call(payload, k));
+    if (!hasExactKeys(payload, ATTACHED_KEYS.filter((k) => !missing.includes(k)))) throw fail();
     const kind = payload['kind'];
     if (kind !== 'proof' && kind !== 'evidence') throw fail();
     const c = common(payload);
-    return { type, payload: { proofId: c.proofId, kind, key: c.key, sha256: c.sha256, width: c.width, height: c.height, mime: c.mime, hidden: hiddenList(payload['hidden']) } };
+    return { type, payload: { proofId: c.proofId, kind, key: c.key, sha256: c.sha256, width: c.width, height: c.height, mime: c.mime, hidden: hiddenList(payload['hidden']), photoTakenAt: photoTakenAtOf(payload['photoTakenAt']) } };
   }
   if (type === 'proof.unblurred') {
     if (!hasExactKeys(payload, UNBLURRED_KEYS)) throw fail();

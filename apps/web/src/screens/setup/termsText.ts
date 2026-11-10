@@ -13,7 +13,7 @@
  * deploy that changed one without the other), and the Terms screen refuses to take an "I accept"
  * for a version whose text it does not show. Change both together.
  */
-export const TERMS_TEXT_VERSION = '2026-10-17';
+export const TERMS_TEXT_VERSION = '2026-11-09';
 
 export interface TermsSection {
   heading: string;
@@ -28,9 +28,14 @@ export const KEY_POINTS: readonly string[] = [
   'X2F never holds your coins.',
   'If you post an ad, you pay a 1% fee when the trade completes.',
   'Moderators can read your trade chat only if a dispute is opened.',
-  'Dispute records are kept for 30 days.',
+  // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling): two lines in place of
+  // "Dispute records are kept for 30 days." COPY-UNSIGNED.
+  'Completed trades are erased on day 30.',
+  'Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators.',
   'No IP addresses are logged.',
   'We answer lawful warrants with the little we have.',
+  // S-043 (owner p4-6, build spec j33a section 1, 9 Nov): the 60-day rule, last, saying why. COPY-UNSIGNED
+  'X2F is built to last, for people who trade regularly, so an account not signed into for 60 days is closed.',
 ];
 
 /** The heading of the section the tick box's "Privacy Policy" points at. */
@@ -81,7 +86,10 @@ export const TERMS: TermsSection[] = [
     heading: PRIVACY_HEADING,
     paragraphs: [
       'X2F keeps only what a trade needs, and deletes it after a set time. X2F does not track you, does not use analytics and removes location and device details from uploads.',
-      'No IP addresses are logged, even in disputes. Dispute records are kept for 30 days after the dispute closes, then deleted.',
+      'No IP addresses are logged, even in disputes.',
+      // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling), in place of "Dispute records
+      // are kept for 30 days after the dispute closes, then deleted." COPY-UNSIGNED.
+      'Completed trades, chat included, are erased for good on day 30 after they end. Disputed trades are kept for up to 90 days after the dispute closes, with private details removed by our privacy tool, and used to train our moderators while X2F grows.',
     ],
   },
   {

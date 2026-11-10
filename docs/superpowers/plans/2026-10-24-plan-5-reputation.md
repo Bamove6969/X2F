@@ -37,6 +37,12 @@ Task 13 Step 3 lists the resolved tree (`npm ls --all tesseract.js`) in the comm
 
 > **Lead note 2026-10-24:** the display-name / login-name split (spec 6.1) is owned by the Plan 2 follow-up FU-A (branch `wip/lead-p2-fua`, migration 009, renaming `username` to `display_name` and adding `login_name`). It merges before Plan 5 starts. Plans 3 and 4 then switch `username` to `display_name`.
 
+## Revision 2026-11-09 (owner)
+
+Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's answers register of 2026-11-09. Where this list differs from older text, this list wins.
+
+- **Fast badge (owner p11-20):** earned after 30 payments sent in under half the time allowed to pay (replaces "usually pays or releases within 10 minutes" and the lead default "median of both lists"). Lead reading, to confirm: the clock stops at the "I've paid" tap.
+
 ## Global Constraints
 
 - **Share the bare minimum (spec 1).** No route returns a login name, email, phone, IP, payout address, trade amount sum, or anything inside a PGP key other than its fingerprint. Profiles are keyed by the **display name** only (spec 6.1, owner 2026-10-23).
@@ -78,7 +84,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 **Badges**
 - **P5-A11 New and the 2 Featured slots.** New takes one of the 2 Featured slots, so a New account can feature one more badge.
 - **P5-A12 Families.** Only the highest trade milestone (10, 50, 100, 500, 1,000) and the highest Veteran step (1, 3, 5 years) are earned at once. Labels: "10 trades" … "1,000 trades" (board), "Veteran", "Veteran · 3 years", "Veteran · 5 years" `// COPY-UNSIGNED`.
-- **P5-A13 Thresholds not in the spec.** Fast: `typicalMinutes ≤ 10` with at least `FAST_MIN_SAMPLES = 5`. Clean record: ≥ 100 completed trades and **zero** lost disputes ever. Milestones and Trusted count `completedTrades` = released trades (the spec's stat), not the starter-limit count.
+- **P5-A13 Thresholds not in the spec.** Fast: ~~`typicalMinutes ≤ 10` with at least `FAST_MIN_SAMPLES = 5`~~ *(replaced 2026-11-09, owner p11-20: 30 payments sent in under half the time allowed to pay; lead reading, to confirm: measured to the "I've paid" tap)*. Clean record: ≥ 100 completed trades and **zero** lost disputes ever. Milestones and Trusted count `completedTrades` = released trades (the spec's stat), not the starter-limit count.
 - **P5-A14 Security key verified.** Earned with any `webauthn_credentials.kind = 'security-key'`. Trader keys are registered with `attestationType: 'none'` (Plan 2), so X2F cannot prove the key is hardware. Requiring attestation would tell X2F the key's make and model (a privacy cost). Owner to choose.
 - **P5-A15 After the first choice.** Once a trader has saved badge choices, newly earned badges start On hover. A Featured badge that is lost frees its slot; nothing is promoted automatically.
 - **P5-A16 Icons not named by the spec.** Milestones `Trophy`, Clean record `BadgeCheck`, Past reputation `History` (lucide). Spec icons: New `Sprout`, Trusted `ShieldCheck`, Fast `Zap`, Veteran `Star`, PGP `KeyRound`, Security key `Usb`.
@@ -243,7 +249,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - [ ] **Step 1: Write the failing tests.**
   - Stage `building` with 7 trades → `new` earned; `graduated` with 20 trades → no `new`; 4 trades `graduated` is impossible input and still yields no `new` (the stage decides, spec 2.3).
   - 212 trades, 99%, 6 min over 20 samples, 0 lost, 2 years, PGP → `['trades-100','veteran-1','trusted','fast','clean-record','pgp']` (order-insensitive); 1,000 trades → `trades-1000` only from the family.
-  - 150 trades, 97% → no `trusted`; 150 trades, 1 lost dispute → no `clean-record`; Fast with 4 samples → none.
+  - 150 trades, 97% → no `trusted`; 150 trades, 1 lost dispute → no `clean-record`; ~~Fast with 4 samples → none~~ (2026-11-09, owner p11-20: Fast needs 30 qualifying payments, so 29 → none).
   - **No volume badge:** the `BADGES` keys and every `label`/`meaning` match none of `/\$|usd|xmr|volume|traded/i`.
   - Defaults with no choices: earned `trusted, trades-100, fast, veteran-1, pgp` → `featured ['trusted','trades-100']`, `more ['fast','veteran-1','pgp']`; with `new` earned → `featured ['new','trusted']`.
   - Hidden `pgp` appears in neither list; `applyChoice(.., 'new', 'hidden')` throws `new-is-fixed`; featuring a third shows the exact notice.
@@ -628,7 +634,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: encrypted proof storage, moderator-only unblurred copies, retention`.
 
-**Revision 2026-10-29 (owner):** `purgeProofs` follows the new retention: proofs go with the trade 30 days after it ends, or 90 days after the dispute button for a disputed trade (Plan 7 Task 2, Plan 4 Task 23). See "Revision 2026-10-29 (owner)" at the end.
+**Revision 2026-10-29 (owner):** `purgeProofs` follows the new retention: proofs go with the trade 30 days after it ends, or 90 days after ~~the dispute button~~ the dispute closing (owner p11-11, 2026-11-09) for a disputed trade (Plan 7 Task 2, Plan 4 Task 23). See "Revision 2026-10-29 (owner)" at the end.
 
 ### Task 15: Proof screens — upload, blur editor, paid card, evidence and the unblurred copy (`apps/web`)
 
@@ -768,7 +774,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 - **Running totals instead of per-trade rows.** After the 30-day delete, stats can't be computed from `trades`. New Task 20 keeps per-account running totals (completed trades, lost disputes, cancels, trades reaching funding) updated when each trade or dispute ends. **Decided (lead call, 2026-10-29):** P5-A8 `typicalMinutes` (median of the last 20 action times) and P5-A9 cancel rate need more than a count, so each account keeps its last 20 action durations, in minutes, with no trade code or date. The owner still has to confirm the running-totals approach (answers, Q3 "pending confirmation").
 - **Feedback link on every "can't do that" popup** (owner): new Task 21 adds the feedback form (complaint, feedback or recommendation; named or anonymous) and the shared `CantDoThat` popup. Task 4's "How's X2F doing?" card stays as it is.
 - **P5-A29** (the buyer keeps the unblurred original on the device until no dispute is possible) follows the dispute-after-refund window, which is open (Plan 3 Revision 2026-10-29).
-- **The self-delete lines of Revision 2026-10-28 are superseded.** There are no per-side self-delete times. Proofs are deleted with the trade, 30 days after it ends, or 90 days after the dispute button for a disputed trade (Task 14's `purgeProofs` takes both numbers).
+- **The self-delete lines of Revision 2026-10-28 are superseded.** There are no per-side self-delete times. Proofs are deleted with the trade, 30 days after it ends, or 90 days after ~~the dispute button~~ the dispute closing (owner p11-11, 2026-11-09) for a disputed trade (Task 14's `purgeProofs` takes both numbers).
 - **Delete my account** is decided (yes) and planned in Plan 7 (new Task 18). Reviews by and about a deleted account stay (they are permanent) and show "Deleted user".
 
 ### Task 19: Review disputes — NEW 2026-10-29

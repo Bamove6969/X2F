@@ -1,3 +1,4 @@
+import type { TradePublisher } from '../trades/store.js';
 import fastifyCookie from '@fastify/cookie';
 import { can } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
@@ -19,12 +20,15 @@ import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushT
 import { staffAccountRoutes } from './account.js';
 import { staffTicketRoutes } from '../tickets/staffRoutes.js';
 import { staffFeedbackRoutes } from './feedback.js';
+import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
+import { staffHoldRoutes } from './holds.js';
 import { staffPastRepRoutes } from './pastrep.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
 import { ownerSetupRoutes } from './ownerSetup.js';
 import { serveStaffWeb } from './web.js';
+import { staffRevenueRoutes } from './revenue.js';
 import { staffSettingsRoutes } from './settings.js';
 import { staffSiteRoutes } from './site.js';
 
@@ -44,6 +48,11 @@ export interface StaffDeps extends Deps {
   appendLog?: typeof appendLog;
   /** `X2F_STAFF_WEB_ROOT`: the built staff app (apps/staff-web/dist), served on this origin (Task 16). */
   staffWebRoot?: string;
+  /**
+   * The trader app's trade publisher (main.ts passes `app.tradePublish`): a staff action that moves
+   * a trade (ending a hold resumes its trades) reaches the traders' live views. Unset: nobody hears.
+   */
+  tradePublish?: TradePublisher;
 }
 
 /** One registered staff route, as the privilege matrix test (test/staff/routes.ts) lists it. */
@@ -158,6 +167,7 @@ export async function buildStaffApi(
   staffPriceHealthRoutes(app);
   // Plan 5 Task 10 (owner 2026-11-02): a claim's verified dollar figure (senior moderators and the owner).
   staffPastRepRoutes(app);
+  staffHoldRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
   // Plan 4 Task 11: the moderator's queue, case, logged chat access, messages, proof and freeze.
@@ -168,6 +178,10 @@ export async function buildStaffApi(
   });
   // Plan 4 Task 30 / J-14: support tickets and compromised-account tickets (D-055, D-057, D-059).
   staffTicketRoutes(app);
+  // Plan 4 Task 32: the owner's revenue totals from the internal revenue ledger (earnings.read).
+  staffRevenueRoutes(app);
+  // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
+  staffFeeSweepRoutes(app);
   // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.
   if (deps.staffWebRoot !== undefined) await serveStaffWeb(app, deps.staffWebRoot);
 

@@ -5,6 +5,8 @@
 // Blocking is silent (the blocked person is never told) and open trades finish normally. The one
 // refusal (a block the API refuses) is CantDoThat's, worded in ui/cantDoCodes.ts (CANNOT_BLOCK).
 
+import { formatDate } from '../../ui/dates.js';
+
 export const BLOCK_COPY = {
   action: (name: string) => `Block ${name}`,
   confirmTitle: (name: string) => `Block ${name}?`,
@@ -26,7 +28,7 @@ export const BLOCK_COPY = {
   whatNote: "This applies while they're signed in. To block someone, open one of their offers and tap Block.",
   count: (n: number) => (n === 1 ? '1 blocked trader' : `${n} blocked traders`),
   blockedOn: (iso: string) =>
-    `Blocked ${new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`,
+    `Blocked ${formatDate(iso)}`,
   unblockedRow: 'Unblocked. They can see your offers again.',
   // The row button: the accessible name starts with the visible word, so a voice user saying
   // "click Undo" or "click Unblock" finds it (WCAG 2.5.3, review N2).

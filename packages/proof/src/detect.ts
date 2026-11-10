@@ -14,6 +14,7 @@
 import { normalizeTradeCode } from '@x2f/core';
 import { findAmounts } from './amounts.js';
 import { NAME_LABELS } from './nameLabels.js';
+import { NUMBER_LABELS, type NumberLabelKind } from './numberLabels.js';
 import { type OcrWord, linesOf } from './ocr.js';
 
 export type HiddenKind = 'name' | 'account' | 'card' | 'iban' | 'address' | 'phone' | 'email' | 'handle' | 'manual';
@@ -48,7 +49,10 @@ interface Span {
 
 // Class ranks: where spans overlap, the more specific class labels the character. The rank belongs
 // to the class, not the label: a Luhn-invalid card is still the card class, labelled `account`.
-const RANK = { iban: 0, card: 1, email: 2, phone: 3, handle: 4, monero: 5, account: 6, address: 7, name: 8 } as const;
+// `labelled` (owner G17): a number after a field label takes the label's kind over the phone, account
+// and Monero guesses, but not over a card or IBAN found by its own shape (a Luhn-invalid card stays
+// `account` whatever its label, as review 2026-10-24 set it).
+const RANK = { iban: 0, card: 1, email: 2, labelled: 2.5, phone: 3, handle: 4, monero: 5, account: 6, address: 7, name: 8 } as const;
 
 /** Marks a kept character in the text the classifiers see, so no match can run across it. */
 const BLANK = '\u0000';
@@ -65,7 +69,20 @@ export const UPI_IDS = true;
 export interface DetectOptions {
   /** Mask UPI IDs (`name@bank`); defaults to `UPI_IDS`. */
   upiIds?: boolean;
+  /**
+   * `detectSensitiveText` only: the field-label kinds (owner G17, `numberLabels.ts`) that make the
+   * number after them a detail; defaults to all of them. Review notes pass `REVIEW_NOTE_NUMBER_LABELS`.
+   */
+  numberLabels?: readonly NumberLabelKind[];
 }
+
+/**
+ * Lead default pending owner p11-142 (review 2026-11-10 finding 5): review notes read only the
+ * account and IBAN field labels, not the card and phone ones, so `Paid with Visa 1500 EUR` or `Sent
+ * via mobile 2500 MXN` is feedback, not a card or phone number; a card or phone number is still
+ * refused by its own shape. Proof screenshots keep every label (F15: after `Card` it is the card).
+ */
+export const REVIEW_NOTE_NUMBER_LABELS: readonly NumberLabelKind[] = ['iban', 'account'];
 
 // ---------------------------------------------------------------------------------------------
 // Normalisation (reviews R3-I3 and R4). Detection runs on a copy of each line where every Unicode
@@ -538,6 +555,55 @@ function nameStart(line: string): number | 'next' {
   return -1;
 }
 
+// Numbers after a field label (owner G17, 2026-11-07; F15): "read what the field is named prior to
+// the number". A personal label (`numberLabels.ts`) blurs the number after it with the label's kind,
+// even a short one or one equal to the trade amount (`Card ending in 4125` on a $4,125.00 trade:
+// owner F15, "card ending vs amount: read the words before the digits"). The number starts right
+// after the label (and an optional `number`, `no.`, `#`, `ending in`, colon), on the same line, or at
+// the start of the next line when the label stands alone on its line. The trade code, the trade
+// amount (after an amount label, `AMOUNT_LABEL`, or on its own) and times stay clear as before (Q50).
+
+const NUMBER_KINDS = Object.keys(NUMBER_LABELS) as NumberLabelKind[];
+/** Words between a label and its number. */
+const NUMBER_TAIL = '\\.?(?:\\s*(?:number|num|no|nr|n[º°]|ending(?:\\s+in)?|ends\\s+in)\\.?)?\\s*[:：#]?\\s*';
+// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- built from the constant NUMBER_LABELS lists, each label escaped by alternation()
+const NUMBER_LABEL = new RegExp(
+  `(?<![\\p{L}\\p{N}/])(?:${NUMBER_KINDS.map((k) => `(?<${k}>${alternation([...NUMBER_LABELS[k]])})`).join('|')})(?![\\p{L}\\p{N}])${NUMBER_TAIL}`,
+  'giu',
+);
+/** A digit or a mask mark (`••••`, `**`, `...`, `xx` before digits) inside a labelled number. */
+const VALUE_CHAR = '(?:\\d|[•*●·∙°…]|[xX](?=[xX\\d])|\\.(?=\\.*\\d))';
+/** The number after a label: a `+` or bracket, then digits and masks with short separators. */
+const LABELLED_VALUE = new RegExp(`\\+?\\(?${VALUE_CHAR}(?:${VALUE_CHAR}|[ ()./-]{1,2}(?=${VALUE_CHAR}|\\())*`, 'y');
+const MASK_CHAR = /[•*●·∙°…xX]|\.\./;
+
+/**
+ * The numbers after personal field labels in a normalised line, as `labelled` spans with the label's
+ * kind; `prev` is the line before (a label alone on it labels this line's first number). A number
+ * needs 4 digits or more, or a mask and 2 digits (`Account 2 of 3` is not one).
+ */
+function labelledNumbers(text: string, prev?: string): Span[] {
+  const look = withLookalikeDigits(text, true).text;
+  const out: Span[] = [];
+  const valueAt = (at: number, kind: NumberLabelKind): void => {
+    LABELLED_VALUE.lastIndex = at;
+    const m = LABELLED_VALUE.exec(look);
+    if (!m) return;
+    const digits = digitsOf(m[0]).length;
+    if (digits >= 4 || (digits >= 2 && MASK_CHAR.test(m[0]))) out.push({ start: at, end: at + m[0].length, kind, rank: RANK.labelled });
+  };
+  const kindOf = (m: RegExpExecArray | RegExpMatchArray): NumberLabelKind => NUMBER_KINDS.find((k) => m.groups?.[k] !== undefined)!;
+  for (const m of foldAccents(text).matchAll(NUMBER_LABEL)) valueAt(m.index + m[0].length, kindOf(m));
+  if (prev !== undefined) {
+    const p = foldAccents(prev);
+    NUMBER_LABEL.lastIndex = 0;
+    const m = NUMBER_LABEL.exec(p);
+    NUMBER_LABEL.lastIndex = 0;
+    if (m && p.slice(0, m.index).trim() === '' && m.index + m[0].length >= p.trimEnd().length) valueAt(text.length - text.trimStart().length, kindOf(m));
+  }
+  return out;
+}
+
 // Addresses: a house number and a street word, or a postcode, mask the whole line.
 const STREET_WORDS = new Set(
   'street st road rd avenue ave av lane ln drive dr boulevard blvd bd way court ct place pl square sq terrace close crescent highway hwy parkway pkwy rue chemin allée allee impasse quai cours platz gasse ring damm calle avenida plaza paseo carrer camino via viale piazza corso largo vicolo straat laan plein gracht kade singel dijk'.split(' '),
@@ -663,13 +729,17 @@ function markDatesAndCode(text: string, k: boolean[], codeRe: RegExp): void {
  * marker can sit between a group and the real amount: in `… 1111 - 1111 $1,111.00` the `$` is also
  * read as a marker after the last group). An amount with decimals is always kept.
  */
-function amountKept(text: string, keep: Keep, codeRe: RegExp, unmarkedOnly = false): boolean[] {
+function amountKept(text: string, keep: Keep, codeRe: RegExp, unmarkedOnly = false, prev?: string): boolean[] {
   const k: boolean[] = new Array<boolean>(text.length).fill(false);
+  // Owner G17/F15: a bare number after a personal label is that detail, never the amount.
+  const personal = labelledNumbers(text, prev);
+  const isPersonal = (start: number, end: number): boolean => personal.some((p) => p.start < end && start < p.end);
   // [start, end, has a currency marker]
   const bare: Array<[number, number, boolean]> = [];
   for (const a of findAmounts(text, keep.exponent)) {
     if (a.value !== keep.fiatCents) continue;
     if (a.decimals) mark(k, a.start, a.end);
+    else if (a.marker === null && isPersonal(a.start, a.end)) continue;
     else if (a.marker !== null || AMOUNT_LABEL.test(text.slice(0, a.start)) || standsAlone(text, a.start, a.end)) bare.push([a.start, a.end, a.marker !== null]);
   }
   const unit = 10n ** BigInt(keep.exponent);
@@ -677,7 +747,7 @@ function amountKept(text: string, keep: Keep, codeRe: RegExp, unmarkedOnly = fal
     const whole = (keep.fiatCents / unit).toString();
     for (const m of text.matchAll(LONG_DIGITS)) {
       const end = m.index + m[0].length;
-      if (m[0].replace(/^0+(?=\d)/, '') !== whole) continue;
+      if (m[0].replace(/^0+(?=\d)/, '') !== whole || isPersonal(m.index, end)) continue;
       if (AMOUNT_LABEL.test(text.slice(0, m.index)) || standsAlone(text, m.index, end)) bare.push([m.index, end, false]);
     }
   }
@@ -698,10 +768,11 @@ function amountKept(text: string, keep: Keep, codeRe: RegExp, unmarkedOnly = fal
  * Whether one line shows the trade amount as a whole number with no currency marker that
  * `detectSensitive` keeps clear: after an amount label (`Total 250000`) or on its own (owner Q17),
  * and never a group of a longer number (review RV4-I1). For Task 9's amount check (review RV4-M4),
- * so the smart check never reports "not found" for an amount the automatic blur left visible.
+ * so the smart check never reports "not found" for an amount the automatic blur left visible. `prev` is
+ * the line before (a personal label alone on it makes this line's number that detail, owner G17).
  */
-export function showsWholeAmount(line: string, keep: Keep): boolean {
-  return amountKept(normalize(line).text, keep, keepCode(keep), true).some(Boolean);
+export function showsWholeAmount(line: string, keep: Keep, prev?: string): boolean {
+  return amountKept(normalize(line).text, keep, keepCode(keep), true, prev === undefined ? undefined : normalize(prev).text).some(Boolean);
 }
 
 /** The trade code's pattern for `keep`, or a RangeError. */
@@ -719,9 +790,11 @@ function keepCode(keep: Keep): RegExp {
 export function amountBoxes(words: OcrWord[], keep: Keep): Box[] {
   const codeRe = keepCode(keep);
   const out: Box[] = [];
+  let prev: string | undefined;
   for (const l of linesOf(words)) {
     const n = normalize(l.text);
-    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), amountKept(n.text, keep, codeRe)).keep;
+    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), amountKept(n.text, keep, codeRe, false, prev)).keep;
+    prev = n.text;
     for (const { word, start, end } of l.words) {
       const charW = (word.x1 - word.x0) / (end - start);
       for (let c = start; c < end; ) {
@@ -756,7 +829,7 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
   // Detection reads the normalised text; results are carried back to the words through its map.
   const norms = lines.map((l) => normalize(l.text));
   const texts = norms.map((n) => n.text);
-  const amounts = texts.map((text) => amountKept(text, keep, codeRe));
+  const amounts = texts.map((text, i) => amountKept(text, keep, codeRe, false, texts[i - 1]));
   const kept = texts.map((text, i) => {
     const k = [...amounts[i]!];
     markDatesAndCode(text, k, codeRe);
@@ -767,7 +840,7 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
   moneroChains(blankedTexts).forEach((c, i) => spans[i]!.push(...c));
   texts.forEach((text, i) => {
     const t = blankedTexts[i]!;
-    spans[i]!.push(...moneySpans(t, false, upi), ...handleSpans(t));
+    spans[i]!.push(...moneySpans(t, false, upi), ...handleSpans(t), ...labelledNumbers(text, texts[i - 1]));
     for (const m of t.matchAll(SPLIT_EMAIL)) spans[i]!.push({ start: m.index, end: m.index + m[0].length, kind: 'email', rank: RANK.email });
     if (isAddressLine(t)) spans[i]!.push({ start: 0, end: t.length, kind: 'address', rank: RANK.address });
     const ns = nameStart(text);
@@ -927,7 +1000,9 @@ const TEXT_ORDER: HiddenKind[] = ['email', 'phone', 'card', 'iban', 'account'];
 /**
  * The personal-detail kinds in plain text (review notes, P5-A6): email, phone, card, IBAN, account
  * number and Monero address (as `account`). Each kind once, in a fixed order. Dates and trade codes
- * are not details.
+ * are not details. A number after a personal field label (`phone 612 345 678`, `Acct 4821`) is that
+ * detail whatever its grouping (owner G17), for the label kinds in `opts.numberLabels` (all by
+ * default; review notes pass `REVIEW_NOTE_NUMBER_LABELS`).
  */
 export function detectSensitiveText(s: string, opts: DetectOptions = {}): HiddenKind[] {
   const upi = opts.upiIds ?? UPI_IDS;
@@ -956,12 +1031,77 @@ export function detectSensitiveText(s: string, opts: DetectOptions = {}): Hidden
     }
     return k;
   });
+  // Owner G17: a number after a personal label is a detail even when the rules above allow it
+  // (`phone 612 345 678`), unless it is a date.
+  const labelKinds = opts.numberLabels ?? NUMBER_KINDS;
+  const labelled = lines.map((line, i) => labelledNumbers(line, lines[i - 1]).filter((sp) => labelKinds.includes(sp.kind as NumberLabelKind)));
+  lines.forEach((line, i) => {
+    const dates: boolean[] = new Array<boolean>(line.length).fill(false);
+    markDates(line, dates);
+    for (const sp of labelled[i]!) for (let c = sp.start; c < sp.end; c++) if (!dates[c]) keeps[i]![c] = false;
+  });
   const blankedLines = lines.map((line, i) => blanked(line, keeps[i]!));
   const chains = moneroChains(blankedLines);
   lines.forEach((line, i) => {
-    const spans = [...moneySpans(blankedLines[i]!, true, upi), ...chains[i]!];
+    const spans = [...moneySpans(blankedLines[i]!, true, upi), ...chains[i]!, ...labelled[i]!];
     const best = visible(line, resolve(line.length, spans, keeps[i]!));
     for (const b of best) if (b) found.add(b.kind);
   });
   return TEXT_ORDER.filter((k) => found.has(k));
+}
+
+/**
+ * The boxes of the trade code (the memo) in OCR words, in any grouping or case, also wrapped onto
+ * the next line, cut by character position like `amountBoxes`. The uploader's app compares them with the uploader's own blur (owner
+ * 2026-11-02 08:17: warn when their blur covers the amount or the memo; posting is still allowed).
+ */
+export function codeBoxes(words: OcrWord[], tradeCode: string): Box[] {
+  const code = normalizeTradeCode(tradeCode);
+  if (code === null) throw new RangeError('tradeCode is not a trade code');
+  const codeRe = codePattern(code);
+  const out: Box[] = [];
+  const lines = linesOf(words);
+  const norms = lines.map((l) => normalize(l.text));
+  const kepts = norms.map((n) => {
+    const kept: boolean[] = new Array<boolean>(n.text.length).fill(false);
+    for (const m of n.text.matchAll(codeRe)) mark(kept, m.index, m.index + m[0].length);
+    return kept;
+  });
+  // A code wrapped onto the next line (review 2026-11-10 finding 8, as `checkProof` reads it, review
+  // N1): the two lines joined with nothing and with a space; each part is boxed on its own line.
+  for (let i = 0; i + 1 < norms.length; i++) {
+    const a = norms[i]!.text;
+    const b = norms[i + 1]!.text;
+    for (const sep of ['', ' ']) {
+      for (const m of `${a}${sep}${b}`.matchAll(codeRe)) {
+        const end = m.index + m[0].length;
+        if (m.index >= a.length || end <= a.length + sep.length) continue;
+        mark(kepts[i]!, m.index, a.length);
+        mark(kepts[i + 1]!, 0, end - a.length - sep.length);
+      }
+    }
+  }
+  for (const [li, l] of lines.entries()) {
+    const n = norms[li]!;
+    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), kepts[li]!).keep;
+    for (const { word, start, end } of l.words) {
+      const charW = (word.x1 - word.x0) / (end - start);
+      for (let c = start; c < end; ) {
+        if (!k[c]) {
+          c++;
+          continue;
+        }
+        let d = c;
+        while (d < end && k[d]) d++;
+        out.push({
+          x0: c === start ? word.x0 : Math.floor(word.x0 + charW * (c - start)),
+          y0: word.y0,
+          x1: d === end ? word.x1 : Math.ceil(word.x0 + charW * (d - start)),
+          y1: word.y1,
+        });
+        c = d;
+      }
+    }
+  }
+  return out;
 }

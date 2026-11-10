@@ -115,6 +115,7 @@ describe('GET /v1/trades/:code', () => {
       const v = (await who.browser.get(`/v1/trades/${trade.code}`)).json() as View;
       expect(v).toMatchObject({
         poster: 'buyer', state: 'setup', amountAtomic: AMOUNT.toString(), settling: null, paidAt: null,
+        confirmWindowMin: 120, // fixed at take (seedTrade's); either side's wait before a dispute (owner p9-4)
         lockedRate: { currency: 'USD', centsPerXmr: '33000' }, maxFiatCents: '100000',
       });
     }

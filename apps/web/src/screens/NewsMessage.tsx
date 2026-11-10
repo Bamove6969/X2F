@@ -1,6 +1,6 @@
 import './screens.css';
 import '../ui/ui.css';
-import { utcDateTime } from '../ui/dates.js';
+import { formatDateTime as utcDateTime } from '../ui/dates.js';
 
 /**
  * One News message as the News page shows it (Plan 4 Task 28): title, a "New" mark, the posted

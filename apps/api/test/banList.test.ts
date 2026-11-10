@@ -10,6 +10,7 @@ import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
+import { SIG } from './helpers/signature.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 
 // Owner, 2 Nov 2026: the ban list. When an account is banned its usernames (display and login
@@ -39,7 +40,7 @@ async function create(n: NewNames): Promise<string> {
   const c = await deps.db.connect();
   try {
     await c.query('begin');
-    const id = await createAccount(c, deps.config, { ...n, kind: 'trader', termsVersion: deps.config.termsVersion, now: deps.clock() });
+    const id = await createAccount(c, deps.config, { ...n, kind: 'trader', termsVersion: deps.config.termsVersion, termsSignature: SIG, now: deps.clock() });
     await c.query('commit');
     return id;
   } catch (e) {
@@ -97,8 +98,8 @@ describe('recordBan', () => {
     const key = await genKey();
     await insertPgpKey(deps.db, deps.config, { accountId: member, fingerprint: key.fingerprint, armored: key.publicKey, now: deps.clock() });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
-       values ($1, 'Sam', 'sam', '{trades}', $2, $3, $2, $2)`,
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'Sam', 'sam', '{trades-see-active}', $2, $3, $2, $2)`,
       [team, deps.clock(), member],
     );
     const fps = await keyFingerprints(key.publicKey);
@@ -186,7 +187,7 @@ describe('a banned PGP key can never be used again', () => {
     const start = await b.post('/v1/register/pgp/start', { displayName: display, loginName: login, publicKey: key.publicKey });
     const code = start.statusCode === 200 ? codeOf(await decrypt(start.json().encryptedMessage, key.privateKey)) : '';
     const finish = start.statusCode === 200
-      ? await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion })
+      ? await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion, termsSignature: SIG })
       : null;
     return { start, finish, display };
   }
@@ -226,7 +227,8 @@ describe('a banned PGP key can never be used again', () => {
 
   it('lead review item 2: a login that refreshes the stored key with a banned subkey is refused, and nothing is stored', async () => {
     const k = await genKey();
-    const id = await seedAccount(deps, { loginName: uniq('refresher') });
+    const loginName = uniq('refresher');
+    const id = await seedAccount(deps, { loginName });
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
     const before = (await deps.db.query<{ armored_enc: Buffer }>('select armored_enc from pgp_keys where account_id = $1', [id])).rows[0]!.armored_enc;
     // The same primary key with a new signing subkey, which is banned.
@@ -235,7 +237,7 @@ describe('a banned PGP key can never be used again', () => {
     const sub = grown.getSubkeys().at(-1)!.getFingerprint();
     await recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [sub], accountId: null, now: deps.clock() });
     const b = new Browser(app);
-    const start = await b.post('/v1/login/pgp/start', { key: grown.toPublic().armor() });
+    const start = await b.post('/v1/login/pgp/start', { key: grown.toPublic().armor(), loginName });
     expect(start.statusCode, start.body).toBe(200);
     const code = codeOf(await decrypt(start.json().encryptedMessage, grown.armor(), undefined, deps.clock()));
     const finish = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk' });
@@ -336,19 +338,21 @@ describe('security review 8 Nov I1: a ban covers only what the banned account co
     const start = await b.post('/v1/register/pgp/start', { displayName: display, loginName: uniq('mal.login'), publicKey });
     expect(start.statusCode, start.body).toBe(200);
     const code = codeOf(await decrypt(start.json().encryptedMessage, privateKey));
-    const finish = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion });
+    const finish = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });
     const { rows } = await deps.db.query<{ id: string }>('select id from accounts where display_key = $1', [display.toLowerCase()]);
     return { id: rows[0]?.id ?? null, finish };
   }
 
   /** Vera: an account, and her own PGP key (not yet stored). */
   async function vera() {
-    return { id: await seedAccount(deps, { loginName: uniq('vera') }), key: await genKey() };
+    const loginName = uniq('vera');
+    return { id: await seedAccount(deps, { loginName }), loginName, key: await genKey() };
   }
 
-  async function loginWith(key: { publicKey: string; privateKey: string }) {
+  /** A trader PGP login: the key with the account's username (owner G6). */
+  async function loginWith(key: { publicKey: string; privateKey: string }, loginName: string) {
     const b = new Browser(app);
-    const start = await b.post('/v1/login/pgp/start', { key: key.publicKey });
+    const start = await b.post('/v1/login/pgp/start', { key: key.publicKey, loginName });
     expect(start.statusCode, start.body).toBe(200);
     const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey, undefined, deps.clock()));
     return b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk' });
@@ -372,7 +376,7 @@ describe('security review 8 Nov I1: a ban covers only what the banned account co
       await expect(assertKeyNotBanned(deps.db, deps.config, v.key.publicKey)).resolves.toBeUndefined();
       // Mallory's own key is banned.
       await expect(assertKeyNotBanned(deps.db, deps.config, mallory.publicKey)).rejects.toMatchObject({ code: 'key-unavailable' });
-      const login = await loginWith(v.key);
+      const login = await loginWith(v.key, v.loginName);
       expect(login.statusCode, login.body).toBe(200);
     });
   }
@@ -398,13 +402,14 @@ describe('security review 8 Nov I1: a ban covers only what the banned account co
 
   it('bans the subkeys the account proved, one a later login proved too, and signing subkeys that signed back', async () => {
     const k = await genKey({ subkeys: [{}, { sign: true }] });
-    const id = await seedAccount(deps, { loginName: uniq('prover') });
+    const loginName = uniq('prover');
+    const id = await seedAccount(deps, { loginName });
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
     // A newer encryption subkey: the next login's challenge goes to it, so that login proves it.
     const priv = await openpgp.readPrivateKey({ armoredKey: k.privateKey });
     const grown = await priv.addSubkey({ date: new Date(deps.clock().getTime() - 60_000) });
     const newEnc = grown.getSubkeys().at(-1)!.getFingerprint();
-    const login = await loginWith({ publicKey: grown.toPublic().armor(), privateKey: grown.armor() });
+    const login = await loginWith({ publicKey: grown.toPublic().armor(), privateKey: grown.armor() }, loginName);
     expect(login.statusCode, login.body).toBe(200);
     const { rows } = await deps.db.query<{ proved_subkeys: string[] }>('select proved_subkeys from pgp_keys where account_id = $1', [id]);
     expect(rows[0]!.proved_subkeys).toContain(newEnc);

@@ -134,9 +134,8 @@ test('05 a backup login starts the 24-hour hold', async ({ page }) => {
   await page.route('**/v1/account/me', json({ ...TRADER_ME, level: 'recovery', holdUntil: HOLD_UNTIL }));
   await page.route('**/v1/login/backup', json({ status: 'ok', level: 'recovery', holdUntil: HOLD_UNTIL }));
   await page.goto('/login/backup?returnTo=%2Fbuy');
-  await page.click('[data-kind="totp"]');
   await page.fill('#backup-login-name', 'nightowl');
-  await page.fill('#backup-code', '123456');
+  await page.fill('#backup-code', 'ABCD-EFGH-JKMN-PQRT');
   await page.click('[data-part="backup-login"]');
   await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
   await shot(page, '05-backup-login-hold-note');
@@ -162,6 +161,7 @@ const approval = (over: Record<string, unknown> = {}) => ({
   expiresAt: new Date(Date.now() + 240_000).toISOString(),
   atLimit: false,
   oneDevice: false,
+  keysOffered: false,
   ...over,
 });
 
@@ -233,15 +233,15 @@ test('12 a held backup session: the hold banner on Security', async ({ page }) =
   await shot(page, '12-security-hold-banner');
 });
 
-test('13 a change from a one-proof login is held: "takes effect at"', async ({ page }) => {
-  // The logout timer that used to be this shot's held change is retired (session length, owner
-  // 2 Nov 2026): One device at a time on Devices is the held change now.
+test('13 a change from a username-and-password login is staged: "Saved as a draft"', async ({ page }) => {
+  // The logout timer that used to be this shot's staged change is retired (session length, owner
+  // 2 Nov 2026): One device at a time on Devices is the staged change now.
   await securityApi(page);
-  await page.route('**/v1/account/security/one-device', json({ status: 'held', holdUntil: HOLD_UNTIL }, 202));
+  await page.route('**/v1/account/security/one-device', json({ status: 'staged', changeId: '55555555-5555-4555-8555-555555555555' }, 202));
   await page.goto('/settings/devices');
   await page.locator('[data-part="one-device-toggle"]').click();
-  await expect(page.locator('[data-part="held-note"]')).toContainText('This change takes effect at');
-  await shot(page, '13-devices-held-change', { scrollTo: page.locator('[data-part="held-note"]') });
+  await expect(page.locator('[data-part="staged-note"]')).toContainText('Saved as a draft');
+  await shot(page, '13-devices-staged-change', { scrollTo: page.locator('[data-part="staged-note"]') });
 });
 
 // ---- 14-28 Team members (Plan 2 Task 18) ----------------------------------------------------------
@@ -344,6 +344,9 @@ test('21-23 a member joins: the invite, the PGP step, the second way', async ({ 
     el.dispatchEvent(new Event('scroll'));
   });
   await page.check('[data-part="terms-tick"]');
+  // And signs (owner 9 Nov 2026, p11-14: everyone who gets a login signs).
+  await page.click('[data-part="signature-type"]');
+  await page.fill('[data-part="signature-name"]', 'AK');
   await page.click('[data-part="terms-accept"]');
   await expect(page.locator('[data-part="invite-who"]')).toBeVisible();
   await shot(page, '21-team-join-invite');
@@ -440,7 +443,7 @@ const OC = '33333333-3333-4333-8333-333333333333';
 type Offer = Record<string, unknown> & { id: string; status: 'live' | 'paused'; hidden?: string };
 const myOffers = (): Offer[] => [
   { id: OA, side: 'sell', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', rate: '33165', pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, status: 'live', createdAt: '2026-10-29T10:00:00.000Z' },
-  { id: OB, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '30000', pricing: { mode: 'fixed', centsPerXmr: '30000' }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5, status: 'paused', createdAt: '2026-10-29T09:00:00.000Z' },
+  { id: OB, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '27000', pricing: { mode: 'market', marginBps: -1000 }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5, status: 'paused', createdAt: '2026-10-29T09:00:00.000Z' },
   { id: OC, side: 'sell', methodId: 'WISE', methodName: 'Wise', currency: 'GBP', rate: '26530', pricing: { mode: 'market', marginBps: 0 }, minFiatCents: '2000', maxFiatCents: '90000', minTrades: 0, status: 'live', createdAt: '2026-10-29T08:00:00.000Z' },
 ];
 
@@ -594,7 +597,7 @@ function apply(s: Room, e: Record<string, unknown>): { status: number; json: unk
   const v = s.view;
   switch (e.type) {
     case 'mark-paid':
-      s.view = { ...v, state: 'paid', paidAt: PAY_NOW, confirmBy: new Date(Date.parse(PAY_NOW) + 120 * 60_000).toISOString() };
+      s.view = { ...v, state: 'paid', paidAt: PAY_NOW, confirmBy: new Date(Date.parse(PAY_NOW) + 90 * 60_000).toISOString(), confirmWindowMin: 90 };
       break;
     case 'propose-cancel':
       s.view = { ...v, cancelProposedBy: v.role };
@@ -662,7 +665,7 @@ test('37 owner G56: Cancelling is final', async ({ page }) => {
   await openRoom(page, PAY_SECURING, { warned: false });
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Cancel trade' }).click();
-  const final = page.getByRole('dialog', { name: 'Cancelling is final' });
+  const final = page.getByRole('dialog', { name: 'Cancelling is likely final' });
   await expect(final).toBeVisible();
   await shot(page, '37-trade-cancel-final');
   await final.getByRole('button', { name: 'Keep trading' }).click();
@@ -679,7 +682,7 @@ test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) =
   await shot(page, '38-trade-paid-confirm-sheet');
   await page.getByRole('button', { name: 'Yes, mark as paid' }).click();
   await roomState(page, 'paid');
-  await expect(page.locator('[data-primary]').first()).toHaveText('Marked as paid');
+  await expect(page.locator('[data-part="paid-status"]')).toBeVisible();
   await shot(page, '39-trade-marked-paid');
 });
 
@@ -702,8 +705,9 @@ const PAID_SELLER = {
   poster: 'seller',
   state: 'paid',
   paidAt: new Date(Date.parse(PAY_NOW) - 8 * 60_000).toISOString(),
-  confirmBy: new Date(Date.parse(PAY_NOW) + 112 * 60_000).toISOString(),
-  nextDeadline: new Date(Date.parse(PAY_NOW) + 112 * 60_000).toISOString(),
+  confirmBy: new Date(Date.parse(PAY_NOW) + 82 * 60_000).toISOString(),
+  confirmWindowMin: 90,
+  nextDeadline: new Date(Date.parse(PAY_NOW) + 82 * 60_000).toISOString(),
   fee: { atomic: '12500000000' },
 } as TradeView;
 
@@ -758,9 +762,12 @@ test('47 Released (Task 24): the buyer\'s view', async ({ page }) => {
 });
 
 test("48 the buyer's refunded trade: why, and the 48-hour Open a dispute", async ({ page }) => {
-  const v = sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', closedAt: new Date(Date.parse(SERVER_NOW) - 10 * 3_600_000).toISOString(), txHash: 'ab'.repeat(32) });
+  // The buyer's view of satoshi_ghost's trade (review 48: not mira.k), with the time-ran-out timeline in order.
+  const ago = (min: number) => new Date(Date.parse(SERVER_NOW) - min * 60_000).toISOString();
+  const base = sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', payBy: ago(620), closedAt: ago(600), txHash: 'ab'.repeat(32) });
+  const v = { ...base, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
   await openRoom(page, v);
-  await expect(page.getByRole('link', { name: 'Open a dispute' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open dispute', exact: true })).toBeVisible();
   await shot(page, '48-trade-buyer-refunded');
 });
 
@@ -860,7 +867,8 @@ const disputeTrade = (o: Record<string, unknown> = {}) => ({
   state: 'paid',
   counterparty: { displayName: 'satoshi_ghost', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
   paidAt: T('08:02'),
-  confirmBy: T('10:02'),
+  confirmBy: T('09:32'),
+  confirmWindowMin: 90,
   payBy: T('09:30'),
   serverNow: T('10:14'),
   ...o,
@@ -927,12 +935,13 @@ test('59 DisputeRuling', async ({ page }) => {
 test('60 News', async ({ page }) => {
   const item = (id: number, iso: string, title: string, body: string) => ({ id, title, body, publishedAt: iso, editedAt: null });
   await page.route('**/v1/news**', json({ items: [
-    item(3, '2026-10-29T09:00:00.000Z', 'Upgrade done', 'All systems are back.\nThanks for waiting.'),
-    item(2, '2026-10-28T09:00:00.000Z', 'Planned upgrade', 'Tomorrow at 09:00 UTC. Trades in escrow are safe.'),
+    item(3, '2026-11-02T09:00:00.000Z', 'Upgrade done', 'All systems are back.\nThanks for waiting.'),
+    item(2, '2026-11-01T09:00:00.000Z', 'Planned upgrade', "X2F will be down for about 30 minutes on 2 Nov 2026 from 03:00 UTC. Payment timers pause while we're down, so no trade runs out of time."),
     item(1, '2026-10-20T09:00:00.000Z', 'Welcome', 'Hello from X2F.'),
-  ], serverNow: '2026-10-29T12:00:00.000Z' }));
+  ], serverNow: '2026-11-02T12:00:00.000Z' }));
   await page.route('**/v1/account/me', json(TRADER_ME));
-  await page.goto('/news');
+  // As it opens after a login: with "Don't show me this again" (design session 2 Nov).
+  await page.goto('/news?after=login&returnTo=%2Fbuy');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
   await shot(page, '60-news');
 });
@@ -953,9 +962,10 @@ test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({
   await expect(popup).toBeVisible();
   await shot(page, '61-cantdothat-post-offer');
   await popup.getByRole('link', { name: 'feedback' }).click();
-  await expect(page.getByRole('heading', { name: 'Tell us what you think' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Tell us what you think' })).toBeVisible();
   await page.getByLabel('Your message').fill('A hold should say how long it lasts.');
-  await shot(page, '62-feedback-form');
+  // Full page: FlowScreen's footer is not pinned, so Send sits below a 915 px screen.
+  await shot(page, '62-feedback-form', { fullPage: true });
   await page.getByRole('button', { name: 'Send' }).click();
   await expect(page.locator('[data-part="feedback-thanks"]')).toBeVisible();
   await shot(page, '63-feedback-thanks');
@@ -987,7 +997,7 @@ test('64-65 block a trader from the quote; Blocked traders', async ({ page }) =>
   await page.goto(`/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`);
   await page.getByRole('button', { name: `Block ${B.offer.poster.displayName}` }).click();
   await expect(page.locator('[data-part="block-ask"]')).toBeVisible();
-  await shot(page, '64-block-ask-on-quote', { scrollTo: page.locator('[data-part="block-ask"]') });
+  await shot(page, '64-block-ask-on-quote');
   await page.locator('[data-part="block-confirm"]').click();
   await expect(page.locator('[data-part="block-done"]')).toBeVisible();
   await page.getByRole('link', { name: 'Blocked traders' }).click();

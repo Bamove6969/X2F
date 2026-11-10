@@ -2,8 +2,9 @@
 // React so the unit tests can read them. Words follow Claude Design's MyOffers board
 // (origin/wip/design-brief docs/design-boards/MyOffers.dc.html, 2026-10-29); anything the board does
 // not give is lead wording until the owner signs it off (COPY-UNSIGNED).
-import { CANT_DO_CODES, MY_OFFERS_HIDDEN, TRADING_HOLD_CODE, isCantDoCode, myOffersRowText, type CantDoCode, type MyOffersHidden } from '../../ui/cantDoCodes.js';
-import { formatAmount, formatPrice, marginText } from '../post/offerForm.js';
+import { CANT_DO_CODES, MY_OFFERS_HIDDEN, OFFER_CAP_LINE, TRADING_HOLD_CODE, isCantDoCode, myOffersRowText, type CantDoCode, type MyOffersHidden } from '../../ui/cantDoCodes.js';
+import { marginWords } from '../../ui/margin.js';
+import { formatAmount } from '../post/offerForm.js';
 import { xmrRangeText } from '../browse/offerAmounts.js';
 import type { MyOffer, OfferState, SwitchResult } from './api.js';
 
@@ -58,22 +59,26 @@ export function turnOnPopup(results: readonly SwitchResult[], before: readonly M
   return { kind: 'some', ...top, ids: refused.map((r) => r.id) };
 }
 
-/** The board's title line: "Selling XMR · USD". */
+/** The board's title line: "Selling XMR · USD"; with several currencies (J-16) "Selling XMR · USD, CAD". COPY-UNSIGNED: the comma list. */
 export function offerTitle(o: MyOffer): string {
-  return `${o.side === 'sell' ? 'Selling XMR' : 'Buying XMR'} · ${o.currency}`;
+  return `${o.side === 'sell' ? 'Selling XMR' : 'Buying XMR'} · ${o.currencies.join(', ')}`;
 }
 
-/** The method line: "Zelle", or "Amazon gift card (US)" for a gift card. */
+/** The method line: "Zelle", "Amazon gift card (US)" for a gift card; with several (J-16) "Zelle, PayPal". COPY-UNSIGNED: the comma list. */
 export function offerMethods(o: MyOffer): string {
-  return `${o.methodName}${o.country ? ` (${o.country})` : ''}`;
+  return `${o.methodNames.join(', ')}${o.country ? ` (${o.country})` : ''}`;
 }
 
-/** The price line in two parts, as the board: ["+0.5%", "follows the market"] or ["$335.00 / XMR", "Fixed price"]. */
+/**
+ * The price line in two parts: ["0.5% above market", "follows the market"] (every offer is market +/- %,
+ * owner Q1; the margin in the one form everywhere, ui/margin.ts, design final call 10 Nov 2026, in place
+ * of the board's "+0.5%").
+ */
 export function offerPriceParts(o: MyOffer): [string, string] {
-  return o.pricing.mode === 'market' ? [marginText(o.pricing.marginBps), 'follows the market'] : [formatPrice(o.pricing.centsPerXmr, o.currency), 'Fixed price'];
+  return [marginWords(o.pricing.marginBps), 'follows the market'];
 }
 
-/** The price line: "+0.5% · follows the market" or "$335.00 / XMR · Fixed price". */
+/** The price line: "0.5% above market · follows the market". */
 export function offerPrice(o: MyOffer): string {
   return offerPriceParts(o).join(' · ');
 }
@@ -94,10 +99,8 @@ export function whoCanTrade(o: MyOffer): string {
   return o.minTrades > 0 ? `${o.minTrades}+ completed trades` : 'Anyone';
 }
 
-/** Fold-MyOffers' line under the price. */
-export function marketLine(o: MyOffer): string {
-  return o.pricing.mode === 'market' ? 'Percent of the market price, updated as the market moves.' : 'A fixed price doesn’t follow the market. Check it often.';
-}
+/** Fold-MyOffers' line under the price (every offer follows the market, owner Q1). */
+export const MARKET_LINE = 'Percent of the market price, updated as the market moves.';
 
 /**
  * Whether the account has a trading hold, as far as this screen can tell: GET /v1/account/offers
@@ -145,7 +148,7 @@ export function allHint(selected: number, total: number): string {
  * COPY-UNSIGNED. The API enforces the same caps (owner 6 Nov 2026, Q31: 3 buying and 3 selling
  * per account in all, a seventh refused, paused offers counted: routes.ts OFFER_CAP_DEFAULTS).
  */
-export const FOOTNOTE = 'Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. You can have 3 buying and 3 selling offers. Each offer can cover several currencies.';
+export const FOOTNOTE = `Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. ${OFFER_CAP_LINE} Each offer can cover several currencies.`;
 
 /** The offers with each switch result's status applied; ids reported `not-found` are dropped. */
 export function applyResults(offers: readonly MyOffer[], results: readonly SwitchResult[]): MyOffer[] {

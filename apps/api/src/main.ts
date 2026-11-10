@@ -17,6 +17,8 @@ import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
 import { settleDueHolds } from './auth/hold.js';
+import { settleDueChanges } from './auth/holdChanges.js';
+import { syncHeldTradesJob } from './trades/held.js';
 import { startDisputeTimers } from './disputes/timers.js';
 import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
@@ -26,6 +28,9 @@ import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
 import { moderationFromEnv, staffListenFromEnv, startStaffApi } from './staff/main.js';
 import { assertOneSiteFlagsRow } from './site/flags.js';
+import { startOutbox } from './jabber/outbox.js';
+import { omemoEncryptor } from './jabber/omemo.js';
+import { xmppSender } from './jabber/xmpp.js';
 
 function port(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 8080;
@@ -62,7 +67,7 @@ await assertOneSiteFlagsRow(db);
 const clock = () => new Date();
 let onAlert: (a: PriceAlert) => Promise<void> = (a) => addOwnerAlert(db, a.kind, a.detail, clock());
 // A lost alert is logged once the app's logger exists (the sink only runs after prices.start()).
-let alertLog: { error(obj: { error: string }, msg: string): void } | null = null;
+let alertLog: { error(obj: { error: string }, msg: string): void; info(obj: object, msg: string): void } | null = null;
 const prices = createMarketPrices({
   xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),
   fx: createFxRates(fxSources(config.fxSources), { clock, settings: () => loadFxSettings(db) }),
@@ -82,6 +87,13 @@ const deps: Deps = {
   prices,
   // Task 26: shared context from real trades (Task 6), open chats (Task 20), delivery over Task 19's SSE and Web Push (nudge/wiring.ts).
   nudges: productionNudgeWiring(db),
+  // Owner rule p5-7: Jabber account-change notices, only when X2F_XMPP_* name X2F's sending account
+  // (GAP: the production account and server are not set up; unset, the set-up answers jabber-unavailable).
+  // Owner ruling p11-31: only through Tor (config.xmpp.socks) and only OMEMO-encrypted (jabber/omemo.ts,
+  // @x2f/omemo; docs/jabber/omemo-plan.md): X2F's identity and bundle live sealed in jabber_omemo_identity.
+  ...(config.xmpp && config.jabberKeys
+    ? { jabberSender: xmppSender(config.xmpp, omemoEncryptor(db, config.jabberKeys, clock, (e) => alertLog?.info(e, 'jabber omemo'))) }
+    : {}),
 };
 
 // One scheduler for every purge job (X-12); the list is in retentionJobs.ts.
@@ -91,10 +103,19 @@ const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 const monerod = monerodUrlFromEnv(process.env);
 const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmations({ url: monerod }) } : {});
 onAlert = ownerAlertSink({ db, clock, push: app.push });
-// Plan 2 Task 17: holds whose 24 hours are up end every minute, and their waiting change applies.
-const stopHolds = startRetention(deps, [settleDueHolds(config, app.events, app.log)], 60_000);
+// Plan 2 Task 17, hold model v3: every minute, holds whose 24 hours are up end, changes whose 24
+// hours are up apply, and held trades are paused or resumed as their holds say.
+const stopHolds = startRetention(
+  deps,
+  [settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log, app.push), syncHeldTradesJob(app.tradePublish)],
+  60_000,
+);
 // Plan 4 Task 10: every 30 s, appeal windows close and maintenance shifts dispute deadlines (A7).
 const stopDisputeTimers = startDisputeTimers(deps, app.events);
+// Owner rule p5-7: queued Jabber notices go out every 5 s, after the change committed (counts-only logs).
+const stopJabber = deps.jabberSender
+  ? startOutbox({ db, clock, config, sender: deps.jabberSender }, (e) => app.log.info(e, 'jabber outbox'))
+  : async () => undefined;
 alertLog = app.log;
 prices.start();
 if (web) await serveWeb(app, web);
@@ -124,9 +145,10 @@ if (internal) {
 // Plan 4 Task 4: the staff API on its own origin and port (X2F_STAFF_ORIGIN, X2F_STAFF_PORT); unset: none.
 const staffListen = staffListenFromEnv(process.env);
 // Plan 4 Task 11: the moderation process's internal API (MOD_INTERNAL_SOCKET, MOD_INTERNAL_SECRET),
-// and the trader API's events (a moderator joining, a proof request, a moderator's message).
+// and the trader API's events (a moderator joining, a proof request, a moderator's message). Hold
+// model v3: the trade publisher, so a staff hold end's resumed trades reach the live views.
 const staff = staffListen
-  ? await startStaffApi(deps, staffListen, { moderation: moderationFromEnv(process.env, clock), traderEvents: app.events })
+  ? await startStaffApi(deps, staffListen, { moderation: moderationFromEnv(process.env, clock), traderEvents: app.events, tradePublish: app.tradePublish })
   : null;
 
 // Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation, and maintenance pause/resume
@@ -143,6 +165,7 @@ const shutdown = async () => {
   if (staff) await staff.close();
   await stopHolds();
   await stopDisputeTimers();
+  await stopJabber();
   await timers.stop(); // lets a pass in flight finish before the pool closes
   await stopRetention(); // lets a purge in flight finish before the pool closes
   await prices.stop();

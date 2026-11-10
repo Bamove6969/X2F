@@ -168,9 +168,10 @@ describe('owner lockout', () => {
       const res = await send(method, url, { password: 'correct horse battery staple 1', confirmToken: 'x' });
       expect({ url, error: errorOf(res) }).toEqual({ url, error: 'method-not-allowed' });
     }
-    // The backup login (TOTP or a recovery code) and the password login: the same answer as any
-    // wrong name (no oracle), never a session.
-    for (const kind of ['totp', 'recovery-code']) {
+    // The backup login (a recovery code; an authenticator code is no backup, refused for everyone
+    // before any lookup) and the password login: the same answer as any wrong name (no oracle),
+    // never a session.
+    for (const kind of ['recovery-code']) {
       const res = await t.trader.inject({
         method: 'POST', url: '/v1/login/backup', headers: { origin: 'https://x2f.test' },
         payload: { loginName: owner.loginName, kind, code: '123456', deviceLabel: 'x' },
@@ -193,7 +194,7 @@ describe('owner lockout', () => {
   });
 
   it('maintenance and the emergency stop leave every staff route working', async () => {
-    await t.deps.db.query('update site_flags set trading_paused = true, maintenance_since = $1', [MON_NOON]);
+    await t.deps.db.query("update site_flags set trading_paused = true, maintenance_since = $1, maintenance_kind = 'unplanned'", [MON_NOON]);
     try {
       expect((await owner.browser.get('/staff/v1/me')).statusCode).toBe(200);
       expect((await owner.browser.get('/staff/v1/members')).statusCode).toBe(200);
@@ -202,7 +203,7 @@ describe('owner lockout', () => {
       const { res } = await ownerLogin(owner.keys[1]!);
       expect(res.json(), res.body).toEqual({ status: 'ok' });
     } finally {
-      await t.deps.db.query('update site_flags set trading_paused = false, maintenance_since = null');
+      await t.deps.db.query('update site_flags set trading_paused = false, maintenance_since = null, maintenance_kind = null');
     }
   });
 });

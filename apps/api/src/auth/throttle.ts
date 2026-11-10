@@ -1,5 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
+import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { deviceHash, isTrusted } from './device.js';
 
@@ -132,6 +133,25 @@ export async function dailyCap(deps: Pick<Deps, 'db' | 'clock'>, key: string, li
   throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.ceil((midnight - now.getTime()) / 1000) });
 }
 
+/**
+ * Inside the caller's transaction, after the action it limits has succeeded: counts it for the UTC
+ * day, or throws 429 `slow-down` with the seconds until 00:00 UTC when `limit` were already counted
+ * (the throw rolls the action back). Only successes are counted: a refused or failed action rolls
+ * its count back with it (lead hold v3 review 8 Nov C1).
+ */
+export async function dailyCapInTx(db: Queryable, key: string, limit: number, now: Date): Promise<void> {
+  const day = now.toISOString().slice(0, 10);
+  const { rows } = await db.query<{ count: number }>(
+    `insert into daily_counts (key, day, count) values ($1, $2, 1)
+     on conflict (key, day) do update set count = daily_counts.count + 1 where daily_counts.count < $3
+     returning count`,
+    [key, day, limit],
+  );
+  if (rows.length > 0 && limit > 0) return;
+  const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.ceil((midnight - now.getTime()) / 1000) });
+}
+
 // ---------------------------------------------------------------------------------------------
 // Password login (owner, 2026-10-23): no visible waits, a quiet lock.
 
@@ -203,4 +223,49 @@ export async function visitorMiss(deps: Pick<Deps, 'db' | 'clock'>, device: Buff
 /** Clears this browser's miss count after a password login that succeeded. */
 export async function visitorReset(deps: Pick<Deps, 'db'>, device: Buffer | null): Promise<void> {
   if (device !== null) await deps.db.query('delete from login_throttle where key = $1', [`password-visitor:${device.toString('hex')}`]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Shared token buckets (signup-team review F2, 8 Nov 2026): a request budget kept in Postgres, so
+// every API process and every restart draws on the same count (an in-memory `TokenBucket` is per
+// process: N processes would give N times the budget, and a restart refilled it).
+
+/** Thousandths of a token: `login_throttle.failures` is an integer column. */
+const MILLI = 1000;
+
+/**
+ * Takes one token from the shared bucket `key` (a `login_throttle` row: `failures` holds the
+ * bucket's level in thousandths of a token, `last_failure_at` when it was last refilled), or
+ * throws `refusal` with `retryAfterSeconds` when it has less than one. One atomic upsert: a
+ * parallel burst never takes more tokens than the bucket holds. A missing row is a full bucket, so
+ * `purgeExpired` deleting a row an hour after its last use changes nothing, provided the bucket
+ * refills completely within the hour (asserted here).
+ */
+export async function takeSharedBucket(
+  deps: Pick<Deps, 'db' | 'clock'>,
+  key: string,
+  size: { capacity: number; perMinute: number },
+  refusal: { status: 429 | 503; code: 'slow-down' | 'busy' },
+): Promise<void> {
+  if (size.capacity / size.perMinute > 60) throw new Error(`shared bucket ${key} takes longer than the purge hour to refill`);
+  const now = deps.clock();
+  const capacity = size.capacity * MILLI;
+  const perSecond = (size.perMinute * MILLI) / 60;
+  const level = `least($2::int, t.failures + floor(greatest(0, extract(epoch from ($3::timestamptz - t.last_failure_at))) * $4::float8))`;
+  const { rows } = await deps.db.query(
+    `insert into login_throttle as t (key, failures, last_failure_at) values ($1, $2::int - ${MILLI}, $3)
+     on conflict (key) do update set failures = (${level} - ${MILLI})::int, last_failure_at = greatest(t.last_failure_at, $3::timestamptz)
+     where ${level} >= ${MILLI}
+     returning failures`,
+    [key, capacity, now, perSecond],
+  );
+  if (rows.length > 0) return;
+  const { rows: held } = await deps.db.query<{ failures: number; last_failure_at: Date }>(
+    'select failures, last_failure_at from login_throttle where key = $1',
+    [key],
+  );
+  const row = held[0];
+  const have = row ? Math.min(capacity, row.failures + Math.max(0, (now.getTime() - row.last_failure_at.getTime()) / 1000) * perSecond) : capacity;
+  const retryAfterSeconds = Math.max(1, Math.ceil((MILLI - have) / perSecond));
+  throw new ApiError(refusal.status, refusal.code, { retryAfterSeconds });
 }

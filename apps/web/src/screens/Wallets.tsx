@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { AuthApiError, isHeld, walletsAction, withConfirm, type Held } from '@x2f/auth-client';
+import { AuthApiError, isStaged, walletsAction, withConfirm, type Staged } from '@x2f/auth-client';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
-import { CANT_DO_TITLE, RECOVERY_SESSION_WALLETS, isCantDoCode, walletsCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, RECOVERY_SESSION_WALLETS, isCantDoCode, holdChangesCantDoText, walletsCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
+import { formatDateTime } from '../ui/dates.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
-import { heldNote, refusalText } from './auth/refusals.js';
+import { refusalText } from './auth/refusals.js';
+import { StagedNote, changesCapOf, reportChangesCap } from './settings/HoldChanges.js';
 import {
   APP_LABELS,
   MAX_WALLET_BATCH,
@@ -26,7 +28,6 @@ import {
 } from './wallets-model.js';
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
-import { utcDateTime } from '../ui/dates.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -35,9 +36,8 @@ import { utcDateTime } from '../ui/dates.js';
 
 const LABEL_MAX = 40;
 
-function when(iso: string): string {
-  return utcDateTime(new Date(iso));
-}
+/** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */
+const when = (iso: string): string => formatDateTime(iso);
 
 /** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2; in the refusal text map). */
 export { RECOVERY_SESSION_WALLETS };
@@ -75,19 +75,25 @@ function addError(e: unknown): string {
 // window event the store should dispatch on add/remove (we also re-read on focus/visibility). At
 // merge, confirm the store's object-store name and that its keys are the trade codes, and that it
 // fires `x2f:escrow-changed`; drop this note once wired.
+// 10 Nov 2026 (J-23 follow-up): the object-store name is confirmed as `trades` (escrow/store.ts
+// TRADES, keys are the trade codes; tested in escrow-store.test.ts). The event is still open.
 // ---------------------------------------------------------------------------------------------
 const ESCROW_DB = 'x2f-escrow';
-const SECRETS_STORE = 'x2f-escrow-secrets';
+const TRADES_STORE = 'trades';
 
-function readOpenEscrowCodes(): Promise<string[]> {
+/**
+ * Exported for tests (`idb` defaults to the browser's). Lead 10 Nov: the short-lived connection also
+ * closes itself on `versionchange`, so this read never stalls another tab's upgrade or delete.
+ */
+export function readOpenEscrowCodes(idb: IDBFactory | undefined = typeof indexedDB === 'undefined' ? undefined : indexedDB): Promise<string[]> {
   return new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
+    if (idb === undefined) {
       resolve([]);
       return;
     }
     let req: IDBOpenDBRequest;
     try {
-      req = indexedDB.open(ESCROW_DB);
+      req = idb.open(ESCROW_DB);
     } catch {
       resolve([]);
       return;
@@ -105,14 +111,16 @@ function readOpenEscrowCodes(): Promise<string[]> {
     req.onerror = () => resolve([]);
     req.onsuccess = () => {
       const db = req.result;
+      db.onversionchange = () => db.close();
       try {
-        const names = [...db.objectStoreNames].filter((n) => n !== SECRETS_STORE);
-        if (names.length === 0) {
+        // The trade records' store by name (escrow/store.ts TRADES). The first store that is not
+        // the secrets one is `keys` (names sort), whose one key is the wrap key's id, not a trade.
+        if (!db.objectStoreNames.contains(TRADES_STORE)) {
           db.close();
           resolve([]);
           return;
         }
-        const store = names[0] as string;
+        const store = TRADES_STORE;
         const tx = db.transaction(store, 'readonly');
         const keys = tx.objectStore(store).getAllKeys();
         keys.onsuccess = () => {
@@ -262,6 +270,7 @@ function WalletsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [staged, setStaged] = useState(false);
 
   const codes = useOpenEscrowKeys();
   const { prove, confirmUi, open: confirmOpen } = useConfirm();
@@ -335,11 +344,12 @@ function WalletsScreen() {
     setSaving(true);
     setError(null);
     setNotice(null);
+    setStaged(false);
     const drafts = trimmed === '' ? batch : [...batch, current()];
     // After the first wallet, adding needs confirm-it's-you: one confirm for the whole batch.
-    const post = async (confirmToken?: string): Promise<WalletView[] | Held> => {
+    const post = async (confirmToken?: string): Promise<WalletView[] | Staged> => {
       try {
-        return await api<WalletView[] | Held>('/v1/wallets', {
+        return await api<WalletView[] | Staged>('/v1/wallets', {
           method: 'POST',
           body: confirmToken === undefined ? { wallets: drafts } : { wallets: drafts, confirmToken },
         });
@@ -351,15 +361,15 @@ function WalletsScreen() {
     };
     try {
       const action = await walletsAction(drafts.map((d) => d.address));
-      const result: WalletView[] | Held = await withConfirm(action, post, prove);
-      // Plan 2 Task 17 review round 2 N-I4: added from a login with one way of proving it's you
-      // (PGP alone included), the wallets wait out the 24-hour hold (202 held): nothing is listed yet.
-      if (isHeld(result)) {
+      const result: WalletView[] | Staged = await withConfirm(action, post, prove);
+      // Hold model v3: added from a username-and-password login (a PGP key login is strong, owner
+      // Q81), the wallets are a draft to review and submit (202 staged): nothing is listed yet.
+      if (isStaged(result)) {
         setBatch([]);
         setLabel('');
         setAddress('');
         setAdding(false);
-        setNotice(heldNote(result.holdUntil));
+        setStaged(true);
         return;
       }
       const saved = result;
@@ -388,7 +398,8 @@ function WalletsScreen() {
     } catch (e) {
       if (!isConfirmAbort(e)) {
         const code = addCantDo(e);
-        if (code !== null) setCantDo({ code, text: walletsCantDoText(code) ?? refusalText(e, ADD_FAILED) });
+        const cap = changesCapOf(e);
+        if (code !== null) setCantDo({ code, text: cap !== null ? holdChangesCantDoText(cap.max) : (walletsCantDoText(code) ?? refusalText(e, ADD_FAILED)) });
         else setError(addError(e));
       }
     } finally {
@@ -400,9 +411,16 @@ function WalletsScreen() {
     setError(null);
     try {
       // Removal cannot redirect money, so it needs no confirm; the API always saves an alert.
-      await api(`/v1/wallets/${encodeURIComponent(w.id)}`, { method: 'DELETE' });
+      const r = await api<unknown>(`/v1/wallets/${encodeURIComponent(w.id)}`, { method: 'DELETE' });
+      // Owner p5-7: from a username-and-password login the removal is a draft that waits 24 h once
+      // submitted; the wallet stays listed and usable until then.
+      if (isStaged(r)) {
+        setStaged(true);
+        return;
+      }
       setWallets((prev) => (prev ?? []).filter((x) => x.id !== w.id));
-    } catch {
+    } catch (e) {
+      if (reportChangesCap(e)) return;
       setError('That wallet could not be removed. Try again.');
     }
   }
@@ -429,6 +447,7 @@ function WalletsScreen() {
             {notice}
           </p>
         ) : null}
+        {staged ? <StagedNote /> : null}
 
         {wallets && wallets.length > 0 ? (
           <section className="x2f-wallets__section" aria-label="Linked wallets">

@@ -8,7 +8,7 @@
  * "Your login hours have ended." and returns to Login. A 401 `not-authenticated` from a call made
  * behind the shell goes to Login too (the session ran out).
  */
-import { defaultDeviceLabel } from '@x2f/auth-client';
+import { defaultDeviceLabel, type TermsSignature } from '@x2f/auth-client';
 import type { KeyTapIntent, LoginHours, NavItem, StaffRole } from '@x2f/staff';
 import type {
   AuthenticationResponseJSON,
@@ -184,9 +184,16 @@ export interface InviteView {
 
 const invitePath = (token: string, rest = '') => `/staff/v1/invites/accept/${encodeURIComponent(token)}${rest}`;
 
+/** `GET /staff/v1/terms`: the Terms version an invitee accepts (the trader API's `GET /v1/terms`, the same value). */
+export const staffTerms = () => staffApi<{ version: string }>('/staff/v1/terms');
 export const inviteRead = (token: string) => staffApi<InviteView>(invitePath(token));
-/** Owner Q54: the public name is `displayName` (the API refuses a field named username). */
-export const inviteAccount = (token: string, b: { displayName: string; loginName: string }) =>
+/**
+ * Owner Q54: the public name is `displayName` (the API refuses a field named username). Owner 9 Nov
+ * 2026 (p11-14): everyone who gets a login signs the Terms, so the version accepted and the
+ * signature given on the Terms step go with the names (400 `terms-not-accepted` when the version
+ * changed meanwhile: the page shows the Terms again).
+ */
+export const inviteAccount = (token: string, b: { displayName: string; loginName: string; acceptedTerms: string; termsSignature: TermsSignature }) =>
   staffApi<{ ok: true }>(invitePath(token, '/account'), { method: 'POST', body: b });
 export const inviteKeyStart = (token: string, kind: 'security-key' | 'passkey') =>
   staffApi<{ options: PublicKeyCredentialCreationOptionsJSON }>(invitePath(token, '/key/start'), { method: 'POST', body: { kind } });

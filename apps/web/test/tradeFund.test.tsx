@@ -58,6 +58,7 @@ const base: TradeView = {
   payBy: null,
   paidAt: null,
   confirmBy: null,
+  confirmWindowMin: 90,
   settleBy: null,
   releaseClaimedAt: null,
   pausedAt: null,
@@ -790,14 +791,20 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
     expect(host.textContent).toContain('If satoshi_ghost doesn\'t fund it in time, the trade is cancelled. You can cancel at any time before then.');
   });
 
-  it('Cancel trade asks once ("Cancelling is final", nothing funded yet), then posts buyer-cancel with no escrow step', async () => {
+  it('Cancel trade asks once ("Cancelling is likely final"; nothing funded yet: nothing needs refunding), then posts buyer-cancel with no escrow step', async () => {
     current = buyerView();
     const buyerCancel = vi.fn(async () => undefined);
     setTradeEscrowHook(() => verified({ buyerCancel }));
     const host = await room();
     await act(async () => button(host, 'Cancel trade')!.click());
     const sheet = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
-    expect(sheet.textContent).toContain("satoshi_ghost hasn't funded the escrow yet, so nothing needs to go back. This trade closes. Don't send any money.");
+    // Design final call (10 Nov 2026): the T-049 sheet keeps its title; before anything is in the escrow its
+    // first line is the unfunded variant, and no XMR figure is named (there is nothing to return).
+    expect(document.querySelector('[role="dialog"] h2')?.textContent).toBe('Cancelling is likely final');
+    expect(sheet.textContent).toContain('Nothing is in escrow yet, so nothing needs refunding.');
+    expect(sheet.textContent).not.toContain('in escrow is returned');
+    expect(sheet.textContent).not.toContain('1.250000');
+    expect(sheet.textContent).toContain("Be sure before you cancel. Don't send any money after you cancel.");
     const confirm = [...sheet.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!;
     await act(async () => confirm.click());
     await flush();
@@ -812,7 +819,10 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
     const host = await room();
     await act(async () => button(host, 'Cancel trade')!.click());
     const sheet = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
-    expect(sheet.textContent).toContain('The 1.250000 XMR goes back to satoshi_ghost');
+    // Lead, batch 4: the escrow-held figure (0.6 XMR received so far), trade-copy's T-049 wording; design
+    // final call 10 Nov keeps it once anything is held.
+    expect(sheet.textContent).toContain('The 0.600000 XMR in escrow is returned and this trade closes.');
+    expect(sheet.textContent).not.toContain('Nothing is in escrow yet');
     await act(async () => [...sheet.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!.click());
     await flush();
     expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'buyer-cancel' } }]);

@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { expectParity } from './parity.js';
 import { takeableWallets, type WalletRule, type WalletView } from '../src/screens/wallets-model.js';
 import { INSIDE } from './session.js';
+import { DB_NAME as ESCROW_DB, KEYS, SECRETS, TRADES } from '../src/escrow/store.js';
 
 /** A 95-character standard address ending in `end` (the API's `addressEnd` is its last 6 characters). */
 const address = (seed: string, end: string) => `4${seed.repeat(95).slice(0, 88)}${end}`;
@@ -76,18 +77,17 @@ const CODE = 'K7M2-9QXA-4FTR-8WPN';
 /** Writes one escrow record keyed by its trade code and tells the page the store changed. */
 async function openTrade(page: Page, code: string): Promise<void> {
   await page.evaluate(
-    (c) =>
+    ({ c, db: name, trades, stores }) =>
       new Promise<void>((resolve, reject) => {
-        const req = indexedDB.open('x2f-escrow', 1);
+        const req = indexedDB.open(name, 1);
         req.onupgradeneeded = () => {
           const db = req.result;
-          if (!db.objectStoreNames.contains('records')) db.createObjectStore('records');
-          if (!db.objectStoreNames.contains('x2f-escrow-secrets')) db.createObjectStore('x2f-escrow-secrets');
+          for (const s of stores) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
         };
         req.onsuccess = () => {
           const db = req.result;
-          const tx = db.transaction('records', 'readwrite');
-          tx.objectStore('records').put({ partyState: {} }, c);
+          const tx = db.transaction(trades, 'readwrite');
+          tx.objectStore(trades).put({ partyState: {} }, c);
           tx.oncomplete = () => {
             db.close();
             window.dispatchEvent(new Event('x2f:escrow-changed'));
@@ -97,20 +97,21 @@ async function openTrade(page: Page, code: string): Promise<void> {
         };
         req.onerror = () => reject(req.error);
       }),
-    code,
+    // The escrow store's real layout (escrow/store.ts): the record goes in `trades`, which Wallets reads.
+    { c: code, db: ESCROW_DB, trades: TRADES, stores: [TRADES, SECRETS, KEYS] },
   );
 }
 
 /** Deletes the escrow record, as the worker does when a trade closes, and tells the page. */
 async function closeTrade(page: Page, code: string): Promise<void> {
   await page.evaluate(
-    (c) =>
+    ({ c, db: name, store }) =>
       new Promise<void>((resolve, reject) => {
-        const req = indexedDB.open('x2f-escrow', 1);
+        const req = indexedDB.open(name, 1);
         req.onsuccess = () => {
           const db = req.result;
-          const tx = db.transaction('records', 'readwrite');
-          tx.objectStore('records').delete(c);
+          const tx = db.transaction(store, 'readwrite');
+          tx.objectStore(store).delete(c);
           tx.oncomplete = () => {
             db.close();
             window.dispatchEvent(new Event('x2f:escrow-changed'));
@@ -120,7 +121,7 @@ async function closeTrade(page: Page, code: string): Promise<void> {
         };
         req.onerror = () => reject(req.error);
       }),
-    code,
+    { c: code, db: ESCROW_DB, store: TRADES },
   );
 }
 
@@ -221,11 +222,11 @@ test.describe('the rule popup explains what adding does for this account', () =>
       never: [],
     },
     {
-      name: 'password only',
+      name: 'username and password, nothing stronger',
       rule: RULE_PASSWORD_ONLY,
       says: [
-        /You only have a password: new wallets will work 24 hours after you add them\./,
-        /Add a passkey, security key or PGP key first to skip the wait\./,
+        /You have no passkey, security key or PGP key yet: new wallets will work 24 hours after you add them\./,
+        /Add one first to skip the wait\./,
       ],
       never: [],
     },

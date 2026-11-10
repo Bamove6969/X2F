@@ -16,6 +16,8 @@ import { testApp, testConfig, testSigner } from './helpers/app.js';
 import { inspectPublicKey } from '@x2f/accounts';
 import { codeOf, decrypt, genKey, KEY_DATE, resign, type Pair } from './helpers/pgpKeys.js';
 import { spySql } from './helpers/sqlSpy.js';
+import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 const ORIGIN = 'https://x2f.test';
 const ONION = 'http://x2fexample.onion';
@@ -94,19 +96,36 @@ async function registerStart(b: Browser, displayName: string, key: Pair) {
 
 /** Registers display name `displayName` with `key` in browser `b` (or a new one); returns the browser. */
 async function registerPgp(displayName: string, key: Pair, b = new Browser()): Promise<Browser> {
+  LOGIN_NAMES.set(key.fingerprint.toLowerCase(), `${displayName}.l`);
   const start = await registerStart(b, displayName, key);
   expect(start.statusCode).toBe(200);
   const code = codeOf(await dec(start.json().encryptedMessage, key.privateKey));
   const fin = await b.post('/v1/register/pgp/finish', {
-    challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS,
+    challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
   });
   expect(fin.statusCode).toBe(201);
   return b;
 }
 
-/** PGP login needs no name: the person pastes their whole public key (a key pair sends its public half; a string is sent as is). */
+/** Each registered key's login name by fingerprint (owner G6: the trader PGP login takes the username with the key). */
+const LOGIN_NAMES = new Map<string, string>();
+async function nameOfKey(armored: string): Promise<string | undefined> {
+  try {
+    return LOGIN_NAMES.get((await openpgp.readKey({ armoredKey: armored })).getFingerprint().toLowerCase());
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Pastes the whole public key (a key pair sends its public half; a string is sent as is). On the
+ * trader mount the login name goes with it: the key's own when registered here, else one that names
+ * no account. `extra` may override it.
+ */
 async function loginStart(b: Browser, key: Pair | string, extra: Record<string, unknown> = {}, mount = '/v1/login/pgp') {
-  return b.post(`${mount}/start`, { key: typeof key === 'string' ? key : key.publicKey, ...extra });
+  const armored = typeof key === 'string' ? key : key.publicKey;
+  const name = mount === '/v1/login/pgp' ? { loginName: (await nameOfKey(armored)) ?? 'nobody-here0' } : {};
+  return b.post(`${mount}/start`, { key: armored, ...name, ...extra });
 }
 
 async function loginFinish(b: Browser, challengeId: string, code: string, extra: Record<string, unknown> = {}, mount = '/v1/login/pgp') {
@@ -173,7 +192,7 @@ describe('register', () => {
     expect(text).toContain(`Expires: ${exp}Z`);
     const code = codeOf(text).toLowerCase().replaceAll('-', '');
     const fin = await b.post('/v1/register/pgp/finish', {
-      challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS,
+      challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
     });
     expect(fin.statusCode).toBe(201);
     expect(fin.json()).toEqual({ displayName: name });
@@ -207,8 +226,16 @@ describe('register', () => {
     const bad = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: '2020-01-01' });
     expect(bad.statusCode).toBe(400);
     expect(bad.json()).toEqual({ error: 'terms-not-accepted', version: TERMS });
-    const ok = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    // The signature too (owner, 8 Nov 2026), still before the challenge is used.
+    for (const [termsSignature, error] of [[undefined, 'signature-required'], [{ kind: 'drawn', width: 1, height: 1, path: 'M9 9' }, 'signature-invalid']] as const) {
+      const unsigned = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature });
+      expect(unsigned.statusCode).toBe(400);
+      expect(unsigned.json()).toEqual({ error });
+    }
+    const ok = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(ok.statusCode).toBe(201);
+    const { rows } = await deps.db.query('select id, terms_signature from accounts where display_key = $1', [name.toLowerCase()]);
+    expect(openTermsSignature(deps.config, rows[0].terms_signature, rows[0].id)).toEqual(SIG);
   });
 
   it('refuses a private key and stores nothing of it', async () => {
@@ -246,7 +273,7 @@ describe('register', () => {
     const free = await new Browser().post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: 'never.used.9', publicKey: fresh.publicKey });
     expect(Object.keys(free.json()).sort()).toEqual(Object.keys(loginTaken.json()).sort());
     const code = codeOf(await dec(loginTaken.json().encryptedMessage, fresh.privateKey));
-    const fin = await lb.post('/v1/register/pgp/finish', { challengeId: loginTaken.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    const fin = await lb.post('/v1/register/pgp/finish', { challengeId: loginTaken.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(fin.statusCode).toBe(409);
     expect(fin.json()).toEqual({ error: 'names-unavailable' });
     const reserved = await registerStart(new Browser(), 'X2F.Support', ed);
@@ -263,7 +290,7 @@ describe('register', () => {
     const start = await registerStart(b, name, key);
     expect(start.statusCode).toBe(200);
     const code = codeOf(await dec(start.json().encryptedMessage, key.privateKey));
-    const fin = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    const fin = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(fin.statusCode).toBe(409);
     expect(fin.json()).toEqual({ error: 'key-in-use' });
     const { rows } = await deps.db.query('select 1 from accounts where display_key = $1', [name.toLowerCase()]);
@@ -606,7 +633,7 @@ describe('binding', () => {
     expect(c.json()).toEqual({ error: 'challenge-expired' });
     const s2 = await loginStart(home, key);
     const code2 = codeOf(await dec(s2.json().encryptedMessage, key.privateKey));
-    const r = await home.post('/v1/register/pgp/finish', { challengeId: s2.json().challengeId, code: code2, deviceLabel: 'x', acceptedTerms: TERMS });
+    const r = await home.post('/v1/register/pgp/finish', { challengeId: s2.json().challengeId, code: code2, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(r.json()).toEqual({ error: 'challenge-expired' });
   });
 
@@ -656,6 +683,7 @@ describe('confirm and adding a key', () => {
     const b = await registerPgp(n, k1);
     setNow(new Date(now.getTime() + 31 * MIN));
     const k2 = await genKey();
+    LOGIN_NAMES.set(k2.fingerprint.toLowerCase(), `${n}.l`);
 
     const none = await b.post('/v1/account/pgp/start', { publicKey: k2.publicKey });
     expect(none.statusCode).toBe(403);
@@ -849,6 +877,18 @@ describe('staff, owner and other mounts', () => {
 });
 
 describe('review fixes', () => {
+  it("owner G6: the login takes the username with the key; another account's name gets the decoy, none is 400", async () => {
+    const n = uniqueName();
+    const k = await genKey();
+    await registerPgp(n, k);
+    const other = uniqueName();
+    await registerPgp(other, await genKey());
+    expect(await isDecoy(await loginStart(new Browser(), k))).toBe(false);
+    expect(await isDecoy(await loginStart(new Browser(), k, { loginName: `${other}.l` }))).toBe(true);
+    expect(await isDecoy(await loginStart(new Browser(), k, { loginName: 'nobody-here0' }))).toBe(true);
+    expect((await new Browser().post('/v1/login/pgp/start', { key: k.publicKey })).statusCode).toBe(400);
+  });
+
   it('I1: made-up cookies neither evict a known browser’s challenge nor hold it; there is no per-key ceiling', async () => {
     const n = uniqueName();
     const k = await genKey();
@@ -858,7 +898,7 @@ describe('review fixes', () => {
     const madeUp = () =>
       app.inject({
         method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
-        cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { key: k.publicKey },
+        cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { key: k.publicKey, loginName: `${n}.l` },
       });
     for (let i = 0; i < 12; i++) {
       setNow(new Date(now.getTime() + 1000)); // A's challenge is the oldest, the first a shared cap would evict
@@ -879,14 +919,14 @@ describe('review fixes', () => {
       Array.from({ length: 8 }, () =>
         app.inject({
           method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
-          cookies: { [DEVICE_COOKIE]: cookie }, payload: { key: mk.publicKey },
+          cookies: { [DEVICE_COOKIE]: cookie }, payload: { key: mk.publicKey, loginName: `${n}.l` },
         }),
       ),
     );
     expect(res.filter((r) => r.statusCode === 200)).toHaveLength(5);
     expect(res.filter((r) => r.statusCode === 429)).toHaveLength(3);
     const after = await app.inject({
-      method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, cookies: { [DEVICE_COOKIE]: cookie }, payload: { key: mk.publicKey },
+      method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, cookies: { [DEVICE_COOKIE]: cookie }, payload: { key: mk.publicKey, loginName: (await nameOfKey(mk.publicKey)) ?? 'nobody-here0' },
     });
     expect(after.statusCode).toBe(429);
     const { rows } = await deps.db.query(
@@ -979,7 +1019,7 @@ describe('review fixes', () => {
     const count = async (k: Pair, cookies: Record<string, string>, extra: Record<string, unknown> = {}) => {
       spy.clear();
       const res = await app.inject({
-        method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, cookies, payload: { key: k.publicKey, ...extra },
+        method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, cookies, payload: { key: k.publicKey, loginName: (await nameOfKey(k.publicKey)) ?? 'nobody-here0', ...extra },
       });
       expect(res.statusCode).toBe(200);
       return spy.sql();
@@ -1037,7 +1077,7 @@ describe('review fixes', () => {
     const code = codeOf(await dec(start.json().encryptedMessage, key.privateKey));
     const onion = new Browser(ONION);
     onion.cookies = { ...b.cookies };
-    const fin = await onion.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    const fin = await onion.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(fin.statusCode).toBe(400);
     expect(fin.json()).toEqual({ error: 'challenge-expired' });
 

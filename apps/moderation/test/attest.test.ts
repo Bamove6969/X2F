@@ -35,6 +35,7 @@ const NOW = new Date('2026-10-24T12:00:00Z');
 /** The trade record's terms, as the API's work list hands them over (lead answer 4). */
 const TERMS: AttestedTerms = {
   deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+  payWindowMin: 90,
   buyerPayout: '4'.padEnd(95, 'B'),
   sellerRefund: '8'.padEnd(95, 'S'),
 };
@@ -201,6 +202,11 @@ describe('attesting a trade', () => {
     const report = net.reports.find((r) => r.attestation.trade === code)!;
     expect(report.attestation.terms).toEqual(TERMS);
     const me = { trade: code, role: 'buyer' as const, signPublic: buyer.id.signPublic, boxPublic: buyer.id.boxPublic };
+    // The time to pay is signed as the work item gave it; a device shown another one refuses it.
+    await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...me, deal: DEAL, ownAddress: TERMS.buyerPayout, payWindowMin: TERMS.payWindowMin }))
+      .resolves.toBeUndefined();
+    await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...me, deal: DEAL, ownAddress: TERMS.buyerPayout, payWindowMin: 1440 }))
+      .rejects.toMatchObject({ code: 'wrong-terms' });
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...me, deal: { ...DEAL, centsPerXmr: 1n }, ownAddress: TERMS.buyerPayout }))
       .rejects.toMatchObject({ code: 'wrong-terms' });
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...me, deal: DEAL, ownAddress: TERMS.sellerRefund }))
@@ -208,7 +214,11 @@ describe('attesting a trade', () => {
   });
 
   it('skips work with missing or malformed terms (logged bad-terms, never a final refusal) and signs nothing (review M3)', async () => {
-    const bad: unknown[] = [undefined, null, { ...TERMS, buyerPayout: '' }, { ...TERMS, deal: { ...TERMS.deal, takeAmountAtomic: '01' } }, { ...TERMS, extra: 1 }];
+    const { payWindowMin: _p, ...noPayWindow } = TERMS; // a work item from an API before the time to pay joined the terms
+    const bad: unknown[] = [
+      undefined, null, { ...TERMS, buyerPayout: '' }, { ...TERMS, deal: { ...TERMS.deal, takeAmountAtomic: '01' } }, { ...TERMS, extra: 1 },
+      noPayWindow, { ...TERMS, payWindowMin: 0 }, { ...TERMS, payWindowMin: 1441 }, { ...TERMS, payWindowMin: '90' },
+    ];
     for (const terms of bad) {
       const code = newTradeCode();
       const buyer = await trader(code, 'buyer');

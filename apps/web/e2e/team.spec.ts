@@ -228,6 +228,9 @@ async function acceptTerms(page: Page): Promise<void> {
     el.dispatchEvent(new Event('scroll'));
   });
   await page.check('[data-part="terms-tick"]');
+  // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs (the typed form, for brevity).
+  await page.click('[data-part="signature-type"]');
+  await page.fill('[data-part="signature-name"]', 'AK');
   await page.click('[data-part="terms-accept"]');
 }
 
@@ -278,6 +281,7 @@ for (const [second, viewport] of [['security-key', '390x844'], ['passkey', '360x
       await expect(page).toHaveURL(/\/sell$/);
       expect(seen.bodies['/v1/team/invite']).toEqual([{ invite: CODE }]);
       expect(seen.bodies['/v1/team/join/start']).toEqual([{ invite: CODE, loginName: 'aurora_login', publicKey: FAKE_KEY.trim(), acceptedTerms: TERMS_TEXT_VERSION }]);
+      expect(seen.bodies['/v1/team/join/finish']).toEqual([{ challengeId: 'c1', code: '12345678', termsSignature: { kind: 'typed', name: 'AK' } }]);
       if (second === 'pgp') {
         expect(seen.bodies['/v1/team/join/second/pgp/finish']).toEqual([{ setupId: 's1', challengeId: 'c2', code: '87654321', deviceLabel: expect.any(String) }]);
       } else {
@@ -376,6 +380,7 @@ test("a member logs in with PGP first, then a security key; a member's passkey a
   webauthnStarts = [];
   await page.goto(`${LOCAL}/login?returnTo=%2Fprofile%2Foffers`);
   await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'desk_ana');
   await page.fill('#pgp-key', FAKE_KEY);
   await page.click('text=Send me a login message');
   await page.fill('[aria-label="Login code"]', '12345678');

@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { isHeld, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry, type SessionInfo } from '@x2f/auth-client';
+import { isStaged, isVendor, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry, type SessionInfo } from '@x2f/auth-client';
 import { Avatar, RoleTag } from '../../ui/Avatar.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
@@ -30,7 +30,8 @@ import { authApi } from '../auth/authApi.js';
 import { SessionLengthField } from '../auth/SessionLength.js';
 import { SESSION_COPY } from '../auth/sessionCopy.js';
 import { shareSessionInfo } from '../../session/sessionWatch.js';
-import { heldNote, refusalText, weakSessionCantDo } from '../auth/refusals.js';
+import { refusalText, weakSessionCantDo } from '../auth/refusals.js';
+import { StagedNote, reportChangesCap } from './HoldChanges.js';
 import { DEVICES_TITLE, deviceKind, initials } from './devicesCopy.js';
 import { OwnerOnly } from './OwnerOnly.js';
 import { TEAM_PATH } from './teamCopy.js';
@@ -43,6 +44,12 @@ const C = {
   devicesTitle: 'Devices',
   atLimit: "You're at the limit. To let a new device in, you'll pick one to log out.",
   oneMore: 'One more device can log in.',
+  // G-007 (build spec j33b section 7): over the limit (One device at a time on, more logged in).
+  overCount: (used: number, max: number) => `${used} logged in · your limit is ${max}`,
+  over: 'Log one out to keep going.',
+  // G-007: the session length line under the field.
+  lengthLine: (hours: number | null) =>
+    hours === null ? "You stay logged in for the length you pick. Then we ask you to confirm it's you." : `You stay logged in for ${hours} h. Then we ask you to confirm it's you.`,
   more: (n: number) => `${n} more devices can log in.`,
   mineTitle: 'Your devices',
   thisDevice: 'This device',
@@ -50,7 +57,14 @@ const C = {
   logOutLabel: (name: string) => `Log out ${name}`,
   logOutAll: 'Log out all other devices',
   teamTitle: 'Team members logged in',
+  // The board's G-007 sentence goes on "They stay logged in until their session ends or you switch
+  // them off.": left out while members have no "Can log in" switch (see the top of devicesCopy.ts).
   teamNotYours: "These are your team members' logins, not yours.",
+  // G-007: the team card with no members yet, and with members none of whom is logged in.
+  teamEmptyTitle: 'No team members yet',
+  teamEmpty: (max: number) => `Add up to ${max} people to help with your trades. You choose what each one can do.`,
+  teamAdd: 'Add a team member',
+  teamAllOut: 'No team members are logged in.',
   teamMember: 'Team member',
   teamLogOutLabel: (member: string, device: string) => `Log out ${member} on ${device}`,
   logOutTeam: 'Log out all team members',
@@ -120,13 +134,20 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
   const [note, setNote] = useState<string | null>(null);
   const [optNote, setOptNote] = useState<string | null>(null);
   const [ask, setAsk] = useState<Ask | null>(null);
-  // Plan 2 Task 17: a change from a login with one way of proving it's you waits out the hold.
-  const [held, setHeld] = useState<string | null>(null);
+  // Hold model v3: a change from a username-and-password login is staged as a draft (202).
+  const [staged, setStaged] = useState(false);
   // Plan 2 Task 17 review round 2: a device whose login waits may not log stronger ones out (CantDoThat).
   const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
   // Session length (owner, 2 Nov 2026): this session's own length, as after the login.
   const [length, setLength] = useState<SessionInfo | null>(null);
   const [lengthNote, setLengthNote] = useState<string | null>(null);
+  // G-007: the team's size, so the team card can say none are logged in, or there are none yet;
+  // null when this account has no team (the call is refused) or it has not answered. Only a vendor
+  // account has a team (owner, 2 Nov 2026), but GET /v1/team answers a plain trader's own session
+  // too ({ members: [], max: 3 }), so the reply counts only once me() says the account is a vendor.
+  const [teamReply, setTeamReply] = useState<{ members: number; max: number } | null>(null);
+  const [vendor, setVendor] = useState(false);
+  const teamSize = vendor ? teamReply : null;
 
   const refresh = useCallback(async () => {
     setSessions(await authApi.listSessions());
@@ -137,7 +158,14 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     // Staff and owner accounts have no device setting (403): the screen then shows the list only.
     authApi.getDeviceSettings().then(setSettings, () => undefined);
     // Staff, owner and backup sessions have no length (null): the field is then left out.
-    authApi.me().then((m) => setLength(m.session ?? null), () => undefined);
+    authApi.me().then(
+      (m) => {
+        setLength(m.session ?? null);
+        setVendor(isVendor(m));
+      },
+      () => undefined,
+    );
+    authApi.getTeam().then((t) => setTeamReply({ members: t.members.length, max: t.max }), () => undefined);
   }, [refresh]);
 
   const end = async (ids: string[], done: string) => {
@@ -174,7 +202,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     const on = !settings.oneDevice;
     setBusy(true);
     setError(null);
-    setHeld(null);
+    setStaged(false);
     setOptNote(null);
     try {
       const next = await withConfirm(
@@ -182,13 +210,13 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
         (t) => authApi.setOneDevice({ on, ...(t !== undefined ? { confirmToken: t } : {}) }),
         prove,
       );
-      if (isHeld(next)) setHeld(heldNote(next.holdUntil));
+      if (isStaged(next)) setStaged(true);
       else {
         setSettings(next);
         setOptNote(next.oneDevice ? C.oneDeviceOn : C.oneDeviceOff);
       }
     } catch (e) {
-      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not change that setting. Try again.'));
+      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not change that setting. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -222,7 +250,10 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
   // "Log out all other devices" covers only your own devices (owner, 2 Nov, Devices board).
   const others = mine.filter((s) => !s.current);
   const max = settings === null ? null : settings.oneDevice ? 1 : settings.maxDevices;
-  const meterNote = max === null || settings?.oneDevice ? null : used >= max ? C.atLimit : max - used === 1 ? C.oneMore : C.more(max - used);
+  const over = max !== null && used > max;
+  const meterNote = over ? C.over : max === null || settings?.oneDevice ? null : used >= max ? C.atLimit : max - used === 1 ? C.oneMore : C.more(max - used);
+  // The team card shows with members logged in, and (G-007) whenever the account has a team.
+  const showTeam = team.length > 0 || teamSize !== null;
 
   let askTitle = '';
   let askText = '';
@@ -260,7 +291,15 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
             {max !== null && sessions !== null ? (
               <div className="x2f-panel">
                 <p className="x2f-h3" data-part="devices-count">
-                  <span className="x2f-num">{used}</span> of <span className="x2f-num">{max}</span> devices logged in
+                  {over ? (
+                    <>
+                      <span className="x2f-num">{used}</span> logged in · your limit is <span className="x2f-num">{max}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="x2f-num">{used}</span> of <span className="x2f-num">{max}</span> devices logged in
+                    </>
+                  )}
                 </p>
                 <Meter used={used} max={max} part="devices-meter" />
                 {meterNote !== null ? <p className="x2f-fine">{meterNote}</p> : null}
@@ -320,14 +359,24 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                 {C.logOutAll}
               </Button>
             </div>
-            {team.length > 0 ? (
+            {showTeam ? (
               <section className="x2f-panel" data-tone="team" aria-labelledby="devices-team-h" data-part="team-sessions">
                 <h3 className="x2f-h3 x2f-icon-line" id="devices-team-h">
                   <Icon name="team" size={20} />
                   {C.teamTitle}
                 </h3>
                 <p className="x2f-fine">{C.teamNotYours}</p>
-                <ul className="x2f-items" aria-labelledby="devices-team-h">
+                {team.length === 0 && teamSize !== null && teamSize.members === 0 ? (
+                  <div className="x2f-team-empty" data-part="team-empty">
+                    <h4 className="x2f-team-empty__title">{C.teamEmptyTitle}</h4>
+                    <p className="x2f-fine">{C.teamEmpty(teamSize.max)}</p>
+                    <Link className="x2f-link x2f-team-empty__add" to={TEAM_PATH}>
+                      {C.teamAdd}
+                    </Link>
+                  </div>
+                ) : null}
+                {team.length === 0 && teamSize !== null && teamSize.members > 0 ? <p className="x2f-fine">{C.teamAllOut}</p> : null}
+                <ul className="x2f-items" aria-labelledby="devices-team-h" hidden={team.length === 0}>
                   {team.map((s) => {
                     const m = memberOfSession(s)!;
                     return (
@@ -356,15 +405,17 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                     );
                   })}
                 </ul>
-                <Button
-                  variant="secondary"
-                  data-tone="team"
-                  disabled={busy}
-                  onClick={() => setAsk({ kind: 'team', ids: team.map((s) => s.id) })}
-                  data-part="end-team"
-                >
-                  {C.logOutTeam}
-                </Button>
+                {teamSize !== null && teamSize.members === 0 && team.length === 0 ? null : (
+                  <Button
+                    variant="secondary"
+                    data-tone="team"
+                    disabled={busy || team.length === 0}
+                    onClick={() => setAsk({ kind: 'team', ids: team.map((s) => s.id) })}
+                    data-part="end-team"
+                  >
+                    {C.logOutTeam}
+                  </Button>
+                )}
                 <p className="x2f-fine" data-part="team-all-covers">
                   {C.teamAllCovers}
                 </p>
@@ -401,11 +452,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                     data-part="one-device-toggle"
                   />
                 </div>
-                {held !== null ? (
-                  <p className="x2f-fine" role="status" data-part="held-note">
-                    {held}
-                  </p>
-                ) : null}
+                {staged ? <StagedNote /> : null}
                 {optNote !== null ? (
                   <p className="x2f-icon-line" role="status" data-part="one-device-note">
                     <Icon name="check" size={18} />
@@ -416,7 +463,13 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
             ) : null}
             {length !== null ? (
               <div className="x2f-panel" data-part="session-length-panel">
-                <SessionLengthField choices={length.choices} value={length.lengthHours} onChange={(h) => void changeLength(h)} disabled={busy} />
+                <SessionLengthField
+                  choices={length.choices}
+                  value={length.lengthHours}
+                  onChange={(h) => void changeLength(h)}
+                  disabled={busy}
+                  askHint={C.lengthLine(length.lengthHours)}
+                />
                 {lengthNote !== null ? (
                   <p className="x2f-icon-line" role="status" data-part="session-length-note">
                     <Icon name="check" size={18} />

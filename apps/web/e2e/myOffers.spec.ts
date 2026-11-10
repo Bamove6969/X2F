@@ -22,8 +22,8 @@ const OFFERS: Offer[] = [
     status: 'live', createdAt: '2026-10-29T10:00:00.000Z',
   },
   {
-    id: B, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '30000',
-    pricing: { mode: 'fixed', centsPerXmr: '30000' }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5,
+    id: B, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '27000',
+    pricing: { mode: 'market', marginBps: -1000 }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5,
     status: 'paused', createdAt: '2026-10-29T09:00:00.000Z',
   },
   {
@@ -76,12 +76,12 @@ test('lists my offers with tick boxes and switches, at both phone sizes', async 
   await expect(sw(page, A)).toHaveAttribute('aria-checked', 'true');
   await expect(sw(page, B)).toHaveAttribute('aria-checked', 'false');
   await expect(row(page, A)).toContainText('Selling XMR · USD');
-  await expect(row(page, A)).toContainText('+0.5% · follows the market');
+  await expect(row(page, A)).toContainText('0.5% above market · follows the market');
   await expect(row(page, A)).toContainText('$50 – $2,000 per trade');
   await expect(row(page, B)).toContainText('Off · hidden from everyone');
   // Review M2: the names carry the price and limits. The switch is a real track with no words now.
-  await expect(sw(page, A)).toHaveAccessibleName('Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
-  await expect(tick(page, A)).toHaveAccessibleName('Select Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
+  await expect(sw(page, A)).toHaveAccessibleName('Selling XMR · USD Zelle 0.5% above market · follows the market $50 – $2,000 per trade');
+  await expect(tick(page, A)).toHaveAccessibleName('Select Selling XMR · USD Zelle 0.5% above market · follows the market $50 – $2,000 per trade');
   // Design review 1 Nov 2026 (shot 31): every card's text starts at the same x, on the grid
   // tick box 44 | content | switch 60; the tick box is 24 px and the switch track 52×32.
   const xs = await page.locator('[data-part="offer"] .x2f-select-card__eyebrow').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));

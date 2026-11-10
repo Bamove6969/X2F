@@ -5,13 +5,14 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError, type Wallet } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
+import { BACKUPS } from '../src/screens/setup/Backup.js';
 import { stepPath } from '../src/screens/setup/kit.js';
 import { passwordRules } from '../src/screens/setup/Password.js';
 import { groupFingerprint } from '../src/screens/setup/PgpKey.js';
 import { KEY_UNAVAILABLE } from '../src/screens/auth/refusals.js';
 import { KEY_IN_USE, nameError, setupError, termsChanged } from '../src/screens/setup/register.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
-import { TERMS } from '../src/screens/setup/termsText.js';
+import { KEY_POINTS, TERMS } from '../src/screens/setup/termsText.js';
 import { FEE_SENTENCE, startTradingPath, summarize } from '../src/screens/setup/Welcome.js';
 
 const wallet = (over: Partial<Wallet> = {}): Wallet => ({
@@ -45,9 +46,9 @@ describe('Start trading (owner G25: after sign-up, log in again)', () => {
 
 describe('summarize (Welcome rows)', () => {
   it('reads the flow first: the method just set up and the backup just added', () => {
-    expect(summarize({ methods: ['password', 'totp'] }, [wallet()], { registered: true, method: 'password', backup: 'totp' })).toEqual({
+    expect(summarize({ methods: ['password', 'recovery-codes'] }, [wallet()], { registered: true, method: 'password', backup: 'recovery-codes' })).toEqual({
       loginWith: 'Password',
-      backup: 'Authenticator app',
+      backup: 'Recovery codes',
       paidTo: { app: 'Cake Wallet', end: 'k3Fz' },
     });
     // A second PGP key is not visible in the methods list; the flow knows.
@@ -59,6 +60,12 @@ describe('summarize (Welcome rows)', () => {
     expect(summarize({ methods: ['security-key'] }, [], fresh)).toMatchObject({ loginWith: 'Security key', backup: 'None yet' });
     expect(summarize({ methods: ['password', 'recovery-codes'] }, [], fresh)).toMatchObject({ loginWith: 'Password', backup: 'Recovery codes' });
     expect(summarize({ methods: [] }, [], fresh)).toMatchObject({ loginWith: 'None yet', backup: 'None yet' });
+    // Design build gaps Job 1: an authenticator app is no backup login (it is a password's second step).
+    expect(summarize({ methods: ['password', 'totp'] }, [], fresh)).toMatchObject({ loginWith: 'Password', backup: 'None yet' });
+  });
+
+  it('setup offers no authenticator app as a backup; recovery codes come first and are picked', () => {
+    expect(BACKUPS.map((b) => b.id)).toEqual(['recovery-codes', 'security-key', 'pgp']);
   });
 
   it('"You get paid to" shows only a usable wallet, never one still waiting', () => {
@@ -89,8 +96,10 @@ describe('groupFingerprint', () => {
 
 describe('register errors', () => {
   it("maps FU-A's name refusals from the typed client and nothing else", () => {
-    expect(nameError(new AuthApiError(409, 'display-name-taken'))).toBe('That username is taken. Pick another.');
-    expect(nameError(new AuthApiError(400, 'names-same'))).toBe('Your login name must be different from your username.');
+    // Owner Q54: the private login name is the "username", the public one the "display name".
+    expect(nameError(new AuthApiError(409, 'display-name-taken'))).toBe('That display name is taken. Pick another.');
+    expect(nameError(new AuthApiError(400, 'login-name-invalid'))).toBe('That username cannot be used. Pick another.');
+    expect(nameError(new AuthApiError(400, 'names-same'))).toBe('Your display name must be different from your username.');
     expect(nameError(new AuthApiError(409, 'names-unavailable'))).toBe('Those names cannot be used. Pick others.');
     expect(nameError(new ApiCallError(409, 'username-taken'))).toBeNull();
     expect(nameError(new ApiCallError(400, 'password-weak'))).toBeNull();
@@ -145,8 +154,14 @@ describe('setupError (review fix round M1, M2, I1)', () => {
     );
   });
   it('names refusals link back to the names screen; anything else is the fallback', () => {
-    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That username is taken. Pick another.', names: true });
+    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That display name is taken. Pick another.', names: 'display-name' });
     expect(setupError(new TypeError('network'), fallback)).toEqual({ text: fallback });
+  });
+});
+
+describe('SetupTerms key points (build spec j33a section 1, S-043)', () => {
+  it('ends with the 60-day line, saying why: X2F is for people who trade regularly', () => {
+    expect(KEY_POINTS.at(-1)).toBe('X2F is built to last, for people who trade regularly, so an account not signed into for 60 days is closed.');
   });
 });
 

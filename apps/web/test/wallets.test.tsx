@@ -36,6 +36,8 @@ interface Stub {
   /** Answers POST /v1/wallets; `n` counts from 1. */
   onPost: (body: Record<string, unknown>, n: number) => { status: number; json: unknown };
   calls: Call[];
+  /** Owner p5-7: a removal from a username-and-password login answers 202 staged. */
+  removeStaged?: boolean;
 }
 
 let stub: Stub;
@@ -71,6 +73,7 @@ beforeEach(() => {
         return json(a.status, a.json);
       }
       if (url === '/v1/wallets/rule') return json(200, stub.rule);
+      if (url.startsWith('/v1/wallets/') && method === 'DELETE') return json(stub.removeStaged ? 202 : 204, { status: 'staged', changeId: 'c-1' });
       if (url === '/v1/account/me') return json(200, { methods: ['password'] });
       if (url === '/v1/confirm/password') return json(200, { confirmToken: 'tok-1' });
       return json(404, { error: 'not-found' });
@@ -184,6 +187,21 @@ describe('Your wallets', () => {
     expect(posts[0]!.body).not.toHaveProperty('confirmToken');
     expect(posts[1]!.body).toMatchObject({ wallets: [{ address: ADDR_C }], confirmToken: 'tok-1' });
     expect(dialog("Confirm it's you")).toBeNull();
+  });
+
+  it('owner p5-7: a removal staged (202) keeps the wallet listed and says it is a draft to submit', async () => {
+    stub.removeStaged = true;
+    await mount();
+    await click(`Remove ${READY.label}`);
+    expect(stub.calls.some((c) => c.method === 'DELETE' && c.url === `/v1/wallets/${READY.id}`)).toBe(true);
+    expect(document.querySelector('[data-part="staged-note"]')).not.toBeNull();
+    expect(button(`Remove ${READY.label}`)).toBeTruthy();
+  });
+
+  it('a removal that applies (204) takes the wallet off the list', async () => {
+    await mount();
+    await click(`Remove ${READY.label}`);
+    expect(() => button(`Remove ${READY.label}`)).toThrow();
   });
 
   describe('?add=1 (sent here by a 409 no-wallet)', () => {

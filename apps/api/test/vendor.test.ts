@@ -11,6 +11,7 @@ import { genKey } from './helpers/pgpKeys.js';
 import { Browser } from './helpers/totp.js';
 import { fakeAddress } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { flexBody, insertOffer } from './helpers/offers.js';
 
 // Owner, 2 Nov 2026 (docs/design-hold-model-2026-11-02.md, board BecomeVendor): Trader (default;
 // takes offers) and Vendor (posts offers) accounts. Becoming a vendor is a switch in Settings that
@@ -94,20 +95,20 @@ describe('account type', () => {
   it('a trader cannot post an offer (403 not-vendor) and nothing is written; a vendor can', async () => {
     const t = await trader();
     await addWallet(t.id);
-    const res = await t.browser.post('/v1/offers', BODY);
+    const res = await t.browser.post('/v1/offers', flexBody(BODY));
     expect(res.statusCode, res.body).toBe(403);
     expect(errorOf(res)).toBe('not-vendor');
     const { rows } = await deps.db.query('select 1 from offers where account_id = $1', [t.id]);
     expect(rows).toHaveLength(0);
     await makeVendor(deps, t.id);
-    expect((await t.browser.post('/v1/offers', BODY)).statusCode).toBe(201);
+    expect((await t.browser.post('/v1/offers', flexBody(BODY))).statusCode).toBe(201);
   });
 
   it("a trader's existing offers stay (migration rule): pausing and removing work, turning one on is refused", async () => {
     const t = await trader();
     await addWallet(t.id);
     await makeVendor(deps, t.id);
-    const id = ((await t.browser.post('/v1/offers', BODY)).json() as { id: string }).id;
+    const id = ((await t.browser.post('/v1/offers', flexBody(BODY))).json() as { id: string }).id;
     await deps.db.query("update accounts set account_type = 'trader', vendor_since = null where id = $1", [t.id]);
     expect((await t.browser.patch(`/v1/offers/${id}`, { status: 'paused' })).statusCode).toBe(200);
     const on = await t.browser.patch(`/v1/offers/${id}`, { status: 'live' });
@@ -161,7 +162,7 @@ describe('PUT /v1/account/type (switch to vendor)', () => {
     expect(me.accountType).toBe('vendor');
     const { rows } = await deps.db.query<{ kind: string }>("select kind from alerts where account_id = $1 and kind = 'became-vendor'", [t.id]);
     expect(rows).toHaveLength(1);
-    expect((await t.browser.post('/v1/offers', BODY)).statusCode).toBe(201);
+    expect((await t.browser.post('/v1/offers', flexBody(BODY))).statusCode).toBe(201);
   });
 
   it('a passkey or security key confirm switches too', async () => {
@@ -218,8 +219,8 @@ describe('PUT /v1/account/type (switch to vendor)', () => {
     const loginId = await seedAccount(deps, { loginName: 'vendormember1', displayName: 'vm-1-placeholder', kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
-       values ($1, 'Vm1', 'vm1', '{offers}', $2, $3, $2, $2)`,
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'Vm1', 'vm1', '{offers-see}', $2, $3, $2, $2)`,
       [t.id, now, loginId],
     );
     const mb = new Browser(app);
@@ -247,15 +248,11 @@ describe('migration 198: existing accounts', () => {
     const mk = async (o: { offer?: 'live' | 'paused' | 'removed'; team?: boolean; key?: boolean }) => {
       const id = await seedAccount(deps, { loginName: `mig${Math.random().toString(36).slice(2, 10)}` });
       if (o.offer) {
-        await deps.db.query(
-          `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-           values ($1, 'sell', 'ZELLE', 'USD', 'market', 0, 100, 200, null, '', $2, $3, $3)`,
-          [id, o.offer, now],
-        );
+        await insertOffer(deps.db, { accountId: id, side: 'sell', methodId: 'ZELLE', currency: 'USD', min: 100, max: 200, status: o.offer, at: now });
       }
       if (o.team) {
         await deps.db.query(
-          `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, created_at) values ($1, 'Mx', 'mx', '{offers}', $2, $2)`,
+          `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mx', 'mx', '{offers-see}', $2, $2)`,
           [id, now],
         );
       }

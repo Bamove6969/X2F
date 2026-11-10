@@ -14,23 +14,63 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { AccountKind, ConfirmAction, MethodType } from '@x2f/accounts';
-import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult } from '@x2f/api';
+import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult, TermsSignature } from '@x2f/api';
 
-export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
+export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult, TermsSignature };
 
 /**
- * Plan 2 Task 17: a security change made from a login with only one way of proving it's you
- * (202): nothing changed yet; the change waits until `holdUntil` (the account's 24-hour hold), and
- * a strong login with a method held before the hold cancels it.
+ * Hold model v3: a security change made from a login with just a username and password (202): nothing
+ * changed yet; it is a draft of this session (`changeId`) to review and submit (`submitHoldChanges`),
+ * then applies on its own 24 h after the account's latest submission (owner Q14). A login with a
+ * passkey, security key or PGP key held before discards it; any session of the owner cancels it.
  */
-export interface Held {
-  status: 'held';
-  holdUntil: string;
+export interface Staged {
+  status: 'staged';
+  changeId: string;
 }
 
-/** True for a change that waits out the 24-hour hold (202 `{ status: 'held', holdUntil }`). */
-export function isHeld(x: unknown): x is Held {
-  return x !== null && typeof x === 'object' && (x as { status?: unknown }).status === 'held' && typeof (x as { holdUntil?: unknown }).holdUntil === 'string';
+/** True for a change staged by hold model v3 (202 `{ status: 'staged', changeId }`). */
+export function isStaged(x: unknown): x is Staged {
+  return x !== null && typeof x === 'object' && (x as { status?: unknown }).status === 'staged' && typeof (x as { changeId?: unknown }).changeId === 'string';
+}
+
+/** Hold model v3: what a staged or waiting change is (never a secret, an address or a key). */
+export interface HoldChangeSummary {
+  kind: string;
+  method?: string;
+  wallets?: number;
+  /** Wallets: each new address's last 6 characters. Optional: older API builds do not send it. */
+  addressEnds?: string[];
+  on?: boolean;
+  memberId?: string;
+  roles?: string[];
+  /** A member's new boxes (Job 1c, `team-abilities`): their ids, and each one's catalogue label. */
+  abilities?: string[];
+  abilityLabels?: string[];
+  /** A wallet removed (owner p5-7): its label (and `addressEnds` its address's last 6). */
+  label?: string;
+}
+
+/** Hold model v3: `GET /v1/account/hold`. */
+export interface HoldView {
+  /** The account's hold (a recovery-code login's), while one runs. */
+  accountHold: { until: string; reason: string } | null;
+  /** Every waiting (submitted) change of the account, each with its own date (lead review 8 Nov I4); `takesEffectAt` is the next one. */
+  changes: {
+    count: number;
+    takesEffectAt: string | null;
+    items: Array<HoldChangeSummary & { id: string; createdAt: string; submittedAt: string; takesEffectAt?: string; by: string | null; mine: boolean }>;
+  };
+  /** This session's drafts, to review and submit. */
+  drafts: Array<HoldChangeSummary & { id: string; createdAt: string }>;
+  /** This session's changes are staged instead of applied. */
+  changesWait: boolean;
+  /**
+   * Owner p4-8: set for a team member only, their "Holds and waiting changes" right (`none`: they
+   * see only that a hold is on, no list), and `lead`, the team's name.
+   */
+  rights?: 'none' | 'see' | 'cancel' | 'end';
+  lead?: string;
 }
 
 /** A refused call: the HTTP status, the API's error code and the extra fields it sent. */
@@ -186,6 +226,14 @@ export interface AccountOverview {
   termsCurrent: boolean;
   /** Task 17: when the account's 24-hour hold ends, while one runs (any session of the account). Optional: older API builds do not send it. */
   accountHoldUntil?: string | null;
+  /** Hold model v3: the account's waiting changes (the banner), else null. Optional: older API builds do not send it. */
+  pendingChanges?: { count: number; takesEffectAt: string } | null;
+  /** Owner p4-8: for a team member, while the lead's changes wait, when they take effect (nothing more). */
+  teamHold?: { takesEffectAt: string } | null;
+  /** Hold model v3: this session's changes are staged and wait 24 h. Optional: older API builds do not send it. */
+  changesWait?: boolean;
+  /** Hold model v3: a new recovery code may be shown once (`revealRecoveryCode`). Optional: older API builds do not send it. */
+  recoveryCodeToShow?: boolean;
   /**
    * Plan 2 Task 18: set when the caller is a team member (the overview is of the account they work
    * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
@@ -218,14 +266,20 @@ export function isVendor(me: Pick<AccountOverview, 'accountType'> | null | undef
   return me?.accountType === 'vendor';
 }
 
-/** Plan 2 Task 18: a team member's roles (spec 6.7). */
-export type TeamRole = 'offers' | 'trades';
+/** Plan 2 Task 18: a team member's roles (spec 6.7); owner p4-8 adds the hold rights (each includes the ones before it). */
+export type TeamRole = 'offers' | 'trades' | 'hold-see' | 'hold-cancel' | 'hold-end';
 
 /** Plan 2 Task 18: one member or open invite, as the account owner sees it (`GET /v1/team`). */
 export interface TeamMember {
   id: string;
   displayName: string;
+  /** The old roles the member's boxes read as (Job 1c). */
   roles: TeamRole[];
+  /** Job 1c: the boxes, in catalogue order, and the preset they match (null: none). Optional: older API builds do not send them. */
+  abilities?: string[];
+  preset?: string | null;
+  /** True when the roles above do not describe the boxes exactly (a custom set): show "Custom", not the roles. */
+  custom?: boolean;
   status: 'invited' | 'joining' | 'active';
   inviteExpiresAt: string | null;
   joinedAt: string | null;
@@ -323,6 +377,35 @@ export interface SessionInfo {
   serverNow: string;
 }
 
+/**
+ * Owner rule p5-7: secure Jabber account-change alerts (`GET /v1/account/jabber`). Addresses come
+ * back masked only (`mira…@xmpp.example.org`).
+ */
+export interface JabberStatus {
+  /** False until the deployment has a sending account (`jabber-unavailable` on every write). */
+  available: boolean;
+  /** `broken`: proven, but sealed under a key the server no longer holds; it needs setting up again. */
+  state: 'off' | 'on' | 'paused' | 'broken';
+  address: string | null;
+  pendingAddress: string | null;
+  lastSentAt: string | null;
+}
+
+/**
+ * J-23 chat-key courier (`apps/api` auth/chatKeys.ts): a box sealed by one of the person's devices
+ * to another device's X25519 key. The API stores and serves it exactly as posted and opens nothing.
+ */
+export interface ChatKeyEnvelope {
+  id: string;
+  /** The receiving device's X25519 public key, 64 lower-case hex. */
+  recipientPublic: string;
+  /** The sealed box, base64url, exactly as posted. */
+  sealed: string;
+  epoch: number;
+  createdAt: string;
+  expiresAt: string;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The client
 
@@ -332,8 +415,22 @@ export interface AuthApi {
   getTerms(): Promise<{ version: string }>;
   /** `GET /v1/pgp/signing-key`: X2F's official PGP key, which signs every challenge (R7). */
   getPgpSigningKey(): Promise<{ fingerprint: string; publicKey: string }>;
+  /**
+   * `POST /v1/register/name-check`: the sign-up's live "is available" tick for the private username
+   * (the login name). Advice only: register checks again. Paced per device (429 `slow-down`) and
+   * site wide (503 `busy`), both with `retryAfterSeconds`; 400 `login-name-invalid` for a wrong shape.
+   */
+  nameAvailable(b: { loginName: string }): Promise<{ available: boolean }>;
   /** Both names are picked at sign-up (spec 6.1): the public `displayName` and the private `loginName`; they must differ. */
-  registerPassword(b: { displayName: string; loginName: string; password: string; deviceLabel: string; acceptedTerms: string }): Promise<{
+  /** `acceptedTerms` and `termsSignature`: the Terms version accepted and the signature given with it (owner, 8 Nov 2026). */
+  registerPassword(b: {
+    displayName: string;
+    loginName: string;
+    password: string;
+    deviceLabel: string;
+    acceptedTerms: string;
+    termsSignature: TermsSignature;
+  }): Promise<{
     displayName: string;
   }>;
   /** Every failure is 401 `credentials-invalid` (`PASSWORD_LOGIN_MISMATCH`) with `misses`; check `shouldSendAway`. */
@@ -344,20 +441,24 @@ export interface AuthApi {
   pollLoginApproval(id: string): Promise<ApprovalPoll>;
   /** `POST /v1/login/approval/:id/cancel` (Task 16): stop waiting. */
   cancelLoginApproval(id: string): Promise<void>;
-  /** `POST /v1/login/backup`: opens a recovery session (TOTP: held 24 hours). */
-  loginBackup(b: { loginName: string; kind: 'totp' | 'recovery-code'; code: string; deviceLabel: string }): Promise<{
+  /**
+   * `POST /v1/login/backup`: a recovery code (the only backup way in; an authenticator code is 400
+   * `bad-request`) opens a recovery session held 24 hours.
+   */
+  loginBackup(b: { loginName: string; kind: 'recovery-code'; code: string; deviceLabel: string }): Promise<{
     status: 'ok';
     level: 'recovery';
     holdUntil: string | null;
   }>;
   registerPgpStart(b: { displayName: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
-  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ displayName: string }>;
+  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string; termsSignature: TermsSignature }): Promise<{ displayName: string }>;
   /**
    * PGP login needs no name: `key` is the person's whole armored public key (an unknown key's decoy
    * goes to that key too). A fingerprint, or anything else, is 400 `key-unreadable`, the same for
    * every key. `pendingId`: the second step of a staff or owner login.
    */
-  loginPgpStart(b: { key: string; pendingId?: string }): Promise<PgpChallenge>;
+  /** Owner G6 (7 Nov 2026): the trader login takes the private `loginName` with the key (400 without; a wrong name answers like an unknown key). */
+  loginPgpStart(b: { loginName: string; key: string; pendingId?: string }): Promise<PgpChallenge>;
   loginPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
   registerWebAuthnStart(b: { displayName: string; loginName: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;
   registerWebAuthnFinish(b: {
@@ -365,6 +466,7 @@ export interface AuthApi {
     response: RegistrationResponseJSON;
     deviceLabel: string;
     acceptedTerms: string;
+    termsSignature: TermsSignature;
     label?: string;
   }): Promise<{ displayName: string }>;
   /** Without `loginName`: a discoverable passkey login (traders). */
@@ -373,7 +475,7 @@ export interface AuthApi {
   loginWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
   logout(): Promise<void>;
   /** `POST /v1/account/login-name` (review I3): a pre-009 account sets its private login name once, with a `set-login-name` confirm token (`withConfirm`); 409 `login-name-set` afterwards, 409 `names-unavailable` for a taken name in either namespace, 400 `names-same` / `login-name-invalid`. */
-  setLoginName(b: { loginName: string; confirmToken?: string }): Promise<{ ok: true } | Held>;
+  setLoginName(b: { loginName: string; confirmToken?: string }): Promise<{ ok: true } | Staged>;
 
   // Confirm it's you: each returns a single-use token bound to this session and exactly `action`.
   confirmPassword(b: { password: string; action: ConfirmAction; totp?: string }): Promise<ConfirmTokenResult>;
@@ -384,32 +486,66 @@ export interface AuthApi {
 
   // Login methods of the account
   /**
-   * Task 17: each change below answers `Held` (202) instead when made from a login with only one
-   * way of proving it's you: nothing changed yet, it waits out the 24-hour hold (`isHeld`).
+   * Hold model v3: each change below answers `Staged` (202) instead when made from a login with just
+   * a username and password: nothing changed yet; it is a draft to review and submit (`isStaged`).
    */
   /** `PUT /v1/account/password` (Task 10). */
-  setPassword(b: { password: string } & Token): Promise<Held | undefined>;
+  setPassword(b: { password: string } & Token): Promise<Staged | undefined>;
   addPgpKeyStart(b: { publicKey: string } & Token): Promise<PgpChallenge>;
-  addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string } & Partial<Held>>;
+  addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string } & Partial<Staged>>;
   addWebAuthnStart(b: { kind: WebAuthnKind } & Token): Promise<RegistrationChallenge>;
-  addWebAuthnFinish(b: { challengeId: string; response: RegistrationResponseJSON; label?: string }): Promise<Held | undefined>;
+  addWebAuthnFinish(b: { challengeId: string; response: RegistrationResponseJSON; label?: string }): Promise<Staged | undefined>;
   /** `secret` (base32) and `otpauthUri` are for the authenticator app only: show them, never keep them. */
   addTotpStart(b: Token): Promise<{ challengeId: string; otpauthUri: string; secret: string }>;
-  addTotpFinish(b: { challengeId: string; code: string }): Promise<Held | undefined>;
-  newRecoveryCodes(b: Token): Promise<{ codes: string[] } & Partial<Held>>;
+  addTotpFinish(b: { challengeId: string; code: string }): Promise<Staged | undefined>;
+  newRecoveryCodes(b: Token): Promise<{ codes: string[] } & Partial<Staged>>;
   cancelRecoverySession(id: string): Promise<void>;
+  /** Hold model v3: `POST /v1/account/recovery-code/reveal`, once, by a full session opened after a recovery-code login. */
+  revealRecoveryCode(): Promise<{ code: string }>;
+  /** Hold model v3: `GET /v1/account/hold`. */
+  holdView(): Promise<HoldView>;
+  /** Hold model v3: `POST /v1/account/hold/changes/submit`, exactly the drafts reviewed (409 `changes-changed` otherwise). */
+  submitHoldChanges(b: { ids: string[] }): Promise<{ status: 'queued'; count: number; takesEffectAt: string }>;
+  /**
+   * Owner G58: `POST /v1/account/hold/changes/approve { ids }`: a strong login approves waiting
+   * changes now, so they apply at once. (The API route is being added on this branch.)
+   */
+  approveHoldChanges(b: { ids: string[] }): Promise<unknown>;
+  /** Hold model v3: `DELETE /v1/account/hold/changes`: cancels every waiting change (and this session's drafts). */
+  cancelHoldChanges(): Promise<void>;
+  /** Hold model v3: `DELETE /v1/account/hold/changes/:id`: one waiting change or one of this session's drafts. */
+  cancelHoldChange(id: string): Promise<void>;
   /** `GET /v1/account/methods` (Task 10). */
   listMethods(): Promise<MethodEntry[]>;
   /** `DELETE /v1/account/methods/:type/:id` (Task 10), the token in a JSON body (R17). */
-  removeMethod(type: MethodType, id: string, b: Token): Promise<Held | undefined>;
+  removeMethod(type: MethodType, id: string, b: Token): Promise<Staged | undefined>;
 
   // Account overview (Task 11)
   me(): Promise<AccountOverview>;
-  acceptTerms(b: { version: string }): Promise<void>;
+  /** `POST /v1/account/terms`: a changed Terms version, accepted with a new signature (owner, 8 Nov 2026). */
+  acceptTerms(b: { version: string; signature: TermsSignature }): Promise<void>;
   listSessions(): Promise<SessionEntry[]>;
   endSession(id: string): Promise<void>;
   listAlerts(): Promise<AlertEntry[]>;
   markAlertSeen(id: string): Promise<void>;
+
+  // Owner rule p5-7: secure Jabber account-change alerts (boards JabberSetup, Alerts).
+  getJabber(): Promise<JabberStatus>;
+  /** Sends the test code; 429 `slow-down` `{ retryAfterSeconds }`, 400 `jabber-address-invalid`, 503 `jabber-unavailable`. */
+  sendJabberTest(b: { address: string }): Promise<{ pendingAddress: string; resendAfterSeconds: number }>;
+  /** 400 `code-invalid`, 409 `challenge-expired` (send a new code). */
+  verifyJabber(b: { code: string }): Promise<JabberStatus>;
+  setJabberEnabled(b: { on: boolean }): Promise<JabberStatus>;
+  turnOffJabber(): Promise<void>;
+
+  // J-23 chat-key courier (dormant groundwork): full trader sessions of the owner, strong strictly
+  // (403 `weak-session`), never during a hold (403 `recovery-hold`).
+  /** `GET /v1/account/chat-keys`: the account's current epoch and its open envelopes, oldest first. */
+  listChatKeys(): Promise<{ epoch: number; envelopes: ChatKeyEnvelope[] }>;
+  /** `POST /v1/account/chat-keys`: 400 `bad-request` with `{ epoch }` when `epoch` is not the account's current one; 429 `slow-down`. */
+  postChatKey(b: { recipientPublic: string; sealed: string; epoch: number }): Promise<{ id: string; expiresAt: string }>;
+  /** `DELETE /v1/account/chat-keys/:id`: collects (deletes) an envelope; 404 `not-found`; 429 `slow-down`. */
+  collectChatKey(id: string): Promise<void>;
 
   // New-device approval (Task 16): full trader sessions only.
   /** `GET /v1/account/approvals`: the logins waiting for this account's approval. */
@@ -419,26 +555,28 @@ export interface AuthApi {
   decideApproval(id: string, b: ApprovalDecision): Promise<{ outcome: 'approved' | 'blocked' }>;
   getDeviceSettings(): Promise<DeviceSettings>;
   /** Confirm-it's-you for `{ kind: 'set-one-device', on }` (`withConfirm`). */
-  setOneDevice(b: { on: boolean } & Token): Promise<DeviceSettings | Held>;
+  setOneDevice(b: { on: boolean } & Token): Promise<DeviceSettings | Staged>;
 
   // Wallets (Task 12)
   listWallets(): Promise<Wallet[]>;
   /**
    * The first wallet during sign-up needs no token; every later one does (P2-C2): use `withConfirm`.
    * Confirmed with PGP, a passkey or a security key it is usable at once; with a password (and any
-   * TOTP code) `usableFrom` is 24 hours later. From a login that waits (Task 17; PGP alone
-   * included, lead decision 2026-10-30) nothing is added yet: 202 `Held` (the 24-hour hold).
+   * TOTP code) `usableFrom` is 24 hours later. From a login that waits (a username and
+   * password; a PGP key login is strong, owner 6 Nov 2026 Q81) nothing is added yet: 202 (staged).
    */
-  addWallet(b: WalletDraft & Token): Promise<Wallet | Held>;
+  addWallet(b: WalletDraft & Token): Promise<Wallet | Staged>;
   /**
    * Several wallets (1-10) under one confirm, action `add-wallets` (see `walletsAction`). They share
    * one `usableFrom`: one wait for the batch, not one each.
    */
-  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[] | Held>;
+  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[] | Staged>;
   getWalletRule(): Promise<WalletRule>;
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
-  removeWallet(id: string): Promise<void>;
-  // Session length (owner, 2 Nov 2026). Full trader sessions only.
+  /** Owner p5-7: `Staged` (202) from a login with just a username and password: the wallet stays until it applies. */
+  removeWallet(id: string): Promise<Staged | undefined>;
+  // Session length (owner, 2 Nov 2026). Full trader sessions only. Never staged (lead reading of
+  // owner p11-26: a hold holds only the security changes made; see routes/account.ts).
   /** This session's length: before it is chosen, from the login; after, shorter applies now, longer from the next extend. */
   setSessionLength(b: { hours: number }): Promise<SessionInfo>;
   /**
@@ -460,10 +598,11 @@ export interface AuthApi {
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
   /** Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once. */
   inviteMember(b: { displayName: string; roles: TeamRole[] } & Token): Promise<{ id: string; invite: string; expiresAt: string }>;
-  /** Confirm `team-roles` (`teamRolesAction`). */
-  setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember>;
+  /** Confirm `team-roles` (`teamRolesAction`). From a login that waits (a username and password), 202 `Staged`. */
+  setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember | Staged>;
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
-  removeMember(id: string, b: Token): Promise<void>;
+  /** Owner p5-7: `Staged` (202) from a login with just a username and password: the member keeps access until it applies. */
+  removeMember(id: string, b: Token): Promise<Staged | undefined>;
   /** Newest first, at most 200 rows. */
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
   // The invited person's side (no session yet).
@@ -471,7 +610,8 @@ export interface AuthApi {
   /** `acceptedTerms`: the Terms version the member read and accepted (review 2026-11-08 F1). */
   joinStart(b: { invite: string; loginName: string; publicKey: string; acceptedTerms: string }): Promise<PgpChallenge & { fingerprint: string }>;
   /** The PGP key proved: the member's login exists, no session yet; add the second factor before `setupUntil`. */
-  joinFinish(b: { challengeId: string; code: string }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
+  /** `termsSignature`: the signature given on the Terms step, with the version sent at `joinStart` (owner, 9 Nov 2026). */
+  joinFinish(b: { challengeId: string; code: string; termsSignature: TermsSignature }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
   joinSecondPgpStart(b: { setupId: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
   joinSecondPgpFinish(b: { setupId: string; challengeId: string; code: string; deviceLabel: string }): Promise<{ status: 'ok' }>;
   joinSecondWebAuthnStart(b: { setupId: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;
@@ -547,15 +687,16 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
   const done = async (p: Promise<unknown>): Promise<void> => {
     await p;
   };
-  /** Nothing, or the `Held` answer of a change that waits out the hold (Task 17). */
-  const heldOrDone = async (p: Promise<unknown>): Promise<Held | undefined> => {
+  /** Nothing, or the `Staged` answer of a change staged for review (hold model v3). */
+  const stagedOrDone = async (p: Promise<unknown>): Promise<Staged | undefined> => {
     const r = await p;
-    return isHeld(r) ? r : undefined;
+    return isStaged(r) ? r : undefined;
   };
 
   return {
     getTerms: () => get('/v1/terms'),
     getPgpSigningKey: () => get('/v1/pgp/signing-key'),
+    nameAvailable: (b) => post('/v1/register/name-check', b),
     registerPassword: (b) => post('/v1/register/password', b),
     loginPassword: (b) => post('/v1/login/password', b),
     loginSecondFactor: (b) => post('/v1/login/second-factor', b),
@@ -579,17 +720,23 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     confirmWebAuthnStart: (b) => post('/v1/confirm/webauthn/start', b),
     confirmWebAuthnFinish: (b) => post('/v1/confirm/webauthn/finish', b),
 
-    setPassword: (b) => heldOrDone(call('PUT', '/v1/account/password', b)),
+    setPassword: (b) => stagedOrDone(call('PUT', '/v1/account/password', b)),
     addPgpKeyStart: (b) => post('/v1/account/pgp/start', b),
     addPgpKeyFinish: (b) => post('/v1/account/pgp/finish', b),
     addWebAuthnStart: (b) => post('/v1/account/webauthn/start', b),
-    addWebAuthnFinish: (b) => heldOrDone(post('/v1/account/webauthn/finish', b)),
+    addWebAuthnFinish: (b) => stagedOrDone(post('/v1/account/webauthn/finish', b)),
     addTotpStart: (b) => post('/v1/account/totp/start', b),
-    addTotpFinish: (b) => heldOrDone(post('/v1/account/totp/finish', b)),
+    addTotpFinish: (b) => stagedOrDone(post('/v1/account/totp/finish', b)),
     newRecoveryCodes: (b) => post('/v1/account/recovery-codes', b),
     cancelRecoverySession: (id) => done(call('DELETE', `/v1/account/recovery-sessions/${seg(id)}`)),
+    revealRecoveryCode: () => post('/v1/account/recovery-code/reveal'),
+    holdView: () => get('/v1/account/hold'),
+    submitHoldChanges: (b) => post('/v1/account/hold/changes/submit', b),
+    approveHoldChanges: (b) => post('/v1/account/hold/changes/approve', b),
+    cancelHoldChanges: () => done(call('DELETE', '/v1/account/hold/changes')),
+    cancelHoldChange: (id) => done(call('DELETE', `/v1/account/hold/changes/${seg(id)}`)),
     listMethods: () => get('/v1/account/methods'),
-    removeMethod: (type, id, b) => heldOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
+    removeMethod: (type, id, b) => stagedOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
 
     me: () => get('/v1/account/me'),
     acceptTerms: (b) => done(post('/v1/account/terms', b)),
@@ -597,6 +744,14 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     endSession: (id) => done(call('DELETE', `/v1/account/sessions/${seg(id)}`)),
     listAlerts: () => get('/v1/account/alerts'),
     markAlertSeen: (id) => done(post(`/v1/account/alerts/${seg(id)}/seen`)),
+    getJabber: () => get('/v1/account/jabber'),
+    sendJabberTest: (b) => post('/v1/account/jabber/test', b),
+    verifyJabber: (b) => post('/v1/account/jabber/verify', b),
+    setJabberEnabled: (b) => call('PUT', '/v1/account/jabber/enabled', b),
+    turnOffJabber: () => done(call('DELETE', '/v1/account/jabber')),
+    listChatKeys: () => get('/v1/account/chat-keys'),
+    postChatKey: (b) => post('/v1/account/chat-keys', b),
+    collectChatKey: (id) => done(call('DELETE', `/v1/account/chat-keys/${seg(id)}`)),
     listApprovals: () => get('/v1/account/approvals'),
     getApproval: (id) => get(`/v1/account/approvals/${seg(id)}`),
     decideApproval: (id, b) => post(`/v1/account/approvals/${seg(id)}`, b),
@@ -607,7 +762,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     addWallet: (b) => post('/v1/wallets', b),
     addWallets: (b) => post('/v1/wallets', b),
     getWalletRule: () => get('/v1/wallets/rule'),
-    removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
+    removeWallet: (id) => stagedOrDone(call('DELETE', `/v1/wallets/${seg(id)}`)),
     setSessionLength: (b) => call('PUT', '/v1/account/session/length', b),
     extendSession: (b) => post('/v1/account/session/extend', b),
     setIdleReminder: (b) => call('PUT', '/v1/account/idle-reminder', b),
@@ -617,7 +772,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     getTeam: () => get('/v1/team'),
     inviteMember: (b) => post('/v1/team/invites', b),
     setMemberRoles: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
-    removeMember: (id, b) => done(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
+    removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
     teamAudit: (q = {}) => {
       const p = new URLSearchParams();
       if (q.from !== undefined) p.set('from', q.from);

@@ -18,7 +18,15 @@ const ALLOWED = (p: string) => p.startsWith('screens/dispute/') || p === 'chat/c
 
 /** Trade screens that pass a tone variable to a chip from a literal-only table (no `mod`): glancePill's
  * caution/escrow/danger, the maintenance chip's danger/caution. A new file here needs a reviewer's eye. */
-const TONE_VARIABLE_OK = new Set(['screens/Maintenance.tsx', 'screens/trade/BuyerPay.tsx', 'screens/trade/TradeGlance.tsx']);
+const TONE_VARIABLE_OK = new Set([
+  'screens/Maintenance.tsx',
+  'screens/trade/BuyerPay.tsx',
+  'screens/trade/TradeGlance.tsx',
+  // A disputed trade's Refunded screen (design review P1-7, design-results 22b73fe3): the hero takes
+  // the mod tone only when trade.dispute is set, i.e. inside a disputed trade (spec 6.6); never on a
+  // plain refund. disputeSlot.test.tsx "the hero takes the moderator tone after a dispute..." pins it.
+  'screens/trade/Refunded.tsx',
+]);
 
 /** Every way to draw the moderator look (JSX props may span lines). */
 const MOD_LOOK: [string, RegExp, Set<string>?][] = [

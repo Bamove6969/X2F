@@ -224,7 +224,7 @@ describe('LoginApprove board, new-device side (ApproveOnDevice)', () => {
 
 const VIEW: ApprovalView = {
   id: '22222222-2222-4222-8222-222222222222', deviceLabel: 'Chrome on Windows', choices: [31, 47, 86],
-  createdAt: '2026-10-29T14:05:00.000Z', expiresAt: new Date(Date.now() + 299_000).toISOString(), atLimit: false, oneDevice: false,
+  createdAt: '2026-10-29T14:05:00.000Z', expiresAt: new Date(Date.now() + 299_000).toISOString(), atLimit: false, oneDevice: false, keysOffered: false,
 };
 
 const TOO_MANY = {
@@ -530,5 +530,105 @@ describe('"Devices and sessions" board (Devices)', () => {
     expect(document.getElementById(sw.getAttribute('aria-describedby')!)?.textContent).toBe(
       'When on, approving a new device logs out the one you were using.',
     );
+  });
+});
+
+// Build spec j33b section 7 (G-007): the Devices wordings. COPY-UNSIGNED
+describe('Devices wordings (G-007)', () => {
+  const SESSION = { choices: [8, 12, 24], expiresAt: new Date(NOW + 3_600_000).toISOString(), canExtend: true, serverNow: new Date(NOW).toISOString() };
+  const member = (displayName: string) => ({ id: displayName, displayName, roles: ['offers'], status: 'active', inviteExpiresAt: null, joinedAt: new Date(NOW).toISOString(), createdAt: new Date(NOW).toISOString() });
+  const mount = (o: { sessions?: unknown[]; settings?: unknown; team?: unknown; lengthHours?: number | null; accountType?: 'trader' | 'vendor' }) => {
+    handler = (url) => {
+      if (url === '/v1/account/sessions') return json(200, o.sessions ?? SESSIONS);
+      if (url === '/v1/account/security/devices') return json(200, o.settings ?? { oneDevice: false, maxDevices: 3 });
+      if (url === '/v1/team') return o.team === undefined ? json(403, { error: 'forbidden' }) : json(200, o.team);
+      if (url === '/v1/account/me' && (o.lengthHours !== undefined || o.accountType !== undefined)) {
+        const session = o.lengthHours === undefined ? null : { ...SESSION, lengthHours: o.lengthHours };
+        return json(200, { displayName: 'nightowl', kind: 'trader', level: 'full', session, ...(o.accountType === undefined ? {} : { accountType: o.accountType }) });
+      }
+      return undefined;
+    };
+    return render(
+      <MemoryRouter>
+        <Devices prove={async () => 'T'.repeat(43)} />
+      </MemoryRouter>,
+    );
+  };
+  const mine = SESSIONS.filter((x) => x.member === null);
+
+  it('over the limit (One device at a time on, 2 logged in): "2 logged in · your limit is 1", "Log one out to keep going." and the pill past the limit in caution', async () => {
+    const { host } = mount({ sessions: mine, settings: { oneDevice: true, maxDevices: 3 } });
+    await settle();
+    expect(part(host, 'devices-count')?.textContent).toBe('2 logged in · your limit is 1');
+    expect(part(host, 'devices-count')?.nextElementSibling?.nextElementSibling?.textContent).toBe('Log one out to keep going.');
+    const pills = [...part(host, 'devices-meter')!.children];
+    expect(pills.map((p) => p.getAttribute('data-over'))).toEqual(['false', 'true']);
+    expect(pills.every((p) => p.getAttribute('data-filled') === 'true')).toBe(true);
+  });
+
+  it('at or under the limit the count and notes are as before', async () => {
+    const { host } = mount({ sessions: mine, settings: { oneDevice: false, maxDevices: 3 } });
+    await settle();
+    expect(part(host, 'devices-count')?.textContent).toBe('2 of 3 devices logged in');
+    expect(host.textContent).not.toContain('Log one out to keep going.');
+    expect(part(host, 'devices-meter')!.querySelector('[data-over="true"]')).toBeNull();
+  });
+
+  it('the session length line names the picked length, or says it is the one you pick', async () => {
+    const picked = mount({ lengthHours: 8 });
+    await settle();
+    expect(part(picked.host, 'session-length-panel')?.textContent).toContain("You stay logged in for 8 h. Then we ask you to confirm it's you.");
+    picked.unmount();
+    const none = mount({ lengthHours: null });
+    await settle();
+    expect(part(none.host, 'session-length-panel')?.textContent).toContain("You stay logged in for the length you pick. Then we ask you to confirm it's you.");
+  });
+
+  it('a team with no members yet: "No team members yet", the help line and Add a team member; no Log out all team members', async () => {
+    const { host } = mount({ sessions: mine, team: { members: [], max: 3 }, accountType: 'vendor' });
+    await settle();
+    const team = part(host, 'team-sessions')!;
+    expect(team.querySelector('h3')?.textContent).toBe('Team members logged in');
+    const empty = part(team, 'team-empty')!;
+    expect(empty.querySelector('h4')?.textContent).toBe('No team members yet');
+    expect(empty.textContent).toContain('Add up to 3 people to help with your trades. You choose what each one can do.');
+    const add = empty.querySelector('a')!;
+    expect(add.textContent).toBe('Add a team member');
+    expect(add.getAttribute('href')).toBe('/settings/team');
+    expect(part(team, 'end-team')).toBeNull();
+  });
+
+  it('members, none logged in: "No team members are logged in." and Log out all team members disabled', async () => {
+    const { host } = mount({ sessions: mine, team: { members: [member('desk_ana')], max: 3 }, accountType: 'vendor' });
+    await settle();
+    const team = part(host, 'team-sessions')!;
+    expect(team.textContent).toContain('No team members are logged in.');
+    expect(part(team, 'team-empty')).toBeNull();
+    expect((part(team, 'end-team') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('no team for this account (the team call refused): no team card, as before', async () => {
+    const { host } = mount({ sessions: mine });
+    await settle();
+    expect(part(host, 'team-sessions')).toBeNull();
+  });
+
+  // Review M2 (9 Nov 2026): GET /v1/team answers a plain trader's own session with 200
+  // { members: [], max: 3 }; only vendor accounts have team members (owner, 2 Nov 2026).
+  it('a trader account (the team call answers an empty team): no team card, no "Add a team member"', async () => {
+    const { host } = mount({ sessions: mine, team: { members: [], max: 3 }, accountType: 'trader' });
+    await settle();
+    expect(calls.some((c) => c.url === '/v1/team')).toBe(true);
+    expect(part(host, 'team-sessions')).toBeNull();
+    expect(part(host, 'team-empty')).toBeNull();
+    expect(host.textContent).not.toContain('No team members yet');
+    expect(host.textContent).not.toContain('Add a team member');
+    expect(host.textContent).not.toContain('No team members are logged in.');
+  });
+
+  it('an account whose type the API does not send (an older build): no team card from an empty team', async () => {
+    const { host } = mount({ sessions: mine, team: { members: [], max: 3 }, lengthHours: 8 });
+    await settle();
+    expect(part(host, 'team-sessions')).toBeNull();
   });
 });

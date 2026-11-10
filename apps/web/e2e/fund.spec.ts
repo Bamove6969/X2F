@@ -82,6 +82,7 @@ function sellerView(over: View = {}): View {
     payBy: null,
     paidAt: null,
     confirmBy: null,
+    confirmWindowMin: 90,
     settleBy: null,
     releaseClaimedAt: null,
     pausedAt: null,
@@ -422,12 +423,13 @@ test.describe('the buyer before funding', () => {
     await expect(page.getByText(`Buying from ${B.seller}`)).toBeVisible();
     await expect(page.locator('[data-qr], [data-wallet-link], [data-escrow-address]')).toHaveCount(0);
     expect(await page.content()).not.toContain('monero:');
-    // Design proto review P1: Chat and an at-once Cancel trade, which asks once.
+    // Design proto review P1: Chat and an at-once Cancel trade, which asks once; the sheet is "Cancelling is
+    // likely final" (owner G56, T-049; trade-copy review 9 Nov).
     await expect(page.getByRole('button', { name: 'Chat' })).toBeVisible();
     await page.getByRole('button', { name: 'Cancel trade' }).click();
-    await expect(page.getByRole('dialog', { name: 'Cancelling is final' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Cancelling is likely final' })).toBeVisible();
     await page.getByRole('button', { name: 'Keep trading' }).click();
-    await expect(page.getByRole('dialog', { name: 'Cancelling is final' })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Cancelling is likely final' })).toHaveCount(0);
   });
 });
 

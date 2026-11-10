@@ -6,7 +6,9 @@ import type { KeyTapIntent } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
-import { getSettings } from '../../src/staff/settings.js';
+import { SETTINGS_DEFAULTS, getSettings } from '../../src/staff/settings.js';
+// After staff/settings.ts on purpose: see "the defaults are one module" below.
+import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
 import { StaffBrowser, errorOf, insertSession, logEntries, seedStaff, seedTap, staffApps } from '../helpers/staffApp.js';
 
 const T0 = new Date('2026-11-02T12:00:00Z');
@@ -140,5 +142,16 @@ describe('PUT /staff/v1/settings', () => {
     const res = await b.send('PUT', '/staff/v1/settings', { firstResponseH: 6 });
     expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 403, error: 'forbidden' });
     expect(errorOf(await b.get('/staff/v1/settings'))).toBe('forbidden');
+  });
+});
+
+// Hold model v3 made auth/hold.ts reach trades/store.ts, which reaches disputes/settings.ts, so when
+// staff/settings.ts is the first module loaded (as this file loads it) the old
+// disputes/settings.ts read `SETTINGS_DEFAULTS` from a module still evaluating, and the whole file
+// failed to import. The defaults live in a leaf module (staff/settingsDefaults.ts) both read.
+describe('the defaults are one module, whatever loads first', () => {
+  it('disputes/settings.ts carries the staff defaults when staff/settings.ts loads first', () => {
+    expect(SETTINGS_DEFAULTS).toEqual(DEFAULTS);
+    expect(DISPUTE_DEFAULTS).toEqual({ largeTradeLimitUsd: DEFAULTS.largeTradeLimitUsd, firstResponseH: DEFAULTS.firstResponseH, appealWindowH: DEFAULTS.appealWindowH });
   });
 });

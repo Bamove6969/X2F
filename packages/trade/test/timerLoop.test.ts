@@ -71,10 +71,10 @@ describe('timer loop decisions (Task 9, pure)', () => {
   });
 
   test('ticks a trade whose deadline has passed, strictly after it', () => {
-    const t = taken(); // setupBy = 15 min
-    expect(timerEvents([t], null, at(15))).toEqual([]);
-    expect(timerEvents([t], null, at(15, 1))).toEqual([{ code: t.code, event: { type: 'tick' } }]);
-    expect(pass([t], null, at(15, 1))[0]!.state).toBe('cancelled');
+    const t = taken(); // setupBy = 60 min (owner Q11)
+    expect(timerEvents([t], null, at(60))).toEqual([]);
+    expect(timerEvents([t], null, at(60, 1))).toEqual([{ code: t.code, event: { type: 'tick' } }]);
+    expect(pass([t], null, at(60, 1))[0]!.state).toBe('cancelled');
   });
 
   test('does not tick a passed deadline when the tick would change nothing', () => {
@@ -84,7 +84,7 @@ describe('timer loop decisions (Task 9, pure)', () => {
   });
 
   test('never ticks a closed trade', () => {
-    const t = pass([taken()], null, at(16))[0]!;
+    const t = pass([taken()], null, at(61))[0]!;
     expect(t.state).toBe('cancelled');
     expect(timerEvents([t], null, at(500))).toEqual([]);
   });
@@ -98,13 +98,13 @@ describe('timer loop decisions (Task 9, pure)', () => {
 
   test('maintenance pauses every open trade once and ticks nothing meanwhile', () => {
     const open = taken('ABCD2345EFGH6789');
-    const closed = pass([taken('ZZZZ2345EFGH6789')], null, at(16))[0]!;
+    const closed = pass([taken('ZZZZ2345EFGH6789')], null, at(61))[0]!;
     const since = at(10);
     expect(timerEvents([open, closed], since, at(10))).toEqual([{ code: open.code, event: { type: 'pause' } }]);
     const [paused] = pass([open], since, at(10));
     expect(paused!.pausedAt).toEqual(at(10));
-    // past setupBy while paused: no tick, no second pause
-    expect(timerEvents([paused!], since, at(40))).toEqual([]);
+    // past setupBy (60) while paused: no tick, no second pause
+    expect(timerEvents([paused!], since, at(80))).toEqual([]);
   });
 
   test("a buyer's cancel waiting for the seller's Confirm cancel: paused by maintenance, and closed by a tick 48 h after it became available (owner 2026-10-29)", () => {
@@ -128,22 +128,32 @@ describe('timer loop decisions (Task 9, pure)', () => {
     expect(timerEvents([paused], null, at(30))).toEqual([{ code: paused.code, event: { type: 'resume' } }]);
     const [resumed] = pass([paused], null, at(30));
     expect(resumed!.pausedAt).toBeNull();
-    expect(resumed!.setupBy).toEqual(at(35)); // 15 + 20 min pause
+    expect(resumed!.setupBy).toEqual(at(80)); // 60 + 20 min pause
+  });
+
+  test('lead review 8 Nov C2 (owner G7): a held trade is never resumed or ticked; maintenance still pauses it', () => {
+    const paused = sys(taken(), { type: 'pause' }, at(10));
+    const held = new Set([paused.code]);
+    expect(decide([paused], null, at(30), held).events).toEqual([]);
+    const open = secured('HELD2345EFGH6789');
+    expect(decide([open], null, at(24 * 60), new Set([open.code])).events).toEqual([]);
+    expect(decide([open], at(5), at(6), new Set([open.code])).events.map((e) => e.event)).toEqual([{ type: 'pause' }]);
   });
 
   // J-14 (owner D-059): a trade of an account locked by a "My account has been compromised" ticket
   // is paused at once and stays paused (all timers stop) until staff unlock the account, whatever
   // maintenance does.
-  test('a held trade (its account is locked) is paused, never resumed, never ticked, and resumes once it is no longer held', () => {
+  test('a locked trade (its account is locked) is paused, never resumed, never ticked, and resumes once it is no longer locked', () => {
     const open = secured();
-    const held = new Set([open.code]);
-    expect(decide([open], null, at(5), held).events).toEqual([{ code: open.code, event: { type: 'pause' }, at: at(5) }]);
+    const locked = new Set([open.code]);
+    const none = new Set<string>();
+    expect(decide([open], null, at(5), none, locked).events).toEqual([{ code: open.code, event: { type: 'pause' }, at: at(5) }]);
     const paused = sys(open, { type: 'pause' }, at(5));
     // Maintenance off: an ordinary paused trade would resume; a held one does not.
-    expect(decide([paused], null, at(200), held).events).toEqual([]);
+    expect(decide([paused], null, at(200), none, locked).events).toEqual([]);
     // Maintenance on, then off again: still nothing for the held trade, even far past payBy.
-    expect(decide([paused], at(100), at(300), held).events).toEqual([]);
-    expect(decide([paused], null, at(400), held).events).toEqual([]);
+    expect(decide([paused], at(100), at(300), none, locked).events).toEqual([]);
+    expect(decide([paused], null, at(400), none, locked).events).toEqual([]);
     // Unlocked (no longer held): it resumes and its deadlines move by the whole pause.
     expect(decide([paused], null, at(400)).events).toEqual([{ code: paused.code, event: { type: 'resume' }, at: at(400) }]);
     const resumed = sys(paused, { type: 'resume' }, at(400));
@@ -151,7 +161,7 @@ describe('timer loop decisions (Task 9, pure)', () => {
     // A closed trade has no timer, held or not.
     const closed = sys(taken('ZZZZ2345EFGH6789'), { type: 'tick' }, at(60));
     expect(closed.closedAt).not.toBeNull();
-    expect(decide([closed], null, at(61), new Set([closed.code])).events).toEqual([]);
+    expect(decide([closed], null, at(61), none, new Set([closed.code])).events).toEqual([]);
   });
 
   test('maintenance on for 20 min moves payBy by 20 min and no tick fires meanwhile', () => {
@@ -201,7 +211,7 @@ describe('timer loop decisions (Task 9, pure)', () => {
 
   test('every event but pause is at the loop clock', () => {
     const t = taken();
-    expect(decide([t], null, at(15, 1)).events).toEqual([{ code: t.code, event: { type: 'tick' }, at: at(15, 1) }]);
+    expect(decide([t], null, at(60, 1)).events).toEqual([{ code: t.code, event: { type: 'tick' }, at: at(60, 1) }]);
     const paused = sys(t, { type: 'pause' }, at(5));
     expect(decide([paused], null, at(9)).events[0]!.at).toEqual(at(9));
   });
@@ -231,8 +241,8 @@ describe('timer loop decisions (Task 9, pure)', () => {
     // settling past settleBy with no settleFrom: the machine refuses the tick
     const broken: Trade = { ...secured('BROK2345EFGH6789'), state: 'settling', settling: 'release', settleFrom: null, settleBy: at(3) };
     const good = taken('GOOD2345EFGH6789');
-    const r = decide([broken, good], null, at(16));
-    expect(r.events).toEqual([{ code: good.code, event: { type: 'tick' }, at: at(16) }]);
+    const r = decide([broken, good], null, at(61));
+    expect(r.events).toEqual([{ code: good.code, event: { type: 'tick' }, at: at(61) }]);
     expect(r.skipped).toEqual([{ code: broken.code, reason: 'wrong-state' }]);
   });
 

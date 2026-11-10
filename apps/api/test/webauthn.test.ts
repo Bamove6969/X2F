@@ -25,6 +25,8 @@ import { approvedLogin } from './helpers/approval.js';
 import { testApp } from './helpers/app.js';
 import { createSoftAuthenticator, createTestCa, writeTestMds, type SoftAuthenticator, type TestCa } from './helpers/softAuthenticator.js';
 import { spySql } from './helpers/sqlSpy.js';
+import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
@@ -144,7 +146,7 @@ async function signUp(kind: 'passkey' | 'security-key', username = uniqueName('u
   expect(start.statusCode).toBe(200);
   const { challengeId, options } = start.json();
   const res = await b.post('/v1/register/webauthn/finish', {
-    challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS,
+    challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG,
   });
   expect(res.statusCode).toBe(201);
   const accountId = (await accountIdByLoginName(deps, username))!;
@@ -213,15 +215,23 @@ describe('passkey sign-up and discoverable login', () => {
     const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { ...names(username), kind: 'passkey' })).json();
     const response = auth.register(options, ORIGIN);
     for (const acceptedTerms of [undefined, '2026-01-01']) {
-      const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms });
+      const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms, termsSignature: SIG });
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'terms-not-accepted', version: TERMS });
     }
+    // The signature too (owner, 8 Nov 2026), still before the challenge is used.
+    for (const [termsSignature, error] of [[undefined, 'signature-required'], [{ kind: 'typed', name: '' }, 'signature-invalid']] as const) {
+      const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error });
+    }
     expect(await accountIdByLoginName(deps, username)).toBeUndefined();
-    const ok = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS });
+    const ok = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
     expect(ok.statusCode).toBe(201);
-    const { rows } = await deps.db.query('select terms_version from accounts where id = $1', [await accountIdByLoginName(deps, username)]);
+    const id = (await accountIdByLoginName(deps, username))!;
+    const { rows } = await deps.db.query('select terms_version, terms_signature from accounts where id = $1', [id]);
     expect(rows[0].terms_version).toBe(TERMS);
+    expect(openTermsSignature(deps.config, rows[0].terms_signature, id)).toEqual(SIG);
   });
 
   it('puts a 32-byte user handle in the options, never the username', async () => {
@@ -263,7 +273,7 @@ describe('WebAuthn security checks (P2-I4)', () => {
     const fresh = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { ...names(uniqueName('evil')), kind: 'passkey' })).json();
     const reg = await b.post('/v1/register/webauthn/finish', {
-      challengeId, response: fresh.register(options, 'https://evil.test'), deviceLabel: 'L', acceptedTerms: TERMS,
+      challengeId, response: fresh.register(options, 'https://evil.test'), deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG,
     });
     expect(errorOf(reg)).toBe('webauthn-failed');
   });
@@ -315,7 +325,7 @@ describe('WebAuthn security checks (P2-I4)', () => {
     const noUv = createSoftAuthenticator({ backedUp: true, userVerified: false });
     const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { ...names(uniqueName('nouv')), kind: 'passkey' })).json();
     const reg = await b.post('/v1/register/webauthn/finish', {
-      challengeId, response: noUv.register(options, ORIGIN), deviceLabel: 'L', acceptedTerms: TERMS,
+      challengeId, response: noUv.register(options, ORIGIN), deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG,
     });
     expect(errorOf(reg)).toBe('webauthn-failed');
   });
@@ -1008,7 +1018,7 @@ describe('review fixes', () => {
     const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { ...names(username), kind: 'security-key' })).json();
     const response = auth.register(options, ORIGIN);
     response.response.transports = ['usb', 'bogus', 'nfc', 'x'.repeat(500), 'hybrid'] as never;
-    const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS });
+    const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
     expect(res.statusCode).toBe(201);
     const { rows } = await deps.db.query('select c.transports from webauthn_credentials c where c.account_id = $1', [
       await accountIdByLoginName(deps, username),

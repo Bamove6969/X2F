@@ -534,7 +534,7 @@ test.describe('screens with two panes: nothing across the hinge (design review 5
     await page.setViewportSize({ width: 884, height: 1104 });
     const list = [
       { id: '11111111-1111-4111-8111-111111111111', side: 'sell', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', rate: '33165', pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, status: 'live', createdAt: '2026-10-29T10:00:00.000Z' },
-      { id: '22222222-2222-4222-8222-222222222222', side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '30000', pricing: { mode: 'fixed', centsPerXmr: '30000' }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5, status: 'paused', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: '22222222-2222-4222-8222-222222222222', side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '27000', pricing: { mode: 'market', marginBps: -1000 }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5, status: 'paused', createdAt: '2026-10-29T09:00:00.000Z' },
     ];
     await page.route('**/v1/account/me', (r) => r.fulfill({ json: { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true } }));
     await page.route('**/v1/account/offers', (r) => r.fulfill({ json: list }));

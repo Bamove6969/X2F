@@ -3,7 +3,8 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuyerCancelling, BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/screens/trade/BuyerPay.js';
-import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
+import { confirmWindow, disputeOpensAt, NUDGE_AGAIN_MS } from '../src/screens/trade/PaidWaiting.js';
+import { GIFT_CARD_WARNING, setProofSource, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
 import { resetWarned } from '../src/screens/trade/warned.js';
@@ -53,6 +54,7 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     payBy: null,
     paidAt: null,
     confirmBy: null,
+    confirmWindowMin: 120,
     settleBy: null,
     releaseClaimedAt: null,
     pausedAt: null,
@@ -245,12 +247,13 @@ describe('BuyerPay (BuyerPay board), phone', () => {
     expect(document.querySelector('[data-pay-block]')).toBeNull();
   });
 
-  it("paid: the payment details the buyer paid to stay on screen, never the locked card (review 2026-11-07, 1)", () => {
+  it("paid: the payment details the buyer paid stay on the page, never the locked card (review 2026-11-07, 1)", async () => {
     for (const wide of [false, true]) {
       const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide }));
+      // The BuyerPaidWaiting board folds them under "Your payment" (design review P2-16): one tap shows them.
+      await click(document.querySelector<HTMLElement>('[data-part="paid-payment-toggle"]')!);
       const t = text();
       expect(t).toContain('[SELLER ZELLE ID]');
-      expect(t).toContain('Send exactly');
       expect(t).not.toContain('They appear when the escrow is secured');
       expect(document.querySelector('[data-locked]')).toBeNull();
       r.unmount();
@@ -267,6 +270,17 @@ describe('BuyerPay (BuyerPay board), phone', () => {
   it('a gift-card method shows the one bold warning', () => {
     mount(props({ view: tradeView({ ...SECURED, profile: { ...ZELLE, name: 'Amazon gift card', giftCard: true } }) }));
     expect([...document.querySelectorAll('strong')].map((s) => s.textContent)).toContain(GIFT_CARD_WARNING);
+    // J-17 (G50, G52): the buyer sends the card; the evidence they keep, the video a range card's.
+    expect([...document.querySelectorAll('[data-part="gift-card-evidence"] [data-evidence]')].map((e) => e.getAttribute('data-evidence'))).toEqual([
+      'receipt',
+      'card-photo',
+      'login-video',
+    ]);
+  });
+
+  it('no gift-card evidence on any other method', () => {
+    mount(props({ view: tradeView(SECURED) }));
+    expect(document.querySelector('[data-part="gift-card-evidence"]')).toBeNull();
   });
 });
 
@@ -324,6 +338,69 @@ describe('"Do not show me this warning again" on I\'ve paid (owner 8 Nov p7-2; p
     await click(byText("I've paid", 'button'));
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'refresh']);
+    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+  });
+});
+
+// Build spec j31a section 4 (T-079; owner's words kept, docs/to-lead.md 9 Nov): I've paid with no
+// proof attached asks first, every time. The proof slot is Plan 5's: until it can hold a proof
+// (setProofSource), there is nothing to warn about and I've paid goes straight to the confirm sheet.
+describe("I've paid with no proof attached (T-079)", () => {
+  afterEach(() => setProofSource(null));
+
+  it('asks "Mark paid without proof?" first, in the owner\'s words; Add proof closes it and sends nothing', async () => {
+    setProofSource(() => 'none');
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    expect(dialog()!.querySelector('h2')?.textContent).toBe('Mark paid without proof?');
+    expect(dialog()!.textContent).toContain(
+      "You haven't added a payment screenshot. If this trade ever goes to a dispute, proof is usually what decides which side wins. It's your choice.",
+    );
+    expect(dialog()!.textContent).not.toContain('Mark this trade as paid?');
+    // No "don't show again": it shows whenever proof is missing.
+    expect(dialog()!.querySelector('input[type="checkbox"]')).toBeNull();
+    await click(byText('Add proof', 'button'));
+    expect(dialog()).toBeNull();
+    expect(calls).toEqual([]);
+    await click(byText("I've paid", 'button'));
+    expect(dialog()!.querySelector('h2')?.textContent).toBe('Mark paid without proof?');
+  });
+
+  it('"Do not show me this warning again" never skips the no-proof ask: the sheet shows and nothing is sent; its answer then marks paid at once (lead, batch 4)', async () => {
+    setConfirmUser('mira.k');
+    window.localStorage.setItem('x2f.noconfirm.paid.mira.k', '1');
+    setProofSource(() => 'none');
+    answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid', paidAt: at(0) }) });
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    await flush();
+    expect(dialog()!.querySelector('h2')?.textContent).toBe('Mark paid without proof?');
+    expect(calls).toEqual([]);
+    await click(byText('Mark paid without proof', 'button'));
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
+    resetConfirmSkips();
+  });
+
+  it('"Mark paid without proof" goes on to the confirm sheet, which still asks', async () => {
+    setProofSource(() => 'none');
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    await click(byText('Mark paid without proof', 'button'));
+    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+    expect(calls).toEqual([]);
+  });
+
+  it('with a proof attached, or no proof slot yet, I\'ve paid opens the confirm sheet straight away', async () => {
+    setProofSource(() => 'attached');
+    const a = mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+    a.unmount();
+    setProofSource(null);
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
     expect(dialog()!.textContent).toContain('Mark this trade as paid?');
   });
 });
@@ -410,14 +487,35 @@ describe("I've paid and PaidConfirmSheet", () => {
     expect(dialog()!.querySelector('[role="alert"]')?.textContent).toBeTruthy();
   });
 
-  it('paid: "Marked as paid" once this device recorded the tap (escrow.paidRecorded)', () => {
+  it('paid: "Marking as paid…" until this device recorded the tap, then the BuyerPaidWaiting status with no disabled button (design review 39)', () => {
     const paidView = tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) });
     const r = mount(props({ view: paidView, escrow: fakeEscrow({ paidRecorded: false }) }));
     expect(text()).toContain('Marking as paid…');
     r.unmount();
     mount(props({ view: paidView, escrow: fakeEscrow({ paidRecorded: true }) }));
-    expect(text()).toContain('Marked as paid');
-    expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+    const status = document.querySelector('[data-part="paid-status"]')!;
+    expect(status.getAttribute('role')).toBe('status');
+    // The board's caution hero (design review P1-3): the tinted chip and the key mark, the lead with
+    // no heading of its own (the page's h1 is the header's "Buying from …"), then the timer inside.
+    expect(status.className).toBe('x2f-hero');
+    expect(status.getAttribute('data-tone')).toBe('caution');
+    expect(status.querySelector('h1, h2')).toBeNull();
+    expect(document.querySelector('h1')?.textContent).toBe('Buying from satoshi_ghost');
+    const chip = status.querySelector('.x2f-chip')!;
+    expect([chip.textContent, chip.getAttribute('data-tone'), chip.getAttribute('data-look')]).toEqual(['Paid', 'caution', 'tint']);
+    expect(status.querySelector('[data-part="key-mark"]')?.querySelectorAll('circle')).toHaveLength(3);
+    expect(status.querySelector('[data-part="confirm-timer"]')?.hasAttribute('data-inset')).toBe(true);
+    expect(status.querySelector('.x2f-hero__rule')).not.toBeNull();
+    // "2 h" as a Duration, never "2 hours" in words (design review P1-4).
+    const lead = document.getElementById(status.getAttribute('aria-labelledby')!)!;
+    expect(lead.textContent).toMatch(/^You marked this trade as paid at \d+ \w{3} \d{4}, \d\d:\d\d UTC\. satoshi_ghost has been told and has up to 2 h to check Zelle and release\.$/);
+    expect(lead.querySelector('.x2f-duration__n')?.textContent).toBe('2');
+    expect(status.textContent).not.toMatch(/hours?\b/);
+    expect(status.querySelector('.x2f-timer__hint')?.textContent).toMatch(/^Zelle gets 2 h · ends /);
+    expect(document.querySelectorAll('[data-primary]')).toHaveLength(0);
+    // Your payment folds away in the kit's Disclosure, closed at first.
+    expect(document.querySelector('[data-part="paid-payment-toggle"]')?.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('[data-part="confirm-timer"] [role="timer"]')?.textContent).toBe('1 h 59 min');
   });
 
   it('paid, but this device never recorded it (a reload, another tab, a lost response): Finish sends only trade.paid, with the device total', async () => {
@@ -564,15 +662,23 @@ describe('buyer cancel (spec 2.3; owner G56, g67)', () => {
   const sheet = () => document.body.querySelector<HTMLElement>('[data-sheet="cancel-final"]');
   const inSheet = (label: string) => [...(sheet()?.querySelectorAll<HTMLElement>('button') ?? [])].find((b) => (b.textContent ?? '').trim() === label)!;
 
-  it('Cancel trade opens "Cancelling is final" first and sends nothing; Keep trading closes it', async () => {
+  it('Cancel trade opens "Cancelling is likely final" first and sends nothing; Keep trading closes it (T-049)', async () => {
     mount(props({ view: tradeView(SECURED) }));
     expect(sheet()).toBeNull();
     await click(byText('Cancel trade', 'button'));
     expect(sheet()).not.toBeNull();
-    expect(dialog()!.textContent).toContain('Cancelling is final');
+    expect(dialog()!.querySelector('h2')?.textContent).toBe('Cancelling is likely final');
     expect(sheet()!.textContent).toContain(
-      "The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead.",
+      "The 1.250000 XMR in escrow is returned and this trade closes. Be sure before you cancel. Don't send any money after you cancel. Already paid? Don't cancel: tap I've paid instead.",
     );
+    // T-049 (owner p5-2): the body never names the seller. Design final call 10 Nov: with the escrow
+    // held this is the escrow-held version, never the unfunded line (TradeFund's, tradeFund.test.tsx).
+    expect(sheet()!.textContent).not.toContain('satoshi_ghost');
+    expect(sheet()!.textContent).not.toContain('Nothing is in escrow yet');
+    expect(sheet()!.querySelector('[data-username]')).toBeNull();
+    // The board's emphasis: the amount in mono, XMR and "I've paid" in 600.
+    expect(sheet()!.querySelector('.x2f-mono')?.textContent).toBe('1.250000');
+    expect([...sheet()!.querySelectorAll('strong')].map((b) => b.textContent)).toEqual(['XMR', "I've paid"]);
     // The safe action has focus; the warning describes the dialog.
     expect(document.activeElement?.textContent).toBe('Keep trading');
     expect(document.getElementById(dialog()!.getAttribute('aria-describedby')!)?.textContent).toContain("Don't send any money after you cancel.");
@@ -582,12 +688,12 @@ describe('buyer cancel (spec 2.3; owner G56, g67)', () => {
     expect(calls).toEqual([]);
   });
 
-  it('names the trade amount, never the escrow with the poster\'s 1% fee in it (design proto review P2, board CancelRequest buyer-confirms)', async () => {
-    // The seller posted, so the escrow holds 1.25 + 0.0125 XMR; the buyer has only ever seen 1.250000.
+  it("names what the escrow holds, the poster's fee included (lead, batch 4: trade-copy's J-31 build spec, T-049, over the 8 Nov proto-review P2 reading; design confirming)", async () => {
+    // The seller posted, so the escrow holds 1.25 + 0.0125 XMR: the sheet says 1.262500 is returned.
     mount(props({ view: tradeView({ ...SECURED, receivedAtomic: '1262500000000', fee: { atomic: '12500000000' } }) }));
     await click(byText('Cancel trade', 'button'));
-    expect(sheet()!.textContent).toContain('The 1.250000 XMR goes back to satoshi_ghost');
-    expect(sheet()!.textContent).not.toContain('1.262500');
+    expect(sheet()!.textContent).toContain('The 1.262500 XMR in escrow is returned');
+    expect(sheet()!.textContent).not.toContain('1.250000');
   });
 
   it('before "I\'ve paid", the sheet\'s Cancel trade re-reads the trade, posts buyer-cancel and then starts the refund (trade.cancel)', async () => {
@@ -809,10 +915,10 @@ describe("no dispute for the buyer before I've paid (design proto review P1, 8 N
     }
   });
 
-  it('a 24 h wait shows its UTC date and hours', () => {
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(1439) }), escrow: fakeEscrow({ paidRecorded: true }) }));
-    const locked = byText('Open dispute', 'button');
-    expect(document.getElementById(locked.getAttribute('aria-describedby')!)!.textContent).toBe('Available from 26 Oct 2026, 11:59 UTC · in 23 h');
+  it('a 24 h wait shows its UTC date', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(1439), confirmWindowMin: 1440 }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const locked = document.querySelector<HTMLElement>('[data-part="paid-dispute"]')!;
+    expect(document.getElementById(locked.getAttribute('aria-describedby')!)!.textContent).toMatch(/^Available from 26 Oct 2026, 11:59 UTC · in /);
   });
 });
 
@@ -880,16 +986,216 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-grown]')).toBeNull();
   });
 
-  it("in paid, Open dispute waits for confirmBy (the buyer's dispute is too-early before it)", () => {
-    // Board BuyerPaidWaiting window=in-window: Open dispute disabled, "Available from 15:35 UTC · in 88 min".
-    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-2), confirmBy: at(88) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+  it("in paid, Open dispute waits for confirmBy, the method's window (owner p9-4, F9: 90 min for Zelle; design review P1-1)", () => {
+    // 89 min after I've paid: locked, with the board's "Available from 15:35 UTC · in 1 min".
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-89), confirmBy: at(1), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(document.querySelector('a[href$="/dispute"]')).toBeNull();
-    const locked = byText('Open dispute', 'button') as HTMLButtonElement;
-    expect(locked.disabled).toBe(true);
-    expect(document.getElementById(locked.getAttribute('aria-describedby')!)!.textContent).toBe('Available from 13:28 UTC · in 88 min');
+    const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
+    expect(waiting.tagName).toBe('BUTTON');
+    // aria-disabled, so it keeps focus and its "Available from" (review N4).
+    expect(waiting.getAttribute('aria-disabled')).toBe('true');
+    // The time alone on the same day and no full stop (design review P2-11); "in 1 min" keeps its space (review 39).
+    expect(document.getElementById(waiting.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Available from \d\d:\d\d UTC · in 1 min$/);
+    expect(document.querySelector('[data-part="paid-status"] .x2f-chip')?.textContent).toBe('Paid');
     r.unmount();
+    // The window ended: the outlined button, no soft link (one window for both sides, p9-4).
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-91), confirmBy: at(-1), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const open = document.querySelector('[data-part="paid-dispute"]')!;
+    expect(open.tagName).toBe('A');
+    expect(open.className).toBe('x2f-button x2f-button--danger-outline');
+    expect(open.textContent).toBe('Open dispute');
+    expect(open.getAttribute('href')).toBe(`/trade/${CODE}/dispute`);
+    expect(document.querySelector('.x2f-paid-soft-dispute')).toBeNull();
+    expect(document.getElementById('paid-dispute-when')).toBeNull();
+    // Ended: the same caution hero; the chip says so and the lead gives the window in its own unit.
+    const ended = document.querySelector('[data-part="paid-status"]')!;
+    expect(ended.getAttribute('data-tone')).toBe('caution');
+    expect(ended.querySelector('.x2f-chip')?.textContent).toBe('Paid · not confirmed in time');
+    expect(ended.querySelector('.x2f-hero__lead')?.textContent).toMatch(/^Their 90 min to check Zelle ended at .+ UTC\. The XMR is still safe in escrow\. You can open a dispute now/);
+    // No arc once the time is up, only the track.
+    expect(ended.querySelectorAll('.x2f-timer__ring circle')).toHaveLength(1);
+  });
+
+  it('maintenance after the window ended: no dispute is offered, the machine refuses it (owner G19; lead review 2026-11-08 R-m2)', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-100), confirmBy: at(-10), confirmWindowMin: 90, pausedAt: at(-5) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(document.querySelector('a[href$="/dispute"]')).toBeNull();
+    const locked = document.querySelector<HTMLElement>('[data-part="paid-dispute"]')!;
+    expect([locked.tagName, locked.getAttribute('aria-disabled')]).toEqual(['BUTTON', 'true']);
+    expect(document.getElementById(locked.getAttribute('aria-describedby')!)?.textContent).toBe('Available after the maintenance');
+    expect(document.querySelector('[data-part="paid-status"] .x2f-hero__lead')?.textContent).toContain('You can open a dispute once the maintenance is over');
+    expect(text()).not.toContain('You can open a dispute now');
+  });
+
+  it('the wide room once the window ended: the outlined dispute on the right of the row, no "Available from" line', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-92), confirmBy: at(-2), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
+    const row = document.querySelector('.x2f-paid-actions__row')!;
+    expect([...row.children].map((c) => c.getAttribute('data-part') ?? c.className)).toEqual(['nudge', 'x2f-room__spacer', 'paid-dispute']);
+    expect(row.querySelector('[data-part="paid-dispute"]')?.className).toBe('x2f-button x2f-button--danger-outline');
+    expect(document.getElementById('paid-dispute-when')).toBeNull();
+  });
+
+  it("disputeOpensAt is the server's confirmBy (owner p9-4; maintenance moves it, Q10), and nothing without it", () => {
+    const t = (min: number) => new Date(Date.UTC(2026, 10, 6, 15, 0) + min * 60_000).toISOString();
+    expect(disputeOpensAt({ confirmBy: t(90) })).toBe(Date.parse(t(90)));
+    expect(disputeOpensAt({ confirmBy: null })).toBeNull();
+    expect(disputeOpensAt({ confirmBy: 'not a time' })).toBeNull();
+  });
+
+  it("the window's length is the trade's own, never confirmBy − paidAt stretched by a maintenance (lead review 2026-11-08 R-m1)", () => {
+    // Paid 100 min ago, a 40-minute maintenance moved confirmBy from -10 to +30.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-100), confirmBy: at(30), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const status = document.querySelector('[data-part="paid-status"]')!;
+    expect(status.querySelector('.x2f-timer__hint')?.textContent).toMatch(/^Zelle gets 90 min · ends /);
+    expect(status.querySelector('.x2f-hero__lead')?.textContent).toContain('has up to 90 min to check Zelle');
+    expect(confirmWindow({ confirmBy: at(30), confirmWindowMin: 90 }, T0)?.lengthMs).toBe(90 * 60_000);
+  });
+
+  it("What happens next's step 3 is the board's: the time the dispute opens and the trade's own wait (design review P1-2)", () => {
+    const step = () => document.querySelector('[data-part="paid-next-dispute"]')!;
+    // Zelle: 90 min, said as the board's "90 min" (never "1 h 30 min"), the number in mono.
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(89), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(step().textContent).toMatch(/^If something goes wrong, you can open a dispute from \d\d:\d\d UTC, 90 min after you marked it as paid\. A moderator checks the chat and proof, then decides\.$/);
+    expect(step().querySelector('time')?.getAttribute('dateTime')).toBe(at(89));
+    expect(step().querySelector('.x2f-duration__n')?.textContent).toBe('90');
+    expect(step().textContent).not.toContain('confirm by');
+    r.unmount();
+    // A bank transfer's 3-day wait: the date as well, and "3 d".
+    const r2 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmWindowMin: 3 * 1440, confirmBy: at(3 * 1440 - 1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(step().textContent).toMatch(/you can open a dispute from \d{1,2} \w{3} \d{4}, \d\d:\d\d UTC, 3 d after you marked it as paid\./);
+    r2.unmount();
+    // A maintenance during the window moved the server's time later (owner Q10).
+    const r3 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-100), confirmBy: at(30), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(step().textContent).toContain('90 min after you marked it as paid, plus the time trading was paused.');
+    r3.unmount();
+    // Paused now: no time, since it moves.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), confirmBy: at(50), confirmWindowMin: 90, pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(step().textContent).toMatch(/^If something goes wrong, you can open a dispute 90 min after you marked it as paid, not counting the maintenance\./);
+    expect(step().querySelector('time')).toBeNull();
+  });
+
+  // Lead review 2026-11-06 I1: the co-sign runs in the open page (Released.tsx), not by itself.
+  it('What happens next says the XMR goes to the wallet once the app co-signs, and to keep the page open', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const next = document.querySelector('[data-part="paid-next"]')!.textContent ?? '';
+    expect(next).toContain('When they release, 1.250000 XMR goes to your wallet once your app co-signs. Keep this page open until it arrives.');
+    expect(next).not.toContain('by itself');
+    // Standard 7 (design review P1-6): the digits in mono, the unit apart at 600 in monero-ink.
+    const amount = document.querySelector('[data-part="paid-next"] .x2f-xmr')!;
+    expect(amount.querySelector('.x2f-num')?.textContent).toBe('1.250000');
+    expect(amount.querySelector('.x2f-xmr__unit')?.textContent).toBe('XMR');
+    expect(amount.closest('.x2f-when')).toBeNull();
+  });
+
+  // Lead review 2026-11-08 R-I1: the amount this device accepted, less the fee for a poster buyer (p10-1).
+  it("a poster buyer's payout is the device's amount less the 1% fee, never the API's amount", async () => {
+    const view = tradeView({ ...SECURED, poster: 'buyer', fee: { atomic: '12500000000' }, amountAtomic: '9990000000000', state: 'paid', paidAt: at(-1), confirmBy: at(119) });
+    const r = mount(props({ view, escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(document.querySelector('[data-part="paid-next"]')!.textContent).toContain('When they release, 1.237500 XMR goes to your wallet');
+    expect(text()).not.toContain('9.990000');
+    await click(document.querySelector<HTMLElement>('[data-part="paid-payment-toggle"]')!);
+    const rows = [...document.querySelectorAll('[data-part="paid-payment"] dl > div')].map((d) => [d.querySelector('dt')!.textContent, d.querySelector('dd')!.textContent]);
+    expect(rows).toContainEqual(['For', '1.237500 XMR']);
+    r.unmount();
+    // No device amount: no amount at all, and no For row.
+    mount(props({ view, escrow: fakeEscrow({ paidRecorded: true, amountAtomic: null, fiatCents: null }) }));
+    expect(document.querySelector('[data-part="paid-next"]')!.textContent).toContain('When they release, the XMR goes to your wallet');
+    await click(document.querySelector<HTMLElement>('[data-part="paid-payment-toggle"]')!);
+    expect([...document.querySelectorAll('[data-part="paid-payment"] dt')].map((d) => d.textContent)).not.toContain('For');
+  });
+
+  // Owner Q10 (6 Nov 2026): the clock pauses in maintenance. Lead review m2.
+  it('paused for maintenance: the confirm timer and the dispute wait stop at the pause and say why', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), confirmBy: at(80), pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    // 110 min were left at the pause (80 now + the 30 paused), not 80.
+    expect(document.querySelector('[data-part="confirm-timer"] [role="timer"]')?.textContent).toBe('1 h 50 min');
+    expect(document.querySelector('[data-part="confirm-timer"]')!.textContent).toContain('Trading is paused for maintenance.');
+    const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
+    expect(waiting.tagName).toBe('BUTTON');
+    const when = document.getElementById(waiting.getAttribute('aria-describedby')!)!.textContent ?? '';
+    // The dispute opens at confirmBy, which froze at the pause too: 110 min were left then.
+    expect(when).toMatch(/^Available after the maintenance · in 1 h 50 min$/);
+  });
+
+  it('the phone footer (design review P2-11, P2-13): the dispute first at 56 px, then an ink Nudge with only its bell in caution', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const footer = document.querySelector('footer')!;
+    const parts = [...footer.querySelectorAll('[data-part="paid-dispute"], [data-part="nudge"]')].map((e) => e.getAttribute('data-part'));
+    expect(parts).toEqual(['paid-dispute', 'nudge']);
+    expect(footer.querySelector('[data-part="paid-dispute"]')?.getAttribute('data-size')).toBe('large');
+    const nudge = footer.querySelector('[data-part="nudge"]')!;
+    expect(nudge.hasAttribute('data-tone')).toBe(false);
+    expect(nudge.className).toBe('x2f-button x2f-button--secondary');
+  });
+
+  it('the open dispute on the phone is the 56 px danger outline, not the medium size', () => {
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
-    expect(maybe('Open dispute')).toBeDefined();
+    const open = document.querySelector('[data-part="paid-dispute"]')!;
+    expect(open.className).toBe('x2f-button x2f-button--danger-outline');
+    expect(open.hasAttribute('data-size')).toBe(false);
+  });
+
+  it('Trade progress (design review P2-9): four bars, Seller checks current with the window share filled in caution', () => {
+    for (const wide of [false, true]) {
+      const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-30), confirmBy: at(90) }), escrow: fakeEscrow({ paidRecorded: true }), wide }));
+      const steps = [...document.querySelectorAll('[data-part="paid-progress"] > li')];
+      expect(document.querySelector('[data-part="paid-progress"]')?.getAttribute('aria-label')).toBe('Trade progress');
+      expect(steps.map((li) => [li.textContent, li.getAttribute('data-status')])).toEqual([
+        ['Escrow', 'done'],
+        ['You pay', 'done'],
+        ['Seller checks', 'current'],
+        ['Released', 'todo'],
+      ]);
+      expect(steps[2]!.getAttribute('aria-current')).toBe('step');
+      expect((steps[2]!.querySelector('.x2f-paid-progress__fill') as HTMLElement).style.getPropertyValue('--x2f-fill')).toBe('25%');
+      r.unmount();
+    }
+  });
+
+  it('the wide room in the Wide board\'s order (design review P2-10): hero, the actions row, What happens next, Your payment', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
+    const order = [...document.querySelectorAll('[data-part="paid-progress"], [data-part="paid-status"], [data-part="paid-actions"], [data-part="paid-next"], [data-part="paid-payment"]')].map((e) => e.getAttribute('data-part'));
+    expect(order).toEqual(['paid-progress', 'paid-status', 'paid-actions', 'paid-next', 'paid-payment']);
+    expect(document.querySelector('.x2f-room__grid')).toBeNull();
+    // Nudge left, the dispute right in one row; the hint right-aligned under it.
+    const row = document.querySelector('.x2f-paid-actions__row')!;
+    expect([...row.children].map((c) => c.getAttribute('data-part') ?? c.className)).toEqual(['nudge', 'x2f-room__spacer', 'paid-dispute']);
+    expect(row.querySelector('[data-part="paid-dispute"]')?.hasAttribute('data-size')).toBe(false);
+    expect(document.getElementById('paid-dispute-when')?.getAttribute('data-align')).toBe('end');
+  });
+
+  it('Your payment (design review P2-16, P2-17): on surface, the raised rows with Payment proof last, two columns on wide', async () => {
+    for (const wide of [false, true]) {
+      const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide }));
+      const toggle = document.querySelector<HTMLElement>('[data-part="paid-payment-toggle"]')!;
+      expect(toggle.closest('.x2f-disclosure')?.hasAttribute('data-outline')).toBe(false);
+      await click(toggle);
+      const dl = document.querySelector('[data-part="paid-payment"] dl')!;
+      expect(dl.getAttribute('data-layout')).toBe('raised');
+      expect(dl.getAttribute('data-columns')).toBe(wide ? '2' : null);
+      const rows = [...dl.querySelectorAll(':scope > div')].map((d) => [d.querySelector('dt')!.textContent, d.querySelector('dd')!.textContent]);
+      expect(rows.map(([k]) => k)).toEqual(['Sent to', 'Memo', 'For', 'Marked as paid', 'Payment proof']);
+      expect(rows.at(-1)![1]).toBe('Add payment proof · optional');
+      const memo = dl.querySelector(':scope > div dd')!;
+      expect(memo.className).toBe('x2f-num');
+      r.unmount();
+    }
+  });
+
+  it('Nudge sent says when the next one can go: 15 min, the server\'s gap (owner F10, p6-1; lead review R-I2), the 15 in mono', async () => {
+    answer = () => ({ status: 200, json: {} });
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    await click(document.querySelector<HTMLElement>('[data-part="nudge"]')!);
+    await flush();
+    const sent = document.querySelector('[data-part="nudge-sent"]')!;
+    expect(sent.textContent).toBe('Nudge sent. You can send another in 15 min.');
+    expect(sent.querySelector('.x2f-duration__n')?.textContent).toBe('15');
+    expect(NUDGE_AGAIN_MS).toBe(15 * 60_000);
+  });
+
+  // Lead review m4: the tabletop glance shows the confirm timer, so the screen's copy hides there.
+  it('the confirm timer is marked for the tabletop glance', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(document.querySelector('[data-part="confirm-timer"]')?.getAttribute('data-fold-glance')).toBe('timer');
   });
 
   it("the wide seller room's Chat goes to the chat beside it, never a second chat panel", async () => {
@@ -945,7 +1251,7 @@ describe('review round 2 (2026-10-28): fix round 3', () => {
   it('I1: once recorded, a later view mismatch keeps "Marked as paid" (nothing to finish)', () => {
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1) }), escrow: fakeEscrow({ refusal: 'view-mismatch', paidRecorded: true }) }));
     expect(maybe('Finish marking as paid')).toBeUndefined();
-    expect(maybe('Marked as paid')).toBeDefined();
+    expect(document.querySelector('[data-part="paid-status"]')).not.toBeNull();
   });
 
   it('Minor 2: the same amount with another total will not clear: a final sentence, not "checking"', () => {
@@ -977,5 +1283,42 @@ describe('review round 2 (2026-10-28): fix round 3', () => {
     expect(chat.disabled).toBe(true);
     expect(document.getElementById(chat.getAttribute('aria-describedby')!)?.textContent).toBe("Chat isn't available here yet.");
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+  });
+});
+
+describe("J-08 (S-090): the seller's packaged details fill the buyer's Send exactly card", () => {
+  it('the rows are the labelled boxes of the newest package in the trade chat, in place of "Ask in the chat"', async () => {
+    const { setChatClient } = await import('../src/chat/client.js');
+    const { chatPaymentDetailsSource } = await import('../src/chat/payDetailsFeed.js');
+    const CHAT = 'Q2W3-E4R5-T6Y7-U8I9';
+    const pay = { v: 1 as const, method: 'ZELLE', fields: [{ key: 'email', value: 'jane@example.com' }, { key: 'name', value: 'Jane Doe' }] };
+    const chatSnap = {
+      phase: 'ready' as const,
+      problem: null,
+      role: 'buyer' as const,
+      counterparty: 'satoshi_ghost',
+      disputeOpen: false,
+      paySecured: true,
+      more: false,
+      lines: [{ id: '3', from: 'seller' as const, text: 'Payment details\nEmail: jane@example.com\nName on the account: Jane Doe', pay, at: null, mine: false, gapBefore: false }],
+    };
+    const sync = vi.fn(async () => chatSnap);
+    setChatClient({ sync, send: vi.fn(async () => chatSnap), sendPay: vi.fn(async () => chatSnap) });
+    answer = () => ({ status: 200, json: { chat: CHAT } });
+    setPaymentDetailsSource(chatPaymentDetailsSource);
+    try {
+      mount(props({ view: tradeView(SECURED) }));
+      await flush();
+      expect(calls).toContain(`POST /v1/trades/${CODE}/chat {}`);
+      expect(sync).toHaveBeenCalledWith(CHAT);
+      const card = document.querySelector('[aria-label="Send this payment"]')!;
+      const rows = [...card.querySelectorAll('.x2f-pay-card__row')].map((r) => r.textContent);
+      expect(rows.slice(0, 2)).toEqual(['Emailjane@example.com', 'Name on the accountJane Doe']);
+      expect(card.textContent).not.toContain('Ask in the chat');
+      // Nothing of the details went to the API: the only call was the chat lookup, with an empty body.
+      expect(calls.filter((c) => c.startsWith('POST'))).toEqual([`POST /v1/trades/${CODE}/chat {}`]);
+    } finally {
+      setChatClient(null);
+    }
   });
 });

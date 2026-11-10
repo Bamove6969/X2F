@@ -7,6 +7,7 @@ import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 import { tradeHeldSql } from '../tickets/held.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
+import { bookTradeRevenue } from '../staff/revenue.js';
 import { countActionTimes } from '../traders/actionTimes.js';
 import { countTradeTotals } from '../traders/tradedTotal.js';
 
@@ -25,6 +26,8 @@ export interface TradeSides {
   buyerPayout: string | null;
   sellerRefund: string | null;
   sellerWalletApp: string | null;
+  /** J-16 (490): the chosen method's instructions for the chosen currency, locked at take; '' when absent. */
+  methodInstructions?: string;
 }
 
 /** A `trades` row as pg returns it: numeric columns arrive as strings. */
@@ -35,6 +38,8 @@ export interface TradeRow {
   seller_account_id: string;
   buyer_account_id: string;
   method_id: string;
+  /** J-16 (490): the chosen method's instructions, locked at take. */
+  method_instructions: string;
   amount_atomic: string;
   fee_atomic: string;
   seller_funds_atomic: string;
@@ -42,6 +47,8 @@ export interface TradeRow {
   locked_cents_per_xmr: string;
   fiat_cents: string;
   confirm_window_min: number;
+  /** Migration 124 (owner p9-6): the method's time to pay, fixed at take. */
+  pay_window_min: number;
   min_fiat_cents: string;
   max_fiat_cents: string;
   grown_at: Date | null;
@@ -65,13 +72,8 @@ export interface TradeRow {
   extensions: number;
   paid_at: Date | null;
   confirm_by: Date | null;
-  /**
-   * Retired by the owner's 8 Nov reversal (no final alert; migration 120): kept in the table for
-   * old rows, never read or written by the machine.
-   */
-  final_alert_at: Date | null;
-  /** Retired with the final alert (Task 19's seen-receipt); kept for old rows only. */
-  final_alert_seen_at: Date | null;
+  // The retired final-alert columns (final_alert_at, final_alert_seen_at; owner's 8 Nov reversal,
+  // migration 120) stay in the table for old rows; nothing in src reads or writes them.
   cancel_proposed_by: 'buyer' | 'seller' | null;
   settling: Trade['settling'];
   settle_from: TradeState | null;
@@ -122,6 +124,7 @@ export function rowToTrade(r: TradeRow): Trade {
     lockedRate: { currency: r.locked_currency, centsPerXmr: big(r.locked_cents_per_xmr) },
     fiatCents: big(r.fiat_cents),
     confirmWindowMin: r.confirm_window_min,
+    payWindowMin: r.pay_window_min,
     minFiatCents: big(r.min_fiat_cents),
     maxFiatCents: big(r.max_fiat_cents),
     grown:
@@ -209,7 +212,14 @@ function stateColumns(t: Trade): [string, unknown][] {
  * Inserts a new trade. `usdCents` is the take's US-dollar value (301; the starter-limit check's
  * number, null with no quote), kept only to weigh the trade's reviews (Plan 5 Task 3).
  */
-export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usdCents: bigint | null = null): Promise<void> {
+/** `giftCardTerms`: the gift-card terms version the taker ticked (J-17); null on every other method. */
+export async function insertTrade(
+  q: Queryable,
+  t: Trade,
+  sides: TradeSides,
+  usdCents: bigint | null = null,
+  giftCardTerms: string | null = null,
+): Promise<void> {
   const cols: [string, unknown][] = [
     ['code', t.code],
     ['offer_id', t.offerId],
@@ -220,6 +230,7 @@ export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usd
     ['locked_currency', t.lockedRate.currency],
     ['locked_cents_per_xmr', t.lockedRate.centsPerXmr.toString()],
     ['confirm_window_min', t.confirmWindowMin],
+    ['pay_window_min', t.payWindowMin],
     ['min_fiat_cents', t.minFiatCents.toString()],
     ['max_fiat_cents', t.maxFiatCents.toString()],
     ['taken_at', t.takenAt],
@@ -227,7 +238,9 @@ export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usd
     ['buyer_payout', sides.buyerPayout],
     ['seller_refund', sides.sellerRefund],
     ['seller_wallet_app', sides.sellerWalletApp],
+    ['method_instructions', sides.methodInstructions ?? ''],
     ['usd_cents', usdCents === null ? null : usdCents.toString()],
+    ['gift_card_terms', giftCardTerms],
   ];
   // Column names are the fixed literals above, never input.
   await q.query(
@@ -277,6 +290,7 @@ const STORED = {
   'release-claimed': {},
   pause: {},
   resume: {},
+  'system-cancel': {},
   tick: {},
 } as const satisfies { [T in TradeEvent['type']]: Record<FieldsOf<T>, Kept> };
 
@@ -342,7 +356,12 @@ export async function applyEvent(
   e: TradeEvent,
   by: By,
   within?: (client: pg.PoolClient, prev: Trade, next: Trade, now: Date) => Promise<void>,
-  before?: (client: pg.PoolClient, now: Date) => Promise<void>,
+  /**
+   * Runs after the trade row lock, before the machine. Returning `'stop'` stops the event:
+   * `before`'s own writes commit, the trade is not changed and nothing is published (a held
+   * trade's buyer-cancel, or a resume another hold still blocks: trades/held.ts).
+   */
+  before?: (client: pg.PoolClient, now: Date, prev: Trade) => Promise<void | 'stop'>,
 ): Promise<Trade> {
   const client: pg.PoolClient = await deps.db.connect();
   let next: Trade;
@@ -354,13 +373,18 @@ export async function applyEvent(
       const now = deps.clock();
       // J-14 (D-059): while the buyer's or the seller's account is locked by a compromised-account
       // ticket, no trader event moves the trade (the other party's neither); system events (chain,
-      // reports, the timer's pause) still apply. Read under the trade's row lock.
-      if (by !== 'system') {
+      // reports, the timer's pause) still apply. Read under the trade's row lock. Nor does a system
+      // `resume`: since main's recovery-code holds (trades/held.ts) a hold's end resumes the trades it
+      // paused, and a trade the lock also holds must stay paused until staff unlock it.
+      if (by !== 'system' || e.type === 'resume') {
         const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [code]);
         if (held.rows[0]?.held === true) throw new ApiError(409, 'trade-held');
       }
-      if (before) await before(client, now);
       const prev = rowToTrade(row);
+      if (before && (await before(client, now, prev)) === 'stop') {
+        await client.query('commit');
+        return prev;
+      }
       next = apply(prev, e, by, now);
       // An event that changes nothing (the same chain numbers again, a tick with nothing due)
       // writes no row, appends no event and publishes nothing.
@@ -386,7 +410,12 @@ export async function applyEvent(
       if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, next, now);
       // C12b: a completed trade adds its take-time USD value to both sides' running totals, a settled
       // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
-      if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) await countTradeTotals(client, code);
+      if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) {
+        await countTradeTotals(client, code);
+        // Plan 4 Task 32: the 1% the settlement paid to the fee wallet goes into the aggregate
+        // revenue ledger, once per trade; a cancel or a refund pays none (staff/revenue.ts).
+        await bookTradeRevenue(client, code);
+      }
       // P5-A8: a release by the seller adds both sides' action times to their running lists (once; traders/actionTimes.ts).
       if (next.state !== prev.state && next.state === 'released') await countActionTimes(client, code);
       if (within) await within(client, prev, next, now);

@@ -730,9 +730,9 @@ describe('staff and owner: no password, TOTP or recovery codes (R2)', () => {
 // ---------------------------------------------------------------------------------------------
 // Two factors for staff and the owner (R1)
 
-/** A PGP login step: by the pasted key (`_username` is kept for symmetry with `keyStep`; PGP login needs no name). */
-async function pgpStep(b: Browser, _username: string, key: Pair, pendingId?: string, mount = TRADER_LOGIN) {
-  const s = await b.post(`${mount}/pgp/start`, { key: key.publicKey, ...(pendingId ? { pendingId } : {}) });
+/** A PGP login step: by the pasted key, with the username on the trader login (owner G6; the staff login takes the key alone). */
+async function pgpStep(b: Browser, username: string, key: Pair, pendingId?: string, mount = TRADER_LOGIN) {
+  const s = await b.post(`${mount}/pgp/start`, { key: key.publicKey, ...(mount === TRADER_LOGIN ? { loginName: username } : {}), ...(pendingId ? { pendingId } : {}) });
   expect(s.statusCode).toBe(200);
   const code = codeOf(await decrypt(s.json().encryptedMessage, key.privateKey));
   return b.post(`${mount}/pgp/finish`, { challengeId: s.json().challengeId, code, deviceLabel: 'Desk', ...(pendingId ? { pendingId } : {}) });

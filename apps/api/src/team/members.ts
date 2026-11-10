@@ -1,6 +1,7 @@
 /**
  * Team members (Plan 2 Task 18; spec 6.7, R44; owner 2026-10-29c): invites, the member's own
- * sign-up, roles and removal. Routes are in routes/team.ts.
+ * sign-up, abilities and removal. Routes are in routes/team.ts. What a member may do is a set of
+ * boxes (team/abilities.ts, Job 1c).
  *
  * - The account owner (a trader) invites up to `MAX_TEAM_MEMBERS` members (open invites count). An
  *   invite is a one-time code that lives 24 hours (as staff invites, Plan 4); only its SHA-256 is
@@ -18,15 +19,17 @@ import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import { createAccount, type NewNames } from '../accounts.js';
+import type { TermsSignature } from '../termsSignature.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { holdInTx, holdRefusal, requireLiveSessionInTx, weakRefusal, type SettleDeps } from '../auth/hold.js';
+import { holdInTx, holdRefusal, requireLiveSessionInTx, weakRefusal, type LiveSession, type SettleDeps } from '../auth/hold.js';
 import { waits } from '../auth/strength.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
-import { MAX_TEAM_MEMBERS, type TeamRole } from './perms.js';
 import { assertVendor } from '../routes/accountType.js';
+import { hasAbility, isCustomSet, legacyRoles, parseAbilities, presetOf, sortAbilities, type PresetId, type TeamRole } from './abilities.js';
+import { MAX_TEAM_MEMBERS, STREAM_ABILITY } from './perms.js';
 
 /** An invite lives this long (as Plan 4's staff invites). */
 export const INVITE_TTL_MS = 24 * 3_600_000;
@@ -43,12 +46,25 @@ export type MemberStatus = 'invited' | 'joining' | 'active';
 export interface TeamMemberView {
   id: string;
   displayName: string;
+  /** The member's ticked boxes, in catalogue order (team/abilities.ts). */
+  abilities: string[];
+  /** The preset the boxes match exactly, or null ("Custom"). */
+  preset: PresetId | null;
+  /** The old roles the boxes still read as (for the web until it renders the boxes). */
   roles: TeamRole[];
+  /** True when those roles do not describe the boxes exactly: the web's roles view says "Custom" (review 2026-11-09 m3). */
+  custom: boolean;
   status: MemberStatus;
   /** Until when the invite (or an unfinished sign-up) can be used; null once joined. */
   inviteExpiresAt: string | null;
   joinedAt: string | null;
   createdAt: string;
+}
+
+/** A stored set as views show it: sorted, its preset, and the old roles it reads as. */
+export function abilitiesView(stored: readonly string[]): { abilities: string[]; preset: PresetId | null; roles: TeamRole[] } {
+  const abilities = sortAbilities(stored);
+  return { abilities, preset: presetOf(abilities), roles: legacyRoles(abilities) };
 }
 
 /** Live members: not removed, and joined or still inside their invite's time. */
@@ -57,7 +73,7 @@ export const LIVE_MEMBER = `removed_at is null and (joined_at is not null or inv
 interface MemberRow {
   id: string;
   display_name: string;
-  roles: TeamRole[];
+  abilities: string[];
   member_account_id: string | null;
   joined_at: Date | null;
   invite_expires_at: Date;
@@ -69,7 +85,8 @@ function toView(r: MemberRow): TeamMemberView {
   return {
     id: r.id,
     displayName: r.display_name,
-    roles: r.roles,
+    ...abilitiesView(r.abilities),
+    custom: isCustomSet(r.abilities),
     status,
     inviteExpiresAt: r.joined_at === null ? r.invite_expires_at.toISOString() : null,
     joinedAt: r.joined_at?.toISOString() ?? null,
@@ -80,7 +97,7 @@ function toView(r: MemberRow): TeamMemberView {
 /** The account's live members and open invites, oldest first. */
 export async function listMembers(db: Queryable, accountId: string, now: Date): Promise<TeamMemberView[]> {
   const { rows } = await db.query<MemberRow>(
-    `select id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at
+    `select id, display_name, abilities, member_account_id, joined_at, invite_expires_at, created_at
        from team_members where account_id = $1 and ${LIVE_MEMBER} order by created_at, id`,
     [accountId, now],
   );
@@ -144,13 +161,13 @@ export interface Caller {
  * (`requireStrongSession`, routes/team.ts), so no confirm token is spent. Removal needs no strong
  * session (it only takes access away).
  *
- * TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land):
- * the owner wants a member removal asked for during a hold queued and applied when the 24 hours
- * end. This branch has no queue for it (the `hold_changes` queue lives on wip/lead-p2-recovery-rules,
- * not landed; `account_holds.pending_change` holds only the one security change that started the
- * hold), so removal stays refused with `recovery-hold` here until then.
+ * Hold model v3 (owner 2 Nov 2026): during an account hold (a recovery-code login) every session of
+ * the account is logged out, so no owner session is left to ask; the 1 Nov wish that a removal
+ * asked for during a hold waits for its end has no case left. A role change by a username-and-
+ * password session is staged and waits 24 h (routes/team.ts, `gateChange`). A removal by one is staged
+ * too and the member keeps their access until it applies (owner p5-7, 7 Nov, replacing G5).
  */
-async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { strong: boolean }): Promise<void> {
+async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { strong: boolean }): Promise<LiveSession> {
   const live = await requireLiveSessionInTx(c, caller, now);
   const hold = await holdInTx(c, caller.settle, caller.accountId, now);
   if (hold !== null) throw holdRefusal(hold.holdUntil);
@@ -158,6 +175,7 @@ async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { stro
   // Owner 2 Nov 2026: team members are for vendor accounts only. Inviting and changing roles need
   // a vendor (403 `not-vendor`); a trader's team from before migration 198 can still be removed.
   if (o.strong) await assertVendor(c, caller.accountId);
+  return live;
 }
 
 /**
@@ -171,7 +189,7 @@ async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { stro
 export async function createInvite(
   deps: Pick<Deps, 'db' | 'clock'>,
   caller: Caller,
-  a: { name: { name: string; key: string }; roles: TeamRole[] },
+  a: { name: { name: string; key: string }; abilities: string[] },
 ): Promise<{ id: string; code: string; expiresAt: string }> {
   const { accountId } = caller;
   const now = deps.clock();
@@ -188,9 +206,9 @@ export async function createInvite(
       const count = await c.query<{ n: number }>(`select count(*)::int as n from team_members where account_id = $1 and ${LIVE_MEMBER}`, [accountId, now]);
       if (count.rows[0]!.n >= MAX_TEAM_MEMBERS) throw new ApiError(409, 'too-many-members', { max: MAX_TEAM_MEMBERS });
       const { rows } = await c.query<{ id: string }>(
-        `insert into team_members (account_id, display_name, display_key, roles, invite_hash, invite_expires_at, created_at)
+        `insert into team_members (account_id, display_name, display_key, abilities, invite_hash, invite_expires_at, created_at)
          values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-        [accountId, a.name.name, a.name.key, a.roles, inviteHash(code), expiresAt, now],
+        [accountId, a.name.name, a.name.key, a.abilities, inviteHash(code), expiresAt, now],
       );
       return rows[0]!.id;
     });
@@ -215,25 +233,44 @@ export async function removeMember(
   deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
   caller: Caller,
   memberId: string,
-): Promise<void> {
+  /**
+   * Owner p5-7 (7 Nov 2026, replacing G5): the route's `gateChange`, run after the member is found.
+   * When it stages the removal (a username-and-password session) nothing else is written: the
+   * member keeps their access until the change applies 24 h after it is submitted.
+   */
+  gate: (c: Queryable) => Promise<{ changeId: string } | null> = async () => null,
+): Promise<{ changeId: string } | null> {
   const { accountId } = caller;
   const now = deps.clock();
-  const ended = await inTransaction(deps.db, async (c) => {
+  const out = await inTransaction(deps.db, async (c) => {
     await ownerWriteGate(c, caller, now, { strong: false });
-    const { rows } = await c.query<{ member_account_id: string | null }>(
-      `update team_members set removed_at = $3, invite_hash = null
-        where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
-      [memberId, accountId, now],
-    );
-    const row = rows[0];
-    if (!row) throw new ApiError(404, 'not-found');
-    if (row.member_account_id !== null) await deleteMemberLogin(c, row.member_account_id);
-    const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [
-      memberId, now,
-    ]);
-    return s.rows.map((r) => r.id);
+    const found = await c.query('select 1 from team_members where id = $1 and account_id = $2 and removed_at is null', [memberId, accountId]);
+    if (found.rows.length === 0) throw new ApiError(404, 'not-found');
+    const staged = await gate(c);
+    if (staged !== null) return { staged, ended: [] as string[] };
+    return { staged: null, ended: await applyMemberRemoval(c, accountId, memberId, now) };
   });
-  for (const id of ended) deps.events.closeSession(accountId, id);
+  for (const id of out.ended) deps.events.closeSession(accountId, id);
+  return out.staged;
+}
+
+/**
+ * The removal write (the route's, or a waiting one applied when its 24 h are up): the row is
+ * marked removed, the invite code dies, the member's login account is deleted and every session
+ * of theirs is revoked. Returns those sessions (the caller closes their streams after commit).
+ * 404 `not-found` when the member was removed meanwhile (a waiting removal is then dropped).
+ */
+export async function applyMemberRemoval(c: Queryable, accountId: string, memberId: string, now: Date): Promise<string[]> {
+  const { rows } = await c.query<{ member_account_id: string | null }>(
+    `update team_members set removed_at = $3, invite_hash = null
+      where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
+    [memberId, accountId, now],
+  );
+  const row = rows[0];
+  if (!row) throw new ApiError(404, 'not-found');
+  if (row.member_account_id !== null) await deleteMemberLogin(c, row.member_account_id);
+  const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [memberId, now]);
+  return s.rows.map((r) => r.id);
 }
 
 /** Deletes a member's login account (only ever a `member` row); the cascade takes its login methods and `team_members` keeps a null. */
@@ -242,36 +279,68 @@ async function deleteMemberLogin(c: Queryable, memberAccountId: string): Promise
 }
 
 /**
- * Sets a live member's roles (takes effect on their next request). When the new roles leave out
- * Trades, the member's live streams (which carry the account's trade events) are closed after the
- * commit (review M2). 404 for anyone else's or a removed member. 401 when the calling session
- * was revoked meanwhile, 403 `recovery-hold` during a hold, 403 `weak-session` for a session that
- * is not strong (`ownerWriteGate`, first).
+ * Sets a live member's boxes to exactly `abilities` (takes effect on their next request). When the
+ * new set no longer sees active trades, the member's live streams (which carry the account's trade
+ * events) are closed after the commit (review M2). 404 for anyone else's or a removed member. 401
+ * when the calling session was revoked meanwhile, 403 `recovery-hold` during a hold, 403
+ * `weak-session` for a session that is not strong (`ownerWriteGate`, first).
  */
-export async function setRoles(
+export async function setAbilities(
   deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
   caller: Caller,
   memberId: string,
-  roles: TeamRole[],
+  abilities: string[],
 ): Promise<TeamMemberView> {
   const { accountId } = caller;
   const now = deps.clock();
   const { row, sessions } = await inTransaction(deps.db, async (c) => {
     await ownerWriteGate(c, caller, now, { strong: true });
-    const { rows } = await c.query<MemberRow>(
-      `update team_members set roles = $3
-        where id = $1 and account_id = $4 and ${LIVE_MEMBER}
-        returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
-      [memberId, now, roles, accountId],
-    );
-    const r = rows[0];
+    const r = await updateAbilities(c, accountId, memberId, abilities, now);
     if (!r) throw new ApiError(404, 'not-found');
-    const s = roles.includes('trades') ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
-    return { row: r, sessions: s };
+    return r;
   });
-  // After the commit: a member who lost Trades loses the live streams that carry trade events.
+  // After the commit: a member who can no longer see trades loses the live streams that carry trade events.
   for (const id of sessions) deps.events.closeSession(accountId, id);
   return toView(row);
+}
+
+/**
+ * The boxes write (the route's, or a waiting one applied 24 h after a username-and-password session
+ * submitted it). Null for a member who is not live. Returns the member's sessions whose live
+ * streams must close (the new set no longer sees active trades, review M2).
+ */
+async function updateAbilities(c: Queryable, accountId: string, memberId: string, abilities: string[], now: Date): Promise<{ row: MemberRow; sessions: string[] } | null> {
+  const { rows } = await c.query<MemberRow>(
+    `update team_members set abilities = $3
+      where id = $1 and account_id = $4 and ${LIVE_MEMBER}
+      returning id, display_name, abilities, member_account_id, joined_at, invite_expires_at, created_at`,
+    [memberId, now, abilities, accountId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const s = hasAbility(abilities, STREAM_ABILITY) ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
+  return { row: r, sessions: s };
+}
+
+/**
+ * Hold model v3: a member's boxes waiting from a username-and-password session, applied when their
+ * 24 h are up (hold.ts `applyChange`, account locked). The set is checked again here against the
+ * catalogue as it is now (`parseAbilities`: a box that became owner-only or unknown since it was
+ * staged drops the whole change, 400; the database check is the backstop). Throws 404 `not-found`
+ * (the change is dropped) when the member is no longer live. Returns the member's sessions whose
+ * live streams must close.
+ */
+export async function applyAbilities(c: Queryable, accountId: string, memberId: string, abilities: readonly string[], now: Date = new Date()): Promise<string[]> {
+  const set = parseAbilities(abilities);
+  const r = await updateAbilities(c, accountId, memberId, set, now);
+  if (!r) throw new ApiError(404, 'not-found');
+  return r.sessions;
+}
+
+/** True when `memberId` is a live member (or open invite) of the account: a role change for it can be staged. */
+export async function liveMember(c: Queryable, accountId: string, memberId: string, now: Date): Promise<boolean> {
+  const { rows } = await c.query(`select 1 from team_members where id = $1 and account_id = $3 and ${LIVE_MEMBER}`, [memberId, now, accountId]);
+  return rows.length > 0;
 }
 
 /**
@@ -308,6 +377,8 @@ export const purgeTeamLeftovers: RetentionJob = {
  */
 export interface InviteView {
   displayName: string;
+  abilities: string[];
+  preset: PresetId | null;
   roles: TeamRole[];
   expiresAt: string;
 }
@@ -316,7 +387,7 @@ interface InviteRow {
   id: string;
   account_id: string;
   display_name: string;
-  roles: TeamRole[];
+  abilities: string[];
   invite_expires_at: Date;
 }
 
@@ -333,7 +404,7 @@ export async function openInvite(q: Queryable, by: { code: unknown } | { id: str
     hash = inviteHash(by.code);
   }
   const { rows } = await q.query<InviteRow>(
-    `select tm.id, tm.account_id, tm.display_name, tm.roles, tm.invite_expires_at
+    `select tm.id, tm.account_id, tm.display_name, tm.abilities, tm.invite_expires_at
        from team_members tm join accounts t on t.id = tm.account_id
       where ($1::bytea is null or tm.invite_hash = $1) and ($3::uuid is null or tm.id = $3) and tm.invite_hash is not null
         and tm.removed_at is null and tm.member_account_id is null and tm.invite_expires_at > $2
@@ -347,7 +418,7 @@ export async function openInvite(q: Queryable, by: { code: unknown } | { id: str
 }
 
 export function inviteView(r: InviteRow): InviteView {
-  return { displayName: r.display_name, roles: r.roles, expiresAt: r.invite_expires_at.toISOString() };
+  return { displayName: r.display_name, ...abilitiesView(r.abilities), expiresAt: r.invite_expires_at.toISOString() };
 }
 
 /**
@@ -372,13 +443,16 @@ export async function checkMemberLoginName(db: Queryable, raw: unknown): Promise
 export async function startMember(
   c: Queryable,
   config: Config,
-  a: { inviteId: string; names: NewNames; now: Date; terms: string; addKey: (memberAccountId: string) => Promise<void> },
+  a: { inviteId: string; names: NewNames; now: Date; terms: { version: string; signature: TermsSignature }; addKey: (memberAccountId: string) => Promise<void> },
 ): Promise<{ memberId: string; memberAccountId: string; teamId: string; setupUntil: Date }> {
   const invite = await openInvite(c, { id: a.inviteId }, a.now, true);
   // FU-D: the login name is stored only as its keyed tag (createAccount); the display name is the
   // random placeholder `memberNames` made, never shown.
-  // The member's own acceptance of the Terms (review 2026-11-08 F1), checked by `assertTermsAccepted`.
-  const memberAccountId = await createAccount(c, config, { ...a.names, kind: 'member', termsVersion: a.terms, now: a.now });
+  // The member's own acceptance of the Terms and their signature (review 2026-11-08 F1; owner 9 Nov
+  // p11-14, everyone who gets a login signs), checked by `assertTermsAccepted`.
+  const memberAccountId = await createAccount(c, config, {
+    ...a.names, kind: 'member', termsVersion: a.terms.version, termsSignature: a.terms.signature, now: a.now,
+  });
   await a.addKey(memberAccountId);
   const setupUntil = new Date(Math.max(invite.invite_expires_at.getTime(), a.now.getTime() + SETUP_MIN_MS));
   await c.query('update team_members set member_account_id = $2, invite_hash = null, invite_expires_at = $3 where id = $1', [

@@ -22,7 +22,8 @@ import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
-import { seedTrade } from './helpers/trades.js';
+import { driveTo, seedTrade } from './helpers/trades.js';
+import { insertOffer } from './helpers/offers.js';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -47,12 +48,9 @@ async function trader(): Promise<{ id: string; b: Browser }> {
 
 /** A live offer posted directly in the table (Task 4's route needs a wallet and prices). */
 async function seedOffer(accountId: string, side: 'sell' | 'buy' = 'sell', status = 'live'): Promise<string> {
-  const { rows } = await deps.db.query<{ id: string }>(
-    `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-     values ($1, $2, 'zelle', 'USD', 'market', 100, 1000, 100000, null, '', $3, $4, $4) returning id`,
-    [accountId, side, status, now],
-  );
-  return rows[0]!.id;
+  return insertOffer(deps.db, {
+    accountId, side, methodId: 'zelle', currency: 'USD', marginBps: 100, min: 1000, max: 100000, status: status as 'live' | 'paused' | 'removed', at: now,
+  });
 }
 
 function keyPair(): Identity {
@@ -190,6 +188,19 @@ describe('POST /v1/chats', () => {
     expect((await other.b.post('/v1/chats', {})).statusCode).toBe(400);
   });
 
+  it('an offer stored as fixed before the market-only rule (owner Q1) is not found', async () => {
+    const poster = await trader();
+    const other = await trader();
+    // Migration 345 refuses new fixed rows; lift it for this one insert, as a row from before the rule.
+    await deps.db.query('alter table offers drop constraint if exists offers_market_only');
+    const legacy = await insertOffer(deps.db, { accountId: poster.id, side: 'sell', methodId: 'zelle', currency: 'USD', min: 1000, max: 100000, at: now });
+    await deps.db.query(`update offers set price_mode = 'fixed', fixed_cents_per_xmr = 34000 where id = $1`, [legacy]);
+    await deps.db.query(`alter table offers add constraint offers_market_only check (price_mode = 'market' and fixed_cents_per_xmr is null) not valid`);
+    const res = await other.b.post('/v1/chats', { offerId: legacy });
+    expect(res.statusCode, res.body).toBe(404);
+    expect(res.json()).toEqual({ error: 'not-found' });
+  });
+
   it('needs a session', async () => {
     const poster = await trader();
     const offerId = await seedOffer(poster.id);
@@ -204,7 +215,7 @@ describe('GET /v1/chats/:chat', () => {
     const res = await o.taker.b.get(`/v1/chats/${o.chat}`);
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
-    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, attested: false, mySignPublic: null });
+    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, tradeSecuredAt: null, attested: false, mySignPublic: null });
     expect((body.counterparty as { displayName: string }).displayName).toMatch(/^Dchl/);
     expect(JSON.stringify(body)).not.toContain(`"chl`);
     const stranger = await trader();
@@ -213,6 +224,27 @@ describe('GET /v1/chats/:chat', () => {
     const unknown = await stranger.b.get(`/v1/chats/${newTradeCode()}`);
     expect(unknown.statusCode).toBe(404);
     expect(miss.json()).toEqual(unknown.json());
+  });
+
+  it("review M8 (pay details): a chat linked to a secured trade carries that trade's secured_at, the same for both parties; a stranger still gets 404", async () => {
+    const o = await openChat();
+    const { trade } = await seedTrade(deps, { sellerId: o.poster.id, buyerId: o.taker.id, poster: 'seller', offerId: o.offerId });
+    expect((await o.taker.b.post(`/v1/trades/${trade.code}/chat`, {})).json()).toEqual({ chat: o.chat, role: 'buyer' });
+    // Linked, not yet secured: still null.
+    const linked = (await o.taker.b.get(`/v1/chats/${o.chat}`)).json() as { tradeCode: string; tradeSecuredAt: string | null };
+    expect(linked).toMatchObject({ tradeCode: trade.code, tradeSecuredAt: null });
+    await driveTo(deps, trade, 'secured');
+    const { rows } = await deps.db.query<{ secured_at: Date | null }>('select secured_at from trades where code = $1', [trade.code]);
+    const at = rows[0]!.secured_at!.toISOString();
+    expect(at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const buyer = (await o.taker.b.get(`/v1/chats/${o.chat}`)).json() as { tradeSecuredAt: string | null };
+    const seller = (await o.poster.b.get(`/v1/chats/${o.chat}`)).json() as { tradeSecuredAt: string | null };
+    expect(buyer.tradeSecuredAt).toBe(at);
+    expect(seller.tradeSecuredAt).toBe(at);
+    const stranger = await trader();
+    const miss = await stranger.b.get(`/v1/chats/${o.chat}`);
+    expect(miss.statusCode).toBe(404);
+    expect(miss.body).not.toContain(at.slice(0, 10));
   });
 
   it("hides the other side's online status from a trader they blocked (review M5: presence through the viewer-aware summary)", async () => {

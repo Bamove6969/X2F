@@ -44,10 +44,8 @@ export function rangeInBoth(r: OfferRange, rate: Price): RangeBoth {
 
 /**
  * The rate to show an offer's amounts at. With the markup it is the offer's own rate, what a taker
- * trades at (`offerRate`: the market moved by the margin, as the take locks it, or the fixed price).
- * Without it, the market price itself, for a fixed-price offer too (its difference from the market
- * is its markup). Null when there is no such rate now (the feed is down; a fixed offer with the
- * markup still has its price).
+ * trades at (`offerRate`: the market moved by the margin, as the take locks it). Without it, the
+ * market price itself. Null when there is no market price now (the feed is down).
  */
 export function displayRate(p: Pricing, currency: string, market: Price | null, withMarkup: boolean): Price | null {
   if (withMarkup) return offerRate(p, currency, market);

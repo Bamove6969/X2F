@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
+import { STREAM_ABILITY } from '../team/perms.js';
 import { ApiError } from '../errors.js';
 import type { EventBus } from './bus.js';
 
@@ -38,7 +39,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
   const heartbeatMs = o.heartbeatMs ?? HEARTBEAT_MS;
   const maxStreamMs = o.maxStreamMs ?? MAX_STREAM_MS;
   // The account owner, or a team member with Trades (Plan 2 Task 18): the stream carries the account's trade events.
-  const requireTrader = requireSession({ kinds: ['trader'], touch: false, member: 'trades' });
+  const requireTrader = requireSession({ kinds: ['trader'], touch: false, member: STREAM_ABILITY });
 
   app.get('/v1/events', { preHandler: requireTrader }, async (req: FastifyRequest, reply: FastifyReply) => {
     const raw = reply.raw;

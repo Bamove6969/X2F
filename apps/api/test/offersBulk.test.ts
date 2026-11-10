@@ -8,6 +8,7 @@ import { testDb } from './helpers/db.js';
 import { makeVendor } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 36: My offers. GET /v1/account/offers and POST /v1/account/offers/status (turn some
 // or all of my offers on or off). Real Postgres, one database for the file; each test uses its own
@@ -15,10 +16,14 @@ import { tradeApp } from './helpers/tradeApp.js';
 
 const DAY = 86_400_000;
 
+/**
+ * USD at $330.00 per XMR; every other currency at 297.00 of its units (0.9 per US dollar, as EUR).
+ * Every currency has a price: posting converts every band's top edge to US dollars and fails closed
+ * without a price (the launch cap, owner p11-6).
+ */
 function quote(currency: string): MarketQuote | null {
-  if (currency !== 'USD') return null;
   return {
-    price: { currency, centsPerXmr: 33_000n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
+    price: { currency, centsPerXmr: currency === 'USD' ? 33_000n : 29_700n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
     usdCentsPerXmr: 33_000n, fx: null,
   };
 }
@@ -72,7 +77,7 @@ const BODY = {
 };
 
 async function post(who: Who, over: Record<string, unknown> = {}): Promise<string> {
-  const res = await who.browser.post('/v1/offers', { ...BODY, ...over });
+  const res = await who.browser.post('/v1/offers', flexBody({ ...BODY, ...over }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
@@ -111,7 +116,7 @@ describe('GET /v1/account/offers', () => {
     const other = await poster();
     const a = await post(p);
     setNow(new Date(deps.clock().getTime() + 1000));
-    const b = await post(p, { side: 'buy', methodId: 'REVOLUT', currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: '30000' } });
+    const b = await post(p, { side: 'buy', methodId: 'REVOLUT', currency: 'EUR', pricing: { mode: 'market', marginBps: -1000 } });
     setNow(new Date(deps.clock().getTime() + 1000));
     const c = await post(p);
     await post(other);
@@ -123,12 +128,20 @@ describe('GET /v1/account/offers', () => {
     const list = res.json() as Record<string, unknown>[];
     expect(list.map((o) => o.id)).toEqual([b, a]);
     expect(list[0]).toEqual({
-      id: b, side: 'buy', methodId: 'REVOLUT', methodName: expect.any(String), currency: 'EUR', rate: '30000',
-      pricing: { mode: 'fixed', centsPerXmr: '30000' }, amountUnit: 'fiat', minAtomic: '166666666666', maxAtomic: '6666666666666',
+      // €297.00 −10% = €267.30.
+      id: b, side: 'buy', methodId: 'REVOLUT', methodName: expect.any(String), currency: 'EUR', rate: '26730',
+      pricing: { mode: 'market', marginBps: -1000 }, amountUnit: 'fiat', minAtomic: '187055742611', maxAtomic: '7482229704451',
       minFiatCents: '5000', maxFiatCents: '200000', minTrades: null,
-      status: 'paused', createdAt: expect.any(String),
+      // J-16: the first currency's bands, every currency priced, every method with its instructions
+      // and its time to pay (owner p9-6; the offer's own is its first method's).
+      tiers: [{ min: '5000', max: '200000', marginBps: -1000, minTrades: null, methodIds: null }],
+      currencies: [{ currency: 'EUR', rate: '26730', tiers: [{ min: '5000', max: '200000', marginBps: -1000, minTrades: null, methodIds: null }] }],
+      methods: [{ methodId: 'REVOLUT', methodName: expect.any(String), adjustBps: 0, instructions: '', currencies: ['EUR'], instructionsByCurrency: {}, payWindowMin: 90 }],
+      status: 'paused', payWindowMin: 90, createdAt: expect.any(String),
     });
     expect(list[1]).toMatchObject({ id: a, methodId: 'ZELLE', methodName: 'Zelle', rate: '33165', status: 'live', pricing: { mode: 'market', marginBps: 50 } });
+    // J-16: every method carries the catalog's name, so My offers can list them all.
+    expect((list[1]!.methods as { methodName: string }[]).map((m) => m.methodName)).toEqual(['Zelle']);
   });
 
   it('needs a trader session (401 logged out, 403 staff)', async () => {
@@ -209,7 +222,26 @@ describe('POST /v1/account/offers/status', () => {
     expect(await setStatus(p, [a], 'paused')).toEqual([{ id: a, status: 'paused' }]);
   });
 
-  it('caps are checked per offer as relisting checks them; the others still switch (per-offer results)', async () => {
+  it('the launch cap is checked per offer as relisting checks it (launch-rules review F1)', async () => {
+    const p = await poster();
+    // An offer from before the cap, paused, with a 20,000.00 band: $22,222 at 0.9 (J-16: bands are
+    // written once, so it is inserted as migration 490 would have moved it).
+    const a = await insertOffer(deps.db, { accountId: p.id, side: 'sell', methodId: 'ZELLE', currency: 'SEK', min: 5000, max: 2_000_000, status: 'paused', at: deps.clock() });
+    const b = await post(p, { currency: 'NOK' });
+    await setStatus(p, 'all', 'paused');
+    expect(await setStatus(p, [a, b], 'live')).toEqual([
+      { id: a, status: 'paused', refused: 'launch-cap' },
+      { id: b, status: 'live' },
+    ]);
+    expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'live' });
+    // The same answer as the single relist route.
+    expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'launch-cap', capUsdCents: '500000' });
+    // At $5,000 exactly (4,500.00 at 0.9) it goes on.
+    const c = await insertOffer(deps.db, { accountId: p.id, side: 'buy', methodId: 'ZELLE', currency: 'SEK', min: 5000, max: 450_000, status: 'paused', at: deps.clock() });
+    expect(await setStatus(p, [c], 'live')).toEqual([{ id: c, status: 'live' }]);
+  });
+
+  it('caps are checked per offer as relisting checks them (per side, owner 2026-11-01); the others still switch (per-offer results)', async () => {
     const p = await poster();
     const a = await post(p, { currency: 'GBP' });
     const b = await post(p, { currency: 'CHF' });
@@ -225,7 +257,7 @@ describe('POST /v1/account/offers/status', () => {
         { id: c, status: 'live' },
       ]);
       // The same answer as the single relist route.
-      expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers' });
+      expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
       await p.browser.patch(`/v1/offers/${b}`, { status: 'removed' });
       expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'live' }]);
     } finally {
@@ -243,11 +275,25 @@ describe('POST /v1/account/offers/status', () => {
     }
   });
 
+  it('a fourth selling offer (over the default cap of 3 per side, e.g. after the cap was lowered) stays off; buying offers still go on', async () => {
+    const p = await poster();
+    const sells = [await post(p, { currency: 'GBP' }), await post(p, { currency: 'CHF' }), await post(p, { currency: 'EUR' })];
+    const buy = await post(p, { side: 'buy', currency: 'EUR' });
+    await setStatus(p, 'all', 'paused');
+    // As if posted before the per-side cap: a fourth selling offer, paused (written straight to the
+    // database in migration 490's shape: one currency, one band, one method).
+    const fourth = await insertOffer(deps.db, { accountId: p.id, side: 'sell', methodId: 'ZELLE', currency: 'USD', min: 5000, max: 200_000, status: 'paused', at: deps.clock() });
+    const on = await setStatus(p, [...sells, fourth, buy], 'live');
+    for (const r of on.filter((x) => x.id !== buy)) expect(r).toEqual({ id: r.id, status: 'paused', refused: 'too-many-offers' });
+    expect(on.find((r) => r.id === buy)).toEqual({ id: buy, status: 'live' });
+  });
+
   it('an offer whose method went under legal review cannot go back on (method-unavailable)', async () => {
     const p = await poster();
     const a = await post(p);
     // As if SBP had been available when posted.
-    await deps.db.query(`update offers set method_id = 'SBP', status = 'paused' where id = $1`, [a]);
+    await renameOfferMethod(deps.db, a, 'SBP');
+    await deps.db.query(`update offers set status = 'paused' where id = $1`, [a]);
     expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'paused', refused: 'method-unavailable' }]);
   });
 
@@ -301,15 +347,15 @@ describe('POST /v1/account/offers/status', () => {
     for (let round = 0; round < 3; round++) {
       const res = await Promise.all([
         p.browser.post('/v1/account/offers/status', { ids: 'all', status: 'live' }),
-        p.browser.post('/v1/offers', { ...BODY, currency: 'SEK' }),
-        p.browser.post('/v1/offers', { ...BODY, currency: 'SEK' }),
+        p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'SEK' })),
+        p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'SEK' })),
         p.browser.patch(`/v1/offers/${a}`, { status: 'paused' }),
         p.browser.patch(`/v1/offers/${b}`, { status: 'live' }),
         p.browser.post('/v1/account/offers/status', { ids: 'all', status: 'paused' }),
       ]);
       for (const r of res) expect([200, 201, 409], r.body).toContain(r.statusCode);
       const { rows } = await deps.db.query<{ n: number }>(
-        `select count(*)::int as n from offers where account_id = $1 and currency = 'SEK' and status <> 'removed'`,
+        `select count(*)::int as n from offers o join offer_currencies c on c.offer_id = o.id where o.account_id = $1 and c.currency = 'SEK' and o.status <> 'removed'`,
         [p.id],
       );
       expect(rows[0]!.n).toBeLessThanOrEqual(3);
@@ -344,7 +390,7 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
     await hold(p.id);
     expect(await hiddenOf()).toEqual({ [a]: 'trading-hold', [b]: null });
     await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1', [p.id, deps.clock()]);
-    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [a]);
+    await renameOfferMethod(deps.db, a, 'SBP');
     expect(await hiddenOf()).toEqual({ [a]: 'method-unavailable', [b]: null });
   });
 
@@ -352,7 +398,7 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
     const p = await poster();
     const a = await post(p);
     await setStatus(p, [a], 'paused');
-    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [a]);
+    await renameOfferMethod(deps.db, a, 'SBP');
     await hold(p.id);
     expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'method-unavailable' });
     expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'paused', refused: 'method-unavailable' }]);
@@ -392,7 +438,7 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
     // Round-2 m1 (lead decision 2026-10-29): removing is shutting off too, so it works on stale Terms.
     expect((await p.browser.patch(`/v1/offers/${c}`, { status: 'removed' })).json()).toEqual({ id: c, status: 'removed' });
     // Posting still needs the current Terms.
-    expect((await p.browser.post('/v1/offers', BODY)).json()).toEqual(terms);
+    expect((await p.browser.post('/v1/offers', flexBody(BODY))).json()).toEqual(terms);
     expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'paused', [c]: 'removed' });
 
     await deps.db.query('update accounts set terms_version = $2 where id = $1', [p.id, deps.config.termsVersion]);
@@ -400,16 +446,16 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
   });
 
   it('round-2 m3: a take racing the poster\'s and the taker\'s pause-all neither deadlocks nor takes a paused offer (real Postgres)', async () => {
-    const amount = 100_000_000_000n; // 0.1 XMR at the fixed $330.00: $33.00, under any starter cap
+    const amount = 100_000_000_000n; // 0.1 XMR at the market's $330.00 (0%): $33.00, under any starter cap
     for (let round = 0; round < 3; round++) {
       const poster_ = await poster();
       const taker = await poster();
-      const offer = await post(poster_, { pricing: { mode: 'fixed', centsPerXmr: '33000' }, minFiatCents: '1000' });
+      const offer = await post(poster_, { pricing: { mode: 'market', marginBps: 0 }, minFiatCents: '1000' });
       await post(taker, { side: 'buy' });
       const { rows: w } = await deps.db.query<{ id: string }>('select id from wallets where account_id = $1', [taker.id]);
       const takeBody = {
         amountAtomic: amount.toString(), walletId: w[0]!.id, centsPerXmr: '33000',
-        fiatCents: fiatCents(amount, { currency: 'USD', centsPerXmr: 33_000n }).toString(),
+        fiatCents: fiatCents(amount, { currency: 'USD', centsPerXmr: 33_000n }).toString(), methodId: 'ZELLE', currency: 'USD',
       };
       // Hold both account rows so all three requests queue inside their transactions, then let go.
       const holder = await deps.db.connect();

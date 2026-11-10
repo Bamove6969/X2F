@@ -58,6 +58,8 @@ const B64URL_ID = /^[A-Za-z0-9_-]{16,1364}$/;
 const TOKEN_HASH = /^[A-Za-z0-9_-]{16,128}$/;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 const ATOMIC = /^(0|[1-9][0-9]{0,29})$/;
+/** A standard Monero address's shape (95 base58 characters); the fee-sweep route checks it fully. */
+const COLD_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{95}$/;
 const INVITABLE = ['senior', 'mod', 'helper'] as const;
 
 /** A finished tap as stored: exactly what the moderation process re-verifies. */
@@ -399,6 +401,11 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         firstResponseH: amount(r, 'firstResponseH'),
         appealWindowH: amount(r, 'appealWindowH'),
       };
+    case 'fee-sweep': {
+      exactKeys(r, ['kind', 'thresholdAtomic', 'floatAtomic', 'coldAddress']);
+      const opt = (key: string, re: RegExp): string | null => (r[key] === null ? null : match(r, key, re));
+      return { kind: 'fee-sweep', thresholdAtomic: opt('thresholdAtomic', ATOMIC), floatAtomic: opt('floatAtomic', ATOMIC), coldAddress: opt('coldAddress', COLD_ADDRESS) };
+    }
     case 'ruling': {
       exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256']);
       const code = typeof r.code === 'string' ? normalizeTradeCode(r.code) : null;
@@ -445,6 +452,7 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'remove-staff':
       return 'staff.manage';
     case 'settings':
+    case 'fee-sweep':
       return 'settings.write';
     case 'unlock-account':
       return 'accounts.freeze';

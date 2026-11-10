@@ -1,10 +1,11 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { checkLoginName, checkNames, lookAlikeKey, type AccountKind } from '@x2f/accounts';
 import type { Deps } from './app.js';
 import { subkey, type Config } from './config.js';
 import type { Queryable } from './db/pool.js';
 import { ApiError } from './errors.js';
 import { bannedTagSql, displayNameBanned } from './bans.js';
+import { checkTermsSignature, sealTermsSignature, type TermsSignature } from './termsSignature.js';
 
 /**
  * The two names of a new account: the display name as typed and as its case-insensitive key, and
@@ -233,10 +234,10 @@ export async function lockNames(db: Queryable): Promise<void> {
  * equals it (review I1 A), and no other account holds its tag under any key of the ring. With
  * `displayKey`, also that no account's login tag is that display name's (review I1 B: a display
  * name may never be someone's private login name). A login name waiting out an account's 24-hour
- * hold (`account_holds.pending_change` of kind `login-name`, its tag under its key id) counts as
- * taken in both namespaces too (review round 2 N-M1), and so does a name on the ban list (owner 2
- * Nov 2026, bans.ts: a banned display or login name, in either namespace). One query; the tags
- * are computed by the caller.
+ * hold (`account_holds.pending_change`) or among the changes waiting their 24 h (`hold_changes`, hold
+ * model v3), of kind `login-name`, its tag under its key id, counts as taken in both namespaces too
+ * (review round 2 N-M1), and so does a name on the ban list (owner 2 Nov 2026, bans.ts: a banned
+ * display or login name, in either namespace). One query; the tags are computed by the caller.
  */
 /** Every banned name is out of both namespaces (owner 2 Nov 2026, the ban list; bans.ts). */
 const BANNED_NAMES = ['display-name', 'login-name'] as const;
@@ -244,12 +245,14 @@ const BANNED_NAMES = ['display-name', 'login-name'] as const;
 async function namesTaken(
   db: Queryable,
   q: { self: string | null; loginKey: string; login: LoginTags; display: LoginTags | null },
+  o: { lock: boolean } = { lock: true },
 ): Promise<boolean> {
-  await lockNames(db);
+  if (o.lock) await lockNames(db);
   const pending = (ids: number) =>
-    `exists (select 1 from account_holds h
-              where h.pending_change->>'kind' = 'login-name' and h.account_id is distinct from $4
-                and ((h.pending_change->>'keyId')::smallint, decode(h.pending_change->>'tag', 'base64'))
+    `exists (select 1 from (select account_id, pending_change as c from account_holds
+                            union all select account_id, change from hold_changes) h
+              where h.c->>'kind' = 'login-name' and h.account_id is distinct from $4
+                and ((h.c->>'keyId')::smallint, decode(h.c->>'tag', 'base64'))
                     in (select * from unnest($${ids}::smallint[], $${ids + 1}::bytea[])))`;
   const { rows } = await db.query<{ taken: boolean }>(
     `select exists (select 1 from accounts where display_key = $1)
@@ -265,6 +268,18 @@ async function namesTaken(
 /** True when `loginKey` is taken in either namespace (under `NAMES_LOCK`, in the caller's transaction); Task 17 checks it before a login name waits out the hold. */
 export async function loginNameTaken(db: Queryable, config: Config, accountId: string, loginKey: string): Promise<boolean> {
   return namesTaken(db, { self: accountId, loginKey, login: loginTags(config, loginKey), display: null });
+}
+
+/**
+ * The sign-up's live "is available" tick (`POST /v1/register/name-check`): whether `loginKey` is
+ * free as a new account's login name, in both namespaces, as `createAccount` will check it (a login
+ * name waiting out a hold counts as taken). A read without `NAMES_LOCK`: the answer is advice only,
+ * and `createAccount` checks again under the lock. This deliberately lets a visitor learn whether a
+ * private login name exists (the design's tick), which FU-A review I1 had kept to the end of a
+ * sign-up; the route's budgets (limits.ts `NAME_CHECK_*`) are what bound it.
+ */
+export async function loginNameAvailable(db: Queryable, config: Config, loginKey: string): Promise<boolean> {
+  return !(await namesTaken(db, { self: null, loginKey, login: loginTags(config, loginKey), display: null }, { lock: false }));
 }
 
 /**
@@ -287,14 +302,36 @@ export async function setLoginName(db: Queryable, config: Config, accountId: str
 
 /**
  * R10: the version the person accepted when it equals `config.termsVersion`; anything else (missing,
- * older, not a string) → 400 `terms-not-accepted` `{ version }`. Every register finish calls it
- * before any hashing or account creation.
+ * older, not a string) → 400 `terms-not-accepted` `{ version }`. Then the signature given with it
+ * (owner, 8 Nov 2026; `checkTermsSignature`: 400 `signature-required`, `signature-invalid` or
+ * `signature-too-large`). Every register finish and `POST /v1/account/terms` calls it before any
+ * hashing, challenge use or write.
  */
-export function assertTermsAccepted(deps: Pick<Deps, 'config'>, acceptedTerms: unknown): string {
+export function assertTermsAccepted(
+  deps: Pick<Deps, 'config'>,
+  acceptedTerms: unknown,
+  termsSignature: unknown,
+): { version: string; signature: TermsSignature } {
+  const version = assertTermsVersion(deps, acceptedTerms);
+  return { version, signature: checkTermsSignature(termsSignature) };
+}
+
+/** R10's version check alone: the current version, or 400 `terms-not-accepted` `{ version }`. */
+export function assertTermsVersion(deps: Pick<Deps, 'config'>, acceptedTerms: unknown): string {
   const version = deps.config.termsVersion;
   if (acceptedTerms !== version) throw new ApiError(400, 'terms-not-accepted', { version });
   return version;
 }
+
+/**
+ * What a new account agreed to. Everyone who gets a login signs the Terms (owner, 9 Nov 2026,
+ * p11-14: "Yes, everyone who gets a login signs"): a trader at sign-up, a team member on their own
+ * login account (review 2026-11-08 F1), a staff member at their invite. Each passes
+ * `assertTermsAccepted` first. Only the owner's account, made by the owner's setup, has neither.
+ */
+export type NewAccountTerms =
+  | { kind: Exclude<AccountKind, 'owner'>; termsVersion: string; termsSignature: TermsSignature }
+  | { kind: 'owner'; termsVersion: null; termsSignature?: never };
 
 /** The unique constraints a new account's names can still hit after `namesTaken` (a racing writer without the lock). */
 const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key', 'accounts_login_tag_key', 'name_keys_pkey']);
@@ -307,28 +344,32 @@ const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key
  * anybody's display name nor the other way round (FU-A review I1). A taken name → 409
  * `names-unavailable`, one answer for all, so it never says which one (or that a login name
  * exists). The names-differ check SQL can no longer make is here too (400 `names-same`;
- * `assertNewNames` already refused it). `webauthn_user_id` is 32 random bytes. Terms version and
- * acceptance time are both null when `termsVersion` is null (staff and owner, Plan 4).
+ * `assertNewNames` already refused it). `webauthn_user_id` is 32 random bytes. Terms version,
+ * acceptance time and signature are all null for the owner (`termsVersion` null); every other
+ * account has all three, the signature sealed to the account (so its id is chosen here, not by the
+ * database), and nothing else about the signing is stored.
  */
 export async function createAccount(
   db: Queryable,
   config: Config,
-  a: NewNames & { kind: AccountKind; termsVersion: string | null; now: Date },
+  a: NewNames & NewAccountTerms & { now: Date },
 ): Promise<string> {
   if (a.loginKey === a.displayKey) throw new ApiError(400, 'names-same');
   const login = loginTags(config, a.loginKey);
   const display = loginTags(config, a.displayKey);
   if (await namesTaken(db, { self: null, loginKey: a.loginKey, login, display })) throw new ApiError(409, 'names-unavailable');
+  const id = randomUUID();
   try {
-    const { rows } = await db.query<{ id: string }>(
-      `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+    await db.query(
+      `insert into accounts (id, display_name, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, terms_version, terms_accepted_at, terms_signature, created_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
-        a.displayName, a.displayKey, login.current, config.loginNameKeys.current, a.kind, randomBytes(32),
-        a.termsVersion, a.termsVersion === null ? null : a.now, a.now,
+        id, a.displayName, a.displayKey, login.current, config.loginNameKeys.current, a.kind, randomBytes(32),
+        a.termsVersion, a.termsVersion === null ? null : a.now,
+        a.kind === 'owner' ? null : sealTermsSignature(config, a.termsSignature, id), a.now,
       ],
     );
-    return rows[0]!.id;
+    return id;
   } catch (e) {
     const err = e as { code?: string; constraint?: string };
     if (err.code === '23505' && err.constraint !== undefined && NAME_CONSTRAINTS.has(err.constraint)) {

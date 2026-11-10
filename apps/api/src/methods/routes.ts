@@ -4,7 +4,7 @@ import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import { liveOfferStats } from '../offers/routes.js';
-import { catalog, isAvailable, type CatalogMethod } from './profiles.js';
+import { catalog, isAvailable, tradeProfile, type CatalogMethod } from './profiles.js';
 
 /** Which live offers to count: the ads' own side (what the poster does with XMR) and currency. */
 export interface LiveOfferQuery {
@@ -35,6 +35,14 @@ export interface MethodRow {
   giftCard: boolean;
   offers: number;
   bestRate: string | null;
+  /**
+   * How long the method's money can take to arrive, in minutes: the method's confirm window (or
+   * the Custom method's), which is also the wait from "I've paid" before a dispute (owner p9-4:
+   * "FYI this payment method can take up to 12 hours", shown where the method is picked).
+   */
+  upToMin: number;
+  /** The buyer's time to pay with this method, in minutes (owner p9-6), as the take fixes it. */
+  payWindowMin: number;
 }
 
 const SORTS = ['buyers', 'rate', 'az'] as const;
@@ -87,9 +95,11 @@ export function methodListRoutes(app: FastifyInstance): void {
 
     const row = (m: CatalogMethod): MethodRow => {
       const s = byId.get(m.id);
+      const p = tradeProfile(m.id);
       return {
         id: m.id, name: m.name, group: m.group, giftCard: m.giftCard,
         offers: s?.offers ?? 0, bestRate: s?.bestCentsPerXmr === null || s === undefined ? null : s.bestCentsPerXmr.toString(),
+        upToMin: p.confirmWindowMin, payWindowMin: p.payWindowMin,
       };
     };
     const available = catalog().filter((m) => isAvailable(m.id));

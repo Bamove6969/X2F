@@ -16,6 +16,7 @@ import { testDb } from './helpers/db.js';
 import { applyEvent } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
+import { insertOffer } from './helpers/offers.js';
 
 const T0 = new Date('2026-10-17T12:00:00Z');
 const MIN = 60_000;
@@ -887,6 +888,8 @@ describe('the seller\'s nudge unlocks the refund (owner G2, g66; migration 119)'
     await withRealWiring(async () => {
       for (let i = 0; i < 6; i++) {
         setNow(new Date(secured.payBy!.getTime() + i * NUDGE_GAP_MS));
+        // The test login's 2 h session (main 307/313) ends during the loop: a fresh one each pass.
+        expect((await seller.b.post('/t/login', { accountId: seller.id })).statusCode).toBe(200);
         expect((await nudge(seller, buyer.name, s.code)).statusCode, `nudge ${i}`).toBe(202);
         setNow(new Date(secured.payBy!.getTime() + i * NUDGE_GAP_MS + NUDGE_GAP_MS - 1));
         expect((await nudge(seller, buyer.name, s.code)).statusCode, `too soon ${i}`).toBe(429);
@@ -950,11 +953,7 @@ describe('the seller\'s nudge unlocks the refund (owner G2, g66; migration 119)'
 describe('shared context from open chats (Task 20)', () => {
   /** A chat between `seller` (who posted a sell offer) and `buyer`, inserted directly. */
   async function seedChat(sellerId: string, buyerId: string, tradeCode: string | null = null): Promise<string> {
-    const { rows } = await deps.db.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'market', 100, 1000, 100000, null, '', 'live', now(), now()) returning id`,
-      [sellerId],
-    );
+    const rows = [{ id: await insertOffer(deps.db, { accountId: sellerId, side: 'sell', methodId: 'zelle', currency: 'USD', marginBps: 100, min: 1000, max: 100000 }) }];
     const code = newTradeCode();
     await deps.db.query(
       'insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at) values ($1, $2, $3, $4, $5, now())',

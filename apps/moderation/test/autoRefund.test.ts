@@ -245,6 +245,38 @@ describe("the seller's cancel refund (owner 8 Nov: no final alert, the refund st
     await m.handle.stop();
   });
 
+  it("a 24-hour method (cash by mail): a lying API's cancel at 91 minutes is not co-signed, the shadow runs on the trade's own attested time to pay; once it is over the refund is signed", async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net, { ...TERMS, payWindowMin: 24 * 60 });
+    await secured(ctx, l);
+    later(ctx, 91 * MIN); // past the machine default of 90 minutes, well inside the trade's 24 hours
+    await acked(l, l.seller, 'trade.refund-request', {});
+    apiCancelled(l); // the API took the cancel on the default window
+    await m.handle.watch();
+    let rec = await record(l.code);
+    expect(l.party.settles).toEqual([]);
+    expect(rec.shadow!.payWindowMin).toBe(24 * 60);
+    expect(rec.shadow!.state).toBe('secured');
+    expect(rec.pending).toEqual(['request-refund']);
+    net.states.set(l.code, 'secured'); // the API shows the trade as it is again
+    net.settleKinds.delete(l.code);
+    later(ctx, (24 * 60 - 92) * MIN); // one minute before the trade's own payBy
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([]);
+    expect((await record(l.code)).shadow!.state).toBe('secured');
+    later(ctx, 2 * MIN); // the buyer's 24 hours are over
+    await m.handle.watch();
+    rec = await record(l.code);
+    expect(rec.shadow!.state).toBe('settling');
+    expect(rec.shadow!.settling).toBe('auto-refund');
+    expect(rec.pending).toEqual([]);
+    apiCancelled(l);
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([REFUND]);
+    await m.handle.stop();
+  });
+
   it('nudges are optional (owner 8 Nov; lead decision (a) retired): the shadow takes the request with no nudge once its own payBy passed; before it, the request waits (too-early)', async () => {
     const { net, fetch } = fakeNetwork(ctx);
     const m = await moderation(ctx, fetch);

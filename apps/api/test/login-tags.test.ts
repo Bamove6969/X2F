@@ -15,13 +15,15 @@ import type { Keyring } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { ApiError } from '../src/errors.js';
-import { accountIdByLoginName, currentLoginTag, seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, currentLoginTag, seedAccount, trustedDevice } from './helpers/accounts.js';
+import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { testApp, testConfig } from './helpers/app.js';
 import { emptyDb } from './helpers/db.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 import { VAPID_ENV } from './helpers/vapid.js';
+import { SIG } from './helpers/signature.js';
 
 // Every HMAC made while a request runs is counted (parity: the same HMAC work for every name).
 vi.mock('node:crypto', async (importOriginal) => {
@@ -70,7 +72,7 @@ const key32 = () => new Uint8Array(crypto.randomBytes(32));
 const rotated = (id = 2): Keyring => ({ current: id, keys: new Map([[id, key32()], ...original.keys]) });
 
 const register = (b: Browser, loginName: string, displayName = `P${loginName}`) =>
-  b.post('/v1/register/password', { displayName, loginName, password: GOOD, deviceLabel: 'T', acceptedTerms: TERMS });
+  b.post('/v1/register/password', { displayName, loginName, password: GOOD, deviceLabel: 'T', acceptedTerms: TERMS, termsSignature: SIG });
 const login = (loginName: string, password = GOOD, b = new Browser(app)) =>
   b.post('/v1/login/password', { loginName, password, deviceLabel: 'T' });
 const backup = (loginName: string, code: string, b = new Browser(app)) =>
@@ -176,9 +178,9 @@ describe('rotation', () => {
   it('password: a name under the old key still logs in, then the row is re-tagged under the current key', async () => {
     const { id, loginName } = await passwordAccount(1);
     deps.config.loginNameKeys = rotated();
-    // One browser: a password alone on a new device starts the 24-hour hold, during which only a
-    // browser already logged in may log in again (Task 17 review round 2 N-C1).
+    // One trusted browser: with nothing logged in, a password alone gets in only on a trusted device (hold model v3).
     const b = new Browser(app);
+    b.cookies[DEVICE_COOKIE] = await trustedDevice(deps, id);
     expect((await login(loginName, GOOD, b)).statusCode).toBe(200);
     const row = await tagRow(id);
     expect(row.login_tag_key_id).toBe(2);
@@ -237,8 +239,9 @@ describe('the re-tag is best-effort (review M1)', () => {
   it('password: a failing re-tag still logs in; the row stays under the old key and the next login moves it', async () => {
     const { id, loginName } = await passwordAccount(1);
     deps.config.loginNameKeys = rotated();
-    // One browser (the hold of a password alone on a new device: Task 17 review round 2 N-C1).
+    // One trusted browser (hold model v3: with nothing logged in, a password alone gets in only there).
     const b = new Browser(app);
+    b.cookies[DEVICE_COOKIE] = await trustedDevice(deps, id);
     const res = await retagFails(() => login(loginName, GOOD, b));
     expect(res.statusCode).toBe(200);
     expect(res.headers['set-cookie']).toBeDefined();
@@ -288,7 +291,7 @@ describe('uniqueness across keys', () => {
     const b: Keyring = { current: 1, keys: new Map([[1, original.keys.get(1)!], [2, a.keys.get(2)!]]) };
     const name = uniq('roll');
     const names = (d: string) => ({
-      displayName: d, displayKey: d.toLowerCase(), loginKey: name.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, now: new Date(),
+      displayName: d, displayKey: d.toLowerCase(), loginKey: name.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
     });
     const first = await deps.db.connect();
     const second = await deps.db.connect();
@@ -319,6 +322,27 @@ describe('uniqueness across keys', () => {
     expect(row).toEqual({ login_tag: currentLoginTag(deps, name, 5), login_tag_key_id: 5, login_name: null, login_key: null });
   });
 
+  // Security review 2026-11-08, finding 9; owner 9 Nov 2026 (p11-14): everyone who gets a login
+  // signs. `npm run typecheck` is what enforces these.
+  it('createAccount needs a signature and a version for a trader, a member and staff, by type', () => {
+    type Args = Parameters<typeof createAccount>[2];
+    const base = { displayName: 'A', displayKey: 'a', loginKey: 'b', now: new Date() };
+    // @ts-expect-error a trader must carry a signature
+    const unsigned: Args = { ...base, kind: 'trader', termsVersion: TERMS };
+    // @ts-expect-error a trader must carry a Terms version
+    const unversioned: Args = { ...base, kind: 'trader', termsVersion: null, termsSignature: SIG };
+    // @ts-expect-error a staff login signs too
+    const staffUnsigned: Args = { ...base, kind: 'staff', termsVersion: null };
+    // @ts-expect-error a team member's login signs too
+    const memberUnsigned: Args = { ...base, kind: 'member', termsVersion: TERMS };
+    // @ts-expect-error the owner's account has no signature
+    const ownerSigned: Args = { ...base, kind: 'owner', termsVersion: null, termsSignature: SIG };
+    const staff: Args = { ...base, kind: 'staff', termsVersion: TERMS, termsSignature: SIG };
+    const member: Args = { ...base, kind: 'member', termsVersion: TERMS, termsSignature: SIG };
+    const owner: Args = { ...base, kind: 'owner', termsVersion: null };
+    expect([unsigned, unversioned, staffUnsigned, memberUnsigned, ownerSigned, staff, member, owner]).toHaveLength(8);
+  });
+
   it('createAccount refuses equal names itself (the check SQL can no longer make)', async () => {
     const client = await deps.db.connect();
     try {
@@ -326,7 +350,7 @@ describe('uniqueness across keys', () => {
       await expect(
         createAccount(client, deps.config, {
           displayName: 'Same.Name1', displayKey: 'same.name1', loginKey: 'same.name1',
-          kind: 'trader', termsVersion: TERMS, now: new Date(),
+          kind: 'trader', termsVersion: TERMS, termsSignature: SIG, now: new Date(),
         }),
       ).rejects.toEqual(new ApiError(400, 'names-same'));
     } finally {
@@ -338,7 +362,7 @@ describe('uniqueness across keys', () => {
 
 describe('one namespace for both names with tags (FU-A review I1, coordination note 2)', () => {
   const names = (display: string, login: string) => ({
-    displayName: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, now: new Date(),
+    displayName: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
   });
 
   it("B: a display name that is someone's login name under an old key is refused at create (names-unavailable)", async () => {
@@ -436,7 +460,7 @@ describe('sealed names in a waiting sign-up (FU-A review note 1)', () => {
     const { challengeId, encryptedMessage } = start.json() as { challengeId: string; encryptedMessage: string };
     const code = codeOf(await decrypt(encryptedMessage, pair.privateKey, undefined, deps.clock()));
     deps.config.loginNameKeys = rotated(6);
-    const res = await b.post('/v1/register/pgp/finish', { challengeId, code, deviceLabel: 'T', acceptedTerms: TERMS });
+    const res = await b.post('/v1/register/pgp/finish', { challengeId, code, deviceLabel: 'T', acceptedTerms: TERMS, termsSignature: SIG });
     expect(res.statusCode).toBe(201);
     const id = (await accountIdByLoginName(deps, loginName))!;
     expect((await tagRow(id)).login_tag_key_id).toBe(6);

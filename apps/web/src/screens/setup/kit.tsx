@@ -6,16 +6,20 @@ import { createContext, useContext, type KeyboardEvent, type ReactNode } from 'r
 import { Link } from 'react-router';
 import type { WalletApp } from '@x2f/auth-client';
 import { Icon } from '../../ui/icons.js';
-import type { RegisterPgpStart, SetupError } from './register.js';
+import type { RegisterPgpStart, SetupError, TermsAcceptance } from './register.js';
 import './setup.css';
 
 export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
-export type BackupChoice = 'totp' | 'security-key' | 'pgp' | 'recovery-codes';
-export type Step = '' | 'name' | 'login' | 'pgp-key' | 'pgp-code' | 'password' | 'backup' | 'wallet' | 'welcome';
+/** No authenticator app: it is no backup login (design build gaps Job 1). */
+export type BackupChoice = 'security-key' | 'pgp' | 'recovery-codes';
+export type Step = '' | 'name' | 'display-name' | 'login' | 'pgp-key' | 'pgp-code' | 'password' | 'backup' | 'wallet' | 'welcome';
 
 export interface SetupState {
-  /** The Terms version accepted on the first screen; sent as `acceptedTerms` with the register call. */
-  terms: string | null;
+  /**
+   * The Terms version accepted on the first screen and the signature given there (owner, 8 Nov
+   * 2026); sent as `acceptedTerms` and `termsSignature` with the register call.
+   */
+  terms: TermsAcceptance | null;
   displayName: string;
   loginName: string;
   method: LoginMethod;
@@ -124,7 +128,8 @@ export function SetupIntro({ title, children }: { title: ReactNode; children?: R
 }
 
 /**
- * A refused register call. A name problem links back to the names screen (what they typed is kept);
+ * A refused register call. A name problem links back to the screen of the name to change (review
+ * F8: a display-name refusal to the display-name screen, any other to the username; what they typed is kept);
  * a key already on another account links back to the key screen and to Log in (review I1); a
  * refused key (key-unavailable) links back to the key screen only.
  */
@@ -137,7 +142,7 @@ export function RegisterError({ error }: { error: SetupError | null }) {
       {error.names ? (
         <>
           {' '}
-          <Link className="x2f-link" to={path('name')} data-part="change-names">
+          <Link className="x2f-link" to={path(error.names)} data-part="change-names">
             Change your names
           </Link>
         </>

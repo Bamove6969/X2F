@@ -24,8 +24,8 @@ async function stubNews(page: Page, items: unknown[]): Promise<{ writes: string[
   return { writes };
 }
 
-const titles = (page: Page) => page.locator('[data-part="news-item"] h2').allTextContents();
-const newTitles = (page: Page) => page.locator('[data-part="news-item"][data-new] h2').allTextContents();
+const titles = (page: Page) => page.locator('[data-part="news-item"] [data-part="news-title"]').allTextContents();
+const newTitles = (page: Page) => page.locator('[data-part="news-item"][data-new] [data-part="news-title"]').allTextContents();
 
 test('logged out, News never opens: the front door (the Landing board) takes the visitor, and nothing is read (owner, 8 Nov 2026)', async ({ page }) => {
   const reads: string[] = [];
@@ -52,12 +52,12 @@ test('newest first with dates, all new, then seen on the next visit', async ({ p
   expect(await page.locator('[data-part="news-date"] time').evaluateAll((ts) => ts.map((t) => t.getAttribute('datetime')))).toEqual(
     ITEMS.map((i) => i.publishedAt),
   );
-  await expect(page.locator('[data-part="news-date"]').first()).toHaveText(/^Posted .*2026/);
+  await expect(page.locator('[data-part="news-date"]').first()).toHaveText(/^New\s*\d+ \w{3} 2026, \d\d:\d\d UTC/);
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
 
   await page.reload();
-  await expect(page.locator('[data-part="news-count"]')).toHaveText('Nothing new since your last visit.');
+  await expect(page.locator('[data-part="news-count"]')).toHaveText('All read · 3 posts');
   expect(await newTitles(page)).toEqual([]);
   // Reading sent nothing back.
   expect(s.writes).toEqual([]);
@@ -72,7 +72,7 @@ test('after login, unseen news opens first and Continue goes on', async ({ page 
   await page.fill('#login-name', 'nightowl');
   await page.fill('#login-password', 'Correct-Horse-9!');
   await page.click('[data-part="password-login"]');
-  await expect(page).toHaveURL(/\/news\?returnTo=%2Fwallets$/);
+  await expect(page).toHaveURL(/\/news\?after=login&returnTo=%2Fwallets$/);
   // Wait for the list: allTextContents() reads once and does not retry.
   await expect(page.locator('[data-part="news-item"][data-new] h2')).toHaveCount(3);
   await page.click('[data-part="news-continue"]');

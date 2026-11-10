@@ -27,6 +27,13 @@ export interface TradeView {
   state: Trade['state'];
   counterparty: TraderSummary;
   methodId: string;
+  /**
+   * J-16 (Task 34): the chosen method's instructions from the offer, locked at take (the payment
+   * details). Lead default (Task 34 builder, 29 Oct): shown to the two traders only once the escrow
+   * was secured (`securedAt` set), so taking an offer never reveals the poster's payment details by
+   * itself; null before that. '' when the offer gave none (offers from before migration 490).
+   */
+  paymentInstructions: string | null;
   profile: unknown;
   amountAtomic: string;
   fiatCents: string;
@@ -56,8 +63,16 @@ export interface TradeView {
   fundStartedAt: string | null;
   securedAt: string | null;
   payBy: string | null;
+  /** The buyer's time to pay in minutes, the payment method's, fixed at take (owner p9-6). */
+  payWindowMin: number;
   paidAt: string | null;
   confirmBy: string | null;
+  /**
+   * The trade's confirm window in minutes, fixed at take by the payment type (owner 2026-11-07 F9:
+   * 90 for instant types up to 4 days for cash by mail). `confirmBy` is paid time plus this, later by
+   * any maintenance; it is also when either side may open a dispute in `paid` (owner p9-4).
+   */
+  confirmWindowMin: number;
   settleBy: string | null;
   /**
    * When the moderator's watcher reported that a buyer or seller says their side of the
@@ -81,6 +96,17 @@ export interface TradeView {
   sellerNudgedAt: string | null;
   nextDeadline: string | null;
   serverNow: string;
+  /**
+   * Hold model v3: the other party's account has a temporary problem (a recovery-code hold; the
+   * trade is paused or was cancelled, trades/held.ts). The partner is told only that, never
+   * why. False when the view is built without it (live events).
+   */
+  counterpartyProblem: boolean;
+  /**
+   * Owner G7 (lead review 8 Nov I5): this trade's buyer-cancel is recorded and waits for the other
+   * account's temporary problem to end (no coins move meanwhile). False when built without it.
+   */
+  cancelWaiting: boolean;
 }
 
 /** The extra facts a view needs that are not trade fields. */
@@ -89,6 +115,12 @@ export interface ViewContext {
   /** Task 3's method profile for `t.methodId` (null until Task 3 wires `getProfile`). */
   profile: unknown;
   sellerWalletApp: string | null;
+  /** Hold model v3: see `TradeView.counterpartyProblem`. */
+  counterpartyProblem?: boolean;
+  /** See `TradeView.cancelWaiting`. */
+  cancelWaiting?: boolean;
+  /** `trades.method_instructions` (J-16, 490); absent → ''. */
+  paymentInstructions?: string;
 }
 
 /**
@@ -106,6 +138,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     state: t.state,
     counterparty: ctx.counterparty,
     methodId: t.methodId,
+    paymentInstructions: t.securedAt === null ? null : (ctx.paymentInstructions ?? ''),
     profile: ctx.profile,
     amountAtomic: t.amountAtomic.toString(),
     fiatCents: t.fiatCents.toString(),
@@ -139,8 +172,10 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     fundStartedAt: iso(t.fundStartedAt),
     securedAt: iso(t.securedAt),
     payBy: iso(t.payBy),
+    payWindowMin: t.payWindowMin,
     paidAt: iso(t.paidAt),
     confirmBy: iso(t.confirmBy),
+    confirmWindowMin: t.confirmWindowMin,
     settleBy: iso(t.settleBy),
     releaseClaimedAt: t.state === 'settling' ? iso(t.releaseClaimedAt) : null,
     pausedAt: iso(t.pausedAt),
@@ -150,6 +185,8 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     sellerNudgedAt: iso(t.sellerNudgedAt),
     nextDeadline: iso(nextDeadline(t)),
     serverNow: serverNow.toISOString(),
+    counterpartyProblem: ctx.counterpartyProblem ?? false,
+    cancelWaiting: ctx.cancelWaiting ?? false,
   };
   if (role === t.poster) view.fee = { atomic: t.feeAtomic.toString() };
   return view;

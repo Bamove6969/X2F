@@ -2,20 +2,29 @@
 // Claude Design board yet (NEEDS_DESIGN_TEAM in test/team-tripwires.test.ts); the owner signs it
 // off with the board. Refusals (owner-only, a role a member lacks, the member limit, escrow
 // signing) are CantDoThat's, worded in ui/cantDoCodes.ts (teamCantDoText).
+import { formatDateTime } from '../../ui/dates.js';
 import type { TeamRole } from '@x2f/auth-client';
-import { utcDateTime } from '../../ui/dates.js';
 
 export const TEAM_PATH = '/settings/team';
 export const JOIN_PATH = '/team/join';
 
-export const ROLE_WORDS: Record<TeamRole, string> = { offers: 'Offers', trades: 'Trades' };
+// Owner p4-8: the "Holds and waiting changes" rights (MemberPermissions board, COPY-UNSIGNED).
+export const ROLE_WORDS: Record<TeamRole, string> = {
+  offers: 'Offers',
+  trades: 'Trades',
+  'hold-see': 'See waiting changes',
+  'hold-cancel': 'Untick or cancel waiting changes',
+  'hold-end': 'End a hold',
+};
 
 /** "Offers", "Trades" or "Offers and Trades". */
 export function rolesText(roles: readonly TeamRole[]): string {
-  return (['offers', 'trades'] as const).filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]).join(' and ');
+  const words = (['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'] as const).filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]);
+  return words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 }
 
-const when = (iso: string): string => utcDateTime(new Date(iso));
+/** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */
+const when = (iso: string): string => formatDateTime(iso);
 
 /** What each audit action reads as (an unknown one is shown by its code). */
 const AUDIT_WORDS: Record<string, string> = {
@@ -38,6 +47,8 @@ const AUDIT_WORDS: Record<string, string> = {
   'withdraw-cancel': 'withdrew a cancel',
   'walk-away': 'walked away from the trade',
   'confirm-cancel': 'confirmed the cancel',
+  'hold-changes-cancelled': 'cancelled waiting changes',
+  'hold-changes-approved': 'applied waiting changes now',
 };
 
 export const TEAM_COPY = {
@@ -46,10 +57,15 @@ export const TEAM_COPY = {
   what: [
     'Offers: post, change, turn on or off and remove your offers.',
     'Trades: start trades on offers, mark payments sent, cancel and open disputes.',
+    // Owner p4-8 (MemberPermissions board; COPY-UNSIGNED).
+    'Holds and waiting changes: see your waiting changes, untick or cancel them, or end a hold. Off by default: without these, a member only sees that a hold is on.',
   ] as const,
   // The lead defaults the owner may change (spec 6.7).
   ownerKeeps: 'Payout wallets, your login methods, security settings and the team itself stay with you.',
   oneReputation: 'Your account has one reputation. Everything a member does shows in the log below.',
+  // Owner p7-9 (8 Nov, replacing p4-8's "no stronger than the lead"): members may use ANY login
+  // method. Not built yet (lead report 2026-11-08: the join, member logins and their strength need
+  // rules first); this line says what the join enforces today, so it changes with the build.
   twoFactors: 'Each member logs in with their own two factors: a PGP key plus a security key, a passkey or a second PGP key.',
   // Plan 3 Task 42 (R44): members cannot release yet.
   releaseNote: 'Releasing or securing coins still happens on your own device.',
@@ -59,6 +75,8 @@ export const TEAM_COPY = {
   status: { invited: 'Invited', joining: 'Setting up their login', active: 'Active' } as const,
   inviteUntil: (iso: string) => `Invite works until ${when(iso)}`,
   roles: (roles: readonly TeamRole[]) => rolesText(roles),
+  // Job 1c (review 2026-11-09 m3): a member whose boxes no role describes. COPY-UNSIGNED.
+  custom: 'Custom',
   changeRoles: (name: string) => `Change roles for ${name}`,
   saveRoles: 'Save roles',
   remove: 'Remove',
@@ -68,6 +86,9 @@ export const TEAM_COPY = {
   pickRole: 'Pick at least one role.',
   inviteTitle: 'Invite a member',
   nameLabel: 'Their name in trade chats',
+  // Owner 2026-10-28 (R44): chat labels name the member, "Team Calcium member: Aurora", which the
+  // owner chose over design's "never which member". Design build gaps Job 1 (and board TeamChat)
+  // still ask for "never which member": left as the owner ruled, raised with the lead 2026-11-08.
   nameHint: 'Chat shows it as "Team <your name> member: <their name>".',
   inviteButton: 'Make an invite link',
   // Team board (wip/design-brief), the full state, with the 1 Nov limit as a number.
@@ -96,6 +117,7 @@ export const JOIN_COPY = {
   invited: (name: string, roles: readonly TeamRole[]) => `You are invited to a team as ${name}, for ${rolesText(roles)}.`,
   // The member's Terms step before joining (review 2026-11-08 F1). COPY-UNSIGNED.
   termsIntro: 'Before you join, read the Terms of Service to the end and accept them. The key points first:',
+  // What the join enforces today; owner p7-9 (any login method) is not built yet (see TEAM_COPY.twoFactors).
   twoFactors: 'You log in with two factors: first a PGP key, then a security key, a passkey or a second PGP key.',
   loginNameLabel: 'Your private login name',
   loginNameHint: 'Only you use it to log in. Nobody else sees it.',

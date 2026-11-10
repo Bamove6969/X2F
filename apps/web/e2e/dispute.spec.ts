@@ -47,7 +47,8 @@ function tradeView(o: Partial<Record<string, unknown>> & { role?: 'buyer' | 'sel
     securedAt: T('08:00'),
     payBy: T('09:30'),
     paidAt: T('08:02'),
-    confirmBy: T('10:02'),
+    confirmBy: T('09:32'),
+    confirmWindowMin: 90,
     settleBy: null,
     pausedAt: null,
     closedAt: null,
@@ -168,15 +169,40 @@ test('DisputeOpen shows the board copy and sends the reason and note', async ({ 
   expect(posts[0]!.postDataJSON()).toEqual({ reason: 'silent', note: 'No answer since 10:02.' });
 });
 
-test('before the seller\'s confirm window ends, the buyer is told when and nothing is sent', async ({ page }) => {
-  const posts = await stub(page, { trade: tradeView({ serverNow: T('09:30') }) });
+test("before the method's 90-minute window after marking paid (owner 2026-11-07 F9: instant types; p9-4), the buyer is told when and nothing is sent", async ({ page }) => {
+  // Paid at 08:02: 89 min later the dispute is still closed.
+  const posts = await stub(page, { trade: tradeView({ serverNow: T('09:31') }) });
   await open(page);
-  await expect(page.getByText("You can open a dispute if the seller hasn't confirmed within 2 h of your payment.")).toBeVisible();
+  await expect(page.getByText("You can open a dispute if the seller hasn't confirmed within 90 minutes of your payment.")).toBeVisible();
   const button = page.getByRole('button', { name: 'Open dispute' });
   await expect(button).toBeDisabled();
   await button.click({ force: true });
   await page.waitForTimeout(300);
   expect(posts).toHaveLength(0);
+});
+
+test('from 90 minutes after marking paid (confirmBy, owner p9-4) the buyer may open one', async ({ page }) => {
+  await stub(page, { trade: tradeView({ serverNow: T('09:32') }) });
+  await open(page);
+  await expect(page.getByRole('button', { name: 'Open dispute' })).toBeEnabled();
+  // One window for both sides (p9-4): once it is open, the seller's time has run out too.
+  await expect(page.getByText("Seller's time to confirm ran out")).toBeVisible();
+});
+
+test('after a maintenance moved the end of the window (owner 2026-11-06 Q10), the buyer still waits past paidAt + 90 min', async ({ page }) => {
+  // Paid at 08:02; a 40-minute maintenance moved confirmBy from 09:32 to 10:12.
+  const posts = await stub(page, { trade: tradeView({ serverNow: T('09:40'), confirmBy: T('10:12') }) });
+  await open(page);
+  await expect(page.getByRole('button', { name: 'Open dispute' })).toBeDisabled();
+  await expect(page.getByText("You can open a dispute if the seller hasn't confirmed within 90 minutes of your payment.")).toBeVisible();
+  expect(posts).toHaveLength(0);
+});
+
+test('a slow payment type says its own wait: a SWIFT wire, 3 days (owner 2026-11-07 F9)', async ({ page }) => {
+  await stub(page, { trade: tradeView({ serverNow: T('09:31'), confirmWindowMin: 4320, confirmBy: T('08:02', 18) }) });
+  await open(page);
+  await expect(page.getByRole('button', { name: 'Open dispute' })).toBeDisabled();
+  await expect(page.getByText("You can open a dispute if the seller hasn't confirmed within 3 days of your payment.")).toBeVisible();
 });
 
 test('the seller sees the seller\'s reasons', async ({ page }) => {
@@ -199,8 +225,8 @@ test('DisputeRoom: rose In dispute chip, locked amount, deadline line, hourglass
   await expect(page.locator('[data-part="hourglass"]')).toHaveCount(0);
   await expect(page.getByText(/ruling due by/)).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Moderator joined' })).toContainText('Moderator sarah.v joined this dispute');
-  await expect(page.getByText('10:14 · You opened a dispute: I paid, but the seller hasn\'t released')).toBeVisible();
-  await expect(page.getByText('10:52 · Moderator sarah.v joined this dispute')).toBeVisible();
+  await expect(page.getByText('10:14 UTC · You opened a dispute: I paid, but the seller hasn\'t released')).toBeVisible();
+  await expect(page.getByText('10:52 UTC · Moderator sarah.v joined this dispute')).toBeVisible();
   await expect(page.getByText('Chats are encrypted. If a dispute is opened, a moderator can read this conversation.')).toBeVisible();
 });
 
@@ -253,7 +279,7 @@ test('DisputeRuling: the winner sees where the XMR goes; past the window there i
   await expect(page.getByText('Goes to Cake Wallet, address ending …k3Fz.')).toBeVisible();
   await expect(page.getByText('Sent to', { exact: false })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Appeal this ruling' })).toHaveCount(0);
-  await expect(page.getByText('The appeal window closed on Sat 17 Oct, 14:30.')).toBeVisible();
+  await expect(page.getByText('The appeal window closed on 17 Oct 2026, 14:30 UTC.')).toBeVisible();
 });
 
 test('an appeal refused as too late shows the refusal', async ({ page }) => {

@@ -9,10 +9,12 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { heldNote, holdSentence } from '../auth/refusals.js';
+import { holdSentence } from '../auth/refusals.js';
 import { IDLE_COPY, IDLE_REMINDER_PATH } from '../auth/sessionCopy.js';
 import { Icon } from '../../ui/icons.js';
 import { Alerts } from './Alerts.js';
+import { AccountChanges } from './HoldChanges.js';
+import { NewRecoveryCode } from './NewRecoveryCode.js';
 import { BLOCKED_PATH } from './BlockAction.js';
 import { BLOCK_COPY } from './blockCopy.js';
 import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
@@ -76,6 +78,9 @@ function SecurityScreen() {
       <main className="x2f-screen" data-screen="security">
         <h1 className="x2f-screen__title">Security</h1>
         <HoldBanner />
+        {/* Hold model v3 (lead review item 3): a new recovery code to write down, and the account's changes. */}
+        <NewRecoveryCode />
+        <AccountChanges />
         <Methods prove={prove} />
         <PayoutWait />
         {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it. */}

@@ -26,7 +26,12 @@ export interface Price {
   centsPerXmr: bigint;
 }
 
-export type Pricing = { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
+/**
+ * How an offer is priced: always the market price moved by a margin (owner Q1, 6 Nov 2026: "all
+ * offers are going to be market + whatever percentage"; F1, 7 Nov: above or below, at most 50%).
+ * There is no fixed-price offer.
+ */
+export type Pricing = { mode: 'market'; marginBps: number };
 
 /** n / d rounded half up, for n >= 0 and d > 0. */
 function divHalfUp(n: bigint, d: bigint): bigint {
@@ -61,15 +66,11 @@ export function atomicForFiat(cents: bigint, rate: Price): bigint {
 }
 
 /**
- * The offer's price per XMR. A market offer needs a current feed price in the
- * same currency and returns null without one; a fixed offer ignores the feed.
+ * The offer's price per XMR: the market price moved by the margin. It needs a current feed price
+ * in the same currency and returns null without one. Any other pricing mode is refused (there is
+ * no fixed price, owner Q1).
  */
 export function offerRate(p: Pricing, currency: string, market: Price | null): Price | null {
-  if (p.mode === 'fixed') {
-    const rate = { currency, centsPerXmr: p.centsPerXmr };
-    checkPrice(rate);
-    return rate;
-  }
   if (p.mode !== 'market') throw new RangeError('unknown pricing mode');
   if (market === null || market.currency !== currency) return null;
   return rateFor(market, p.marginBps);

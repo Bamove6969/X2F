@@ -47,6 +47,7 @@ beforeEach(() => {
     if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { displayName: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
     if (input === '/v1/terms') return json(200, { version: TERMS_TEXT_VERSION });
     if (input === '/v1/team/join/start') return json(200, { challengeId: 'c1', encryptedMessage: 'MSG', fingerprint: 'F' });
+    if (input === '/v1/team/join/finish') return json(201, { setupId: 's1', needs: ['security-key', 'passkey', 'pgp'], setupUntil: '2026-10-31T10:00:00.000Z' });
     return json(500, { error: 'internal' });
   });
 });
@@ -94,6 +95,16 @@ describe('Team (settings)', () => {
     expect(host.querySelector('[data-action="mark-paid"]')?.textContent).toContain('trade AAAA-BBBB-CCCC-DDDD');
     // One primary on the screen.
     expect(host.querySelectorAll('[data-primary]').length).toBe(1);
+  });
+
+  it('a member whose boxes no role describes reads "Custom", not a role (review 2026-11-09 m3)', async () => {
+    members = [
+      { id: 'm4', displayName: 'Dana', roles: ['trades'], abilities: ['trades-see-active'], preset: null, custom: true, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+    ];
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    expect(host.querySelector('[data-member="Dana"]')?.textContent).toContain('Custom · Active');
+    expect(host.querySelector('[data-member="Dana"]')?.textContent).not.toContain('Trades');
   });
 
   it('Make an invite link sends the name and roles and shows the link once', async () => {
@@ -177,7 +188,9 @@ describe('Team (settings)', () => {
     await settle();
     const popup = byPart(document, 'cant-do-that');
     expect(popup?.getAttribute('data-from')).toBe('weak-session');
-    expect(popup?.textContent).toContain("can't invite team members or change their roles");
+    expect(popup?.textContent).toContain("can't invite team members");
+    // Lead review 8 Nov: role changes and removals from such a device wait 24 hours; they are not refused.
+    expect(popup?.textContent).not.toContain('change their roles');
     expect(byPart(host, 'invite-url')).toBeNull();
   });
 
@@ -204,6 +217,14 @@ describe('MemberInvite (join)', () => {
     await act(async () => {
       (byPart(host, 'terms-tick') as HTMLInputElement).click();
     });
+    // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs; the tick alone is not enough.
+    expect(accept.disabled).toBe(true);
+    await act(async () => {
+      (byPart(host, 'signature-type') as HTMLButtonElement).click();
+    });
+    type(byPart(host, 'signature-name') as HTMLInputElement, 'AK');
+    await settle();
+    expect(accept.disabled).toBe(false);
     await act(async () => {
       accept.click();
     });
@@ -222,6 +243,14 @@ describe('MemberInvite (join)', () => {
     });
     await settle();
     expect(calls.find((c) => c.url === '/v1/team/join/start')?.body).toEqual({ invite: CODE, loginName: 'aurora.login', publicKey: 'KEY', acceptedTerms: TERMS_TEXT_VERSION });
+    // The signature goes with the first factor's finish, where the login account is made.
+    type(host.querySelector('input[aria-label="Code"]') as HTMLInputElement, '12345678');
+    await act(async () => {
+      (byPart(host, 'prove') as HTMLButtonElement).click();
+    });
+    await settle();
+    expect(calls.find((c) => c.url === '/v1/team/join/finish')?.body).toEqual({ challengeId: 'c1', code: '12345678', termsSignature: { kind: 'typed', name: 'AK' } });
+    expect(byPart(host, 'join-second')).not.toBeNull();
   });
 
   it('a used or expired invite says so without naming the vendor (front door, design board InviteInvalid)', async () => {

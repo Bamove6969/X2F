@@ -4,6 +4,7 @@ import { newTrade, type By, type Trade, type TradeEvent, type TradeState } from 
 import type { Deps } from '../../src/app.js';
 import { insertReview } from '../../src/reviews/store.js';
 import { applyEvent, insertTrade, type TradeSides } from '../../src/trades/store.js';
+import { insertOffer } from './offers.js';
 
 export const XMR = 1_000_000_000_000n;
 /** 1.25 XMR at $330.00: fiat total $412.50, fee 0.0125 XMR. */
@@ -31,14 +32,14 @@ export interface SeededTrade {
  * Inserts an offer directly for `seedTrade` (trades.offer_id references offers, migration 112). It
  * is stored as removed, so it never shows in an offer list or a method count.
  */
-export async function seedOffer(deps: Pick<Deps, 'db' | 'clock'>, posterId: string, poster: 'seller' | 'buyer'): Promise<string> {
-  const { rows } = await deps.db.query<{ id: string }>(
-    `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents,
-                         min_trades, terms, status, created_at, updated_at)
-     values ($1, $2, 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'removed', $3, $3) returning id`,
-    [posterId, poster === 'seller' ? 'sell' : 'buy', deps.clock()],
-  );
-  return rows[0]!.id;
+export async function seedOffer(
+  deps: Pick<Deps, 'db' | 'clock'>, posterId: string, poster: 'seller' | 'buyer',
+  o: { methodId?: string; status?: 'live' | 'paused' | 'removed' } = {},
+): Promise<string> {
+  return insertOffer(deps.db, {
+    accountId: posterId, side: poster === 'seller' ? 'sell' : 'buy', methodId: o.methodId ?? 'zelle', currency: 'USD', min: 1000, max: 100000,
+    status: o.status ?? 'removed', at: deps.clock(),
+  });
 }
 
 /**
@@ -51,6 +52,8 @@ export async function seedTrade(
     sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint; offerId?: string; methodId?: string; usdCents?: bigint;
     /** The offer's fiat limits in cents (default 1,000 to 100,000); a test of large or tiny amounts widens them. */
     minFiatCents?: bigint; maxFiatCents?: bigint;
+    /** The trade's time to pay in minutes (default TIMERS.payMin, 90). */
+    payWindowMin?: number;
   } & Partial<TradeSides>,
 ): Promise<SeededTrade> {
   const offerId = a.offerId ?? (await seedOffer(deps, a.poster === 'seller' ? a.sellerId : a.buyerId, a.poster));
@@ -65,6 +68,7 @@ export async function seedTrade(
       amountAtomic: a.amountAtomic ?? AMOUNT,
       lockedRate: RATE,
       confirmWindowMin: 120,
+      ...(a.payWindowMin === undefined ? {} : { payWindowMin: a.payWindowMin }),
       minFiatCents: a.minFiatCents ?? 1_000n,
       maxFiatCents: a.maxFiatCents ?? 100_000n,
     },

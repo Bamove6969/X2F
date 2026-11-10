@@ -21,6 +21,14 @@ export type AlertKind =
   // Task 17: the 24-hour hold.
   | 'hold-started'
   | 'hold-ended'
+  // Hold model v3 (owner 1-2 Nov 2026): a moderator moved the hold's end; a username-and-password session's
+  // changes submitted, cancelled, discarded early or applied; the used recovery code replaced.
+  | 'hold-extended'
+  | 'hold-changes-submitted'
+  | 'hold-changes-cancelled'
+  | 'hold-changes-discarded'
+  | 'hold-changes-applied'
+  | 'recovery-code-renewed'
   // Plan 2 Task 18: to the account owner, about the team.
   | 'team-member-joined'
   | 'team-member-login'
@@ -35,7 +43,10 @@ export type AlertKind =
   | 'auto-close-capped'
   // Owner only: a seller's cancel refund landed after an escrow ruling was proposed or published
   // on the buyer's dispute; the case needs a person to re-rule (re-verify 43fbbb2f, R-I1).
-  | 'dispute-refund-after-ruling';
+  | 'dispute-refund-after-ruling'
+  // Owner only: the fee wallet's sweep to the cold wallet (B-006, Plan 4 Task 9).
+  | 'fee-sweep-due'
+  | 'fee-sweep-failed';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

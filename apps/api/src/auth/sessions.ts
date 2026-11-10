@@ -6,7 +6,8 @@ import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import type { EventBus } from '../events/bus.js';
 import { ApiError } from '../errors.js';
-import { hasRole, type MemberAccess, type TeamRole } from '../team/perms.js';
+import { hasAbility } from '../team/abilities.js';
+import type { MemberAccess } from '../team/perms.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
 import type { LoginStrength } from './strength.js';
 
@@ -73,8 +74,8 @@ export interface AuthContext {
    * to it; only routes that pass `member` to `requireSession` let it through.
    */
   memberId: string | null;
-  /** The member's roles (empty for the account owner, who has every permission). */
-  memberRoles: readonly TeamRole[];
+  /** The member's ticked boxes (team/abilities.ts; empty for the account owner, who has every permission). */
+  memberAbilities: readonly string[];
   /** The member's name as the chat label shows it; null for the account owner. */
   memberName: string | null;
 }
@@ -167,8 +168,8 @@ export interface NewSession {
   firstSession: boolean;
   holdUntil?: Date;
   /**
-   * Task 17: how strong the login was (`loginStrength`). Default: a passkey or security key alone
-   * is strong; anything else single waits (`pgp-single` for a PGP key, else `weak-single`). A
+   * Task 17: how strong the login was (`loginStrength`). Default: a passkey, security key or (Q81,
+   * owner 6 Nov 2026) PGP key alone is strong; anything else single waits (`weak-single`). A
    * password with its TOTP code passes 'strong'.
    */
   strength?: LoginStrength;
@@ -191,7 +192,7 @@ export async function openSession(
   a: NewSession,
 ): Promise<{ sessionId: string; after: () => void }> {
   const strength: LoginStrength =
-    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' ? 'strong' : a.method === 'pgp' ? 'pgp-single' : 'weak-single');
+    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' || a.method === 'pgp' ? 'strong' : 'weak-single');
   const now = deps.clock();
   const token = randomBytes(32).toString('base64url');
   const label = cleanLabel(a.deviceLabel);
@@ -210,6 +211,15 @@ export async function openSession(
   // that runs at the same time wait, so it then ends this session too.
   if (row.kind === 'member') {
     if (a.level !== 'full') throw new ApiError(401, 'not-authenticated');
+    // Hold model v3: the team account's lock first (the order of every account write; a
+    // recovery-code login logs the team out under it), then no member logs in while the team
+    // account is held (403 `recovery-hold`).
+    const team = await db.query<{ account_id: string }>('select account_id from team_members where member_account_id = $1', [a.accountId]);
+    if (team.rows[0]) {
+      await db.query('select 1 from accounts where id = $1 for no key update', [team.rows[0].account_id]);
+      const held = await db.query<{ hold_until: Date }>('select hold_until from account_holds where account_id = $1 and hold_until > $2', [team.rows[0].account_id, now]);
+      if (held.rows[0]) throw new ApiError(403, 'recovery-hold', { holdUntil: held.rows[0].hold_until.toISOString() });
+    }
     const tm = await db.query<{ id: string; account_id: string; display_name: string; kind: AccountKind; disabled_at: Date | null }>(
       `select tm.id, tm.account_id, tm.display_name, t.kind, t.disabled_at
          from team_members tm join accounts t on t.id = tm.account_id
@@ -318,7 +328,7 @@ interface SessionRow {
   hold_until: Date | null;
   member_id: string | null;
   member_live: boolean | null;
-  member_roles: TeamRole[] | null;
+  member_abilities: string[] | null;
   member_name: string | null;
   member_disabled: boolean | null;
   member_terms_version: string | null;
@@ -364,7 +374,8 @@ export function requireSession(
     /**
      * Plan 2 Task 18: which team members may pass. Left out, a member's session gets 403
      * `owner-only` (fail closed: a route is the account owner's until it says otherwise); `any`
-     * lets every member through; a role lets through members holding it (others 403 `forbidden`).
+     * lets every member through; an ability (or a list: any one of them) lets through members
+     * holding it (others 403 `forbidden`). Job 1c: team/abilities.ts.
      */
     member?: MemberAccess;
   } = {},
@@ -377,7 +388,7 @@ export function requireSession(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
               s.hold_until, a.kind, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
-              tm.roles as member_roles, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
+              tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
               ma.terms_version as member_terms_version, s.app,
               case when s.token_hash = $1 then null else s.prev_token_until end as prev_until
          from sessions s join accounts a on a.id = s.account_id
@@ -411,7 +422,7 @@ export function requireSession(
     if (row.disabled_at !== null || row.member_disabled === true) throw new ApiError(403, 'account-disabled');
     if (row.member_id !== null) {
       if (opts.member === undefined) throw new ApiError(403, 'owner-only');
-      if (!hasRole(row.member_roles ?? [], opts.member)) throw new ApiError(403, 'forbidden');
+      if (!hasAbility(row.member_abilities ?? [], opts.member)) throw new ApiError(403, 'forbidden');
     }
     if (row.level === 'recovery' && !opts.allowRecovery) throw new ApiError(403, 'recovery-session');
     if (row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime() && !opts.allowHeld) {
@@ -449,7 +460,7 @@ export function requireSession(
       // The deadline as the row had it (an untouched request did not move it).
       expiresAt: policy === null ? row.expires_at : new Date(Math.min(row.expires_at.getTime(), row.last_seen_at.getTime() + policy.idleMs)),
       memberId: row.member_id,
-      memberRoles: row.member_id !== null ? (row.member_roles ?? []) : [],
+      memberAbilities: row.member_id !== null ? (row.member_abilities ?? []) : [],
       memberName: row.member_id !== null ? row.member_name : null,
     };
   };

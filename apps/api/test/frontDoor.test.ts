@@ -11,7 +11,10 @@ import { runsWithSession } from '../src/auth/sessions.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
+import { flexBody } from './helpers/offers.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 // Every route the app registers, as Fastify's own onRoute hook sees it (as team.test.ts does).
 const registered = vi.hoisted(() => [] as RouteOptions[]);
@@ -74,6 +77,7 @@ const MISSING_OFFER = '00000000-0000-4000-8000-000000000000';
 
 // Each marketplace read, and what a signed-in, set-up trader gets.
 const READS: { url: string; inside: number }[] = [
+  { url: '/v1/currencies', inside: 200 }, // J-16: which currencies have a price now is market data
   { url: '/v1/methods?side=sell&currency=USD', inside: 200 },
   { url: '/v1/offers?side=sell&method=ZELLE&currency=USD', inside: 200 },
   { url: `/v1/offers/${MISSING_OFFER}`, inside: 404 },
@@ -161,16 +165,17 @@ describe('marketplace reads are behind the front door', () => {
 
   it('a logged-out offer list never reaches the database answer: the same 401 for a real offer as for none', async () => {
     const p = await trader();
+    await makeVendor(deps, p.id); // batch 2 (owner 2 Nov 2026): only a vendor account posts offers
     await deps.db.query(
       `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $3)`,
       [p.id, `addr-${Math.random()}`, new Date(deps.clock().getTime() - 86_400_000)],
     );
     // Only vendors post offers (owner 2 Nov 2026); no minimum is null (owner 8 Nov: 5, 10, 25 or 50).
     await makeVendor(deps, p.id);
-    const posted = await p.browser.post('/v1/offers', {
+    const posted = await p.browser.post('/v1/offers', flexBody({
       side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
       minFiatCents: '1000', maxFiatCents: '100000', minTrades: null, terms: 'Zelle only.',
-    });
+    }));
     expect(posted.statusCode, posted.body).toBe(201);
     const id = (posted.json() as { id: string }).id;
     for (const url of [`/v1/offers/${id}`, '/v1/offers?side=sell&method=ZELLE&currency=USD', '/v1/methods?side=sell&currency=USD']) {
@@ -193,9 +198,9 @@ describe('a team member signs the Terms themselves', () => {
     const loginId = await seedAccount(deps, { loginName: `ml${tag}`, displayName: `m-${tag}-placeholder`, kind: 'member', termsVersion: terms });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
-      [owner.id, `Mem${tag}`, `mem${tag}`, ['offers', 'trades'], now, loginId],
+      [owner.id, `Mem${tag}`, `mem${tag}`, ['offers-see', 'trades-see-active'], now, loginId],
     );
     const browser = new Browser(app);
     expect((await browser.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
@@ -213,19 +218,32 @@ describe('a team member signs the Terms themselves', () => {
       const me = (await m.browser.get('/v1/account/me')).json() as { termsCurrent: boolean };
       expect(me.termsCurrent).toBe(false);
       // The site view is the outside one.
-      expect((await m.browser.get('/v1/site')).json()).toEqual({ maintenance: null });
+      expect((await m.browser.get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
     }
   });
 
   it('the member accepts the Terms on their own login account and is inside; the team account row is untouched', async () => {
     const m = await memberOn('2020-01-01');
     const before = await deps.db.query<{ terms_accepted_at: Date | null }>('select terms_accepted_at from accounts where id = $1', [m.owner.id]);
-    const wrong = await m.browser.post('/v1/account/terms', { version: '2020-01-01' });
+    const wrong = await m.browser.post('/v1/account/terms', { version: '2020-01-01', signature: SIG });
     expect(wrong.statusCode).toBe(400);
-    const ok = await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion });
+    // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs, a member included.
+    const unsigned = await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion });
+    expect(unsigned.statusCode).toBe(400);
+    expect((unsigned.json() as { error: string }).error).toBe('signature-required');
+    const ok = await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion, signature: SIG });
     expect(ok.statusCode, ok.body).toBe(204);
-    const rows = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [m.loginId]);
+    const rows = await deps.db.query<{ terms_version: string | null; terms_signature: Buffer | null }>(
+      'select terms_version, terms_signature from accounts where id = $1', [m.loginId],
+    );
     expect(rows.rows[0]!.terms_version).toBe(deps.config.termsVersion);
+    // Sealed to the member's own login account.
+    expect(openTermsSignature(deps.config, rows.rows[0]!.terms_signature!, m.loginId)).toEqual(SIG);
+    // The same version again changes nothing (security review 2026-11-08 finding 5, as for a trader).
+    const again = await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion, signature: { kind: 'typed', name: 'Someone Else' } });
+    expect(again.statusCode).toBe(204);
+    const still = await deps.db.query<{ terms_signature: Buffer }>('select terms_signature from accounts where id = $1', [m.loginId]);
+    expect(openTermsSignature(deps.config, still.rows[0]!.terms_signature, m.loginId)).toEqual(SIG);
     const after = await deps.db.query<{ terms_accepted_at: Date | null }>('select terms_accepted_at from accounts where id = $1', [m.owner.id]);
     expect(after.rows[0]!.terms_accepted_at?.toISOString()).toBe(before.rows[0]!.terms_accepted_at?.toISOString());
     for (const { url, inside } of READS) expect((await m.browser.get(url)).statusCode, url).toBe(inside);
@@ -238,7 +256,7 @@ describe('a team member signs the Terms themselves', () => {
     for (const { url } of READS) expect((await m.browser.get(url)).statusCode, url).toBe(403);
     expect(((await m.browser.get('/v1/account/me')).json() as { termsCurrent: boolean }).termsCurrent).toBe(false);
     // The member's acceptance is theirs only: it does not accept for the account.
-    expect((await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion })).statusCode).toBe(204);
+    expect((await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion, signature: SIG })).statusCode).toBe(204);
     const team = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [m.owner.id]);
     expect(team.rows[0]!.terms_version).toBe('2020-01-01');
     expect((await m.browser.get('/v1/news')).statusCode).toBe(403);
@@ -251,12 +269,12 @@ describe('GET /v1/site on both sides of the door', () => {
     try {
       const anon = await app.inject({ method: 'GET', url: '/v1/site' });
       expect(anon.statusCode).toBe(200);
-      expect(anon.json()).toEqual({ maintenance: null });
-      expect((await (await staleTermsBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null });
-      expect((await (await recoveryBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null });
+      expect(anon.json()).toEqual({ maintenance: null, plannedMaintenance: null });
+      expect((await (await staleTermsBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
+      expect((await (await recoveryBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
 
       const t = await trader();
-      expect((await t.browser.get('/v1/site')).json()).toEqual({ banner: { text: 'Upgrade at noon', kind: 'info' }, tradingPaused: true, maintenance: null });
+      expect((await t.browser.get('/v1/site')).json()).toEqual({ banner: { text: 'Upgrade at noon', kind: 'info' }, tradingPaused: true, maintenance: null, plannedMaintenance: null });
     } finally {
       await deps.db.query(`update site_flags set banner_text = null, banner_kind = null, trading_paused = false`);
     }
@@ -266,7 +284,7 @@ describe('GET /v1/site on both sides of the door', () => {
     await deps.db.query(`update site_flags set maintenance_since = now(), maintenance_message = 'Back at 15:00 UTC', maintenance_kind = 'planned'`);
     try {
       const anon = await app.inject({ method: 'GET', url: '/v1/site' });
-      expect(anon.json()).toEqual({ maintenance: { kind: 'planned' } });
+      expect(anon.json()).toEqual({ maintenance: { kind: 'planned' }, plannedMaintenance: null });
       expect(anon.body).not.toContain('15:00');
       const t = await trader();
       expect((await t.browser.get('/v1/site')).json()).toMatchObject({ maintenance: { kind: 'planned', message: 'Back at 15:00 UTC' } });

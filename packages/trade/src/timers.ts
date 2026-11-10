@@ -1,7 +1,15 @@
 /** Trade timers (Global Constraints). All are measured on the server clock. */
 export const TIMERS = {
-  setupMin: 15,
+  /**
+   * Owner Q11 (6 Nov): the poster has 60 minutes to answer a trade request (pick the trade's wallet)
+   * before it closes by itself (was 15).
+   */
+  setupMin: 60,
   fundMin: 30,
+  /**
+   * The shortest time to pay, the instant methods' (owner F9). Each trade has its own, the
+   * payment method's, fixed at take (`Trade.payWindowMin`, owner p9-6); this is its default.
+   */
   payMin: 90,
   extendMin: 30,
   maxExtensions: 2,

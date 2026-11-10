@@ -12,6 +12,10 @@
  * This file is the refusal text map: tools/copy-lint.ts judges refusal wording everywhere else
  * piece by piece, and passes it here. A plain module (no React, no CSS) so the lint can read it.
  */
+import { LAUNCH_TRADE_CAP_USD_CENTS } from '@x2f/trade';
+
+/** The launch cap as words ("$5,000"), from the one constant the API enforces. */
+export const LAUNCH_CAP_TEXT = `$${(LAUNCH_TRADE_CAP_USD_CENTS / 100n).toLocaleString('en-US')}`;
 
 export const CANT_DO_CODES = [
   // Plan 3 Task 5 (take; on the main line since 2026-10-29).
@@ -20,6 +24,8 @@ export const CANT_DO_CODES = [
   'own-offer',
   'already-waiting',
   'offer-busy',
+  // Owner p11-6: the launch cap on one trade, at take and at post.
+  'launch-cap',
   // Plan 3 Task 4 (post an offer).
   'trading-hold',
   'too-many-offers',
@@ -31,6 +37,15 @@ export const CANT_DO_CODES = [
   'last-login-method',
   'method-not-allowed',
   'account-disabled',
+  // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key
+  // (API only so far, no words here); the 20-change cap (owner G36, `holdChangesCantDoText`); a
+  // trade event refused because the partner's account has a temporary problem (no words yet).
+  'approval-unavailable',
+  'too-many-changes',
+  // Notes on traders (review 2026-11-09 m4): the account's note cap. API only so far, no words here
+  // (no notes screen yet).
+  'too-many-notes',
+  'counterparty-unavailable',
   // Plan 3 Task 26: the nudge limit. Task 6: no more payment-time extensions.
   'too-soon',
   'no-extensions-left',
@@ -95,6 +110,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'both-owner-keys-required': "a change to the owner's keys is tapped with both owner keys (staff app only)",
   'passkey-is-security-key': 'a staff passkey must be another device than the security key (staff app only)',
   'bad-request': 'a malformed request (a fault)',
+  // Hold model v3: the drafts submitted are not the ones there are (another tab changed them): reload and review again.
+  'changes-changed': 'a state conflict: the list changed since it was reviewed',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',
   internal: 'a server fault',
@@ -135,6 +152,20 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wallet-exists': 'an input check (already linked)',
   'terms-not-accepted': 'sends the person to the Terms',
   'terms-required': 'sends the person to the Terms',
+  // Owner, 8 Nov 2026: the signature given with the Terms; the pad never sends these.
+  'signature-required': 'an input check on the Terms signature',
+  'signature-invalid': 'an input check on the Terms signature',
+  'signature-too-large': 'an input check on the Terms signature',
+  // Owner rule p5-7: the Jabber set-up.
+  'jabber-unavailable': 'the deployment has no Jabber sending account yet (a missing feature, not a rule)',
+  'jabber-address-invalid': 'an input check on a typed Jabber address',
+  // J-08 pay-details (ChatPanel's payErrorText, PayDetailsError and ChatFailed codes): the boxes' own input checks and a wait.
+  'not-ready': 'the escrow is not secured yet, so the payment details wait (ChatFailed; a wait, not a rule)',
+  'missing': 'an input check on a payment-details box (PayDetailsError)',
+  'one-of': 'an input check on a group of payment-details boxes (PayDetailsError)',
+  'too-long': 'an input check on a payment-details box (PayDetailsError)',
+  'bad-value': 'an input check on a payment-details box (PayDetailsError)',
+  'bad-chars': 'an input check on a payment-details box (PayDetailsError)',
   'price-unavailable': 'the price feed is down (a fault)',
   'price-changed': 'the market moved (re-quote)',
   'method-unavailable': 'a catalog fact (the method is off the list); Suggest a method covers it',
@@ -245,6 +276,8 @@ export const CANT_DO_TITLE = {
   teamWeak: 'Needs a Strong login',
   // COPY-UNSIGNED: the design review's title for shot 19 (too-many-members, now a server fallback).
   teamFull: 'Your team is full',
+  // Hold model v3, owner G36: the 20-change cap. COPY-UNSIGNED
+  changes: "This change can't be saved yet",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -255,6 +288,9 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       if (o.stageName === null) return 'This trade is above a trading limit right now. Try a smaller amount or another offer.';
       if (o.maxOpen !== null) return `Your account is on ${o.stageName} limits: at most ${o.maxOpen} open ${o.maxOpen === 1 ? 'trade' : 'trades'} at once. Finish one first.`;
       return `Your account is on ${o.stageName} limits${o.capText === null ? '' : ` up to ${o.capText} per trade`}. Try a smaller amount.`;
+    case 'launch-cap':
+      // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
+      return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Try a smaller amount.`;
     case 'own-offer':
       return 'This is your own offer.';
     case 'not-enough-trades':
@@ -281,13 +317,48 @@ export function chatCantDoText(code: CantDoCode): string {
   return code === 'own-offer' ? 'This is your own offer.' : "You can't open this chat right now.";
 }
 
-/** What a refused Post offer says. */
-export function postCantDoText(code: CantDoCode): string {
+/**
+ * The offer cap the API enforces (owner 6 Nov 2026, Q31: 3 buying and 3 selling offers per
+ * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said wherever the cap is explained:
+ * PostOffer's and My offers' CantDoThat for `too-many-offers` and the My offers footnote.
+ * PostOffer says the 409's own number (`offerCapLine`, review M2); the My offers footnote and its
+ * bulk turn-on refusal (whose per-offer result carries no cap) say this default. COPY-UNSIGNED
+ */
+export const OFFER_CAP_LINE = 'You can have 3 buying and 3 selling offers.'; // COPY-UNSIGNED
+
+/**
+ * The offer caps a 409 `too-many-offers` carries (cap-dispute review M2: the caps are owner
+ * settings, not fixed numbers). The API sends `{ buy, sell }` on POST and PATCH (owner Q31: the
+ * settings `offers_max_buy` and `offers_max_sell`, apps/api/src/offers/routes.ts OFFER_CAP_KEYS).
+ */
+export interface OfferCaps {
+  buy: number;
+  sell: number;
+}
+
+/** The caps from a refusal's extra fields, or null when the API sent none (or nonsense). */
+export function offerCapsOf(extra: Record<string, unknown> | undefined): OfferCaps | null {
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 1 && v <= 1000;
+  return extra && ok(extra.buy) && ok(extra.sell) ? { buy: extra.buy, sell: extra.sell } : null;
+}
+
+/** The cap line with the numbers the API sent (the owner settings), else the default line. COPY-UNSIGNED */
+export function offerCapLine(caps: OfferCaps | null): string {
+  if (caps === null || (caps.buy === 3 && caps.sell === 3)) return OFFER_CAP_LINE;
+  const { buy, sell } = caps;
+  return `You can have ${buy} buying and ${sell} selling ${sell === 1 ? 'offer' : 'offers'}.`;
+}
+
+/** What a refused Post offer says; `caps` from the API's refusal (offerCapsOf). */
+export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null): string {
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
-      return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
+      return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
+    case 'launch-cap':
+      // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
+      return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Lower your offer's maximum to ${LAUNCH_CAP_TEXT} or less.`;
     // Plan 2 Task 18: a team member without the Offers role.
     case 'forbidden':
     case 'owner-only':
@@ -345,9 +416,10 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
     case 'too-many-offers':
+      // C2-A1: the cap is per side now (owner 2026-11-01), not per market. COPY-UNSIGNED
       return n === 1
-        ? 'You have more offers in this market than the limit allows now. Remove one you no longer need, then turn this one on.'
-        : 'You have more offers in some markets than the limit allows now. Remove ones you no longer need, then turn these on.';
+        ? `${OFFER_CAP_LINE} Remove one you no longer need, then turn this one on.`
+        : `${OFFER_CAP_LINE} Remove ones you no longer need, then turn these on.`;
     default:
       return "Your account can't turn these offers on right now.";
   }
@@ -361,7 +433,7 @@ export function myOffersCantDoRow(code: CantDoCode): string {
     case 'trading-hold':
       return 'Stayed off: your account has a trading hold.';
     case 'too-many-offers':
-      return 'Stayed off: over the offer limit for this market.';
+      return 'Stayed off: over the offer limit.'; // C2-A1: per side, not per market. COPY-UNSIGNED
     default:
       return 'Stayed off.';
   }
@@ -409,6 +481,8 @@ export const MY_OFFERS_HIDDEN = {
   'trading-hold': 'On, hidden while your account has a trading hold',
   'review-pending': 'On, hidden until you rate your last trade', // COPY-UNSIGNED (Plan 5 Task 3 review M3)
   'method-unavailable': "On, hidden: this payment method isn't available right now",
+  // COPY-UNSIGNED (J-16; Task 34 review M4): none of the offer's currencies has a market price now.
+  'no-price': 'On, hidden: no market price for its currencies right now',
 } as const;
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
 
@@ -423,23 +497,27 @@ export const TOO_MANY_APPROVALS_CODE = 'too-many-approvals' satisfies CantDoCode
 export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
 
 /**
- * 403 `recovery-hold`: the account's 24-hour hold after a login with only one way of proving it's
- * you, or a backup login (Plan 2 Task 17; owner 2026-10-29 14:12: PGP alone does not end it).
- * `when` is "until Tue 3:05 PM" or "for a day".
+ * 403 `recovery-hold`: the account's 24-hour hold (hold model v3: only a recovery-code login starts
+ * one; a passkey, security key or PGP key the account held before it ends it, an authenticator
+ * code does not; owner 2 Nov and 6 Nov 2026, Q81). `when` is "until Tue 3:05 PM" or "for a day".
  */
 export function holdText(when: string): string {
-  return `Your account is on a 24-hour hold after a login with only one way of proving it's you, so new trades, wallet changes and login changes wait ${when}. Trades already open can still be finished. Logging in with a passkey, a security key, or your password and authenticator code from before the hold ends it.`;
+  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: held trades
+  // are paused for the account's own sessions too, owner G7; the old "can still be finished" was wrong).
+  return `Your account is on a 24-hour hold after a login with a recovery code, so new trades, wallet changes and login changes wait ${when}. Your open trades are paused until the hold ends or a moderator decides. Logging in with a passkey, a security key or a PGP key you had before the hold ends it.`;
 }
 
 /**
  * 403 `recovery-hold` on the login screen (review round 3 R3-M3): this login was refused a session
- * because it waits, and the hold is still running. `when` is "until Tue 3:05 PM" or "for a day".
+ * because it waits, and the hold is still running. `when` is "until 6 Nov 2026, 15:00 UTC" or "for a day".
  * It says what this login cannot do and what the reader can do, whatever methods the account has
- * (the login screen does not know them); review round 4 R4-M3: a backup login spends a recovery
- * code and pushes the hold's end out to 24 hours from then. COPY-UNSIGNED
+ * (the login screen does not know them). It offers no backup login (lead review 8 Nov: the used
+ * code is spent and its replacement sealed until the owner's next login). COPY-UNSIGNED
  */
 export function holdLoginText(when: string): string {
-  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with only one way of proving it's you, and a login like this one waits until the hold ends. If you had a passkey, a security key, or an authenticator code set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open. A backup login uses up that recovery code and makes the hold last 24 hours from then.`;
+  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: no backup
+  // login meanwhile, as the used code is spent and its replacement sealed; held trades are paused).
+  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with a recovery code, and a login like this one waits until the hold ends. If you had a passkey, a security key or a PGP key set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. Your open trades are paused until the hold ends or a moderator decides.`;
 }
 
 /** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
@@ -450,12 +528,14 @@ export const TOO_MANY_APPROVALS =
 export const WEAK_SESSION_CODE = 'weak-session' satisfies CantDoCode;
 
 /**
- * 403 `weak-session`: this device logged in with only one way of proving it's you, so it cannot
- * log out a device that logged in more strongly (or any device during the 24-hour hold), nor
- * answer a login made with a passkey or two ways.
+ * 403 `weak-session`: this device logged in with a username and password and nothing stronger, so
+ * it cannot log out a device that logged in more strongly or earlier than itself (owner g64, lead
+ * review 8 Nov: it may log out the owner's newer username-and-password devices), nor answer a
+ * strong login (a passkey, security key, PGP key since Q81, or password and code).
  */
+// DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
 export const WEAK_SESSION_TEXT =
-  "This device logged in with only one way of proving it's you, so it can't log out devices that logged in more securely, or answer their logins. Do this from a device where you logged in with a passkey, a security key, or your password and authenticator code.";
+  "This device logged in with just a username and password, so it can't log out devices that logged in more securely, or answer their logins. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
 
 /** 403 `recovery-hold` when approving a new device during the hold; blocking it still works. */
 export function holdApproveText(when: string): string {
@@ -491,9 +571,11 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
     case 'member-cannot-sign':
       return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
-    // Owner 1 Nov 2026: inviting a member and changing roles need a strong login (API 403 weak-session).
+    // Owner 1 Nov 2026: inviting a member needs a strong login (API 403 weak-session). Owner p5-7:
+    // role changes and removals from such a device are not refused; they wait 24 hours.
     case 'weak-session':
-      return "This device logged in with only one way of proving it's you, so it can't invite team members or change their roles. Do this from a device where you logged in with a passkey, a security key, or your password and authenticator code.";
+      // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: role changes are staged now)
+      return "This device logged in with just a username and password, so it can't invite team members. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
     default:
       return "This can't be done on the team right now.";
   }
@@ -537,3 +619,14 @@ export const TICKET_CANT_OPEN_TITLE = "This ticket can't be opened yet";
 export const ticketOpenText = (n: number): string => `Ticket ${n} is still open. Add to it, or close it, before you open another.`;
 export const ticketLimitText = (perDay: number): string =>
   `You've opened ${perDay} tickets today, the most for one day. The limit helps keep spam out. You can open another tomorrow.`;
+
+// ---------------------------------------------------------------------------------------------
+// Hold model v3 (owner G36, 7 Nov 2026): at most 20 changes (drafts and waiting ones) per account.
+
+/** The change cap's code (409 `too-many-changes` `{ max }`). */
+export const TOO_MANY_CHANGES_CODE = 'too-many-changes' satisfies CantDoCode;
+
+/** 409 `too-many-changes`: the account already holds the most changes it can. COPY-UNSIGNED */
+export function holdChangesCantDoText(max: number | undefined): string {
+  return `Your account already has ${max ?? 20} changes waiting or in drafts, the most it can hold at once. Submit or cancel some of them under Account changes, then make this change again.`;
+}

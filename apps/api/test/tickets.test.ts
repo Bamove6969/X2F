@@ -63,8 +63,8 @@ async function member(teamId: string): Promise<{ id: string; loginId: string; lo
   const loginId = await seedAccount(deps, { loginName, displayName: `m-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
-     values ($1, $2, $3, '{trades}', $4, $5, $4, $4) returning id`,
+    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+     values ($1, $2, $3, '{trades-see-active}', $4, $5, $4, $4) returning id`,
     [teamId, name, name.toLowerCase(), now, loginId],
   );
   const b = new Browser(app);

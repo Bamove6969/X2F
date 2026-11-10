@@ -18,6 +18,7 @@ export function parseChatView(v: unknown): ChatApiView | null {
     role: v.role,
     counterparty: cp,
     disputeOpen: v.disputeOpen === true,
+    tradeSecuredAt: typeof v.tradeSecuredAt === 'string' ? v.tradeSecuredAt : null,
     mySignPublic: typeof v.mySignPublic === 'string' ? v.mySignPublic : null,
   };
 }

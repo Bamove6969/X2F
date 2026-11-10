@@ -1,29 +1,46 @@
-import { offerRate } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, offerRate } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { rateSql } from '../src/offers/routes.js';
+import { OFFER_CAP_DEFAULTS, OFFER_CAP_KEYS, rateSql } from '../src/offers/routes.js';
+import { currencyExponent } from '../src/price/currencies.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { currentLoginTag, makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { seedReviews, seedTrade } from './helpers/trades.js';
+import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 4: offers. Real Postgres (one database per file), a fake market so each test sets
 // the price feed up or down.
 
 const DAY = 86_400_000;
 
-/** The market the app sees: USD (and EUR at 0.9 USD) at `usdCentsPerXmr`, or nothing while down. */
+/**
+ * The market the app sees: USD at `usdCentsPerXmr`, and a few currencies at a fixed number of their
+ * minor units per US cent (EUR 0.9, GBP 0.8, BRL 5, SEK 10, MXN 18, THB 35), or nothing while down.
+ * Every other currency the feed knows is 1:1 with USD: posting converts every band's top edge to US
+ * dollars and fails closed without a price (the launch cap, owner p11-6), and J-16 (owner Q5) lists
+ * no offers in a currency without a price. A test that needs a currency with no price adds it to
+ * `unpriced` after posting and takes it out again; one that needs a rate move sets `fx` for it.
+ * Offers are market ± % only (owner Q1), so a test that needs two different rates uses two margins
+ * over one of these.
+ */
 const market = { usdCentsPerXmr: 33_000n as bigint | null };
+const PER_USD: Record<string, [bigint, bigint]> = { USD: [1n, 1n], EUR: [9n, 10n], GBP: [8n, 10n], BRL: [5n, 1n], SEK: [10n, 1n], MXN: [18n, 1n], THB: [35n, 1n] };
+/** Currencies with no price in the fake feed right now (see above). */
+const unpriced = new Set<string>();
+/** A currency's minor units per US cent right now where a test moved it off PER_USD (a rate move). */
+const fx: Record<string, [bigint, bigint]> = {};
 
 function quote(currency: string): MarketQuote | null {
   const usd = market.usdCentsPerXmr;
-  if (usd === null) return null;
-  const local = currency === 'USD' ? usd : currency === 'EUR' ? (usd * 9n) / 10n : null;
-  if (local === null) return null;
+  if (usd === null || unpriced.has(currency)) return null;
+  const ratio = fx[currency] ?? PER_USD[currency] ?? (currencyExponent(currency) !== null ? ([1n, 1n] as [bigint, bigint]) : undefined);
+  if (ratio === undefined) return null;
+  const local = (usd * ratio[0]) / ratio[1];
   return {
-    price: { currency, centsPerXmr: local }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
+    price: { currency, centsPerXmr: local }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: currencyExponent(currency)!,
     usdCentsPerXmr: usd, fx: null,
   };
 }
@@ -61,6 +78,8 @@ afterAll(async () => {
 });
 beforeEach(() => {
   market.usdCentsPerXmr = 33_000n;
+  unpriced.clear();
+  for (const k of Object.keys(fx)) delete fx[k];
 });
 
 type Who = Awaited<ReturnType<typeof trader>>;
@@ -88,7 +107,7 @@ const BODY = {
 };
 
 async function post(who: Who, over: Record<string, unknown> = {}): Promise<string> {
-  const res = await who.browser.post('/v1/offers', { ...BODY, ...over });
+  const res = await who.browser.post('/v1/offers', flexBody({ ...BODY, ...over }));
   expect(res.statusCode, res.body).toBe(201);
   const id = (res.json() as { id: string }).id;
   expect(id).toMatch(/^[0-9a-f-]{36}$/);
@@ -124,8 +143,11 @@ describe('POST /v1/offers and GET /v1/offers', () => {
       expect(out.statusCode, url).toBe(401);
       expect(out.body, url).toBe('{"error":"not-authenticated"}');
     }
-    // CAD has no market in the fake feed: the market offer has no rate now.
-    const cards = await list('side=sell&method=ZELLE&currency=CAD&sort=best');
+    // Once posted, CAD loses its market in the fake feed: no list shows the offer in CAD (owner Q5,
+    // 2 Nov: hidden for that currency only), and the single-offer route shows it with no rate now.
+    unpriced.add('CAD');
+    expect(await list('side=sell&method=ZELLE&currency=CAD&sort=best')).toEqual([]);
+    const cards = [(await viewer.get(`/v1/offers/${id}`)).json() as Record<string, unknown>];
     expect(cards).toEqual([
       {
         id,
@@ -143,6 +165,12 @@ describe('POST /v1/offers and GET /v1/offers', () => {
         minFiatCents: '5000',
         maxFiatCents: '200000',
         minTrades: null,
+        // J-16: the card's currency, every currency of the offer, its bands and its methods (no instructions).
+        currency: 'CAD',
+        currencies: ['CAD'],
+        tiers: [{ min: '5000', max: '200000', marginBps: 50, minTrades: null, methodIds: null }],
+        methods: [{ methodId: 'ZELLE', adjustBps: 0 }],
+        side: 'sell', methodId: 'ZELLE', terms: BODY.terms, status: 'live',
       },
     ]);
     // The private login name is never in a public answer (spec 6.1, FU-A). The database holds only
@@ -169,33 +197,41 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     expect(card).toMatchObject({ id, rate: '29403', pricing: { mode: 'market', marginBps: -100 } });
     const one = await viewer.get(`/v1/offers/${id}`);
     expect(one.statusCode).toBe(200);
+    // The list card carries the signed-in viewer's completed trades (the quote reads the offer from
+    // its list and picks its band with them, J-16); the single-offer route answers the offer itself.
+    const { viewerTrades, ...shown } = card!;
+    expect(viewerTrades).toBe(20);
     expect(one.json()).toEqual({
-      ...card, side: 'sell', methodId: 'ZELLE', currency: 'EUR', terms: BODY.terms, status: 'live',
+      ...shown, side: 'sell', methodId: 'ZELLE', terms: BODY.terms, status: 'live',
     });
     expect((await viewer.get('/v1/offers/00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
     expect((await viewer.get('/v1/offers/not-a-uuid')).statusCode).toBe(404);
   });
 
-  it('a fixed-price offer lists its own rate while the feed is down; a market offer lists rate null', async () => {
+  it('while the feed is down no list shows the offers (owner Q5); the single offer shows rate null (no fixed price, owner Q1)', async () => {
     const p = await poster();
-    const fixed = await post(p, { currency: 'GBP', pricing: { mode: 'fixed', centsPerXmr: '28000' } });
-    const mkt = await post(p, { currency: 'GBP', side: 'sell' });
+    const q = await poster();
+    // GBP market: 0.8 × $330.00 = £264.00; −10% is £237.60, +10% is £290.40.
+    const low = await post(p, { currency: 'GBP', pricing: { mode: 'market', marginBps: -1000 } });
+    const high = await post(q, { currency: 'GBP', pricing: { mode: 'market', marginBps: 1000 } });
+    await deps.db.query('update offers set created_at = created_at - interval \'1 minute\' where id = $1', [low]);
+    expect((await list('side=sell&method=ZELLE&currency=GBP')).map((c) => [c.id, c.rate])).toEqual([[low, '23760'], [high, '29040']]);
     market.usdCentsPerXmr = null;
-    const cards = await list('side=sell&method=ZELLE&currency=GBP');
-    expect(cards.find((c) => c.id === fixed)).toMatchObject({ rate: '28000', pricing: { mode: 'fixed', centsPerXmr: '28000' } });
-    expect(cards.find((c) => c.id === mkt)).toMatchObject({ rate: null });
-    // Best price for someone buying XMR (sell ads): lowest first; no price now goes last.
-    expect(cards.map((c) => c.id)).toEqual([fixed, mkt]);
+    expect(await list('side=sell&method=ZELLE&currency=GBP')).toEqual([]);
+    for (const [id, marginBps] of [[high, 1000], [low, -1000]] as const) {
+      expect((await viewer.get(`/v1/offers/${id}`)).json()).toMatchObject({ rate: null, pricing: { mode: 'market', marginBps } });
+    }
   });
 
   it('sorts best price for the person browsing: sell ads lowest first, buy ads highest first', async () => {
     const p = await poster();
     const q = await poster();
-    const cheap = await post(p, { currency: 'BRL', pricing: { mode: 'fixed', centsPerXmr: '150000' } });
-    const dear = await post(q, { currency: 'BRL', pricing: { mode: 'fixed', centsPerXmr: '160000' } });
+    // BRL market 165000: −10% = 148500, −3% = 160050.
+    const cheap = await post(p, { currency: 'BRL', pricing: { mode: 'market', marginBps: -1000 } });
+    const dear = await post(q, { currency: 'BRL', pricing: { mode: 'market', marginBps: -300 } });
     expect((await list('side=sell&method=ZELLE&currency=BRL&sort=best')).map((c) => c.id)).toEqual([cheap, dear]);
-    const low = await post(p, { side: 'buy', currency: 'BRL', pricing: { mode: 'fixed', centsPerXmr: '150000' } });
-    const high = await post(q, { side: 'buy', currency: 'BRL', pricing: { mode: 'fixed', centsPerXmr: '160000' } });
+    const low = await post(p, { side: 'buy', currency: 'BRL', pricing: { mode: 'market', marginBps: -1000 } });
+    const high = await post(q, { side: 'buy', currency: 'BRL', pricing: { mode: 'market', marginBps: -300 } });
     expect((await list('side=buy&method=ZELLE&currency=BRL&sort=best')).map((c) => c.id)).toEqual([high, low]);
     // Most trades first.
     await history(q.id, { days: 1, completed: 2 });
@@ -218,24 +254,24 @@ describe('POST /v1/offers and GET /v1/offers', () => {
 
   it('a staff account cannot post (wrong-account-kind); logged out is 401', async () => {
     const staff = await trader('staff');
-    const res = await staff.browser.post('/v1/offers', BODY);
+    const res = await staff.browser.post('/v1/offers', flexBody(BODY));
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'wrong-account-kind' });
-    expect((await anon.post('/v1/offers', BODY)).statusCode).toBe(401);
+    expect((await anon.post('/v1/offers', flexBody(BODY))).statusCode).toBe(401);
   });
 
   it('SBP (legal review) → 409 method-unavailable; an unknown method → 400', async () => {
     const p = await poster();
-    const res = await p.browser.post('/v1/offers', { ...BODY, methodId: 'SBP' });
+    const res = await p.browser.post('/v1/offers', flexBody({ ...BODY, methodId: 'SBP' }));
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: 'method-unavailable' });
-    expect((await p.browser.post('/v1/offers', { ...BODY, methodId: 'NOPE' })).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, methodId: 'NOPE' }))).statusCode).toBe(400);
   });
 
   it('a held account and a paused site cannot post', async () => {
     const p = await poster();
     await deps.db.query('insert into trading_holds (account_id, created_at) values ($1, $2)', [p.id, deps.clock()]);
-    const held = await p.browser.post('/v1/offers', BODY);
+    const held = await p.browser.post('/v1/offers', flexBody(BODY));
     expect(held.statusCode).toBe(409);
     expect(held.json()).toEqual({ error: 'trading-hold' });
     await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1', [p.id, deps.clock()]);
@@ -243,7 +279,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
 
     await deps.db.query('update site_flags set trading_paused = true');
     try {
-      const paused = await p.browser.post('/v1/offers', BODY);
+      const paused = await p.browser.post('/v1/offers', flexBody(BODY));
       expect(paused.statusCode).toBe(409);
       expect(paused.json()).toEqual({ error: 'trading-paused' });
     } finally {
@@ -254,11 +290,11 @@ describe('POST /v1/offers and GET /v1/offers', () => {
   it('no usable wallet → 409 no-wallet, also with one waiting (24-hour) wallet only', async () => {
     const t = await trader();
     await makeVendor(deps, t.id);
-    const none = await t.browser.post('/v1/offers', BODY);
+    const none = await t.browser.post('/v1/offers', flexBody(BODY));
     expect(none.statusCode).toBe(409);
     expect(none.json()).toEqual({ error: 'no-wallet' });
     await addWallet(t.id, false);
-    expect((await t.browser.post('/v1/offers', BODY)).json()).toEqual({ error: 'no-wallet' });
+    expect((await t.browser.post('/v1/offers', flexBody(BODY))).json()).toEqual({ error: 'no-wallet' });
     await addWallet(t.id, true);
     await post(t);
   });
@@ -268,7 +304,10 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     const bad: Record<string, unknown>[] = [
       { pricing: { mode: 'market', marginBps: 50, centsPerXmr: '33000' } },
       { pricing: { mode: 'fixed', centsPerXmr: '33000', marginBps: 0 } },
+      // Owner Q1: no fixed-price offers, however well formed.
+      { pricing: { mode: 'fixed', centsPerXmr: '33000' } },
       { pricing: { mode: 'market', marginBps: 5001 } },
+      { pricing: { mode: 'market', marginBps: -5001 } },
       { pricing: { mode: 'market', marginBps: 1.5 } },
       { pricing: { mode: 'fixed', centsPerXmr: '0' } },
       { pricing: { mode: 'fixed', centsPerXmr: 33000 } },
@@ -278,7 +317,8 @@ describe('POST /v1/offers and GET /v1/offers', () => {
       { minFiatCents: '0' },
       { minFiatCents: '300000' },
       { minFiatCents: '50.00' },
-      { maxFiatCents: '1'.repeat(16) },
+      // 14 whole digits: a band edge has at most 12 (J-16).
+      { maxFiatCents: '1'.repeat(14) + '00' },
       { minTrades: 7 },
       // Owner, 8 Nov: no minimum is null; 0, 1, 100 and strings are not choices.
       { minTrades: 0 },
@@ -291,11 +331,11 @@ describe('POST /v1/offers and GET /v1/offers', () => {
       { extra: true },
     ];
     for (const over of bad) {
-      const res = await p.browser.post('/v1/offers', { ...BODY, ...over });
+      const res = await p.browser.post('/v1/offers', flexBody({ ...BODY, ...over }));
       expect(res.statusCode, JSON.stringify(over)).toBe(400);
     }
     const { methodId: _m, ...noMethod } = BODY;
-    expect((await p.browser.post('/v1/offers', noMethod)).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody(noMethod))).statusCode).toBe(400);
     // Newlines in the terms are fine.
     await post(p, { terms: 'Line one.\nLine two.', minTrades: 50 });
   });
@@ -310,16 +350,16 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     }
     // The key is required: leaving it out is not "no minimum".
     const { minTrades: _t, ...noMin } = BODY;
-    expect((await p.browser.post('/v1/offers', noMin)).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody(noMin))).statusCode).toBe(400);
   });
 
   it('a gift-card offer must name the card country, and carries it (Revision 2026-10-27)', async () => {
     const p = await poster();
-    const gift = { methodId: 'AMAZON_GIFT_CARD', currency: 'USD', side: 'buy' };
-    expect((await p.browser.post('/v1/offers', { ...BODY, ...gift })).statusCode).toBe(400);
-    expect((await p.browser.post('/v1/offers', { ...BODY, ...gift, country: 'us' })).statusCode).toBe(400);
+    const gift = { methodId: 'AMAZON_GIFT_CARD', currency: 'USD', side: 'buy', giftCardTerms: GIFT_CARD_TERMS_VERSION };
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, ...gift }))).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, ...gift, country: 'us' }))).statusCode).toBe(400);
     // A country on a method that is not a gift card is refused too.
-    expect((await p.browser.post('/v1/offers', { ...BODY, country: 'US' })).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, country: 'US' }))).statusCode).toBe(400);
     const id = await post(p, { ...gift, country: 'US' });
     const [card] = await list('side=buy&method=AMAZON_GIFT_CARD&currency=USD');
     expect(card).toMatchObject({ id, country: 'US' });
@@ -327,6 +367,69 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     // A card without one has no country key at all.
     const plain = await post(p, { currency: 'INR' });
     expect('country' in (await list('side=sell&method=ZELLE&currency=INR')).find((c) => c.id === plain)!).toBe(false);
+  });
+});
+
+describe('gift-card offers (J-17)', () => {
+  const gift = { methodId: 'STEAM_GIFT_CARD', side: 'buy', giftCardTerms: GIFT_CARD_TERMS_VERSION };
+
+  it("the card's currency follows its country (T-081)", async () => {
+    const p = await poster();
+    for (const [country, currency] of [['US', 'EUR'], ['DE', 'USD'], ['CA', 'USD'], ['AQ', 'USD']] as const) {
+      const res = await p.browser.post('/v1/offers', flexBody({ ...BODY, ...gift, country, currency }));
+      expect(res.statusCode, `${country} ${currency}`).toBe(400);
+    }
+    await post(p, { ...gift, country: 'DE', currency: 'EUR' });
+    await post(p, { ...gift, country: 'US', currency: 'USD' });
+    // Panama's cards may be in US dollars (ISO 4217 lists both legal tenders).
+    await post(p, { ...gift, country: 'PA', currency: 'USD' });
+  });
+
+  it('a gift-card method among several (J-16 x J-17, lead ruling): that method may be offered only in a currency of the card\'s country; the others in any', async () => {
+    const p = await poster();
+    const bands = [{ min: '50', max: '2000', marginBps: 50, minTrades: null }];
+    const two = (giftMethod: Record<string, unknown>, over: Record<string, unknown> = {}) => ({
+      side: 'sell', terms: 'Zelle or a Steam card.', country: 'US', giftCardTerms: GIFT_CARD_TERMS_VERSION,
+      currencies: [{ currency: 'USD', bands }, { currency: 'EUR', bands }],
+      methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: '' }, { methodId: 'STEAM_GIFT_CARD', adjustBps: 0, instructions: '', ...giftMethod }],
+      ...over,
+    });
+    // The card method in every currency of the offer (the default), or named in EUR too: EUR is not a US card's.
+    expect((await p.browser.post('/v1/offers', two({}))).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', two({ currencies: ['USD', 'EUR'] }))).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', two({ currencies: ['EUR'] }))).statusCode).toBe(400);
+    // The country still has to be the card's for the card method's own currency.
+    expect((await p.browser.post('/v1/offers', two({ currencies: ['USD'] }, { country: 'DE' }))).statusCode).toBe(400);
+    // The terms version is the offer's whenever any method is a gift card.
+    const { giftCardTerms: _v, ...unticked } = two({ currencies: ['USD'] });
+    expect((await p.browser.post('/v1/offers', unticked)).statusCode).toBe(400);
+    expect((await deps.db.query('select 1 from offers where account_id = $1', [p.id])).rowCount).toBe(0);
+    // The card method in US dollars only, Zelle in both: posted, with the card's country and the terms on the offer.
+    const res = await p.browser.post('/v1/offers', two({ currencies: ['USD'] }));
+    expect(res.statusCode, res.body).toBe(201);
+    const id = (res.json() as { id: string }).id;
+    expect((await deps.db.query('select country, gift_card_terms from offers where id = $1', [id])).rows[0]).toEqual({ country: 'US', gift_card_terms: GIFT_CARD_TERMS_VERSION });
+    expect((await list('side=sell&method=STEAM_GIFT_CARD&currency=USD')).find((c) => c.id === id)).toMatchObject({ country: 'US' });
+    expect((await list('side=sell&method=STEAM_GIFT_CARD&currency=EUR')).some((c) => c.id === id)).toBe(false);
+    expect((await list('side=sell&method=ZELLE&currency=EUR')).find((c) => c.id === id)).toMatchObject({ country: 'US' });
+  });
+
+  it("the poster ticks the gift-card terms; the version they ticked is kept on the offer (F13)", async () => {
+    const p = await poster();
+    const { giftCardTerms: _v, ...unticked } = gift;
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, ...unticked, country: 'US' }))).statusCode).toBe(400);
+    // A page showing older words cannot agree to these.
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, ...gift, country: 'US', giftCardTerms: 'gift-card-terms-unsigned-0' }))).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, ...gift, country: 'US', giftCardTerms: true }))).statusCode).toBe(400);
+    // Not a gift card: no gift-card terms.
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, giftCardTerms: GIFT_CARD_TERMS_VERSION }))).statusCode).toBe(400);
+    const id = await post(p, { ...gift, country: 'US' });
+    const plain = await post(p, { currency: 'EUR' });
+    const { rows } = await deps.db.query<{ id: string; gift_card_terms: string | null }>(
+      'select id, gift_card_terms from offers where id = any($1) order by id = $2 desc',
+      [[id, plain], id],
+    );
+    expect(rows).toEqual([{ id, gift_card_terms: GIFT_CARD_TERMS_VERSION }, { id: plain, gift_card_terms: null }]);
   });
 });
 
@@ -371,6 +474,33 @@ describe('PATCH /v1/offers/:id', () => {
     // Pausing and removing stay allowed under a hold.
     expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'paused' })).statusCode).toBe(200);
   });
+
+  it('relisting checks the launch cap as posting does: an offer from before the cap, or one a rate move put above it, stays off (launch-rules review F1)', async () => {
+    const p = await poster();
+    const CAP = { error: 'launch-cap', capUsdCents: '500000' };
+    // An offer from before the cap, paused, with a $20,000 band (J-16: bands are written once, so it
+    // is inserted as migration 490 would have moved it).
+    const old = await insertOffer(deps.db, { accountId: p.id, side: 'buy', methodId: 'ZELLE', currency: 'USD', min: 5000, max: 2_000_000, status: 'paused', at: deps.clock() });
+    const refused = await p.browser.patch(`/v1/offers/${old}`, { status: 'live' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toEqual(CAP);
+    expect((await deps.db.query<{ status: string }>('select status from offers where id = $1', [old])).rows[0]!.status).toBe('paused');
+    // A euro band is counted in US dollars at the price now: €4,500 is $5,000 at 0.9 and posts; after
+    // the euro moves to 0.8 it is $5,625 and the offer does not go live again.
+    const eur = await post(p, { currency: 'EUR', maxFiatCents: '450000' });
+    await p.browser.patch(`/v1/offers/${eur}`, { status: 'paused' });
+    fx.EUR = [8n, 10n];
+    expect((await p.browser.patch(`/v1/offers/${eur}`, { status: 'live' })).json()).toEqual(CAP);
+    delete fx.EUR;
+    // No price to count its only currency with fails closed, as posting does.
+    unpriced.add('EUR');
+    expect((await p.browser.patch(`/v1/offers/${eur}`, { status: 'live' })).json()).toEqual({ error: 'price-unavailable' });
+    unpriced.delete('EUR');
+    // Within the cap it relists as before.
+    expect((await p.browser.patch(`/v1/offers/${eur}`, { status: 'live' })).json()).toEqual({ id: eur, status: 'live' });
+    // Off the shared euro list again.
+    await p.browser.patch(`/v1/offers/${eur}`, { status: 'removed' });
+  });
 });
 
 describe('who is listed', () => {
@@ -388,19 +518,20 @@ describe('who is listed', () => {
 
   it('/v1/methods counts live offers from the offers table, with the best rate', async () => {
     const p = await poster();
-    await post(p, { currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '350000' } });
-    await post(p, { currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '340000' } });
-    const paused = await post(p, { currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '100' } });
+    // SEK market 330000: +5% = 346500, +2% = 336600, −50% = 165000, +9% = 359700.
+    await post(p, { currency: 'SEK', pricing: { mode: 'market', marginBps: 500 } });
+    await post(p, { currency: 'SEK', pricing: { mode: 'market', marginBps: 200 } });
+    const paused = await post(p, { currency: 'SEK', pricing: { mode: 'market', marginBps: -5000 } });
     await p.browser.patch(`/v1/offers/${paused}`, { status: 'paused' });
     const res = await viewer.get('/v1/methods?side=sell&currency=SEK');
     expect(res.statusCode).toBe(200);
     const { live } = res.json() as { live: { id: string; offers: number; bestRate: string | null }[] };
-    expect(live).toEqual([expect.objectContaining({ id: 'ZELLE', offers: 2, bestRate: '340000' })]);
+    expect(live).toEqual([expect.objectContaining({ id: 'ZELLE', offers: 2, bestRate: '336600' })]);
     // Buy ads: the best is the highest.
-    await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '340000' } });
-    await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '360000' } });
+    await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'market', marginBps: 200 } });
+    await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'market', marginBps: 900 } });
     const buy = (await viewer.get('/v1/methods?side=buy&currency=SEK')).json() as { live: { id: string; bestRate: string | null }[] };
-    expect(buy.live).toEqual([expect.objectContaining({ id: 'ZELLE', bestRate: '360000' })]);
+    expect(buy.live).toEqual([expect.objectContaining({ id: 'ZELLE', bestRate: '359700' })]);
   });
 });
 
@@ -461,10 +592,10 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     // (Another poster: p already has its 3 buying offers, the per-account cap.)
     const eur = await post(await poster(), { currency: 'EUR', minFiatCents: '50000', maxFiatCents: '60000', side: 'buy' });
     expect((await list('side=buy&method=ZELLE&currency=EUR', starter.browser)).find((c) => c.id === eur)?.opensAt).toBe('building');
-    // A fixed-price offer is converted the same way (its minimum is still money in its currency).
+    // An offer 50% below the market is measured the same way (its minimum is still money in its currency).
     // (Another poster, for the same reason.)
-    const fixedBig = await post(await poster(), { currency: 'USD', side: 'buy', minFiatCents: '150000', maxFiatCents: '160000', pricing: { mode: 'fixed', centsPerXmr: '1' } });
-    expect((await list(q, starter.browser)).find((c) => c.id === fixedBig)?.opensAt).toBe('graduated');
+    const halfBig = await post(await poster(), { currency: 'USD', side: 'buy', minFiatCents: '150000', maxFiatCents: '160000', pricing: { mode: 'market', marginBps: -5000 } });
+    expect((await list(q, starter.browser)).find((c) => c.id === halfBig)?.opensAt).toBe('graduated');
 
     // While the market is down the cap cannot be checked here: no mark (the take checks it).
     market.usdCentsPerXmr = null;
@@ -482,30 +613,32 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
 });
 
 describe('review fixes (Task 4 review 2026-10-28)', () => {
-  it('Q31: at most 3 live or paused selling offers per account across every method and currency (409 too-many-offers); removed ones do not count', async () => {
+  it('Q31: at most 3 live or paused selling offers per account across every method and currency (409 too-many-offers with the caps, review M2); removed ones do not count', async () => {
     const p = await poster();
     // Three markets, one side: the account's selling count is 3 whatever the method and currency.
     const ids = [await post(p, { currency: 'TRY' }), await post(p, { currency: 'EUR', methodId: 'REVOLUT' }), await post(p, { currency: 'GBP', methodId: 'REVOLUT' })];
     for (const [currency, methodId] of [['TRY', 'ZELLE'], ['ILS', 'REVOLUT'], ['CHF', 'REVOLUT']]) {
-      const over = await p.browser.post('/v1/offers', { ...BODY, currency, methodId });
+      const over = await p.browser.post('/v1/offers', flexBody({ ...BODY, currency, methodId }));
       expect(over.statusCode).toBe(409);
-      expect(over.json()).toEqual({ error: 'too-many-offers' });
+      expect(over.json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 3 });
     }
     // A paused offer still counts (no seventh kept on hold); a removed one does not.
     await p.browser.patch(`/v1/offers/${ids[0]}`, { status: 'paused' });
-    expect((await p.browser.post('/v1/offers', { ...BODY, currency: 'NZD' })).statusCode).toBe(409);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'NZD' }))).statusCode).toBe(409);
     await p.browser.patch(`/v1/offers/${ids[0]}`, { status: 'removed' });
     await post(p, { currency: 'NZD' });
-    expect((await p.browser.post('/v1/offers', { ...BODY, currency: 'AUD' })).json()).toEqual({ error: 'too-many-offers' });
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'AUD' }))).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 3 });
   });
 
   it('Q31: exactly 3 buying + 3 selling offers per account, a seventh refused; the owner settings move each side, relisting included', async () => {
+    expect(OFFER_CAP_DEFAULTS).toEqual({ buy: 3, sell: 3 });
+    expect(OFFER_CAP_KEYS).toEqual({ buy: 'offers_max_buy', sell: 'offers_max_sell' });
     const p = await poster();
     for (const side of ['sell', 'buy']) for (const currency of ['USD', 'EUR', 'GBP']) await post(p, { currency, side, methodId: 'REVOLUT' });
     for (const side of ['sell', 'buy']) {
-      const over = await p.browser.post('/v1/offers', { ...BODY, side, currency: 'ILS', methodId: 'REVOLUT' });
+      const over = await p.browser.post('/v1/offers', flexBody({ ...BODY, side, currency: 'ILS', methodId: 'REVOLUT' }));
       expect(over.statusCode).toBe(409);
-      expect(over.json()).toEqual({ error: 'too-many-offers' });
+      expect(over.json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 3 });
     }
     const { rows } = await deps.db.query(`select count(*)::int as n from offers where account_id = $1 and status <> 'removed'`, [p.id]);
     expect(rows[0]).toEqual({ n: 6 });
@@ -518,9 +651,9 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     await q.browser.patch(`/v1/offers/${b}`, { status: 'paused' });
     await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_sell', 1, now())`);
     try {
-      expect((await q.browser.post('/v1/offers', { ...BODY, currency: 'NZD' })).json()).toEqual({ error: 'too-many-offers' });
+      expect((await q.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'NZD' }))).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
       // Relisting counts the others on its side: one other paused selling offer is already the cap of 1.
-      expect((await q.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers' });
+      expect((await q.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
       // The buying side keeps its own cap of 3.
       await post(q, { currency: 'NZD', side: 'buy' });
       await q.browser.patch(`/v1/offers/${b}`, { status: 'removed' });
@@ -530,7 +663,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     }
     await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_buy', 2, now())`);
     try {
-      expect((await q.browser.post('/v1/offers', { ...BODY, side: 'buy', currency: 'CAD' })).json()).toEqual({ error: 'too-many-offers' });
+      expect((await q.browser.post('/v1/offers', flexBody({ ...BODY, side: 'buy', currency: 'CAD' }))).json()).toEqual({ error: 'too-many-offers', buy: 2, sell: 3 });
       await post(q, { currency: 'CAD' });
     } finally {
       await deps.db.query(`delete from owner_settings where key = 'offers_max_buy'`);
@@ -539,17 +672,20 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
 
   it('I1: six concurrent posts in one market create exactly three offers (real Postgres)', async () => {
     const p = await poster();
-    const results = await Promise.all(Array.from({ length: 6 }, () => p.browser.post('/v1/offers', { ...BODY, currency: 'NGN' })));
+    const results = await Promise.all(Array.from({ length: 6 }, () => p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'NGN' }))));
     expect(results.map((r) => r.statusCode).sort()).toEqual([201, 201, 201, 409, 409, 409]);
-    const { rows } = await deps.db.query(`select count(*)::int as n from offers where account_id = $1 and currency = 'NGN'`, [p.id]);
+    const { rows } = await deps.db.query(
+      `select count(*)::int as n from offers o join offer_currencies c on c.offer_id = o.id where o.account_id = $1 and c.currency = 'NGN'`,
+      [p.id],
+    );
     expect(rows[0]).toEqual({ n: 3 });
   });
 
-  it('I1: the best sort is done by the database across market and fixed offers', async () => {
+  it('I1: the best sort is done by the database across margins', async () => {
     const p = await poster();
     const q = await poster();
-    // USD market 33000: +1% = 33330, −1% = 32670; fixed 33000 sits between.
-    const mid = await post(q, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'fixed', centsPerXmr: '33000' } });
+    // USD market 33000: +1% = 33330, −1% = 32670; 0% (q's) sits between.
+    const mid = await post(q, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'market', marginBps: 0 } });
     const up = await post(p, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'market', marginBps: 100 } });
     const down = await post(p, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'market', marginBps: -100 } });
     const cards = await list('side=sell&method=CASH_APP&currency=USD&sort=best');
@@ -559,7 +695,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
   it('M2: terms refuse C0/C1 controls (but newline and tab) and bidi controls; emoji with ZWJ and soft hyphens are fine; CRLF becomes LF', async () => {
     const p = await poster();
     for (const t of ['nul \u0000 here', 'c1 \u0085 here', 'del \u007f', 'bidi ‮', 'isolate ⁦x⁩', 'esc \u001b[31m']) {
-      const res = await p.browser.post('/v1/offers', { ...BODY, currency: 'UAH', terms: t });
+      const res = await p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'UAH', terms: t }));
       expect(res.statusCode, JSON.stringify(t)).toBe(400);
     }
     const id = await post(p, { currency: 'UAH', terms: 'Team \u{1F469}‍\u{1F4BB} ok­ay\r\nline two\rthree\tend' });
@@ -591,14 +727,16 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
 
   it("M7: the poster's own offers never carry opensAt; another viewer's single-offer answer does", async () => {
     const p = await poster(); // Starter, cap $200
-    const id = await post(p, { currency: 'SAR', minFiatCents: '50000', maxFiatCents: '90000', pricing: { mode: 'fixed', centsPerXmr: '120000' } });
-    // SAR has no market in the fake feed, so use USD for the converted cap.
+    const id = await post(p, { currency: 'SAR', minFiatCents: '50000', maxFiatCents: '90000' });
+    // Once posted, SAR loses its market in the fake feed (no opensAt for it), so use USD for the converted cap.
+    unpriced.add('SAR');
     const usd = await post(p, { currency: 'USD', side: 'sell', methodId: 'APPLE_CASH', minFiatCents: '50000', maxFiatCents: '90000' });
     expect((await list('side=sell&method=APPLE_CASH&currency=USD', p.browser)).find((c) => c.id === usd)!.opensAt).toBeUndefined();
     expect((await p.browser.get(`/v1/offers/${usd}`)).json()).not.toHaveProperty('opensAt');
     const other = await trader();
     expect((await other.browser.get(`/v1/offers/${usd}`)).json()).toMatchObject({ opensAt: 'building' });
     expect((await other.browser.get(`/v1/offers/${id}`)).json()).not.toHaveProperty('opensAt');
+    unpriced.delete('SAR');
   });
 
   it('M11: the single-offer route hides held and disabled posters and methods under legal review', async () => {
@@ -613,7 +751,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     // An SBP offer (only possible from before the method went under review) is hidden too.
     const p = await poster();
     const sbp = await post(p, { currency: 'BDT' });
-    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [sbp]);
+    await renameOfferMethod(deps.db, sbp, 'SBP');
     expect((await viewer.get(`/v1/offers/${sbp}`)).statusCode).toBe(404);
     expect(await list('side=sell&method=SBP&currency=BDT')).toEqual([]);
   });
@@ -662,7 +800,7 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     }
     const { rows } = await deps.db.query<{ rate: string }>(
       `select (${rateSql('o.m')})::text as rate
-         from (select 'market'::text as price_mode, null::numeric as fixed_cents_per_xmr, u.b as margin_bps, u.m::numeric as m, u.i
+         from (select u.b as margin_bps, u.m::numeric as m, u.i
                  from unnest($1::text[], $2::int[]) with ordinality as u(m, b, i)) o
         order by o.i`,
       [pairs.map(([m]) => m.toString()), pairs.map(([, b]) => b)],
@@ -672,32 +810,31 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
       return rows[i]!.rate === js ? [] : [{ m: m.toString(), b, js, sql: rows[i]!.rate }];
     });
     expect(differ).toEqual([]);
-    // A fixed offer's rate is its own price, also at the 20-digit maximum.
-    const fixed = await deps.db.query<{ rate: string }>(
-      `select (${rateSql('$1')})::text as rate from (select 'fixed'::text as price_mode, '99999999999999999999'::numeric as fixed_cents_per_xmr, null::int as margin_bps) o`,
-      ['33000'],
-    );
-    expect(fixed.rows[0]!.rate).toBe('99999999999999999999');
+    // No market price: no rate, whatever the margin (there is no fixed price to fall back on, owner Q1).
+    const none = await deps.db.query<{ rate: string | null }>(`select (${rateSql('$1')})::text as rate from (select 0 as margin_bps) o`, [null]);
+    expect(none.rows[0]!.rate).toBeNull();
   });
 
   it('Minor 1: the best sort uses the rate rounded half up, as the cards show it', async () => {
-    market.usdCentsPerXmr = 33_333n;
+    // $10.00 market: +0.04% = 1000.4 → 1000; +0.05% = 1000.5 → 1001; +0.06% = 1000.6 → 1001.
+    market.usdCentsPerXmr = 1_000n;
     const p = await poster();
     const q = await poster();
-    // 33333 × 1.0005 = 33349.67 → 33350, between the fixed 33349 and 33351.
-    const lo = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'fixed', centsPerXmr: '33349' } });
-    const hi = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'fixed', centsPerXmr: '33351' } });
-    const mid = await post(p, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'market', marginBps: 5 } });
+    const lo = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'market', marginBps: 4 } });
+    const five = await post(p, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'market', marginBps: 5 } });
+    const six = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'market', marginBps: 6 } });
+    // Five is older: unrounded, it would come before six; rounded, the two tie and the newer (six) is first.
+    await deps.db.query('update offers set created_at = created_at - interval \'1 minute\' where id = $1', [five]);
     const cards = await list('side=sell&method=TRANSFERWISE&currency=USD&sort=best');
-    expect(cards.map((c) => [c.id, c.rate])).toEqual([[lo, '33349'], [mid, '33350'], [hi, '33351']]);
+    expect(cards.map((c) => [c.id, c.rate])).toEqual([[lo, '1000'], [six, '1001'], [five, '1001']]);
   });
 
   it('Minor 2: online is seen in the current or previous 5-minute bucket, so polling learns only the bucket', async () => {
     const p = await poster();
     const q = await poster();
     // q is cheaper, so only the online sort puts p first.
-    const pOffer = await post(p, { currency: 'MXN', pricing: { mode: 'fixed', centsPerXmr: '600000' } });
-    const qOffer = await post(q, { currency: 'MXN', pricing: { mode: 'fixed', centsPerXmr: '500000' } });
+    const pOffer = await post(p, { currency: 'MXN', pricing: { mode: 'market', marginBps: 1000 } });
+    const qOffer = await post(q, { currency: 'MXN', pricing: { mode: 'market', marginBps: -1000 } });
     const seen = async (who: Who, at: string): Promise<void> => {
       await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [who.id, new Date(at)]);
     };
@@ -732,20 +869,20 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     const other = await trader();
     expect((await p.browser.post('/v1/account/blocks', { displayName: blocked.displayName })).statusCode).toBe(204);
     // q is cheaper and offline: the online sort puts p first, unless p counts as offline.
-    const pOffer = await post(p, { currency: 'JPY', pricing: { mode: 'fixed', centsPerXmr: '6000000' } });
-    const qOffer = await post(q, { currency: 'JPY', pricing: { mode: 'fixed', centsPerXmr: '5000000' } });
+    const pOffer = await post(p, { currency: 'THB', pricing: { mode: 'market', marginBps: 1000 } });
+    const qOffer = await post(q, { currency: 'THB', pricing: { mode: 'market', marginBps: -1000 } });
     await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [q.id, new Date(deps.clock().getTime() - DAY)]);
     const shown = { online: true, lastSeenAt: deps.clock().toISOString() };
     const hidden = { online: false, lastSeenAt: null };
     for (const who of [viewer, other.browser]) {
-      const cards = await list('side=sell&method=ZELLE&currency=JPY&sort=online', who);
+      const cards = await list('side=sell&method=ZELLE&currency=THB&sort=online', who);
       expect(cards.map((c) => c.id)).toEqual([pOffer, qOffer]);
       expect(cards.find((c) => c.id === pOffer)!.poster).toMatchObject(shown);
       expect(((await who.get(`/v1/offers/${pOffer}`)).json() as Card).poster).toMatchObject(shown);
     }
     // Since Task 37 the blocked viewer does not see p's offers at all (list and 404), so p's
     // presence cannot reach them through an offer (apps/api/test/blocks.test.ts).
-    expect((await list('side=sell&method=ZELLE&currency=JPY&sort=online', blocked.browser)).map((c) => c.id)).toEqual([qOffer]);
+    expect((await list('side=sell&method=ZELLE&currency=THB&sort=online', blocked.browser)).map((c) => c.id)).toEqual([qOffer]);
     expect((await blocked.browser.get(`/v1/offers/${pOffer}`)).statusCode).toBe(404);
     // The trade view's counterparty too.
     const { code } = await seedTrade(deps, { sellerId: p.id, buyerId: blocked.id, poster: 'seller' });
@@ -754,5 +891,50 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     expect((res.json() as { counterparty: Record<string, unknown> }).counterparty).toMatchObject(hidden);
     const mine = await p.browser.get(`/v1/trades/${code}`);
     expect((mine.json() as { counterparty: Record<string, unknown> }).counterparty).toMatchObject({ online: true });
+  });
+});
+
+describe('no fixed-price offers (owner Q1, 6 Nov; F1, 7 Nov: market ± % only, at most 50% either way)', () => {
+  it('a fixed price is refused with 400 and nothing is stored; 50% above or below is posted, 50.01% is refused', async () => {
+    const p = await poster();
+    const fixed = await p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'HUF', pricing: { mode: 'fixed', centsPerXmr: '33000' } }));
+    expect(fixed.statusCode, fixed.body).toBe(400);
+    expect(fixed.json()).toEqual({ error: 'bad-request' });
+    const { rows } = await deps.db.query(`select 1 from offers where account_id = $1`, [p.id]);
+    expect(rows).toHaveLength(0);
+    for (const marginBps of [5001, -5001]) {
+      const res = await p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'HUF', pricing: { mode: 'market', marginBps } }));
+      expect(res.statusCode, String(marginBps)).toBe(400);
+    }
+    const above = await post(p, { currency: 'USD', methodId: 'VENMO', pricing: { mode: 'market', marginBps: 5000 } });
+    const below = await post(p, { currency: 'USD', methodId: 'VENMO', pricing: { mode: 'market', marginBps: -5000 } });
+    // USD market $330.00: +50% is $495.00, −50% is $165.00.
+    expect((await viewer.get(`/v1/offers/${above}`)).json()).toMatchObject({ pricing: { mode: 'market', marginBps: 5000 }, rate: '49500' });
+    expect((await viewer.get(`/v1/offers/${below}`)).json()).toMatchObject({ pricing: { mode: 'market', marginBps: -5000 }, rate: '16500' });
+  });
+
+  it('an offer stored as fixed before the rule is kept, but never listed, counted, shown, switched or relisted', async () => {
+    const p = await poster();
+    const mkt = await post(p, { currency: 'HKD' });
+    // A row from before the rule: migration 345 refuses new ones, so lift it for the insert only.
+    await deps.db.query('alter table offers drop constraint if exists offers_market_only');
+    const legacy = await insertOffer(deps.db, { accountId: p.id, side: 'sell', methodId: 'ZELLE', currency: 'HKD', min: 5000, max: 200000, at: deps.clock() });
+    await deps.db.query(`update offers set price_mode = 'fixed', fixed_cents_per_xmr = 700000 where id = $1`, [legacy]);
+    await deps.db.query(`alter table offers add constraint offers_market_only check (price_mode = 'market' and fixed_cents_per_xmr is null) not valid`);
+    expect((await list('side=sell&method=ZELLE&currency=HKD')).map((c) => c.id)).toEqual([mkt]);
+    expect(((await viewer.get('/v1/methods?side=sell&currency=HKD')).json() as { live: { offers: number }[] }).live).toEqual([
+      expect.objectContaining({ id: 'ZELLE', offers: 1 }),
+    ]);
+    expect((await viewer.get(`/v1/offers/${legacy}`)).statusCode).toBe(404);
+    expect((await p.browser.get(`/v1/offers/${legacy}`)).statusCode).toBe(404);
+    expect(((await p.browser.get('/v1/account/offers')).json() as { id: string }[]).map((o) => o.id)).toEqual([mkt]);
+    for (const status of ['live', 'paused']) {
+      expect((await p.browser.patch(`/v1/offers/${legacy}`, { status })).statusCode, status).toBe(404);
+      const bulk = await p.browser.post('/v1/account/offers/status', { ids: [legacy], status });
+      expect(bulk.json(), status).toMatchObject({ results: [{ id: legacy, refused: 'not-found' }] });
+    }
+    // The data is kept as it was, for the owner's decision on old rows.
+    const kept = await deps.db.query(`select price_mode, fixed_cents_per_xmr::text, status from offers where id = $1`, [legacy]);
+    expect(kept.rows).toEqual([{ price_mode: 'fixed', fixed_cents_per_xmr: '700000', status: 'live' }]);
   });
 });

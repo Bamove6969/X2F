@@ -32,7 +32,11 @@ export class Semaphore {
 /** Process-wide: Argon2 hashing is bounded by CPU, not by any one app instance. */
 export const ARGON2_SLOTS = new Semaphore(4, 32);
 
-/** An in-memory token bucket (never persisted); an empty bucket throws 503 `busy` with `retryAfterSeconds`. */
+/**
+ * An in-memory token bucket (never persisted, so per API process; a restart refills it); an empty
+ * bucket throws 503 `busy` with `retryAfterSeconds`. A budget that must hold across processes uses
+ * `takeSharedBucket` (auth/throttle.ts) instead.
+ */
 export class TokenBucket {
   private tokens: number;
   private last: number;
@@ -90,11 +94,29 @@ export const APPROVAL_DECISION_BUCKET: BucketSize = { capacity: 10, perMinute: 5
  */
 export const COMPROMISED_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
 
+/**
+ * `POST /v1/register/name-check` (the sign-up's live "is available" tick, lead job 2026-11-08), site
+ * wide, counted in Postgres for every API process together (`takeSharedBucket`, review F2). The tick answers whether a private login name exists, so this budget is what bounds
+ * enumeration: at most 30 at once and 10 a minute (14,400 a day) for the whole site, however many
+ * device cookies a script throws away. A person typing a few names uses a handful. When a script
+ * drains it, the tick falls back to "checked when you finish" for everyone; sign-up itself is not
+ * affected (`createAccount` checks again and answers only `names-unavailable`).
+ */
+export const NAME_CHECK_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+/**
+ * The same route per device cookie, also in Postgres (checked first, so a device over its pace never
+ * spends the site budget, review F3). Both sizes are also used for the route's in-memory load shed
+ * (`nameCheckShed`, `nameCheckDeviceShed`, review S1), taken before the shared counts: one process
+ * alone can never pass more than the shared budget, so the shed refuses nothing the shared count
+ * would allow from that process, and an empty shed refuses without touching the database.
+ */
+export const NAME_CHECK_DEVICE_BUCKET: BucketSize = { capacity: 10, perMinute: 2 };
+
 /** `POST /v1/method-suggestions` (Plan 3 Task 3): rows carry no account, so one budget for everyone. */
 export const SUGGEST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 
 /**
- * Keyed token buckets (per account or per session; in memory, never persisted, like TokenBucket): one bucket per key,
+ * Keyed token buckets (per account or per session; in memory, never persisted, so per API process, like TokenBucket): one bucket per key,
  * created full. An empty bucket throws 429 `slow-down` with `retryAfterSeconds` (the caller's own
  * pace, so not 503 `busy`). At most `maxKeys` buckets are kept: past that, buckets that have
  * refilled are forgotten first (a forgotten bucket is a full one, so nothing changes for its key),
@@ -151,6 +173,13 @@ export const CHAT_OPEN_BUCKET: BucketSize = { capacity: 20, perMinute: 20 / 60 }
 export const CHAT_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
 
 /**
+ * J-23 review F6: the chat-key courier's writes per account (lead default). A handover posts one
+ * box per device and collects it once, so a person never comes near these; a loop runs dry.
+ */
+export const CHAT_KEY_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+export const CHAT_KEY_COLLECT_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+
+/**
  * `POST /v1/account/past-rep/start` (Plan 5 Task 10, lead follow-up 2026-11-01): starts per account
  * an hour. Each start inspects a pasted key and stores a challenge. The owner may change it.
  */
@@ -170,6 +199,13 @@ export interface Budgets {
   /** `POST /v1/tickets/compromised`, app-wide, apart from `start` (J-14 review J5). */
   compromised: TokenBucket;
   suggest: TokenBucket;
+  /**
+   * `POST /v1/register/name-check`, site wide, in this process only: a load shed in front of the
+   * shared `name-check:site` bucket (review S1, 9 Nov), so a flood is refused before any query.
+   */
+  nameCheckShed: TokenBucket;
+  /** The same per device cookie, in this process only: the shed in front of `name-check:dev:<hash>`. */
+  nameCheckDeviceShed: KeyedBuckets;
   /** Per session: `PUT /v1/account/password` (review round 3 R3-I1). */
   securityChange: KeyedBuckets;
   /** Per session: `POST /v1/account/approvals/:id` (review round 4 R4-I1). */
@@ -180,6 +216,10 @@ export interface Budgets {
   chatPost: KeyedBuckets;
   /** Per account: `POST /v1/account/past-rep/start`. */
   pastRepStart: KeyedBuckets;
+  /** Per account: `POST /v1/account/chat-keys` (J-23 review F6). */
+  chatKeyPost: KeyedBuckets;
+  /** Per account: `DELETE /v1/account/chat-keys/:id` (J-23 review F6). */
+  chatKeyCollect: KeyedBuckets;
   /** Per account: `POST /v1/account/past-rep/finish`. */
   pastRepFinish: KeyedBuckets;
 }
@@ -191,11 +231,15 @@ export function newBudgets(clock: () => Date): Budgets {
     start: new TokenBucket(START_BUCKET.capacity, START_BUCKET.perMinute, clock),
     compromised: new TokenBucket(COMPROMISED_BUCKET.capacity, COMPROMISED_BUCKET.perMinute, clock),
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
+    nameCheckShed: new TokenBucket(NAME_CHECK_BUCKET.capacity, NAME_CHECK_BUCKET.perMinute, clock),
+    nameCheckDeviceShed: new KeyedBuckets(NAME_CHECK_DEVICE_BUCKET, clock),
     securityChange: new KeyedBuckets(SECURITY_CHANGE_BUCKET, clock),
     approvalDecision: new KeyedBuckets(APPROVAL_DECISION_BUCKET, clock),
     chatOpen: new KeyedBuckets(CHAT_OPEN_BUCKET, clock),
     chatPost: new KeyedBuckets(CHAT_POST_BUCKET, clock),
     pastRepStart: new KeyedBuckets(PAST_REP_START_BUCKET, clock),
+    chatKeyPost: new KeyedBuckets(CHAT_KEY_POST_BUCKET, clock),
+    chatKeyCollect: new KeyedBuckets(CHAT_KEY_COLLECT_BUCKET, clock),
     pastRepFinish: new KeyedBuckets(PAST_REP_FINISH_BUCKET, clock),
   };
 }

@@ -9,6 +9,8 @@ import { isLoginNameClash } from '../src/routes/account.js';
 import { currentLoginTag, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser } from './helpers/totp.js';
+import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 const T0 = new Date('2026-10-17T12:00:00Z');
 const MIN = 60_000;
@@ -211,7 +213,7 @@ describe('GET /v1/account/me', () => {
     expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
       displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', methods: ['password'], hasBackup: false,
-      suggestions: ['add-authenticator', 'add-backup'], termsCurrent: true, accountHoldUntil: null, member: null,
+      suggestions: ['add-authenticator', 'add-backup'], termsCurrent: true, accountHoldUntil: null, pendingChanges: null, changesWait: false, recoveryCodeToShow: false, member: null, teamHold: null,
       session: { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: at(2 * HOUR).toISOString(), canExtend: true, serverNow: now.toISOString() },
       idleReminderMinutes: null,
       accountType: 'trader',
@@ -475,22 +477,39 @@ describe('Terms of Service (R10)', () => {
       expect((await me(b)).termsCurrent).toBe(false);
       expect((await b.get('/v1/account/sessions')).statusCode).toBe(200);
 
-      const wrong = await b.post('/v1/account/terms', { version: oldVersion });
+      const wrong = await b.post('/v1/account/terms', { version: oldVersion, signature: SIG });
       expect(wrong.statusCode).toBe(400);
       expect(wrong.json()).toEqual({ error: 'terms-not-accepted', version: newVersion });
       for (const bad of [{}, { version: 7 }, { version: null }]) {
-        const r = await b.post('/v1/account/terms', bad);
+        const r = await b.post('/v1/account/terms', { ...bad, signature: SIG });
         expect(r.statusCode).toBe(400);
         expect(errorOf(r)).toBe('terms-not-accepted');
       }
+      // A new version asks for a new signature too (owner, 8 Nov 2026).
+      const unsigned: [unknown, string][] = [
+        [undefined, 'signature-required'],
+        [{ kind: 'typed', name: ' ' }, 'signature-invalid'],
+        [{ kind: 'drawn', width: 320, height: 120, path: `M0 0${'L100 100'.repeat(8300)}` }, 'signature-too-large'],
+      ];
+      for (const [signature, error] of unsigned) {
+        const r = await b.post('/v1/account/terms', { version: newVersion, signature });
+        expect(r.statusCode, error).toBe(400);
+        expect(r.json()).toEqual({ error });
+      }
+      expect((await me(b)).termsCurrent).toBe(false);
 
       setNow(at(MIN));
-      const ok = await b.post('/v1/account/terms', { version: newVersion });
+      const typed = { kind: 'typed', name: 'Mira K' };
+      const ok = await b.post('/v1/account/terms', { version: newVersion, signature: typed });
       expect(ok.statusCode).toBe(204);
-      const { rows } = await deps.db.query<{ terms_version: string; terms_accepted_at: Date }>(
-        'select terms_version, terms_accepted_at from accounts where id = $1', [id],
+      const { rows } = await deps.db.query<{ terms_version: string; terms_accepted_at: Date; terms_signature: Buffer }>(
+        'select terms_version, terms_accepted_at, terms_signature from accounts where id = $1', [id],
       );
-      expect(rows[0]).toEqual({ terms_version: newVersion, terms_accepted_at: now });
+      expect(rows[0]!.terms_version).toBe(newVersion);
+      expect(rows[0]!.terms_accepted_at).toEqual(now);
+      expect(openTermsSignature(deps.config, rows[0]!.terms_signature, id)).toEqual(typed);
+      // The signature is never sent back (it is not in me).
+      expect(JSON.stringify(await me(b))).not.toContain('Mira K');
       expect((await b.get('/v1/account/alerts')).statusCode).toBe(200);
       expect((await me(b)).termsCurrent).toBe(true);
 
@@ -502,8 +521,41 @@ describe('Terms of Service (R10)', () => {
     }
   });
 
+  // Security review 2026-11-08, finding 5.
+  it('a session cannot replace the signature at the version already signed', async () => {
+    const { id } = await account();
+    await addPgp(id);
+    const b = await loggedIn(id);
+    const row = async () =>
+      (await deps.db.query<{ terms_accepted_at: Date; terms_signature: Buffer }>('select terms_accepted_at, terms_signature from accounts where id = $1', [id])).rows[0]!;
+    const oldVersion = deps.config.termsVersion;
+    const newVersion = '2026-11-02';
+    deps.config.termsVersion = newVersion;
+    try {
+      const first = { kind: 'typed', name: 'First Signer' };
+      expect((await b.post('/v1/account/terms', { version: newVersion, signature: first })).statusCode).toBe(204);
+      const before = await row();
+      setNow(at(MIN));
+      // Answers the same as a first signing, and changes nothing.
+      expect((await b.post('/v1/account/terms', { version: newVersion, signature: { kind: 'typed', name: 'Someone Else' } })).statusCode).toBe(204);
+      const after = await row();
+      expect(after.terms_accepted_at).toEqual(before.terms_accepted_at);
+      expect(after.terms_signature.equals(before.terms_signature)).toBe(true);
+      expect(openTermsSignature(deps.config, after.terms_signature, id)).toEqual(first);
+
+      // A later version is signed afresh.
+      const later = '2026-11-03';
+      deps.config.termsVersion = later;
+      const second = { kind: 'typed', name: 'Second Signer' };
+      expect((await b.post('/v1/account/terms', { version: later, signature: second })).statusCode).toBe(204);
+      expect(openTermsSignature(deps.config, (await row()).terms_signature, id)).toEqual(second);
+    } finally {
+      deps.config.termsVersion = oldVersion;
+    }
+  });
+
   it('accepting needs a session', async () => {
-    const res = await new Browser(app).post('/v1/account/terms', { version: deps.config.termsVersion });
+    const res = await new Browser(app).post('/v1/account/terms', { version: deps.config.termsVersion, signature: SIG });
     expect(res.statusCode).toBe(401);
   });
 });

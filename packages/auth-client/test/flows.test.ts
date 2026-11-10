@@ -10,14 +10,16 @@ import {
   addWebAuthnKey,
   confirmWithWebAuthn,
   createAuthApi,
+  isStaged,
   loginWithPasskey,
   loginWithSecurityKey,
   registerWithWebAuthn,
   shouldSendAway,
   withConfirm,
   type AuthApi,
+  type Staged,
 } from '../src/index.js';
-import { ROUTES, callSample, methodNames } from './helpers/routes.js';
+import { ROUTES, SIG, callSample, methodNames } from './helpers/routes.js';
 import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
 
@@ -34,13 +36,16 @@ const LABEL = 'Browser on Linux';
  * Push (its final-alert receipt route is gone with the final alert: trade-rules, owner 8 Nov p6-1); Task 24: the release confirmations; Task 26: nudges, nudge settings
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
  * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
- * Plan 4 Task 8: the site state, read by the web shell; Plan 4 Task 31 / J-14: the six support-ticket routes). Any other new route still needs a client method.
+ * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
+ * Post an offer in apps/web/src/screens/post/api.ts; Plan 4 Task 31 / J-14: the six support-ticket routes). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
+  'DELETE /v1/account/notes/:displayName|:id',
   'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
   'GET /v1/account/blocks',
+  'GET /v1/account/notes/:displayName|:id',
   'GET /v1/account/nudges',
   'GET /v1/account/offers',
   'GET /v1/account/past-rep',
@@ -50,6 +55,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/chats/:chat',
   'GET /v1/chats/:chat/attestation',
   'GET /v1/chats/:chat/envelopes',
+  'GET /v1/currencies',
   'GET /v1/events',
   'GET /v1/methods',
   'GET /v1/news',
@@ -58,6 +64,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/price',
   'GET /v1/reviews/pending',
   'GET /v1/site',
+  'GET /v1/team/permissions',
   'GET /v1/tickets',
   'GET /v1/tickets/:id',
   'GET /v1/trades/:code',
@@ -67,6 +74,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/trades/:code/review',
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
+  'POST /v1/account/notes',
   'POST /v1/account/offers/status',
   'POST /v1/account/past-rep/finish',
   'POST /v1/account/past-rep/start',
@@ -94,6 +102,7 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/trades/:code/wallet',
   'PUT /v1/account/nudges',
   'PUT /v1/account/profile/traded-total',
+  // POST /v1/trades/:code/final-alert-seen is gone with the final alert (owner 8 Nov, p6-1; design-results).
 ] as const;
 
 let srv: Server;
@@ -126,15 +135,15 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
   expect(start.fingerprint).toBe(key.fingerprint);
   const done = await j.api.registerPgpFinish({
-    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: terms(),
+    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG,
   });
   expect(done).toEqual({ displayName: `D${username}` });
   return { username, key };
 }
 
-/** PGP login needs no name: the whole public key (`_username` is unused). */
-async function loginPgp(api: AuthApi, _username: string, key: Pair) {
-  const start = await api.loginPgpStart({ key: key.publicKey });
+/** PGP login: the login name with the whole public key (owner G6). */
+async function loginPgp(api: AuthApi, username: string, key: Pair) {
+  const start = await api.loginPgpStart({ loginName: username, key: key.publicKey });
   return api.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL });
 }
 
@@ -191,7 +200,7 @@ describe('onboarding', () => {
   it('passkey sign-up through the ceremony wrapper', async () => {
     const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const username = uniqueName('key');
-    await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft))).resolves.toEqual({
+    await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), SIG, ceremonyOf(soft))).resolves.toEqual({
       displayName: `D${username}`,
     });
     const fresh = jar();
@@ -201,16 +210,16 @@ describe('onboarding', () => {
   it('password sign-up: a leaked or weak password is refused with its reason, then a good one works', async () => {
     const own = jar();
     const username = uniqueName('pass');
-    const leaked = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'Password123!', deviceLabel: LABEL, acceptedTerms: terms() })));
+    const leaked = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'Password123!', deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG })));
     expect(leaked.status).toBe(400);
     expect(leaked.code).toBe('password-leaked');
-    const weak = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'short', deviceLabel: LABEL, acceptedTerms: terms() })));
+    const weak = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'short', deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG })));
     expect(weak.code).toBe('password-weak');
     expect(weak.missing).toEqual(expect.arrayContaining(['length']));
-    const stale = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: 'old' })));
+    const stale = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: 'old', termsSignature: SIG })));
     expect(stale.code).toBe('terms-not-accepted');
 
-    await expect(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms() })).resolves.toEqual({
+    await expect(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG })).resolves.toEqual({
       displayName: `D${username}`,
     });
     await own.api.logout();
@@ -230,7 +239,8 @@ describe('confirm it\'s you (P2-C2)', () => {
     const prove = vi.fn(async (a: Parameters<typeof confirmWithWebAuthn>[1]) => (token = await confirmWithWebAuthn(fresh.api, a, ceremonyOf(soft))));
     const run = vi.fn((t?: string) => fresh.api.newRecoveryCodes({ confirmToken: t }));
     const result = await withConfirm({ kind: 'new-recovery-codes' }, run, prove);
-    expect(result.codes).toHaveLength(10);
+    // Hold model v3 (owner 2 Nov 2026): ONE recovery code.
+    expect(result.codes).toHaveLength(1);
     expect(prove).toHaveBeenCalledTimes(1);
     expect(prove).toHaveBeenCalledWith({ kind: 'new-recovery-codes' });
     expect(run).toHaveBeenCalledTimes(2);
@@ -260,7 +270,8 @@ describe('confirm it\'s you (P2-C2)', () => {
       return (await fresh.api.confirmPgpFinish({ challengeId: start.challengeId, code: codeOf(text) })).confirmToken;
     });
     const result = await withConfirm({ kind: 'new-recovery-codes' }, (t) => fresh.api.newRecoveryCodes({ confirmToken: t }), prove);
-    expect(result.codes).toHaveLength(10);
+    // Hold model v3 (owner 2 Nov 2026): ONE recovery code.
+    expect(result.codes).toHaveLength(1);
     expect(prove).toHaveBeenCalledTimes(1);
   });
 });
@@ -270,7 +281,7 @@ describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
     // A password account (this browser becomes trusted) that adds a passkey and a PGP key during onboarding.
     const own = jar();
     const username = uniqueName('flood');
-    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms() });
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG });
     const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await addWebAuthnKey(own.api, 'passkey', {}, ceremonyOf(soft));
     const key = await genKey();
@@ -305,14 +316,20 @@ describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
     // and the live session gets a confirm token by passkey and uses it.
     const token = await confirmWithWebAuthn(own.api, { kind: 'new-recovery-codes' }, ceremonyOf(soft));
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    // Plan 2 Task 17: that session logged in with the password alone, so the change waits out the
-    // 24-hour hold (it is not refused by the flood).
-    await expect(own.api.newRecoveryCodes({ confirmToken: token })).resolves.toMatchObject({ codes: expect.any(Array), status: 'held' });
+    // Hold model v3: that session logged in with a username and password, so the change is staged
+    // for review (it is not refused by the flood).
+    const first = await own.api.newRecoveryCodes({ confirmToken: token });
+    expect(first).toMatchObject({ codes: expect.any(Array), status: 'staged' });
+    expect(isStaged(first)).toBe(true);
     // So does a confirm by password from the trusted browser, still with no time passing; the next
-    // change is refused by the hold, not by the flood.
+    // change is staged too, not refused by the flood.
     const byPassword = await own.api.confirmPassword({ password: GOOD, action: { kind: 'new-recovery-codes' } });
     expect(byPassword.confirmToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(apiError(await failure(own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken }))).code).toBe('recovery-hold');
+    const second = await own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken });
+    expect(isStaged(second)).toBe(true);
+    const view = await own.api.holdView();
+    expect(view.changesWait).toBe(true);
+    expect(view.drafts.map((d) => d.id).sort()).toEqual([(first as Staged).changeId, (second as Staged).changeId].sort());
 
     // The flood is still in force for the stranger.
     expect(apiError(await failure(stranger.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
@@ -345,7 +362,7 @@ describe('a flood of bad passwords against a two-factor username (Review Focus 2
     }
     const browser: AuthApi = jar().api;
     expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
-    const start = await browser.loginPgpStart({ key: key.publicKey });
+    const start = await browser.loginPgpStart({ loginName: username, key: key.publicKey });
     expect(apiError(await failure(browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL }))))
       .toMatchObject({ status: 401, code: 'code-invalid' });
     await expect(browser.listMethods()).rejects.toMatchObject({ status: 401 });
@@ -356,7 +373,7 @@ describe('a flood of bad passwords against a two-factor username (Review Focus 2
     const browser: AuthApi = jar().api;
     expect(apiError(await failure(browser.loginPassword({ loginName: username, password: WRONG, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
     expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
-    const start = await browser.loginPgpStart({ key: key.publicKey });
+    const start = await browser.loginPgpStart({ loginName: username, key: key.publicKey });
     expect(apiError(await failure(browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL }))))
       .toMatchObject({ status: 401, code: 'code-invalid' });
     await expect(browser.listMethods()).rejects.toMatchObject({ status: 401 });

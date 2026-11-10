@@ -28,6 +28,7 @@ export {
   throttleReset, visitorMiss, visitorReset, type ThrottledMethod,
 } from './auth/throttle.js';
 export { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
+export { SIGNATURE_MAX_BYTES, MAX_TYPED_NAME, checkTermsSignature, type TermsSignature } from './termsSignature.js';
 export { openLeakedList } from './auth/leaked.js';
 export { parseConfirmAction } from './auth/actionInput.js';
 export {
@@ -51,10 +52,12 @@ export {
   verifyTotp,
 } from './auth/totp.js';
 export {
-  HOLD_BLOCKED_ROUTES, HOLD_MS, SECURITY_CHANGE_ROUTES, holdUntil, requireNotHeld, settleDueHolds, type Hold, type HoldReason, type PendingChange,
+  HOLD_BLOCKED_ROUTES, HOLD_MS, SECURITY_CHANGE_ROUTES, endHoldByModerator, extendHoldByModerator, holdUntil, requireNotHeld, settleDueHolds,
+  type Hold, type HoldReason, type PendingChange,
 } from './auth/hold.js';
+export { MAX_HOLD_CHANGES, settleDueChanges } from './auth/holdChanges.js';
 export { STRONG_COMBOS, loginStrength, type LoginFactorKind, type LoginStrength } from './auth/strength.js';
-export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, recoveryCodeHash, recoveryRoutes } from './auth/recovery.js';
+export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, recoveryCodeHash, recoveryRoutes } from './auth/recovery.js';
 export { keyringBox, type SecretBox } from './auth/keystore.js';
 export { SECURITY_HEADERS, addSecurityHeaders, clientErrorHandler, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
 export { fileAttestationPolicy, hasCertificateChain, parseAllowlist } from './auth/attestation.js';

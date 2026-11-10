@@ -121,13 +121,13 @@ describe('GET /internal/v1/watch', () => {
     const item = async (code: string) =>
       ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === code);
     expect((await item(open.code))?.paused).toBe(false);
-    await deps.db.query('update site_flags set maintenance_since = $1', [NOW]);
+    await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [NOW]);
     try {
       expect((await item(open.code))?.paused).toBe(true);
       // a closed trade has no timer to stop (and the timer loop never pauses it)
       expect((await item(closed.code))?.paused).toBe(false);
     } finally {
-      await deps.db.query('update site_flags set maintenance_since = null');
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     }
     expect((await item(open.code))?.paused).toBe(false);
   });
@@ -143,6 +143,18 @@ describe('GET /internal/v1/watch', () => {
     const trades = ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<{ trade: string; chat: string | null }> }).trades;
     expect(trades.find((x) => x.trade === linked.code)?.chat).toBe(chat);
     expect(trades.find((x) => x.trade === alone.code)?.chat).toBeNull();
+  });
+
+  it('lead review 8 Nov C2: a trade with an open held_trades row shows paused (G7: the moderator decides), its release shows it again', async () => {
+    const t = await trade();
+    const { rows } = await deps.db.query<{ seller_account_id: string }>('select seller_account_id from trades where code = $1', [t.code]);
+    const item = async () =>
+      ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === t.code);
+    expect((await item())?.paused).toBe(false);
+    await deps.db.query(`insert into held_trades (code, account_id, action, held_at) values ($1, $2, 'pause', $3)`, [t.code, rows[0]!.seller_account_id, NOW]);
+    expect((await item())?.paused).toBe(true);
+    await deps.db.query('update held_trades set released_at = $2 where code = $1', [t.code, NOW]);
+    expect((await item())?.paused).toBe(false);
   });
 
   it('refuses an unsigned request', async () => {

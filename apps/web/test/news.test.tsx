@@ -1,5 +1,8 @@
 // @vitest-environment happy-dom
 // Plan 4 Task 28: the News page, the device-only seen mark, and News opening after login.
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +10,7 @@ import { afterLogin } from '../src/screens/auth/authApi.js';
 import { News } from '../src/screens/News.js';
 import {
   NEWS_DISMISS_ENABLED,
+  NEWS_HIDE_KEY,
   NEWS_SEEN_KEY,
   markSeen,
   readLastSeen,
@@ -83,8 +87,8 @@ function page(path = '/news') {
   );
 }
 
-const titles = (host: HTMLElement) => [...host.querySelectorAll('[data-part="news-item"] h2')].map((h) => h.textContent);
-const newTitles = (host: HTMLElement) => [...host.querySelectorAll('[data-part="news-item"][data-new] h2')].map((h) => h.textContent);
+const titles = (host: HTMLElement) => [...host.querySelectorAll('[data-part="news-item"] [data-part="news-title"]')].map((h) => h.textContent);
+const newTitles = (host: HTMLElement) => [...host.querySelectorAll('[data-part="news-item"][data-new] [data-part="news-title"]')].map((h) => h.textContent);
 
 describe('the News page', () => {
   it('lists messages newest first, each with its posted date; all new on a first visit; logged out works', async () => {
@@ -94,8 +98,9 @@ describe('the News page', () => {
     expect(newTitles(host)).toEqual(['Upgrade done', 'Planned upgrade', 'Welcome']);
     const times = [...host.querySelectorAll('[data-part="news-date"] time')].map((t) => t.getAttribute('datetime'));
     expect(times).toEqual(ITEMS.map((i) => i.publishedAt));
-    expect(host.querySelector('[data-part="news-date"]')!.textContent).toMatch(/^Posted /);
-    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('3 new messages.');
+    // The News board: "New", then the date in the one format (ui/dates.ts).
+    expect(host.querySelector('[data-part="news-date"]')!.textContent).toMatch(/^New\d+ \w{3} \d{4}, \d\d:\d\d UTC$/);
+    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('3 new · 3 posts');
     // Paragraphs keep the line breaks of the body.
     expect([...host.querySelectorAll('[data-part="news-item"]')][0]!.textContent).toContain('Thanks for waiting.');
     // Only the news was asked for: no session call, nothing sent back about reading.
@@ -116,7 +121,7 @@ describe('the News page', () => {
     await settle();
     expect(newTitles(host)).toEqual(['Fresh']);
     expect(host.querySelector('[data-part="news-new"]')!.textContent).toBe('New');
-    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('1 new message.');
+    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('1 new · 4 posts');
     expect(calls.every((c) => c.method === 'GET')).toBe(true);
   });
 
@@ -125,13 +130,53 @@ describe('the News page', () => {
     const a = page();
     await settle();
     expect(newTitles(a.host)).toEqual([]);
-    expect(a.host.querySelector('[data-part="news-count"]')!.textContent).toBe('Nothing new since your last visit.');
+    expect(a.host.querySelector('[data-part="news-count"]')!.textContent).toBe('All read · 3 posts');
+    // Nothing new: the newest post is open, the others closed; read posts say "Read"; no Mark all as read.
+    expect([...a.host.querySelectorAll('[data-part="news-item"] button[aria-expanded]')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false', 'false']);
+    expect(a.host.querySelector('[data-part="news-date"]')!.textContent).toMatch(/^Read/);
+    expect(a.host.querySelector('[data-part="news-mark-all"]')).toBeNull();
     a.unmount();
     news = { status: 200, body: { items: [], serverNow: '2026-10-29T12:00:00.000Z' } };
     const b = page();
     await settle();
-    expect(b.host.querySelector('[data-part="news-count"]')!.textContent).toBe('No news yet.');
+    expect(b.host.querySelector('[data-part="news-count"]')!.textContent).toBe('No news yet');
     expect(b.host.querySelector('[data-part="news-list"]')).toBeNull();
+  });
+
+  it('the News board: only the newest unread post opens, "1 of 3 new" steps through the new ones, Mark all as read clears the marks', async () => {
+    const { host } = page();
+    await settle();
+    const toggles = () => [...host.querySelectorAll<HTMLButtonElement>('[data-part="news-item"] button[aria-expanded]')];
+    expect(toggles().map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false', 'false']);
+    expect(host.querySelector('[data-part="news-step"]')!.textContent).toBe('1 of 3 new');
+    const prev = host.querySelector<HTMLButtonElement>('[aria-label="Previous new post"]')!;
+    const next = host.querySelector<HTMLButtonElement>('[aria-label="Next new post"]')!;
+    expect(prev.disabled).toBe(true);
+    fire(next, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector('[data-part="news-step"]')!.textContent).toBe('2 of 3 new');
+    expect(toggles().map((b) => b.getAttribute('aria-expanded'))).toEqual(['false', 'true', 'false']);
+    fire(next, new MouseEvent('click', { bubbles: true }));
+    expect(next.disabled).toBe(true);
+    fire(prev, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector('[data-part="news-step"]')!.textContent).toBe('2 of 3 new');
+    // A post opens and closes by itself too.
+    fire(toggles()[1]!, new MouseEvent('click', { bubbles: true }));
+    expect(toggles()[1]!.getAttribute('aria-expanded')).toBe('false');
+    const body = host.querySelector<HTMLElement>(`#${toggles()[1]!.getAttribute('aria-controls')}`)!;
+    expect(body.hidden).toBe(true);
+    expect(host.querySelector('[aria-label="Close News"]')).not.toBeNull();
+    // The board's pill: the double-tick icon, then the words (design review P1-8).
+    const markAll = host.querySelector('[data-part="news-mark-all"]')!;
+    expect(markAll.className).toBe('x2f-header-action');
+    expect(markAll.querySelector('svg')).not.toBeNull();
+    expect(markAll.textContent).toBe('Mark all as read');
+    fire(markAll, new MouseEvent('click', { bubbles: true }));
+    expect(newTitles(host)).toEqual([]);
+    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('All read · 3 posts');
+    expect(host.querySelector('[data-part="news-mark-all"]')).toBeNull();
+    expect(host.querySelector('[data-part="news-stepper"]')).toBeNull();
+    // Still nothing sent anywhere about reading.
+    expect(calls).toEqual([{ url: '/v1/news', method: 'GET' }]);
   });
 
   it('a failed load says so and retries; nothing is marked seen', async () => {
@@ -158,12 +203,26 @@ describe('the News page', () => {
     expect(where).toBe('/sell');
   });
 
-  it('has no "Don\'t show me this again" checkbox: the owner has not decided', async () => {
-    expect(NEWS_DISMISS_ENABLED).toBe(false);
-    const { host } = page();
+  it('"Don\'t show me this again" (design session 2 Nov): only on the News that opened after a login; ticked, News stops opening after login on this device', async () => {
+    expect(NEWS_DISMISS_ENABLED).toBe(true);
+    const plain = page();
     await settle();
-    expect(host.querySelector('input[type="checkbox"]')).toBeNull();
-    expect(host.textContent).not.toMatch(/show (me )?this again/i);
+    expect(plain.host.querySelector('input[type="checkbox"]')).toBeNull();
+    plain.unmount();
+    const { host } = page('/news?after=login&returnTo=%2Fwallets');
+    await settle();
+    const box = host.querySelector<HTMLInputElement>('[data-part="news-hide"] input[type="checkbox"]')!;
+    expect(box.checked).toBe(false);
+    expect(host.querySelector('[data-part="news-hide"]')!.textContent).toContain('Site news');
+    fire(box, new MouseEvent('click', { bubbles: true }));
+    expect(window.localStorage.getItem(NEWS_HIDE_KEY)).toBe('1');
+    // Even with something new, a login now goes straight on.
+    news = { status: 200, body: { items: [item(9, 31, 'Newer'), ...ITEMS], serverNow: '2026-10-31T12:00:00.000Z' } };
+    const go: string[] = [];
+    await afterLogin((to) => go.push(to), '/wallets');
+    expect(go).toEqual(['/wallets']);
+    fire(box, new MouseEvent('click', { bubbles: true }));
+    expect(window.localStorage.getItem(NEWS_HIDE_KEY)).toBeNull();
   });
 });
 
@@ -203,7 +262,7 @@ describe('after login', () => {
   it('opens News first when something is new, carrying returnTo', async () => {
     const go: string[] = [];
     await afterLogin((to) => go.push(to), '/wallets');
-    expect(go).toEqual(['/news?returnTo=%2Fwallets']);
+    expect(go).toEqual(['/news?after=login&returnTo=%2Fwallets']);
   });
 
   it('goes straight on when everything was seen, or the news cannot be read', async () => {
@@ -217,10 +276,46 @@ describe('after login', () => {
     expect(go).toEqual(['/wallets', '/buy']);
   });
 
+  it('owner G58: a strong login while changes wait lands on Account changes first; a weak one or a member does not', async () => {
+    markSeen(3);
+    const go: string[] = [];
+    me = { status: 200, body: { termsCurrent: true, pendingChanges: { count: 1, takesEffectAt: '2099-01-02T15:00:00.000Z' }, changesWait: false, member: null } };
+    await afterLogin((to) => go.push(to), '/wallets');
+    me = { status: 200, body: { termsCurrent: true, pendingChanges: { count: 1, takesEffectAt: '2099-01-02T15:00:00.000Z' }, changesWait: true, member: null } };
+    await afterLogin((to) => go.push(to), '/wallets');
+    me = { status: 200, body: { termsCurrent: true, pendingChanges: null, changesWait: false, member: { name: 'Aurora', roles: [] } } };
+    await afterLogin((to) => go.push(to), '/wallets');
+    expect(go).toEqual(['/settings/changes?returnTo=%2Fwallets', '/wallets', '/wallets']);
+  });
+
   it('Terms first when they changed, then News, then returnTo', async () => {
     me = { status: 200, body: { termsCurrent: false } };
     const go: string[] = [];
     await afterLogin((to) => go.push(to), '/wallets');
-    expect(go).toEqual([`/terms?returnTo=${encodeURIComponent('/news?returnTo=%2Fwallets')}`]);
+    expect(go).toEqual([`/terms?returnTo=${encodeURIComponent('/news?after=login&returnTo=%2Fwallets')}`]);
+  });
+});
+
+describe('the News board styles (design review P1-8)', () => {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui/ui.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = (sel: string) => {
+    const at = css.indexOf(`${sel} {`);
+    expect(at, sel).toBeGreaterThanOrEqual(0);
+    return css.slice(at, css.indexOf('}', at));
+  };
+
+  it('a new post is the plain surface card: no inset edge, no box-shadow', () => {
+    const body = rule('.x2f-post[data-new]');
+    expect(body).toContain('background: var(--x2f-surface)');
+    expect(body).not.toContain('box-shadow');
+  });
+
+  it('Mark all as read is an ink pill on surface, never orange', () => {
+    const body = rule('.x2f-header-action');
+    expect(body).toContain('color: var(--x2f-ink)');
+    expect(body).toContain('background: var(--x2f-surface)');
+    expect(body).toContain('border-radius: var(--x2f-radius-pill)');
+    expect(body).toContain('font-weight: 600');
+    expect(body).not.toContain('monero');
   });
 });

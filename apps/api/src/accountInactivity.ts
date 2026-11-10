@@ -28,6 +28,7 @@
  */
 import type pg from 'pg';
 import { addOwnerAlert } from './alerts.js';
+import { eraseChatKeyEnvelopes } from './auth/chatKeys.js';
 import type { Deps } from './app.js';
 import { keepClosedAccountKeys } from './bans.js';
 import type { RetentionJob } from './retention.js';
@@ -77,7 +78,8 @@ export async function closeDueAccounts(deps: Pick<Deps, 'db' | 'config'>, now: D
       await c.query('begin');
       await c.query('select id from accounts where id = $1 for update', [id]);
       const r = await c.query(
-        `update accounts a set disabled_at = $1, closed_at = $1, closed_reason = 'inactive' where a.id = $3 and ${DUE} returning a.id`,
+        // Owner p11-13: the Terms signature is erased when the account closes (terms-signature review R1).
+        `update accounts a set disabled_at = $1, closed_at = $1, closed_reason = 'inactive', terms_signature = null where a.id = $3 and ${DUE} returning a.id`,
         [...params, id],
       );
       if ((r.rowCount ?? 0) > 0) {
@@ -88,6 +90,8 @@ export async function closeDueAccounts(deps: Pick<Deps, 'db' | 'config'>, now: D
         // Security review 8 Nov M2: what a ban would record of them is kept first (keyed tags only).
         await keepClosedAccountKeys({ db: c, config: deps.config }, id, now);
         await c.query('delete from pgp_keys where account_id = $1', [id]);
+        // J-23 (lead 10 Nov): no sealed chat key waits for a device of a closed account.
+        await eraseChatKeyEnvelopes(c, id);
         closed++;
       }
       await c.query('commit');

@@ -25,7 +25,7 @@ import { methodAllowed } from './methods.js';
 import { requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { traderLogin } from './approval.js';
-import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
+import { gateChange, stagedReply, requireNotHeld } from './hold.js';
 import { assertNotDisabled, requireSession } from './sessions.js';
 import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
 
@@ -276,11 +276,11 @@ async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
   // Sealed again with a fresh nonce; the enrolment code's step counts as used.
   const sealedNow = sealSecret(deps, req.auth.accountId, bytes);
   const client = await deps.db.connect();
-  let held: { holdUntil: Date } | null = null;
+  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
-      // Task 17: a waiting login's enrolment starts the hold and waits in it.
+      // Hold model v3: a waiting login's enrolment is staged; it applies 24 h after it is submitted.
       held = await gateChange(client, req, { kind: 'totp', secretEnc: sealedNow.toString('base64'), step });
       if (held === null) await applyTotp(client, req.auth.accountId, sealedNow, step, now);
       await client.query('commit');
@@ -292,8 +292,7 @@ async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   if (held !== null) {
-    pushHoldStarted(req, req.auth.accountId);
-    return reply.code(202).send(heldReply(held));
+    return reply.code(202).send(stagedReply(held));
   }
   return { ok: true };
 }

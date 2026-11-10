@@ -9,7 +9,7 @@ import type { ChatWorkItem, WorkItem } from './link.js';
  * participant list with the long-term moderation signing key. The API never chooses the mod key:
  * a participant list the API made up can only ever be signed with a moderator identity minted
  * here, and a trader whose own key is not in its slot rejects it (`not-me`). The attestation also
- * signs the trade record's terms (deal and both addresses, lead answer 4), which each trader checks
+ * signs the trade record's terms (deal, time to pay and both addresses, lead answer 4), which each trader checks
  * against what its user confirmed (`wrong-terms`).
  */
 export interface Attested {
@@ -70,6 +70,7 @@ export async function signAttestation(
     issuedAt: issuedAt.toISOString(),
     terms: {
       deal: { ...terms.deal },
+      payWindowMin: terms.payWindowMin,
       buyerPayout: terms.buyerPayout,
       sellerRefund: terms.sellerRefund,
     },
