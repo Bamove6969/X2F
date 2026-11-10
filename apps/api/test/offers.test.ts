@@ -139,7 +139,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
         poster: {
           displayName: p.displayName, completedTrades: 0, online: true, lastSeenAt: deps.clock().toISOString(),
           // A starter carries New (spec 5.4; traderTrust.test.ts has the rest of the trust row).
-          typicalMinutes: null, positivePct: null, badges: ['new'], stage: 'starter', tradedOverXmr: null, imported: [],
+          typicalMinutes: null, positivePct: null, badges: ['new'], stage: 'starter', tradedOverXmr: null, imported: [], disputes: { won: 0, lost: 0 },
         },
         rate: null,
         pricing: { mode: 'market', marginBps: 50 },

@@ -23,6 +23,7 @@ import { STAFF_ORIGIN, StaffBrowser, insertSession, seedStaff } from '../helpers
 import { tradeApp } from '../helpers/tradeApp.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
+import { traderSummaries } from '../../src/traders/summary.js';
 
 const START = new Date('2026-11-02T12:00:00Z');
 
@@ -125,10 +126,10 @@ const CONFIRM_WINDOW_MIN = 120;
  * lets the buyer open a dispute only after "I've paid" and the method's full wait, so `at` is the
  * first moment the dispute may open.
  */
-async function disputed(at = START) {
+async function disputed(at = START, pair?: { seller: Awaited<ReturnType<typeof newTrader>>; buyer: Awaited<ReturnType<typeof newTrader>> }) {
   setNow(new Date(at.getTime() - CONFIRM_WINDOW_MIN * MIN));
-  const seller = await newTrader();
-  const buyer = await newTrader();
+  const seller = pair?.seller ?? (await newTrader());
+  const buyer = pair?.buyer ?? (await newTrader());
   const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
   expect(trade.confirmWindowMin).toBe(CONFIRM_WINDOW_MIN);
   const t = await driveTo(deps, trade, 'paid');
@@ -285,6 +286,33 @@ describe('the case view', () => {
     expect(v.cancels).toEqual({ buyer: 2, seller: 1 });
     // The summaries are what any trader sees: no cancel figure in them.
     for (const side of ['buyer', 'seller']) expect(Object.keys(v.traders[side]!).some((k) => /cancel/i.test(k))).toBe(false);
+  });
+});
+
+// D-049 (owner 28 Oct, leaning yes; lead default): profiles show "Disputes: N won, M lost". The
+// public summary (offer cards, the trade view's counterparty, the profile) carries both counts,
+// each dispute by its latest ruling (an appeal's final ruling replaces round 1); an open dispute,
+// and an after-refund "no action" ruling (owner question), count for neither side.
+describe('disputes won and lost (D-049)', () => {
+  it('counts each ruled dispute once for the winner and once for the loser, by the latest ruling', async () => {
+    const pair = { seller: await newTrader(), buyer: await newTrader() };
+    const a = await disputed(START, pair);
+    await publishRuling(deps, a.code, { outcome: 'release-to-buyer' });
+    const b = await disputed(new Date(START.getTime() + 3 * H), pair);
+    await publishRuling(deps, b.code, { outcome: 'release-to-buyer' });
+    await appealDirect(deps, b.code, 'seller');
+    await publishRuling(deps, b.code, { outcome: 'refund-to-seller' });
+    const c = await disputed(new Date(START.getTime() + 6 * H), pair);
+    await publishRuling(deps, c.code, { outcome: 'refund-to-seller' });
+    await disputed(new Date(START.getTime() + 9 * H), pair);
+    const s = await traderSummaries(deps.db, [pair.buyer.id, pair.seller.id], deps.clock(), null);
+    expect(s.get(pair.buyer.id)!.disputes).toEqual({ won: 1, lost: 2 });
+    expect(s.get(pair.seller.id)!.disputes).toEqual({ won: 2, lost: 1 });
+    // What a trader sees of the other side: the trade view's counterparty is the same summary.
+    const view = (await pair.seller.browser.get(`/v1/trades/${a.code}`)).json() as { counterparty: { disputes: unknown } };
+    expect(view.counterparty.disputes).toEqual({ won: 1, lost: 2 });
+    const fresh = await newTrader();
+    expect((await traderSummaries(deps.db, [fresh.id], deps.clock(), null)).get(fresh.id)!.disputes).toEqual({ won: 0, lost: 0 });
   });
 });
 

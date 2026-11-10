@@ -60,6 +60,8 @@ export interface TraderSummary {
   tradedOverXmr: number | null;
   /** Owner Q64, p4-1: verified imported volume, one line per site, in whole US dollars (rounded down); [] for none. */
   imported: { site: string; overUsd: number }[];
+  /** D-049 (J-21): disputes won and lost, by each one's latest ruling (the profile's "Disputes: N won, M lost"). */
+  disputes?: { won: number; lost: number };
 }
 
 /** Always the market price moved by the margin (owner Q1, F1: there are no fixed-price offers). */

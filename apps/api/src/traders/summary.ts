@@ -40,6 +40,11 @@ export interface TraderSummary {
   tradedOverXmr: number | null;
   /** Owner Q64, p4-1: verified imported volume, one line per site in whole US dollars (opt-in like the XMR line; [] when off). */
   imported: ImportedLine[];
+  /**
+   * D-049 (owner 28 Oct, leaning yes; lead default, J-21): the profile's "Disputes: N won, M lost",
+   * each dispute by its latest ruling. Public, like the Clean record badge it already feeds.
+   */
+  disputes: { won: number; lost: number };
 }
 
 /** Someone counts as online when one of their sessions was used this recently (to the 5-minute bucket: see `onlineSince`). */
@@ -82,6 +87,17 @@ const LOST_DISPUTES_SQL = `(select count(*) from dispute_rulings dr join trades 
      and ((dr.outcome in ('release-to-buyer', 'seller-sends-xmr', 'seller-returns-fiat') and t.seller_account_id = a.id)
        or (dr.outcome = 'refund-to-seller' and t.buyer_account_id = a.id)))`;
 
+/**
+ * SQL: the disputes `a.id` won, the mirror of LOST_DISPUTES_SQL by the same latest ruling: a release
+ * to the buyer, or the seller told to send XMR or return fiat, is won by the buyer; a refund to the
+ * seller is won by the seller. An after-refund "no action" ruling counts for neither side, as in
+ * LOST_DISPUTES_SQL (owner question, J-21). Read from the live trades until Task 20's running totals.
+ */
+const WON_DISPUTES_SQL = `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
+   where not exists (select 1 from dispute_rulings d2 where d2.code = dr.code and d2.seq = dr.seq and d2.round > dr.round)
+     and ((dr.outcome in ('release-to-buyer', 'seller-sends-xmr', 'seller-returns-fiat') and t.buyer_account_id = a.id)
+       or (dr.outcome = 'refund-to-seller' and t.seller_account_id = a.id)))`;
+
 /** A trader's side, for the typical time a card shows: a seller's release time, a buyer's payment time. */
 export type SummaryRole = 'buyer' | 'seller';
 
@@ -107,7 +123,7 @@ export async function traderSummaries(
   // The name column is a constant, never input.
   const { rows } = await q.query<{
     id: string; name: string; created_at: Date; completed: string; last_seen: Date | null; show_traded: boolean; traded: string;
-    positive: string; negative: string; pay: number[] | null; release: number[] | null; pgp: boolean; security_key: boolean; lost: string;
+    positive: string; negative: string; pay: number[] | null; release: number[] | null; pgp: boolean; security_key: boolean; lost: string; won: string;
   }>(
     `select a.id, a.${PUBLIC_NAME_COLUMN} as name, a.created_at,
             ${COMPLETED_TRADES_SQL} as completed,
@@ -118,7 +134,8 @@ export async function traderSummaries(
             (select m.minutes from account_action_minutes m where m.account_id = a.id and m.kind = 'release') as release,
             exists (select 1 from pgp_keys k where k.account_id = a.id) as pgp,
             exists (select 1 from webauthn_credentials w where w.account_id = a.id and w.kind = 'security-key') as security_key,
-            ${LOST_DISPUTES_SQL} as lost
+            ${LOST_DISPUTES_SQL} as lost,
+            ${WON_DISPUTES_SQL} as won
        from accounts a
        cross join lateral (
          select count(*) filter (where not r.neutral and r.stars >= $3) as positive,
@@ -182,6 +199,7 @@ export async function traderSummaries(
       stage,
       tradedOverXmr: tradedOverXmr(r.show_traded, r.traded),
       imported: r.show_traded ? importedLines(sites.get(r.id)) : [],
+      disputes: { won: Number(r.won), lost: Number(r.lost) },
     });
   }
   return out;

@@ -49,6 +49,8 @@ export interface TraderSummary {
   tradedOverXmr?: number | null;
   /** Owner Q64, p4-1: verified imported volume per site, in whole US dollars. */
   imported?: { site: string; overUsd: number }[];
+  /** D-049 (J-21): disputes won and lost, by each one's latest ruling (the profile's "Disputes: N won, M lost"). */
+  disputes?: { won: number; lost: number };
 }
 
 /** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */
