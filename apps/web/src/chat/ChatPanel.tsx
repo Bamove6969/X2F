@@ -39,7 +39,7 @@
  * Task 23's `setTradeChat` seam takes (`{ code, name, methodId }`); `OfferChatPanel` opens the
  * pre-trade chat on an offer (the quote's Chat button).
  */
-import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
+import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payeeGivesNothing, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
@@ -300,7 +300,14 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
       ) : null}
 
       {phase === 'ready' && !gone && pay !== undefined && snap?.role === 'seller' ? (
-        <PayBoxes chat={chat} name={name} methodId={pay.methodId} secured={snap.paySecured} onSent={sent} />
+        payeeGivesNothing(pay.methodId) ? (
+          // COPY-UNSIGNED (payee fields, 10 Nov 2026): a gift card, ATM or face-to-face cash method has no boxes.
+          <p className="x2f-chat__pay-hint" data-pay-nothing="">
+            Nothing to send: the buyer sends the card or cash details here in the chat.
+          </p>
+        ) : (
+          <PayBoxes chat={chat} name={name} methodId={pay.methodId} secured={snap.paySecured} onSent={sent} />
+        )
       ) : null}
       {phase === 'ready' && !gone ? (
         <form className="x2f-chat__composer" onSubmit={(e) => void onSubmit(e)}>
