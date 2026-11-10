@@ -9,12 +9,17 @@ import { makeVendor } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
+import { flexBody } from './helpers/offers.js';
 
 // Plan 3 Task 37: the trader-to-trader block (spec 2.4). Real Postgres, one database for the file.
 
 const DAY = 86_400_000;
 
-/** USD at $330.00 per XMR; every other currency at 3,300,000 minor units (offers are market ± %, owner Q1). */
+/**
+ * USD at $330.00 per XMR; every other currency at 3,300,000 minor units (offers are market ± %, owner
+ * Q1). Every currency has a price: posting converts each band's top edge to US dollars and fails
+ * closed without a price (the launch cap, owner p11-6).
+ */
 function quote(currency: string): MarketQuote | null {
   return {
     price: { currency, centsPerXmr: currency === 'USD' ? 33_000n : 3_300_000n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
@@ -68,10 +73,10 @@ const ownCurrency = (): string => {
 };
 
 async function post(who: Who, currency: string, marginBps = 0): Promise<string> {
-  const res = await who.browser.post('/v1/offers', {
+  const res = await who.browser.post('/v1/offers', flexBody({
     side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'market', marginBps },
     minFiatCents: '5000', maxFiatCents: '200000', minTrades: null, terms: 'Zelle only.',
-  });
+  }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }

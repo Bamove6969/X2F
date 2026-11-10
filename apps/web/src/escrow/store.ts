@@ -103,6 +103,12 @@ export interface EscrowRecord {
    */
   paidPending?: { amountAtomic: bigint; fiatCents: bigint } | null;
   /**
+   * The buyer's time to pay in minutes, the first one this device saw in the trade view and
+   * verified against the attestation (launch-rules review F2); a later view showing another is
+   * refused (`deal-mismatch`). Absent until then, and in records written before the field.
+   */
+  payWindowMin?: number | null;
+  /**
    * The seller refused the buyer's signed trade.paid for good: a total that does not fit the
    * amount, an amount below the take amount, or a second, different trade.paid.
    */

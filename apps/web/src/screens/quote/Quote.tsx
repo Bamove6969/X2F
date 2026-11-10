@@ -291,7 +291,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
       ? {
           role: copy.adSide === 'sell' ? 'buyer' : 'seller',
           ownAddress: pickedWallet.address,
-          deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: dealMaxFiat(o, ok.rate) },
+          deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: dealMaxFiat(o, ok.rate, ok.range) },
         }
       : null;
   const refusal = state.error === null ? null : takeRefusal(state.error, o);
@@ -479,12 +479,12 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             onClick={() => {
               if (!ok) return;
               touched();
-              const sent = { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents };
+              const sent = { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents, methodId: o.methodId, currency: o.currency };
               take({
                 quote: giftCard ? { ...sent, giftCardTerms: GIFT_CARD_TERMS_VERSION } : sent,
                 walletId: pickedWallet?.id ?? null,
                 confirmed,
-                range: quoteRange(o),
+                range: ok.range,
                 resumeHref,
               });
             }}

@@ -8,12 +8,17 @@ import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { INSIDE } from './session.js';
 
-/** The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate and total. */
+/**
+ * The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate
+ * and total; J-16 adds the currency and the payment method the quote was in (the buyer picks both).
+ */
 interface TakeBody {
   amountAtomic: string;
   walletId: string;
   centsPerXmr: string;
   fiatCents: string;
+  methodId: string;
+  currency: string;
 }
 
 interface Stub {
@@ -85,7 +90,7 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
     const rate = s.rate ?? B.marketCentsPerXmr;
     if (body.centsPerXmr !== rate) return r.fulfill({ status: 409, json: { error: 'price-changed' } });
     seen.storedFiatCents.push(fiatCents(BigInt(body.amountAtomic), { currency: B.currency, centsPerXmr: BigInt(rate) }));
-    return r.fulfill({ json: { code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents } });
+    return r.fulfill({ json: { code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: B.offer.maxFiatCents } });
   });
   return seen;
 }
@@ -202,7 +207,9 @@ test.describe('BuyQuote', () => {
     expect(seen.takes).toHaveLength(0);
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
-    expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
+    expect(seen.takes).toEqual([
+      { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency },
+    ]);
   });
 
   test("logged out, the quote never opens: the Landing board keeps it as returnTo; Create account starts setup with it, and Welcome's Start trading comes back to the quote at the price now, never taken silently (owner, 8 Nov 2026)", async ({ page }) => {
@@ -339,7 +346,7 @@ test.describe('SellQuote', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
-    expect(seen.takes[0]).toMatchObject({ offerId: MIRA_BUYS.id, amountAtomic: '4545454000000', walletId: 'w-cake' });
+    expect(seen.takes[0]).toMatchObject({ offerId: MIRA_BUYS.id, amountAtomic: '4545454000000', walletId: 'w-cake', methodId: B.method.id, currency: B.currency });
   });
 });
 
@@ -527,7 +534,9 @@ test.describe('phone sizes: fit and a take by tapping', () => {
       await expectFitsPhone(page);
       await trade(page).tap();
       await expect(page).toHaveURL(`/trade/${B.code}`);
-      expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
+      expect(seen.takes).toEqual([
+        { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency },
+      ]);
     });
 
     test(`BuyQuote at ${vp.width}x${vp.height} with no wallet and "Price unavailable right now" still fits`, async ({ page }) => {

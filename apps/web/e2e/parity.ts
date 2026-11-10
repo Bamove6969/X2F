@@ -72,6 +72,14 @@ const CANCEL_T049 =
 const AD_CARD_V142 =
   'Owner #11 (8 Nov), boards v142 on wip/design-brief: the ad card shows the markup bottom-left ("+0.4%" over "Vendor markup") and the range as two rows, XMR and fiat, each with its unit; the time moved to the price row. design/x2f-app still has the earlier card.';
 
+/**
+ * J-16 (Plan 3 Tasks 34/35): PostOffer lists up to 5 currencies with up to 3 bands each and up to 5
+ * payment methods, so the board's one "Payment method" select, one "Currency" select (USD/EUR/GBP),
+ * one market line and one "Who can trade with you" section are now pickers, chips, a market line
+ * per currency and a "Minimum completed trades" choice per band. The board is still Task 21's.
+ */
+const FLEX_BOARD_PENDING = 'J-16 flex offers; board recapture pending (design)';
+
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
   BuyOffers: ['$0.10 above market', '$50 – $1,500Releases in ~8 min', '0.5% above market', '$100 – $3,000Releases in ~20 min', '0.9% above market', '$20 – $400Releases in ~30 min'].map(
     (text) => ({ text, why: AD_CARD_V142 }),
@@ -292,6 +300,14 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text,
       why: 'Owner F1 (7 Nov): the vendor picks Above or Below market and types the percentage, at most 50% (J-02); the board still draws the ±0.1% stepper buttons (design to-do).',
     })),
+    ...[
+      'Payment method',
+      'Currency',
+      'EUR',
+      'GBP',
+      "Market $329.90 / XMR right now. Your price follows the market, so it's always {{priceNow}} at today's rate.",
+      'Who can trade with you',
+    ].map((text) => ({ text, why: FLEX_BOARD_PENDING })),
   ],
   // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).
   DisputeOpen: [

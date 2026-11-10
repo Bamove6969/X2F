@@ -27,6 +27,7 @@ import { tradeApp } from './helpers/tradeApp.js';
 import type { JabberSender } from '../src/jabber/sender.js';
 import { Browser, codeAt } from './helpers/totp.js';
 import { SIG } from './helpers/signature.js';
+import { flexBody, insertOffer } from './helpers/offers.js';
 
 const ORIGIN = 'https://x2f.test';
 const TERMS = '2026-10-17';
@@ -644,14 +645,10 @@ describe('during the hold', () => {
     const t = await heldTrader();
     const take = await t.thief.post('/v1/offers/00000000-0000-4000-8000-000000000000/take', {});
     expect(take.json()).toEqual({ error: 'recovery-hold', holdUntil: t.until });
-    expect(errorOf(await t.thief.post('/v1/offers', {}))).toBe('recovery-hold');
+    expect(errorOf(await t.thief.post('/v1/offers', flexBody({})))).toBe('recovery-hold');
     expect(errorOf(await t.thief.post('/v1/wallets', {}))).toBe('recovery-hold');
     expect(errorOf(await t.thief.delete('/v1/wallets/00000000-0000-4000-8000-000000000000'))).toBe('recovery-hold');
-    const { rows } = await deps.db.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'paused', $2, $2) returning id`,
-      [t.id, now],
-    );
+    const rows = [{ id: await insertOffer(deps.db, { accountId: t.id, side: 'sell', methodId: 'zelle', currency: 'USD', min: 1000, max: 100000, status: 'paused', at: now }) }];
     expect(errorOf(await t.thief.patch(`/v1/offers/${rows[0]!.id}`, { status: 'live' }))).toBe('recovery-hold');
     expect(errorOf(await t.thief.post('/v1/account/offers/status', { ids: [rows[0]!.id], status: 'live' }))).toBe('recovery-hold');
     expect((await t.thief.patch(`/v1/offers/${rows[0]!.id}`, { status: 'removed' })).statusCode).toBeLessThan(300);

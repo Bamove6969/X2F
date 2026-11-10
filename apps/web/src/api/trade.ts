@@ -103,6 +103,8 @@ export interface TradeView {
   fundStartedAt: string | null;
   securedAt: string | null;
   payBy: string | null;
+  /** The buyer's time to pay in minutes, the payment method's, fixed at take (owner p9-6); missing from an older API (90). */
+  payWindowMin?: number;
   paidAt: string | null;
   confirmBy: string | null;
   /**

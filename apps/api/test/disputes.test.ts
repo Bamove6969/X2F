@@ -143,6 +143,16 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect((await b.seller.browser.post(dispute(b.t.code), { reason: 'other', note: 'x' })).statusCode).toBe(200);
   });
 
+  it("p11-16: once the seller disputes before \"I've paid\", the server refuses the buyer's I've paid", async () => {
+    const { buyer, seller, t } = await tradeIn('secured');
+    expect((await seller.browser.post(dispute(t.code), { reason: 'other', note: 'I want out' })).statusCode).toBe(200);
+    const paid = await buyer.browser.post(`/v1/trades/${t.code}/events`, { type: 'mark-paid', fiatCents: t.fiatCents.toString() });
+    expect(paid.statusCode).toBe(409);
+    expect(errorOf(paid)).toBe('wrong-state');
+    const after = (await loadTrade(deps.db, t.code))!;
+    expect({ state: after.state, paidAt: after.paidAt }).toEqual({ state: 'disputed', paidAt: null });
+  });
+
   it('opens a dispute after a refund for the buyer within 48 hours (owner 2026-10-29), never for the seller, never after', async () => {
     const { buyer, seller, t } = await tradeIn('secured');
     await applyEvent(deps, t.code, { type: 'settled', kind: 'auto-refund', txHash: 'ab'.repeat(32) }, 'system');

@@ -27,6 +27,13 @@ export interface TradeView {
   state: Trade['state'];
   counterparty: TraderSummary;
   methodId: string;
+  /**
+   * J-16 (Task 34): the chosen method's instructions from the offer, locked at take (the payment
+   * details). Lead default (Task 34 builder, 29 Oct): shown to the two traders only once the escrow
+   * was secured (`securedAt` set), so taking an offer never reveals the poster's payment details by
+   * itself; null before that. '' when the offer gave none (offers from before migration 490).
+   */
+  paymentInstructions: string | null;
   profile: unknown;
   amountAtomic: string;
   fiatCents: string;
@@ -56,6 +63,8 @@ export interface TradeView {
   fundStartedAt: string | null;
   securedAt: string | null;
   payBy: string | null;
+  /** The buyer's time to pay in minutes, the payment method's, fixed at take (owner p9-6). */
+  payWindowMin: number;
   paidAt: string | null;
   confirmBy: string | null;
   /**
@@ -110,6 +119,8 @@ export interface ViewContext {
   counterpartyProblem?: boolean;
   /** See `TradeView.cancelWaiting`. */
   cancelWaiting?: boolean;
+  /** `trades.method_instructions` (J-16, 490); absent → ''. */
+  paymentInstructions?: string;
 }
 
 /**
@@ -127,6 +138,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     state: t.state,
     counterparty: ctx.counterparty,
     methodId: t.methodId,
+    paymentInstructions: t.securedAt === null ? null : (ctx.paymentInstructions ?? ''),
     profile: ctx.profile,
     amountAtomic: t.amountAtomic.toString(),
     fiatCents: t.fiatCents.toString(),
@@ -160,6 +172,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     fundStartedAt: iso(t.fundStartedAt),
     securedAt: iso(t.securedAt),
     payBy: iso(t.payBy),
+    payWindowMin: t.payWindowMin,
     paidAt: iso(t.paidAt),
     confirmBy: iso(t.confirmBy),
     confirmWindowMin: t.confirmWindowMin,

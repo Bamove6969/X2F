@@ -7,7 +7,10 @@ import type { TradeEscrow, TradeState, TradeView } from './payTypes.js';
 
 /** Confirmations after which Monero coins unlock (@x2f/trade UNLOCK_CONFIRMATIONS). */
 export const UNLOCK_CONFIRMATIONS = 10;
-/** The payment window and one extension, in minutes (@x2f/trade TIMERS.payMin / extendMin). */
+/**
+ * The shortest payment window and one extension, in minutes (@x2f/trade TIMERS.payMin / extendMin).
+ * A trade's own window is `payWindowMin` (the payment method's, owner p9-6); PAY_MIN is its fallback.
+ */
 export const PAY_MIN = 90;
 export const EXTEND_MIN = 30;
 /** Monero's block time, for an ETA the view does not give. */
@@ -45,11 +48,12 @@ export type PayTimer =
   | { started: true; totalMin: number; payBy: string; leftMin: number };
 
 /**
- * "Time to pay": 90 minutes (plus 30 per extension) that start when the escrow settles, so
- * waiting never costs the buyer time (spec 2.2 step 6). `leftMin` is rounded up like Countdown.
+ * "Time to pay": the payment method's time (owner p9-6; 90 minutes for instant methods), plus 30
+ * per extension, that starts when the escrow settles, so waiting never costs the buyer time (spec
+ * 2.2 step 6). `leftMin` is rounded up like Countdown.
  */
-export function payTimer(v: Pick<TradeView, 'payBy' | 'extensions' | 'releasableEtaMin'>, nowMs: number): PayTimer {
-  const totalMin = PAY_MIN + EXTEND_MIN * v.extensions;
+export function payTimer(v: Pick<TradeView, 'payBy' | 'extensions' | 'releasableEtaMin' | 'payWindowMin'>, nowMs: number): PayTimer {
+  const totalMin = (v.payWindowMin ?? PAY_MIN) + EXTEND_MIN * v.extensions;
   if (v.payBy === null) return { started: false, totalMin, startsInMin: v.releasableEtaMin };
   const left = Date.parse(v.payBy) - nowMs;
   return { started: true, totalMin, payBy: v.payBy, leftMin: Number.isFinite(left) ? Math.max(0, Math.ceil(left / 60_000)) : 0 };

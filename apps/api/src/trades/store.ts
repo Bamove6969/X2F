@@ -25,6 +25,8 @@ export interface TradeSides {
   buyerPayout: string | null;
   sellerRefund: string | null;
   sellerWalletApp: string | null;
+  /** J-16 (490): the chosen method's instructions for the chosen currency, locked at take; '' when absent. */
+  methodInstructions?: string;
 }
 
 /** A `trades` row as pg returns it: numeric columns arrive as strings. */
@@ -35,6 +37,8 @@ export interface TradeRow {
   seller_account_id: string;
   buyer_account_id: string;
   method_id: string;
+  /** J-16 (490): the chosen method's instructions, locked at take. */
+  method_instructions: string;
   amount_atomic: string;
   fee_atomic: string;
   seller_funds_atomic: string;
@@ -42,6 +46,8 @@ export interface TradeRow {
   locked_cents_per_xmr: string;
   fiat_cents: string;
   confirm_window_min: number;
+  /** Migration 124 (owner p9-6): the method's time to pay, fixed at take. */
+  pay_window_min: number;
   min_fiat_cents: string;
   max_fiat_cents: string;
   grown_at: Date | null;
@@ -122,6 +128,7 @@ export function rowToTrade(r: TradeRow): Trade {
     lockedRate: { currency: r.locked_currency, centsPerXmr: big(r.locked_cents_per_xmr) },
     fiatCents: big(r.fiat_cents),
     confirmWindowMin: r.confirm_window_min,
+    payWindowMin: r.pay_window_min,
     minFiatCents: big(r.min_fiat_cents),
     maxFiatCents: big(r.max_fiat_cents),
     grown:
@@ -227,6 +234,7 @@ export async function insertTrade(
     ['locked_currency', t.lockedRate.currency],
     ['locked_cents_per_xmr', t.lockedRate.centsPerXmr.toString()],
     ['confirm_window_min', t.confirmWindowMin],
+    ['pay_window_min', t.payWindowMin],
     ['min_fiat_cents', t.minFiatCents.toString()],
     ['max_fiat_cents', t.maxFiatCents.toString()],
     ['taken_at', t.takenAt],
@@ -234,6 +242,7 @@ export async function insertTrade(
     ['buyer_payout', sides.buyerPayout],
     ['seller_refund', sides.sellerRefund],
     ['seller_wallet_app', sides.sellerWalletApp],
+    ['method_instructions', sides.methodInstructions ?? ''],
     ['usd_cents', usdCents === null ? null : usdCents.toString()],
     ['gift_card_terms', giftCardTerms],
   ];

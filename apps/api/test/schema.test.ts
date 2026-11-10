@@ -45,11 +45,57 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
-        '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '016_hold_v3.sql', '017_ban_list.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '334_jabber_paths_batch4.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql',
+        '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '016_hold_v3.sql', '017_ban_list.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '124_pay_window.sql', '125_launch_cap_offers.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '334_jabber_paths_batch4.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql', '490_flex_offers.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
       await db.end();
+    }
+  });
+
+  it('125: pauses every live US-dollar offer whose maximum is above the $5,000 launch cap (launch-rules review F1)', async () => {
+    const db = await emptyDb();
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+    try {
+      const all = await readdir(MIGRATIONS_DIR);
+      for (const f of all.filter((n) => n < '125')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+      await migrate(db, dir);
+      const account = (
+        await db.query<{ id: string }>(
+          `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at)
+           values ('Cap.Trader', 'cap.trader', $1, 1, true, 'trader', $2, '2026-10-17', now(), now()) returning id`,
+          [randomBytes(32), randomBytes(32)],
+        )
+      ).rows[0]!.id;
+      const before = new Date('2026-11-01T00:00:00Z');
+      const offer = async (currency: string, max: string, status = 'live') =>
+        (
+          await db.query<{ id: string }>(
+            `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
+             values ($1, 'sell', 'ZELLE', $2, 'market', 0, 1000, $3, 0, '', $4, $5, $5) returning id`,
+            [account, currency, max, status, before],
+          )
+        ).rows[0]!.id;
+      const over = await offer('USD', '2000000');
+      const justOver = await offer('USD', '500001');
+      const atCap = await offer('USD', '500000');
+      const pausedOver = await offer('USD', '2000000', 'paused');
+      const removedOver = await offer('USD', '2000000', 'removed');
+      // No exchange rate in the database: a euro offer is left for the take and growth checks.
+      const euro = await offer('EUR', '2000000');
+      await migrate(db);
+      const { rows } = await db.query<{ id: string; status: string; updated_at: Date }>('select id, status, updated_at from offers');
+      const of = (id: string) => rows.find((r) => r.id === id)!;
+      expect(of(over).status).toBe('paused');
+      expect(of(over).updated_at).not.toEqual(before);
+      expect(of(justOver).status).toBe('paused');
+      expect(of(atCap)).toMatchObject({ status: 'live', updated_at: before });
+      expect(of(pausedOver)).toMatchObject({ status: 'paused', updated_at: before });
+      expect(of(removedOver)).toMatchObject({ status: 'removed', updated_at: before });
+      expect(of(euro)).toMatchObject({ status: 'live', updated_at: before });
+    } finally {
+      await db.end();
+      await rm(dir, { recursive: true, force: true });
     }
   });
 
@@ -148,7 +194,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '016_hold_v3.sql', '017_ban_list.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql',
-        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '334_jabber_paths_batch4.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql',
+        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '124_pay_window.sql', '125_launch_cap_offers.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '334_jabber_paths_batch4.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql', '490_flex_offers.sql',
       ]);
       const { rows } = await db.query('select display_name, display_key, login_name, login_key, legacy_login_name from accounts');
       expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: 'Old.Trader', login_key: 'old.trader', legacy_login_name: true }]);
@@ -226,7 +272,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '016_hold_v3.sql', '017_ban_list.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
-        '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '334_jabber_paths_batch4.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql',
+        '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '124_pay_window.sql', '125_launch_cap_offers.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '334_jabber_paths_batch4.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql', '490_flex_offers.sql',
       ]);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);

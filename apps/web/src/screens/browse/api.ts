@@ -28,6 +28,11 @@ export interface MethodRow {
   offers: number;
   /** The best rate among the live offers, in minor units per XMR, or null when none has a price now. */
   bestRate: bigint | null;
+  /**
+   * How long the method's money can take to arrive, in minutes (owner p9-4: shown up front where
+   * the method is picked); null from an older API, and then no line is shown.
+   */
+  upToMin: number | null;
 }
 
 export interface MethodLists {
@@ -85,6 +90,33 @@ export interface Offer {
   minTrades: number;
   /** Set for a signed-in viewer whose cap is below the offer's minimum: the stage that opens it. */
   opensAt?: OpensAt;
+  /**
+   * J-16 (flexible offers, apps/api/src/offers/routes.ts OfferCard): the listed currency's bands, as
+   * covered ranges in `amountUnit`'s minor units, by start; [] in an answer from before J-16 (the
+   * card is then one band, its range and `pricing`).
+   */
+  tiers: OfferTier[];
+  /** The payment methods offered in the listed currency with their price change; [] before J-16. */
+  methods: OfferMethod[];
+  /** Every currency of the offer in the poster's order; [] before J-16. */
+  currencies: string[];
+  /** The signed-in viewer's completed trades, which the take picks the band by; null signed out or before J-16. */
+  viewerTrades: number | null;
+}
+
+/** One band of a card (J-16): both ends included, its margin and its trade rule (null: no minimum); `methodIds` null: every method. */
+export interface OfferTier {
+  min: bigint;
+  max: bigint;
+  marginBps: number;
+  minTrades: number | null;
+  methodIds: string[] | null;
+}
+
+/** A payment method on a card (J-16): its price change over the band's price, in basis points of the market. */
+export interface OfferMethod {
+  methodId: string;
+  adjustBps: number;
 }
 
 /** A response that is not the shape the screens were built for. */
@@ -160,6 +192,7 @@ function parseRow(v: unknown, at: string): MethodRow {
     giftCard: optional(o, 'giftCard', at, bool, false),
     offers: num(o, 'offers', at),
     bestRate: orNull(o, 'bestRate', at, big),
+    upToMin: optional<number | null>(o, 'upToMin', at, num, null),
   };
 }
 
@@ -239,6 +272,33 @@ function parseAmounts(o: Obj, at: string): Pick<Offer, 'amountUnit' | 'minAtomic
   return out;
 }
 
+function strings(v: unknown, at: string): string[] {
+  return list(v, at).map((x, i) => {
+    if (typeof x !== 'string') throw new ApiShapeError(`${at}[${i}]`);
+    return x;
+  });
+}
+
+function parseTier(v: unknown, at: string): OfferTier {
+  const o = obj(v, at);
+  const min = big(o, 'min', at);
+  const max = big(o, 'max', at);
+  if (min <= 0n || max < min) throw new ApiShapeError(`${at}.max`);
+  if (!('minTrades' in o) || !('methodIds' in o)) throw new ApiShapeError(at);
+  return {
+    min,
+    max,
+    marginBps: num(o, 'marginBps', at),
+    minTrades: o.minTrades === null ? null : num(o, 'minTrades', at),
+    methodIds: o.methodIds === null ? null : strings(o.methodIds, `${at}.methodIds`),
+  };
+}
+
+function parseOfferMethod(v: unknown, at: string): OfferMethod {
+  const o = obj(v, at);
+  return { methodId: str(o, 'methodId', at), adjustBps: num(o, 'adjustBps', at) };
+}
+
 export function parseOffers(v: unknown): Offer[] {
   return list(v, 'offers').map((item, i) => {
     const at = `offers[${i}]`;
@@ -250,6 +310,10 @@ export function parseOffers(v: unknown): Offer[] {
       pricing: parsePricing(o.pricing, `${at}.pricing`),
       ...parseAmounts(o, at),
       minTrades: minTradesOf(o, at),
+      tiers: o.tiers === undefined ? [] : list(o.tiers, `${at}.tiers`).map((t, j) => parseTier(t, `${at}.tiers[${j}]`)),
+      methods: o.methods === undefined ? [] : list(o.methods, `${at}.methods`).map((m, j) => parseOfferMethod(m, `${at}.methods[${j}]`)),
+      currencies: o.currencies === undefined ? [] : strings(o.currencies, `${at}.currencies`),
+      viewerTrades: o.viewerTrades === undefined ? null : num(o, 'viewerTrades', at),
     };
     if (o.opensAt !== undefined) offer.opensAt = oneOf(o, 'opensAt', at, OPENS_AT);
     return offer;

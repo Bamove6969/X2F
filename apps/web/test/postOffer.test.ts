@@ -33,18 +33,61 @@ import {
   saveDraft,
   usdValue,
   validate,
+  type FormErrors,
   type FormState,
+  type MinTrades,
 } from '../src/screens/post/offerForm.js';
 
-const form = (over: Partial<FormState> = {}): FormState => ({
-  ...DEFAULT_FORM,
+/** The single-offer form's fields (before J-16): one method, one currency, one band. */
+interface Flat {
+  side: FormState['side'];
+  methodId: string;
+  currency: string;
+  marginSide: 'above' | 'below';
+  marginPct: string;
+  unit: FormState['unit'];
+  min: string;
+  max: string;
+  terms: string;
+  minTrades: MinTrades;
+  country: string;
+}
+
+const FLAT: Flat = {
+  side: 'sell',
   methodId: 'ZELLE',
+  currency: 'USD',
+  marginSide: 'above',
+  marginPct: '0.5',
   // These tests type fiat; offerAmounts.test.tsx covers the XMR default.
   unit: 'fiat',
   min: '$50',
   max: '$2,000',
-  ...over,
-});
+  terms: '',
+  minTrades: null,
+  country: '',
+};
+
+/** J-16: the flat fields as the form keeps them, one currency with one band (key 1) and one method (or none). */
+function one(f: Flat): FormState {
+  return {
+    side: f.side,
+    unit: f.unit,
+    currencies: [f.currency],
+    bands: { [f.currency]: [{ key: 1, min: f.min, max: f.max, marginSide: f.marginSide, marginPct: f.marginPct, minTrades: f.minTrades }] },
+    methods: f.methodId === '' ? [] : [{ methodId: f.methodId, adjustBps: 0, same: true, instructions: '', byCurrency: {} }],
+    terms: f.terms,
+    country: f.country,
+  };
+}
+
+const form = (over: Partial<Flat> = {}): FormState => one({ ...FLAT, ...over });
+
+/** The posted margin of the one band. */
+const marginOf = (f: FormState) => validate(f).body?.currencies[0]?.bands[0]?.marginBps;
+
+/** The one band's own errors. */
+const bandErrors = (r: { errors: FormErrors }) => r.errors.bands?.['USD']?.rows[1];
 
 function memoryStorage(): Storage {
   const m = new Map<string, string>();
@@ -75,10 +118,10 @@ describe('parseAmount', () => {
 });
 
 describe('margin (owner F1, 7 Nov: pick above or below, type the percentage, at most 50%)', () => {
-  const bps = (marginSide: 'above' | 'below', marginPct: string) => marginBpsOf(form({ marginSide, marginPct }));
+  const bps = (marginSide: 'above' | 'below', marginPct: string) => marginBpsOf({ marginSide, marginPct });
 
   it('starts at 0.5% above the market (the board), and offers exactly above and below', () => {
-    expect(DEFAULT_FORM).toMatchObject({ marginSide: 'above', marginPct: '0.5' });
+    expect(DEFAULT_FORM.bands['USD']![0]).toMatchObject({ marginSide: 'above', marginPct: '0.5' });
     expect(MARGIN_SIDES.map((o) => o.id)).toEqual(['above', 'below']);
     expect(MARGIN_MAX_BPS).toBe(5000);
   });
@@ -109,14 +152,14 @@ describe('margin (owner F1, 7 Nov: pick above or below, type the percentage, at 
   });
 
   it('validate sends the signed margin, and refuses a bad or too-large percentage inline, on the margin', () => {
-    expect(validate(form({ marginSide: 'above', marginPct: '50' })).body?.pricing).toEqual({ mode: 'market', marginBps: 5000 });
-    expect(validate(form({ marginSide: 'below', marginPct: '50' })).body?.pricing).toEqual({ mode: 'market', marginBps: -5000 });
+    expect(marginOf(form({ marginSide: 'above', marginPct: '50' }))).toBe(5000);
+    expect(marginOf(form({ marginSide: 'below', marginPct: '50' }))).toBe(-5000);
     for (const marginSide of ['above', 'below'] as const) {
       const r = validate(form({ marginSide, marginPct: '50.01' }));
       expect(r.body).toBeUndefined();
-      expect(r.errors).toEqual({ margin: MARGIN_ERROR });
+      expect(r.errors).toEqual({ bands: { USD: { rows: { 1: { margin: MARGIN_ERROR } } } } });
     }
-    expect(validate(form({ marginPct: '' })).errors).toEqual({ margin: MARGIN_ERROR });
+    expect(validate(form({ marginPct: '' })).errors).toEqual({ bands: { USD: { rows: { 1: { margin: MARGIN_ERROR } } } } });
     expect(MARGIN_ERROR).not.toContain('!');
   });
 
@@ -188,13 +231,12 @@ describe('validate', () => {
   it('builds the POST /v1/offers body for a market offer', () => {
     const r = validate(form({ terms: '  Memo: trade number  ', minTrades: 5 }));
     expect(r.errors).toEqual({});
+    // J-16: whole units (O-018), one band per currency here, the method with its instructions.
     expect(r.body).toEqual({
       side: 'sell',
-      methodId: 'ZELLE',
-      currency: 'USD',
-      pricing: { mode: 'market', marginBps: 50 },
-      amounts: { amountUnit: 'fiat', minFiatCents: 5000n, maxFiatCents: 200000n },
-      minTrades: 5,
+      amountUnit: 'fiat',
+      currencies: [{ currency: 'USD', bands: [{ min: '50', max: '2000', marginBps: 50, minTrades: 5 }] }],
+      methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: '' }],
       terms: 'Memo: trade number',
     });
   });
@@ -202,33 +244,35 @@ describe('validate', () => {
   it('there is no fixed price (owner Q1): the form has no price box and always sends a market margin', () => {
     expect(DEFAULT_FORM).not.toHaveProperty('priceMode');
     expect(DEFAULT_FORM).not.toHaveProperty('fixed');
-    expect(validate(form({ side: 'buy', marginSide: 'below', marginPct: '3' })).body?.pricing).toEqual({ mode: 'market', marginBps: -300 });
+    expect(marginOf(form({ side: 'buy', marginSide: 'below', marginPct: '3' }))).toBe(-300);
+    expect(validate(form()).body?.currencies[0]?.bands[0]).not.toHaveProperty('centsPerXmr');
   });
 
   it('refuses min > max inline, on the smallest trade', () => {
     const r = validate(form({ min: '500', max: '100' }));
     expect(r.body).toBeUndefined();
-    expect(r.errors.min).toBe("The smallest trade can't be more than the largest.");
+    expect(bandErrors(r)?.min).toBe("The smallest trade can't be more than the largest.");
   });
 
   it('refuses missing or zero amounts, a missing method and a missing margin', () => {
     const r = validate(form({ methodId: '', min: '', max: '0', marginPct: 'x' }));
     expect(r.body).toBeUndefined();
-    expect(Object.keys(r.errors).sort()).toEqual(['margin', 'max', 'method', 'min']);
+    expect(Object.keys(r.errors).sort()).toEqual(['bands', 'methods']);
+    expect(Object.keys(bandErrors(r)!).sort()).toEqual(['margin', 'max', 'min']);
   });
 
   it('a gift-card method needs the card\'s country, sent as `country` (Revision 2026-10-21)', () => {
-    const refused = validate(form({ methodId: 'AMAZON_GIFT_CARD' }), { giftCard: true });
+    const refused = validate(form({ methodId: 'AMAZON_GIFT_CARD' }), { giftCard: (id) => id === 'AMAZON_GIFT_CARD' });
     expect(refused.body).toBeUndefined();
     expect(refused.errors).toEqual({ country: COUNTRY_REQUIRED, giftCardTerms: GIFT_CARD_TERMS_UNTICKED });
     // J-17: with the poster's side's terms ticked (a sell ad's poster checks the card).
-    const ok = validate(form({ methodId: 'AMAZON_GIFT_CARD', country: 'US' }), { giftCard: true, giftCardTicked: new Set(GIFT_CARD_TERMS.checker) });
+    const ok = validate(form({ methodId: 'AMAZON_GIFT_CARD', country: 'US' }), { giftCard: (id) => id === 'AMAZON_GIFT_CARD', giftCardTicked: new Set(GIFT_CARD_TERMS.checker) });
     expect(ok.errors).toEqual({});
     expect(ok.body?.country).toBe('US');
   });
 
   it('never sends a country for a method that is not a gift card', () => {
-    const r = validate(form({ country: 'US' }), { giftCard: false });
+    const r = validate(form({ country: 'US' }), { giftCard: () => false });
     expect(r.errors).toEqual({});
     expect(r.body).not.toHaveProperty('country');
     expect(validate(form()).body).not.toHaveProperty('country');
@@ -253,29 +297,32 @@ describe('validate: terms (the API rule, Task 4 review M2)', () => {
 describe('minimum completed trades (owner, 8 Nov: "This will be 5, 10, 25, 50")', () => {
   it('is a fixed choice: No minimum (the default), 5, 10, 25 or 50', () => {
     expect(MIN_TRADES).toEqual([null, 5, 10, 25, 50]);
-    expect(DEFAULT_FORM.minTrades).toBeNull();
+    expect(DEFAULT_FORM.bands['USD']![0]!.minTrades).toBeNull();
     expect(MIN_TRADES_OPTIONS.map((o) => o.label)).toEqual(['No minimum', '5', '10', '25', '50']);
   });
 
   it('posts null for no minimum and the number for a choice', () => {
-    expect(validate(form()).body?.minTrades).toBeNull();
-    for (const n of [5, 10, 25, 50] as const) expect(validate(form({ minTrades: n })).body?.minTrades).toBe(n);
+    const rule = (f: FormState) => validate(f).body?.currencies[0]?.bands[0]?.minTrades;
+    expect(rule(form())).toBeNull();
+    for (const n of [5, 10, 25, 50] as const) expect(rule(form({ minTrades: n }))).toBe(n);
   });
 
   it('a no-minimum draft round-trips', () => {
     const s = memoryStorage();
     saveDraft(s, form({ minTrades: null }));
-    expect(loadDraft(s)?.minTrades).toBeNull();
+    expect(loadDraft(s)?.bands['USD']![0]!.minTrades).toBeNull();
     saveDraft(s, form({ minTrades: 25 }));
-    expect(loadDraft(s)?.minTrades).toBe(25);
+    expect(loadDraft(s)?.bands['USD']![0]!.minTrades).toBe(25);
   });
 });
 
 describe('preview and navigation', () => {
   it('says who can trade openly, never a name (the board says "you")', () => {
-    expect(previewLine('sell', 'Zelle', 'USD', null)).toBe('Selling XMR via Zelle · USD · you');
-    expect(previewLine('sell', 'Zelle', 'USD', 25)).toBe('Selling XMR via Zelle · USD · you · 25+ completed trades');
-    expect(previewLine('buy', 'Zelle', 'EUR', 10)).toBe('Buying XMR via Zelle · EUR · you · 10+ completed trades');
+    expect(previewLine('sell', ['Zelle'], ['USD'], null)).toBe('Selling XMR via Zelle · USD · you');
+    expect(previewLine('sell', ['Zelle'], ['USD'], 25)).toBe('Selling XMR via Zelle · USD · you · 25+ completed trades');
+    expect(previewLine('buy', ['Zelle'], ['EUR'], 10)).toBe('Buying XMR via Zelle · EUR · you · 10+ completed trades');
+    // J-16: several methods and currencies.
+    expect(previewLine('sell', ['Zelle', 'PayPal'], ['USD', 'CAD'], null)).toBe('Selling XMR via Zelle, PayPal · USD, CAD · you');
   });
 
   it("returns to the list where takers see the new offer: a sell ad on Buy, a buy ad on Sell", () => {
@@ -294,19 +341,30 @@ describe('draft', () => {
 
   it('a draft from before the typed margin keeps its market margin; a fixed-price draft is dropped (owner Q1)', () => {
     const s = memoryStorage();
-    const { marginSide: _s, marginPct: _p, ...rest } = form();
+    // A draft of the single-offer form (before J-16, no version) loads as one currency, one band, one method.
+    const { marginSide: _s, marginPct: _p, ...rest } = FLAT;
     s.setItem('x2f.post-draft', JSON.stringify({ ...rest, priceMode: 'market', marginBps: -120, fixed: '' }));
-    expect(loadDraft(s)).toMatchObject({ marginSide: 'below', marginPct: '1.2' });
+    expect(loadDraft(s)?.bands['USD']![0]).toMatchObject({ marginSide: 'below', marginPct: '1.2' });
+    expect(loadDraft(s)?.methods.map((m) => m.methodId)).toEqual(['ZELLE']);
     s.setItem('x2f.post-draft', JSON.stringify({ ...rest, priceMode: 'fixed', marginBps: 50, fixed: '340' }));
     expect(loadDraft(s)).toBeNull();
     // A typed percentage over 50 is kept as typed (the form shows the error); the side must be one of the two.
-    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), marginSide: 'sideways' }));
+    s.setItem('x2f.post-draft', JSON.stringify({ ...FLAT, marginSide: 'sideways' }));
     expect(loadDraft(s)).toBeNull();
+    const saved = memoryStorage();
+    saveDraft(saved, form());
+    const v2 = JSON.parse(saved.getItem('x2f.post-draft')!) as { bands: Record<string, Record<string, unknown>[]> };
+    v2.bands['USD']![0]!.marginSide = 'sideways';
+    saved.setItem('x2f.post-draft', JSON.stringify(v2));
+    expect(loadDraft(saved)).toBeNull();
   });
 
   it('refuses a draft whose country is not an alpha-2 code', () => {
     const s = memoryStorage();
-    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), country: 'usa' }));
+    s.setItem('x2f.post-draft', JSON.stringify({ ...FLAT, country: 'usa' }));
+    expect(loadDraft(s)).toBeNull();
+    saveDraft(s, form({ country: 'GB' }));
+    s.setItem('x2f.post-draft', s.getItem('x2f.post-draft')!.replace('"country":"GB"', '"country":"usa"'));
     expect(loadDraft(s)).toBeNull();
   });
 
@@ -315,12 +373,16 @@ describe('draft', () => {
     expect(loadDraft(s)).toBeNull();
     s.setItem('x2f.post-draft', '{not json');
     expect(loadDraft(s)).toBeNull();
-    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), minTrades: 7 }));
+    s.setItem('x2f.post-draft', JSON.stringify({ ...FLAT, minTrades: 7 }));
     expect(loadDraft(s)).toBeNull();
     // A draft from before the owner's choices (0 for anyone) is No minimum, never read as a minimum (review L2).
-    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), minTrades: 0 }));
-    expect(loadDraft(s)?.minTrades).toBeNull();
-    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), side: 'steal' }));
+    s.setItem('x2f.post-draft', JSON.stringify({ ...FLAT, minTrades: 0 }));
+    expect(loadDraft(s)?.bands['USD']![0]!.minTrades).toBeNull();
+    s.setItem('x2f.post-draft', JSON.stringify({ ...FLAT, side: 'steal' }));
+    expect(loadDraft(s)).toBeNull();
+    s.setItem('x2f.post-draft', JSON.stringify({ v: 2, ...form(), side: 'steal' }));
+    expect(loadDraft(s)).toBeNull();
+    s.setItem('x2f.post-draft', JSON.stringify({ v: 3, ...form() }));
     expect(loadDraft(s)).toBeNull();
   });
 
@@ -373,8 +435,8 @@ describe('api parsers (Task 3 shapes: GET /v1/price, GET /v1/methods on the main
   it('parseMethods takes the whole catalog list (`all`)', () => {
     const row = (id: string, name: string, giftCard = false) => ({ id, name, group: 'g', giftCard, offers: 0, bestRate: null });
     expect(parseMethods({ live: [row('ZELLE', 'Zelle')], all: [row('ZELLE', 'Zelle'), row('AMAZON_GIFT_CARD', 'Amazon gift card', true)] })).toEqual([
-      { id: 'ZELLE', name: 'Zelle', giftCard: false },
-      { id: 'AMAZON_GIFT_CARD', name: 'Amazon gift card', giftCard: true },
+      { id: 'ZELLE', name: 'Zelle', giftCard: false, upToMin: null },
+      { id: 'AMAZON_GIFT_CARD', name: 'Amazon gift card', giftCard: true, upToMin: null },
     ]);
     expect(() => parseMethods({ live: [] })).toThrow();
   });
