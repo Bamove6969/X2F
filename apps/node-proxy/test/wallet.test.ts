@@ -17,7 +17,7 @@ describe('node proxy with monero-ts wallets on a restricted regtest node', () =>
   let proxyUri: string;
   const wallets: MoneroWalletFull[] = [];
   /** Every call the proxy answered: path (and json_rpc method) with its status. */
-  const calls: { call: string; status: number }[] = [];
+  const calls: { method: string; call: string; status: number }[] = [];
 
   beforeAll(async () => {
     node = await startRegtest({ restrictedRpc: true });
@@ -35,7 +35,7 @@ describe('node proxy with monero-ts wallets on a restricted regtest node', () =>
           call += ' (unparsed)';
         }
       }
-      calls.push({ call, status: reply.statusCode });
+      calls.push({ method: req.method, call, status: reply.statusCode });
     });
     await app.listen({ host: '127.0.0.1', port: 0 });
     const a = app.server.address();
@@ -104,7 +104,10 @@ describe('node proxy with monero-ts wallets on a restricted regtest node', () =>
     await bob.sync();
     expect((await bob.getTxs({ hash }))[0]?.getIsConfirmed()).toBe(true);
 
-    const refused = calls.filter((c) => c.status !== 200 && c.status !== 204); // 204: the preflight above
+    // The one preflight above is the only answer that may be other than 200 (review L4).
+    const preflight = (c: (typeof calls)[number]): boolean => c.method === 'OPTIONS' && c.call === '/get_transactions' && c.status === 204;
+    expect(calls.filter(preflight)).toHaveLength(1);
+    const refused = calls.filter((c) => c.status !== 200 && !preflight(c));
     expect(refused).toEqual([]);
     expect(calls.length).toBeGreaterThan(0);
     // Shown in the test output so a change in what wallets call is easy to review.
