@@ -104,6 +104,24 @@ function describe(tx: MoneroTxWallet): DescribedTx {
   };
 }
 
+/**
+ * Where monerod's `/get_transactions` answer puts `txHash`: 'block' only for that exact hash, out
+ * of the pool and at a block height; 'pool' for that hash in the pool; 'none' when the daemon does
+ * not have it. An answer that is not an OK reply is EscrowError('daemon-unavailable') (retried),
+ * never 'none'.
+ */
+export function txStatusOf(body: unknown, txHash: string): TxStatus {
+  const r = body as { status?: unknown; txs?: unknown } | null;
+  if (typeof r !== 'object' || r === null || r.status !== 'OK') throw new EscrowError('daemon-unavailable', 'tx lookup: no OK answer');
+  if (r.txs !== undefined && !Array.isArray(r.txs)) throw new EscrowError('daemon-unavailable', 'tx lookup: malformed answer');
+  const tx = ((r.txs ?? []) as unknown[]).find((t): t is { tx_hash: string; in_pool?: unknown; block_height?: unknown } =>
+    typeof t === 'object' && t !== null && (t as { tx_hash?: unknown }).tx_hash === txHash,
+  );
+  if (!tx) return 'none';
+  if (tx.in_pool === true) return 'pool';
+  return tx.in_pool === false && typeof tx.block_height === 'number' && Number.isSafeInteger(tx.block_height) && tx.block_height > 0 ? 'block' : 'none';
+}
+
 export class MoneroMultisigSession implements EscrowSession {
   constructor(
     /** Exposed for tests that build hostile tx sets; product code never touches it. */
@@ -347,7 +365,10 @@ export class MoneroMultisigSession implements EscrowSession {
 
   private daemon: Promise<MoneroDaemonRpc> | undefined;
 
-  /** monero-ts's daemon client, in-process, on the same URI as the wallet (the node proxy in browsers). */
+  /**
+   * monero-ts's daemon client, in-process, on the same URI as the wallet. Only proveTx (the
+   * moderator, in Node) uses it: in the web app's bundle its HTTP cannot send (see txStatus).
+   */
   private daemonClient(): Promise<MoneroDaemonRpc> {
     this.daemon ??= MoneroDaemonRpc.connectToDaemonRpc({ server: { uri: this.daemonUri, timeoutMs: DAEMON_TIMEOUT_MS }, proxyToWorker: false });
     this.daemon.catch(() => {
@@ -356,18 +377,35 @@ export class MoneroMultisigSession implements EscrowSession {
     return this.daemon;
   }
 
+  /**
+   * The daemon's own view of one tx: monerod's `/get_transactions`, read with a plain `fetch` (the
+   * node proxy allows that path), never monero-ts's in-process HTTP client. In the web app's bundle
+   * that client cannot send at all: its Node `http`/`https` imports resolve to an empty module, so
+   * `new http.Agent()` throws before any request ("o.default.Agent is not a constructor"). Every
+   * lookup in the escrow worker was then 'daemon-unavailable', retried every tick and never
+   * answered, so a builder never saw its release in a block (P0, 8 Nov; seen in the demo's seller
+   * worker on 10 Nov). The wallet's own calls run in monero-ts's prebuilt worker, whose HTTP works.
+   * The request is aborted after DAEMON_TIMEOUT_MS, and `timed` bounds the reading of the body too.
+   */
   async txStatus(txHash: string): Promise<TxStatus> {
     if (!TX_HASH.test(txHash)) return 'none';
-    let tx: Awaited<ReturnType<MoneroDaemonRpc['getTx']>>;
+    let body: unknown;
     try {
-      tx = await timed((async () => (await this.daemonClient()).getTx(txHash))(), 'tx lookup');
+      body = await timed((async () => {
+        const res = await fetch(`${this.daemonUri.replace(/\/+$/, '')}/get_transactions`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ txs_hashes: [txHash], decode_as_json: false, prune: true }),
+          signal: AbortSignal.timeout(DAEMON_TIMEOUT_MS),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return (await res.json()) as unknown;
+      })(), 'tx lookup');
     } catch (e) {
       if (e instanceof EscrowError) throw e;
       throw new EscrowError('daemon-unavailable', `tx lookup failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
     }
-    if (!tx || tx.getHash() !== txHash) return 'none';
-    if (tx.getIsConfirmed() === true && tx.getInTxPool() !== true) return 'block';
-    return tx.getInTxPool() === true ? 'pool' : 'none';
+    return txStatusOf(body, txHash);
   }
 
   async txSeen(txHash: string): Promise<boolean> {
@@ -377,7 +415,7 @@ export class MoneroMultisigSession implements EscrowSession {
   async spentBy(txHash: string): Promise<boolean> {
     if (!TX_HASH.test(txHash)) return false;
     try {
-      const txs = await this.wallet.getTxs({ hashes: [txHash], isOutgoing: true, isConfirmed: true });
+      const txs = await timed(this.wallet.getTxs({ hashes: [txHash], isOutgoing: true, isConfirmed: true }), 'spent by');
       return txs.length === 1 && txs[0]!.getHash() === txHash && txs[0]!.getIsOutgoing() === true && txs[0]!.getIsConfirmed() === true;
     } catch {
       return false;

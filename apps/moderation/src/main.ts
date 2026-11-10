@@ -171,8 +171,13 @@ const fromHexIdentity = (m: SealedParty['me']): Identity => ({
   boxSecret: sodium.from_hex(m.boxSecret),
 });
 
+/** The longest one call to the API's internal listener or the relay admin may take (headers and body). */
+export const LINK_FETCH_TIMEOUT_MS = 15_000;
+
+// Bounded: the watcher's pass (and so `settled`) waits on these; one that never answers fails and
+// is tried again on the next pass, never a pass that waits for good.
 const defaultFetch: Fetch = async (url, init) => {
-  const res = await globalThis.fetch(url, init);
+  const res = await globalThis.fetch(url, { ...init, signal: AbortSignal.timeout(LINK_FETCH_TIMEOUT_MS) });
   return { status: res.status, json: () => res.json() as Promise<unknown> };
 };
 
