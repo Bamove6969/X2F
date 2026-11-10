@@ -686,6 +686,31 @@ describe('taking a gift-card offer (J-17, F13 tick-box terms)', () => {
     await expect(deps.db.query('update trades set gift_card_terms = null where code = $1', [code])).rejects.toThrow(/never change/);
   });
 
+  it('a two-method offer (J-16 x J-17): the chosen method decides; a gift-card take keeps the terms and the gift-card windows (G50; lead p11-130)', async () => {
+    const poster = await person();
+    const taker = await person();
+    const other = await person();
+    const bands = [{ min: '10', max: '5000', marginBps: 0, minTrades: null }];
+    const res = await poster.browser.post('/v1/offers', {
+      side: 'sell', terms: 'Zelle or a Steam card.', country: 'US', giftCardTerms: GIFT_CARD_TERMS_VERSION,
+      currencies: [{ currency: 'USD', bands }],
+      methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: '' }, { methodId: 'STEAM_GIFT_CARD', adjustBps: 0, instructions: '' }],
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const offer = (res.json() as { id: string }).id;
+    // Zelle: no terms; the card: the terms, exactly.
+    expect((await take(taker, offer, body(taker, XMR, undefined, { methodId: 'ZELLE', giftCardTerms: GIFT_CARD_TERMS_VERSION }))).statusCode).toBe(400);
+    expect((await take(other, offer, body(other, XMR, undefined, { methodId: 'STEAM_GIFT_CARD' }))).statusCode).toBe(400);
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [offer])).rowCount).toBe(0);
+    const zelle = await taken(taker, offer, body(taker, XMR, undefined, { methodId: 'ZELLE' }));
+    const card = await taken(other, offer, body(other, XMR, undefined, { methodId: 'STEAM_GIFT_CARD', giftCardTerms: GIFT_CARD_TERMS_VERSION }));
+    const rows = async (code: string) =>
+      (await deps.db.query('select method_id, gift_card_terms, confirm_window_min, pay_window_min from trades where code = $1', [code])).rows[0];
+    expect(await rows(zelle)).toEqual({ method_id: 'ZELLE', gift_card_terms: null, confirm_window_min: 90, pay_window_min: 90 });
+    // The gift-card profile (one lookup, tradeProfile): 45 minutes to check the card (owner G50), 90 to send it (lead default, p11-130).
+    expect(await rows(card)).toEqual({ method_id: 'STEAM_GIFT_CARD', gift_card_terms: GIFT_CARD_TERMS_VERSION, confirm_window_min: 45, pay_window_min: 90 });
+  });
+
   it('a take of any other offer carries no gift-card terms', async () => {
     const poster = await person();
     const taker = await person();

@@ -372,7 +372,7 @@ describe('gift-card offers (J-17)', () => {
   it("the card's currency follows its country (T-081)", async () => {
     const p = await poster();
     for (const [country, currency] of [['US', 'EUR'], ['DE', 'USD'], ['CA', 'USD'], ['AQ', 'USD']] as const) {
-      const res = await p.browser.post('/v1/offers', { ...BODY, ...gift, country, currency });
+      const res = await p.browser.post('/v1/offers', flexBody({ ...BODY, ...gift, country, currency }));
       expect(res.statusCode, `${country} ${currency}`).toBe(400);
     }
     await post(p, { ...gift, country: 'DE', currency: 'EUR' });
@@ -381,15 +381,44 @@ describe('gift-card offers (J-17)', () => {
     await post(p, { ...gift, country: 'PA', currency: 'USD' });
   });
 
+  it('a gift-card method among several (J-16 x J-17, lead ruling): that method may be offered only in a currency of the card\'s country; the others in any', async () => {
+    const p = await poster();
+    const bands = [{ min: '50', max: '2000', marginBps: 50, minTrades: null }];
+    const two = (giftMethod: Record<string, unknown>, over: Record<string, unknown> = {}) => ({
+      side: 'sell', terms: 'Zelle or a Steam card.', country: 'US', giftCardTerms: GIFT_CARD_TERMS_VERSION,
+      currencies: [{ currency: 'USD', bands }, { currency: 'EUR', bands }],
+      methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: '' }, { methodId: 'STEAM_GIFT_CARD', adjustBps: 0, instructions: '', ...giftMethod }],
+      ...over,
+    });
+    // The card method in every currency of the offer (the default), or named in EUR too: EUR is not a US card's.
+    expect((await p.browser.post('/v1/offers', two({}))).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', two({ currencies: ['USD', 'EUR'] }))).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', two({ currencies: ['EUR'] }))).statusCode).toBe(400);
+    // The country still has to be the card's for the card method's own currency.
+    expect((await p.browser.post('/v1/offers', two({ currencies: ['USD'] }, { country: 'DE' }))).statusCode).toBe(400);
+    // The terms version is the offer's whenever any method is a gift card.
+    const { giftCardTerms: _v, ...unticked } = two({ currencies: ['USD'] });
+    expect((await p.browser.post('/v1/offers', unticked)).statusCode).toBe(400);
+    expect((await deps.db.query('select 1 from offers where account_id = $1', [p.id])).rowCount).toBe(0);
+    // The card method in US dollars only, Zelle in both: posted, with the card's country and the terms on the offer.
+    const res = await p.browser.post('/v1/offers', two({ currencies: ['USD'] }));
+    expect(res.statusCode, res.body).toBe(201);
+    const id = (res.json() as { id: string }).id;
+    expect((await deps.db.query('select country, gift_card_terms from offers where id = $1', [id])).rows[0]).toEqual({ country: 'US', gift_card_terms: GIFT_CARD_TERMS_VERSION });
+    expect((await list('side=sell&method=STEAM_GIFT_CARD&currency=USD')).find((c) => c.id === id)).toMatchObject({ country: 'US' });
+    expect((await list('side=sell&method=STEAM_GIFT_CARD&currency=EUR')).some((c) => c.id === id)).toBe(false);
+    expect((await list('side=sell&method=ZELLE&currency=EUR')).find((c) => c.id === id)).toMatchObject({ country: 'US' });
+  });
+
   it("the poster ticks the gift-card terms; the version they ticked is kept on the offer (F13)", async () => {
     const p = await poster();
     const { giftCardTerms: _v, ...unticked } = gift;
-    expect((await p.browser.post('/v1/offers', { ...BODY, ...unticked, country: 'US' })).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, ...unticked, country: 'US' }))).statusCode).toBe(400);
     // A page showing older words cannot agree to these.
-    expect((await p.browser.post('/v1/offers', { ...BODY, ...gift, country: 'US', giftCardTerms: 'gift-card-terms-unsigned-0' })).statusCode).toBe(400);
-    expect((await p.browser.post('/v1/offers', { ...BODY, ...gift, country: 'US', giftCardTerms: true })).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, ...gift, country: 'US', giftCardTerms: 'gift-card-terms-unsigned-0' }))).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, ...gift, country: 'US', giftCardTerms: true }))).statusCode).toBe(400);
     // Not a gift card: no gift-card terms.
-    expect((await p.browser.post('/v1/offers', { ...BODY, giftCardTerms: GIFT_CARD_TERMS_VERSION })).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, giftCardTerms: GIFT_CARD_TERMS_VERSION }))).statusCode).toBe(400);
     const id = await post(p, { ...gift, country: 'US' });
     const plain = await post(p, { currency: 'EUR' });
     const { rows } = await deps.db.query<{ id: string; gift_card_terms: string | null }>(
