@@ -105,6 +105,19 @@ export function workingUntil(raw: unknown, now: Date): Date | null {
   return windowEndsAt(h, now);
 }
 
+/**
+ * Review S-m4 (owner G9: members "won't be able to extend the session anyway"): inside the session
+ * route's transaction, 403 `past-working-hours` `{ workingUntil }` when a member's session would be
+ * given an end later than its current one and past the end of the member's working window. Nothing
+ * for the account owner, for "any" hours, or for an end no later than the session already has.
+ */
+export async function assertSessionEndInHours(q: Queryable, memberId: string | null, now: Date, end: Date, currentEnd: Date): Promise<void> {
+  if (memberId === null || end.getTime() <= currentEnd.getTime()) return;
+  const { rows } = await q.query<{ hours: unknown }>('select hours from team_members where id = $1', [memberId]);
+  const until = workingUntil(rows[0]?.hours, now);
+  if (until !== null && end.getTime() > until.getTime()) throw new ApiError(403, 'past-working-hours', { workingUntil: until.toISOString() });
+}
+
 /** The band of a stored row, or null. */
 export function bandOf(min: string | null, max: string | null): TradeBand | null {
   if (min === null || max === null) return null;
@@ -123,6 +136,32 @@ export function bandKey(b: TradeBand | null): string {
 /** The confirm action's `hours`: `any` or `<days comma-separated> <start>-<end> <tz>`, e.g. `Mon,Tue 08:00-18:00 UTC`. */
 export function hoursKey(h: LoginHours): string {
   return h === 'any' ? 'any' : `${h.days.join(',')} ${h.start}-${h.end} ${h.tz}`;
+}
+
+/** The band a confirm action's `band` names, or undefined when it is not one `bandKey` makes. */
+export function bandFromKey(key: string): TradeBand | null | undefined {
+  if (key === 'none') return null;
+  const m = /^(0|[1-9]\d{0,29})-([1-9]\d{0,29})$/.exec(key);
+  if (!m) return undefined;
+  try {
+    const b = parseBand({ minAtomic: m[1], maxAtomic: m[2] });
+    return b !== null && bandKey(b) === key ? b : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The hours a confirm action's `hours` names, or undefined when it is not one `hoursKey` makes. */
+export function hoursFromKey(key: string): LoginHours | undefined {
+  if (key === 'any') return 'any';
+  const m = /^([A-Za-z,]{3,27}) (\d\d:\d\d)-(\d\d:\d\d) ([A-Za-z0-9_+\-/]{1,64})$/.exec(key);
+  if (!m) return undefined;
+  try {
+    const h = validateHours({ days: m[1]!.split(','), start: m[2], end: m[3], tz: m[4] });
+    return hoursKey(h) === key ? h : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function outside(b: TradeBand): ApiError {

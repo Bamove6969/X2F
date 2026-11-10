@@ -10,6 +10,7 @@
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { hasAbility, type AbilityNeed } from './abilities.js';
+import { assertInsideBand, bandOf, insideHours } from './limits.js';
 
 /** Every action the log records. */
 export type AuditAction =
@@ -135,7 +136,7 @@ export async function auditMember(
   now: Date,
 ): Promise<void> {
   if (actor.memberId === null) return;
-  await assertLiveMember(q, actor, ACTION_ABILITY[a.action]);
+  await assertLiveMember(q, actor, ACTION_ABILITY[a.action], now, { tradeCode: a.tradeCode ?? null, offerId: a.offerId ?? null });
   const detail = {
     ...(a.tradeCode ? await tradeAmount(q, a.tradeCode) : {}), ...(a.offerId ? await offerTerms(q, a.offerId) : {}), ...(a.detail ?? {}),
   };
@@ -167,11 +168,21 @@ export async function auditLead(q: Queryable, actor: Actor, a: { action: LeadAud
  * one who no longer holds `need` (403 `forbidden`), exactly as `auditMember` does, without writing
  * a log row. For a write a member's request causes that is not itself an audited action (the
  * `return-confirmed` a member's Confirm cancel records first). Nothing for the account owner.
+ *
+ * J-20, read from the same locked row: outside the member's working hours at `now` → 401
+ * `outside-login-hours` (p7-11); an action on a trade (`on.tradeCode`) or an offer (`on.offerId`)
+ * outside the member's trade-size band → 403 `outside-trade-band` (p7-4, team/limits.ts).
  */
-export async function assertLiveMember(q: Queryable, actor: Actor, need: AbilityNeed): Promise<void> {
+export async function assertLiveMember(
+  q: Queryable,
+  actor: Actor,
+  need: AbilityNeed,
+  now: Date,
+  on: { tradeCode?: string | null; offerId?: string | null } = {},
+): Promise<void> {
   if (actor.memberId === null) return;
-  const { rows } = await q.query<{ abilities: string[] }>(
-    `select tm.abilities from team_members tm
+  const { rows } = await q.query<{ abilities: string[]; band_min_atomic: string | null; band_max_atomic: string | null; hours: unknown }>(
+    `select tm.abilities, tm.band_min_atomic::text, tm.band_max_atomic::text, tm.hours from team_members tm
       where tm.id = $1 and tm.account_id = $2 and tm.removed_at is null and tm.joined_at is not null
       for share`,
     [actor.memberId, actor.accountId],
@@ -179,6 +190,8 @@ export async function assertLiveMember(q: Queryable, actor: Actor, need: Ability
   const live = rows[0];
   if (!live) throw new ApiError(401, 'not-authenticated');
   if (!hasAbility(live.abilities, need)) throw new ApiError(403, 'forbidden');
+  if (!insideHours(live.hours, now)) throw new ApiError(401, 'outside-login-hours');
+  await assertInsideBand(q, bandOf(live.band_min_atomic, live.band_max_atomic), on);
 }
 
 export interface AuditEntry {

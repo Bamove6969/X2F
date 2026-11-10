@@ -28,6 +28,7 @@ import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
 import { assertVendor } from '../routes/accountType.js';
 import { hasAbility, isCustomSet, legacyRoles, parseAbilities, presetOf, sortAbilities, type PresetId, type TeamRole } from './abilities.js';
+import { applyLimits, bandOf, bandView, storedHours, type LoginHours, type MemberLimits, type TradeBandView } from './limits.js';
 import { MAX_TEAM_MEMBERS, STREAM_ABILITY } from './perms.js';
 
 /** An invite lives this long (as Plan 4's staff invites). */
@@ -54,6 +55,10 @@ export interface TeamMemberView {
   /** True when those roles do not describe the boxes exactly: the web's roles view says "Custom" (review 2026-11-09 m3). */
   custom: boolean;
   status: MemberStatus;
+  /** J-20 (p7-4): the trade-size band in XMR atomic units, or null (no band). */
+  band: TradeBandView | null;
+  /** J-20 (p7-11): working hours, "any" or the days-and-hours window; null when the stored value is invalid (the member is then always outside). */
+  hours: LoginHours | null;
   /** Until when the invite (or an unfinished sign-up) can be used; null once joined. */
   inviteExpiresAt: string | null;
   joinedAt: string | null;
@@ -77,7 +82,13 @@ interface MemberRow {
   joined_at: Date | null;
   invite_expires_at: Date;
   created_at: Date;
+  band_min_atomic: string | null;
+  band_max_atomic: string | null;
+  hours: unknown;
 }
+
+/** The columns a `MemberRow` reads. */
+const MEMBER_COLS = 'id, display_name, abilities, member_account_id, joined_at, invite_expires_at, created_at, band_min_atomic::text, band_max_atomic::text, hours';
 
 function toView(r: MemberRow): TeamMemberView {
   const status: MemberStatus = r.joined_at !== null ? 'active' : r.member_account_id !== null ? 'joining' : 'invited';
@@ -87,6 +98,8 @@ function toView(r: MemberRow): TeamMemberView {
     ...abilitiesView(r.abilities),
     custom: isCustomSet(r.abilities),
     status,
+    band: bandView(bandOf(r.band_min_atomic, r.band_max_atomic)),
+    hours: storedHours(r.hours),
     inviteExpiresAt: r.joined_at === null ? r.invite_expires_at.toISOString() : null,
     joinedAt: r.joined_at?.toISOString() ?? null,
     createdAt: r.created_at.toISOString(),
@@ -96,7 +109,7 @@ function toView(r: MemberRow): TeamMemberView {
 /** The account's live members and open invites, oldest first. */
 export async function listMembers(db: Queryable, accountId: string, now: Date): Promise<TeamMemberView[]> {
   const { rows } = await db.query<MemberRow>(
-    `select id, display_name, abilities, member_account_id, joined_at, invite_expires_at, created_at
+    `select ${MEMBER_COLS}
        from team_members where account_id = $1 and ${LIVE_MEMBER} order by created_at, id`,
     [accountId, now],
   );
@@ -304,6 +317,30 @@ export async function setAbilities(
 }
 
 /**
+ * J-20: sets a live member's (or open invite's) trade-size band and working hours to exactly
+ * `limits` (strong session; the route stages a weak one's). The gate is the boxes': the account
+ * lock, a live calling session, no hold, a strong session and a vendor account (`ownerWriteGate`).
+ * Sessions the new hours shut out end at once; their streams close after the commit.
+ */
+export async function setLimits(
+  deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
+  caller: Caller,
+  memberId: string,
+  limits: MemberLimits,
+): Promise<TeamMemberView> {
+  const { accountId } = caller;
+  const now = deps.clock();
+  const { row, ended } = await inTransaction(deps.db, async (c) => {
+    await ownerWriteGate(c, caller, now, { strong: true });
+    const ended = await applyLimits(c, accountId, memberId, limits, now);
+    const { rows } = await c.query<MemberRow>(`select ${MEMBER_COLS} from team_members where id = $1`, [memberId]);
+    return { row: rows[0]!, ended };
+  });
+  for (const id of ended) deps.events.closeSession(accountId, id);
+  return toView(row);
+}
+
+/**
  * The boxes write (the route's, or a waiting one applied 24 h after a username-and-password session
  * submitted it). Null for a member who is not live. Returns the member's sessions whose live
  * streams must close (the new set no longer sees active trades, review M2).
@@ -312,7 +349,7 @@ async function updateAbilities(c: Queryable, accountId: string, memberId: string
   const { rows } = await c.query<MemberRow>(
     `update team_members set abilities = $3
       where id = $1 and account_id = $4 and ${LIVE_MEMBER}
-      returning id, display_name, abilities, member_account_id, joined_at, invite_expires_at, created_at`,
+      returning ${MEMBER_COLS}`,
     [memberId, now, abilities, accountId],
   );
   const r = rows[0];

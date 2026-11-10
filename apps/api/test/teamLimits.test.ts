@@ -110,8 +110,8 @@ async function setLimits(owner: Who, memberId: string, band: Band, hours: Hours)
 
 const today = () => WEEKDAYS[deps.clock().getUTCDay()]!;
 const otherDay = () => WEEKDAYS[(deps.clock().getUTCDay() + 3) % 7]!;
-/** A window that contains the test's now (12:00 UTC). */
-const OPEN: () => Hours = () => ({ days: [today()], start: '08:00', end: '14:00', tz: 'UTC' });
+/** A window that contains the test's now (12:00 UTC) and ends at 13:00, inside the unchosen 2-hour session. */
+const OPEN: () => Hours = () => ({ days: [today()], start: '08:00', end: '13:00', tz: 'UTC' });
 /** A window on another day only. */
 const SHUT: () => Hours = () => ({ days: [otherDay()], start: '08:00', end: '14:00', tz: 'UTC' });
 
@@ -275,8 +275,8 @@ describe('working hours (p7-11; review S-m4)', () => {
     expect((await setLimits(owner, a.id, null, OPEN())).statusCode).toBe(200);
     expect((await setLimits(owner, b.id, null, OPEN())).statusCode).toBe(200);
     expect((await a.browser.get('/v1/account/me')).statusCode).toBe(200);
-    // 14:00 UTC: the window is over.
-    setNow(new Date(START.getTime() + 2 * HOUR));
+    // 13:30 UTC: the window is over (the 2-hour session itself still runs).
+    setNow(new Date(START.getTime() + 1.5 * HOUR));
     expect(err(await a.browser.get('/v1/account/me'))).toEqual({ status: 401, error: 'outside-login-hours' });
     const sa = await deps.db.query<{ revoked_at: Date | null }>('select revoked_at from sessions where member_id = $1', [a.id]);
     expect(sa.rows[0]!.revoked_at).not.toBeNull();
@@ -300,11 +300,11 @@ describe('working hours (p7-11; review S-m4)', () => {
   it('S-m4: a member cannot extend their session or choose a length past the window end; inside it they can', async () => {
     const owner = await team();
     const m = await member(owner.id, rolesToAbilities(['trades']));
-    // The window ends at 14:00, two hours from now.
+    // The window ends at 13:00, an hour from now.
     expect((await setLimits(owner, m.id, null, OPEN())).statusCode).toBe(200);
     const six = await m.browser.put('/v1/account/session/length', { hours: 6 });
     expect(err(six)).toEqual({ status: 403, error: 'past-working-hours' });
-    expect(six.json()).toMatchObject({ workingUntil: new Date(START.getTime() + 2 * HOUR).toISOString() });
+    expect(six.json()).toMatchObject({ workingUntil: new Date(START.getTime() + HOUR).toISOString() });
     const sid = await sessionId(m.browser);
     const t = await issueConfirmToken(deps, { sessionId: sid, accountId: owner.id, action: { kind: 'extend-session' }, method: 'passkey' });
     const ext = await m.browser.post('/v1/account/session/extend', { hours: 6, confirmToken: t });

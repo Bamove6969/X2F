@@ -11,6 +11,7 @@ import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { abilitiesView } from '../team/members.js';
+import { assertSessionEndInHours } from '../team/limits.js';
 import type { PresetId, TeamRole } from '../team/abilities.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
@@ -464,9 +465,9 @@ export function accountRoutes(app: FastifyInstance): void {
         // extend sets the length, so an unchosen session's period is still its login.
         const firstChoice = old.length_hours === null && now.getTime() < old.period_started_at.getTime() + SESSION_CHOICE_WINDOW_MS;
         if (end.getTime() > old.expires_at.getTime() && !firstChoice) throw new ApiError(403, 'confirm-required', { action: 'extend-session' });
-        // TODO(team working hours, p7-11; review S-m4, owner G9): when a team lead sets working
-        // hours, a member's session must not get a later end outside them ("they won't be able to
-        // extend the session anyway"). Refuse a later end here, for req.auth.memberId !== null, before any write.
+        // J-20 (team working hours, p7-11; review S-m4, owner G9): a member's session never gets a
+        // later end past their working window ("they won't be able to extend the session anyway").
+        await assertSessionEndInHours(db, req.auth.memberId, now, end, old.expires_at);
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
           `update sessions set period_started_at = $3, expires_at = $4, length_hours = $2 where id = $1
         returning length_hours, expires_at`,
@@ -509,10 +510,11 @@ export function accountRoutes(app: FastifyInstance): void {
       const hours = (req.body as { hours?: number }).hours ?? null;
       const { info, setCookie } = await withTx(d.db, async (db) => {
         await requireLiveSessionInTx(db, req.auth, now);
-        // TODO(team working hours, p7-11; review S-m4, owner G9): when a team lead sets working
-        // hours, a member's session must not get a later end outside them ("they won't be able to
-        // extend the session anyway"). Refuse here, for req.auth.memberId !== null, before any write.
-        const cur = await db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1 for update', [req.auth.sessionId]);
+        const cur = await db.query<{ expires_at: Date; length_hours: number | null }>('select expires_at, length_hours from sessions where id = $1 for update', [req.auth.sessionId]);
+        // J-20 (team working hours, p7-11; review S-m4, owner G9): a member's session never gets a
+        // later end past their working window, refused before any write (the token is not rotated).
+        const wanted = new Date(now.getTime() + (hours ?? cur.rows[0]!.length_hours ?? UNCHOSEN_SESSION_HOURS) * 3_600_000);
+        await assertSessionEndInHours(db, req.auth.memberId, now, wanted, cur.rows[0]!.expires_at);
         // Review S-m1: a new token, the one before it valid only to this old end.
         const setCookie = await rotateSessionToken(db, req, reply, req.auth.sessionId, cur.rows[0]!.expires_at);
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(

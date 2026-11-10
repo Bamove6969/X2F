@@ -162,6 +162,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/team/invites': 'an invite to my own team; answers its id, code and deadline',
   'PATCH /v1/team/members/:id': "changes a member's boxes (abilities) in my own team",
   'DELETE /v1/team/members/:id': 'removes a member from my own team',
+  'PUT /v1/team/members/:id/limits': "sets a member's trade-size band and working hours in my own team (J-20)",
 };
 
 /**

@@ -77,6 +77,7 @@ import { applyTotp } from './totp.js';
 import { applyCredential, type StoredCredential } from './webauthn.js';
 import { applyAbilities, applyMemberRemoval } from '../team/members.js';
 import { rolesToAbilities, type TeamRole } from '../team/abilities.js';
+import { applyLimits, parseBand, parseHours, type LoginHours, type TradeBandView } from '../team/limits.js';
 import { releaseHeldTrades, syncHeldTrades } from '../trades/held.js';
 import type { TradePublisher } from '../trades/store.js';
 import { HOLD_CHANGE_ACTIONS_PER_DAY, holdActionsKey, stageChange } from './holdChanges.js';
@@ -126,7 +127,13 @@ export type PendingChange =
    */
   | { kind: 'remove-wallet'; walletId: string; label: string; addressEnd: string }
   /** Owner p5-7: a team member removed by a username-and-password session; they keep their access until it applies. */
-  | { kind: 'team-remove'; memberId: string };
+  | { kind: 'team-remove'; memberId: string }
+  /**
+   * J-20 (owner p7-4, p7-11): a member's trade-size band and working hours set by a
+   * username-and-password session (S-106: the change waits, nothing else does). Checked again
+   * when it applies (`parseBand`, `parseHours`).
+   */
+  | { kind: 'team-limits'; memberId: string; band: TradeBandView | null; hours: LoginHours };
 
 export interface Hold {
   startedAt: Date;
@@ -286,6 +293,11 @@ export async function applyChange(db: Queryable, s: SettleDeps, accountId: strin
       return false;
     case 'team-remove': {
       const ended = await applyMemberRemoval(db, accountId, c.memberId, now);
+      for (const id of ended) s.events?.closeSession(accountId, id);
+      return false;
+    }
+    case 'team-limits': {
+      const ended = await applyLimits(db, accountId, c.memberId, { band: parseBand(c.band), hours: parseHours(c.hours) }, now);
       for (const id of ended) s.events?.closeSession(accountId, id);
       return false;
     }
@@ -577,6 +589,8 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
   'DELETE /v1/team/members/:id',
+  // J-20: a member's trade-size band and working hours (team/limits.ts; the lock is the account's).
+  'PUT /v1/team/members/:id/limits',
   // Owner 2 Nov 2026: switching to a vendor account (routes/accountType.ts; the lock is the account's).
   'PUT /v1/account/type',
   // Hold model v3: submitting and cancelling the changes waiting their 24 h (holdRoutes.ts), and
@@ -676,6 +690,7 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // under the account lock (team/members.ts `ownerWriteGate`).
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
+  'PUT /v1/team/members/:id/limits',
   // Hold model v3: during a recovery-code hold every session of the account is logged out, so only
   // the held recovery session could ask; refused (see team/members.ts `ownerWriteGate`).
   'DELETE /v1/team/members/:id',
