@@ -17,7 +17,7 @@ import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import type { Keyring } from '../src/config.js';
 import { OUTBOX_ATTEMPTS, sendDueNotices } from '../src/jabber/outbox.js';
 import { CODE_TRIES, CODE_TTL_MS, RESEND_WAIT_S, TESTS_PER_DAY } from '../src/jabber/routes.js';
-import { ACCOUNT_CHANGE_TEXT, NOTICE_KINDS, NoticeDeferred, SENDER_NAME, TRADE_ATTENTION_TEXT, messageText, type JabberMessage, type JabberSender } from '../src/jabber/sender.js';
+import { ACCOUNT_CHANGE_TEXT, NOTICE_KINDS, NoticeDeferred, SENDER_NAME, TEAM_FIRST_LOGIN_TEXT, TRADE_ATTENTION_TEXT, messageText, type JabberMessage, type JabberSender } from '../src/jabber/sender.js';
 import { seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -85,10 +85,13 @@ describe('the fixed texts', () => {
     expect(messageText({ kind: 'account-change' })).toBe(ACCOUNT_CHANGE_TEXT);
     expect(messageText({ kind: 'test-code', code: '012345' })).toBe('Your X2F test code is 012345.');
     expect(() => messageText({ kind: 'test-code', code: 'wallet changed' })).toThrow();
-    // Lead default 2026-11-08: the dispute notice to the payer, the second and last notice kind.
-    expect(NOTICE_KINDS).toEqual(['account-change', 'trade-attention']);
+    // Lead default 2026-11-08: the dispute notice to the payer.
     expect(messageText({ kind: 'trade-attention' })).toBe(TRADE_ATTENTION_TEXT);
     expect(TRADE_ATTENTION_TEXT).toBe('A trade on your X2F account needs your attention.');
+    // J-20 (owner p11-27, S-107): a team member's first login, to the team account. No name.
+    expect(NOTICE_KINDS).toEqual(['account-change', 'trade-attention', 'team-member-first-login']);
+    expect(messageText({ kind: 'team-member-first-login' })).toBe(TEAM_FIRST_LOGIN_TEXT);
+    expect(TEAM_FIRST_LOGIN_TEXT).toBe('A team member logged in to your X2F account for the first time.');
     expect(() => messageText({ kind: 'wallet-added' } as never)).toThrow();
   });
 
@@ -594,11 +597,11 @@ describe('who may change it', () => {
     const owner = await withJabber();
     const loginId = await seedAccount(deps, { loginName: `jmember${n}x`, displayName: `jm-${n}-placeholder`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
-       values ($1, 'Jmate', 'jmate', '{offers-see}', $2, $3, $2, $2)`,
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at, first_login_at)
+       values ($1, 'Jmate', 'jmate', '{offers-see}', $2, $3, $2, $2, $2)`,
       [owner.id, deps.clock(), loginId],
     );
-    // Adding the member was a team change.
+    // Adding the member was a team change (a member who has logged in before: J-20's first-login notice is the next test's).
     expect(await notices(owner.id)).toBe(1);
     const mb = new Browser(app);
     expect((await mb.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
@@ -606,6 +609,27 @@ describe('who may change it', () => {
     expect(err(await mb.post('/v1/account/jabber/test', { address: address() }))).toEqual({ status: 403, error: 'owner-only' });
     await deps.db.query("update accounts set display_name = 'jm-renamed', display_key = 'jm-renamed' where id = $1", [loginId]);
     expect(await notices(owner.id)).toBe(2);
+  });
+});
+
+describe("a team member's first login tells the team account (J-20, owner p11-27, S-107; review F4)", () => {
+  it('queues one team-member-first-login notice in the login, sends its sentence; later logins queue nothing more', async () => {
+    const owner = await withJabber();
+    const loginId = await seedAccount(deps, { loginName: `jfirst${n}x`, displayName: `jf-${n}-placeholder`, kind: 'member' });
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'Jfirst', 'jfirst', '{offers-see}', $2, $3, $2, $2)`,
+      [owner.id, deps.clock(), loginId],
+    );
+    await deps.db.query('delete from jabber_outbox');
+    expect((await new Browser(app).post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+    const kinds = async () => (await deps.db.query<{ kind: string }>('select kind from jabber_outbox where account_id = $1 order by id', [owner.id])).rows.map((r) => r.kind);
+    expect(await kinds()).toEqual(['team-member-first-login']);
+    await sendAll();
+    expect(sent).toEqual([{ to: owner.jid, message: { kind: 'team-member-first-login' } }]);
+    sent.length = 0;
+    expect((await new Browser(app).post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+    expect(await kinds()).toEqual([]);
   });
 });
 
