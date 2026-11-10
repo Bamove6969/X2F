@@ -22,6 +22,11 @@ export const CHAT_DB = 'x2f-chat';
 const CHATS = 'chats';
 const KEYS = 'keys';
 const KEY_ID = 'wrap';
+/** J-23: the one account record (the device key and the account chat key), under the same wrap. */
+const ACCOUNT = 'account';
+const ACCOUNT_ID = 'account';
+/** Version 2 added the `account` store (J-23); the chat records are untouched by the upgrade. */
+const DB_VERSION = 2;
 
 /**
  * One line this device accepted (its guard moved for it), or one envelope it refused for good
@@ -88,6 +93,34 @@ export function upgradeChatRecord(raw: unknown, chat: string): ChatRecord | null
   return { ...rest, v: 2, receipts: messages.map((m) => ({ id: m.id, from: m.from, seq: m.seq, sig: null, at: m.at, gapBefore: m.gapBefore })) } as unknown as ChatRecord;
 }
 
+/**
+ * J-23 (S-075; docs/security/multi-device-2026-11-09.md section 4.2): this device's part of the
+ * account chat key (ACK) handover, one record per device, under the same non-extractable wrap as
+ * the chat records. `deviceKey` is the X25519 pair other devices seal the ACK to (`sealTo`); `ack`
+ * is the key this device holds, with its epoch, or null until one is handed over or made here.
+ * Secrets are hex strings as the chat identity's are; they never leave the worker (chat/ack.ts).
+ */
+export interface ChatAccountRecord {
+  v: 1;
+  deviceKey: { boxPublic: string; boxSecret: string };
+  ack: { key: string; epoch: number } | null;
+}
+
+/** A stored account record as read, or null for anything else. */
+export function checkAccountRecord(raw: unknown): ChatAccountRecord | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.v !== 1 || typeof r.deviceKey !== 'object' || r.deviceKey === null) return null;
+  const k = r.deviceKey as Record<string, unknown>;
+  if (typeof k.boxPublic !== 'string' || typeof k.boxSecret !== 'string') return null;
+  if (r.ack !== null) {
+    if (typeof r.ack !== 'object' || r.ack === null) return null;
+    const a = r.ack as Record<string, unknown>;
+    if (typeof a.key !== 'string' || typeof a.epoch !== 'number' || !Number.isInteger(a.epoch) || a.epoch < 0) return null;
+  }
+  return r as unknown as ChatAccountRecord;
+}
+
 export interface ChatStore {
   /** The chat's record; a v1 record is upgraded (its text dropped) and saved back before it is returned. */
   load(chat: string): Promise<ChatRecord | null>;
@@ -95,6 +128,10 @@ export interface ChatStore {
   delete(chat: string): Promise<void>;
   /** Every chat code with a record on this device. */
   list(): Promise<string[]>;
+  /** J-23: this device's account record (device key and account chat key), or null before one is made. */
+  loadAccount(): Promise<ChatAccountRecord | null>;
+  saveAccount(rec: ChatAccountRecord): Promise<void>;
+  deleteAccount(): Promise<void>;
 }
 
 export class ChatStoreError extends Error {
@@ -121,9 +158,9 @@ function done(tx: IDBTransaction): Promise<void> {
 
 function openDb(idb: IDBFactory): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const r = idb.open(CHAT_DB, 1);
+    const r = idb.open(CHAT_DB, DB_VERSION);
     r.onupgradeneeded = () => {
-      for (const name of [CHATS, KEYS]) if (!r.result.objectStoreNames.contains(name)) r.result.createObjectStore(name);
+      for (const name of [CHATS, KEYS, ACCOUNT]) if (!r.result.objectStoreNames.contains(name)) r.result.createObjectStore(name);
     };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error ?? new ChatStoreError('unavailable'));
@@ -148,6 +185,8 @@ async function wrapKey(db: IDBDatabase, subtle: SubtleCrypto): Promise<CryptoKey
 }
 
 const aad = (chat: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(`x2f-chat/v1\0${chat}`);
+/** The account record's additional data: its own label, so a chat record can never be read back as it. */
+const ACCOUNT_AAD: Uint8Array<ArrayBuffer> = new TextEncoder().encode('x2f-chat/account/v1');
 
 export async function openChatStore(o: { indexedDB?: IDBFactory; crypto?: Crypto } = {}): Promise<ChatStore> {
   const idb = o.indexedDB ?? globalThis.indexedDB;
@@ -189,15 +228,60 @@ export async function openChatStore(o: { indexedDB?: IDBFactory; crypto?: Crypto
       tx.objectStore(CHATS).delete(chat);
       await done(tx);
     },
+    async loadAccount() {
+      const raw = (await req(db.transaction(ACCOUNT).objectStore(ACCOUNT).get(ACCOUNT_ID))) as { iv?: unknown; ct?: unknown } | undefined;
+      if (raw === undefined) return null;
+      if (!(raw.iv instanceof Uint8Array) || !(raw.ct instanceof ArrayBuffer)) throw new ChatStoreError('bad-record');
+      let plain: ArrayBuffer;
+      try {
+        plain = await cr.subtle.decrypt({ name: 'AES-GCM', iv: raw.iv as Uint8Array<ArrayBuffer>, additionalData: ACCOUNT_AAD }, key, raw.ct);
+      } catch {
+        throw new ChatStoreError('bad-record');
+      }
+      const rec = checkAccountRecord(JSON.parse(new TextDecoder().decode(plain)));
+      if (rec === null) throw new ChatStoreError('bad-record');
+      return rec;
+    },
+    async saveAccount(rec) {
+      const iv = cr.getRandomValues(new Uint8Array(12));
+      const ct = await cr.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: ACCOUNT_AAD }, key, new TextEncoder().encode(JSON.stringify(rec)));
+      const tx = db.transaction(ACCOUNT, 'readwrite');
+      tx.objectStore(ACCOUNT).put({ iv, ct }, ACCOUNT_ID);
+      await done(tx);
+    },
+    async deleteAccount() {
+      const tx = db.transaction(ACCOUNT, 'readwrite');
+      tx.objectStore(ACCOUNT).delete(ACCOUNT_ID);
+      await done(tx);
+    },
   };
 }
 
-/** An in-memory store (tests). */
-export function memoryChatStore(): ChatStore & { records: Map<string, string> } {
+/** An in-memory store (tests). `account` is the stored account record's JSON, as `records` are the chats'. */
+export function memoryChatStore(): ChatStore & { records: Map<string, string>; account: string | null } {
   const records = new Map<string, string>();
-  return {
+  const store = {
     records,
-    async load(chat) {
+    account: null as string | null,
+    async loadAccount() {
+      if (store.account === null) return null;
+      const rec = checkAccountRecord(JSON.parse(store.account));
+      if (rec === null) throw new ChatStoreError('bad-record');
+      return rec;
+    },
+    async saveAccount(rec: ChatAccountRecord) {
+      store.account = JSON.stringify(rec);
+    },
+    async deleteAccount() {
+      store.account = null;
+    },
+    async save(rec: ChatRecord) {
+      records.set(rec.chat, JSON.stringify(rec));
+    },
+    async delete(chat: string) {
+      records.delete(chat);
+    },
+    async load(chat: string) {
       const v = records.get(chat);
       if (v === undefined) return null;
       const raw = JSON.parse(v) as { v?: unknown };
@@ -209,11 +293,6 @@ export function memoryChatStore(): ChatStore & { records: Map<string, string> } 
     async list() {
       return [...records.keys()];
     },
-    async save(rec) {
-      records.set(rec.chat, JSON.stringify(rec));
-    },
-    async delete(chat) {
-      records.delete(chat);
-    },
   };
+  return store;
 }
