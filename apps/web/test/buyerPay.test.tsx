@@ -1291,7 +1291,7 @@ describe("J-08 (S-090): the seller's packaged details fill the buyer's Send exac
     const { setChatClient } = await import('../src/chat/client.js');
     const { chatPaymentDetailsSource } = await import('../src/chat/payDetailsFeed.js');
     const CHAT = 'Q2W3-E4R5-T6Y7-U8I9';
-    const pay = { v: 1 as const, method: 'ZELLE', fields: [{ key: 'email', value: 'jane@example.com' }, { key: 'name', value: 'Jane Doe' }] };
+    const pay = { v: 2 as const, method: 'ZELLE', fields: [{ key: 'email', value: 'jane@example.com' }, { key: 'name', value: 'Jane Doe' }] };
     const chatSnap = {
       phase: 'ready' as const,
       problem: null,
