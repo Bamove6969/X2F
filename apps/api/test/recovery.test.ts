@@ -470,7 +470,7 @@ describe('S-019: the recovery code is an emergency login only (owner G32; lead j
     expect(await passwordRow(id)).toEqual(pw);
   });
 
-  it('never shortens the 24-hour hold: a second code later moves the end later, never earlier', async () => {
+  it('never shortens the 24-hour hold: under hold model v3 there is one code, so a second recovery login cannot happen during the hold; the end stays', async () => {
     const { id, username } = await account();
     const codes = await newCodes(await loggedIn(id));
     const first = new Browser(app);
@@ -479,18 +479,19 @@ describe('S-019: the recovery code is an emergency login only (owner G32; lead j
     expect(await holdUntil(id)).toEqual(firstEnd);
     expect((await sessionRow(first)).hold_until).toEqual(firstEnd);
 
+    // Hold model v3 (owner 2 Nov 2026; batch 4 integration): one recovery code, replaced only once a
+    // strong or waited session reveals the new one, so no second code exists to log in with at 12 h:
+    // the used code is refused and the hold's end never moves (earlier or later).
+    expect(codes).toHaveLength(1);
     setNow(at(12 * HOUR));
-    const second = new Browser(app);
-    expect((await backup(second, username, 'recovery-code', codes[1]!)).statusCode).toBe(200);
-    const secondEnd = new Date(now.getTime() + RECOVERY_HOLD_MS);
-    expect(await holdUntil(id)).toEqual(secondEnd);
-    expect(secondEnd.getTime()).toBeGreaterThan(firstEnd.getTime());
-    // The first backup session keeps its own 24 hours.
+    expect((await backup(new Browser(app), username, 'recovery-code', codes[0]!)).statusCode).toBe(401);
+    expect(await holdUntil(id)).toEqual(firstEnd);
+    // The backup session keeps its own 24 hours.
     expect((await sessionRow(first)).hold_until).toEqual(firstEnd);
     // A recovery session cannot end a hold (only a full session can end a backup session).
     const { id: firstId } = await sessionRow(first);
-    expect((await second.delete(`/v1/account/recovery-sessions/${firstId}`)).json()).toEqual({ error: 'recovery-session' });
-    expect(await holdUntil(id)).toEqual(secondEnd);
+    expect((await first.delete(`/v1/account/recovery-sessions/${firstId}`)).json()).toEqual({ error: 'recovery-session' });
+    expect(await holdUntil(id)).toEqual(firstEnd);
   });
 });
 

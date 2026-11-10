@@ -13,6 +13,7 @@ import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { sealSecret } from '../src/auth/totp.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
+import { SIG } from './helpers/signature.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { Browser, addTestLogin, codeAt } from './helpers/totp.js';
 
@@ -75,7 +76,7 @@ describe('S-013: a username alone is no account', () => {
   it('every sign-up route refuses the names without a login method, and no account is made', async () => {
     const before = await accountCount();
     const b = new Browser(app);
-    const base = { ...names(), deviceLabel: 'Test browser', acceptedTerms: TERMS };
+    const base = { ...names(), deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG };
     // Password sign-up without a password, or with an empty one.
     expect((await b.post('/v1/register/password', base)).statusCode).toBe(400);
     const empty = await b.post('/v1/register/password', { ...base, password: '' });
@@ -100,7 +101,7 @@ describe('S-012: a username with an authenticator code alone is no account and n
   it('there is no sign-up with an authenticator code, and the password route does not take one in place of a password', async () => {
     const before = await accountCount();
     const b = new Browser(app);
-    const base = { ...names(), deviceLabel: 'Test browser', acceptedTerms: TERMS };
+    const base = { ...names(), deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG };
     for (const url of ['/v1/register/totp', '/v1/register/totp/start', '/v1/register/totp/finish', '/v1/register/authenticator']) {
       expect((await b.post(url, { ...base, code: '123456' })).statusCode, url).toBe(404);
     }
@@ -121,7 +122,9 @@ describe('S-012: a username with an authenticator code alone is no account and n
     const code = codeAt(secret, now);
     const b = new Browser(app);
     const backup = await b.post('/v1/login/backup', { loginName, kind: 'totp', code, deviceLabel: 'Test browser' });
-    expect(backup.statusCode).toBe(400);
+    // Hold model v3 (owner Q81, 2 Nov): an authenticator code is no backup login at all: 403 method-not-allowed (was a 400 input refusal).
+    expect(backup.statusCode).toBe(403);
+    expect(backup.json()).toMatchObject({ error: 'method-not-allowed' });
     // The second-factor step finishes only a password login this browser started.
     const second = await b.post('/v1/login/second-factor', { pendingId: '00000000-0000-0000-0000-000000000000', code });
     expect(second.statusCode).toBe(400);
@@ -146,14 +149,14 @@ describe('S-014: only a strong password is accepted', () => {
   it('sign-up refuses a password that misses any one rule, and names the rule', async () => {
     const before = await accountCount();
     for (const [password, rule] of missing) {
-      const res = await new Browser(app).post('/v1/register/password', { ...names(), password, deviceLabel: 'Test browser', acceptedTerms: TERMS });
+      const res = await new Browser(app).post('/v1/register/password', { ...names(), password, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG });
       expect(res.statusCode, password).toBe(400);
       expect(res.json(), password).toEqual({ error: 'password-weak', missing: [rule] });
     }
-    const leaked = await new Browser(app).post('/v1/register/password', { ...names(), password: 'Password123!', deviceLabel: 'Test browser', acceptedTerms: TERMS });
+    const leaked = await new Browser(app).post('/v1/register/password', { ...names(), password: 'Password123!', deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG });
     expect(leaked.json()).toEqual({ error: 'password-leaked' });
     expect(await accountCount()).toBe(before);
-    const ok = await new Browser(app).post('/v1/register/password', { ...names(), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS });
+    const ok = await new Browser(app).post('/v1/register/password', { ...names(), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG });
     expect(ok.statusCode).toBe(201);
   });
 

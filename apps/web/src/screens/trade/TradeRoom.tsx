@@ -394,14 +394,27 @@ export function useChatPane(view: Pick<TradeView, 'state'>): boolean {
 }
 
 const COMPOSER = ":is(input, textarea, [contenteditable='true'])";
+/** The payee's payment-detail boxes (ChatPanel PayBoxes, J-08): inputs in the chat pane above its composer. */
+const PAY_BOXES = '[data-pay-boxes]';
 /** The room's chat pane (two panes, three, tabletop). */
 const PANE_CHAT = "[data-pane='side']";
 /** A screen's own chat aside in the wide layout (BuyerPay's WideRoom, the Desktop board). */
 const ASIDE_CHAT = "[data-pane='main'] .x2f-room__chat-panel";
 
+/**
+ * The chat's own composer inside `where`: the first input that is not one of the payee's
+ * payment-detail boxes, which sit in the same pane above it (J-08).
+ */
+function composerIn(where: string): HTMLElement | null {
+  for (const el of document.querySelectorAll<HTMLElement>(`${where} ${COMPOSER}`)) {
+    if (el.closest(PAY_BOXES) === null) return el;
+  }
+  return null;
+}
+
 /** Moves the focus to the composer of the room's chat pane. */
 export function focusChatPane(): void {
-  document.querySelector<HTMLElement>(`${PANE_CHAT} ${COMPOSER}`)?.focus();
+  composerIn(PANE_CHAT)?.focus();
 }
 
 /**
@@ -411,7 +424,7 @@ export function focusChatPane(): void {
  * focus from something the user moved it to in the meantime. Returns the cleanup.
  */
 export function focusComposerWhenReady(where: string): () => void {
-  const find = () => document.querySelector<HTMLElement>(`${where} ${COMPOSER}`);
+  const find = () => composerIn(where);
   const now = find();
   if (now) {
     now.focus();

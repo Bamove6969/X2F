@@ -77,7 +77,8 @@ export async function closeDueAccounts(deps: Pick<Deps, 'db' | 'config'>, now: D
       await c.query('begin');
       await c.query('select id from accounts where id = $1 for update', [id]);
       const r = await c.query(
-        `update accounts a set disabled_at = $1, closed_at = $1, closed_reason = 'inactive' where a.id = $3 and ${DUE} returning a.id`,
+        // Owner p11-13: the Terms signature is erased when the account closes (terms-signature review R1).
+        `update accounts a set disabled_at = $1, closed_at = $1, closed_reason = 'inactive', terms_signature = null where a.id = $3 and ${DUE} returning a.id`,
         [...params, id],
       );
       if ((r.rowCount ?? 0) > 0) {

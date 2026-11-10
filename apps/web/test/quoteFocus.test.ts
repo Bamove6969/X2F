@@ -24,8 +24,14 @@ describe('quote amount field focus', () => {
     expect(body('.x2f-quote__box:has(input:focus-visible)')).toMatch(/border-color:\s*var\(--x2f-ink\)/);
   });
 
+  // The 1 px inner ring is an outline at -2px, not an inset box-shadow (ea617d2f): kit 1.5 keeps
+  // box-shadow for the two nav-current lines only (kit-tokens.test). With the 1 px danger border it
+  // reads as a 2 px danger ring, as the box-shadow did.
   it('a field in error keeps the danger border and still shows focus', () => {
-    expect(body('.x2f-quote__box[data-bad]:has(input:focus-visible)')).toMatch(/box-shadow:[^;]*var\(--x2f-danger\)/);
+    const bad = body('.x2f-quote__box[data-bad]:has(input:focus-visible)');
+    expect(bad).toMatch(/outline:\s*1px solid var\(--x2f-danger\)/);
+    expect(bad).toMatch(/outline-offset:\s*-2px/);
+    expect(bad).not.toMatch(/box-shadow/);
   });
 
   it('Max and the unit switch do not light the field border (:has(input:focus-visible), not :focus-within)', () => {
@@ -34,6 +40,16 @@ describe('quote amount field focus', () => {
 
   it('forced colors (High Contrast): the box draws a Highlight outline, since borders and shadows are replaced', () => {
     const m = CSS.match(/@media \(forced-colors: active\)\s*\{[^@]*?\.x2f-quote__box:focus-within\s*\{([^{}]*)\}/);
+    expect(m).not.toBeNull();
+    expect(m![1]).toMatch(/outline:\s*2px solid Highlight/);
+    expect(m![1]).toMatch(/outline-offset:\s*2px/);
+  });
+
+  // The error-focus rule above is an outline too and outranks `.x2f-quote__box:focus-within`
+  // ((0,4,1) against (0,2,0)), so without its own forced-colors rule an error field in focus would
+  // draw the 1 px inner ring instead of the Highlight outline.
+  it('forced colors: a field in error with focus draws the same Highlight outline', () => {
+    const m = CSS.match(/@media \(forced-colors: active\)\s*\{[^@]*?\.x2f-quote__box\[data-bad\]:has\(input:focus-visible\)\s*\{([^{}]*)\}/);
     expect(m).not.toBeNull();
     expect(m![1]).toMatch(/outline:\s*2px solid Highlight/);
     expect(m![1]).toMatch(/outline-offset:\s*2px/);
