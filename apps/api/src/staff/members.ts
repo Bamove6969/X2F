@@ -22,7 +22,8 @@ import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
 // - `POST /staff/v1/members/:id/switch-on { tapId }` (tap `switch-on`, bound to the person and
 //   their current role) → `{ status: 'active' }`. A moderator or senior must hold all three methods
 //   (owner G3; 409 `all-three-methods-required`, the tap left unused).
-//   `GET /staff/v1/members` lists, per moderator and senior, the methods they still lack (`missingMethods`).
+//   `GET /staff/v1/members` lists, per moderator and senior, the methods they still lack (`missingMethods`),
+//   and per member the stored per-person checkboxes (`grants`, J-21).
 // - `PUT /staff/v1/members/:id/hours { hours }` → `{ hours }` (`validateHours`; 400 `bad-request`).
 // - `PUT /staff/v1/members/:id/role { role, tapId }` (tap `set-role`) → `{ role }`. A senior or mod
 //   role needs an attested security key (409 `security-key-required`): they rule or approve.
@@ -140,14 +141,20 @@ export interface MemberRow {
    * before G3; empty for everyone else and for invites.
    */
   missingMethods: Array<'security-key' | 'pgp' | 'passkey'>;
+  /**
+   * J-21 (owner Q60): the per-person checkboxes as stored (only GRANTABLE_PERMS, sorted), for the
+   * Staff page; [] for the owner and for invites. What a role holds anyway (a senior's Feedback) is
+   * not repeated here.
+   */
+  grants: string[];
 }
 
 export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]> {
   const { rows: staff } = await db.query<{
     account_id: string; display_name: string; role: StaffRole; hours: unknown; switched_off_at: Date | null; joined_at: Date; last_active: Date | null;
-    open_cases: number; keys: number; pgp: number; passkeys: number;
+    open_cases: number; keys: number; pgp: number; passkeys: number; grants: string[];
   }>(
-    `select m.account_id, a.display_name, m.role, m.hours, m.switched_off_at, m.joined_at,
+    `select m.account_id, a.display_name, m.role, m.hours, m.switched_off_at, m.joined_at, m.grants,
             (select count(*)::int from webauthn_credentials w where w.account_id = m.account_id and w.kind = 'security-key' and w.attested) as keys,
             (select count(*)::int from pgp_keys p where p.account_id = m.account_id) as pgp,
             (select count(*)::int from webauthn_credentials w where w.account_id = m.account_id and w.kind = 'passkey') as passkeys,
@@ -173,10 +180,11 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
       missingMethods: THREE_METHOD_ROLES.includes(r.role)
         ? [...(r.keys > 0 ? [] : ['security-key' as const]), ...(r.pgp > 0 ? [] : ['pgp' as const]), ...(r.passkeys > 0 ? [] : ['passkey' as const])]
         : [],
+      grants: r.role === 'owner' ? [] : r.grants.filter((g) => (GRANTABLE_PERMS as readonly string[]).includes(g)).sort(),
     })),
     ...invites.map((r): MemberRow => ({
       accountId: null, inviteId: r.id, displayName: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
-      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(), missingMethods: [],
+      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(), missingMethods: [], grants: [],
     })),
   ];
 }

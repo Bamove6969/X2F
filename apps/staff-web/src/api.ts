@@ -9,7 +9,7 @@
  * behind the shell goes to Login too (the session ran out).
  */
 import { defaultDeviceLabel, type TermsSignature } from '@x2f/auth-client';
-import type { KeyTapIntent, LoginHours, NavItem, StaffRole } from '@x2f/staff';
+import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, StaffRole } from '@x2f/staff';
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -236,3 +236,32 @@ export const newsList = () => staffApi<{ items: NewsItem[] }>('/staff/v1/news');
 export const newsAdd = (d: { title: string; body: string }) => staffApi<NewsItem>('/staff/v1/news', { method: 'POST', body: d });
 export const newsEdit = (id: number, d: { title: string; body: string }) => staffApi<NewsItem>(`/staff/v1/news/${id}`, { method: 'PUT', body: d });
 export const newsDelete = (id: number) => staffApi<unknown>(`/staff/v1/news/${id}`, { method: 'DELETE' });
+
+// ---------------------------------------------------------------------------------------------
+// Price health (owner Q13, J-21; perm stats.read, the owner only): apps/api/src/price/routes.ts
+// `priceHealthBody`, served at GET /staff/v1/price-health.
+
+export interface PriceHealth {
+  xmr: { name: string; lastGoodAt: string | null; consecutiveFailures: number; inUse: boolean }[];
+  fx: { name: string; rank: number; lastGoodAt: string | null; consecutiveFailures: number; stale: boolean; inUse: boolean; usedFor: string[] }[];
+  rejected: { source: string; currency: string; at: string }[];
+  paused: string[];
+  settings: { staleAfterMinutes: number; sanityPercent: number };
+}
+export const priceHealth = () => staffApi<PriceHealth>('/staff/v1/price-health');
+
+// ---------------------------------------------------------------------------------------------
+// Staff members (Plan 4 Task 7; perm staff.manage, the owner only) and their per-person
+// checkboxes (owner Q60, J-21: PUT …/grants with a `set-grants` tap bound to the exact sorted list).
+
+export interface Member {
+  accountId: string | null;
+  inviteId: string | null;
+  displayName: string | null;
+  role: StaffRole;
+  status: 'active' | 'switched-off' | 'waiting';
+  grants: GrantablePerm[];
+}
+export const members = () => staffApi<{ members: Member[] }>('/staff/v1/members');
+export const setGrants = (accountId: string, grants: GrantablePerm[], tapId: string) =>
+  staffApi<{ grants: GrantablePerm[] }>(`/staff/v1/members/${encodeURIComponent(accountId)}/grants`, { method: 'PUT', body: { grants, tapId } });
