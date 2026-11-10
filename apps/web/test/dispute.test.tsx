@@ -207,7 +207,8 @@ describe('copy helpers', () => {
     expect(paidOutAtomic('release-to-buyer', '1250000000000', 'buyer')).toBe(1_250_000_000_000n - plan.feeAtomic);
     expect(paidOutAtomic('release-to-buyer', '1250000000000', 'seller')).toBe(1_250_000_000_000n);
     expect(paidOutAtomic('refund-to-seller', '1250000000000', 'buyer')).toBe(1_250_000_000_000n);
-    expect(paidOutAtomic('refund-to-seller', '1250000000000', 'seller')).toBe(1_250_000_000_000n);
+    // Owner g63: a full reversal takes no fee, so on a seller's ad the seller gets the fee it funded back too.
+    expect(paidOutAtomic('refund-to-seller', '1250000000000', 'seller')).toBe(escrowPlan({ amountAtomic: 1_250_000_000_000n, poster: 'seller' }).sellerFundsAtomic);
     const buyerAd = rulingCopy(ruled(), 'buyer', 'satoshi_ghost', '1250000000000', new Date(T0 + 500 * MIN), 'buyer');
     expect(buyerAd.title).toBe(`${xmrInText(1_250_000_000_000n - plan.feeAtomic)} XMR goes to you`);
   });
@@ -531,6 +532,12 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(() => parseDispute(view({ proofRequest: { username: 'sarah.v' } }))).toThrow();
   });
 
+  it("owner g63: reads the poster's fee rule after a ruling; absent (the taker's view) reads as null", () => {
+    for (const fee of ['poster-pays', 'none', 'waits'] as const) expect(parseDispute(view({ fee })).fee).toBe(fee);
+    expect(parseDispute(view({})).fee).toBeNull();
+    expect(() => parseDispute(view({ fee: 'maybe' }))).toThrow();
+  });
+
   it('before a moderator replies: the hourglass is the one deadline, with the place in the queue under it (design 7 Nov)', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const d = parseDispute(view());
@@ -589,12 +596,13 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(host.textContent).toContain('There is one appeal per dispute, and its decision is final.');
   });
 
-  it('tells the party the server says owes the fee, with the amount; nobody else (Revision 2026-10-29c)', () => {
-    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+  it('tells the party the server says owes the fee, with the amount; nobody else (owner g63: a lien completes the trade)', () => {
+    const t = trade({ state: 'refunded', dispute: { by: 'buyer', at: iso(130) } });
     const line = 'This also means you still owe the 1% fee for this trade, equal to 0.012500 XMR, which will be deducted automatically from your future trades.';
-    const owes = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={{ ...ruled({ outcome: 'refund-to-seller', destination: null }), feeOwedAtomic: '12500000000' }} serverClock={at(500)} onAppeal={async () => undefined} />));
+    const lien = { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true, status: 'final' as const }), complyBy: iso(2000) };
+    const owes = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={{ ...lien, feeOwedAtomic: '12500000000' }} serverClock={at(500)} onAppeal={async () => undefined} />));
     expect(owes.host.textContent).toContain(line);
-    const not = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled({ outcome: 'refund-to-seller', destination: null })} serverClock={at(500)} onAppeal={async () => undefined} />));
+    const not = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={lien} serverClock={at(500)} onAppeal={async () => undefined} />));
     expect(not.host.textContent).not.toContain('owe the 1% fee');
   });
 

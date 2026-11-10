@@ -1,7 +1,8 @@
 // Plan 4 Task 32 (B-004): the internal revenue ledger. The owner's rules (HANDOFF "Decided
-// 2026-10-29c"): the poster pays the 1% on a released trade and on a settled dispute, never on a
-// cancel; a loser with no money in the escrow still owes the 1%, taken from future trades, and the
-// ledger books it when it is collected. The ledger is an aggregate by day, market and kind that
+// 2026-10-29c"; owner g63, 7 Nov): the poster pays the 1% on a released trade and on a ruling that
+// completes the trade, never on a cancel or a full reversal (everything back to the original
+// parties); a loser who still owes the 1% (a lien) has it taken from future trades, and the ledger
+// books it when it is collected. The ledger is an aggregate by day, market and kind that
 // keeps its amounts after the trade purge; the per-trade marker (code and amount only) goes with
 // the trade. Owner only on the staff API. Real Postgres.
 import { randomBytes } from 'node:crypto';
@@ -78,11 +79,13 @@ describe('the fee each settlement pays to the fee wallet (feeOutputAtomic, as pa
     }
   }
 
-  it('released yes, settled dispute yes (except the buyer-ad poster who loses: owed), every cancel no', () => {
+  it('released yes, a ruling that completes the trade yes, a full reversal no (owner g63), every cancel no', () => {
     const fee = 12_345n;
     expect(feeOutputAtomic('release', 'buyer', fee)).toBe(fee);
     expect(feeOutputAtomic('dispute-buyer', 'buyer', fee)).toBe(fee);
-    expect(feeOutputAtomic('dispute-seller', 'seller', fee)).toBe(fee);
+    expect(feeOutputAtomic('dispute-buyer', 'seller', fee)).toBe(fee);
+    // Owner g63 (7 Nov): a full reversal (everything back to the seller) takes no 1%, whoever posted.
+    expect(feeOutputAtomic('dispute-seller', 'seller', fee)).toBe(0n);
     expect(feeOutputAtomic('dispute-seller', 'buyer', fee)).toBe(0n);
     for (const k of ['mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund', null, 'something-new']) expect(feeOutputAtomic(k, 'seller', fee)).toBe(0n);
   });
@@ -136,10 +139,24 @@ describe('booking through the trade store', () => {
     expect(await booked(t.code)).toEqual([]);
   });
 
-  it('a settled dispute: released to the buyer books the 1% once; a seller win on a seller ad books it when the ruling names its payout set', async () => {
+  it('a refunded trade books nothing, whatever kind the caller names (owner g63: only a completed trade pays the 1%)', async () => {
+    setNow(new Date('2026-03-07T10:00:00Z'));
+    for (const poster of ['seller', 'buyer'] as const) {
+      const t = await trade({ poster });
+      expect((await applyEvent(deps, t.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system')).state).toBe('refunded');
+      for (const kind of [undefined, 'release', 'dispute-buyer', 'dispute-seller', 'auto-refund'] as const) {
+        expect(await withClient((c) => bookTradeRevenue(c, t.code, kind)), `${poster} ${kind}`).toBe(false);
+      }
+      expect(await booked(t.code), poster).toEqual([]);
+    }
+    expect(await ledgerDay('2026-03-07')).toEqual([]);
+  });
+
+  it('a settled dispute: a ruling that completes the trade (released to the buyer) books the 1% once; a full reversal books nothing (owner g63)', async () => {
     setNow(new Date('2026-03-04T10:00:00Z'));
     const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
-    // Escalated while settling: the dispute ends with the release (the ruling's dispute-buyer set).
+    // Escalated while settling: the dispute ends with the release (the ruling's dispute-buyer set):
+    // the trade completes, the poster pays the 1%, as before.
     const won = await trade({ to: 'settling' });
     expect((await applyEvent(deps, won.code, { type: 'escalate' }, 'system')).state).toBe('disputed');
     const released = await applyEvent(deps, won.code, { type: 'settled', kind: 'release', txHash: tx() }, 'system');
@@ -147,24 +164,20 @@ describe('booking through the trade store', () => {
     expect(await booked(won.code)).toEqual([{ kind: 'fee', fee_atomic: fee.toString() }]);
     expect(await withClient((c) => bookTradeRevenue(c, won.code, 'dispute-buyer'))).toBe(false);
 
-    // Seller wins on a seller's ad: Task 14's execution names `dispute-seller` (the row's own
-    // settling is a refund kind on this tree, which pays nothing): the 1% is booked once.
-    const lost = await trade({ to: 'settling' });
-    await applyEvent(deps, lost.code, { type: 'escalate' }, 'system');
-    expect((await applyEvent(deps, lost.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system')).state).toBe('refunded');
-    expect(await booked(lost.code)).toEqual([]);
-    expect(await withClient((c) => bookTradeRevenue(c, lost.code, 'dispute-seller'))).toBe(true);
-    expect(await withClient((c) => bookTradeRevenue(c, lost.code, 'dispute-seller'))).toBe(false);
-    expect(await booked(lost.code)).toEqual([{ kind: 'fee', fee_atomic: fee.toString() }]);
+    // Owner g63 (7 Nov): a full reversal (the ruling returns everything to the seller) charges no 1%
+    // and books no revenue, whoever posted, even when the ruling's execution names its own
+    // `dispute-seller` set (the row's own settling is a refund kind, which pays nothing either).
+    for (const poster of ['seller', 'buyer'] as const) {
+      const reversed = await trade({ to: 'settling', poster });
+      await applyEvent(deps, reversed.code, { type: 'escalate' }, 'system');
+      expect((await applyEvent(deps, reversed.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system')).state).toBe('refunded');
+      expect(await booked(reversed.code)).toEqual([]);
+      expect(await withClient((c) => bookTradeRevenue(c, reversed.code, 'dispute-seller')), poster).toBe(false);
+      expect(await withClient((c) => bookTradeRevenue(c, reversed.code)), poster).toBe(false);
+      expect(await booked(reversed.code), poster).toEqual([]);
+    }
 
-    // Seller wins on a BUYER's ad: no fee in the escrow, nothing booked now (the poster owes it).
-    const owes = await trade({ to: 'settling', poster: 'buyer' });
-    await applyEvent(deps, owes.code, { type: 'escalate' }, 'system');
-    await applyEvent(deps, owes.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system');
-    expect(await withClient((c) => bookTradeRevenue(c, owes.code, 'dispute-seller'))).toBe(false);
-    expect(await booked(owes.code)).toEqual([]);
-
-    expect(await ledgerDay('2026-03-04')).toEqual([{ kind: 'fee', currency: 'USD', trades: 2, fee_atomic: (2n * fee).toString(), usd_estimate_cents: '660' }]);
+    expect(await ledgerDay('2026-03-04')).toEqual([{ kind: 'fee', currency: 'USD', trades: 1, fee_atomic: fee.toString(), usd_estimate_cents: '330' }]);
   });
 
   it('an owed fee is booked as revenue on the day it is collected, on the collecting trade, once', async () => {
@@ -243,10 +256,11 @@ describe('GET /staff/v1/revenue (owner only)', () => {
     expect(byMonth.statusCode, byMonth.body).toBe(200);
     const body = byMonth.json() as { buckets: Array<{ period: string; trades: number; owedCollectedAtomic: string; totalAtomic: string }>; total: { trades: number; owedCollections: number }; byCurrency: Array<{ period: string }> };
     expect(body.buckets.map((b) => b.period)).toEqual(['2026-03', '2026-04']);
-    // March: 2 (Mar 2) + 2 (Mar 4) + 1 (Mar 5) + 1 (Mar 6, purged trade, still counted) released or settled.
-    expect(body.buckets[0]).toMatchObject({ trades: 6, owedCollectedAtomic: '7000000000' });
+    // March: 2 (Mar 2) + 1 (Mar 4: the dispute released to the buyer; the full reversals book
+    // nothing, owner g63) + 1 (Mar 5) + 1 (Mar 6, purged trade, still counted) released or settled.
+    expect(body.buckets[0]).toMatchObject({ trades: 5, owedCollectedAtomic: '7000000000' });
     expect(body.buckets[1]).toMatchObject({ trades: 1, totalAtomic: fee3.toString() });
-    expect(body.total).toMatchObject({ trades: 7, owedCollections: 1 });
+    expect(body.total).toMatchObject({ trades: 6, owedCollections: 1 });
     expect(body.byCurrency.map((b) => b.period)).toEqual(['USD']);
 
     // Defaults: by month, to today, from eleven months back.

@@ -263,7 +263,10 @@ export interface RulingCopy {
 /** The XMR a ruling pays to the side it favours, in atomic units (the escrow fully funded). */
 export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: string, poster: Party): bigint {
   const amount = BigInt(amountAtomic);
-  if (outcome === 'release-to-buyer' && poster === 'buyer') return amount - escrowPlan({ amountAtomic: amount, poster }).feeAtomic;
+  const plan = escrowPlan({ amountAtomic: amount, poster });
+  if (outcome === 'release-to-buyer' && poster === 'buyer') return amount - plan.feeAtomic;
+  // Owner g63 (7 Nov): a full reversal takes no fee, so the seller gets back all it funded.
+  if (outcome === 'refund-to-seller') return plan.sellerFundsAtomic;
   return amount;
 }
 
@@ -287,8 +290,10 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
   // What the seller must send on a seller-sends-xmr ruling: exact, never cut at 6 places.
   const amount = `${xmrInTextExact(amountAtomic)} XMR`;
   // Lead review 7 Nov: what the ruling pays out, as `payoutsFor('dispute-buyer' | 'dispute-seller')`
-  // builds it for a fully funded escrow. The poster pays the 1% fee: on a buyer's ad the buyer gets
-  // the amount less the fee; the seller's refund is the amount either way.
+  // builds it for a fully funded escrow. A release completes the trade and the poster pays the 1%:
+  // on a buyer's ad the buyer gets the amount less the fee. A refund is a full reversal (owner g63):
+  // no fee, the seller gets back everything it funded.
+  // TODO(design, owner g63): the explanation of the fee rule for users (DisputeView.fee).
   const paidOut = `${xmrInText(paidOutAtomic(r.outcome, amountAtomic, poster))} XMR`;
   const otherSide: Party = me === 'buyer' ? 'seller' : 'buyer';
   const nameOf = (p: Party) => (p === me ? 'you' : other);
