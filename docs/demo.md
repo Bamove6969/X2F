@@ -51,18 +51,31 @@ account's authenticator secret from `.demo/logins.txt` to any authenticator app.
 authenticator code is a strong login, so a demo account works at once in a new browser; a
 password alone would start the 24-hour hold (R42) and leave the account unable to trade.
 
+**The door (demo only, `tools/demo/door.ts`).** On the real app a password + authenticator login
+on a browser the account does not know is refused when no device is logged in to approve it (hold
+model v3, 403 `approval-unavailable`); only a passkey, security key or PGP key gets in. The seeded
+accounts have none of those, so the gateway lets them in: when a seeded account's password step
+passes and the account has no logged-in session, that browser is recorded as known for it before
+the code is checked. Accounts you make yourself in the demo get no door.
+
 If the same account is already logged in somewhere else (another browser, or a script), a new
 login asks that device to approve it (number matching, Plan 2 Task 16): log the other one out
-first, or approve from it.
+first, or approve from it (the logged-in device shows three numbers; tap the one the new device
+shows).
+
+Only a vendor can post offers (owner, 2 Nov 2026). The cast and `ana-demo` are made vendors by the
+seeder, straight in the demo database (becoming one for real needs a passkey, security key or PGP
+key); `ben-demo` and `cy-demo` stay traders, so you can see both. The seed signs the Terms with
+each account's display name typed (the sign-up's signature, migration 316).
 
 Yours, with no offers, to trade with yourself (one browser profile or device per account, since
 each trade's escrow keys live in that browser):
 
-| Login name | Shown as |
-| --- | --- |
-| `ana-demo` | demo_ana |
-| `ben-demo` | demo_ben |
-| `cy-demo` | demo_cy |
+| Login name | Shown as | Type |
+| --- | --- | --- |
+| `ana-demo` | demo_ana | vendor |
+| `ben-demo` | demo_ben | trader |
+| `cy-demo` | demo_cy | trader |
 
 The cast, each with offers already posted (USD and CAD, Zelle, Cash App, Interac, Venmo, Amazon
 gift cards, Wise, PayPal):
@@ -82,9 +95,13 @@ Every account has a password, an authenticator (throwaway secret) and one throwa
 - **The money.** The chain is a private regtest chain on this machine (`--regtest --offline`, no
   peers). Its XMR is worthless and exists only until `npm run demo:stop`. Addresses look like
   mainnet ones (regtest uses the mainnet address format) but are only ever used on this chain.
-- **Funding.** When a seller taps "Fund escrow", the demo moderator's faucet wallet pays the
-  escrow exactly what the trade asks, standing in for the seller's own wallet app. A block is
-  mined every 3 seconds, so the 10 confirmations take about half a minute.
+- **Funding.** When the seller starts funding (taps **Copy address** or **Copy amount** on the
+  funding screen, or completes the hold that opens the wallet app; the trade records
+  `fund-started`), the demo moderator's faucet wallet pays the escrow exactly what the trade asks,
+  standing in for the seller's own wallet app. A block is mined every 3 seconds, so the 10
+  confirmations take about half a minute.
+- **The seller must be online** for an offer to show **Trade** (otherwise only "Message"): log the
+  seller in, in its own browser, before the buyer takes.
 - **The fiat payment.** Nothing is paid; the buyer just taps "I've paid".
 - **Every secret.** The server keys, key rings, PGP signing key, VAPID keys, moderation signing
   key and keystore key, the X2F fee wallet (whose keys are thrown away) and the Postgres password
@@ -105,7 +122,7 @@ offers cannot be taken (409 `price-unavailable`).
 ## Comments on the running demo
 
 The gateway adds one script tag (`/__demo/notes.js`) to the app's HTML, so anyone with the demo open
-can leave comments the way one does on a shared page: tap **Comment** (bottom-left, drag it if it is
+can leave comments the way one does on a shared page: tap **Comment** (top-right, drag it if it is
 in the way), tap the spot, type, Send. A numbered pin stays on that spot for that screen; tapping it
 opens the thread, where you can add to it or **Resolve** it. A red mark on a pin means a new reply.
 Nothing in `apps/` or the production build knows about this: it is `tools/demo/` only, and the app's
@@ -133,6 +150,15 @@ text. It never reads a form field, cookie or token; on wallet, setup, login and 
 tapped text is left out, and long address- or key-like strings are replaced with `[hidden]`.
 `POST /__demo/notes` is same-origin only, JSON only, 4 KB at most, 30 writes a minute. `/__demo/*`
 never reaches the API (`tools/test/demo-notes.test.ts`).
+
+## Known issue: a release never finishes on the seller's side
+
+After the seller holds **Payment received** and the buyer's device co-signs, the buyer sees
+"Released" and the XMR is sent, but the seller's screen stays on "Signing… keep this page open"
+and the trade stays `settling` (the moderator logs `sweep-unproven`). The seller's device can never
+see its release in a block in the browser bundle, so it never sends its post-release statement and
+the watcher (which needs both traders' statements) cannot settle. This is the app bug documented in
+`wip/lead-release-settle` 3efabc81 (P0 8 Nov, `docs/coordination.md` there; WIP, not on main).
 
 ## The guards
 
