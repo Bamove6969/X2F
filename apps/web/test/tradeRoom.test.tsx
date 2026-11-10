@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TradeView } from '../src/api/trade.js';
 import { publicName } from '../src/api/trade.js';
-import { focusComposerWhenReady, registerTradeScreen, screenFor, type TradeScreen } from '../src/screens/trade/TradeRoom.js';
+import { focusChatPane, focusComposerWhenReady, registerTradeScreen, screenFor, type TradeScreen } from '../src/screens/trade/TradeRoom.js';
 
 const A: TradeScreen = () => null;
 const B: TradeScreen = () => null;
@@ -102,5 +102,27 @@ describe('focusComposerWhenReady (Task 20 round-2 review m3)', () => {
     document.body.append(document.createElement('textarea'));
     await settle();
     expect(document.activeElement).toBe(other);
+  });
+
+  it("skips the payee's payment-detail boxes (J-08): the chat's composer gets the focus, now and once it renders", async () => {
+    const pane = document.createElement('div');
+    pane.dataset.pane = 'side';
+    const boxes = document.createElement('form');
+    boxes.dataset.payBoxes = '';
+    const email = document.createElement('input');
+    boxes.append(email);
+    pane.append(boxes);
+    document.body.append(pane);
+    const stop = focusComposerWhenReady("[data-pane='side']");
+    await settle();
+    expect(document.activeElement).not.toBe(email);
+    const composer = document.createElement('textarea');
+    pane.append(composer);
+    await settle();
+    expect(document.activeElement).toBe(composer);
+    stop();
+    email.focus();
+    focusChatPane();
+    expect(document.activeElement).toBe(composer);
   });
 });
