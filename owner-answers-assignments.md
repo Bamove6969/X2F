@@ -43,7 +43,7 @@ Rules for every builder (they go in every brief):
 | J-17 | 355-359 | |
 | J-20 | 380-384 | |
 | J-21 | 470-479 | |
-| J-23 | 385-389 | |
+| J-23 | 385-389 (unused) and 500-509 (used: 500_chat_key_envelopes) | |
 | J-24 | 390-394 | |
 | J-27 | 480-489 | |
 | J-07 | 440-449 | |
