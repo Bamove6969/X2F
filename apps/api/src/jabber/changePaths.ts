@@ -83,8 +83,12 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     changes: [
       'id', 'account_id', 'display_name', 'display_key', 'abilities', 'invite_hash', 'invite_expires_at', 'member_account_id',
       'joined_at', 'created_at', 'removed_at',
+      // J-20 (migration 380): the member's trade-size band and working hours, set by the lead.
+      'band_min_atomic', 'band_max_atomic', 'hours',
     ],
-    bookkeeping: {},
+    bookkeeping: {
+      first_login_at: "set once by the member's first login, which queues its own notice (kind team-member-first-login, J-20)",
+    },
   },
   {
     table: 'account_holds', accountColumn: 'account_id', ops: ALL,

@@ -27,3 +27,17 @@ alter table team_members
 -- session), so they are marked now and never raise the alert.
 alter table team_members add column first_login_at timestamptz;
 update team_members set first_login_at = joined_at where joined_at is not null;
+
+-- The secure Jabber notice of a first login (p11-27: "a notification and even a Jabber
+-- notification"; review F4): a notice kind of its own through jabber-notices' outbox (migration
+-- 331), queued by the login itself in its transaction (auth/sessions.ts), behind the same opt-in
+-- (and so as dark as the rest of jabber-notices). Its fixed sentence names no member
+-- (jabber/sender.ts TEAM_FIRST_LOGIN_TEXT). first_login_at is therefore bookkeeping for the
+-- account-change trigger (jabber/changePaths.ts), so the first login is not also told as an
+-- account change; the band and hours are changes, as every other column of team_members.
+alter table jabber_outbox drop constraint jabber_outbox_kind_check;
+alter table jabber_outbox add constraint jabber_outbox_kind_check
+  check (kind in ('account-change', 'trade-attention', 'team-member-first-login'));
+drop trigger jabber_note_change on team_members;
+create trigger jabber_note_change after insert or update or delete on team_members for each row
+  execute function jabber_note_change('account_id', 'first_login_at');

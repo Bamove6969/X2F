@@ -273,15 +273,27 @@ export async function openSession(
   let firstMemberLogin = false;
   if (member) {
     // Owner p11-27 (S-107, replacing p7-10's first-login approval): no approval; the lead is told,
-    // in the alert list and by a push, when a member logs in for the first time. (The secure
-    // Jabber notice joins when the Jabber notices land: NEEDS_JABBER_NOTICES.)
+    // in the alert list, by a push and by the secure Jabber notice (when they set Jabber alerts up),
+    // when a member logs in for the first time.
     const first = await db.query('update team_members set first_login_at = $2 where id = $1 and first_login_at is null returning id', [member.id, now]);
     if ((first.rowCount ?? 0) > 0) {
       firstMemberLogin = true;
-      await addAlert(db, member.teamId, 'team-member-first-login', { member: member.name, method: a.method, deviceLabel: label }, now);
+      // Review F4: through jabber-notices' outbox, in this transaction (a rollback queues nothing).
+      await db.query(
+        "select jabber_queue(c.account_id, c.jid_sealed, 'team-member-first-login') from jabber_contacts c where c.account_id = $1 and c.enabled and c.jid_sealed is not null",
+        [member.teamId],
+      );
     }
-    // The account owner is told about every member login (in the team account's alert list).
-    await addAlert(db, member.teamId, 'team-member-login', { member: member.name, method: a.method, deviceLabel: label }, now);
+    // Review F5 (Q3): a member's only first session is the join's (`firstSession`, team join
+    // routes), which is their first login; finishMember's `team-member-joined` already tells the
+    // lead, so the join adds no second or third alert. Every other member login is told: a first
+    // login that is not the join (the join's session never opened, e.g. the process stopped between
+    // the join's commit and its session) and each later one.
+    if (!a.firstSession) {
+      if (firstMemberLogin) await addAlert(db, member.teamId, 'team-member-first-login', { member: member.name, method: a.method, deviceLabel: label }, now);
+      // The account owner is told about every member login (in the team account's alert list).
+      await addAlert(db, member.teamId, 'team-member-login', { member: member.name, method: a.method, deviceLabel: label }, now);
+    }
   } else if (!a.firstSession) {
     if (a.level === 'recovery') {
       const detail: Record<string, string> = { method: a.method, deviceLabel: label };
