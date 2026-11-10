@@ -2,6 +2,8 @@
 
 The owner's order (8 Nov): "I want all my answers to every question moved and dispersed and disseminated amongst the team and worked on."
 
+**Status note, 10 Nov 2026:** this plan was written on 9 Nov when 131 rows were "not started". Since then batch 3 (main 58f3d186) and batch 4 (main d421706c) landed. Current counts over all 534 register rows: landed 273, in flight 40, not started 83, waiting 53, superseded 85 (the register is the source of truth; section 6 has the per-job table and every indexed row's status). The text below is the 9 Nov plan.
+
 This file turns the 131 "not started" rows of `owner-answers-register.md` into jobs. Every one of the 131 is in exactly one job below (index at the end). The 57 "waiting on ..." rows cannot be assigned yet. They are listed in section 4 by owner page id. The 19 lead defaults the owner has to confirm are in section 5.
 
 Base facts used (checked 9 Nov 04:17 UTC): main = `origin/main` 0c6f3f16. On main, `packages/trade/src/payouts.ts:72-77` sends surplus to the seller's refund address. `apps/api/src/offers/routes.ts:42,133` has `mode: 'fixed'` and `OFFER_CAP_DEFAULTS { perMarket: 3, total: 20 }`. `apps/api/src/price/feed.ts:43` has `maxSpreadBps: 500`. `packages/trade/src/timers.ts:3` has `setupMin: 15`. On `wip/second-p3-task34` (c2d1006c, untouched since 2 Nov), `packages/trade/src/flexOffer.ts:60` has `MAX_METHODS = 10`.
@@ -605,7 +607,49 @@ The register counts 19. Fourteen say "lead default (confirm)"; five more (T-042,
 
 ---
 
-## 6. Counts, and the index of every not-started row
+## 6. Counts, and the index of every row that was not started on 9 Nov
+
+**Row status on 10 Nov 2026 (main d421706c, after batch 4; refreshed from the register).** All 534 register rows: landed 273, in flight 40, not started 83, waiting 53, superseded 85. The 131 rows indexed below were all "not started" on 9 Nov; today they stand as follows (last column of the index has each row):
+
+| job | rows | landed | in flight | not started | waiting |
+|---|---|---|---|---|---|
+| J-01 | 4 | 0 | 0 | 0 | 4 |
+| J-02 | 3 | 2 | 0 | 1 | 0 |
+| J-03 | 1 | 1 | 0 | 0 | 0 |
+| J-04 | 2 | 2 | 0 | 0 | 0 |
+| J-05 | 1 | 1 | 0 | 0 | 0 |
+| J-06 | 5 | 0 | 0 | 5 | 0 |
+| J-07 | 5 | 0 | 0 | 5 | 0 |
+| J-08 | 1 | 1 | 0 | 0 | 0 |
+| J-09 | 5 | 5 | 0 | 0 | 0 |
+| J-10 | 7 | 7 | 0 | 0 | 0 |
+| J-11 | 3 | 0 | 0 | 1 | 2 |
+| J-12 | 5 | 0 | 0 | 5 | 0 |
+| J-13 | 2 | 2 | 0 | 0 | 0 |
+| J-14 | 3 | 0 | 3 | 0 | 0 |
+| J-15 | 6 | 1 | 0 | 5 | 0 |
+| J-16 | 5 | 0 | 5 | 0 | 0 |
+| J-17 | 4 | 4 | 0 | 0 | 0 |
+| J-18 | 2 | 1 | 0 | 1 | 0 |
+| J-19 | 1 | 1 | 0 | 0 | 0 |
+| J-20 | 3 | 0 | 2 | 0 | 0 |
+| J-21 | 5 | 0 | 5 | 0 | 0 |
+| J-22 | 1 | 1 | 0 | 0 | 0 |
+| J-23 | 1 | 0 | 1 | 0 | 0 |
+| J-24 | 4 | 0 | 0 | 4 | 0 |
+| J-25 | 2 | 2 | 0 | 0 | 0 |
+| J-26 | 1 | 0 | 1 | 0 | 0 |
+| J-27 | 2 | 0 | 0 | 0 | 2 |
+| J-28 | 3 | 0 | 0 | 3 | 0 |
+| J-29 | 3 | 0 | 0 | 3 | 0 |
+| J-30 | 3 | 0 | 0 | 3 | 0 |
+| J-31 | 9 | 7 | 0 | 2 | 0 |
+| J-32 | 5 | 0 | 1 | 4 | 0 |
+| J-33 | 7 | 2 | 0 | 5 | 0 |
+| J-34 | 6 | 1 | 0 | 5 | 0 |
+| lead own (section 1 table) | 11 | 0 | 0 | 8 | 3 |
+
+Job state in words: J-02 (the O-028 limit pop-up is still open), J-04, J-05, J-08, J-09, J-10, J-13 (dark), J-17, J-18 (research; T-031 still needs an owner call on the sound), J-19, J-22, J-25 landed in batch 3 or batch 4. In flight: J-16 (`wip/lead-flex-launch-4`, with the launch rules), J-14 (`wip/second-support-tickets`), J-20 (`wip/second-team-limits`), J-21 (`wip/second-staff-pages`), J-23 (`wip/lead-multi-device`, note only), J-26 (wording pages). Waiting on the owner: J-01 (p11-63..66), J-27 (p12-7/8/11/12), part of J-11 (p11-69). Not started: J-06, J-07, J-12, J-15, J-24, J-28, J-29, J-30. Design jobs J-31 to J-34 are partly drawn (see the J-19 rows landed from trade-copy). Changelog: 10 Nov 2026, counts and index status refreshed from the register.
 
 **Jobs per owner:**
 
@@ -619,136 +663,136 @@ The register counts 19. Fourteen say "lead default (confirm)"; five more (T-042,
 
 **Index: all 131 not-started rows to their job** (checked by script: none missing, none twice)
 
-| row | rule (short) | job | carried by | priority |
-|---|---|---|---|---|
-| B-004 | Separate internal revenue ledger (aggregate) of completed trades' 1%;  | J-13 | LH | P1 |
-| B-006 | Fee wallet stays hot; at an owner-set threshold the excess moves autom | J-13 | LH | P1 |
-| B-007 | Crypto lawyer before mainnet; Terms text from the lawyer | lead own (section 1 table) | lead | - |
-| B-009 | Sanctioned rails (SBP, Mir, YooMoney) need a lawyer; no sanctioned cur | J-29 | LH | P3 |
-| C-013 | Terms say: completed trades destroyed on the 30th day; disputes kept u | J-05 | LH | P1 |
-| C-015 | Disputes kept 90 days with personal detail removed, dialogue intact; u | J-27 | LH | P2 |
-| C-016 | Revoking a removed staff member's chat access is logged ("any event is | J-27 | LH | P2 |
-| C-019 | Team chat must not ship before a team-member key path exists; hide tea | J-10 | LH | P1 |
-| D-002 | Filing a dispute shows an hourglass counting down from 24 h ("the maxi | J-15 | c3 | P2 |
-| D-005 | File appeal button on completed-trades list and the trade page; disapp | J-15 | c3 | P2 |
-| D-006 | Won appeal fixes the record and liens the other account until it repay | J-06 | c3 | P1 |
-| D-008 | Losing a dispute that requires restitution: immediate lien; lifted whi | J-06 | c3 | P1 |
-| D-009 | Money moves at once after a ruling; a lien covers a reversal | J-06 | c3 | P1 |
-| D-010 | One appeal only, filed within 48 h of the ruling, decided within ~48 h | J-15 | c3 | P2 |
-| D-011 | No eligible appeal reviewer: appeal waits, owner alerted, trader told | J-15 | c3 | P2 |
-| D-016 | Frozen-account message: "A moderator has frozen your account. Open you | J-33 | design | P2 |
-| D-020 | Ban notice: "We're sorry, but your account has been banned. If you fee | J-33 | design | P2 |
-| D-029 | Owner backup login: one security key is enough (its PIN also needed);  | J-11 | c3 | P1 |
-| D-030 | Owner who loses every PGP key gets back in with one of his two backup  | J-11 | c3 | P1 |
-| D-032 | Moderator who loses the only key: recovery code, else owner vets and r | J-11 | c3 | P1 |
-| D-036 | Moderator and helper permissions granular; senior always has feedback | J-21 | LH | P2 |
-| D-041 | Staff pay per completed dispute, calculated at logout since the last p | J-12 | c3 | P1 |
-| D-042 | For now pay is per completed dispute only (no hourly); pay kinds stay  | J-12 | c3 | P1 |
-| D-043 | Seniors: pay per dispute + % of large-trade revenue (threshold TBD); b | J-12 | c3 | P1 |
-| D-044 | Clawback option A: pay goes out at clock-out; an overruled decision re | J-12 | c3 | P1 |
-| D-045 | Clock-out required; closing the app is no clock-out; auto-logout recor | J-12 | c3 | P1 |
-| D-046 | First staff login explains position, pay and the appeal/clawback risk | J-33 | design | P2 |
-| D-049 | Profiles show "Disputes: N won, M lost" | J-21 | LH | P2 |
-| D-055 | One open ticket per person until it is resolved | J-14 | LH | P1 |
-| D-057 | Tickets shared across a team; feedback per member | J-14 | LH | P1 |
-| D-059 | "My account has been compromised" ticket: username + any credentials + | J-14 | LH | P1 |
-| D-062 | Loser with no escrow money still owes 1% of the trade; deducted from f | J-06 | c3 | P1 |
-| D-063 | Lien includes the unpaid fee only if the lien holder owed it; the repa | J-06 | c3 | P1 |
-| D-064 | Staff who reach the owner on the secure Jabber channel may end a recov | J-24 | LH | P2 |
-| D-066 | Only trade parties open disputes; team members with dispute access may | J-10 | LH | P1 |
-| D-067 | Moderator contact link setting takes Matrix or Telegram (Matrix prefer | J-24 | LH | P2 |
-| D-069 | In a dispute both parties must cooperate with the moderator's question | J-31 | design | P2 |
-| G-003 | Active Buy/Sell tab 2 px dark border, after design review | J-34 | design | P3 |
-| G-004 | Disabled-button and sheet-title look: design decides | J-34 | design | P3 |
-| G-005 | Unbuilt board items (market price card, method icons, section counts,  | J-34 | design | P3 |
-| G-006 | Blue info note and rounder icon buttons: design's call | J-34 | design | P3 |
-| G-007 | Five Devices wording items go to design; owner input only if she asks | J-34 | design | P3 |
-| G-008 | Research folding phones (Pixel, Samsung, others); detect the type; des | J-34 | design | P3 |
-| G-012 | Sign unsigned wording: send every line, grouped by screen | J-26 | LH | P2 |
-| G-013 | Support headline: "Ask an X2F staff member" | J-33 | design | P2 |
-| G-018 | Send design a phone screenshot pack + "what changed" after each landin | lead own (section 1 table) | lead | - |
-| O-001 | Offers are market ± % only; no fixed-price offers | J-02 | c2 | P1 |
-| O-009 | At most 3 amount bands per currency | J-16 | LH | P2 |
-| O-010 | At most 5 payment types per offer | J-16 | LH | P2 |
-| O-015 | A second band needs differentiating conditions (e.g. trade count); sam | J-16 | LH | P2 |
-| O-016 | Research LocalMonero, LocalCoinSwap, Paxful listing conditions into a  | J-18 | LH | P2 |
-| O-019 | Currency list: top 5-6 most common, then A-Z, all with flags | J-16 | LH | P2 |
-| O-020 | A currency with no market rate shows a "no rate" tag in the dropdown o | J-16 | LH | P2 |
-| O-021 | Run the no-rate pop-up wording by design | J-32 | design | P2 |
-| O-022 | My offers: flag an ad whose currency has no price, obvious and pretty; | J-32 | design | P2 |
-| O-023 | Name the screen: vote among My offers / My listings / My ads / My post | J-32 | design | P2 |
-| O-024 | My offers shows the payment types in a dropdown | J-32 | design | P2 |
-| O-025 | 3 buy + 3 sell ads per vendor, in settings and the ad builder; no on-h | J-02 | c2 | P1 |
-| O-028 | Limit pop-up "Sorry, you're limited to N offers per side..." + feedbac | J-02 | c2 | P1 |
-| O-030 | Expand the 109 payment types as its own task after Task 34, legal chec | J-29 | LH | P3 |
-| O-035 | Ad button reads "Request to buy XMR" (and the sell equivalent) | J-32 | design | P2 |
-| O-037 | Max gap between price sources 3% before no price | J-03 | c2 | P1 |
-| O-044 | Price-health page moves to the staff site | J-21 | LH | P2 |
-| O-052 | After launch add the currencies that both Coinbase and BitPay quote | J-29 | LH | P3 |
-| P-011 | Disclaimer wording, placement and button: design's job | J-31 | design | P2 |
-| P-012 | "Was this proof blurred correctly?" on every proof for the first coupl | J-07 | c3 | P2 |
-| P-013 | First month: ask BOTH parties every time whether private info was remo | J-07 | c3 | P2 |
-| P-014 | Database of foreign-language name labels; ask every uploader whether t | J-07 | c3 | P2 |
-| P-015 | Receiver's feedback button records auto vs manual blur; read by a help | J-07 | c3 | P2 |
-| P-016 | Proof template DB (field names, data blank) until auto-blur is perfect | J-28 | LH | P3 |
-| P-019 | OCR reads the label before a number (phone, account) to decide blurrin | J-28 | LH | P3 |
-| P-020 | Warn if the payer's blur hides the trade code; still allowed; system p | J-07 | c3 | P2 |
-| P-022 | Card last-4 matching the amount: OCR the preceding words; "Trade code" | J-28 | LH | P3 |
-| P-030 | Buyer paid less: no prompt; seller accepts or disputes; encourage talk | J-31 | design | P2 |
-| P-031 | No VirusTotal or server AV; receiver-side proof check (decode, re-rend | J-22 | LH | P2 |
-| R-011 | Feedback follows the final outcome: reversed none; settled stays; appe | J-15 | c3 | P2 |
-| R-012 | Totals follow the final binding outcome | J-15 | c3 | P2 |
-| R-028 | A different account may claim a revoked key if it proves it | J-21 | LH | P2 |
-| S-012 | Username + authenticator code alone is NOT allowed; no Medium tier | J-09 | LH | P1 |
-| S-013 | Username-only accounts not allowed | J-09 | LH | P1 |
-| S-014 | Strong passwords enforced at signup with a live meter; only "strong" a | J-09 | LH | P1 |
-| S-015 | At signup a strength chart shows where the chosen methods stand; confi | J-33 | design | P2 |
-| S-017 | Recovery code required at signup: tick "I've written it down", then ty | J-09 | LH | P1 |
-| S-019 | Recovery code = emergency login only; very long or ~5 mnemonic words;  | J-09 | LH | P1 |
-| S-025 | Message for a recovery-session change attempt ("a 24 h hold... securit | J-33 | design | P2 |
-| S-026 | During a recovery hold contact only via Matrix/Telegram/secure Jabber | J-24 | LH | P2 |
-| S-043 | No warning notice before the 60-day close; explain the rule clearly at | J-33 | design | P2 |
-| S-075 | Full abilities on every extra device logged in strongly; approve a new | J-23 | LH | P2 |
-| S-085 | Device-bound sessions (non-copyable browser key) before mainnet | J-30 | LH | P3 |
-| S-087 | Granular teams: 3-4 member types, 7-10 boxes each, a member can be in  | J-10 | LH | P1 |
-| S-090 | Per-method detail boxes in the payer's chat side (e.g. Interac: name,  | J-08 | LH | P2 |
-| S-091 | Each member gets a trade-size band that limits everything they do | J-20 | LH | P2 |
-| S-092 | Granular boxes; a "manager" preset ticks a recommended set that can be | J-10 | LH | P1 |
-| S-094 | Member boxes "can view notes on traders" and "can add notes" (logged,  | J-10 | LH | P1 |
-| S-095 | Member logins: approve only the first login (design B); the granular b | J-20 | LH | P2 |
-| S-096 | Member hours: 24/7 or fine-tune days and hours | J-20 | LH | P2 |
-| S-097 | The starting granular list is good; think of every one, leave the rest | J-10 | LH | P1 |
-| T-017 | All cancel types recorded as ONE cancel figure, seen only by moderator | J-21 | LH | P2 |
-| T-023 | Automatic payouts pay ONLY the trade's expected amounts; any surplus s | J-01 | LH | P1 |
-| T-024 | Surplus too small to move stays unless the seller disputes; they may t | J-01 | LH | P1 |
-| T-025 | The pre-determined amounts are set in stone for every automatic payout | J-01 | LH | P1 |
-| T-026 | Payout network fee option B: seller's funding includes an estimate of  | J-01 | LH | P1 |
-| T-031 | Nudge sound = old ICQ Model T horn, original sped up, 2nd recording wi | J-18 | LH | P2 |
-| T-034 | The trade's rules list tells each side about the nudge and encourages  | J-31 | design | P2 |
-| T-039 | A rule pop-up when opening a trade: if you open several to see who ans | J-31 | design | P2 |
-| T-044 | Recommend paying from an account in your own name; never enforced; rea | J-31 | design | P2 |
-| T-049 | Buyer's Cancel confirmation wording goes to design | J-31 | design | P2 |
-| T-055 | Gift card must be bought within the last 30 days | J-17 | c2 | P2 |
-| T-056 | Full written value only, except range cards (e.g. Visa 200-500), which | J-17 | c2 | P2 |
-| T-057 | Gift card brand list = top 30 + Home Hardware + Canadian Tire + Other  | J-17 | c2 | P2 |
-| T-058 | Accept gift cards; easy, clear rules for buyers and sellers from Paxfu | J-31 | design | P2 |
-| T-061 | Poster has 60 min to respond to a trade request before it closes autom | J-04 | c2 | P1 |
-| T-076 | Team members never release XMR on the vendor's sell trades: only the v | J-10 | LH | P1 |
-| T-079 | No-proof warning: tapping "I've paid" with no proof shows "are you sur | J-19 | LH | P2 |
-| T-080 | Trade terms show each reader only what applies to them, line by line ( | J-31 | design | P2 |
-| T-081 | Gift cards: card currency follows its country, short window, evidence  | J-17 | c2 | P2 |
-| W-004 | Maintenance never defaults to "emergency" (internal only); unplanned:  | J-04 | c2 | P1 |
-| W-009 | Optional unrestricted battery on Android, explained in setup | J-30 | LH | P3 |
-| W-010 | Android: APK from the site + own F-Droid repo; web app stays main path | J-30 | LH | P3 |
-| W-013 | Not open source for now; outside testing groups and a bug bounty | lead own (section 1 table) | lead | - |
-| W-015 | Real Matrix and Telegram addresses set up near the end of design | lead own (section 1 table) | lead | - |
-| W-016 | Optional secure Jabber account for staff to reach the owner; Matrix/Te | J-24 | LH | P2 |
-| X-002 | Install SonarQube Cloud / the official SonarQube scan action; token is | lead own (section 1 table) | lead | - |
-| X-003 | Use the 1Password CLI / service MCP vault for tokens | lead own (section 1 table) | lead | - |
-| X-005 | No freelance crypto review now; a proper audit from early revenue | lead own (section 1 table) | lead | - |
-| X-006 | Public 2-4 page crypto spec for community review | J-25 | LH | P2 |
-| X-007 | Bug bounty after launch | lead own (section 1 table) | lead | - |
-| X-008 | Monero CCS, OTF Red Team Lab, NLnet applications: drafts only; nothing | J-25 | LH | P2 |
-| X-017 | "I don't see why nudge can't be moved to GitHub": scheduled routine wa | lead own (section 1 table) | lead | - |
-| X-019 | claude2 and claude3 accounts close 21 Nov: on 19-20 Nov confirm all pu | lead own (section 1 table) | lead | - |
-| X-021 | One 1Password service account token allowed in the cloud lead's enviro | lead own (section 1 table) | lead | - |
+| row | rule (short) | job | carried by | priority  status 10 Nov |
+|---|---|---|---|------|
+| B-004 | Separate internal revenue ledger (aggregate) of completed trades' 1%;  | J-13 | LH | P1  landed |
+| B-006 | Fee wallet stays hot; at an owner-set threshold the excess moves autom | J-13 | LH | P1  landed |
+| B-007 | Crypto lawyer before mainnet; Terms text from the lawyer | lead own (section 1 table) | lead | -  not started |
+| B-009 | Sanctioned rails (SBP, Mir, YooMoney) need a lawyer; no sanctioned cur | J-29 | LH | P3  not started |
+| C-013 | Terms say: completed trades destroyed on the 30th day; disputes kept u | J-05 | LH | P1  landed |
+| C-015 | Disputes kept 90 days with personal detail removed, dialogue intact; u | J-27 | LH | P2  waiting p12-12 |
+| C-016 | Revoking a removed staff member's chat access is logged ("any event is | J-27 | LH | P2  waiting p12-7 |
+| C-019 | Team chat must not ship before a team-member key path exists; hide tea | J-10 | LH | P1  landed |
+| D-002 | Filing a dispute shows an hourglass counting down from 24 h ("the maxi | J-15 | c3 | P2  landed |
+| D-005 | File appeal button on completed-trades list and the trade page; disapp | J-15 | c3 | P2  not started |
+| D-006 | Won appeal fixes the record and liens the other account until it repay | J-06 | c3 | P1  not started |
+| D-008 | Losing a dispute that requires restitution: immediate lien; lifted whi | J-06 | c3 | P1  not started |
+| D-009 | Money moves at once after a ruling; a lien covers a reversal | J-06 | c3 | P1  not started |
+| D-010 | One appeal only, filed within 48 h of the ruling, decided within ~48 h | J-15 | c3 | P2  not started |
+| D-011 | No eligible appeal reviewer: appeal waits, owner alerted, trader told | J-15 | c3 | P2  not started |
+| D-016 | Frozen-account message: "A moderator has frozen your account. Open you | J-33 | design | P2  landed |
+| D-020 | Ban notice: "We're sorry, but your account has been banned. If you fee | J-33 | design | P2  not started |
+| D-029 | Owner backup login: one security key is enough (its PIN also needed);  | J-11 | c3 | P1  waiting p11-69 |
+| D-030 | Owner who loses every PGP key gets back in with one of his two backup  | J-11 | c3 | P1  waiting p11-69 |
+| D-032 | Moderator who loses the only key: recovery code, else owner vets and r | J-11 | c3 | P1  not started |
+| D-036 | Moderator and helper permissions granular; senior always has feedback | J-21 | LH | P2  in flight wip/second-staff-pages |
+| D-041 | Staff pay per completed dispute, calculated at logout since the last p | J-12 | c3 | P1  not started |
+| D-042 | For now pay is per completed dispute only (no hourly); pay kinds stay  | J-12 | c3 | P1  not started |
+| D-043 | Seniors: pay per dispute + % of large-trade revenue (threshold TBD); b | J-12 | c3 | P1  not started |
+| D-044 | Clawback option A: pay goes out at clock-out; an overruled decision re | J-12 | c3 | P1  not started |
+| D-045 | Clock-out required; closing the app is no clock-out; auto-logout recor | J-12 | c3 | P1  not started |
+| D-046 | First staff login explains position, pay and the appeal/clawback risk | J-33 | design | P2  not started |
+| D-049 | Profiles show "Disputes: N won, M lost" | J-21 | LH | P2  in flight wip/second-staff-pages |
+| D-055 | One open ticket per person until it is resolved | J-14 | LH | P1  in flight wip/second-support-tickets |
+| D-057 | Tickets shared across a team; feedback per member | J-14 | LH | P1  in flight wip/second-support-tickets |
+| D-059 | "My account has been compromised" ticket: username + any credentials + | J-14 | LH | P1  in flight wip/second-support-tickets |
+| D-062 | Loser with no escrow money still owes 1% of the trade; deducted from f | J-06 | c3 | P1  not started |
+| D-063 | Lien includes the unpaid fee only if the lien holder owed it; the repa | J-06 | c3 | P1  not started |
+| D-064 | Staff who reach the owner on the secure Jabber channel may end a recov | J-24 | LH | P2  not started |
+| D-066 | Only trade parties open disputes; team members with dispute access may | J-10 | LH | P1  landed |
+| D-067 | Moderator contact link setting takes Matrix or Telegram (Matrix prefer | J-24 | LH | P2  not started |
+| D-069 | In a dispute both parties must cooperate with the moderator's question | J-31 | design | P2  landed |
+| G-003 | Active Buy/Sell tab 2 px dark border, after design review | J-34 | design | P3  not started |
+| G-004 | Disabled-button and sheet-title look: design decides | J-34 | design | P3  not started |
+| G-005 | Unbuilt board items (market price card, method icons, section counts,  | J-34 | design | P3  not started |
+| G-006 | Blue info note and rounder icon buttons: design's call | J-34 | design | P3  not started |
+| G-007 | Five Devices wording items go to design; owner input only if she asks | J-34 | design | P3  landed |
+| G-008 | Research folding phones (Pixel, Samsung, others); detect the type; des | J-34 | design | P3  not started |
+| G-012 | Sign unsigned wording: send every line, grouped by screen | J-26 | LH | P2  in flight |
+| G-013 | Support headline: "Ask an X2F staff member" | J-33 | design | P2  not started |
+| G-018 | Send design a phone screenshot pack + "what changed" after each landin | lead own (section 1 table) | lead | -  not started |
+| O-001 | Offers are market ± % only; no fixed-price offers | J-02 | c2 | P1  landed |
+| O-009 | At most 3 amount bands per currency | J-16 | LH | P2  in flight wip/lead-flex-launch-4 |
+| O-010 | At most 5 payment types per offer | J-16 | LH | P2  in flight wip/lead-flex-launch-4 |
+| O-015 | A second band needs differentiating conditions (e.g. trade count); sam | J-16 | LH | P2  in flight wip/lead-flex-launch-4 |
+| O-016 | Research LocalMonero, LocalCoinSwap, Paxful listing conditions into a  | J-18 | LH | P2  landed |
+| O-019 | Currency list: top 5-6 most common, then A-Z, all with flags | J-16 | LH | P2  in flight wip/lead-flex-launch-4 |
+| O-020 | A currency with no market rate shows a "no rate" tag in the dropdown o | J-16 | LH | P2  in flight wip/lead-flex-launch-4 |
+| O-021 | Run the no-rate pop-up wording by design | J-32 | design | P2  not started |
+| O-022 | My offers: flag an ad whose currency has no price, obvious and pretty; | J-32 | design | P2  not started |
+| O-023 | Name the screen: vote among My offers / My listings / My ads / My post | J-32 | design | P2  not started |
+| O-024 | My offers shows the payment types in a dropdown | J-32 | design | P2  in flight wip/lead-flex-launch-4 |
+| O-025 | 3 buy + 3 sell ads per vendor, in settings and the ad builder; no on-h | J-02 | c2 | P1  landed |
+| O-028 | Limit pop-up "Sorry, you're limited to N offers per side..." + feedbac | J-02 | c2 | P1  not started |
+| O-030 | Expand the 109 payment types as its own task after Task 34, legal chec | J-29 | LH | P3  not started |
+| O-035 | Ad button reads "Request to buy XMR" (and the sell equivalent) | J-32 | design | P2  not started |
+| O-037 | Max gap between price sources 3% before no price | J-03 | c2 | P1  landed |
+| O-044 | Price-health page moves to the staff site | J-21 | LH | P2  in flight wip/second-staff-pages |
+| O-052 | After launch add the currencies that both Coinbase and BitPay quote | J-29 | LH | P3  not started |
+| P-011 | Disclaimer wording, placement and button: design's job | J-31 | design | P2  not started |
+| P-012 | "Was this proof blurred correctly?" on every proof for the first coupl | J-07 | c3 | P2  not started |
+| P-013 | First month: ask BOTH parties every time whether private info was remo | J-07 | c3 | P2  not started |
+| P-014 | Database of foreign-language name labels; ask every uploader whether t | J-07 | c3 | P2  not started |
+| P-015 | Receiver's feedback button records auto vs manual blur; read by a help | J-07 | c3 | P2  not started |
+| P-016 | Proof template DB (field names, data blank) until auto-blur is perfect | J-28 | LH | P3  not started |
+| P-019 | OCR reads the label before a number (phone, account) to decide blurrin | J-28 | LH | P3  not started |
+| P-020 | Warn if the payer's blur hides the trade code; still allowed; system p | J-07 | c3 | P2  not started |
+| P-022 | Card last-4 matching the amount: OCR the preceding words; "Trade code" | J-28 | LH | P3  not started |
+| P-030 | Buyer paid less: no prompt; seller accepts or disputes; encourage talk | J-31 | design | P2  not started |
+| P-031 | No VirusTotal or server AV; receiver-side proof check (decode, re-rend | J-22 | LH | P2  landed |
+| R-011 | Feedback follows the final outcome: reversed none; settled stays; appe | J-15 | c3 | P2  not started |
+| R-012 | Totals follow the final binding outcome | J-15 | c3 | P2  not started |
+| R-028 | A different account may claim a revoked key if it proves it | J-21 | LH | P2  in flight wip/second-staff-pages |
+| S-012 | Username + authenticator code alone is NOT allowed; no Medium tier | J-09 | LH | P1  landed |
+| S-013 | Username-only accounts not allowed | J-09 | LH | P1  landed |
+| S-014 | Strong passwords enforced at signup with a live meter; only "strong" a | J-09 | LH | P1  landed |
+| S-015 | At signup a strength chart shows where the chosen methods stand; confi | J-33 | design | P2  not started |
+| S-017 | Recovery code required at signup: tick "I've written it down", then ty | J-09 | LH | P1  landed |
+| S-019 | Recovery code = emergency login only; very long or ~5 mnemonic words;  | J-09 | LH | P1  landed |
+| S-025 | Message for a recovery-session change attempt ("a 24 h hold... securit | J-33 | design | P2  not started |
+| S-026 | During a recovery hold contact only via Matrix/Telegram/secure Jabber | J-24 | LH | P2  not started |
+| S-043 | No warning notice before the 60-day close; explain the rule clearly at | J-33 | design | P2  landed |
+| S-075 | Full abilities on every extra device logged in strongly; approve a new | J-23 | LH | P2  in flight wip/lead-multi-device |
+| S-085 | Device-bound sessions (non-copyable browser key) before mainnet | J-30 | LH | P3  not started |
+| S-087 | Granular teams: 3-4 member types, 7-10 boxes each, a member can be in  | J-10 | LH | P1  landed |
+| S-090 | Per-method detail boxes in the payer's chat side (e.g. Interac: name,  | J-08 | LH | P2  landed |
+| S-091 | Each member gets a trade-size band that limits everything they do | J-20 | LH | P2  in flight wip/second-team-limits |
+| S-092 | Granular boxes; a "manager" preset ticks a recommended set that can be | J-10 | LH | P1  landed |
+| S-094 | Member boxes "can view notes on traders" and "can add notes" (logged,  | J-10 | LH | P1  landed |
+| S-095 | Member logins: approve only the first login (design B); the granular b | J-20 | LH | P2  superseded |
+| S-096 | Member hours: 24/7 or fine-tune days and hours | J-20 | LH | P2  in flight wip/second-team-limits |
+| S-097 | The starting granular list is good; think of every one, leave the rest | J-10 | LH | P1  landed |
+| T-017 | All cancel types recorded as ONE cancel figure, seen only by moderator | J-21 | LH | P2  in flight wip/second-staff-pages |
+| T-023 | Automatic payouts pay ONLY the trade's expected amounts; any surplus s | J-01 | LH | P1  waiting p11-63 |
+| T-024 | Surplus too small to move stays unless the seller disputes; they may t | J-01 | LH | P1  waiting p11-63 |
+| T-025 | The pre-determined amounts are set in stone for every automatic payout | J-01 | LH | P1  waiting p11-63 |
+| T-026 | Payout network fee option B: seller's funding includes an estimate of  | J-01 | LH | P1  waiting p11-66 |
+| T-031 | Nudge sound = old ICQ Model T horn, original sped up, 2nd recording wi | J-18 | LH | P2  not started |
+| T-034 | The trade's rules list tells each side about the nudge and encourages  | J-31 | design | P2  landed |
+| T-039 | A rule pop-up when opening a trade: if you open several to see who ans | J-31 | design | P2  landed |
+| T-044 | Recommend paying from an account in your own name; never enforced; rea | J-31 | design | P2  landed |
+| T-049 | Buyer's Cancel confirmation wording goes to design | J-31 | design | P2  landed |
+| T-055 | Gift card must be bought within the last 30 days | J-17 | c2 | P2  landed |
+| T-056 | Full written value only, except range cards (e.g. Visa 200-500), which | J-17 | c2 | P2  landed |
+| T-057 | Gift card brand list = top 30 + Home Hardware + Canadian Tire + Other  | J-17 | c2 | P2  landed |
+| T-058 | Accept gift cards; easy, clear rules for buyers and sellers from Paxfu | J-31 | design | P2  landed |
+| T-061 | Poster has 60 min to respond to a trade request before it closes autom | J-04 | c2 | P1  landed |
+| T-076 | Team members never release XMR on the vendor's sell trades: only the v | J-10 | LH | P1  landed |
+| T-079 | No-proof warning: tapping "I've paid" with no proof shows "are you sur | J-19 | LH | P2  landed |
+| T-080 | Trade terms show each reader only what applies to them, line by line ( | J-31 | design | P2  landed |
+| T-081 | Gift cards: card currency follows its country, short window, evidence  | J-17 | c2 | P2  landed |
+| W-004 | Maintenance never defaults to "emergency" (internal only); unplanned:  | J-04 | c2 | P1  landed |
+| W-009 | Optional unrestricted battery on Android, explained in setup | J-30 | LH | P3  not started |
+| W-010 | Android: APK from the site + own F-Droid repo; web app stays main path | J-30 | LH | P3  not started |
+| W-013 | Not open source for now; outside testing groups and a bug bounty | lead own (section 1 table) | lead | -  not started |
+| W-015 | Real Matrix and Telegram addresses set up near the end of design | lead own (section 1 table) | lead | -  not started |
+| W-016 | Optional secure Jabber account for staff to reach the owner; Matrix/Te | J-24 | LH | P2  not started |
+| X-002 | Install SonarQube Cloud / the official SonarQube scan action; token is | lead own (section 1 table) | lead | -  waiting |
+| X-003 | Use the 1Password CLI / service MCP vault for tokens | lead own (section 1 table) | lead | -  waiting |
+| X-005 | No freelance crypto review now; a proper audit from early revenue | lead own (section 1 table) | lead | -  not started |
+| X-006 | Public 2-4 page crypto spec for community review | J-25 | LH | P2  landed |
+| X-007 | Bug bounty after launch | lead own (section 1 table) | lead | -  not started |
+| X-008 | Monero CCS, OTF Red Team Lab, NLnet applications: drafts only; nothing | J-25 | LH | P2  landed |
+| X-017 | "I don't see why nudge can't be moved to GitHub": scheduled routine wa | lead own (section 1 table) | lead | -  not started |
+| X-019 | claude2 and claude3 accounts close 21 Nov: on 19-20 Nov confirm all pu | lead own (section 1 table) | lead | -  not started |
+| X-021 | One 1Password service account token allowed in the cloud lead's enviro | lead own (section 1 table) | lead | -  waiting |
