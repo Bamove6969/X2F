@@ -309,9 +309,9 @@ describe('fire and forget', () => {
 describe('lead follow-up to interop 4b: the prekeys X2F used are remembered across passes (migration 335)', () => {
   const preKeyIdOf = (xml: string) => parsePreKeyMessage(parseEncryptedElement(xml).keys[0]!.data).preKeyId!;
   /** The real encryptor with the database record, as production has it; the recipient's device list is `devices()`. */
-  function omemoSender(devices: () => OmemoDevice[]) {
+  function omemoSender(devices: () => OmemoDevice[], ring: Keyring = deps.config.jabberKeys!) {
     const id = identityFromSeed(newIdentitySeed());
-    const omemo = omemoEncryptorFrom({ deviceId: 777, ...id }, generateBundleSecrets(id, 20), undefined, dbPreKeyStore(deps.db, deps.config.jabberKeys!, deps.clock));
+    const omemo = omemoEncryptorFrom({ deviceId: 777, ...id }, generateBundleSecrets(id, 20), undefined, dbPreKeyStore(deps.db, ring, deps.clock));
     const delivered: string[] = [];
     const calls = { n: 0 };
     const sender: JabberSender = {
@@ -321,7 +321,7 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
         delivered.push(await omemo.encrypt({ to, plaintext: messageText(message), bundles, ...(o?.preKeys ? { preKeys: o.preKeys } : {}) }));
       },
     };
-    return { sender, delivered, calls, pass: () => sendDueNotices({ db: deps.db, clock: deps.clock, config: deps.config, sender }) };
+    return { sender, delivered, calls, pass: () => sendDueNotices({ db: deps.db, clock: deps.clock, config: { jabberKeys: ring }, sender }) };
   }
   let hours = 2;
   const changes = async (t: { browser: Browser }, count: number) => {
@@ -348,12 +348,15 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
     for (const xml of s.delivered) expect(phone.decrypt(xml)).toBe(ACCOUNT_CHANGE_TEXT);
     let rows = await records();
     expect(rows).toHaveLength(1);
-    expect(Object.keys(rows[0]!).sort()).toEqual(['device_tag', 'identity_tag', 'prekey_ids', 'updated_at']);
+    expect(Object.keys(rows[0]!).sort()).toEqual(['device_sealed', 'id', 'prekey_ids', 'recipient_tag', 'updated_at']);
     expect([...rows[0]!.prekey_ids].sort()).toEqual([1, 2, 3]);
     // Nothing in it names the address, the device id or the device's key.
-    const raw = Buffer.concat([rows[0]!.device_tag as Buffer, rows[0]!.identity_tag as Buffer]);
+    const raw = Buffer.concat([rows[0]!.recipient_tag as Buffer, rows[0]!.device_sealed as Buffer]);
     expect(raw.includes(Buffer.from(t.jid))).toBe(false);
     expect(raw.includes(phone.identity.publicKey)).toBe(false);
+    const id21 = Buffer.alloc(4);
+    id21.writeUInt32BE(21);
+    expect(raw.includes(id21)).toBe(false);
 
     // The client comes back, reads them and republishes: the deferred notice goes on a fresh prekey and the old ids are forgotten.
     phone.replenish();
@@ -365,14 +368,14 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
     expect(rows.map((r) => r.prekey_ids)).toEqual([[fresh]]);
 
     // A reinstalled client: the same device id with a new identity key (and prekey ids 1-3 again) starts a new record.
-    const before = rows[0]!.identity_tag as Buffer;
+    const before = rows[0]!.device_sealed as Buffer;
     phone = new OmemoDevice(21, 3);
     await changes(t, 1);
     expect(await s.pass()).toEqual({ sent: 1, retried: 0, dropped: 0, deferred: 0 });
     rows = await records();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.prekey_ids).toEqual([preKeyIdOf(s.delivered[4]!)]);
-    expect((rows[0]!.identity_tag as Buffer).equals(before)).toBe(false);
+    expect((rows[0]!.device_sealed as Buffer).equals(before)).toBe(false);
     expect(phone.decrypt(s.delivered[4]!)).toBe(ACCOUNT_CHANGE_TEXT);
     // A send outside any pass (a test code) also reads and writes the record.
     await s.sender.send(t.jid, { kind: 'test-code', code: '123456' });
@@ -399,16 +402,44 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
     await deps.db.query('delete from jabber_omemo_prekeys');
   });
 
+  it('rewrap-jabber re-tags the record under the current key: after the old key is removed, an unchanged bundle still gets no reused prekey', async () => {
+    const t = await withJabber();
+    await sendAll();
+    await deps.db.query('delete from jabber_omemo_prekeys');
+    const phone = new OmemoDevice(24, 3); // offline throughout
+    const old = deps.config.jabberKeys!;
+    const before = omemoSender(() => [phone], old);
+    await changes(t, 2);
+    expect(await before.pass()).toEqual({ sent: 2, retried: 0, dropped: 0, deferred: 0 });
+    // A new key first, the rewrap, then the old key removed.
+    const fresh = new Uint8Array(randomBytes(32));
+    const both: Keyring = { current: old.current + 1, keys: new Map([[old.current + 1, fresh], ...old.keys]) };
+    const onlyNew: Keyring = { current: old.current + 1, keys: new Map([[old.current + 1, fresh]]) };
+    const first = await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } });
+    expect(first.failed).toBe(0);
+    expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 0 });
+    const after = omemoSender(() => [phone], onlyNew);
+    await changes(t, 2);
+    expect(await after.pass()).toEqual({ sent: 1, retried: 0, dropped: 0, deferred: 1 });
+    const all = [...before.delivered, ...after.delivered];
+    expect(all.map(preKeyIdOf).sort()).toEqual([1, 2, 3]);
+    for (const xml of all) expect(phone.decrypt(xml)).toBe(ACCOUNT_CHANGE_TEXT);
+    // This account's address is now sealed under a key the rest of the file does not hold.
+    await deps.db.query('delete from jabber_contacts where account_id = $1', [t.id]);
+    await deps.db.query('delete from jabber_outbox');
+    await deps.db.query('delete from jabber_omemo_prekeys');
+  });
+
   it('purgeJabberPreKeys drops records not touched for 30 days and keeps the rest', async () => {
     await deps.db.query('delete from jabber_omemo_prekeys');
     const at = (ms: number) => new Date(now.getTime() - ms);
     for (const [tag, when] of [[1, at(PREKEY_RECORD_RETENTION_MS + 1)], [2, at(PREKEY_RECORD_RETENTION_MS - 60_000)]] as const) {
-      await deps.db.query('insert into jabber_omemo_prekeys (device_tag, identity_tag, prekey_ids, updated_at) values ($1, $2, $3, $4)', [
-        Buffer.alloc(32, tag), Buffer.alloc(32, tag), [1], when,
+      await deps.db.query('insert into jabber_omemo_prekeys (recipient_tag, device_sealed, prekey_ids, updated_at) values ($1, $2, $3, $4)', [
+        Buffer.alloc(32, tag), Buffer.alloc(40, tag), [1], when,
       ]);
     }
     expect(await purgeJabberPreKeys.run(deps.db, now)).toBe(1);
-    expect((await records()).map((r) => (r.device_tag as Buffer)[0])).toEqual([2]);
+    expect((await records()).map((r) => (r.recipient_tag as Buffer)[0])).toEqual([2]);
     expect(RETENTION_JOBS).toContain(purgeJabberPreKeys);
     await deps.db.query('delete from jabber_omemo_prekeys');
   });

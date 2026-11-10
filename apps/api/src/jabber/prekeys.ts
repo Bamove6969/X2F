@@ -4,22 +4,25 @@
  * one pass from using a prekey twice; this record keeps the next pass from using one again while the
  * client stays offline and its published bundle still lists it.
  *
- * Each send loads the record of every device it is about to encrypt to, seeds the ledger with it,
- * encrypts, and writes back what the ledger then holds, in one transaction under an advisory lock
- * per recipient (two API processes never pick from the same record at once). Reconciled against the
- * fetched bundle on every load: an id the bundle no longer lists is dropped (the client used it and
- * republished; it can never be picked again anyway), and a record whose identity key differs (a
- * reinstalled client under the same device id) starts empty. A record with no id left is deleted.
+ * Each send loads the records of the recipient, seeds the ledger with those of the devices it is
+ * about to encrypt to, encrypts, and writes back what the ledger then holds, in one transaction
+ * under an advisory lock per recipient (two API processes never pick from the same record at once).
+ * Reconciled against the fetched bundle on every load: an id the bundle no longer lists is dropped
+ * (the client used it and republished; it can never be picked again anyway), and a record whose
+ * identity key differs (a reinstalled client under the same device id) is replaced. A record with
+ * no id left is deleted.
  *
- * Ids only. A record is found by an HMAC of the address and device id and checked against an HMAC
- * that adds the identity key, under a subkey of X2F_JABBER_KEYS (HKDF info `x2f/jabber-prekeys`).
- * It is looked up under every key of the ring and rewritten under the current one, so a key
- * rotation keeps it; a record under a key removed from the ring is not found, and the device's
- * prekeys are then picked as if none had been used (the 30-day purge removes it).
+ * Only the ids are plain. A record is found by `recipientTag`, an HMAC of the address under a
+ * subkey of X2F_JABBER_KEYS (HKDF info `x2f/jabber-prekeys`), looked up under every key of the
+ * ring; the device id and identity key it is for are sealed under X2F_JABBER_KEYS. A send rewrites
+ * the records it touches under the current key, and `npm run rewrap-jabber` (rewrap.ts) re-tags and
+ * reseals the rest for every address it opens, so removing an old key afterwards loses none. A
+ * record it cannot match to an address stays as it is and ages out (`purgeJabberPreKeys`).
  */
 import { createHmac, hkdfSync } from 'node:crypto';
 import type pg from 'pg';
 import type { PreKeyLedger, RecipientBundle } from '@x2f/omemo';
+import { keyringBox, type SecretBox } from '../auth/keystore.js';
 import type { Keyring } from '../config.js';
 import type { RetentionJob } from '../retention.js';
 
@@ -31,6 +34,9 @@ export interface PreKeyStore {
   withRecord<T>(to: string, bundles: RecipientBundle[], ledger: PreKeyLedger, encrypt: () => T): Promise<T>;
 }
 
+/** The sealed device's binding: the row's recipient tag, so a blob cannot be moved to another recipient's row. */
+export const preKeyContext = (recipientTag: Buffer) => `x2f/jabber-prekeys/${recipientTag.toString('hex')}`;
+
 const subkeys = new WeakMap<Keyring, Map<number, Buffer>>();
 function subkeyOf(ring: Keyring, id: number): Buffer {
   let m = subkeys.get(ring);
@@ -39,40 +45,47 @@ function subkeyOf(ring: Keyring, id: number): Buffer {
   if (!k) m.set(id, (k = Buffer.from(hkdfSync('sha256', ring.keys.get(id)!, new Uint8Array(0), 'x2f/jabber-prekeys', 32))));
   return k;
 }
-const tag = (key: Buffer, ...parts: Array<string | Buffer>) => {
-  const h = createHmac('sha256', key);
-  for (const p of parts) {
-    const b = typeof p === 'string' ? Buffer.from(p, 'utf8') : p;
-    h.update(Buffer.from([b.length >> 8, b.length & 0xff])).update(b);
-  }
-  return h.digest();
+
+/** HMAC-SHA-256 of the address under key `keyId`'s subkey: the only form the address has in the table. */
+export const recipientTag = (ring: Keyring, keyId: number, jid: string): Buffer => createHmac('sha256', subkeyOf(ring, keyId)).update(jid, 'utf8').digest();
+/** `recipientTag` under every key of the ring, the current one first. */
+export const recipientTags = (ring: Keyring, jid: string): Buffer[] =>
+  [ring.current, ...[...ring.keys.keys()].filter((id) => id !== ring.current)].map((id) => recipientTag(ring, id, jid));
+
+/** The sealed device: its id (4 bytes, big-endian) and its identity key in wire form. */
+const deviceBytes = (b: RecipientBundle) => {
+  const id = Buffer.alloc(4);
+  id.writeUInt32BE(b.deviceId);
+  return Buffer.concat([id, b.identityKey]);
 };
-const deviceTag = (key: Buffer, to: string, b: RecipientBundle) => tag(key, 'device', to, String(b.deviceId));
-const identityTag = (key: Buffer, to: string, b: RecipientBundle) => tag(key, 'identity', to, String(b.deviceId), b.identityKey);
 
 export function dbPreKeyStore(db: pg.Pool, ring: Keyring, clock: () => Date): PreKeyStore {
+  const box: SecretBox = keyringBox(ring);
   return {
     async withRecord<T>(to: string, bundles: RecipientBundle[], ledger: PreKeyLedger, encrypt: () => T): Promise<T> {
-      const keyIds = [ring.current, ...[...ring.keys.keys()].filter((id) => id !== ring.current)];
-      const current = subkeyOf(ring, ring.current);
+      const tags = recipientTags(ring, to);
+      const current = tags[0]!;
       const c = await db.connect();
       try {
         await c.query('begin');
-        await c.query('select pg_advisory_xact_lock(hashtextextended($1, 335))', [tag(current, 'recipient', to).toString('hex')]);
-        // Each device's tags under every key of the ring, the current one first.
-        const devices = bundles.map((b) => ({ b, tags: keyIds.map((id) => deviceTag(subkeyOf(ring, id), to, b)) }));
-        const { rows } = await c.query<{ device_tag: Buffer; identity_tag: Buffer; prekey_ids: number[] }>(
-          'select device_tag, identity_tag, prekey_ids from jabber_omemo_prekeys where device_tag = any($1)',
-          [devices.flatMap((d) => d.tags)],
+        await c.query('select pg_advisory_xact_lock(hashtextextended($1, 335))', [current.toString('hex')]);
+        const { rows } = await c.query<{ id: string; recipient_tag: Buffer; device_sealed: Buffer; prekey_ids: number[] }>(
+          'select id, recipient_tag, device_sealed, prekey_ids from jabber_omemo_prekeys where recipient_tag = any($1)',
+          [tags],
         );
-        for (const { b, tags } of devices) {
-          const listed = new Set(b.preKeys.map((p) => p.id));
-          for (const [i, t] of tags.entries()) {
-            const row = rows.find((r) => r.device_tag.equals(t));
-            if (row && row.identity_tag.equals(identityTag(subkeyOf(ring, keyIds[i]!), to, b))) {
-              ledger.seed(to, b, row.prekey_ids.filter((id) => listed.has(id)));
-            }
+        // Each row's device, opened; a row that does not open (a removed key) is left alone.
+        const opened = rows.flatMap((r) => {
+          try {
+            const d = Buffer.from(box.open(r.device_sealed, preKeyContext(r.recipient_tag)));
+            return d.length >= 4 ? [{ id: r.id, deviceId: d.readUInt32BE(0), device: d, ids: r.prekey_ids }] : [];
+          } catch {
+            return [];
           }
+        });
+        for (const b of bundles) {
+          const listed = new Set(b.preKeys.map((p) => p.id));
+          const mine = deviceBytes(b);
+          for (const r of opened) if (r.device.equals(mine)) ledger.seed(to, b, r.ids.filter((id) => listed.has(id)));
         }
         let result: T;
         try {
@@ -80,15 +93,16 @@ export function dbPreKeyStore(db: pg.Pool, ring: Keyring, clock: () => Date): Pr
         } finally {
           // Written back whatever the encryption did: the ledger gave back every prekey it did not use.
           const now = clock();
-          for (const { b, tags } of devices) {
+          for (const b of bundles) {
             const listed = new Set(b.preKeys.map((p) => p.id));
             const ids = ledger.usedIds(to, b).filter((id) => listed.has(id)).sort((x, y) => x - y);
-            await c.query('delete from jabber_omemo_prekeys where device_tag = any($1)', [tags]);
+            // The device's earlier records, under any identity key (a changed key replaces them) and any ring key.
+            const stale = opened.filter((r) => r.deviceId === b.deviceId).map((r) => r.id);
+            if (stale.length > 0) await c.query('delete from jabber_omemo_prekeys where id = any($1)', [stale]);
             if (ids.length === 0) continue;
-            await c.query(
-              'insert into jabber_omemo_prekeys (device_tag, identity_tag, prekey_ids, updated_at) values ($1, $2, $3, $4)',
-              [tags[0], identityTag(current, to, b), ids, now],
-            );
+            await c.query('insert into jabber_omemo_prekeys (recipient_tag, device_sealed, prekey_ids, updated_at) values ($1, $2, $3, $4)', [
+              current, box.seal(deviceBytes(b), preKeyContext(current)), ids, now,
+            ]);
           }
           await c.query('commit');
         }
