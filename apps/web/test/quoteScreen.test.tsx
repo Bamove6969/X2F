@@ -15,6 +15,7 @@ import { resetCourtesy, turnCourtesyOff } from '../src/screens/quote/courtesy.js
 import { OffersRoute } from '../src/screens/browse/OffersRoute.js';
 import { BUY_COPY } from '../src/screens/browse/BuyCopy.js';
 import { SELL_COPY } from '../src/screens/browse/SellCopy.js';
+import { resetSyncFirst, syncNow } from '../src/session/syncFirst.js';
 import { fire, render } from './render.js';
 
 const session = vi.hoisted(() => ({ status: 'signed-in' as 'signed-in' | 'signed-out' | 'loading' }));
@@ -1133,5 +1134,56 @@ describe('after Trade, the quote goes straight to the trade room (the courtesy s
     await takeIt(host);
     expect(sheet()).toBeNull();
     expect(where(host)).toBeNull();
+  });
+});
+
+describe('C-021 review S1: the offers and their quote read again on resume', () => {
+  afterEach(() => resetSyncFirst());
+  const reads = (path: string) =>
+    (globalThis.fetch as unknown as { mock: { calls: [RequestInfo | URL][] } }).mock.calls.filter(([u]) => new URL(String(u), 'http://x2f.test').pathname === path).length;
+  const resume = async () => {
+    let phase: unknown;
+    await act(async () => {
+      phase = await syncNow();
+    });
+    await settle();
+    return phase;
+  };
+  const down = () => {
+    globalThis.fetch = vi.fn(async () => json(500, { error: 'internal' })) as typeof fetch;
+  };
+
+  it('the offer list: a resume reads the method, the price and the offers again before it is ready, and shows what changed; a failed read is stale', async () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/sell/ZELLE?currency=USD']}>
+        <Routes>
+          <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(host.textContent).toContain('mira.k');
+    const before = ['/v1/methods', '/v1/price', '/v1/offers'].map(reads);
+    stub.offers = [GHOST, ABOVE];
+    expect(await resume()).toBe('ready');
+    expect(['/v1/methods', '/v1/price', '/v1/offers'].map(reads)).toEqual(before.map((n) => n + 1));
+    expect(host.textContent).not.toContain('mira.k');
+    down();
+    expect(await resume()).toBe('stale');
+    // A failed read keeps what was shown (the banner says it may be out of date).
+    expect(host.textContent).toContain('satoshi_ghost');
+  });
+
+  it('the quote: a resume reads the offer, the method, the price and the wallets again before it is ready; an offer gone meanwhile shows as gone; a failed read is stale', async () => {
+    const { host } = await open(BUY);
+    expect(host.textContent).not.toContain('This offer is no longer listed.');
+    const paths = ['/v1/offers', '/v1/methods', '/v1/price', '/v1/wallets'];
+    const before = paths.map(reads);
+    stub.offers = [ABOVE, MIRA];
+    expect(await resume()).toBe('ready');
+    for (const [i, p] of paths.entries()) expect(reads(p), p).toBeGreaterThan(before[i]!);
+    expect(host.textContent).toContain('This offer is no longer listed.');
+    down();
+    expect(await resume()).toBe('stale');
   });
 });

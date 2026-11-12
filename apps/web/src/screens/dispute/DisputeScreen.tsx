@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useServerClock } from '../../api/client.js';
 import { POLL_MS, useTradeLive } from '../trade/seams.js';
+import { useResumeSync } from '../../session/syncFirst.js';
 import { fetchDispute, fetchMethodName, fetchTrade, openDispute, refusalText, sendAppeal, type DisputeTrade, type DisputeView } from './api.js';
 import { DisputeOpen } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
@@ -107,6 +108,14 @@ export function DisputeScreen() {
   const [failed, setFailed] = useState(false);
   const [n, setN] = useState(0);
   const reload = useCallback(() => setN((x) => x + 1), []);
+
+  // C-021: on resume the dispute is read again before its actions work (session/syncFirst.ts).
+  useResumeSync(async () => {
+    const trade = await fetchTrade(code);
+    const [dispute, methodName] = await Promise.all([fetchDispute(code), fetchMethodName(trade.methodId, trade.currency)]);
+    setData({ trade, dispute, methodName });
+    setFailed(false);
+  });
 
   useEffect(() => {
     const ac = new AbortController();
