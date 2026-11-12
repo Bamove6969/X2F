@@ -11,6 +11,8 @@ import { useLocation, useNavigate } from 'react-router';
 import { AuthApiError } from '@x2f/auth-client';
 import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
+import { Notice } from '../../ui/Notice.js';
+import { BURNED_CODE_COPY as BURNED } from '../settings/holdCopy.js';
 import { afterLogin, authApi, deviceLabel } from './authApi.js';
 import { LOGIN_RETRY_LATER } from './loginRules.js';
 import { holdSentence, refusalText } from './refusals.js';
@@ -49,6 +51,10 @@ export function BackupLogin() {
         <p className="x2f-note" data-part="hold-note">
           {holdSentence(heldUntil)}
         </p>
+        {/* Owner S-111 (p11-36): the code just used is burned. COPY-UNSIGNED (BURNED_CODE_COPY). */}
+        <Notice tone="caution" title={BURNED.title} data-part="code-burned">
+          {BURNED.body}
+        </Notice>
         <Button variant="primary" onClick={() => void afterLogin((to) => navigate(to), returnTo)} data-part="hold-continue">
           Continue
         </Button>
