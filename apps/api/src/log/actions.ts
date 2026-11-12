@@ -147,7 +147,8 @@ export const LOG_ACTIONS = {
   'staff.method-removed': { method: 'id' },
   'staff.session-ended': {},
   // Lead review 7 Nov M1: silencing actions on the staff site.
-  'staff.alert-seen': {},
+  // Owner-alerts review OA2: which kind of alert was hidden (one), or how many (all at once); never its detail.
+  'staff.alert-seen': { kind: 'id', count: 'number' },
   'staff.push-removed': {},
   // Shifts and pay (Task 33).
   'staff.welcome-acknowledged': {},

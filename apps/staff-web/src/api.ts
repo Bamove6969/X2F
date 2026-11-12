@@ -306,3 +306,18 @@ export const clockOut = (quote: string, addressId: string | null) =>
 /** Adds a payout address; `tapId` is a tap of intent `payout-address` for exactly this address. */
 export const addPayoutAddress = (address: string, tapId: string) =>
   staffApi<PayoutAddress>('/staff/v1/pay/addresses', { method: 'POST', body: { address, tapId } });
+// The owner's notifications (O-040, owner Q35; perm self, the owner only)
+
+export interface OwnerAlert {
+  id: string;
+  kind: string;
+  /** The alert's own sentence, when it has one. */
+  message: string | null;
+  detail: Record<string, unknown>;
+  createdAt: string;
+  seenAt: string | null;
+}
+export const ownerAlerts = (before?: string) =>
+  staffApi<{ items: OwnerAlert[]; unread: number; next: string | null }>(page('/staff/v1/owner/alerts', before));
+export const markOwnerAlertRead = (id: string) => staffApi<unknown>(`/staff/v1/owner/alerts/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} });
+export const markAllOwnerAlertsRead = () => staffApi<unknown>('/staff/v1/owner/alerts/read-all', { method: 'POST', body: {} });

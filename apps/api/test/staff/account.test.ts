@@ -178,6 +178,8 @@ describe('sessions, alerts and push on the staff site', () => {
     await owner.browser.post(`/staff/v1/account/alerts/${a.id}/seen`, {});
     await owner.browser.post(`/staff/v1/account/alerts/${a.id}/seen`, {}); // already seen: not logged again
     expect(await logEntries(t.deps, 'staff.alert-seen')).toHaveLength(before + 1);
+    // Owner-alerts review OA2: the entry names the kind of alert hidden.
+    expect(JSON.parse((await logEntries(t.deps, 'staff.alert-seen')).at(-1)!.detail)).toEqual({ kind: 'market-prices-paused' });
     const sub = () => {
       const ecdh = createECDH('prime256v1');
       ecdh.generateKeys();
