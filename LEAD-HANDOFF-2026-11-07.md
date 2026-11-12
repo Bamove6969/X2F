@@ -233,3 +233,5 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 ## 2026-11-10T15:38:22Z batch 7 landed
 - main 6ebed537 (release-settle-2 + regtest-reload + assert shim). Security review + re-verify approved. Checks green: vitest 6554, PW 506, Monero 104/4/10/34. Demo branch has it (41df907b).
 - Drive x2f folder skimmed: nothing to recover. Owner told to check claude_backup.tar.gz sharing.
+
+- 2026-11-12T08:27:37Z owner: his Google Drive (2 TB) holds the old x2f folders and may be used as overflow storage/archive if cloud limits bite (via the Drive connector; read/write archive only, not a working disk).
