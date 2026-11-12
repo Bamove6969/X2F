@@ -16,12 +16,15 @@
  *   ban list (`recordBan`, lead reading: a timed ban must not stop the person's own names and keys
  *   coming back). Logged `account.trade-banned` / `account.site-banned`.
  * - `POST /staff/v1/accounts/:id/bans/:banId/lift { tapId }` → 200: tap `lift-ban`; 409
- *   `wrong-state` unless the ban still stands. Logged `account.ban-lifted`.
+ *   `wrong-state` unless the ban still stands. Logged `account.ban-lifted` with the ban id. Lifting a
+ *   lifetime site ban deletes the ban-list rows recorded as the account's or its members' own
+ *   (review MF2, lead call; `identifiersRemoved` in the log).
  * Only a trader account is banned (a team's members are banned with it: their sessions are the
  * team account's); anything else is 404.
  *
- * Trader side: `GET /v1/account/ban` → `{ bans, contacts }`: the bans in force (kind, the general
- * reason code, `until` or null, `permanent`) and the moderator contact links from Settings
+ * Trader side: `GET /v1/account/ban` → `{ bans, unfinished, contacts }`: the bans in force (kind, the general
+ * reason code, `until` or null, `permanent`), under a site ban the unfinished trades
+ * (`{ code, dispute }`, newest first; review S1) and the moderator contact links from Settings
  * (`moderator_contact_url`, `community_matrix_url`, `community_telegram_url`; null when unset).
  * Never the rule or the note.
  *
@@ -35,9 +38,10 @@ import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { lockAccount, withTx } from '../auth/hold.js';
 import { requireSession } from '../auth/sessions.js';
-import { activeBans } from '../banState.js';
+import { activeBans, unfinishedTrades } from '../banState.js';
 import { recordBan } from '../bans.js';
 import type { Queryable } from '../db/pool.js';
+import type { EventBus } from '../events/bus.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import type { RetentionJob } from '../retention.js';
@@ -100,7 +104,12 @@ async function lockTrader(c: Queryable, accountId: string): Promise<void> {
   await lockAccount(c, accountId);
 }
 
-export function staffBanRoutes(app: FastifyInstance): void {
+export interface StaffBanOptions {
+  /** The trader API's bus (main.ts): a site ban ends the account's open event streams (review S2). */
+  traderEvents?: Pick<EventBus, 'closeAccount'>;
+}
+
+export function staffBanRoutes(app: FastifyInstance, o: StaffBanOptions = {}): void {
   const perm = 'accounts.ban' as const;
   const opts = { config: { perm }, preHandler: requireStaff(perm) };
 
@@ -138,11 +147,15 @@ export function staffBanRoutes(app: FastifyInstance): void {
         [accountId, kind, now],
       );
       if (standing.rows.length > 0) throw new ApiError(409, 'already-banned');
-      // A standing ban past its end that the job has not settled yet makes room now.
-      await c.query(
-        'update account_bans set ended_at = until where account_id = $1 and kind = $2 and ended_at is null and lifted_at is null and until <= $3',
+      // A standing ban past its end that the job has not settled yet makes room now, logged as the
+      // job would (review S5: one account.reinstated per ended ban).
+      const ended = await c.query<{ kind: string }>(
+        'update account_bans set ended_at = until where account_id = $1 and kind = $2 and ended_at is null and lifted_at is null and until <= $3 returning kind',
         [accountId, kind, now],
       );
+      for (const r of ended.rows) {
+        await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: null, action: 'account.reinstated', detail: { accountId, kind: r.kind } });
+      }
       const { rows: prior } = await c.query<{ n: number }>('select count(*)::int as n from account_bans where account_id = $1', [accountId]);
       const term = checkBanTerm({ ruleId, priorOffences: prior[0]!.n, until }, now);
       if (!term.ok) {
@@ -166,6 +179,9 @@ export function staffBanRoutes(app: FastifyInstance): void {
       });
       return staffView(ins.rows[0]!, now);
     });
+    // Review S2: an event stream opened before the ban would run on for up to its lifetime; a site
+    // ban ends them after the commit (a reconnect then meets the gate), as endAllSessions does.
+    if (kind === 'site') o.traderEvents?.closeAccount(accountId);
     return reply.code(201).send(view);
   });
 
@@ -190,7 +206,22 @@ export function staffBanRoutes(app: FastifyInstance): void {
         `update account_bans set lifted_at = $2, lifted_by = $3 where id = $1 returning ${COLUMNS}`,
         [banId, now, req.staff.accountId],
       );
-      await appendLog(c, { at: now, actor: actor(req), tradeCode: null, action: 'account.ban-lifted', detail: { accountId, kind: ban.kind } });
+      // Review MF2 (lead call): lifting a lifetime site ban undoes what it put on the ban list: every
+      // row recorded as the account's or one of its members' login accounts' own (`recordBan`).
+      let identifiersRemoved: number | null = null;
+      if (ban.kind === 'site' && ban.until === null) {
+        const del = await c.query(
+          `delete from banned_identifiers
+            where account_id = $1
+               or account_id in (select m.member_account_id from team_members m where m.account_id = $1 and m.member_account_id is not null)`,
+          [accountId],
+        );
+        identifiersRemoved = del.rowCount ?? 0;
+      }
+      await appendLog(c, {
+        at: now, actor: actor(req), tradeCode: null, action: 'account.ban-lifted',
+        detail: { accountId, banId, kind: ban.kind, ...(identifiersRemoved !== null ? { identifiersRemoved } : {}) },
+      });
       return staffView(up.rows[0]!, now);
     });
   });
@@ -202,12 +233,15 @@ export function traderBanRoutes(app: FastifyInstance): void {
   app.get('/v1/account/ban', { preHandler: pre }, async (req) => {
     const { db, clock } = req.server.deps;
     const bans = await activeBans(db, req.auth.accountId, clock());
+    // Review S1: a site-banned person's unfinished trades, for the notice's links (empty otherwise).
+    const unfinished = bans.some((x) => x.kind === 'site') ? await unfinishedTrades(db, req.auth.accountId) : [];
     const { rows } = await db.query<{ moderator_contact_url: string | null; community_matrix_url: string | null; community_telegram_url: string | null }>(
       'select moderator_contact_url, community_matrix_url, community_telegram_url from settings where id = 1',
     );
     const s = rows[0];
     return {
       bans: bans.map((x) => ({ kind: x.kind, reasonCode: x.reasonCode, until: x.until?.toISOString() ?? null, permanent: x.until === null })),
+      unfinished,
       contacts: {
         moderatorUrl: s?.moderator_contact_url ?? null,
         matrixUrl: s?.community_matrix_url ?? null,

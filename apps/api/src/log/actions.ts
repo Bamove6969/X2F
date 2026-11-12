@@ -114,8 +114,9 @@ export const LOG_ACTIONS = {
   'hold.ended': { accountId: 'uuid', via: 'id' },
   'account.trade-banned': BAN,
   'account.site-banned': BAN,
-  'account.ban-lifted': { accountId: 'uuid', kind: 'id' },
-  // Written on the first request after a timed site ban's `until` (Task 27).
+  // Review S6: the ban id; MF2: how many ban-list rows a lifetime site ban's lift removed.
+  'account.ban-lifted': { accountId: 'uuid', banId: 'id', kind: 'id', identifiersRemoved: 'number' },
+  // A timed ban ended (Task 27): by the settle job, or by a new ban's place route (review S5).
   'account.reinstated': { accountId: 'uuid', kind: 'id' },
   // Liens (Task 25, rewritten 2026-10-29c) and owed fees (Revision 2026-10-29c).
   'lien.placed': LIEN,

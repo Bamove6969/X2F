@@ -9,6 +9,7 @@
  * account whose ban has no `ended_at` yet, so a timed ban's offers come back within the settle
  * job's minute.
  */
+import { normalizeTradeCode } from '@x2f/core';
 import type { BanReasonCode } from '@x2f/staff';
 import type { Queryable } from './db/pool.js';
 import { ApiError } from './errors.js';
@@ -56,36 +57,114 @@ export async function siteBan(db: Queryable, accountId: string, now: Date): Prom
   return (await activeBans(db, accountId, now)).find((b) => b.kind === 'site') ?? null;
 }
 
+/** SQL: true while trade `t` is unfinished: open (`closed_at` null), or with a dispute not closed (an open appeal included). */
+const UNFINISHED_SQL = `(t.closed_at is null or exists (select 1 from disputes d where d.code = t.code and d.status <> 'closed'))`;
+
 /** An open trade or a dispute not closed (an open appeal included): what a site-banned person may still finish. */
 export async function hasUnfinished(db: Queryable, accountId: string): Promise<boolean> {
   const { rows } = await db.query<{ open: boolean }>(
-    `select exists (select 1 from trades t where (t.seller_account_id = $1 or t.buyer_account_id = $1) and t.closed_at is null)
-         or exists (select 1 from disputes d join trades t on t.code = d.code
-                     where (t.seller_account_id = $1 or t.buyer_account_id = $1) and d.status <> 'closed') as open`,
+    `select exists (select 1 from trades t where (t.seller_account_id = $1 or t.buyer_account_id = $1) and ${UNFINISHED_SQL}) as open`,
     [accountId],
   );
   return rows[0]!.open;
 }
 
 /**
- * Task 27, 2026-10-29b ("a site-banned user can log in only while something is unfinished ... they
- * can then reach only what finishes it"): the trader routes a site-banned session reaches. Always:
- * the notice and who they are (the app shell). With an open trade or dispute: the trade's own
- * routes (its events, wallet step, chat, dispute and appeal; never its review), the chats, the
- * live events, and reading wallets and alerts. Nothing that starts anything new.
+ * Review S1: the account's unfinished trades for the ban notice's links, newest first. `dispute`:
+ * the trade has a dispute not closed (the notice links its dispute screen), else the trade room.
  */
-const ALWAYS = new Set(['GET /v1/account/ban', 'GET /v1/account/me', 'GET /v1/terms', 'POST /v1/account/terms']);
-const TO_FINISH: readonly RegExp[] = [
-  /^(GET|HEAD) \/v1\/trades\/:code(\/(attestation|confirmations|dispute))?$/,
-  /^POST \/v1\/trades\/:code\/(events|wallet|identity|chat|dispute|appeal)$/,
-  /^(GET|HEAD) \/v1\/chats(\/:chat(\/(attestation|envelopes))?)?$/,
-  /^POST \/v1\/chats\/:chat\/(envelopes|identity)$/,
-  /^(GET|HEAD) \/v1\/events$/,
-  /^(GET|HEAD) \/v1\/wallets(\/rule)?$/,
-  /^(GET|HEAD) \/v1\/account\/alerts$/,
-];
+export async function unfinishedTrades(db: Queryable, accountId: string): Promise<{ code: string; dispute: boolean }[]> {
+  const { rows } = await db.query<{ code: string; dispute: boolean }>(
+    `select t.code, exists (select 1 from disputes d where d.code = t.code and d.status <> 'closed') as dispute
+       from trades t
+      where (t.seller_account_id = $1 or t.buyer_account_id = $1) and ${UNFINISHED_SQL}
+      order by t.taken_at desc, t.code desc`,
+    [accountId],
+  );
+  return rows;
+}
 
-export function siteBanAllows(route: string, unfinished: boolean): boolean {
-  if (ALWAYS.has(route) || ALWAYS.has(route.replace(/^HEAD /, 'GET '))) return true;
-  return unfinished && TO_FINISH.some((re) => re.test(route));
+/** True when `raw` names a trade of the account's that is unfinished. */
+async function unfinishedTrade(db: Queryable, accountId: string, raw: unknown): Promise<boolean> {
+  const code = typeof raw === 'string' ? normalizeTradeCode(raw) : null;
+  if (code === null) return false;
+  const { rows } = await db.query<{ ok: boolean }>(
+    `select exists (select 1 from trades t where t.code = $2 and (t.seller_account_id = $1 or t.buyer_account_id = $1) and ${UNFINISHED_SQL}) as ok`,
+    [accountId, code],
+  );
+  return rows[0]!.ok;
+}
+
+/** True when `raw` names a chat of the account's on an unfinished trade (never an offer chat). */
+async function unfinishedChat(db: Queryable, accountId: string, raw: unknown): Promise<boolean> {
+  const code = typeof raw === 'string' ? normalizeTradeCode(raw) : null;
+  if (code === null) return false;
+  const { rows } = await db.query<{ ok: boolean }>(
+    `select exists (select 1 from chats c join trades t on t.code = c.trade_code
+                     where c.code = $2 and (c.seller_account_id = $1 or c.buyer_account_id = $1)
+                       and (t.seller_account_id = $1 or t.buyer_account_id = $1) and ${UNFINISHED_SQL}) as ok`,
+    [accountId, code],
+  );
+  return rows[0]!.ok;
+}
+
+/**
+ * Task 27, 2026-10-29b ("a site-banned user can log in only while something is unfinished ... they
+ * can then reach only what finishes it"): the trader routes a site-banned session reaches.
+ *
+ * - Always: the notice, who they are, the Terms, and the feedback form (owner: everyone refused can
+ *   say so; review S4).
+ * - While anything is unfinished, the account-wide reads and upkeep the trade room and the app shell
+ *   need (review S1, S3): live events, wallets and alerts (read), news, methods, prices and
+ *   currencies (read), the hold banner, this device's push subscription, the chat-key courier, and
+ *   approving a new device's login.
+ * - Review MF1: a trade's own routes only for that trade, when it is one of the account's
+ *   unfinished trades (its events, wallet step, chat, dispute and appeal; never its review); a
+ *   chat's routes only for the chat of such a trade (never an offer chat, never a closed trade's);
+ *   a nudge only in such a trade or its chat (`context`). Never the chat list.
+ *
+ * Nothing that starts anything new: no offers, takes, new chats, settings.
+ */
+const ALWAYS = new Set(['GET /v1/account/ban', 'GET /v1/account/me', 'GET /v1/terms', 'POST /v1/account/terms', 'POST /v1/feedback/form']);
+const ACCOUNT: readonly RegExp[] = [
+  /^GET \/v1\/events$/,
+  /^GET \/v1\/wallets(\/rule)?$/,
+  /^GET \/v1\/account\/alerts$/,
+  /^GET \/v1\/(news|methods|price|currencies)$/,
+  /^GET \/v1\/account\/hold$/,
+  /^(GET|POST|DELETE) \/v1\/account\/push$/,
+  /^(GET|POST) \/v1\/account\/chat-keys$/,
+  /^DELETE \/v1\/account\/chat-keys\/:id$/,
+  /^GET \/v1\/account\/approvals(\/:id)?$/,
+  /^POST \/v1\/account\/approvals\/:id$/,
+];
+const TRADE: readonly RegExp[] = [
+  /^GET \/v1\/trades\/:code(\/(attestation|confirmations|dispute))?$/,
+  /^POST \/v1\/trades\/:code\/(events|wallet|identity|chat|dispute|appeal)$/,
+];
+const CHAT: readonly RegExp[] = [/^GET \/v1\/chats\/:chat(\/(attestation|envelopes))?$/, /^POST \/v1\/chats\/:chat\/(envelopes|identity)$/];
+const NUDGE = 'POST /v1/nudges';
+
+export interface GatedRequest {
+  method: string;
+  /** The route's template (`req.routeOptions.url`). */
+  url: string;
+  params: unknown;
+  body: unknown;
+}
+
+const field = (o: unknown, k: string): unknown => (o !== null && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined);
+
+/** Whether a site-banned account's request passes the gate (the session check answers 403 `banned` otherwise). */
+export async function siteBanAllows(db: Queryable, accountId: string, req: GatedRequest): Promise<boolean> {
+  const route = `${req.method === 'HEAD' ? 'GET' : req.method} ${req.url}`;
+  if (ALWAYS.has(route)) return true;
+  if (ACCOUNT.some((re) => re.test(route))) return hasUnfinished(db, accountId);
+  if (TRADE.some((re) => re.test(route))) return unfinishedTrade(db, accountId, field(req.params, 'code'));
+  if (CHAT.some((re) => re.test(route))) return unfinishedChat(db, accountId, field(req.params, 'chat'));
+  if (route === NUDGE) {
+    const context = field(req.body, 'context');
+    return (await unfinishedTrade(db, accountId, context)) || unfinishedChat(db, accountId, context);
+  }
+  return false;
 }

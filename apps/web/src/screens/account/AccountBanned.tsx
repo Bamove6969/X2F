@@ -9,10 +9,11 @@
  * at [Matrix Channel] [Telegram Channel] and ask to speak to a moderator for further details."), with
  * the two channels shown as links under it; design words it (register D-020). The end line is
  * Task 27's ("will be fully operational again on <exact date and time>"). No board yet: laid out with
- * the frozen notice's classes.
+ * the frozen notice's classes. Review S1: under a site ban, each unfinished trade (or its dispute)
+ * is a link, the one way back into a trade the person may still finish.
  */
 import { useEffect, useState } from 'react';
-import { Navigate } from 'react-router';
+import { Link, Navigate } from 'react-router';
 import { api } from '../../api/client.js';
 import { BAN_REASON_TEXT, type BanReasonCode } from '../../ui/cantDoCodes.js';
 import { formatDateTime } from '../../ui/dates.js';
@@ -26,6 +27,8 @@ export { BAN_REASON_TEXT, type BanReasonCode };
 
 export interface BanNotice {
   bans: Array<{ kind: 'trade' | 'site'; reasonCode: BanReasonCode; until: string | null; permanent: boolean }>;
+  /** Review S1: under a site ban, the trades still to finish (newest first); absent from an older API. */
+  unfinished?: Array<{ code: string; dispute: boolean }>;
   contacts: { moderatorUrl: string | null; matrixUrl: string | null; telegramUrl: string | null };
 }
 
@@ -33,6 +36,9 @@ export interface BanNotice {
 export const BAN_NOTICE_LEAD =
   // not-a-refusal: the ban notice itself (owner G39 draft), a full screen, not a refused action
   "We're sorry, but your account has been banned. If you feel this has been done in error, please reach out to a moderator and ask to speak to a moderator for further details.";
+
+/** Review S1: above the links to what is still open. COPY-UNSIGNED, DESIGNER-REVIEW (no board) */
+export const BAN_UNFINISHED_LEAD = 'You can still finish these:';
 
 export function AccountBanned({ notice }: { notice: BanNotice }) {
   // A site ban says more than a trade ban: show it when there is one.
@@ -64,6 +70,18 @@ export function AccountBanned({ notice }: { notice: BanNotice }) {
           </div>
         </dl>
       </Hero>
+      {site && notice.unfinished && notice.unfinished.length > 0 && (
+        <section className="x2f-frozen__card" aria-label="Still to finish" data-part="ban-unfinished">
+          <p>{BAN_UNFINISHED_LEAD}</p>
+          <ul className="x2f-frozen__list">
+            {notice.unfinished.map((u) => (
+              <li key={u.code}>
+                <Link to={u.dispute ? `/trade/${u.code}/dispute` : `/trade/${u.code}`}>{u.dispute ? `Dispute on trade ${u.code}` : `Trade ${u.code}`}</Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {links.length > 0 && (
         <section className="x2f-frozen__card" aria-label="Contact a moderator">
           <ul className="x2f-frozen__list">

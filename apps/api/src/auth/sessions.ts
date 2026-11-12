@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { hasUnfinished, siteBan, siteBanAllows } from '../banState.js';
+import { siteBan, siteBanAllows } from '../banState.js';
 import { UNCHOSEN_SESSION_HOURS, type AccountKind } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
@@ -435,7 +435,7 @@ export function requireSession(
     // every other route is 403 `banned` with the kind, the general reason and the end (null: lifetime).
     if (row.kind === 'trader') {
       const ban = await siteBan(deps.db, row.account_id, now);
-      if (ban !== null && !siteBanAllows(`${req.method} ${req.routeOptions.url ?? ''}`, await hasUnfinished(deps.db, row.account_id))) {
+      if (ban !== null && !(await siteBanAllows(deps.db, row.account_id, { method: req.method, url: req.routeOptions.url ?? '', params: req.params, body: req.body }))) {
         throw new ApiError(403, 'banned', { kind: 'site', reasonCode: ban.reasonCode, until: ban.until?.toISOString() ?? null });
       }
     }
