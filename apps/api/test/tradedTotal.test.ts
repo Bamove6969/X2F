@@ -10,6 +10,20 @@ import { seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedReviews, seedTrade } from './helpers/trades.js';
+import { appealDirect, publishRuling } from './helpers/disputes.js';
+import { applyDispute } from '@x2f/staff';
+import { DISPUTE_DEFAULTS } from '../src/disputes/settings.js';
+import { withDispute } from '../src/disputes/store.js';
+
+/**
+ * A moderator's ruling (helpers/disputes.ts). This app has no price feed, so a dispute's USD value is
+ * the large-trade limit itself (fail closed: two people); these trades are small, so put the value
+ * under the limit first and one moderator publishes.
+ */
+async function rule(code: string, outcome: Parameters<typeof publishRuling>[2]['outcome']) {
+  await deps.db.query('update disputes set usd_cents = 1 where code = $1', [code]);
+  return publishRuling(deps, code, { outcome });
+}
 
 // The opt-in traded line (C12b, owner 2026-11-01/02/03; owner Q63 and Q64, 6 Nov 2026):
 // - the card shows the XMR traded to date ("X+ XMR"), not dollars: completed trades only (released,
@@ -61,6 +75,15 @@ const totals = async (id: string) =>
   (await deps.db.query<{ own_usd_cents: string; own_xmr_atomic: string; cancels: number }>(
     'select own_usd_cents, own_xmr_atomic, cancels from account_traded_totals where account_id = $1', [id],
   )).rows[0] ?? null;
+/** Round 1's appeal window ends with no appeal: the ruling is final (the dispute timers' step). */
+async function closeWindow(code: string) {
+  const back = deps.clock();
+  setNow(new Date(back.getTime() + 3 * 86_400_000));
+  await withDispute(deps, { code }, async (d, _c, at) => applyDispute(d, { type: 'window-closed' }, { kind: 'system' }, at, DISPUTE_DEFAULTS));
+  setNow(back);
+}
+/** The XMR total, '0' with no row (the totals lock step creates an empty row for a party with none: reviews M1, m3). */
+const xmrOf = async (id: string) => (await totals(id))?.own_xmr_atomic ?? '0';
 const setting = (who: Who) => who.browser.get('/v1/account/profile/traded-total');
 const optIn = (who: Who, show: unknown) => who.browser.put('/v1/account/profile/traded-total', { show });
 /** The counterparty summary on the trade view: a TraderSummary, as on offer cards. */
@@ -99,17 +122,60 @@ describe('the running totals', () => {
     expect(await totals(seller.id)).toMatchObject({ own_usd_cents: '0', own_xmr_atomic: xmr(2).toString() });
   });
 
-  it('a refund with no dispute is not completed; a refund that settles a dispute is (whoever won)', async () => {
+  it('a refund with no dispute is not completed; a disputed trade counts only once its dispute is decided as a sale (R-012)', async () => {
     const seller = await trader();
     const buyer = await trader();
     const plain = await trade(seller, buyer, xmr(20), { state: 'secured' });
     await applyEvent(deps, plain, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
-    expect(await totals(seller.id)).toBeNull();
+    expect(await xmrOf(seller.id)).toBe('0');
+    // Refunded while the dispute is open: pending, so not counted yet.
     const disputed = await trade(seller, buyer, xmr(30), { state: 'secured' });
     expect((await seller.browser.post(`/v1/trades/${disputed}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     await applyEvent(deps, disputed, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
-    expect((await totals(seller.id))!.own_xmr_atomic).toBe(xmr(30).toString());
-    expect((await totals(buyer.id))!.own_xmr_atomic).toBe(xmr(30).toString());
+    expect(await xmrOf(seller.id)).toBe('0');
+    // Owner Q41: "the total follows the final outcome". A ruling that refunds the seller is a
+    // reversal, not a sale: once it is final it is still not counted.
+    await rule(disputed, 'refund-to-seller');
+    await closeWindow(disputed);
+    expect(await xmrOf(seller.id)).toBe('0');
+    // A dispute decided as a sale (release to the buyer) counts, once, when it becomes final.
+    const sale = await trade(seller, buyer, xmr(7), { state: 'secured' });
+    expect((await seller.browser.post(`/v1/trades/${sale}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
+    await rule(sale, 'release-to-buyer');
+    expect(await xmrOf(seller.id)).toBe('0');
+    await closeWindow(sale);
+    expect((await totals(seller.id))!.own_xmr_atomic).toBe(xmr(7).toString());
+    expect((await totals(buyer.id))!.own_xmr_atomic).toBe(xmr(7).toString());
+    await applyEvent(deps, sale, { type: 'settled', kind: 'release', txHash: tx() }, 'system');
+    expect((await totals(seller.id))!.own_xmr_atomic).toBe(xmr(7).toString());
+  });
+
+  it('an appeal that reverses a counted trade takes it back off both sides and out of the completed count (R-012)', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const keep = await trade(seller, buyer, xmr(2), { usdCents: dollars(50) });
+    const code = await trade(seller, buyer, xmr(5), { usdCents: dollars(300) });
+    expect(await totals(seller.id)).toMatchObject({ own_usd_cents: '35000', own_xmr_atomic: xmr(7).toString() });
+    expect((await summaryOf(buyer, keep)).summary.completedTrades).toBe(2);
+    // Late funds escalate it; round 1 releases to the buyer and is appealed: still counted meanwhile.
+    await applyEvent(deps, code, { type: 'escalate' }, 'system');
+    await rule(code, 'release-to-buyer');
+    await appealDirect(deps, code, 'seller');
+    expect(await totals(seller.id)).toMatchObject({ own_xmr_atomic: xmr(7).toString() });
+    // ...and in the completed count too, matching the totals until the result decides (review m2).
+    expect((await summaryOf(buyer, keep)).summary.completedTrades).toBe(2);
+    // Round 2 reverses it: the trade comes off both sides' totals and their completed counts.
+    await rule(code, 'refund-to-seller');
+    for (const id of [seller.id, buyer.id]) expect(await totals(id)).toMatchObject({ own_usd_cents: '5000', own_xmr_atomic: xmr(2).toString() });
+    expect((await summaryOf(buyer, keep)).summary.completedTrades).toBe(1);
+    // Idempotent: counting again changes nothing.
+    const c = await deps.db.connect();
+    try {
+      await countTradeTotals(c, code);
+    } finally {
+      c.release();
+    }
+    expect(await totals(seller.id)).toMatchObject({ own_xmr_atomic: xmr(2).toString() });
   });
 
   it('a skipped review changes nothing: the trade still counts as completed and in the total (owner 2026-11-02)', async () => {

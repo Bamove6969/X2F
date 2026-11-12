@@ -9,4 +9,5 @@ alter table account_traded_totals rename constraint account_traded_totals_buyer_
 -- The buyer cancels already counted stay counted, now under the one kind.
 alter table trade_totals_counted drop constraint trade_totals_counted_kind_check;
 update trade_totals_counted set kind = 'cancel' where kind = 'buyer-cancel';
-alter table trade_totals_counted add constraint trade_totals_counted_kind_check check (kind in ('completed', 'cancel', 'action-times'));
+-- Batch 8 integration: keeps 326's 'fast-payment' (wip/lead-reputation, R-042), which lands with this.
+alter table trade_totals_counted add constraint trade_totals_counted_kind_check check (kind in ('completed', 'cancel', 'action-times', 'fast-payment'));

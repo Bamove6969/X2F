@@ -10,6 +10,7 @@ import type { Queryable } from '../db/pool.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { verifiedPastRepBySite } from '../pastrep/store.js';
 import { importedLines, tradedOverXmr, tradedXmrSql, type ImportedLine } from './tradedTotal.js';
+import { FINAL_SALES_SQL, reviewHeldSql, rulingCountsSql } from './finalOutcome.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, stageFor, type Stage, type StarterSettings } from './stage.js';
 
 /**
@@ -80,10 +81,12 @@ export function lastSeenSql(account: string, viewer: string): string {
  * to the buyer, or the seller told to send XMR or return fiat, is lost by the seller; a refund to the
  * seller is lost by the buyer. Read from the live trades until Plan 5 Task 20's running total
  * (`lost_disputes`) exists, so after the 30-day delete it can only undercount; Clean record needs 100
- * completed trades as well.
+ * completed trades as well. A dispute whose appeal is pending counts neither way until the appeal is
+ * decided (R-011 / R-012, J-21 review F1; `rulingCountsSql`, shared with J-21's won count).
  */
-const LOST_DISPUTES_SQL = `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
+export const LOST_DISPUTES_SQL = `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
    where not exists (select 1 from dispute_rulings d2 where d2.code = dr.code and d2.seq = dr.seq and d2.round > dr.round)
+     and ${rulingCountsSql('dr.code', 'dr.seq')}
      and ((dr.outcome in ('release-to-buyer', 'seller-sends-xmr', 'seller-returns-fiat') and t.seller_account_id = a.id)
        or (dr.outcome = 'refund-to-seller' and t.buyer_account_id = a.id)))`;
 
@@ -122,11 +125,13 @@ export async function traderSummaries(
   const s = settings ?? (await loadStarterSettings(q));
   // The name column is a constant, never input.
   const { rows } = await q.query<{
-    id: string; name: string; created_at: Date; completed: string; last_seen: Date | null; show_traded: boolean; traded: string;
+    id: string; name: string; created_at: Date; completed: string; sales: string; fast: number; last_seen: Date | null; show_traded: boolean; traded: string;
     positive: string; negative: string; pay: number[] | null; release: number[] | null; pgp: boolean; security_key: boolean; lost: string; won: string;
   }>(
     `select a.id, a.${PUBLIC_NAME_COLUMN} as name, a.created_at,
             ${COMPLETED_TRADES_SQL} as completed,
+            ${FINAL_SALES_SQL} as sales,
+            coalesce((select tt.fast_payments from account_traded_totals tt where tt.account_id = a.id), 0) as fast,
             ${lastSeenSql('a.id', '$2::uuid')} as last_seen,
             a.show_traded_total as show_traded, ${tradedXmrSql('a.id')}::text as traded,
             rv.positive, rv.negative,
@@ -140,7 +145,7 @@ export async function traderSummaries(
        cross join lateral (
          select count(*) filter (where not r.neutral and r.stars >= $3) as positive,
                 count(*) filter (where not r.neutral and r.stars <= $4) as negative
-           from reviews r where r.subject_id = a.id
+           from reviews r where r.subject_id = a.id and not ${reviewHeldSql('r')}
        ) rv
       where a.id = any($1::uuid[])`,
     [ids, viewerId, POSITIVE_MIN_STARS, NEGATIVE_MAX_STARS],
@@ -148,29 +153,30 @@ export async function traderSummaries(
   const since = onlineSince(now).getTime();
   const sites = await verifiedPastRepBySite(q, rows.filter((r) => r.show_traded).map((r) => r.id));
   for (const r of rows) {
-    const completed = Number(r.completed);
-    const stage = stageFor(s, completed, r.created_at, now);
+    // The stage counts R38's way (a settled dispute whoever won, no automatic drop: D-048); the count
+    // traders see and the badges follow the final binding outcome (R-012, traders/finalOutcome.ts).
+    // Which one should drive the stage is an owner question.
+    const stage = stageFor(s, Number(r.completed), r.created_at, now);
+    const completed = Number(r.sales);
     // % positive (P5-A2, @x2f/reputation positivePct): positive over positive plus negative, rounded
     // down; Neutral and 3 stars count for neither. Review disputes (Task 19) are not built, so every
-    // submitted review counts.
+    // submitted review counts, except one on hold while its trade's appeal is pending (R-011).
     const positive = Number(r.positive);
     const rated = positive + Number(r.negative);
     const positivePct = rated === 0 ? null : Math.floor((positive * 100) / rated);
     const pay = r.pay ?? [];
     const release = r.release ?? [];
     // Both lists' last 20 together (review 2, I2): a plain concatenation's "last 20" was only releases.
-    const both = bothRolesTypical(pay, release);
     const role = roles?.get(r.id);
-    const typical = role === 'seller' ? typicalMinutes(release) : role === 'buyer' ? typicalMinutes(pay) : both.minutes;
+    const typical = role === 'seller' ? typicalMinutes(release) : role === 'buyer' ? typicalMinutes(pay) : bothRolesTypical(pay, release).minutes;
     const earned = earnedBadges(
       {
         stage,
         completedTrades: completed,
         positivePct,
         ratedReviews: rated,
-        // Fast: "usually pays or releases within 10 min", over both lists.
-        typicalMinutes: both.minutes,
-        typicalSamples: both.samples,
+        // Fast (R-042): 30 payments sent in under half the time to pay (traders/actionTimes.ts countFastPayment).
+        fastPayments: r.fast,
         // NEEDS_TASK_20_LOST_DISPUTES (review 2, M1): Clean record reads lost disputes from the live
         // trades, so once the 30-day trade delete runs it would undercount and claim "no lost disputes"
         // falsely. The Plan 7 trade purge must not land before Task 20's `lost_disputes` running total

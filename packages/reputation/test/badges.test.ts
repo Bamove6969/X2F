@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   BADGES,
   BadgeError,
+  FAST_MIN_PAYMENTS,
   MIN_REVIEWS_TRUSTED,
   TRUSTED_MIN_TRADES,
   applyChoice,
   earnedBadges,
   levelShown,
   nextMilestones,
+  isFastPayment,
   pastRepLabel,
   resolveVisibility,
   type BadgeFacts,
@@ -27,8 +29,7 @@ const base: BadgeFacts = {
   completedTrades: 0,
   positivePct: null,
   ratedReviews: 50,
-  typicalMinutes: null,
-  typicalSamples: 0,
+  fastPayments: 0,
   lostDisputes: 0,
   accountCreatedAt: yearsAgo(0, -86_400_000),
   hasPgp: false,
@@ -52,7 +53,8 @@ function errOf(fn: () => unknown): string {
 describe('BADGES catalogue', () => {
   it('uses the board meanings', () => {
     expect(BADGES.trusted.meaning).toBe('200+ trades and 98%+ positive');
-    expect(BADGES.fast.meaning).toBe('Usually pays or releases within 10 min');
+    // R-042 (owner p11-20): Fast is about payments only now (COPY-UNSIGNED meaning).
+    expect(BADGES.fast.meaning).toBe('Paid in under half the time allowed, 30+ times');
     expect(BADGES['veteran-1'].meaning).toBe('Trading on X2F for 1+ year');
     expect(BADGES.pgp.meaning).toBe('Signs in with a verified PGP key');
     expect(BADGES['security-key'].meaning).toBe('Protects the account with a hardware key');
@@ -94,7 +96,7 @@ describe('earnedBadges', () => {
     expect(earnedBadges(facts({ stage: 'graduated', completedTrades: 4 }), NOW)).not.toContain('new');
   });
   it('the plan example', () => {
-    const f = facts({ completedTrades: 212, positivePct: 99, typicalMinutes: 6, typicalSamples: 20, lostDisputes: 0, accountCreatedAt: yearsAgo(2), hasPgp: true });
+    const f = facts({ completedTrades: 212, positivePct: 99, fastPayments: 31, lostDisputes: 0, accountCreatedAt: yearsAgo(2), hasPgp: true });
     expect(sorted(earnedBadges(f, NOW))).toEqual(sorted(['trades-100', 'veteran-1', 'trusted', 'fast', 'clean-record', 'pgp']));
   });
   it('only the highest trade milestone', () => {
@@ -144,11 +146,27 @@ describe('earnedBadges', () => {
     expect(got).toContain('trusted');
     expect(got).not.toContain('clean-record');
   });
-  it('Fast needs 10 min or less over at least 5 samples', () => {
-    expect(earnedBadges(facts({ typicalMinutes: 6, typicalSamples: 4 }), NOW)).not.toContain('fast');
-    expect(earnedBadges(facts({ typicalMinutes: 11, typicalSamples: 20 }), NOW)).not.toContain('fast');
-    expect(earnedBadges(facts({ typicalMinutes: 10, typicalSamples: 5 }), NOW)).toContain('fast');
-    expect(earnedBadges(facts({ typicalMinutes: null, typicalSamples: 20 }), NOW)).not.toContain('fast');
+  it('Fast (R-042, owner p11-20): earned after 30 payments sent in under half the allowed time to pay', () => {
+    expect(FAST_MIN_PAYMENTS).toBe(30);
+    expect(earnedBadges(facts({ fastPayments: 0 }), NOW)).not.toContain('fast');
+    expect(earnedBadges(facts({ fastPayments: 29 }), NOW)).not.toContain('fast');
+    expect(earnedBadges(facts({ fastPayments: 30 }), NOW)).toContain('fast');
+    expect(earnedBadges(facts({ fastPayments: 500 }), NOW)).toContain('fast');
+  });
+  it('a fast payment is strictly under half the time to pay, measured to the "I\'ve paid" tap', () => {
+    const MIN = 60_000;
+    // 90 minutes allowed: under 45 counts, 45 exactly does not.
+    expect(isFastPayment(44 * MIN + 59_999, 90)).toBe(true);
+    expect(isFastPayment(45 * MIN, 90)).toBe(false);
+    expect(isFastPayment(80 * MIN, 90)).toBe(false);
+    // Odd windows: half of 15 minutes is 7.5 minutes.
+    expect(isFastPayment(7 * MIN + 29_999, 15)).toBe(true);
+    expect(isFastPayment(7 * MIN + 30_000, 15)).toBe(false);
+    // Paid before the escrow was secured counts as 0 (as the typical time does).
+    expect(isFastPayment(0, 15)).toBe(true);
+    expect(isFastPayment(-5 * MIN, 15)).toBe(true);
+    for (const bad of [0, -1, 1.5, Number.NaN]) expect(() => isFastPayment(MIN, bad)).toThrow(RangeError);
+    expect(() => isFastPayment(Number.NaN, 15)).toThrow(RangeError);
   });
   it('security honours and past reputation', () => {
     const got = earnedBadges(facts({ hasSecurityKey: true, pastRep: [{ id: 'abc', site: 'LocalMonero', trades: 1240 }] }), NOW);
@@ -169,8 +187,7 @@ describe('earnedBadges', () => {
         stage: (['starter', 'building', 'graduated'] as const)[rnd(3)]!,
         completedTrades: rnd(1200),
         positivePct: rnd(5) === 0 ? null : 90 + rnd(11),
-        typicalMinutes: rnd(30),
-        typicalSamples: rnd(21),
+        fastPayments: rnd(60),
         lostDisputes: rnd(3),
         accountCreatedAt: yearsAgo(rnd(7)),
         hasPgp: rnd(2) === 0,

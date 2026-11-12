@@ -4,17 +4,24 @@ import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { verifiedPastRepBySite, type VerifiedSiteVolume } from '../pastrep/store.js';
+import { disputeOutcomeSql, isFinalSaleSql } from './finalOutcome.js';
 
 /**
  * C12b (owner 2026-11-01/02, via the lead): the per-account running totals of 308_traded_totals.sql.
  *
  * `countTradeTotals` runs in the transaction that stores a trade event (trades/store.ts
- * `applyEvent`) and is idempotent per trade: a COMPLETED trade (released, or refunded to settle a
- * dispute: R38, the same rule as `COMPLETED_TRADES_SQL`) adds its take-time USD value
- * (`trades.usd_cents`; null counts nothing) to both sides' `own_usd_cents` once; a cancel of any
- * kind adds one to the `cancels` of the side that ended it (`countCancel`, J-21; moderators only). A
- * review or a Skip review changes neither. The totals have no link to trades, so they survive the
- * 30-day purge. SEAM for Plan 5 Task 20's `account_totals`.
+ * `applyEvent`) and in the one that saves a dispute (disputes/store.ts `saveDispute`), and is
+ * idempotent per trade. Owner Q41 (R-012, 6 Nov 2026; claude3's option A): the totals follow the
+ * FINAL binding outcome: a trade counts only if it ended as a real completed sale
+ * (traders/finalOutcome.ts `isFinalSaleSql`: released with no dispute, or its disputes decided as a
+ * sale), otherwise it is removed. So a COMPLETED sale adds its take-time USD value
+ * (`trades.usd_cents`; null counts nothing) and its XMR to both sides once (a `trade_totals_counted`
+ * row of kind 'completed'); a trade counted earlier whose final outcome turns out a reversal (a later
+ * dispute, or an appeal that reverses the ruling) takes exactly that back off both sides and drops the
+ * mark, so a later sale outcome can count it again. A trade whose dispute is still pending is left as
+ * it stands until the result. A cancel of any kind adds one to the `cancels` of the side that ended
+ * it (`countCancel`, J-21; moderators only). A review or a Skip review changes neither. The totals have no
+ * link to trades, so they survive the 30-day purge. SEAM for Plan 5 Task 20's `account_totals`.
  *
  * The dollar total (`own_usd_cents`) is for moderators only, never public (owner Q63, 6 Nov). The
  * public line is in XMR: `tradedBucketXmr(own_xmr_atomic)` (migration 312), the account's own trades
@@ -25,11 +32,15 @@ import { verifiedPastRepBySite, type VerifiedSiteVolume } from '../pastrep/store
  * claim stops showing at once.
  */
 export async function countTradeTotals(q: Queryable, code: string): Promise<void> {
-  // Completed: add the value to both sides, once.
+  // Review m3: both parties' rows first, in account-id order, on every path (a trade event as well
+  // as a dispute's save), so two transactions on trades between the same two accounts never take
+  // them in opposite orders (the upserts below go buyer, then seller).
+  await lockPartyTotals(q, code);
+  // A final sale: add the value to both sides, once.
   await q.query(
     `with t as (
-       select code, buyer_account_id, seller_account_id, usd_cents, amount_atomic from trades
-        where code = $1 and (state = 'released' or (state = 'refunded' and dispute_by is not null))
+       select t.code, t.buyer_account_id, t.seller_account_id, t.usd_cents, t.amount_atomic from trades t
+        where t.code = $1 and ${isFinalSaleSql('t')}
      ), mark as (
        insert into trade_totals_counted (trade_code, kind) select code, 'completed' from t
        on conflict do nothing returning trade_code
@@ -39,6 +50,35 @@ export async function countTradeTotals(q: Queryable, code: string): Promise<void
        cross join lateral (values (t.buyer_account_id), (t.seller_account_id)) as a (id)
      on conflict (account_id) do update set own_usd_cents = account_traded_totals.own_usd_cents + excluded.own_usd_cents,
        own_xmr_atomic = account_traded_totals.own_xmr_atomic + excluded.own_xmr_atomic`,
+    [code],
+  );
+  // Counted before, reversed in the end (R-012): take it back off both sides, once. The values are
+  // what was added (a closed trade's usd_cents and amount_atomic no longer change); never below 0.
+  await q.query(
+    `with t as (
+       select t.code, t.buyer_account_id, t.seller_account_id, t.usd_cents, t.amount_atomic from trades t
+        where t.code = $1 and ${disputeOutcomeSql('t')} = 'reversed'
+     ), unmark as (
+       delete from trade_totals_counted c using t where c.trade_code = t.code and c.kind = 'completed' returning c.trade_code
+     )
+     update account_traded_totals tt
+        set own_usd_cents = greatest(0, tt.own_usd_cents - coalesce(t.usd_cents, 0)),
+            own_xmr_atomic = greatest(0, tt.own_xmr_atomic - t.amount_atomic)
+       from t join unmark on unmark.trade_code = t.code
+      where tt.account_id in (t.buyer_account_id, t.seller_account_id)`,
+    [code],
+  );
+  // Review n1: a fast payment counted at the seller's release comes back off the buyer when the
+  // trade is reversed in the end (it was not a real payment for a sale), once.
+  await q.query(
+    `with t as (
+       select t.code, t.buyer_account_id from trades t where t.code = $1 and ${disputeOutcomeSql('t')} = 'reversed'
+     ), unmark as (
+       delete from trade_totals_counted c using t where c.trade_code = t.code and c.kind = 'fast-payment' returning c.trade_code
+     )
+     update account_traded_totals tt set fast_payments = greatest(0, tt.fast_payments - 1)
+       from t join unmark on unmark.trade_code = t.code
+      where tt.account_id = t.buyer_account_id`,
     [code],
   );
   await countCancel(q, code);
@@ -104,6 +144,30 @@ export async function cancelFigures(q: Queryable, accountIds: readonly string[])
     [[...new Set(accountIds)]],
   );
   return new Map(rows.map((r) => [r.id, r.cancels]));
+}
+
+/**
+ * Review M1 (12 Nov): locks both parties' running-totals rows of trade `code`, creating an empty row
+ * (all zeros, the same as no row to every reader) for a party that has none yet, in account-id
+ * order. `withDispute` calls it right after the trade and dispute row locks and before anything
+ * appends to the log, so `countTradeTotals` in a decided save never waits on these rows while
+ * holding the site-wide log lock (log/append.ts N3) and cannot deadlock with a trade event of the
+ * same party (which takes them before its own append).
+ */
+export async function lockPartyTotals(q: Queryable, code: string): Promise<void> {
+  await q.query(
+    `insert into account_traded_totals (account_id)
+     select p.id from trades t cross join lateral (values (t.buyer_account_id), (t.seller_account_id)) as p (id)
+      where t.code = $1 order by p.id
+     on conflict (account_id) do nothing`,
+    [code],
+  );
+  await q.query(
+    `select 1 from account_traded_totals tt
+      where tt.account_id in (select buyer_account_id from trades where code = $1 union select seller_account_id from trades where code = $1)
+      order by tt.account_id for update`,
+    [code],
+  );
 }
 
 /**

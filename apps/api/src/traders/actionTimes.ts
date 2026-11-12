@@ -34,3 +34,33 @@ export async function countActionTimes(q: Queryable, code: string): Promise<void
     [code, TYPICAL_WINDOW],
   );
 }
+
+/**
+ * R-042 (owner p11-20, 9 Nov 2026): the buyer's running count of payments sent in less than half the
+ * time they had to pay (@x2f/reputation `isFastPayment`, the same rule in SQL); 30 of them earn Fast.
+ * Measured from the escrow being secured to the "I've paid" tap (`paid_at - secured_at`, lead
+ * reading: the time to pay ends there; 0 when paid before secured) against the trade's own time to
+ * pay (`pay_window_min`, fixed at take). Like the action times, only a trade released by its seller
+ * (not by a ruling, and never disputed) counts, once per trade (a `trade_totals_counted` row of kind
+ * 'fast-payment', which goes with the trade); the count is kept on the account (migration 326), with
+ * no trade code or date, so it survives the 30-day trade delete.
+ *
+ * Runs in the transaction that stores the `released` event (trades/store.ts `applyEvent`).
+ */
+export async function countFastPayment(q: Queryable, code: string): Promise<void> {
+  await q.query(
+    `with t as (
+       select t.code, t.buyer_account_id from trades t
+        where t.code = $1 and t.state = 'released' and t.settling = 'release' and t.dispute_by is null
+          and t.paid_at is not null and t.secured_at is not null
+          and greatest(0, extract(epoch from (t.paid_at - t.secured_at))) * 2 < t.pay_window_min * 60
+     ), mark as (
+       insert into trade_totals_counted (trade_code, kind) select code, 'fast-payment' from t
+       on conflict do nothing returning trade_code
+     )
+     insert into account_traded_totals (account_id, fast_payments)
+     select t.buyer_account_id, 1 from t join mark on mark.trade_code = t.code
+     on conflict (account_id) do update set fast_payments = account_traded_totals.fast_payments + 1`,
+    [code],
+  );
+}

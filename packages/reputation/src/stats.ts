@@ -77,8 +77,8 @@ export function typicalMinutes(samples: readonly number[]): number | null {
 }
 
 /**
- * Fast ("usually pays or releases within 10 min") and the role-less typical time, over both of a
- * trader's lists (review 2, I2): the median of the last 20 payment times and the last 20 release
+ * The role-less typical time, over both of a trader's lists (review 2, I2; it was Fast's measure
+ * too until R-042 made Fast a count of quick payments, badges.ts `isFastPayment`): the median of the last 20 payment times and the last 20 release
  * times together, so one quick side can't hide a slow one. `samples` is exactly what the median saw.
  */
 export function bothRolesTypical(pay: readonly number[], release: readonly number[]): { minutes: number | null; samples: number } {

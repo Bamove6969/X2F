@@ -4,12 +4,13 @@ import type { Trade } from '@x2f/trade';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { countActionTimes } from '../src/traders/actionTimes.js';
+import { countActionTimes, countFastPayment } from '../src/traders/actionTimes.js';
 import { applyEvent } from '../src/trades/store.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, happyPath, seedReviews, seedTrade } from './helpers/trades.js';
 import { flexBody } from './helpers/offers.js';
+import { appealDirect, publishRuling } from './helpers/disputes.js';
 
 // The offer card's trust row (design review 8 Nov, item 5; boards SellOffers/BuyOffers): trades, %
 // positive, earned badges, and "Releases in ~8 min" / "Pays in ~6 min". Every figure comes from real
@@ -85,8 +86,8 @@ async function person(o: { graduated?: boolean; ageDays?: number } = {}): Promis
 }
 
 /** A released trade where the buyer paid `pay` minutes after the escrow was secured and the seller released `release` minutes after that. */
-async function timedTrade(sellerId: string, buyerId: string, pay: number, release: number): Promise<string> {
-  const { trade } = await seedTrade(deps, { sellerId, buyerId, poster: 'seller' });
+async function timedTrade(sellerId: string, buyerId: string, pay: number, release: number, payWindowMin?: number): Promise<string> {
+  const { trade } = await seedTrade(deps, { sellerId, buyerId, poster: 'seller', ...(payWindowMin === undefined ? {} : { payWindowMin }) });
   let t: Trade = trade;
   for (const step of happyPath(trade, fakeAddress())) {
     if (step.to === 'paid') tick(pay * MIN);
@@ -104,6 +105,8 @@ const OFFER = { methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', m
 async function post(who: Who, side: 'sell' | 'buy'): Promise<string> {
   // Only vendors post offers (owner 2 Nov 2026, vendor.test.ts); the poster becomes one here.
   await makeVendor(deps, who.id);
+  // The clock moves by hours in these tests: log the poster in again first.
+  expect((await who.browser.post('/t/login', { accountId: who.id })).statusCode).toBe(200);
   const res = await who.browser.post('/v1/offers', flexBody({ ...OFFER, side }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
@@ -200,10 +203,8 @@ describe('badges (spec 5.4, @x2f/reputation earnedBadges and the default visibil
     expect(poster.badges).toEqual(['new']);
   });
 
-  it('earned from facts: Fast (5 quick actions), Veteran (1+ year), PGP and security key; featured first, then the rest', async () => {
+  it('earned from facts: Veteran (1+ year), PGP and security key; featured first, then the rest', async () => {
     const p = await person({ ageDays: 400 });
-    const buyer = await person();
-    for (let i = 0; i < 5; i++) await timedTrade(p.id, buyer.id, 1, 3);
     await deps.db.query(
       `insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, '\\x00', now())`,
       [p.id, randomBytes(20).toString('hex')],
@@ -215,29 +216,92 @@ describe('badges (spec 5.4, @x2f/reputation earnedBadges and the default visibil
     );
     const poster = await posterOn('sell', await post(p, 'sell'));
     expect(poster.stage).toBe('graduated');
-    expect(poster.completedTrades).toBe(7);
+    expect(poster.completedTrades).toBe(2);
     // Featured by default: Trusted, a milestone, Fast, Veteran (two slots); the rest after them.
-    expect(poster.badges).toEqual(['fast', 'veteran-1', 'pgp', 'security-key']);
+    expect(poster.badges).toEqual(['veteran-1', 'pgp', 'security-key']);
   });
 
-  it('Fast weighs both lists: 20 payments at 240 min and 20 releases at 1 min is not Fast (review 2, I2)', async () => {
-    const p = await person();
-    const lists = (pay: number, release: number) =>
-      deps.db.query(
-        `insert into account_action_minutes (account_id, kind, minutes) values ($1, 'pay', $2), ($1, 'release', $3)
-         on conflict (account_id, kind) do update set minutes = excluded.minutes`,
-        [p.id, Array.from({ length: 20 }, () => pay), Array.from({ length: 20 }, () => release)],
-      );
-    await lists(240, 1);
-    const sell = await post(p, 'sell');
-    const buy = await post(p, 'buy');
-    const seller = await posterOn('sell', sell);
-    expect(seller.typicalMinutes).toBe(1);
-    expect(seller.badges).not.toContain('fast');
-    expect((await posterOn('buy', buy)).typicalMinutes).toBe(240);
-    // Quick on both sides is Fast.
-    await lists(2, 1);
-    expect((await posterOn('sell', sell)).badges).toContain('fast');
+  it('Fast (R-042, owner p11-20): 30 payments sent in under half the time to pay earn it; release times never do', async () => {
+    const buyer = await person();
+    const seller = await person();
+    const fastOf = async (id: string) =>
+      (await deps.db.query<{ n: number }>('select fast_payments as n from account_traded_totals where account_id = $1', [id])).rows[0]?.n ?? 0;
+    // 90 minutes to pay (the default): 44 minutes counts, 45 (exactly half) and 60 do not.
+    await timedTrade(seller.id, buyer.id, 44, 1);
+    expect(await fastOf(buyer.id)).toBe(1);
+    await timedTrade(seller.id, buyer.id, 45, 1);
+    await timedTrade(seller.id, buyer.id, 60, 1);
+    expect(await fastOf(buyer.id)).toBe(1);
+    // The seller's quick releases count for nothing.
+    expect(await fastOf(seller.id)).toBe(0);
+    // A shorter time to pay is measured against itself: 10 of 15 minutes is not under half, 7 is.
+    await timedTrade(seller.id, buyer.id, 10, 1, 15);
+    await timedTrade(seller.id, buyer.id, 7, 1, 15);
+    expect(await fastOf(buyer.id)).toBe(2);
+    // Counted once per trade: replaying the count changes nothing.
+    const again = await timedTrade(seller.id, buyer.id, 1, 1);
+    expect(await fastOf(buyer.id)).toBe(3);
+    const c = await deps.db.connect();
+    try {
+      await countFastPayment(c, again);
+    } finally {
+      c.release();
+    }
+    expect(await fastOf(buyer.id)).toBe(3);
+    const buy = await post(buyer, 'buy');
+    expect((await posterOn('buy', buy)).badges).not.toContain('fast');
+    // 30 in all earns it; a slow payment later does not take it away (a count, not a median).
+    await deps.db.query('update account_traded_totals set fast_payments = 28 where account_id = $1', [buyer.id]);
+    await timedTrade(seller.id, buyer.id, 2, 1);
+    expect((await posterOn('buy', buy)).badges).not.toContain('fast');
+    await timedTrade(seller.id, buyer.id, 3, 1);
+    expect(await fastOf(buyer.id)).toBe(30);
+    await timedTrade(seller.id, buyer.id, 89, 1);
+    expect((await posterOn('buy', buy)).badges).toContain('fast');
+    // A seller who only ever releases quickly is not Fast.
+    await deps.db.query(
+      `insert into account_action_minutes (account_id, kind, minutes) values ($1, 'release', $2)
+       on conflict (account_id, kind) do update set minutes = excluded.minutes`,
+      [seller.id, Array.from({ length: 20 }, () => 1)],
+    );
+    expect((await posterOn('sell', await post(seller, 'sell'))).badges).not.toContain('fast');
+  });
+
+  it('a fast payment is taken back when its released trade is later reversed (review n1)', async () => {
+    const buyer = await person();
+    const seller = await person();
+    const fastOf = async () =>
+      (await deps.db.query<{ n: number }>('select fast_payments as n from account_traded_totals where account_id = $1', [buyer.id])).rows[0]?.n ?? 0;
+    await timedTrade(seller.id, buyer.id, 1, 1);
+    const code = await timedTrade(seller.id, buyer.id, 1, 1);
+    expect(await fastOf()).toBe(2);
+    // Late funds escalate it; round 1 releases to the buyer, the appeal reverses it.
+    await applyEvent(deps, code, { type: 'escalate' }, 'system');
+    await deps.db.query('update disputes set usd_cents = 1 where code = $1', [code]);
+    await publishRuling(deps, code, { outcome: 'release-to-buyer' });
+    await appealDirect(deps, code, 'seller');
+    expect(await fastOf()).toBe(2);
+    await publishRuling(deps, code, { outcome: 'refund-to-seller' });
+    expect(await fastOf()).toBe(1);
+    expect((await deps.db.query(`select 1 from trade_totals_counted where trade_code = $1 and kind = 'fast-payment'`, [code])).rowCount).toBe(0);
+  });
+
+  it('a payment on a disputed trade never counts toward Fast', async () => {
+    const buyer = await person();
+    const seller = await person();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    let t: Trade = trade;
+    for (const step of happyPath(trade, fakeAddress())) {
+      if (step.to === 'settling') break;
+      if (step.to === 'paid') tick(MIN);
+      t = await applyEvent(deps, trade.code, step.e, step.by);
+    }
+    expect(t.state).toBe('paid');
+    // A dispute opens once the seller's time to confirm has passed.
+    tick(30 * DAY);
+    await applyEvent(deps, trade.code, { type: 'open-dispute' }, 'buyer');
+    await applyEvent(deps, trade.code, { type: 'settled', kind: 'release', txHash: randomBytes(32).toString('hex') }, 'system');
+    expect((await deps.db.query('select 1 from account_traded_totals where account_id = $1 and fast_payments > 0', [buyer.id])).rowCount).toBe(0);
   });
 
   it('a passkey is not a security key; a graduated trader with nothing earned carries no badge', async () => {

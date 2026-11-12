@@ -4,10 +4,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { Queryable } from '../src/db/pool.js';
 import { hasPendingReview, pendingReviews } from '../src/reviews/gate.js';
-import { REVIEW_DETACH_GRANULARITY, detachReviews, eraseOverturnedReviews, eraseReviewsOfTrade, insertReview, reviewableSince } from '../src/reviews/store.js';
+import { REVIEW_DETACH_GRANULARITY, detachReviews, eraseReversedReviews, eraseReviewsOfTrade, insertReview, reviewableSince } from '../src/reviews/store.js';
 import { applyEvent, loadTradeRow } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { applyDispute } from '@x2f/staff';
+import { DISPUTE_DEFAULTS } from '../src/disputes/settings.js';
+import { withDispute } from '../src/disputes/store.js';
+import { traderSummary } from '../src/traders/summary.js';
 import { appealDirect, publishRuling } from './helpers/disputes.js';
 
 // Plan 5 Task 3: reviews (spec 5.1; no blind reveal since the owner's answer of 2026-11-02: a review
@@ -56,6 +60,15 @@ const view = async (who: Who, code: string) => {
 };
 const refusal = (res: { statusCode: number; json(): unknown }) => ({ status: res.statusCode, ...(res.json() as object) });
 
+/** A trader-facing round-1 ruling on the trade's current dispute (108), as Plan 4 writes it. */
+async function afterRefundRuling(code: string, outcome: string) {
+  await deps.db.query(
+    `insert into dispute_rulings (code, seq, round, outcome, reason, moderator_name, ruled_at, appeal_until)
+     values ($1, (select max(seq) from disputes where code = $1), 1, $2, 'The chain shows it.', 'sarah.v', $3, $4)`,
+    [code, outcome, deps.clock(), new Date(deps.clock().getTime() + 2 * DAY)],
+  );
+}
+
 /** What Plan 4 writes when the trade's current dispute ends: a final ruling, then `closed`. */
 async function closeDispute(code: string, at: Date) {
   await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [code, at]);
@@ -102,7 +115,7 @@ describe('who may review which trade', () => {
       await applyEvent(deps, t.code, { type: 'settled', kind, txHash: tx() }, 'system');
       expect(await reviewableSince(deps.db, t.code), kind).toBeNull();
       expect(refusal(await review(buyer, t.code)), kind).toEqual({ status: 409, error: 'not-reviewable' });
-      expect(await view(buyer, t.code)).toEqual({ reviewable: false, mine: null, theirs: null, skipped: false });
+      expect(await view(buyer, t.code)).toEqual({ reviewable: false, mine: null, theirs: null, skipped: false, held: false });
     }
   });
 
@@ -124,24 +137,27 @@ describe('who may review which trade', () => {
     expect(await reviewableSince(deps.db, t.code)).toEqual(closedAt);
     await jump(new Date(START.getTime() + 3 * DAY), buyer, seller);
     expect((await review(seller, t.code, { neutral: true })).statusCode).toBe(201);
-    // Whatever the outcome: a refund to the seller after a dispute is reviewable too.
+    // R-011 (owner Q40): "if the trade is reversed, there is no feedback". A dispute that ends with
+    // every coin back where it came from (here with no ruling, so the trade's own refund decides) is
+    // not reviewable at all.
     const b = await tradeIn('secured');
     expect((await b.seller.browser.post(`/v1/trades/${b.t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     await applyEvent(deps, b.t.code, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
     await deps.db.query(`update disputes set status = 'final' where code = $1`, [b.t.code]);
-    expect(await reviewableSince(deps.db, b.t.code)).toEqual(START);
-    expect((await review(b.buyer, b.t.code)).statusCode).toBe(201);
+    expect(await reviewableSince(deps.db, b.t.code)).toBeNull();
+    expect(refusal(await review(b.buyer, b.t.code))).toEqual({ status: 409, error: 'not-reviewable' });
   });
 
-  it('a no-show refund is not-reviewable; after a dispute-after-refund opens and closes, reviewable from the close', async () => {
+  it('a no-show refund is not-reviewable; a dispute-after-refund ruled a sale is reviewable from the close, one ruled no-action never (R-011)', async () => {
     const { seller, buyer, t } = await tradeIn('secured');
     await applyEvent(deps, t.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system');
     expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
     setNow(new Date(START.getTime() + 60 * MIN));
     expect((await buyer.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
-    // Plan 4 ends it: the trade ends again and the dispute closes.
+    // Plan 4 ends it: the seller is told to send the XMR (the sale stands), the trade ends again and the dispute closes.
     setNow(new Date(START.getTime() + DAY));
+    await afterRefundRuling(t.code, 'seller-sends-xmr');
     await applyEvent(deps, t.code, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
     const closedAt = new Date(START.getTime() + DAY + 5 * MIN);
     await closeDispute(t.code, closedAt);
@@ -149,6 +165,14 @@ describe('who may review which trade', () => {
     await jump(new Date(START.getTime() + DAY + 10 * MIN), buyer, seller);
     expect((await review(buyer, t.code)).statusCode).toBe(201);
     expect((await view(seller, t.code)).theirs).toMatchObject({ stars: 5 });
+    // The same dispute ruled `no-action` leaves the refund standing: a reversal, never reviewable.
+    const n = await tradeIn('secured');
+    await applyEvent(deps, n.t.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system');
+    expect((await n.buyer.browser.post(`/v1/trades/${n.t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
+    await afterRefundRuling(n.t.code, 'no-action');
+    await applyEvent(deps, n.t.code, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
+    await closeDispute(n.t.code, closedAt);
+    expect(await reviewableSince(deps.db, n.t.code)).toBeNull();
   });
 });
 
@@ -162,6 +186,7 @@ describe('a review shows at once (owner 2026-11-02: no blind reveal)', () => {
       mine: null,
       theirs: { neutral: false, stars: 2, phrases: ['Slow'], tradeBadges: [], note: null, method: 'Zelle', age: 'Oct 2026' },
       skipped: false,
+      held: false,
     });
     expect(await view(seller, t.code)).toMatchObject({ reviewable: false, theirs: null, mine: { neutral: false, stars: 2, phrases: ['Slow'] } });
     expect((await review(buyer, t.code)).statusCode).toBe(201);
@@ -170,6 +195,7 @@ describe('a review shows at once (owner 2026-11-02: no blind reveal)', () => {
       mine: { neutral: false, stars: 5, phrases: ['Friendly'], tradeBadges: ['Smooth trade'], note: 'Smooth one', method: 'Zelle', age: 'Oct 2026' },
       theirs: { neutral: false, stars: 2, phrases: ['Slow'], tradeBadges: [], note: null, method: 'Zelle', age: 'Oct 2026' },
       skipped: false,
+      held: false,
     });
     expect((await view(seller, t.code)).theirs).toMatchObject({ stars: 5 });
   });
@@ -182,10 +208,10 @@ describe('a review shows at once (owner 2026-11-02: no blind reveal)', () => {
     expect((await review(buyer, t.code, { neutral: false, stars: 1, phrases: [], tradeBadges: [] })).statusCode).toBe(201);
   });
 
-  // Owner 2026-11-02 (review I2): the review STAYS through the dispute and after it, UNLESS the
-  // dispute's ruling is overturned; then eraseReviewsOfTrade deletes it (the overturn tests below;
-  // tripwire NEEDS_P4_OVERTURN_ERASES_REVIEWS for Plan 4's ruling executor).
-  it('a review given while the trade was reviewable stays visible to the other side if late funds escalate the trade (unless the ruling is later overturned)', async () => {
+  // R-011 (owner Q40): the review STAYS while the dispute is open (only an appeal holds it), and its
+  // final outcome decides: a reversal erases it (the tests below; tripwire
+  // NEEDS_P4_OVERTURN_ERASES_REVIEWS for Plan 4's ruling executor), a sale keeps it.
+  it('a review given while the trade was reviewable stays visible to the other side if late funds escalate the trade (until the outcome decides)', async () => {
     const { seller, buyer, t } = await tradeIn('released');
     await jump(new Date(START.getTime() + DAY), seller);
     expect((await review(seller, t.code)).statusCode).toBe(201);
@@ -205,9 +231,9 @@ describe('Skip review (owner 2026-11-01, item 28)', () => {
     const res = await skip(buyer, t.code);
     expect(res.statusCode, res.body).toBe(204);
     expect(res.body).toBe('');
-    expect(await view(buyer, t.code)).toEqual({ reviewable: false, mine: null, theirs: null, skipped: true });
+    expect(await view(buyer, t.code)).toEqual({ reviewable: false, mine: null, theirs: null, skipped: true, held: false });
     // The other side learns nothing: their view is what it was before the skip.
-    expect(await view(seller, t.code)).toEqual({ reviewable: true, mine: null, theirs: null, skipped: false });
+    expect(await view(seller, t.code)).toEqual({ reviewable: true, mine: null, theirs: null, skipped: false, held: false });
     expect((await deps.db.query('select 1 from reviews where trade_code = $1', [t.code])).rowCount).toBe(0);
     // The skip names no account: only the trade and the side, while the trade exists.
     const cols = (await deps.db.query<{ c: string }>(`select column_name as c from information_schema.columns where table_name = 'review_skips' order by 1`)).rows.map((r) => r.c);
@@ -406,12 +432,12 @@ describe('reviews are final (301 triggers)', () => {
   });
 });
 
-describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => {
-  // "If the trade is OVERTURNED like it never happened, then the feedback is ERASED. If all ends well
-  // and finishes like a normal trade after the dispute, the feedback remains." Overturned = an
-  // appeal's round 2 differing from round 1 (Plan 4's Dispute.overturned). Plan 4's staff routes are
-  // not built: the rulings are written here as it will write them, and the overturn's transaction
-  // calls eraseOverturnedReviews.
+describe('feedback follows the final outcome (R-011, owner Q40; replaced C12)', () => {
+  // "If the trade is reversed, there is no feedback ... If an appeal happens, then that feedback will
+  // be put on hold and removed temporarily ... At the end of the appeal process, whatever the decision
+  // is will determine the outcome of the feedback ... If they let it settle like a trade happened, then
+  // the feedback stays." Plan 4's staff routes are not built: the rulings are written here as it will
+  // write them, and the deciding transaction calls eraseReversedReviews.
   const skip = (who: Who, code: string) => who.browser.post(`/v1/trades/${code}/review/skip`, {});
   const CURRENT = `(select max(seq) from disputes where code = $1)`;
 
@@ -446,7 +472,7 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
       await c.query('begin');
       await ruling(c, code, 2, outcome, at);
       await c.query(`update disputes set status = 'final' where code = $1 and seq = ${CURRENT}`, [code]);
-      const erased = await eraseOverturnedReviews(c, code);
+      const erased = await eraseReversedReviews(c, code);
       // The caller's role is back for the rest of its transaction.
       expect((await c.query<{ u: string }>('select current_user as u')).rows[0]!.u).not.toBe('x2f_purge');
       await c.query('commit');
@@ -467,15 +493,22 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
   });
 
   it("Plan 4's own ruling path: saveDispute erases on an overturn in the ruling's transaction, keeps on a decision that stands (NEEDS_P4_OVERTURN_ERASES_REVIEWS)", async () => {
-    const run = async (round2: 'release-to-buyer' | 'refund-to-seller') => {
+    type Escrow = 'release-to-buyer' | 'refund-to-seller';
+    const run = async (round2: Escrow, round1: Escrow = 'release-to-buyer') => {
       const { seller, buyer, t } = await tradeIn('released');
       await jump(new Date(START.getTime() + DAY), buyer, seller);
       expect((await review(seller, t.code)).statusCode).toBe(201);
       expect((await skip(buyer, t.code)).statusCode).toBe(204);
       await applyEvent(deps, t.code, { type: 'escalate' }, 'system');
-      await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
+      await publishRuling(deps, t.code, { outcome: round1 });
       await appealDirect(deps, t.code, 'seller');
       expect(await counts(t.code)).toEqual({ reviews: 1, skips: 1 });
+      // On hold while the appeal is pending: withheld from the other side, flagged to both.
+      await jump(new Date(START.getTime() + 2 * DAY), buyer, seller);
+      expect(await view(buyer, t.code)).toMatchObject({ theirs: null, held: true });
+      expect(await view(seller, t.code)).toMatchObject({ mine: { stars: 5 }, held: true });
+      // ...and counted in no figure: the buyer's only review is on hold.
+      expect((await traderSummary(deps.db, buyer.id, deps.clock(), null)).positivePct).toBeNull();
       const d = await publishRuling(deps, t.code, { outcome: round2 });
       expect(d.status === 'final' || d.status === 'closed').toBe(true);
       return { seller, buyer, t, d };
@@ -488,9 +521,26 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
     const stands = await run('release-to-buyer');
     expect(stands.d.overturned).toBe(false);
     expect(await counts(stands.t.code)).toEqual({ reviews: 1, skips: 1 });
+    expect(await view(stands.buyer, stands.t.code)).toMatchObject({ theirs: { stars: 5 }, held: false });
+    expect((await traderSummary(deps.db, stands.buyer.id, deps.clock(), null)).positivePct).toBe(100);
+    // Overturned, but to a sale: the decision settles it like a trade happened, so the feedback stays.
+    const toSale = await run('release-to-buyer', 'refund-to-seller');
+    expect(toSale.d.overturned).toBe(true);
+    expect(await counts(toSale.t.code)).toEqual({ reviews: 1, skips: 1 });
+    expect(await view(toSale.buyer, toSale.t.code)).toMatchObject({ theirs: { stars: 5 }, held: false });
+    // A ruling that reverses the trade with no appeal at all, once final, erases it too.
+    const r = await tradeIn('released');
+    expect((await review(r.seller, r.t.code)).statusCode).toBe(201);
+    await applyEvent(deps, r.t.code, { type: 'escalate' }, 'system');
+    const d1 = await publishRuling(deps, r.t.code, { outcome: 'refund-to-seller' });
+    expect(d1.status).toBe('published');
+    expect(await counts(r.t.code)).toEqual({ reviews: 1, skips: 0 });
+    setNow(new Date(START.getTime() + 3 * DAY));
+    await withDispute(deps, { code: r.t.code }, async (d, _c, at) => applyDispute(d, { type: 'window-closed' }, { kind: 'system' }, at, DISPUTE_DEFAULTS));
+    expect(await counts(r.t.code)).toEqual({ reviews: 0, skips: 0 });
   });
 
-  it('a dispute that ends like a normal trade ("Decision stands") keeps the reviews and the skip', async () => {
+  it('a dispute that ends like a normal trade keeps the reviews and the skip; one that ends reversed, even with no appeal, loses them', async () => {
     const { seller, buyer, t } = await reviewedThenAppealed();
     expect(await appealRuled(t.code, 'release-to-buyer')).toEqual({ reviews: 0, skips: 0 });
     expect(await counts(t.code)).toEqual({ reviews: 1, skips: 1 });
@@ -498,15 +548,18 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
     expect(await view(buyer, t.code)).toMatchObject({ reviewable: false, theirs: { stars: 5 }, skipped: true });
     expect(await view(seller, t.code)).toMatchObject({ reviewable: false, mine: { stars: 5 } });
     expect(await reviewableSince(deps.db, t.code)).not.toBeNull();
-    // A dispute with no appeal at all is a normal finish too.
+    // R-011: a dispute with no appeal that reverses the trade erases its feedback too (C12 kept it:
+    // only an overturn erased). The trade's refund erases it at once (applyEvent).
     const n = await tradeIn('released');
     expect((await review(n.seller, n.t.code)).statusCode).toBe(201);
     await applyEvent(deps, n.t.code, { type: 'escalate' }, 'system');
     await ruling(deps.db, n.t.code, 1, 'refund-to-seller', new Date(START.getTime() + DAY));
-    await applyEvent(deps, n.t.code, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
     await closeDispute(n.t.code, new Date(START.getTime() + 2 * DAY));
-    expect(await asTx((c) => eraseOverturnedReviews(c, n.t.code))).toEqual({ reviews: 0, skips: 0 });
     expect(await counts(n.t.code)).toEqual({ reviews: 1, skips: 0 });
+    await applyEvent(deps, n.t.code, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
+    expect(await counts(n.t.code)).toEqual({ reviews: 0, skips: 0 });
+    expect(await reviewableSince(deps.db, n.t.code)).toBeNull();
+    expect(await asTx((c) => eraseReversedReviews(c, n.t.code))).toEqual({ reviews: 0, skips: 0 });
   });
 
   it('an overturned trade ("Decision overruled"): reviews and skips erased, shown nowhere, not reviewable, the gate clear; a second erase does nothing', async () => {
@@ -516,7 +569,7 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
     expect((await deps.db.query('select 1 from reviews where subject_id = any($1) or reviewer_id = any($1)', [[buyer.id, seller.id]])).rowCount).toBe(0);
     await jump(new Date(START.getTime() + 4 * DAY), buyer, seller);
     for (const who of [buyer, seller]) {
-      expect(await view(who, t.code)).toEqual({ reviewable: false, mine: null, theirs: null, skipped: false });
+      expect(await view(who, t.code)).toEqual({ reviewable: false, mine: null, theirs: null, skipped: false, held: false });
       expect(refusal(await review(who, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
       expect(refusal(await skip(who, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
       expect(await hasPendingReview(deps.db, who.id, deps.clock())).toBe(false);
@@ -524,7 +577,7 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
       expect(((await who.browser.get('/v1/reviews/pending')).json() as { trades: unknown[] }).trades).toEqual([]);
     }
     expect(await reviewableSince(deps.db, t.code)).toBeNull();
-    expect(await asTx((c) => eraseOverturnedReviews(c, t.code))).toEqual({ reviews: 0, skips: 0 });
+    expect(await asTx((c) => eraseReversedReviews(c, t.code))).toEqual({ reviews: 0, skips: 0 });
   });
 
   it('race: a review committed while the overturn waits on the trade lock is erased with the rest', async () => {
@@ -537,8 +590,9 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
       const row = (await loadTradeRow(c1, t.code, true))!;
       await c2.query('begin');
       await ruling(c2, t.code, 2, 'refund-to-seller', new Date(START.getTime() + 3 * DAY));
+      await c2.query(`update disputes set status = 'final' where code = $1 and seq = ${CURRENT}`, [t.code]);
       let done = false;
-      const erase = eraseOverturnedReviews(c2, t.code).then((r) => { done = true; return r; });
+      const erase = eraseReversedReviews(c2, t.code).then((r) => { done = true; return r; });
       await new Promise((r) => setTimeout(r, 300));
       expect(done).toBe(false);
       await insertReview(c1, {
@@ -569,7 +623,7 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
     try {
       await c.query('begin');
       await ruling(c, t.code, 2, 'refund-to-seller', new Date(START.getTime() + 2 * DAY));
-      expect(await eraseOverturnedReviews(c, t.code)).toEqual({ reviews: 1, skips: 0 });
+      expect(await eraseReversedReviews(c, t.code)).toEqual({ reviews: 1, skips: 0 });
       let settled = false;
       const late = review(buyer, t.code).then((r) => { settled = true; return r; });
       await new Promise((r) => setTimeout(r, 300));
@@ -582,13 +636,13 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
     expect(await counts(t.code)).toEqual({ reviews: 0, skips: 0 });
   });
 
-  it('a trade that was not overturned is left alone by the seam; the app role still cannot delete a review', async () => {
+  it('a trade that was not reversed is left alone by the seam; the app role still cannot delete a review', async () => {
     const { seller, buyer, t } = await tradeIn('released');
     expect((await review(seller, t.code)).statusCode).toBe(201);
     expect((await skip(buyer, t.code)).statusCode).toBe(204);
     await expect(deps.db.query('delete from reviews where trade_code = $1', [t.code])).rejects.toThrow(/reviews are final/);
-    // Not overturned: the seam deletes nothing.
-    expect(await asTx((c) => eraseOverturnedReviews(c, t.code))).toEqual({ reviews: 0, skips: 0 });
+    // Not reversed: the seam deletes nothing.
+    expect(await asTx((c) => eraseReversedReviews(c, t.code))).toEqual({ reviews: 0, skips: 0 });
     expect(await counts(t.code)).toEqual({ reviews: 1, skips: 1 });
   });
 

@@ -33,8 +33,24 @@ export const TRUSTED_MIN_PCT = 98;
  * positive-or-negative reviews, so it can't rest on one 5-star review among Neutrals.
  */
 export const MIN_REVIEWS_TRUSTED = 5;
-export const FAST_MAX_MINUTES = 10;
-export const FAST_MIN_SAMPLES = 5;
+/**
+ * R-042 (owner p11-20, 9 Nov 2026, replacing R-037's "Fast = median of both lists"): the system counts
+ * how many times a trader sends the payment in less than half the time they have to pay; after 30
+ * ("let's say") such payments they earn Fast. A buyer-side badge only: release times no longer earn it.
+ */
+export const FAST_MIN_PAYMENTS = 30;
+
+/**
+ * Whether one payment counts toward Fast: sent in strictly less than half the trade's time to pay
+ * (`payWindowMin`, the method's, fixed at take). `paidAfterMs` runs from the escrow being secured
+ * (when the time to pay starts) to the buyer's "I've paid" tap (lead reading of p11-20: the time to
+ * pay ends there); a payment marked before the escrow was secured counts as 0, as the typical time does.
+ */
+export function isFastPayment(paidAfterMs: number, payWindowMin: number): boolean {
+  if (!Number.isSafeInteger(payWindowMin) || payWindowMin <= 0) throw new RangeError('payWindowMin must be a whole number > 0');
+  if (Number.isNaN(paidAfterMs)) throw new RangeError('paidAfterMs must be a number');
+  return Math.max(0, paidAfterMs) * 2 < payWindowMin * 60_000;
+}
 export const CLEAN_RECORD_MIN_TRADES = 100;
 
 function thousands(n: number): string {
@@ -55,7 +71,8 @@ export const BADGES: Record<CatalogueId, BadgeInfo> = {
   'veteran-3': { label: 'Veteran · 3 years', meaning: 'Trading on X2F for 3+ years', icon: 'Star', tone: 'escrow' },
   'veteran-5': { label: 'Veteran · 5 years', meaning: 'Trading on X2F for 5+ years', icon: 'Star', tone: 'escrow' },
   trusted: { label: 'Trusted', meaning: '200+ trades and 98%+ positive', icon: 'ShieldCheck', tone: 'escrow' },
-  fast: { label: 'Fast', meaning: 'Usually pays or releases within 10 min', icon: 'Zap', tone: 'escrow' },
+  // COPY-UNSIGNED: Fast's meaning under R-042 (owner p11-20; design words it). The web copies (apps/web Badges.tsx, OfferCard.tsx) use the same words (review n3).
+  fast: { label: 'Fast', meaning: 'Paid in under half the time allowed, 30+ times', icon: 'Zap', tone: 'escrow' },
   // COPY-UNSIGNED: Clean record's meaning (spec 5.4 wording, no board line).
   'clean-record': { label: 'Clean record', meaning: '100 trades with no lost disputes', icon: 'BadgeCheck', tone: 'escrow' },
   pgp: { label: 'PGP verified', meaning: 'Signs in with a verified PGP key', icon: 'KeyRound', tone: 'escrow' },
@@ -73,8 +90,8 @@ export interface BadgeFacts {
   positivePct: number | null;
   /** Positive and negative reviews behind `positivePct` (`ratedReviewCount`). */
   ratedReviews: number;
-  typicalMinutes: number | null;
-  typicalSamples: number;
+  /** Payments this trader sent in under half the time to pay (`isFastPayment`), ever: a running count (R-042). */
+  fastPayments: number;
   /** Every lost dispute ever (Task 20 running total). */
   lostDisputes: number;
   accountCreatedAt: Date;
@@ -107,7 +124,7 @@ export function earnedBadges(f: BadgeFacts, now: Date): BadgeId[] {
   const v = highest(VETERAN_YEARS, fullYearsSince(f.accountCreatedAt, now));
   if (v !== null) out.push(`veteran-${v}`);
   if (f.completedTrades >= TRUSTED_MIN_TRADES && f.positivePct !== null && f.positivePct >= TRUSTED_MIN_PCT && f.ratedReviews >= MIN_REVIEWS_TRUSTED) out.push('trusted');
-  if (f.typicalMinutes !== null && f.typicalMinutes <= FAST_MAX_MINUTES && f.typicalSamples >= FAST_MIN_SAMPLES) out.push('fast');
+  if (f.fastPayments >= FAST_MIN_PAYMENTS) out.push('fast');
   if (f.completedTrades >= CLEAN_RECORD_MIN_TRADES && f.lostDisputes === 0) out.push('clean-record');
   if (f.hasPgp) out.push('pgp');
   if (f.hasSecurityKey) out.push('security-key');
