@@ -7,6 +7,9 @@
 //   own CSP (apps/api/src/static/serve.ts `OCR_WORKER_CSP`), so even a default that pointed at a CDN
 //   could not be fetched; the CDN default is also dropped from the bundle (vite.config.ts).
 // - Loaded lazily: tesseract.js is a separate chunk, imported on the first proof, never at start.
+// - Cyrillic (lead 2026-11-12): English first. Only when that reads like Cyrillic in Latin look-alikes
+//   (`looksCyrillicGarbage`) does a second worker read the page with the Russian model too; the
+//   Russian model (/ocr/rus.traineddata.gz, 2.7 MB) is fetched then and only then.
 // - It never throws. A load that fails or takes longer than OCR_TIMEOUT_MS, a recognition that fails
 //   or hangs, and a result with no blocks answer null: the editor then says it could not check the
 //   image and starts with no regions (Review Focus 3). A worker that failed or timed out is
@@ -83,8 +86,36 @@ export interface OcrDeps {
 const silent = (): void => undefined;
 const TIMED_OUT = Symbol('timed out');
 
-/** `ProofImageDeps.ocr` over `deps`: one lazily created worker, null (never a throw) on any failure. */
-export function createOcr(deps: OcrDeps): (rgba: Uint8ClampedArray, width: number, height: number) => Promise<OcrWord[] | null> {
+/**
+ * Letters the English model reads Cyrillic as (А→A, Н→H, В→B, П→N or n, Е→E, Т→T, Р→P, О→O, С→C,
+ * К→K, М→M, Х→X, а→a, е→e, о→o, р→p, с→c, у→y, х→x, л→l or N, и→u or N, ...).
+ */
+const LOOKALIKES = new Set('ABCEHKMNOPTXYabcehkmnoprtuxyl');
+/** A run of capitals and then a small letter, or a small letter and then a capital, inside a word. */
+const ODD_CASE = /\p{Lu}{2,}\p{Ll}|\p{Ll}\p{Lu}/u;
+
+/**
+ * Whether the English OCR reads like Cyrillic text in Latin look-alikes (`AHHa lNMeTpoBa` for
+ * `Анна Петрова`): at least two words of three or more Latin letters, every one a look-alike, with
+ * case no real word has. Brand names such as `PayPal` alone do not trigger it.
+ */
+export function looksCyrillicGarbage(words: readonly OcrWord[]): boolean {
+  let odd = 0;
+  for (const w of words) {
+    const t = w.text.trim();
+    if (!/^[A-Za-z]{3,}$/.test(t) || !ODD_CASE.test(t)) continue;
+    if ([...t].every((c) => LOOKALIKES.has(c))) odd++;
+  }
+  return odd >= 2;
+}
+
+/** The languages of the second pass when the English one reads Cyrillic as garbage. */
+export const PROOF_OCR_CYRILLIC_LANGS: readonly string[] = ['eng', 'rus'];
+
+type Runner = (rgba: Uint8ClampedArray, width: number, height: number) => Promise<OcrWord[] | null>;
+
+/** One lazily created worker for `langs`: words, or null (never a throw) on any failure. */
+function runner(deps: OcrDeps, langs: readonly string[]): Runner {
   let current: Attempt | null = null;
 
   const start = (): Attempt => {
@@ -96,7 +127,7 @@ export function createOcr(deps: OcrDeps): (rgba: Uint8ClampedArray, width: numbe
     };
     const worker = deps
       .load()
-      .then((engine) => engine.createWorker([...PROOF_OCR_LANGS], engine.OEM.LSTM_ONLY, { ...OCR_WORKER_OPTIONS, logger: silent, errorHandler: silent, onSpawn }));
+      .then((engine) => engine.createWorker([...langs], engine.OEM.LSTM_ONLY, { ...OCR_WORKER_OPTIONS, logger: silent, errorHandler: silent, onSpawn }));
     return {
       worker,
       kill: () => {
@@ -139,6 +170,24 @@ export function createOcr(deps: OcrDeps): (rgba: Uint8ClampedArray, width: numbe
     } finally {
       clearTimeout(timer);
     }
+  };
+}
+
+/**
+ * `ProofImageDeps.ocr` over `deps`: English first, in one lazily created worker. Only when that
+ * reads like Cyrillic in Latin look-alikes does a second worker (English and Russian, its own
+ * timeout) read the page again, and its words are used; the Russian model is fetched then and only
+ * then. A second pass that fails keeps the English words. Null (never a throw) when the English
+ * pass fails.
+ */
+export function createOcr(deps: OcrDeps): Runner {
+  const english = runner(deps, PROOF_OCR_LANGS);
+  let cyrillic: Runner | null = null;
+  return async (rgba, width, height) => {
+    const words = await english(rgba, width, height);
+    if (words === null || !looksCyrillicGarbage(words)) return words;
+    cyrillic ??= runner(deps, PROOF_OCR_CYRILLIC_LANGS);
+    return (await cyrillic(rgba, width, height)) ?? words;
   };
 }
 

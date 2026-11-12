@@ -1,8 +1,10 @@
 # Plan 5 Task 13: SHA-256 of each served OCR file, computed from the pinned npm tarballs
-# (tesseract.js-7.0.0.tgz, tesseract.js-core-7.0.0.tgz, @tesseract.js-data/eng-1.0.0.tgz via
+# (tesseract.js-7.0.0.tgz, tesseract.js-core-7.0.0.tgz, @tesseract.js-data/eng-1.0.0.tgz and
+# @tesseract.js-data/rus-1.0.0.tgz via
 # `npm pack`), not from node_modules. tools/copy-ocr-assets.ts fails the build on any difference.
 576b7df7e3393e137e51849357c9adb53fe7ac1bb69bfa06cf3d61520f182c6d  worker.min.js
 eef5f8b2f8e20e150680b20adaec4a60babafee3adbe8a94583c81fee46e8680  tesseract-core-lstm.wasm.js
 c58b46a4c796c0b8afccf77591d5b875b6896b45d402bbce8caa6f5362447b38  tesseract-core-simd-lstm.wasm.js
 861a536cf9ef8e63cb644d57bab39c388f37f7d6b6f60024b741c5f6b39a59b3  tesseract-core-relaxedsimd-lstm.wasm.js
 45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91  eng.traineddata.gz
+f51f5edc992249ff9b70a227b22f242dfa47b2b1bbc7ae0ea74908640c101f6a  rus.traineddata.gz

@@ -1,5 +1,5 @@
 // Plan 5 Task 13: copies the self-hosted OCR files from the pinned packages (tesseract.js 7.0.0,
-// tesseract.js-core 7.0.0, @tesseract.js-data/eng 1.0.0) into apps/web/public/ocr/ (git-ignored,
+// tesseract.js-core 7.0.0, @tesseract.js-data/eng 1.0.0 and @tesseract.js-data/rus 1.0.0) into apps/web/public/ocr/ (git-ignored,
 // rebuilt), and checks every file against tools/ocr-assets.sha256. That manifest was computed from
 // the pinned npm tarballs themselves, not from node_modules, so it proves something about
 // node_modules. Changing a pin means regenerating the manifest in the same commit.
@@ -26,6 +26,8 @@ export const OCR_ASSETS: ReadonlyArray<{ from: string; to: string }> = [
   { from: 'tesseract.js-core/tesseract-core-simd-lstm.wasm.js', to: 'tesseract-core-simd-lstm.wasm.js' },
   { from: 'tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js', to: 'tesseract-core-relaxedsimd-lstm.wasm.js' },
   { from: '@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz', to: 'eng.traineddata.gz' },
+  // The Russian model, for the Cyrillic second pass only (proof/ocr.ts `looksCyrillicGarbage`).
+  { from: '@tesseract.js-data/rus/4.0.0_best_int/rus.traineddata.gz', to: 'rus.traineddata.gz' },
 ];
 
 const sha256 = (b: Uint8Array): string => createHash('sha256').update(b).digest('hex');
