@@ -68,6 +68,10 @@ export const CANT_DO_CODES = [
   'forbidden',
   'too-many-members',
   'member-cannot-sign',
+  // J-20 (owner p7-4, p7-11; review S-m4): a member outside their trade-size band, and a session
+  // end past their working hours.
+  'outside-trade-band',
+  'past-working-hours',
   // Owner 2 Nov 2026: only vendor accounts post offers or have team members; switching to vendor
   // needs a passkey, security key or PGP key on the account.
   'not-vendor',
@@ -353,9 +357,10 @@ export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null):
     case 'launch-cap':
       // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
       return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Lower your offer's maximum to ${LAUNCH_CAP_TEXT} or less.`;
-    // Plan 2 Task 18: a team member without the Offers role.
+    // Plan 2 Task 18: a team member without the Offers role; J-20: an offer outside their band.
     case 'forbidden':
     case 'owner-only':
+    case 'outside-trade-band':
       return teamCantDoText(code);
     case 'not-vendor':
       return NOT_VENDOR_POST_TEXT;
@@ -414,6 +419,11 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
       return n === 1
         ? `${OFFER_CAP_LINE} Remove one you no longer need, then turn this one on.`
         : `${OFFER_CAP_LINE} Remove ones you no longer need, then turn these on.`;
+    // J-20 review F2: a team member turning on an offer outside their band. COPY-UNSIGNED // DESIGN: wording
+    case 'outside-trade-band':
+      return n === 1
+        ? 'This offer is outside the trade sizes the account owner set for you, so it stays off. Ask the account owner to turn it on.'
+        : 'These offers are outside the trade sizes the account owner set for you, so they stay off. Ask the account owner to turn them on.';
     default:
       return "Your account can't turn these offers on right now.";
   }
@@ -428,6 +438,8 @@ export function myOffersCantDoRow(code: CantDoCode): string {
       return 'Stayed off: your account has a trading hold.';
     case 'too-many-offers':
       return 'Stayed off: over the offer limit.'; // C2-A1: per side, not per market. COPY-UNSIGNED
+    case 'outside-trade-band':
+      return 'Stayed off: outside the trade sizes set for you.'; // J-20 review F2. COPY-UNSIGNED // DESIGN: wording
     default:
       return 'Stayed off.';
   }
@@ -565,6 +577,12 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
     case 'member-cannot-sign':
       return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
+    // J-20 (owner p7-4). COPY-UNSIGNED // DESIGN: wording
+    case 'outside-trade-band':
+      return 'This is outside the trade sizes the account owner set for you. Ask the account owner to do this step.';
+    // J-20 (owner p7-11, review S-m4). COPY-UNSIGNED // DESIGN: wording
+    case 'past-working-hours':
+      return 'Your working hours end before then, so your session cannot run that long.';
     // Owner 1 Nov 2026: inviting a member needs a strong login (API 403 weak-session). Owner p5-7:
     // role changes and removals from such a device are not refused; they wait 24 hours.
     case 'weak-session':

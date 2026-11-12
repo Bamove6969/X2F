@@ -226,6 +226,10 @@ describe('the model', () => {
     expect(myOffersCantDoText('too-many-offers', 1)).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then turn this one on.');
     expect(myOffersCantDoText('too-many-offers', 2)).toBe('You can have 3 buying and 3 selling offers. Remove ones you no longer need, then turn these on.');
     for (const n of [1, 2]) expect(myOffersCantDoText('too-many-offers', n)).not.toMatch(/market/);
+    // J-20 review F2: a team member turning on an offer outside their trade sizes.
+    expect(refusalLine('outside-trade-band')).toBe('Stayed off: outside the trade sizes set for you.');
+    expect(myOffersCantDoText('outside-trade-band', 1)).toBe('This offer is outside the trade sizes the account owner set for you, so it stays off. Ask the account owner to turn it on.');
+    expect(myOffersCantDoText('outside-trade-band', 2)).toBe('These offers are outside the trade sizes the account owner set for you, so they stay off. Ask the account owner to turn them on.');
   });
 });
 

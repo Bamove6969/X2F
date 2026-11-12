@@ -28,6 +28,7 @@ import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
 import { moderationFromEnv, staffListenFromEnv, startStaffApi } from './staff/main.js';
 import { assertOneSiteFlagsRow } from './site/flags.js';
+import { endMemberSessionsOutsideHours } from './team/limits.js';
 import { startOutbox } from './jabber/outbox.js';
 import { omemoEncryptor } from './jabber/omemo.js';
 import { xmppSender } from './jabber/xmpp.js';
@@ -107,7 +108,11 @@ onAlert = ownerAlertSink({ db, clock, push: app.push });
 // hours are up apply, and held trades are paused or resumed as their holds say.
 const stopHolds = startRetention(
   deps,
-  [settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log, app.push), syncHeldTradesJob(app.tradePublish)],
+  [
+    settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log, app.push), syncHeldTradesJob(app.tradePublish),
+    // J-20 (owner p7-11): members' sessions end when their working hours do.
+    endMemberSessionsOutsideHours(app.events),
+  ],
   60_000,
 );
 // Plan 4 Task 10: every 30 s, appeal windows close and maintenance shifts dispute deadlines (A7).

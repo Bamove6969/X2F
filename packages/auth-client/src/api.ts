@@ -49,6 +49,9 @@ export interface HoldChangeSummary {
   abilityLabels?: string[];
   /** A wallet removed (owner p5-7): its label (and `addressEnds` its address's last 6). */
   label?: string;
+  /** J-20 (`team-limits`): a member's new trade-size band (null: none) and working hours. */
+  band?: TradeBand | null;
+  hours?: WorkingHours;
 }
 
 /** Hold model v3: `GET /v1/account/hold`. */
@@ -238,7 +241,13 @@ export interface AccountOverview {
    * Plan 2 Task 18: set when the caller is a team member (the overview is of the account they work
    * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
    */
-  member?: { name: string; roles: TeamRole[]; chatLabel?: string } | null;
+  member?: {
+    name: string;
+    roles: TeamRole[];
+    chatLabel?: string;
+    /** J-20 review F8 (owner question p11-136): the member's own limits; absent while the API's MEMBER_SEES_OWN_LIMITS is off, or on older builds. */
+    limits?: { band: TradeBand | null; hours: WorkingHours };
+  } | null;
   /**
    * The calling session's length (owner, 2 Nov 2026): set for a full trader session, null for staff,
    * owner and backup sessions. Optional: older API builds do not send it.
@@ -269,6 +278,15 @@ export function isVendor(me: Pick<AccountOverview, 'accountType'> | null | undef
 /** Plan 2 Task 18: a team member's roles (spec 6.7); owner p4-8 adds the hold rights (each includes the ones before it). */
 export type TeamRole = 'offers' | 'trades' | 'hold-see' | 'hold-cancel' | 'hold-end';
 
+/** J-20 (owner p7-4): a member's trade-size band, XMR atomic units as decimal strings, both ends included. */
+export interface TradeBand {
+  minAtomic: string;
+  maxAtomic: string;
+}
+
+/** J-20 (owner p7-11): a member's working hours: any time, or days and a daily window in an IANA time zone. */
+export type WorkingHours = 'any' | { days: ('Sun' | 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat')[]; start: string; end: string; tz: string };
+
 /** Plan 2 Task 18: one member or open invite, as the account owner sees it (`GET /v1/team`). */
 export interface TeamMember {
   id: string;
@@ -283,6 +301,9 @@ export interface TeamMember {
   status: 'invited' | 'joining' | 'active';
   /** Owner p11-25 (S-105): how trade chats show the member, "<lead's display name> Assistant N". Optional: older API builds do not send it. */
   chatLabel?: string;
+  /** J-20: the trade-size band (null: none) and working hours (null: stored value invalid, never inside). Optional: older API builds do not send them. */
+  band?: TradeBand | null;
+  hours?: WorkingHours | null;
   inviteExpiresAt: string | null;
   joinedAt: string | null;
   createdAt: string;
@@ -625,6 +646,8 @@ export interface AuthApi {
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
   /** Owner p5-7: `Staged` (202) from a login with just a username and password: the member keeps access until it applies. */
   removeMember(id: string, b: Token): Promise<Staged | undefined>;
+  /** J-20: confirm `team-limits` (`teamLimitsAction`). From a login that waits (a username and password), 202 `Staged`. */
+  setMemberLimits(id: string, b: { band: TradeBand | null; hours: WorkingHours } & Token): Promise<TeamMember | Staged>;
   /** Newest first, at most 200 rows. */
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
   // The invited person's side (no session yet).
@@ -797,6 +820,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     inviteMember: (b) => post('/v1/team/invites', b),
     setMemberRoles: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
     removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
+    setMemberLimits: (id, b) => call('PUT', `/v1/team/members/${seg(id)}/limits`, b),
     teamAudit: (q = {}) => {
       const p = new URLSearchParams();
       if (q.from !== undefined) p.set('from', q.from);

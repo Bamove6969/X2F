@@ -276,10 +276,12 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown; termsCurrent: boolean };
     expect(me.displayName).toBe(owner.displayName);
     // Job 1c: the member's boxes (the old Trades role's), their preset (none: Custom) and the old roles they read as.
+    // J-20 F8 (MEMBER_SEES_OWN_LIMITS, lead default on): and their own limits, none yet.
     expect(me.member).toEqual({
       name: `Joiner${n}x`, abilities: rolesToAbilities(['trades']), preset: null, roles: ['trades'],
       // S-105 (owner p11-25): how chats show them, the lead's name and their number; never their own name.
       chatLabel: `${owner.displayName} Assistant 1`,
+      limits: { band: null, hours: 'any' },
     });
     // The member's own login account carries the Terms they signed, and they are inside.
     expect(me.termsCurrent).toBe(true);
@@ -295,6 +297,11 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect((await b.get('/v1/news')).statusCode).toBe(200);
     const alerts = (await owner.browser.get('/v1/account/alerts')).json() as { kind: string }[];
     expect(alerts.map((a) => a.kind)).toContain('team-member-joined');
+    // J-20 review F5 (p11-27): the join is the member's first login, and the lead gets one alert for it,
+    // not joined + first login + login; the first login is recorded, so no later login re-announces it.
+    expect(alerts.map((a) => a.kind).filter((k) => k.startsWith('team-member-'))).toEqual(['team-member-joined']);
+    const fl = await deps.db.query<{ first_login_at: Date | null }>('select first_login_at from team_members where id = $1', [created.id]);
+    expect(fl.rows[0]!.first_login_at).not.toBeNull();
     expect(((await owner.browser.get('/v1/team')).json() as { members: { status: string }[] }).members[0]!.status).toBe('active');
   });
 
