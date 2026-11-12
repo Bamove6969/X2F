@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { verifyRegistrationResponse, type RegistrationResponseJSON } from '@simplewebauthn/server';
 import { decodeAttestationObject } from '@simplewebauthn/server/helpers';
-import { canonicalJson, inviteRegistrationChallenge, involvedIn, type KeyTapIntent } from '@x2f/staff';
+import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, involvedIn, type KeyTapIntent } from '@x2f/staff';
 import type pg from 'pg';
 import type { GateState, InvitableRole, PinnedCred } from './store.js';
 import { noteCounter, olderThanSeen, verifyTap, type GateContext, type GateRuling, type StoredTap } from './verify.js';
@@ -409,15 +409,21 @@ export function pgGateSource(db: Pick<pg.Pool, 'query'>): PgGateSource {
       );
       const d = rows[0];
       if (!d) return { current: null, round1: null, involved: [] };
-      const { rows: pub } = await db.query<{ round: 1 | 2; h: string }>(
-        `select round, encode(sha256(convert_to(reason, 'UTF8')), 'hex') as h from dispute_rulings where code = $1 and seq = $2`,
+      const { rows: pub } = await db.query<{ round: 1 | 2; h: string; evidence: unknown }>(
+        `select round, encode(sha256(convert_to(reason, 'UTF8')), 'hex') as h, evidence from dispute_rulings where code = $1 and seq = $2`,
         [code, d.seq],
       );
-      const hashOf = (round: 1 | 2): string | undefined => pub.find((p) => p.round === round)?.h;
       const of = (r: Draft, round: 1 | 2, round1Id?: string): GateRuling | null => {
-        const h = hashOf(round);
-        if (h === undefined) return null;
-        return { id: r.id, code, round, outcome: r.outcome, accountAction: r.accountAction, proposer: r.proposer, approver: r.approver, reasonSha256: h, ...(round1Id ? { round1Id } : {}) };
+        const p = pub.find((x) => x.round === round);
+        if (p === undefined) return null;
+        // The lines as the ruling stores them, through the same function the API binds them with.
+        let ev: string;
+        try {
+          ev = evidenceSha256(p.evidence as string[]);
+        } catch {
+          return null;
+        }
+        return { id: r.id, code, round, outcome: r.outcome, accountAction: r.accountAction, proposer: r.proposer, approver: r.approver, reasonSha256: p.h, evidenceSha256: ev, ...(round1Id ? { round1Id } : {}) };
       };
       const round1 = d.round1 ? of(d.round1, 1) : null;
       const current = d.ruling ? of(d.ruling, d.round, d.round === 2 ? d.round1?.id : undefined) : null;

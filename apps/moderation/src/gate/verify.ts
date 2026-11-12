@@ -195,6 +195,8 @@ export interface GateRuling {
   proposer: string;
   approver: string | null;
   reasonSha256: string;
+  /** `evidenceSha256(lines)` (@x2f/staff) of the evidence lines the ruling stores, as the API rebuilds it. */
+  evidenceSha256: string;
   /** Round 2 only: the round-1 ruling it reviews (R37). */
   round1Id?: string;
 }
@@ -229,7 +231,7 @@ export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: A
  *   (`unknown-key`, `revoked`, `bad-signature`), each a `ruling` intent (`intent-mismatch`), whose
  *   nonce was never used for anything else (`nonce-reused`);
  * - both intents agree with the stored ruling (id, code, round, outcome, account action, the
- *   reason's SHA-256, round 2's `round1Id`, proposer and approver) and with the XMR amount recorded
+ *   reason's SHA-256, the evidence lines' `evidenceSha256`, round 2's `round1Id`, proposer and approver) and with the XMR amount recorded
  *   here (`intent-mismatch`);
  * - the proposer is a moderator, a senior moderator or the owner (`proposer-role`);
  * - at or above the gate's own limit, by its own recorded value, or with any account action: an
@@ -275,6 +277,7 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
       i.outcome === rul.outcome &&
       canonicalJson(i.accountAction) === canonicalJson(rul.accountAction) &&
       i.reasonSha256 === rul.reasonSha256 &&
+      i.evidenceSha256 === rul.evidenceSha256 &&
       i.round1Id === round1Id &&
       i.amountAtomic === r.recorded.amountAtomic.toString();
     if (!agrees) return refuse('intent-mismatch');

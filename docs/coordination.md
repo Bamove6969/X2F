@@ -820,3 +820,4 @@ Owner Q21 (2026-11-03): built now on the existing kit; every new piece carries `
   - I1 (lead call): the owner's tapped `remove-staff` removes for good; `emergency-stop` refuses every ruling (`stopped`) until a newer tapped `resume-trading`.
   - I2: `parseGateAllowlist` mirrors the API's `parseAllowlist` (both now read CRLF as LF), pinned by a parity test on shared fixtures.
   - I3: `recordedTerms` refuses a trade whose poster is not the attested one or whose amount is below the attested take amount.
+  - evidenceSha256 (wip/lead-rulings 601bcc8f): `GateRuling.evidenceSha256` is `evidenceSha256(dispute_rulings.evidence)` (the @x2f/staff function the API binds with; 211 grants the `evidence` column); every tap must agree with it.

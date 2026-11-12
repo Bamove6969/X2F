@@ -26,8 +26,8 @@ grant select (credential_id, invite_id, response) on staff_key_registrations to 
 grant select (account_id, credential_id, public_key, kind, attested, aaguid) on webauthn_credentials to x2f_mod_reader;
 grant select (id, account_id, credential_id, intent, nonce, response, finished_at, used_at) on key_taps to x2f_mod_reader;
 -- The ruling as the API stored it (the machine's draft and round 1), and the published reason's
--- text so the gate can check it is the one both taps bound (its SHA-256).
+-- text and evidence lines so the gate can check they are the ones both taps bound (their SHA-256s).
 grant select (round, ruling, round1) on disputes to x2f_mod_reader;
-grant select (code, seq, round, reason) on dispute_rulings to x2f_mod_reader;
+grant select (code, seq, round, reason, evidence) on dispute_rulings to x2f_mod_reader;
 -- R37: who has an activity-log entry on the trade before its appeal.
 grant select (actor_kind, actor_id) on activity_log to x2f_mod_reader;
