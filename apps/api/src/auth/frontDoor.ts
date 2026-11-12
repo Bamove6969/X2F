@@ -50,6 +50,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/alerts': 'my own security alerts',
   'GET /v1/account/approvals': 'my own pending new-device login approvals',
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
+  'GET /v1/account/ban': "my own account's bans in force (kind, general reason code, end), my own unfinished trades under a site ban, and the moderator contact links; never the rule, the note or anyone else's ban (Task 27)",
   'GET /v1/account/blocks': 'the traders I blocked',
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
