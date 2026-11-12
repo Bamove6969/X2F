@@ -7,7 +7,7 @@ import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { assertLiveMember, auditLead, auditMember, type AuditAction } from '../team/audit.js';
-import { assertMemberMay, assertMemberMaySend, EVENT_ABILITY, eventAbility, MEMBER_EVENT_ABILITIES, TRADE_READ } from '../team/perms.js';
+import { assertMemberMay, assertMemberMaySend, EVENT_ABILITY, eventAbility, MEMBER_EVENT_ABILITIES, TRADE_READ, tradePartAbility } from '../team/perms.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
@@ -116,6 +116,9 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const row = await tradeFor(req);
     const t = rowToTrade(row);
     if (roleOf(t, req.auth.accountId) === null) throw new ApiError(404, 'not-found');
+    // Review trades-list I1: a member reads an open trade with See active trades and a completed
+    // one with See trade history, as the trades list does (the guard let in either box).
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     return view(req, t, row);
   });
 

@@ -169,7 +169,7 @@ function TradeRow({ trade: t, action }: { trade: TradeListItem; action: ReactNod
   const state = STATE_LABEL[t.state];
   return (
     <li className="x2f-trades__row" data-part="trade-row" data-state={t.state}>
-      <Link to={`/trade/${t.code}`} className="x2f-trades__link">
+      <Link to={`/trade/${encodeURIComponent(t.code)}`} className="x2f-trades__link">
         <span className="x2f-trades__top">
           <span className="x2f-trades__side">{sideLine(t)}</span>
           <span className="x2f-trades__fiat x2f-trades__mono">{fiatLine(t)}</span>

@@ -66,6 +66,18 @@ export function eventAbility(type: string): string {
 /** The boxes that let a member read one of the account's trades (its room, attestation, confirmations). */
 export const TRADE_READ: readonly string[] = ['trades-see-active', 'trades-see-history'];
 
+/**
+ * The box for each part of the account's trades (the boxes' own words, team/abilities.ts): an open
+ * trade needs See active trades, a completed one (closed) See trade history. The trades list
+ * (trades/list.ts) and the trade room (trades/routes.ts, review trades-list I1) both apply it.
+ */
+export const TRADE_PART_ABILITY = { open: 'trades-see-active', completed: 'trades-see-history' } as const;
+
+/** The box a member needs to read this trade: by whether it has closed. */
+export function tradePartAbility(closedAt: Date | null): string {
+  return closedAt === null ? TRADE_PART_ABILITY.open : TRADE_PART_ABILITY.completed;
+}
+
 /** The boxes that let a member reach the trade events route at all (each event then needs its own). */
 export const MEMBER_EVENT_ABILITIES: readonly string[] = [
   ...new Set(Object.entries(EVENT_ABILITY).filter(([e]) => !MEMBER_SIGNING_EVENTS_LIST.includes(e)).map(([, a]) => a)),

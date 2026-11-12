@@ -45,7 +45,7 @@ import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
 import { BehindTheDoor, isInside } from './session/frontDoor.js';
-import { mayPostOffers, memberOf } from './session/member.js';
+import { mayPostOffers, mayReadTrades, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { PlannedMaintenanceBanner } from './ui/PlannedMaintenanceBanner.js';
@@ -84,7 +84,7 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
   const outside = door && !isInside(session);
   const frame = outside ? 'centred' : wideFrameOf(pathname);
   let top: ReactNode = null;
-  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} />;
+  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} trades={mayReadTrades(session)} />;
   else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop />;
   return (
     <div data-shell={wide ? 'desktop' : 'phone'} data-wide-frame={wide ? frame : undefined} className={wide ? 'x2f-desktop' : undefined}>
@@ -99,7 +99,7 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
         <Outlet />
       </div>
       <ChangesCapPopup />
-      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} /> : null}
+      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} trades={mayReadTrades(session)} /> : null}
     </div>
   );
 }

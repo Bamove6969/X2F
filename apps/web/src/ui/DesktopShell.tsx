@@ -90,10 +90,13 @@ function PageName({ name }: { name: RailPageName }) {
   );
 }
 
-/** The left rail. `postOffers` false leaves out Post offer, as the phone tab bar does for a member without the Offers role. */
-export function DesktopRail({ postOffers = true }: { postOffers?: boolean }) {
+/**
+ * The left rail. `postOffers` false leaves out Post offer, as the phone tab bar does for a member
+ * without the Offers role; `trades` false leaves out My trades (review trades-list m1).
+ */
+export function DesktopRail({ postOffers = true, trades = true }: { postOffers?: boolean; trades?: boolean }) {
   const { pathname } = useLocation();
-  const links = postOffers ? LINKS : LINKS.filter((l) => l.to !== '/post');
+  const links = LINKS.filter((l) => (postOffers || l.to !== '/post') && (trades || l.to !== '/trades'));
   // Without the Offers role Post offer is not listed, so /profile/offers sits under Profile.
   const isCurrent = (l: (typeof LINKS)[number]) =>
     l.match(pathname) || (!postOffers && l.to === '/profile' && /^\/profile\/offers(\/|$)/.test(pathname));
@@ -137,12 +140,12 @@ export function WideTop() {
 }
 
 /** The frame on its own around a page (the app shell, App.tsx, draws the same parts in one tree for every layout). */
-export function DesktopShell({ children, postOffers = true }: { children: ReactNode; postOffers?: boolean }) {
+export function DesktopShell({ children, postOffers = true, trades = true }: { children: ReactNode; postOffers?: boolean; trades?: boolean }) {
   const { pathname } = useLocation();
   const frame = wideFrameOf(pathname);
   return (
     <div data-shell="desktop" data-wide-frame={frame} className="x2f-desktop">
-      {frame === 'rail' ? <DesktopRail postOffers={postOffers} /> : <WideTop />}
+      {frame === 'rail' ? <DesktopRail postOffers={postOffers} trades={trades} /> : <WideTop />}
       <div className="x2f-desktop__body">{children}</div>
     </div>
   );
