@@ -13,7 +13,8 @@ import { KEY_UNAVAILABLE } from '../src/screens/auth/refusals.js';
 import { KEY_IN_USE, nameError, setupError, termsChanged } from '../src/screens/setup/register.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { KEY_POINTS, TERMS } from '../src/screens/setup/termsText.js';
-import { FEE_SENTENCE, startTradingPath } from '../src/screens/setup/Welcome.js';
+import { FEE_SENTENCE } from '../src/screens/post/offerForm.js';
+import { startTradingPath } from '../src/screens/setup/Welcome.js';
 
 const wallet = (over: Partial<Wallet> = {}): Wallet => ({
   id: 'w1',
@@ -96,6 +97,7 @@ describe('stepPath', () => {
 });
 
 describe('copy', () => {
+  // The one PostOffer shows (review 12 Nov, C3: Welcome's copy of it is gone).
   it('the fee sentence is OD-7 word for word', () => {
     expect(FEE_SENTENCE).toBe('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.');
   });

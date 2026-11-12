@@ -1,10 +1,14 @@
+// @vitest-environment happy-dom
 // Owner demo notes of 12 Nov 2026 (owner-demo-notes-2026-11-12.jsonl), in his own words with the
 // typos fixed: the session-length hints and the setup Welcome screen's lead line and checklist.
 // COPY-UNSIGNED and DESIGNER-REVIEW: design restyles both screens.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Wallet } from '@x2f/auth-client';
 import { SESSION_COPY } from '../src/screens/auth/sessionCopy.js';
-import { WELCOME_COPY, checklist, loginMethodsBestFirst } from '../src/screens/setup/Welcome.js';
+import * as WelcomeModule from '../src/screens/setup/Welcome.js';
+import { Tick, WELCOME_COPY, checklist, loginMethodsBestFirst } from '../src/screens/setup/Welcome.js';
+import { render } from './render.js';
 
 const wallet = (over: Partial<Wallet> = {}): Wallet => ({
   id: 'w1', app: 'cake', label: 'Wallet 1', address: `4${'9'.repeat(90)}k3Fz`, addressEnd: 'k3Fz', usableFrom: '2026-10-25T00:00:00.000Z', usable: true, ...over,
@@ -94,5 +98,28 @@ describe('carried over from summarize() (lead check, 12 Nov)', () => {
     // was: "You get paid to" shows only a usable wallet
     expect(checklist({ methods: ['pgp'] }, [wallet({ usable: false })], fresh).wallet).toBeNull();
     expect(checklist({ methods: ['pgp'] }, [wallet({ usable: false }), wallet({ app: 'edge', addressEnd: 'Q9x2', usable: true })], fresh).wallet).toEqual({ app: 'Edge', end: 'Q9x2' });
+  });
+});
+
+// Review 12 Nov (owner-copy-1 minors, done on wip/lead-owner-ui).
+describe('/setup/welcome: the review minors', () => {
+  it('C1: an item not done yet says so to a screen reader, as a done one says Done', () => {
+    const done = render(<Tick done />).host.firstElementChild!;
+    expect([done.getAttribute('role'), done.getAttribute('aria-label'), done.getAttribute('data-part')]).toEqual(['img', 'Done', 'tick']);
+    const open = render(<Tick done={false} />).host.firstElementChild!;
+    expect([open.getAttribute('role'), open.getAttribute('aria-label'), open.getAttribute('data-part')]).toEqual(['img', 'Not done yet', 'tick-open']);
+    expect(open.getAttribute('aria-hidden')).toBeNull();
+    expect(WELCOME_COPY.notDone).toBe('Not done yet');
+  });
+
+  it('C2: the ticks use a kit token, not hard-coded greens (the tokens have no green yet)', () => {
+    const css = readFileSync(new URL('../src/screens/setup/setup.css', import.meta.url), 'utf8');
+    expect(css).not.toMatch(/#3ccf7a|#1a7f45|--x2f-welcome-done/i);
+    const tick = /\.x2f-welcome__tick\s*\{([^}]*)\}/.exec(css)![1]!;
+    expect(tick).toContain('background: var(--x2f-escrow);');
+  });
+
+  it('C3: Welcome no longer exports the fee sentence it stopped showing (PostOffer keeps its own)', () => {
+    expect('FEE_SENTENCE' in WelcomeModule).toBe(false);
   });
 });
