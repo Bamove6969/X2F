@@ -26,7 +26,7 @@ describe('Task 18 web still waits for its design and the member keys', () => {
   it('NEEDS_PLAN3_TASK42_MEMBER_KEY: a member device never starts an escrow step until the member key scheme lands', () => {
     // The API refuses a member's release and trade identity (403 member-cannot-sign, R44); the web
     // shows it through CantDoThat (teamCantDoText). Plan 3 Task 42 owns the trade side for members
-    // (chat label "Message from Team <name> member: <member>", proof, release with a per-member
+    // (chat label "<lead display name> Assistant N", owner p11-25 / S-105, from GET /v1/team and /v1/account/me `chatLabel`; proof; release with a per-member
     // key). When its key scheme lands (apps/web/src/escrow/memberKey.ts), wire the member's device
     // into the escrow there, drop the 'member-cannot-sign' words if no longer reachable, and delete this.
     expect(existsSync(`${ROOT}apps/web/src/escrow/memberKey.ts`), 'Task 42 member keys landed: wire them in').toBe(false);

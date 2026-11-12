@@ -148,6 +148,8 @@ export function Team() {
       const displayName = name.trim();
       const r = await withConfirm(teamInviteAction(displayName, roles), (confirmToken) => authApi.inviteMember({ displayName, roles, confirmToken }), prove);
       setLink({ name: displayName, url: inviteLink(window.location.origin, r.invite) });
+      // Owner p11-21 (S-104): from a username-and-password login the boxes wait as a draft.
+      if (isStaged(r)) setStaged(true);
       setCopied(false);
       setName('');
       await load();
@@ -252,9 +254,17 @@ export function Team() {
                     <span data-username="">{m.displayName}</span>
                     <br />
                     <span className="x2f-list__time">
-                      {m.custom === true ? C.custom : C.roles(m.roles)} · {C.status[m.status]}
+                      {m.custom === true ? C.custom : m.roles.length === 0 ? C.noBoxes : C.roles(m.roles)} · {C.status[m.status]}
                       {m.inviteExpiresAt !== null ? ` · ${C.inviteUntil(m.inviteExpiresAt)}` : ''}
                     </span>
+                    {m.chatLabel !== undefined ? (
+                      <>
+                        <br />
+                        <span className="x2f-list__time" data-part="chat-label">
+                          {C.chatLabel(m.chatLabel)}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
                   {editing?.id === m.id ? (
                     <div className="x2f-stack">

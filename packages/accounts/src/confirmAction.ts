@@ -21,7 +21,7 @@ export type ConfirmAction =
   | { kind: 'set-one-device'; on: 'on' | 'off' }
   | { kind: 'add-device-key'; signPublicHash: string }
   /**
-   * Plan 2 Task 18: the account owner invites a team member: `name`, their name in trade chats,
+   * Plan 2 Task 18: the account owner invites a team member: `name`, their name on the team (chats show "<lead> Assistant N", S-105),
    * exactly as typed (review M9(a): one confirm invites one named member), and `roles`, the roles
    * comma-separated in a fixed order.
    */

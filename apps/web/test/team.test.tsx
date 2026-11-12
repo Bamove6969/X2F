@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemberInvite, inviteFromHash } from '../src/screens/auth/MemberInvite.js';
 import { Team, inviteLink } from '../src/screens/settings/Team.js';
-import { rolesText } from '../src/screens/settings/teamCopy.js';
+import { JOIN_COPY, rolesText } from '../src/screens/settings/teamCopy.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { fire, render } from './render.js';
 
@@ -78,6 +78,12 @@ describe('helpers', () => {
     expect(inviteFromHash('')).toBeNull();
   });
 
+  it('S-104: an invite with no boxes yet reads without a role list', () => {
+    expect(JOIN_COPY.invited('Aurora', ['trades'])).toBe('You are invited to a team as Aurora, for Trades.');
+    expect(JOIN_COPY.invited('Aurora', [])).not.toMatch(/for \.$/);
+    expect(JOIN_COPY.invited('Aurora', [])).toContain('Aurora');
+  });
+
   it('roles read in a fixed order', () => {
     expect(rolesText(['trades', 'offers'])).toBe('Offers and Trades');
     expect(rolesText(['trades'])).toBe('Trades');
@@ -105,6 +111,40 @@ describe('Team (settings)', () => {
     await settle();
     expect(host.querySelector('[data-member="Dana"]')?.textContent).toContain('Custom · Active');
     expect(host.querySelector('[data-member="Dana"]')?.textContent).not.toContain('Trades');
+  });
+
+  it('S-105 (owner p11-25): each member shows how chats label them, the lead\'s name and a number, never their own name', async () => {
+    members = [
+      { id: 'm1', displayName: 'Aurora', chatLabel: 'Calcium Assistant 1', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm2', displayName: 'Basil', chatLabel: 'Calcium Assistant 2', roles: ['offers'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
+    ];
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    expect([...host.querySelectorAll('[data-part="chat-label"]')].map((e) => e.textContent)).toEqual(['In chats: Calcium Assistant 1', 'In chats: Calcium Assistant 2']);
+    // The invite form no longer says chats show the member's name.
+    expect(host.querySelector('#team-name-hint')?.textContent).not.toContain('<their name>');
+    expect(host.querySelector('#team-name-hint')?.textContent).toContain('Assistant');
+  });
+
+  it('S-104 (owner p11-21): an invite from a username-and-password login shows the link and says its boxes wait as a draft', async () => {
+    inviteReply = { status: 201, body: { id: 'm3', invite: CODE, expiresAt: '2026-10-31T10:00:00.000Z', status: 'staged', changeId: 'ch1' } };
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
+    await settle();
+    fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(byPart(host, 'invite-url')?.textContent).toBe(`${window.location.origin}/team/join#${CODE}`);
+    expect(byPart(host, 'staged-note')).not.toBeNull();
+  });
+
+  it('S-104: a member with no boxes yet says so instead of an empty role list', async () => {
+    members = [
+      { id: 'm5', displayName: 'Eden', chatLabel: 'Calcium Assistant 1', roles: [], abilities: [], preset: null, custom: false, status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
+    ];
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    expect(host.querySelector('[data-member="Eden"]')?.textContent).toContain('No roles yet · Invited');
   });
 
   it('Make an invite link sends the name and roles and shows the link once', async () => {

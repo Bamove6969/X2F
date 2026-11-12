@@ -292,7 +292,7 @@ test('14-16 the owner invites a member: the form, the confirm, the link', async 
   await ownerApi(page, { members: [] });
   await page.goto('/settings/team');
   await expect(page.locator('[data-part="team-count"]')).toHaveText('0 of 3 members');
-  await page.getByLabel('Their name in trade chats').fill('Aurora.K');
+  await page.getByLabel('Their name on your team').fill('Aurora.K');
   await page.locator('input[data-role="offers"]').uncheck();
   await page.locator('input[data-role="trades"]').check();
   await shot(page, '14-team-owner-invite-form');
@@ -320,7 +320,7 @@ test('19 a full team: the invite control disabled with the board note (review sh
 test('20 an invite from a one-proof login is refused (CantDoThat weak-session)', async ({ page }) => {
   await ownerApi(page, { members: [member('m1', 'Aurora', ['trades'])], inviteAnswer: { status: 403, body: { error: 'weak-session' } } });
   await page.goto('/settings/team');
-  await page.getByLabel('Their name in trade chats').fill('Cedric');
+  await page.getByLabel('Their name on your team').fill('Cedric');
   await page.locator('[data-part="invite"]').click();
   await confirmWithPassword(page);
   await expect(page.locator('[data-part="cant-do-that"]')).toHaveAttribute('data-from', 'weak-session');

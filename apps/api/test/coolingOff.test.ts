@@ -1684,11 +1684,16 @@ describe('the route lists', () => {
     // Plan 2 Task 18 (owner 2026-10-30): the three team writes check the hold before spending the confirm token.
     // Owner 2026-11-01 (landing review I1): invites also need a strong session, checked after the
     // hold and before the confirm token is spent; removal does not. Hold model v3 (owner 2 Nov): a
-    // role change by a password-only session is staged (`gateChange`) instead of refused.
-    expect(src('routes/team.ts').split(', requireNotHeld, requireStrongSession, requireConfirm(').length - 1).toBe(1);
+    // role change by a password-only session is staged (`gateChange`) instead of refused. Owner
+    // p11-21 (S-104): a password-only session's invite goes out with its boxes staged
+    // (`gateChange` for the new member); only one inside its sign-up window is refused before the
+    // confirm token is spent (`requireStageableSession`).
+    expect(src('routes/team.ts').split(', requireNotHeld, requireStageableSession, requireConfirm(').length - 1).toBe(1);
     expect(src('routes/team.ts').split(', requireNotHeld, requireConfirm(').length - 1).toBe(2);
     expect(src('routes/team.ts').split('await gateChange(').length - 1).toBe(1);
-    expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: true });').length - 1).toBe(2);
+    expect(src('routes/team.ts').split("=> gateChange(c, req, { kind: 'team-abilities', memberId, abilities })").length - 1).toBe(1);
+    expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: true });').length - 1).toBe(1);
+    expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, stage ? { strong: false, vendor: true } : { strong: true });').length - 1).toBe(1);
     expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: false });').length - 1).toBe(1);
     // Plan 5 Task 10 (owner 1 Nov): past-rep start and finish check the hold; list and delete do not.
     expect(src('pastrep/routes.ts').split('preHandler: [requireTrader, requireNotHeld] }').length - 1).toBe(2);
