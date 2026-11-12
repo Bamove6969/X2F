@@ -2015,6 +2015,7 @@ describe('a member reads each part of the trades only with its box (review trade
       await a.waitFor((e) => (e as { code?: string }).code === 'LAST');
       app.events.publish(owner.id, { type: 'trade', code: 'LAST-DONE', state: 'released' }, { closed: true });
       await h.waitFor((e) => (e as { code?: string }).code === 'LAST-DONE');
+      await own.waitFor((e) => (e as { code?: string }).code === 'LAST-DONE');
       const codes = (st: SseStream) => st.events.map((e) => (e as { code?: string; type: string }).code ?? (e as { type: string }).type);
       expect(codes(own)).toEqual(['OPEN-ONE', 'DONE-ONE', 'nudge', 'LAST', 'LAST-DONE']);
       expect(codes(a)).toEqual(['OPEN-ONE', 'nudge', 'LAST']);

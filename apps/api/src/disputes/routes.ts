@@ -8,6 +8,7 @@ import { FINISH_OPEN_TRADES } from '../trades/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
+import { assertMemberMay, tradePartAbility } from '../team/perms.js';
 import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow } from '../trades/store.js';
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
@@ -297,6 +298,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
 
   app.get('/v1/trades/:code/dispute', { preHandler: answer }, async (req) => {
     const { row, side } = await participant(req);
+    // Review trades-list I1: besides the disputes box, the part's (open: See active trades; decided and closed: See trade history).
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     const view = await loadView(req.server.deps.db, row, side, req.auth.accountId, req.server.deps.clock());
     if (view === null) throw new ApiError(404, 'not-found');
     return view;

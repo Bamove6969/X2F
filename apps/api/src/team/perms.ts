@@ -30,8 +30,12 @@ export type MemberAccess = AbilityNeed;
 /** The trade events that need the trade's party key (see `MEMBER_SIGNING_EVENTS` below). */
 const MEMBER_SIGNING_EVENTS_LIST: readonly string[] = ['release-started', 'fund-started'];
 
-/** The box a live stream (`GET /v1/events`, the account's trade events) needs. */
-export const STREAM_ABILITY = 'trades-see-active';
+/**
+ * The boxes a live stream (`GET /v1/events`, the account's trade events) needs: either trades box
+ * (review trades-list I1); the bus then carries a member only the events of the parts their boxes
+ * allow (events/bus.ts `PublishOptions`).
+ */
+export const STREAM_ABILITY: readonly string[] = ['trades-see-active', 'trades-see-history'];
 
 /** The client events the events route takes (`open-dispute` comes only through the dispute route). */
 export type EventsRouteEvent = Exclude<(typeof CLIENT_EVENTS)[number], 'open-dispute'>;

@@ -469,7 +469,9 @@ export function chatRoutes(app: FastifyInstance): void {
       await q.query('update chats set last_message_at = $2 where code = $1', [row.code, now]);
       return ins.rows[0]!.id;
     });
-    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
+    // Review trades-list I1: a trade's chat is that trade's part for members' streams; an offer chat has none.
+    const part = row.trade_code === null ? {} : { closed: !(await tradeOpen(req.server.deps.db, row.trade_code)) };
+    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code }, part);
     return reply.code(201).send({ id });
   });
 

@@ -1,3 +1,5 @@
+import { hasAbility } from '../team/abilities.js';
+import { TRADE_PART_ABILITY } from '../team/perms.js';
 /**
  * Live events (Task 19). The only event shapes `GET /v1/events` ever sends. Names in them (`by`,
  * `from`) are public display names (see publicName.ts), never login names.
@@ -16,6 +18,16 @@ export type LiveEvent =
    */
   | { type: 'moderator-joined'; code: string; username: string }
   | { type: 'proof-requested'; code: string; username: string };
+
+/**
+ * Which part of the account's trades an event belongs to (review trades-list I1): an open trade's,
+ * or a completed (closed) one's. A team member's stream carries a part's events only with that part's
+ * box (team/perms.ts TRADE_PART_ABILITY); an event of no part (a nudge, a login approval) only with
+ * See active trades, the box the stream needed before it took either one.
+ */
+export interface PublishOptions {
+  closed?: boolean;
+}
 
 /** One open stream: `send` writes a whole SSE frame; `close` ends the response. */
 export interface StreamSink {
@@ -54,7 +66,7 @@ export class EventBus {
    * events, but never count as the account being reached: only the account owner's device runs
    * the escrow, so a push still goes to the owner whenever no stream of the owner's own is open.
    */
-  private readonly memberSinks = new Set<StreamSink>();
+  private readonly memberSinks = new Map<StreamSink, readonly string[] | null>();
   private count = 0;
 
   constructor(o: EventBusOptions = {}) {
@@ -70,9 +82,11 @@ export class EventBus {
   /**
    * Adds a stream; returns its detach function, or null when a cap is reached. `o.member`: a team
    * member's stream (Plan 2 Task 18). Members' streams together may take at most `perAccount - 1`
-   * slots, so one is always left for the account owner (review I1).
+   * slots, so one is always left for the account owner (review I1). `o.abilities`: the member's
+   * boxes, which decide the parts their stream carries (review trades-list I1); left out, the
+   * stream carries every event (an older caller's, tests of the slot rules).
    */
-  attach(accountId: string, sink: StreamSink, sessionId?: string, o: { member?: boolean } = {}): (() => void) | null {
+  attach(accountId: string, sink: StreamSink, sessionId?: string, o: { member?: boolean; abilities?: readonly string[] } = {}): (() => void) | null {
     const own = this.streams.get(accountId);
     if (this.count >= this.global || (own?.size ?? 0) >= this.perAccount) return null;
     if (o.member === true && this.memberCount(own) >= this.perAccount - 1) return null;
@@ -80,7 +94,7 @@ export class EventBus {
     if (!own) this.streams.set(accountId, set);
     set.add(sink);
     if (sessionId !== undefined) this.sessionOf.set(sink, sessionId);
-    if (o.member === true) this.memberSinks.add(sink);
+    if (o.member === true) this.memberSinks.set(sink, o.abilities ?? null);
     this.count++;
     let attached = true;
     return () => {
@@ -111,12 +125,15 @@ export class EventBus {
    * decide whether the owner still needs a push, and a member's tab never stands in for the
    * owner's device (Plan 2 Task 18, review I1).
    */
-  publish(accountId: string, ev: LiveEvent): number {
+  publish(accountId: string, ev: LiveEvent, o: PublishOptions = {}): number {
     const set = this.streams.get(accountId);
     if (!set) return 0;
     const data = frame(ev);
+    const need = o.closed === true ? TRADE_PART_ABILITY.completed : TRADE_PART_ABILITY.open;
     let written = 0;
     for (const sink of [...set]) {
+      const boxes = this.memberSinks.get(sink);
+      if (boxes !== undefined && boxes !== null && !hasAbility(boxes, need)) continue;
       try {
         sink.send(data);
         if (!this.memberSinks.has(sink)) written++;

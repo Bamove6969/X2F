@@ -237,6 +237,8 @@ export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations
     const t = rowToTrade(row);
     const role = roleOf(t, req.auth.accountId);
     if (role === null) throw new ApiError(404, 'not-found');
+    // Review trades-list I1: the part's box (a settled trade has closed: See trade history).
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     if (t.txHash === null || (t.state !== 'released' && t.state !== 'refunded')) throw new ApiError(409, 'wrong-state');
     let confirmations: number | null = null;
     try {
