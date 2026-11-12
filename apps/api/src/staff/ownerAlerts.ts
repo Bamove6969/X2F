@@ -17,7 +17,7 @@ import { log } from './members.js';
  * - `POST /staff/v1/owner/alerts/:id/read` → 204 (404 for an id that is not the owner's).
  * - `POST /staff/v1/owner/alerts/read-all` → 204.
  * Marking read is logged `staff.alert-seen` when it changes anything (lead review 7 Nov M1: a stolen
- * session cannot silence alerts unseen).
+ * session cannot silence alerts unseen), with the alert's kind, or for read-all how many (review OA2).
  */
 
 export const OWNER_ALERTS_PAGE = 50;
@@ -86,7 +86,7 @@ export function staffOwnerAlertRoutes(app: FastifyInstance): void {
     const { db, clock } = req.server.deps;
     await withTx(db, async (c) => {
       const r = await c.query('update alerts set seen_at = $2 where account_id = $1 and seen_at is null', [req.staff.accountId, clock()]);
-      if ((r.rowCount ?? 0) > 0) await log(c, req, 'staff.alert-seen', {});
+      if ((r.rowCount ?? 0) > 0) await log(c, req, 'staff.alert-seen', { count: r.rowCount ?? 0 });
     });
     return reply.code(204).send();
   });
@@ -96,9 +96,12 @@ export function staffOwnerAlertRoutes(app: FastifyInstance): void {
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
     const { db, clock } = req.server.deps;
     await withTx(db, async (c) => {
-      const r = await c.query('update alerts set seen_at = $3 where id = $1 and account_id = $2 and seen_at is null', [id.toLowerCase(), req.staff.accountId, clock()]);
-      if ((r.rowCount ?? 0) > 0) {
-        await log(c, req, 'staff.alert-seen', {});
+      const r = await c.query<{ kind: string }>(
+        'update alerts set seen_at = $3 where id = $1 and account_id = $2 and seen_at is null returning kind',
+        [id.toLowerCase(), req.staff.accountId, clock()],
+      );
+      if (r.rows[0]) {
+        await log(c, req, 'staff.alert-seen', { kind: r.rows[0].kind });
         return;
       }
       const { rows } = await c.query('select 1 from alerts where id = $1 and account_id = $2', [id.toLowerCase(), req.staff.accountId]);

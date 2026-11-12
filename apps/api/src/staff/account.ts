@@ -144,14 +144,19 @@ export function staffAccountRoutes(app: FastifyInstance): void {
     const id = idParam(req);
     const { db, clock } = req.server.deps;
     await withTx(db, async (c) => {
-      const r = await c.query('update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2 and seen_at is null', [id, req.staff.accountId, clock()]);
-      if ((r.rowCount ?? 0) === 0) {
+      const r = await c.query<{ kind: string }>(
+        'update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2 and seen_at is null returning kind',
+        [id, req.staff.accountId, clock()],
+      );
+      const hidden = r.rows[0];
+      if (!hidden) {
         const { rows } = await c.query('select 1 from alerts where id = $1 and account_id = $2', [id, req.staff.accountId]);
         if (rows.length === 0) throw new ApiError(404, 'not-found');
         return;
       }
-      // Lead review 7 Nov M1: hiding an alert is logged, so a stolen session can't silence one unseen.
-      await log(c, req, 'staff.alert-seen', {});
+      // Lead review 7 Nov M1: hiding an alert is logged, so a stolen session can't silence one unseen
+      // (owner-alerts review OA2: with its kind).
+      await log(c, req, 'staff.alert-seen', { kind: hidden.kind });
     });
     return reply.code(204).send();
   });

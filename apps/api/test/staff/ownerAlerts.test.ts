@@ -53,7 +53,8 @@ describe('GET /staff/v1/owner/alerts (O-040)', () => {
     const before = (await logEntries(deps, 'staff.alert-seen')).length;
     const res = await owner.post(`/staff/v1/owner/alerts/${v.items[1]!.id}/read`, {});
     expect(res.statusCode, res.body).toBe(204);
-    expect((await logEntries(deps, 'staff.alert-seen')).length).toBe(before + 1);
+    // Review OA2: the entry names which kind of alert was hidden (never its detail).
+    expect((await logEntries(deps, 'staff.alert-seen')).slice(before).map((e) => JSON.parse(e.detail) as unknown)).toEqual([{ kind: v.items[1]!.kind }]);
     const after = await list(owner);
     expect(after.unread).toBe(2);
     expect(after.items[1]!.seenAt).not.toBeNull();
@@ -65,9 +66,15 @@ describe('GET /staff/v1/owner/alerts (O-040)', () => {
   it('marks all read at once', async () => {
     await addOwnerAlert(deps.db, 'market-prices-paused', { urgent: true, currencies: ['EUR'], message: 'EUR prices paused' }, new Date(T0.getTime() + 4 * MIN));
     expect((await list(owner)).unread).toBeGreaterThan(0);
+    const unread = (await list(owner)).unread;
+    const before = (await logEntries(deps, 'staff.alert-seen')).length;
     const res = await owner.post('/staff/v1/owner/alerts/read-all', {});
     expect(res.statusCode, res.body).toBe(204);
     expect((await list(owner)).unread).toBe(0);
+    // Review OA1/OA2: logged once, with how many it hid; again with nothing unread: 204, nothing logged.
+    expect((await logEntries(deps, 'staff.alert-seen')).slice(before).map((e) => JSON.parse(e.detail) as unknown)).toEqual([{ count: unread }]);
+    expect((await owner.post('/staff/v1/owner/alerts/read-all', {})).statusCode).toBe(204);
+    expect((await logEntries(deps, 'staff.alert-seen')).length).toBe(before + 1);
   });
 
   it('pages by 50, newest first, with no repeat across pages', async () => {
@@ -93,7 +100,14 @@ describe('GET /staff/v1/owner/alerts (O-040)', () => {
       expect(errorOf(await b.post('/staff/v1/owner/alerts/read-all', {}))).toBe('forbidden');
     }
     const modAlert = (await deps.db.query<{ id: string }>('select id from alerts where account_id = $1', [mod.id])).rows[0]!.id;
+    const before = (await logEntries(deps, 'staff.alert-seen')).length;
     expect((await owner.post(`/staff/v1/owner/alerts/${modAlert}/read`, {})).statusCode).toBe(404);
     expect((await list(owner)).items.some((i) => i.id === modAlert)).toBe(false);
+    // Review OA1: the 404 changed nothing: the other account's alert is still unread, and nothing is logged.
+    expect((await deps.db.query('select seen_at from alerts where id = $1', [modAlert])).rows).toEqual([{ seen_at: null }]);
+    expect((await logEntries(deps, 'staff.alert-seen')).length).toBe(before);
+    // Read-all touches only the owner's own rows.
+    await owner.post('/staff/v1/owner/alerts/read-all', {});
+    expect((await deps.db.query('select seen_at from alerts where id = $1', [modAlert])).rows).toEqual([{ seen_at: null }]);
   });
 });
