@@ -352,3 +352,7 @@ No conflict.
 - **Q-15:** "Without reason" conflicts with the G39 ban notice and the Q15 rules list. Recommend "without always giving a reason".
 - **Q-16:** Which channel is "leave feedback" (support ticket, Matrix, Telegram)?
 - **Q-K (design):** the key points above the box. "Completed trades are erased on day 30" and "Disputed trades are kept up to 90 days…" still match. "Moderators can read your trade chat only if a dispute is opened" still matches, because of the kept qualifier in item 9. "If you post an ad, you pay a 1% fee when the trade completes" matches. No key point has to change unless Q-13 or Q-8 goes the other way.
+
+## Added 12 Nov (owner: "I'm sticking to the US sanction laws"; "Crimea is under Russian control")
+Proposed new line (COPY-UNSIGNED, lawyer to confirm): "You may not use X2F if you are in, or acting for anyone in, a country or region under comprehensive US sanctions, including Russia, Iran, Cuba, North Korea and the occupied regions of Ukraine (Crimea, Donetsk and Luhansk)."
+X2F does not track location, so this is a Terms rule, not a technical block.
