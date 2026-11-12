@@ -75,7 +75,7 @@ describe('production bundle', () => {
     }
     // Neither proof/ocr.ts nor the engine is in the entry: both are loaded with the first proof.
     const entryText = await readFile(join(dir, entry!), 'utf8');
-    for (const internal of ['Legacy model requested', 'regeneratorRuntime', 'wasm-feature-detect', '/ocr/worker.min.js']) expect(entryText, internal).not.toContain(internal);
+    for (const internal of ['createWorker', 'Legacy model requested', 'regeneratorRuntime', 'wasm-feature-detect', '/ocr/worker.min.js']) expect(entryText, internal).not.toContain(internal);
   });
 
   it('no CDN default reaches the bundle; the OCR core and model are served from /ocr/, never bundled', { timeout: 200_000 }, async () => {

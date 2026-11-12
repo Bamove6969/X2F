@@ -55,6 +55,8 @@ export interface ProofLabResult {
   amount: Array<{ x0: number; y0: number; x1: number; y1: number }>;
   memo: Array<{ x0: number; y0: number; x1: number; y1: number }>;
   words: string[];
+  /** The OCR words with their boxes and lines (for the recall record, docs/security/plan-5-review.md). */
+  ocr: Array<{ text: string; x0: number; y0: number; x1: number; y1: number; line: number }>;
   ms: number;
 }
 
@@ -72,6 +74,7 @@ async function proofLab(b64: string, mime: string, keep: { tradeCode: string; fi
     amount: p.amount.map(box),
     memo: p.memo.map(box),
     words: p.words.map((w) => w.text),
+    ocr: p.words.map((w) => ({ text: w.text, ...box(w), line: w.line })),
     ms: performance.now() - t0,
   };
 }

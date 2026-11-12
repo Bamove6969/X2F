@@ -65,7 +65,7 @@ describe('createOcr', () => {
     expect(langs).toEqual(['eng']);
     expect(PROOF_OCR_LANGS).toEqual(['eng']);
     expect(oem).toBe(1);
-    expect(options).toEqual({ ...OCR_WORKER_OPTIONS, errorHandler: expect.any(Function), logger: expect.any(Function) });
+    expect(options).toEqual({ ...OCR_WORKER_OPTIONS, errorHandler: expect.any(Function), logger: expect.any(Function), onSpawn: expect.any(Function) });
     expect(OCR_WORKER_OPTIONS).toEqual({
       workerPath: '/ocr/worker.min.js',
       corePath: '/ocr/',
@@ -96,6 +96,39 @@ describe('createOcr', () => {
     expect(e.createWorker).toHaveBeenCalledTimes(2);
     const broken = createOcr({ load: async () => Promise.reject(new Error('chunk failed')), toImage, timeoutMs: 1000 });
     await expect(broken(RGBA, 2, 2)).resolves.toBeNull();
+  });
+
+  it('review m-2: a load that never settles terminates the spawned Worker itself at the timeout', async () => {
+    const raw = { terminate: vi.fn() };
+    const e = engine({
+      createWorker: (_l, _o, options) => {
+        (options as { onSpawn: (w: unknown) => void }).onSpawn(raw);
+        return new Promise(() => undefined);
+      },
+    });
+    await expect(createOcr({ load: e.load, toImage, timeoutMs: 30 })(RGBA, 2, 2)).resolves.toBeNull();
+    expect(raw.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('review m-2: a load that fails terminates the spawned Worker (tesseract.js does not)', async () => {
+    const raw = { terminate: vi.fn() };
+    const e = engine({
+      createWorker: async (_l, _o, options) => {
+        (options as { onSpawn: (w: unknown) => void }).onSpawn(raw);
+        throw new Error('404 tesseract-core-relaxedsimd-lstm.wasm.js');
+      },
+    });
+    await expect(createOcr({ load: e.load, toImage, timeoutMs: 1000 })(RGBA, 2, 2)).resolves.toBeNull();
+    expect(raw.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('review m-3: a result with no blocks is a failure (could not check), not "nothing found"', async () => {
+    for (const blocks of [null, 'x', {}]) {
+      const e = engine({ blocks: blocks as unknown as null });
+      await expect(createOcr({ load: e.load, toImage, timeoutMs: 1000 })(RGBA, 2, 2), String(blocks)).resolves.toBeNull();
+    }
+    const empty = engine({ blocks: [] });
+    await expect(createOcr({ load: empty.load, toImage, timeoutMs: 1000 })(RGBA, 2, 2)).resolves.toEqual([]);
   });
 
   it('past the timeout it answers null and terminates the worker (a load that never finishes)', async () => {

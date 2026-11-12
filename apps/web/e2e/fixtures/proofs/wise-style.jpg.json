@@ -1,0 +1,45 @@
+{
+  "file": "wise-style.jpg",
+  "name": "avatar-caption",
+  "width": 760,
+  "height": 372,
+  "keep": {
+    "tradeCode": "K7M2-9QXA-4FTR-8WPN",
+    "fiatCents": "41250",
+    "exponent": 2
+  },
+  "marks": [
+    {
+      "kind": "amount",
+      "text": "$412.50",
+      "x0": 204,
+      "y0": 40,
+      "x1": 340,
+      "y1": 75
+    },
+    {
+      "kind": "name",
+      "text": "Morgan Ortiz",
+      "x0": 48,
+      "y0": 191,
+      "x1": 229,
+      "y1": 224
+    },
+    {
+      "kind": "card",
+      "text": "4321",
+      "x0": 291,
+      "y0": 244,
+      "x1": 357,
+      "y1": 274
+    },
+    {
+      "kind": "code",
+      "text": "K7M2-9QXA-4FTR-8WPN",
+      "x0": 187,
+      "y0": 288,
+      "x1": 501,
+      "y1": 318
+    }
+  ]
+}

@@ -129,6 +129,14 @@ describe('the OCR files (Plan 5 Task 13, Global Constraints: the worker\'s own C
     }
   });
 
+  it('review m-4: .gz is a file only under /ocr/: a profile named alice.gz is still the app page', async () => {
+    for (const url of ['/u/alice.gz', '/u/backup.gz']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.headers['content-type'], url).toMatch(/^text\/html/);
+    }
+  });
+
   it('only the ocr folder gets it: a built asset named ocr-… keeps no CSP', async () => {
     const res = await app.inject({ method: 'GET', url: '/assets/ocr-abc123.js' });
     expect(res.statusCode).toBe(200);
