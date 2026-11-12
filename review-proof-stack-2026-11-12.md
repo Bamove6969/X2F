@@ -16,7 +16,7 @@ Method: I read every `--cc` resolution in the twelve merge commits, the seams co
 | `vitest run --project @x2f/web` (full) | 73fb96a4 | 140 files, **2147 passed**, 0 failed |
 | `npm run build -w @x2f/web` (production, `VITE_X2F_PROOF_UPLOAD` unset) | 73fb96a4 | built; bundle inspected (item 5) |
 | `playwright test proof-ocr` (pinned Chromium `/opt/pw-browsers/chromium`) | 73fb96a4 | **6/6 passed** (the lead's commit message says 5/5; the spec has 6 tests at this head, the Cyrillic one included) |
-| `vitest run --project @x2f/proof` (full) | 5b42f262 | see the end of this file |
+| `vitest run --project @x2f/proof` (full, receive.test included) | 5b42f262 | 14 files, **373 passed**, 0 failed |
 
 ## 1. Merge resolutions
 

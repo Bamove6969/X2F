@@ -74,7 +74,10 @@ Scenario: a RUB/SBP trade is mid-flight at deploy time and completes on X2F afte
 ## Tests run
 
 All under `flock ~/x2f-comms/check.lock timeout 2400 …`, in a detached worktree at 80e87322 with a fresh `npm ci`:
-- vitest on 13 files: `apps/api/test/offers`, `flexOffers`, `offersBulk`, `offerMigrations` (plus my uncommitted scratch test, the fixed-price migration check described in point 2), `price`, `price-health`, `profiles`, `schema`, `take`; `packages/trade/test/giftCards`, `payFieldsCoverage`, `payFields`; `apps/web/test/postOffer`. RESULTS_PLACEHOLDER
-- `tsc --noEmit` for apps/api, apps/web and packages/trade, and `npm run copy-lint`: TSC_PLACEHOLDER
+- vitest on 13 files: `apps/api/test/offers`, `flexOffers`, `offersBulk`, `offerMigrations` (plus my uncommitted scratch test, the fixed-price migration check described in point 2), `price`, `price-health`, `profiles`, `schema`, `take`; `packages/trade/test/giftCards`, `payFieldsCoverage`, `payFields`; `apps/web/test/postOffer`.
+  - First run: 12 files passed and 416 tests passed. `offerMigrations.test.ts` failed to compile because of a quote error in **my own scratch test** (an apostrophe inside a single-quoted name), not the branch.
+  - Re-run of `offerMigrations.test.ts` with the scratch test fixed: **1 file, 5 tests, all passed**, including the branch's migration-590 test and my fixed-price check.
+  - Net: all 13 files pass on the branch; nothing failed because of the branch.
+- `tsc --noEmit` for apps/api, apps/web and packages/trade, and `npm run copy-lint`: clean for all three (the apps/api error in the first run was the same scratch-test typo; the re-run is clean), and copy-lint clean.
 - OFAC and Treasury sources fetched and checked: 10 URLs, all HTTP 200, quotes as above.
 - Not run: Playwright (`e2e/post.spec.ts` changed only a test title and a comment).
