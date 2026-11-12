@@ -288,6 +288,16 @@
   cursor: pointer;
 }
 
+/* Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): logo D and the room's name above the trade header. */
+.x2f-trade-header__brand {
+  padding: var(--x2f-space-3) var(--x2f-space-4) 0;
+}
+
+/* Wide: the rail head already carries the logo and the page name. */
+[data-shell='desktop'] .x2f-trade-header__brand {
+  display: none;
+}
+
 /* Trade-room header (TradeFund, BuyerPay, SellerConfirm boards). */
 .x2f-trade-header {
   display: flex;
@@ -2743,4 +2753,9 @@
   justify-content: center;
   min-width: 44px;
   min-height: 44px;
+}
+
+/* The trade header's wrapper (the brand row and the board's header), one block for the tabletop rule. */
+.x2f-trade-header-wrap {
+  flex-shrink: 0;
 }

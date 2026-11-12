@@ -114,9 +114,9 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
 /** Buy and Sell's own bar carries the shared header (MethodList). */
 const BROWSE = /^\/(buy|sell)\/?$/;
 /**
- * The trade room and its dispute keep their own header (TradeHeader: who, the code) for now: the room
- * keeps one tree and its scroll across folding, which a header appearing above it would move.
- * DESIGNER-REVIEW: logo D in TradeHeader itself, a follow-up.
+ * The trade room and its dispute draw the shared header inside TradeHeader (logo D, "Trade · K7M2"),
+ * in the room's own tree: the room keeps one tree and its scroll across folding, which a header
+ * appearing above it in the shell would move. DESIGNER-REVIEW.
  */
 const TRADE_ROOM = /^\/trade\//;
 

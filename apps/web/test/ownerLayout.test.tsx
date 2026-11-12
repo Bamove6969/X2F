@@ -134,7 +134,7 @@ describe('the trade room and its dispute: logo D and the name in TradeHeader (le
           <TradeHeader title="Selling to mira.k" code="K7M2-9QXA-4FTR-8WPN" method={ZELLE} backTo="/sell" />
         </MemoryRouter>,
       );
-      const brand = host.querySelector('[data-fold-glance="header"].x2f-trade-header__brand')!;
+      const brand = host.querySelector('[data-fold-glance="header"] > .x2f-trade-header__brand')!;
       expect(brand.querySelector('header[data-screen-header] svg[role="img"][aria-label="X2F"]')).not.toBeNull();
       expect(brand.querySelector('[data-part="screen-name"]')!.textContent).toBe(name);
       // The board's header row is unchanged after it.
