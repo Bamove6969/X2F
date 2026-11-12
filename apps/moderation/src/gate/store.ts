@@ -82,6 +82,27 @@ export interface GateState {
   stopped: boolean;
   /** Review M1: the last tap applied per subject (`settings`, `role:<id>`, `stop`), by key and counter. */
   applied: Record<string, { credentialId: string; counter: number; issuedAt?: string }>;
+  /**
+   * Plan 4 Task 14: each trade's ruling payout, per trade code, recorded BEFORE the moderator's party
+   * is first asked and again once it finished (`execute.ts`). A trade has at most one; nothing else
+   * is ever settled for it. Empty in a gate.bin written before Task 14.
+   */
+  executions: Record<string, RulingExecution>;
+}
+
+/** One trade's ruling payout as the executor recorded it (amounts as decimal strings). */
+export interface RulingExecution {
+  /** The round-1 ruling it pays (round 1 pays even after an appeal, Note 2026-10-30 M3). */
+  rulingId: string;
+  winner: 'buyer' | 'seller';
+  /** Exactly the payouts the gate authorised, in order. */
+  payouts: Array<{ address: string; amountAtomic: string }>;
+  /** When it was recorded (this process's clock), before the party was asked. */
+  recordedAt: string;
+  /** When the party's settle() finished (the release is done); null until then. */
+  settledAt: string | null;
+  /** The tx hash settle() answered with: the co-signer submits, so the moderator as builder often has none. */
+  settledTx: string | null;
 }
 
 /** The API's defaults (`settings` in migration 206) until the owner taps a change. */
@@ -103,6 +124,7 @@ export function emptyGate(): GateState {
     removedIds: [],
     stopped: false,
     applied: {},
+    executions: {},
   };
 }
 

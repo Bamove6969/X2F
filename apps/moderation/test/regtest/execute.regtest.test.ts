@@ -4,18 +4,20 @@
 // pinned registry and recorded terms; the executor hands the gate's payouts to the moderator's real
 // escrow party (`builder: 'mod'`), the buyer's party co-signs as its app would (Task 15), and the
 // buyer and the fee wallet are paid on regtest. Exactly once: a restarted executor settles nothing.
+// The chain, wallets, multisig engine and all three parties are real; the relay is the in-memory one
+// (test/chain.ts): apps/moderation may not load @x2f/relay, tests included (separation check P3-C1).
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ROLES, type Role } from '@x2f/core';
-import { MoneroMultisigEngine, runParty, wsTransport, type PartyHandle, type PartyState, type PartyStore } from '@x2f/escrow';
+import { MoneroMultisigEngine, runParty, type PartyHandle, type PartyState, type PartyStore } from '@x2f/escrow';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@x2f/regtest';
-import { buildRelay, type Relay } from '@x2f/relay';
 import type { MoneroWalletFull } from 'monero-ts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { rulingExecutor } from '../../src/execute.js';
+import { memoryRelay } from '../chain.js';
 import { openGateStore } from '../../src/gate/index.js';
 import { BALANCE, ctx, recorded, ruling, tapBy, world } from '../gateWorld.js';
 
@@ -35,8 +37,6 @@ function memoryStore(): PartyStore {
 
 describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
   let node: Regtest;
-  let relay: Relay;
-  let relayUrl: string;
   let funder: MoneroWalletFull;
   const running: PartyHandle[] = [];
   const wallets: MoneroWalletFull[] = [];
@@ -45,17 +45,12 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
   beforeAll(async () => {
     node = await startRegtest();
     funder = await fundedWallet(node.rpcUri);
-    relay = await buildRelay();
-    await relay.app.listen({ host: '127.0.0.1', port: 0 });
-    const addr = relay.app.server.address();
-    relayUrl = `ws://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
   });
 
   afterAll(async () => {
     for (const p of running.splice(0)) await p.stop();
     for (const w of wallets.splice(0)) await w.close();
     await funder?.close();
-    await relay?.app.close();
     await node?.stop();
     for (const d of dirs) await rm(d, { recursive: true, force: true });
   });
@@ -99,10 +94,10 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     store.state = w.gate;
     await store.save();
 
-    // The escrow: three real parties over the relay, funded with the seller's whole deposit.
+    // The escrow: three real parties, funded with the seller's whole deposit.
     const ids = Object.fromEntries(await Promise.all(ROLES.map(async (r) => [r, await generateIdentity()] as const))) as Record<Role, Identity>;
     const participants = Object.fromEntries(ROLES.map((r) => [r, { signPublic: ids[r].signPublic, boxPublic: ids[r].boxPublic }])) as Participants;
-    relay.registerTrade(code, { buyer: ids.buyer.signPublic, seller: ids.seller.signPublic, mod: ids.mod.signPublic });
+    const relay = memoryRelay();
     const parties = Object.fromEntries(
       ROLES.map((role) => {
         const p = runParty({
@@ -110,7 +105,7 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
           trade: code,
           me: ids[role],
           participants,
-          transport: wsTransport({ url: relayUrl, code, role, me: ids[role] }),
+          transport: relay.transport(role),
           engine,
           daemonUri: node.rpcUri,
           password: `pw-${role}`,

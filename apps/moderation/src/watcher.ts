@@ -10,6 +10,7 @@ import {
   type EscrowFunds,
   type ModPartyArgs,
   type SpendEvidence,
+  type Trade,
   type TradeState,
   type WatchReport,
   type WatchState,
@@ -47,6 +48,12 @@ export interface WatcherOptions {
    * party runs. Absent: no desk (Task 9's tests).
    */
   openDesk?: (a: ModPartyArgs) => Promise<Desk>;
+  /**
+   * Plan 4 Task 14: the ruling executor's pass for this trade, after the desk's, with the same
+   * accepted facts (the trade's party, the API item read for this pass, the funds the party read),
+   * this service's own args and the desk's shadow trade. Absent: no rulings are executed.
+   */
+  executeRuling?: (s: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null }) => Promise<unknown>;
 }
 
 export interface Watcher {
@@ -452,6 +459,18 @@ export function createWatcher(o: WatcherOptions): Watcher {
           refresh: () => freshItem(row.trade, unlisted),
         })
         .catch(() => o.log({ reason: 'desk-step-failed' }));
+    }
+    if (o.executeRuling) {
+      await o
+        .executeRuling({
+          code: row.trade,
+          handle,
+          api: item,
+          funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked },
+          args,
+          shadow: desks.get(row.trade)?.record().shadow ?? null,
+        })
+        .catch(() => o.log({ reason: 'ruling-step-failed' }));
     }
     if (step.closeChannels) {
       for (const kind of ['escrow', 'signals'] as const) {

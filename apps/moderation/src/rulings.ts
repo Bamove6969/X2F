@@ -5,7 +5,7 @@
  * the stored ruling, R37), and names the only payouts the moderator key may co-sign, computed from
  * the addresses this process recorded at escrow setup.
  *
- * NEEDS_TASK_14: nothing calls `settle` on a ruling's behalf yet. The executor (Plan 4 Task 14,
- * `gate/execute.ts`) runs `gateCheck` for each final ruling and settles once.
+ * Plan 4 Task 14: the executor (`execute.ts`) runs `gateCheck` for each disputed trade's round-1
+ * escrow ruling and settles what it authorises, once.
  */
 export { gateCheck } from './gate/check.js';

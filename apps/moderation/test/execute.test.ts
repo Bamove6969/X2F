@@ -13,7 +13,7 @@ import type { Outcome, PartyHandle } from '@x2f/escrow';
 import { escrowPlan } from '@x2f/trade';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rulingExecutor, type RulingStepInput } from '../src/execute.js';
-import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, type GateStore } from '../src/gate/index.js';
+import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, syncRegistry, type GateStore } from '../src/gate/index.js';
 import { BALANCE, ctx, recorded, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
 import { DEAL, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
 
@@ -72,7 +72,10 @@ const executor = (s: Setup, store: GateStore = s.store, logs: string[] = []) => 
 
 /** What the gate itself says may be co-signed for this case (a fresh copy of the gate, so the store is untouched). */
 async function authorised(s: Setup) {
-  const a = await authorizeRuling(structuredClone(s.store.state), { ruling: s.c.ruling, taps: await s.w.api.rulingTaps(s.c.ruling.id), recorded: recorded(41_250n), balanceAtomic: BALANCE }, ctx());
+  // As gateCheck does: the registry synced first (the hired moderator is known only after a sync).
+  const g = structuredClone(s.store.state);
+  await syncRegistry(s.w.api, g, ctx());
+  const a = await authorizeRuling(g, { ruling: s.c.ruling, taps: await s.w.api.rulingTaps(s.c.ruling.id), recorded: recorded(41_250n), balanceAtomic: BALANCE }, ctx());
   if (!a.ok || a.settle === null) throw new Error('fixture: the gate must authorise this case');
   return a.settle;
 }
@@ -107,10 +110,10 @@ describe('the ruling executor (Plan 4 Task 14)', () => {
     // The party finished (as the builder its settle() resolves; the co-signer submits, so the hash
     // may be null): recorded after, and never settled again, in this process or after a restart.
     p.answer(null);
-    await expect.poll(() => s.store.state.executions[s.c.ruling.code]?.settledAt ?? null).not.toBeNull();
+    // On disk (the sealed gate.bin), not only in memory.
+    await expect.poll(async () => (await openGateStore(s.dir, s.key)).state.executions[s.c.ruling.code]?.settledAt ?? null).not.toBeNull();
     expect(await exec.step(step(s, handle))).toBe('settled');
     const reopened = await openGateStore(s.dir, s.key);
-    expect(reopened.state.executions[s.c.ruling.code]?.settledAt).toEqual(expect.any(String));
     const again = recordingParty();
     expect(await executor(s, reopened).step(step(s, again.handle))).toBe('settled');
     expect(again.settles).toEqual([]);

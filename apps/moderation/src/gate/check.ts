@@ -8,10 +8,10 @@ import { authorizeRuling, type Authorization, type GateContext, type RulingInput
  * switch-off or removal the API shows already counts, then check the ruling with its stored taps,
  * then save what the gate learnt (the nonces it bound, the ruling it saw), whatever the answer.
  *
- * NEEDS_TASK_14: the ruling executor (`gate/execute.ts`) calls this for each final ruling, with the
- * ruling from `pgGateSource.storedRulings` (round 1's once there is an appeal, Note 2026-10-30 M3),
- * the recorded terms from this process's own desk record (`recordedTerms`) and the balance from the
- * mod party, and settles `settle.payouts` once with `builder: 'mod', cosigner: settle.winner`.
+ * Plan 4 Task 14: the ruling executor (`src/execute.ts`, outside gate/) calls this each pass for a
+ * disputed trade, with the ruling from `pgGateSource.storedRulings` (round 1's once there is an
+ * appeal, Note 2026-10-30 M3), the recorded terms from this process's own records (`recordedTerms`)
+ * and the balance from the mod party, and settles `settle.payouts` once, mod-built for the winner.
  * Nothing here calls `settle`.
  */
 export function gateCheck(store: GateStore, source: GateSource, input: Omit<RulingInput, 'taps'>, ctx: GateContext): Promise<Authorization> {
