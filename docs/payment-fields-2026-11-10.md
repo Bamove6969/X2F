@@ -5,7 +5,7 @@ What the seller (who receives the fiat) is asked for in the trade chat, per cata
 with the lead decisions of 10 Nov 2026 applied. Every label is COPY-UNSIGNED: this page is for the
 owner to sign the wording. "one of: X" means at least one box of group X must be filled.
 
-127 methods. Confidence: high = provider documentation, medium = several secondary sources agree, low = unclear.
+124 methods (127 researched; SBP, MIR and YOOMONEY removed, owner 12 Nov: Russian anything is banned). Confidence: high = provider documentation, medium = several secondary sources agree, low = unclear.
 
 Notes:
 
@@ -51,7 +51,6 @@ Notes:
 | WERO | Mobile number registered for Wero (phone, one of: reach)<br>Email registered for Wero (email, one of: reach)<br>Name on the account (text, optional) | medium |
 | MB_WAY | Portuguese mobile number (phone, required)<br>Name on the account (text, optional) | medium |
 | PAYPAY | Japanese mobile number (phone, one of: reach)<br>PayPay ID (account, one of: reach)<br>Name on the account (text, optional) | high |
-| YOOMONEY | YooMoney wallet number (account, one of: reach)<br>Phone number linked to the wallet (phone, one of: reach)<br>Email linked to the wallet (email, one of: reach) | high |
 | KASPI | Kaspi phone number (phone, required)<br>Name on the account (text, optional) | high |
 | SKRILL | Email on the Skrill account (email, one of: reach)<br>Phone number on the Skrill account (phone, one of: reach)<br>Name on the account (text, optional) | high |
 | NETELLER | Neteller email (email, required)<br>Name on the account (text, optional) | high |
@@ -103,8 +102,6 @@ Notes:
 | PAYNOW | Mobile number registered for PayNow (phone, one of: reach)<br>UEN (businesses) (account, one of: reach)<br>PayNow VPA (account, one of: reach)<br>Name shown on PayNow (text, optional) | high |
 | FPS | Mobile number registered for FPS (phone, one of: reach)<br>Email registered for FPS (email, one of: reach)<br>FPS ID (account, one of: reach)<br>Bank code and account number (account, one of: reach)<br>Name on the account (text, optional) | medium |
 | DUITNOW | DuitNow ID (mobile number or business registration number) (account, one of: reach)<br>Account number and bank (account, one of: reach)<br>Name on the account (text, optional) | medium |
-| SBP | Phone number linked to SBP (phone, required)<br>Bank to receive in (text, required)<br>Name (as the bank shows it) (text, optional) | medium |
-| MIR | Mir card number (account, required)<br>Cardholder name (text, optional)<br>Issuing bank (text, optional) | medium |
 | UKRAINE_CARD | Card number (16 digits) (account, one of: reach)<br>IBAN (UA..., 29 characters) (iban, one of: reach)<br>Phone number linked to the card (phone, one of: reach)<br>Name on the card or account (text, optional) | medium |
 
 ## Cash & money orders

@@ -169,21 +169,21 @@ describe('createAlertGrouper', () => {
     ]);
   });
 
-  it('refusals are grouped per source per poll: Coinbase refused for 44 currencies gives 1 alert and 1 all-clear (re-review)', () => {
+  it('refusals are grouped per source per poll: Coinbase refused for 43 currencies gives 1 alert and 1 all-clear (re-review; 43 since RUB left the list, owner 12 Nov: Russian anything is banned)', () => {
     const step = stepper();
-    const codes = NON_USD.slice(0, 44);
-    expect(codes).toHaveLength(44);
+    const codes = NON_USD.slice(0, 43);
+    expect(codes).toHaveLength(43);
     const all = { fx: fxHealth({ rejected: codes.map((currency) => ({ source: 'coinbase', currency, at: T0 })) }) };
     expect(step(all)).toEqual([
       {
         kind: 'price-source-failing',
-        detail: { feed: 'fx', source: 'coinbase', reason: 'rejected', currencies: [...codes].sort(), message: 'Coinbase rates for 44 currencies off by more than 10%, using backup' },
+        detail: { feed: 'fx', source: 'coinbase', reason: 'rejected', currencies: [...codes].sort(), message: 'Coinbase rates for 43 currencies off by more than 10%, using backup' },
       },
     ]);
     expect(step(all)).toEqual([]);
     for (let i = 0; i < 3; i++) expect(step()).toEqual([]);
     expect(step()).toEqual([
-      { kind: 'price-source-recovered', detail: { feed: 'fx', source: 'coinbase', currencies: [...codes].sort(), message: 'Coinbase rates for 44 currencies back in range' } },
+      { kind: 'price-source-recovered', detail: { feed: 'fx', source: 'coinbase', currencies: [...codes].sort(), message: 'Coinbase rates for 43 currencies back in range' } },
     ]);
     expect(step()).toEqual([]);
   });

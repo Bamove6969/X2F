@@ -362,6 +362,7 @@ describe('POST /v1/offers/:id/take', () => {
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'trading-hold' });
 
     const other = await person();
+    // A row from before SBP was removed (owner 12 Nov: Russian anything is banned): unknown now, so unavailable.
     await renameOfferMethod(deps.db, offer, 'SBP');
     expect(refusal(await take(other, offer, body(other, tenth, undefined, { methodId: 'SBP' })))).toEqual({ status: 409, error: 'method-unavailable' });
     await renameOfferMethod(deps.db, offer, 'ZELLE');

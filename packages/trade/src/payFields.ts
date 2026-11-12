@@ -9,7 +9,8 @@
  *
  * SOURCE of the table (owner order, 10 Nov 2026: every catalogue method gets its researched
  * mandatory payee fields, so he is not asked method by method): the payee-field research of
- * 2026-11-10 (one row per id in data/payment-methods.json, 127, each with its confidence and
+ * 2026-11-10 (one row per id in data/payment-methods.json, 127 then, 124 now: owner 12 Nov: Russian
+ * anything is banned, so SBP, MIR and YOOMONEY are gone; each with its confidence and
  * sources), with the lead's decisions of the same day applied on top (they override the research
  * where they differ: card numbers allowed only as a receiving identifier, never an expiry date or
  * CVV; personal tax and ID numbers never a box; per-row calls such as SPEI CLABE only, IMPS and
@@ -211,10 +212,6 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
     fields: [one('reach', 'phone', 'Japanese mobile number', 'phone'), one('reach', 'paypayId', 'PayPay ID', 'account'), no('name', 'Name on the account')],
     source: 'research 2026-11-10 (high): https://paypay.ne.jp/guide/send/',
   },
-  YOOMONEY: {
-    fields: [one('reach', 'walletNumber', 'YooMoney wallet number', 'account'), one('reach', 'phone', 'Phone number linked to the wallet', 'phone'), one('reach', 'email', 'Email linked to the wallet', 'email')],
-    source: 'research 2026-11-10 (high): https://yoomoney.ru/page?id=536228; owner question p11-144 (Russian methods, sanctions)',
-  },
   KASPI: {
     fields: [yes('phone', 'Kaspi phone number', 'phone'), no('name', 'Name on the account')],
     source: 'research 2026-11-10 (high): https://guide.kaspi.kz/client/ru/app/transfers/client/q12373; lead: phone only, no card box',
@@ -399,14 +396,6 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   DUITNOW: {
     fields: [one('reach', 'duitnowId', 'DuitNow ID (mobile number or business registration number)', 'account'), one('reach', 'accountBank', 'Account number and bank', 'account'), no('name', 'Name on the account')],
     source: 'research 2026-11-10 (medium): https://knowledgebase.paynet.my/hc/en-us/articles/49480498637849-Overview; lead: account number and bank in one box; MyKad, passport, army and police numbers never a box',
-  },
-  SBP: {
-    fields: [yes('phone', 'Phone number linked to SBP', 'phone'), yes('bankName', 'Bank to receive in'), no('name', 'Name (as the bank shows it)')],
-    source: 'research 2026-11-10 (medium): https://www.nspk.ru/en/; lead: phone and bank; owner question p11-144 (Russian methods, sanctions)',
-  },
-  MIR: {
-    fields: [yes('cardNumber', 'Mir card number', 'account'), no('name', 'Cardholder name'), no('bankName', 'Issuing bank')],
-    source: 'research 2026-11-10 (medium): https://mironline.ru/; lead: card number required (the only route); owner question p11-144 (Russian methods, sanctions)',
   },
   UKRAINE_CARD: {
     fields: [one('reach', 'cardNumber', 'Card number (16 digits)', 'account'), one('reach', 'iban', 'IBAN (UA..., 29 characters)', 'iban'), one('reach', 'phone', 'Phone number linked to the card', 'phone'), no('name', 'Name on the card or account')],

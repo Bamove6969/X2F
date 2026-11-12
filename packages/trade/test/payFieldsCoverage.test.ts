@@ -16,14 +16,22 @@ const CPF = /\bcpf\b/i;
 /** The lead's exceptions (10 Nov): a box that is the method's own payee identifier. */
 const ID_EXEMPT = new Set(['PAGO_MOVIL.idNumber']);
 /** Receiving to a card number is allowed only where it is the method's route (lead, 10 Nov). */
-const CARD_METHODS = new Set(['MIR', 'UKRAINE_CARD', 'PAYSEND', 'POSTEPAY']);
+const CARD_METHODS = new Set(['UKRAINE_CARD', 'PAYSEND', 'POSTEPAY']);
 const CARD = /card ?number/i;
 const BAD_WORDS = new Set(['password', 'passcode', 'pin', 'cvv', 'cvc', 'expiry', 'expiration', 'exp', 'tax', 'nric', 'ssn', 'login']);
 
 describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)', () => {
-  it('the catalogue is the 127 methods the research covered', () => {
-    expect(CATALOG.length).toBe(127);
+  it('the catalogue is the 124 methods the research covered, less the three Russian ones', () => {
+    // owner 12 Nov: Russian anything is banned (SBP, MIR and YOOMONEY removed: 127 to 124).
+    expect(CATALOG.length).toBe(124);
     expect(new Set(CATALOG).size).toBe(CATALOG.length);
+  });
+
+  it('owner 12 Nov: Russian anything is banned: no SBP, MIR or YOOMONEY in the catalogue or the table', () => {
+    for (const id of ['SBP', 'MIR', 'YOOMONEY']) {
+      expect(CATALOG, id).not.toContain(id);
+      expect(Object.prototype.hasOwnProperty.call(PAY_FIELDS, id), id).toBe(false);
+    }
   });
 
   it('every catalogue method has its own row: boxes, or explicitly nothing to send', () => {
@@ -57,7 +65,7 @@ describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)
     }
   });
 
-  it('review F4: a card-number box appears only in MIR, UKRAINE_CARD, PAYSEND and POSTEPAY', () => {
+  it('review F4: a card-number box appears only in UKRAINE_CARD, PAYSEND and POSTEPAY (MIR removed, owner 12 Nov)', () => {
     const where = new Set<string>();
     for (const [id, row] of Object.entries(PAY_FIELDS)) for (const f of row.fields) if (CARD.test(f.key) || CARD.test(f.label)) where.add(id);
     expect([...where].sort()).toEqual([...CARD_METHODS].sort());

@@ -310,7 +310,7 @@ test('a buy ad goes to the Sell list', async ({ page }) => {
   await expect(page).toHaveURL(/\/sell\/ZELLE\?currency=EUR$/);
 });
 
-test('SBP and the other methods awaiting legal review are absent from the picker', async ({ page }) => {
+test('SBP, Mir and YooMoney (removed, owner 12 Nov: Russian anything is banned) are absent from the picker', async ({ page }) => {
   await stub(page);
   await page.goto('/post?method=SBP');
   await expect(f(page).method.locator('option', { hasText: 'Zelle' })).toHaveCount(1);
@@ -319,6 +319,7 @@ test('SBP and the other methods awaiting legal review are absent from the picker
   for (const name of ['SBP — Faster Payments System (Russia)', 'Mir card', 'YooMoney']) expect(options).not.toContain(name);
   await expect(f(page).method).toHaveValue('');
   // ?method=SBP put nothing on the offer: a method off the list is never kept (J-16).
+  // owner 12 Nov: Russian anything is banned, so these names are out of the catalog itself.
   await expect(page.locator('[data-part="method"]')).toHaveCount(0);
 });
 
