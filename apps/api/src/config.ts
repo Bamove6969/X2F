@@ -39,6 +39,12 @@ export interface Config {
    */
   legacySecrets: boolean;
   /**
+   * S-085: `X2F_DEVICE_BOUND_SESSIONS` (`off` by default, or `on`): device-bound sessions
+   * (auth/deviceBound.ts). Off, nothing is bound and nothing new is checked (the kill switch).
+   * Optional so a config built without it reads as off.
+   */
+  deviceBoundSessions?: boolean;
+  /**
    * Owner rule p5-7 (Jabber account-change notices): the key ring that seals each Jabber address at
    * rest (`X2F_JABBER_KEYS`, env or file, like the other rings). Optional: without it, or without
    * `xmpp`, the Jabber set-up answers 503 `jabber-unavailable`.
@@ -241,6 +247,9 @@ export function loadConfig(env: Env): Config {
   const legacy = env.X2F_LEGACY_SECRETS || 'on';
   if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
   const legacySecrets = legacy === 'on';
+  const bound = env.X2F_DEVICE_BOUND_SESSIONS || 'off';
+  if (bound !== 'on' && bound !== 'off') throw malformed('X2F_DEVICE_BOUND_SESSIONS', 'on or off');
+  const deviceBoundSessions = bound === 'on';
   const hasRing = (name: string) => Boolean(env[name] || env[`${name}_FILE`]);
   const jabberKeys = hasRing('X2F_JABBER_KEYS') ? parseKeyring('X2F_JABBER_KEYS', ringSource(env, 'X2F_JABBER_KEYS')) : null;
   const xmpp = parseXmpp(env);
@@ -265,7 +274,7 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp,
+    loginNameKeys, legacySecrets, deviceBoundSessions, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp,
   };
 }
 

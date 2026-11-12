@@ -127,6 +127,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PUT /v1/account/jabber/enabled': 'switches my own Jabber alerts on or off; answers my set-up state',
   'DELETE /v1/account/jabber': 'removes my own Jabber set-up; no data back',
   // J-23 groundwork: the chat-key courier between my own devices (a strong session of the account owner only).
+  'POST /v1/account/session/proof/challenge': "a proof challenge for my own session's browser key; answers the challenge only",
+  'POST /v1/account/session/proof': "renews my own session's bound cookie with my own browser key; answers its end only",
   'POST /v1/account/chat-keys': "stores a sealed chat-key envelope for one of my own devices; answers its id and expiry",
   'DELETE /v1/account/chat-keys/:id': "marks one of my own account's chat-key envelopes collected; no data back",
   // Hold model v3: my own account's changes waiting their 24 h, and its replaced recovery code.

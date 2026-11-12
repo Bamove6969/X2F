@@ -9,6 +9,7 @@ import { ApiError } from '../errors.js';
 import { hasAbility } from '../team/abilities.js';
 import type { MemberAccess } from '../team/perms.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
+import { boundCookieValid, boundSessionsOn, issueBoundCookie, sessionKeyOf } from './deviceBound.js';
 import type { LoginStrength } from './strength.js';
 
 export const SESSION_COOKIE = '__Host-x2f_session';
@@ -200,6 +201,8 @@ export async function openSession(
   const device = deviceHash(req);
   const presented = presentedToken(req);
   const realm = realmOf(req);
+  // S-085: the browser's public key, checked before anything is written (a malformed one is 400).
+  const boundKey = sessionKeyOf(req, realm.app);
 
   const acct = await db.query<{ kind: AccountKind }>('select kind from accounts where id = $1', [a.accountId]);
   let row = acct.rows[0];
@@ -246,8 +249,8 @@ export async function openSession(
     replaced = old.rows[0] ?? null;
   }
   const { rows } = await db.query<{ id: string }>(
-    `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, period_started_at, expires_at, hold_until, strength, member_id, app)
-     values ($1, $2, $3, $4, $5, $6, $6, $6, $7, $8, $9, $10, $11) returning id`,
+    `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, period_started_at, expires_at, hold_until, strength, member_id, app, bound_key)
+     values ($1, $2, $3, $4, $5, $6, $6, $6, $7, $8, $9, $10, $11, $12) returning id`,
     [
       member ? member.teamId : a.accountId, tokenHash(token), a.level, label,
       // A member's session never gets the sign-up window (its exemptions are the account owner's).
@@ -258,9 +261,12 @@ export async function openSession(
       strength,
       member?.id ?? null,
       realm.app,
+      boundKey,
     ],
   );
   const sessionId = rows[0]!.id;
+  // S-085: a bound session gets its first bound cookie with its session cookie.
+  const setBound = boundKey !== null ? await issueBoundCookie(db, sessionId, now, reply) : null;
   // Owner answer Q77 (6 Nov 2026): a vendor account not logged into for 60 days closes
   // (accountInactivity.ts). Every login counts; a member's login counts for the team account.
   await db.query('update accounts set last_login_at = $2 where id = $1', [member ? member.teamId : a.accountId, now]);
@@ -284,6 +290,7 @@ export async function openSession(
     // member's login is an alert to the account owner instead (Task 18).
     if (!a.firstSession && !member) void req.server.push.send(a.accountId, 'new-login', { exceptSession: sessionId }).catch(() => undefined);
     void reply.setCookie(realm.cookie, token, { ...COOKIE_ATTRS, maxAge: Math.floor((policy ? policy.absoluteMs : TRADER_COOKIE_MS) / 1000) });
+    setBound?.();
   };
   return { sessionId, after };
 }
@@ -335,6 +342,10 @@ interface SessionRow {
   app: SessionRealm['app'];
   /** Set when the request carried the token before the last extend (review S-m1): its own end. */
   prev_until: Date | null;
+  /** S-085: the session is bound to a browser key; its bound cookie's hash and end. */
+  bound: boolean;
+  bound_token_hash: Buffer | null;
+  bound_until: Date | null;
 }
 
 /** Marks the preHandlers `requireSession` returns, so the app can list the routes that run with a session. */
@@ -372,6 +383,11 @@ export function requireSession(
     allowStaleTerms?: boolean;
     touch?: boolean;
     /**
+     * S-085: let a bound session through without a valid bound cookie. Only the two proof routes
+     * (auth/deviceBound.ts), which are how a bound cookie is renewed, set it.
+     */
+    allowUnproven?: boolean;
+    /**
      * Plan 2 Task 18: which team members may pass. Left out, a member's session gets 403
      * `owner-only` (fail closed: a route is the account owner's until it says otherwise); `any`
      * lets every member through; an ability (or a list: any one of them) lets through members
@@ -390,7 +406,8 @@ export function requireSession(
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
               tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
               ma.terms_version as member_terms_version, s.app,
-              case when s.token_hash = $1 then null else s.prev_token_until end as prev_until
+              case when s.token_hash = $1 then null else s.prev_token_until end as prev_until,
+              s.bound_key is not null as bound, s.bound_token_hash, s.bound_until
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
          left join accounts ma on ma.id = tm.member_account_id
@@ -419,6 +436,11 @@ export function requireSession(
     }
     // A removed member's session ends at once, whatever the route (Task 18).
     if (row.member_id !== null && row.member_live !== true) throw new ApiError(401, 'not-authenticated');
+    // S-085: a bound session also shows a bound cookie the key renewed within BOUND_TTL_MS, before
+    // anything else about the account is answered (a copied session cookie learns nothing more).
+    if (row.bound && boundSessionsOn(deps.config) && !opts.allowUnproven && !boundCookieValid(req, row.bound_token_hash, row.bound_until, now)) {
+      throw new ApiError(401, 'session-proof-required');
+    }
     if (row.disabled_at !== null || row.member_disabled === true) throw new ApiError(403, 'account-disabled');
     if (row.member_id !== null) {
       if (opts.member === undefined) throw new ApiError(403, 'owner-only');
