@@ -35,6 +35,15 @@
   color: var(--x2f-mod);
 }
 
+/* P-020: a fixed notice a trader's app sent. Muted and italic, never the moderator's violet. */
+.x2f-chat__autonotice {
+  color: var(--x2f-ink-muted);
+  font-family: var(--x2f-label-family);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-style: italic;
+}
+
 .x2f-chat__statusbox {
   display: flex;
   flex-direction: column;
