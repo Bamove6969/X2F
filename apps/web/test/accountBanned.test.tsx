@@ -3,7 +3,7 @@
 // (the owner's draft; design words it).
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
-import { AccountBanned, BAN_NOTICE_LEAD, BAN_REASON_TEXT, type BanNotice } from '../src/screens/account/AccountBanned.js';
+import { AccountBanned, BAN_NOTICE_LEAD, BAN_REASON_TEXT, BAN_UNFINISHED_LEAD, type BanNotice } from '../src/screens/account/AccountBanned.js';
 import { render } from './render.js';
 
 const CONTACTS = { moderatorUrl: null, matrixUrl: 'https://matrix.to/#/#x2f-mods:matrix.org', telegramUrl: 'https://t.me/x2f_mods' };
@@ -38,6 +38,24 @@ describe('AccountBanned (Task 27, D-020)', () => {
     const { host } = mount({ bans: [{ kind: 'trade', reasonCode: 'terms', until: '2026-11-19T12:00:00.000Z', permanent: false }], contacts: CONTACTS });
     expect(host.querySelector('h1')?.textContent).toBe('Your account has been banned from trading');
     expect(host.querySelector('[data-part="ban-reason"]')?.textContent).toBe(BAN_REASON_TEXT.terms);
+  });
+
+  it('review S1: a site ban with unfinished trades lists each with a link to its room, or its dispute', () => {
+    const { host } = mount({
+      bans: [{ kind: 'site', reasonCode: 'abuse', until: null, permanent: true }],
+      unfinished: [{ code: 'K7M2-9QXA-4FTR-8WPN', dispute: false }, { code: 'AB2C-3DEF-4GHJ-5KMN', dispute: true }],
+      contacts: CONTACTS,
+    });
+    const section = host.querySelector('[data-part="ban-unfinished"]')!;
+    expect(section.textContent).toContain(BAN_UNFINISHED_LEAD);
+    const links = [...section.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')]);
+    expect(links).toEqual([
+      ['Trade K7M2-9QXA-4FTR-8WPN', '/trade/K7M2-9QXA-4FTR-8WPN'],
+      ['Dispute on trade AB2C-3DEF-4GHJ-5KMN', '/trade/AB2C-3DEF-4GHJ-5KMN/dispute'],
+    ]);
+    // Nothing unfinished (or an older API without the field): no list.
+    expect(mount({ bans: [{ kind: 'site', reasonCode: 'abuse', until: null, permanent: true }], unfinished: [], contacts: CONTACTS }).host.querySelector('[data-part="ban-unfinished"]')).toBeNull();
+    expect(mount({ bans: [{ kind: 'site', reasonCode: 'abuse', until: null, permanent: true }], contacts: CONTACTS }).host.querySelector('[data-part="ban-unfinished"]')).toBeNull();
   });
 
   it('the four general reasons have their words, and only those', () => {

@@ -33,7 +33,8 @@ export async function staffApps(
   const { stream, logs } = captureLogs();
   const { webRoot, ...options } = staffOptions;
   const app = await buildStaffApi(
-    { ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, ...(webRoot !== undefined ? { staffWebRoot: webRoot } : {}), ...staffDeps },
+    // The trader app's bus, as main.ts passes it (a site ban ends the trader's streams, review S2).
+    { ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, traderEvents: t.app.events, ...(webRoot !== undefined ? { staffWebRoot: webRoot } : {}), ...staffDeps },
     { logStream: stream, ...options },
   );
   return {
