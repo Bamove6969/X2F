@@ -19,10 +19,12 @@ create index trade_proofs_trade on trade_proofs (trade_code, uploader_role);
 
 -- One-time ids: every id ever stored leaves its tag here, sha256 of `x2f/proof-id/v1|<id>`, kept
 -- when the proof itself is purged, so an id can never be stored twice (a replayed upload, or one
--- moved to another trade, is 409 proof-exists). The tag names neither the trade nor the uploader.
+-- moved to another trade, is 409 proof-exists). The tag names neither the trade nor the uploader,
+-- and keeps only the UTC day it was used (review M3: the exact time would match the proof's
+-- created_at and outlive the proof).
 create table proof_id_tags (
   tag bytea primary key check (octet_length(tag) = 32),
-  used_at timestamptz not null
+  used_on date not null
 );
 
 grant select, delete on trade_proofs to x2f_purge;
