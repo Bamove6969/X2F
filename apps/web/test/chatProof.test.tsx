@@ -69,6 +69,7 @@ function deps(): ReceiveDeps & { decode: ReturnType<typeof vi.fn> } {
 const settle = () => act(async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0)); });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -262,6 +263,50 @@ describe('proofStateOfSnapshot: "Mark paid without proof?"', () => {
     expect(proofStateOfSnapshot(snap([], 'waiting'), true)).toBe('unavailable');
     expect(proofStateOfSnapshot({ ...snap([]), more: true }, true)).toBe('unavailable');
     expect(proofStateOfSnapshot(null, true)).toBe('unavailable');
+  });
+});
+
+describe('review M4: the upload and the receive half together', () => {
+  const ready = (lines: ChatSnapshot['lines']): ChatSnapshot => ({ phase: 'ready', problem: null, role: 'buyer', counterparty: 'Sam', disputeOpen: false, paySecured: true, more: false, lines });
+
+  it('one flag function: the proof state reads proofUploadOn (VITE_X2F_PROOF_UPLOAD exactly 1)', async () => {
+    const { chatProofState } = await import('../src/proof/chatProof.js');
+    const { publishPaySnapshot } = await import('../src/chat/payDetailsFeed.js');
+    const code = 'BBBB-CCCC-DDDD-EEEE';
+    publishPaySnapshot(code, ready([]));
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    expect(chatProofState(code)).toBe('none');
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', 'true');
+    expect(chatProofState(code)).toBe('unavailable');
+    vi.unstubAllEnvs();
+    const src = (await import('node:fs')).readFileSync(new URL('../src/proof/chatProof.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/VITE_X2F_PROOF_UPLOAD|proofUploadBuilt/);
+  });
+
+  it("a sent proof's snapshot is published at once, so 'Mark paid without proof?' is not asked right after a send", async () => {
+    const { chatProofState } = await import('../src/proof/chatProof.js');
+    const { publishPaySnapshot, latestChatSnapshot } = await import('../src/chat/payDetailsFeed.js');
+    const { setChatClient } = await import('../src/chat/client.js');
+    const { postProofToChat } = await import('../src/screens/proof/AddProof.js');
+    const code = 'CCCC-DDDD-EEEE-FFFF';
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    publishPaySnapshot(code, ready([]));
+    expect(chatProofState(code)).toBe('none');
+    const { payload } = await made();
+    const after = ready([{ id: '9', from: 'buyer', text: '', at: null, mine: true, gapBefore: false, proof: payload }]);
+    const sent: unknown[] = [];
+    setChatClient({ sync: async () => after, send: async () => after, sendPay: async () => after, sendProof: async (chat, p) => (sent.push([chat, p]), after) });
+    try {
+      await postProofToChat(code, payload, async () => 'CHAT1');
+    } finally {
+      setChatClient(null);
+      vi.unstubAllEnvs();
+    }
+    expect(sent).toEqual([['CHAT1', payload]]);
+    expect(latestChatSnapshot(code)).toBe(after);
+    // A proof line is there (not checked on this page yet): never 'none'.
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    expect(chatProofState(code)).toBe('unavailable');
   });
 });
 

@@ -329,9 +329,12 @@ describe('BuyerPay proof slot wiring', () => {
     expect(proofExpectedOf({ code: CODE, securedAt: null, lockedRate: { currency: 'USD', centsPerXmr: '1' } }, { fiatCents: null, deal: null }, NOW)).toBeNull();
   });
 
-  it('flag off (the default): the board slot stays disabled; on: the picker is live and a sent proof marks the trade attached', async () => {
+  it('flag off (the default): the board slot stays disabled; on: the picker is live, and a send leaves the proof state to the chat (review M4)', async () => {
     const { ProofSlotLive } = await import('../src/screens/proof/proofSlot.js');
     const { proofStateOf, setProofSource } = await import('../src/screens/trade/paySeams.js');
+    // As App.tsx installs it: the chat's answer. The slot must not replace it (proof-receive review M4).
+    const chatSource = (code: string) => (code === CODE ? ('unavailable' as const) : ('none' as const));
+    setProofSource(chatSource);
     const off = render(<ProofSlotLive enabled={false} secured code={CODE} expected={EXPECTED} wide={false} />);
     expect((off.host.querySelector('input[type="file"]') as HTMLInputElement).disabled).toBe(true);
     off.unmount();
@@ -344,7 +347,9 @@ describe('BuyerPay proof slot wiring', () => {
     await flush();
     click(on.host.querySelector('[data-part="send-proof"]'));
     await flush();
-    expect(proofStateOf(CODE)).toBe('attached');
+    expect(on.host.textContent).toContain(PROOF_SENT);
+    expect(proofStateOf(CODE)).toBe('unavailable');
+    expect(proofStateOf('AAAA-BBBB-CCCC-DDDD')).toBe('none');
     setProofSource(null);
   });
 });
