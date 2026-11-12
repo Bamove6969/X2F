@@ -3,7 +3,7 @@
  * read and tested on their own. Every sentence here is draft copy unless a board words it.
  * COPY-UNSIGNED
  */
-import { sha256, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
+import { evidenceSha256, sha256, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 
 const ATOMIC_PER_XMR = 1_000_000_000_000n;
 const H = 3_600_000;
@@ -154,7 +154,7 @@ export function reasonSha256(reason: string): string {
 /** The ruling tap's intent, the same content the API rebuilds and checks (apps/api disputes/rulings.ts). */
 export function rulingIntent(
   step: 'propose' | 'approve',
-  a: { rulingId: string; code: string; round: 1 | 2; outcome: RulingOutcome; amountAtomic: string; reason: string },
+  a: { rulingId: string; code: string; round: 1 | 2; outcome: RulingOutcome; amountAtomic: string; reason: string; evidence: readonly string[] },
 ): KeyTapIntent {
   return {
     kind: 'ruling',
@@ -166,5 +166,7 @@ export function rulingIntent(
     accountAction: { kind: 'none' },
     amountAtomic: a.amountAtomic,
     reasonSha256: reasonSha256(a.reason),
+    // Review mod-screens M1: the evidence lines exactly as posted (propose) or as stored (approve).
+    evidenceSha256: evidenceSha256(a.evidence),
   };
 }

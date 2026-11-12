@@ -106,7 +106,8 @@ export function ModCase({ role }: { role: StaffRole }) {
   const live = c.status !== 'closed';
   const work = c.mayWork && live;
   const proposing = c.assignedToYou && ((c.round === 1 && c.status === 'open') || (c.round === 2 && c.status === 'appealed'));
-  const approving = c.status === 'awaiting-approval' && isApprover(role) && !c.proposedByYou && c.ruling.proposal !== null;
+  // Review M2: in an appeal, someone involved in round 1 (mayWork false) never decides it (R37).
+  const approving = c.status === 'awaiting-approval' && isApprover(role) && !c.proposedByYou && c.ruling.proposal !== null && (c.round === 1 || c.mayWork);
 
   return (
     <section data-screen="mod-case">
@@ -208,7 +209,7 @@ function CaseChips({ c, role, onTaken }: { c: DisputeCase; role: StaffRole; onTa
           {t}
         </span>
       ))}
-      {takeable(c, role) ? (
+      {takeable(c, role) && (c.round === 1 || c.mayWork) ? (
         <Button variant="secondary" onClick={() => void take()}>
           Take this case
         </Button>
@@ -477,7 +478,7 @@ function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buy
     const text = reason;
     const ev = lines;
     setTap({
-      intent: rulingIntent('propose', { rulingId, code: c.code, round: c.round, outcome, amountAtomic: c.escrow.amountAtomic, reason: text }),
+      intent: rulingIntent('propose', { rulingId, code: c.code, round: c.round, outcome, amountAtomic: c.escrow.amountAtomic, reason: text, evidence: ev }),
       title: label,
       body: `Tap your security key to sign this ruling: ${OUTCOME_LABELS[outcome]}.`,
       onDone: async (tapId) => {
@@ -550,7 +551,7 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
     if (outcome === null) return;
     setFault(null);
     setTap({
-      intent: rulingIntent('approve', { rulingId: p.rulingId, code: c.code, round: c.round, outcome, amountAtomic: c.escrow.amountAtomic, reason: p.reason }),
+      intent: rulingIntent('approve', { rulingId: p.rulingId, code: c.code, round: c.round, outcome, amountAtomic: c.escrow.amountAtomic, reason: p.reason, evidence: p.evidence }),
       title: 'Approve ruling',
       body: `Tap your security key to approve and publish this ruling: ${OUTCOME_LABELS[outcome]}.`,
       onDone: async (tapId) => {
