@@ -371,6 +371,15 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'remove-staff':
       exactKeys(r, ['kind', 'accountId']);
       return { kind: 'remove-staff', accountId: match(r, 'accountId', UUID).toLowerCase() };
+    case 'reset-staff-security':
+      exactKeys(r, ['kind', 'accountId', 'inviteId', 'tokenHash', 'expiresAt']);
+      return {
+        kind: 'reset-staff-security',
+        accountId: match(r, 'accountId', UUID).toLowerCase(),
+        inviteId: match(r, 'inviteId', UUID).toLowerCase(),
+        tokenHash: match(r, 'tokenHash', TOKEN_HASH),
+        expiresAt: match(r, 'expiresAt', ISO_UTC),
+      };
     case 'add-pgp-key':
       exactKeys(r, ['kind', 'fingerprint']);
       return { kind: 'add-pgp-key', fingerprint: match(r, 'fingerprint', FINGERPRINT).toLowerCase() };
@@ -449,6 +458,7 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'set-role':
     case 'set-grants':
     case 'remove-staff':
+    case 'reset-staff-security':
       return 'staff.manage';
     case 'settings':
     case 'fee-sweep':

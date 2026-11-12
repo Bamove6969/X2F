@@ -184,13 +184,25 @@ describe('owner lockout', () => {
     expect(rows).toEqual([]);
   });
 
-  it('no staff route takes an email address or a reset', () => {
-    for (const r of t.app.staffRoutes) expect(r.url, r.url).not.toMatch(/reset|recover|email|password/i);
+  // D-032 (owner G60, 7 Nov, after Task 7 was written): the one reset there is: the owner's own,
+  // tapped reset of another staff member's security (staff.manage; owner-protected, so never the
+  // owner's; securityReset.test.ts). Nothing else may reset, recover or take an email or a password.
+  const OWNER_RESET = '/staff/v1/members/:id/reset-security';
+  it('no staff route takes an email address or a reset, but the owner\'s tapped reset of another staff member (D-032)', async () => {
+    for (const r of t.app.staffRoutes) {
+      if (r.url === OWNER_RESET) expect([r.method, r.perm]).toEqual(['POST', 'staff.manage']);
+      else expect(r.url, r.url).not.toMatch(/reset|recover|email|password/i);
+    }
     const dir = fileURLToPath(new URL('../../src/staff/', import.meta.url));
     for (const f of readdirSync(dir)) {
-      const src = readFileSync(dir + f, 'utf8');
+      const src = readFileSync(dir + f, 'utf8').replaceAll(`'${OWNER_RESET}'`, "''");
       expect(src, f).not.toMatch(/['"`]\/staff\/v1\/[^'"`]*(reset|recover|email)/i);
     }
+    // And it never resets the owner, whoever asks (the owner included).
+    const res = await owner.browser.post(`/staff/v1/members/${owner.id}/reset-security`, {
+      inviteId: '00000000-0000-4000-8000-000000000000', token: 'A'.repeat(43), expiresAt: new Date(MON_NOON.getTime() + 60 * MIN).toISOString(), tapId: 'x',
+    });
+    expect([res.statusCode, errorOf(res)]).toEqual([409, 'owner-protected']);
   });
 
   it('maintenance and the emergency stop leave every staff route working', async () => {

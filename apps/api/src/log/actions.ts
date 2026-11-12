@@ -134,6 +134,9 @@ export const LOG_ACTIONS = {
   'staff.switched-off': { staffId: 'uuid' },
   'staff.switched-on': { staffId: 'uuid', role: 'id' },
   'staff.removed': { staffId: 'uuid' },
+  // D-032 (owner G60): the owner reset a staff member's security; the link was used.
+  'staff.security-reset': { staffId: 'uuid', inviteId: 'id' },
+  'staff.security-reset-finished': { staffId: 'uuid' },
   'staff.role-set': { staffId: 'uuid', from: 'id', to: 'id' },
   'staff.hours-set': { staffId: 'uuid' },
   'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool', feedbackRead: 'bool' },

@@ -93,7 +93,7 @@ interface Target {
  * staff write takes). 404 unless a live (not removed) staff member; 409 `owner-protected` for the
  * owner.
  */
-async function lockTarget(c: Queryable, accountId: string): Promise<Target> {
+export async function lockTarget(c: Queryable, accountId: string): Promise<Target> {
   await lockAccount(c, accountId);
   const { rows } = await c.query<{ role: StaffRole; switched_off_at: Date | null }>(
     'select role, switched_off_at from staff_members where account_id = $1 and removed_at is null for update',
@@ -113,7 +113,7 @@ const OPEN_CASE_STATUSES = ['open', 'appealed'] as const;
  * (assignee cleared) in the same transaction, each logged as `dispute.unassigned` with its trade
  * code. A proposal already waiting for approval keeps its proposer: the approval is the senior's.
  */
-async function unassignOpenCases(c: pg.PoolClient, accountId: string, req: FastifyRequest): Promise<void> {
+export async function unassignOpenCases(c: pg.PoolClient, accountId: string, req: FastifyRequest): Promise<void> {
   const { rows } = await c.query<{ code: string }>(
     'update disputes set assignee = null where assignee = $1 and status = any($2::text[]) returning code',
     [accountId, OPEN_CASE_STATUSES],
@@ -163,7 +163,7 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
   const { rows: invites } = await db.query<{ id: string; role: StaffRole; hours: unknown; expires_at: Date; display_name: string | null }>(
     `select i.id, i.role, i.hours, i.expires_at, a.display_name
        from staff_invites i left join accounts a on a.id = i.account_id
-      where i.used_at is null and i.cancelled_at is null and i.expires_at > $1
+      where i.kind = 'invite' and i.used_at is null and i.cancelled_at is null and i.expires_at > $1
       order by i.created_at, i.id`,
     [now],
   );
@@ -291,6 +291,8 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       await c.query('update staff_members set switched_off_at = coalesce(switched_off_at, $2), removed_at = $2 where account_id = $1', [id, now]);
       // Removal closes the staff login for good (switch-off can be undone, so it keeps it).
       await eraseTermsSignature(c, id);
+      // D-032: an open security-reset link of theirs ends with them.
+      await c.query("update staff_invites set cancelled_at = $2 where account_id = $1 and kind = 'reset' and used_at is null and cancelled_at is null", [id, now]);
       if (!target.switchedOff) await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.removed', { staffId: id });
     });
