@@ -4,6 +4,7 @@
 import type { ChatSnapshot } from '../chat/engine.js';
 import { latestChatSnapshot } from '../chat/payDetailsFeed.js';
 import type { ProofState } from '../screens/trade/paySeams.js';
+import { proofUploadOn } from './upload.js';
 
 export type ProofCheck = 'ready' | 'failed';
 /** Proof ids this page fetched, decrypted and checked (ChatProof), or sent itself: ids only, no key or bytes. */
@@ -37,12 +38,8 @@ export function proofStateOfSnapshot(snap: ChatSnapshot | null, uploadOn: boolea
   return uploadOn ? 'none' : 'unavailable';
 }
 
-/** The proof slot can take a proof only in a build with the upload (VITE_X2F_PROOF_UPLOAD=1, wip/lead-proof-upload). */
-export function proofUploadBuilt(): boolean {
-  return (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_X2F_PROOF_UPLOAD === '1';
-}
-
 /** The ProofSource App.tsx installs (paySeams setProofSource): this trade's newest chat snapshot. */
 export function chatProofState(code: string): ProofState {
-  return proofStateOfSnapshot(latestChatSnapshot(code), proofUploadBuilt());
+  // The proof slot can take a proof only in a build with the upload (one flag function, review M4).
+  return proofStateOfSnapshot(latestChatSnapshot(code), proofUploadOn());
 }

@@ -1,6 +1,5 @@
 import type { ProofExpected } from '@x2f/proof';
 import type { TradeEscrow, TradeView } from '../trade/payTypes.js';
-import { setProofSource } from '../trade/paySeams.js';
 import { AddProof, type SendArgs } from './AddProof.js';
 import type { PreparedProof } from '../../proof/upload.js';
 
@@ -33,16 +32,6 @@ export function proofExpectedOf(
     earliest: new Date((Number.isFinite(secured) ? secured : now.getTime()) - DAY_MS),
     latest: now,
   };
-}
-
-/**
- * Trades this page sent a proof for. NEEDS_PROOF_RECEIVE: after a reload the page cannot tell yet
- * (the chat does not open `proof.attached` lines), so an unmarked trade reads 'unavailable', never
- * 'none': "Mark paid without proof?" is not asked on a guess.
- */
-const sent = new Set<string>();
-function installSource(): void {
-  setProofSource((code) => (sent.has(code) ? 'attached' : 'unavailable'));
 }
 
 /** The board's slot, disabled (flag off until Task 13's OCR and Task 14's storage are both on main). */
@@ -93,10 +82,8 @@ export function ProofSlotLive({
           expected={expected}
           {...(prepare ? { prepare } : {})}
           {...(send ? { send } : {})}
-          onSent={() => {
-            sent.add(code);
-            installSource();
-          }}
+          // The proof state is the chat's (App.tsx installs chatProofState; the send publishes its
+          // snapshot): the slot installs no source of its own (proof-receive review M4).
         />
       ) : (
         <>

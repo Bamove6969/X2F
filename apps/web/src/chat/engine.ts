@@ -49,7 +49,6 @@
  *   record (a block hides a chat with that same 404, and it may come back).
  */
 import type { Role } from '@x2f/core';
-import type { ProofAttachedPayload } from '@x2f/proof';
 import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ProofError, type ProofAttachedPayload } from '@x2f/proof';
@@ -148,9 +147,9 @@ export interface ChatEngine {
    * 'bad-proof' for a malformed payload or a payment proof from the seller; 'not-ready' while the
    * trade is not secured, for evidence too (proof review M4, as sendPay); 'uncertain' when the post
    * got no answer and may be stored (review M2). Once the API answered the post, it resolves even if
-   * the read after it fails. The image itself went up as ciphertext before this (proof/upload.ts). NEEDS_PROOF_RECEIVE: syncs do not open
-   * `proof.attached` yet (ChatPanel's ProofThumb, Task 15's receiving half), so a device that reads
-   * one keeps a refused receipt for it.
+   * the read after it fails. The image itself went up as ciphertext before this (proof/upload.ts).
+   * Syncs open `proof.attached` as proof lines (the receive half, ChatPanel's ChatProof), the
+   * sender's own included.
    */
   sendProof(chat: string, proof: ProofAttachedPayload): Promise<ChatSnapshot>;
   /**

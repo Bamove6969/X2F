@@ -279,7 +279,10 @@ describe('review M4: the upload and the receive half together', () => {
     vi.stubEnv('VITE_X2F_PROOF_UPLOAD', 'true');
     expect(chatProofState(code)).toBe('unavailable');
     vi.unstubAllEnvs();
-    const src = (await import('node:fs')).readFileSync(new URL('../src/proof/chatProof.ts', import.meta.url), 'utf8');
+    const fs = await import('node:fs');
+    // happy-dom's import.meta.url is not a file URL: find the file from the run's directory.
+    const file = ['src/proof/chatProof.ts', 'apps/web/src/proof/chatProof.ts'].find((f) => fs.existsSync(f))!;
+    const src = fs.readFileSync(file, 'utf8');
     expect(src).not.toMatch(/VITE_X2F_PROOF_UPLOAD|proofUploadBuilt/);
   });
 

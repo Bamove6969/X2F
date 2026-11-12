@@ -1,4 +1,5 @@
-import type { ProofExpected } from '@x2f/proof';
+import type { ProofAttachedPayload, ProofExpected } from '@x2f/proof';
+import { publishPaySnapshot } from '../../chat/payDetailsFeed.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ChatFailed, chatClient, openTradeChat } from '../../chat/client.js';
 import { browserProofImageDeps } from '../../proof/browserImage.js';
@@ -38,6 +39,16 @@ export interface SendArgs {
   ownHidden: { amount: boolean; memo: boolean };
 }
 
+/**
+ * Posts the proof's `proof.attached` in the trade's chat and publishes the snapshot it returns
+ * (proof-receive review M4): the proof state ("Mark paid without proof?") reads the newest snapshot,
+ * so it sees the new proof line at once rather than on the pay feed's next poll.
+ */
+export async function postProofToChat(code: string, payload: ProofAttachedPayload, open: (code: string) => Promise<string> = openTradeChat): Promise<void> {
+  const snap = await chatClient().sendProof(await open(code), payload);
+  publishPaySnapshot(code, snap);
+}
+
 /** The real send: the ciphertext up, the key in the trade's chat. */
 export async function sendTradeProof(a: SendArgs): Promise<{ proofId: string; blur: BlurKind }> {
   const r = await sendProof(
@@ -45,9 +56,7 @@ export async function sendTradeProof(a: SendArgs): Promise<{ proofId: string; bl
     {
       encode: browserProofImageDeps().encode,
       put: (code, proofId, kind, ciphertext) => putProof(code, proofId, kind, ciphertext),
-      postAttached: async (code, payload) => {
-        await chatClient().sendProof(await openTradeChat(code), payload);
-      },
+      postAttached: (code, payload) => postProofToChat(code, payload),
       // NEEDS_BRANCH_PROOF_CHECK: wip/lead-proof-check's `proofPosted(code, proofId, blur)` goes here.
     },
   );
