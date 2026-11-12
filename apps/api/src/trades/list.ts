@@ -5,7 +5,7 @@ import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { hasAbility } from '../team/abilities.js';
-import { TRADE_READ } from '../team/perms.js';
+import { TRADE_PART_ABILITY, TRADE_READ } from '../team/perms.js';
 import { FINISH_OPEN_TRADES } from './routes.js';
 
 /**
@@ -38,8 +38,8 @@ export const TRADE_LIST_DEFAULT_LIMIT = 20;
 export const TRADE_LIST_MAX_LIMIT = 100;
 const MAX_CURSOR_LENGTH = 128;
 
-/** The boxes for each part of the list (team/abilities.ts): open trades, and past ones. */
-const PART_ABILITY: Readonly<Record<TradeListStatus, string>> = { open: 'trades-see-active', completed: 'trades-see-history' };
+/** The boxes for each part of the list (team/perms.ts, the trade room's too): open trades, and past ones. */
+const PART_ABILITY: Readonly<Record<TradeListStatus, string>> = TRADE_PART_ABILITY;
 
 /** A query value given once, as a string; absent → undefined; given twice or as anything else → 400. */
 function one(query: unknown, name: string): string | undefined {
@@ -57,10 +57,20 @@ function encodeCursor(takenKey: string, code: string): string {
   return Buffer.from(`${takenKey}|${code}`, 'utf8').toString('base64url');
 }
 
+/**
+ * Review M1: the key's date and time must exist (no 30 February, month 13, 25:61:61 or year 0, which
+ * Postgres would refuse with a 500): parsed as UTC it reads back to the same second.
+ */
+function realInstant(takenKey: string): boolean {
+  if (takenKey.startsWith('0000')) return false;
+  const ms = Date.parse(`${takenKey.slice(0, 19)}Z`);
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 19) === takenKey.slice(0, 19);
+}
+
 function decodeCursor(raw: string): { takenKey: string; code: string } {
   if (raw.length === 0 || raw.length > MAX_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(raw)) throw new ApiError(400, 'bad-request');
   const m = CURSOR.exec(Buffer.from(raw, 'base64url').toString('utf8'));
-  if (!m || normalizeTradeCode(m[2]!) !== m[2]) throw new ApiError(400, 'bad-request');
+  if (!m || normalizeTradeCode(m[2]!) !== m[2] || !realInstant(m[1]!)) throw new ApiError(400, 'bad-request');
   return { takenKey: m[1]!, code: m[2]! };
 }
 

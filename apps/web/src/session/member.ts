@@ -43,6 +43,23 @@ export function mayViewWallets(session: Session): boolean {
 }
 
 /**
+ * Whether this session may read a part of the trades list, so My trades is worth a tab (review
+ * trades-list m1; design review shot 26: no tab that only leads to a refusal): the account owner, and
+ * a member with See active trades or See trade history (the boxes `GET /v1/account/me` sends as
+ * `member.abilities`; an older API's roles only: the Trades role). Signed out, the tab stays, as Post
+ * offer's does; while the session loads it waits.
+ */
+export function mayReadTrades(session: Session): boolean {
+  if (session.status === 'loading') return false;
+  if (session.status !== 'signed-in') return true;
+  const m = (session.me as { member?: unknown }).member;
+  if (m === null || m === undefined || typeof m !== 'object') return true;
+  const abilities = (m as { abilities?: unknown }).abilities;
+  if (Array.isArray(abilities)) return abilities.includes('trades-see-active') || abilities.includes('trades-see-history');
+  return memberOf(session)?.roles.includes('trades') ?? false;
+}
+
+/**
  * Owner 2 Nov 2026: the signed-in account's type, 'trader' or 'vendor'; null when signed out,
  * loading, or the API sent none (an older build: the API still refuses a trader's post).
  */

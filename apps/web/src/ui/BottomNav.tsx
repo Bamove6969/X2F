@@ -18,10 +18,10 @@ const TABS: { to: string; label: string; icon: IconName; match: (path: string) =
   { to: '/profile', label: 'Profile', icon: 'user', match: (p) => /^\/profile(\/|$)/.test(p) },
 ];
 
-export function BottomNav({ postOffers = true, wallets = true }: { postOffers?: boolean; wallets?: boolean | undefined }) {
+/** `postOffers` false leaves out Post offer; `wallets` false leaves out Wallets; `trades` false leaves out My trades (review trades-list m1: a session that may read no part of the list). */
+export function BottomNav({ postOffers = true, wallets = true, trades = true }: { postOffers?: boolean; wallets?: boolean | undefined; trades?: boolean }) {
   const { pathname } = useLocation();
-  let tabs = postOffers ? TABS : TABS.filter((t) => t.to !== '/post');
-  if (!wallets) tabs = tabs.filter((t) => t.to !== '/wallets');
+  const tabs = TABS.filter((t) => (postOffers || t.to !== '/post') && (wallets || t.to !== '/wallets') && (trades || t.to !== '/trades'));
   return (
     <nav aria-label="Main" className="x2f-bottom-nav">
       {tabs.map((t) => {

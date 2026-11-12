@@ -3,6 +3,7 @@
 //   GET /v1/trades?status=open|completed&cursor → { trades: TradeListItem[], next: string | null },
 //   newest first; `next` is the cursor for the following page, null at the end. 403 `forbidden` for
 //   a team member without the box for that part (open: See active trades; completed: See trade history).
+import { normalizeTradeCode } from '@x2f/core';
 import { api } from '../../api/client.js';
 import { TRADE_STATES, type Party, type TradeState } from '../../api/trade.js';
 
@@ -31,6 +32,12 @@ function shape(): Error {
   return new Error('unexpected trades list answer');
 }
 
+/** Review m2: a trade code in its own form only (what the room itself accepts), so a row's link stays a room link. */
+function tradeCode(v: unknown): string {
+  if (typeof v !== 'string' || normalizeTradeCode(v) !== v) throw shape();
+  return v;
+}
+
 function str(v: unknown): string {
   if (typeof v !== 'string' || v.length === 0) throw shape();
   return v;
@@ -52,7 +59,7 @@ function item(raw: unknown): TradeListItem {
   if (typeof raw.state !== 'string' || !(TRADE_STATES as readonly string[]).includes(raw.state)) throw shape();
   if (typeof raw.currency !== 'string' || !/^[A-Z]{3}$/.test(raw.currency)) throw shape();
   return {
-    code: str(raw.code),
+    code: tradeCode(raw.code),
     role: raw.role,
     state: raw.state as TradeState,
     amountAtomic: big(raw.amountAtomic),

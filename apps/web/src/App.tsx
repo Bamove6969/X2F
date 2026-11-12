@@ -53,7 +53,7 @@ import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
 import { BehindTheDoor, isInside } from './session/frontDoor.js';
-import { mayPostOffers, mayViewWallets, memberOf } from './session/member.js';
+import { mayPostOffers, mayReadTrades, mayViewWallets, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { ScreenHeader, screenName } from './ui/ScreenHeader.js';
@@ -104,7 +104,7 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
   const helpInside = HELP.test(pathname) && isInside(session);
   const frame = outside ? 'centred' : helpInside ? 'rail' : wideFrameOf(pathname);
   let top: ReactNode = null;
-  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} wallets={mayViewWallets(session)} />;
+  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} wallets={mayViewWallets(session)} trades={mayReadTrades(session)} />;
   else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop name={screenName(pathname)} />;
   return (
     <div data-shell={wide ? 'desktop' : 'phone'} data-wide-frame={wide ? frame : undefined} className={wide ? 'x2f-desktop' : undefined}>
@@ -125,7 +125,7 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
         <Outlet />
       </div>
       <ChangesCapPopup />
-      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} wallets={mayViewWallets(session)} /> : null}
+      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} wallets={mayViewWallets(session)} trades={mayReadTrades(session)} /> : null}
     </div>
   );
 }
