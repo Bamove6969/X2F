@@ -518,3 +518,40 @@ describe('a ruling\'s payout reported by the watcher (Plan 4 Task 14, R-M2)', ()
     expect(await executedLog(t.code)).toEqual([{ rulingId: d.ruling!.id, txHash }]);
   });
 });
+
+// Plan 4 Task 14: the moderation process checkpoints the activity log's head (its id and hash, kept
+// in its own sealed gate store) and reports it; the API logs the checkpoint only for the row that
+// still has that hash. A failed daily verification is reported as an alarm (site_flags.log_alarm).
+describe('log checkpoints and the log alarm (Plan 4 Task 14)', () => {
+  const head = async () => (await deps.db.query<{ id: string; hash: Buffer }>('select id::text as id, hash from activity_log order by id desc limit 1')).rows[0]!;
+
+  it('log-checkpoint appends log.checkpoint for the row it names, only with that row\'s hash', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'funding'); // at least one entry in the log
+    const h = await head();
+    const hex = h.hash.toString('hex');
+    for (const [id, hash] of [[h.id, 'f'.repeat(64)], ['999999999', hex]] as const) {
+      const res = await report({ kind: 'log-checkpoint', id, hash });
+      expect([res.statusCode, res.json()], id).toEqual([409, { error: 'checkpoint-mismatch' }]);
+    }
+    expect((await head()).id).toBe(h.id);
+    for (const bad of [{ kind: 'log-checkpoint', id: 'x', hash: hex }, { kind: 'log-checkpoint', id: h.id, hash: 'nothex' }, { kind: 'log-checkpoint', id: h.id }]) {
+      expect((await report(bad)).statusCode).toBe(400);
+    }
+    const ok = await report({ kind: 'log-checkpoint', id: h.id, hash: hex });
+    expect([ok.statusCode, ok.json()]).toEqual([201, { ok: true }]);
+    const last = (await deps.db.query<{ action: string; detail: string; actor_kind: string }>('select action, detail, actor_kind from activity_log order by id desc limit 1')).rows[0]!;
+    expect({ ...last, detail: JSON.parse(last.detail) }).toEqual({ action: 'log.checkpoint', detail: { id: h.id, hash: hex }, actor_kind: 'system' });
+  });
+
+  it('log-alarm sets site_flags.log_alarm, and a later alarm keeps the first time', async () => {
+    await deps.db.query('update site_flags set log_alarm = null');
+    const res = await report({ kind: 'log-alarm' });
+    expect([res.statusCode, res.json()]).toEqual([201, { ok: true }]);
+    expect((await deps.db.query('select log_alarm from site_flags')).rows).toEqual([{ log_alarm: NOW }]);
+    await deps.db.query("update site_flags set log_alarm = '2026-01-01T00:00:00Z'");
+    expect((await report({ kind: 'log-alarm' })).statusCode).toBe(201);
+    expect((await deps.db.query('select log_alarm from site_flags')).rows).toEqual([{ log_alarm: new Date('2026-01-01T00:00:00Z') }]);
+    expect((await report({ kind: 'log-alarm', extra: 1 })).statusCode).toBe(400);
+  });
+});

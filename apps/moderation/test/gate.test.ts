@@ -717,36 +717,16 @@ describe('pin-owner', () => {
 });
 
 describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
-  let admin: string;
   let owner: pg.Pool;
   let reader: pg.Pool;
-  let name: string;
+  let schema: ApiSchema;
 
   beforeAll(async () => {
-    admin = inject('modPgUrl');
-    name = `x2f_mod_g_${randomBytes(8).toString('hex')}`;
-    const c = new pg.Client({ connectionString: `${admin}/postgres` });
-    await c.connect();
-    try {
-      await c.query(`create database ${name}`);
-    } finally {
-      await c.end();
-    }
-    owner = new pg.Pool({ connectionString: `${admin}/${name}`, max: 1 });
-    const dir = new URL('../../api/migrations/', import.meta.url);
-    const { readdir } = await import('node:fs/promises');
-    for (const f of (await readdir(dir)).filter((n) => /^\d{3}_[a-z0-9_]+\.sql$/.test(n)).sort()) {
-      await owner.query(await readFile(new URL(f, dir), 'utf8'));
-    }
-    const login = `modg_${randomBytes(4).toString('hex')}`;
-    const pass = randomBytes(12).toString('hex');
-    await owner.query(`create role ${login} login password '${pass}' in role x2f_mod_reader`);
-    const u = new URL(admin);
-    reader = new pg.Pool({ connectionString: `postgres://${login}:${pass}@${u.host}/${name}`, max: 1 });
+    schema = await apiSchemaDb('x2f_mod_g');
+    ({ owner, reader } = schema);
   });
   afterAll(async () => {
-    await reader?.end();
-    await owner?.end();
+    await schema?.end();
   });
 
   beforeEach(() => {});
