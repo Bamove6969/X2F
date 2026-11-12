@@ -29,7 +29,7 @@ import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
-import { banHidesSql, tradeBanned } from '../banState.js';
+import { banHidesSql, tradeBanRefusal, tradeBanned } from '../banState.js';
 import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -694,6 +694,8 @@ async function assertMayPost(
   // Owner 2 Nov 2026: only a vendor posts or turns on offers (403 `not-vendor`), before the other guards.
   await assertVendor(client, accountId);
   const refused = await accountRefusal(client, accountId, now);
+  // Lead call (Task 27 Q4): a trade ban's refusal carries its general reason and end, for the popup.
+  if (refused === 'trade-ban') throw (await tradeBanRefusal(client, accountId, now)) ?? new ApiError(409, refused);
   if (refused !== null) throw new ApiError(409, refused);
   const caps = await loadOfferCaps(client);
   const { rows } = await client.query<{ same: number }>(

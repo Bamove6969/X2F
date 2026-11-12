@@ -11,6 +11,7 @@
  */
 import type { BanReasonCode } from '@x2f/staff';
 import type { Queryable } from './db/pool.js';
+import { ApiError } from './errors.js';
 
 /** SQL: true while `col`'s account has a ban not yet ended or lifted (the lists' test). */
 export const banHidesSql = (col: string): string =>
@@ -32,6 +33,17 @@ export async function activeBans(db: Queryable, accountId: string, now: Date): P
     [accountId, now],
   );
   return rows.map((r) => ({ id: r.id, kind: r.kind, reasonCode: r.reason_code, until: r.until }));
+}
+
+/**
+ * Lead call (Task 27 Q4): the 409 `trade-ban` for this account, carrying the general reason and the
+ * end (null: lifetime) of the ban that stops it trading (a site ban first, it says more); null when
+ * none does.
+ */
+export async function tradeBanRefusal(db: Queryable, accountId: string, now: Date): Promise<ApiError | null> {
+  const bans = await activeBans(db, accountId, now);
+  const b = bans.find((x) => x.kind === 'site') ?? bans[0];
+  return b === undefined ? null : new ApiError(409, 'trade-ban', { reasonCode: b.reasonCode, until: b.until?.toISOString() ?? null });
 }
 
 /** True while any ban stops this account trading at `now`. */

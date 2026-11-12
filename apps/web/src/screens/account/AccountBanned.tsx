@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router';
 import { api } from '../../api/client.js';
+import { BAN_REASON_TEXT, type BanReasonCode } from '../../ui/cantDoCodes.js';
 import { formatDateTime } from '../../ui/dates.js';
 import { Hero, ResultHeadline } from '../../ui/Hero.js';
 import { StatusChip } from '../../ui/StatusChip.js';
@@ -21,20 +22,12 @@ import './frozen.css';
 
 export const BANNED_PATH = '/account/banned';
 
-export type BanReasonCode = 'terms' | 'trade-problems' | 'abuse' | 'account-security';
+export { BAN_REASON_TEXT, type BanReasonCode };
 
 export interface BanNotice {
   bans: Array<{ kind: 'trade' | 'site'; reasonCode: BanReasonCode; until: string | null; permanent: boolean }>;
   contacts: { moderatorUrl: string | null; matrixUrl: string | null; telegramUrl: string | null };
 }
-
-/** The general reasons (Revision 2026-10-29b, lead default list). COPY-UNSIGNED */
-export const BAN_REASON_TEXT: Readonly<Record<BanReasonCode, string>> = {
-  terms: 'Breaking the Terms of Service',
-  'trade-problems': 'Problems in trades',
-  abuse: 'Abuse of other traders',
-  'account-security': 'Account security',
-};
 
 /** D-020, the owner's draft without its channel placeholders (the links follow it). COPY-UNSIGNED */
 export const BAN_NOTICE_LEAD =

@@ -13,6 +13,7 @@
  * piece by piece, and passes it here. A plain module (no React, no CSS) so the lint can read it.
  */
 import { LAUNCH_TRADE_CAP_USD_CENTS } from '@x2f/trade';
+import { formatDateTime } from './dates.js';
 
 /** The launch cap as words ("$5,000"), from the one constant the API enforces. */
 export const LAUNCH_CAP_TEXT = `$${(LAUNCH_TRADE_CAP_USD_CENTS / 100n).toLocaleString('en-US')}`;
@@ -287,8 +288,45 @@ export const CANT_DO_TITLE = {
  */
 export const TRADE_BAN_TEXT = 'Your account has been banned from trading for now. Trades you already started carry on. See Account banned for the reason and when it ends.';
 
+/** The general reasons a ban shows (Revision 2026-10-29b, lead default list). COPY-UNSIGNED */
+export const BAN_REASON_TEXT = {
+  terms: 'Breaking the Terms of Service',
+  'trade-problems': 'Problems in trades',
+  abuse: 'Abuse of other traders',
+  'account-security': 'Account security',
+} as const;
+export type BanReasonCode = keyof typeof BAN_REASON_TEXT;
+
+/** What a 409 `trade-ban` carries (lead call, Task 27 Q4): the general reason and the end (null: lifetime). */
+export interface TradeBan {
+  reasonCode: BanReasonCode;
+  until: string | null;
+}
+
+const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/** The ban in a refusal's extra fields, or null when the API sent none (or nonsense). */
+export function tradeBanOf(extra: Record<string, unknown> | undefined): TradeBan | null {
+  if (!extra || typeof extra.reasonCode !== 'string' || !Object.hasOwn(BAN_REASON_TEXT, extra.reasonCode)) return null;
+  const until = extra.until;
+  if (until !== null && (typeof until !== 'string' || !ISO_MS.test(until) || !Number.isFinite(Date.parse(until)))) return null;
+  return { reasonCode: extra.reasonCode as BanReasonCode, until };
+}
+
+/** The trade-ban popup with the reason and the end, else the general words. COPY-UNSIGNED */
+export function tradeBanText(ban: TradeBan | null): string {
+  if (ban === null) return TRADE_BAN_TEXT;
+  const reason = `Reason: ${BAN_REASON_TEXT[ban.reasonCode]}. Trades you already started carry on.`;
+  return ban.until === null
+    ? `Your account is permanently banned from trading. ${reason}`
+    : `Your account is banned from trading until ${formatDateTime(new Date(ban.until))}. ${reason}`;
+}
+
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
-export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; capText: string | null; maxOpen: number | null; minTrades: number }): string {
+export function takeCantDoText(
+  code: CantDoCode,
+  o: { stageName: string | null; capText: string | null; maxOpen: number | null; minTrades: number; ban?: TradeBan | null },
+): string {
   switch (code) {
     case 'starter-limit':
       // No stage: the limit is the other side's, which is never named (Task 5 sends nothing about it).
@@ -305,7 +343,7 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
     case 'trading-hold':
       return 'Your account is on a trading hold while a dispute is open, so it cannot start trades.';
     case 'trade-ban':
-      return TRADE_BAN_TEXT;
+      return tradeBanText(o.ban ?? null);
     case 'already-waiting':
       return 'You already have a trade on this offer waiting to be funded.';
     case 'offer-busy':
@@ -359,12 +397,12 @@ export function offerCapLine(caps: OfferCaps | null): string {
 }
 
 /** What a refused Post offer says; `caps` from the API's refusal (offerCapsOf). */
-export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null): string {
+export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null, ban: TradeBan | null = null): string {
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'trade-ban':
-      return TRADE_BAN_TEXT;
+      return tradeBanText(ban);
     case 'too-many-offers':
       return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
     case 'launch-cap':

@@ -2,7 +2,7 @@
 // noted). The words name only the caller's own situation: a starter-limit refusal names the
 // caller's own stage and cap and nothing about the other side (spec 2.3, Revision 2026-10-24).
 import { ApiCallError } from '../../api/client.js';
-import { CANT_DO_TITLE, isCantDoCode, takeCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, isCantDoCode, takeCantDoText, tradeBanOf, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { STAGE_NAMES, fiatWhole, type QuoteOffer } from './quoteModel.js';
 
 const GENERIC = 'The trade could not start. Try again.';
@@ -41,7 +41,7 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
     // Only a starter-limit refusal carries a stage and a cap; for the rest both read as null.
     const stage = ownStage(e.extra);
     const cap = capCents(e.extra);
-    return takeCantDoText(e.code, { stageName: stage === null ? null : STAGE_NAMES[stage], capText: cap === null ? null : fiatWhole(cap, 'USD'), maxOpen: maxOpen(e.extra), minTrades: offer.minTrades });
+    return takeCantDoText(e.code, { stageName: stage === null ? null : STAGE_NAMES[stage], capText: cap === null ? null : fiatWhole(cap, 'USD'), maxOpen: maxOpen(e.extra), minTrades: offer.minTrades, ban: tradeBanOf(e.extra) });
   }
   switch (e.code) {
     case 'out-of-range':

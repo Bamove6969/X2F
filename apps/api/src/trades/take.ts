@@ -19,7 +19,7 @@ import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
-import { banHidesSql, tradeBanned } from '../banState.js';
+import { banHidesSql, tradeBanRefusal } from '../banState.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -341,7 +341,8 @@ export function takeRoutes(app: FastifyInstance): void {
       if (flags.paused !== false) throw new ApiError(409, 'trading-paused');
       if (flags.held) throw new ApiError(409, 'trading-hold');
       // Plan 4 Task 27: a trade-banned (or site-banned) taker starts nothing new.
-      if (await tradeBanned(c, takerId, now)) throw new ApiError(409, 'trade-ban');
+      const banned = await tradeBanRefusal(c, takerId, now);
+      if (banned !== null) throw banned;
       // Plan 5 Task 3, the rate-first gate (spec 5.1, P5-A4), for both sides, under the account locks
       // above (a review submitted meanwhile is seen at the next take). The taker's own pending review
       // is named (409 `review-pending`); the poster's is the generic `offer-busy`, so a taker learns
