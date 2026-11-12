@@ -159,3 +159,58 @@ The SQL fragments built by string interpolation (`ACTIVE_LIEN_SQL(p)`) only ever
 2. **L2:** before liens go live, give every lien a way to end. Recommend (a): the XMR part is repaid by the proof, and the 1% moves to `fees_owed`. Plus the repayment trade or a staff "settled" action for overturn liens.
 
 Should-fix in the same pass: L3 (TRUNCATE guards), L4 (freeze rows that are over), L5 (pre-lock the accounts and liens before `fn`, which is also the merge resolution with `wip/lead-reputation`), L6 (tests).
+
+## Re-verify: `wip/lead-liens` 274ad0c1 (fixes 7472994f, 274ad0c1), 12 Nov 2026
+
+Detached worktree `rv-liens2` at 274ad0c1, fresh `npm ci`, removed afterwards. dockerd was already up and was not restarted.
+
+### Verdict: CHANGES REQUIRED. Two MONEY gaps remain (R1, R2). Everything else checked passes.
+
+| Item | Result |
+|---|---|
+| L1 overturned lien after the seller paid | **Partly fixed**: still open when the seller posted the ad (R1) |
+| L2 `liens_enabled` | Blocks nothing while off, old rows included; no route can turn it on. **But** a 1% that rides in the lien is not recorded while off (R2) |
+| L3 TRUNCATE guards | Fixed |
+| L4 a row that is over is frozen | Fixed |
+| L5 lock order | Fixed; merges cleanly with reputation |
+| L6 tests | Fixed for what they cover; the R1 and R2 cases are missing |
+| schema.test list | Right |
+
+### R1 (MONEY, must-fix): L1 is still open when the seller posted the ad
+The new branch in `lienSteps` (packages/staff/src/lien.ts, round 2 overruled) places the buyer's `overturned` lien only for a round-1 restitution lien whose **status is `repaid`**. But `complied` repays only a lien with `fee_atomic = 0`. When the seller posted the ad, the round-1 lien carries the seller's own 1% (D-063), so it stays `active` after the seller pays (NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY).
+
+If round 2 then overrules, that lien is voided and nothing is placed on the buyer, who keeps the XMR. Proved with the pure function (a scratch test, deleted afterwards), using `sellerPosted` facts and the lien as it is really stored (fee F):
+- publish `seller-sends-xmr`: place round 1, seller, amount A, fee F
+- `complied`: `[]` (`compliedAt` set; the lien stays `active`)
+- appeal by the seller: `[suspend l1]`; round 2 `no-action`: `[void l1]` only
+- appeal by the buyer: `[]`; round 2 `no-action` or `seller-returns-fiat`: `[void l1]` only
+
+The new pure test "overruled to seller-returns-fiat" passes `sellerPosted` with a lien at fee 0 and status `repaid`. No stored row can look like that, so the test does not cover this case.
+
+Fix: key the branch on the dispute's own record that the seller paid (`next.compliedAt !== null`; it is kept through the appeal, checked), not on the lien's status. Place a round-2 `overturned` lien on the buyer for `facts.amountAtomic`, fee 0. Add the seller-posted case to both test files, with the stored lien carrying F, for both `active` (buyer appealed) and `suspended` (seller appealed).
+
+### R2 (MONEY, must-fix now: the flag is off in production): with liens off, a 1% that rides in the lien is lost
+`applyLienRules` drops every `place` step while `liens_enabled` is false. `feeSplit` puts the 1% *inside* the lien whenever the debtor is the poster: a seller's ad with `seller-sends-xmr`, or a refund overturned against the seller who posted. In those cases there is no separate `fee-owed` step, at publish or at finality, so the 1% is recorded nowhere.
+
+The L2 API test only covers a buyer's ad, where the fee is already its own `fees_owed` row for the buyer. So "owed fees are still recorded" holds there but not on a seller's ad.
+
+Fix: tell `lienSteps` whether liens are on (for example in `LienFacts`). While off, `feeSplit` should send the debtor-poster's 1% to `owed` at finality (round 1 final with no appeal, round 2 "stands", the round-2 places), never at publish, since a `fees_owed` row can't be undone if an appeal overrules. Add an API test: a seller's ad, flag off, `seller-sends-xmr`, then final; expect one `fees_owed` row on the seller for F.
+
+### Checks that pass
+- **L2, nothing blocks while off.** `ACTIVE_LIEN_SQL` now begins with `LIENS_ON_SQL` (no row counts as off). Every place that checks a lien (take's `poster_ok`, the taker check and set-up via `hasActiveLien`; offers' LISTED and relist; chat's LISTED) goes through it. A grep finds no lien read outside it.
+  - The suspend, reactivate, void and repaid steps still follow the dispute while off, so liens placed before a switch-off stay correct, and they bind again when it is switched back on (tested).
+- **L2, no route can turn the flag on.** `liens_enabled` is written only by migration 400 (default false) and by the test template. Every `update site_flags` in `apps/api/src` names fixed columns. None is built from input, and none touches this column. `site_flags` is single-row (`id boolean primary key check (id)`; startup refuses anything else).
+  - Note: disputes ruled while off never gain a lien when it is switched on. That is acceptable, but the operator should know before switching.
+- **L3.** `before truncate ... for each statement` triggers on both tables reuse the guard functions, which raise on `TRUNCATE` before they touch NEW or OLD. A cascaded truncate from `accounts` is refused too. Tested.
+- **L4.** For a `repaid` or `void` lien, and for an owed fee with `settled_at` set, `to_jsonb(new) is distinct from to_jsonb(old)` refuses any change to any column. The transition into those states is still allowed, because the check is on OLD. Tested for `changed_at`, `lifted_at`, `repayment_code` and `settled_at`.
+- **L5.** In `withDispute`, before `fn`, in this order: the dispute (`for update of d`), then both parties' `accounts` rows `for key share` in id order, then the dispute's liens `for update`. `applyLienRules` is called only from `withDispute`. Its inserts are serialised by the dispute lock, and its foreign-key share locks are already held, so nothing after the append waits.
+  - On `wip/lead-reputation`, `withDispute` locks the trade, then the dispute (`loadDisputeRecord lock`), then `lockPartyTotals`. Placing these two queries right after `lockPartyTotals` gives the asked order trade → dispute → totals → accounts → liens. Accounts in key-share mode cannot conflict with the totals locks.
+- **L6.** New tests: set-up refused with 409 `lien` and nothing set up (take); bulk turn-all-on refused `lien` per offer (offersBulk); `complied` through `withDispute` repays and logs; L1 through the API for both appealers (buyer's ad only, see R1); the flag-off test (buyer's ad only, see R2); TRUNCATE; frozen rows.
+- **schema.test.** `400_liens.sql` is added between `361_trader_notes.sql` and `430_revenue_ledger.sql` in all three migration lists, matching the migrations folder.
+- **O2.** The web lines now say "the trade's XMR". 274ad0c1 only moves the not-a-refusal marker for copy-lint.
+
+### Tests run (serialised runner)
+- `packages/staff` `lien.test.ts` + `dispute.test.ts`: 97/97 passed (2 files)
+- `apps/api` `disputes/lien.test.ts`, `take.test.ts`, `offersBulk.test.ts`, `schema.test.ts`, `disputes/staff.test.ts`: 204 passed, 1 todo (5 files)
+
+Not run: the rest of the suites, Playwright, `npm run check`.

@@ -87,3 +87,68 @@ The constructor exists in every browser the app targets (iOS 13+). But if it thr
 - Playwright `e2e/syncFirst.spec.ts` with `--trace off --workers=1`: 3/3 passed.
 
 Not run: the rest of the web suite and Playwright, and `npm run check`.
+
+## Re-verify: f0424819 (on 14a0a1a5), 12 Nov 2026
+
+Independent reviewer, no code edits, detached worktree `rv-sync` at origin/wip/lead-sync-first f0424819 (fresh `npm ci`, worktree removed after). dockerd not restarted.
+
+### Verdict: PASS. S1-S5 are fixed. Two new Info notes (R1, R2), neither blocking.
+
+### What the commit fixes
+- **S1, per-screen resume pulls.**
+  - OfferList and Quote: both `useLoad`s now pull on resume.
+  - MyOffers: the list.
+  - PostOffer: methods, currencies and every picked currency's price. These are the same reads the screen makes on mount. Post offer reads no own-offers list on mount, so nothing is missing.
+  - A failed resume read rejects, which makes the gate `stale`, and keeps what is shown.
+  - Stale answers are dropped by a generation counter (`gen`). An answer for older `deps` never overwrites newer ones.
+- **S2, screen-reader feedback.**
+  - The `role="status"` live region is mounted empty all the time, and "Updating…" is put into it.
+  - While held, `main` gets `aria-busy="true"` and every held control gets `aria-disabled="true"`. A `MutationObserver` also marks controls that mount during the sync.
+  - The stale alert is unchanged.
+- **S3, online debounce.** `online` is ignored while a sync is running, and within 3 s (`ONLINE_DEBOUNCE_MS`) of the last online-triggered sync.
+- **S4.** The guard is now installed in `useLayoutEffect`.
+- **S5.** `pointerCancel()` falls back to a plain `Event` if the `PointerEvent` constructor is missing or throws.
+
+### The three questions
+
+**1. Can restoring the aria attributes leave a control permanently disabled? No.**
+- `mark` skips any element whose attribute is already `"true"`. So it only ever records an earlier value of `null` or a non-"true" string, and cleanup restores exactly that.
+- Cleanup can therefore never *write* `"true"`. Every attribute the gate set is removed or put back when `held` goes false, or when SyncGate unmounts.
+- `disconnect()` drops pending observer records, so nothing is marked after cleanup.
+- No element is recorded twice, because the second `mark` sees `"true"` and skips it.
+- No code reads `aria-disabled` back from the DOM: Button and HoldButton act on their props. So the attribute changes presentation only, never behaviour. The real hold is still the capture-phase listener.
+
+**2. Can the resume refresh loop or hammer the API? No.**
+- `useResumeSync` registers once per mount: `useEffect(..., [])`, with the latest function kept in a ref. Registering never triggers a sync.
+- `syncNow` runs only on a resume event or on a Try again tap. It never retries by itself, and a pull that sets state does not re-enter it.
+- Each resume costs one read per registered pull. That is bounded: on Post offer it is site + methods + currencies + one price per picked currency.
+- The resume triggers are each limited: a tab switch needs 5 s hidden (`RESUME_AFTER_HIDDEN_MS`), `online` is now debounced, and `pageshow` fires only for bfcache restores. A bfcache restore can also fire a `visibilitychange`, giving two syncs; the second supersedes the first through `round`. That is harmless and was noted before.
+
+**3. Do the e2e stub changes fix real wrong shapes, or weaken the test? They fix real wrong shapes, and the test is stronger.**
+- `GET /v1/methods`: the old stub answered `[]`, but `parseMethods` needs `{ all: [...] }`. That would throw `ApiShapeError`, so the new methods pull would always fail and the gate would end `stale`.
+- `GET /v1/currencies`: this was not stubbed at all, so the request would go to the unserved API and fail. The new stub `{ currencies: [] }` matches `parseCurrencies` and the API route.
+- The spec now also asserts:
+  - the empty live region exists before the sync;
+  - `main` has `aria-busy` and the Post offer button has `aria-disabled` while held;
+  - methods are read exactly once more;
+  - the sync ends `ready`, not `stale`;
+  - the attributes are gone afterwards.
+- Vitest changes:
+  - The only removed assertion is `status.getAttribute('role') === 'status'`. It is replaced by `closest('[role="status"]')` plus a direct role check on the live region, because the role moved to the wrapper.
+  - The existing watchResume test only gained `await flush()` and `now += ONLINE_DEBOUNCE_MS` steps, which the new debounce needs. All five resume triggers are still checked.
+  - Four new tests were added.
+
+### New notes
+- **R1 (Info).** A control whose React-managed `aria-disabled` turns `"true"` *during* a sync loses it at cleanup until its next prop change. Example: ChatPanel's send button, `'aria-disabled': sending ? 'true' : undefined`; a send from Enter in the composer is not held. The gate restores the value it recorded, and React does not re-write a prop that has not changed. The effect is transient and presentational only (the button acts on `sending`), and it is the opposite of stuck-disabled. A possible fix: on cleanup, skip restoring an element whose current attribute is no longer the gate's `"true"`, or skip elements that have an `aria-disabled` prop. That alone does not cover a prop set to `"true"` mid-sync, though, so the cleanest fix is an `attributes` observer, or leaving it as is.
+- **R2 (Info).** In both `useLoad`s, a mount or `deps` read that is still in flight when a resume read starts carries the same generation. If it answers last, its older answer can overwrite the resume's fresher one. A `++gen` in the resume pull, kept for the resume's own check, would close this. It is low impact: it only happens in the first seconds after a mount, and the server re-checks every action.
+
+### Tests (serialised runner)
+| Suite | File | Passed |
+|---|---|---|
+| web vitest | syncFirst.test.tsx | 17/17 |
+| web vitest | myOffers.test.tsx | 21/21 |
+| web vitest | quoteScreen.test.tsx | 58/58 |
+| web vitest | postOffer.test.ts | 35/35 |
+| Playwright (`--trace off --workers=1`) | e2e/syncFirst.spec.ts | 3/3 |
+
+Not run: the rest of the web suite, and `npm run check`.
