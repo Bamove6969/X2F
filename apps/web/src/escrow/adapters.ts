@@ -58,6 +58,26 @@ export interface EscrowTradeView {
   securedSeen: boolean;
 }
 
+/**
+ * The most payment instructions a trade can lock (migration 490: `char_length(method_instructions) <= 1000`).
+ * Postgres counts characters (code points), so the limit here is in code points, not UTF-16 units.
+ */
+export const MAX_INSTRUCTIONS_CHARS = 1000;
+
+/**
+ * The view's payment instructions as text, or null when they are not text or are longer than any
+ * trade can lock (re-verify R2: a longer value is malformed, so a lying API cannot hand the
+ * runtime megabytes to hash and keep).
+ */
+function instructionsText(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  if (v.length <= MAX_INSTRUCTIONS_CHARS) return v;
+  if (v.length > 2 * MAX_INSTRUCTIONS_CHARS) return null;
+  let n = 0;
+  for (const _ of v) if (++n > MAX_INSTRUCTIONS_CHARS) return null;
+  return v;
+}
+
 const big = (v: unknown): bigint | null => (typeof v === 'string' && /^(?:0|[1-9]\d{0,30})$/.test(v) ? BigInt(v) : null);
 
 /** Reads a TradeView, or null if it lacks what the runtime needs. */
@@ -87,8 +107,8 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
     payWindowMin:
       typeof v.payWindowMin === 'number' && Number.isSafeInteger(v.payWindowMin) && v.payWindowMin >= 1 && v.payWindowMin <= MAX_PAY_WINDOW_MIN ? v.payWindowMin : null,
     methodId: typeof v.methodId === 'string' && v.methodId.length > 0 ? v.methodId : null,
-    paymentInstructions: typeof v.paymentInstructions === 'string' ? v.paymentInstructions : null,
-    instructionsMalformed: v.paymentInstructions !== undefined && v.paymentInstructions !== null && typeof v.paymentInstructions !== 'string',
+    paymentInstructions: instructionsText(v.paymentInstructions),
+    instructionsMalformed: v.paymentInstructions !== undefined && v.paymentInstructions !== null && instructionsText(v.paymentInstructions) === null,
     securedSeen: typeof v.securedAt === 'string',
   };
 }

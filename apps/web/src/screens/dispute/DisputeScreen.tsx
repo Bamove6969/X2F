@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useServerClock } from '../../api/client.js';
 import { POLL_MS, useTradeLive } from '../trade/seams.js';
-import { fetchDispute, fetchMethodName, fetchTrade, openDispute, refusalText, sendAppeal, type DisputeTrade, type DisputeView } from './api.js';
+import { disputeMethodName, fetchDispute, fetchTrade, openDispute, refusalText, sendAppeal, type DisputeTrade, type DisputeView } from './api.js';
 import { DisputeOpen } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
 import { DisputeRuling } from './DisputeRuling.js';
@@ -113,7 +113,8 @@ export function DisputeScreen() {
     void (async () => {
       try {
         const trade = await fetchTrade(code, ac.signal);
-        const [dispute, methodName] = await Promise.all([fetchDispute(code, ac.signal), fetchMethodName(trade.methodId, trade.currency, ac.signal)]);
+        const dispute = await fetchDispute(code, ac.signal);
+        const methodName = disputeMethodName(trade.methodId);
         setData({ trade, dispute, methodName });
         setFailed(false);
       } catch (err) {
