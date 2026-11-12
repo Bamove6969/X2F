@@ -123,6 +123,12 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/disputes/:code/messages', perm: 'disputes.handle', allowed: MODERATORS, body: { text: 'Hello' } },
   { method: 'POST', url: '/staff/v1/disputes/:code/proof-request', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'buyer' } },
   { method: 'POST', url: '/staff/v1/disputes/:code/freeze', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', on: true, reason: 'no-reply' } },
+  // Task 12: rulings. Bodies are valid in shape, so the allowed roles reach the handler (an unknown case: 404).
+  { method: 'POST', url: '/staff/v1/disputes/:code/rulings', perm: 'disputes.handle', allowed: MODERATORS,
+    body: { rulingId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f', outcome: 'release-to-buyer', accountAction: { kind: 'none' }, reason: 'x'.repeat(40), evidence: [], tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/approve', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/send-back', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { note: 'Look again.' } },
+  { method: 'GET', url: '/staff/v1/disputes/:code/appeal-reviewers', perm: 'disputes.handle', allowed: MODERATORS },
   // Plan 4 Task 32: the owner's revenue totals (the internal revenue ledger).
   { method: 'GET', url: '/staff/v1/revenue', perm: 'earnings.read', allowed: OWNER },
   // B-006: the fee wallet's sweep settings (a body that changes nothing needs no tap).

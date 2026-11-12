@@ -9,6 +9,7 @@ import { EventBus } from '../events/bus.js';
 import { newBudgets } from '../limits.js';
 import { addSecurityHeaders } from '../static/serve.js';
 import type { ModerationClient } from '../disputes/moderationClient.js';
+import { staffRulingRoutes } from '../disputes/rulings.js';
 import { staffDisputeRoutes } from '../disputes/staffRoutes.js';
 import type { appendLog } from '../log/append.js';
 import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
@@ -175,6 +176,8 @@ export async function buildStaffApi(
     ...(deps.traderEvents ? { traderEvents: deps.traderEvents } : {}),
     ...(deps.appendLog ? { appendLog: deps.appendLog } : {}),
   });
+  // Plan 4 Task 12: rulings (propose, approve, send back) and the appeal's eligible reviewers.
+  staffRulingRoutes(app, deps.traderEvents ? { traderEvents: deps.traderEvents } : {});
   // Plan 4 Task 32: the owner's revenue totals from the internal revenue ledger (earnings.read).
   staffRevenueRoutes(app);
   // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).

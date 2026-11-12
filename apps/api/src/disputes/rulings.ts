@@ -1,0 +1,297 @@
+import { createHash } from 'node:crypto';
+import {
+  AFTER_REFUND_OUTCOMES,
+  ESCROW_OUTCOMES,
+  DisputeRuleError,
+  appealReviewers,
+  applyDispute,
+  type AccountAction,
+  type Dispute,
+  type KeyTapIntent,
+  type RulingOutcome,
+} from '@x2f/staff';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type pg from 'pg';
+import { ApiError } from '../errors.js';
+import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
+import type { EventBus } from '../events/bus.js';
+import { appendLog } from '../log/append.js';
+import { consumeKeyTap } from '../staff/keyTap.js';
+import { requireStaff } from '../staff/guard.js';
+import { disputeSettings } from './settings.js';
+import { loadDispute, withDispute } from './store.js';
+import { rulingExtras } from './rulingDrafts.js';
+import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staffRoutes.js';
+
+/**
+ * Plan 4 Task 12: the staff ruling routes (J-06).
+ *
+ * - `POST /staff/v1/disputes/:code/rulings {rulingId, outcome, accountAction, reason, evidence,
+ *   tapId}` (perm `disputes.handle`): the assignee proposes. The security-key tap must be the
+ *   caller's own, made for exactly this ruling (`ruling` intent, step `propose`: the ruling id, the
+ *   trade, the round, the outcome, the account action, the trade's XMR and the SHA-256 of the
+ *   reason's UTF-8 bytes); anything else is 403 `tap-invalid` and nothing is written (the tap stays
+ *   unused). Under the large-trade limit it is published at once (round 1: the 48-hour appeal window
+ *   opens; round 2: it is final). At or above it, it waits for a second person.
+ * - `POST …/rulings/:id/approve {tapId}` (perm `rulings.approve`, a senior moderator or the owner,
+ *   never the proposer, never anyone involved in round 1 for an appeal): the same content tapped
+ *   again with step `approve`; it publishes.
+ * - `POST …/rulings/:id/send-back {note}` (perm `rulings.approve`): back to the proposer with a
+ *   staff-only note. No tap: it publishes nothing and only takes a proposal away.
+ * - `GET …/appeal-reviewers` (perm `disputes.handle`): who may decide the appeal (R37).
+ *
+ * Every change goes through `withDispute` and the dispute machine, so the two-person rule, R37 and
+ * the deadlines are the machine's, and the liens (Task 25), the reviews' erasure on an overturn and
+ * anything else hooked there follow by themselves. The reason and evidence stay staff-only in
+ * `ruling_drafts` (401) until published, then go to the trader-visible `dispute_rulings`.
+ *
+ * Account actions on the ruling card are refused (409 `account-action-unavailable`): a freeze is a
+ * separate act, never on the ruling card (owner D-015), and the ban stages are Task 27's
+ * (NEEDS_BANS_MERGE: wip/lead-bans adds `account_bans` and the staff route's insert helper; once it is
+ * merged, accept `trade-ban`/`site-ban` here and have `publishDecided` call that same helper in this
+ * transaction when the ruling is published, never a copy of it). So every ruling here carries
+ * `{kind: 'none'}`.
+ *
+ * NEEDS_TASK_13: the moderation process still refuses every ruling (`apps/moderation` rulings.ts);
+ * its gate re-verifies these taps itself. NEEDS_TASK_14: nothing moves the escrow's coins on a
+ * published ruling yet; the dispute stops at `published` (or `final`) until the executor reports
+ * the payout. NEEDS_TASK_12_TX_PROOF: the seller's payment proof for `seller-sends-xmr` is not
+ * built (it needs a regtest-checked `checkTxKey`).
+ */
+
+/** Plan 4 Task 12: a ruling's reason is at least 40 characters (and at most 108's 4000). */
+export const REASON_MIN = 40;
+export const REASON_MAX = 4000;
+/** Evidence lines the traders read (lead default): up to 10, each 1 to 200 characters. */
+export const EVIDENCE_MAX = 10;
+export const EVIDENCE_LINE_MAX = 200;
+export const SEND_BACK_NOTE_MAX = 1000;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
+const OUTCOMES: readonly string[] = [...ESCROW_OUTCOMES, ...AFTER_REFUND_OUTCOMES];
+const NONE: AccountAction = { kind: 'none' };
+
+/** The SHA-256 of a reason's UTF-8 bytes, lower-case hex: the `reasonSha256` its taps bind. */
+export const reasonSha256 = (reason: string): string => createHash('sha256').update(reason, 'utf8').digest('hex');
+
+const isText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max && !CONTROL.test(v);
+
+function parseEvidence(v: unknown): string[] {
+  if (!Array.isArray(v) || v.length > EVIDENCE_MAX) throw new ApiError(400, 'bad-request');
+  for (const x of v) if (!isText(x, EVIDENCE_LINE_MAX) || x.trim() === '') throw new ApiError(400, 'bad-request');
+  return [...(v as string[])];
+}
+
+/** The account action as sent: only its shape here; anything but `none` is refused after. */
+function parseAction(v: unknown): AccountAction {
+  if (v === null || typeof v !== 'object' || Array.isArray(v) || typeof (v as { kind?: unknown }).kind !== 'string') throw new ApiError(400, 'bad-request');
+  const kind = (v as { kind: string }).kind;
+  if (kind === 'none' && Object.keys(v).length === 1) return NONE;
+  if (kind === 'none' || !['freeze', 'trade-ban', 'site-ban'].includes(kind)) throw new ApiError(400, 'bad-request');
+  return v as AccountAction;
+}
+
+interface DraftRow {
+  ruling_id: string;
+  round: 1 | 2;
+  reason: string;
+  evidence: string[];
+  proposer: string;
+  proposed_at: Date;
+  status: 'proposed' | 'published' | 'sent-back';
+}
+
+async function tradeAmount(client: pg.PoolClient, code: string): Promise<string> {
+  const { rows } = await client.query<{ amount_atomic: string }>('select amount_atomic::text from trades where code = $1', [code]);
+  if (!rows[0]) throw new ApiError(404, 'not-found');
+  return rows[0].amount_atomic;
+}
+
+const rulingIntent = (step: 'propose' | 'approve', a: { rulingId: string; code: string; round: 1 | 2; outcome: RulingOutcome; amountAtomic: string; reason: string }): KeyTapIntent => ({
+  kind: 'ruling',
+  step,
+  rulingId: a.rulingId,
+  code: a.code,
+  round: a.round,
+  outcome: a.outcome,
+  accountAction: NONE,
+  amountAtomic: a.amountAtomic,
+  reasonSha256: reasonSha256(a.reason),
+});
+
+const rulingDetail = (r: { id: string; outcome: RulingOutcome }, round: 1 | 2, amountAtomic: string) => ({
+  rulingId: r.id, round, outcome: r.outcome, accountAction: 'none', amountAtomic,
+});
+
+/** Whether `prev` → `next` decided the round: round 1 published, or round 2 final. */
+const decided = (prev: Dispute, next: Dispute) =>
+  next.round === 1
+    ? next.status === 'published' && prev.status !== 'published'
+    : ['final', 'complying', 'closed'].includes(next.status) && !['final', 'complying', 'closed'].includes(prev.status);
+
+/**
+ * The decided round, in the change's own transaction: the trader-visible ruling (`dispute_rulings`)
+ * with the proposer's public name, the draft marked published, `ruling.published` and, for round 2,
+ * `ruling.final` ("Decision overruled" when it differs from round 1). NEEDS_TASK_14: the payout.
+ */
+// NEEDS_BANS_MERGE: the ruling's ban (see the top) is inserted here, through the bans helper.
+async function publishDecided(client: pg.PoolClient, next: Dispute, draft: DraftRow, amountAtomic: string, now: Date, actor: ReturnType<typeof actorOf>): Promise<void> {
+  const r = next.ruling!;
+  const name = (await client.query<{ name: string }>(`select ${PUBLIC_NAME_COLUMN} as name from accounts where id = $1`, [r.proposer])).rows[0]?.name;
+  if (name === undefined) throw new Error('rulings: the proposer has no account');
+  await client.query(
+    `insert into dispute_rulings (code, seq, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [next.code, next.seq, next.round, r.outcome, draft.reason, JSON.stringify(draft.evidence), name, now, next.round === 1 ? next.appealEndsAt : null],
+  );
+  await client.query(`update ruling_drafts set status = 'published', decided_by = $2, decided_at = $3 where ruling_id = $1`, [r.id, actor.id, now]);
+  await appendLog(client, { at: now, actor, tradeCode: next.code, action: 'ruling.published', detail: rulingDetail(r, next.round, amountAtomic) });
+  if (next.round === 2) {
+    await appendLog(client, { at: now, actor, tradeCode: next.code, action: 'ruling.final', detail: { rulingId: r.id, round: 2, overturned: next.overturned === true } });
+  }
+}
+
+function rulingError(err: unknown): never {
+  if (err instanceof DisputeRuleError) {
+    if (err.code === 'same-person') throw new ApiError(409, 'same-person');
+    if (err.code === 'invalid-action') throw new ApiError(400, 'bad-request');
+  }
+  return ruleError(err);
+}
+
+export interface StaffRulingDeps {
+  traderEvents?: Pick<EventBus, 'publish'>;
+}
+
+export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {}): void {
+  const handle = { preHandler: requireStaff('disputes.handle'), config: { perm: 'disputes.handle' as const } };
+  const approver = { preHandler: requireStaff('rulings.approve'), config: { perm: 'rulings.approve' as const } };
+  const disputeDeps = (req: FastifyRequest) => ({
+    db: req.server.deps.db,
+    clock: req.server.deps.clock,
+    ...(o.traderEvents ? { events: o.traderEvents } : {}),
+  });
+
+  app.post('/staff/v1/disputes/:code/rulings', handle, async (req) => {
+    const b = bodyOf(req, ['rulingId', 'outcome', 'accountAction', 'reason', 'evidence', 'tapId']);
+    if (typeof b.rulingId !== 'string' || !UUID.test(b.rulingId)) throw new ApiError(400, 'bad-request');
+    if (typeof b.outcome !== 'string' || !OUTCOMES.includes(b.outcome)) throw new ApiError(400, 'bad-request');
+    if (!isText(b.reason, REASON_MAX)) throw new ApiError(400, 'bad-request');
+    if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request');
+    const action = parseAction(b.accountAction);
+    const evidence = parseEvidence(b.evidence);
+    const reason = b.reason;
+    if (reason.trim().length < REASON_MIN) throw new ApiError(400, 'reason-too-short');
+    const rulingId = b.rulingId;
+    const outcome = b.outcome as RulingOutcome;
+    const tapId = b.tapId;
+    const code = await caseCodeOf(req.server.deps.db, req);
+    // D-015 and Task 27: no account action on the ruling card (see the top).
+    if (action.kind !== 'none') throw new ApiError(409, 'account-action-unavailable');
+    const me = actorOf(req);
+    try {
+      await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
+        const amountAtomic = await tradeAmount(client, code);
+        // The tap first: a tap that is not for exactly this ruling writes nothing.
+        await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: d.round, outcome, amountAtomic, reason }), now, { sessionId: req.auth.sessionId });
+        const s = await disputeSettings(client);
+        const next = applyDispute(d, { type: 'propose', ruling: { id: rulingId, outcome, accountAction: NONE, proposer: me.id } }, me, now, s);
+        const ins = await client.query(
+          `insert into ruling_drafts (ruling_id, code, seq, round, reason, evidence, proposer, proposed_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict do nothing`,
+          [rulingId, code, d.seq, d.round, reason, JSON.stringify(evidence), me.id, now],
+        );
+        if (ins.rowCount !== 1) throw new ApiError(409, 'wrong-state');
+        await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.proposed', detail: rulingDetail({ id: rulingId, outcome }, d.round, amountAtomic) });
+        if (decided(d, next)) {
+          await publishDecided(client, next, { ruling_id: rulingId, round: d.round, reason, evidence, proposer: me.id, proposed_at: now, status: 'proposed' }, amountAtomic, now, me);
+        }
+        return next;
+      });
+    } catch (err) {
+      rulingError(err);
+    }
+    return rulingState(req, code);
+  });
+
+  /** The waiting proposal `:id` of the dispute's current round, locked; 409 `wrong-state` otherwise. */
+  async function waiting(client: pg.PoolClient, d: Dispute, id: unknown): Promise<DraftRow> {
+    if (typeof id !== 'string' || !UUID.test(id) || d.status !== 'awaiting-approval' || d.ruling?.id !== id) throw new ApiError(409, 'wrong-state');
+    const { rows } = await client.query<DraftRow>(
+      `select ruling_id::text, round, reason, evidence, proposer::text, proposed_at, status from ruling_drafts
+        where ruling_id = $1 and code = $2 and seq = $3 and round = $4 and status = 'proposed' for update`,
+      [id, d.code, d.seq, d.round],
+    );
+    if (!rows[0]) throw new ApiError(409, 'wrong-state');
+    return rows[0];
+  }
+
+  app.post('/staff/v1/disputes/:code/rulings/:id/approve', approver, async (req) => {
+    const b = bodyOf(req, ['tapId']);
+    if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request');
+    const tapId = b.tapId;
+    const code = await caseCodeOf(req.server.deps.db, req);
+    const me = actorOf(req);
+    try {
+      await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
+        const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
+        const amountAtomic = await tradeAmount(client, code);
+        const r = d.ruling!;
+        await consumeKeyTap(client, tapId, me.id, rulingIntent('approve', { rulingId: r.id, code, round: d.round, outcome: r.outcome, amountAtomic, reason: draft.reason }), now, { sessionId: req.auth.sessionId });
+        const next = applyDispute(d, { type: 'approve' }, me, now, await disputeSettings(client));
+        await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.approved', detail: rulingDetail(r, d.round, amountAtomic) });
+        if (decided(d, next)) await publishDecided(client, next, draft, amountAtomic, now, me);
+        return next;
+      });
+    } catch (err) {
+      rulingError(err);
+    }
+    return rulingState(req, code);
+  });
+
+  app.post('/staff/v1/disputes/:code/rulings/:id/send-back', approver, async (req) => {
+    const b = bodyOf(req, ['note']);
+    if (!isText(b.note, SEND_BACK_NOTE_MAX) || b.note.trim() === '') throw new ApiError(400, 'bad-request');
+    const note = b.note;
+    const code = await caseCodeOf(req.server.deps.db, req);
+    const me = actorOf(req);
+    try {
+      await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
+        const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
+        const next = applyDispute(d, { type: 'send-back' }, me, now, await disputeSettings(client));
+        await client.query(
+          `update ruling_drafts set status = 'sent-back', decided_by = $2, decided_at = $3, sent_back_note = $4 where ruling_id = $1`,
+          [draft.ruling_id, me.id, now, note],
+        );
+        await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.sent-back', detail: { rulingId: draft.ruling_id } });
+        return next;
+      });
+    } catch (err) {
+      rulingError(err);
+    }
+    return rulingState(req, code);
+  });
+
+  // R37: who may decide the appeal. In round 1, those who would be eligible if it were appealed now.
+  app.get('/staff/v1/disputes/:code/appeal-reviewers', handle, async (req) => {
+    const db = req.server.deps.db;
+    const code = await caseCodeOf(db, req);
+    const dispute = await loadDispute(db, code);
+    if (dispute === null) throw new ApiError(404, 'not-found');
+    const involved = dispute.round === 2 ? (dispute.round1?.involved ?? []) : dispute.seen;
+    const { rows } = await db.query<{ id: string; role: 'owner' | 'senior' | 'mod' | 'helper'; name: string; off: boolean }>(
+      `select s.account_id::text as id, s.role, a.${PUBLIC_NAME_COLUMN} as name, s.switched_off_at is not null as off
+         from staff_members s join accounts a on a.id = s.account_id
+        where s.role in ('owner', 'senior') order by s.role, a.${PUBLIC_NAME_COLUMN}, s.account_id`,
+    );
+    const ids = new Set(appealReviewers(rows.map((r) => ({ id: r.id, role: r.role, active: !r.off })), involved));
+    const reviewers = rows.filter((r) => ids.has(r.id)).map((r) => ({ id: r.id, name: r.name, role: r.role }));
+    return { round: dispute.round, reviewers, waiting: reviewers.length === 0 };
+  });
+}
+
+/** The ruling part of the case after a change (the same as the case view's `ruling` extras). */
+async function rulingState(req: FastifyRequest, code: string) {
+  return { code, ruling: await rulingExtras(req.server.deps.db, code) };
+}

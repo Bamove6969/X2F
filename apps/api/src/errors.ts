@@ -175,6 +175,10 @@ export type ApiErrorCode =
   // moderator or the owner), or involved in round 1 of an appealed case; `freeze-not-allowed`: the
   // party has not ignored the dispute or the ruling; the moderation process's own answers.
   | 'forbidden-case'
+  // Plan 4 Task 12 (J-06): the ruling routes.
+  | 'reason-too-short'
+  | 'same-person'
+  | 'account-action-unavailable'
   | 'freeze-not-allowed'
   | 'no-chat'
   | 'no-proof'

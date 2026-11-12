@@ -98,6 +98,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 4 Tasks 5 and 7: staff-API answers traders never get (their words come with the staff web
   // app, Plan 4 Task 16).
   'tap-invalid': 'a staff security-key tap (staff app only)',
+  // Plan 4 Task 12 (J-06): the staff ruling routes.
+  'reason-too-short': "a ruling's reason under 40 characters (staff app only)",
+  'same-person': 'a ruling approved by its own proposer (staff app only)',
+  'account-action-unavailable': 'an account action on the ruling card (staff app only)',
   'invite-invalid': 'a staff invite link that is used, expired or cancelled (staff app only)',
   'security-key-required': 'a staff sign-up step: a security key must be added (staff app only)',
   'two-factors-required': 'a staff sign-up step: a second login method must be added (staff app only)',
