@@ -247,3 +247,6 @@ DEMO REFRESH PLAN (owner wants to walk the next demo): when ready, build wip/lea
 
 ## 2026-11-12 13:42Z
 BATCH 10 candidates: payee-fields-2 ec53ea9b (approved), bans 2ac92021+frontDoor row (approved after lead check), trades-list (B2/m3 fix pending), terms-v2 a467c7e7, owner-copy-1 (pending), signup-v2 (pending), no-russia/sanctions (pending), device-bound c7552c9d (re-verify pending). Later: proof stack, rulings line (rulings+liens+mod-screens+mod-gate+payout).
+
+## 2026-11-12 20:37Z
+2026-11-12T20:37:48Z LEAD: batch 9 landed on main 4f0afa14 (appeals, staff pay, owner alerts, g67, j20, j21, sync-first, proof-check, proof-code, proof-labels, s026-d056, o028-s093, instr-hash, e2e-batch8). Check 6891 pass, Playwright 529 pass, Monero 4 suites green. Base new work on 4f0afa14. Next: batch 10 (bans, device-bound, trades-list, no-russia, payee-fields-2, terms-v2, signup-v2, owner-copy-1, owner-layout-1, landing-tour, tours-staff-team, proof-stack); then disputes-stack.
