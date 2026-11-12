@@ -29,6 +29,7 @@ import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
+import { banHidesSql, tradeBanned } from '../banState.js';
 import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -175,7 +176,7 @@ export interface MyOffer {
    * methods under legal review, or none of its currencies with a market price now (Task 34 review
    * M4). Absent when the offer is listed or paused.
    */
-  hidden?: 'trading-paused' | 'trading-hold' | 'recovery-hold' | 'review-pending' | 'method-unavailable' | 'no-price';
+  hidden?: 'trading-paused' | 'trading-hold' | 'trade-ban' | 'recovery-hold' | 'review-pending' | 'method-unavailable' | 'no-price';
   createdAt: string;
 }
 
@@ -206,7 +207,7 @@ export interface MyOfferMethod {
  * a price to count its bands with), or `not-found` for an id that is not one of my live or paused offers.
  */
 export type OfferSwitchRefusal =
-  | 'not-vendor' | 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'launch-cap' | 'price-unavailable' | 'not-found';
+  | 'not-vendor' | 'trading-paused' | 'trading-hold' | 'trade-ban' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'launch-cap' | 'price-unavailable' | 'not-found';
 
 /** One offer's outcome: its status after the call, and why it was not switched when it was refused. */
 export interface OfferSwitchResult {
@@ -293,6 +294,7 @@ export const MARKET_PRICED = `o.price_mode = 'market'`;
 const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
   and not ${recoveryHoldHidesSql('o.account_id')}
+  and not ${banHidesSql('o.account_id')}
   and not coalesce((select f.trading_paused from site_flags f), true)`;
 
 /**
@@ -725,7 +727,7 @@ async function lockAccountLive(client: Queryable, auth: AuthContext, now: Date):
  * vendor posts or turns on offers (owner 2 Nov 2026; 403 `not-vendor`). A trader's offers from
  * before migration 198 stay listed while live, and can be paused or removed.
  */
-type AccountRefusal = 'not-vendor' | 'trading-paused' | 'trading-hold' | 'no-wallet';
+type AccountRefusal = 'not-vendor' | 'trading-paused' | 'trading-hold' | 'trade-ban' | 'no-wallet';
 async function accountRefusal(client: Queryable, accountId: string, now: Date): Promise<AccountRefusal | null> {
   if ((await accountTypeOf(client, accountId)) !== 'vendor') return 'not-vendor';
   const flags = await client.query<{ trading_paused: boolean }>('select trading_paused from site_flags for share');
@@ -733,6 +735,8 @@ async function accountRefusal(client: Queryable, accountId: string, now: Date): 
   if (flags.rows[0]?.trading_paused !== false) return 'trading-paused';
   const held = await client.query('select 1 from trading_holds where account_id = $1 and lifted_at is null limit 1', [accountId]);
   if ((held.rowCount ?? 0) > 0) return 'trading-hold';
+  // Plan 4 Task 27: a trade ban or a site ban (until its end by the clock).
+  if (await tradeBanned(client, accountId, now)) return 'trade-ban';
   if ((await usableWallets(client, accountId, now)).length === 0) return 'no-wallet';
   return null;
 }
@@ -1095,9 +1099,10 @@ export function offerRoutes(app: FastifyInstance): void {
       [accountId],
     );
     // Why a live offer is not listed now (review M4), in LISTED's terms; no site_flags row is a stop.
-    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean; recovery: boolean }>(
+    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean; banned: boolean; recovery: boolean }>(
       `select not coalesce((select f.trading_paused = false from site_flags f), false) as paused,
               exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held,
+              ${banHidesSql('$1::uuid')} as banned,
               ${recoveryHoldHidesSql('$1::uuid')} as recovery`,
       [accountId],
     );
@@ -1107,6 +1112,8 @@ export function offerRoutes(app: FastifyInstance): void {
       ? 'trading-paused'
       : why[0]!.held
         ? 'trading-hold'
+        : why[0]!.banned
+          ? 'trade-ban'
         : why[0]!.recovery
           ? 'recovery-hold'
           : (await hasPendingReview(deps.db, accountId, deps.clock()))

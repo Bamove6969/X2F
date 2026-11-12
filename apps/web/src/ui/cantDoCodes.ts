@@ -471,6 +471,7 @@ export const TRADING_HOLD_CODE = 'trading-hold' satisfies CantDoCode;
 export const MY_OFFERS_HIDDEN = {
   'trading-paused': 'On, hidden while trading is paused',
   'trading-hold': 'On, hidden while your account has a trading hold',
+  'trade-ban': 'On, hidden while your account is banned from trading', // COPY-UNSIGNED (Plan 4 Task 27)
   'review-pending': 'On, hidden until you rate your last trade', // COPY-UNSIGNED (Plan 5 Task 3 review M3)
   'method-unavailable': "On, hidden: this payment method isn't available right now",
   // COPY-UNSIGNED (J-16; Task 34 review M4): none of the offer's currencies has a market price now.

@@ -124,6 +124,13 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     changes: ['id', 'kind', 'tag_key_id', 'tag', 'account_id', 'banned_at'],
     bookkeeping: {},
   },
+  {
+    // Plan 4 Task 27 (migration 560): a ban placed, ended by its time or lifted (lead default, as
+    // trading_holds). The staff note is part of the row; the notice never says what changed.
+    table: 'account_bans', accountColumn: 'account_id', ops: ALL,
+    changes: ['id', 'account_id', 'kind', 'rule_id', 'reason_code', 'until', 'note', 'placed_by', 'tap_id', 'created_at', 'ended_at', 'lifted_at', 'lifted_by'],
+    bookkeeping: {},
+  },
 ];
 
 /**
@@ -156,6 +163,8 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'staff_members.account_id': 'staff records (staff and owner accounts have no Jabber set-up)',
   'staff_invites.created_by': 'staff records',
   'staff_invites.account_id': 'staff records',
+  'account_bans.placed_by': 'staff records (who placed a ban; the banned account is account_id)',
+  'account_bans.lifted_by': 'staff records (who lifted a ban)',
   'key_taps.account_id': 'a staff security-key tap',
   // Batch 4 (lead default, owner p11-119): silent.
   // Hold model v3 and team abilities (team-perms-port; lead default pending the owner, p11-119 extension): silent.

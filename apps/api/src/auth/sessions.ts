@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { hasUnfinished, siteBan, siteBanAllows } from '../banState.js';
 import { UNCHOSEN_SESSION_HOURS, type AccountKind } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
@@ -429,6 +430,15 @@ export function requireSession(
       throw new ApiError(403, 'recovery-hold', { holdUntil: row.hold_until.toISOString() });
     }
     if (opts.kinds && !opts.kinds.includes(row.kind)) throw new ApiError(403, 'wrong-account-kind');
+    // Plan 4 Task 27 (2026-10-29b): a site-banned account (its team members' sessions included)
+    // reaches only the notice, and while something is unfinished what finishes it (banState.ts);
+    // every other route is 403 `banned` with the kind, the general reason and the end (null: lifetime).
+    if (row.kind === 'trader') {
+      const ban = await siteBan(deps.db, row.account_id, now);
+      if (ban !== null && !siteBanAllows(`${req.method} ${req.routeOptions.url ?? ''}`, await hasUnfinished(deps.db, row.account_id))) {
+        throw new ApiError(403, 'banned', { kind: 'site', reasonCode: ban.reasonCode, until: ban.until?.toISOString() ?? null });
+      }
+    }
     // Review 2026-11-08 F1 (the front door: nobody gets in without signing the agreement): a team
     // member must have accepted the current Terms on their own login account too; the team
     // account's acceptance is the account owner's and never stands in for theirs.

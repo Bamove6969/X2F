@@ -17,6 +17,7 @@ import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
 import { settleDueHolds } from './auth/hold.js';
+import { settleEndedBans } from './staff/bans.js';
 import { settleDueChanges } from './auth/holdChanges.js';
 import { syncHeldTradesJob } from './trades/held.js';
 import { startDisputeTimers } from './disputes/timers.js';
@@ -107,7 +108,7 @@ onAlert = ownerAlertSink({ db, clock, push: app.push });
 // hours are up apply, and held trades are paused or resumed as their holds say.
 const stopHolds = startRetention(
   deps,
-  [settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log, app.push), syncHeldTradesJob(app.tradePublish)],
+  [settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log, app.push), syncHeldTradesJob(app.tradePublish), settleEndedBans],
   60_000,
 );
 // Plan 4 Task 10: every 30 s, appeal windows close and maintenance shifts dispute deadlines (A7).

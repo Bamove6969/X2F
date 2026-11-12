@@ -35,6 +35,7 @@ import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
+import { traderBanRoutes } from './staff/bans.js';
 import { teamRoutes } from './routes/team.js';
 import { accountTypeRoutes } from './routes/accountType.js';
 import { jabberRoutes } from './jabber/routes.js';
@@ -301,6 +302,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
+  // Plan 4 Task 27: the trader's own ban notice (staff/bans.ts).
+  traderBanRoutes(app);
   // Owner 2 Nov 2026: Trader and Vendor accounts.
   accountTypeRoutes(app);
   // Plan 2 Task 16: new-device approval (the new device's poll and the logged-in device's decision).

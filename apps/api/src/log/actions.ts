@@ -67,7 +67,7 @@ const RULING: Schema = {
   amountAtomic: 'amount',
 };
 const LIEN: Schema = { lienId: 'id', accountId: 'uuid', amountAtomic: 'amount', cause: 'id' };
-const BAN: Schema = { accountId: 'uuid', until: 'iso', reasonCode: 'id', permanent: 'bool' };
+const BAN: Schema = { accountId: 'uuid', until: 'iso', reasonCode: 'id', permanent: 'bool', banId: 'id', ruleId: 'id' };
 
 export const LOG_ACTIONS = {
   ...TRADE,

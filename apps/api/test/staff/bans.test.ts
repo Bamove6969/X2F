@@ -190,11 +190,11 @@ describe('a site ban on the trader app (Task 27, 2026-10-29b)', () => {
     const until = new Date(NOW.getTime() + 2 * HOUR).toISOString();
     const b = await ban(senior, id, { kind: 'site', ruleId: 'abuse', until });
     expect(b.res.statusCode).toBe(201);
-    const me = await asTrader(id);
+    // A fresh session at each moment (a test session's own life is shorter than the ban).
     t.setNow(new Date(Date.parse(until) - 1000));
-    expect((await me('GET', '/v1/wallets')).statusCode).toBe(403);
+    expect((await (await asTrader(id))('GET', '/v1/wallets')).statusCode).toBe(403);
     t.setNow(new Date(Date.parse(until) + 1000));
-    expect((await me('GET', '/v1/wallets')).statusCode).toBe(200);
+    expect((await (await asTrader(id))('GET', '/v1/wallets')).statusCode).toBe(200);
     const job = settleEndedBans;
     expect(await job.run(t.deps.db, t.deps.clock())).toBeGreaterThanOrEqual(1);
     expect(await job.run(t.deps.db, t.deps.clock())).toBe(0);
