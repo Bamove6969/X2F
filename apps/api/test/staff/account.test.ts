@@ -66,9 +66,9 @@ describe('one\'s own PGP keys on the staff site', () => {
     expect(live).toEqual([]);
     expect((await mod.browser.get('/staff/v1/me')).statusCode).toBe(200);
     expect(await logEntries(t.deps, 'staff.method-removed')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ method: 'pgp' }) });
-    // The last PGP key: a moderator keeps all three methods (owner G3).
+    // The last PGP key: a moderator keeps a PGP key and a passkey (owner G3, D-070).
     const last = await del(b, await tap(mod, { kind: 'remove-method', methodType: 'pgp', methodId: b }));
-    expect([last.statusCode, errorOf(last)]).toEqual([409, 'all-three-methods-required']);
+    expect([last.statusCode, errorOf(last)]).toEqual([409, 'moderator-methods-required']);
   });
 
   it('the owner keeps two security keys (409 owner-needs-two-keys)', async () => {
