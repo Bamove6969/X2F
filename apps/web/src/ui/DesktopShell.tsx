@@ -18,6 +18,9 @@ import './ui.css';
 const LINKS: { to: string; label: string; icon: IconName; match: (path: string) => boolean }[] = [
   // Trade covers both browse sides, a quote, a trade and its dispute, and site news (News-Wide).
   { to: '/sell', label: 'Trade', icon: 'trade', match: (p) => /^\/(sell|buy|trade|news)(\/|$)/.test(p) },
+  // My trades (register D-005): not on the *-Wide boards yet (the Desktop board left its "My trades"
+  // card out until the list existed). DESIGNER-REVIEW, COPY-UNSIGNED
+  { to: '/trades', label: 'My trades', icon: 'list-check', match: (p) => /^\/trades(\/|$)/.test(p) },
   // MyOffers-Wide: My offers sits under Post offer.
   { to: '/post', label: 'Post offer', icon: 'plus-circle', match: (p) => /^\/(post|profile\/offers)(\/|$)/.test(p) },
   { to: '/wallets', label: 'Wallets', icon: 'wallet', match: (p) => /^\/wallets(\/|$)/.test(p) },
@@ -46,6 +49,7 @@ const NAMES: [RegExp, string][] = [
   [/^\/(sell|buy)\/[^/]+\/?$/, 'Offers'],
   [/^\/post(\/|$)/, 'Post an offer'],
   [/^\/profile\/offers(\/|$)/, 'My offers'],
+  [/^\/trades(\/|$)/, 'My trades'],
   [/^\/wallets(\/|$)/, 'Wallets'],
   [/^\/settings\/security(\/|$)/, 'Security'],
   [/^\/settings\/devices(\/|$)/, 'Devices'],

@@ -10,6 +10,7 @@ import { STATE_LABEL, sideLine, whenLine } from '../src/screens/trades/model.js'
 import { TRADE_STATES } from '../src/api/trade.js';
 import { BottomNav } from '../src/ui/BottomNav.js';
 import { DesktopRail, railPageName } from '../src/ui/DesktopShell.js';
+import { teamCantDoText } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 
 const OPEN = {
@@ -155,15 +156,22 @@ describe('My trades screen', () => {
     expect(host.querySelector('[data-part="more"]')).toBeNull();
   });
 
-  it('an empty tab says so; a member without the box is told plainly; a failure can be retried', async () => {
+  it('an empty tab says so; a member without the box gets the team-role refusal; a failure can be retried', async () => {
     answer = () => ({ status: 200, json: { trades: [], next: null } });
     const empty = await screen();
     expect(empty.host.querySelector('[data-part="empty"]')!.textContent).toContain('No open trades');
 
-    answer = () => ({ status: 403, json: { error: 'forbidden' } });
+    // A member with See trade history only: Open is refused in CantDoThat (the team-role words), OK goes to Completed.
+    answer = (u) => (u.searchParams.get('status') === 'open' ? { status: 403, json: { error: 'forbidden' } } : { status: 200, json: { trades: [DONE], next: null } });
     const forbidden = await screen();
-    expect(forbidden.host.querySelector('[data-part="forbidden"]')!.textContent).toContain("Your team role doesn't include open trades");
+    const popup = document.querySelector('[data-part="cant-do-that"]')!;
+    expect(popup.getAttribute('data-from')).toBe('forbidden');
+    expect(popup.textContent).toContain(teamCantDoText('forbidden'));
     expect(rows(forbidden.host)).toEqual([]);
+    fire([...popup.querySelectorAll('button')].find((b) => b.textContent === 'OK')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(tab(forbidden.host, 'Completed').getAttribute('aria-selected')).toBe('true');
+    expect(rows(forbidden.host)).toHaveLength(1);
 
     let fail = true;
     answer = () => (fail ? { status: 500, json: { error: 'internal' } } : { status: 200, json: { trades: [OPEN], next: null } });
