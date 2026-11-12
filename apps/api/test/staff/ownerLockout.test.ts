@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { keyCheckCode } from '@x2f/staff';
+import { GRANTABLE_PERMS, keyCheckCode } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { codeOf, decrypt, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
@@ -203,6 +203,22 @@ describe('owner lockout', () => {
       inviteId: '00000000-0000-4000-8000-000000000000', token: 'A'.repeat(43), expiresAt: new Date(MON_NOON.getTime() + 60 * MIN).toISOString(), tapId: 'x',
     });
     expect([res.statusCode, errorOf(res)]).toEqual([409, 'owner-protected']);
+  });
+
+  // Review MF1: the reset is the owner role's own, so a grant can never hand it to anyone else.
+  it('the reset refuses every non-owner, a senior holding every grantable perm included, and so does its tap', async () => {
+    const target = await staffWithKeys(t, { role: 'mod' });
+    const body = { inviteId: '00000000-0000-4000-8000-000000000000', token: 'A'.repeat(43), expiresAt: new Date(MON_NOON.getTime() + 60 * MIN).toISOString(), tapId: 'x' };
+    for (const role of ['senior', 'mod', 'helper'] as const) {
+      const p = await staffWithKeys(t, { role });
+      await t.deps.db.query('update staff_members set grants = $2::text[] where account_id = $1', [p.id, [...GRANTABLE_PERMS]]);
+      const res = await p.browser.post(`/staff/v1/members/${target.id}/reset-security`, body);
+      expect([res.statusCode, errorOf(res)], role).toEqual([403, 'forbidden']);
+      const start = await p.browser.post('/staff/v1/taps/start', {
+        kind: 'reset-staff-security', accountId: target.id, inviteId: body.inviteId, tokenHash: 'a'.repeat(64), expiresAt: body.expiresAt,
+      });
+      expect([start.statusCode, errorOf(start)], role).toEqual([403, 'forbidden']);
+    }
   });
 
   it('maintenance and the emergency stop leave every staff route working', async () => {

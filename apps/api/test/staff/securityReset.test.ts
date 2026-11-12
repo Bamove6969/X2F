@@ -8,11 +8,13 @@ import type { KeyTapIntent } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { verifyLogChain } from '../../src/log/verify.js';
 import { purgeStaffInviteLeftovers } from '../../src/staff/invites.js';
+import { tapPermOf } from '../../src/staff/keyTap.js';
+import { PUSHED_OWNER_ALERTS } from '../../src/push/ownerAlert.js';
 import { sealTermsSignature } from '../../src/termsSignature.js';
 import { codeOf, decrypt, genKey, type Pair } from '../helpers/pgpKeys.js';
 import { SIG } from '../helpers/signature.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
-import { STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries } from '../helpers/staffApp.js';
+import { STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedTap } from '../helpers/staffApp.js';
 import { addPgpKey, attestedStaffApps, registerKey, resetBudgets, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
 
 const NOW = new Date('2026-11-12T12:00:00Z');
@@ -179,6 +181,48 @@ describe('the owner resets a staff member\'s security (D-032, owner G60)', () =>
     await purgeStaffInviteLeftovers.run(t.deps.db, t.deps.clock());
     expect(await signature(b.id)).not.toBeNull();
     expect(errorOf(await new StaffBrowser(t.app).get(acceptUrl(rb.token)))).toBe('invite-invalid');
+  });
+
+  it('review MF1: the reset is the owner role\'s, not a perm\'s: its tap needs the owner', () => {
+    expect(tapPermOf({ kind: 'reset-staff-security', accountId: randomUUID(), inviteId: randomUUID(), tokenHash: 'a'.repeat(64), expiresAt: NOW.toISOString() })).toBe('owner');
+  });
+
+  it('review S1: the reset also clears the person\'s unused taps, open login challenges and pending login approvals (a used tap stays)', async () => {
+    const mod = await fullMod();
+    const unused = await seedTap(t.deps, mod.id, { kind: 'emergency-stop' });
+    const used = await seedTap(t.deps, mod.id, { kind: 'resume-trading' });
+    await t.deps.db.query('update key_taps set used_at = $2 where id = $1', [used, NOW]);
+    await t.deps.db.query(
+      "insert into challenges (account_id, purpose, method, created_at, expires_at) values ($1, 'login', 'pgp', $2, $3)",
+      [mod.id, NOW, new Date(NOW.getTime() + HOUR)],
+    );
+    await t.deps.db.query(
+      `insert into login_approvals (account_id, device_hash, secret_hash, device_label, session_label, method, number, choices, created_at, expires_at)
+       values ($1, $2, $3, 'Browser on Linux', 'x', 'pgp', 42, '{42,13,77}', $4, $5)`,
+      [mod.id, randomBytes(32), randomBytes(32), NOW, new Date(NOW.getTime() + HOUR)],
+    );
+    expect((await reset(mod.id)).res.statusCode).toBe(201);
+    const left = async (sql: string) => (await t.deps.db.query<{ n: number }>(sql, [mod.id])).rows[0]!.n;
+    expect(await left('select count(*)::int as n from key_taps where account_id = $1 and used_at is null')).toBe(0);
+    expect((await t.deps.db.query('select id from key_taps where id = any($1::uuid[])', [[unused, used]])).rows.map((r) => r.id)).toEqual([used]);
+    expect(await left('select count(*)::int as n from challenges where account_id = $1 and used_at is null')).toBe(0);
+    expect(await left('select count(*)::int as n from login_approvals where account_id = $1 and used_at is null')).toBe(0);
+  });
+
+  it('review S2: the owner is alerted (in-app and phone push) when a reset starts and when its link is used', async () => {
+    expect(PUSHED_OWNER_ALERTS.has('staff-security-reset')).toBe(true);
+    expect(PUSHED_OWNER_ALERTS.has('staff-security-reset-finished')).toBe(true);
+    const alerts = async (kind: string) =>
+      (await t.deps.db.query<{ detail: { staffId: string } }>('select detail from alerts where account_id = $1 and kind = $2', [owner.id, kind])).rows.map((r) => r.detail);
+    const mod = await fullMod();
+    const r = await reset(mod.id);
+    expect(r.res.statusCode).toBe(201);
+    expect(await alerts('staff-security-reset')).toContainEqual({ staffId: mod.id });
+    const b = new StaffBrowser(t.app);
+    expect((await addPgp(b, r.token, await genKey())).statusCode).toBe(201);
+    expect((await addKey(b, r.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
+    expect((await b.post(acceptUrl(r.token, '/finish'), {})).statusCode).toBe(201);
+    expect(await alerts('staff-security-reset-finished')).toContainEqual({ staffId: mod.id });
   });
 
   it('only the owner resets (staff.manage); never the owner; someone not on the staff is 404; the input is checked', async () => {
