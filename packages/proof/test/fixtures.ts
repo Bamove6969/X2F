@@ -3,13 +3,25 @@
 // X2F_WRITE_FIXTURES=1. The zlib streams use stored (uncompressed) blocks built here, so the bytes
 // never depend on the zlib version Node ships.
 
-function crc32(bytes: Uint8Array): number {
-  let c = ~0;
-  for (const b of bytes) {
-    c ^= b;
+/** The PNG CRC table (polynomial 0xEDB88320), so a CRC costs one lookup per byte. */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
     for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
+    t[n] = c >>> 0;
   }
-  return ~c >>> 0;
+  return t;
+})();
+
+/**
+ * PNG CRC-32. Table-driven: the bit-by-bit loop took 1.8 s for each 28 MiB chunk of the
+ * RECEIVE_MAX_RENDER_BYTES fixtures, which alone pushed that test past vitest's 5 s timeout.
+ */
+function crc32(bytes: Uint8Array): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]!) & 0xff]! ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
 }
 
 function adler32(bytes: Uint8Array): number {
