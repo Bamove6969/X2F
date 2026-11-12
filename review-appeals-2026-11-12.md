@@ -124,3 +124,85 @@ member who has the appeal box without the answer box (S1), or a reviewer removed
   with both boxes. Also the existing over-disclosure of the appeal POST's response to such a member.
 - m1: should the owner be alerted again when an appeal becomes unreviewable after filing? (Possibly the
   re-alert commit in progress, which needs its own review.)
+
+## Re-verify (38e71072, 12 Nov 2026)
+
+Reviewed 384a8803..38e71072 (10 files, +201/-42) in a fresh detached worktree. I changed no code. Docker
+was up the whole time.
+
+**Verdict: the M1, S1 and m1 fixes are correct, and m2 is covered. Approve.** One test-only should-fix
+(R1) and two minors remain, none blocking.
+
+### What I checked
+- **Migration 520.** It adds one nullable `no_reviewer_alerted_at timestamptz`. No reader shows it. The
+  schema test adds 520 to the three lists and changes nothing else (confirmed with a word diff).
+- **`syncNoReviewerAlert`.** It is once per transition, and it cannot race.
+  - It runs only inside `withDispute`, where the dispute row is held `FOR UPDATE`. That is true both in
+    the appeal route and in the timer.
+  - Reading the mark, writing the alert and setting the mark therefore happen one dispute at a time. A
+    timer pass and an appeal on the same dispute run one after the other.
+  - The timer's callback returns `d` unchanged. `withDispute` then commits without `saveDispute`, so the
+    mark and the alert do commit, and nothing else on the case changes.
+  - The push goes out after commit, at most once per timer pass. Its text is the same fixed one with no
+    detail, so it leaks nothing.
+  - Flapping a reviewer on and off alerts once per transition. That is what was asked, and it is
+    owner-driven, not spam.
+  - The timer skips paused (maintenance) disputes.
+  - The tests cover each case: one alert across repeated passes, re-alerting after the reviewer comes
+    back and is lost again, no second alert for an appeal already alerted at filing, and an assignee
+    switched off.
+- **M1 (reviewer list).**
+  - Now `staff.manage` (owner only); the matrix row is updated.
+  - It refuses (403 `forbidden-case`) anyone in `round1.involved` or in `seen`, or who has any staff log
+    entry on the trade. Log trade codes are stored normalised (`append.ts`), so the plain equality is
+    sound.
+  - It stays unlogged: the involvement check is a plain select. The test asserts the trade's log count is
+    unchanged for both the refused and the allowed read.
+  - Consequence: in the main D-011 case, where the owner was involved in round 1, the owner cannot read
+    the list. They still see `noReviewer` in the queue, and they get the alert. Acceptable, since the list
+    would be empty anyway.
+- **S1.**
+  - `appealUntil` now needs both `disputes-appeal` and `disputes-answer`.
+  - An appeal-only member's POST still files the appeal, then answers `204` with an empty body (tested).
+    The response is chosen after commit, so the appeal, the alert and the push are unaffected.
+  - The answer is decided from the session's member abilities, the same source as the guard.
+- **Behaviour change.** `appealWaiting` and the queue's `noReviewer` no longer stop at `assignee !== null`.
+  An eligible assignee is in the candidate list, so a live assignee never counts as waiting. One who is
+  switched off, removed or disabled does. This matches the D-011 intent, and R37 is still enforced by the
+  machine.
+
+### The two edited tests (not weakened, one gap)
+1. "A team member sees it only with...": renamed. All of the earlier assertions are kept: the member with
+   both boxes gets the deadline, the member without the appeal box gets null and a 403 on POST. It adds
+   the appeal-only member: null deadline, 403 on the dispute GET, 204 and an empty body on POST. This is
+   stronger than before.
+2. "A fresh senior moderator added later...": the two owner reads of the reviewer list are removed. The
+   owner is involved in that test, so the list now refuses them, and the refusal is asserted in the new
+   owner-only test.
+   - **R1 (should-fix, test only):** those two lines were the only assertions on the list's *contents*.
+     The first showed an involved owner left out (`reviewers: []`, `waiting: true`). The second showed the
+     fresh senior named (`[{ name }]`, `waiting: false`).
+   - The replacement only checks `arrayContaining({ name: any String })`, so no test now shows that an
+     involved senior is absent from the names, or that `waiting` is right on this route.
+   - Suggest: in the uninvolved-owner case, involve one senior and assert the exact name list (that senior
+     absent, a fresh one present) plus `waiting: false`.
+
+### Minors
+- n1: the timer clears the mark only on rows still `appealed`. Suppose an eligible reviewer proposes a
+  round-2 ruling within 30 s of the alert (status leaves `appealed` with the mark still set). If a
+  send-back later returns the case to `appealed` with nobody eligible again, no fresh alert is sent. This is
+  very unlikely. The fix would be to clear the mark whenever the sync sees a non-waiting state, including
+  `syncNoReviewerAlert` on the round-2 ruling path.
+- n2: every 30 s the timer takes a short `FOR UPDATE` on every appealed dispute and runs one
+  candidate-list query each. That is fine at current volume. If appeals pile up, run the candidate query
+  once per pass.
+
+### Tests run (serialised runner, at 38e71072)
+All passed:
+- disputes/appeals: 11/11
+- disputes/trader: 18/18
+- disputes/staff: 27 passed, 1 todo (already on main)
+- staff/matrix: 102/102
+- schema: 77/77
+
+Logs are in the scratchpad's `logs/rv-appeals2-*`.
