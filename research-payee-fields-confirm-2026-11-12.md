@@ -30,11 +30,11 @@ Every box label is still COPY-UNSIGNED. The corrections below are proposals for 
 
   | Confidence | Count |
   |---|---|
-  | high | 32 |
-  | medium | 29 |
+  | high | 33 |
+  | medium | 28 |
   | low | 1 (CAPITUAL) |
 
-  The 29 that stay medium are mostly:
+  The 28 that stay medium are mostly:
   - generic bank methods, which vary by country and so cannot be pinned to one provider page;
   - providers whose help centres would not load (Uphold, Volet, Paxum);
   - providers covered only by press or partner pages.
@@ -150,6 +150,6 @@ Gift cards (all "nothing to send", except Amazon's optional delivery email). For
   - Deadline: 14 Dec 2026.
   - Both boxes were added as optional, and SPEI joined the coverage test's card-number list.
 - Applied: CASH_AT_ATM, NEQUI, WORLDREMIT, POSTEPAY, LYDIA, ALI_PAY, WECHAT_PAY, the ESSO catalogue name, and the notes for MONESE and CASH_DEPOSIT.
-- Confidence: every one of the 62 rows records its recheck in `source`. The doc was regenerated: 97 high, 29 medium, 1 low.
+- Confidence: every one of the 62 rows records its recheck in `source`. The doc was regenerated: 98 high, 28 medium, 1 low (corrected from 97/29 after review m-1).
 - Left for the owner: CAPITUAL, PAPARA, CANADIAN_TIRE_GIFT_CARD.
 - PAY_DETAILS_V stays at 2, because the payload shape is unchanged.

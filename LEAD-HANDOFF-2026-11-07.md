@@ -244,3 +244,6 @@ OWNER RULE (12 Nov): when his demo changes are built, refresh the demo (cloud pr
 
 ## 2026-11-12 12:35Z
 DEMO REFRESH PLAN (owner wants to walk the next demo): when ready, build wip/lead-demo-r2 = main + wip/lead-terms-v2 a467c7e7 + wip/lead-signup-v2 + wip/lead-owner-copy-1 + wip/lead-demo tooling; restart the cloud demo; tell the owner to git pull that branch on the phone. Demo reads X2F_TERMS_VERSION from TERMS_TEXT_VERSION, so no env change needed.
+
+## 2026-11-12 13:42Z
+BATCH 10 candidates: payee-fields-2 ec53ea9b (approved), bans 2ac92021+frontDoor row (approved after lead check), trades-list (B2/m3 fix pending), terms-v2 a467c7e7, owner-copy-1 (pending), signup-v2 (pending), no-russia/sanctions (pending), device-bound c7552c9d (re-verify pending). Later: proof stack, rulings line (rulings+liens+mod-screens+mod-gate+payout).
