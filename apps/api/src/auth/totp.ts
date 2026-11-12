@@ -22,7 +22,7 @@ import { ApiError } from '../errors.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen } from './challenges.js';
 import { keyringBox, type SecretBox } from './keystore.js';
 import { methodAllowed } from './methods.js';
-import { requireConfirm } from './confirm.js';
+import { onlyIfNew, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { traderLogin } from './approval.js';
 import { gateChange, stagedReply, requireNotHeld } from './hold.js';
@@ -360,7 +360,7 @@ async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
 export function totpRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/totp/start',
-    { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld, requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: true })] },
+    { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld, requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: onlyIfNew('totp') })] },
     enrolStart,
   );
   app.post('/v1/account/totp/finish', { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld] }, enrolFinish);

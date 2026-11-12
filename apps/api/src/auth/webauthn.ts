@@ -23,7 +23,7 @@ import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { hasCertificateChain, isUnknownAuthenticator } from './attestation.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
+import { confirmerOf, issueConfirmToken, onlyIfNew, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
@@ -1000,7 +1000,7 @@ export function webauthnRoutes(app: FastifyInstance): void {
       preHandler: [
         requireSession({ allowRecovery: true }),
         requireNotHeld,
-        requireConfirm(addKeyAction, { onboarding: true, recovery: true }),
+        requireConfirm(addKeyAction, { onboarding: onlyIfNew((req) => credentialKind(record(req.body).kind)), recovery: true }),
       ],
     },
     addKeyStart,

@@ -14,7 +14,7 @@ import { addAlert } from '../alerts.js';
 import { abilitiesView } from '../team/members.js';
 import { assistantLabel } from '../team/label.js';
 import type { PresetId, TeamRole } from '../team/abilities.js';
-import { requireConfirm } from '../auth/confirm.js';
+import { endOnboarding, requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
 import { changesWait, pendingSummary } from '../auth/holdChanges.js';
 import { revealDue } from '../auth/recovery.js';
@@ -343,6 +343,9 @@ export function accountRoutes(app: FastifyInstance): void {
   const readAny = { allowRecovery: true, allowHeld: true } as const;
 
   app.get('/v1/terms', async () => ({ version: deps().config.termsVersion }));
+
+  // Review M1(a): the web app closes the creating session's sign-up window on reaching Welcome.
+  app.post('/v1/account/onboarding/end', { preHandler: requireSession() }, endOnboarding);
 
   /**
    * A pre-009 account sets its private login name, once (review I3). Full session only (a held

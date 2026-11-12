@@ -28,7 +28,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
+import { confirmerOf, issueConfirmToken, onlyIfNew, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
@@ -39,6 +39,9 @@ import { NIL_UUID } from './throttle.js';
 
 // ---------------------------------------------------------------------------------------------
 // The official X2F signing key (R7)
+
+/** Where the official signing key's public half is published for import (also linked from setup). */
+export const SIGNING_KEY_WELL_KNOWN = '/.well-known/x2f-signing-key.asc';
 
 /** The official X2F PGP key every challenge is signed with; its fingerprint is published on the site. */
 export interface PgpSigner {
@@ -66,6 +69,17 @@ export async function pgpSignerFromArmored(armored: string, expectedFingerprint:
     await key.getSigningKey();
   } catch {
     throw new Error('config: X2F_PGP_SIGNING_KEY_PATH holds a key that cannot sign (expired, revoked or no signing key)');
+  }
+  // Signing-only (lead, 12 Nov 2026): the key users import only ever vouches for X2F's messages;
+  // nothing in it (primary key or subkey) may be used to encrypt to X2F.
+  let canEncrypt = true;
+  try {
+    await key.getEncryptionKey();
+  } catch {
+    canEncrypt = false;
+  }
+  if (canEncrypt) {
+    throw new Error('config: X2F_PGP_SIGNING_KEY_PATH must hold a signing-only key (it has a key that can encrypt; make it with no encryption subkey)');
   }
   return { key, fingerprint, publicArmored: key.toPublic().armor() };
 }
@@ -1024,6 +1038,11 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
     fingerprint: req.server.deps.pgpSigner.fingerprint,
     publicKey: req.server.deps.pgpSigner.publicArmored,
   }));
+  // The same public key as a file to import into a PGP app (owner demo note, 12 Nov 2026: the
+  // decrypted login message read "unknown signer" until X2F's key is imported).
+  app.get(SIGNING_KEY_WELL_KNOWN, async (req, reply) =>
+    reply.type('application/pgp-keys; charset=utf-8').header('cache-control', 'public, max-age=3600').send(req.server.deps.pgpSigner.publicArmored),
+  );
 
   app.post('/v1/register/pgp/start', { bodyLimit: PGP_BODY_LIMIT }, registerStart);
   // The Terms signature rides on the finish (owner, 8 Nov 2026): the default limit plus its room.
@@ -1045,7 +1064,7 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
         methodAllowed('pgp'),
         requireNotHeld,
         inspectNewKey,
-        requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: true, recovery: true }),
+        requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: onlyIfNew('pgp'), recovery: true }),
       ],
     },
     addKeyStart,

@@ -10,7 +10,7 @@ import { hashPassword, verifyPassword } from '../src/auth/password.js';
 import { RECOVERY_HOLD_MS } from '../src/auth/recovery.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
 import { sealSecret } from '../src/auth/totp.js';
-import { seedAccount } from './helpers/accounts.js';
+import { confirmTokenFor, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { genKey, type Pair } from './helpers/pgpKeys.js';
 import { spySql } from './helpers/sqlSpy.js';
@@ -89,8 +89,10 @@ async function withTotp(accountId: string): Promise<string> {
  */
 const endHold = (accountId: string) => deps.db.query('delete from account_holds where account_id = $1', [accountId]);
 
-async function newCodes(b: Browser): Promise<string[]> {
-  const res = await b.post('/v1/account/recovery-codes', {});
+/** `replacing`: the account already holds a code, so even the sign-up window needs a confirm token (review M1). */
+async function newCodes(b: Browser, o: { replacing?: boolean } = {}): Promise<string[]> {
+  const confirmToken = o.replacing ? await confirmTokenFor(deps, b.cookies, { kind: 'new-recovery-codes' }) : undefined;
+  const res = await b.post('/v1/account/recovery-codes', confirmToken !== undefined ? { confirmToken } : {});
   expect(res.statusCode).toBe(200);
   return (res.json() as { codes: string[] }).codes;
 }
@@ -184,7 +186,7 @@ describe('recovery-code keys (FU-C, ASVS 2.6.2)', () => {
     expect((await backup(new Browser(app), username, 'recovery-code', legacy[0]!)).statusCode).toBe(200);
     expect((await backup(new Browser(app), username, 'recovery-code', legacy[0]!)).statusCode).toBe(401);
     await endHold(id);
-    await newCodes(await loggedIn(id));
+    await newCodes(await loggedIn(id), { replacing: true });
     expect((await backup(new Browser(app), username, 'recovery-code', legacy[1]!)).statusCode).toBe(401);
     const { rows } = await deps.db.query('select 1 from recovery_codes where account_id = $1 and key_id is null', [id]);
     expect(rows).toEqual([]);
@@ -242,7 +244,7 @@ describe('backup login with a recovery code', () => {
     const { id, username } = await account();
     const owner = await loggedIn(id);
     const [old] = await newCodes(owner);
-    const codes = await newCodes(owner);
+    const codes = await newCodes(owner, { replacing: true });
     expect((await backup(new Browser(app), username, 'recovery-code', old!)).json()).toEqual({ error: 'credentials-invalid' });
 
     const b = new Browser(app);
@@ -590,7 +592,8 @@ describe('no patterns in recovery codes (R9)', () => {
     for (const position of counts) {
       const expected = 10_000 / 32;
       const chi = position.reduce((s, c) => s + (c - expected) ** 2 / expected, 0);
-      // 31 degrees of freedom; with the TOTP check, about one false alarm in 3,000 runs (R9).
+      // 31 degrees of freedom. With 64 positions (the 64-symbol code, 12 Nov 2026) at this threshold,
+      // about one false alarm in 1,500 runs, plus the TOTP check's share (R9; review I-1).
       expect(chi).toBeLessThan(76);
     }
   });

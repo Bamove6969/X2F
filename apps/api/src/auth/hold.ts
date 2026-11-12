@@ -613,6 +613,7 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
  */
 export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/account/pgp/start': 'writes only an add-key challenge bound to this session; its finish is checked',
+  'POST /v1/account/onboarding/end': "only clears this session's own sign-up window, which narrows what the session may do (review M1)",
   'POST /v1/account/totp/start': 'writes only an enrolment challenge bound to this session; its finish is checked',
   'POST /v1/account/webauthn/start': 'writes only a registration challenge bound to this session; its finish is checked',
   'POST /v1/confirm/password': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',

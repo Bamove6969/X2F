@@ -10,11 +10,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Backup } from '../src/screens/setup/Backup.js';
 import { INITIAL, SIGNUP_ORDER, SetupContext, nextStep, type SetupApi, type SetupState } from '../src/screens/setup/kit.js';
 import { Login, METHODS } from '../src/screens/setup/Login.js';
+import { PgpChallenge } from '../src/screens/setup/PgpChallenge.js';
 import { Username } from '../src/screens/setup/Username.js';
 import { fire, render } from './render.js';
 
 /** A 64-symbol code as the server makes them (16 groups of four). */
 const CODE = 'K7M2-9QXA-4FTR-8WPN-ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR';
+const SIGNING = { fingerprint: '3f2a9c417b0ed5a261c80e4b92d71f6ac3b80d15', publicKey: '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nxjMEsigning\n-----END PGP PUBLIC KEY BLOCK-----\n' };
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -29,6 +31,7 @@ beforeEach(() => {
       made += 1;
       return json(200, { codes: [CODE] });
     }
+    if (url === '/v1/pgp/signing-key') return json(200, SIGNING);
     return json(500, { error: 'internal' });
   });
 });
@@ -241,5 +244,44 @@ describe('/setup/backup: one long recovery code, written down, then typed back u
     expect(byPart(again, 'recovery-make')).toBeNull();
     expect(byPart(again, 'recovery-code')!.textContent!.replace(/\s/g, '')).toBe(CODE.replaceAll('-', ''));
     expect(made).toBe(1);
+  });
+});
+
+describe('lead calls, 12 Nov 2026', () => {
+  it('no "Add another backup" step: the recovery code goes straight on to the wallet', async () => {
+    const api = setup({ registered: true });
+    const host = show(<Backup />, api);
+    click(byPart(host, 'recovery-make'));
+    await flush();
+    click(byPart(host, 'recovery-written'));
+    click(byPart(host, 'recovery-next'));
+    type(host.querySelector<HTMLInputElement>('#recovery-typeback')!, CODE);
+    click(byPart(host, 'recovery-continue'));
+    expect(api.update).toHaveBeenCalledWith({ backup: 'recovery-codes' });
+    expect(api.go).toHaveBeenCalledWith('wallet');
+    expect(host.querySelector('[data-backup]')).toBeNull();
+    expect(byPart(host, 'backup-skip')).toBeNull();
+    expect(host.textContent).not.toContain('Add another backup');
+  });
+
+  it('a recovery code already saved in this flow opens on the wallet, never an extras step', () => {
+    const api = setup({ registered: true, backup: 'recovery-codes' });
+    const host = show(<Backup />, api);
+    expect(host.querySelector('[data-backup]')).toBeNull();
+    expect(api.go).toHaveBeenCalledWith('wallet', { replace: true });
+  });
+
+  it("the PGP code step offers X2F's signing key to import, with its fingerprint, so the message reads as signed by X2F", async () => {
+    const host = show(
+      <PgpChallenge />,
+      setup({ challenge: { challengeId: 'c1', encryptedMessage: '-----BEGIN PGP MESSAGE-----', expiresAt: '2099-01-01T00:00:00.000Z', fingerprint: 'aa' } as SetupState['challenge'] }),
+    );
+    await flush();
+    const part = byPart(host, 'signing-key')!;
+    expect(part).not.toBeNull();
+    expect(part.textContent).toContain('3F2A 9C41 7B0E D5A2 61C8  0E4B 92D7 1F6A C3B8 0D15');
+    expect(part.querySelector('a')!.getAttribute('href')).toBe('/.well-known/x2f-signing-key.asc');
+    expect(part.querySelector('a')!.hasAttribute('download')).toBe(true);
+    expect(host.querySelector('[data-part="signing-key"] [data-primary]')).toBeNull();
   });
 });

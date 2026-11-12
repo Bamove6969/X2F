@@ -13,7 +13,8 @@
  * server's answer to "Set password" is the check (a leaked one drops to Weak).
  */
 import { useState } from 'react';
-import { checkPassword, isStaged } from '@x2f/auth-client';
+import { checkPassword, isStaged, withConfirm } from '@x2f/auth-client';
+import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { HOLD_COPY } from '../settings/holdCopy.js';
 import { refreshSession } from '../../session/useSession.js';
@@ -104,6 +105,9 @@ export function Password() {
   // account that method made (`PUT /v1/account/password`, no confirm in the sign-up window).
   const adding = state.registered;
   const [held, setHeld] = useState(false);
+  // Review m-1: past the sign-up window (or when it no longer covers this), the server asks for
+  // confirm-it's-you, as on the other method steps.
+  const { prove, confirmUi, open } = useConfirm();
   const [pw, setPw] = useState('');
   const [again, setAgain] = useState('');
   const [leaked, setLeaked] = useState<Met>('unknown');
@@ -120,7 +124,7 @@ export function Password() {
     setError(null);
     try {
       if (adding) {
-        const staged = await authApi.setPassword({ password: pw });
+        const staged = await withConfirm({ kind: 'set-password' }, (t) => authApi.setPassword({ password: pw, ...(t !== undefined ? { confirmToken: t } : {}) }), prove);
         setPw('');
         setAgain('');
         if (staged !== undefined && isStaged(staged)) setHeld(true);
@@ -133,6 +137,7 @@ export function Password() {
       refreshSession();
       finishMethod(api, 'password', { registered: true, method: 'password' });
     } catch (e) {
+      if (isConfirmAbort(e)) return;
       const code = errorCode(e);
       if (termsChanged(e)) {
         update({ terms: null });
@@ -150,70 +155,73 @@ export function Password() {
   };
 
   return (
-    <SetupFrame
-      screen="setup-password"
-      step={3}
-      {...(adding ? {} : { back: path('login') })}
-      footer={
-        held ? (
-          <Button variant="primary" onClick={() => finishMethod(api, 'password')} data-part="method-next">
-            Continue
-          </Button>
-        ) : (
-          <Button variant="primary" disabled={!canSet || busy} onClick={() => void submit()} data-part="password-set">
-            Set password
-          </Button>
-        )
-      }
-    >
-      {held ? (
-        <p className="x2f-note" role="status" data-part="held-note">
-          {HOLD_COPY.staged}
+    <ConfirmOpenProvider value={open}>
+      <SetupFrame
+        screen="setup-password"
+        step={3}
+        {...(adding ? {} : { back: path('login') })}
+        footer={
+          held ? (
+            <Button variant="primary" onClick={() => finishMethod(api, 'password')} data-part="method-next">
+              Continue
+            </Button>
+          ) : (
+            <Button variant={open ? 'secondary' : 'primary'} disabled={!canSet || busy} onClick={() => void submit()} data-part="password-set">
+              Set password
+            </Button>
+          )
+        }
+      >
+        {held ? (
+          <p className="x2f-note" role="status" data-part="held-note">
+            {HOLD_COPY.staged}
+          </p>
+        ) : null}
+        <SetupIntro title="Choose a password">At least 10 characters, with upper and lower case letters, a number and a symbol.</SetupIntro>
+        <label className="x2f-field x2f-label" htmlFor="pw">
+          Password
+          <input
+            className="x2f-input"
+            id="pw"
+            type="password"
+            autoComplete="new-password"
+            value={pw}
+            onChange={(e) => {
+              setPw(e.target.value);
+              setLeaked('unknown');
+            }}
+          />
+        </label>
+        <StrengthMeter level={strength} />
+        <label className="x2f-field x2f-label" htmlFor="pw2">
+          Type it again
+          <input className="x2f-input" id="pw2" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
+        </label>
+        <ul className="x2f-start__rules" aria-label="Password rules">
+          <Rule id="length" met={yes(rules.length)}>
+            10 characters or more
+          </Rule>
+          <Rule id="cases" met={yes(rules.cases)}>
+            Upper and lower case letters
+          </Rule>
+          <Rule id="number-symbol" met={yes(rules.numberSymbol)}>
+            A number and a symbol
+          </Rule>
+          <Rule id="leaked" met={leaked}>
+            Not on the list of leaked passwords
+          </Rule>
+          <Rule id="match" met={yes(rules.match)}>
+            Both match
+          </Rule>
+        </ul>
+        <RegisterError error={error} />
+        {/* not-a-refusal: explains password storage */}
+        <p className="x2f-start__help">
+          X2F stores a scrambled version that can't be turned back into your password. We have no email address to reset it with, so keep it in a
+          password manager or somewhere else safe.
         </p>
-      ) : null}
-      <SetupIntro title="Choose a password">At least 10 characters, with upper and lower case letters, a number and a symbol.</SetupIntro>
-      <label className="x2f-field x2f-label" htmlFor="pw">
-        Password
-        <input
-          className="x2f-input"
-          id="pw"
-          type="password"
-          autoComplete="new-password"
-          value={pw}
-          onChange={(e) => {
-            setPw(e.target.value);
-            setLeaked('unknown');
-          }}
-        />
-      </label>
-      <StrengthMeter level={strength} />
-      <label className="x2f-field x2f-label" htmlFor="pw2">
-        Type it again
-        <input className="x2f-input" id="pw2" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
-      </label>
-      <ul className="x2f-start__rules" aria-label="Password rules">
-        <Rule id="length" met={yes(rules.length)}>
-          10 characters or more
-        </Rule>
-        <Rule id="cases" met={yes(rules.cases)}>
-          Upper and lower case letters
-        </Rule>
-        <Rule id="number-symbol" met={yes(rules.numberSymbol)}>
-          A number and a symbol
-        </Rule>
-        <Rule id="leaked" met={leaked}>
-          Not on the list of leaked passwords
-        </Rule>
-        <Rule id="match" met={yes(rules.match)}>
-          Both match
-        </Rule>
-      </ul>
-      <RegisterError error={error} />
-      {/* not-a-refusal: explains password storage */}
-      <p className="x2f-start__help">
-        X2F stores a scrambled version that can't be turned back into your password. We have no email address to reset it with, so keep it in a
-        password manager or somewhere else safe.
-      </p>
-    </SetupFrame>
+        {confirmUi}
+      </SetupFrame>
+    </ConfirmOpenProvider>
   );
 }

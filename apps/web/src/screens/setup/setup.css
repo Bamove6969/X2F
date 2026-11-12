@@ -174,9 +174,9 @@
 }
 
 .x2f-start__typeback[data-match='yes'] {
-  border-color: var(--x2f-escrow);
-  outline-color: var(--x2f-escrow);
-  color: var(--x2f-escrow);
+  border-color: var(--x2f-good);
+  outline-color: var(--x2f-good);
+  color: var(--x2f-good);
 }
 
 .x2f-start__match {
@@ -191,7 +191,7 @@
 }
 
 .x2f-start__match[data-tone='yes'] {
-  color: var(--x2f-escrow);
+  color: var(--x2f-good);
 }
 
 /* The 64-symbol recovery code: four groups to a row. */
@@ -326,6 +326,37 @@
   cursor: pointer;
 }
 
+/* A text button standing on its own (not inside a sentence): a 44 px tap target (lead call, 12 Nov 2026). */
+.x2f-start__textbutton--tap {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* X2F's signing key on the PGP code step. */
+.x2f-start__signing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: 12px;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+}
+
+.x2f-start__signing-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.x2f-start__signing-link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 44px;
+  color: var(--x2f-monero-ink);
+}
+
 .x2f-start__textbutton:hover {
   color: var(--x2f-monero-ink-hover);
 }
@@ -382,9 +413,8 @@
 }
 
 /*
- * The strength words (owner, 12 Nov 2026: "strong in green letters"). The design system's own
- * "good" colour is --x2f-escrow (teal), so Strong uses it until design adds a green; Medium and
- * Weak take the caution and danger colours (for design to confirm).
+ * The strength words (owner, 12 Nov 2026: "strong in green letters"; lead call: its own green
+ * token, --x2f-good). Medium and Weak take the caution and danger colours (for design to confirm).
  */
 .x2f-start__strength {
   font-size: 12px;
@@ -393,7 +423,7 @@
 }
 
 .x2f-start__strength[data-strength='strong'] {
-  color: var(--x2f-escrow);
+  color: var(--x2f-good);
 }
 
 .x2f-start__strength[data-strength='medium'] {

@@ -15,6 +15,7 @@ const TERMS_VERSION = '2026-11-09';
 const CODE = 'K7M2-9QXA-4FTR-8WPN-ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR';
 const MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 const ADDRESS = `4${'9'.repeat(90)}k3Fz`;
+const SIGNING = { fingerprint: '3f2a9c417b0ed5a261c80e4b92d71f6ac3b80d15', publicKey: '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nxjMEsigning\n-----END PGP PUBLIC KEY BLOCK-----\n' };
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
@@ -31,12 +32,15 @@ interface Stub {
   bodies: Record<string, unknown[]>;
 }
 
+function recordIn(s: Stub, name: string, r: Route): void {
+  s.calls.push(name);
+  (s.bodies[name] ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
+}
+const record = recordIn;
+
 async function stubApi(page: Page): Promise<Stub> {
   const s: Stub = { registered: false, methods: [], calls: [], bodies: {} };
-  const record = (name: string, r: Route) => {
-    s.calls.push(name);
-    (s.bodies[name] ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
-  };
+  const record = (name: string, r: Route) => recordIn(s, name, r);
   page.on('request', (r) => {
     const u = new URL(r.url());
     if (u.pathname.startsWith('/v1/confirm/')) s.calls.push(`confirm ${u.pathname}`);
@@ -47,6 +51,7 @@ async function stubApi(page: Page): Promise<Stub> {
       : json({ error: 'not-authenticated' }, 401)(r),
   );
   await page.route('**/v1/terms', json({ version: TERMS_VERSION }));
+  await page.route('**/v1/pgp/signing-key', json(SIGNING));
   await page.route('**/v1/register/name-check', json({ available: true }));
   await page.route('**/v1/register/pgp/start', (r) => {
     record('pgp-start', r);
@@ -82,7 +87,17 @@ async function stubApi(page: Page): Promise<Stub> {
     return json({ codes: [CODE] })(r);
   });
   await page.route('**/v1/wallets/rule', json({ firstWallet: true, strongMethods: ['pgp'], password: 'none', waitHours: 24 }));
-  await page.route('**/v1/wallets', (r) => (r.request().method() === 'GET' ? json([])(r) : json([], 201)(r)));
+  await page.route('**/v1/wallets', (r) => {
+    if (r.request().method() === 'GET') return json([])(r);
+    record('wallets', r);
+    const b = JSON.parse(r.request().postData() ?? '{}') as { wallets: { app: string; label: string; address: string }[] };
+    return json(b.wallets.map((w, i) => ({ id: `00000000-0000-4000-8000-00000000000${i}`, ...w, addressEnd: w.address.slice(-4), usableFrom: '2026-10-25T00:00:00.000Z', usable: true })), 201)(r);
+  });
+  // Security review M1(a): reaching Welcome closes the sign-up window.
+  await page.route('**/v1/account/onboarding/end', (r) => {
+    record('onboarding-end', r);
+    return json({ ok: true })(r);
+  });
   return s;
 }
 
@@ -145,7 +160,9 @@ for (const v of VIEWPORTS) {
     for (const id of ['pgp', 'security-key']) {
       await expect(page.locator(`[data-method="${id}"] [data-part="recommended"]`)).toHaveText('Recommended');
       await expect(page.locator(`[data-method="${id}"] [data-part="strength"]`)).toHaveText('Strong');
-      expect(await colour(page, `[data-method="${id}"] [data-part="strength"]`, 'color')).toBe(await token(page, '--x2f-escrow'));
+      // Lead call (12 Nov 2026): green, its own token (not the escrow teal).
+      expect(await colour(page, `[data-method="${id}"] [data-part="strength"]`, 'color')).toBe(await token(page, '--x2f-good'));
+      expect(await token(page, '--x2f-good')).not.toBe(await token(page, '--x2f-escrow'));
     }
     await expect(page.locator('[data-method="totp"] [data-part="strength"]')).toHaveText('Medium');
     await expect(page.locator('[data-method="totp"]')).toContainText('6-digit code');
@@ -159,13 +176,9 @@ for (const v of VIEWPORTS) {
     await expect(tick(page, 'totp')).toBeEnabled();
     await page.click('[data-method="totp"]');
     await expect(tick(page, 'totp')).toBeChecked();
-    // No sideways scroll on the login step. (Its "New to PGP?" text button predates this job and is
-    // under the 32 px tap floor, so the full phone-layout check is not run here; reported to the lead.)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    for (const id of ['pgp', 'security-key', 'passkey', 'totp', 'password']) {
-      const r = (await page.locator(`[data-method="${id}"]`).boundingBox())!;
-      expect(r.height).toBeGreaterThanOrEqual(44);
-    }
+    // Lead call: "New to PGP?" is a 44 px tap target, and the whole step passes the phone layout check.
+    expect((await page.locator('[data-part="pgp-explain"]').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await expectPhoneLayout(page);
     await page.click('[data-part="method-continue"]');
 
     // PGP first: its key box is much bigger.
@@ -178,6 +191,11 @@ for (const v of VIEWPORTS) {
     await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
     await page.click('[data-part="key-continue"]');
     await expect(page).toHaveURL(/\/setup\/pgp-code\?/);
+    // X2F's signing key to import (lead call, owner's "unknown signer" note): fingerprint and download.
+    const signing = page.locator('[data-part="signing-key"]');
+    await expect(signing).toContainText('3F2A 9C41 7B0E D5A2 61C8  0E4B 92D7 1F6A C3B8 0D15');
+    await expect(signing.locator('a')).toHaveAttribute('href', '/.well-known/x2f-signing-key.asc');
+    await expectPhoneLayout(page);
     await page.fill('#phrase', 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR');
     await page.click('[data-part="pgp-verify"]');
     await page.click('[data-part="pgp-continue"]');
@@ -230,18 +248,48 @@ for (const v of VIEWPORTS) {
     await page.keyboard.insertText(CODE.replaceAll('-', '').toLowerCase());
     await expect(input).toHaveValue(CODE);
     await expect(input).toHaveAttribute('data-match', 'yes');
-    expect(await colour(page, '#recovery-typeback', 'borderTopColor')).toBe(await token(page, '--x2f-escrow'));
+    expect(await colour(page, '#recovery-typeback', 'borderTopColor')).toBe(await token(page, '--x2f-good'));
     await page.click('[data-part="recovery-continue"]');
-    await expect(page.locator('[data-part="backup-skip"]')).toBeVisible();
-    await page.click('[data-part="backup-skip"]');
+    // Lead call: no "Add another backup" step; straight on to the wallet.
     await expect(page).toHaveURL(/\/setup\/wallet\?/);
     await page.fill('#addr', ADDRESS);
+    await page.click('[data-part="wallet-finish"]');
+    await expect(page).toHaveURL(/\/setup\/welcome\?/);
+    await expect.poll(() => s.calls.includes('onboarding-end')).toBe(true);
 
     // One sign-up (the PGP key), then the password and the authenticator added to it, with no
     // confirm-it's-you in the sign-up window; one recovery code made, nothing sent to check it.
-    expect(s.calls.filter((c) => !c.startsWith('confirm'))).toEqual(['pgp-start', 'pgp-finish', 'set-password', 'totp-start', 'totp-finish', 'recovery-codes']);
+    expect(s.calls.filter((c) => !c.startsWith('confirm'))).toEqual(['pgp-start', 'pgp-finish', 'set-password', 'totp-start', 'totp-finish', 'recovery-codes', 'wallets', 'onboarding-end']);
     expect(s.calls.filter((c) => c.startsWith('confirm'))).toEqual([]);
     expect(s.bodies['set-password']).toEqual([{ password: 'Quiet-harbour-58' }]);
+  });
+
+  test(`${v}: a password added after PGP outside the sign-up window asks to confirm it's you (review m-1)`, async ({ page }) => {
+    await setPhone(page, v);
+    const s = await stubApi(page);
+    await page.unroute('**/v1/account/password');
+    await page.route('**/v1/account/password', (r) => {
+      record(s, 'set-password', r);
+      return json({ error: 'confirm-required', action: 'set-password' }, 403)(r);
+    });
+    await page.goto('/setup?returnTo=%2Fpost');
+    await acceptTerms(page);
+    await pickNames(page);
+    await page.click('[data-method="password"]');
+    await page.click('[data-part="method-continue"]');
+    await page.fill('#pub', realKey);
+    await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
+    await page.click('[data-part="key-continue"]');
+    await page.fill('#phrase', 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR');
+    await page.click('[data-part="pgp-verify"]');
+    await page.click('[data-part="pgp-continue"]');
+    await expect(page).toHaveURL(/\/setup\/password\?/);
+    await page.fill('#pw', 'Quiet-harbour-58');
+    await page.fill('#pw2', 'Quiet-harbour-58');
+    await page.click('[data-part="password-set"]');
+    // The confirm sheet opens with the account's PGP key, rather than a dead end.
+    await expect(page.locator('[role="dialog"] [data-method="pgp"]')).toBeVisible();
+    await expect(page.locator('[data-part="register-error"]')).toHaveCount(0);
   });
 
   test(`${v}: the /login PGP key box is the same width and much taller`, async ({ page }) => {

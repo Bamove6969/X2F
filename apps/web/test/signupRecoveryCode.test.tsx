@@ -113,17 +113,14 @@ describe('S-017: the recovery code is required at sign-up', () => {
     expect(byPart(host, 'recovery-continue')!.hasAttribute('disabled')).toBe(false);
     click(byPart(host, 'recovery-continue'));
     expect(api.update).toHaveBeenCalledWith({ backup: 'recovery-codes' });
-    expect(api.go).not.toHaveBeenCalled();
   });
 
-  it('after the code, the other backups are optional and Skip goes on to the wallet', async () => {
+  it('after the code, it goes straight on to the wallet: no other backup is offered (lead call, 12 Nov 2026)', async () => {
     const { host, api } = await shown();
     type(toTypeBack(host), CODES[0]!);
     click(byPart(host, 'recovery-continue'));
-    expect(host.querySelector('[data-backup="recovery-codes"]')).toBeNull();
-    expect(host.querySelector('[data-backup="security-key"]')).not.toBeNull();
-    expect(host.querySelector('[data-backup="pgp"]')).not.toBeNull();
-    click(byPart(host, 'backup-skip'));
+    expect(host.querySelector('[data-backup]')).toBeNull();
+    expect(byPart(host, 'backup-skip')).toBeNull();
     expect(api.go).toHaveBeenCalledWith('wallet');
   });
 

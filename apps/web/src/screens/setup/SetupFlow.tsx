@@ -84,11 +84,24 @@ export function SetupFlow() {
         <Route path="authenticator" element={more('totp', <AuthenticatorStep />)} />
         <Route path="backup" element={<Backup />} />
         <Route path="wallet" element={after(<Wallet />)} />
-        <Route path="welcome" element={after(<Welcome />)} />
+        <Route path="welcome" element={after(<EndSignup registered={state.registered}><Welcome /></EndSignup>)} />
         <Route path="*" element={<Navigate to={path('')} replace />} />
       </Routes>
     </SetupContext.Provider>
   );
+}
+
+/**
+ * Security review M1(a) (12 Nov 2026): reaching Welcome after this flow made the account ends
+ * sign-up, so the creating session's sign-up window (no confirm-it's-you for a first method) is
+ * closed. Best effort: if the call fails the window still ends on its own after 30 minutes, and
+ * Start trading logs the session out (G25).
+ */
+function EndSignup({ registered, children }: { registered: boolean; children: ReactNode }) {
+  useEffect(() => {
+    if (registered) void authApi.endOnboarding().catch(() => undefined);
+  }, [registered]);
+  return children;
 }
 
 /**

@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError, type Wallet } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { BACKUPS } from '../src/screens/setup/Backup.js';
+import * as BackupStep from '../src/screens/setup/Backup.js';
 import { stepPath } from '../src/screens/setup/kit.js';
 import { passwordRules } from '../src/screens/setup/Password.js';
 import { groupFingerprint } from '../src/screens/setup/PgpKey.js';
@@ -64,8 +64,9 @@ describe('summarize (Welcome rows)', () => {
     expect(summarize({ methods: ['password', 'totp'] }, [], fresh)).toMatchObject({ loginWith: 'Password', backup: 'None yet' });
   });
 
-  it('setup offers no authenticator app as a backup; recovery codes come first and are picked', () => {
-    expect(BACKUPS.map((b) => b.id)).toEqual(['recovery-codes', 'security-key', 'pgp']);
+  it('setup offers no authenticator app as a backup; lead call (12 Nov 2026): it offers no backup but the recovery code', () => {
+    // The list of optional backups is gone with its step (signupV2.test.tsx renders the step and finds no other backup).
+    expect('BACKUPS' in BackupStep).toBe(false);
   });
 
   it('"You get paid to" shows only a usable wallet, never one still waiting', () => {

@@ -208,7 +208,7 @@ export function Login() {
         </p>
       ) : null}
       <RegisterError error={error} />
-      <button type="button" className="x2f-start__textbutton" aria-expanded={explain} onClick={() => setExplain((x) => !x)} data-part="pgp-explain">
+      <button type="button" className="x2f-start__textbutton x2f-start__textbutton--tap" aria-expanded={explain} onClick={() => setExplain((x) => !x)} data-part="pgp-explain">
         New to PGP?
       </button>
       {explain ? (

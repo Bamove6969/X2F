@@ -13,7 +13,7 @@ import {
 import { ApiError } from '../errors.js';
 import { ARGON2_SLOTS } from '../limits.js';
 import { parseConfirmAction } from './actionInput.js';
-import { issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
+import { issueConfirmToken, onlyIfNew, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { methodAllowed, passwordAllowed } from './methods.js';
 import { traderLogin } from './approval.js';
@@ -492,7 +492,7 @@ export function passwordRoutes(app: FastifyInstance): void {
         checkNewPassword,
         // Owner S-110: an optional recovery code, checked before the confirm token is spent.
         checkChangeCode,
-        requireConfirm({ kind: 'set-password' }, { onboarding: true, recovery: true }),
+        requireConfirm({ kind: 'set-password' }, { onboarding: onlyIfNew('password'), recovery: true }),
       ],
     },
     setPasswordHandler,
