@@ -308,3 +308,6 @@ The smallest tour (the 10-box start set) is Find a trade, Dispute room 1–2 (`d
 
 ## For the owner (one question)
 On pages a new trader has no data for yet (Offers, Offer details, the Trade room, My trades), should the tour show a clearly marked **Example**? That's the default here. The alternative is to skip those pages until the person has a real trade.
+
+## Head designer ruling (12 Nov)
+- Pages where a new trader has no data yet (Offers, Offer details, Trade room, My trades): show the tour on clearly marked "Example" content. Design decides this; it doesn't need the owner.
