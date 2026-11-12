@@ -1063,3 +1063,12 @@ J-34 rulings: docs/design-rulings-J34-2026-11-09.md (28d45d74). Canvas v167.
   - browse toggle: "Show amounts with the seller's price"
   - quote chips: "Seller's price / Market price"
   - trade terms: "the seller's price (0.4% above market)" (COPY-UNSIGNED)
+
+## 12 Nov — design's four workers: all settled (canvas v170)
+
+- docs/wording/settled-batch10-12.md: Wording Room batches 10–12, 273 questions settled (183 kept, 89 changed, 1 owner). The owner's 15 answers are kept exactly.
+- docs/wording/settled-payment-boxes.md: the Payment boxes tab, all 101 lines (312 boxes). Add `hint?: string` to `PayFieldSpec`. Part B answers the five 10 Nov questions.
+- docs/wording/settled-register-calls.md: the 19 register calls (O-021 … G-025). No owner items.
+- docs/wording/settled-freeze-recovery-jabber.md: the 12 Nov list (freeze refusals, See why, deleted-record freeze, recovery code strings, reviews on hold, Fast badge, the J-20 messages).
+- Boards: new JabberEvents (+Wide); Loud alarm card added to Alerts (+Wide).
+- Owner decision 12 Nov: the Russian methods (MIR, SBP, YooMoney) are REMOVED at launch. Capitual is still waiting on the owner.
