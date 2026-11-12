@@ -143,6 +143,9 @@ test('parity with DisputeRoom at 390x844', async ({ page }) => {
 test('parity with DisputeRuling at 390x844', async ({ page }) => {
   await stub(page, { trade: disputed('buyer', T('14:32')), dispute: disputeView({ status: 'ruled', ruling: RULING, serverNow: T('14:32') }) });
   await open(page);
+  // Wait for the ruling before comparing, as the DisputeRoom parity waits for its badge: under load
+  // (another spec building) the comparison otherwise ran before the screen had drawn.
+  await expect(page.getByText('Ruling: release to the buyer')).toBeVisible();
   await expectParity(page, 'DisputeRuling', { primary: false });
   // The appeal countdown's board texts are KNOWN_EXCEPTIONS (a mask cannot stand for "47 h 58 min"); its shape:
   await expect(page.locator('.dispute-window-open')).toHaveText(/^Open · \d+ h \d+ min left$/);

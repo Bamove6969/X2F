@@ -1,0 +1,145 @@
+/* The intro lab (/lab/intro, demo builds only): the owner's proof of concept. Theme tokens only. */
+.intro-lab {
+  min-height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: var(--x2f-space-5) var(--x2f-space-4) var(--x2f-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+}
+
+.intro-lab__kicker {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+  font-size: 13px;
+}
+
+.intro-lab__title {
+  margin: var(--x2f-space-1) 0 0;
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
+}
+
+.intro-lab__text {
+  margin: var(--x2f-space-2) 0 0;
+  color: var(--x2f-ink-muted);
+}
+
+.intro-lab__canvas {
+  display: block;
+  width: 100%;
+  height: 280px;
+  border-radius: var(--x2f-radius-lg);
+  background: radial-gradient(circle at 50% 40%, var(--x2f-surface) 0%, var(--x2f-ground) 70%);
+}
+
+/* The stand-in screen the tour points at (the arrow comes in from the left of each target). */
+.intro-lab__stage {
+  position: relative;
+}
+
+.intro-lab__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.intro-lab__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-3);
+}
+
+.intro-lab__label {
+  color: var(--x2f-ink-muted);
+}
+
+.intro-lab__fake,
+.intro-lab__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--x2f-space-4);
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-weight: 700;
+}
+
+.intro-lab__chip {
+  min-height: 28px;
+  border: 1px solid var(--x2f-escrow);
+  background: transparent;
+  color: var(--x2f-escrow);
+  font-size: 14px;
+}
+
+/* The tour: a ring around the target and an arrow above it. Quick fade in, quick fade out. */
+.intro-lab__ring,
+.intro-lab__arrow {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+.intro-lab__ring {
+  border: 2px solid var(--x2f-escrow);
+  border-radius: var(--x2f-radius-pill);
+  /* A soft halo without a shadow (the kit allows box-shadow only for the nav lines). */
+  outline: 6px solid color-mix(in srgb, var(--x2f-escrow) 22%, transparent);
+}
+
+.intro-lab__arrow {
+  fill: none;
+  stroke: var(--x2f-escrow);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.intro-lab__ring[data-shown='true'],
+.intro-lab__arrow[data-shown='true'] {
+  opacity: 1;
+}
+
+.intro-lab__ring[data-shown='false'],
+.intro-lab__arrow[data-shown='false'] {
+  transition-duration: 110ms;
+  transition-timing-function: ease-in;
+}
+
+.intro-lab__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-3);
+  margin-top: auto;
+}
+
+.intro-lab__count {
+  color: var(--x2f-ink-muted);
+}
+
+.intro-lab__button {
+  min-width: 96px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-lab__ring,
+  .intro-lab__arrow,
+  .intro-lab__ring[data-shown='false'],
+  .intro-lab__arrow[data-shown='false'] {
+    transition: none;
+  }
+}

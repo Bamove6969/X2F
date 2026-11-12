@@ -60,10 +60,10 @@ async function expectPointing(page: Page, target: Locator): Promise<void> {
   expect(r.x + r.width).toBeGreaterThanOrEqual(t.x + t.width);
   expect(r.y + r.height).toBeGreaterThanOrEqual(t.y + t.height);
   const a = (await arrow.boundingBox())!;
-  // The arrow sits just above the ring, over its horizontal span.
-  expect(a.y + a.height).toBeLessThanOrEqual(r.y + 2);
-  expect(a.x + a.width / 2).toBeGreaterThanOrEqual(r.x);
-  expect(a.x + a.width / 2).toBeLessThanOrEqual(r.x + r.width);
+  // The arrow sits just left of the ring, at its height, pointing at it.
+  expect(a.x + a.width).toBeLessThanOrEqual(r.x + 2);
+  expect(a.y + a.height / 2).toBeGreaterThanOrEqual(r.y);
+  expect(a.y + a.height / 2).toBeLessThanOrEqual(r.y + r.height);
 }
 
 async function shot(page: Page, name: string): Promise<void> {
@@ -136,7 +136,8 @@ test.describe('intro lab (/lab/intro, demo builds only)', () => {
     await expect(canvas).toHaveAttribute('data-intro-scene', 'ready');
     await expect(page.locator('[data-intro-root]')).toHaveAttribute('data-motion', 'reduced');
     const duration = await page.locator('[data-tour-ring]').evaluate((el) => getComputedStyle(el).transitionDuration);
-    expect(parseFloat(duration)).toBe(0);
+    // base.css's reduced-motion rule makes every transition 0.01 ms: none, in effect.
+    expect(parseFloat(duration)).toBeLessThanOrEqual(0.001);
     await page.getByRole('button', { name: 'Next' }).click();
     // No tween: the next scene is in place on the next frame.
     await expect(canvas).toHaveAttribute('data-step', '1');
