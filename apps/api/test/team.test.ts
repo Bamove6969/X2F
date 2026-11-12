@@ -1989,6 +1989,52 @@ describe('a member reads each part of the trades only with its box (review trade
     expect(status(await withHistory.browser.get(`/v1/trades/${d.code}/dispute`))).toBe('forbidden');
   });
 
+  it('re-verify m3: a member acts on a trade (POST events) only with the box for its part, besides the event\'s own', async () => {
+    const owner = await team();
+    const seller = await team();
+    // An open trade where the owner is the buyer, secured: mark-paid is the owner side's event.
+    const o = await seedTrade(deps, { sellerId: seller.id, buyerId: owner.id, poster: 'seller' });
+    const secured = await driveTo(deps, o.trade, 'secured');
+    const paidHistory = await member(owner.id, { abilities: ['trades-mark-paid', ...HISTORY] });
+    const paidActive = await member(owner.id, { abilities: ['trades-mark-paid', ...ACTIVE] });
+    const markPaid = { type: 'mark-paid', fiatCents: secured.fiatCents.toString() };
+    expect(err(await paidHistory.browser.post(`/v1/trades/${o.code}/events`, markPaid))).toEqual({ status: 403, error: 'forbidden' });
+    expect((await loadTrade(deps.db, o.code))!.state).toBe('secured');
+    const ok = await paidActive.browser.post(`/v1/trades/${o.code}/events`, markPaid);
+    expect(ok.statusCode, ok.body).toBe(200);
+
+    // A completed trade (refunded on the buyer's cancel): Confirm cancel needs See trade history.
+    const { done } = await twoTrades(owner);
+    const cancelActive = await member(owner.id, { abilities: ['trades-confirm-cancel', ...ACTIVE] });
+    const cancelHistory = await member(owner.id, { abilities: ['trades-confirm-cancel', ...HISTORY] });
+    expect(err(await cancelActive.browser.post(`/v1/trades/${done}/events`, { type: 'confirm-cancel' }))).toEqual({ status: 403, error: 'forbidden' });
+    expect((await loadTrade(deps.db, done))!.cancelConfirmedAt).toBeNull();
+    const confirmed = await cancelHistory.browser.post(`/v1/trades/${done}/events`, { type: 'confirm-cancel' });
+    expect(confirmed.statusCode, confirmed.body).toBe(200);
+  });
+
+  it('re-verify m3: a member appeals only with the box for the trade\'s part, besides the appeal box', async () => {
+    const owner = await team();
+    const other = await team();
+    const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    const withActive = await member(owner.id, { abilities: ['disputes-appeal', ...ACTIVE] });
+    const withHistory = await member(owner.id, { abilities: ['disputes-appeal', ...HISTORY] });
+    for (const b of [owner.browser, withActive.browser, withHistory.browser]) expect((await b.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
+    const opened = await owner.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'x' });
+    expect(opened.statusCode, opened.body).toBe(200);
+    await publishRuling(deps, d.code, { outcome: 'release-to-buyer' });
+    // Whichever part the ruled trade is in now, the other part's box alone is refused, and writes nothing.
+    const closed = (await loadTrade(deps.db, d.code))!.closedAt !== null;
+    const [right, wrong] = closed ? [withHistory, withActive] : [withActive, withHistory];
+    const why = { why: 'The moderator missed my bank statement.' };
+    expect(err(await wrong.browser.post(`/v1/trades/${d.code}/appeal`, why))).toEqual({ status: 403, error: 'forbidden' });
+    expect((await deps.db.query('select 1 from dispute_appeals where code = $1', [d.code])).rowCount).toBe(0);
+    const appealed = await right.browser.post(`/v1/trades/${d.code}/appeal`, why);
+    expect(appealed.statusCode, appealed.body).toBe(200);
+  });
+
   it("a trade's review stays the account owner's: a member is refused whatever their boxes", async () => {
     const owner = await team();
     const { done } = await twoTrades(owner);
