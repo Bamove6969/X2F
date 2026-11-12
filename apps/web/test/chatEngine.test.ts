@@ -800,4 +800,114 @@ describe('chat engine: the payment proof (Plan 5 Task 15)', () => {
     expect(out).toContainEqual(expect.objectContaining({ t: 'chat', id: 2, ok: true }));
     expect(got).toHaveLength(1);
   });
+
+  it('review M4: no proof before the trade is secured: the engine refuses it with not-ready, nothing sealed or posted, the seq kept', async () => {
+    api.view.tradeSecuredAt = null;
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.sendProof(chat, await attached())).rejects.toMatchObject({ code: 'not-ready' });
+    // Evidence waits for securing too (the lead's call, review M4's owner question: recommendation no).
+    await expect(e.sendProof(chat, await attached({ kind: 'evidence' }))).rejects.toMatchObject({ code: 'not-ready' });
+    expect(api.posted).toHaveLength(0);
+    expect((await store.load(chat))!.state?.nextSeq ?? 0).toBe(0);
+    await e.send(chat, 'still securing');
+    expect((api.posted[0] as Envelope).seq).toBe(0);
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    await e.sendProof(chat, await attached());
+    expect(api.posted).toHaveLength(2);
+  });
+
+  it('review M4: the worker answers chat-send-proof with not-ready while the trade is not secured', async () => {
+    api.view.tradeSecuredAt = null;
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    const { serveChat } = await import('../src/chat/serve.js');
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => e);
+    handler({ data: { t: 'chat-send-proof', id: 1, chat, proof: await attached() } });
+    for (let i = 0; i < 400 && out.length < 1; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(out).toEqual([{ t: 'chat', id: 1, ok: false, error: 'not-ready' }]);
+    expect(api.posted).toHaveLength(0);
+  });
+
+  it('review M2: a proof whose post got no answer (the connection dropped, or a 5xx) is uncertain, not refused; a 4xx is still refused', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    const post = api.postEnvelope.bind(api);
+    // Stored, then the connection dropped on the response.
+    api.postEnvelope = async (c, env) => {
+      await post(c, env);
+      throw new TypeError('Failed to fetch');
+    };
+    await expect(e.sendProof(chat, await attached())).rejects.toMatchObject({ code: 'uncertain' });
+    api.postEnvelope = async () => {
+      throw Object.assign(new Error('api 502'), { status: 502, code: 'internal' });
+    };
+    await expect(e.sendProof(chat, await attached())).rejects.toMatchObject({ code: 'uncertain' });
+    api.postEnvelope = async () => {
+      throw Object.assign(new Error('api 403'), { status: 403, code: 'forbidden' });
+    };
+    await expect(e.sendProof(chat, await attached())).rejects.toMatchObject({ code: 'refused' });
+    // A chat line is unchanged by this (its copy is ChatPanel's).
+    api.postEnvelope = async () => {
+      throw new TypeError('Failed to fetch');
+    };
+    await expect(e.send(chat, 'hello')).rejects.toMatchObject({ code: 'refused' });
+    // The worker passes the code through.
+    const { serveChat } = await import('../src/chat/serve.js');
+    let handler: (ev: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (ev: { data: unknown }) => void) => (handler = cb) } as never, async () => e);
+    handler({ data: { t: 'chat-send-proof', id: 9, chat, proof: await attached() } });
+    for (let i = 0; i < 400 && out.length < 1; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(out).toEqual([{ t: 'chat', id: 9, ok: false, error: 'uncertain' }]);
+  });
+
+  it('review M2: a proof the API stored is sent even when the read after it fails', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await e.sync(chat);
+    const post = api.postEnvelope.bind(api);
+    let down = false;
+    api.postEnvelope = async (c, env) => {
+      const id = await post(c, env);
+      down = true;
+      return id;
+    };
+    const get = api.getChat.bind(api);
+    api.getChat = async () => {
+      if (down) throw new TypeError('Failed to fetch');
+      return get();
+    };
+    await expect(e.sendProof(chat, await attached())).resolves.toBeDefined();
+    expect(api.posted).toHaveLength(1);
+  });
+
+  // TRIPWIRE NEEDS_PROOF_RECEIVE (review I1): the API sees only `from`, so a modified seller client
+  // can seal `proof.attached` kind 'proof' and the server stores it. The receiving half (ChatPanel's
+  // ProofThumb, Task 15) must refuse a payment proof from anyone but the buyer and show nothing of it.
+  // Today every proof.attached is a refused receipt; when the receive half opens them, this keeps
+  // the seller's "payment proof" refused.
+  it('NEEDS_PROOF_RECEIVE tripwire: a payment proof (kind proof) from the seller is refused on receipt and shows nothing', async () => {
+    const { parseProofPayload, sealProofEnvelope } = await import('@x2f/proof');
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await e.sync(chat);
+    const fake = await attached();
+    const env = await sealProofEnvelope(parseProofPayload('proof.attached', fake), { trade: channel, from: 'seller', seq: 0, me: seller, participants: parts });
+    const id = api.add('seller', env);
+    await fromSeller('after it', parts, 'seller', 1);
+    const snap = await e.sync(chat);
+    const shown = JSON.stringify(snap);
+    for (const s of [fake.proofId, fake.key, fake.sha256]) expect(shown, s).not.toContain(s);
+    expect(snap.lines.map((l) => l.text)).toEqual(['after it']);
+    const rec = (await store.load(chat))!;
+    expect(rec.receipts.find((r) => r.id === id)?.refused).toBe(true);
+  });
 });

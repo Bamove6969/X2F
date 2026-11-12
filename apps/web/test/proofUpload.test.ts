@@ -5,6 +5,7 @@
 // The browser parts (decode with createImageBitmap, encode with OffscreenCanvas, OCR) are passed in:
 // Node has no canvas. The encoder here is a REAL PNG writer (node:zlib), and it adds a tEXt chunk on
 // purpose, so the test also proves the output is cleaned rather than trusting the encoder.
+import { randomBytes } from 'node:crypto';
 import { deflateSync, inflateSync } from 'node:zlib';
 import { type OcrWord, decryptProof, proofKeyFromBase64, redact } from '@x2f/proof';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,9 +19,11 @@ import {
   finishProof,
   manualRegion,
   prepareProof,
+  proofUploadOn,
   putProof,
   sendProof,
 } from '../src/proof/upload.js';
+import { browserProofImageDeps } from '../src/proof/browserImage.js';
 import { cleanJpeg } from '../../../packages/proof/test/fixtures.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
@@ -151,6 +154,7 @@ afterEach(() => {
   for (const k of logs) expect(console[k], `console.${k} must never be called by the proof upload`).not.toHaveBeenCalled();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 const inRegion = (x: number, y: number, rs: readonly { x0: number; y0: number; x1: number; y1: number }[]) => rs.some((r) => x >= Math.floor(r.x0) && x < Math.ceil(r.x1) && y >= Math.floor(r.y0) && y < Math.ceil(r.y1));
@@ -202,6 +206,118 @@ describe('prepareProof', () => {
       expect((e as ProofInputError).code).toBe(code);
     }
     expect(decode).not.toHaveBeenCalled();
+  });
+});
+
+describe('review M3 and M1: the decode reads the checked bytes, never the File again', () => {
+  /** A picked file that counts its reads and keeps the buffers it handed out. */
+  class Picked extends Blob {
+    reads = 0;
+    slices = 0;
+    buffers: ArrayBuffer[] = [];
+    override async arrayBuffer(): Promise<ArrayBuffer> {
+      this.reads++;
+      const b = await super.arrayBuffer();
+      this.buffers.push(b);
+      return b;
+    }
+    override slice(start?: number, end?: number, type?: string): Blob {
+      this.slices++;
+      return super.slice(start, end, type);
+    }
+  }
+
+  it('decodes a Blob of the checked bytes with the sniffed type, reads the file once, and zeroes those bytes', async () => {
+    const png = encodePng(original(), W, H, FILE_META);
+    // The file says it is a JPEG: the decoder is told what the header check found.
+    const file = new Picked([png as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' });
+    const got: { blob: Blob; bytes: Uint8Array }[] = [];
+    const decode = vi.fn(async (blob: Blob) => {
+      got.push({ blob, bytes: new Uint8Array(await blob.arrayBuffer()) });
+      return { rgba: original(), width: W, height: H };
+    });
+    const p = await prepareProof(file, KEEP, deps({ decode }));
+    expect(p.width).toBe(W);
+    expect(got).toHaveLength(1);
+    expect(got[0]!.blob).not.toBe(file);
+    expect(got[0]!.blob.type).toBe('image/png');
+    expect(Buffer.from(got[0]!.bytes).equals(Buffer.from(png))).toBe(true);
+    // One read of the picked file: the photo time and the decode use the checked copy.
+    expect(file.reads).toBe(1);
+    expect(file.slices).toBe(0);
+    // The bytes read for the check (the original file, its metadata included) are zeroed.
+    expect(file.buffers).toHaveLength(1);
+    expect(new Uint8Array(file.buffers[0]!).every((b) => b === 0)).toBe(true);
+  });
+
+  it('zeroes the checked bytes on a refusal too', async () => {
+    const file = new Picked([new TextEncoder().encode('not an image at all')]);
+    await expect(prepareProof(file, KEEP, deps())).rejects.toBeInstanceOf(ProofInputError);
+    expect(new Uint8Array(file.buffers[0]!).every((b) => b === 0)).toBe(true);
+    const bad = new Picked([encodePng(original(), W, H) as Uint8Array<ArrayBuffer>]);
+    await expect(prepareProof(bad, KEEP, deps({ decode: async () => { throw new Error('no'); } }))).rejects.toMatchObject({ code: 'undecodable' });
+    expect(new Uint8Array(bad.buffers[0]!).every((b) => b === 0)).toBe(true);
+  });
+
+  it('review M1: the decode canvas is wiped once its pixels are read', async () => {
+    const canvases: { width: number; height: number; cleared: number; readAfterClear: boolean }[] = [];
+    class FakeCanvas {
+      width: number;
+      height: number;
+      state = { width: 0, height: 0, cleared: 0, readAfterClear: false };
+      constructor(w: number, h: number) {
+        this.width = w;
+        this.height = h;
+        canvases.push(this.state);
+      }
+      getContext() {
+        const c = this;
+        return {
+          canvas: c,
+          fillStyle: '',
+          fillRect: () => undefined,
+          drawImage: () => undefined,
+          clearRect: () => void c.state.cleared++,
+          getImageData: (_x: number, _y: number, w: number, h: number) => {
+            if (c.state.cleared > 0) c.state.readAfterClear = true;
+            return { data: new Uint8ClampedArray(w * h * 4).fill(9) };
+          },
+        };
+      }
+    }
+    vi.stubGlobal('OffscreenCanvas', FakeCanvas);
+    vi.stubGlobal('createImageBitmap', async () => ({ width: 40, height: 20, close: () => undefined }));
+    const out = await browserProofImageDeps().decode(new Blob([new Uint8Array(4)]), 2600);
+    expect(out.width).toBe(40);
+    expect(out.rgba.every((b) => b === 9)).toBe(true);
+    expect(canvases).toHaveLength(1);
+    const c = canvases[0]!;
+    expect(c.cleared).toBeGreaterThan(0);
+    expect(c.readAfterClear).toBe(false);
+  });
+});
+
+describe('review M6: the flag', () => {
+  it('proofUploadOn() is off unless VITE_X2F_PROOF_UPLOAD is exactly 1', () => {
+    for (const v of [undefined, '', '0', 'true', 'TRUE', 'yes', 'on', ' 1', '1 ', '01', '2']) {
+      vi.stubEnv('VITE_X2F_PROOF_UPLOAD', v);
+      expect(proofUploadOn(), String(v)).toBe(false);
+    }
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    expect(proofUploadOn()).toBe(true);
+  });
+});
+
+describe('review M5: an image too large even as JPEG', () => {
+  it('finishProof refuses it as ProofInputError too-large (the screen shows the can\'t-use line, not a connection error)', async () => {
+    const p = await prepareProof(pickedFile(), KEEP, deps());
+    // A real, clean PNG of noise, over the cap whatever the encoder is asked for.
+    const noise = new Uint8ClampedArray(randomBytes(1100 * 1000 * 4));
+    const big = encodePng(noise, 1100, 1000);
+    expect(big.length).toBeGreaterThan(4 * 1024 * 1024);
+    const e = await finishProof(p, p.auto, deps({ encode: async () => big })).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(ProofInputError);
+    expect((e as ProofInputError).code).toBe('too-large');
   });
 });
 

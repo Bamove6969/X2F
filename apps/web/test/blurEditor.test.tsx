@@ -8,7 +8,8 @@ import { type OcrWord, type ProofExpected } from '@x2f/proof';
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type EditorRegion, type PreparedProof, PROOF_CANT_USE, PROOF_NO_AUTO_CHECK } from '../src/proof/upload.js';
-import { AddProof, PROOF_SENT } from '../src/screens/proof/AddProof.js';
+import { AddProof, PROOF_SEND_FAILED, PROOF_SEND_UNCERTAIN, PROOF_SENT } from '../src/screens/proof/AddProof.js';
+import { ChatFailed } from '../src/chat/client.js';
 import { BlurEditor, PROOF_BEST_EFFORT } from '../src/screens/proof/BlurEditor.js';
 import { PROOF_AMOUNT_HIDDEN, PROOF_NO_AMOUNT, PROOF_NOT_CURRENT } from '../src/screens/proof/ProofPrompts.js';
 import { fire, render } from './render.js';
@@ -53,6 +54,7 @@ function drag(el: Element, from: [number, number], to: [number, number]) {
 const flush = () => act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); await new Promise((r) => setTimeout(r, 0)); });
 
 afterEach(() => vi.restoreAllMocks());
+const setProofSourceOff = () => void import('../src/screens/trade/paySeams.js').then((m) => m.setProofSource(null));
 
 describe('BlurEditor', () => {
   it('shows each automatic region; a tap removes it; Send hands over the regions left', () => {
@@ -179,6 +181,143 @@ describe('AddProof', () => {
     expect($(host, '[data-part="blur-editor"]')).not.toBeNull();
     expect(textOf(host)).not.toContain(PROOF_SENT);
     expect($(host, '[data-part="proof-send-error"]')).not.toBeNull();
+  });
+});
+
+describe('AddProof: review M1, the decoded pixels are zeroed on every way out', () => {
+  function file(): File {
+    return new File([new Uint8Array([1, 2, 3])], 'x.png', { type: 'image/png' });
+  }
+  /** A prepared proof whose pixels are all 7 (so zeroing is visible), and its words. */
+  function held(): PreparedProof {
+    return prepared({ rgba: new Uint8ClampedArray(300 * 120 * 4).fill(7), words: [...WORDS] });
+  }
+  const zeroed = (p: PreparedProof) => p.rgba.every((b) => b === 0) && p.words.length === 0;
+  function pickIn(host: HTMLElement) {
+    const input = $(host, 'input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [file()] });
+    fire(input, new Event('change', { bubbles: true }));
+  }
+
+  it('leaving the screen while the editor is open (the trade room, the chat opening) zeroes them', async () => {
+    const p = held();
+    const r = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => p} send={vi.fn()} />);
+    pickIn(r.host);
+    await flush();
+    expect($(r.host, '[data-part="blur-editor"]')).not.toBeNull();
+    expect(zeroed(p)).toBe(false);
+    r.unmount();
+    expect(zeroed(p)).toBe(true);
+  });
+
+  it('a decode that finishes after the screen is gone is zeroed at once', async () => {
+    const p = held();
+    let done: (x: PreparedProof) => void = () => undefined;
+    const r = render(<AddProof code={CODE} expected={EXPECTED} prepare={() => new Promise<PreparedProof>((res) => (done = res))} send={vi.fn()} />);
+    pickIn(r.host);
+    await flush();
+    r.unmount();
+    done(p);
+    await flush();
+    expect(zeroed(p)).toBe(true);
+  });
+
+  it('leaving while a send is in flight zeroes them once the send settles, sent or not', async () => {
+    for (const outcome of ['ok', 'fail'] as const) {
+      const p = held();
+      let settle: () => void = () => undefined;
+      const send = () => new Promise<void>((res, rej) => (settle = () => (outcome === 'ok' ? res() : rej(new Error('refused')))));
+      const r = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => p} send={send} />);
+      pickIn(r.host);
+      await flush();
+      click($(r.host, '[data-part="send-proof"]'));
+      await flush();
+      r.unmount();
+      settle();
+      await flush();
+      expect(zeroed(p), outcome).toBe(true);
+    }
+  });
+
+  it('Choose another and a sent proof zero them; a failed send keeps them for the retry', async () => {
+    const a = held();
+    const r = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => a} send={async () => { throw new Error('refused'); }} />);
+    pickIn(r.host);
+    await flush();
+    click($(r.host, '[data-part="send-proof"]'));
+    await flush();
+    expect(zeroed(a)).toBe(false);
+    click($$(r.host, 'button').find((b) => b.textContent === 'Choose another') ?? null);
+    await flush();
+    expect(zeroed(a)).toBe(true);
+    const b = held();
+    const s = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => b} send={async () => undefined} />);
+    pickIn(s.host);
+    await flush();
+    click($(s.host, '[data-part="send-proof"]'));
+    await flush();
+    expect(textOf(s.host)).toContain(PROOF_SENT);
+    expect(zeroed(b)).toBe(true);
+  });
+
+  it('crossing the layout breakpoint (the slot moves in the tree, so it remounts) zeroes them', async () => {
+    const { ProofSlotLive } = await import('../src/screens/proof/proofSlot.js');
+    const p = held();
+    const slot = (wide: boolean) => <ProofSlotLive enabled code={CODE} expected={EXPECTED} wide={wide} prepare={async () => p} send={vi.fn()} />;
+    // As BuyerPay: the wide room and the phone layout put the slot at different places.
+    const Room = ({ wide }: { wide: boolean }) => (wide ? <div data-layout="wide"><section>{slot(true)}</section></div> : <div data-layout="phone">{slot(false)}</div>);
+    const r = render(<Room wide />);
+    pickIn(r.host);
+    await flush();
+    expect($(r.host, '[data-part="blur-editor"]')).not.toBeNull();
+    r.rerender(<Room wide={false} />);
+    await flush();
+    expect(zeroed(p)).toBe(true);
+    setProofSourceOff();
+  });
+});
+
+describe('AddProof: what a failed send says', () => {
+  function pickIn(host: HTMLElement) {
+    const input = $(host, 'input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [new File([new Uint8Array(3)], 'x.png')] });
+    fire(input, new Event('change', { bubbles: true }));
+  }
+
+  it('review M2: an uncertain send (the connection dropped after the post) is its own state: check the chat before sending again', async () => {
+    const { host } = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => prepared()} send={async () => { throw new ChatFailed('uncertain'); }} />);
+    pickIn(host);
+    await flush();
+    click($(host, '[data-part="send-proof"]'));
+    await flush();
+    expect($(host, '[data-part="proof-send-uncertain"]')).not.toBeNull();
+    expect(typeof PROOF_SEND_UNCERTAIN).toBe('string');
+    expect(textOf(host)).toContain(PROOF_SEND_UNCERTAIN);
+    expect(textOf(host)).not.toContain(PROOF_SEND_FAILED);
+    expect(textOf(host)).not.toContain(PROOF_SENT);
+    expect($(host, '[data-part="proof-send-error"]')).toBeNull();
+  });
+
+  it('a refused send still says it was not sent', async () => {
+    const { host } = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => prepared()} send={async () => { throw new ChatFailed('refused'); }} />);
+    pickIn(host);
+    await flush();
+    click($(host, '[data-part="send-proof"]'));
+    await flush();
+    expect(textOf(host)).toContain(PROOF_SEND_FAILED);
+    expect($(host, '[data-part="proof-send-uncertain"]')).toBeNull();
+  });
+
+  it("review M5: an image too large even as JPEG says it can't be used, never to check the connection", async () => {
+    const { ProofInputError } = await import('../src/proof/upload.js');
+    const { host } = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => prepared()} send={async () => { throw new ProofInputError('too-large'); }} />);
+    pickIn(host);
+    await flush();
+    click($(host, '[data-part="send-proof"]'));
+    await flush();
+    expect(textOf(host)).toContain(PROOF_CANT_USE);
+    expect(textOf(host)).not.toContain(PROOF_SEND_FAILED);
+    expect(textOf(host)).not.toContain(PROOF_SENT);
   });
 });
 
