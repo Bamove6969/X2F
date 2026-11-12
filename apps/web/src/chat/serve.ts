@@ -1,10 +1,14 @@
 /**
  * The chat half of the escrow worker's message protocol (Task 20). The page asks for `chat-sync`
  * and `chat-send`; the worker answers with a ChatSnapshot of verified plain lines, or an error code.
- * No chat key, ciphertext or ChatState ever crosses postMessage. One key does (proof review I6):
- * `chat-send-proof` carries a proof's own key from the page, base64 in clear on this same-origin
- * channel, because the page made it and encrypted the image under it (proof/upload.ts); the worker
- * seals it into `proof.attached` and keeps nothing. Its string cannot be zeroed (a known residual).
+ * No chat key, ciphertext or ChatState ever crosses postMessage. Proof keys do, both ways, on this
+ * same-origin channel, never stored or logged, their strings not zeroable (a known residual):
+ * - page to worker (proof-upload review I6): `chat-send-proof` carries a proof's own key, because the
+ *   page made it and encrypted the image under it (proof/upload.ts); the worker seals it into
+ *   `proof.attached` and keeps nothing;
+ * - worker to page (proof-receive review I4): a `proof.attached` line carries its proof's key in the
+ *   snapshot, so the page can fetch and decrypt that one picture (screens/proof/ChatProof.tsx). It
+ *   stays in the page's memory (React state and payDetailsFeed's last snapshot).
  */
 import { ProofError, parseProofPayload, type ProofAttachedPayload } from '@x2f/proof';
 import { PayDetailsError, parsePayDetails } from '@x2f/trade';

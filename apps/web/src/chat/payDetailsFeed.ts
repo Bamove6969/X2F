@@ -39,7 +39,11 @@ export function payRowsOf(snap: ChatSnapshot): PaymentDetail[] | null {
 const norm = (c: string): string => c.replace(/-/g, '').toUpperCase();
 const listeners = new Map<string, Set<(d: PaymentDetail[] | null) => void>>();
 const latest = new Map<string, PaymentDetail[] | null>();
-/** NEEDS_PROOF_RECEIVE: each trade's newest snapshot, for the proof state (proof/chatProof.ts chatProofState). Memory only. */
+/**
+ * NEEDS_PROOF_RECEIVE: each trade's newest snapshot, for the proof state (proof/chatProof.ts
+ * chatProofState). Memory only. It holds any proof line's key (review I4), as the open panel does,
+ * until the trade's last listener goes.
+ */
 const snapshots = new Map<string, ChatSnapshot>();
 
 /** The newest snapshot of this trade's chat that the feed or an open panel saw, or null. */

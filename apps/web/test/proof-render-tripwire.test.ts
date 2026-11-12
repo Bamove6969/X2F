@@ -3,12 +3,16 @@
 // runs the receiving device's check (showableProof -> @x2f/proof's receiveProof: type allowlist, header
 // walk, size cap, metadata stripped, decode, redraw on a fresh canvas) and shows the redrawn copy as a
 // data: URL. The decrypted bytes never reach an <img>, a Blob URL, a FileReader or a download link, in
-// the trader app or the staff app. Proof stack (wip/lead-proof-stack): ChatPanel's `proof.attached`
-// card mounts ChatProof, which decrypts and mounts ProofThumb (checked below). Still to come, each
-// mounting ProofThumb the same way: the paid card's proof slot, DisputeRoom's evidence chips
-// (seams.tsx: tradeProofs is empty) and the moderator's view (NEEDS_P4_CHAT_MEMBERSHIP); the only <img>
-// in either app is ProofThumb's own. Extend IMG_ALLOWED only for an image that
-// is not a proof (a logo or avatar from the app's own files), never for a proof.
+// the trader app or the staff app. ChatPanel's `proof.attached` card (screens/proof/ChatProof.tsx,
+// wip/lead-proof-chat-receive) mounts ProofThumb with the decrypted bytes; the paid card's proof slot,
+// DisputeRoom's evidence chips (seams.tsx: tradeProofs is empty) and the moderator's view are still
+// Task 15's, and each mounts ProofThumb the same way, so the only <img> in either app stays
+// ProofThumb's own. Extend IMG_ALLOWED only for an image that is not a proof (a logo or avatar from
+// the app's own files), never for a proof.
+// Proof stack: ChatPanel -> ChatProof -> ProofThumb is also asserted below (the chat's proof lines).
+// Proof-receive review I3 (12 Nov 2026): a file that decrypts a proof also never sends anything out
+// of the page (no fetch with a body, postMessage, sendBeacon, WebSocket or EventSource), so the
+// plaintext can only go to ProofThumb.
 // Re-verify of f8c9fa78 (10 Nov 2026, F-R1): the wire also catches the other ways to put bytes on the
 // screen (createElement('img'), new Image(), HTML strings, SVG <image>, CSS url(), <video poster>,
 // <input type="image">, any "data:" string literal), scans .js/.jsx/.mjs/.cjs too, and strips comments
@@ -149,6 +153,8 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
       if (!/\bdecryptProof\s*\(/.test(c)) continue;
       expect(c, `${f} decrypts a proof: show it with <ProofThumb>`).toMatch(/\bProofThumb\b/);
       expect(c, f).not.toMatch(/new Blob\(|new File\(|<img[\s/>]|data:image\//);
+      // Review I3: and never out of the page.
+      expect(c, `${f} decrypts a proof: it sends nothing out`).not.toMatch(/\bpostMessage\b|\bsendBeacon\b|\bWebSocket\b|\bEventSource\b|\bbody\s*:/);
     }
   });
 });

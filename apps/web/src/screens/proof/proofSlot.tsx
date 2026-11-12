@@ -1,6 +1,5 @@
 import type { ProofExpected } from '@x2f/proof';
 import type { TradeEscrow, TradeView } from '../trade/payTypes.js';
-import { markProofSent } from '../../proof/chatProof.js';
 import { AddProof, type SendArgs } from './AddProof.js';
 import type { PreparedProof } from '../../proof/upload.js';
 
@@ -34,7 +33,6 @@ export function proofExpectedOf(
     latest: now,
   };
 }
-
 
 /** The board's slot, disabled (flag off until Task 13's OCR and Task 14's storage are both on main). */
 function DisabledSlot() {
@@ -84,9 +82,8 @@ export function ProofSlotLive({
           expected={expected}
           {...(prepare ? { prepare } : {})}
           {...(send ? { send } : {})}
-          onSent={() => {
-            markProofSent(code);
-          }}
+          // The proof state is the chat's (App.tsx installs chatProofState; the send publishes its
+          // snapshot): the slot installs no source of its own (proof-receive review M4).
         />
       ) : (
         <>

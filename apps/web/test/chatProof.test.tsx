@@ -11,8 +11,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSnapshot } from '../src/chat/engine.js';
 import { PROOF_REFUSED_TITLE } from '../src/screens/proof/ProofThumb.js';
 import { CHAT_PROOF_GONE, ChatProof } from '../src/screens/proof/ChatProof.js';
-import { proofStateOfSnapshot } from '../src/proof/chatProof.js';
+import { proofCheckOf, proofStateOfSnapshot } from '../src/proof/chatProof.js';
+import { PROOF_MAX_CIPHERTEXT } from '@x2f/proof';
 import { render } from './render.js';
+
+// Review I5: every plaintext decryptProof hands ChatProof, to check that it is zeroed afterwards.
+const { decrypted } = vi.hoisted(() => ({ decrypted: [] as Uint8Array[] }));
+vi.mock('@x2f/proof', async (importOriginal) => {
+  const m = await importOriginal<typeof import('@x2f/proof')>();
+  return {
+    ...m,
+    decryptProof: async (...a: Parameters<typeof m.decryptProof>) => {
+      const out = await m.decryptProof(...a);
+      decrypted.push(out);
+      return out;
+    },
+  };
+});
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
 const latin1 = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0));
@@ -54,6 +69,7 @@ function deps(): ReceiveDeps & { decode: ReturnType<typeof vi.fn> } {
 const settle = () => act(async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0)); });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -120,20 +136,125 @@ describe('ChatProof', () => {
   });
 });
 
+describe('review M3: ChatProof records whether the proof checked out', () => {
+  it('shown is ready; refused, gone or not decrypting is failed', async () => {
+    const good = await made();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(good.ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
+    const r1 = render(<ChatProof tradeCode={CODE} proof={good.payload} deps={deps()} />);
+    await settle();
+    expect(r1.host.querySelector('img')).not.toBeNull();
+    expect(proofCheckOf(good.payload.proofId)).toBe('ready');
+    const gone = await made();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not-found' }), { status: 404 })));
+    render(<ChatProof tradeCode={CODE} proof={gone.payload} deps={deps()} />);
+    await settle();
+    expect(proofCheckOf(gone.payload.proofId)).toBe('failed');
+    const bad = await made('proof', latin1('<svg onload=alert(1)>'));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(bad.ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
+    render(<ChatProof tradeCode={CODE} proof={bad.payload} deps={deps()} />);
+    await settle();
+    expect(proofCheckOf(bad.payload.proofId)).toBe('failed');
+    expect(proofCheckOf(newProofId())).toBeUndefined();
+  });
+});
+
+describe('review I5: the decrypted picture is zeroed once ProofThumb has checked it', () => {
+  it('shown or refused, the plaintext ChatProof decrypted is zeros afterwards', async () => {
+    for (const plain of [PLAIN, latin1('<svg onload=alert(1)>')]) {
+      decrypted.length = 0;
+      const { payload, ciphertext } = await made('proof', plain);
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
+      const r = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
+      await settle();
+      if (plain === PLAIN) expect(r.host.querySelector('img')).not.toBeNull();
+      else expect(r.host.textContent).toContain(PROOF_REFUSED_TITLE);
+      expect(decrypted).toHaveLength(1);
+      expect(decrypted[0]!.length).toBe(plain.length);
+      expect(decrypted[0]!.every((x) => x === 0)).toBe(true);
+      r.unmount();
+    }
+  });
+});
+
+describe('review M5: one fetch per proof, and a bounded read', () => {
+  it('a new snapshot object for the same proof (every chat poll) does not fetch, decrypt or check it again', async () => {
+    const { payload, ciphertext } = await made();
+    const f = vi.fn(async () => new Response(ciphertext as Uint8Array<ArrayBuffer>, { status: 200 }));
+    vi.stubGlobal('fetch', f);
+    const d = deps();
+    const r = render(<ChatProof tradeCode={CODE} proof={payload} deps={d} />);
+    await settle();
+    for (let i = 0; i < 3; i++) {
+      r.rerender(<ChatProof tradeCode={CODE} proof={{ ...payload, hidden: [...payload.hidden] }} deps={d} />);
+      await settle();
+    }
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(d.decode).toHaveBeenCalledTimes(1);
+    expect(r.host.querySelector('img')).not.toBeNull();
+  });
+
+  it('an answer that says it is over the cap is refused unread', async () => {
+    const { payload } = await made();
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        // Bounded (1 MiB) so that a reader that ignores the length cannot take the test's memory.
+        if (++pulled > 16) return c.close();
+        c.enqueue(new Uint8Array(65536));
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200, headers: { 'content-length': String(PROOF_MAX_CIPHERTEXT + 1) } })));
+    const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
+    await settle();
+    expect(host.textContent).toContain(PROOF_REFUSED_TITLE);
+    expect(pulled).toBeLessThanOrEqual(2);
+  });
+
+  it('an endless answer with no length is cut at the cap', async () => {
+    const { payload } = await made();
+    let read = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        read += 65536;
+        // 8 MiB, twice the cap: enough to show the cut, small enough for the test's memory.
+        if (read > 8 * 1024 * 1024) return c.close();
+        c.enqueue(new Uint8Array(65536));
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
+    const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
+    await settle();
+    expect(host.textContent).toContain(PROOF_REFUSED_TITLE);
+    expect(read).toBeLessThanOrEqual(PROOF_MAX_CIPHERTEXT + 3 * 65536);
+  });
+});
+
 describe('proofStateOfSnapshot: "Mark paid without proof?"', () => {
   const snap = (lines: ChatSnapshot['lines'], phase: ChatSnapshot['phase'] = 'ready'): ChatSnapshot => ({
     phase, problem: null, role: 'buyer', counterparty: 'Sam', disputeOpen: false, paySecured: true, more: false, lines,
   });
   const line = (o: Partial<ChatSnapshot['lines'][number]>): ChatSnapshot['lines'][number] => ({ id: '1', from: 'buyer', text: '', at: null, mine: true, gapBefore: false, ...o });
 
-  it("'attached' once the buyer's payment proof is in the chat; evidence or the seller's never counts", async () => {
+  it("'attached' once the buyer's payment proof is in the chat and checked out; evidence or the seller's never counts", async () => {
     const { payload } = await made();
-    expect(proofStateOfSnapshot(snap([line({ proof: payload })]), true)).toBe('attached');
-    expect(proofStateOfSnapshot(snap([line({ proof: payload })]), false)).toBe('attached');
+    const ok = () => 'ready' as const;
+    expect(proofStateOfSnapshot(snap([line({ proof: payload })]), true, ok)).toBe('attached');
+    expect(proofStateOfSnapshot(snap([line({ proof: payload })]), false, ok)).toBe('attached');
     const ev = (await made('evidence')).payload;
-    expect(proofStateOfSnapshot(snap([line({ proof: ev })]), true)).toBe('none');
-    expect(proofStateOfSnapshot(snap([line({ from: 'seller', mine: false, proof: payload })]), true)).toBe('none');
-    expect(proofStateOfSnapshot(snap([line({ text: 'hi' })]), true)).toBe('none');
+    expect(proofStateOfSnapshot(snap([line({ proof: ev })]), true, ok)).toBe('none');
+    expect(proofStateOfSnapshot(snap([line({ from: 'seller', mine: false, proof: payload })]), true, ok)).toBe('none');
+    expect(proofStateOfSnapshot(snap([line({ text: 'hi' })]), true, ok)).toBe('none');
+  });
+
+  it("review M3 (lead 2026-11-12): 'attached' only once ChatProof could show the proof; not checked yet, gone or refused is 'unavailable'", async () => {
+    const a = await made();
+    const b = await made();
+    const lines = [line({ id: '1', proof: a.payload }), line({ id: '2', proof: b.payload })];
+    expect(proofStateOfSnapshot(snap(lines), true, () => undefined)).toBe('unavailable');
+    expect(proofStateOfSnapshot(snap(lines), true, (id) => (id === a.payload.proofId ? 'failed' : undefined))).toBe('unavailable');
+    expect(proofStateOfSnapshot(snap(lines), true, () => 'failed')).toBe('unavailable');
+    expect(proofStateOfSnapshot(snap(lines), false, () => 'failed')).toBe('unavailable');
+    expect(proofStateOfSnapshot(snap(lines), true, (id) => (id === b.payload.proofId ? 'ready' : 'failed'))).toBe('attached');
   });
 
   it("'none' only when the chat is read in full and this build can take a proof; otherwise 'unavailable'", () => {
@@ -145,6 +266,53 @@ describe('proofStateOfSnapshot: "Mark paid without proof?"', () => {
   });
 });
 
+describe('review M4: the upload and the receive half together', () => {
+  const ready = (lines: ChatSnapshot['lines']): ChatSnapshot => ({ phase: 'ready', problem: null, role: 'buyer', counterparty: 'Sam', disputeOpen: false, paySecured: true, more: false, lines });
+
+  it('one flag function: the proof state reads proofUploadOn (VITE_X2F_PROOF_UPLOAD exactly 1)', async () => {
+    const { chatProofState } = await import('../src/proof/chatProof.js');
+    const { publishPaySnapshot } = await import('../src/chat/payDetailsFeed.js');
+    const code = 'BBBB-CCCC-DDDD-EEEE';
+    publishPaySnapshot(code, ready([]));
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    expect(chatProofState(code)).toBe('none');
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', 'true');
+    expect(chatProofState(code)).toBe('unavailable');
+    vi.unstubAllEnvs();
+    const fs = await import('node:fs');
+    // happy-dom's import.meta.url is not a file URL: find the file from the run's directory.
+    const file = ['src/proof/chatProof.ts', 'apps/web/src/proof/chatProof.ts'].find((f) => fs.existsSync(f))!;
+    const src = fs.readFileSync(file, 'utf8');
+    expect(src).not.toMatch(/VITE_X2F_PROOF_UPLOAD|proofUploadBuilt/);
+  });
+
+  it("a sent proof's snapshot is published at once, so 'Mark paid without proof?' is not asked right after a send", async () => {
+    const { chatProofState } = await import('../src/proof/chatProof.js');
+    const { publishPaySnapshot, latestChatSnapshot } = await import('../src/chat/payDetailsFeed.js');
+    const { setChatClient } = await import('../src/chat/client.js');
+    const { postProofToChat } = await import('../src/screens/proof/AddProof.js');
+    const code = 'CCCC-DDDD-EEEE-FFFF';
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    publishPaySnapshot(code, ready([]));
+    expect(chatProofState(code)).toBe('none');
+    const { payload } = await made();
+    const after = ready([{ id: '9', from: 'buyer', text: '', at: null, mine: true, gapBefore: false, proof: payload }]);
+    const sent: unknown[] = [];
+    setChatClient({ sync: async () => after, send: async () => after, sendPay: async () => after, sendProof: async (chat, p) => (sent.push([chat, p]), after), sendNotice: async () => after });
+    try {
+      await postProofToChat(code, payload, async () => 'CHAT1');
+    } finally {
+      setChatClient(null);
+      vi.unstubAllEnvs();
+    }
+    expect(sent).toEqual([['CHAT1', payload]]);
+    expect(latestChatSnapshot(code)).toBe(after);
+    // A proof line is there (not checked on this page yet): never 'none'.
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    expect(chatProofState(code)).toBe('unavailable');
+  });
+});
+
 describe('chatProofState: the source App installs for proofStateOf', () => {
   it("reads the trade's newest chat snapshot (from the pay feed or an open panel); none yet is 'unavailable'", async () => {
     const { chatProofState } = await import('../src/proof/chatProof.js');
@@ -153,6 +321,10 @@ describe('chatProofState: the source App installs for proofStateOf', () => {
     expect(chatProofState(code)).toBe('unavailable');
     const { payload } = await made();
     publishPaySnapshot(code, { phase: 'ready', problem: null, role: 'buyer', counterparty: 'Sam', disputeOpen: false, paySecured: true, more: false, lines: [{ id: '1', from: 'buyer', text: '', at: null, mine: true, gapBefore: false, proof: payload }] });
+    // Review M3: the key line alone is not enough; once this device checked the proof, it is attached.
+    expect(chatProofState(code.toLowerCase())).toBe('unavailable');
+    const { noteProofChecked } = await import('../src/proof/chatProof.js');
+    noteProofChecked(payload.proofId, true);
     expect(chatProofState(code.toLowerCase())).toBe('attached');
   });
 });

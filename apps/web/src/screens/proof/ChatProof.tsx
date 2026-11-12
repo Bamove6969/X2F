@@ -1,5 +1,6 @@
-import { type ProofAttachedPayload, type ReceiveDeps, decryptProof, proofKeyFromBase64 } from '@x2f/proof';
-import { useEffect, useState } from 'react';
+import { PROOF_MAX_CIPHERTEXT, type ProofAttachedPayload, type ReceiveDeps, decryptProof, proofKeyFromBase64 } from '@x2f/proof';
+import { noteProofChecked } from '../../proof/chatProof.js';
+import { useEffect, useRef, useState } from 'react';
 import { Notice } from '../../ui/Notice.js';
 import { PROOF_CHECKING, PROOF_REFUSED_BODY, PROOF_REFUSED_TITLE, ProofThumb } from './ProofThumb.js';
 
@@ -25,8 +26,43 @@ class ProofGone extends Error {
   }
 }
 
+/**
+ * The answer's body, at most `cap` bytes (review M5): a stated length over the cap is refused
+ * unread, and a body without one is cut as soon as it passes the cap.
+ */
+async function readCapped(res: Response, cap: number): Promise<Uint8Array> {
+  const stated = res.headers.get('content-length');
+  if (stated !== null && !(Number(stated) <= cap)) {
+    void res.body?.cancel().catch(() => undefined);
+    throw new Error('proof-too-large');
+  }
+  if (res.body === null) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > cap) {
+      void reader.cancel().catch(() => undefined);
+      throw new Error('proof-too-large');
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+type Wanted = Pick<ProofAttachedPayload, 'proofId' | 'key' | 'sha256' | 'kind'>;
+
 /** Fetches and decrypts one proof. Rejects with ProofGone for a 404, anything else for a bad one. */
-async function openChatProof(code: string, p: ProofAttachedPayload, f: typeof fetch = globalThis.fetch): Promise<Uint8Array> {
+async function openChatProof(code: string, p: Wanted, f: typeof fetch = globalThis.fetch): Promise<Uint8Array> {
   const res = await f(`/v1/trades/${encodeURIComponent(code)}/proofs/${encodeURIComponent(p.proofId)}`, {
     method: 'GET',
     credentials: 'same-origin',
@@ -34,7 +70,7 @@ async function openChatProof(code: string, p: ProofAttachedPayload, f: typeof fe
   });
   if (res.status === 404) throw new ProofGone();
   if (!res.ok) throw new Error('proof-unavailable');
-  const ciphertext = new Uint8Array(await res.arrayBuffer());
+  const ciphertext = await readCapped(res, PROOF_MAX_CIPHERTEXT);
   const key = await proofKeyFromBase64(p.key);
   try {
     return await decryptProof(ciphertext, key, { code, proofId: p.proofId, kind: p.kind, sha256: p.sha256 });
@@ -52,17 +88,42 @@ type State = { s: 'loading' } | { s: 'ready'; bytes: Uint8Array } | { s: 'gone' 
  */
 export function ChatProof({ tradeCode, proof, deps }: { tradeCode: string; proof: ProofAttachedPayload; deps?: ReceiveDeps }) {
   const [state, setState] = useState<State>({ s: 'loading' });
+  const { proofId, sha256 } = proof;
+  // The rest of the payload is read when the effect runs, not as a dependency.
+  const latest = useRef(proof);
+  latest.current = proof;
+  /** The decrypted picture while ProofThumb checks it; zeroed once it has (review I5) or when this goes. */
+  const plain = useRef<Uint8Array | null>(null);
+  const wipe = () => {
+    plain.current?.fill(0);
+    plain.current = null;
+  };
+  // Keyed on proofId and sha256, not the line object: every chat poll brings a new snapshot
+  // object, and the same proof is fetched, decrypted and checked once (review M5).
   useEffect(() => {
     let live = true;
     setState({ s: 'loading' });
-    openChatProof(tradeCode, proof).then(
-      (bytes) => live && setState({ s: 'ready', bytes }),
-      (e: unknown) => live && setState({ s: e instanceof ProofGone ? 'gone' : 'refused' }),
+    const { key, kind } = latest.current;
+    openChatProof(tradeCode, { proofId, key, sha256, kind }).then(
+      (bytes) => {
+        if (!live) {
+          bytes.fill(0);
+          return;
+        }
+        plain.current = bytes;
+        setState({ s: 'ready', bytes });
+      },
+      (e: unknown) => {
+        if (!live) return;
+        setState({ s: e instanceof ProofGone ? 'gone' : 'refused' });
+        noteProofChecked(proofId, false);
+      },
     );
     return () => {
       live = false;
+      wipe();
     };
-  }, [tradeCode, proof]);
+  }, [tradeCode, proofId, sha256]);
 
   const title = CHAT_PROOF_TITLE[proof.kind];
   return (
@@ -81,7 +142,17 @@ export function ChatProof({ tradeCode, proof, deps }: { tradeCode: string; proof
           {PROOF_REFUSED_BODY}
         </Notice>
       ) : (
-        <ProofThumb bytes={state.bytes} declared={{ mime: proof.mime, width: proof.width, height: proof.height }} alt={title} {...(deps ? { deps } : {})} />
+        <ProofThumb
+          bytes={state.bytes}
+          declared={{ mime: proof.mime, width: proof.width, height: proof.height }}
+          alt={title}
+          onChecked={(ok) => {
+            noteProofChecked(proofId, ok);
+            // ProofThumb shows its own redrawn copy (or the refusal): the plaintext is not needed again.
+            wipe();
+          }}
+          {...(deps ? { deps } : {})}
+        />
       )}
     </figure>
   );

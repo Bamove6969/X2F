@@ -24,7 +24,10 @@
  *   trade was secured (`tradeSecuredAt`). One sent before that is taken into the guard (so the
  *   sender's later lines are not blocked behind it: a seq once passed can never be accepted) with
  *   a receipt marked `heldPay`, and no text; once the trade is secured the chat is read again from
- *   the start and the held package is decrypted and shown in its place.
+ *   the start and the held package is decrypted and shown in its place. Dispute evidence
+ *   (`proof.attached` kind 'evidence') is held the same way (`heldEvidence`) while the API's view
+ *   has no open dispute, so evidence that races the dispute opening is not lost (proof-receive
+ *   review M2); it is shown, and re-opened after a reload, while a dispute is open (M1).
  * - A fixed notice (P-020, notices.ts) is a line with `notice` set and the reader's own wording as
  *   its text. `sendNotice` seals one (chatCrypto's sealChatNotice), only once the trade is secured
  *   (a proof only exists then), like a package. The upload sends `proofCodeNotice(...)` with the
@@ -153,9 +156,9 @@ export interface ChatEngine {
    * 'bad-proof' for a malformed payload or a payment proof from the seller; 'not-ready' while the
    * trade is not secured, for evidence too (proof review M4, as sendPay); 'uncertain' when the post
    * got no answer and may be stored (review M2). Once the API answered the post, it resolves even if
-   * the read after it fails. The image itself went up as ciphertext before this (proof/upload.ts). Syncs open
-   * `proof.attached` as proof lines (chatCrypto.ts openChatMessage: the payment proof from the buyer
-   * only, evidence only while a dispute is open), shown by ChatPanel's ChatProof.
+   * the read after it fails. The image itself went up as ciphertext before this (proof/upload.ts).
+   * Syncs open `proof.attached` as proof lines (the receive half, ChatPanel's ChatProof), the
+   * sender's own included.
    */
   sendProof(chat: string, proof: ProofAttachedPayload): Promise<ChatSnapshot>;
   /**
@@ -232,7 +235,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
      * A package held until the escrow is secured (owner Q12) is not a line yet, not even a
      * placeholder; an envelope refused for good (pay-details review M1) never is.
      */
-    const withheld = (m: StoredChatReceipt): boolean => m.refused === true || (m.heldPay === true && session?.texts.has(m.id) !== true);
+    const withheld = (m: StoredChatReceipt): boolean => m.refused === true || ((m.heldPay === true || m.heldEvidence === true) && session?.texts.has(m.id) !== true);
     return {
       phase,
       more,
@@ -311,13 +314,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
    * Re-opens a line the guard already took (its receipt), for a re-read: with a fresh guard, and
    * only for the same envelope (its signature) from the same sender and seq. Null when it is not.
    */
-  async function reopen(rec: ChatRecord, me: Identity, parts: Participants, e: ApiEnvelope, r: StoredChatReceipt, channel: string, secured: boolean): Promise<Shown | null> {
+  async function reopen(rec: ChatRecord, me: Identity, parts: Participants, e: ApiEnvelope, r: StoredChatReceipt, channel: string, secured: boolean, disputeOpen: boolean): Promise<Shown | null> {
     try {
       if (e.senderRole !== r.from || (r.sig !== null && sigOf(e.envelope) !== r.sig)) return null;
       const fresh = { channel, nextSeq: 0, guard: new ReplayGuard(channel).toJSON() };
       // A moderator line it showed once (during a dispute) is shown again: the guard took it then. A
       // package only once the trade is secured (owner Q12): before that the only package receipts are held ones.
-      const o = await openChatMessage(e.envelope, { role: rec.role, me, participants: parts, state: fresh, modMayPost: true, payAllowed: secured });
+      // Evidence only while a dispute is open (P5-A30), so a reload during the dispute shows it again (review M1).
+      const o = await openChatMessage(e.envelope, { role: rec.role, me, participants: parts, state: fresh, modMayPost: true, payAllowed: secured, evidenceAllowed: disputeOpen });
       return o.message.from === r.from && o.message.seq === r.seq ? shownOf(o.message) : null;
     } catch {
       return null;
@@ -341,7 +345,10 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     const secured = view.tradeSecuredAt !== null;
     // Read from the start on the first sync in this worker, and again once the trade is secured
     // while a held package (owner Q12) is still to be shown: its envelope is below the cursor.
-    const cold = session === undefined || (secured && rec.receipts.some((r) => r.heldPay === true && !shown.has(r.id)));
+    const cold =
+      session === undefined ||
+      (secured && rec.receipts.some((r) => r.heldPay === true && !shown.has(r.id))) ||
+      (view.disputeOpen && rec.receipts.some((r) => r.heldEvidence === true && !shown.has(r.id)));
     const start = BigInt(rec.cursor);
     let cursor = rec.cursor;
     let held = false;
@@ -361,7 +368,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         const receipt = known.get(e.id);
         if (receipt) {
           if (receipt.refused !== true && !shown.has(e.id)) {
-            const again = await reopen(rec, me, parts, e, receipt, channel, secured);
+            const again = await reopen(rec, me, parts, e, receipt, channel, secured, view.disputeOpen);
             if (again !== null) shown.set(e.id, again);
           }
           if (past && !held && cursor !== e.id) {
@@ -378,16 +385,18 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           if (!ROLES_SET.has(e.senderRole)) throw new ChatError('bad-message', 'unknown sender');
           const args = { role: rec.role, me, participants: parts, state, modMayPost: view.disputeOpen, evidenceAllowed: view.disputeOpen };
           let r: Awaited<ReturnType<typeof openChatMessage>>;
-          let withhold = false;
+          let withhold: 'pay' | 'evidence' | null = null;
           try {
             r = await openChatMessage(e.envelope, { ...args, payAllowed: secured });
           } catch (err) {
-            // Not a message while the trade is not secured: if it is a well-formed package, take it
-            // into the guard but hold it (owner Q12), so the sender's later lines are not stuck behind it.
-            if (secured || !(err instanceof ChatError && err.code === 'bad-message')) throw err;
-            r = await openChatMessage(e.envelope, { ...args, payAllowed: true });
-            if (r.message.pay === undefined) throw err;
-            withhold = true;
+            // Not a message yet: a well-formed package while the trade is not secured (owner Q12), or
+            // evidence while no dispute is open (review M2). Take it into the guard but hold it, so
+            // the sender's later lines are not stuck behind it; anything else stays refused.
+            if ((secured && view.disputeOpen) || !(err instanceof ChatError && err.code === 'bad-message')) throw err;
+            r = await openChatMessage(e.envelope, { ...args, payAllowed: true, evidenceAllowed: true });
+            if (!secured && r.message.pay !== undefined) withhold = 'pay';
+            else if (!view.disputeOpen && r.message.proof?.kind === 'evidence') withhold = 'evidence';
+            else throw err;
           }
           // The signer and the server's record must agree (never trust one of them alone).
           if (r.message.from !== e.senderRole) throw new ProtocolError('bad-signature', 'sender mismatch');
@@ -401,12 +410,12 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
             at: typeof e.at === 'string' ? e.at : null,
             // Senders start at seq 0, so a first line above 0 also follows missing ones (review M1).
             gapBefore: r.message.seq > (prev ?? -1) + 1,
-            ...(withhold ? { heldPay: true as const } : {}),
+            ...(withhold === 'pay' ? { heldPay: true as const } : withhold === 'evidence' ? { heldEvidence: true as const } : {}),
           };
           lastSeq.set(m.from, m.seq);
           receipts.push(m);
           known.set(m.id, m);
-          if (!withhold) shown.set(m.id, shownOf(r.message));
+          if (withhold === null) shown.set(m.id, shownOf(r.message));
         } catch (err) {
           // A moderator line outside a dispute is tried again on a later sync: the cursor stops
           // before it (the guard did not move for it). A package before the trade is secured was
