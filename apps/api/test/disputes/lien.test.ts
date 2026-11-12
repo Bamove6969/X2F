@@ -152,7 +152,7 @@ describe('an appeal lifts the lien while it is pending, and its outcome decides 
     expect(await hasActiveLien(deps.db, seller.id)).toBe(true);
   });
 
-  it('"Decision stands": active again, and the buyer poster now owes the 1% from future trades (D-062)', async () => {
+  it('"Decision stands": active again, and the buyer poster now owes the 1% from future trades (g63 poster pays; owner question O3)', async () => {
     const { seller, buyer, code } = await disputed({ afterRefund: true, poster: 'buyer' });
     await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
     await appealDirect(deps, code, 'seller');
@@ -199,7 +199,7 @@ describe('a won appeal liens whoever received the coins (D-006)', () => {
     expect(await owed(code)).toEqual([]);
   });
 
-  it('refunded at round 1, released on appeal on a buyer\'s ad: the seller is liened; the buyer owes the 1% (D-063, D-062)', async () => {
+  it('refunded at round 1, released on appeal on a buyer\'s ad: the seller is liened; the buyer owes the 1% (D-063; g63 poster pays, owner question O3)', async () => {
     const { seller, buyer, code } = await disputed({ afterRefund: false, poster: 'buyer' });
     await publishRuling(deps, code, { outcome: 'refund-to-seller' });
     await appealDirect(deps, code, 'buyer');
