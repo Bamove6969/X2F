@@ -10,6 +10,7 @@ import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, happyPath, seedReviews, seedTrade } from './helpers/trades.js';
 import { flexBody } from './helpers/offers.js';
+import { appealDirect, publishRuling } from './helpers/disputes.js';
 
 // The offer card's trust row (design review 8 Nov, item 5; boards SellOffers/BuyOffers): trades, %
 // positive, earned badges, and "Releases in ~8 min" / "Pays in ~6 min". Every figure comes from real
@@ -264,6 +265,25 @@ describe('badges (spec 5.4, @x2f/reputation earnedBadges and the default visibil
       [seller.id, Array.from({ length: 20 }, () => 1)],
     );
     expect((await posterOn('sell', await post(seller, 'sell'))).badges).not.toContain('fast');
+  });
+
+  it('a fast payment is taken back when its released trade is later reversed (review n1)', async () => {
+    const buyer = await person();
+    const seller = await person();
+    const fastOf = async () =>
+      (await deps.db.query<{ n: number }>('select fast_payments as n from account_traded_totals where account_id = $1', [buyer.id])).rows[0]?.n ?? 0;
+    await timedTrade(seller.id, buyer.id, 1, 1);
+    const code = await timedTrade(seller.id, buyer.id, 1, 1);
+    expect(await fastOf()).toBe(2);
+    // Late funds escalate it; round 1 releases to the buyer, the appeal reverses it.
+    await applyEvent(deps, code, { type: 'escalate' }, 'system');
+    await deps.db.query('update disputes set usd_cents = 1 where code = $1', [code]);
+    await publishRuling(deps, code, { outcome: 'release-to-buyer' });
+    await appealDirect(deps, code, 'seller');
+    expect(await fastOf()).toBe(2);
+    await publishRuling(deps, code, { outcome: 'refund-to-seller' });
+    expect(await fastOf()).toBe(1);
+    expect((await deps.db.query(`select 1 from trade_totals_counted where trade_code = $1 and kind = 'fast-payment'`, [code])).rowCount).toBe(0);
   });
 
   it('a payment on a disputed trade never counts toward Fast', async () => {

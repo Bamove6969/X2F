@@ -64,6 +64,19 @@ export async function countTradeTotals(q: Queryable, code: string): Promise<void
       where tt.account_id in (t.buyer_account_id, t.seller_account_id)`,
     [code],
   );
+  // Review n1: a fast payment counted at the seller's release comes back off the buyer when the
+  // trade is reversed in the end (it was not a real payment for a sale), once.
+  await q.query(
+    `with t as (
+       select t.code, t.buyer_account_id from trades t where t.code = $1 and ${disputeOutcomeSql('t')} = 'reversed'
+     ), unmark as (
+       delete from trade_totals_counted c using t where c.trade_code = t.code and c.kind = 'fast-payment' returning c.trade_code
+     )
+     update account_traded_totals tt set fast_payments = greatest(0, tt.fast_payments - 1)
+       from t join unmark on unmark.trade_code = t.code
+      where tt.account_id = t.buyer_account_id`,
+    [code],
+  );
   // A settled buyer cancel: one for the buyer, once.
   await q.query(
     `with t as (
@@ -75,6 +88,30 @@ export async function countTradeTotals(q: Queryable, code: string): Promise<void
      insert into account_traded_totals (account_id, buyer_cancels)
      select t.buyer_account_id, 1 from t join mark on mark.trade_code = t.code
      on conflict (account_id) do update set buyer_cancels = account_traded_totals.buyer_cancels + 1`,
+    [code],
+  );
+}
+
+/**
+ * Review M1 (12 Nov): locks both parties' running-totals rows of trade `code`, creating an empty row
+ * (all zeros, the same as no row to every reader) for a party that has none yet, in account-id
+ * order. `withDispute` calls it right after the trade and dispute row locks and before anything
+ * appends to the log, so `countTradeTotals` in a decided save never waits on these rows while
+ * holding the site-wide log lock (log/append.ts N3) and cannot deadlock with a trade event of the
+ * same party (which takes them before its own append).
+ */
+export async function lockPartyTotals(q: Queryable, code: string): Promise<void> {
+  await q.query(
+    `insert into account_traded_totals (account_id)
+     select p.id from trades t cross join lateral (values (t.buyer_account_id), (t.seller_account_id)) as p (id)
+      where t.code = $1 order by p.id
+     on conflict (account_id) do nothing`,
+    [code],
+  );
+  await q.query(
+    `select 1 from account_traded_totals tt
+      where tt.account_id in (select buyer_account_id from trades where code = $1 union select seller_account_id from trades where code = $1)
+      order by tt.account_id for update`,
     [code],
   );
 }

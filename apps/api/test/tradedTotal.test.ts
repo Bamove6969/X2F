@@ -82,6 +82,8 @@ async function closeWindow(code: string) {
   await withDispute(deps, { code }, async (d, _c, at) => applyDispute(d, { type: 'window-closed' }, { kind: 'system' }, at, DISPUTE_DEFAULTS));
   setNow(back);
 }
+/** The XMR total, '0' with no row (a dispute's lock step may create an empty row: review M1). */
+const xmrOf = async (id: string) => (await totals(id))?.own_xmr_atomic ?? '0';
 const setting = (who: Who) => who.browser.get('/v1/account/profile/traded-total');
 const optIn = (who: Who, show: unknown) => who.browser.put('/v1/account/profile/traded-total', { show });
 /** The counterparty summary on the trade view: a TraderSummary, as on offer cards. */
@@ -130,17 +132,17 @@ describe('the running totals', () => {
     const disputed = await trade(seller, buyer, xmr(30), { state: 'secured' });
     expect((await seller.browser.post(`/v1/trades/${disputed}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     await applyEvent(deps, disputed, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
-    expect(await totals(seller.id)).toBeNull();
+    expect(await xmrOf(seller.id)).toBe('0');
     // Owner Q41: "the total follows the final outcome". A ruling that refunds the seller is a
     // reversal, not a sale: once it is final it is still not counted.
     await rule(disputed, 'refund-to-seller');
     await closeWindow(disputed);
-    expect(await totals(seller.id)).toBeNull();
+    expect(await xmrOf(seller.id)).toBe('0');
     // A dispute decided as a sale (release to the buyer) counts, once, when it becomes final.
     const sale = await trade(seller, buyer, xmr(7), { state: 'secured' });
     expect((await seller.browser.post(`/v1/trades/${sale}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     await rule(sale, 'release-to-buyer');
-    expect(await totals(seller.id)).toBeNull();
+    expect(await xmrOf(seller.id)).toBe('0');
     await closeWindow(sale);
     expect((await totals(seller.id))!.own_xmr_atomic).toBe(xmr(7).toString());
     expect((await totals(buyer.id))!.own_xmr_atomic).toBe(xmr(7).toString());
@@ -160,6 +162,8 @@ describe('the running totals', () => {
     await rule(code, 'release-to-buyer');
     await appealDirect(deps, code, 'seller');
     expect(await totals(seller.id)).toMatchObject({ own_xmr_atomic: xmr(7).toString() });
+    // ...and in the completed count too, matching the totals until the result decides (review m2).
+    expect((await summaryOf(buyer, keep)).summary.completedTrades).toBe(2);
     // Round 2 reverses it: the trade comes off both sides' totals and their completed counts.
     await rule(code, 'refund-to-seller');
     for (const id of [seller.id, buyer.id]) expect(await totals(id)).toMatchObject({ own_usd_cents: '5000', own_xmr_atomic: xmr(2).toString() });

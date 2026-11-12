@@ -26,8 +26,8 @@ const NEW_BADGE: BadgeInfo = { label: 'New', icon: 'sprout', tone: 'caution', me
 /** Earned badges by API id (spec 5.4). Ids the app does not know are left off. */
 const BADGES: Record<string, BadgeInfo> = {
   trusted: { label: 'Trusted', icon: 'shield-check', tone: 'escrow', meaning: '200+ trades and 98%+ positive' },
-  // COPY-UNSIGNED: Fast's meaning under R-042 (owner p11-20).
-  fast: { label: 'Fast', icon: 'bolt', tone: 'escrow', meaning: 'paid in under half the time allowed, 30+ times' },
+  // COPY-UNSIGNED: Fast's meaning under R-042 (owner p11-20), the same words as @x2f/reputation BADGES.fast (review n3).
+  fast: { label: 'Fast', icon: 'bolt', tone: 'escrow', meaning: 'Paid in under half the time allowed, 30+ times' },
   veteran: { label: 'Veteran', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 1+ year' },
   // The ids the API earns them under (@x2f/reputation badges.ts); COPY-UNSIGNED: the 3- and 5-year labels (P5-A12).
   'veteran-1': { label: 'Veteran', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 1+ year' },

@@ -9,9 +9,12 @@ import type { RulingOutcome } from '@x2f/staff';
  * - Settled ("they let it settle like a trade happened"): the feedback stays and the trade counts.
  * - An appeal holds the feedback (removed temporarily) until its result decides (`reviewHeldSql`).
  *
- * Which outcome is which is the same split as X2F's 1% after a ruling (@x2f/staff `rulingFee`, owner
- * g63): an outcome that completes the trade ("poster pays") is a sale, a full reversal is not.
- * apps/api/test/finalOutcome.test.ts checks the two agree.
+ * For a single round, which outcome is which is the same split as X2F's 1% after a ruling
+ * (@x2f/staff `rulingFee`, owner g63): an outcome that completes the trade ("poster pays") is a sale,
+ * a full reversal is not. The two part on an appeal that overturns a ruling whose coins already moved
+ * (round 1 releases to the buyer, round 2 refunds the seller): for the fee that is a lien and the
+ * poster pays (owner Q37), for reputation it is a reversal, read from the round in force (D-006: a
+ * won appeal fixes the record). apps/api/test/finalOutcome.test.ts pins both.
  */
 export const SALE_OUTCOMES = ['release-to-buyer', 'seller-sends-xmr'] as const satisfies readonly RulingOutcome[];
 export const REVERSAL_OUTCOMES = ['refund-to-seller', 'seller-returns-fiat', 'no-action'] as const satisfies readonly RulingOutcome[];
@@ -63,9 +66,14 @@ export const isFinalSaleSql = (t: string): string =>
  * trader's public count and the badges that read it. The starter stage and the offers' minimum-trades
  * filter still count R38's way (`COMPLETED_TRADES_SQL`: a settled dispute counts whoever won, with no
  * automatic stage drop): which count drives the stage is an owner question (R-012 vs D-048).
+ * A trade counted before (its 'completed' mark, traders/tradedTotal.ts) whose later dispute or appeal
+ * is still pending stays in, matching the running totals until the result decides (review m2).
  */
 export const FINAL_SALES_SQL = `(select count(*) from trades t
-   where (t.buyer_account_id = a.id or t.seller_account_id = a.id) and ${isFinalSaleSql('t')})`;
+   cross join lateral (select ${disputeOutcomeSql('t')} as o) x
+   where (t.buyer_account_id = a.id or t.seller_account_id = a.id)
+     and (coalesce(x.o, case when t.state = 'released' then 'sale' end) = 'sale'
+       or (x.o = 'pending' and exists (select 1 from trade_totals_counted c where c.trade_code = t.code and c.kind = 'completed'))))`;
 
 /**
  * SQL (boolean): the dispute row (alias `d`, a `disputes` row) has an appeal PENDING: `appealed`, or

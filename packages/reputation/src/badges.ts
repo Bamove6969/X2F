@@ -71,7 +71,7 @@ export const BADGES: Record<CatalogueId, BadgeInfo> = {
   'veteran-3': { label: 'Veteran · 3 years', meaning: 'Trading on X2F for 3+ years', icon: 'Star', tone: 'escrow' },
   'veteran-5': { label: 'Veteran · 5 years', meaning: 'Trading on X2F for 5+ years', icon: 'Star', tone: 'escrow' },
   trusted: { label: 'Trusted', meaning: '200+ trades and 98%+ positive', icon: 'ShieldCheck', tone: 'escrow' },
-  // COPY-UNSIGNED: Fast's meaning under R-042 (owner p11-20; design words it).
+  // COPY-UNSIGNED: Fast's meaning under R-042 (owner p11-20; design words it). The web copies (apps/web Badges.tsx, OfferCard.tsx) use the same words (review n3).
   fast: { label: 'Fast', meaning: 'Paid in under half the time allowed, 30+ times', icon: 'Zap', tone: 'escrow' },
   // COPY-UNSIGNED: Clean record's meaning (spec 5.4 wording, no board line).
   'clean-record': { label: 'Clean record', meaning: '100 trades with no lost disputes', icon: 'BadgeCheck', tone: 'escrow' },

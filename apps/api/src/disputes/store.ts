@@ -7,7 +7,7 @@ import type { EventBus } from '../events/bus.js';
 import { appendLog } from '../log/append.js';
 import { eraseReversedReviews } from '../reviews/store.js';
 import { DECIDED_STATUSES } from '../traders/finalOutcome.js';
-import { countTradeTotals } from '../traders/tradedTotal.js';
+import { countTradeTotals, lockPartyTotals } from '../traders/tradedTotal.js';
 import type { MarketPrices } from '../price/market.js';
 import { usdCentsOf } from '../traders/stage.js';
 import { disputeSettings } from './settings.js';
@@ -139,7 +139,8 @@ export async function saveDispute(client: pg.PoolClient, d: Dispute, now: Date):
   // final binding outcome, in this same transaction. A trade that ends REVERSED loses its reviews and
   // skips; one that ends as a sale keeps them (and counts); while an appeal is pending they are held
   // (traders/finalOutcome.ts reviewHeldSql). Both are idempotent and decide from the rows just saved;
-  // only a decided dispute can change them, so an undecided save takes no trade lock here.
+  // only a decided dispute can change them. Their locks (the trade row, the parties' totals rows)
+  // are already held: `withDispute` takes them before `fn` appends to the log (review M1).
   if ((DECIDED_STATUSES as readonly string[]).includes(d.status)) {
     await eraseReversedReviews(client, d.code);
     await countTradeTotals(client, d.code);
@@ -245,8 +246,15 @@ export async function withDispute(
   try {
     await client.query('begin');
     try {
+      // Review M1 (12 Nov): the trade row first, then the dispute row, the same order as a trade
+      // event (applyEvent) and the settle path (internal/routes.ts); then the parties' running
+      // totals rows. A decided save (saveDispute) erases a reversed trade's reviews and moves those
+      // totals, and `fn` appends to the log before it: every lock that work needs is taken here,
+      // before the site-wide log lock, so nothing after the append waits on a contended lock (N3).
+      await client.query('select 1 from trades where code = $1 for update', [target.code]);
       const rec = await loadDisputeRecord(client, target.code, { ...(target.seq === undefined ? {} : { seq: target.seq }), lock: true });
       if (rec === null) throw new DisputeRuleError('wrong-state');
+      await lockPartyTotals(client, target.code);
       const now = deps.clock();
       next = await fn(rec.dispute, client, now, rec);
       if (next === rec.dispute) {

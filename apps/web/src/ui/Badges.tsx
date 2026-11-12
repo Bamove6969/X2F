@@ -28,8 +28,8 @@ export const BADGE_SET = {
   trusted: { key: 'trusted', name: 'Trusted', tone: 'escrow', glyph: 'trusted', meaning: '200+ trades and 98%+ positive.' },
   clean: { key: 'clean', name: 'Clean record', tone: 'escrow', glyph: 'clean', meaning: 'No lost disputes in 100 trades.' },
   veteran: { key: 'veteran', name: 'Veteran', tone: 'escrow', glyph: 'veteran', meaning: 'Trading on X2F for over a year.' },
-  // COPY-UNSIGNED: Fast's meaning under R-042 (owner p11-20: 30 payments in under half the time to pay; design words it).
-  fast: { key: 'fast', name: 'Fast', tone: 'caution', glyph: 'fast', meaning: 'Paid in under half the time allowed, 30+ times.' },
+  // COPY-UNSIGNED: Fast's meaning under R-042 (owner p11-20), the same words as @x2f/reputation BADGES.fast (review n3).
+  fast: { key: 'fast', name: 'Fast', tone: 'caution', glyph: 'fast', meaning: 'Paid in under half the time allowed, 30+ times' },
   pgp: { key: 'pgp', name: 'PGP verified', tone: 'ink', glyph: 'pgp', meaning: 'Logs in with a verified PGP key.' },
   hw: { key: 'hw', name: 'Security key', tone: 'ink', glyph: 'hw', meaning: 'Protects the account with a hardware key.' },
   m10: milestone(10),
