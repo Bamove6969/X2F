@@ -268,10 +268,12 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       // Owner G3 (7 Nov): a moderator or senior holds all three methods.
       if (THREE_METHOD_ROLES.includes(role) && !(await holdsAllThree(c, id))) throw new ApiError(409, 'all-three-methods-required');
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-role', accountId: id, role }, now, { sessionId: req.auth.sessionId });
-      // Review F5: what the new role holds is not kept as a per-person box.
+      // Review F5: what the new role holds is not kept as a per-person box; nor what the old role held
+      // (re-verify R1: a box stored before F5 and hidden while the role held it would otherwise come
+      // back on its own after a demotion).
       const { rows: held } = await c.query<{ grants: string[] }>('select grants from staff_members where account_id = $1', [id]);
       await c.query('update staff_members set role = $2, has_security_key = $3, grants = $4::text[] where account_id = $1', [
-        id, role, keys > 0, perPersonGrants(role, held[0]?.grants ?? []),
+        id, role, keys > 0, perPersonGrants(role, perPersonGrants(target.role, held[0]?.grants ?? [])),
       ]);
       await log(c, req, 'staff.role-set', { staffId: id, from: target.role, to: role });
     });
