@@ -38,6 +38,12 @@ export interface LienFacts {
   amountAtomic: bigint;
   /** The trade's 1%, atomic units. */
   feeAtomic: bigint;
+  /**
+   * Review L2/R2: whether liens are switched on (`site_flags.liens_enabled`). While off nothing is
+   * placed, and a 1% a lien would have carried (the debtor posted) is owed from future trades
+   * instead, once the ruling is final.
+   */
+  liensOn: boolean;
 }
 
 /** A lien already stored for this dispute (code and seq). */
@@ -69,19 +75,30 @@ const restitutionDebtor = (o: RulingOutcome): LienSide | null => (o === 'seller-
 
 /**
  * The 1% an outcome leaves unpaid by the escrow when the trade completes (g63: a lien completes the
- * trade and the poster pays), split by D-063: in the lien when the debtor is the poster, else owed
- * by the poster from future trades. `paidByEscrow`: a round-1 escrow output already carried it.
+ * trade and the poster pays), split by D-063: in the lien when the debtor is the poster and a lien
+ * carries it (`inLienOk`), else owed by the poster from future trades. `paidByEscrow`: a round-1
+ * escrow output already carried it. Call it only once the ruling is final (g63), except for the
+ * debtor's own fee at a round-1 publish, which the lien carries.
  */
-function feeSplit(debtor: LienSide, facts: LienFacts, paidByEscrow: boolean): { inLien: bigint; owed: LienStep[] } {
+function feeSplit(debtor: LienSide, facts: LienFacts, paidByEscrow: boolean, inLienOk: boolean): { inLien: bigint; owed: LienStep[] } {
   if (paidByEscrow) return { inLien: 0n, owed: [] };
-  if (facts.poster === debtor) return { inLien: facts.feeAtomic, owed: [] };
+  if (facts.poster === debtor && inLienOk) return { inLien: facts.feeAtomic, owed: [] };
   return { inLien: 0n, owed: [{ op: 'fee-owed', side: facts.poster, amountAtomic: facts.feeAtomic }] };
 }
+
+/**
+ * Review R2: at round-1 finality (no appeal, or "Decision stands"), whether a stored round-1 lien
+ * already carries the debtor-poster's 1%. Read from the stored liens rather than the flag now, so a
+ * switch between publish and finality neither loses the fee nor records it twice.
+ */
+const round1Carries = (liens: readonly LienRef[], debtor: LienSide): boolean =>
+  liens.some((l) => l.round === 1 && l.cause === 'restitution' && l.debtor === debtor && l.feeAtomic > 0n && l.status !== 'void');
 
 function checkFacts(f: LienFacts): void {
   if (f.poster !== 'buyer' && f.poster !== 'seller') throw new RangeError('poster must be buyer or seller');
   if (typeof f.amountAtomic !== 'bigint' || f.amountAtomic <= 0n) throw new RangeError('amount must be positive');
   if (typeof f.feeAtomic !== 'bigint' || f.feeAtomic < 0n || f.feeAtomic >= f.amountAtomic) throw new RangeError('fee out of range');
+  if (typeof f.liensOn !== 'boolean') throw new RangeError('liensOn must be a boolean');
 }
 
 /**
@@ -97,7 +114,8 @@ export function lienSteps(prev: Dispute, next: Dispute, facts: LienFacts, liens:
   if (next.round === 1 && next.status === 'published' && prev.status !== 'published') {
     const o = next.ruling?.outcome;
     const debtor = o === undefined || !next.afterRefund ? null : restitutionDebtor(o);
-    if (debtor === null) return [];
+    // Review R2: while off nothing is placed, and the fee waits for finality like any other.
+    if (debtor === null || !facts.liensOn) return [];
     // The fee part waits for finality (g63), except the debtor's own fee, which the lien carries.
     const inLien = facts.poster === debtor ? facts.feeAtomic : 0n;
     return [{ op: 'place', round: 1, debtor, cause: 'restitution', amountAtomic: facts.amountAtomic, feeAtomic: inLien }];
@@ -114,7 +132,7 @@ export function lienSteps(prev: Dispute, next: Dispute, facts: LienFacts, liens:
     const o = next.ruling?.outcome;
     const debtor = o === undefined || !next.afterRefund ? null : restitutionDebtor(o);
     if (debtor === null) return [];
-    return feeSplit(debtor, facts, false).owed;
+    return feeSplit(debtor, facts, false, round1Carries(liens, debtor)).owed;
   }
 
   // Round 2 decided ("Decision stands" or "Decision overruled").
@@ -128,30 +146,32 @@ export function lienSteps(prev: Dispute, next: Dispute, facts: LienFacts, liens:
       // now that the outcome is final (g63: an appeal upholding completion, the poster pays).
       const back: LienStep[] = round1.filter((l) => l.status === 'suspended').map((l) => ({ op: 'reactivate' as const, id: l.id }));
       const debtor = next.afterRefund ? restitutionDebtor(final) : null;
-      return debtor === null ? back : [...back, ...feeSplit(debtor, facts, false).owed];
+      return debtor === null ? back : [...back, ...feeSplit(debtor, facts, false, round1Carries(liens, debtor)).owed];
     }
     const steps: LienStep[] = round1.map((l) => ({ op: 'void' as const, id: l.id }));
     if (isEscrow(first)) {
       // The coins moved under round 1 and never move again: whoever received them owes the loss.
       const debtor: LienSide = first === 'release-to-buyer' ? 'buyer' : 'seller';
       // A release paid the 1% from the escrow; a refund paid none, and the appeal completes the trade.
-      const fee = feeSplit(debtor, facts, first === 'release-to-buyer');
-      steps.push({ op: 'place', round: 2, debtor, cause: 'overturned', amountAtomic: facts.amountAtomic, feeAtomic: fee.inLien }, ...fee.owed);
+      const fee = feeSplit(debtor, facts, first === 'release-to-buyer', facts.liensOn);
+      if (facts.liensOn) steps.push({ op: 'place', round: 2, debtor, cause: 'overturned', amountAtomic: facts.amountAtomic, feeAtomic: fee.inLien });
+      steps.push(...fee.owed);
       return steps;
     }
-    // Review L1: the seller already paid under round 1 (its restitution lien `repaid` by the accepted
-    // proof), and the appeal overruled the order: the XMR moved like escrow coins, so whoever
-    // received it (the creditor) owes it back. g63: an overruled order to pay is no completion, so
-    // no 1% goes with it.
-    for (const l of liens) {
-      if (l.round === 1 && l.cause === 'restitution' && l.status === 'repaid') {
-        steps.push({ op: 'place', round: 2, debtor: other(l.debtor), cause: 'overturned', amountAtomic: l.amountAtomic, feeAtomic: 0n });
-      }
+    // Reviews L1 and R1: the seller already paid under round 1 (the dispute's own `compliedAt`, kept
+    // through the appeal; never the lien's status, as a lien carrying the seller's own 1% stays
+    // active after payment), and the appeal overruled the order: the XMR moved like escrow coins, so
+    // whoever received it (the creditor) owes it back. g63: an overruled order to pay is no
+    // completion, so no 1% goes with it.
+    const paidDebtor = next.afterRefund ? restitutionDebtor(first) : null;
+    if (paidDebtor !== null && next.compliedAt !== null && facts.liensOn) {
+      steps.push({ op: 'place', round: 2, debtor: other(paidDebtor), cause: 'overturned', amountAtomic: facts.amountAtomic, feeAtomic: 0n });
     }
     const debtor = restitutionDebtor(final);
     if (debtor !== null) {
-      const fee = feeSplit(debtor, facts, false);
-      steps.push({ op: 'place', round: 2, debtor, cause: 'restitution', amountAtomic: facts.amountAtomic, feeAtomic: fee.inLien }, ...fee.owed);
+      const fee = feeSplit(debtor, facts, false, facts.liensOn);
+      if (facts.liensOn) steps.push({ op: 'place', round: 2, debtor, cause: 'restitution', amountAtomic: facts.amountAtomic, feeAtomic: fee.inLien });
+      steps.push(...fee.owed);
     }
     return steps;
   }

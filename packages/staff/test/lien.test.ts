@@ -22,8 +22,10 @@ const system: Actor = { kind: 'system' };
 
 const A = 1_250_000_000_000n;
 const F = 12_500_000_000n;
-const sellerPosted: LienFacts = { poster: 'seller', amountAtomic: A, feeAtomic: F };
-const buyerPosted: LienFacts = { poster: 'buyer', amountAtomic: A, feeAtomic: F };
+const sellerPosted: LienFacts = { poster: 'seller', amountAtomic: A, feeAtomic: F, liensOn: true };
+const buyerPosted: LienFacts = { poster: 'buyer', amountAtomic: A, feeAtomic: F, liensOn: true };
+/** Review R2: the same trade while liens are switched off (`site_flags.liens_enabled`). */
+const off = (f: LienFacts): LienFacts => ({ ...f, liensOn: false });
 
 function opened(afterRefund: boolean): Dispute {
   return newDispute({ code: 'K7M2-9QXA-4FTR-8WPN', openedBy: 'buyer', afterRefund, usdCents: 41_250n, limitUsdCents: 100_000n, firstResponseH: 4, now: T0 });
@@ -251,19 +253,94 @@ describe('review L1: the seller paid, then the appeal overrules the payment orde
 
   it('overruled to seller-returns-fiat: the XMR paid is still owed back by the buyer', () => {
     const a = paidThenAppealed('seller');
-    expect(lienSteps(a, decide(a, 'seller-returns-fiat'), sellerPosted, [lien({ status: 'repaid' })])).toEqual([
+    expect(lienSteps(a, decide(a, 'seller-returns-fiat'), buyerPosted, [lien({ status: 'repaid' })])).toEqual([
       { op: 'place', round: 2, debtor: 'buyer', cause: 'overturned', amountAtomic: A, feeAtomic: 0n },
     ]);
   });
 
-  it('"Decision stands" after the seller paid: nothing more', () => {
+  it('"Decision stands" after the seller paid: no lien; the buyer poster owes the 1% now it is final (D-062)', () => {
     const a = paidThenAppealed('buyer');
-    expect(lienSteps(a, decide(a, 'seller-sends-xmr'), sellerPosted, [lien({ status: 'repaid' })])).toEqual([]);
+    expect(lienSteps(a, decide(a, 'seller-sends-xmr'), buyerPosted, [lien({ status: 'repaid' })])).toEqual([{ op: 'fee-owed', side: 'buyer', amountAtomic: F }]);
   });
 
   it('a void round-1 lien (never paid) brings no lien on the buyer', () => {
     const p = appeal(publish(opened(true), 'seller-sends-xmr'), 'seller');
     expect(lienSteps(p, decide(p, 'no-action'), buyerPosted, [lien({ status: 'void' })])).toEqual([]);
+  });
+});
+
+describe("re-verify R1: on the seller's own ad the paid lien carries the 1% and stays active", () => {
+  // As stored (D-063): the round-1 lien carries the seller's fee F, so `complied` does not repay it
+  // (NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY). The dispute's own `compliedAt` says the seller paid.
+  function paidThenAppealed(by: 'buyer' | 'seller') {
+    const p = publish(opened(true), 'seller-sends-xmr');
+    const paid = applyDispute(p, { type: 'complied' }, system, at(2.5), S);
+    expect(lienSteps(p, paid, sellerPosted, [lien({ feeAtomic: F })])).toEqual([]);
+    const appealed = appeal(paid, by);
+    expect(appealed.compliedAt).not.toBeNull();
+    expect(lienSteps(paid, appealed, sellerPosted, [lien({ feeAtomic: F })])).toEqual(by === 'seller' ? [{ op: 'suspend', id: 'l1' }] : []);
+    return { a: appealed, stored: lien({ feeAtomic: F, status: by === 'seller' ? 'suspended' : 'active' }) };
+  }
+
+  for (const by of ['seller', 'buyer'] as const) {
+    for (const final of ['no-action', 'seller-returns-fiat'] as const) {
+      it(`appeal by the ${by} (lien ${by === 'seller' ? 'suspended' : 'active'}), overruled to ${final}: the round-1 lien is void and the buyer owes the XMR back`, () => {
+        const { a, stored } = paidThenAppealed(by);
+        expect(lienSteps(a, decide(a, final), sellerPosted, [stored])).toEqual([
+          { op: 'void', id: 'l1' },
+          { op: 'place', round: 2, debtor: 'buyer', cause: 'overturned', amountAtomic: A, feeAtomic: 0n },
+        ]);
+      });
+    }
+  }
+
+  it('never paid (no compliedAt), overruled: the lien is void and nobody else is liened', () => {
+    const p = appeal(publish(opened(true), 'seller-sends-xmr'), 'seller');
+    expect(lienSteps(p, decide(p, 'no-action'), sellerPosted, [lien({ feeAtomic: F, status: 'suspended' })])).toEqual([{ op: 'void', id: 'l1' }]);
+  });
+});
+
+describe("re-verify R2: liens switched off, the debtor-poster's 1% is owed at finality, never at publish", () => {
+  it("seller's ad, seller-sends-xmr: nothing at publish; owed by the seller once the window closes", () => {
+    const d = opened(true);
+    const p = publish(d, 'seller-sends-xmr');
+    expect(lienSteps(d, p, off(sellerPosted), [])).toEqual([]);
+    const closed = applyDispute(p, { type: 'window-closed' }, system, at(60), S);
+    expect(lienSteps(p, closed, off(sellerPosted), [])).toEqual([{ op: 'fee-owed', side: 'seller', amountAtomic: F }]);
+  });
+
+  it('a lien placed while on already carries the 1%: switched off at finality, it is not owed twice', () => {
+    const p = publish(opened(true), 'seller-sends-xmr');
+    const closed = applyDispute(p, { type: 'window-closed' }, system, at(60), S);
+    expect(lienSteps(p, closed, off(sellerPosted), [lien({ feeAtomic: F })])).toEqual([]);
+  });
+
+  it('switched on at finality after a publish while off (no lien stored): still owed', () => {
+    const p = publish(opened(true), 'seller-sends-xmr');
+    const closed = applyDispute(p, { type: 'window-closed' }, system, at(60), S);
+    expect(lienSteps(p, closed, sellerPosted, [])).toEqual([{ op: 'fee-owed', side: 'seller', amountAtomic: F }]);
+  });
+
+  it('appealed: nothing while it is pending; "Decision stands" makes it owed', () => {
+    const p = publish(opened(true), 'seller-sends-xmr');
+    const a = appeal(p, 'seller');
+    expect(lienSteps(p, a, off(sellerPosted), [])).toEqual([]);
+    expect(lienSteps(a, decide(a, 'seller-sends-xmr'), off(sellerPosted), [])).toEqual([{ op: 'fee-owed', side: 'seller', amountAtomic: F }]);
+  });
+
+  it('refunded at round 1, released on appeal against the seller who posted: no lien, the 1% owed', () => {
+    const p = appeal(publish(opened(false), 'refund-to-seller'), 'buyer');
+    expect(lienSteps(p, decide(p, 'release-to-buyer'), off(sellerPosted), [])).toEqual([{ op: 'fee-owed', side: 'seller', amountAtomic: F }]);
+  });
+
+  it('overruled to seller-sends-xmr on the seller\'s ad: no lien, the 1% owed', () => {
+    const p = appeal(publish(opened(true), 'no-action'), 'buyer');
+    expect(lienSteps(p, decide(p, 'seller-sends-xmr'), off(sellerPosted), [])).toEqual([{ op: 'fee-owed', side: 'seller', amountAtomic: F }]);
+  });
+
+  it('liensOn must be a boolean', () => {
+    const d = opened(true);
+    expect(() => lienSteps(d, publish(d, 'seller-sends-xmr'), { poster: 'seller', amountAtomic: A, feeAtomic: F } as LienFacts, [])).toThrow(RangeError);
   });
 });
 

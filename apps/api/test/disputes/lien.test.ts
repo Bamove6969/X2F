@@ -255,6 +255,50 @@ describe('review L1: the seller paid, then the appeal overrules the order to pay
   }
 });
 
+describe("re-verify R1: on the seller's own ad the paid lien keeps the 1% and stays active", () => {
+  for (const by of ['seller', 'buyer'] as const) {
+    for (const final of ['no-action', 'seller-returns-fiat'] as const) {
+      it(`appeal by the ${by}, overruled to ${final}: the round-1 lien is void and the buyer is liened for the XMR received`, async () => {
+        const { seller, buyer, code } = await disputed({ afterRefund: true, poster: 'seller' });
+        await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
+        await complied(code);
+        // The lien carries the seller's own 1% (D-063), so paying the buyer does not repay it.
+        expect(await liens(code)).toMatchObject([{ fee_atomic: FEE.toString(), status: 'active' }]);
+        await appealDirect(deps, code, by);
+        expect(await liens(code)).toMatchObject([{ status: by === 'seller' ? 'suspended' : 'active' }]);
+        await publishRuling(deps, code, { outcome: final });
+        expect(await liens(code)).toEqual([
+          expect.objectContaining({ debtor: seller.id, round: 1, status: 'void' }),
+          { debtor: buyer.id, creditor: seller.id, amount_atomic: AMOUNT.toString(), fee_atomic: '0', round: 2, cause: 'overturned', status: 'active', lifted: false },
+        ]);
+        expect(await hasActiveLien(deps.db, buyer.id)).toBe(true);
+        expect(await owed(code)).toEqual([]);
+      });
+    }
+  }
+});
+
+describe("re-verify R2: liens switched off on a seller's ad, the seller's 1% is still recorded", () => {
+  it('seller-sends-xmr while off: nothing at publish; one owed fee on the seller once the ruling is final', async () => {
+    const { seller, code } = await disputed({ afterRefund: true, poster: 'seller' });
+    await deps.db.query('update site_flags set liens_enabled = false');
+    try {
+      await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
+      expect(await liens(code)).toEqual([]);
+      // Never at publish: an appeal could still overrule it, and an owed fee cannot be undone.
+      expect(await owed(code)).toEqual([]);
+      setNow(at(H + 48 * H));
+      expect(await tick()).toBeGreaterThanOrEqual(1);
+      expect(await owed(code)).toEqual([{ account: seller.id, amount_atomic: FEE.toString(), collected_atomic: '0' }]);
+      await tick();
+      expect(await owed(code)).toHaveLength(1);
+      expect((await lienLog(code)).map((e) => e.action)).toEqual(['fee.owed']);
+    } finally {
+      await deps.db.query('update site_flags set liens_enabled = true');
+    }
+  });
+});
+
 describe('review L2: liens stay dark until switched on (site_flags.liens_enabled)', () => {
   it('switched off: no lien is placed and none blocks trading, but the owed 1% is still recorded', async () => {
     const { seller, buyer, code } = await disputed({ afterRefund: true, poster: 'buyer' });
