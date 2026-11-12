@@ -93,6 +93,18 @@ describe("the seller's cancel refund (owner 8 Nov: no final alert, the refund st
     await m.handle.stop();
   });
 
+  it("review M5: once the ruling executor recorded a payout for the trade, the desk arms and hands nothing for it", async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch, { rulings: { step: async () => 'in-flight', kindFor: () => 'dispute-buyer' } });
+    const l = await inFunding(ctx, m, net);
+    await sellerCancelled(l);
+    await m.handle.watch();
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([]);
+    expect((await record(l.code)).armed).toBeNull();
+    await m.handle.stop();
+  });
+
   it("nothing is signed while the API does not show the seller's cancel (secured, the retired refund_requested, another settling kind)", async () => {
     const { net, fetch } = fakeNetwork(ctx);
     const m = await moderation(ctx, fetch);
@@ -694,11 +706,20 @@ describe('autoRefundStep (pure)', () => {
 });
 
 describe('the only paths to settle() as the moderator', () => {
-  it('apps/moderation calls settle() in desk.ts alone, and only with the guarded refunds', () => {
+  it('apps/moderation calls settle() in desk.ts (the guarded refunds) and execute.ts (the gate-authorised ruling) alone', () => {
     const dir = fileURLToPath(new URL('../src/', import.meta.url));
     const callers = readdirSync(dir).filter((f) => f.endsWith('.ts') && /\.settle\(/.test(readFileSync(dir + f, 'utf8')));
-    expect(callers).toEqual(['desk.ts']);
+    // Plan 4 Task 14 adds execute.ts on purpose: a ruling's payout, exactly as the gate authorised it.
+    expect(callers).toEqual(['desk.ts', 'execute.ts']);
     const desk = readFileSync(dir + 'desk.ts', 'utf8');
     expect(desk.match(/\.settle\(/g)).toHaveLength(1);
+    // The plan's rule (Task 14): a ruling is mod-built and co-signed by the winner; the only
+    // `cosigner: 'mod'` (the moderator co-signing a trader's tx) stays the desk's guarded refunds.
+    const exec = readFileSync(dir + 'execute.ts', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(exec.match(/\.settle\(/g)).toHaveLength(1);
+    expect(exec).toMatch(/builder: 'mod'/);
+    expect(exec).not.toMatch(/cosigner: 'mod'/);
+    const withModCosigner = readdirSync(dir).filter((f) => f.endsWith('.ts') && /cosigner: 'mod'/.test(readFileSync(dir + f, 'utf8')));
+    expect(withModCosigner).toEqual(['desk.ts']);
   });
 });

@@ -16,6 +16,7 @@
     "@simplewebauthn/server": "14.0.3",
     "@x2f/core": "0.0.0",
     "@x2f/escrow": "0.0.0",
+    "@x2f/logchain": "0.0.0",
     "@x2f/protocol": "0.0.0",
     "@x2f/staff": "0.0.0",
     "@x2f/trade": "0.0.0",
@@ -23,6 +24,7 @@
     "pg": "8.23.1"
   },
   "devDependencies": {
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "@x2f/regtest": "0.0.0"
   }
 }

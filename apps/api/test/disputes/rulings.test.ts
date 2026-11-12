@@ -3,7 +3,7 @@
 // or held for a senior moderator's or the owner's tapped approval at or above it; a send-back
 // returns it to the proposer. Every decided state goes through `withDispute`, so the liens (Task 25)
 // and the reviews' erasure on an overturn follow by themselves.
-// NEEDS_TASK_14: nothing moves the escrow's coins yet; the ruling stops at published (or final).
+// The payout itself is Plan 4 Task 14's (the moderation executor; watchReports.test.ts records it).
 import { createHash, randomUUID } from 'node:crypto';
 import { evidenceSha256, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
