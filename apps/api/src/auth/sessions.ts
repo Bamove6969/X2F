@@ -9,7 +9,7 @@ import { ApiError } from '../errors.js';
 import { hasAbility } from '../team/abilities.js';
 import type { MemberAccess } from '../team/perms.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
-import { boundCookieValid, boundSessionsOn, issueBoundCookie, sessionKeyOf } from './deviceBound.js';
+import { BOUND_COOKIE, boundCookieValid, boundSessionsOn, issueBoundCookie, sessionKeyOf } from './deviceBound.js';
 import type { LoginStrength } from './strength.js';
 
 export const SESSION_COOKIE = '__Host-x2f_session';
@@ -597,6 +597,9 @@ export function logoutRoute(app: FastifyInstance, url = '/v1/logout', config: Re
       for (const row of r.rows) req.server.events.closeSession(row.account_id, row.id);
     }
     void reply.clearCookie(realmOf(req).cookie, COOKIE_ATTRS);
+    // S-085 (review Info): the trader's bound cookie goes with the session (useless without its row,
+    // but nothing is left behind). The staff API never sets one.
+    if (realmOf(req).app === 'trader') void reply.clearCookie(BOUND_COOKIE, COOKIE_ATTRS);
     return { ok: true };
   });
 }

@@ -290,6 +290,21 @@ describe('a bound session', () => {
     expect(errorOf(await me(jar))).toBe('not-authenticated');
   });
 
+  it('logout clears the bound cookie too (review Info)', async () => {
+    const key = device();
+    const { jar } = await login(key);
+    expect(jar[BOUND_COOKIE]).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const res = await send(jar, 'POST', '/v1/logout', {});
+    expect(res.statusCode).toBe(200);
+    const cleared = res.cookies.find((c) => c.name === BOUND_COOKIE);
+    expect(cleared).toBeDefined();
+    expect(cleared!.value === '' || cleared!.maxAge === 0 || (cleared!.expires !== undefined && cleared!.expires.getTime() <= Date.now())).toBe(true);
+    // The same __Host- attributes it was set with, or the browser would keep it.
+    expect(cleared).toMatchObject({ path: '/', secure: true, httpOnly: true, sameSite: 'Strict' });
+    expect(cleared!.domain).toBeUndefined();
+    expect(jar[BOUND_COOKIE]).toBeUndefined();
+  });
+
   it('turning the flag off is the kill switch: a bound session works without the bound cookie', async () => {
     const key = device();
     const { jar } = await login(key);

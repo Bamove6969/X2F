@@ -163,8 +163,9 @@ export function deviceBoundRoutes(app: FastifyInstance): void {
   // Review S2, re-verify R2: the per-session budget is charged only to refused proofs, so a valid
   // proof is never refused by a budget that whoever holds a copied session cookie can spend.
   // Challenges have no per-session cap at all (re-verify 2): they write nothing (one HMAC and one
-  // indexed select), the app's general request limits cover them, and a per-session cap is one the
-  // thief shares with the person, who needs a new challenge for every renewal.
+  // indexed select), the deployment's request limits cover them (the API has no app-wide limiter),
+  // and a per-session cap is one the thief shares with the person, who needs a new challenge for
+  // every renewal.
   const refused = (req: FastifyRequest): never => {
     req.server.budgets.sessionProof.take(req.auth.sessionId);
     throw new ApiError(401, 'proof-invalid');

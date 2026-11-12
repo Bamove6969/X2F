@@ -108,8 +108,9 @@ fresh server challenge.
      (`SESSION_PROOF_BUCKET`, 20 at once, 10 a minute; 429 `slow-down`). A valid proof is never
      charged, so whoever holds a copied session cookie cannot spend what a valid renewal needs.
      Challenges have no per-session cap (re-verify 2): they write nothing (one HMAC, one indexed
-     select), the app's general request limits cover them, and a per-session cap would be shared
-     with the thief while the person needs a new challenge for every renewal.
+     select), the deployment's request limits cover them (the API has no app-wide limiter), and a
+     per-session cap would be shared with the thief while the person needs a new challenge for
+     every renewal.
    - Renewal keeps the previous bound cookie valid until the earlier of its own end and now + 60 s
      (`BOUND_OVERLAP_MS`, columns `bound_prev_hash` / `bound_prev_until`, re-verify R1), as the
      session token's `prev_token_hash` does. Every tab shares the one cookie jar, so a request
@@ -204,6 +205,16 @@ history" modes. There the key lives only as long as the window, which still bind
    Recommendation: 10 minutes.
 4. **Staff app.** Not wired yet: staff sessions are never bound. Recommendation: bind staff-web
    next, with the same routes on the staff API.
+5. **Sessions opened before the flags go on (review S3).** A session is bound only when it is
+   created, so every trader session already open at flag-on stays unbound for the rest of its life,
+   with today's protection (a copied cookie works until the session ends: 12 hours, or longer with
+   "Stay logged in"). Either:
+   - (a) accept it: those sessions age out on their own; or
+   - (b) revoke every unbound trader session once at flag-on, which logs everyone out once and makes
+     every new session bound (where the browser can make a key).
+
+   Recommendation: (b) at mainnet launch, when few sessions exist; (a) if the flags go on later,
+   with a notice. Decide before switching on.
 
 ## 9. Not in this change
 
