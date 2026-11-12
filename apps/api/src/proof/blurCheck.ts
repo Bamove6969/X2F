@@ -119,7 +119,7 @@ export function blurCheckRoutes(app: FastifyInstance): void {
       // Proof stack: only a proof this side stored for this trade is announced (isStoredProof:
       // existence only, never the ciphertext), so the site's proof count and the asks follow real
       // proofs. Any other id is 404, like an unknown trade.
-      if (!(await isStoredProof(c, code, proofId, side))) throw new ApiError(404, 'not-found');
+      if (proofId === null || !(await isStoredProof(c, code, proofId, side))) throw new ApiError(404, 'not-found');
       const known = await c.query<{ ask: boolean }>('select ask from blur_check_proofs where trade_code = $1 and proof_id = $2', [code, proofId]);
       if (known.rows[0]) return { ask: known.rows[0].ask };
       const n = await c.query<{ n: string }>('select count(*) as n from blur_check_proofs where trade_code = $1', [code]);
