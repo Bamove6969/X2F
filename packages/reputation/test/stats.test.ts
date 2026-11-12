@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CANCEL_RATE_MIN_TRADES,
   FEEDBACK_EVERY,
   NEGATIVE_MAX_STARS,
   PCT_MIN_REVIEWS,
@@ -9,7 +8,6 @@ import {
   TYPICAL_WINDOW,
   actionMinutes,
   bothRolesTypical,
-  cancelRatePct,
   classify,
   isCompletedTrade,
   median,
@@ -152,23 +150,12 @@ describe('running action minutes (Task 20: last 20, no codes or dates)', () => {
   });
 });
 
-describe('cancelRatePct (P5-A9)', () => {
-  it('is null below 5 trades that reached funding', () => {
-    expect(CANCEL_RATE_MIN_TRADES).toBe(5);
-    expect(cancelRatePct({ cancelledByMe: 1, reachedFunding: 4 })).toBeNull();
-  });
-  it('rounds down', () => {
-    expect(cancelRatePct({ cancelledByMe: 1, reachedFunding: 50 })).toBe(2);
-    expect(cancelRatePct({ cancelledByMe: 1, reachedFunding: 3 * 17 })).toBe(1);
-    expect(cancelRatePct({ cancelledByMe: 0, reachedFunding: 5 })).toBe(0);
-  });
-  it('refuses negative or fractional counts (review M5)', () => {
-    expect(() => cancelRatePct({ cancelledByMe: -1, reachedFunding: 10 })).toThrow(RangeError);
-    expect(() => cancelRatePct({ cancelledByMe: 1, reachedFunding: -10 })).toThrow(RangeError);
-    expect(() => cancelRatePct({ cancelledByMe: 0.5, reachedFunding: 10 })).toThrow(RangeError);
-  });
-  it('never exceeds 100', () => {
-    expect(cancelRatePct({ cancelledByMe: 9, reachedFunding: 5 })).toBe(100);
+describe('no public cancel rate (owner T-017; J-21 review F6)', () => {
+  // All cancel types are recorded as ONE cancel figure seen only by moderators (the moderator case
+  // view, J-21); P5-A9's public profile cancel rate is superseded, so the package exports none.
+  it('exports no cancel-rate helper', async () => {
+    const pkg = (await import('../src/index.js')) as Record<string, unknown>;
+    expect(Object.keys(pkg).filter((k) => /cancel/i.test(k))).toEqual([]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { GRANTABLE_PERMS, validateHours, type LoginHours, type StaffRole } from '@x2f/staff';
+import { GRANTABLE_PERMS, can, validateHours, type GrantablePerm, type LoginHours, type StaffRole } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { lockAccount, withTx } from '../auth/hold.js';
@@ -146,9 +146,22 @@ export interface MemberRow {
   /**
    * J-21 (owner Q60): the per-person checkboxes as stored (only GRANTABLE_PERMS, sorted), for the
    * Staff page; [] for the owner and for invites. What a role holds anyway (a senior's Feedback) is
-   * not repeated here.
+   * never a per-person box (review F5): it is left out here, a save does not store it and a role
+   * change clears it (`perPersonGrants`).
    */
   grants: string[];
+}
+
+/**
+ * J-21 review F5 (lead, 12 Nov): the per-person boxes worth storing for `role`: grantable perms the
+ * role does not already hold, sorted. A box the role holds is shown ticked and fixed from the role
+ * itself (staff-web StaffGrants), never from a stored grant, so it never comes back on its own after
+ * a demotion.
+ */
+export function perPersonGrants(role: StaffRole, grants: readonly string[]): GrantablePerm[] {
+  return [...new Set(grants)]
+    .filter((g): g is GrantablePerm => (GRANTABLE_PERMS as readonly string[]).includes(g) && !can(role, g as GrantablePerm))
+    .sort();
 }
 
 export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]> {
@@ -182,7 +195,7 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
       missingMethods: THREE_METHOD_ROLES.includes(r.role)
         ? [...(r.keys > 0 ? [] : ['security-key' as const]), ...(r.pgp > 0 ? [] : ['pgp' as const]), ...(r.passkeys > 0 ? [] : ['passkey' as const])]
         : [],
-      grants: r.role === 'owner' ? [] : r.grants.filter((g) => (GRANTABLE_PERMS as readonly string[]).includes(g)).sort(),
+      grants: r.role === 'owner' ? [] : perPersonGrants(r.role, r.grants),
     })),
     ...invites.map((r): MemberRow => ({
       accountId: null, inviteId: r.id, displayName: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
@@ -258,7 +271,13 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       // security key is optional.
       if (THREE_METHOD_ROLES.includes(role) && !(await holdsModeratorMethods(c, id))) throw new ApiError(409, 'moderator-methods-required');
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-role', accountId: id, role }, now, { sessionId: req.auth.sessionId });
-      await c.query('update staff_members set role = $2, has_security_key = $3 where account_id = $1', [id, role, keys > 0]);
+      // Review F5: what the new role holds is not kept as a per-person box; nor what the old role held
+      // (re-verify R1: a box stored before F5 and hidden while the role held it would otherwise come
+      // back on its own after a demotion).
+      const { rows: held } = await c.query<{ grants: string[] }>('select grants from staff_members where account_id = $1', [id]);
+      await c.query('update staff_members set role = $2, has_security_key = $3, grants = $4::text[] where account_id = $1', [
+        id, role, keys > 0, perPersonGrants(role, perPersonGrants(target.role, held[0]?.grants ?? [])),
+      ]);
       await log(c, req, 'staff.role-set', { staffId: id, from: target.role, to: role });
     });
     return { role };
@@ -277,13 +296,16 @@ export function staffMemberRoutes(app: FastifyInstance): void {
     if (grants.length !== raw.length) throw new ApiError(400, 'bad-request', { field: 'grants' });
     const tapId = tapIdOf(b);
     const now = req.server.deps.clock();
-    await withTx(req.server.deps.db, async (c) => {
-      await lockTarget(c, id);
+    const stored = await withTx(req.server.deps.db, async (c) => {
+      const target = await lockTarget(c, id);
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-grants', accountId: id, grants }, now, { sessionId: req.auth.sessionId });
-      await c.query('update staff_members set grants = $2::text[] where account_id = $1', [id, grants]);
-      await log(c, req, 'staff.grants-set', { staffId: id, ticketsHandle: grants.includes('tickets.handle'), feedbackRead: grants.includes('feedback.read') });
+      // Review F5: the tap is bound to the list as sent; what the role holds anyway is not stored.
+      const kept = perPersonGrants(target.role, grants);
+      await c.query('update staff_members set grants = $2::text[] where account_id = $1', [id, kept]);
+      await log(c, req, 'staff.grants-set', { staffId: id, ticketsHandle: kept.includes('tickets.handle'), feedbackRead: kept.includes('feedback.read') });
+      return kept;
     });
-    return { grants };
+    return { grants: stored };
   });
 
   // Owner G4 (7 Nov): a permanent removal is tapped (`remove-staff` bound to the person).
