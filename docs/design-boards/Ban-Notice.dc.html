@@ -20,7 +20,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <div style="{{appStyle}}">
   <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
     <a href="#" aria-label="Close" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></a>
-    <span style="flex-grow: 1; font-size: 15px; line-height: 20px; font-weight: 600;">Account notice</span>
+    <div style="flex-grow: 1; display: flex; align-items: center; min-width: 0; height: 44px;"><a href="#" aria-label="X2F home" style="display: flex; flex-shrink: 0; text-decoration: none;"><svg width="60" height="24" viewBox="0 0 60 24" aria-hidden="true" style="display:block;flex-shrink:0;overflow:visible"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.29 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.96 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></svg></a><span aria-hidden="true" style="flex-shrink: 0; margin: 0 10px; font-size: 18px; line-height: 24px; color: var(--ink-muted);">–</span><span style="flex: 1; min-width: 0; font-size: 15px; line-height: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{screenName}}</span></div>
     <span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   </header>
   <main aria-labelledby="ban-title" style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 8px 16px 24px;">
@@ -99,7 +99,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </div>
 
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
-    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2><aside aria-label="Design, 12 Nov: ban notice reuses the frozen layout" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Design · 12 Nov · D-019, D-020, backlog</span><span style="font-weight: 600;">Same layout as AccountFrozen: logo and screen name top-left, danger hero with the facts, cards under it.</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Screen name: "Account banned" (site ban), "Trade ban" (trade ban). The build's AccountBanned.tsx reuses the x2f-frozen classes; swap its lead and headlines for D-020's (settled-register-calls.md) and drop "Your account will be fully working again on …".</li><li>Reason shows only the general text, never the case detail: "Breaking the Terms of Service", "Problems in trades", "Abuse of other traders", "Account security" (w11-102, BAN_REASON_TEXT). Preview with the reason tweak. Showing: {{reasonName}}</li></ul></aside>
     <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Built like Lien-Notice: a full-screen account notice, danger hero with the Ends and Reason block inside it, then what it means and who to message. OK is the one primary. Preview the trade ban and site ban with the variant tweak.</p>
     <aside aria-label="Decided by the owner: Ban length follows a written rule list" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q15)</span><span style="font-weight: 600;">Ban length follows a written rule list</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Each offence on the list carries its own ban length. Repeat offences step up; a third is a lifetime ban.</li><li>Some offences, such as scamming, are a lifetime ban from the first time.</li><li>Until the list is written, the moderator picks the length. So both forms ship: an end date, or "Permanent · until a moderator lifts it" (ends tweak).</li></ul></aside>
     <aside aria-label="Decided by the owner: ban notice wording" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G39)</span><span style="font-weight: 600;">Ban notice wording</span><span style="color: var(--ink-muted);">Owner: "We're sorry, but your account has been banned. If you feel this has been done in error, please reach out to a moderator at [Matrix Channel] [Telegram Channel] and ask to speak to a moderator for further details. Please refer to Design for the best wording here."</span><span>Design tightened it into the site-ban headline and lead. The trade ban keeps its own headline but uses the same apology and contact line. The contact card is now just its heading and the two rows, so the lead isn't said twice.</span></aside>
@@ -111,7 +111,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["trade-ban","site-ban"],"default":"trade-ban"},"ends":{"editor":"enum","options":["date","permanent"],"default":"date"},"business":{"editor":"enum","options":["unfinished","none"],"default":"unfinished"},"$preview":{"width":390,"height":1791}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["trade-ban","site-ban"],"default":"trade-ban"},"ends":{"editor":"enum","options":["date","permanent"],"default":"date"},"business":{"editor":"enum","options":["unfinished","none"],"default":"unfinished"},"reason":{"editor":"enum","options":["terms","trade-problems","abuse","account-security"],"default":"trade-problems"},"$preview":{"width":390,"height":2071}}'>
 class Component extends DCLogic {
   renderVals() {
     const THEMES = {
@@ -123,14 +123,16 @@ class Component extends DCLogic {
     const timed = this.props.ends !== 'permanent';
     const unfinished = this.props.business !== 'none';
     // App area heights (measured), plus the design-notes strip below it.
-    const APP = { trade: 1050, 'site-date-unfinished': 1406, 'site-permanent-unfinished': 1384, 'site-date-none': 1048, 'site-permanent-none': 1048 };
+    const APP = { trade: 1050, 'site-date-unfinished': 1384, 'site-permanent-unfinished': 1362, 'site-date-none': 1026, 'site-permanent-none': 1026 }; // 12 Nov: general reason is one line
     const appH = !site ? APP.trade : APP['site-' + (timed ? 'date' : 'permanent') + '-' + (unfinished ? 'unfinished' : 'none')];
-    const NOTES = 741;
+    const NOTES = 1021;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (appH + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); text-wrap: pretty; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + appH + 'px; display: flex; flex-direction: column; overflow: hidden;';
     const loginLine = unfinished
       ? (timed ? "Once everything is finished, you won't be able to log in again until the ban ends." : "Once everything is finished, you won't be able to log in again.")
       : "Nothing on your account is left open, so you can't log in while the ban lasts.";
+    const REASONS = { terms: 'Breaking the Terms of Service', 'trade-problems': 'Problems in trades', abuse: 'Abuse of other traders', 'account-security': 'Account security' };
+    const rk = REASONS[this.props.reason] ? this.props.reason : 'trade-problems';
     return {
       rootStyle, appStyle,
       tradeBan: !site,
@@ -142,7 +144,7 @@ class Component extends DCLogic {
       headline: !site ? "You can't trade right now" : 'Your account has been banned',
       lead: !site ? "We're sorry. Your account can't start or join new trades. If you think this was a mistake, message a moderator on Matrix or Telegram and ask for the details."
         : "We're sorry. If you think this was a mistake, message a moderator on Matrix or Telegram and ask for the details.",
-      reason: !site ? 'Three trades in a row were not paid.' : 'You sent the same seller a fake payment screenshot.',
+      reason: REASONS[rk], reasonName: rk, screenName: site ? 'Account banned' : 'Trade ban',
       loginLine
     };
   }

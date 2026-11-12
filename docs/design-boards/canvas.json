@@ -264,7 +264,7 @@
     },
     "StaffList.dc.html": {
       "expand": "fill",
-      "h": 2174,
+      "h": 2489,
       "is_interactive": true,
       "page": "all",
       "title": "2 \u00b7 Staff: add, set login hours, switch off",
@@ -1472,6 +1472,42 @@
       "page": "all",
       "title": "TradeFund-Wide",
       "is_interactive": true
+    },
+    "StaffInvite.dc.html": {
+      "x": 12240,
+      "y": 24482,
+      "w": 1280,
+      "h": 1657,
+      "page": "all",
+      "title": "StaffInvite",
+      "is_interactive": true
+    },
+    "StaffMyPay.dc.html": {
+      "x": 13600,
+      "y": 24482,
+      "w": 1280,
+      "h": 2333,
+      "page": "all",
+      "title": "StaffMyPay",
+      "is_interactive": true
+    },
+    "StaffPaySetup.dc.html": {
+      "x": 14960,
+      "y": 24482,
+      "w": 1280,
+      "h": 1445,
+      "page": "all",
+      "title": "StaffPaySetup",
+      "is_interactive": true
+    },
+    "StaffBan.dc.html": {
+      "x": 16320,
+      "y": 24482,
+      "w": 1280,
+      "h": 1641,
+      "page": "all",
+      "title": "StaffBan",
+      "is_interactive": true
     }
   },
   "createdOnFiles": {
@@ -1672,11 +1708,15 @@
     "SetupPassword.dc.html",
     "SetupWelcome.dc.html",
     "OwnerSetup.dc.html",
+    "StaffInvite.dc.html",
     "StaffLogin.dc.html",
     "StaffList.dc.html",
     "StaffSettings.dc.html",
+    "StaffMyPay.dc.html",
+    "StaffPaySetup.dc.html",
     "OwnerKeys.dc.html",
     "StaffLog.dc.html",
+    "StaffBan.dc.html",
     "StaffOverview.dc.html",
     "StaffImportVerify.dc.html",
     "StaffPerformance.dc.html",
