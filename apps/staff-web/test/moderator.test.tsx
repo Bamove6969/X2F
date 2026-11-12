@@ -48,7 +48,7 @@ const trader = (name: string, trades: number, pct: number | null) => ({
 const kase = (o: Record<string, unknown> = {}, ruling: Record<string, unknown> = {}) => ({
   code: CODE, incidentId: 'D-7RWD', seq: 1, status: 'open', round: 1, openedBy: 'buyer', reason: 'paid', note: 'Paid by Zelle at 08:51.',
   afterRefund: false, openedAt: new Date(Date.now() - 2 * H).toISOString(), replyDueAt: new Date(Date.now() + 2 * H).toISOString(),
-  rulingDueAt: new Date(Date.now() + 46 * H).toISOString(), firstReplyAt: null, usd: '1320.00', overLimit: true,
+  rulingDueAt: new Date(Date.now() + 46 * H).toISOString(), firstReplyAt: null, usd: '1320.00', overLimit: true, limitUsd: 1000,
   assignee: 'dmitri_k', assignedToYou: true, proposedByYou: false, taken: null, mayWork: true, moderator: null,
   traders: { buyer: trader('harbor_lin', 31, 100), seller: trader('quietfox', 145, 97) },
   escrow: { state: 'escrow-secured', amountAtomic: '4000000000000', methodId: 'zelle', currency: 'USD', centsPerXmr: '33000', fiatCents: '132000', confirmations: 10, takenAt: new Date(Date.now() - 3 * H).toISOString() },
@@ -235,7 +235,7 @@ describe('ModCase (board ModCase)', () => {
     expect(part('approve')).toBeNull();
   });
 
-  it('an approver sees the waiting proposal with "Approve ruling" (tapped) and "Send back"; a moderator never does', async () => {
+  it('an approver sees the waiting proposal with "Approve ruling" (tapped) and "Send back"', async () => {
     const proposedAt = new Date().toISOString();
     const waiting = kase(
       { status: 'awaiting-approval', assignedToYou: false, assignee: 'dmitri_k' },
@@ -268,8 +268,14 @@ describe('ModCase (board ModCase)', () => {
     await settle();
     await click(button('Send back to the moderator'));
     expect(api.calls.find((c) => c.path === `/staff/v1/disputes/${CODE}/rulings/r1/send-back`)!.body).toEqual({ note: 'Look at the bank statement again.' });
+  });
 
-    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes/:code': { body: { ...waiting, mayWork: false } } });
+  it('a moderator never sees the approval panel of a waiting ruling (rulings.approve is owner and senior only)', async () => {
+    const waiting = kase(
+      { status: 'awaiting-approval', assignedToYou: false, assignee: 'sarah.v', mayWork: false },
+      { proposal: { rulingId: 'r1', reason: REASON, evidence: [], proposer: 'p', proposedAt: new Date().toISOString() }, draft: { id: 'r1', outcome: 'refund-to-seller' } },
+    );
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes/:code': { body: waiting } });
     await open(`/disputes/${CODE}`);
     expect(part('approve')).toBeNull();
     expect(text('ruling-waiting')).toContain('waiting for approval');

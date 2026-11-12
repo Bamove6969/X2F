@@ -3,7 +3,7 @@
  * read and tested on their own. Every sentence here is draft copy unless a board words it.
  * COPY-UNSIGNED
  */
-import type { KeyTapIntent, RulingOutcome } from '@x2f/staff';
+import { sha256, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 
 const ATOMIC_PER_XMR = 1_000_000_000_000n;
 const H = 3_600_000;
@@ -143,17 +143,19 @@ export function reasonHint(reason: string): string {
 /** The evidence lines the traders read: one per non-empty line. */
 export const evidenceLines = (raw: string) => raw.split('\n').map((l) => l.trim()).filter((l) => l !== '');
 
-/** The SHA-256 of the reason's UTF-8 bytes, lower-case hex: what the ruling tap binds (`reasonSha256`). */
-export async function reasonSha256(reason: string): Promise<string> {
-  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(reason));
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+/**
+ * The SHA-256 of the reason's UTF-8 bytes, lower-case hex: what the ruling tap binds
+ * (`reasonSha256`). Synchronous (@x2f/staff's own SHA-256), so the tap dialog opens at once.
+ */
+export function reasonSha256(reason: string): string {
+  return [...sha256(new TextEncoder().encode(reason))].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** The ruling tap's intent, the same content the API rebuilds and checks (apps/api disputes/rulings.ts). */
-export async function rulingIntent(
+export function rulingIntent(
   step: 'propose' | 'approve',
   a: { rulingId: string; code: string; round: 1 | 2; outcome: RulingOutcome; amountAtomic: string; reason: string },
-): Promise<KeyTapIntent> {
+): KeyTapIntent {
   return {
     kind: 'ruling',
     step,
@@ -163,6 +165,6 @@ export async function rulingIntent(
     outcome: a.outcome,
     accountAction: { kind: 'none' },
     amountAtomic: a.amountAtomic,
-    reasonSha256: await reasonSha256(a.reason),
+    reasonSha256: reasonSha256(a.reason),
   };
 }

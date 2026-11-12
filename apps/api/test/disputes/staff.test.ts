@@ -605,6 +605,8 @@ describe('G37: incident IDs and taking a case', () => {
     const v = (await mod.b.get(url(code))).json() as Record<string, unknown>;
     expect(v).toMatchObject({
       assignee: mod.name, assignedToYou: true, mayWork: true,
+      // Plan 4 Task 18 (ModCase "Above the 1,000 USD limit"): the limit the dispute snapshotted when it opened.
+      limitUsd: Number((await loadDispute(deps.db, code))!.limitUsdCents / 100n),
       taken: { by: mod.name, at: START.toISOString(), openedAt: new Date(START.getTime() + 7 * MIN).toISOString() },
     });
     const other = await staff('mod');

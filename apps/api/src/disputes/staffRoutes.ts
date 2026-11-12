@@ -277,7 +277,10 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const c = counts.rows[0]!;
     // D-011: an untaken appeal nobody may review is marked, so the owner sees which case waits.
     const candidates = rows.some((r) => r.status === 'appealed') ? await reviewerCandidates(deps.db) : [];
+    // Plan 4 Task 18 (ModQueue): the header's first-reply time and the footer's large-trade limit.
+    const settings = await disputeSettings(deps.db);
     return {
+      settings: { firstResponseH: settings.firstResponseH, largeTradeLimitUsd: settings.largeTradeLimitUsd },
       rows: rows.map((r) => {
         const usdCents = BigInt(r.usd_cents);
         const approval = r.status === 'awaiting-approval'
@@ -401,8 +404,13 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       firstReplyAt: d.firstReplyAt?.toISOString() ?? null,
       usd: usd(d.usdCents),
       overLimit: d.usdCents >= d.limitUsdCents,
+      // Plan 4 Task 18 (ModCase): the large-trade limit this dispute snapshotted when it opened, whole dollars.
+      limitUsd: Number(d.limitUsdCents / 100n),
       assignee: x.assignee_name,
       assignedToYou: d.assignee === me.id,
+      // Plan 4 Task 18 (ModCase): the waiting proposal is the viewer's own, so staff-web never
+      // offers its proposer the approval (the route refuses it too: 409 `same-person`).
+      proposedByYou: d.status === 'awaiting-approval' && d.ruling?.proposer === me.id,
       taken: tk ? { by: tk.name, at: tk.at.toISOString(), openedAt: tk.opened_at?.toISOString() ?? null } : null,
       mayWork: mayWork(d, req),
       moderator: r.moderatorName !== null && r.moderatorJoinedAt !== null ? { name: r.moderatorName, joinedAt: r.moderatorJoinedAt.toISOString() } : null,
