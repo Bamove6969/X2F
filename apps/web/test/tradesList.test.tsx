@@ -103,6 +103,10 @@ describe('parseTradeList', () => {
 
   it('every trade state has words', () => {
     for (const s of TRADE_STATES) expect(STATE_LABEL[s].text.length, s).toBeGreaterThan(0);
+    // Re-verify B2 (spec 6.6): the moderator look stays on the dispute screens; a disputed row says
+    // "In dispute" in the caution tone with the alert icon.
+    expect(STATE_LABEL.disputed).toEqual({ text: 'In dispute', tone: 'caution', icon: 'alert' });
+    for (const s of TRADE_STATES) expect(STATE_LABEL[s].tone, s).not.toBe('mod');
   });
 });
 
@@ -197,6 +201,17 @@ describe('My trades screen', () => {
     expect(row.querySelector('[data-part="appeal"]')!.textContent).toBe('Appeal Z9Y8-X7W6-V5T4-S3R2');
     // Outside the room link, so pressing it never opens the trade.
     expect(row.querySelector('a [data-part="appeal"]')).toBeNull();
+  });
+});
+
+describe('the disputed row (re-verify B2)', () => {
+  it('draws "In dispute" as a caution chip with the alert icon, never the moderator tone', async () => {
+    answer = () => ({ status: 200, json: { trades: [{ ...OPEN, state: 'disputed' }], next: null } });
+    const { host } = await screen();
+    const chip = rows(host)[0]!.querySelector('.x2f-chip')!;
+    expect(chip.getAttribute('data-tone')).toBe('caution');
+    expect(chip.textContent).toContain('In dispute');
+    expect(host.querySelector('[data-tone="mod"]')).toBeNull();
   });
 });
 
