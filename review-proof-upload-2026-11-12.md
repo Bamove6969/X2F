@@ -160,6 +160,19 @@ known residual).
 
 ## Tests run (worktree at bde8310f, fresh npm ci, under flock ~/x2f-comms/check.lock)
 
-RESULTS_PLACEHOLDER
+All 9 passed, 263 tests in all:
+- apps/web/test/proofUpload.test.ts: 12/12
+- apps/web/test/blurEditor.test.tsx: 12/12
+- apps/web/test/chatEngine.test.ts: 42/42
+- apps/web/test/cantDoThat-lint.test.ts: 13/13 (the `not-a-refusal` count passes at the new cap of 66; the grep diff, base 66 -> head 67 lines, shows exactly one new pragma)
+- apps/web/test/buyerPay.test.tsx: 91/91
+- apps/web/test/chatPanel.test.tsx: 31/31
+- apps/web/test/payDetailsFeed.test.tsx: 6/6
+- packages/proof/test/inputHeader.test.ts: 4/4
+- packages/proof/test/receive.test.ts: 42/42
+
+Not run: proof-render-tripwire.test.ts, a typecheck, and Playwright. The real browser path
+(`browserImage.ts`: createImageBitmap, OffscreenCanvas, convertToBlob) has no automated test. Its
+safety rests on code reading plus `cleanImage`/`assertClean` on the output.
 
 Worktree and its node_modules removed after the run.
