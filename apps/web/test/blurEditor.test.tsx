@@ -263,7 +263,7 @@ describe('AddProof: review M1, the decoded pixels are zeroed on every way out', 
   it('crossing the layout breakpoint (the slot moves in the tree, so it remounts) zeroes them', async () => {
     const { ProofSlotLive } = await import('../src/screens/proof/proofSlot.js');
     const p = held();
-    const slot = (wide: boolean) => <ProofSlotLive enabled code={CODE} expected={EXPECTED} wide={wide} prepare={async () => p} send={vi.fn()} />;
+    const slot = (wide: boolean) => <ProofSlotLive enabled secured code={CODE} expected={EXPECTED} wide={wide} prepare={async () => p} send={vi.fn()} />;
     // As BuyerPay: the wide room and the phone layout put the slot at different places.
     const Room = ({ wide }: { wide: boolean }) => (wide ? <div data-layout="wide"><section>{slot(true)}</section></div> : <div data-layout="phone">{slot(false)}</div>);
     const r = render(<Room wide />);
@@ -332,10 +332,10 @@ describe('BuyerPay proof slot wiring', () => {
   it('flag off (the default): the board slot stays disabled; on: the picker is live and a sent proof marks the trade attached', async () => {
     const { ProofSlotLive } = await import('../src/screens/proof/proofSlot.js');
     const { proofStateOf, setProofSource } = await import('../src/screens/trade/paySeams.js');
-    const off = render(<ProofSlotLive enabled={false} code={CODE} expected={EXPECTED} wide={false} />);
+    const off = render(<ProofSlotLive enabled={false} secured code={CODE} expected={EXPECTED} wide={false} />);
     expect((off.host.querySelector('input[type="file"]') as HTMLInputElement).disabled).toBe(true);
     off.unmount();
-    const on = render(<ProofSlotLive enabled code={CODE} expected={EXPECTED} wide={false} prepare={async () => prepared()} send={async () => ({})} />);
+    const on = render(<ProofSlotLive enabled secured code={CODE} expected={EXPECTED} wide={false} prepare={async () => prepared()} send={async () => ({})} />);
     const input = on.host.querySelector('input[type="file"]') as HTMLInputElement;
     expect(input.disabled).toBe(false);
     expect(proofStateOf(CODE)).not.toBe('attached');

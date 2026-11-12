@@ -378,7 +378,8 @@ function SendExactlyCard({ view, method, total, rate }: { view: TradeView; metho
  * (screens/proof/proofSlot.tsx; off until the storage route, Task 14, exists).
  */
 function ProofSlot({ wide, view, escrow, serverClock }: { wide: boolean } & Pick<TradeScreenProps, 'view' | 'escrow' | 'serverClock'>) {
-  return <ProofSlotLive enabled={proofUploadOn()} code={view.code} expected={proofExpectedOf(view, escrow, serverClock())} wide={wide} />;
+  // No proof while the escrow is securing (lead 2026-11-12): BuyerPay is also the securing screen.
+  return <ProofSlotLive enabled={proofUploadOn()} secured={view.state !== 'securing'} code={view.code} expected={proofExpectedOf(view, escrow, serverClock())} wide={wide} />;
 }
 
 /** The wide room (Desktop board): the trade on the left, the counterparty and the chat on the right. */
