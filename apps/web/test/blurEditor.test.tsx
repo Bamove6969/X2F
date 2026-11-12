@@ -332,6 +332,9 @@ describe('BuyerPay proof slot wiring', () => {
   it('flag off (the default): the board slot stays disabled; on: the picker is live and a sent proof marks the trade attached', async () => {
     const { ProofSlotLive } = await import('../src/screens/proof/proofSlot.js');
     const { proofStateOf, setProofSource } = await import('../src/screens/trade/paySeams.js');
+    const { chatProofState } = await import('../src/proof/chatProof.js');
+    // As App.tsx installs it (the chat's proof state; a proof sent here counts at once).
+    setProofSource(chatProofState);
     const off = render(<ProofSlotLive enabled={false} code={CODE} expected={EXPECTED} wide={false} />);
     expect((off.host.querySelector('input[type="file"]') as HTMLInputElement).disabled).toBe(true);
     off.unmount();

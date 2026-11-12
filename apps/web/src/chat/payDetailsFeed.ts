@@ -39,6 +39,13 @@ export function payRowsOf(snap: ChatSnapshot): PaymentDetail[] | null {
 const norm = (c: string): string => c.replace(/-/g, '').toUpperCase();
 const listeners = new Map<string, Set<(d: PaymentDetail[] | null) => void>>();
 const latest = new Map<string, PaymentDetail[] | null>();
+/** NEEDS_PROOF_RECEIVE: each trade's newest snapshot, for the proof state (proof/chatProof.ts chatProofState). Memory only. */
+const snapshots = new Map<string, ChatSnapshot>();
+
+/** The newest snapshot of this trade's chat that the feed or an open panel saw, or null. */
+export function latestChatSnapshot(tradeCode: string): ChatSnapshot | null {
+  return snapshots.get(norm(tradeCode)) ?? null;
+}
 /** How many open panels are publishing for each trade. */
 const panels = new Map<string, number>();
 
@@ -64,6 +71,7 @@ export function publishPaySnapshot(tradeCode: string, snap: ChatSnapshot): void 
   const key = norm(tradeCode);
   const rows = payRowsOf(snap);
   latest.set(key, rows);
+  snapshots.set(key, snap);
   for (const cb of [...(listeners.get(key) ?? [])]) cb(rows);
 }
 
@@ -110,6 +118,7 @@ export const chatPaymentDetailsSource: PaymentDetailsSource = (code, onDetails) 
     if (set.size === 0) {
       listeners.delete(key);
       latest.delete(key);
+      snapshots.delete(key);
     }
     offLive?.();
     if (timer !== null) clearInterval(timer);

@@ -86,6 +86,12 @@ export interface ChatMessage {
   text: string;
   /** The payee's packaged payment details (J-08), checked; absent on a plain line. */
   pay?: PayDetailsPayload;
+  /**
+   * NEEDS_PROOF_RECEIVE: a `proof.attached` (Plan 5 Task 8): the proof's key and facts, checked by
+   * parseProofPayload and the kind rules below; `text` is empty. The picture is fetched and
+   * decrypted by the page (proof/chatProof.ts) and shown only through ProofThumb.
+   */
+  proof?: ProofAttachedPayload;
 }
 
 const ALL: readonly Role[] = ['buyer', 'seller', 'mod'];
@@ -281,6 +287,12 @@ export interface OpenChatArgs {
    * not move, so the same envelope opens once the trade is secured.
    */
   payAllowed?: boolean;
+  /**
+   * Accept dispute evidence (`proof.attached` kind 'evidence'). Default false: evidence belongs to
+   * an open dispute only (P5-A30), so the engine sets it from the API's `disputeOpen`. When false,
+   * evidence is refused with ChatError('bad-message') for good.
+   */
+  evidenceAllowed?: boolean;
 }
 
 /**
@@ -313,6 +325,20 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
   }
   const p = opened.payload;
   const notChat = (): ChatError => new ChatError('bad-message', 'Not a chat message');
+  if (opened.type === 'proof.attached') {
+    let proof: ProofAttachedPayload;
+    try {
+      const parsed = parseProofPayload(opened.type, p);
+      if (parsed.type !== 'proof.attached') throw notChat();
+      proof = parsed.payload;
+    } catch {
+      throw notChat();
+    }
+    // The payment proof is the buyer's only; evidence a trader's, only while a dispute is open.
+    if (proof.kind === 'proof' && opened.from !== 'buyer') throw notChat();
+    if (proof.kind === 'evidence' && (opened.from === 'mod' || a.evidenceAllowed !== true)) throw notChat();
+    return { message: { from: opened.from, seq: env.seq, text: '', proof }, state: { ...state, guard: guard.toJSON() } };
+  }
   if (opened.type !== CHAT_MSG_TYPE || typeof p !== 'object' || p === null || Array.isArray(p) || !Object.prototype.hasOwnProperty.call(p, 'text')) throw notChat();
   const keys = Object.keys(p);
   const packaged = keys.length === 2 && Object.prototype.hasOwnProperty.call(p, 'pay');

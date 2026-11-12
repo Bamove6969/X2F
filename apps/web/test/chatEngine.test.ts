@@ -891,8 +891,8 @@ describe('chat engine: the payment proof (Plan 5 Task 15)', () => {
   // TRIPWIRE NEEDS_PROOF_RECEIVE (review I1): the API sees only `from`, so a modified seller client
   // can seal `proof.attached` kind 'proof' and the server stores it. The receiving half (ChatPanel's
   // ProofThumb, Task 15) must refuse a payment proof from anyone but the buyer and show nothing of it.
-  // Today every proof.attached is a refused receipt; when the receive half opens them, this keeps
-  // the seller's "payment proof" refused.
+  // The receive half is in (proof stack merge): proof.attached opens as a proof line, and this keeps
+  // the seller's "payment proof" refused for good.
   it('NEEDS_PROOF_RECEIVE tripwire: a payment proof (kind proof) from the seller is refused on receipt and shows nothing', async () => {
     const { parseProofPayload, sealProofEnvelope } = await import('@x2f/proof');
     const e = engine();
@@ -909,5 +909,44 @@ describe('chat engine: the payment proof (Plan 5 Task 15)', () => {
     expect(snap.lines.map((l) => l.text)).toEqual(['after it']);
     const rec = (await store.load(chat))!;
     expect(rec.receipts.find((r) => r.id === id)?.refused).toBe(true);
+  });
+});
+
+describe('chat engine: proof.attached lines (NEEDS_PROOF_RECEIVE)', () => {
+  async function fromSellerProof(kind: 'proof' | 'evidence', parts: Participants) {
+    const { newProofId, proofKeyToBase64, sealProofEnvelope } = await import('@x2f/proof');
+    const payload = {
+      proofId: newProofId(), kind, key: await proofKeyToBase64(new Uint8Array(32).fill(5)), sha256: 'ef'.repeat(32),
+      width: 200, height: 100, mime: 'image/png' as const, hidden: [], photoTakenAt: null,
+    };
+    const env = await sealProofEnvelope({ type: 'proof.attached', payload }, { trade: channel, from: 'seller', seq: sellerState.nextSeq, me: seller, participants: parts });
+    sellerState = { ...sellerState, nextSeq: sellerState.nextSeq + 1 };
+    api.add('seller', env);
+    return payload;
+  }
+
+  it('evidence from the other trader is a proof line while a dispute is open; the key is never stored', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await fromSellerProof('evidence', parts);
+    const snap = await e.sync(chat);
+    expect(snap.lines).toEqual([{ id: '1', from: 'seller', text: '', proof: p, at: expect.any(String), mine: false, gapBefore: false }]);
+    expect(JSON.stringify([...store.records.values()])).not.toContain(p.key);
+  });
+
+  it("evidence outside a dispute, and a 'payment proof' from the seller, are refused for good; the next line still shows", async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await fromSellerProof('evidence', parts);
+    await fromSellerProof('proof', parts);
+    await fromSeller('after', parts);
+    const snap = await e.sync(chat);
+    expect(snap.lines.map((l) => [l.text, l.proof === undefined])).toEqual([['after', true]]);
+    // Decided for good: a dispute opening later does not bring them back.
+    api.view.disputeOpen = true;
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['after']);
   });
 });
