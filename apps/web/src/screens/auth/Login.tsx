@@ -19,6 +19,7 @@ import { isExpired, loginCantDo, refusalText } from './refusals.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import '../screens.css';
+import { HelpLinks } from '../../ui/HelpLinks.js';
 
 /**
  * Where a visitor is sent once the server says this browser has missed the password about ten
@@ -61,7 +62,8 @@ export function Login() {
   }
 
   return (
-    <main className="x2f-screen" data-screen="login">
+    // Owner demo notes 12 Nov #38 (DESIGNER-REVIEW): the content sits lower (x2f-screen--roomy) and ends with the help links.
+    <main className="x2f-screen x2f-screen--roomy" data-screen="login">
       <h1 className="x2f-screen__title">Log in</h1>
 
       {method === 'choose' ? (
@@ -104,6 +106,7 @@ export function Login() {
           Create an account
         </Link>
       </p>
+      <HelpLinks />
     </main>
   );
 }

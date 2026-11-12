@@ -4,6 +4,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import { Icon, type IconName } from './icons.js';
 import { Logo } from './Logo.js';
 import { NewsBell } from './NewsBell.js';
+import { ScreenHeaderView } from './ScreenHeader.js';
 import './ui.css';
 
 /*
@@ -32,7 +33,7 @@ const LINKS: { to: string; label: string; icon: IconName; match: (path: string) 
 ];
 
 /** The routes before login: the wide layout shows the centred logo there, never the rail. */
-const PRE_LOGIN = /^\/(login|setup|terms|team\/join)(\/|$)/;
+const PRE_LOGIN = /^\/(login|setup|terms|team\/join|help)(\/|$)/;
 
 export type WideFrame = 'rail' | 'centred';
 
@@ -130,13 +131,12 @@ export function DesktopRail({ postOffers = true, trades = true }: { postOffers?:
   );
 }
 
-/** Before login (Login-Wide, SignupSecurity-Wide): the 32 px logo, centred, and nothing to click. */
-export function WideTop() {
-  return (
-    <header className="x2f-wide-top">
-      <Logo size={32} />
-    </header>
-  );
+/**
+ * Before login (Login-Wide, SignupSecurity-Wide): the 32 px logo and nothing to click. Owner demo
+ * notes 12 Nov 2026 #37 (DESIGNER-REVIEW): top left with the screen name beside it, the shared header.
+ */
+export function WideTop({ name = '' }: { name?: RailPageName }) {
+  return <ScreenHeaderView name={name} size={32} className="x2f-wide-top" />;
 }
 
 /** The frame on its own around a page (the app shell, App.tsx, draws the same parts in one tree for every layout). */

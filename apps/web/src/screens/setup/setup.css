@@ -11,7 +11,7 @@
   box-sizing: border-box;
   width: 100%;
   max-width: 480px;
-  height: 100dvh;
+  height: calc(100dvh - var(--x2f-shell-header, 0px));
   margin: 0 auto;
   background: var(--x2f-ground);
   color: var(--x2f-ink);

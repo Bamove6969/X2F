@@ -84,14 +84,50 @@ test('at 1440x900 the page sits beside a 240 px rail with logo D and is at most 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
 });
 
-test('at 1280x800 before login the logo is centred and there is no rail', async ({ page }) => {
+// Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): before login the logo moved from the centre to the
+// top left, with the screen name beside it (the shared header); still no rail.
+test('at 1280x800 before login the logo is top left with the screen name, and there is no rail', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/login');
   await expect(page.locator('[data-shell="desktop"][data-wide-frame="centred"]')).toBeAttached();
   await expect(page.locator('nav.x2f-rail')).toHaveCount(0);
   const logo = (await page.locator('header.x2f-wide-top svg[role="img"][aria-label="X2F"]').boundingBox())!;
-  expect(Math.abs(logo.x + logo.width / 2 - 640)).toBeLessThanOrEqual(1);
+  expect(logo.x).toBeLessThanOrEqual(48);
   expect(logo.height).toBe(32);
+  await expect(page.locator('header.x2f-wide-top [data-part="screen-name"]')).toHaveText('Log in');
+});
+
+// Owner demo notes 12 Nov #37, #38, #42, #48 (DESIGNER-REVIEW): logo D top left with the screen name
+// on every phone screen, one logo on Buy/Sell, help links on /login, and nothing scrolls sideways at 360.
+test('on a phone every screen has logo D top left with its name; /login has the help links (owner 12 Nov)', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  for (const [path, name] of [['/buy', 'Find a trade'], ['/sell', 'Find a trade'], ['/wallets', 'Wallets'], ['/settings/security', 'Security']] as const) {
+    await page.goto(path);
+    const header = page.locator('header[data-screen-header]:visible');
+    await expect(header, path).toHaveCount(1);
+    await expect(header.locator('[data-part="screen-name"]'), path).toHaveText(name);
+    const logo = (await header.locator('svg[role="img"][aria-label="X2F"]').boundingBox())!;
+    expect(logo.x, path).toBeLessThanOrEqual(24);
+    await expect(page.locator('svg[role="img"][aria-label="X2F"]:visible'), path).toHaveCount(1);
+    await expectPhoneLayout(page);
+  }
+  await expect(page.locator('.x2f-bottom-nav')).toHaveCount(0);
+  await page.goto('/buy');
+  await expect(page.locator('.x2f-bottom-nav')).toBeVisible();
+  await signedOut(page);
+  await page.goto('/login');
+  await expect(page.locator('header[data-screen-header] [data-part="screen-name"]')).toHaveText('Log in');
+  const links = page.locator('nav[data-part="help-links"] a');
+  await expect(links).toHaveText(['FAQ', 'Getting started', 'Support', 'Settings']);
+  for (const l of await links.all()) expect((await l.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await expectPhoneLayout(page);
+  await links.first().click();
+  await expect(page).toHaveURL('/help/faq');
+  await expect(page.locator('main[data-screen="help-faq"] h1')).toHaveText('FAQ');
+  await expectPhoneLayout(page);
+  // The Landing board keeps its own large logo and no header.
+  await page.goto('/');
+  await expect(page.locator('header[data-screen-header]')).toHaveCount(0);
 });
 
 test('on a phone the browse header shows logo D where the letters X2F were, and no rail', async ({ page }) => {

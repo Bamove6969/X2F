@@ -13,6 +13,11 @@
   padding: var(--x2f-space-6) var(--x2f-space-4);
 }
 
+/* Owner demo notes 12 Nov #38, #42 (DESIGNER-REVIEW): /login and /session-length sit lower, so they do not look empty. */
+.x2f-screen--roomy {
+  padding-top: calc(var(--x2f-space-8) * 2);
+}
+
 .x2f-screen__title {
   margin: 0;
   font-family: var(--x2f-screen-title-family);
