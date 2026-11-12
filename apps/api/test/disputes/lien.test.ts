@@ -299,6 +299,29 @@ describe("re-verify R2: liens switched off on a seller's ad, the seller's 1% is 
   });
 });
 
+describe("re-verify N2: switched off between publish and finality on a seller's ad, the 1% is not owed twice", () => {
+  it('placed while on with the 1%, final while off: no owed fee, and the lien still carries the 1%', async () => {
+    const { seller, buyer, code } = await disputed({ afterRefund: true, poster: 'seller' });
+    await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
+    expect(await liens(code)).toEqual([
+      { debtor: seller.id, creditor: buyer.id, amount_atomic: AMOUNT.toString(), fee_atomic: FEE.toString(), round: 1, cause: 'restitution', status: 'active', lifted: false },
+    ]);
+    await deps.db.query('update site_flags set liens_enabled = false');
+    try {
+      setNow(at(H + 48 * H));
+      expect(await tick()).toBeGreaterThanOrEqual(1);
+      // The stored lien already carries the seller's 1% (D-063): it is not also owed from future trades.
+      expect(await owed(code)).toEqual([]);
+      expect(await liens(code)).toEqual([
+        { debtor: seller.id, creditor: buyer.id, amount_atomic: AMOUNT.toString(), fee_atomic: FEE.toString(), round: 1, cause: 'restitution', status: 'active', lifted: false },
+      ]);
+      expect((await lienLog(code)).map((e) => e.action)).toEqual(['lien.placed']);
+    } finally {
+      await deps.db.query('update site_flags set liens_enabled = true');
+    }
+  });
+});
+
 describe('review L2: liens stay dark until switched on (site_flags.liens_enabled)', () => {
   it('switched off: no lien is placed and none blocks trading, but the owed 1% is still recorded', async () => {
     const { seller, buyer, code } = await disputed({ afterRefund: true, poster: 'buyer' });
