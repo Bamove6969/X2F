@@ -180,6 +180,8 @@ export type ApiErrorCode =
   | 'same-person'
   | 'account-action-unavailable'
   | 'freeze-not-allowed'
+  // Lead call Q1: a ruling while maintenance pauses the dispute.
+  | 'dispute-paused'
   | 'no-chat'
   | 'no-proof'
   | 'moderation-unavailable'

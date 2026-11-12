@@ -3,7 +3,6 @@ import {
   AFTER_REFUND_OUTCOMES,
   ESCROW_OUTCOMES,
   DisputeRuleError,
-  appealReviewers,
   applyDispute,
   type AccountAction,
   type Dispute,
@@ -19,7 +18,7 @@ import { appendLog } from '../log/append.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { disputeSettings } from './settings.js';
-import { loadDispute, withDispute } from './store.js';
+import { withDispute, type DisputeRecord } from './store.js';
 import { rulingExtras } from './rulingDrafts.js';
 import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staffRoutes.js';
 
@@ -38,7 +37,15 @@ import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staf
  *   again with step `approve`; it publishes.
  * - `POST …/rulings/:id/send-back {note}` (perm `rulings.approve`): back to the proposer with a
  *   staff-only note. No tap: it publishes nothing and only takes a proposal away.
- * - `GET …/appeal-reviewers` (perm `disputes.handle`): who may decide the appeal (R37).
+ *
+ * Lead call Q3 (12 Nov): no reviewer list here. `GET …/appeal-reviewers` is wip/lead-appeals'
+ * (owner-only, refused to anyone involved, never logged, R37); if rulings needs the list, call that
+ * branch's `eligibleReviewers` helper.
+ *
+ * Lead call Q1 (12 Nov): propose, approve and send-back are refused while maintenance pauses the
+ * dispute (409 `dispute-paused`, the freeze route's gate: `paused_since`) and during the emergency
+ * stop (409 `trading-paused`, `site_flags.trading_paused` read `for share`, so a stop being set waits
+ * for the ruling or is seen by it). Refused before the tap, so the tap stays unused.
  *
  * Every change goes through `withDispute` and the dispute machine, so the two-person rule, R37 and
  * the deadlines are the machine's, and the liens (Task 25), the reviews' erasure on an overturn and
@@ -152,6 +159,16 @@ async function publishDecided(client: pg.PoolClient, next: Dispute, draft: Draft
   }
 }
 
+/**
+ * Lead call Q1: no ruling work while maintenance pauses the dispute (the freeze route's gate) or
+ * during the emergency stop. A missing site_flags row counts as stopped (as the offers' guard).
+ */
+async function assertNotPaused(client: pg.PoolClient, rec: DisputeRecord): Promise<void> {
+  if (rec.pausedSince !== null) throw new ApiError(409, 'dispute-paused');
+  const { rows } = await client.query<{ paused: boolean }>('select trading_paused as paused from site_flags for share');
+  if (rows[0]?.paused !== false) throw new ApiError(409, 'trading-paused');
+}
+
 function rulingError(err: unknown): never {
   if (err instanceof DisputeRuleError) {
     if (err.code === 'same-person') throw new ApiError(409, 'same-person');
@@ -191,7 +208,8 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     if (action.kind !== 'none') throw new ApiError(409, 'account-action-unavailable');
     const me = actorOf(req);
     try {
-      await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
+      await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
+        await assertNotPaused(client, rec);
         const amountAtomic = await tradeAmount(client, code);
         // The tap first: a tap that is not for exactly this ruling writes nothing.
         await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: d.round, outcome, amountAtomic, reason }), now, { sessionId: req.auth.sessionId });
@@ -234,7 +252,8 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const code = await caseCodeOf(req.server.deps.db, req);
     const me = actorOf(req);
     try {
-      await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
+      await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
+        await assertNotPaused(client, rec);
         const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
         const amountAtomic = await tradeAmount(client, code);
         const r = d.ruling!;
@@ -257,7 +276,8 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const code = await caseCodeOf(req.server.deps.db, req);
     const me = actorOf(req);
     try {
-      await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
+      await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
+        await assertNotPaused(client, rec);
         const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
         const next = applyDispute(d, { type: 'send-back' }, me, now, await disputeSettings(client));
         await client.query(
@@ -271,23 +291,6 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
       rulingError(err);
     }
     return rulingState(req, code);
-  });
-
-  // R37: who may decide the appeal. In round 1, those who would be eligible if it were appealed now.
-  app.get('/staff/v1/disputes/:code/appeal-reviewers', handle, async (req) => {
-    const db = req.server.deps.db;
-    const code = await caseCodeOf(db, req);
-    const dispute = await loadDispute(db, code);
-    if (dispute === null) throw new ApiError(404, 'not-found');
-    const involved = dispute.round === 2 ? (dispute.round1?.involved ?? []) : dispute.seen;
-    const { rows } = await db.query<{ id: string; role: 'owner' | 'senior' | 'mod' | 'helper'; name: string; off: boolean }>(
-      `select s.account_id::text as id, s.role, a.${PUBLIC_NAME_COLUMN} as name, s.switched_off_at is not null as off
-         from staff_members s join accounts a on a.id = s.account_id
-        where s.role in ('owner', 'senior') order by s.role, a.${PUBLIC_NAME_COLUMN}, s.account_id`,
-    );
-    const ids = new Set(appealReviewers(rows.map((r) => ({ id: r.id, role: r.role, active: !r.off })), involved));
-    const reviewers = rows.filter((r) => ids.has(r.id)).map((r) => ({ id: r.id, name: r.name, role: r.role }));
-    return { round: dispute.round, reviewers, waiting: reviewers.length === 0 };
   });
 }
 

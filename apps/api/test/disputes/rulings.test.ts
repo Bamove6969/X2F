@@ -287,14 +287,11 @@ describe('the appeal round', () => {
     return { ...x, mod };
   }
 
-  it('lists the eligible reviewers: uninvolved seniors and the owner, never the round-1 moderator', async () => {
-    const { code, mod } = await appealed();
+  it('the ruling routes add no reviewer list: GET …/appeal-reviewers is wip/lead-appeals\' owner-only route (lead Q3)', async () => {
+    const { code } = await appealed();
     const senior = await staff('senior');
     const res = await senior.b.get(url(code, '/appeal-reviewers'));
-    expect(res.statusCode, res.body).toBe(200);
-    const ids = (res.json() as { reviewers: { id: string }[] }).reviewers.map((r) => r.id);
-    expect(ids).toContain(senior.id);
-    expect(ids).not.toContain(mod.id);
+    expect(res.statusCode, res.body).toBe(404);
   });
 
   it('an uninvolved senior overturns: final, overturned, round 2 published, the receiver of the coins liened (D-006)', async () => {
@@ -318,4 +315,63 @@ describe('the appeal round', () => {
     const r = await propose(mod, code, { outcome: 'refund-to-seller', round: 2 });
     expect(r.res.statusCode).toBe(403);
   });
+});
+
+// Lead call Q1 (12 Nov): no ruling is proposed, approved or sent back while maintenance pauses the
+// dispute (the freeze route's gate, `paused_since`) or during the emergency stop
+// (`site_flags.trading_paused`). Refused before the tap, so nothing is written and the tap stays unused.
+describe('maintenance and the emergency stop', () => {
+  async function paused<T>(how: 'maintenance' | 'stop', code: string, fn: () => Promise<T>): Promise<T> {
+    if (how === 'maintenance') await deps.db.query('update disputes set paused_since = $2 where code = $1', [code, at(H)]);
+    else await deps.db.query('update site_flags set trading_paused = true, stopped_at = $1', [at(H)]);
+    try {
+      return await fn();
+    } finally {
+      await deps.db.query('update disputes set paused_since = null where code = $1', [code]);
+      await deps.db.query('update site_flags set trading_paused = false, stopped_at = null');
+    }
+  }
+  const REFUSAL = { maintenance: 'dispute-paused', stop: 'trading-paused' } as const;
+
+  for (const how of ['maintenance', 'stop'] as const) {
+    it(`${how}: a proposal is refused with 409 ${REFUSAL[how]}, nothing is written and the tap stays unused`, async () => {
+      const mod = await staff('mod');
+      const { code } = await disputed();
+      setNow(at(H));
+      await take(mod, code);
+      const rulingId = randomUUID();
+      const tapId = await seedTap(deps, mod.id, intent(code, 'propose', { rulingId, outcome: 'release-to-buyer' }));
+      const body = { rulingId, outcome: 'release-to-buyer', accountAction: NONE, reason: REASON, evidence: EVIDENCE, tapId };
+      const res = await paused(how, code, () => mod.b.post(url(code, '/rulings'), body));
+      expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: REFUSAL[how] });
+      expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'open', ruling: null });
+      expect(await actions(code)).toEqual([]);
+      expect((await deps.db.query('select 1 from ruling_drafts where code = $1', [code])).rows).toEqual([]);
+      const after = await mod.b.post(url(code, '/rulings'), body);
+      expect(after.statusCode, after.body).toBe(200);
+    });
+
+    it(`${how}: an approval and a send-back are refused with 409 ${REFUSAL[how]}; the proposal still waits`, async () => {
+      await withLimit(300, async () => {
+        const mod = await staff('mod');
+        const senior = await staff('senior');
+        const { code } = await disputed();
+        setNow(at(H));
+        await take(mod, code);
+        const { res, rulingId } = await propose(mod, code, { outcome: 'refund-to-seller' });
+        expect(res.statusCode, res.body).toBe(200);
+        const tapId = await seedTap(deps, senior.id, intent(code, 'approve', { rulingId, outcome: 'refund-to-seller' }));
+        const [ok, back] = await paused(how, code, async () => [
+          await senior.b.post(url(code, `/rulings/${rulingId}/approve`), { tapId }),
+          await senior.b.post(url(code, `/rulings/${rulingId}/send-back`), { note: 'Ask for the bank reference.' }),
+        ]);
+        expect({ status: ok!.statusCode, error: errorOf(ok!) }).toEqual({ status: 409, error: REFUSAL[how] });
+        expect({ status: back!.statusCode, error: errorOf(back!) }).toEqual({ status: 409, error: REFUSAL[how] });
+        expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'awaiting-approval', ruling: { id: rulingId } });
+        expect(await actions(code)).toEqual(['ruling.proposed']);
+        const later = await senior.b.post(url(code, `/rulings/${rulingId}/approve`), { tapId });
+        expect(later.statusCode, later.body).toBe(200);
+      });
+    });
+  }
 });
