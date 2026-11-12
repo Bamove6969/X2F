@@ -1666,3 +1666,156 @@ describe('notes on traders (S-094, p7-8)', () => {
     expect(await auditRows(owner.id)).toEqual([]);
   });
 });
+
+// Review trades-list I1, applied to every per-trade read (lead, 12 Nov 2026): a member reads an open
+// trade's attestation, confirmations and dispute with See active trades, and a completed trade's
+// with See trade history, as the room and the trades list do; the live stream carries a member only
+// the events of the parts their boxes allow.
+describe('a member reads each part of the trades only with its box (review trades-list I1)', () => {
+  const ACTIVE = ['trades-see-active'];
+  const HISTORY = ['trades-see-history'];
+  const status = (res: { statusCode: number; json(): unknown }) => (res.statusCode === 403 ? (res.json() as { error: string }).error : res.statusCode);
+
+  /** An open trade of `owner`'s (secured) and a completed one (refunded on a buyer's cancel, its tx confirmed). */
+  async function twoTrades(owner: Who): Promise<{ open: string; done: string }> {
+    const other = await team();
+    const o = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
+    await driveTo(deps, o.trade, 'secured');
+    const d = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
+    await driveTo(deps, d.trade, 'secured');
+    expect((await other.browser.post(`/v1/trades/${d.code}/events`, { type: 'buyer-cancel' })).statusCode).toBe(200);
+    const tx = randomBytes(32).toString('hex');
+    await applyEvent(deps, d.code, { type: 'settled', kind: 'buyer-cancel', txHash: tx }, 'system');
+    nodeCounts.set(tx, 10);
+    expect((await loadTrade(deps.db, d.code))!.closedAt).not.toBeNull();
+    return { open: o.code, done: d.code };
+  }
+
+  it('the bus: a member sink gets an event of a part only with its box; an event of no part needs See active trades', () => {
+    const bus = new EventBus({ perAccount: 5, global: 10 });
+    const owner = fakeSink();
+    const a = fakeSink();
+    const h = fakeSink();
+    const both = fakeSink();
+    const legacy = fakeSink();
+    bus.attach('team', owner, 'o');
+    bus.attach('team', a, 'a', { member: true, abilities: ACTIVE });
+    bus.attach('team', h, 'h', { member: true, abilities: HISTORY });
+    bus.attach('team', both, 'b', { member: true, abilities: [...ACTIVE, ...HISTORY] });
+    expect(bus.publish('team', { type: 'trade', code: 'O', state: 'paid' }, { closed: false })).toBe(1);
+    bus.publish('team', { type: 'trade', code: 'C', state: 'released' }, { closed: true });
+    bus.publish('team', { type: 'nudge', from: 'x', context: 'offer' });
+    const seen = (k: { got: string[] }) => k.got.map((d) => (JSON.parse(d.slice(6)) as { code?: string; type: string }).code ?? 'nudge');
+    expect(seen(owner)).toEqual(['O', 'C', 'nudge']);
+    expect(seen(a)).toEqual(['O', 'nudge']);
+    expect(seen(h)).toEqual(['C']);
+    expect(seen(both)).toEqual(['O', 'C', 'nudge']);
+    // A sink attached with no boxes named (an older caller) is not widened: it gets none of a part's.
+    bus.attach('team', legacy, 'l', { member: true, abilities: [] });
+    bus.publish('team', { type: 'trade', code: 'C2', state: 'released' }, { closed: true });
+    expect(legacy.got).toEqual([]);
+  });
+
+  it('the trade event publisher says which part each event is: open or completed', async () => {
+    const calls: Array<[string, unknown, unknown]> = [];
+    const events = { publish: (id: string, ev: unknown, o?: unknown) => (calls.push([id, ev, o]), 0) };
+    const publish = tradeEventPublisher({ events: events as never, push: { send: async () => true } });
+    await publish({ code: 'A', state: 'paid', sellerId: 's', buyerId: 'b', closedAt: null } as never, { type: 'mark-paid' } as never, 'buyer');
+    await publish({ code: 'B', state: 'released', sellerId: 's', buyerId: 'b', closedAt: new Date() } as never, { type: 'settled' } as never, 'system');
+    await publish({ code: 'C', state: 'refunded', sellerId: 's', buyerId: 'b', closedAt: new Date() } as never, { type: 'return-confirmed' } as never, 'system');
+    expect(calls.map(([, ev, o]) => [(ev as { code: string }).code, o])).toEqual([
+      ['A', { closed: false }], ['A', { closed: false }],
+      ['B', { closed: true }], ['B', { closed: true }],
+      ['C', { closed: true }], ['C', { closed: true }],
+    ]);
+  });
+
+  it('the attestation: open with See active trades, completed with See trade history', async () => {
+    const owner = await team();
+    const { open, done } = await twoTrades(owner);
+    const active = await member(owner.id, { abilities: ACTIVE });
+    const history = await member(owner.id, { abilities: HISTORY });
+    expect(status(await active.browser.get(`/v1/trades/${open}/attestation`))).not.toBe('forbidden');
+    expect(status(await active.browser.get(`/v1/trades/${done}/attestation`))).toBe('forbidden');
+    expect(status(await history.browser.get(`/v1/trades/${done}/attestation`))).not.toBe('forbidden');
+    expect(status(await history.browser.get(`/v1/trades/${open}/attestation`))).toBe('forbidden');
+  });
+
+  it('the confirmations of a completed trade need See trade history', async () => {
+    const owner = await team();
+    const { done } = await twoTrades(owner);
+    const active = await member(owner.id, { abilities: ACTIVE });
+    const history = await member(owner.id, { abilities: HISTORY });
+    expect(status(await active.browser.get(`/v1/trades/${done}/confirmations`))).toBe('forbidden');
+    // Nothing recorded by the refused read.
+    expect((await loadTrade(deps.db, done))!.cancelConfirmableAt).toBeNull();
+    expect(status(await history.browser.get(`/v1/trades/${done}/confirmations`))).toBe(200);
+    expect(status(await owner.browser.get(`/v1/trades/${done}/confirmations`))).toBe(200);
+  });
+
+  it("the dispute of an open (disputed) trade needs See active trades besides the disputes box", async () => {
+    const owner = await team();
+    const other = await team();
+    const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    expect((await owner.browser.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+    const withActive = await member(owner.id, { abilities: ['disputes-answer', ...ACTIVE] });
+    const withHistory = await member(owner.id, { abilities: ['disputes-answer', ...HISTORY] });
+    for (const m of [withActive, withHistory]) expect((await m.browser.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
+    const opened = await owner.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'x' });
+    expect(opened.statusCode, opened.body).toBe(200);
+    expect(status(await withActive.browser.get(`/v1/trades/${d.code}/dispute`))).toBe(200);
+    expect(status(await withHistory.browser.get(`/v1/trades/${d.code}/dispute`))).toBe('forbidden');
+  });
+
+  it("a trade's review stays the account owner's: a member is refused whatever their boxes", async () => {
+    const owner = await team();
+    const { done } = await twoTrades(owner);
+    const m = await member(owner.id, { abilities: [...ACTIVE, ...HISTORY] });
+    expect(err(await m.browser.get(`/v1/trades/${done}/review`))).toEqual({ status: 403, error: 'owner-only' });
+  });
+
+  it('the live stream: a member with See trade history only may open it, and gets only completed trades\' events', async () => {
+    const owner = await team();
+    const history = await member(owner.id, { abilities: HISTORY });
+    const active = await member(owner.id, { abilities: ACTIVE });
+    try {
+      const h = await stream(history.browser);
+      expect(h.status).toBe(200);
+      const a = await stream(active.browser);
+      expect(a.status).toBe(200);
+      const own = await stream(owner.browser);
+      app.events.publish(owner.id, { type: 'trade', code: 'OPEN-ONE', state: 'secured' }, { closed: false });
+      app.events.publish(owner.id, { type: 'trade', code: 'DONE-ONE', state: 'refunded' }, { closed: true });
+      // An event of no part (a nudge) goes where it always went: the See active trades box.
+      app.events.publish(owner.id, { type: 'nudge', from: 'someone', context: 'offer' });
+      app.events.publish(owner.id, { type: 'trade', code: 'LAST', state: 'paid' }, { closed: false });
+      await own.waitFor((e) => (e as { code?: string }).code === 'LAST');
+      await a.waitFor((e) => (e as { code?: string }).code === 'LAST');
+      app.events.publish(owner.id, { type: 'trade', code: 'LAST-DONE', state: 'released' }, { closed: true });
+      await h.waitFor((e) => (e as { code?: string }).code === 'LAST-DONE');
+      const codes = (st: SseStream) => st.events.map((e) => (e as { code?: string; type: string }).code ?? (e as { type: string }).type);
+      expect(codes(own)).toEqual(['OPEN-ONE', 'DONE-ONE', 'nudge', 'LAST', 'LAST-DONE']);
+      expect(codes(a)).toEqual(['OPEN-ONE', 'nudge', 'LAST']);
+      expect(codes(h)).toEqual(['DONE-ONE', 'LAST-DONE']);
+    } finally {
+      for (const st of streams.splice(0)) st.close();
+      await until(() => !app.events.delivered(owner.id));
+    }
+  });
+
+  it("a change to a member's trades boxes ends their live stream, so it reopens with the new parts", async () => {
+    const owner = await team();
+    const m = await member(owner.id, { abilities: [...ACTIVE, ...HISTORY] });
+    const st = await stream(m.browser);
+    expect(st.status).toBe(200);
+    // Dropping See trade history keeps See active trades, so the stream may reopen, with the new parts.
+    const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: ACTIVE.join(',') });
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities: ACTIVE, confirmToken });
+    expect(res.statusCode, res.body).toBe(200);
+    await st.ended;
+    expect((await stream(m.browser)).status).toBe(200);
+    for (const s of streams.splice(0)) s.close();
+  });
+});
