@@ -26,7 +26,6 @@ alter table team_members
 -- in for the first time. Members who already joined have logged in (their join starts their first
 -- session), so they are marked now and never raise the alert.
 alter table team_members add column first_login_at timestamptz;
-update team_members set first_login_at = joined_at where joined_at is not null;
 
 -- The secure Jabber notice of a first login (p11-27: "a notification and even a Jabber
 -- notification"; review F4): a notice kind of its own through jabber-notices' outbox (migration
@@ -41,3 +40,8 @@ alter table jabber_outbox add constraint jabber_outbox_kind_check
 drop trigger jabber_note_change on team_members;
 create trigger jabber_note_change after insert or update or delete on team_members for each row
   execute function jabber_note_change('account_id', 'first_login_at');
+
+-- The backfill runs only now, after the trigger above treats first_login_at as bookkeeping
+-- (review N1, 12 Nov): with 331's trigger still in place it told every team with Jabber on and a
+-- joined member that "an account change was made", for a change nobody made.
+update team_members set first_login_at = joined_at where joined_at is not null;
