@@ -86,5 +86,7 @@ All runs used the single lock with the timeout inside it (`flock ~/x2f-comms/che
   - All 64 branch tests pass.
   - Of the 15 PoCs, which all expect refusal, 5 pass: P1, P2, P3, P4 and P5 are closed.
   - 10 fail, each an open item above: B1 residual, P6, N1, N2, N3, N3b, N4, N5, N6, N7.
-- **API** (`staff/keyTap.test.ts`, `staff/members.test.ts`, `disputes/rulings.test.ts`) and **staff** (`packages/staff/test/intent.test.ts`): see the results appended below.
+- **API** (`staff/keyTap.test.ts`, `staff/members.test.ts`, `disputes/rulings.test.ts`): **80/80 passed**.
+- **Staff** (`packages/staff/test/intent.test.ts`): **19/19 passed**.
+- **Tests weakened:** none. I checked the branch's test changes (gate, buyerCancel, keyTap, members, rulings, intent): each one adds checks or tightens existing ones (for example the M3 tripwire).
 - `npx tsc -p apps/moderation --noEmit`: clean.
