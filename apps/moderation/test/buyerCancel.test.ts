@@ -608,6 +608,8 @@ describe('rulings', () => {
         expect(m[2], f).not.toMatch(/(^|\/)(party|desk|watcher|main|autoRefund|buyerCancel)\.js$/);
       }
       expect(code, f).not.toMatch(/import\(\s*'[^']*(party|desk|watcher|main)\.js'/);
+      // Re-verify: a dynamic import of the escrow package is caught too.
+      expect(code, f).not.toMatch(/import\(\s*['"`]@x2f\/escrow/);
     }
   });
 });

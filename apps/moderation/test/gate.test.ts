@@ -15,6 +15,7 @@ import { createSoftAuthenticator, createTestCa, type SoftAuthenticator, type Tes
 import {
   authorizeRuling,
   emptyGate,
+  initGate,
   gateCheck,
   openGateStore,
   pgGateSource,
@@ -537,7 +538,7 @@ describe('authorizeRuling', () => {
     w.api.taps.push(t);
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
     try {
-      const store = await openGateStore(dir, new Uint8Array(32).fill(7));
+      const store = await openGateStore(dir, new Uint8Array(32).fill(7), { init: true });
       store.state = w.gate;
       await store.save();
       const check = () => gateCheck(store, w.api, { ruling: c.ruling, recorded: recorded(1n), balanceAtomic: BALANCE, involved: [] }, ctx());
@@ -729,7 +730,7 @@ describe('security review 2026-11-12', () => {
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
     try {
       const key = new Uint8Array(randomBytes(32));
-      const s = await openGateStore(dir, key);
+      const s = await openGateStore(dir, key, { init: true });
       await Promise.all(Array.from({ length: 8 }, (_, i) => {
         s.state.usedNonces[`n${i}`] = 'x';
         return s.save();
@@ -806,6 +807,133 @@ describe('signed issuedAt (review P4, lead call)', () => {
   });
 });
 
+// The re-verify of 12 Nov (re-verify-mod-gate-2026-11-12.md): its PoCs, each refused. N5 (the
+// 2-minute skew) is accepted as designed and the B1 residual is the owner's question (lead calls).
+describe('re-verify 2026-11-12', () => {
+  const at = (min: number) => new Date(NOW.getTime() + min * 60_000);
+  const ctxAt = (d: Date): GateContext => ({ ...ctx(), now: () => d });
+  const FAR = new Date('2030-01-01T00:00:00.000Z');
+
+  it('P6: a missing gate.bin is an error; only the init command, with the operator\'s "yes", makes a new one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
+    try {
+      const key = new Uint8Array(32).fill(7);
+      await expect(openGateStore(dir, key)).rejects.toThrow(/gate\.bin/);
+      expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'no' })).toBe('declined');
+      await expect(openGateStore(dir, key)).rejects.toThrow(/gate\.bin/);
+      expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'yes' })).toBe('created');
+      const s = await openGateStore(dir, key);
+      s.state.ownerAccountId = 'x';
+      await s.save();
+      // Never over an existing gate.
+      expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'yes' })).toBe('exists');
+      expect((await openGateStore(dir, key)).state.ownerAccountId).toBe('x');
+      await rm(join(dir, 'gate.bin'));
+      await expect(openGateStore(dir, key)).rejects.toThrow(/gate\.bin/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('N1: a far-future settings tap is refused, so it cannot lock out the owner\'s later settings', async () => {
+    const w = await world();
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 5000, firstResponseH: 4, appealWindowH: 48 }, { key: w.ownerKey2, issuedAt: FAR }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(0)));
+    expect(w.gate.limitUsdCents).toBe(100_000n);
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 100, firstResponseH: 4, appealWindowH: 48 }, { issuedAt: at(60) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(61)));
+    expect(w.gate.limitUsdCents).toBe(10_000n);
+    // Within the skew ahead is fine.
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 200, firstResponseH: 4, appealWindowH: 48 }, { issuedAt: at(63) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(62)));
+    expect(w.gate.limitUsdCents).toBe(20_000n);
+  });
+
+  it('N2: a far-future resume-trading cannot disable the owner\'s later emergency stop', async () => {
+    const w = await world();
+    w.api.taps.push(tapBy(w.owner, { kind: 'resume-trading' }, { issuedAt: FAR }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(0)));
+    w.api.taps.push(tapBy(w.owner, { kind: 'emergency-stop' }, { key: w.ownerKey2, issuedAt: at(60) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(61)));
+    expect(w.gate.stopped).toBe(true);
+  });
+
+  it('N3: a withheld far-future switch-on restores nobody switched off later', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const old = tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }, { issuedAt: FAR });
+    await syncRegistry(w.api, w.gate, ctxAt(at(1)));
+    w.api.staffRows.get(mod.id)!.switchedOff = true;
+    await syncRegistry(w.api, w.gate, ctxAt(at(30)));
+    w.api.staffRows.get(mod.id)!.switchedOff = false;
+    w.api.taps.push(old);
+    await syncRegistry(w.api, w.gate, ctxAt(at(31)));
+    expect(w.gate.staff[mod.id]!.revoked).toBe(true);
+  });
+
+  it('N3b: a far-future set-role cannot make every later demotion ignored', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctxAt(at(0)));
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'senior' }, { issuedAt: FAR }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(1)));
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'helper' }, { key: w.ownerKey2, issuedAt: at(60) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(61)));
+    expect(w.gate.staff[mod.id]!.role).toBe('helper');
+  });
+
+  it('N4: a registry tap first seen more than 24 hours after its issuedAt is refused', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctxAt(at(0)));
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'senior' }, { issuedAt: at(1) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(30 * 24 * 60)));
+    expect(w.gate.staff[mod.id]!.role).toBe('mod');
+    // Within 24 hours it counts (the gate was down for a while).
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'senior' }, { issuedAt: at(30 * 24 * 60) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(30 * 24 * 60 + 23 * 60)));
+    expect(w.gate.staff[mod.id]!.role).toBe('senior');
+  });
+
+  it('N6: add-owner-key pairs only taps issued within 10 minutes of each other', async () => {
+    const w = await world();
+    const third = newKey();
+    w.api.creds.set(third.credentialId, { accountId: w.owner.id, publicKey: new Uint8Array(third.cosePublicKey), aaguid: AAGUID });
+    const intent: KeyTapIntent = { kind: 'add-owner-key', credentialId: third.credentialId, publicKeySha256: sha256Hex(third.cosePublicKey) };
+    w.api.taps.push(tapBy(w.owner, intent, { issuedAt: at(0) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(1)));
+    w.api.taps.push(tapBy(w.owner, intent, { key: w.ownerKey2, issuedAt: at(11) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(12)));
+    expect(w.gate.ownerCreds.map((c) => c.credentialId)).not.toContain(third.credentialId);
+    // Two taps 5 minutes apart pair.
+    w.api.taps.push(tapBy(w.owner, intent, { issuedAt: at(20) }), tapBy(w.owner, intent, { key: w.ownerKey2, issuedAt: at(25) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(26)));
+    expect(w.gate.ownerCreds.map((c) => c.credentialId)).toContain(third.credentialId);
+  });
+
+  it('N7: in one sync, taps apply in each key\'s counter order whatever their step: a settings tap before a create-invite still applies', async () => {
+    const w = await world();
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 100, firstResponseH: 4, appealWindowH: 48 }, { issuedAt: at(0) }));
+    w.hire('mod'); // the owner's create-invite tap, same key, a later counter
+    await syncRegistry(w.api, w.gate, ctxAt(at(1)));
+    expect(w.gate.limitUsdCents).toBe(10_000n);
+  });
+
+  it('M-R1: the reason\'s SHA-256 is computed here from the stored text, never taken from the database', async () => {
+    const reason = 'r'.repeat(40);
+    const fake = {
+      query: async (sql: string) => {
+        if (/from disputes/.test(sql)) return { rows: [{ seq: 1, round: 1, ruling: { id: randomUUID(), outcome: 'release-to-buyer', accountAction: { kind: 'none' }, proposer: randomUUID(), approver: null }, round1: null }] };
+        // A lying database: a hash column that is not the reason's (the gate must not ask for one).
+        if (/from dispute_rulings/.test(sql)) return { rows: [{ round: 1, reason, evidence: ['a'], h: 'f'.repeat(64) }] };
+        return { rows: [] };
+      },
+    };
+    const got = await pgGateSource(fake as never).storedRulings('ABCD-EFGH-JKMN-PQRS');
+    expect(got.current?.reasonSha256).toBe(sha256Hex(reason));
+  });
+});
+
 describe('the attestation allowlists, gate and API (review I2)', () => {
   it('both parsers read the same README fixtures the same way, CRLF included', async () => {
     const { parseAllowlist } = await import('../../api/src/auth/attestation.js');
@@ -844,7 +972,7 @@ describe('GateStore', () => {
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
     try {
       const key = new Uint8Array(randomBytes(32));
-      const s = await openGateStore(dir, key);
+      const s = await openGateStore(dir, key, { init: true });
       expect(s.state.ownerCreds).toEqual([]);
       s.state.limitUsdCents = 123_400n;
       s.state.usedNonces.abc = 'x';
