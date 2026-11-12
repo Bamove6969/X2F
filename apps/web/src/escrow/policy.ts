@@ -174,7 +174,8 @@ function check(c: PolicyContext, o: Outcome): boolean {
   if (c.role === 'buyer') {
     if (route('release')) return true;
     if (route('lapse-refund')) return state === 'lapsed' && c.balance < sellerFundsAtomic;
-    if (route('buyer-cancel')) return BUYER_CANCEL_STATES.includes(state);
+    // Owner g67 (7 Nov): the buyer may cancel after escrow until "I've paid"; after it only a dispute.
+    if (route('buyer-cancel')) return BUYER_CANCEL_STATES.includes(state) && c.trade.paidAt === null;
     // No cancel of any kind after "I've paid" (option B, Task 39 review I2 and round 2 N4).
     if (route('mutual-cancel')) return state !== 'paid' && c.trade.paidAt === null;
     return state === 'disputed' && is('dispute-buyer', 'mod', 'buyer') && ruled(c, o);

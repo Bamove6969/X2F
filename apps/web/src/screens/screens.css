@@ -199,6 +199,12 @@ textarea.x2f-input {
   border-bottom: 1px solid var(--x2f-surface-raised);
 }
 
+/* The Jabber section's rows on Alerts (address, events) are links: 44 px tap targets (phone rule). */
+[data-part='jabber-alerts'] a.x2f-list__row {
+  box-sizing: border-box;
+  min-height: 44px;
+}
+
 .x2f-list__label {
   min-width: 0;
   word-break: break-word;

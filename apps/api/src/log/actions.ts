@@ -147,7 +147,8 @@ export const LOG_ACTIONS = {
   'staff.method-removed': { method: 'id' },
   'staff.session-ended': {},
   // Lead review 7 Nov M1: silencing actions on the staff site.
-  'staff.alert-seen': {},
+  // Owner-alerts review OA2: which kind of alert was hidden (one), or how many (all at once); never its detail.
+  'staff.alert-seen': { kind: 'id', count: 'number' },
   'staff.push-removed': {},
   // Shifts and pay (Task 33).
   'staff.welcome-acknowledged': {},
@@ -156,6 +157,9 @@ export const LOG_ACTIONS = {
   'shift.abandoned': { shiftId: 'id', ended: 'id' },
   'pay.paid': { staffId: 'uuid', kind: 'id', usdCents: 'amount', atomic: 'amount', ref: 'id' },
   'pay.clawback': { staffId: 'uuid', usdCents: 'amount', rulingId: 'id' },
+  // D-041: a staff member's own pre-approved payout addresses (the id only, never the address).
+  'pay.address-added': { addressId: 'id' },
+  'pay.address-removed': { addressId: 'id' },
   // Past reputation (Plan 5 Task 10, owner 2026-11-02): a senior moderator or the owner sets or
   // clears a claim's verified dollar figure. The figure itself is never logged.
   'pastrep.verified-usd-set': { claimId: 'uuid', cleared: 'bool' },
@@ -186,6 +190,9 @@ export const LOG_ACTIONS = {
   'ticket.replied': { ticketId: 'id' },
   'ticket.closed': { ticketId: 'id' },
   'training.copy-saved': {},
+  // D-058 (lead 12 Nov): a staff member opened a page of the feedback form list, which names the
+  // sender of a named row; how many rows on that page were named (never who).
+  'feedback.form-opened': { namedRows: 'number' },
   'log.checkpoint': { id: 'id', hash: 'hex64' },
 } as const satisfies Record<string, Schema>;
 

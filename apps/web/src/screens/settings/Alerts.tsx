@@ -49,6 +49,8 @@ const KIND_WORDS: Record<string, string> = {
   // Plan 2 Task 18.
   'team-member-joined': 'A team member joined',
   'team-member-login': 'A team member logged in',
+  // J-20 (owner p11-27). COPY-UNSIGNED // DESIGN: wording
+  'team-member-first-login': 'A team member logged in for the first time',
 };
 
 const count = (n: unknown, one: string, many: string): string | null =>

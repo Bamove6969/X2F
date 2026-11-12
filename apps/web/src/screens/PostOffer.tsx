@@ -73,6 +73,7 @@ import {
 } from './post/offerForm.js';
 import './post/PostOffer.css';
 import { accountTypeOf } from '../session/member.js';
+import { useResumeSync } from '../session/syncFirst.js';
 import { useSession } from '../session/useSession.js';
 import { NOT_VENDOR_CODE, NOT_VENDOR_POST_TEXT } from '../ui/cantDoCodes.js';
 import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './settings/accountTypeCopy.js';
@@ -147,6 +148,13 @@ function usePrices(currencies: readonly string[]): Record<string, PriceQuote | n
       window.clearInterval(t);
     };
   }, [key]);
+  // C-021: on resume every picked currency's price is read again before Post offer works (a feed
+  // with no price answers null, as on mount).
+  useResumeSync(async () => {
+    const list = key === '' ? [] : key.split(',');
+    const got = await Promise.all(list.map(async (currency) => [currency, await fetchPrice(currency)] as const));
+    setQuotes((all) => ({ ...all, ...Object.fromEntries(got.map(([c, q]) => [c, q?.currency === c ? q : null])) }));
+  });
   const out: Record<string, PriceQuote | null | undefined> = {};
   for (const c of currencies) out[c] = quotes[c];
   return out;
@@ -165,6 +173,8 @@ function useCurrencyChoices(): CurrencyChoice[] | null {
       window.clearInterval(t);
     };
   }, []);
+  // C-021: read again on resume (session/syncFirst.ts); a failed read keeps the list shown.
+  useResumeSync(async () => setChoices(await fetchCurrencies()));
   return choices;
 }
 
@@ -185,6 +195,11 @@ function useMethods(): [Methods, () => void] {
       live = false;
     };
   }, [attempt]);
+  // C-021: read again on resume (session/syncFirst.ts); a failed read keeps the list shown.
+  useResumeSync(async () => {
+    const list = await fetchMethods(DEFAULT_FORM.side, DEFAULT_FORM.currencies[0]!);
+    setMethods({ kind: 'ready', list });
+  });
   return [methods, () => setAttempt((n) => n + 1)];
 }
 

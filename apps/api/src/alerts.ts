@@ -32,6 +32,8 @@ export type AlertKind =
   // Plan 2 Task 18: to the account owner, about the team.
   | 'team-member-joined'
   | 'team-member-login'
+  // J-20 (owner p11-27, S-107): a member logged in for the first time (no approval; the lead is told).
+  | 'team-member-first-login'
   // Owner 2 Nov 2026: the account switched to a vendor account (detail: the confirm method).
   | 'became-vendor'
   // Owner only: price health (spec 11.6, Plan 3 Task 3).

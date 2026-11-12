@@ -118,6 +118,11 @@ export type ApiErrorCode =
   | 'no-shared-context'
   // Plan 5, Task 3: reviews and the rate-first gate.
   | 'not-reviewable'
+  // P-012/P-013 (proof/blurCheck.ts): a trade announced too many proofs; @x2f/proof BlurCheckError codes (400).
+  | 'too-many-proofs'
+  | 'comment-on-yes'
+  | 'comment-too-long'
+  | 'comment-bad-character'
   | 'review-exists'
   | 'review-pending'
   // Plan 5, Task 3: @x2f/reputation's ReviewError codes, answered as 400 (reviews/routes.ts checks
@@ -138,6 +143,10 @@ export type ApiErrorCode =
   | 'forbidden'
   | 'too-many-members'
   | 'member-cannot-sign'
+  // J-20 (owner p7-4, p7-11; review S-m4): a member's action on a trade or offer outside their
+  // trade-size band, and a session end asked for past the member's working hours.
+  | 'outside-trade-band'
+  | 'past-working-hours'
   // Owner 2 Nov 2026: Trader and Vendor accounts (only a vendor posts offers or has a team; the
   // switch needs a passkey, security key or PGP key), and the ban list (a banned PGP key).
   | 'not-vendor'
@@ -194,7 +203,16 @@ export type ApiErrorCode =
   | 'jabber-unavailable'
   | 'jabber-address-invalid'
   // W-021 review F1: a security notice can't be turned off (owner to rule).
-  | 'jabber-event-always-on';
+  | 'jabber-event-always-on'
+  // Plan 4 Task 33 (D-041): the clock-out needs a pre-approved payout address of one's own.
+  | 'address-required'
+  | 'address-unknown'
+  | 'address-exists'
+  | 'too-many-addresses'
+  // Security review S2: the clock-out pays exactly the sheet's signed quote.
+  | 'quote-invalid'
+  | 'quote-expired'
+  | 'quote-changed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

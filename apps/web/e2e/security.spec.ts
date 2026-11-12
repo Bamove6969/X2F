@@ -3,6 +3,7 @@
 // log-out, and the one confirm sheet for an action-bound confirm (here: making recovery codes).
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { screenStatus } from './session.js';
 
 type Overview = Record<string, unknown>;
 function overview(over: Overview = {}): Overview {
@@ -185,7 +186,7 @@ test('ending another device’s session logs it out', async ({ page }) => {
   await ask.locator('[data-part="end-confirm"]').click();
   await expect(page.locator('[data-part="device-list"] li')).toHaveCount(1);
   await expect(page.locator('[data-part="device-list"]')).not.toContainText('Browser on Android');
-  await expect(page.getByRole('status')).toHaveText('Browser on Android was logged out.');
+  await expect(screenStatus(page)).toHaveText('Browser on Android was logged out.');
 });
 
 // C2-D1 review I1 (owner, via the Devices board): "Log out all team members" asks first, then ends
@@ -218,7 +219,7 @@ test('"Log out all team members" asks first, then ends only the team members\' s
   await expect(ask).toBeVisible();
   expect(ended).toEqual([]);
   await ask.getByRole('button', { name: 'Log out all team members' }).click();
-  await expect(page.getByRole('status')).toHaveText('All team members were logged out.');
+  await expect(screenStatus(page)).toHaveText('All team members were logged out.');
   expect(ended).toEqual(['s3', 's4']);
   await expect(page.locator('[data-part="team-sessions"]')).toHaveCount(0);
   await expect(page.locator('[data-part="device-list"] li')).toHaveCount(2);

@@ -85,8 +85,12 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       'joined_at', 'created_at', 'removed_at',
       // Migration 390 (S-105): the member's chat number, set with the invite (its insert notifies).
       'assistant_no',
+      // J-20 (migration 380): the member's trade-size band and working hours, set by the lead.
+      'band_min_atomic', 'band_max_atomic', 'hours',
     ],
-    bookkeeping: {},
+    bookkeeping: {
+      first_login_at: "set once by the member's first login, which queues its own notice (kind team-member-first-login, J-20)",
+    },
   },
   {
     table: 'account_holds', accountColumn: 'account_id', ops: ALL,
@@ -122,7 +126,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
   },
   {
     table: 'account_blocks', accountColumn: 'account_id', ops: ALL,
-    changes: ['account_id', 'blocked_id', 'created_at'],
+    // S-093 (migration 362): the blocker's own note is a change they made, like the block itself.
+    changes: ['account_id', 'blocked_id', 'created_at', 'note'],
     bookkeeping: {},
   },
   {
@@ -174,6 +179,11 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'staff_invites.created_by': 'staff records',
   'staff_invites.account_id': 'staff records',
   'key_taps.account_id': 'a staff security-key tap',
+  // Plan 4 Task 33 (staff pay, migration 420), classified at the batch 9 merge.
+  'staff_shifts.staff_id': 'staff records: a staff session\'s shift (staff accounts have no Jabber set-up)',
+  'staff_pay_items.staff_id': 'staff records: the staff pay ledger',
+  'staff_payouts.staff_id': 'staff records: a staff payout',
+  'staff_payout_addresses.staff_id': 'staff records: a staff member\'s payout address (added with a security-key tap)',
   // Batch 4 (lead default, owner p11-119): silent.
   // Hold model v3 and team abilities (team-perms-port; lead default pending the owner, p11-119 extension): silent.
   'hold_changes.account_id': 'a draft or waiting change (hold v3); the change notifies when it applies, through the table it writes',

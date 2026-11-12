@@ -25,6 +25,10 @@
  *   sender's later lines are not blocked behind it: a seq once passed can never be accepted) with
  *   a receipt marked `heldPay`, and no text; once the trade is secured the chat is read again from
  *   the start and the held package is decrypted and shown in its place.
+ * - A fixed notice (P-020, notices.ts) is a line with `notice` set and the reader's own wording as
+ *   its text. `sendNotice` seals one (chatCrypto's sealChatNotice), only once the trade is secured
+ *   (a proof only exists then), like a package. Nothing sends one yet: NEEDS_PLAN_5_TASK_15 (the
+ *   BlurEditor sends `proofCodeNotice(...)` with the proof).
  * - No message text is stored on the device (owner p11-10, design 2026-11-08 section 5): the store
  *   keeps keys, the ChatState, the cursor and a receipt per accepted line. The first sync of a chat
  *   in this worker re-reads the whole chat from the server and decrypts it again; a line the guard
@@ -48,7 +52,8 @@
 import type { Role } from '@x2f/core';
 import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
-import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
+import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
+import type { ChatNoticeId } from './notices.js';
 import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
 
 export interface ChatApiView {
@@ -95,6 +100,8 @@ export interface ChatLine {
   missing?: true;
   /** The payee's packaged payment details (J-08): the panel shows a card; `text` is its plain rendering. */
   pay?: PayDetailsPayload;
+  /** A fixed notice (P-020): the panel shows its own wording as a system line; `text` is that wording. */
+  notice?: ChatNoticeId;
 }
 
 export interface ChatSnapshot {
@@ -129,6 +136,8 @@ export interface ChatEngine {
   send(chat: string, text: string): Promise<ChatSnapshot>;
   /** Seals and posts the payee's packaged payment details (J-08); 'bad-details' for a bad package, 'not-ready' while the trade is not secured (owner Q12). */
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
+  /** Seals and posts a fixed notice (P-020); 'not-ready' while the trade is not secured. */
+  sendNotice(chat: string, notice: ChatNoticeId): Promise<ChatSnapshot>;
   /**
    * Asks the API about every chat stored on this device and erases each one it answers 410
    * `chat-purged` for; resolves with those. Any other answer (or none) keeps the record. Rejects on
@@ -220,6 +229,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           const line = { id: m.id, from: m.from, at: m.at, mine: m.from === view.role, gapBefore: m.gapBefore };
           const shown = session?.texts.get(m.id);
           if (shown === undefined) return { ...line, text: '', missing: true };
+          if (shown.notice !== undefined) return { ...line, text: shown.text, notice: shown.notice };
           return shown.pay === undefined ? { ...line, text: shown.text } : { ...line, text: shown.text, pay: shown.pay };
         }),
     };
@@ -501,6 +511,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     },
     send: (chat, text) => post(chat, (a) => sealChatMessage({ ...a, text })),
     sendPay: (chat, pay) => post(chat, (a) => sealPayDetails({ ...a, pay }), true),
+    sendNotice: (chat, notice) => post(chat, (a) => sealChatNotice({ ...a, notice }), true),
   };
 }
 
@@ -508,5 +519,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
 interface Shown {
   text: string;
   pay?: PayDetailsPayload;
+  notice?: ChatNoticeId;
 }
-const shownOf = (m: { text: string; pay?: PayDetailsPayload }): Shown => (m.pay === undefined ? { text: m.text } : { text: m.text, pay: m.pay });
+const shownOf = (m: { text: string; pay?: PayDetailsPayload; notice?: ChatNoticeId }): Shown =>
+  m.notice !== undefined ? { text: m.text, notice: m.notice } : m.pay === undefined ? { text: m.text } : { text: m.text, pay: m.pay };

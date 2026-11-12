@@ -15,7 +15,8 @@ import type { PushKind } from './send.js';
 // session plus one tap is noticed on his other devices. D-011 (Plan 4 Task 24): an appeal with no
 // eligible reviewer waits until the owner adds one, so the owner hears about it on the phone too.
 export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>([
-  'market-prices-paused', 'price-source-failing', 'fee-sweep-due', 'fee-sweep-failed', 'staff-security-reset', 'staff-security-reset-finished', 'appeal-no-reviewer',
+  'market-prices-paused', 'price-source-failing', 'fee-sweep-due', 'fee-sweep-failed', 'staff-security-reset', 'staff-security-reset-finished',
+  'appeal-no-reviewer',
 ]);
 
 export interface OwnerAlertDeps {

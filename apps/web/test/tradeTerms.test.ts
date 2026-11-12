@@ -1,6 +1,6 @@
 // Build spec j31a section 1 (T-034, T-080): the "What applies to you" lists, one per reader.
 import { describe, expect, it } from 'vitest';
-import { TERMS_SUBTITLE, TRADE_TERMS, termsParts, type TermsRole } from '../src/screens/quote/tradeTerms.js';
+import { BLUR_CHECK_LINE, TERMS_SUBTITLE, TRADE_TERMS, termsParts, type TermsRole } from '../src/screens/quote/tradeTerms.js';
 
 // The boards' WA_DATA, byte-identical on BuyQuote, SellQuote(+Wide) and OfferAd(+Wide) on
 // wip/design-brief (b5bb4faa, 9 Nov 2026), copied verbatim.
@@ -12,9 +12,11 @@ const ROLES = Object.keys(BOARD) as TermsRole[];
 const lines = (role: TermsRole) => TRADE_TERMS[role].flatMap((g) => g.lines);
 
 describe('trade terms by reader (T-034, T-080)', () => {
-  it("every list is the board's, word for word, in order, without the lead's placeholder", () => {
+  it("every list is the board's, word for word, in order, with the first-weeks check line where the placeholder was (P-012/P-013)", () => {
+    // Page 11's recommended wording (option 1, not answered yet: COPY-UNSIGNED).
+    expect(BLUR_CHECK_LINE).toBe('For the first weeks we ask after every proof whether our privacy tool hid the right details. It takes one tap.');
     for (const role of ROLES) {
-      const want = BOARD[role].map((g) => ({ title: g.title, lines: g.lines.filter((l) => l !== PLACEHOLDER) }));
+      const want = BOARD[role].map((g) => ({ title: g.title, lines: g.lines.map((l) => (l === PLACEHOLDER ? BLUR_CHECK_LINE : l)) }));
       expect(TRADE_TERMS[role].map((g) => ({ title: g.title, lines: [...g.lines] }))).toEqual(want);
     }
   });

@@ -26,7 +26,7 @@ import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 export const API = 'http://api-internal.test';
 export const RELAY = 'http://relay-admin.test';
 export const TERMS: AttestedTerms = {
-  deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+  deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
   payWindowMin: 90,
   buyerPayout: '4'.padEnd(95, 'B'),
   sellerRefund: '8'.padEnd(95, 'S'),

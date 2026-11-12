@@ -17,7 +17,7 @@ import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { BOARD, SERVER_NOW, buyerCancelledView, sellerNudgedView, sellerRefundedView, sellerView } from './refundViews.js';
-import { INSIDE } from './session.js';
+import { INSIDE, screenStatus } from './session.js';
 
 type RefundView = TradeView;
 const PORT = 4319;
@@ -170,7 +170,7 @@ test('owner 8 Nov: with no nudge Cancel is the one primary; a nudge is offered, 
   await expect(page.locator('[data-primary]')).toHaveText('Cancel and get refund');
   await expect(button(page, 'Cancel and get refund')).toBeEnabled();
   await button(page, 'Nudge mira.k').click();
-  await expect(page.getByRole('status')).toHaveText('Nudge sent.');
+  await expect(screenStatus(page)).toHaveText('Nudge sent.');
   await expect(page.locator('[data-primary]')).toHaveText('Cancel and get refund');
   expect(s.posted).toEqual([]);
 });
@@ -268,7 +268,7 @@ test('Nudge mira.k nudges by public name with the trade as context', async ({ pa
   await open(page);
   await button(page, 'Nudge mira.k').click();
   expect((await nudge).postDataJSON()).toEqual({ to: 'mira.k', context: BOARD.code });
-  await expect(page.getByRole('status')).toHaveText('Nudge sent.');
+  await expect(screenStatus(page)).toHaveText('Nudge sent.');
 });
 
 test("the buyer sees the seller's cancel: no I've paid, no countdown, Open dispute at once (p9-2)", async ({ page }) => {

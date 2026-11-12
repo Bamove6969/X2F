@@ -35,6 +35,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
 import { assertMemberMay } from '../team/perms.js';
+import { memberBand, offerInsideBand } from '../team/limits.js';
 import { getMethod, isAvailable, isGiftCard, tradeProfile } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
@@ -204,10 +205,13 @@ export interface MyOfferMethod {
  * Why one offer was not switched by `POST /v1/account/offers/status`: the posting guards of
  * relisting (`not-vendor`, `trading-paused`, `trading-hold`, `lien`, `no-wallet`, `too-many-offers`, `method-unavailable`,
  * and the launch cap's `launch-cap`, or `price-unavailable` when none of the offer's currencies has
- * a price to count its bands with), or `not-found` for an id that is not one of my live or paused offers.
+ * a price to count its bands with), a team member's `outside-trade-band` (J-20 review F2: turning on
+ * an offer outside their band; turning off is never banded), or `not-found` for an id that is not
+ * one of my live or paused offers.
  */
 export type OfferSwitchRefusal =
-  | 'not-vendor' | 'trading-paused' | 'trading-hold' | 'lien' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'launch-cap' | 'price-unavailable' | 'not-found';
+  | 'not-vendor' | 'trading-paused' | 'trading-hold' | 'lien' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'launch-cap' | 'price-unavailable'
+  | 'outside-trade-band' | 'not-found';
 
 /** One offer's outcome: its status after the call, and why it was not switched when it was refused. */
 export interface OfferSwitchResult {
@@ -1216,6 +1220,8 @@ export function offerRoutes(app: FastifyInstance): void {
       );
       // Their currencies and bands, for the launch cap (turning on only; written once at post).
       const flex = status === 'live' ? await loadFlex(client, mine.map((o) => o.id)) : null;
+      // J-20: a team member's trade-size band (turning on only; null for the owner or no band).
+      const band = status === 'live' ? await memberBand(client, req.auth!.memberId) : null;
       // A row stored as fixed (MARKET_PRICED) is never switched: not-found, as PATCH answers. The caps
       // still count it, as assertMayPost does (J-02 leaves the caps alone).
       const byId = new Map(mine.filter((o) => o.market).map((o) => [o.id, o]));
@@ -1245,6 +1251,8 @@ export function offerRoutes(app: FastifyInstance): void {
           // Then the launch cap, as relisting checks it (launch-rules review F1): every band of every
           // currency; an unpriced currency is skipped and stays hidden (OWNER QUESTION p11-95).
           if (refused === null) refused = offerLaunchCapRefusal(o.amount_unit, flex!.get(id)!.currencies, deps.prices, true);
+          // J-20 review F2: a member's band, per offer, so one offer outside it does not fail the batch.
+          if (refused === null && !(await offerInsideBand(client, band, id))) refused = 'outside-trade-band';
           if (refused !== null) {
             out.push({ id, status: o.status, refused });
             continue;

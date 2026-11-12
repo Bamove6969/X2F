@@ -140,6 +140,9 @@ describe("the web TradeView matches the API's", () => {
   it('has the same fields as apps/api/src/trades/view.ts TradeView', () => {
     const theirs = fields(new URL('trades/view.ts', api), 'TradeView');
     expect(theirs.length).toBeGreaterThan(30);
-    expect(fields(new URL('api/trade.ts', web), 'TradeView')).toEqual(theirs);
+    // Except the payment instructions (instr-hash review I1): unsigned, so not on the screens' type;
+    // only the escrow runtime reads them (from `unknown`) and checks them against the attested hash.
+    expect(theirs).toContain('paymentInstructions');
+    expect(fields(new URL('api/trade.ts', web), 'TradeView')).toEqual(theirs.filter((f) => f !== 'paymentInstructions'));
   });
 });

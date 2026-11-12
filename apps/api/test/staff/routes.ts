@@ -79,6 +79,10 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/owner/keys', perm: 'self', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/owner/keys/start', perm: 'self', allowed: OWNER, body: {} },
   { method: 'POST', url: '/staff/v1/owner/keys/finish', perm: 'self', allowed: OWNER, body: {} },
+  // O-040 (owner Q35): the owner's notifications (perm self, the owner only).
+  { method: 'GET', url: '/staff/v1/owner/alerts', perm: 'self', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/owner/alerts/read-all', perm: 'self', allowed: OWNER, body: {} },
+  { method: 'POST', url: '/staff/v1/owner/alerts/:id/read', perm: 'self', allowed: OWNER, body: {} },
   // Plan 4 Task 6: owner first-run setup (public; 404 setup-locked once locked, and here: an owner exists).
   { method: 'POST', url: '/staff/v1/setup/code', perm: 'public-setup', allowed: 'public', body: { code: 'AAAA-AAAA-AAAA' } },
   { method: 'POST', url: '/staff/v1/setup/account', perm: 'public-setup', allowed: 'public', body: { displayName: 'matrix.owner', loginName: 'matrix-login' } },
@@ -116,6 +120,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Owner Q60: senior moderators by role, moderators and helpers by grant.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  // P-012/P-013: the blur-check answers, read by the feedback readers.
+  { method: 'GET', url: '/staff/v1/feedback/blur-checks', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
   // incident ID: 404 past the guard).
   { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },
@@ -138,4 +144,15 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // B-006: the fee wallet's sweep settings (a body that changes nothing needs no tap).
   { method: 'GET', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER, body: { thresholdAtomic: null, floatAtomic: null, coldAddress: null, tapId: '00000000-0000-4000-8000-000000000000' } },
+  // Plan 4 Task 33 (D-041..D-045): one's own pay page, the clock-out, payout addresses (a bad body
+  // stops at validation); the owner's pay settings (a body that changes nothing needs no tap) and
+  // every member's unpaid net.
+  { method: 'GET', url: '/staff/v1/pay', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'GET', url: '/staff/v1/pay/clock-out', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/pay/clock-out', perm: 'self', allowed: EVERY_ROLE, body: { quote: 'x', addressId: 'not-a-uuid' } },
+  { method: 'POST', url: '/staff/v1/pay/addresses', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'DELETE', url: '/staff/v1/pay/addresses/:id', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'GET', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER, body: { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, tapId: '00000000-0000-4000-8000-000000000000' } },
+  { method: 'GET', url: '/staff/v1/pay/staff', perm: 'earnings.read', allowed: OWNER },
 ];

@@ -553,7 +553,7 @@ describe('security review 2026-11-12', () => {
   });
 
   it('I3: the recorded trade must agree with the attested deal', () => {
-    const terms = { deal: { poster: 'seller' as const, takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16500', maxFiatCents: '100000' }, payWindowMin: 90, buyerPayout: BUYER, sellerRefund: SELLER };
+    const terms = { deal: { poster: 'seller' as const, takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16500', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }, payWindowMin: 90, buyerPayout: BUYER, sellerRefund: SELLER };
     const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
     const trade = { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' as const };
     expect(() => recordedTerms({ terms, trade: { ...trade, poster: 'buyer' }, feeWallet: FEE })).toThrow(RangeError);
@@ -891,7 +891,7 @@ describe('the attestation allowlists, gate and API (review I2)', () => {
 
 describe('recordedTerms', () => {
   it('takes the addresses this process attested and its own trade, never the API row', () => {
-    const terms = { deal: { poster: 'seller' as const, takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16500', maxFiatCents: '100000' }, payWindowMin: 90, buyerPayout: BUYER, sellerRefund: SELLER };
+    const terms = { deal: { poster: 'seller' as const, takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16500', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }, payWindowMin: 90, buyerPayout: BUYER, sellerRefund: SELLER };
     const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
     const r = recordedTerms({ terms, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE });
     // 0.25 XMR at $165.00: $41.25, rounded up to the cent.

@@ -525,11 +525,15 @@ function foldAccents(text: string): string {
   return out;
 }
 
-/** Labels as a regex alternation, longest first (`titular de la cuenta` before `titular`). */
+/**
+ * Labels as a regex alternation, longest first (`titular de la cuenta` before `titular`). A Turkish
+ * dotless `ı` also matches `i` (and so `I`: `ALICI`, or OCR's `alici`), which case-insensitive
+ * matching alone does not do (P-014).
+ */
 function alternation(labels: string[]): string {
   return [...new Set(labels.map(foldAccents))]
     .sort((a, b) => b.length - a.length)
-    .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+').replace(/'/g, "['\u2019]"))
+    .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+').replace(/'/g, "['\u2019]").replace(/ı/g, '[ıi]'))
     .join('|');
 }
 
@@ -565,7 +569,7 @@ function nameStart(line: string): number | 'next' {
 
 const NUMBER_KINDS = Object.keys(NUMBER_LABELS) as NumberLabelKind[];
 /** Words between a label and its number. */
-const NUMBER_TAIL = '\\.?(?:\\s*(?:number|num|no|nr|n[º°]|ending(?:\\s+in)?|ends\\s+in)\\.?)?\\s*[:：#]?\\s*';
+const NUMBER_TAIL = '\\.?(?:\\s*(?:number|num|no|nr|n[º°]|№|ending(?:\\s+in)?|ends\\s+in)\\.?)?\\s*[:：#]?\\s*';
 // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- built from the constant NUMBER_LABELS lists, each label escaped by alternation()
 const NUMBER_LABEL = new RegExp(
   `(?<![\\p{L}\\p{N}/])(?:${NUMBER_KINDS.map((k) => `(?<${k}>${alternation([...NUMBER_LABELS[k]])})`).join('|')})(?![\\p{L}\\p{N}])${NUMBER_TAIL}`,

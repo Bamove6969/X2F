@@ -57,6 +57,7 @@ import {
 } from './myoffers/model.js';
 import './screens.css';
 import { accountTypeOf } from '../session/member.js';
+import { useResumeSync } from '../session/syncFirst.js';
 import { useSession } from '../session/useSession.js';
 import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './settings/accountTypeCopy.js';
 
@@ -80,19 +81,31 @@ export function MyOffers() {
   const panes = hasPanes(layout);
   const [shownId, setShownId] = useState<string | null>(null);
 
-  const reload = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const offers = await fetchMyOffers(signal);
-      setLoad({ kind: 'ready', offers });
-      // A fresh list says by itself whether a hold hides the live offers (review M1).
-      setRefusedHold(false);
-      // A selection can only hold offers still on the list.
-      setSelected((s) => new Set([...s].filter((id) => offers.some((o) => o.id === id))));
-    } catch (e) {
-      if (signal?.aborted) return;
-      setLoad(e instanceof ApiCallError && e.status === 401 ? { kind: 'signed-out' } : { kind: 'failed' });
-    }
+  /** One read of the list; throws when it fails. */
+  const pull = useCallback(async (signal?: AbortSignal) => {
+    const offers = await fetchMyOffers(signal);
+    setLoad({ kind: 'ready', offers });
+    // A fresh list says by itself whether a hold hides the live offers (review M1).
+    setRefusedHold(false);
+    // A selection can only hold offers still on the list.
+    setSelected((s) => new Set([...s].filter((id) => offers.some((o) => o.id === id))));
   }, []);
+
+  const reload = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        await pull(signal);
+      } catch (e) {
+        if (signal?.aborted) return;
+        setLoad(e instanceof ApiCallError && e.status === 401 ? { kind: 'signed-out' } : { kind: 'failed' });
+      }
+    },
+    [pull],
+  );
+
+  // C-021: on resume the list is read again before its switches work (session/syncFirst.ts); a
+  // failed read keeps the list shown (the gate says it may be out of date).
+  useResumeSync(() => pull());
 
   useEffect(() => {
     const ac = new AbortController();

@@ -173,11 +173,15 @@ describe('sessions, alerts and push on the staff site', () => {
   it('lead review M1: marking an alert seen and unsubscribing are logged; a bare DELETE drops only this session\'s subscriptions', async () => {
     const owner = await theOwner();
     await addAlert(t.deps.db, owner.id, 'market-prices-paused', { currency: 'JPY' }, t.deps.clock());
-    const a = ((await owner.browser.get('/staff/v1/account/alerts')).json() as Array<{ id: string; kind: string; seenAt: string | null }>).find((x) => x.seenAt === null)!;
+    // The alert just added (batch 9: other alerts of the owner, e.g. a login method's, may be unseen too).
+    const a = ((await owner.browser.get('/staff/v1/account/alerts')).json() as Array<{ id: string; kind: string; detail: { currency?: string }; seenAt: string | null }>)
+      .find((x) => x.seenAt === null && x.kind === 'market-prices-paused' && x.detail.currency === 'JPY')!;
     const before = (await logEntries(t.deps, 'staff.alert-seen')).length;
     await owner.browser.post(`/staff/v1/account/alerts/${a.id}/seen`, {});
     await owner.browser.post(`/staff/v1/account/alerts/${a.id}/seen`, {}); // already seen: not logged again
     expect(await logEntries(t.deps, 'staff.alert-seen')).toHaveLength(before + 1);
+    // Owner-alerts review OA2: the entry names the kind of alert hidden.
+    expect(JSON.parse((await logEntries(t.deps, 'staff.alert-seen')).at(-1)!.detail)).toEqual({ kind: 'market-prices-paused' });
     const sub = () => {
       const ecdh = createECDH('prime256v1');
       ecdh.generateKeys();
