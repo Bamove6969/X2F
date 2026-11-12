@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 import { listFeedbackForm } from '../feedback/form.js';
 import { feedbackMoodCounts, listFeedback } from '../feedback/mood.js';
+import { blurCheckCounts, listBlurChecks } from '../proof/blurCheck.js';
 import { requireStaff } from './guard.js';
 
 /** A page cursor as the client sends it back: `<YYYY-MM-DD>_<uuid>` (the last row's day and id). */
@@ -32,6 +33,9 @@ const nextOf = (items: readonly { createdOn: string; id: string }[]) => {
  * - `GET /staff/v1/feedback/form?before` → `{ items: { id, kind, text, accountId, from, createdOn }[], next }`,
  *   the feedback form every "can't do that" popup links to (`listFeedbackForm`; `accountId` null
  *   for an anonymous row).
+ * - `GET /staff/v1/feedback/blur-checks?before` → `{ items: { id, correct, comment, role, method, blur, createdOn }[], counts: { yes, no }, next }`,
+ *   the "Was this proof blurred correctly?" answers (P-012/P-013, proof/blurCheck.ts), with the 30-day
+ *   Yes / No counts. They name no trade and no person, so every reader gets the same rows.
  * `before` is the `next` of the previous page.
  */
 export function staffFeedbackRoutes(app: FastifyInstance): void {
@@ -42,6 +46,12 @@ export function staffFeedbackRoutes(app: FastifyInstance): void {
     const { db, clock } = req.server.deps;
     const items = await listFeedback(db, before ? { before } : {});
     return { items, counts: await feedbackMoodCounts(db, clock()), next: nextOf(items) };
+  });
+  app.get('/staff/v1/feedback/blur-checks', opts, async (req) => {
+    const before = cursorOf(req);
+    const { db, clock } = req.server.deps;
+    const items = await listBlurChecks(db, before ? { before } : {});
+    return { items, counts: await blurCheckCounts(db, clock()), next: nextOf(items) };
   });
   app.get('/staff/v1/feedback/form', opts, async (req) => {
     const before = cursorOf(req);
