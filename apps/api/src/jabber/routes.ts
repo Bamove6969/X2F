@@ -19,7 +19,8 @@
  * W-021 (owner p11-27): the Jabber notifications settings page. `GET /v1/account/jabber/events`
  * lists every notice kind (`NOTICE_KINDS`) with whether it is on; `PUT /v1/account/jabber/events`
  * `{ kind, on }` turns one on or off (404 `not-found` until an address is proven). Each is on until
- * turned off. The write has the same gate as the others, and a change of the picks is told to the
+ * turned off, except the security notices in `ALWAYS_ON_KINDS` (review F1: 409
+ * `jabber-event-always-on`; listed with `canTurnOff: false`). The write has the same gate as the others, and a change of the picks is told to the
  * address that is on (migration 336's `jabber_contact_changed`).
  *
  * The address is never logged (buildApi redacts request bodies; nothing here logs it) and never
@@ -33,7 +34,7 @@ import { dailyCap } from '../auth/throttle.js';
 import { ApiError } from '../errors.js';
 import { codeHash, codeMatches, maskJid, newTestCode, normalizeJid, openJid, sealJid } from './address.js';
 import { SEND_TIMEOUT_MS, withTimeout } from './outbox.js';
-import { NOTICE_KINDS, type NoticeKind } from './sender.js';
+import { ALWAYS_ON_KINDS, NOTICE_KINDS, type NoticeKind } from './sender.js';
 
 export const RESEND_WAIT_S = 60;
 export const TESTS_PER_DAY = 5;
@@ -126,10 +127,15 @@ async function writeGate(c: pg.PoolClient, req: FastifyRequest): Promise<void> {
 
 export interface JabberEvents {
   /** Every notice kind, in `NOTICE_KINDS` order. */
-  events: Array<{ kind: NoticeKind; on: boolean }>;
+  events: Array<{ kind: NoticeKind; on: boolean; canTurnOff: boolean }>;
 }
 
-const eventsOf = (muted: readonly string[]): JabberEvents => ({ events: NOTICE_KINDS.map((kind) => ({ kind, on: !muted.includes(kind) })) });
+const eventsOf = (muted: readonly string[]): JabberEvents => ({
+  events: NOTICE_KINDS.map((kind) => {
+    const canTurnOff = !ALWAYS_ON_KINDS.includes(kind);
+    return { kind, on: !canTurnOff || !muted.includes(kind), canTurnOff };
+  }),
+});
 
 async function mutedOf(db: pg.PoolClient | pg.Pool, accountId: string): Promise<string[]> {
   const { rows } = await db.query<{ muted_kinds: string[] }>('select muted_kinds from jabber_contacts where account_id = $1', [accountId]);
@@ -228,7 +234,11 @@ export function jabberRoutes(app: FastifyInstance): void {
   app.put('/v1/account/jabber/events', writes, async (req) => {
     const b = body(req, ['kind', 'on']);
     const { kind, on } = b;
-    if (typeof kind !== 'string' || !(NOTICE_KINDS as readonly string[]).includes(kind) || typeof on !== 'boolean') throw new ApiError(400, 'bad-request');
+    if (typeof kind !== 'string' || typeof on !== 'boolean') throw new ApiError(400, 'bad-request');
+    // Review F1: a security notice stays on, also one this build does not send yet (J-20's first
+    // login). Asking for it on is a no-op, below.
+    if (!on && ALWAYS_ON_KINDS.includes(kind)) throw new ApiError(409, 'jabber-event-always-on');
+    if (!(NOTICE_KINDS as readonly string[]).includes(kind)) throw new ApiError(400, 'bad-request');
     const accountId = req.auth.accountId;
     const muted = await withTx(app.deps.db, async (c) => {
       await writeGate(c, req);

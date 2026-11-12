@@ -5,11 +5,12 @@
 -- before this migration keeps every notice it had. Turn off (deleting the row) forgets the picks
 -- with the address. 336: next after 335; re-check the number at landing.
 --
--- The allowed kinds include J-20's `team-member-first-login` (wip/second-team-limits, migration
--- 380) ahead of its landing, so the page lists it as soon as it joins NOTICE_KINDS. A later kind
--- needs this check widened with it.
+-- Review F1 (safe default until the owner rules): only kinds that are not security notices may be
+-- turned off. `account-change` and J-20's `team-member-first-login` stay on (ALWAYS_ON_KINDS in
+-- apps/api/src/jabber/sender.ts; the API refuses them with 409 `jabber-event-always-on`). A ruling
+-- that lets them be muted, or a new mutable kind, widens this check in a later migration.
 alter table jabber_contacts add column muted_kinds text[] not null default '{}'
-  check (muted_kinds <@ array['account-change', 'trade-attention', 'team-member-first-login']::text[]);
+  check (muted_kinds <@ array['trade-attention']::text[]);
 
 -- The mute is enforced where every notice is queued, so a trigger and a route that call
 -- jabber_queue (J-20's first-login notice does) all honour it.

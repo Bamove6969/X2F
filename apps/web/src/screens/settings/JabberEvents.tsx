@@ -52,7 +52,6 @@ export function JabberEventsScreen() {
   };
 
   const setUp = status !== null && (status.state === 'on' || status.state === 'paused');
-  const accountChangesOff = events?.some((e) => e.kind === 'account-change' && !e.on) ?? false;
 
   return (
     <main className="x2f-screen" data-screen="jabber-events">
@@ -84,11 +83,15 @@ export function JabberEventsScreen() {
             {events.map((e) => {
               const id = `je-${e.kind}`;
               const w = wordsOf(e.kind);
+              const described = [w.note ? `${id}-n` : null, e.canTurnOff ? null : 'je-always-on'].filter((x) => x !== null).join(' ');
               return (
                 <li className="x2f-list__row" key={e.kind}>
                   <input
-                    id={id} type="checkbox" data-kind={e.kind} checked={e.on} disabled={busy} aria-describedby={w.note ? `${id}-n` : undefined}
-                    onChange={(ev) => void toggle(e.kind, ev.target.checked)}
+                    id={id} type="checkbox" data-kind={e.kind} checked={e.on || !e.canTurnOff} disabled={busy || !e.canTurnOff}
+                    aria-describedby={described || undefined}
+                    onChange={(ev) => {
+                      if (e.canTurnOff) void toggle(e.kind, ev.target.checked);
+                    }}
                   />
                   <span className="x2f-list__label">
                     <label htmlFor={id}>{w.label}</label>
@@ -105,9 +108,9 @@ export function JabberEventsScreen() {
               );
             })}
           </ul>
-          {accountChangesOff ? (
-            <p className="x2f-note" data-part="jabber-events-warning">
-              {C.accountChangeOffWarning}
+          {events.some((e) => !e.canTurnOff) ? (
+            <p className="x2f-note" id="je-always-on" data-part="jabber-events-always-on">
+              {C.alwaysOnNote}
             </p>
           ) : null}
         </section>

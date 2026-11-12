@@ -71,6 +71,6 @@ export const JABBER_COPY = {
       note: 'Message: "A team member logged in to your X2F account for the first time."',
     },
   },
-  /** Shown while account changes are off. */
-  accountChangeOffWarning: 'Account changes are off: you will not be told if someone changes your account. Changing these choices is always told to your address.',
+  /** Review F1: under a security notice's box, which is ticked and cannot be unticked. */
+  alwaysOnNote: "Security alerts can't be turned off.",
 } as const;

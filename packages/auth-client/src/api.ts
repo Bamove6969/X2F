@@ -396,7 +396,8 @@ export type JabberEventKind = 'account-change' | 'trade-attention' | 'team-membe
 
 /** W-021 (owner p11-27): which events send a Jabber notice (`GET /v1/account/jabber/events`), every kind in the server's order. */
 export interface JabberEvents {
-  events: Array<{ kind: JabberEventKind; on: boolean }>;
+  /** `canTurnOff: false`: a security notice that stays on (review F1; 409 `jabber-event-always-on`). */
+  events: Array<{ kind: JabberEventKind; on: boolean; canTurnOff: boolean }>;
 }
 
 /**
