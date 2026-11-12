@@ -140,7 +140,7 @@ describe('the appeal decides (D-006, D-008)', () => {
     expect(lienSteps(p, decide(p, 'no-action'), buyerPosted, [lien({ status: 'suspended' })])).toEqual([{ op: 'void', id: 'l1' }]);
   });
 
-  it('an appeal that orders restitution after a refund: a new restitution lien, the fee owed by a buyer poster from future trades (D-062)', () => {
+  it('an appeal that orders restitution after a refund: a new restitution lien, the fee owed by a buyer poster from future trades (g63 poster pays; owner question O3)', () => {
     const p = appeal(publish(opened(true), 'no-action'), 'buyer');
     expect(lienSteps(p, decide(p, 'seller-sends-xmr'), buyerPosted, [])).toEqual([
       { op: 'place', round: 2, debtor: 'seller', cause: 'restitution', amountAtomic: A, feeAtomic: 0n },
