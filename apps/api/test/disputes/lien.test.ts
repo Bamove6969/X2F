@@ -6,7 +6,9 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { hasActiveLien } from '../../src/disputes/lien.js';
-import { startDispute } from '../../src/disputes/store.js';
+import { applyDispute } from '@x2f/staff';
+import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
+import { startDispute, withDispute } from '../../src/disputes/store.js';
 import { disputeTimerJob } from '../../src/disputes/timers.js';
 import { revenueReport } from '../../src/staff/revenue.js';
 import { appealDirect, publishRuling } from '../helpers/disputes.js';
@@ -215,7 +217,88 @@ describe('a won appeal liens whoever received the coins (D-006)', () => {
   });
 });
 
+/** The seller's payment proof accepted (`complied`), through withDispute as its route will (NEEDS_TASK_12_TX_PROOF). */
+async function complied(code: string) {
+  const S = { appealWindowH: DISPUTE_DEFAULTS.appealWindowH, firstResponseH: DISPUTE_DEFAULTS.firstResponseH };
+  await withDispute(deps, { code }, async (d, _client, now) => applyDispute(d, { type: 'complied' }, { kind: 'system' }, now, S));
+}
+
+describe('the seller pays the XMR (complied, through withDispute; review L6)', () => {
+  it('a lien for the XMR alone is repaid and logged; the seller may trade again', async () => {
+    const { seller, code } = await disputed({ afterRefund: true, poster: 'buyer' });
+    await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
+    await complied(code);
+    expect(await liens(code)).toMatchObject([{ status: 'repaid', lifted: true }]);
+    expect(await hasActiveLien(deps.db, seller.id)).toBe(false);
+    expect((await lienLog(code)).map((e) => e.action)).toEqual(['lien.placed', 'lien.repaid']);
+  });
+});
+
+describe('review L1: the seller paid, then the appeal overrules the order to pay', () => {
+  for (const by of ['seller', 'buyer'] as const) {
+    it(`appeal by the ${by}, overruled to no-action: the buyer is liened for the XMR received, owed to the seller`, async () => {
+      const { seller, buyer, code } = await disputed({ afterRefund: true, poster: 'buyer' });
+      await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
+      await complied(code);
+      await appealDirect(deps, code, by);
+      // The repaid lien stays over: the appeal suspends nothing.
+      expect(await liens(code)).toMatchObject([{ status: 'repaid' }]);
+      await publishRuling(deps, code, { outcome: 'no-action' });
+      expect(await liens(code)).toEqual([
+        expect.objectContaining({ debtor: seller.id, round: 1, status: 'repaid' }),
+        { debtor: buyer.id, creditor: seller.id, amount_atomic: AMOUNT.toString(), fee_atomic: '0', round: 2, cause: 'overturned', status: 'active', lifted: false },
+      ]);
+      expect(await hasActiveLien(deps.db, buyer.id)).toBe(true);
+      expect(await owed(code)).toEqual([]);
+      expect((await lienLog(code)).map((e) => e.action)).toEqual(['lien.placed', 'lien.repaid', 'lien.placed']);
+    });
+  }
+});
+
+describe('review L2: liens stay dark until switched on (site_flags.liens_enabled)', () => {
+  it('switched off: no lien is placed and none blocks trading, but the owed 1% is still recorded', async () => {
+    const { seller, buyer, code } = await disputed({ afterRefund: true, poster: 'buyer' });
+    // A lien from before the switch-off (placed while on) blocks nothing while off.
+    const earlier = await disputed({ afterRefund: true, poster: 'buyer' });
+    await publishRuling(deps, earlier.code, { outcome: 'seller-sends-xmr' });
+    expect(await hasActiveLien(deps.db, earlier.seller.id)).toBe(true);
+    await deps.db.query('update site_flags set liens_enabled = false');
+    try {
+      expect(await hasActiveLien(deps.db, earlier.seller.id)).toBe(false);
+      await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
+      expect(await liens(code)).toEqual([]);
+      expect(await hasActiveLien(deps.db, seller.id)).toBe(false);
+      setNow(at(H + 48 * H));
+      await tick();
+      expect(await owed(code)).toEqual([{ account: buyer.id, amount_atomic: FEE.toString(), collected_atomic: '0' }]);
+    } finally {
+      await deps.db.query('update site_flags set liens_enabled = true');
+    }
+    expect(await hasActiveLien(deps.db, earlier.seller.id)).toBe(true);
+  });
+});
+
 describe('the records (migration 400)', () => {
+  it('review L3: neither table can be truncated', async () => {
+    await expect(deps.db.query('truncate liens')).rejects.toMatchObject({ code: '42501' });
+    await expect(deps.db.query('truncate fees_owed')).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('review L4: a lien or an owed fee that is over never changes again, in any column', async () => {
+    const { code } = await disputed({ afterRefund: true, poster: 'buyer' });
+    await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
+    await complied(code);
+    for (const set of [`changed_at = changed_at + interval '1 s'`, `lifted_at = lifted_at + interval '1 s'`, `repayment_code = 'X'`]) {
+      await expect(deps.db.query(`update liens set ${set} where from_code = $1`, [code]), set).rejects.toMatchObject({ code: '42501' });
+    }
+    const other = await disputed({ afterRefund: true, poster: 'buyer' });
+    await publishRuling(deps, other.code, { outcome: 'seller-sends-xmr' });
+    setNow(at(H + 48 * H));
+    await tick();
+    await deps.db.query('update fees_owed set collected_atomic = amount_atomic, settled_at = $2 where from_code = $1', [other.code, deps.clock()]);
+    await expect(deps.db.query(`update fees_owed set settled_at = settled_at + interval '1 s' where from_code = $1`, [other.code])).rejects.toMatchObject({ code: '42501' });
+  });
+
   it('a lien is an account record: it survives the trade being deleted (the 90-day purge)', async () => {
     const { seller, code } = await disputed({ afterRefund: true, poster: 'buyer' });
     await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });

@@ -242,6 +242,17 @@ export async function withDispute(
     try {
       const rec = await loadDisputeRecord(client, target.code, { ...(target.seq === undefined ? {} : { seq: target.seq }), lock: true });
       if (rec === null) throw new DisputeRuleError('wrong-state');
+      // J-06 review L5: everything the lien rules write waits on nothing once `fn` has appended to
+      // the activity log (appendLog's rule N3). So, before `fn`: both parties' account rows (the
+      // liens' and owed fees' foreign keys take FOR KEY SHARE on them), in id order, then this
+      // dispute's liens. Order with the reputation branch's withDispute: trade, dispute, totals,
+      // accounts, liens.
+      await client.query(
+        `select 1 from accounts where id in (select seller_account_id from trades where code = $1 union select buyer_account_id from trades where code = $1)
+          order by id for key share`,
+        [target.code],
+      );
+      await client.query('select 1 from liens where from_code = $1 and dispute_seq = $2 order by id for update', [rec.dispute.code, rec.dispute.seq]);
       const now = deps.clock();
       next = await fn(rec.dispute, client, now, rec);
       if (next === rec.dispute) {

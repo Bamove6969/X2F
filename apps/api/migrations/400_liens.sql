@@ -53,7 +53,7 @@ create function liens_guard() returns trigger
   set search_path = pg_catalog
 as $$
 begin
-  if tg_op = 'DELETE' then
+  if tg_op in ('DELETE', 'TRUNCATE') then
     raise exception 'liens are never deleted' using errcode = 'insufficient_privilege';
   end if;
   if new.id <> old.id or new.debtor_account_id <> old.debtor_account_id or new.creditor_account_id <> old.creditor_account_id
@@ -61,7 +61,8 @@ begin
      or new.dispute_seq <> old.dispute_seq or new.round <> old.round or new.cause <> old.cause or new.created_at <> old.created_at then
     raise exception 'a lien''s parties, amounts and origin never change' using errcode = 'insufficient_privilege';
   end if;
-  if old.status in ('repaid', 'void') and new.status <> old.status then
+  -- Review L4: once over, nothing about it changes again, not even when or how it ended.
+  if old.status in ('repaid', 'void') and to_jsonb(new) is distinct from to_jsonb(old) then
     raise exception 'a lien that is over stays over' using errcode = 'insufficient_privilege';
   end if;
   return new;
@@ -69,6 +70,8 @@ end
 $$;
 
 create trigger liens_guard before update or delete on liens for each row execute function liens_guard();
+-- Review L3: row triggers do not fire on TRUNCATE (as 201 and 430 guard theirs).
+create trigger liens_no_truncate before truncate on liens for each statement execute function liens_guard();
 
 create table fees_owed (
   id uuid primary key default gen_random_uuid(),
@@ -92,7 +95,7 @@ create function fees_owed_guard() returns trigger
   set search_path = pg_catalog
 as $$
 begin
-  if tg_op = 'DELETE' then
+  if tg_op in ('DELETE', 'TRUNCATE') then
     raise exception 'owed fees are never deleted' using errcode = 'insufficient_privilege';
   end if;
   if new.id <> old.id or new.account_id <> old.account_id or new.amount_atomic <> old.amount_atomic
@@ -100,11 +103,22 @@ begin
      or new.collected_atomic < old.collected_atomic then
     raise exception 'an owed fee only collects' using errcode = 'insufficient_privilege';
   end if;
+  -- Review L4: once settled, nothing about it changes again.
+  if old.settled_at is not null and to_jsonb(new) is distinct from to_jsonb(old) then
+    raise exception 'a settled owed fee stays as it is' using errcode = 'insufficient_privilege';
+  end if;
   return new;
 end
 $$;
 
 create trigger fees_owed_guard before update or delete on fees_owed for each row execute function fees_owed_guard();
+create trigger fees_owed_no_truncate before truncate on fees_owed for each statement execute function fees_owed_guard();
+
+-- Review L2 (lead call, 12 Nov): liens stay dark until the owner rules how each kind ends and the
+-- repayment trade (or a settle action) exists. While `liens_enabled` is false no lien is placed and
+-- none blocks trading (`ACTIVE_LIEN_SQL` reads it); owed fees are still recorded. Switched on by the
+-- operator once ruled (no route sets it). The test template turns it on (test/setup/postgres.ts).
+alter table site_flags add column liens_enabled boolean not null default false;
 
 -- Owner rule p5-7: a change to an account sends one Jabber notice (331's choke point). A lien on
 -- the account and a fee it owes are changes to it, like a freeze (`trading_holds`); lead default,
