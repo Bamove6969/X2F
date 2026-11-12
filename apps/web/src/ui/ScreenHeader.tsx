@@ -42,16 +42,23 @@ export function screenName(pathname: string): RailPageName {
   return MORE.find(([re]) => re.test(pathname))?.[1] ?? '';
 }
 
+/**
+ * The element the header is drawn as. A `header` where it is the screen's own top; a `div` inside a bar
+ * that is already a header or a phrasing wrapper (Buy/Sell's bar, the trade header): a `header` may not
+ * sit inside another `header` or a `span` (review 12 Nov, L5).
+ */
+export type ScreenHeaderAs = 'header' | 'div';
+
 /** The shared header for the current route: logo D, then the route's screen name. */
-export function ScreenHeader({ size = 24, className }: { size?: 24 | 32; className?: string }) {
+export function ScreenHeader({ size = 24, className, as = 'header' }: { size?: 24 | 32; className?: string; as?: ScreenHeaderAs }) {
   const { pathname } = useLocation();
-  return <ScreenHeaderView name={screenName(pathname)} size={size} {...(className !== undefined ? { className } : {})} />;
+  return <ScreenHeaderView name={screenName(pathname)} size={size} as={as} {...(className !== undefined ? { className } : {})} />;
 }
 
 /** The same header for a given name (the wide pre-login top, which the shell hands the name). */
-export function ScreenHeaderView({ name, size = 24, className }: { name: RailPageName; size?: 24 | 32; className?: string }) {
+export function ScreenHeaderView({ name, size = 24, className, as: Tag = 'header' }: { name: RailPageName; size?: 24 | 32; className?: string; as?: ScreenHeaderAs }) {
   return (
-    <header className={className === undefined ? 'x2f-screen-header' : `x2f-screen-header ${className}`} data-screen-header="">
+    <Tag className={className === undefined ? 'x2f-screen-header' : `x2f-screen-header ${className}`} data-screen-header="">
       <span className="x2f-screen-header__logo">
         <Logo size={size} />
       </span>
@@ -66,6 +73,6 @@ export function ScreenHeaderView({ name, size = 24, className }: { name: RailPag
           )}
         </span>
       )}
-    </header>
+    </Tag>
   );
 }

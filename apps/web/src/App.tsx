@@ -85,7 +85,10 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
   // On the front door, someone not (yet) inside gets no links to the screens behind it: never the
   // rail; the centred logo (it links nowhere) only where the wide frame is the pre-login one.
   const outside = door && !isInside(session);
-  const frame = outside ? 'centred' : wideFrameOf(pathname);
+  // The help pages are on the front door but are read signed in too (review 12 Nov, L3): someone
+  // inside keeps the rail there; someone outside gets the pre-login frame, as on /login.
+  const helpInside = HELP.test(pathname) && isInside(session);
+  const frame = outside ? 'centred' : helpInside ? 'rail' : wideFrameOf(pathname);
   let top: ReactNode = null;
   if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} />;
   else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop name={screenName(pathname)} />;
@@ -110,6 +113,9 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
     </div>
   );
 }
+
+/** The help placeholders (screens/HelpTopic.tsx). */
+const HELP = /^\/help(\/|$)/;
 
 /** Buy and Sell's own bar carries the shared header (MethodList). */
 const BROWSE = /^\/(buy|sell)\/?$/;

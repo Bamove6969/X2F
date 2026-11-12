@@ -107,13 +107,14 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
     <div className="x2f-browse">
       <header className="x2f-browse__header">
         <div className="x2f-browse__bar">
-          <span className="x2f-brand x2f-browse__brand">
-            <span className="x2f-browse__logo">
-              {/* Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): the shared header, logo D with the screen name. */}
-              <ScreenHeader />
-            </span>
+          <div className="x2f-brand x2f-browse__brand">
+            <div className="x2f-browse__logo">
+              {/* Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): the shared header, logo D with the screen name.
+                  Drawn as a div: this bar is already inside the browse header (review 12 Nov, L5). */}
+              <ScreenHeader as="div" />
+            </div>
             <NewsBell />
-          </span>
+          </div>
           <div role="tablist" aria-label="Buy or sell" className="x2f-segment">
             {(['buy', 'sell'] as const).map((s) => (
               <button

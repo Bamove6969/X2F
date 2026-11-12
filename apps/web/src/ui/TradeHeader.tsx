@@ -37,7 +37,8 @@ export function TradeHeader({
   return (
     <div className="x2f-trade-header-wrap" data-fold-glance="header">
       <div className="x2f-trade-header__brand">
-        <ScreenHeader />
+        {/* A div, so the room has one header element: the board's own row below (review 12 Nov, L5). */}
+        <ScreenHeader as="div" />
       </div>
       <header className="x2f-trade-header">
         <Link to={backTo} className="x2f-icon-button" aria-label="Back to trades">
