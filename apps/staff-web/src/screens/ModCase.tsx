@@ -478,7 +478,7 @@ function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buy
     const text = reason;
     const ev = lines;
     setTap({
-      intent: rulingIntent('propose', { rulingId, code: c.code, round: c.round, outcome, amountAtomic: c.escrow.amountAtomic, reason: text, evidence: ev }),
+      intent: rulingIntent('propose', { rulingId, code: c.code, round: c.round, round1Id: c.ruling.round1?.id ?? null, outcome, amountAtomic: c.escrow.amountAtomic, reason: text, evidence: ev }),
       title: label,
       body: `Tap your security key to sign this ruling: ${OUTCOME_LABELS[outcome]}.`,
       onDone: async (tapId) => {
@@ -551,7 +551,7 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
     if (outcome === null) return;
     setFault(null);
     setTap({
-      intent: rulingIntent('approve', { rulingId: p.rulingId, code: c.code, round: c.round, outcome, amountAtomic: c.escrow.amountAtomic, reason: p.reason, evidence: p.evidence }),
+      intent: rulingIntent('approve', { rulingId: p.rulingId, code: c.code, round: c.round, round1Id: c.ruling.round1?.id ?? null, outcome, amountAtomic: c.escrow.amountAtomic, reason: p.reason, evidence: p.evidence }),
       title: 'Approve ruling',
       body: `Tap your security key to approve and publish this ruling: ${OUTCOME_LABELS[outcome]}.`,
       onDone: async (tapId) => {

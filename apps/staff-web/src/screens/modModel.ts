@@ -154,7 +154,7 @@ export function reasonSha256(reason: string): string {
 /** The ruling tap's intent, the same content the API rebuilds and checks (apps/api disputes/rulings.ts). */
 export function rulingIntent(
   step: 'propose' | 'approve',
-  a: { rulingId: string; code: string; round: 1 | 2; outcome: RulingOutcome; amountAtomic: string; reason: string; evidence: readonly string[] },
+  a: { rulingId: string; code: string; round: 1 | 2; round1Id: string | null; outcome: RulingOutcome; amountAtomic: string; reason: string; evidence: readonly string[] },
 ): KeyTapIntent {
   return {
     kind: 'ruling',
@@ -168,5 +168,7 @@ export function rulingIntent(
     reasonSha256: reasonSha256(a.reason),
     // Review mod-screens M1: the evidence lines exactly as posted (propose) or as stored (approve).
     evidenceSha256: evidenceSha256(a.evidence),
+    // mod-gate review B2: round 2's taps name the round-1 ruling they review; round 1 names none.
+    round1Id: a.round === 2 ? a.round1Id : null,
   };
 }

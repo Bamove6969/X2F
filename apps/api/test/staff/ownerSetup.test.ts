@@ -184,6 +184,20 @@ describe('the pending owner account', () => {
 });
 
 describe('keys and finish', () => {
+  it('the setup key\'s challenge is the staff site\'s own domain: sha256("x2f-owner-setup-v1\\n" + nonce) (re-verify X2)', async () => {
+    const { ownerSetupChallenge } = await import('@x2f/staff');
+    const { app, deps } = await fresh();
+    const b = await begin(app, deps);
+    const start = (await b.post('/staff/v1/setup/key/start', {})).json();
+    expect(start.setupNonce).toMatch(/^[0-9a-f]{64}$/);
+    expect(start.options.challenge).toBe(Buffer.from(ownerSetupChallenge(start.setupNonce)).toString('base64url'));
+    await deps.db.query('update challenges set webauthn_challenge = $2 where id = $1', [start.challengeId, Buffer.alloc(32, 7).toString('base64url')]);
+    const res = await b.post('/staff/v1/setup/key/finish', {
+      challengeId: start.challengeId, response: key().register({ ...start.options, challenge: Buffer.alloc(32, 7).toString('base64url') }, STAFF_ORIGIN), label: 'Main key',
+    });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 400, error: 'challenge-expired' });
+  });
+
   it('accepts attested security keys only (method-not-allowed otherwise)', async () => {
     const { app, deps } = await fresh();
     const b = await begin(app, deps);

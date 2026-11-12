@@ -5,6 +5,8 @@ import {
   BAN_REASON_CODES,
   ESCROW_OUTCOMES,
   canonicalJson,
+  hasIssuedAt,
+  stampIssuedAt,
   tapChallenge,
   GRANTABLE_PERMS,
   type AccountAction,
@@ -102,9 +104,12 @@ export async function startKeyTap(
   accountId: string,
   intent: KeyTapIntent,
   o: { sessionId?: string } = {},
-): Promise<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON }> {
-  const norm = normalized(intent);
-  if (norm === null) throw badRequest();
+): Promise<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON; nonce: string; issuedAt: string | null }> {
+  const parsed = normalized(intent);
+  if (parsed === null) throw badRequest();
+  const now = deps.clock();
+  // Lead P4 call: the owner registry kinds carry this tap's start time, signed (`stampIssuedAt`).
+  const norm = stampIssuedAt(parsed, now);
   let canonical: string;
   let challenge: Uint8Array;
   const nonce = randomBytes(NONCE_BYTES);
@@ -121,7 +126,6 @@ export async function startKeyTap(
   // RV5 m12: one statement counts the account's open taps and inserts only under the cap, so a
   // burst of parallel starts can pass it by at most the requests already in flight, never grow
   // `key_taps` without bound. The per-account lock makes the count exact.
-  const now = deps.clock();
   const client = await deps.db.connect();
   let id: string | undefined;
   try {
@@ -143,7 +147,9 @@ export async function startKeyTap(
     client.release();
   }
   if (id === undefined) throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.ceil(KEY_TAP_TTL_MS / 1000) });
-  return { tapId: id, options };
+  // Re-verify X1: the nonce and the stamped issuedAt go back too, so the staff site can rebuild
+  // `tapChallenge` from the intent it shows and refuse a challenge for anything else.
+  return { tapId: id, options, nonce: nonce.toString('hex'), issuedAt: (norm as { issuedAt?: string }).issuedAt ?? null };
 }
 
 interface TapRow {
@@ -242,11 +248,15 @@ export async function consumeKeyTap(
   o: { sessionId?: string } = {},
 ): Promise<StoredTap> {
   if (typeof tapId !== 'string' || !UUID.test(tapId)) throw tapInvalid();
-  const norm = normalized(expect);
-  if (norm === null) throw tapInvalid();
+  const found = normalized(expect);
+  if (found === null) throw tapInvalid();
+  // An owner registry tap's stored intent also carries `issuedAt`, its own start time (lead P4
+  // call): the route's intent is compared without it, and the stored one must equal the start time.
+  const stamped = hasIssuedAt(found.kind);
+  const { issuedAt: _ignored, ...norm } = found as KeyTapIntent & { issuedAt?: string };
   let canonical: string;
   try {
-    canonical = canonicalJson(norm);
+    canonical = canonicalJson(norm as KeyTapIntent);
   } catch {
     throw tapInvalid();
   }
@@ -256,14 +266,18 @@ export async function consumeKeyTap(
   const { rows } = await client.query<TapRow>(
     `update key_taps t set used_at = $3
       where t.id = $1 and t.account_id = $2 and t.used_at is null and t.finished_at is not null
-        and t.started_at > $4 and t.intent = $5
+        and t.started_at > $4
+        and (case when $7::boolean
+               then (t.intent::jsonb - 'issuedAt') = $5::text::jsonb
+                    and t.intent::jsonb ->> 'issuedAt' = to_char(t.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+               else t.intent = $5::text end)
         and (t.session_id is null or t.session_id = $6::uuid)
         and exists (
           select 1 from webauthn_credentials c
            where c.account_id = t.account_id and c.kind = 'security-key'
              and c.credential_id = decode(rpad(translate(t.credential_id, '-_', '+/'), ((char_length(t.credential_id) + 3) / 4) * 4, '='), 'base64'))
       returning t.id, t.account_id, t.credential_id, t.intent, t.nonce, t.response`,
-    [tapId, accountId, now, new Date(now.getTime() - KEY_TAP_TTL_MS), canonical, o.sessionId && UUID.test(o.sessionId) ? o.sessionId : null],
+    [tapId, accountId, now, new Date(now.getTime() - KEY_TAP_TTL_MS), canonical, o.sessionId && UUID.test(o.sessionId) ? o.sessionId : null, stamped],
   );
   if (!rows[0]) throw tapInvalid();
   return storedOf(rows[0]);
@@ -416,10 +430,14 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       return { kind: 'fee-sweep', thresholdAtomic: opt('thresholdAtomic', ATOMIC), floatAtomic: opt('floatAtomic', ATOMIC), coldAddress: opt('coldAddress', COLD_ADDRESS) };
     }
     case 'ruling': {
-      exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256']);
+      exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256', 'round1Id']);
       const code = typeof r.code === 'string' ? normalizeTradeCode(r.code) : null;
       if (code === null) throw badRequest();
       if (r.round !== 1 && r.round !== 2) throw badRequest();
+      // mod-gate review B2: a round-2 ruling names the round-1 ruling it reviews; round 1 names none.
+      let round1Id: string | null = null;
+      if (r.round === 2) round1Id = match(r, 'round1Id', UUID).toLowerCase();
+      else if (r.round1Id !== null) throw badRequest();
       return {
         kind: 'ruling',
         step: oneOf(r, 'step', ['propose', 'approve'] as const),
@@ -431,6 +449,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         amountAtomic: match(r, 'amountAtomic', ATOMIC),
         reasonSha256: match(r, 'reasonSha256', HEX64),
         evidenceSha256: match(r, 'evidenceSha256', HEX64),
+        round1Id,
       };
     }
     default:

@@ -121,7 +121,7 @@ export interface PgpChallenge {
 }
 
 export const keyLoginStart = (b: { loginName: string } | { pendingId: string }) =>
-  staffApi<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON }>('/staff/v1/login/security-key/start', { method: 'POST', body: b });
+  staffApi<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON; loginNonce?: string }>('/staff/v1/login/security-key/start', { method: 'POST', body: b });
 export const keyLoginFinish = (b: { challengeId: string; response: AuthenticationResponseJSON; pendingId?: string }) =>
   staffApi<LoginResult>('/staff/v1/login/security-key/finish', { method: 'POST', body: { ...b, deviceLabel: deviceLabel() } });
 export const pgpLoginStart = (b: { key: string; pendingId?: string }) => staffApi<PgpChallenge>('/staff/v1/login/pgp/start', { method: 'POST', body: b });
@@ -132,7 +132,7 @@ export const pgpLoginFinish = (b: { challengeId: string; code: string }) =>
 // Key taps (Task 5): every tapped action first proves a security-key tap bound to its intent.
 
 export const tapStart = (intent: KeyTapIntent) =>
-  staffApi<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON }>('/staff/v1/taps/start', { method: 'POST', body: intent });
+  staffApi<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON; nonce: string; issuedAt: string | null }>('/staff/v1/taps/start', { method: 'POST', body: intent });
 export const tapFinish = (tapId: string, response: AuthenticationResponseJSON) =>
   staffApi<{ tapId: string }>(`/staff/v1/taps/${encodeURIComponent(tapId)}/finish`, { method: 'POST', body: { response } });
 
@@ -160,7 +160,7 @@ const fetchProbe = () => staffApi<unknown>('/staff/v1/setup/finish', { method: '
 export const setupCode = (code: string) => staffApi<{ ok: true; expiresAt: string }>('/staff/v1/setup/code', { method: 'POST', body: { code } });
 export const setupAccount = (b: { displayName: string; loginName: string }) => staffApi<{ ok: true }>('/staff/v1/setup/account', { method: 'POST', body: b });
 export const setupKeyStart = () =>
-  staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
+  staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON; setupNonce?: string }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
 export const setupKeyFinish = (b: { challengeId: string; response: RegistrationResponseJSON; label?: string }) =>
   staffApi<{ keys: number }>('/staff/v1/setup/key/finish', { method: 'POST', body: b });
 export const setupPgpStart = (publicKey: string) => staffApi<PgpChallenge>('/staff/v1/setup/pgp/start', { method: 'POST', body: { publicKey } });
@@ -306,6 +306,8 @@ export interface CaseRuling {
   proposal: { rulingId: string; reason: string; evidence: string[]; proposer: string; proposedAt: string } | null;
   sentBack: { rulingId: string; note: string | null; at: string } | null;
   draft: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
+  /** Round 1's ruling once there is an appeal (the API's `round1`): a round-2 tap names its id. */
+  round1?: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
   publishedAt: string | null;
   appealEndsAt: string | null;
 }

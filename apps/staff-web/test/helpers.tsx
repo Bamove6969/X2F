@@ -8,11 +8,16 @@ import { afterEach, vi } from 'vitest';
 
 const mounted: { root: Root; host: HTMLElement }[] = [];
 
-afterEach(() => {
+/** Unmounts everything rendered so far (also run after each test). */
+export function cleanup(): void {
   for (const m of mounted.splice(0)) {
     act(() => m.root.unmount());
     m.host.remove();
   }
+}
+
+afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
 });
 

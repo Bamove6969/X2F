@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Plan 4 Task 16: staff login, invite acceptance, owner setup and the owner's Feedback page
 // (Plan 5 Task 4's NEEDS_P4_STAFF_WEB_FEEDBACK_PAGE).
-import { NAV } from '@x2f/staff';
+import { NAV, inviteRegistrationChallenge, inviteTokenHash, ownerSetupChallenge, staffLoginChallenge, stampIssuedAt, tapChallenge } from '@x2f/staff';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
@@ -10,7 +10,7 @@ import { STAFF_REFUSALS, refusalOf } from '../src/refusals.js';
 import { canFinish, INVITE_GONE, keyCheckLine } from '../src/screens/Invite.js';
 import { LOCKED_TITLE } from '../src/screens/OwnerSetup.js';
 import { TERMS_TEXT_VERSION } from '../src/ui/kit.js';
-import { button, click, fakeApi, field, refused, render, settle, tick, typeInto } from './helpers.js';
+import { button, cleanup, click, fakeApi, field, refused, render, settle, tick, typeInto } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
@@ -26,6 +26,12 @@ async function open(path: string) {
   );
   await settle();
 }
+
+const b64url = (b: Uint8Array) => Buffer.from(b).toString('base64url');
+/** Re-verify X2: a server nonce, and what a lying server might send as the challenge instead (a tap's). */
+const NONCE = 'ab'.repeat(32);
+const TAP_LOOKALIKE = b64url(tapChallenge(stampIssuedAt({ kind: 'settings', largeTradeLimitUsd: 1_000_000, firstResponseH: 4, appealWindowH: 48 }, new Date()), new Uint8Array(16).fill(1)));
+const LOGIN_CHALLENGE = b64url(staffLoginChallenge(NONCE));
 
 const screen = () => document.querySelector('[data-screen]')?.getAttribute('data-screen');
 const cantDo = () => document.querySelector('[data-part="cant-do-that"]')?.getAttribute('data-from') ?? null;
@@ -46,7 +52,7 @@ describe('Login', () => {
 
   it('security key first, then the PGP key the API asks for, bound to its pendingId, then the shell', async () => {
     const api = fakeApi({
-      'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c1', options: { challenge: 'x' } } },
+      'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c1', options: { challenge: TAP_LOOKALIKE }, loginNonce: NONCE } },
       'POST /staff/v1/login/security-key/finish': { body: { status: 'second-factor', pendingId: 'p1', needs: ['pgp'] } },
       'POST /staff/v1/login/pgp/start': { body: { challengeId: 'c2', encryptedMessage: '-----BEGIN PGP MESSAGE-----', expiresAt: new Date().toISOString() } },
       'POST /staff/v1/login/pgp/finish': { body: { status: 'ok' } },
@@ -56,7 +62,8 @@ describe('Login', () => {
     typeInto(field('Login name'), 'nightowl');
     await click(button('Tap security key'));
     expect(api.calls[0]!.body).toEqual({ loginName: 'nightowl' });
-    expect(webauthn.startAuthentication).toHaveBeenCalledWith({ optionsJSON: { challenge: 'x' } });
+    // Re-verify X2: the key signs the staff site's own login challenge, whatever the server sent.
+    expect(webauthn.startAuthentication).toHaveBeenCalledWith({ optionsJSON: { challenge: LOGIN_CHALLENGE } });
     expect(api.calls[1]!.body).toMatchObject({ challengeId: 'c1', response: { id: 'cred', response: {} } });
     expect(typeof (api.calls[1]!.body as { deviceLabel: unknown }).deviceLabel).toBe('string');
     // The second step: only PGP is asked for, so there is no choice to make.
@@ -75,7 +82,7 @@ describe('Login', () => {
     const api = fakeApi({
       'POST /staff/v1/login/pgp/start': { body: { challengeId: 'c1', encryptedMessage: 'msg', expiresAt: new Date().toISOString() } },
       'POST /staff/v1/login/pgp/finish': { body: { status: 'second-factor', pendingId: 'p9', needs: ['security-key'] } },
-      'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c2', options: { challenge: 'y' } } },
+      'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c2', options: { challenge: 'y' }, loginNonce: NONCE } },
       'POST /staff/v1/login/security-key/finish': { body: { status: 'ok' } },
       'GET /staff/v1/me': { body: ME },
     });
@@ -94,7 +101,7 @@ describe('Login', () => {
 
   it('a switched-off account and a login outside the login hours are refusals (CantDoThat)', async () => {
     const api = fakeApi({
-      'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c1', options: {} } },
+      'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c1', options: {}, loginNonce: NONCE } },
       'POST /staff/v1/login/security-key/finish': refused(403, 'account-disabled'),
     });
     await open('/login');
@@ -107,9 +114,21 @@ describe('Login', () => {
     expect(cantDo()).toBe('outside-login-hours');
   });
 
+  it('a login start with no nonce of the staff site\'s format asks no key (re-verify X2)', async () => {
+    for (const loginNonce of [undefined, 'AB'.repeat(32), 'ab']) {
+      fakeApi({ 'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c1', options: { challenge: TAP_LOOKALIKE }, ...(loginNonce !== undefined ? { loginNonce } : {}) } } });
+      await open('/login');
+      typeInto(field('Login name'), 'nightowl');
+      await click(button('Tap security key'));
+      expect(webauthn.startAuthentication, String(loginNonce)).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-part="login-fault"]')).not.toBeNull();
+      cleanup();
+    }
+  });
+
   it('a failed key is a fault in a Notice, not a refusal', async () => {
     fakeApi({
-      'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c1', options: {} } },
+      'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c1', options: {}, loginNonce: NONCE } },
       'POST /staff/v1/login/security-key/finish': refused(401, 'webauthn-failed'),
     });
     await open('/login');
@@ -179,7 +198,8 @@ describe('Invite', () => {
     expect(finish().disabled).toBe(true);
     await click(button('Tap key to register', row('Security key')));
     expect(api.calls.find((c) => c.path.endsWith('/key/start'))?.body).toEqual({ kind: 'security-key' });
-    expect(webauthn.startRegistration).toHaveBeenCalledWith({ optionsJSON: { challenge: 'r' } });
+    // Re-verify X2: the invite key's challenge is derived here, from the token in the link.
+    expect(webauthn.startRegistration).toHaveBeenCalledWith({ optionsJSON: { challenge: b64url(inviteRegistrationChallenge(inviteTokenHash('tok_1'))) } });
     expect(finish().disabled).toBe(true);
     await click(button('Add PGP key'));
     typeInto(field('Your PGP public key'), PGP_KEY);
@@ -261,7 +281,7 @@ describe('OwnerSetup', () => {
       'POST /staff/v1/setup/finish': refused(401, 'not-authenticated'),
       'POST /staff/v1/setup/code': { body: { ok: true, expiresAt: new Date().toISOString() } },
       'POST /staff/v1/setup/account': { status: 201, body: { ok: true } },
-      'POST /staff/v1/setup/key/start': { body: { challengeId: 'k', options: { challenge: 'z' } } },
+      'POST /staff/v1/setup/key/start': { body: { challengeId: 'k', options: { challenge: 'z' }, setupNonce: NONCE } },
       'POST /staff/v1/setup/key/finish': { status: 201, body: { keys: 1 } },
       'POST /staff/v1/setup/pgp/start': { body: { challengeId: 'g', encryptedMessage: 'msg', expiresAt: new Date().toISOString() } },
       'POST /staff/v1/setup/pgp/finish': { status: 201, body: { fingerprint: 'F' } },
@@ -288,6 +308,8 @@ describe('OwnerSetup', () => {
     expect(create().disabled).toBe(true);
     await click(button('Tap key to register'));
     expect(api.calls.filter((c) => c.path.endsWith('/setup/key/finish'))).toHaveLength(2);
+    // Re-verify X2: the owner's key signs the staff site's own setup challenge, not the server's 'z'.
+    expect(webauthn.startRegistration).toHaveBeenLastCalledWith({ optionsJSON: { challenge: b64url(ownerSetupChallenge(NONCE)) } });
     expect(api.calls.filter((c) => c.path.endsWith('/setup/account'))).toHaveLength(1);
     expect((field('Username') as HTMLInputElement).readOnly).toBe(true);
     expect(create().disabled).toBe(true);
