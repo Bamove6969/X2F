@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import type { JabberEventKind, JabberEvents, JabberStatus } from '@x2f/auth-client';
+import { Checkbox } from '../../ui/Checkbox.js';
 import { authApi } from '../auth/authApi.js';
 import { jabberErrorText } from './JabberSetup.js';
 import { JABBER_COPY as C } from './jabberCopy.js';
@@ -86,11 +87,11 @@ export function JabberEventsScreen() {
               const described = [w.note ? `${id}-n` : null, e.canTurnOff ? null : 'je-always-on'].filter((x) => x !== null).join(' ');
               return (
                 <li className="x2f-list__row" key={e.kind}>
-                  <input
-                    id={id} type="checkbox" data-kind={e.kind} checked={e.on || !e.canTurnOff} disabled={busy || !e.canTurnOff}
+                  <Checkbox
+                    id={id} data-kind={e.kind} checked={e.on || !e.canTurnOff} disabled={busy || !e.canTurnOff}
                     aria-describedby={described || undefined}
-                    onChange={(ev) => {
-                      if (e.canTurnOff) void toggle(e.kind, ev.target.checked);
+                    onChange={(on) => {
+                      if (e.canTurnOff) void toggle(e.kind, on);
                     }}
                   />
                   <span className="x2f-list__label">
