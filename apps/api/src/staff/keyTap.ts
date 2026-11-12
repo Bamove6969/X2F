@@ -458,11 +458,12 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'set-role':
     case 'set-grants':
     case 'remove-staff':
-    case 'reset-staff-security':
       return 'staff.manage';
     case 'settings':
     case 'fee-sweep':
       return 'settings.write';
+    // Review MF1 (mod-rules 12 Nov): the reset is the owner role's own, never a perm a grant could hand out.
+    case 'reset-staff-security':
     case 'add-owner-key':
       return 'owner';
     case 'add-pgp-key':

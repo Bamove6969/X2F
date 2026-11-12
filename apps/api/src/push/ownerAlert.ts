@@ -11,7 +11,11 @@ import type { PushKind } from './send.js';
  */
 // B-006 (owner q7): "The owner gets a notification when the threshold is reached": the fee wallet's
 // sweep alerts go to the phone too.
-export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>(['market-prices-paused', 'price-source-failing', 'fee-sweep-due', 'fee-sweep-failed']);
+// D-032 review S2 (lead call): a staff security reset, started and finished, so a stolen owner
+// session plus one tap is noticed on his other devices.
+export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>([
+  'market-prices-paused', 'price-source-failing', 'fee-sweep-due', 'fee-sweep-failed', 'staff-security-reset', 'staff-security-reset-finished',
+]);
 
 export interface OwnerAlertDeps {
   db: Queryable;
