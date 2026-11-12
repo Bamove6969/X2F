@@ -321,19 +321,24 @@ describe('the appeal round', () => {
 // dispute (the freeze route's gate, `paused_since`) or during the emergency stop
 // (`site_flags.trading_paused`). Refused before the tap, so nothing is written and the tap stays unused.
 describe('maintenance and the emergency stop', () => {
-  async function paused<T>(how: 'maintenance' | 'stop', code: string, fn: () => Promise<T>): Promise<T> {
+  // `maintenance`: the timer has marked the dispute paused. `maintenance-before-tick` (lead follow-up
+  // to Q1): the site's maintenance switch is on and the timer has not run yet, so `paused_since` is unset.
+  async function paused<T>(how: Pause, code: string, fn: () => Promise<T>): Promise<T> {
     if (how === 'maintenance') await deps.db.query('update disputes set paused_since = $2 where code = $1', [code, at(H)]);
+    else if (how === 'maintenance-before-tick') await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [at(H)]);
     else await deps.db.query('update site_flags set trading_paused = true, stopped_at = $1', [at(H)]);
     try {
+      if (how === 'maintenance-before-tick') expect((await deps.db.query('select paused_since from disputes where code = $1', [code])).rows).toEqual([{ paused_since: null }]);
       return await fn();
     } finally {
       await deps.db.query('update disputes set paused_since = null where code = $1', [code]);
-      await deps.db.query('update site_flags set trading_paused = false, stopped_at = null');
+      await deps.db.query('update site_flags set trading_paused = false, stopped_at = null, maintenance_since = null, maintenance_kind = null');
     }
   }
-  const REFUSAL = { maintenance: 'dispute-paused', stop: 'trading-paused' } as const;
+  type Pause = 'maintenance' | 'maintenance-before-tick' | 'stop';
+  const REFUSAL = { maintenance: 'dispute-paused', 'maintenance-before-tick': 'dispute-paused', stop: 'trading-paused' } as const;
 
-  for (const how of ['maintenance', 'stop'] as const) {
+  for (const how of ['maintenance', 'maintenance-before-tick', 'stop'] as const) {
     it(`${how}: a proposal is refused with 409 ${REFUSAL[how]}, nothing is written and the tap stays unused`, async () => {
       const mod = await staff('mod');
       const { code } = await disputed();

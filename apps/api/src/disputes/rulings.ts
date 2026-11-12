@@ -43,7 +43,9 @@ import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staf
  * branch's `eligibleReviewers` helper.
  *
  * Lead call Q1 (12 Nov): propose, approve and send-back are refused while maintenance pauses the
- * dispute (409 `dispute-paused`, the freeze route's gate: `paused_since`) and during the emergency
+ * dispute or the site's maintenance switch is on (409 `dispute-paused`: the freeze route's
+ * `paused_since` gate, and `site_flags.maintenance_since`, so nothing gets through before the timer
+ * marks the dispute paused) and during the emergency
  * stop (409 `trading-paused`, `site_flags.trading_paused` read `for share`, so a stop being set waits
  * for the ruling or is seen by it). Refused before the tap, so the tap stays unused.
  *
@@ -160,13 +162,20 @@ async function publishDecided(client: pg.PoolClient, next: Dispute, draft: Draft
 }
 
 /**
- * Lead call Q1: no ruling work while maintenance pauses the dispute (the freeze route's gate) or
- * during the emergency stop. A missing site_flags row counts as stopped (as the offers' guard).
+ * Lead call Q1: no ruling work while maintenance pauses the dispute (the freeze route's gate) or the
+ * site's maintenance switch is on, or during the emergency stop. A missing site_flags row counts as
+ * both (as the offers' guard).
  */
 async function assertNotPaused(client: pg.PoolClient, rec: DisputeRecord): Promise<void> {
   if (rec.pausedSince !== null) throw new ApiError(409, 'dispute-paused');
-  const { rows } = await client.query<{ paused: boolean }>('select trading_paused as paused from site_flags for share');
-  if (rows[0]?.paused !== false) throw new ApiError(409, 'trading-paused');
+  // Lead follow-up: the site's maintenance switch too, so nothing gets through before the timer
+  // has marked the dispute paused. Both flags `for share`: a switch being set waits for this or is seen.
+  const { rows } = await client.query<{ paused: boolean; maintenance: boolean }>(
+    'select trading_paused as paused, maintenance_since is not null as maintenance from site_flags for share',
+  );
+  const f = rows[0];
+  if (f === undefined || f.maintenance) throw new ApiError(409, 'dispute-paused');
+  if (f.paused !== false) throw new ApiError(409, 'trading-paused');
 }
 
 function rulingError(err: unknown): never {
