@@ -164,3 +164,47 @@ The run printed `PROBE victim-challenge-after-drain: 429 slow-down` and passed.
 | RED: c7552c9d's `deviceBound.test.ts` on f2e037be's code | 5 failed, 14 passed: both R2 tests, both R1 tests, and the disabled-order test |
 
 Not run: the rest of the suites, Playwright, `npm run check`.
+
+---
+
+# Re-verify 3: `wip/lead-device-bound` 9196a5f5 (R2b)
+
+Reviewer: independent reviewer (cloud helper), 12 Nov 2026. Read-only on code. Detached worktree `rv-dbv3` at 9196a5f5 (one commit on c7552c9d: 4 files, +24/-38), fresh `npm ci`, removed afterwards; dockerd not restarted.
+
+## R2b: fixed at the cause: PASS
+- `POST /v1/account/session/proof/challenge` has no per-session budget any more. `SESSION_CHALLENGE_BUCKET` and `budgets.sessionChallenge` are removed (a grep of `apps`, `packages` and `docs` finds nothing left).
+- The only per-session budget is `sessionProof`, and it is charged only by **refused** proofs (`refused()`): a valid proof is charged nothing.
+- So nothing a cookie-only holder can spend stands between the person and a renewal. The person can always get a new challenge, and their valid signature is never refused by a budget.
+- **The test is now the right one:** "R2: challenges have no per-session cap: after a cookie thief asks for hundreds, the victim asks for a NEW challenge and renews".
+  1. The bound cookie expires (`me` gives `session-proof-required`).
+  2. The thief, with the session cookie only, makes 300 challenges, all 200.
+  3. Then the victim gets a **fresh** challenge, renews with 200, and `me` gives 200.
+
+  On c7552c9d's code it fails exactly at the old cap: `thief challenge 120: 429 slow-down`. That is my re-verify-2 probe, now pinned.
+- Together with "S2/R2: refused proofs spend a strict per-session budget …; a valid proof is never refused", both of a thief's levers (challenges, and garbage proofs) are covered.
+
+**Info:** the comment says "the app's general request limits cover them". There is no app-level request limiter in `apps/api/src/app.ts`, only per-route buckets, so the challenge route is limited only by whatever the deployment's proxy enforces. That is the same as every other uncapped authenticated read (`GET /v1/account/me`, for example), and each challenge costs one session lookup, one indexed `select` and one HMAC, writing nothing. So it's acceptable, but the comment should say "the deployment's request limits".
+
+## Tests run (serialised runner)
+
+| Run | Result |
+|---|---|
+| At 9196a5f5, `apps/api`: `deviceBound`, `deviceBoundLogins`, `staff/deviceBound`, `team`, `frontDoor` | 120/120 passed (5 files) |
+| At 9196a5f5, `apps/web`: `deviceKey` | 21/21 passed |
+| At 9196a5f5, `tsc --noEmit -p apps/api` | clean |
+| RED: 9196a5f5's `deviceBound.test.ts` on c7552c9d's code | 1 failed (the new R2 test, at challenge 120: 429), 18 passed |
+
+## Final verdict for flag-on readiness (`X2F_DEVICE_BOUND_SESSIONS` and `VITE_X2F_DEVICE_BOUND`)
+
+**Engineering and security: READY.** Every item from my review and both re-verifies is fixed at its cause and pinned by a test that was red before its fix:
+- the original review: MF1, MF2, S1, S2, S4, S5;
+- re-verify 1: R1 and R2;
+- re-verify 2: the disabled-account order and R2b.
+
+With both flags off the branch changes nothing, the kill switch is tested, and the flags can be turned off again at any time (a restart).
+
+**Before turning the flags on, two decisions are still open. Neither is a code defect:**
+1. **S3 is not written down.** f2e037be says "S3 is left for the owner. Spec updated.", but the spec at 9196a5f5 doesn't mention it: §8 has four owner questions, and none is S3. The point: every trader session opened **before** flag-on stays unbound for the rest of its life, with today's bearer-only protection, which can be more than 12 h with "Stay logged in". The owner should decide (a) accept it, or (b) revoke unbound trader sessions at flag-on, which logs everyone out once. It should be added to §8 so it isn't missed at switch-on.
+2. **The spec's §8 owner questions are unanswered:** unbound sessions at mainnet (recommended: a weak session, with a notice), re-login after clearing site data, the 10-minute `BOUND_TTL`, and the staff app.
+
+Smaller, not blocking: the comment wording above; and from the original review, logout does not clear `__Host-x2f_bound` (tidiness only).
