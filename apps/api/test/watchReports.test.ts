@@ -11,7 +11,7 @@ import { buildInternalListener } from '../src/internal/routes.js';
 import { loadDispute, startDispute } from '../src/disputes/store.js';
 import { runDisputeTimers } from '../src/disputes/timers.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
-import { publishRuling } from './helpers/disputes.js';
+import { appealDirect, publishRuling } from './helpers/disputes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
@@ -425,5 +425,94 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     await deps.db.query(`update trades set state = 'settling', settling = 'auto-refund', settle_from = 'secured' where code = $1`, [t.code]);
     for (const kind of ['alert-unseen', 'alert-late']) expect((await report({ kind, trade: t.code })).statusCode).toBe(400);
     expect((await loadTrade(deps.db, t.code))!.state).toBe('settling');
+  });
+});
+
+// Plan 4 Task 14, R-M2 (NEEDS_PLAN_4_RULING_PAYOUT): the moderation process executed a round-1
+// escrow ruling (mod-built, the winner co-signed) and its watcher reports the sweep with the ruling's
+// own kind. The API applies it in one transaction: the trade released (dispute-buyer) or refunded
+// (dispute-seller), the dispute's `executed` (it closes once final: the appeal window still runs,
+// A1 dropped), `ruling.executed` in the log, the fee booked for a release only.
+describe('a ruling\'s payout reported by the watcher (Plan 4 Task 14, R-M2)', () => {
+  /** An attested trade disputed from settling (the system escalation opens the dispute row), with a round-1 ruling published. */
+  async function ruled(outcome: 'release-to-buyer' | 'refund-to-seller' | 'seller-sends-xmr') {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    expect((await report({ kind: 'spend-unshown', trade: t.code })).statusCode).toBe(201);
+    const d = await publishRuling(deps, t.code, { outcome });
+    return { t, d };
+  }
+  const executedLog = async (code: string) =>
+    (await deps.db.query<{ detail: string }>(`select detail from activity_log where trade_code = $1 and action = 'ruling.executed' order by id`, [code])).rows.map((r) => JSON.parse(r.detail));
+  const booked = async (code: string) => (await deps.db.query('select 1 from revenue_booked where code = $1', [code])).rows.length;
+
+  it('release to the buyer: the trade is released, the dispute executed (closed once final), ruling.executed logged, the fee booked', async () => {
+    const { t, d } = await ruled('release-to-buyer');
+    const txHash = randomBytes(32).toString('hex');
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-buyer' });
+    expect([res.statusCode, res.json()]).toEqual([201, { ok: true }]);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', settling: null, txHash, closedAt: NOW });
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ status: 'published', executedAt: NOW });
+    expect(await executedLog(t.code)).toEqual([{ rulingId: d.ruling!.id, txHash }]);
+    expect(await booked(t.code)).toBe(1);
+    // The appeal window ends: the case is final and, the payout seen, closed.
+    await runDisputeTimers({ db: deps.db, clock: () => new Date(d.appealEndsAt!.getTime() + 1) });
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ status: 'closed' });
+  });
+
+  it('refund to the seller: the trade is refunded and no fee is booked (a full reversal, owner g63)', async () => {
+    const { t, d } = await ruled('refund-to-seller');
+    const txHash = randomBytes(32).toString('hex');
+    expect((await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-seller' })).statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'refunded', settling: null, txHash, closedAt: NOW });
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ executedAt: NOW });
+    expect(await executedLog(t.code)).toEqual([{ rulingId: d.ruling!.id, txHash }]);
+    expect(await booked(t.code)).toBe(0);
+  });
+
+  it('the same report again changes nothing; another tx for the paid-out escrow is refused', async () => {
+    const { t } = await ruled('release-to-buyer');
+    const txHash = randomBytes(32).toString('hex');
+    expect((await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-buyer' })).statusCode).toBe(201);
+    const again = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-buyer' });
+    expect(again.statusCode).toBe(201);
+    expect((await executedLog(t.code))).toHaveLength(1);
+    expect(await booked(t.code)).toBe(1);
+    const other = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'dispute-buyer' });
+    expect([other.statusCode, other.json()]).toEqual([409, { error: 'wrong-state' }]);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+  });
+
+  it('a kind that does not match the published ruling\'s payouts is refused, and nothing changes', async () => {
+    const { t } = await ruled('release-to-buyer');
+    const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'dispute-seller' });
+    expect([res.statusCode, res.json()]).toEqual([409, { error: 'settle-kind-changed' }]);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', txHash: null });
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ executedAt: null });
+    expect(await executedLog(t.code)).toEqual([]);
+  });
+
+  it('no escrow payout to record: no ruling yet, an after-refund ruling, or a trade not disputed (settle-kind-unknown)', async () => {
+    const open = await trade();
+    await driveTo(deps, open, 'settling');
+    expect((await report({ kind: 'spend-unshown', trade: open.code })).statusCode).toBe(201);
+    const afterRefund = await ruled('seller-sends-xmr');
+    const settling = await trade();
+    await driveTo(deps, settling, 'settling');
+    for (const [code, kind] of [[open.code, 'dispute-buyer'], [afterRefund.t.code, 'dispute-buyer'], [settling.code, 'dispute-buyer']] as const) {
+      const res = await report({ kind: 'settled', trade: code, txHash: randomBytes(32).toString('hex'), settleKind: kind });
+      expect([res.statusCode, res.json()], code).toEqual([409, { error: 'settle-kind-unknown' }]);
+    }
+    expect(await loadTrade(deps.db, settling.code)).toMatchObject({ state: 'settling', txHash: null });
+  });
+
+  it('after an appeal, round 1\'s payout is still recorded against round 1 (Note 2026-10-30 M3); the appeal goes on', async () => {
+    const { t, d } = await ruled('release-to-buyer');
+    await appealDirect(deps, t.code, 'seller');
+    const txHash = randomBytes(32).toString('hex');
+    expect((await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-buyer' })).statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ status: 'appealed', executedAt: NOW });
+    expect(await executedLog(t.code)).toEqual([{ rulingId: d.ruling!.id, txHash }]);
   });
 });

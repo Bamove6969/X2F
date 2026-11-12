@@ -16,7 +16,10 @@ import { generateIdentity, type Identity, type Participants } from '@x2f/protoco
 import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@x2f/regtest';
 import type { MoneroWalletFull } from 'monero-ts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { applyDispute, newDispute } from '@x2f/staff';
+import { apply, fiatCents, newTrade } from '@x2f/trade';
 import { rulingExecutor } from '../../src/execute.js';
+import { ownSweepKind } from '../../src/watcher.js';
 import { memoryRelay } from '../chain.js';
 import { openGateStore } from '../../src/gate/index.js';
 import { BALANCE, ctx, recorded, ruling, tapBy, world } from '../gateWorld.js';
@@ -152,6 +155,38 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     expect(got).toBeLessThan(to[0]!.amountAtomic);
     expect(got).toBeGreaterThan(to[0]!.amountAtomic - MAX_NET_FEE);
     expect(await balanceOf(sellerW)).toBe(0n);
+
+    // The end states (R-M2): the moderator's own party shows the sweep as its own tx, the watcher's
+    // report names the ruling's kind, and on that report the trade machine releases the trade and the
+    // dispute machine records the execution (closed once the appeal window ends, A1 dropped).
+    const after = await parties.mod.funds();
+    expect(after.balance).toBe(0n);
+    expect(after.ownTxs).toContain(tx);
+    const kind = ownSweepKind(parties.mod.committedBuilder(), exec.kindFor(code));
+    expect(kind).toBe('dispute-buyer');
+    const T0 = new Date('2026-11-12T10:00:00Z');
+    const at = (min: number) => new Date(T0.getTime() + min * 60_000);
+    const rate = { currency: 'USD', centsPerXmr: 80_000n };
+    let t = newTrade({ code, offerId: 'o', poster: 'seller', sellerId: 's', buyerId: 'b', methodId: 'ZELLE', amountAtomic: terms.amountAtomic, lockedRate: rate, confirmWindowMin: 120, minFiatCents: 1n, maxFiatCents: 10_000_000n }, T0);
+    t = apply(t, { type: 'setup-done', escrowAddress: addresses[0]! }, 'system', at(1));
+    t = apply(t, { type: 'chain', receivedAtomic: BALANCE, unlockedAtomic: BALANCE, confirmations: 10 }, 'system', at(10));
+    t = apply(t, { type: 'mark-paid', fiatCents: fiatCents(terms.amountAtomic, rate) }, 'buyer', at(20));
+    t = apply(t, { type: 'open-dispute' }, 'buyer', at(200));
+    expect(t.state).toBe('disputed');
+    t = apply(t, { type: 'settled', kind: kind!, txHash: tx! }, 'system', at(300));
+    expect(t).toMatchObject({ state: 'released', txHash: tx, settling: null });
+    const S = { appealWindowH: 48, firstResponseH: 4 };
+    const modActor = { kind: 'staff' as const, id: mod.id, role: 'mod' as const };
+    const ownerActor = { kind: 'staff' as const, id: w.owner.id, role: 'owner' as const };
+    let d = newDispute({ code, openedBy: 'buyer', afterRefund: false, usdCents: 200_000n, limitUsdCents: 100_000n, firstResponseH: 4, now: at(200) });
+    d = applyDispute(d, { type: 'assign', staffId: mod.id, role: 'mod' }, modActor, at(210), S);
+    d = applyDispute(d, { type: 'propose', ruling: { id: c.ruling.id, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, proposer: mod.id } }, modActor, at(220), S);
+    d = applyDispute(d, { type: 'approve' }, ownerActor, at(230), S);
+    expect(d.status).toBe('published');
+    d = applyDispute(d, { type: 'executed' }, { kind: 'system' }, at(300), S);
+    expect(d).toMatchObject({ status: 'published', executedAt: at(300) });
+    d = applyDispute(d, { type: 'window-closed' }, { kind: 'system' }, new Date(d.appealEndsAt!.getTime() + 1), S);
+    expect(d.status).toBe('closed');
 
     // Once: this executor and a restarted one (the gate reopened from disk) settle nothing more.
     expect(await pass()).toBe('settled');

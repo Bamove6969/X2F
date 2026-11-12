@@ -119,6 +119,17 @@ describe('the ruling executor (Plan 4 Task 14)', () => {
     expect(again.settles).toEqual([]);
   });
 
+  it('names the kind of a recorded payout for the watcher (R-M2), from the gate store only', async () => {
+    const s = await setup({ outcome: 'refund-to-seller' });
+    const p = recordingParty();
+    const exec = executor(s);
+    expect(exec.kindFor(s.c.ruling.code)).toBeNull();
+    expect(await exec.step(step(s, p.handle))).toBe('handed');
+    expect(exec.kindFor(s.c.ruling.code)).toBe('dispute-seller');
+    expect(executor(s, await openGateStore(s.dir, s.key)).kindFor(s.c.ruling.code)).toBe('dispute-seller');
+    expect(exec.kindFor('ABCD2345EFGH6789')).toBeNull();
+  });
+
   it('a restart before the payout finished hands the party the same outcome again, and nothing else', async () => {
     const s = await setup();
     const first = recordingParty();
@@ -206,5 +217,19 @@ describe('the watcher hands each disputed trade to the executor', () => {
         feeWallet: FEE_WALLET,
       }),
     );
+  });
+  it("reports the ruling's own sweep with the ruling's kind (R-M2): the payout the executor recorded names it, never the API", async () => {
+    const { net, fetch } = fakeNetwork(c);
+    const m = await moderation(c, fetch, { rulings: { step: async () => 'none', kindFor: () => 'dispute-buyer' } });
+    const l = await inFunding(c, m, net);
+    await secured(c, l);
+    net.states.set(l.code, 'disputed');
+    // The moderator's party built the ruling's release and saw it done: its own tx empties the escrow.
+    l.party.committed = true;
+    l.party.settles.push({ kind: 'release', to: [{ address: TERMS.buyerPayout, amountAtomic: FUNDS }], builder: 'mod', cosigner: 'buyer' });
+    const tx = '7'.repeat(64);
+    l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic: FUNDS }], ownTxs: [tx] };
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: tx, settleKind: 'dispute-buyer' }]);
   });
 });
