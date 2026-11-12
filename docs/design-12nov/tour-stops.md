@@ -8,8 +8,8 @@ Pages, selectors and roles come from origin/main:
 
 Every card title and body below is **COPY-UNSIGNED**, and so are the shell labels.
 
-Who does what: the animated isometric 3D scenes and all motion values belong to T1's motion board. This file covers the still shell and every stop.
-Owner, 12 Nov: the tours use X2F's own look. Only the 3D quality and polish come from the Trust Wallet reference. The shell, the cards and the arrows use our tokens, our type and our shapes.
+Who does what: all motion values belong to tour-motion.md. This file covers the still shell and every stop. The owner rejected the isometric 3D style on 12 Nov, so there is no 3D scene layer behind the cards any more.
+Owner, 12 Nov: the tours use X2F's own look, with nothing borrowed from Trust Wallet. The shell, the cards and the arrows use our tokens, our type and our shapes.
 
 ---
 
@@ -76,104 +76,51 @@ The board can be clicked through: Next and Back step through the 7 stops of page
   - focus moves to the card title at each stop and stays inside the card;
   - each stop is announced through the dialog's label and description.
 - Tour mode changes nothing. Buttons behind the scrim are inert. Pages that need data the person doesn't have yet (Offers, Offer details, the Trade room, My trades) show the example from `apps/web/src/fixtures` with a neutral **Example** chip under the header.
-- Motion: owned by T1. The hooks are `tour-overlay` (scrim), `tour-ring`, `tour-arrow` and `tour-card`, plus the 3D scene layer T1 places behind the card. With reduced motion, the parts swap instantly.
+- Motion: owned by T1. The hooks are `tour-overlay` (scrim), `tour-ring`, `tour-arrow` and `tour-card` (the old 3D scene layer is gone). With reduced motion, the parts swap instantly.
 
 ---
 
-## 2. Trader tour (web app): READY
+## 2. Trader tour (web app): "your first trade" (READY, rebuilt 12 Nov)
 
-- Pages for a **trader** account: 1–8.
-- A **vendor** account also gets the pages marked V, in the order shown. Its count reads "of 11".
-- "Phone / Wide" in the Arrow column gives the arrow side for each layout.
-- On every page, the last stop reads Next screen. The last stop of the tour reads Finish.
+**Owner, 12 Nov:** the trader tour is only "how to do your first trade". It follows one pretend **sell** trade from start to finish, and the person watches the app being used. The page-by-page tour of every screen that used to be here (Find a trade, Offers, Offer details, Trade room, My trades, Wallets, Profile, V1–V3, Settings) is dropped.
 
-### Page 1 · Find a trade · `/buy` (MethodList, BUY_COPY; board BuyMain)
-| # | Element (selector / component) | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | Logo and screen name: `.x2f-browse__brand` (`Logo`; wide: `.x2f-rail__head`) | Where you are | The X2F logo sits top left on every screen, with the screen's name beside it. Tap the logo to come back here. | top / left | Next |
-| 2 | Site news: `[data-part="news-bell"]` (NewsBell) | Site news | News from the X2F team lands here. A dot means there's something you haven't read yet. | top / left | Next |
-| 3 | Buy or sell: `[role=tablist][aria-label="Buy or sell"].x2f-segment` | Buy or sell | Buy gets you XMR. Sell turns your XMR into cash. Everything below changes to match. | top / left | Next |
-| 4 | Active trades, the My trades row (board BuyMain; not on main's MethodList yet) | Your trades | Every trade in progress lives here. The yellow tag tells you when one is waiting on you. | top / left | Next |
-| 5 | Market price card, with the currency control (`RadioChips` `#browse-currency`; board BuyMain "Market price") | Market price | Today's XMR price in your currency. Each offer sets its price a little above or below it. | top / left | Next |
-| 6 | Search and Sort: `.x2f-browse__filters` plus the Sort `RadioChips` | Find how you pay | Search every payment method, or sort them by most sellers, best rate or A to Z. | bottom / left | Next |
-| 7 | First method row: `.x2f-method` (live section) | Pick a payment method | Each one shows how many sellers take it and their best price. Tap one to see the offers. | bottom / left | **Next screen** |
+How it differs from the shell in §1:
+- **Count:** "n of 17" across the whole tour, not per page. The page bars count the 6 screens: Find a trade, Offers, Quote, Fund, Check and release, Released.
+- **No title** on the cards: the body is the whole card.
+- The last stop reads **Done**. There is no separate "You're all set" card, because stop 17 is the end card.
+- "Next screen" is not used. A stop that is on a new screen pushes that screen in first.
+- **Motion and actions:** see tour-motion.md §4–5.
+- **Prototype:** `tour-art/x2f-intro-prototype.html` (`?view=tour&stop=N`).
 
-### Page 2 · Offers · `/buy/:methodId` (OffersRoute → OfferList, OfferCard; board BuyOffers; Example)
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | Header and market line: `.x2f-browse__header`, `[data-part="market-updated"]` | One way to pay | Every seller here takes this method. The market price stays on show so you can compare. | top / left | Next |
-| 2 | Seller: `.x2f-offer__who` (name, `[data-part="online"]`, `.x2f-offer__badges`) | Who you'd trade with | Their name, badges and whether they're online now. Tap the name to see their profile and reviews. | top / left | Next |
-| 3 | Price: `.x2f-offer__price` with `[data-part="markup"]` | Their price | What they ask per XMR, and how far that is from the market price. | top / left | Next |
-| 4 | Limits and time: `.x2f-offer__limits`, `.x2f-offer__time` | How much and how fast | The smallest and largest trade they take, and how long they usually take to release. | bottom / left | Next |
-| 5 | Take button: `.x2f-offer__action` | Have a look | Tap to see your exact amount before anything is agreed. Starting a trade is always free. | bottom / left | **Next screen** |
+All screens after Find a trade show the clearly marked **Example**, as the head designer ruled. Card copy is **COPY-UNSIGNED** and must be used exactly as written.
 
-### Page 3 · Offer details · `/buy/:methodId/:offerId` (Quote, BuyQuote; board BuyQuote; Example)
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | Amount: `section[aria-label="Amount"].x2f-quote__amount` | Your amount | Type how much you want to pay. You'll see exactly how much XMR you get. | top / left | Next |
-| 2 | Wallet: `.x2f-quote__wallets` (WalletPicker) | Where your XMR goes | Pick one of your saved wallets. Your XMR goes straight there when the trade ends. | top / left | Next |
-| 3 | What you get: `section[aria-label="What you get"].x2f-quote__card` | The full sum | Rate, network fee and what you receive, all in one place. No surprises later. | bottom / left | Next |
-| 4 | Terms: `[data-part="what-applies"]` (WhatApplies) | This seller's terms | The rules for this trade, like how long you have to pay. Have a read before you start. | bottom / left | Next |
-| 5 | Request button: `.x2f-quote__footer` ("Request to buy XMR") | Send your request | The seller says yes, then their XMR is locked in escrow. You only pay after that. | bottom / left | **Next screen** |
+| # | Screen (board) | Target element | Card text | Action |
+|---|---|---|---|---|
+| 1 | Find a trade `/buy` (BuyMain) | Buy/Sell switch `[role=tablist][aria-label="Buy or sell"].x2f-segment`. The highlight alternates between the Buy and Sell tabs. | First, decide why you're here: to buy Monero or to sell it. | The highlight fades back and forth between Buy and Sell, with a breathing ring (this stop only). |
+| 2 | Find a trade | The Sell tab | Let's pretend we're selling. Tap Sell. | Sell is tapped and fills. The heading becomes "How do you want to be paid?". |
+| 3 | Find a trade | Currency picker in the Market price card (`#browse-currency`; BuyMain "Market price" currency button). The highlight grows to cover the open menu. | Next, pick the currency you want to be paid in. | The menu opens, USD is tapped and fills, and the menu closes. The price and the methods switch to USD. |
+| 4 | Find a trade | Payment methods list (`.x2f-method` list, "Payment apps") | Then pick how you want to be paid. | Cash App is tapped and fills, and its chevron becomes a tick. |
+| 5 | Find a trade | None: a centred card with an eye-off tile | X2F hides every offer you don't qualify for yet. If a buyer only trades with people who have 10 or more completed trades, a brand-new account won't see that offer. Everything you see, you can take right now. | None. |
+| 6 | Offers `/sell/:methodId` (SellOffers, with Cash App and USD) | Header: count line and "Sell XMR via Cash App" (`.x2f-browse__header`) | Here are the offers open to you. | The screen pushes in, showing buyers paying with Cash App in USD. |
+| 7 | Offers | The badges on the first card (`.x2f-offer__badges`: Trusted, Fast, Security key, +2) | Each card tells you about the trader: the badges they've earned... | None. |
+| 8 | Offers | The % figure on the first card (`[data-part="markup"]`: "2%", "above market") | ...how far above the market price they'll pay: this one pays 2% above market... | None. |
+| 9 | Offers | The limits on the first card (`.x2f-offer__limits`: "≈ 0.148588 – 2.971768 XMR", "$50 – $1,000 USD") | ...and the trade sizes they accept: this one takes $50 to $1,000. In other currencies we convert at the real exchange rate, with nothing added. | None. |
+| 10 | Offers | The first offer card (`.x2f-offer`, satoshi_ghost) | Let's take this one. Tap the offer. | The card is tapped and presses. |
+| 11 | Quote `/sell/:methodId/:offerId` (SellQuote) | The "You sell" field (`section[aria-label="Amount"]`), then the "You receive" card (`.x2f-quote__card`) | Enter how much you want to sell. You'll see exactly what you get. | The screen pushes in. 0.594354 XMR is typed, and "You receive" counts to $200.00. The highlight then moves to "You receive". |
+| 12 | Quote | Request button and its note (`.x2f-quote__footer`, "Request to sell XMR") | Send your request. The buyer accepts, and the trade starts. | The button is tapped and reads "Request sent", then "Trade started", with "satoshi_ghost accepted. The trade has started." |
+| 13 | Fund `/trade/:code` (TradeFund, taker side) | The QR code with the escrow address and amount (TradeFund "Send from your wallet") | Now lock your Monero in escrow. Scan this code with your wallet, or copy the address and amount. | The screen pushes in and scrolls to the QR. A scan line sweeps it once. |
+| 14 | Fund | The escrow status card (TradeFund status card; `[aria-label="Escrow confirmations"].x2f-escrow` in the build) | Once it's secured, the buyer is told to pay you. Nobody can touch the coins while the trade is open. | The screen scrolls up. The card turns from "Waiting for you to fund" to "Locked in escrow", and the stepper moves to "Buyer pays". |
+| 15 | Check and release `/trade/:code` (SellerConfirm) | The status card, then the "I checked…" tick box | The buyer sends $200 by Cash App and taps I've paid. Check your Cash App: only your own account proves the money arrived. | The screen pushes in. "Waiting for satoshi_ghost to pay" turns to "Payment sent". The highlight moves to the tick box, which is ticked, and the release button unlocks. |
+| 16 | Check and release | The release button and its note ("Hold to release 0.594354 XMR") | Got the money? Press and hold to release. The Monero goes to the buyer. | Press and hold for 1.5 s ("Keep holding…"). It then reads "Released 0.594354 XMR to satoshi_ghost". |
+| 17 | Released, rate the trade (Review, seller side) | None: a centred card with a tick tile | That's your first trade. Rate the buyer, and you're done. Buying works the same way, the other way round. | None. The button reads **Done**. |
 
-### Page 4 · Trade room · `/trade/:code` (TradeRoom → BuyerPay; boards BuyerPay, TradeFund; Example)
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | Header: `.x2f-trade-header` (TradeHeader) | Your trade | The trade code and payment method stay at the top. Back takes you to My trades. | top / left | Next |
-| 2 | Progress: `[aria-label="Trade progress"].x2f-timeline` (TradeTimeline) | Where things stand | Each step lights up as the trade moves on, so you always know what's next. | top / left | Next |
-| 3 | Escrow: `[aria-label="Escrow confirmations"].x2f-escrow` | Safe in escrow | The seller's XMR is locked here. Nobody can move it alone, not even X2F. | top / left | Next |
-| 4 | Pay card and timer: `.x2f-pay-card` (`aria-label="Payment details"`), `.x2f-pay-timer` | Pay the seller | Send exactly this amount, the way shown, before the timer runs out. | bottom / left | Next |
-| 5 | Chat: `.x2f-room__chat` (TradeChatButton) | Chat | Talk to the other trader here. Chats are end-to-end encrypted. | bottom / left | Next |
-| 6 | Actions: `.x2f-action-bar` (I've paid, Add proof) | Tell them you've paid | Once the money's sent, add proof and tap I've paid. Stuck? You can open a dispute. | bottom / left | **Next screen** |
+**Example numbers, consistent across the screens:**
+- market price $329.90;
+- satoshi_ghost pays $336.50 (2% above market) and takes $50 to $1,000;
+- the trade is 0.594354 XMR for $200.00, by Cash App, trade code K7M2-9QXA-4FTR-8WPN.
 
-### Page 5 · My trades (board MyTrades; no route on main yet, the BuyMain row links to it; Example)
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | "Active trades" list | Trades in progress | Your open trades, newest first. Tap one to jump back into it. | top / left | Next |
-| 2 | Status chip on a row ("Fund escrow", "Check payment") | What's needed | Each trade says what happens next, and who has to do it. | top / left | Next |
-| 3 | "Recent" list | Done and dusted | Finished and cancelled trades stay here, so you can look back any time. | bottom / left | **Next screen** |
+**Vendors:** a vendor gets the same first-trade tour. The vendor pages (Post an offer, My offers, Team) are not part of it. **OPEN:** whether vendors get a separate "post your first offer" tour.
 
-### Page 6 · Wallets · `/wallets` (Wallets.tsx; board Wallet)
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | Bottom tab or rail: `.x2f-bottom-nav__tab[href="/wallets"]` (wide: `.x2f-rail__link`) | Wallets | Your Monero wallets live under this tab. | bottom / left | Next |
-| 2 | List: `[aria-label="Linked wallets"]` `.x2f-wallet-row` | Your wallets | Where your XMR is paid out. Each shows its name and the end of its address. | top / left | Next |
-| 3 | Add: `.x2f-wallets__add` | Add a wallet | Paste an address from any Monero wallet app to add it here. | bottom / left | **Next screen** |
-
-### Page 7 · Profile · `/profile` (board Profile; the tab exists, the page is not routed on main yet)
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | Name and badges ("Badges", "Choose badges") | How others see you | Your name and the badges you've earned. You choose which badges show. | top / left | Next |
-| 2 | "Recent reviews" | Reviews | What people said after trading with you. Good trades build your name. | bottom / left | **Next screen** |
-
-### V1 · Post an offer · `/post` (PostOffer; board PostOffer; vendor only, shown when `mayPostOffers`)
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | "I want to" (Buy XMR / Sell XMR) and `[aria-label="Payment methods"]` | What you trade | Pick buy or sell, and the ways you'll take payment. | top / left | Next |
-| 2 | "Your price" (`.post-margin-box`, Market ± Vendor markup) | Your price | Follow the market with your own markup, so your price moves with it. | top / left | Next |
-| 3 | "Trade size and terms" (`.post-amount`, `.post-mintrades`) | Who and how much | Set the smallest and largest trade, and who can trade with you. | bottom / left | Next |
-| 4 | Preview: `[aria-label="Preview"].post-preview` | How others see it | This is your offer as traders will see it. You only pay a fee once it's posted. | bottom / left | **Next screen** |
-
-### V2 · My offers · `/profile/offers` (MyOffers; board MyOffers; vendor only)
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | `[data-part="offer"]` | Your offers | Every offer you've posted, with whether it's on or off right now. | top / left | Next |
-| 2 | `[data-part="switch"]` | On or off | Turn an offer off when you're away, and back on when you're ready. | top / left | Next |
-| 3 | `[data-part="post"]` | Post another | You can have up to 3 buy and 3 sell offers at once. | bottom / left | **Next screen** |
-
-### Page 8 · Settings · `/settings/security` (Security.tsx; board Settings) · the last page for a trader
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | Login methods and `[data-part="devices-link"]` | Keep it locked | Your login methods, devices and recovery code. A security key or PGP is the strongest. | top / left | Next |
-| 2 | Alerts and sounds row (Alerts) | Never miss a trade | Turn on Nudges so a new trade wakes you. Jabber alerts work too. | top / left | Next |
-| 3 | Help group and `[data-part="tour-replay"]` | Help is here | FAQ, Support and this tour all live here. Replay it whenever you like. | bottom / left | **Finish** (trader) / Next screen (vendor) |
-
-### V3 · Team · `/settings/team` (Team.tsx; board Team; vendor only, the last page for a vendor)
-| # | Element | Title | Card text | Arrow | Button |
-|---|---|---|---|---|---|
-| 1 | `[data-part="team-members"]` | Your team | People who help run your account. Each one has their own login. | top / left | Next |
-| 2 | `[data-part="team-invite"]` | Add a member | Send an invite link, then pick exactly what they're allowed to do. | top / left | Next |
-| 3 | `[data-part="team-log"]` | Every action recorded | See who did what, and when. Nothing a member does is hidden from you. | bottom / left | **Finish** |
 
 ---
 

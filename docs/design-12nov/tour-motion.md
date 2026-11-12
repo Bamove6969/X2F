@@ -1,224 +1,181 @@
-# Landing intro and tour: isometric motion language (12 Nov)
+# First screen and first-trade tour: motion (12 Nov, v2)
 
-Worker T1 "tour-art". Covers the owner's 12 Nov notes: he wants the tour "like it was made in Flash or HTML5", and he wants the Trust Wallet *quality* (real 3D depth, smooth building and morphing, polish) but **not** their look. Everything here uses X2F's own motifs, THEMES colours and type. None of their layouts, gradients or slide structure is reused.
+**The owner rejected the isometric-blocks style on 12 Nov** ("it sucks", "why are we ripping their animation off"). All the iso work is gone: the block scenes, the camera orbit, the floor grid, the shield, and the mini iso tiles in the tour cards. Its old contact sheets are in `tour-art/rejected-iso/` for the record only. What replaces it is X2F's own: the logo's letters, and the real app being used.
 
-- **Prototype (READY):** `S/w13/tour-art/x2f-intro-prototype.html`. It is one file, about 46 KB raw and 13 KB gzipped, with no libraries and no network requests. It runs in a 443 x 794 phone frame and has light and dark themes plus reduced motion.
-- **Frames:** `S/w13/tour-art/frames/`. Start with the contact sheets: `contact-intro-night.png`, `contact-tour-night.png` and `contact-day-and-reduced-motion.png`. The single frames are named `<theme>[-rm]-<scene or stop>-<ms or rest>.png`.
-- **Re-render:** `node S/w13/tour-art/cap.js '<json>'` (Playwright). URL params: `?theme=night|day`, `?rm=1`, `?view=tour&stop=N`, `?still=1`, `?bare=1`.
+- **Prototype (READY):** `tour-art/x2f-intro-prototype.html` (the same file is at `S/w13/tour-art/`). It is one file with no libraries. Its only network request is the Google Fonts stylesheet the boards already use. It fills the viewport, so the same file is the phone, the folded iPhone Duo and the unfolded iPhone Duo.
+- **Contact sheets** (in `tour-art/` and `S/w13/tour-art/frames/`):
+  - `contact-intro.png`: the letter sequence, then the hold frame at each size, plus reduced motion;
+  - `contact-intro-landscape.png`;
+  - `contact-tour-night-443x794.png`, `contact-tour-day-443x794.png` and `contact-tour-night-390x844.png`;
+  - `contact-tour-night-466x678-folded.png`, `contact-tour-day-626x890-unfolded.png` and `contact-tour-night-890x626-landscape.png`;
+  - `contact-tour-in-motion.png`: actions mid-flight.
+- **URL params:** `?theme=night|day`, `?rm=1`, `?view=tour&stop=1..17`, `?still=1` (hold the full logo), `?bare=1` (hide the prototype controls).
+- **JS hooks:** `X2F.intro()`, `X2F.tour(n)`, `X2F.go(n)`, `X2F.end()`.
 
-Status for each item: **READY** means drawn, built and checked in frames. **OPEN** means it needs a decision.
+Status for each item: **READY** means built and checked in rendered frames. **OPEN** means it needs a decision.
 
 ---
 
-## 1. The language (READY)
+## 1. Motion tokens (READY)
 
-**Shapes.** Every object is an axis-aligned box: a top face and two visible sides. Boxes never rotate. They only change position, size and tone, which is what makes "build, morph, rearrange" read as one material. There are two exceptions:
-- the **shield**, a plane extruded by stacking 15 layers;
-- **decals**, which are stroke icons printed on a top face or front face.
-
-**Camera.** True-ish isometric: `rotateX(56–60deg) rotateZ(40–50deg)` under `perspective: 1500px`. The camera orbits a few degrees per scene, so the depth reads as real and not as flat 2.5D.
-
-**Light** comes from the top-left and is fixed. Each face is shaded from THEMES tokens only:
-
-| Face | Night | Day |
+| Token | Value | Use |
 |---|---|---|
-| Top | `color-mix(tone, --ink 24%)`, a 1px lighter rim, and a 135deg sheen | `color-mix(tone, --surface 30%)` |
-| Left (front) side | `tone`, falling to `color-mix(tone, --ground 22%)` at the base | the same, with `--ink` as the dark mixer |
-| Right side | `color-mix(tone, --ground 46%)`, darker toward the base | `color-mix(tone, --ink 30%)` |
-| Contact shadow | `--scrim`, blurred 3px when resting. Lifted objects get a wider, fainter shadow that is offset away from the light. | the same |
+| `--ease-out` | `cubic-bezier(0.22, 1, 0.36, 1)` | settles, card moves, text in |
+| `--ease-in` | `cubic-bezier(0.4, 0, 1, 1)` | anything leaving |
+| `--ease-io` | `cubic-bezier(0.65, 0, 0.35, 1)` | scrolls, the scan line, the ring's breathing |
+| Letter spring | a damped spring (ζ 0.62, ω 13.5 rad/s, 600 ms), sampled into CSS `linear()` | each letter's grow: about 6% overshoot, then it settles |
+| Dot spring | ζ 0.48, ω 15 rad/s, 700 ms | the orange dot's landing: a touch more bounce |
 
-The page CSS sets `--iso-hi` and `--iso-lo` for each theme: night uses `--ink` / `--ground`, day uses `--surface` / `--ink`. That is why both themes come from the same scene data.
+The springs are generated in JS (`spring(zeta, omega, dur)`) as `linear()` easing strings and handed to the Web Animations API. Where `linear()` is missing (Safari before 17.2), use `--ease-out` instead.
 
-**Tones mean things.** They are never decoration:
+## 2. First screen: the letter intro (READY)
 
-| Tone | Means |
-|---|---|
-| `--team` | you, a trader |
-| `--mod` | the other trader |
-| `--monero` | XMR coin tiles. This is the illustration's only orange, and it never sits next to the orange button. |
-| `--escrow` | the vault, the keys that agree, and the shield |
-| `--line` | X2F's resting key |
-| `--surface-raised` | the stage slab |
-| `--ink-muted` | cash or a bank note |
+**Layout.** This is the FirstScreen board's order with the intro slot filled in. The column is at most 480 wide and centred, with 16 px sides:
 
-**Layers, back to front:**
-1. A dotted floor grid (parallax: it drifts on a slower, longer curve than the objects).
-2. The stage slab.
-3. The objects.
-4. Fixed DOM text and buttons, which never move with the art.
+1. **Hero:** radius 20, a 1 px `--surface-raised` border, and the board's radial wash (`--escrow` 10% into `--surface`, falling to `--ground`). It flexes: at most 340 tall, at least 132.
+2. **"Welcome to X2F":** Familjen 30/36 700.
+3. **One line:** 17/24 `--ink-muted`. "Swap Monero for cash, bank transfers or gift cards, person to person." This is the line from the old intro scene 1, so it is still **COPY-UNSIGNED**.
+4. **Take the tour:** primary, 56 high.
+5. **Skip and get started:** secondary, 52 high.
+6. **FAQ / Getting started / Support / Settings:** these only show when the screen is at least 760 tall.
+7. **Tab bar:** 60 high, with no tab current.
 
-**Design-system exception (DECIDED, head designer, 12 Nov): face gradients and contact shadows are ALLOWED inside the iso art only.** That means `.illus` and the tour card's mini tile. Everywhere else, v2 §3 and its Don't list still apply: no drop shadows, and no gradients outside the hero wash.
+**The letters.** These are the real logo paths (`viewBox 0 -2.15 292 122.15`), split into four layers: X, 2, F and the orange dot.
+- All four layers share one box with whole-pixel width and height, so the end state is exactly the static logo. There is no sub-pixel drift.
+- The box width is min(280, 66% of the hero's width, 46% of its height × 292/122). Short screens shrink the letter stage first.
+- Only `transform` and `opacity` animate (`will-change` is on), so there is no layout and no blur. Each letter scales from its own baseline centre.
 
-## 2. Landing intro scenes (READY)
+**One loop** (t in ms):
 
-Layout, 443 x 794:
-- header 56: logo top-left and the screen name "Welcome";
-- illustration y 56 to 434;
-- headline at y 440: Familjen 30/36 700;
-- line: 17/24 `--ink-muted`, at most 2 lines;
-- dots at y 560;
-- primary "Take the tour" 56h at y 600;
-- secondary "Skip and get started" 48h;
-- tab bar 64 at the bottom, shown "as if they had dived in".
-
-All words below are **COPY-UNSIGNED**.
-
-| # | Headline | Line | Shapes (pool slot: what it does) |
+| t | What | Duration | Easing |
 |---|---|---|---|
-| 1 | Welcome to X2F | Swap Monero for cash, bank transfers or gift cards, person to person. | The slab builds. A blue trader block (person decal) stands at the left and a violet one at the right. Two coin tiles are stacked in the middle and a third hangs in mid-air between them, being handed over. A grey cash note lies in front. |
-| 2 | Escrow holds the coins | The seller's coins are locked before you pay, so nobody can run off with them. | The coins sink into the centre while 8 teal cubes build a 2x2x2 vault around them, one by one, with a lock decal on the front. The traders shrink and step out to the left and right corners. The camera turns to the right. |
-| 3 | Two of three keys | You, the other trader and X2F each hold a key. It takes any two to move the coins. | The traders morph into key pillars: a blue key pillar and a violet key pillar, both with filled key decals and 70 tall. The third pillar is short and grey with an outline key: X2F's key, resting. The vault shrinks and slides back. |
-| 4 | Private from the start | No email and no IP addresses logged. Alerts reach you on Jabber. | The key pillars sink away. The vault re-forms as a 3x2 wall at the back. A teal shield (eye-off glyph) rises and scales up in front of it, with a soft shadow on the slab. The traders come back small, behind the shield. |
+| 0 | **X** grows from `scale(0.36) translateY(10px)` to rest; opacity 0 to 1 over the first 160 | 600 | letter spring |
+| 200 | **2**, the same | 600 | letter spring |
+| 400 | **F**, the same | 600 | letter spring |
+| 660 | **The dot** drops 34 px and scales 0.55 to 1. It lands last. | 700 | dot spring |
+| 850 | A thin `--monero` ring leaves the dot: scale 1 to 2.3, opacity 0.55 to 0 | 620 | `--ease-out` |
+| 1360 to 2560 | **Hold**: the full logo, still | 1200 | |
+| 2560 | **Settle back**: each layer goes to `scale(0.86)` and opacity 0, 50 ms apart (X first) | 420 | `cubic-bezier(0.5, 0, 0.75, 0)` |
+| 3130 to 3610 | Rest on the empty hero, then the loop starts again | 480 | |
 
-Scene 3 echoes the 2-of-3 meaning without using the key mark itself, which v2 §1 says is never animated.
+- The text and buttons rise in once and do not loop: the welcome block at 1250 ms, the buttons at 1400 and the links at 1520. Each takes 520 ms (opacity, plus translateY 8 to 0).
+- The loop stops once the person leaves the screen (Take the tour, Skip and get started).
+- **Production:** pause the loop on `visibilitychange`. Stop it after about 30 s on the screen, resting on the full logo (WCAG 2.2.2: moving content that lasts more than 5 s needs a pause; this auto-stop is the simplest one). **OPEN:** the owner asked for "repeats". Design suggests stopping after 30 s; the owner should confirm.
 
-## 3. Intro motion: every duration, easing and order (READY)
+**Reduced motion:** the full logo, faded in over 600 ms, with no loop. Text and buttons fade in with no rise.
 
-Curves:
-- `--ease-out` = `cubic-bezier(0.22, 1, 0.36, 1)` (out-quint: morph, settle)
-- `--ease-in` = `cubic-bezier(0.4, 0, 1, 1)` (leave)
-- `--ease-io` = `cubic-bezier(0.65, 0, 0.35, 1)` (camera, floor)
+## 3. First-trade tour: the shell (READY)
 
-| What | Duration | Easing | Order and delay |
-|---|---|---|---|
-| First build (on arrival) | 1000ms | ease-out | Boxes grow from height 0 and drop 40px, staggered **70ms** in pool order: slab, then trader A, trader B, coins, then cash. Done at about 1.4s. |
-| Box morph (position, size) | 760ms | ease-out | Staggered **45ms** across the boxes that stay or arrive, in pool order (slab first, then traders, coins, vault cubes, keys) |
-| Box leaving | 760ms height to 0 | ease-in | No stagger: everything leaving goes at t=0 |
-| Box opacity | 320ms | ease-out | Same delay as its morph |
-| Box tone change | 600ms | ease-out | Same delay as its morph |
-| Decal swap | out 160ms (opacity, scale to 0.6); in 240ms opacity + 360ms scale to 1 | ease-out | The new decal goes in at t=160 |
-| Camera orbit | 1100ms | ease-io | t=0 |
-| Floor parallax drift | 1400ms | ease-io | t=0. It is slower than the objects, which gives the depth. |
-| Shield rise | 900ms (scale 0 to 1, rise 40px) | ease-out | t=0 |
-| Text out | 160ms opacity + translateY(-6px) | ease-in | t=0 |
-| Text in | 280ms opacity + translateY(+10px to 0) | ease-out | Swap at t=160, in from t=280 |
-| Dots | 240ms (width 8 to 24, colour `--line` to `--ink`) | ease-out | t=0 |
+These parts are the TourShell board's, kept as they were, except where noted.
 
-**Paging:**
-- The intro auto-advances every **4200ms**, once through, and **rests on scene 4**. Nothing loops.
-- Any tap on a dot, a swipe (40px or more), or a button stops auto-advance for good.
-- Auto-advance is off under reduced motion (WCAG 2.2.2).
+- **Scrim:** `--scrim` over everything, with an SVG mask hole: radius 14, padded 6 px round the target.
+- **Ring:** 2 px `--ink` on the hole. On **stop 1 only**, a second ring breathes outward: scale 1 to 1.06 / 1.22, opacity 0.55 to 0, every 1.8 s, with `--ease-io`.
+- **Arrow:** a quadratic curve, 2.5 px `--ink`, round caps and joins, with an open chevron head (9 × 14). Its end tangent is aimed straight at the target, so the head always points in. It is drawn with `stroke-dashoffset` over 320 ms `--ease-out`, and the head fades in once the line arrives.
+- **Card:** `--surface`, 1 px `--line` border, radius 16, padding 20, gap 12. Inside, top to bottom:
+  - page bars, one per screen: Find a trade, Offers, Quote, Fund, Check and release, Done;
+  - the step count, mono 14 `--ink-muted`, reading "**n of 17**";
+  - the body, 17/26.
 
-## 4. Tour overlay (READY shell; the stops are a demo)
+  On the centred stops (5 and 17) the card also gets a 56 px `--escrow` icon tile, and the body is centred.
 
-**Parts:**
-- **Scrim:** full-screen `--scrim`.
-- **Cut-out:** an SVG mask. The hole is a rounded rect with radius 14, padded 6px around the target.
-- **Ring:** a 2px `--ink` stroke on the hole.
-- **Arrow:** a quadratic curve, 2.5px `--ink`, round caps, plus a chevron head.
-- **Card:** `--surface`, 1px `--line` border, radius 16, padding 16. It contains:
-  - a 72px mini iso tile (`--surface-raised`, radius 12);
-  - a meta line, 13/16 muted, with mono digits: "Trade · 1 of 4";
-  - a title, Familjen 19/24 600;
-  - the body, 16/23;
-  - "Skip tour" (tertiary) on the left and the primary button (48h, min 132) on the right. The primary reads **"Next"**, then **"Next screen"** on a page's last stop, then **"Done"** on the final stop.
+  There is **no title.** The 17 card texts are short narration and are kept exactly as signed off. A title would add words that are not in the copy.
+- **Buttons:** Skip tour (text), Back (secondary; off on stop 1), Next (primary, at least 112 wide; it reads **Done** on stop 17). Done and Skip tour both close the tour.
+- **Keys:** → means Next, ← means Back, Esc means Skip tour. Focus moves into the card at each stop. When the person is using the keyboard, it goes to Next.
+- **Short screens** (720 tall or less): card padding 16, body 16/24, and the QR at 160 px.
 
-**Placement:**
-- The card goes below the target when the target sits in the top 45% of the screen and the card fits there. Otherwise it goes above.
-- The gap is 64px for the arrow.
-- The arrow starts from the card edge, 70px off the target's centre on the side away from the edge, and bends outward.
+**Placement rules**, so a card never covers the highlight and never clips:
+1. **Phone, folded, and unfolded portrait:** the card is the column's width less 32, at most 448. It goes **below** the highlight if it fits with a 60 px arrow gap and 12 px to spare at the bottom. If not, it goes **above**.
+2. If neither fits, the screen **scrolls** first (480 ms, ease-in-out cubic): to put the highlight near the top with the card below it, or near the footer with the card above it. Sticky footers (the Request and Release buttons) never scroll; their card goes above.
+3. **Unfolded landscape (or any screen 860+ wide with room):** the column slides left and the card sits **to the right** of the highlight. The card is 300 to 360 wide, 40 px past the column's content, and vertically centred on the highlight within the screen. The arrow then runs sideways.
+4. When the highlight moves during an action (the currency menu opens, the focus moves from the amount to what you receive, from the status card to the tick box), the card moves with it, using the same rules.
 
-**Keys and focus:**
-- Esc means Skip tour.
-- Focus moves to the primary after each stop.
-- The overlay is `role="dialog" aria-modal`.
+## 4. First-trade tour: motion (READY)
 
-**Motion order per "Next"** (t in ms; this is what the owner described: "arrows fade in and out, highlighted areas fade quickly in and quickly out"):
+**Each Next** (t in ms):
 
 | t | Event | Duration | Easing |
 |---|---|---|---|
-| 0 | Arrow fades out | 120 | ease-in |
-| 0 | Highlight (hole + ring) fades out. The scrim stays. | **90** | ease-in |
-| 0 | Card text fades out, -4px | 120 | ease-in |
-| 0 | Mini iso object morphs to the next stop's shape | 760, stagger 40 | ease-out |
-| 130 | Text swaps. The card slides to its new place if it has to switch sides. | top 320 | ease-out |
-| 190 | Card text fades in | 200 | ease-out |
-| 190 | Highlight fades in at the new target | **120** | ease-out |
-| 270 | Arrow fades in, and draws from card to target with stroke-dashoffset L to 0 | fade 120, draw **280** | ease-out |
-| 510 | Arrowhead fades in | 100 | ease-out |
+| 0 | Arrow fades out | 110 | `--ease-in` |
+| 0 | Highlight (hole and ring) fades out. The scrim stays. | 90 | `--ease-in` |
+| 0 | Card text fades out, −4 px | 110 | `--ease-in` |
+| 120 | Any half-played action snaps to its end state. If the stop is on a new screen, that screen **pushes in**: the new one 28 px from the right plus opacity, the old one 16 px to the left (Back reverses it). | 300 | `--ease-out` |
+| +0 | The screen scrolls, if placement needs it | 480 | ease-in-out |
+| +0 | The card moves to its place (transform) | 340 | `--ease-out` |
+| +40 | The new text comes in, from +6 px | 200 / 240 | `--ease-out` |
+| +60 | Highlight fades in at the target | 120 | `--ease-out` |
+| +140 | Arrow draws | 320 | `--ease-out` |
+| +440 | Arrowhead fades in | 120 | ease-out |
+| +700 to +1100 | **The action plays** (§5), after the text, so the card says it first and then the app does it | | |
 
-A stop settles at about **610ms**.
+**Action pieces:**
+- **Tap ripple:** an `--ink` disc at the tap point. Scale 0.25 to 1.35, opacity 0.26 to 0.14 to 0, over 440 ms `--ease-out`. The tapped element dips to `scale(0.98)` for 120 ms.
+- **Selection fill:** a selected pill, chip or row fills to `--surface-raised` and gains its 2 px `--ink` border, over a **150 ms** colour transition. A row's chevron swaps to a tick (opacity, plus scale 0.6 to 1, 200 ms).
+- **Highlight moves within a stop:** the hole tweens its rect over 240 to 260 ms (ease-out cubic).
+- **Highlight alternation (stop 1):** the hole fades out over 90 ms, moves, then fades in over 120 ms, between Buy and Sell, every 1.3 s until Next.
+- **Typing:** one character every 90 ms (180 ms for the first). The field shows a focus ring and a caret, and what you receive updates live with each character.
+- **Press and hold:** a pressed disc stays under the finger (scale 0.3 to 1.15, 300 ms). The fill grows left to right over 1500 ms (linear, `scaleX`), and the label reads "Keep holding…". Then the button turns `--escrow`: "Released 0.594354 XMR to satoshi_ghost".
+- **State swaps on cards** (escrow funded, payment sent): the old content fades out and up 6 px while the new content comes in from +6 px (260 / 300 ms). The card's tint crossfades over 400 ms, and the stepper bar grows over 600 ms.
+- **QR scan:** a 2 px `--monero` line with a soft glow sweeps the code once, over 1500 ms `--ease-io`.
 
-- **"Next screen"** adds a crossfade to the next screen (260ms) after the out-phase, then the same in-sequence.
-- **Start:** the tour view crossfades in over 260ms, the scrim fades in over 200ms, the card fades in, then the highlight and the arrow follow as above.
-- **Skip / Done / Esc:** arrow and highlight out as above, card fades out over 200ms, scrim fades out over 200ms.
+## 5. What each stop does (READY)
 
-**Mini iso object for each stop.** This is the demo; the same mapping applies to every tour:
-- logo / home: a stepped block stack and a coin;
-- Buy or sell: two trader blocks;
-- offer: a trader pair and a coin stack;
-- post: an orange plus slab;
-- wallet: a teal tray with coins;
-- profile: a single person block.
+See `tour-stops.md` §2 for the targets and copy. Actions in order:
 
-Staff and team tours reuse the shell. They swap the tones to `--mod` (staff) and `--team` (members), and use a gavel or ID-card block motif in place of the coin.
+| Stop | Screen | Action after the text |
+|---|---|---|
+| 1 | Find a trade (Buy) | The highlight fades back and forth between Buy and Sell, with the breathing ring. |
+| 2 | Find a trade | Tap Sell. Sell fills, and the heading swaps to "How do you want to be paid?". |
+| 3 | Find a trade | Tap the currency button. The menu opens and the highlight grows to cover it. Tap USD: it fills. The menu closes, the price swaps €306.10 → $329.90 and the method list swaps to the USD methods. The highlight shrinks back. |
+| 4 | Find a trade | Tap Cash App. The row fills and the chevron becomes a tick. |
+| 5 | Find a trade | No highlight. A centred card with an eye-off tile. |
+| 6 | Offers (push) | The highlight is on the header, "Sell XMR via Cash App". |
+| 7–9 | Offers | The highlight steps to the badges, then the % figure, then the limits. |
+| 10 | Offers | Tap the first offer card. It presses and stays tinted. |
+| 11 | Quote (push) | Tap the field and type 0.594354. You receive counts to $200.00. Then the highlight moves to the "You receive" card. |
+| 12 | Quote | Tap Request to sell XMR. It reads "Request sent" with three pulsing dots. After 1.3 s it turns `--escrow`: "Trade started", "satoshi_ghost accepted. The trade has started." |
+| 13 | Fund (push) | Scroll to the QR and its address and amount. The scan line sweeps. |
+| 14 | Fund | Scroll back up. The status card turns from caution "Waiting for you to fund" (with its timer) to escrow "Locked in escrow · 0.594354 XMR", and the first stepper bar fills. |
+| 15 | Check and release (push) | The status card swaps from "Waiting for satoshi_ghost to pay" to "Payment sent". The highlight moves to the tick box, which gets ticked, and the release button unlocks. |
+| 16 | Check and release | Press and hold release (1.5 s). It becomes "Released". |
+| 17 | Released, rate the trade (push) | A centred card with a tick tile and Done. |
 
-**Demo stops in the prototype.** These are **COPY-UNSIGNED**, and they are a demo of the shell, not the final stop list. The stop lists per page and role belong to the tour spec.
+The amounts all agree: market price $329.90; satoshi_ghost pays 2% above it, $336.50; $50 to $1,000 is ≈ 0.148588 to 2.971768 XMR; $200.00 is 0.594354 XMR. Every screen carries the **Example** marker, as ruled.
 
-| Stop | Title | Body | Button |
-|---|---|---|---|
-| Trade 1/4, logo | Your home base | Tap the logo on any screen to come back to Trade. | Next |
-| Trade 2/4, Buy/Sell switch | Buy or sell | Switch between buying and selling Monero. The list below changes to match. | Next |
-| Trade 3/4, first offer row | Pick an offer | Check the price, the limits and the trader's feedback. Starting a trade is always free. | Next |
-| Trade 4/4, Post offer tab | Post your own offer | Set your price and how you get paid. You only pay a fee when you post an offer. | Next screen |
-| Wallets 1/2, linked wallet row | Your wallets | Link the Monero wallet you already use. When you buy, the coins go straight to it. | Next |
-| Wallets 2/2, Profile tab | Your profile | Your feedback, badges and settings live here. | Done |
+## 6. Responsive and foldable (READY)
 
-Other COPY-UNSIGNED strings: "Welcome" (the screen name), "Skip tour", "Next screen", "Done", plus these on the Wallets mock: "Linked wallet", "Payouts go here", "Link another wallet".
+Checked at deviceScaleFactor 2 for 443 × 794 and 390 × 844, and at 3 for the iPhone Duo's third-party estimates:
+- **Folded, 466 × 678:** the hero shrinks, so the letters, the welcome text and both buttons fit with no scrolling. The four links hide (under 760 tall). Tour cards use the short-screen sizes, and every stop places without covering its highlight.
+- **Unfolded portrait, 626 × 890:** a centred 480 column. The cards are 448 wide, not edge to edge.
+- **Unfolded landscape, 890 × 626:** the intro is the centred column. In the tour, the column slides left and the cards sit beside each highlight (§3, rule 3).
 
-**The Wallets mock never shows a balance.** X2F has no built-in wallet (head designer, 12 Nov). The mock shows a linked wallet row instead:
-- a wallet tile;
-- the wallet name, "Cake Wallet";
-- the address in mono chunks, "4Ax9 … k2Qm";
-- a muted line, "Payouts go here".
+## 7. Reduced motion (READY)
 
-A "Link another wallet" row sits under it.
+This applies under `prefers-reduced-motion: reduce`, or `?rm=1`. There is no movement, only fades:
+- **Intro:** the full logo fades in over 600 ms. There is no loop and no rise.
+- **Screen pushes:** crossfades only.
+- **Arrow:** shown fully drawn, faded in. The ring does not breathe.
+- **Ripples:** a short opacity flash with no scale. Typing and scrolls are instant, and waits are capped at 400 ms.
+- **Card:** fades in place.
+- **Hold to release:** the fill still shows progress, since it tells the person something.
 
-## 5. Reduced motion (READY)
+## 8. Production notes
 
-This applies under `prefers-reduced-motion: reduce`, or `?rm=1` in the prototype. There is no movement, only crossfades:
-- **Illustration:** the whole picture fades out (200ms), the new layout is applied instantly, then it fades in (200ms). There is no build, no camera orbit and no parallax. The shield appears in place.
-- **Text:** opacity only, keeping the same 160 / 280ms timings.
-- **Decals:** opacity only.
-- **Tour highlight:** keeps its 90ms out and 120ms in fades, which are opacity only.
-- **Arrow:** appears fully drawn with a 120ms fade. There is no draw.
-- **Card:** opacity only. It jumps to its new place; it does not slide.
-- **Mini iso:** crossfades.
-- **Paging:** auto-advance is off.
+- Build the letters as one `<X2FMark animated>` component: four absolutely placed inline SVG layers, driven by WAAPI. The tour is the TourShell component plus a small script per stop (target, optional highlight moves, action).
+- Keep using transform and opacity only. The hole rect and the arrow are SVG attributes, updated per frame only while they move.
+- `linear()` easing: Chrome 113+, Safari 17.2+, Firefox 112+. The fallback is `--ease-out`.
+- Pause everything on `visibilitychange`.
 
-See `frames/night-rm-s2-0100.png`, `-0300.png` and `-rest.png`.
+## 9. Decisions and open items
 
-## 6. Production tech recommendation (READY): CSS 3D
-
-**Recommendation: build it as a small React component (`<IsoStage scenes={…}>`) with CSS 3D transforms and registered custom properties, exactly as the prototype does.**
-
-| | CSS 3D (the prototype) | Rive | Lottie |
-|---|---|---|---|
-| Runtime size, self-hosted | **0 KB library**. The engine is about 4 KB and the scene data about 1 KB per scene. | About 150 KB WASM + JS runtime, plus a .riv per scene (small) | lottie-web about 250 KB min (about 60–70 KB gz, light build), plus 20–100 KB JSON per scene |
-| Real 3D depth | Yes: a true perspective camera, live orbit and parallax | Drawn 2.5D; depth is faked in the tool | Pre-rendered 2.5D vectors from After Effects |
-| Light/dark from THEMES | Free: faces are `color-mix()` of tokens | Needs data-bound colours or two files | Needs colour slots or two files |
-| Reduced motion | Trivial: the same data, crossfaded | A separate state or a still | Show a still frame |
-| Text and buttons | Real DOM, accessible, translatable | Real DOM beside the canvas | Real DOM beside the canvas |
-| Authoring | Scene = a data array (boxes, tones, decals). Engineers and designers can edit it in review. | Rive editor, skilled animator | After Effects + Bodymovin, skilled animator |
-| Best at | Geometric block worlds (our motif) | Characters, mesh deformation, state machines | Illustrative, frame-by-frame vector art |
-
-**Why CSS 3D:**
-- The prototype shows the owner's quality bar is reachable with zero dependencies: real depth, staggered build and morph, camera orbit, contact shadows, and both themes.
-- It shares the tour shell's DOM and tokens.
-- No CDN, no WASM, nothing to self-host beyond our own code.
-
-Rive is the fallback if the owner later wants characters or organic motion. Rive is preferred over Lottie, since its state machine maps to tour steps.
-
-**Production notes:**
-- `@property` needs Chrome 85+, Safari 16.4+ or Firefox 128+. Where it is missing, snap to the new layout with the reduced-motion crossfade, which is still acceptable.
-- Animating custom properties runs on the main thread. Keep 20 boxes or fewer per stage, and profile on a mid-range Android.
-  - If it janks, switch each box to a unit cube with `transform: translate3d() scale3d()`, which is compositor-only. That costs non-uniformly scaled decals, so move the decals to separate planes.
-- Replace the `filter: blur()` contact shadows with a pre-blurred `radial-gradient`. That is cheaper on mobile GPUs.
-- Keep boxes non-intersecting. Safari's 3D depth sorting misorders planes that intersect. Test on iOS Safari.
-- Pause the intro when the tab is hidden (`visibilitychange`).
-
-## 7. Decisions and open items
-
-- **Decided:** face gradients and contact shadows are allowed inside the iso art only (§1).
-- **Confirmed:** scene 4's "No email and no IP addresses logged." The lead confirms it matches deployment. It stays COPY-UNSIGNED until the owner signs off the copy.
-- **Open:** nothing beyond owner sign-off of the COPY-UNSIGNED strings.
+- **Decided (owner, 12 Nov):** no isometric style. The intro is X2F's own letters. The trader tour is only "how to do your first trade".
+- **Open:** loop forever, or stop after about 30 s (§2)? Design suggests stopping after about 30 s, for WCAG 2.2.2.
+- **Open:** owner sign-off of the COPY-UNSIGNED strings. These are the intro line, plus the mock-screen strings the tour adds:
+  - "Locked in escrow";
+  - "satoshi_ghost has been told to pay you.";
+  - "Waiting for satoshi_ghost to pay";
+  - "You'll get an alert when they tap I've paid.";
+  - "I checked my Cash App myself and the $200.00 is there.";
+  - "Only your Cash App shows whether the money arrived.";
+  - "Request sent";
+  - "Trade started";
+  - "satoshi_ghost accepted. The trade has started.".

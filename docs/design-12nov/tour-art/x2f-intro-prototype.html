@@ -2,348 +2,628 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>X2F Intro Motion</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>X2F Intro and Tour</title>
 <!--
-  X2F landing intro + tour overlay motion prototype (12 Nov). Spec: docs/design-12nov/tour-motion.md
-  Pure CSS 3D + SVG + a little JS. No libraries, no external requests.
-  URL params: ?theme=night|day  ?rm=1 (force reduced motion)  ?view=intro|tour  ?scene=0..3  ?stop=0..5  ?still=1 (no auto-advance)
-  JS hooks for capture: X2F.scene(i), X2F.tour(i), X2F.intro(), X2F.end()
+  X2F first screen (letter intro) + first-trade tour prototype, 12 Nov (v2, after the owner rejected the isometric style).
+  Spec: docs/design-12nov/tour-motion.md and tour-stops.md. Self-contained except the Google Fonts the boards use.
+  URL params: ?theme=night|day  ?rm=1  ?view=intro|tour  ?stop=1..17  ?bare=1 (hide prototype controls)  ?still=1 (intro holds the full logo)
+  JS hooks for capture: X2F.intro(), X2F.tour(n), X2F.end(), X2F.stopNow(), X2F.settle()
 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 /* ---------- THEMES, verbatim from the boards ---------- */
 :root, :root[data-theme="night"] {
   --ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;
-  /* illustration light: mixers derived from THEMES only */
-  --iso-hi: var(--ink); --iso-lo: var(--ground); --iso-top: 24%; --iso-dark: 46%;
+  --qr-bg: var(--ink); --qr-fg: var(--ground);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="night"]) {
     --ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;
-    --iso-hi: var(--surface); --iso-lo: var(--ink); --iso-top: 30%; --iso-dark: 30%;
+    --qr-bg: var(--surface); --qr-fg: var(--ink);
     color-scheme: light;
   }
 }
 :root[data-theme="day"] {
   --ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;
-  --iso-hi: var(--surface); --iso-lo: var(--ink); --iso-top: 30%; --iso-dark: 30%;
+  --qr-bg: var(--surface); --qr-fg: var(--ink);
   color-scheme: light;
 }
 
-/* ---------- motion tokens (see spec §2) ---------- */
+/* ---------- motion tokens (spec §2) ---------- */
 :root {
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);      /* morph, settle */
-  --ease-in: cubic-bezier(0.4, 0, 1, 1);           /* leave */
-  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);       /* camera, floor */
-  --t-morph: 760ms; --t-camera: 1100ms; --t-floor: 1400ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+  --col: 480px;
+  --mono: 'Atkinson Hyperlegible Mono', ui-monospace, 'DejaVu Sans Mono', monospace;
+  --disp: 'Familjen Grotesk', 'Atkinson Hyperlegible Next', system-ui, sans-serif;
 }
-
-/* animatable box properties (registered so CSS can tween them) */
-@property --x { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --y { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --z { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --w { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --d { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --h { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --gz { syntax: '<length>'; inherits: true; initial-value: 0px; }
-@property --lift { syntax: '<number>'; inherits: true; initial-value: 0; }
-@property --o { syntax: '<number>'; inherits: true; initial-value: 0; }
-@property --tone { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --cx { syntax: '<angle>'; inherits: true; initial-value: 58deg; }
-@property --cz { syntax: '<angle>'; inherits: true; initial-value: 45deg; }
-@property --s { syntax: '<number>'; inherits: true; initial-value: 0; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
-  background: var(--ground); color: var(--ink);
+  background: var(--ground); color: var(--ink); overflow: hidden;
   font-family: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
 }
-.mono { font-family: 'Atkinson Hyperlegible Mono', ui-monospace, 'DejaVu Sans Mono', monospace; }
-.disp { font-family: 'Familjen Grotesk', 'Atkinson Hyperlegible Next', system-ui, sans-serif; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.disp { font-family: var(--disp); }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-button, a { transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out; font: inherit; }
+button { font: inherit; color: inherit; }
+button, a, label, .chipf, .opt, .mrow, .pill { transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 150ms ease-out, transform 120ms var(--ease-out); }
+.instant, .instant * { transition: none !important; }
 
-/* ---------- phone frame 443 x 794 ---------- */
-.phone {
-  position: relative; width: 443px; height: 794px; overflow: hidden; flex-shrink: 0;
-  background: var(--ground);
-}
+/* ---------- phone = the viewport ---------- */
+.phone { position: fixed; inset: 0; overflow: hidden; background: var(--ground); }
 .view { position: absolute; inset: 0; transition: opacity 260ms var(--ease-out); }
 .view[hidden] { display: block; opacity: 0; pointer-events: none; visibility: hidden; }
+.col { width: 100%; max-width: var(--col); margin-left: var(--colL, auto); margin-right: auto; }
 
-/* header: logo top-left + screen name */
-.hdr { position: absolute; left: 0; right: 0; top: 0; height: 56px; padding: 0 16px; display: flex; align-items: center; gap: 12px; z-index: 3; }
-.hdr svg { color: var(--ink); }
-.hdr .name { font-size: 17px; line-height: 22px; font-weight: 600; padding-left: 12px; border-left: 1px solid var(--line); }
-.hdr .skip { margin-left: auto; }
+/* tab bar (board: 60px, current tab raised with a 2px top rule) */
+.tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 60px; border-top: 1px solid var(--surface-raised); background: var(--ground); z-index: 3; }
+.tabs .col { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); height: 100%; }
+.tabs a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--ink-muted); font-size: 12px; line-height: 16px; text-decoration: none; }
+.tabs a[aria-current="page"] { background: var(--surface-raised); box-shadow: inset 0 2px 0 var(--ink); color: var(--ink); font-weight: 600; }
 
-/* ---------- iso stage ---------- */
-.illus { position: absolute; left: 0; right: 0; top: 56px; height: 378px; perspective: 1500px; perspective-origin: 50% 30%; overflow: hidden; }
-.illus .anchor { position: absolute; left: 50%; top: 62%; width: 0; height: 0; transform-style: preserve-3d; transition: opacity 200ms ease-out; }
-.cam {
-  position: absolute; left: 0; top: 0; transform-style: preserve-3d;
-  transform: rotateX(var(--cx)) rotateZ(var(--cz));
-  transition: --cx var(--t-camera) var(--ease-io), --cz var(--t-camera) var(--ease-io);
+/* ============ FIRST SCREEN ============ */
+#intro > .col { position: absolute; top: 0; bottom: 60px; left: 0; right: 0; display: flex; flex-direction: column; padding: 8px 16px 16px; gap: 16px; }
+.hero {
+  position: relative; flex: 1 1 auto; min-height: 132px; max-height: 340px; border-radius: 20px; overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 42%, color-mix(in srgb, var(--escrow) 10%, var(--surface)) 0%, var(--ground) 100%);
+  border: 1px solid var(--surface-raised);
 }
-.floor {
-  position: absolute; left: -330px; top: -330px; width: 660px; height: 660px;
-  transform: translate3d(var(--fx, 0px), var(--fy, 0px), -1px);
-  transition: transform var(--t-floor) var(--ease-io);
-  background: radial-gradient(circle, color-mix(in srgb, var(--ink-muted) 34%, transparent) 1.3px, transparent 1.8px) 0 0 / 30px 30px;
-  -webkit-mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
-          mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
-}
-.bx {
-  position: absolute; left: 0; top: 0; transform-style: preserve-3d;
-  transform: translate3d(var(--x), var(--y), var(--z));
-  transition:
-    --x var(--t-morph) var(--ease-out) var(--dl, 0ms), --y var(--t-morph) var(--ease-out) var(--dl, 0ms),
-    --z var(--t-morph) var(--ease-out) var(--dl, 0ms), --w var(--t-morph) var(--ease-out) var(--dl, 0ms),
-    --d var(--t-morph) var(--ease-out) var(--dl, 0ms), --h var(--t-morph) var(--ease-out) var(--dl, 0ms),
-    --gz var(--t-morph) var(--ease-out) var(--dl, 0ms), --lift var(--t-morph) var(--ease-out) var(--dl, 0ms),
-    --o 320ms ease-out var(--dl, 0ms), --tone 600ms ease-out var(--dl, 0ms);
-}
-.bx.leaving { transition-timing-function: var(--ease-in); --dl: 0ms !important; }
-.f { position: absolute; left: 0; top: 0; transform-origin: 0 0; opacity: var(--o); display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.f.top {
-  width: var(--w); height: var(--d); transform: translateZ(var(--h));
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--iso-hi) 14%, transparent), transparent 60%),
-    color-mix(in srgb, var(--tone), var(--iso-hi) var(--iso-top));
-  border: 1px solid color-mix(in srgb, var(--tone), var(--iso-hi) 46%);
-}
-.f.fy {
-  width: var(--w); height: var(--h);
-  transform: translateY(var(--d)) translateZ(var(--h)) rotateX(-90deg);
-  background: linear-gradient(180deg, var(--tone), color-mix(in srgb, var(--tone), var(--iso-lo) 22%));
-}
-.f.fx {
-  width: var(--d); height: var(--h);
-  transform: translateX(var(--w)) translateZ(var(--h)) rotateZ(90deg) rotateX(-90deg);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--tone), var(--iso-lo) var(--iso-dark)), color-mix(in srgb, var(--tone), var(--iso-lo) calc(var(--iso-dark) + 18%)));
-}
-/* soft contact shadow on the surface below: tighter and darker when resting, wider and fainter when lifted */
-.shd {
-  position: absolute; left: 0; top: 0; width: var(--w); height: var(--d); border-radius: 6px;
-  transform: translate3d(calc(var(--lift) * 0.22px + 3px), calc(var(--lift) * 0.22px + 3px), calc(var(--gz) - var(--z) + 0.6px));
-  background: var(--scrim);
-  filter: blur(calc(3px + var(--lift) * 0.12px));
-  opacity: calc(var(--o) * (0.9 - min(var(--lift), 60) * 0.009));
-}
-.decal { width: 70%; height: 70%; max-width: 46px; max-height: 46px; display: flex; align-items: center; justify-content: center; transition: opacity 240ms ease-out, transform 360ms var(--ease-out); color: color-mix(in srgb, var(--tone), var(--iso-lo) 62%); }
-.decal.off { opacity: 0; transform: scale(0.6); }
-.decal svg { width: 100%; height: 100%; display: block; }
-.f.fy .decal { max-width: 30px; max-height: 30px; }
-.f.top .decal { rotate: calc(-1 * var(--cz) + 0deg); }
+.mark { position: absolute; left: 50%; top: 50%; width: var(--lw); height: var(--lh); margin-left: calc(var(--lw) / -2); margin-top: calc(var(--lh) / -2); }
+.mark .lt { position: absolute; inset: 0; will-change: transform, opacity; backface-visibility: hidden; }
+.mark svg { display: block; width: var(--lw); height: var(--lh); overflow: visible; }
+.mark .ring { position: absolute; width: var(--dr); height: var(--dr); border-radius: 50%; border: 2px solid var(--monero); opacity: 0; will-change: transform, opacity; pointer-events: none; }
+.welcome { flex-shrink: 0; text-align: center; padding: 0 8px; }
+.welcome h1 { margin: 0; font-family: var(--disp); font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -0.015em; }
+.welcome p { margin: 6px auto 0; max-width: 360px; font-size: 17px; line-height: 24px; color: var(--ink-muted); text-wrap: balance; }
+.cta { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
+.btn-p { display: flex; align-items: center; justify-content: center; gap: 10px; height: 56px; border-radius: 12px; border: 0; background: var(--monero); color: var(--on-monero); font-size: 20px; line-height: 26px; font-weight: 600; cursor: pointer; }
+.btn-p:hover { background: color-mix(in srgb, var(--on-monero) 12%, var(--monero)); }
+.btn-s { display: flex; align-items: center; justify-content: center; gap: 8px; height: 52px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 18px; line-height: 24px; font-weight: 600; cursor: pointer; }
+.links { flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.links a { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px; border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 17px; line-height: 24px; font-weight: 600; text-decoration: none; }
+.links svg { color: var(--ink-muted); }
+@media (max-height: 760px) { .links { display: none; } }
+@media (max-height: 640px) { #intro .col { gap: 12px; } .welcome h1 { font-size: 26px; line-height: 32px; } .welcome p { font-size: 16px; line-height: 22px; } }
+.welcome, .cta, .links { opacity: 0; transform: translateY(8px); animation: rise 520ms var(--ease-out) forwards; }
+.welcome { animation-delay: 1250ms; } .cta { animation-delay: 1400ms; } .links { animation-delay: 1520ms; }
+@keyframes rise { to { opacity: 1; transform: none; } }
 
-/* shield: extruded from stacked planes */
-.shield {
-  position: absolute; left: 0; top: 0; transform-style: preserve-3d;
-  transform: translate3d(var(--x), var(--y), calc(var(--z) + (1 - var(--s)) * -40px)) rotateZ(-45deg) scale3d(var(--s), var(--s), var(--s));
-  transition: --x 900ms var(--ease-out), --y 900ms var(--ease-out), --z 900ms var(--ease-out), --s 900ms var(--ease-out), --tone 600ms ease-out;
-}
-.shield .ly {
-  position: absolute; left: -46px; top: 0; width: 92px; height: 112px; transform-origin: 46px 0;
-  clip-path: path('M46 3 L88 18 V56 C88 84 70 103 46 110 C22 103 4 84 4 56 V18 Z');
-  background: color-mix(in srgb, var(--tone), var(--iso-lo) 44%);
-  opacity: min(1, calc(var(--s) * 3));
-}
-.shield .ly.front {
-  background:
-    linear-gradient(160deg, color-mix(in srgb, var(--iso-hi) 26%, transparent), transparent 55%),
-    color-mix(in srgb, var(--tone), var(--iso-hi) 10%);
-  display: flex; align-items: center; justify-content: center; color: color-mix(in srgb, var(--tone), var(--iso-lo) 66%);
-}
-.shield .shs {
-  position: absolute; left: -50px; top: -26px; width: 100px; height: 52px; border-radius: 50%;
-  background: var(--scrim); filter: blur(8px); opacity: calc(var(--s) * 0.8);
-  transform: translateZ(-5.4px) translateY(2px);
-}
+/* ============ MOCK SCREENS (faithful to the boards) ============ */
+.scr { position: absolute; inset: 0; background: var(--ground); transition: opacity 240ms var(--ease-out), transform 300ms var(--ease-out); }
+.scr.off { opacity: 0; pointer-events: none; visibility: hidden; }
+.scr.enter { opacity: 0; transform: translateX(28px); }
+.scr.leave { opacity: 0; transform: translateX(-16px); }
+.scroll { position: absolute; left: 0; right: 0; top: 0; bottom: var(--foot, 0px); overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+.scroll::-webkit-scrollbar { display: none; }
+.scroll > .col { padding-bottom: 45vh; }
+.foot { position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid var(--surface-raised); background: var(--ground); z-index: 3; }
+.foot .col { display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; }
+.foot .note { display: flex; align-items: center; justify-content: center; min-height: 32px; font-size: 13px; line-height: 16px; color: var(--ink-muted); text-align: center; transition: color 150ms ease-out; }
 
-/* ---------- intro text + buttons, fixed below ---------- */
-.copy { position: absolute; left: 0; right: 0; top: 440px; height: 112px; padding: 0 24px; text-align: center; }
-.copy .t { position: absolute; left: 24px; right: 24px; top: 0; transition: opacity 280ms var(--ease-out) 120ms, transform 280ms var(--ease-out) 120ms; }
-.copy .t.out { opacity: 0; transform: translateY(-6px); transition: opacity 160ms var(--ease-in), transform 160ms var(--ease-in); }
-.copy .t.pre { opacity: 0; transform: translateY(10px); transition: none; }
-.copy h1 { margin: 0; font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -0.01em; }
-.copy p { margin: 8px 0 0; font-size: 17px; line-height: 24px; color: var(--ink-muted); }
-.dots { position: absolute; left: 0; right: 0; top: 560px; display: flex; justify-content: center; gap: 4px; }
-.dots button { width: 28px; height: 28px; padding: 0; border: 0; background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.dots i { display: block; width: 8px; height: 8px; border-radius: 99px; background: var(--line); transition: width 240ms var(--ease-out), background-color 240ms ease-out; }
-.dots button[aria-current="step"] i { width: 24px; background: var(--ink); }
-.cta { position: absolute; left: 16px; right: 16px; top: 600px; display: flex; flex-direction: column; gap: 8px; }
-.btn-p { height: 56px; border-radius: 12px; border: 0; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; cursor: pointer; }
-.btn-s { height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 16px; font-weight: 600; cursor: pointer; }
-.btn-t { height: 44px; border: 0; background: none; color: var(--ink-muted); font-size: 15px; font-weight: 600; padding: 0 8px; cursor: pointer; }
+.hd { display: flex; flex-direction: column; padding: 8px 16px 16px; }
+.hd .bar { display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px; }
+.ib { display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink); }
+.chat { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 600; }
+.meta { margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted); }
+.h1 { margin: 4px 0 0; font-family: var(--disp); font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em; }
+.main { display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px; }
+.cap { font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); }
+.card { border-radius: 16px; background: var(--surface); }
+.wash { border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--tint) 35%, transparent); transition: border-color 400ms ease-out, background 400ms ease-out; --tint: var(--ink-muted); }
+.status { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--tint) 14%, transparent); color: var(--tint); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; transition: color 300ms ease-out, background-color 300ms ease-out; }
+.dl { display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised); }
+.dl > div { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px; }
+.dl > i { display: block; height: 1px; margin: 0 14px; background: var(--surface); }
+.dl dt { color: var(--ink-muted); } .dl dd { margin: 0; }
+.xmr { font-weight: 600; color: var(--monero-ink); }
+.big { font-family: var(--mono); font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 
-/* tab bar (shown as if they had already dived in) */
-.tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--surface-raised); background: var(--ground); }
-.tabs a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; line-height: 16px; color: var(--ink-muted); text-decoration: none; }
-.tabs a[aria-current="page"] { color: var(--ink); font-weight: 600; }
-.tabs svg { width: 22px; height: 22px; }
+/* Find a trade (Main / BuyMain) */
+.logo-row { display: flex; align-items: center; min-width: 0; height: 44px; }
+.logo-row .dash { margin: 0 8px; font-size: 18px; line-height: 24px; color: var(--ink-muted); }
+.logo-row .ttl { flex: 1; font-size: 18px; line-height: 24px; font-weight: 600; }
+.news { position: relative; margin-right: -8px; display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; font-size: 14px; }
+.news i { position: absolute; top: 10px; left: 21px; width: 8px; height: 8px; border-radius: 999px; background: var(--escrow); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 12px; padding: 4px; border-radius: 999px; background: var(--surface); }
+.pill { display: flex; align-items: center; justify-content: center; height: 36px; border-radius: 999px; border: 2px solid transparent; color: var(--ink-muted); font-size: 15px; font-weight: 600; }
+.pill.on { border-color: var(--ink); background: var(--surface-raised); color: var(--ink); }
+.swap { position: relative; display: block; }
+.swap > * { transition: opacity 180ms var(--ease-out), transform 220ms var(--ease-out); }
+.swap > .b { position: absolute; left: 0; top: 0; right: 0; opacity: 0; transform: translateY(6px); }
+.swap.alt > .a { opacity: 0; transform: translateY(-6px); }
+.swap.alt > .b { opacity: 1; transform: none; }
+.mkt { position: relative; z-index: 2; }
+.curbtn { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); font-size: 15px; font-weight: 600; cursor: pointer; }
+.flag { flex-shrink: 0; }
+.menu { position: absolute; top: 52px; right: -8px; z-index: 5; width: min(326px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--surface-raised); box-shadow: 0 12px 32px -12px rgba(0,0,0,.45);
+  opacity: 0; transform: translateY(-6px) scale(0.98); transform-origin: top right; pointer-events: none; transition: opacity 160ms var(--ease-out), transform 200ms var(--ease-out); }
+.menu.open { opacity: 1; transform: none; }
+.opt { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 10px; border-radius: 8px; border: 2px solid transparent; font-size: 15px; }
+.opt b { font-weight: 600; }
+.opt .ck { margin-left: auto; opacity: 0; transition: opacity 150ms ease-out; }
+.opt.sel { background: var(--surface-raised); border-color: var(--ink); }
+.opt.sel .ck { opacity: 1; }
+.list { display: flex; flex-direction: column; border-radius: 16px; background: var(--surface); }
+.mrow { position: relative; display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 14px 16px; color: var(--ink); border-radius: 0; }
+.mrow + .mrow::before { content: ''; position: absolute; left: 16px; right: 16px; top: 0; height: 1px; background: var(--surface-raised); }
+.mrow:first-child { border-radius: 16px 16px 0 0; } .mrow:last-child { border-radius: 0 0 16px 16px; }
+.tile { display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink); transition: background-color 150ms ease-out; }
+.mrow .m { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.mrow .m b { font-size: 16px; line-height: 22px; font-weight: 600; }
+.mrow .m small { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.mrow .r { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.mrow .r small { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.mrow .r span { font-family: var(--mono); font-size: 15px; line-height: 20px; font-weight: 500; }
+.mrow .go { position: relative; width: 20px; height: 20px; flex-shrink: 0; color: var(--ink-muted); }
+.mrow .go svg { position: absolute; inset: 0; transition: opacity 150ms ease-out, transform 200ms var(--ease-out); }
+.mrow .go .ck { opacity: 0; transform: scale(.6); color: var(--ink); }
+.mrow.sel { background: var(--surface-raised); box-shadow: inset 0 0 0 2px var(--ink); }
+.mrow.sel::before, .mrow.sel + .mrow::before { opacity: 0; }
+.mrow.sel .tile { background: var(--surface); }
+.mrow.sel .go .ch { opacity: 0; } .mrow.sel .go .ck { opacity: 1; transform: none; }
+.sech { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-top: 4px; }
+.sech h2 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; }
+.sech span { font-family: var(--mono); font-size: 13px; color: var(--ink-muted); }
 
-/* ---------- mock screens for the tour ---------- */
-.scr { position: absolute; inset: 0; transition: opacity 260ms var(--ease-out); }
-.scr[hidden] { display: block; opacity: 0; visibility: hidden; }
-.content { position: absolute; left: 0; right: 0; top: 56px; bottom: 64px; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 16px; }
-.seg { display: grid; grid-template-columns: 1fr 1fr; height: 44px; padding: 4px; background: var(--surface-raised); border-radius: 12px; }
-.seg span { display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 15px; font-weight: 600; color: var(--ink-muted); }
-.seg span.on { background: var(--surface); color: var(--ink); outline: 2px solid var(--ink); outline-offset: -2px; }
-.card { background: var(--surface); border-radius: 16px; padding: 4px 0; }
-.row { display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; }
-.row + .row { border-top: 1px solid var(--surface-raised); }
-.tile { width: 40px; height: 40px; border-radius: 12px; background: var(--surface-raised); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 15px; font-weight: 700; }
-.row .m { flex: 1; min-width: 0; }
-.row .m b { display: block; font-size: 16px; line-height: 22px; font-weight: 600; }
-.row .m small { display: block; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
-.row .p { text-align: right; font-size: 15px; }
-.row .p small { display: block; font-size: 13px; color: var(--ink-muted); }
-.sec { font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-muted); margin: 4px 0 -8px; }
-.chips { display: flex; gap: 8px; }
-.chip { height: 36px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); display: flex; align-items: center; font-size: 14px; font-weight: 600; }
-.chip.on { border: 2px solid var(--ink); background: var(--surface-raised); }
-.wcard { background: var(--surface); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+/* offers (SellOffers) */
+.mktrow { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; border-radius: 16px; background: var(--surface); }
+.sort { display: flex; gap: 8px; align-items: center; }
+.sort > span:first-child { font-size: 13px; line-height: 16px; color: var(--ink-muted); }
+.chipf { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); font-size: 14px; }
+.chipf.on { border: 2px solid var(--ink); background: var(--surface-raised); font-weight: 600; }
+.offer { display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface); transition: background-color 150ms ease-out, transform 120ms var(--ease-out); }
+.offer.pressed { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); }
+.who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.av { position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: var(--disp); font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.av.on { border-color: color-mix(in srgb, var(--escrow) 70%, transparent); }
+.av.on::after { content: ''; position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface); box-sizing: border-box; }
+.who .n { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.who .n > span:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 16px; line-height: 22px; font-weight: 600; }
+.who .n small { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.vendor { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bdg { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--c) 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; white-space: nowrap; }
+.bdg i { display: flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--c) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); color: var(--c); }
+.bdg.more { padding: 0 10px 0 11px; gap: 4px; border-color: var(--line); }
+.price { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.price > span:first-child { font-family: var(--mono); font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em; }
+.price small { font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: right; }
+.terms { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--surface-raised); }
+.terms .pct { display: flex; flex-direction: column; gap: 2px; }
+.terms .pct span { font-family: var(--mono); font-size: 15px; line-height: 20px; font-weight: 500; color: var(--escrow); }
+.terms small { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.terms .lim { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 14px; line-height: 20px; white-space: nowrap; }
+.btn-o { display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 16px; font-weight: 600; }
 
-/* ---------- tour overlay ---------- */
-.tour { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+/* quote (SellQuote) */
+.field { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); transition: border-color 150ms ease-out, box-shadow 150ms ease-out; }
+.field.focus { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.field .v { flex: 1; min-width: 0; font-family: var(--mono); font-size: 20px; font-weight: 500; display: flex; align-items: center; height: 44px; }
+.field .v .ph { color: var(--ink-muted); }
+.caret { display: none; width: 2px; height: 22px; margin-left: 1px; background: var(--ink); animation: blink 1s steps(1) infinite; }
+.field.focus .caret { display: block; }
+@keyframes blink { 50% { opacity: 0; } }
+.field .max { display: flex; align-items: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--monero-ink); font-size: 15px; font-weight: 600; }
+.field .sep { width: 1px; height: 20px; background: var(--line); }
+.help { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.req { height: 56px; border-radius: 12px; border: 0; font-size: 18px; font-weight: 600; background: var(--surface-raised); color: var(--ink-muted); display: flex; align-items: center; justify-content: center; gap: 10px; }
+.req.ok { background: var(--monero); color: var(--on-monero); }
+.req.sent { background: color-mix(in srgb, var(--on-monero) 12%, var(--monero)); color: var(--on-monero); }
+.req.done { background: var(--escrow); color: var(--ground); }
+.dots3 { display: inline-flex; gap: 4px; } .dots3 i { width: 5px; height: 5px; border-radius: 9px; background: currentColor; animation: dot 900ms ease-in-out infinite; }
+.dots3 i:nth-child(2) { animation-delay: 150ms; } .dots3 i:nth-child(3) { animation-delay: 300ms; }
+@keyframes dot { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+
+/* trade room (TradeFund / SellerConfirm) */
+.deal { position: relative; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); }
+.deal b { display: block; font-family: var(--mono); font-size: 15px; line-height: 20px; font-weight: 500; white-space: nowrap; }
+.deal small { display: block; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0; padding: 0 16px 16px; list-style: none; }
+.steps li { display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.steps li > span { display: block; height: 4px; border-radius: 999px; background: var(--surface-raised); overflow: hidden; }
+.steps li > span > i { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--escrow); transition: width 600ms var(--ease-out), background-color 300ms ease-out; }
+.steps li.done > span > i { width: 100%; }
+.steps li.cur { color: var(--ink); font-weight: 600; }
+.steps li.cur > span > i { width: 9%; background: var(--caution); }
+.timer { display: inline-flex; align-items: baseline; gap: 6px; }
+.timer .u { font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted); }
+.st2 { display: grid; } .st2 > * { grid-area: 1 / 1; transition: opacity 260ms var(--ease-out), transform 300ms var(--ease-out); }
+.st2 > .b { opacity: 0; transform: translateY(6px); }
+.st2.alt > .a { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.st2.alt > .b { opacity: 1; transform: none; }
+.qrw { position: relative; display: flex; justify-content: center; }
+.qrbox { position: relative; padding: 12px; border-radius: 12px; background: var(--qr-bg); overflow: hidden; }
+.qrbox svg { display: block; width: var(--qr, 208px); height: var(--qr, 208px); }
+.scanline { position: absolute; left: 6px; right: 6px; top: 0; height: 2px; border-radius: 2px; background: var(--monero); box-shadow: 0 0 12px 2px color-mix(in srgb, var(--monero) 55%, transparent); opacity: 0; }
+.cpy { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: transparent; font-size: 15px; font-weight: 600; }
+.addr { font-family: var(--mono); font-size: 15px; line-height: 22px; word-spacing: 2px; }
+.danger { display: flex; flex-direction: column; gap: 14px; padding: 16px; border-radius: 16px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); }
+.danger h2 { margin: 0; display: flex; gap: 10px; align-items: flex-start; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--danger); }
+.danger p { margin: -8px 0 0 28px; font-size: 14px; line-height: 20px; }
+.tick { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 14px; border-radius: 12px; font-size: 15px; line-height: 22px; background: var(--surface-raised); border: 2px solid transparent; }
+.tick.on { border-color: var(--ink); }
+.box { display: flex; flex-shrink: 0; width: 22px; height: 22px; margin-top: 1px; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: transparent; transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out; }
+.tick.on .box { border: 2px solid var(--ink); background: var(--ink); color: var(--ground); }
+.hold { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; border: 0; background: var(--surface-raised); color: var(--ink-muted); font-size: 18px; line-height: 24px; font-weight: 600; }
+.hold.ok { background: var(--monero); color: var(--on-monero); }
+.hold.holding { background: color-mix(in srgb, var(--on-monero) 12%, var(--monero)); color: var(--on-monero); }
+.hold.done { background: var(--escrow); color: var(--ground); }
+.hold .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; transform-origin: left; transform: scaleX(0); background: color-mix(in srgb, var(--on-monero) 28%, var(--monero)); }
+.hold.done .fill { opacity: 0; }
+.hold > span { position: relative; }
+.stars { display: flex; gap: 6px; }
+.stars svg { width: 36px; height: 36px; color: var(--caution); }
+
+/* ============ TOUR OVERLAY ============ */
+.tour { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
 .tour.on { pointer-events: auto; }
-.tour svg.scrim { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 200ms var(--ease-out); }
+.tour svg.scrim { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 220ms var(--ease-out); }
 .tour.on svg.scrim { opacity: 1; }
-#hole, #ring { transition: opacity 120ms var(--ease-out); }
-#hole.out, #ring.out { opacity: 0; transition: opacity 90ms var(--ease-in); }
+#hole, #ring, #pulse { transition: opacity 120ms var(--ease-out); }
+.hide { opacity: 0 !important; transition: opacity 90ms var(--ease-in) !important; }
+#pulse { opacity: 0; transform-box: fill-box; transform-origin: center; }
+#pulse.breathe { animation: breathe 1800ms var(--ease-io) infinite; }
+@keyframes breathe { 0% { opacity: .55; transform: scale(1); } 70%, 100% { opacity: 0; transform: scale(1.06, 1.22); } }
 .arrow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .arrow path { fill: none; stroke: var(--ink); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-.arrow #shaft { transition: stroke-dashoffset 280ms var(--ease-out), opacity 120ms ease-out; }
-.arrow #head { transition: opacity 100ms ease-out, transform 160ms var(--ease-out); }
-.arrow.out #shaft, .arrow.out #head { opacity: 0 !important; transition: opacity 120ms var(--ease-in); }
+#shaft { transition: stroke-dashoffset 320ms var(--ease-out), opacity 120ms ease-out; }
+#head { transition: opacity 120ms ease-out; }
+.arrow.out #shaft, .arrow.out #head { opacity: 0 !important; transition: opacity 110ms var(--ease-in); }
+.rips { position: absolute; inset: 0; z-index: 15; pointer-events: none; }
+.rip { position: absolute; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: var(--ink); opacity: 0; will-change: transform, opacity; }
 
-.tcard {
-  position: absolute; left: 16px; right: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-  padding: 16px; display: flex; flex-direction: column; gap: 12px;
-  transition: top 320ms var(--ease-out), opacity 200ms var(--ease-out);
-}
-.tcard .hd { display: flex; gap: 14px; align-items: center; }
-.mini { width: 72px; height: 72px; border-radius: 12px; background: var(--surface-raised); position: relative; overflow: hidden; flex-shrink: 0; perspective: 600px; }
-.mini .anchor { position: absolute; left: 50%; top: 60%; transform-style: preserve-3d; transform: scale(0.3); transition: opacity 200ms ease-out; }
-.tcard .meta { font-size: 13px; line-height: 16px; color: var(--ink-muted); }
-.tcard h2 { margin: 2px 0 0; font-size: 19px; line-height: 24px; font-weight: 600; }
-.tcard p { margin: 0; font-size: 16px; line-height: 23px; }
-.tcard .txt { transition: opacity 200ms var(--ease-out) 60ms, transform 200ms var(--ease-out) 60ms; }
-.tcard .txt.out { opacity: 0; transform: translateY(-4px); transition: opacity 120ms var(--ease-in), transform 120ms var(--ease-in); }
-.tcard .act { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.tcard .btn-p { height: 48px; padding: 0 22px; font-size: 16px; min-width: 132px; }
-.tcard .btn-t { margin-left: -8px; }
+.tcard { position: absolute; left: 0; top: 0; width: 360px; padding: 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px;
+  box-shadow: 0 18px 44px -18px rgba(0,0,0,.5); opacity: 0; transition: transform 340ms var(--ease-out), opacity 200ms var(--ease-out), width 0ms; will-change: transform; }
+.tcard.on { opacity: 1; }
+.tcard:focus { outline: none; }
+.tcard .prog { display: flex; align-items: center; gap: 12px; }
+.tcard .bars { flex: 1; display: flex; gap: 4px; }
+.tcard .bars i { flex: 1; height: 4px; border-radius: 999px; background: var(--surface-raised); transition: background-color 200ms ease-out; }
+.tcard .bars i.done { background: var(--ink-muted); } .tcard .bars i.now { background: var(--ink); }
+.tcard .count { font-family: var(--mono); font-size: 14px; line-height: 16px; color: var(--ink-muted); white-space: nowrap; }
+.tcard .ico { display: none; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 16%, transparent); color: var(--escrow); margin: 4px auto 0; }
+.tcard.center .ico { display: flex; }
+.tcard.center .body { text-align: center; }
+.tcard .body { margin: 0; font-size: 17px; line-height: 26px; text-wrap: pretty; transition: opacity 200ms var(--ease-out) 40ms, transform 240ms var(--ease-out) 40ms; }
+.tcard .body.out { opacity: 0; transform: translateY(-4px); transition: opacity 110ms var(--ease-in), transform 110ms var(--ease-in); }
+.tcard .body.pre { opacity: 0; transform: translateY(6px); transition: none; }
+.tcard .act { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.tcard .skip { height: 48px; padding: 0 4px; margin-right: auto; border: 0; background: transparent; color: var(--ink-muted); font-size: 15px; font-weight: 600; cursor: pointer; }
+.tcard .back { height: 48px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: transparent; font-size: 16px; font-weight: 600; cursor: pointer; }
+.tcard .back:disabled { color: var(--ink-muted); opacity: .5; cursor: not-allowed; }
+.tcard .next { height: 48px; min-width: 112px; padding: 0 18px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.tcard .next:hover { background: color-mix(in srgb, var(--on-monero) 12%, var(--monero)); }
+
+@media (max-height: 720px) { .qrbox { --qr: 160px; } .tcard { padding: 16px; gap: 10px; } .tcard .body { font-size: 16px; line-height: 24px; } .tcard .act { margin-top: 0; } }
 
 /* ---------- reduced motion: crossfades only ---------- */
-.rm .bx, .rm .shield, .rm .cam, .rm .floor { transition: none !important; }
-.rm .copy .t, .rm .copy .t.out { transform: none !important; }
-.rm .decal, .rm .decal.off { transform: none !important; }
-.rm .arrow #shaft { transition: opacity 120ms ease-out !important; stroke-dashoffset: 0 !important; }
-.rm .tcard { transition: opacity 200ms ease-out !important; }
-.rm .tcard .txt, .rm .tcard .txt.out { transform: none !important; }
+.rm .scr.enter, .rm .scr.leave { transform: none; }
+.rm .swap > *, .rm .st2 > *, .rm .tcard .body, .rm .tcard .body.out, .rm .tcard .body.pre { transform: none !important; }
+.rm .tcard { transition: opacity 200ms ease-out; }
+.rm #shaft { stroke-dashoffset: 0 !important; }
+.rm #pulse.breathe { animation: none; }
+.rm .welcome, .rm .cta, .rm .links { transform: none; animation: fadein 400ms ease-out forwards; animation-delay: 200ms; }
+@keyframes fadein { to { opacity: 1; } }
 
-/* prototype controls, outside the phone */
-.ctl { display: flex; gap: 8px; padding: 12px; flex-wrap: wrap; justify-content: center; }
-.ctl button { height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 14px; cursor: pointer; }
+/* prototype controls (hidden with ?bare=1) */
+.ctl { position: fixed; right: 8px; top: 8px; z-index: 99; display: flex; gap: 6px; opacity: .35; transition: opacity 150ms; }
+.ctl:hover { opacity: 1; }
+.ctl button { height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12px; cursor: pointer; }
 .bare .ctl { display: none; }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <path id="lgX" d="M0 120L0 119.1L35.4 56.3L5.1 0.9L5.1 0L32.6 0L54.3 40.2L58 40.2L79.1 0L105.5 0L105.5 0.9L75.4 56.3L110.5 119.1L110.5 120L81.8 120L56.6 72.5L52.9 72.5L27.4 120Z"/>
+    <path id="lg2" d="M115.1 120L115.1 99.7Q127.8 90 137.4 82.2Q146.9 74.5 153.7 68Q163.8 58.5 169 50.8Q174.2 43.1 174.2 34.6Q174.2 26.9 169.8 22.1Q165.4 17.2 157.1 17.2Q147.7 17.2 142.9 23.3Q138.2 29.4 138.2 39.4L115.1 39.4Q115.1 26.9 119.8 17.5Q124.6 8.2 134.1 3Q143.5 -2.2 157.5 -2.2Q177.4 -2.2 188.2 7.9Q199.1 18 199.1 34.5Q199.1 46.3 192.9 56.2Q186.8 66.2 174.6 77.1Q169.4 81.8 163 86.8Q156.6 91.8 150.3 96L150.3 99.7L203.1 99.7L203.1 120Z"/>
+    <path id="lgF" d="M212.9 0H292V20.3H238.5V47.5H255.4V66.3H238.5V120H212.9Z"/>
+    <g id="hdrLogo"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.290 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.960 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></g>
+    <path id="qrP" d="M4 4h7v1h-7zM18 4h1v1h-1zM21 4h2v1h-2zM24 4h1v1h-1zM26 4h1v1h-1zM30 4h1v1h-1zM32 4h4v1h-4zM38 4h1v1h-1zM40 4h2v1h-2zM44 4h1v1h-1zM46 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM12 5h2v1h-2zM16 5h2v1h-2zM19 5h1v1h-1zM22 5h3v1h-3zM27 5h2v1h-2zM30 5h1v1h-1zM35 5h1v1h-1zM38 5h1v1h-1zM42 5h3v1h-3zM46 5h1v1h-1zM52 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h4v1h-4zM20 6h8v1h-8zM32 6h1v1h-1zM35 6h2v1h-2zM39 6h1v1h-1zM43 6h2v1h-2zM46 6h1v1h-1zM48 6h3v1h-3zM52 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h4v1h-4zM17 7h1v1h-1zM19 7h1v1h-1zM21 7h2v1h-2zM24 7h1v1h-1zM28 7h1v1h-1zM31 7h4v1h-4zM36 7h2v1h-2zM39 7h3v1h-3zM43 7h1v1h-1zM46 7h1v1h-1zM48 7h3v1h-3zM52 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM13 8h1v1h-1zM15 8h3v1h-3zM19 8h1v1h-1zM25 8h6v1h-6zM32 8h3v1h-3zM36 8h1v1h-1zM39 8h1v1h-1zM46 8h1v1h-1zM48 8h3v1h-3zM52 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM13 9h1v1h-1zM15 9h1v1h-1zM18 9h1v1h-1zM20 9h3v1h-3zM25 9h2v1h-2zM30 9h3v1h-3zM34 9h2v1h-2zM41 9h2v1h-2zM46 9h1v1h-1zM52 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h1v1h-1zM32 10h1v1h-1zM34 10h1v1h-1zM36 10h1v1h-1zM38 10h1v1h-1zM40 10h1v1h-1zM42 10h1v1h-1zM44 10h1v1h-1zM46 10h7v1h-7zM12 11h1v1h-1zM15 11h1v1h-1zM17 11h1v1h-1zM21 11h2v1h-2zM26 11h1v1h-1zM30 11h3v1h-3zM35 11h2v1h-2zM38 11h1v1h-1zM40 11h2v1h-2zM43 11h1v1h-1zM4 12h1v1h-1zM10 12h1v1h-1zM12 12h4v1h-4zM22 12h9v1h-9zM33 12h3v1h-3zM37 12h1v1h-1zM39 12h3v1h-3zM43 12h4v1h-4zM49 12h3v1h-3zM6 13h1v1h-1zM11 13h3v1h-3zM15 13h3v1h-3zM20 13h1v1h-1zM24 13h2v1h-2zM29 13h3v1h-3zM33 13h2v1h-2zM36 13h11v1h-11zM48 13h2v1h-2zM51 13h1v1h-1zM4 14h5v1h-5zM10 14h4v1h-4zM15 14h1v1h-1zM17 14h3v1h-3zM21 14h1v1h-1zM23 14h1v1h-1zM28 14h1v1h-1zM30 14h1v1h-1zM32 14h2v1h-2zM36 14h2v1h-2zM42 14h1v1h-1zM44 14h3v1h-3zM48 14h5v1h-5zM4 15h2v1h-2zM7 15h2v1h-2zM12 15h1v1h-1zM14 15h1v1h-1zM16 15h1v1h-1zM18 15h1v1h-1zM20 15h6v1h-6zM30 15h3v1h-3zM34 15h1v1h-1zM36 15h1v1h-1zM40 15h3v1h-3zM45 15h1v1h-1zM47 15h3v1h-3zM5 16h1v1h-1zM10 16h1v1h-1zM14 16h5v1h-5zM20 16h1v1h-1zM22 16h4v1h-4zM28 16h6v1h-6zM36 16h1v1h-1zM40 16h5v1h-5zM47 16h2v1h-2zM51 16h2v1h-2zM5 17h4v1h-4zM14 17h4v1h-4zM19 17h1v1h-1zM21 17h2v1h-2zM27 17h2v1h-2zM31 17h1v1h-1zM33 17h5v1h-5zM40 17h2v1h-2zM43 17h1v1h-1zM46 17h1v1h-1zM48 17h1v1h-1zM5 18h1v1h-1zM9 18h5v1h-5zM15 18h1v1h-1zM18 18h1v1h-1zM21 18h1v1h-1zM24 18h2v1h-2zM28 18h3v1h-3zM32 18h4v1h-4zM38 18h1v1h-1zM44 18h2v1h-2zM48 18h5v1h-5zM7 19h1v1h-1zM9 19h1v1h-1zM13 19h3v1h-3zM17 19h1v1h-1zM24 19h3v1h-3zM29 19h2v1h-2zM33 19h2v1h-2zM36 19h2v1h-2zM42 19h3v1h-3zM47 19h1v1h-1zM50 19h3v1h-3zM9 20h3v1h-3zM16 20h2v1h-2zM20 20h1v1h-1zM22 20h4v1h-4zM27 20h2v1h-2zM33 20h3v1h-3zM38 20h5v1h-5zM44 20h1v1h-1zM46 20h2v1h-2zM50 20h2v1h-2zM4 21h1v1h-1zM6 21h2v1h-2zM9 21h1v1h-1zM11 21h1v1h-1zM17 21h2v1h-2zM20 21h3v1h-3zM25 21h1v1h-1zM27 21h1v1h-1zM29 21h1v1h-1zM32 21h1v1h-1zM34 21h1v1h-1zM36 21h2v1h-2zM40 21h2v1h-2zM43 21h1v1h-1zM45 21h2v1h-2zM48 21h4v1h-4zM6 22h1v1h-1zM10 22h4v1h-4zM15 22h1v1h-1zM17 22h3v1h-3zM21 22h1v1h-1zM23 22h3v1h-3zM31 22h2v1h-2zM35 22h3v1h-3zM40 22h1v1h-1zM43 22h1v1h-1zM46 22h3v1h-3zM51 22h2v1h-2zM4 23h2v1h-2zM7 23h3v1h-3zM13 23h3v1h-3zM17 23h1v1h-1zM19 23h1v1h-1zM21 23h1v1h-1zM23 23h1v1h-1zM27 23h1v1h-1zM29 23h1v1h-1zM31 23h3v1h-3zM35 23h3v1h-3zM40 23h1v1h-1zM48 23h2v1h-2zM4 24h2v1h-2zM8 24h3v1h-3zM12 24h2v1h-2zM17 24h8v1h-8zM26 24h3v1h-3zM31 24h1v1h-1zM34 24h1v1h-1zM37 24h1v1h-1zM39 24h2v1h-2zM42 24h1v1h-1zM44 24h4v1h-4zM49 24h3v1h-3zM6 25h3v1h-3zM11 25h1v1h-1zM14 25h1v1h-1zM16 25h2v1h-2zM20 25h3v1h-3zM24 25h1v1h-1zM28 25h3v1h-3zM32 25h3v1h-3zM37 25h3v1h-3zM41 25h6v1h-6zM50 25h1v1h-1zM52 25h1v1h-1zM5 26h1v1h-1zM7 26h6v1h-6zM15 26h1v1h-1zM19 26h2v1h-2zM23 26h2v1h-2zM26 26h5v1h-5zM34 26h1v1h-1zM36 26h1v1h-1zM40 26h1v1h-1zM42 26h1v1h-1zM44 26h9v1h-9zM5 27h2v1h-2zM8 27h1v1h-1zM12 27h1v1h-1zM21 27h2v1h-2zM26 27h1v1h-1zM30 27h1v1h-1zM32 27h1v1h-1zM37 27h1v1h-1zM39 27h2v1h-2zM43 27h2v1h-2zM48 27h2v1h-2zM6 28h3v1h-3zM10 28h1v1h-1zM12 28h1v1h-1zM14 28h2v1h-2zM17 28h2v1h-2zM20 28h1v1h-1zM24 28h3v1h-3zM28 28h1v1h-1zM30 28h1v1h-1zM32 28h3v1h-3zM36 28h1v1h-1zM40 28h1v1h-1zM44 28h1v1h-1zM46 28h1v1h-1zM48 28h2v1h-2zM51 28h2v1h-2zM6 29h1v1h-1zM8 29h1v1h-1zM12 29h2v1h-2zM15 29h3v1h-3zM22 29h2v1h-2zM25 29h2v1h-2zM30 29h1v1h-1zM33 29h2v1h-2zM36 29h2v1h-2zM39 29h2v1h-2zM44 29h1v1h-1zM48 29h2v1h-2zM51 29h2v1h-2zM4 30h2v1h-2zM8 30h5v1h-5zM17 30h1v1h-1zM20 30h1v1h-1zM22 30h2v1h-2zM25 30h8v1h-8zM37 30h6v1h-6zM44 30h6v1h-6zM51 30h2v1h-2zM5 31h1v1h-1zM7 31h1v1h-1zM12 31h2v1h-2zM16 31h1v1h-1zM18 31h1v1h-1zM20 31h2v1h-2zM25 31h2v1h-2zM28 31h1v1h-1zM33 31h3v1h-3zM37 31h2v1h-2zM41 31h3v1h-3zM48 31h3v1h-3zM4 32h1v1h-1zM6 32h2v1h-2zM10 32h2v1h-2zM15 32h2v1h-2zM18 32h7v1h-7zM26 32h2v1h-2zM30 32h1v1h-1zM33 32h1v1h-1zM37 32h5v1h-5zM43 32h3v1h-3zM47 32h2v1h-2zM52 32h1v1h-1zM4 33h2v1h-2zM7 33h1v1h-1zM12 33h1v1h-1zM16 33h1v1h-1zM18 33h3v1h-3zM26 33h1v1h-1zM28 33h1v1h-1zM32 33h6v1h-6zM41 33h1v1h-1zM44 33h2v1h-2zM47 33h1v1h-1zM49 33h1v1h-1zM5 34h3v1h-3zM9 34h3v1h-3zM13 34h1v1h-1zM15 34h1v1h-1zM19 34h3v1h-3zM24 34h1v1h-1zM28 34h1v1h-1zM30 34h1v1h-1zM32 34h1v1h-1zM35 34h3v1h-3zM39 34h1v1h-1zM41 34h1v1h-1zM43 34h1v1h-1zM46 34h3v1h-3zM50 34h1v1h-1zM52 34h1v1h-1zM5 35h2v1h-2zM8 35h1v1h-1zM13 35h2v1h-2zM17 35h2v1h-2zM20 35h2v1h-2zM23 35h10v1h-10zM34 35h6v1h-6zM43 35h1v1h-1zM47 35h1v1h-1zM51 35h1v1h-1zM5 36h1v1h-1zM9 36h2v1h-2zM15 36h2v1h-2zM20 36h1v1h-1zM22 36h3v1h-3zM29 36h1v1h-1zM37 36h4v1h-4zM42 36h3v1h-3zM49 36h4v1h-4zM4 37h2v1h-2zM7 37h3v1h-3zM11 37h1v1h-1zM13 37h1v1h-1zM15 37h1v1h-1zM18 37h2v1h-2zM21 37h1v1h-1zM23 37h2v1h-2zM27 37h2v1h-2zM30 37h1v1h-1zM32 37h1v1h-1zM34 37h1v1h-1zM36 37h1v1h-1zM38 37h1v1h-1zM40 37h3v1h-3zM47 37h3v1h-3zM4 38h3v1h-3zM9 38h2v1h-2zM12 38h1v1h-1zM14 38h2v1h-2zM17 38h2v1h-2zM22 38h1v1h-1zM24 38h1v1h-1zM27 38h1v1h-1zM29 38h1v1h-1zM33 38h1v1h-1zM36 38h1v1h-1zM38 38h1v1h-1zM40 38h1v1h-1zM42 38h3v1h-3zM46 38h2v1h-2zM49 38h2v1h-2zM52 38h1v1h-1zM5 39h1v1h-1zM9 39h1v1h-1zM12 39h1v1h-1zM15 39h1v1h-1zM17 39h1v1h-1zM20 39h1v1h-1zM22 39h3v1h-3zM26 39h2v1h-2zM29 39h1v1h-1zM32 39h2v1h-2zM35 39h1v1h-1zM38 39h1v1h-1zM41 39h5v1h-5zM47 39h1v1h-1zM49 39h1v1h-1zM51 39h2v1h-2zM4 40h8v1h-8zM13 40h1v1h-1zM15 40h1v1h-1zM21 40h1v1h-1zM25 40h1v1h-1zM27 40h1v1h-1zM29 40h1v1h-1zM32 40h2v1h-2zM36 40h3v1h-3zM40 40h1v1h-1zM42 40h6v1h-6zM49 40h1v1h-1zM51 40h2v1h-2zM5 41h3v1h-3zM9 41h1v1h-1zM11 41h1v1h-1zM14 41h2v1h-2zM18 41h1v1h-1zM20 41h1v1h-1zM27 41h2v1h-2zM33 41h5v1h-5zM39 41h3v1h-3zM44 41h2v1h-2zM47 41h1v1h-1zM49 41h2v1h-2zM5 42h1v1h-1zM9 42h2v1h-2zM12 42h4v1h-4zM19 42h1v1h-1zM24 42h3v1h-3zM28 42h2v1h-2zM31 42h3v1h-3zM36 42h3v1h-3zM40 42h1v1h-1zM42 42h6v1h-6zM49 42h4v1h-4zM5 43h3v1h-3zM16 43h1v1h-1zM20 43h1v1h-1zM22 43h1v1h-1zM26 43h1v1h-1zM29 43h2v1h-2zM32 43h4v1h-4zM38 43h1v1h-1zM41 43h4v1h-4zM47 43h5v1h-5zM4 44h3v1h-3zM10 44h4v1h-4zM16 44h1v1h-1zM18 44h1v1h-1zM21 44h1v1h-1zM24 44h1v1h-1zM26 44h5v1h-5zM34 44h2v1h-2zM37 44h4v1h-4zM43 44h6v1h-6zM52 44h1v1h-1zM12 45h1v1h-1zM17 45h1v1h-1zM22 45h2v1h-2zM25 45h2v1h-2zM30 45h1v1h-1zM33 45h2v1h-2zM37 45h1v1h-1zM41 45h1v1h-1zM44 45h1v1h-1zM48 45h2v1h-2zM4 46h7v1h-7zM14 46h1v1h-1zM17 46h2v1h-2zM20 46h1v1h-1zM25 46h2v1h-2zM28 46h1v1h-1zM30 46h2v1h-2zM35 46h1v1h-1zM39 46h2v1h-2zM42 46h3v1h-3zM46 46h1v1h-1zM48 46h1v1h-1zM52 46h1v1h-1zM4 47h1v1h-1zM10 47h1v1h-1zM13 47h2v1h-2zM16 47h1v1h-1zM20 47h1v1h-1zM26 47h1v1h-1zM30 47h3v1h-3zM34 47h1v1h-1zM36 47h1v1h-1zM38 47h1v1h-1zM40 47h1v1h-1zM43 47h2v1h-2zM48 47h2v1h-2zM51 47h1v1h-1zM4 48h1v1h-1zM6 48h3v1h-3zM10 48h1v1h-1zM14 48h1v1h-1zM16 48h1v1h-1zM18 48h1v1h-1zM20 48h2v1h-2zM26 48h5v1h-5zM33 48h3v1h-3zM38 48h11v1h-11zM52 48h1v1h-1zM4 49h1v1h-1zM6 49h3v1h-3zM10 49h1v1h-1zM13 49h2v1h-2zM16 49h4v1h-4zM23 49h2v1h-2zM26 49h2v1h-2zM29 49h2v1h-2zM32 49h4v1h-4zM37 49h2v1h-2zM42 49h1v1h-1zM47 49h1v1h-1zM49 49h4v1h-4zM4 50h1v1h-1zM6 50h3v1h-3zM10 50h1v1h-1zM17 50h1v1h-1zM20 50h1v1h-1zM22 50h3v1h-3zM27 50h3v1h-3zM31 50h1v1h-1zM34 50h1v1h-1zM37 50h1v1h-1zM41 50h2v1h-2zM46 50h2v1h-2zM49 50h2v1h-2zM4 51h1v1h-1zM10 51h1v1h-1zM13 51h4v1h-4zM18 51h1v1h-1zM20 51h4v1h-4zM25 51h1v1h-1zM27 51h2v1h-2zM31 51h2v1h-2zM34 51h2v1h-2zM37 51h3v1h-3zM42 51h1v1h-1zM45 51h3v1h-3zM49 51h1v1h-1zM52 51h1v1h-1zM4 52h7v1h-7zM12 52h2v1h-2zM17 52h1v1h-1zM19 52h1v1h-1zM21 52h3v1h-3zM26 52h4v1h-4zM32 52h3v1h-3zM36 52h1v1h-1zM38 52h1v1h-1zM40 52h1v1h-1zM42 52h1v1h-1zM44 52h1v1h-1zM48 52h1v1h-1zM52 52h1v1h-1z"/>
+  </defs>
+</svg>
+
 <div class="phone" id="phone">
 
-  <!-- ===== Landing intro ===== -->
-  <section class="view" id="intro" aria-roledescription="carousel" aria-label="Welcome to X2F">
-    <header class="hdr">
-      <svg width="64" height="27" viewBox="0 -2.15 292 122.15" role="img" aria-label="X2F"><path fill="currentColor" d="M0 120L0 119.1L35.4 56.3L5.1 0.9L5.1 0L32.6 0L54.3 40.2L58 40.2L79.1 0L105.5 0L105.5 0.9L75.4 56.3L110.5 119.1L110.5 120L81.8 120L56.6 72.5L52.9 72.5L27.4 120ZM115.1 120L115.1 99.7Q127.8 90 137.4 82.2Q146.9 74.5 153.7 68Q163.8 58.5 169 50.8Q174.2 43.1 174.2 34.6Q174.2 26.9 169.8 22.1Q165.4 17.2 157.1 17.2Q147.7 17.2 142.9 23.3Q138.2 29.4 138.2 39.4L115.1 39.4Q115.1 26.9 119.8 17.5Q124.6 8.2 134.1 3Q143.5 -2.2 157.5 -2.2Q177.4 -2.2 188.2 7.9Q199.1 18 199.1 34.5Q199.1 46.3 192.9 56.2Q186.8 66.2 174.6 77.1Q169.4 81.8 163 86.8Q156.6 91.8 150.3 96L150.3 99.7L203.1 99.7L203.1 120ZM212.9 0H292V20.3H238.5V47.5H255.4V66.3H238.5V120H212.9Z"/><circle fill="var(--monero)" cx="275.1" cy="56.9" r="15.1"/></svg>
-      <span class="name">Welcome</span>
-    </header>
-    <div class="illus" aria-hidden="true"><div class="anchor" id="stageIntro"></div></div>
-    <div class="copy" aria-live="polite"><div class="t" id="copyT"><h1 class="disp" id="h1"></h1><p id="p1"></p></div></div>
-    <nav class="dots" id="dots" aria-label="Intro steps"></nav>
-    <div class="cta">
-      <button class="btn-p" id="takeTour">Take the tour</button>
-      <button class="btn-s" id="skipStart">Skip and get started</button>
+  <!-- =================== FIRST SCREEN =================== -->
+  <section class="view" id="intro" aria-label="Welcome to X2F">
+    <div class="col">
+      <figure class="hero" id="hero" role="img" aria-label="The X2F logo" style="margin:0">
+        <div class="mark" id="mark" aria-hidden="true">
+          <div class="lt" data-l="x"><svg viewBox="0 -2.15 292 122.15"><use href="#lgX" fill="var(--ink)"/></svg></div>
+          <div class="lt" data-l="2"><svg viewBox="0 -2.15 292 122.15"><use href="#lg2" fill="var(--ink)"/></svg></div>
+          <div class="lt" data-l="f"><svg viewBox="0 -2.15 292 122.15"><use href="#lgF" fill="var(--ink)"/></svg></div>
+          <div class="ring" id="dotRing"></div>
+          <div class="lt" data-l="dot"><svg viewBox="0 -2.15 292 122.15"><circle fill="var(--monero)" cx="275.1" cy="56.9" r="15.1"/></svg></div>
+        </div>
+      </figure>
+      <div class="welcome">
+        <h1>Welcome to X2F</h1>
+        <p>Swap Monero for cash, bank transfers or gift cards, person to person.</p>
+      </div>
+      <div class="cta">
+        <button class="btn-p" id="takeTour"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5.5 3.5-5.5 3.5z"/></svg>Take the tour</button>
+        <button class="btn-s" id="skipStart">Skip and get started<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
+      </div>
+      <ul class="links" aria-label="Helpful links">
+        <li><a href="#"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>FAQ</a></li>
+        <li><a href="#"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>Getting started</a></li>
+        <li><a href="#"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>Support</a></li>
+        <li><a href="#"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a></li>
+      </ul>
     </div>
-    <nav class="tabs" aria-label="Main" id="introTabs"></nav>
+    <nav class="tabs" aria-label="Main"><div class="col" data-tabs=""></div></nav>
   </section>
 
-  <!-- ===== Tour on mock screens ===== -->
-  <section class="view" id="tourView" hidden>
-    <!-- Trade screen -->
-    <div class="scr" id="scrTrade">
-      <header class="hdr" data-stop="logo">
-        <svg width="64" height="27" viewBox="0 -2.15 292 122.15" role="img" aria-label="X2F"><use href="#logoPath"/></svg>
-        <span class="name">Trade</span>
-      </header>
-      <div class="content">
-        <div class="seg" data-stop="seg"><span>Buy</span><span class="on">Sell</span></div>
-        <div class="sec">Buyers for your Monero</div>
-        <div class="card">
-          <div class="row" data-stop="offer"><div class="tile">S</div><div class="m"><b>satoshi_ghost</b><small>Zelle · <span class="mono">98</span>% good · <span class="mono">212</span> trades</small></div><div class="p"><span class="mono">$161.20</span><small>per XMR</small></div></div>
-          <div class="row"><div class="tile">M</div><div class="m"><b>moneta_k</b><small>Bank transfer · <span class="mono">100</span>% good</small></div><div class="p"><span class="mono">$160.85</span><small>per XMR</small></div></div>
-          <div class="row"><div class="tile">R</div><div class="m"><b>rivet_88</b><small>Gift card · <span class="mono">96</span>% good</small></div><div class="p"><span class="mono">$159.90</span><small>per XMR</small></div></div>
-          <div class="row"><div class="tile">L</div><div class="m"><b>lumen.trade</b><small>Cash by mail · <span class="mono">99</span>% good</small></div><div class="p"><span class="mono">$158.40</span><small>per XMR</small></div></div>
-        </div>
-      </div>
-    </div>
-    <!-- Wallets screen -->
-    <div class="scr" id="scrWallets" hidden>
-      <header class="hdr">
-        <svg width="64" height="27" viewBox="0 -2.15 292 122.15" role="img" aria-label="X2F"><use href="#logoPath"/></svg>
-        <span class="name">Wallets</span>
-      </header>
-      <div class="content">
-        <div class="sec">Linked wallet</div>
-        <div class="card" data-stop="wallet">
-          <div class="row"><div class="tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="6" width="17" height="13" rx="2.5"/><path d="M16 12.5h2"/><path d="M6 6l9-2.5 1 2.5"/></svg></div><div class="m"><b>Cake Wallet</b><small><span class="mono">4Ax9 … k2Qm</span></small><small>Payouts go here</small></div></div>
-        </div>
-        <div class="card">
-          <div class="row"><div class="tile">+</div><div class="m"><b>Link another wallet</b><small>Paste an address or connect a wallet app</small></div></div>
-        </div>
-      </div>
-    </div>
-    <nav class="tabs" aria-label="Main" id="tourTabs"></nav>
+  <!-- =================== TOUR: mock screens =================== -->
+  <section class="view" id="app" hidden>
 
-    <!-- overlay -->
-    <div class="tour" id="tour" role="dialog" aria-modal="true" aria-labelledby="tTitle">
-      <svg class="scrim" viewBox="0 0 443 794" preserveAspectRatio="none" aria-hidden="true">
-        <defs><mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="443" height="794">
-          <rect x="0" y="0" width="443" height="794" fill="white"/>
-          <rect id="hole" class="out" x="0" y="0" width="0" height="0" rx="14" fill="black"/>
+    <!-- 1 · Find a trade (Main, sell side) -->
+    <div class="scr" id="s-main" style="--foot:60px">
+      <div class="scroll"><div class="col">
+        <header class="hd" style="padding-bottom:24px">
+          <div class="logo-row"><svg width="60" height="24" viewBox="0 0 60 24" aria-label="X2F" style="display:block;overflow:visible"><use href="#hdrLogo"/></svg><span class="dash">–</span><span class="ttl">Find a trade</span>
+            <span class="news"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg><i></i>Site news</span></div>
+          <div class="seg" data-t="seg" role="tablist" aria-label="Buy or sell"><span class="pill on" data-t="buy" role="tab">Buy</span><span class="pill" data-t="sell" role="tab">Sell</span></div>
+          <h1 class="h1 swap" id="mainH1" style="margin-top:20px"><span class="a">How do you want to pay?</span><span class="b">How do you want to be paid?</span></h1>
+        </header>
+        <main class="main" style="gap:28px">
+          <section class="wash mkt" aria-label="Market price">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <span class="cap">Market price</span>
+              <span style="position:relative;display:flex">
+                <span class="curbtn" data-t="cur"><svg class="flag" width="20" height="14" viewBox="0 0 20 14"><rect x=".5" y=".5" width="19" height="13" rx="2" style="fill:none;stroke:var(--line)"/><text id="curFlag" x="10" y="10" text-anchor="middle" style="fill:var(--ink-muted);font-family:var(--mono);font-size:9px">EU</text></svg><span id="curCode">EUR</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+                <div class="menu" id="curMenu" data-t="menu" role="listbox">
+                  <div class="opt" data-c="USD" id="optUSD"><svg class="flag" width="20" height="14" viewBox="0 0 20 14"><rect x=".5" y=".5" width="19" height="13" rx="2" style="fill:none;stroke:var(--line)"/><text x="10" y="10" text-anchor="middle" style="fill:var(--ink-muted);font-family:var(--mono);font-size:9px">US</text></svg><span><b>USD</b> · US dollar</span><svg class="ck" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></div>
+                  <div class="opt sel" data-c="EUR"><svg class="flag" width="20" height="14" viewBox="0 0 20 14"><rect x=".5" y=".5" width="19" height="13" rx="2" style="fill:none;stroke:var(--line)"/><text x="10" y="10" text-anchor="middle" style="fill:var(--ink-muted);font-family:var(--mono);font-size:9px">EU</text></svg><span><b>EUR</b> · Euro</span><svg class="ck" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></div>
+                  <div class="opt" data-c="GBP"><svg class="flag" width="20" height="14" viewBox="0 0 20 14"><rect x=".5" y=".5" width="19" height="13" rx="2" style="fill:none;stroke:var(--line)"/><text x="10" y="10" text-anchor="middle" style="fill:var(--ink-muted);font-family:var(--mono);font-size:9px">GB</text></svg><span><b>GBP</b> · British pound</span><svg class="ck" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></div>
+                  <div class="opt" data-c="CAD"><svg class="flag" width="20" height="14" viewBox="0 0 20 14"><rect x=".5" y=".5" width="19" height="13" rx="2" style="fill:none;stroke:var(--line)"/><text x="10" y="10" text-anchor="middle" style="fill:var(--ink-muted);font-family:var(--mono);font-size:9px">CA</text></svg><span><b>CAD</b> · Canadian dollar</span><svg class="ck" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></div>
+                </div>
+              </span>
+            </div>
+            <span style="display:inline-flex;align-items:baseline;gap:8px;margin-top:-8px"><span class="big swap" id="mktBig" style="display:inline-block"><span class="a">€306.10</span><span class="b">$329.90</span></span><span style="font-size:18px;line-height:24px;font-weight:600;color:var(--ink-muted)">/ <span style="color:var(--monero-ink)">XMR</span></span></span>
+            <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;line-height:18px;color:var(--ink-muted);margin-top:-6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Market rate · updated <span class="mono">14:05</span> UTC</span>
+          </section>
+          <section style="display:flex;flex-direction:column;gap:12px">
+            <div class="sech"><h2>Payment apps</h2><span id="appsCount">4</span></div>
+            <div class="swap" id="methods">
+              <div class="list a" data-t="methodsEUR">
+                <div class="mrow"><span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span class="m"><b>Revolut</b><small><span class="mono" style="color:var(--ink)">14</span> <span class="w-who">sellers</span> taking EUR</small></span><span class="r"><small class="w-pre">from</small><span>€305.70</span></span><span class="go"><svg class="ch" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+                <div class="mrow"><span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span class="m"><b>Wise</b><small><span class="mono" style="color:var(--ink)">9</span> <span class="w-who">sellers</span> taking EUR</small></span><span class="r"><small class="w-pre">from</small><span>€306.40</span></span><span class="go"><svg class="ch" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+                <div class="mrow"><span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span class="m"><b>PayPal</b><small><span class="mono" style="color:var(--ink)">6</span> <span class="w-who">sellers</span> taking EUR</small></span><span class="r"><small class="w-pre">from</small><span>€309.20</span></span><span class="go"><svg class="ch" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+                <div class="mrow"><span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span class="m"><b>Bizum</b><small><span class="mono" style="color:var(--ink)">3</span> <span class="w-who">sellers</span> taking EUR</small></span><span class="r"><small class="w-pre">from</small><span>€307.90</span></span><span class="go"><svg class="ch" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+              </div>
+              <div class="list b" data-t="methods">
+                <div class="mrow" data-t="cash"><span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span class="m"><b>Cash App</b><small><span class="mono" style="color:var(--ink)">23</span> <span class="w-who">sellers</span> taking USD</small></span><span class="r"><small class="w-pre">from</small><span class="w-rate" data-buy="$333.30" data-sell="$336.50">$333.30</span></span><span class="go"><svg class="ch" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg><svg class="ck" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span></div>
+                <div class="mrow"><span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span class="m"><b>Zelle</b><small><span class="mono" style="color:var(--ink)">34</span> <span class="w-who">sellers</span> taking USD</small></span><span class="r"><small class="w-pre">from</small><span class="w-rate" data-buy="$330.40" data-sell="$334.10">$330.40</span></span><span class="go"><svg class="ch" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+                <div class="mrow"><span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span class="m"><b>Venmo</b><small><span class="mono" style="color:var(--ink)">10</span> <span class="w-who">sellers</span> taking USD</small></span><span class="r"><small class="w-pre">from</small><span class="w-rate" data-buy="$334.20" data-sell="$333.80">$334.20</span></span><span class="go"><svg class="ch" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+                <div class="mrow"><span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span class="m"><b>PayPal</b><small><span class="mono" style="color:var(--ink)">8</span> <span class="w-who">sellers</span> taking USD</small></span><span class="r"><small class="w-pre">from</small><span class="w-rate" data-buy="$337.70" data-sell="$332.60">$337.70</span></span><span class="go"><svg class="ch" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+              </div>
+            </div>
+          </section>
+          <p style="margin:0;font-size:12px;line-height:16px;color:var(--ink-muted)">Counts and rates are examples.</p>
+        </main>
+      </div></div>
+      <nav class="tabs" aria-label="Main"><div class="col" data-tabs="Trade"></div></nav>
+    </div>
+
+    <!-- 2 · Buyers paying with Cash App (SellOffers) -->
+    <div class="scr off" id="s-offers">
+      <div class="scroll"><div class="col">
+        <header class="hd">
+          <div class="bar"><span class="ib"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span></div>
+          <div data-t="ohead" style="display:flex;flex-direction:column"><span class="meta"><span class="mono">23</span> buyers · USD · Example</span>
+          <h1 class="h1">Sell XMR via Cash App</h1></div>
+        </header>
+        <main class="main">
+          <div class="mktrow"><span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span><span style="flex-grow:1;font-size:15px;line-height:20px;font-weight:600">Market price</span><span style="display:inline-flex;align-items:baseline;gap:6px"><span class="mono" style="font-size:18px;line-height:24px;font-weight:500">$329.90</span><span style="font-size:14px;color:var(--ink-muted)">/ <span class="xmr">XMR</span></span></span></div>
+          <div class="sort"><span>Sort</span><span class="chipf on">Best price</span><span class="chipf">Online now</span><span class="chipf">Most trades</span></div>
+          <article class="offer" data-t="offer1">
+            <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+              <div class="who"><span class="av on">SG</span><span class="n"><span>satoshi_ghost<span class="vendor"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></span><small><span class="mono">1,284</span> trades · <span class="mono">99.4%</span> positive</small></span></div>
+              <div class="badges" data-t="badges">
+                <span class="bdg" style="--c:var(--escrow)"><i><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4"/></svg></i>Trusted</span>
+                <span class="bdg" style="--c:var(--caution)"><i><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></i>Fast</span>
+                <span class="bdg" style="--c:var(--ink)"><i><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5h5A1.5 1.5 0 0116 4v5a1.5 1.5 0 01-1.5 1.5h-5A1.5 1.5 0 018 9V4a1.5 1.5 0 011.5-1.5zM6.5 10.5h11V15a5.5 5.5 0 01-11 0zM12 14v2.5"/></svg></i>Security key</span>
+                <span class="bdg more"><span class="mono">+2</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div class="price"><span>$336.50</span><small>Pays in about <span class="mono">10</span> min</small></div>
+              <div class="terms"><span class="pct" data-t="pct"><span>2%</span><small>above market</small></span><span class="lim" data-t="limits"><span><span class="mono">≈ 0.148588 – 2.971768</span> <span class="xmr" style="font-size:13px">XMR</span></span><span><span class="mono">$50 – $1,000</span> <span style="font-size:13px;font-weight:600;color:var(--ink-muted)">USD</span></span></span></div>
+            </div>
+            <span class="btn-o">Message satoshi_ghost</span>
+          </article>
+          <article class="offer">
+            <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+              <div class="who"><span class="av">NO</span><span class="n"><span>nightowl_44</span><small>Seen <span class="mono">2</span> h ago · <span class="mono">58</span> trades · <span class="mono">97%</span> positive</small></span></div>
+              <div class="badges"><span class="bdg" style="--c:var(--escrow)"><i><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9a5 5 0 1010 0a5 5 0 10-10 0M9 13.5L7.5 21l4.5-2.5 4.5 2.5L15 13.5"/></svg></i>Veteran</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div class="price"><span>$333.20</span><small>Pays in about <span class="mono">25</span> min</small></div>
+              <div class="terms"><span class="pct"><span>1%</span><small>above market</small></span><span class="lim"><span><span class="mono">≈ 0.060024 – 1.200480</span> <span class="xmr" style="font-size:13px">XMR</span></span><span><span class="mono">$20 – $400</span> <span style="font-size:13px;font-weight:600;color:var(--ink-muted)">USD</span></span></span></div>
+            </div>
+            <span class="btn-o">Message nightowl_44</span>
+          </article>
+        </main>
+      </div></div>
+    </div>
+
+    <!-- 3 · Quote (SellQuote) -->
+    <div class="scr off" id="s-quote" style="--foot:117px">
+      <div class="scroll"><div class="col">
+        <header class="hd">
+          <div class="bar"><span class="ib"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span><span class="chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</span></div>
+          <span class="meta">Cash App · USD · <span class="mono">$336.50</span> / XMR · Example</span>
+          <h1 class="h1">Selling to satoshi_ghost</h1>
+        </header>
+        <main class="main">
+          <section class="card" style="padding:16px 20px"><div class="who"><span class="av on">SG</span><span class="n"><span>satoshi_ghost<span class="vendor">Vendor</span></span><small><span class="mono">1,284</span> trades · <span class="mono">99.4%</span> positive</small></span><span style="color:var(--ink-muted);margin-right:-4px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div></section>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <section data-t="amount" style="display:flex;flex-direction:column;gap:8px">
+              <span class="cap">You sell</span>
+              <div class="field" id="amtField"><span class="v"><span id="amtV"></span><i class="caret"></i><span class="ph" id="amtPh">0.000000</span></span><span class="max">Max</span><span class="sep"></span><span class="xmr" style="font-size:16px">XMR</span></div>
+              <span class="help">satoshi_ghost buys <span class="mono">$50</span> to <span class="mono">$1,000</span> per trade.</span>
+            </section>
+            <section class="wash" data-t="receive" style="gap:16px">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span class="cap">You receive</span>
+                <span style="display:flex;align-items:baseline;gap:8px"><span class="big" id="usdV">$0.00</span><span style="font-size:18px;line-height:24px;font-weight:600;color:var(--ink-muted)">USD</span></span>
+                <span style="font-size:14px;line-height:20px;color:var(--ink-muted)">Paid by satoshi_ghost via Cash App</span>
+              </div>
+              <dl class="dl">
+                <div><dt>Rate</dt><dd><span class="mono" style="font-size:15px;font-weight:500">$336.50</span> / XMR</dd></div><i></i>
+                <div><dt>Network fee</dt><dd style="font-size:15px">Paid by you</dd></div><i></i>
+                <div style="min-height:52px;font-size:16px;line-height:22px;font-weight:600"><dt style="color:var(--ink)">You lock in escrow</dt><dd><span class="mono" style="font-weight:500" id="lockV">0.000000</span> <span class="xmr">XMR</span></dd></div>
+              </dl>
+            </section>
+          </div>
+        </main>
+      </div></div>
+      <footer class="foot"><div class="col" data-t="request"><button class="req" id="reqBtn"><span id="reqL">Request to sell XMR</span></button><span class="note" id="reqNote">Next, you lock the XMR in escrow.</span></div></footer>
+    </div>
+
+    <!-- 4 · Fund the escrow (TradeFund, taker side) -->
+    <div class="scr off" id="s-fund">
+      <div class="scroll"><div class="col">
+        <header class="hd">
+          <div class="bar"><span class="ib"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span><span class="chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</span></div>
+          <span class="meta">Trade <span class="mono">K7M2-9QXA-4FTR-8WPN</span> · Cash App · Example</span>
+          <h1 class="h1">Selling to satoshi_ghost</h1>
+          <div class="deal"><div><b>0.594354 <span class="xmr" style="font-family:inherit">XMR</span></b><small>for <span class="mono">$200.00</span></small></div><div style="text-align:right"><b>$336.50 <span style="font-family:'Atkinson Hyperlegible Next',sans-serif;font-weight:400">/ XMR</span></b><small><span class="mono" style="color:var(--escrow)">2%</span> above market</small></div></div>
+        </header>
+        <ol class="steps" id="fundSteps"><li class="cur"><span><i></i></span>Escrow</li><li><span><i></i></span>Buyer pays</li><li><span><i></i></span>You check</li><li><span><i></i></span>Released</li></ol>
+        <main class="main">
+          <section class="wash" id="fundCard" data-t="status" style="--tint:var(--caution)">
+            <div class="st2" id="fundSt">
+              <div class="a" style="display:flex;flex-direction:column;gap:16px">
+                <span><span class="status"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Waiting for you to fund</span></span>
+                <div style="display:flex;flex-direction:column;gap:4px"><span class="cap" style="color:var(--caution)">Time to fund</span><span class="timer"><span class="big">29</span><span class="u">min</span><span class="big" id="tSec">42</span><span class="u">s</span></span><span style="font-size:14px;line-height:20px;color:var(--ink-muted)">You have <span class="mono" style="color:var(--ink)">30</span> min to fund. If it runs out, the trade is cancelled.</span></div>
+                <div style="height:1px;background:color-mix(in srgb,var(--caution) 25%,transparent)"></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><h2 style="margin:0;font-size:18px;line-height:24px;font-weight:600">Trade started with satoshi_ghost. Fund the escrow to lock the trade.</h2><p style="margin:0;font-size:15px;line-height:22px;color:var(--ink-muted)">Once funded, neither of you can take the XMR alone.</p></div>
+              </div>
+              <div class="b" style="display:flex;flex-direction:column;gap:16px">
+                <span><span class="status" style="--tint:var(--escrow)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Locked in escrow</span></span>
+                <div style="display:flex;flex-direction:column;gap:4px"><span class="cap" style="color:var(--escrow)">Secured</span><span style="display:inline-flex;align-items:baseline;gap:8px"><span class="big">0.594354</span><span style="font-size:18px;line-height:24px;font-weight:600;color:var(--monero-ink)">XMR</span></span><span style="font-size:14px;line-height:20px;color:var(--ink-muted)"><span class="mono" style="color:var(--ink)">3</span> keys, any <span class="mono" style="color:var(--ink)">2</span> release it. One key alone can't move anything.</span></div>
+                <div style="height:1px;background:color-mix(in srgb,var(--escrow) 25%,transparent)"></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><h2 style="margin:0;font-size:18px;line-height:24px;font-weight:600">satoshi_ghost has been told to pay you.</h2><p style="margin:0;font-size:15px;line-height:22px;color:var(--ink-muted)"><span class="mono" style="color:var(--ink)">$200.00</span> by Cash App, within <span class="mono" style="color:var(--ink)">30</span> min.</p></div>
+              </div>
+            </div>
+          </section>
+          <section class="card" style="display:flex;flex-direction:column;gap:16px;padding:20px">
+            <div style="display:flex;flex-direction:column;gap:4px"><h2 style="margin:0;font-size:19px;line-height:26px;font-weight:600">Send from your wallet</h2><p style="margin:0;font-size:16px;line-height:24px;color:var(--ink-muted)">Open Send in any Monero wallet and scan this code. It fills in the escrow address and the exact amount.</p></div>
+            <div data-t="qr" style="display:flex;flex-direction:column;gap:16px">
+              <div class="qrw"><div class="qrbox"><svg viewBox="0 0 57 57" shape-rendering="crispEdges" role="img" aria-label="QR code with the escrow address and 0.594354 XMR"><rect width="57" height="57" fill="var(--qr-bg)"/><use href="#qrP" fill="var(--qr-fg)"/></svg><i class="scanline" id="scan"></i></div></div>
+              <dl class="dl" style="background:var(--surface-raised)">
+                <div style="flex-direction:column;align-items:stretch;gap:6px;padding:12px 14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><dt style="font-size:15px;line-height:22px">Escrow address</dt><span class="cpy"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg>Copy</span></div><dd class="addr">47tRm jJhGD Xcc7i LNpvm 2hqpw F4CiS bRrnU bxSdr uc4Re YHGbx …</dd></div><i></i>
+                <div style="padding:8px 14px;min-height:60px"><div style="display:flex;flex-direction:column;gap:2px"><dt style="font-size:15px;line-height:22px">Amount</dt><dd style="display:inline-flex;align-items:baseline;gap:6px"><span class="mono" style="font-size:22px;line-height:28px;font-weight:500">0.594354</span><span class="xmr" style="font-size:16px">XMR</span></dd></div><span class="cpy"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg>Copy</span></div>
+              </dl>
+            </div>
+            <p style="margin:0;font-size:15px;line-height:22px;color:var(--ink-muted)">Send exactly this amount. Your wallet adds the network fee on top.</p>
+          </section>
+        </main>
+      </div></div>
+    </div>
+
+    <!-- 5 · Check and release (SellerConfirm) -->
+    <div class="scr off" id="s-confirm" style="--foot:129px">
+      <div class="scroll"><div class="col">
+        <header class="hd">
+          <div class="bar"><span class="ib"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span><span class="chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</span></div>
+          <span class="meta">Trade <span class="mono">K7M2-9QXA-4FTR-8WPN</span> · Cash App · Example</span>
+          <h1 class="h1">Selling to satoshi_ghost</h1>
+        </header>
+        <ol class="steps" id="confSteps"><li class="done"><span><i></i></span>Escrow</li><li class="cur"><span><i></i></span>Buyer pays</li><li><span><i></i></span>You check</li><li><span><i></i></span>Released</li></ol>
+        <main class="main" data-t="check">
+          <section class="wash" id="paidCard" data-t="paidCard" style="--tint:var(--escrow)">
+            <div class="st2" id="paidSt">
+              <div class="a" style="display:flex;flex-direction:column;gap:12px">
+                <span><span class="status"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Locked in escrow</span></span>
+                <h2 style="margin:0;font-size:18px;line-height:24px;font-weight:600">Waiting for satoshi_ghost to pay</h2>
+                <p style="margin:0;font-size:15px;line-height:22px;color:var(--ink-muted)"><span class="mono" style="color:var(--ink)">$200.00</span> by Cash App. You'll get an alert when they tap I've paid.</p>
+              </div>
+              <div class="b" style="display:flex;flex-direction:column;gap:12px">
+                <span><span class="status" style="--tint:var(--caution)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>Payment sent</span></span>
+                <h2 style="margin:0;font-size:18px;line-height:24px;font-weight:600">satoshi_ghost marked this trade paid.</h2>
+                <p style="margin:0;font-size:15px;line-height:22px;color:var(--ink-muted)">Check your Cash App for <span class="mono" style="color:var(--ink)">$200.00</span> from satoshi_ghost.</p>
+              </div>
+            </div>
+          </section>
+          <section class="danger">
+            <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>Screenshots can be faked, even a copy of X2F's own screen.</h2>
+            <p>Only your Cash App shows whether the money arrived.</p>
+            <div class="tick" id="tick" data-t="tick"><span class="box"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span><span>I checked my Cash App myself and the <span class="mono">$200.00</span> is there.</span></div>
+          </section>
+        </main>
+      </div></div>
+      <footer class="foot"><div class="col" data-t="release"><button class="hold" id="holdBtn"><i class="fill" id="holdFill"></i><span id="holdL">Hold to release <span class="mono" style="font-weight:500">0.594354</span> XMR</span></button><span class="note" id="holdNote" style="min-height:44px;line-height:18px">Press and hold for <span class="mono">&nbsp;1.5&nbsp;</span> s. Once released, the XMR can't be taken back.</span></div></footer>
+    </div>
+
+    <!-- 6 · Released, rate the trade (Review) -->
+    <div class="scr off" id="s-review">
+      <div class="scroll"><div class="col">
+        <header class="hd">
+          <div class="bar"><span class="ib"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span></div>
+          <span class="meta">Trade <span class="mono">K7M2-9QXA-4FTR-8WPN</span> · Cash App · Example</span>
+          <h1 class="h1">Selling to satoshi_ghost</h1>
+        </header>
+        <main class="main">
+          <section class="wash" style="--tint:var(--escrow)">
+            <span><span class="status"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>Released</span></span>
+            <div style="display:flex;flex-direction:column;gap:4px"><span style="display:inline-flex;align-items:baseline;gap:8px"><span class="big">$200.00</span><span style="font-size:18px;line-height:24px;font-weight:600;color:var(--ink-muted)">USD</span></span><span style="font-size:15px;line-height:22px;color:var(--ink-muted)">received by Cash App. <span class="mono" style="color:var(--ink)">0.594354</span> XMR released to satoshi_ghost.</span></div>
+          </section>
+          <section class="card" style="display:flex;flex-direction:column;gap:16px;padding:20px">
+            <div class="who"><span class="av on">SG</span><span class="n"><span>satoshi_ghost<span class="vendor">Vendor</span></span><small>Buyer · <span class="mono">1,284</span> trades</small></span></div>
+            <h2 style="margin:0;font-size:18px;line-height:24px;font-weight:600">How was trading with satoshi_ghost?</h2>
+            <div class="stars"><svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+            <span style="font-size:14px;line-height:20px;color:var(--ink-muted)">Your review shows on satoshi_ghost's profile straight away.</span>
+            <span class="req ok" style="font-size:17px;height:52px">Submit review</span>
+          </section>
+        </main>
+      </div></div>
+    </div>
+
+    <div class="rips" id="rips"></div>
+
+    <!-- =================== TOUR OVERLAY =================== -->
+    <div class="tour" id="tour" role="dialog" aria-modal="true" aria-label="First trade tour" aria-describedby="tBody">
+      <svg class="scrim" id="scrim" aria-hidden="true">
+        <defs><mask id="cut" maskUnits="userSpaceOnUse">
+          <rect id="maskBg" x="0" y="0" width="100%" height="100%" fill="white"/>
+          <rect id="hole" class="hide" rx="14" fill="black"/>
         </mask></defs>
-        <rect x="0" y="0" width="443" height="794" style="fill:var(--scrim)" mask="url(#cut)"/>
-        <rect id="ring" class="out" x="0" y="0" width="0" height="0" rx="14" style="fill:none;stroke:var(--ink);stroke-width:2"/>
+        <rect width="100%" height="100%" style="fill:var(--scrim)" mask="url(#cut)"/>
+        <rect id="pulse" rx="14" style="fill:none;stroke:var(--ink);stroke-width:2"/>
+        <rect id="ring" class="hide" rx="14" style="fill:none;stroke:var(--ink);stroke-width:2"/>
       </svg>
-      <svg class="arrow out" id="arrow" viewBox="0 0 443 794" aria-hidden="true"><path id="shaft" d=""/><path id="head" d="M-10 -7 L0 0 L-10 7"/></svg>
-      <div class="tcard" id="tcard" style="top:520px;opacity:0">
-        <div class="hd">
-          <div class="mini" aria-hidden="true"><div class="anchor" id="stageMini"></div></div>
-          <div class="txt" id="tHead"><div class="meta" id="tMeta"></div><h2 id="tTitle" class="disp"></h2></div>
-        </div>
-        <p class="txt" id="tBody"></p>
-        <div class="act">
-          <button class="btn-t" id="tSkip">Skip tour</button>
-          <button class="btn-p" id="tNext">Next</button>
-        </div>
-      </div>
+      <svg class="arrow out" id="arrow" aria-hidden="true"><path id="shaft" d=""/><path id="head" d="M-9 -7 L0 0 L-9 7"/></svg>
+      <section class="tcard" id="tcard" tabindex="-1">
+        <div class="prog"><span class="bars" id="tBars" role="img"></span><span class="count" id="tCount"></span></div>
+        <span class="ico" id="tIco" aria-hidden="true"></span>
+        <p class="body" id="tBody" aria-live="polite"></p>
+        <div class="act"><button class="skip" id="tSkip">Skip tour</button><button class="back" id="tBack">Back</button><button class="next" id="tNext">Next</button></div>
+      </section>
     </div>
   </section>
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><g id="logoPath"><path fill="currentColor" d="M0 120L0 119.1L35.4 56.3L5.1 0.9L5.1 0L32.6 0L54.3 40.2L58 40.2L79.1 0L105.5 0L105.5 0.9L75.4 56.3L110.5 119.1L110.5 120L81.8 120L56.6 72.5L52.9 72.5L27.4 120ZM115.1 120L115.1 99.7Q127.8 90 137.4 82.2Q146.9 74.5 153.7 68Q163.8 58.5 169 50.8Q174.2 43.1 174.2 34.6Q174.2 26.9 169.8 22.1Q165.4 17.2 157.1 17.2Q147.7 17.2 142.9 23.3Q138.2 29.4 138.2 39.4L115.1 39.4Q115.1 26.9 119.8 17.5Q124.6 8.2 134.1 3Q143.5 -2.2 157.5 -2.2Q177.4 -2.2 188.2 7.9Q199.1 18 199.1 34.5Q199.1 46.3 192.9 56.2Q186.8 66.2 174.6 77.1Q169.4 81.8 163 86.8Q156.6 91.8 150.3 96L150.3 99.7L203.1 99.7L203.1 120ZM212.9 0H292V20.3H238.5V47.5H255.4V66.3H238.5V120H212.9Z"/><circle fill="var(--monero)" cx="275.1" cy="56.9" r="15.1"/></g></defs></svg>
 </div>
 
 <div class="ctl">
   <button onclick="X2F.intro()">Intro</button>
-  <button onclick="X2F.tour(0)">Tour</button>
-  <button onclick="X2F.toggleTheme()">Light / dark</button>
+  <button onclick="X2F.tour(1)">Tour</button>
+  <button onclick="X2F.toggleTheme()">Day / night</button>
   <button onclick="X2F.toggleRM()">Reduced motion</button>
 </div>
 
 <script>
 (() => {
+  'use strict';
   const Q = new URLSearchParams(location.search);
   const root = document.documentElement;
   if (Q.get('theme')) root.dataset.theme = Q.get('theme');
@@ -353,334 +633,471 @@ button, a { transition: background-color 150ms ease-out, border-color 150ms ease
   const applyRM = () => document.body.classList.toggle('rm', RM);
   applyRM();
   mq.addEventListener('change', e => { RM = e.matches; applyRM(); });
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  const phone = $('#phone');
+  const W = () => phone.clientWidth, H = () => phone.clientHeight;
 
-  /* ---------- decals (stroke icons, 24 grid) ---------- */
-  const D = {
-    person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="9" r="3.6"/><path d="M5.5 19.5c1.2-3.4 3.7-5 6.5-5s5.3 1.6 6.5 5"/></svg>',
-    coin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.6"/></svg>',
-    lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><path d="M12 14.5v2.5"/></svg>',
-    key: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><circle cx="8" cy="12" r="4.5"/><path d="M12 11h9v2.6h-2.4V16h-2.4v-2.4H12z"/></svg>',
-    keyring: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="8" cy="12" r="4"/><path d="M12 11h9v2.6h-2.4V16h-2.4v-2.4H12z"/></svg>',
-    note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/></svg>',
-    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
-    swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h13l-3-3M19 16H6l3 3"/></svg>',
-    x2f: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>',
-    eyeoff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.6"/><path d="M4 20L20 4"/></svg>'
+  /* ---------- tab bars ---------- */
+  const TABS = [['Trade', '<path d="M7 7h13l-3-3"/><path d="M17 17H4l3 3"/>'], ['Post offer', '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'], ['Wallets', '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/>'], ['Profile', '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>']];
+  $$('[data-tabs]').forEach(el => { el.innerHTML = TABS.map(([k, p]) => `<a href="#" ${k === el.dataset.tabs ? 'aria-current="page"' : ''}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${p}</svg>${k}</a>`).join(''); });
+
+  /* ======================================================
+     1. LETTER INTRO
+     ====================================================== */
+  // Damped spring sampled into a CSS linear() easing. zeta < 1 gives the small overshoot.
+  function spring(zeta, omega, dur, n = 48) {
+    const wd = omega * Math.sqrt(1 - zeta * zeta), pts = [];
+    for (let i = 0; i <= n; i++) {
+      const t = (i / n) * dur;
+      const x = 1 - Math.exp(-zeta * omega * t) * (Math.cos(wd * t) + (zeta * omega / wd) * Math.sin(wd * t));
+      pts.push(i === n ? '1' : x.toFixed(4));
+    }
+    return 'linear(' + pts.join(', ') + ')';
+  }
+  const SPR_LETTER = spring(0.62, 13.5, 0.6);   // ~6% overshoot, settled by 600 ms
+  const SPR_DOT = spring(0.48, 15, 0.7);        // a touch more bounce for the dot landing
+  const VB = { y0: -2.15, w: 292, h: 122.15 };
+  const L = {  // centre-x and baseline of each glyph in logo units, for transform-origin
+    x: [55.25, 120], '2': [159.1, 120], f: [252.45, 120], dot: [275.1, 56.9 + 15.1]
   };
-  const TONE = { team: 'var(--team)', mod: 'var(--mod)', monero: 'var(--monero)', escrow: 'var(--escrow)', raised: 'var(--surface-raised)', muted: 'var(--ink-muted)', ink: 'var(--ink)', caution: 'var(--caution)', line: 'var(--line)' };
+  const hero = $('#hero'), mark = $('#mark'), ring = $('#dotRing');
+  const letters = { x: $('[data-l="x"]'), '2': $('[data-l="2"]'), f: $('[data-l="f"]'), dot: $('[data-l="dot"]') };
+  let S = 1;
+  function sizeMark() {
+    const hw = hero.clientWidth, hh = hero.clientHeight;
+    // whole-pixel box; the stage shrinks first on short screens
+    const lw = Math.round(Math.max(120, Math.min(280, hw * 0.66, (hh * 0.46) * VB.w / VB.h)));
+    const lh = Math.round(lw * VB.h / VB.w);
+    S = lw / VB.w;
+    mark.style.setProperty('--lw', lw + 'px'); mark.style.setProperty('--lh', lh + 'px');
+    hero.style.setProperty('--lw', lw + 'px'); hero.style.setProperty('--lh', lh + 'px');
+    for (const k in letters) letters[k].style.transformOrigin = `${(L[k][0] * S).toFixed(2)}px ${((L[k][1] - VB.y0) * S).toFixed(2)}px`;
+    const dr = Math.round(30.2 * S);
+    ring.style.setProperty('--dr', dr + 'px');
+    ring.style.left = (275.1 * S - dr / 2).toFixed(2) + 'px'; ring.style.top = ((56.9 - VB.y0) * S - dr / 2).toFixed(2) + 'px';
+  }
+  let introRun = 0;
+  const anims = [];
+  const A = (el, kf, opt) => { const a = el.animate(kf, Object.assign({ fill: 'both' }, opt)); anims.push(a); return a; };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function clearIntro() { anims.splice(0).forEach(a => a.cancel()); }
+  async function runIntro() {
+    const run = ++introRun;
+    clearIntro(); sizeMark();
+    const all = ['x', '2', 'f', 'dot'];
+    if (RM || Q.get('still')) {
+      // reduced motion: the full logo, gently faded in, no loop
+      all.forEach(k => A(letters[k], [{ opacity: 0 }, { opacity: 1 }], { duration: RM ? 600 : 1, easing: 'ease-out' }));
+      return;
+    }
+    const SMALL = 'translate3d(0, 10px, 0) scale(0.36)';
+    while (run === introRun) {
+      clearIntro();
+      all.forEach(k => A(letters[k], [{ opacity: 0, transform: SMALL }, { opacity: 0, transform: SMALL }], { duration: 1 }));
+      // grow in: X, then 2, then F (200 ms apart, 600 ms spring each); the orange dot lands last
+      ['x', '2', 'f'].forEach((k, i) => {
+        A(letters[k], [{ transform: SMALL }, { transform: 'none' }], { duration: 600, delay: i * 200, easing: SPR_LETTER, composite: 'replace' });
+        A(letters[k], [{ opacity: 0 }, { opacity: 1 }], { duration: 160, delay: i * 200, easing: 'ease-out' });
+      });
+      A(letters.dot, [{ transform: 'translate3d(0, -34px, 0) scale(0.55)' }, { transform: 'none' }], { duration: 700, delay: 660, easing: SPR_DOT });
+      A(letters.dot, [{ opacity: 0 }, { opacity: 1 }], { duration: 140, delay: 660, easing: 'ease-out' });
+      A(ring, [{ opacity: 0.55, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(2.3)' }], { duration: 620, delay: 850, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'none' });
+      await sleep(1360 + 1200);                 // all in by ~1.36 s, hold 1.2 s
+      if (run !== introRun) return;
+      // settle back: ease out together with a short stagger, then rest
+      all.forEach((k, i) => {
+        A(letters[k], [{ transform: 'none', opacity: 1 }, { transform: 'translate3d(0, 4px, 0) scale(0.86)', opacity: 0 }], { duration: 420, delay: i * 50, easing: 'cubic-bezier(0.5, 0, 0.75, 0)' });
+      });
+      await sleep(420 + 150 + 480);
+    }
+  }
+  addEventListener('resize', () => { sizeMark(); });
 
-  /* ---------- stage engine ---------- */
-  function makeStage(anchor, n, withShield, withFloor) {
-    const cam = document.createElement('div'); cam.className = 'cam'; anchor.appendChild(cam);
-    let floor = null;
-    if (withFloor) { floor = document.createElement('div'); floor.className = 'floor'; cam.appendChild(floor); }
-    const boxes = [];
-    for (let i = 0; i < n; i++) {
-      const b = document.createElement('div'); b.className = 'bx';
-      b.innerHTML = '<div class="shd"></div><div class="f fy"><div class="decal off"></div></div><div class="f fx"></div><div class="f top"><div class="decal off"></div></div>';
-      cam.appendChild(b);
-      boxes.push({ el: b, top: b.querySelector('.top .decal'), front: b.querySelector('.fy .decal'), cur: { top: '', front: '' }, shown: false });
-    }
-    let shield = null;
-    if (withShield) {
-      shield = document.createElement('div'); shield.className = 'shield';
-      let h = '<div class="shs"></div>';
-      const L = 14;
-      for (let i = L; i >= 0; i--) {
-        h += `<div class="ly${i === 0 ? ' front' : ''}" style="transform: translateZ(112px) rotateX(-90deg) translateZ(${-i * 1.4}px)${i ? ';filter:brightness(' + (1 - i * 0.012) + ')' : ''}">${i === 0 ? '<div style="width:42px;height:42px">' + D.eyeoff + '</div>' : ''}</div>`;
-      }
-      shield.innerHTML = h; cam.appendChild(shield);
-    }
-    return { anchor, cam, floor, boxes, shield };
+  /* ======================================================
+     2. MOCK APP STATE
+     ====================================================== */
+  const BASE = { side: 'buy', cur: 'EUR', menu: false, optSel: 'EUR', method: false, pressed: false, amt: '', req: 0, funded: false, paid: false, tick: false, released: false, hold: 0 };
+  const AMT = '0.594354', RATE = 336.5;
+  const SCRS = ['s-main', 's-offers', 's-quote', 's-fund', 's-confirm', 's-review'];
+  let curScr = 's-main';
+  function render(st) {
+    $$('#s-main .pill').forEach(p => p.classList.toggle('on', p.dataset.t === st.side));
+    $('#mainH1').classList.toggle('alt', st.side === 'sell');
+    $$('#s-main .w-who').forEach(e => e.textContent = st.side === 'sell' ? 'buyers' : 'sellers');
+    $$('#s-main .w-pre').forEach(e => e.textContent = st.side === 'sell' ? 'up to' : 'from');
+    $$('#s-main .w-rate').forEach(e => e.textContent = e.dataset[st.side]);
+    $$('#s-main .m small').forEach(e => { e.lastChild.textContent = e.lastChild.textContent.replace(/(taking|paying)/, st.side === 'sell' ? 'paying' : 'taking'); });
+    const usd = st.cur === 'USD';
+    $('#curCode').textContent = st.cur; $('#curFlag').textContent = usd ? 'US' : 'EU';
+    $('#mktBig').classList.toggle('alt', usd); $('#methods').classList.toggle('alt', usd);
+    $('#curMenu').classList.toggle('open', st.menu);
+    $$('#curMenu .opt').forEach(o => o.classList.toggle('sel', o.dataset.c === st.optSel));
+    $('[data-t="cash"]').classList.toggle('sel', st.method);
+    $('[data-t="offer1"]').classList.toggle('pressed', st.pressed);
+    // quote
+    $('#amtV').textContent = st.amt; $('#amtPh').style.display = st.amt ? 'none' : '';
+    const n = parseFloat(st.amt || '0') || 0;
+    $('#usdV').textContent = '$' + (n * RATE).toFixed(2);
+    $('#lockV').textContent = st.amt ? n.toFixed(6) : '0.000000';
+    const rb = $('#reqBtn');
+    rb.className = 'req' + (st.req === 2 ? ' done' : st.req === 1 ? ' sent' : st.amt === AMT ? ' ok' : '');
+    $('#reqL').innerHTML = st.req === 2 ? 'Trade started' : st.req === 1 ? 'Request sent <span class="dots3"><i></i><i></i><i></i></span>' : 'Request to sell XMR';
+    $('#reqNote').innerHTML = '<span>' + (st.req === 2 ? '<span style="color:var(--escrow);font-weight:600">satoshi_ghost accepted. The trade has started.</span>' : st.req === 1 ? 'Waiting for satoshi_ghost to accept.' : 'Next, you lock the XMR in escrow.') + '</span>';
+    // fund
+    $('#fundCard').style.setProperty('--tint', st.funded ? 'var(--escrow)' : 'var(--caution)');
+    $('#fundSt').classList.toggle('alt', st.funded);
+    const fs = $$('#fundSteps li');
+    fs.forEach((li, i) => { li.classList.toggle('done', st.funded ? i < 1 : false); li.classList.toggle('cur', st.funded ? i === 1 : i === 0); });
+    // confirm
+    $('#paidCard').style.setProperty('--tint', st.paid ? 'var(--caution)' : 'var(--escrow)');
+    $('#paidSt').classList.toggle('alt', st.paid);
+    const cs = $$('#confSteps li'), cur = st.released ? 4 : st.paid ? 2 : 1;
+    cs.forEach((li, i) => { li.classList.toggle('done', i < cur); li.classList.toggle('cur', i === cur); });
+    $('#tick').classList.toggle('on', st.tick);
+    const hb = $('#holdBtn');
+    hb.className = 'hold' + (st.released ? ' done' : st.hold > 0 ? ' holding' : st.tick ? ' ok' : '');
+    $('#holdFill').style.transform = `scaleX(${st.released ? 1 : st.hold})`;
+    $('#holdL').innerHTML = st.released ? 'Released <span class="mono" style="font-weight:500">0.594354</span> XMR to satoshi_ghost' : st.hold > 0 ? 'Keep holding…' : 'Hold to release <span class="mono" style="font-weight:500">0.594354</span> XMR';
+    $('#holdNote').innerHTML = '<span>' + (st.released ? 'Both signatures sent. satoshi_ghost will be asked to rate the trade.' : st.tick ? 'Press and hold for <span class="mono">1.5</span> s. Once released, the XMR can’t be taken back.' : 'Tick the box above to unlock this release button.') + '</span>';
   }
-  function setDecal(slot, cur, key, name) {
-    if (cur[key] === name) return;
-    cur[key] = name;
-    slot.classList.add('off');
-    const d = RM ? 0 : 160;
-    setTimeout(() => { if (cur[key] !== name) return; slot.innerHTML = name ? D[name] : ''; if (name) requestAnimationFrame(() => slot.classList.remove('off')); }, d);
+  let ST = Object.assign({}, BASE);
+  function set(patch) { Object.assign(ST, patch); render(ST); }
+  function setInstant(st) {
+    phone.classList.add('instant'); ST = Object.assign({}, st); render(ST);
+    phone.getBoundingClientRect(); requestAnimationFrame(() => phone.classList.remove('instant'));
   }
-  // a box spec: [x, y, z, w, d, h, tone, topDecal, frontDecal]; null hides the box where it stands.
-  function applyScene(st, sc, opt = {}) {
-    const stagger = opt.stagger ?? 45;
-    const base = sc.base || null; // [x0,y0,x1,y1,topZ] footprint for shadows
-    st.cam.style.setProperty('--cx', (sc.cam?.[0] ?? 58) + 'deg');
-    st.cam.style.setProperty('--cz', (sc.cam?.[1] ?? 45) + 'deg');
-    if (st.floor) { st.floor.style.setProperty('--fx', (sc.floor?.[0] ?? 0) + 'px'); st.floor.style.setProperty('--fy', (sc.floor?.[1] ?? 0) + 'px'); }
-    let k = 0;
-    st.boxes.forEach((b, i) => {
-      const s = sc.boxes[i];
-      const el = b.el;
-      if (!s) {
-        if (b.shown) { el.classList.add('leaving'); el.style.setProperty('--h', '0px'); el.style.setProperty('--o', '0'); el.style.setProperty('--lift', '0'); }
-        b.shown = false;
-        setDecal(b.top, b.cur, 'top', ''); setDecal(b.front, b.cur, 'front', '');
-        return;
-      }
-      el.classList.remove('leaving');
-      const [x, y, z, w, d, h, tone, td, fd] = s;
-      let gz = 0;
-      if (base && x >= base[0] - 4 && y >= base[1] - 4 && x + w <= base[2] + 4 && y + d <= base[3] + 4 && z >= base[4]) gz = base[4];
-      if (s.ground !== undefined) gz = s.ground;
-      if (i === 0 && sc.baseIndex === 0) gz = 0;
-      if (!b.shown) {
-        // build in: start at footprint with zero height, invisible
-        el.style.transition = 'none';
-        el.style.setProperty('--x', x + 'px'); el.style.setProperty('--y', y + 'px'); el.style.setProperty('--z', (z + (opt.dropIn ? 40 : 0)) + 'px');
-        el.style.setProperty('--w', w + 'px'); el.style.setProperty('--d', d + 'px'); el.style.setProperty('--h', '0px');
-        el.style.setProperty('--gz', gz + 'px'); el.style.setProperty('--o', '0'); el.style.setProperty('--tone', TONE[tone]);
-        el.getBoundingClientRect();
-        el.style.transition = '';
-      }
-      el.style.setProperty('--dl', (RM ? 0 : k * stagger) + 'ms'); k++;
-      el.style.setProperty('--x', x + 'px'); el.style.setProperty('--y', y + 'px'); el.style.setProperty('--z', z + 'px');
-      el.style.setProperty('--w', w + 'px'); el.style.setProperty('--d', d + 'px'); el.style.setProperty('--h', h + 'px');
-      el.style.setProperty('--gz', gz + 'px'); el.style.setProperty('--lift', Math.max(0, z - gz)); el.style.setProperty('--o', '1');
-      el.style.setProperty('--tone', TONE[tone]);
-      b.shown = true;
-      setDecal(b.top, b.cur, 'top', td || ''); setDecal(b.front, b.cur, 'front', fd || '');
-    });
-    if (st.shield) {
-      const s = sc.shield;
-      if (s) { st.shield.style.setProperty('--x', s[0] + 'px'); st.shield.style.setProperty('--y', s[1] + 'px'); st.shield.style.setProperty('--z', s[2] + 'px'); st.shield.style.setProperty('--tone', TONE[s[3]]); st.shield.style.setProperty('--s', '1'); }
-      else st.shield.style.setProperty('--s', '0');
-    }
-  }
-  // reduced motion: fade the whole picture out, swap, fade in
-  function show(st, sc, opt) {
-    if (!RM) return applyScene(st, sc, opt);
-    st.anchor.style.opacity = '0';
-    setTimeout(() => { applyScene(st, sc, opt); requestAnimationFrame(() => { st.anchor.style.opacity = '1'; }); }, 200);
+  async function showScreen(id, animate) {
+    if (id === curScr) return;
+    const prev = $('#' + curScr), next = $('#' + id);
+    const fwd = SCRS.indexOf(id) > SCRS.indexOf(curScr);
+    curScr = id;
+    next.querySelector('.scroll').scrollTop = 0;
+    if (!animate) { $$('.scr').forEach(s => { s.classList.toggle('off', s.id !== id); s.classList.remove('enter', 'leave'); }); return; }
+    phone.classList.add('instant'); next.classList.remove('off', 'leave'); next.classList.add(fwd ? 'enter' : 'leave');
+    next.getBoundingClientRect(); phone.classList.remove('instant');
+    requestAnimationFrame(() => { next.classList.remove('enter', 'leave'); prev.classList.add(fwd ? 'leave' : 'enter'); });
+    await sleep(300);
+    prev.classList.add('off'); prev.classList.remove('enter', 'leave');
   }
 
-  /* ---------- intro scenes ---------- */
-  const BASE = [-132, -84, 132, 84, 14];
-  const slab = [-132, -84, 0, 264, 168, 14, 'raised'];
-  const hid = null;
-  // pool: 0 slab, 1 trader A, 2 trader B, 3-5 coins, 6-13 vault, 14-16 keys, 17 cash
-  const V = (x, y, z, s, tone) => [x, y, z, s, s, s, tone || 'escrow'];
-  const SCENES = [
-    { // 1 Welcome: two traders, coins changing hands
-      words: ['Welcome to X2F', 'Swap Monero for cash, bank transfers or gift cards, person to person.'],
-      cam: [58, 40], floor: [0, 0], base: BASE,
-      boxes: [slab,
-        [-116, 6, 14, 54, 54, 92, 'team', 'person'],
-        [60, -72, 14, 54, 54, 92, 'mod', 'person'],
-        [-4, -36, 14, 40, 40, 7, 'monero', 'coin'],
-        [-4, -36, 23, 40, 40, 7, 'monero', 'coin'],
-        [-34, -6, 72, 40, 40, 7, 'monero', 'coin'],
-        hid, hid, hid, hid, hid, hid, hid, hid,
-        hid, hid, hid,
-        [12, 30, 14, 64, 38, 10, 'muted', 'note']]
-    },
-    { // 2 Escrow: the coins go into a vault that builds around them
-      words: ['Escrow holds the coins', "The seller's coins are locked before you pay, so nobody can run off with them."],
-      cam: [58, 50], floor: [-30, 20], base: BASE,
-      boxes: [slab,
-        [-124, 30, 14, 44, 44, 64, 'team', 'person'],
-        [76, -78, 14, 44, 44, 64, 'mod', 'person'],
-        [-20, -20, 22, 40, 40, 0, 'monero'],
-        [-20, -20, 30, 40, 40, 0, 'monero'],
-        [-20, -20, 38, 40, 40, 0, 'monero'],
-        V(-40, -40, 14, 39), V(0, -40, 14, 39), V(-40, 0, 14, 39), [0, 0, 14, 39, 39, 39, 'escrow', null, 'lock'],
-        V(-40, -40, 54, 39), V(0, -40, 54, 39), V(-40, 0, 54, 39), V(0, 0, 54, 39),
-        hid, hid, hid, hid]
-    },
-    { // 3 Two of three keys
-      words: ['Two of three keys', "You, the other trader and X2F each hold a key. It takes any two to move the coins."],
-      cam: [56, 45], floor: [10, -24], base: BASE,
-      boxes: [slab,
-        hid, hid, hid, hid, hid,
-        V(-30, -66, 14, 30), V(2, -66, 14, 30), V(-30, -34, 14, 30), V(2, -34, 14, 30),
-        V(-30, -66, 46, 30), V(2, -66, 46, 30), V(-30, -34, 46, 30), V(2, -34, 46, 30),
-        [-112, 14, 14, 44, 44, 70, 'team', 'key'],
-        [-22, 30, 14, 44, 44, 70, 'mod', 'key'],
-        [68, 14, 14, 44, 44, 30, 'line', 'keyring'],
-        hid]
-    },
-    { // 4 Private: a shield rises in front of everything
-      words: ['Private from the start', 'No email and no IP addresses logged. Alerts reach you on Jabber.'],
-      cam: [60, 42], floor: [24, 10], base: BASE,
-      boxes: [slab,
-        [-120, -74, 14, 40, 40, 44, 'team', 'person'],
-        [80, -74, 14, 40, 40, 44, 'mod', 'person'],
-        hid, hid, hid,
-        V(-48, -76, 14, 30), V(-16, -76, 14, 30), V(16, -76, 14, 30), hid,
-        V(-48, -76, 46, 30), V(-16, -76, 46, 30), V(16, -76, 46, 30), hid,
-        hid, hid, hid, hid],
-      shield: [26, 30, 20, 'escrow']
-    }
-  ];
-
-  /* ---------- tour stops ---------- */
+  /* ======================================================
+     3. TOUR STOPS (copy is COPY-UNSIGNED; keep it exactly)
+     ====================================================== */
+  const PAGES = ['s-main', 's-offers', 's-quote', 's-fund', 's-confirm', 's-review'];
+  const ICON_EYE = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12s3.5-6 9-6c1.6 0 3 .5 4.2 1.2M21 12s-1.2 2.1-3.4 3.8M9.9 17.7c.7.2 1.4.3 2.1.3 5.5 0 9-6 9-6"/><path d="M4 20L20 4"/></svg>';
+  const ICON_DONE = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>';
   const STOPS = [
-    { scr: 'scrTrade', target: '[data-stop="logo"]', meta: 'Trade · <span class="mono">1</span> of <span class="mono">4</span>', title: 'Your home base', body: 'Tap the logo on any screen to come back to Trade.',
-      mini: { cam: [58, 45], boxes: [[-60, -60, 0, 120, 120, 16, 'raised'], [-44, -44, 16, 52, 52, 52, 'ink'], [12, -44, 16, 32, 32, 30, 'muted'], [-44, 12, 16, 32, 32, 22, 'monero', 'coin'], null, null] } },
-    { scr: 'scrTrade', target: '[data-stop="seg"]', meta: 'Trade · <span class="mono">2</span> of <span class="mono">4</span>', title: 'Buy or sell', body: 'Switch between buying and selling Monero. The list below changes to match.',
-      mini: { cam: [58, 45], boxes: [[-60, -60, 0, 120, 120, 16, 'raised'], [-48, -48, 16, 40, 40, 64, 'team', 'person'], [10, 10, 16, 40, 40, 64, 'mod', 'person'], null, null, null] } },
-    { scr: 'scrTrade', target: '[data-stop="offer"]', meta: 'Trade · <span class="mono">3</span> of <span class="mono">4</span>', title: 'Pick an offer', body: "Check the price, the limits and the trader's feedback. Starting a trade is always free.",
-      mini: { cam: [58, 45], boxes: [[-60, -60, 0, 120, 120, 16, 'raised'], [10, -48, 16, 40, 40, 64, 'mod', 'person'], [-48, 10, 16, 40, 40, 40, 'team', 'person'], [-44, -44, 16, 36, 36, 7, 'monero', 'coin'], [-44, -44, 25, 36, 36, 7, 'monero', 'coin'], null] } },
-    { scr: 'scrTrade', target: '#tourTabs a:nth-child(2)', meta: 'Trade · <span class="mono">4</span> of <span class="mono">4</span>', title: 'Post your own offer', body: 'Set your price and how you get paid. You only pay a fee when you post an offer.', last: true,
-      mini: { cam: [58, 45], boxes: [[-60, -60, 0, 120, 120, 16, 'raised'], [-18, -54, 16, 36, 108, 26, 'monero'], [-54, -18, 16, 108, 36, 26, 'monero', 'plus'], null, null, null] } },
-    { scr: 'scrWallets', target: '[data-stop="wallet"]', meta: 'Wallets · <span class="mono">1</span> of <span class="mono">2</span>', title: 'Your wallets', body: 'Link the Monero wallet you already use. When you buy, the coins go straight to it.',
-      mini: { cam: [58, 45], boxes: [[-60, -60, 0, 120, 120, 16, 'raised'], [-48, -48, 16, 96, 96, 30, 'escrow'], [-30, -30, 46, 40, 40, 7, 'monero', 'coin'], [-30, -30, 55, 40, 40, 7, 'monero', 'coin'], [14, 4, 46, 40, 40, 7, 'monero', 'coin'], null] } },
-    { scr: 'scrWallets', target: '#tourTabs a:nth-child(4)', meta: 'Wallets · <span class="mono">2</span> of <span class="mono">2</span>', title: 'Your profile', body: 'Your feedback, badges and settings live here.', end: true,
-      mini: { cam: [58, 45], boxes: [[-60, -60, 0, 120, 120, 16, 'raised'], [-26, -26, 16, 52, 52, 70, 'team', 'person'], null, null, null, null] } }
+    { scr: 's-main', t: 'seg', body: 'First, decide why you’re here: to buy Monero or to sell it.', act: actAlternate },
+    { scr: 's-main', t: 'sell', body: 'Let’s pretend we’re selling. Tap Sell.', after: { side: 'sell' }, act: async () => { await wait(800); await tap('sell'); set({ side: 'sell' }); } },
+    { scr: 's-main', t: 'cur', body: 'Next, pick the currency you want to be paid in.', after: { cur: 'USD', optSel: 'USD' }, act: actCurrency },
+    { scr: 's-main', t: 'methods', body: 'Then pick how you want to be paid.', after: { method: true }, act: async () => { await wait(800); await tap('cash'); set({ method: true }); } },
+    { scr: 's-main', center: ICON_EYE, body: 'X2F hides every offer you don’t qualify for yet. If a buyer only trades with people who have 10 or more completed trades, a brand-new account won’t see that offer. Everything you see, you can take right now.' },
+    { scr: 's-offers', t: 'ohead', body: 'Here are the offers open to you.' },
+    { scr: 's-offers', t: 'badges', body: 'Each card tells you about the trader: the badges they’ve earned...' },
+    { scr: 's-offers', t: 'pct', body: '...how far above the market price they’ll pay: this one pays 2% above market...' },
+    { scr: 's-offers', t: 'limits', body: '...and the trade sizes they accept: this one takes $50 to $1,000. In other currencies we convert at the real exchange rate, with nothing added.' },
+    { scr: 's-offers', t: 'offer1', body: 'Let’s take this one. Tap the offer.', after: { pressed: true }, act: async () => { await wait(800); await tap('offer1', 0.5, 0.35); set({ pressed: true }); } },
+    { scr: 's-quote', t: 'amount', body: 'Enter how much you want to sell. You’ll see exactly what you get.', after: { amt: AMT }, act: actType },
+    { scr: 's-quote', t: ['reqBtn', 'reqNote'], body: 'Send your request. The buyer accepts, and the trade starts.', after: { req: 2 }, act: async () => { await wait(800); await tap('reqBtn'); set({ req: 1 }); await wait(1300); set({ req: 2 }); } },
+    { scr: 's-fund', t: 'qr', body: 'Now lock your Monero in escrow. Scan this code with your wallet, or copy the address and amount.', act: actScan },
+    { scr: 's-fund', t: 'status', body: 'Once it’s secured, the buyer is told to pay you. Nobody can touch the coins while the trade is open.', after: { funded: true }, act: async () => { await wait(1000); set({ funded: true }); } },
+    { scr: 's-confirm', t: 'paidCard', body: 'The buyer sends $200 by Cash App and taps I’ve paid. Check your Cash App: only your own account proves the money arrived.', after: { paid: true, tick: true }, act: actPaid },
+    { scr: 's-confirm', t: ['holdBtn', 'holdNote'], body: 'Got the money? Press and hold to release. The Monero goes to the buyer.', after: { released: true }, act: actHold },
+    { scr: 's-review', center: ICON_DONE, body: 'That’s your first trade. Rate the buyer, and you’re done. Buying works the same way, the other way round.', end: true }
   ];
+  const N = STOPS.length;
+  const stateBefore = i => { const s = Object.assign({}, BASE); for (let k = 0; k < i; k++) Object.assign(s, STOPS[k].after || {}); s.menu = false; s.hold = 0; return s; };
 
-  /* ---------- tab bar ---------- */
-  const TABICON = {
-    Trade: '<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
-    'Post offer': '<circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8"/>',
-    Wallets: '<rect x="3.5" y="6" width="17" height="13" rx="2.5"/><path d="M16 12.5h2"/><path d="M6 6l9-2.5 1 2.5"/>',
-    Profile: '<circle cx="12" cy="9" r="3.6"/><path d="M5.5 19.5c1.2-3.4 3.7-5 6.5-5s5.3 1.6 6.5 5"/>'
-  };
-  function tabs(el, current) {
-    el.innerHTML = Object.keys(TABICON).map(k => `<a href="#" ${k === current ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${TABICON[k]}</svg>${k}</a>`).join('');
+  /* ---------- overlay plumbing ---------- */
+  const tour = $('#tour'), scrim = $('#scrim'), hole = $('#hole'), ringR = $('#ring'), pulse = $('#pulse');
+  const arrow = $('#arrow'), shaft = $('#shaft'), head = $('#head');
+  const card = $('#tcard'), tBody = $('#tBody'), tCount = $('#tCount'), tBars = $('#tBars'), tIco = $('#tIco');
+  const tNext = $('#tNext'), tBack = $('#tBack');
+  tBars.innerHTML = PAGES.map(() => '<i></i>').join('');
+  let stop = -1, token = 0, holeR = null;
+  class Cancel extends Error {}
+  const wait = ms => { const t = token; return new Promise((res, rej) => setTimeout(() => t === token ? res() : rej(new Cancel()), RM ? Math.min(ms, 400) : ms)); };
+  const el = t => document.getElementById(t) || $(`#${curScr} [data-t="${t}"]`) || $(`[data-t="${t}"]`);
+  const rectOf = e => { const r = e.getBoundingClientRect(), p = phone.getBoundingClientRect(); return { x: r.left - p.left, y: r.top - p.top, w: r.width, h: r.height }; };
+  const union = rs => { const x = Math.min(...rs.map(r => r.x)), y = Math.min(...rs.map(r => r.y)); return { x, y, w: Math.max(...rs.map(r => r.x + r.w)) - x, h: Math.max(...rs.map(r => r.y + r.h)) - y }; };
+  const pad = (r, p = 6) => ({ x: r.x - p, y: r.y - p, w: r.w + 2 * p, h: r.h + 2 * p });
+  function setRect(e, r) { e.setAttribute('x', r.x.toFixed(1)); e.setAttribute('y', r.y.toFixed(1)); e.setAttribute('width', Math.max(0, r.w).toFixed(1)); e.setAttribute('height', Math.max(0, r.h).toFixed(1)); }
+  function drawHole(r) { holeR = r; [hole, ringR, pulse].forEach(e => setRect(e, r)); }
+  function holeShow(on) { hole.classList.toggle('hide', !on); ringR.classList.toggle('hide', !on); }
+  async function holeFadeTo(r) {           // quick fade out, move, fade in
+    holeShow(false); await sleep(RM ? 0 : 100); drawHole(r); holeShow(true);
   }
-  tabs(document.getElementById('introTabs'), 'Trade');
-  tabs(document.getElementById('tourTabs'), 'Trade');
+  function holeTween(r, ms = 240) {        // smooth grow/shrink (menus opening)
+    if (RM || !holeR) { drawHole(r); return sleep(0); }
+    const a = Object.assign({}, holeR), t0 = performance.now();
+    return new Promise(res => { const f = now => { const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3); drawHole({ x: a.x + (r.x - a.x) * e, y: a.y + (r.y - a.y) * e, w: a.w + (r.w - a.w) * e, h: a.h + (r.h - a.h) * e }); k < 1 ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); });
+  }
+  function ripple(x, y, hold) {
+    const d = document.createElement('i'); d.className = 'rip'; d.style.left = x + 'px'; d.style.top = y + 'px';
+    $('#rips').appendChild(d);
+    if (RM) { d.animate([{ opacity: 0.18 }, { opacity: 0 }], { duration: hold ? 1500 : 300, easing: 'ease-out' }).onfinish = () => d.remove(); return d; }
+    if (hold) { d.animate([{ opacity: 0.22, transform: 'scale(0.3)' }, { opacity: 0.16, transform: 'scale(1.15)' }], { duration: 300, easing: 'cubic-bezier(0.22,1,0.36,1)', fill: 'forwards' }); return d; }
+    d.animate([{ opacity: 0.26, transform: 'scale(0.25)' }, { opacity: 0.14, transform: 'scale(1)', offset: 0.55 }, { opacity: 0, transform: 'scale(1.35)' }], { duration: 440, easing: 'cubic-bezier(0.22,1,0.36,1)' }).onfinish = () => d.remove();
+    return d;
+  }
+  async function tap(t, fx = 0.5, fy = 0.5) {
+    const e = el(t), r = rectOf(e);
+    ripple(r.x + r.w * fx + (fx < 0.2 ? 14 : 0), r.y + r.h * fy);
+    if (!RM) { e.style.transform = 'scale(0.98)'; await sleep(120); e.style.transform = ''; }
+    await wait(140);
+  }
 
-  /* ---------- intro controller ---------- */
-  const stIntro = makeStage(document.getElementById('stageIntro'), 18, true, true);
-  const stMini = makeStage(document.getElementById('stageMini'), 6, false, false);
-  const dots = document.getElementById('dots');
-  dots.innerHTML = SCENES.map((s, i) => `<button aria-label="Step ${i + 1} of ${SCENES.length}"><i></i></button>`).join('');
-  const T = document.getElementById('copyT'), H1 = document.getElementById('h1'), P1 = document.getElementById('p1');
-  let cur = -1, auto = null;
-  function scene(i, first) {
-    i = (i + SCENES.length) % SCENES.length;
-    const sc = SCENES[i];
-    stIntro.anchor.style.setProperty('--t-morph', first ? '1000ms' : '');
-    show(stIntro, sc, { dropIn: !!first, stagger: first ? 70 : 45 });
-    [...dots.children].forEach((b, j) => j === i ? b.setAttribute('aria-current', 'step') : b.removeAttribute('aria-current'));
-    if (first) { H1.textContent = sc.words[0]; P1.textContent = sc.words[1]; T.className = 't pre'; T.getBoundingClientRect(); T.className = 't'; }
-    else {
-      T.className = 't out';
-      setTimeout(() => { H1.textContent = sc.words[0]; P1.textContent = sc.words[1]; T.className = 't pre'; T.getBoundingClientRect(); T.className = 't'; }, 160);
+  /* ---------- placement: next to the highlight, never over it, never off-screen ---------- */
+  const GAP = 60, M = 12;
+  let LAST = null;   // { mode, ch, cw, pos, r }
+  function layoutMode() {
+    const w = W();
+    const sideW = Math.min(360, w - 480 - 88);
+    return w >= 860 && sideW >= 300 ? { side: true, cardW: sideW } : { side: false, cardW: Math.min(448, w - 32) };
+  }
+  function applyColumn(mode) {
+    // unfolded landscape: the column moves left so the card can sit beside the highlight
+    if (mode.side && stop >= 0) root.style.setProperty('--colL', Math.max(16, Math.round((W() - 480 - 40 - mode.cardW) / 2)) + 'px');
+    else root.style.removeProperty('--colL');
+  }
+  const colBox = () => rectOf($(`#${curScr} .scroll .col`));
+  const footTop = () => { const f = $(`#${curScr} .foot, #${curScr} .tabs`); return f ? rectOf(f).y : H(); };
+  function plan(r, ch, mode) {
+    const h = H(), cb = colBox();
+    if (mode.side) return { x: Math.round(cb.x + cb.w + 40), y: Math.round(Math.max(M, Math.min(h - ch - M, r.y + r.h / 2 - ch / 2))), where: 'right' };
+    const x = Math.round(cb.x + (cb.w - mode.cardW) / 2);
+    if (r.y + r.h + GAP + ch <= h - M) return { x, y: Math.round(r.y + r.h + GAP), where: 'below' };
+    if (r.y - GAP - ch >= M) return { x, y: Math.round(r.y - GAP - ch), where: 'above' };
+    return null;
+  }
+  async function scrollTo(sc, top) {
+    top = Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, Math.round(top)));
+    const from = sc.scrollTop; if (Math.abs(top - from) < 1) return;
+    if (RM) { sc.scrollTop = top; return; }
+    const t0 = performance.now(), ms = 480;
+    await new Promise(res => { const f = now => { const k = Math.min(1, (now - t0) / ms), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; sc.scrollTop = from + (top - from) * e; k < 1 ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); });
+  }
+  const rectFor = keys => pad(union([].concat(keys).map(k => rectOf(typeof k === 'string' ? el(k) : k))));
+  // scroll the screen (if needed) so the highlight and its card both fit, then return the highlight rect
+  async function fit(keys, ch, mode) {
+    const first = [].concat(keys)[0], e = typeof first === 'string' ? el(first) : first, sc = e.closest('.scroll');
+    let r = rectFor(keys);
+    const ft = sc ? footTop() - 8 : H();
+    const ok = rr => rr.y >= M && rr.y + rr.h <= ft && plan(rr, ch, mode);
+    if (ok(r) || !sc) return r;
+    const max = sc.scrollHeight - sc.clientHeight;
+    const cands = mode.side ? [r.y + r.h / 2 - ft / 2, r.y - (M + 8)] : [r.y - (M + 8), r.y + r.h - ft, r.y - (M + GAP + ch + 8)];
+    let best = cands[0];
+    for (const d of cands) {
+      const top = Math.max(0, Math.min(max, sc.scrollTop + d)), dd = top - sc.scrollTop;
+      if (ok(Object.assign({}, r, { y: r.y - dd }))) { best = d; break; }
     }
-    cur = i;
+    await scrollTo(sc, sc.scrollTop + best);
+    return rectFor(keys);
   }
-  // auto-advance once through the scenes, then rest on the last one (nothing loops); off under reduced motion
-  function startAuto() { stopAuto(); if (Q.get('still') || RM) return; auto = setInterval(() => { if (cur >= SCENES.length - 1) return stopAuto(); scene(cur + 1); }, 4200); }
-  function stopAuto() { if (auto) clearInterval(auto); auto = null; }
-  dots.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; stopAuto(); scene([...dots.children].indexOf(b)); });
-  // swipe
-  let sx = null;
-  const illus = document.querySelector('#intro .illus');
-  illus.addEventListener('pointerdown', e => { sx = e.clientX; });
-  illus.addEventListener('pointerup', e => { if (sx === null) return; const dx = e.clientX - sx; sx = null; if (Math.abs(dx) > 40) { stopAuto(); scene(cur + (dx < 0 ? 1 : -1)); } });
-
-  /* ---------- tour controller ---------- */
-  const tour = document.getElementById('tour'), hole = document.getElementById('hole'), ring = document.getElementById('ring');
-  const arrow = document.getElementById('arrow'), shaft = document.getElementById('shaft'), head = document.getElementById('head');
-  const card = document.getElementById('tcard'), tHead = document.getElementById('tHead'), tBody = document.getElementById('tBody');
-  const tMeta = document.getElementById('tMeta'), tTitle = document.getElementById('tTitle'), tNext = document.getElementById('tNext');
-  const phone = document.getElementById('phone');
-  let stop = -1, busy = false;
-  const wait = ms => new Promise(r => setTimeout(r, ms));
-  function rectOf(sel) {
-    const el = document.querySelector('#' + STOPS[stop].scr + ' ' + sel) || document.querySelector(sel);
-    const p = phone.getBoundingClientRect(), r = el.getBoundingClientRect();
-    return { x: r.left - p.left, y: r.top - p.top, w: r.width, h: r.height };
-  }
-  function place(r) {
-    const pad = 6;
-    const x = Math.max(4, r.x - pad), y = Math.max(4, r.y - pad), w = Math.min(443 - 8, r.w + pad * 2), h = r.h + pad * 2;
-    for (const el of [hole, ring]) { el.setAttribute('x', x); el.setAttribute('y', y); el.setAttribute('width', w); el.setAttribute('height', Math.min(h, 794 - 4 - y)); }
-    return { x, y, w, h };
-  }
-  function cardTopFor(r) {
-    const ch = card.offsetHeight || 210;
-    const below = r.y + r.h + 64;          // room for the arrow
-    if (r.y + r.h / 2 < 794 * 0.45 && below + ch < 794 - 72) return below + 8;
-    return Math.max(72, r.y - 64 - ch);
-  }
-  function drawArrow(r, top) {
-    const ch = card.offsetHeight;
-    const tx = r.x + r.w * (r.w > 200 ? 0.62 : 0.5);
-    const cardBelow = top > r.y;
-    const sx = Math.min(443 - 60, Math.max(60, tx + (tx > 221 ? -70 : 70)));
-    const sy = cardBelow ? top - 6 : top + ch + 6;
-    const ey = cardBelow ? r.y + r.h + 8 : r.y - 8;
-    const ex = tx;
-    const mx = (sx + ex) / 2 + (sx < ex ? -1 : 1) * Math.max(30, Math.abs(ey - sy) * 0.5);
-    const my = (sy + ey) / 2;
-    shaft.setAttribute('d', `M${sx} ${sy} Q${mx} ${my} ${ex} ${ey}`);
-    const ang = Math.atan2(ey - my, ex - mx) * 180 / Math.PI;
-    head.setAttribute('transform', `translate(${ex} ${ey}) rotate(${ang})`);
-    const L = shaft.getTotalLength();
-    shaft.style.strokeDasharray = L;
-    shaft.style.transition = 'none'; shaft.style.strokeDashoffset = RM ? 0 : L; shaft.style.opacity = 0; head.style.opacity = 0;
+  function drawArrow(r, pos, ch, cw) {
+    let sx, sy, ex, ey, cx, cy;
+    if (pos.where === 'right') {
+      sx = pos.x - 8; sy = Math.max(pos.y + 32, Math.min(pos.y + ch - 32, r.y + r.h / 2));
+      ex = r.x + r.w + 8; ey = r.y + r.h / 2;
+      cx = sx + (ex - sx) * 0.35; cy = ey;
+    } else {
+      const below = pos.where === 'below';
+      ex = Math.round(Math.max(r.x + 28, Math.min(r.x + r.w - 28, r.x + r.w / 2)));
+      ey = below ? r.y + r.h + 8 : r.y - 8;
+      sx = Math.max(pos.x + 48, Math.min(pos.x + cw - 48, ex + (ex > pos.x + cw / 2 ? -36 : 36)));
+      sy = below ? pos.y - 8 : pos.y + ch + 8;
+      cx = ex; cy = sy + (ey - sy) * 0.35;
+    }
+    shaft.setAttribute('d', `M${sx.toFixed(1)} ${sy.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`);
+    const ang = Math.atan2(ey - cy, ex - cx) * 180 / Math.PI;
+    head.setAttribute('transform', `translate(${ex.toFixed(1)} ${ey.toFixed(1)}) rotate(${ang.toFixed(1)})`);
+    const len = shaft.getTotalLength();
+    shaft.style.strokeDasharray = len + ' ' + len; shaft.style.transition = 'none';
+    shaft.style.strokeDashoffset = RM ? 0 : len; shaft.style.opacity = 0; head.style.opacity = 0;
     shaft.getBoundingClientRect(); shaft.style.transition = '';
   }
-  async function go(i) {
-    if (busy) return; busy = true;
-    const prev = stop; stop = i;
-    const s = STOPS[i];
-    // 1. out: arrow 120ms, highlight 90ms, card text 120ms (in parallel)
-    arrow.classList.add('out'); hole.classList.add('out'); ring.classList.add('out');
-    if (prev >= 0) { tHead.classList.add('out'); tBody.classList.add('out'); }
-    show(stMini, s.mini, { stagger: 40 });
-    await wait(prev >= 0 ? 130 : 0);
-    // 2. screen change ("Next screen")
-    if (prev < 0 || STOPS[prev].scr !== s.scr) {
-      document.querySelectorAll('#tourView .scr').forEach(el => el.hidden = el.id !== s.scr);
-      tabs(document.getElementById('tourTabs'), s.scr === 'scrTrade' ? 'Trade' : 'Wallets');
-      if (prev >= 0) await wait(280);
-    }
-    // 3. swap card text and move the card
-    tMeta.innerHTML = s.meta; tTitle.textContent = s.title; tBody.textContent = s.body;
-    tNext.textContent = s.end ? 'Done' : s.last ? 'Next screen' : 'Next';
-    const r = place(rectOf(s.target));
-    const top = cardTopFor(r);
-    card.style.top = top + 'px'; card.style.opacity = 1;
-    tHead.classList.remove('out'); tBody.classList.remove('out');
-    if (prev < 0) { tour.classList.add('on'); await wait(200); } else await wait(RM ? 0 : 60);
-    // 4. highlight in 120ms
-    hole.classList.remove('out'); ring.classList.remove('out');
-    await wait(80);
-    // 5. arrow: fade in 120ms + draw 280ms, head pops at the end
-    drawArrow(r, top);
+  async function showArrow(r) {
+    const my = token;
+    drawArrow(r, LAST.pos, LAST.ch, LAST.cw);
     arrow.classList.remove('out');
     requestAnimationFrame(() => { shaft.style.opacity = 1; shaft.style.strokeDashoffset = 0; });
-    await wait(RM ? 0 : 240);
-    head.style.opacity = 1;
-    tNext.focus({ preventScroll: true });
-    busy = false;
+    await sleep(RM ? 0 : 300); if (my === token) head.style.opacity = 1;
   }
-  async function endTour() {
-    arrow.classList.add('out'); hole.classList.add('out'); ring.classList.add('out');
-    card.style.opacity = 0; tour.classList.remove('on');
-    await wait(260); stop = -1; intro();
+  function moveCard(pos) { LAST.pos = pos; card.style.transform = `translate(${pos.x}px, ${pos.y}px)`; }
+  function fallbackPos(r) { const cb = colBox(); const x = Math.round(cb.x + (cb.w - LAST.cw) / 2); return (r.y + r.h / 2 > H() / 2) ? { x, y: M, where: 'above' } : { x, y: Math.round(H() - LAST.ch - M), where: 'below' }; }
+  // move the highlight to new element(s); the card follows so it never covers it
+  async function focus(keys, how = 'tween') {
+    const my = token;
+    arrow.classList.add('out');
+    const r = await fit(keys, LAST.ch, LAST.mode); if (my !== token) throw new Cancel();
+    const pos = plan(r, LAST.ch, LAST.mode) || fallbackPos(r);
+    const moved = pos.x !== LAST.pos.x || pos.y !== LAST.pos.y;
+    moveCard(pos); LAST.r = r;
+    if (how === 'fade') await holeFadeTo(r); else await holeTween(r, 260);
+    await sleep(moved && !RM ? 200 : 40); if (my !== token) throw new Cancel();
+    await showArrow(r);
   }
-  tNext.addEventListener('click', () => { const s = STOPS[stop]; if (s.end) endTour(); else go(stop + 1); });
-  document.getElementById('tSkip').addEventListener('click', endTour);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && stop >= 0) endTour(); });
+  function sizeScrim() { scrim.setAttribute('viewBox', `0 0 ${W()} ${H()}`); arrow.setAttribute('viewBox', `0 0 ${W()} ${H()}`); }
 
-  const vIntro = document.getElementById('intro'), vTour = document.getElementById('tourView');
+  /* ---------- card ---------- */
+  function fillCard(i) {
+    const s = STOPS[i];
+    tBody.textContent = s.body;
+    tCount.innerHTML = `${i + 1} of ${N}`;
+    const pg = PAGES.indexOf(s.scr);
+    [...tBars.children].forEach((b, k) => { b.className = k < pg ? 'done' : k === pg ? 'now' : ''; });
+    tBars.setAttribute('aria-label', `Screen ${pg + 1} of ${PAGES.length}`);
+    tNext.textContent = s.end ? 'Done' : 'Next';
+    tBack.disabled = i === 0;
+    card.classList.toggle('center', !!s.center);
+    tIco.innerHTML = s.center || '';
+  }
+  async function go(i) {
+    i = Math.max(0, Math.min(N - 1, i));
+    const my = ++token, prev = stop; stop = i;
+    const s = STOPS[i];
+    // out: arrow 110 ms, highlight 90 ms, text 110 ms, in parallel
+    arrow.classList.add('out'); holeShow(false); pulse.classList.remove('breathe');
+    if (prev >= 0) tBody.classList.add('out');
+    await sleep(prev >= 0 && !RM ? 120 : 0); if (my !== token) return;
+    // put the screen into this stop's starting state (finishes any half-played action)
+    const animScreen = prev >= 0 && curScr !== s.scr;
+    setInstant(stateBefore(i));
+    await showScreen(s.scr, animScreen); if (my !== token) return;
+    const mode = layoutMode(); applyColumn(mode);
+    card.style.width = mode.cardW + 'px';
+    fillCard(i); tBody.classList.remove('out'); tBody.classList.add('pre');
+    const ch = card.offsetHeight, cw = mode.cardW;
+    sizeScrim();
+    LAST = { mode, ch, cw, pos: null, r: null };
+    let pos, r = null;
+    if (s.center) {
+      const cb = colBox();
+      pos = { x: Math.round(mode.side ? (W() - cw) / 2 : cb.x + (cb.w - cw) / 2), y: Math.round((H() - ch) / 2 - 8), where: 'center' };
+    } else {
+      r = await fit(s.t, ch, mode); if (my !== token) return;
+      pos = plan(r, ch, mode) || (LAST.pos = { x: 0, y: 0 }, fallbackPos(r));
+    }
+    LAST.pos = pos; LAST.r = r;
+    if (prev < 0) { card.style.transition = 'none'; card.style.transform = `translate(${pos.x}px, ${pos.y + 12}px)`; card.getBoundingClientRect(); card.style.transition = ''; }
+    moveCard(pos);
+    card.classList.add('on');
+    if (prev < 0) tour.classList.add('on');
+    requestAnimationFrame(() => tBody.classList.remove('pre'));
+    if (r) {
+      drawHole(r); await sleep(prev < 0 ? 220 : 60); if (my !== token) return;
+      holeShow(true);
+      if (i === 0 && !RM) pulse.classList.add('breathe');
+      await sleep(80); if (my !== token) return;
+      await showArrow(r); if (my !== token) return;
+    } else drawHole({ x: W() / 2, y: H() / 2, w: 0, h: 0 });
+    if (KBD) { if (document.activeElement !== tNext) tNext.focus({ preventScroll: true }); } else if (!card.contains(document.activeElement)) card.focus({ preventScroll: true });
+    if (s.act) { try { await s.act(); } catch (e) { if (!(e instanceof Cancel)) throw e; } }
+  }
+
+  /* ---------- the actions ---------- */
+  async function actAlternate() {          // the highlight fades back and forth between Buy and Sell
+    await wait(700);
+    for (let k = 0; ; k++) {
+      pulse.classList.remove('breathe');
+      await holeFadeTo(rectFor(k % 2 ? 'buy' : 'sell'));
+      if (!RM) { pulse.getBoundingClientRect(); pulse.classList.add('breathe'); }
+      await wait(1300);
+    }
+  }
+  async function actCurrency() {
+    await wait(800);
+    await tap('cur'); set({ menu: true });
+    await focus(['cur', 'menu']);
+    await wait(500);
+    await tap('optUSD'); set({ optSel: 'USD' });
+    await wait(320);
+    set({ menu: false, cur: 'USD' });
+    await focus('cur');
+  }
+  async function actType() {
+    await wait(700);
+    await tap('amtField', 0.3, 0.5);
+    $('#amtField').classList.add('focus');
+    for (let k = 1; k <= AMT.length; k++) { set({ amt: AMT.slice(0, k) }); await wait(k === 1 ? 180 : 90); }
+    await wait(400); $('#amtField').classList.remove('focus');
+    await focus('receive');
+  }
+  async function actScan() {
+    if (RM) return;
+    await wait(700);
+    const sl = $('#scan'), box = $('.qrbox').offsetHeight;
+    sl.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, offset: 0.12 }, { opacity: 1, offset: 0.88 }, { opacity: 0, transform: `translateY(${box - 10}px)` }], { duration: 1500, easing: 'cubic-bezier(0.65,0,0.35,1)' });
+  }
+  async function actPaid() {
+    await wait(1100);
+    set({ paid: true });
+    await wait(1700);
+    await focus('tick');
+    await wait(400);
+    await tap('tick', 0.06, 0.5); set({ tick: true });
+  }
+  async function actHold() {
+    await wait(900);
+    const r = rectOf($('#holdBtn'));
+    const d = ripple(r.x + r.w / 2, r.y + r.h / 2, true);
+    const t0 = performance.now(), my = token;
+    set({ hold: 0.001 });
+    await new Promise(res => { const f = now => { if (my !== token) return res(); const k = Math.min(1, (now - t0) / 1500); set({ hold: k }); k < 1 ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); });
+    d.animate([{ opacity: 0.16 }, { opacity: 0 }], { duration: 200, fill: 'forwards' }).onfinish = () => d.remove();
+    if (my !== token) return;
+    set({ hold: 0, released: true });
+  }
+
+  async function endTour() {
+    token++; arrow.classList.add('out'); holeShow(false); pulse.classList.remove('breathe');
+    card.classList.remove('on'); tour.classList.remove('on');
+    await sleep(260); stop = -1; root.style.removeProperty('--colL'); intro();
+  }
+  tNext.addEventListener('click', () => { if (STOPS[stop].end) endTour(); else go(stop + 1); });
+  tBack.addEventListener('click', () => { if (stop > 0) go(stop - 1); });
+  $('#tSkip').addEventListener('click', endTour);
+  document.addEventListener('keydown', e => {
+    if (stop < 0) return;
+    if (e.key === 'Escape') endTour();
+    if (e.key === 'ArrowRight') tNext.click();
+    if (e.key === 'ArrowLeft' && stop > 0) go(stop - 1);
+  });
+  let KBD = false;
+  addEventListener('keydown', () => { KBD = true; }, true);
+  addEventListener('pointerdown', () => { KBD = false; }, true);
+  let rz = null;
+  addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (stop >= 0) { const s = stop; stop = s - 1; go(s); } }, 120); });
+
+  /* ---------- views ---------- */
+  const vIntro = $('#intro'), vApp = $('#app');
   function intro() {
-    vTour.hidden = true; vIntro.hidden = false;
-    tour.classList.remove('on'); card.style.opacity = 0; arrow.classList.add('out'); hole.classList.add('out'); ring.classList.add('out');
-    stop = -1; scene(+(Q.get('scene') || 0), cur < 0); startAuto();
+    vApp.hidden = true; vIntro.hidden = false;
+    tour.classList.remove('on'); card.classList.remove('on');
+    $$('.welcome, .cta, .links').forEach(e => { e.style.animation = 'none'; e.getBoundingClientRect(); e.style.animation = ''; });
+    requestAnimationFrame(runIntro);
   }
-  function startTour(i = 0) {
-    stopAuto(); vIntro.hidden = true; vTour.hidden = false; stop = -1; busy = false;
-    setTimeout(() => go(i), 280);
+  function startTour(n = 1) {
+    introRun++; clearIntro();
+    vIntro.hidden = true; vApp.hidden = false; stop = -1;
+    setInstant(stateBefore(0)); showScreen('s-main', false); curScr = 's-main';
+    $$('.scroll').forEach(s => s.scrollTop = 0);
+    setTimeout(() => go(n - 1), RM ? 60 : 280);
   }
-  document.getElementById('takeTour').addEventListener('click', () => startTour(0));
-  document.getElementById('skipStart').addEventListener('click', () => { stopAuto(); });
+  $('#takeTour').addEventListener('click', () => startTour(1));
+  $('#skipStart').addEventListener('click', () => { introRun++; });
 
   window.X2F = {
-    scene: i => { stopAuto(); scene(i); },
-    intro, tour: startTour, end: endTour,
-    toggleTheme: () => { const d = getComputedStyle(root).getPropertyValue('--ground').trim() === '#0e1116'; root.dataset.theme = d ? 'day' : 'night'; },
+    intro, tour: n => { startTour(n); }, end: () => { endTour(); }, go: n => { go(n - 1); },
+    stopNow: () => { introRun++; clearIntro(); },
+    settle: () => { token++; const s = stop; if (s >= 0) { const st = stateBefore(s); Object.assign(st, STOPS[s].after || {}); setInstant(st); } },
+    toggleTheme: () => { const night = getComputedStyle(root).getPropertyValue('--ground').trim() === '#0e1116'; root.dataset.theme = night ? 'day' : 'night'; },
     toggleRM: () => { RM = !RM; applyRM(); }
   };
-  requestAnimationFrame(() => {
-    if (Q.get('view') === 'tour') { cur = 0; startTour(+(Q.get('stop') || 0)); }
-    else intro();
-  });
+  const boot = () => { if (Q.get('view') === 'tour') startTour(+(Q.get('stop') || 1)); else intro(); };
+  (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(() => requestAnimationFrame(boot));
 })();
 </script>
 </body>
