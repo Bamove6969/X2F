@@ -126,8 +126,32 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     }
   });
 
+  // Review multisig-vs-RetoSwap F5 (12 Nov): issuedAt is checked against the device clock and the
+  // view's take time. A time refusal may be this device's clock, so it is retryable and never kept.
   it.each([
-    ['another deal (offer maximum)', (a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, deal: { ...a.terms!.deal, maxFiatCents: '90000' } } })],
+    ['issued after the trade was taken: accepted', { takenAt: '2026-10-23T11:00:00.000Z' }, Date.parse('2026-10-24T12:00:00Z'), null],
+    ['issued before the trade was taken (older than the trade)', { takenAt: '2026-10-24T09:00:00.000Z' }, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+    ['issued a day in this device’s future', {}, Date.parse('2026-10-22T12:00:00Z'), 'escrow-failed'],
+    ['a take time the view cannot read', { takenAt: 'yesterday' }, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+  ] as const)('issuedAt %s', async (_n, viewOver, clock, error) => {
+    const t = await setup({ view: tradeView(viewOver) });
+    const buyer = await t.mk('buyer', { now: () => clock });
+    const seller = await t.mk('seller', { now: () => clock });
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    if (error === null) {
+      await until(() => t.parties.calls.some((c) => c.role === 'buyer'));
+      expect(buyer.last()?.error ?? null).toBeNull();
+      return;
+    }
+    expect(await buyer.status((s) => s.phase === 'error')).toMatchObject({ error, retryable: true });
+    expect(t.parties.calls).toEqual([]);
+    expect((await buyer.store.load(CODE))?.failed ?? null).toBeNull();
+    expect((await buyer.store.load(CODE))?.attestation ?? null).toBeNull();
+  });
+
+  it.each([
+    ['another deal (offer maximum)',(a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, deal: { ...a.terms!.deal, maxFiatCents: '90000' } } })],
     ['another take amount', (a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, deal: { ...a.terms!.deal, takeAmountAtomic: '1' } } })],
     ['another payout address for this buyer', (a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, buyerPayout: '4AttackerAddress' } })],
   ])('the moderator attests %s: deal-mismatch, runParty never called', async (_n, tamper) => {
