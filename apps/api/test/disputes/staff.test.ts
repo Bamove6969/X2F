@@ -972,6 +972,13 @@ describe('Task 11 tripwires (local tree only)', () => {
     for (const f of files) {
       if (f.startsWith('proofs/') || f === 'retentionJobs.ts') continue;
       const c = readFileSync(SRC + f, 'utf8');
+      // Proof stack: the blur check's announce asks only whether a stored proof exists
+      // (isStoredProof from the store, existence only); it names no table and reads no ciphertext.
+      if (f === 'proof/blurCheck.ts') {
+        expect(c, f).toMatch(/import \{ isStoredProof \} from '\.\.\/proofs\/store\.js';/);
+        expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|ciphertext/);
+        continue;
+      }
       expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|proofs\/store/);
       // The route lists (auth/frontDoor.ts, auth/hold.ts) name the trader's proof route; staff,
       // internal and dispute code never does.

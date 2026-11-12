@@ -6,6 +6,7 @@ import { requireSession } from '../auth/sessions.js';
 import { TRADE_READ } from '../team/perms.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { isStoredProof } from '../proofs/store.js';
 import { getMethod } from '../methods/profiles.js';
 import type { RetentionJob } from '../retention.js';
 
@@ -115,14 +116,10 @@ export function blurCheckRoutes(app: FastifyInstance): void {
     return inTx(deps.db, async (c) => {
       // The trade row lock serialises a trade's announcements (the cap and the idempotent repeat).
       const { side } = await sideOf(c, code, req.auth.accountId, true);
-      // Proof stack (Task 14 storage): only a proof this side stored for this trade is announced
-      // (a payment proof or evidence; never an unblurred copy), so the site's proof count and the
-      // asks follow real proofs. Any other id is 404, like an unknown trade.
-      const stored = await c.query(
-        `select 1 from trade_proofs where id = $1 and trade_code = $2 and uploader_role = $3 and kind in ('proof', 'evidence')`,
-        [proofId, code, side],
-      );
-      if (stored.rows.length === 0) throw new ApiError(404, 'not-found');
+      // Proof stack: only a proof this side stored for this trade is announced (isStoredProof:
+      // existence only, never the ciphertext), so the site's proof count and the asks follow real
+      // proofs. Any other id is 404, like an unknown trade.
+      if (!(await isStoredProof(c, code, proofId, side))) throw new ApiError(404, 'not-found');
       const known = await c.query<{ ask: boolean }>('select ask from blur_check_proofs where trade_code = $1 and proof_id = $2', [code, proofId]);
       if (known.rows[0]) return { ask: known.rows[0].ask };
       const n = await c.query<{ n: string }>('select count(*) as n from blur_check_proofs where trade_code = $1', [code]);

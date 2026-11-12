@@ -56,6 +56,19 @@ export async function insertProof(
   ]);
 }
 
+/**
+ * Whether this side stored this proof (a payment proof or evidence, never an unblurred copy) for this
+ * trade. Existence only: never the ciphertext. For the blur check's announce (proof stack), the one
+ * user outside proofs/ (staff.test.ts names it).
+ */
+export async function isStoredProof(q: Queryable, code: string, id: string, side: 'buyer' | 'seller'): Promise<boolean> {
+  const { rows } = await q.query(
+    `select 1 from trade_proofs where id = $1 and trade_code = $2 and uploader_role = $3 and kind in ('proof', 'evidence')`,
+    [id, code, side],
+  );
+  return rows.length > 0;
+}
+
 /** A proof of this trade a party may read (`proof` or `evidence`); null for `unblurred` or none. */
 export async function readableProof(q: Queryable, code: string, id: string): Promise<Buffer | null> {
   const { rows } = await q.query<{ ciphertext: Buffer }>(
