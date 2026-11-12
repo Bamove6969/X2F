@@ -56,6 +56,11 @@ import { DesktopRail, WideTop, wideFrameOf } from './ui/DesktopShell.js';
 import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
 import './styles/fold.css';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
+import { Help, HELP_PATH } from './screens/welcome/Help.js';
+import { WelcomeGate } from './screens/welcome/WelcomeGate.js';
+import { WelcomeScreen } from './screens/welcome/WelcomeScreen.js';
+import { TourProvider } from './tour/TourProvider.js';
+import { WELCOME_PATH } from './tour/welcomeSeen.js';
 import { setPaymentDetailsSource, setTradeChat } from './screens/trade/paySeams.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
@@ -205,7 +210,8 @@ export function App() {
   }, [inside, refresh]);
   if (site.maintenance !== null) return <Maintenance maintenance={site.maintenance} onRetry={refresh} />;
   return (
-    <>
+    // The guided tour (owner, 12 Nov 2026) draws over whichever screen it is on.
+    <TourProvider>
       <RouterBridge />
       <SessionPrompt />
       <IdleReminder />
@@ -219,7 +225,10 @@ export function App() {
         {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
         <Route element={<BehindTheDoor />}>
           <Route element={<Layout nav banner={site.banner} planned={site.plannedMaintenance} />}>
-            <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
+            {/* Owner, 12 Nov 2026 (demo note #47): a device's first visit sees the welcome screen before /sell. */}
+            <Route path="/sell" element={<WelcomeGate><MethodList side="sell" copy={SELL_COPY} /></WelcomeGate>} />
+            <Route path={WELCOME_PATH} element={<WelcomeScreen />} />
+            <Route path={HELP_PATH} element={<Help />} />
             <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
             <Route path="/profile/offers" element={<MyOffers />} />
           </Route>
@@ -265,6 +274,6 @@ export function App() {
         {/* Anything else: the front door, which sends a set-up trader on to /sell. */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </>
+    </TourProvider>
   );
 }

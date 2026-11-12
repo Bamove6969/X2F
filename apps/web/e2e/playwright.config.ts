@@ -26,6 +26,9 @@ export default defineConfig({
     // The night theme, as tools/parity/capture-refs.ts shoots the references.
     colorScheme: 'dark',
     serviceWorkers: 'block',
+    // Every spec opens on a device that has already seen the welcome screen (owner, 12 Nov 2026: the
+    // first visit to /sell goes to /welcome once per device); tour.spec.ts starts from a new device.
+    storageState: { cookies: [], origins: [{ origin: `http://127.0.0.1:${PORT}`, localStorage: [{ name: 'x2f.welcome.seen', value: '1' }] }] },
   },
   projects: [{ name: 'chromium', use: { browserName: 'chromium', ...(executablePath ? { launchOptions: { executablePath } } : {}) } }],
   webServer: {
