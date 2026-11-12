@@ -5,8 +5,9 @@
  *
  * - `PUT /v1/trades/:code/proofs/:id?kind=proof|evidence|unblurred`, `application/octet-stream`
  *   only (415 otherwise), 40 bytes to PROOF_MAX_CIPHERTEXT (400 / 413). A party to the trade:
- *   - `proof`: the buyer only (403 wrong-party), in securing | secured | paid | refund_requested |
- *     disputed (409 wrong-state);
+ *   - `proof`: the buyer only (403 wrong-party), in secured | paid | refund_requested | disputed
+ *     (409 wrong-state). Not while securing (lead 2026-11-12): no proof before the escrow is
+ *     secured, as the web's chat engine refuses its `proof.attached` (`not-ready`);
  *   - `evidence`: either side while a dispute is open (409 wrong-state; P5-A30);
  *   - `unblurred`: only the side the open dispute's moderator asked (Plan 4's `proof_request_*` on
  *     `disputes`), one per request (409 not-requested).
@@ -31,7 +32,7 @@ import { PROOF_MAX_PER_SIDE, PROOF_MIN_CIPHERTEXT, type StoredProofKind, claimPr
 
 const KINDS: readonly StoredProofKind[] = ['proof', 'evidence', 'unblurred'];
 /** Where the buyer's payment proof belongs: from the escrow arriving to a dispute. */
-const PROOF_STATES = new Set(['securing', 'secured', 'paid', 'refund_requested', 'disputed']);
+const PROOF_STATES = new Set(['secured', 'paid', 'refund_requested', 'disputed']);
 
 const requireTrader = requireSession({ kinds: ['trader'] });
 const notFound = () => new ApiError(404, 'not-found');

@@ -75,6 +75,17 @@ function capped(w: number, h: number): void {
   if (w > RECEIVE_MAX_SIDE || h > RECEIVE_MAX_SIDE) throw err('too-large');
 }
 
+/** Plan 5 Task 15 / P5-A25: the uploader's picked file, at most this many bytes and decoded pixels. */
+export const PROOF_MAX_INPUT_BYTES = 20 * 1024 * 1024;
+export const PROOF_MAX_DECODED_PIXELS = 40_000_000;
+
+/** The cap for a picked file: its decoded size, not its sides (it is scaled down to PROOF_MAX_SIDE). */
+function inputCapped(w: number, h: number): void {
+  if (w * h > PROOF_MAX_DECODED_PIXELS) throw err('too-large');
+}
+
+type Cap = (w: number, h: number) => void;
+
 export interface ImageHeader {
   mime: ReceiveMime;
   width: number;
@@ -119,7 +130,7 @@ const PNG_CRITICAL = new Set(['IHDR', 'PLTE', 'IDAT', 'IEND']);
  * removal would change which pixels show (PNG tRNS, JPEG APP14) is refused as `unsupported` rather
  * than stripped. Off for the device's own copies (the stripped picture, the fresh PNG).
  */
-function pngHeader(b: Uint8Array, received: boolean): ImageHeader {
+function pngHeader(b: Uint8Array, received: boolean, cap: Cap = capped): ImageHeader {
   let at = 8;
   let width = 0;
   let height = 0;
@@ -145,7 +156,7 @@ function pngHeader(b: Uint8Array, received: boolean): ImageHeader {
       colour = b[data + 9]!;
       if (width === 0 || height === 0 || width > 0x7fffffff || height > 0x7fffffff) throw bad();
       if (!PNG_DEPTHS[colour]?.includes(depth)) throw bad();
-      capped(width, height);
+      cap(width, height);
       if (b[data + 10] !== 0 || b[data + 11] !== 0 || b[data + 12]! > 1) throw bad();
     }
     // APNG: an animation control chunk means more than one picture.
@@ -187,7 +198,7 @@ const SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb,
 /** APP14: Adobe's colour transform flag, which decides how the decoder reads the components. */
 const APP14 = 0xee;
 
-function jpegHeader(b: Uint8Array, received: boolean): ImageHeader {
+function jpegHeader(b: Uint8Array, received: boolean, cap: Cap = capped): ImageHeader {
   let at = 2;
   let width = 0;
   let height = 0;
@@ -217,7 +228,7 @@ function jpegHeader(b: Uint8Array, received: boolean): ImageHeader {
       const nf = body[5]!;
       // Height 0 needs a DNL segment later on: refused, as decoders handle it unevenly.
       if (width === 0 || height === 0 || nf < 1 || nf > 4 || body.length !== 6 + 3 * nf) throw bad();
-      capped(width, height);
+      cap(width, height);
     } else if (marker === SOS) {
       if (width === 0 || body.length < 1) throw bad();
       const ns = body[0]!;
@@ -244,7 +255,7 @@ function jpegHeader(b: Uint8Array, received: boolean): ImageHeader {
   }
 }
 
-function webpHeader(b: Uint8Array): ImageHeader {
+function webpHeader(b: Uint8Array, cap: Cap = capped): ImageHeader {
   if (b.length < 20) throw bad();
   if (u32le(b, 4) !== b.length - 8 || b.length % 2 !== 0) throw bad();
   let at = 12;
@@ -270,11 +281,11 @@ function webpHeader(b: Uint8Array): ImageHeader {
       if (at !== 12 || size !== 10) throw bad();
       if (b[data]! & 0x02) throw err('unsupported'); // the animation flag
       canvas = { w: u24le(b, data + 4) + 1, h: u24le(b, data + 7) + 1 };
-      capped(canvas.w, canvas.h);
+      cap(canvas.w, canvas.h);
     } else if (fourcc === 'VP8 ' || fourcc === 'VP8L') {
       if (image !== null) throw bad();
       image = fourcc === 'VP8 ' ? vp8Size(b, data, size) : vp8lSize(b, data, size);
-      capped(image.w, image.h);
+      cap(image.w, image.h);
     }
     at = next;
   }
@@ -322,11 +333,21 @@ export function readImageHeader(bytes: Uint8Array): ImageHeader {
   return header(bytes, false);
 }
 
-function header(bytes: Uint8Array, received: boolean): ImageHeader {
+/**
+ * The uploader's picked file (Plan 5 Task 15, P5-A25), read without decoding: the same walkers and
+ * refusals as `readImageHeader`, except that `too-large` is over PROOF_MAX_INPUT_BYTES or
+ * PROOF_MAX_DECODED_PIXELS (the picture is scaled down to PROOF_MAX_SIDE after the decode).
+ */
+export function readInputHeader(bytes: Uint8Array): ImageHeader {
+  if (bytes.length > PROOF_MAX_INPUT_BYTES) throw err('too-large');
+  return header(bytes, false, inputCapped);
+}
+
+function header(bytes: Uint8Array, received: boolean, cap: Cap = capped): ImageHeader {
   const mime = sniffImage(bytes);
-  if (mime === 'image/png') return pngHeader(bytes, received);
-  if (mime === 'image/jpeg') return jpegHeader(bytes, received);
-  if (mime === 'image/webp') return webpHeader(bytes);
+  if (mime === 'image/png') return pngHeader(bytes, received, cap);
+  if (mime === 'image/jpeg') return jpegHeader(bytes, received, cap);
+  if (mime === 'image/webp') return webpHeader(bytes, cap);
   throw err('unsupported');
 }
 

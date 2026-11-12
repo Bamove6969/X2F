@@ -149,7 +149,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // for an explanation; the proof can still be sent.
     // 65 -> 66 (NEEDS_PROOF_RECEIVE): screens/proof/ChatProof.tsx's CHAT_PROOF_GONE ("This proof is no
     // longer stored."), a note in place of a proof past its retention, not a rule the user ran into.
-    expect(notARefusal).toBeLessThanOrEqual(66);
+    // 66 -> 67 (Plan 5 Task 15, proof upload, merged in with the receive half, proof-receive review M4):
+    // proof/upload.ts's PROOF_CANT_USE ("This image can't be used. Try a screenshot."), an input check
+    // on the picked image (Review Focus 2); another can be picked.
+    expect(notARefusal).toBeLessThanOrEqual(67);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

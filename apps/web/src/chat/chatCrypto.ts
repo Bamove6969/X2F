@@ -54,7 +54,7 @@ import {
   type PayDetailsPayload,
 } from '@x2f/trade';
 
-import { type ProofAttachedPayload, parseProofPayload } from '@x2f/proof';
+import { type ProofAttachedPayload, parseProofPayload, sealProofEnvelope } from '@x2f/proof';
 
 export type ChatRole = 'buyer' | 'seller';
 export type ChatErrorCode = 'bad-text' | 'too-large' | 'bad-state' | 'bad-message' | 'mod-not-allowed';
@@ -207,6 +207,40 @@ export async function sealPayDetails(a: SealPayArgs): Promise<{ envelope: Envelo
   const pay = parsePayDetails(a.pay);
   const text = checkChatText(renderPayDetailsText(pay));
   return sealInner(a, { text, pay });
+}
+
+export interface SealProofArgs {
+  role: ChatRole;
+  me: Identity;
+  participants: Participants;
+  state: ChatState;
+  /** The `proof.attached` payload: the proof's key and facts, never the image (Plan 5 Task 15). */
+  proof: ProofAttachedPayload;
+}
+
+/**
+ * Seals a `proof.attached` envelope (Plan 5 Task 8 `sealProofEnvelope`, to buyer, seller and mod:
+ * the recipients come from the type) under the chat's seq rules, like sealChatMessage. A payment
+ * proof (`kind: 'proof'`) is the buyer's only; evidence is either trader's. Throws TypeError for
+ * another role, ProofError('bad-payload') for a malformed payload, ChatError 'too-large'.
+ */
+export async function sealProofAttached(a: SealProofArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealProofAttached: role must be buyer or seller');
+  const parsed = parseProofPayload('proof.attached', a.proof);
+  if (parsed.type !== 'proof.attached' || (parsed.payload.kind === 'proof' && a.role !== 'buyer')) throw new TypeError('sealProofAttached: only the buyer sends a payment proof');
+  const state = parseChatState(a.state, a.state.channel);
+  const seq = nextSeqOf(state, a.role);
+  const envelope = await sealProofEnvelope(parsed, { trade: state.channel, from: a.role, seq, me: a.me, participants: a.participants });
+  if (new TextEncoder().encode(JSON.stringify(envelope)).length > CHAT_BODY_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
+  return { envelope, state: { ...state, nextSeq: seq + 1 } };
+}
+
+/** The seq to seal with: never one this device has already seen from itself (see sealInner). */
+function nextSeqOf(state: ChatState, role: ChatRole): number {
+  const seenOwn = state.guard.seen[role];
+  const seq = seenOwn !== undefined && seenOwn >= state.nextSeq ? seenOwn + 1 : state.nextSeq;
+  if (!Number.isSafeInteger(seq + 1)) throw new ChatError('bad-state', 'Sequence exhausted');
+  return seq;
 }
 
 async function sealInner(a: Omit<SealChatArgs, 'text'>, payload: { text: string; pay?: PayDetailsPayload }): Promise<{ envelope: Envelope; state: ChatState }> {
