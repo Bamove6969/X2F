@@ -157,3 +157,98 @@ The three copies are in `packages/reputation/src/badges.ts`, `apps/web/src/ui/Ba
   Recommend confirming as built.
 - m2 (count vs totals while pending) and n2 (re-review after reversed → sale) if the lead does not
   settle them as engineering.
+
+## Re-verify: dd7668c2 (fixes for M1, m1, m2, n1, n3), 2026-11-12
+
+One commit on top of 917695b9. 10 files, +242/-21. It changes `withDispute`, adds
+`lockPartyTotals`, changes `FINAL_SALES_SQL`, adds the fast-payment take-back and unifies the Fast
+copy. It adds reputationLocks.test.ts and extends finalOutcome, tradedTotal and traderTrust.
+
+### Verdict
+
+**APPROVE.** M1, m1, m2, n1 and n3 are closed. One new Minor (m3, below) is cheap to fix in the same
+pass and is not a blocker.
+
+### M1: locks taken up front in withDispute
+
+- **Deadlock safety.** `withDispute` now locks, in this order: the trade row (`for update`), the
+  dispute row (`loadDisputeRecord ... lock`), and then both parties' `account_traded_totals` rows
+  (`lockPartyTotals`: missing rows are inserted, then locked `order by account_id for update`). All of
+  this happens before `fn`. So by the time `fn` takes the site-wide log lock, every row
+  `saveDispute`'s decided-save work touches is already held:
+  - the trade row (`eraseReversedReviews`);
+  - the totals rows (`countTradeTotals`, including the new fast-payment take-back);
+  - `reviews`, `review_skips` and `trade_totals_counted` for this trade, which every other writer
+    reaches only through the trade lock.
+
+  Nothing after the append waits on a contended lock, which satisfies append.ts N3. For the cases
+  that matter this is equivalent to moving the work before `appendLog`. It also fixes the dispute-
+  versus-trade inversion: the order is now trade, then dispute, the same as `applyEvent` and the
+  settle path's `before`/`within`. The other dispute-row writers (`staffRoutes` moderator-name and
+  proof-request updates) take only the dispute row and then the log lock, so they cannot form a cycle
+  with a holder of trade plus dispute.
+- **R37 log ordering.** Unchanged. `fn` still writes its entries in the same order, under the dispute
+  lock, and R37's involvement check still reads the log under that lock. Taking the trade lock
+  earlier only serialises a dispute change behind a running trade event on the same trade. It adds,
+  drops and reorders no entries.
+- **The two concurrency tests really reproduce the deadlock.** I copied reputationLocks.test.ts into a
+  scratch worktree at the old head 917695b9 and ran it: both tests fail with Postgres
+  `deadlock detected` (2/2 failed). On dd7668c2 both pass. Test 1 holds a release of trade B, owning
+  B and the seller's totals row, inside `within`, before its append, while the timer finalises trade
+  A for the same seller: that is the totals-row-versus-log-lock cycle. Test 2 holds trade C, then
+  locks its dispute in `before`, as the settle path does, while the timer finalises C: that is the
+  dispute-versus-trade cycle. The 400 ms sleep only makes sure the timer is blocked before the gate
+  opens. A false pass would need the timer to finish first, which it cannot, because it needs the row
+  the gated event holds. The scratch worktree is removed.
+- **Empty totals rows.** `lockPartyTotals` creates an all-zero row for any party of a disputed trade
+  (on every `withDispute` call, decided or not). Every reader coalesces a missing row to 0:
+  `tradedXmrSql`, the summary's `fast` and `buyer_cancels`. `own_usd_cents` has no reader outside
+  tradedTotal.ts. No reader tests whether a row exists. The FK to `accounts` has no cascade, but the
+  only hard account deletes are team-member login accounts and the setup owner, and neither is ever a
+  trade party. account_traded_totals is listed as not an account change, so no Jabber notice. **No
+  public answer or count changes.** The tradedTotal test now reads "0 or no row", which matches this
+  and is not a weakening.
+
+### m1, m2, n1, n3
+
+- **m1:** the comment now says the fee split and the reputation split part on an appeal that
+  overturns moved coins. finalOutcome.test.ts pins both on a real round-1 release → appeal → round-2
+  refund: `rulingFee` = `poster-pays`, `disputeOutcomeSql` = `reversed`, and `pending` throughout the
+  appeal. Correct.
+- **m2:** `FINAL_SALES_SQL` now also counts a trade whose outcome is `pending` when it already has its
+  'completed' mark. That matches `countTradeTotals`, which leaves a counted trade alone while pending.
+  A reversal deletes the mark, so the trade drops from both together, and a sale keeps both. A
+  never-counted pending trade stays out. Tested ("completed 2 while the appeal is pending, 1 after
+  the reversal"). Correct.
+- **n1:** `countTradeTotals` now deletes the trade's 'fast-payment' mark when the outcome is reversed,
+  and only then decrements the buyer's `fast_payments`, floored at 0. So the take-back happens once.
+  It runs in both callers. Its buyer row is among the rows locked up front. A later reversed → sale
+  does not re-add the payment, because `countFastPayment` requires `dispute_by is null`. That is
+  conservative and fine. Tested (2 → 1, mark gone). Correct.
+- **n3:** all three copies now read "Paid in under half the time allowed, 30+ times" (COPY-UNSIGNED).
+
+### New
+
+**m3 (Minor, engineering):** the order in which a trade event locks the totals rows still differs
+from `lockPartyTotals`. `countTradeTotals` called from `applyEvent` upserts the two parties' rows in
+buyer-then-seller order. `withDispute` locks them in account-id order. Two trades between the same
+two accounts, one taking a dispute action while the other settles, can still deadlock on the two
+totals rows. The same pair trading in opposite roles can also deadlock between two `applyEvent`
+calls, which is pre-existing on main. Postgres resolves it by aborting one transaction. It is rare,
+and the log lock is not involved. Fix: call `lockPartyTotals(q, code)` at the top of
+`countTradeTotals`, which is idempotent with the locks `withDispute` already holds, so every path
+takes the totals rows in id order.
+
+### Tests (serialised runner, single files, on dd7668c2)
+
+| File | Result |
+|---|---|
+| apps/api/test/reputationLocks.test.ts (new) | 2/2 passed (on 917695b9: 2/2 failed, `deadlock detected`) |
+| apps/api/test/finalOutcome.test.ts | 2/2 passed |
+| apps/api/test/tradedTotal.test.ts | 17/17 passed |
+| apps/api/test/disputes/staff.test.ts | 27 passed, 1 todo (28) |
+| apps/api/test/disputes/trader.test.ts | 18/18 passed |
+| apps/api/test/reviews.test.ts | 27/27 passed |
+| apps/api/test/traderTrust.test.ts | 11/11 passed |
+
+dockerd was not touched.
