@@ -1,5 +1,5 @@
 {
- "note": "X2F payment method catalog. Names seeded from Haveno's open-source method list (facts only, no code copied). Each entry must be checked against the provider's own site before launch (verified=false until then). Currency support is NOT recorded here: it comes from live offers. Updated 2026-10-21 (owner): removed Verse, Perfect Money and CelPay (shut down); names updated per research/payment-methods/REPORT.md. Added 2026-10-21 (owner): 13 gift cards and 20 methods LocalMonero offered; unverified until checked like the rest. Added 2026-10-24 (Plan 3 Task 3, owner rule of 2026-10-21): every method in \"Gift cards & vouchers\" carries giftCard: true; a gift-card offer must name the card's country and currency. Updated 2026-11-08 (owner p5-6, T-057): the gift-card list is the top 30 + Home Hardware + Canadian Tire + Other, in the owner's order; Razer Gold and PaysafeCard (not on the list) removed.",
+ "note": "X2F payment method catalog. Names seeded from Haveno's open-source method list (facts only, no code copied). Each entry must be checked against the provider's own site before launch (verified=false until then). Currency support is NOT recorded here: it comes from live offers. Updated 2026-10-21 (owner): removed Verse, Perfect Money and CelPay (shut down); names updated per research/payment-methods/REPORT.md. Added 2026-10-21 (owner): 13 gift cards and 20 methods LocalMonero offered; unverified until checked like the rest. Added 2026-10-24 (Plan 3 Task 3, owner rule of 2026-10-21): every method in \"Gift cards & vouchers\" carries giftCard: true; a gift-card offer must name the card's country and currency. Updated 2026-11-08 (owner p5-6, T-057): the gift-card list is the top 30 + Home Hardware + Canadian Tire + Other, in the owner's order; Razer Gold and PaysafeCard (not on the list) removed. Updated 2026-11-12 (owner 12 Nov: Russian anything is banned): SBP, MIR and YOOMONEY removed (127 to 124); see docs/sanctioned-countries-2026-11-12.md.",
  "methods": [
   {
    "id": "UPHOLD",
@@ -740,30 +740,6 @@
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
-  },
-  {
-   "id": "SBP",
-   "name": "SBP — Faster Payments System (Russia)",
-   "group": "Bank transfers",
-   "source": "haveno PaymentMethod.java (names only)",
-   "verified": false,
-   "legalReview": "sanctions: needs lawyer sign-off before launch"
-  },
-  {
-   "id": "MIR",
-   "name": "Mir card",
-   "group": "Bank transfers",
-   "source": "haveno PaymentMethod.java (names only)",
-   "verified": false,
-   "legalReview": "sanctions: needs lawyer sign-off before launch"
-  },
-  {
-   "id": "YOOMONEY",
-   "name": "YooMoney",
-   "group": "Payment apps",
-   "source": "haveno PaymentMethod.java (names only)",
-   "verified": false,
-   "legalReview": "sanctions: needs lawyer sign-off before launch"
   },
   {
    "id": "UKRAINE_CARD",

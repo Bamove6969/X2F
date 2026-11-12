@@ -276,7 +276,7 @@ describe('the 12 Nov recheck (research-payee-fields-confirm-2026-11-12; lead 12 
 
   it('every rechecked row records the recheck and its new confidence', () => {
     const rechecked = Object.entries(PAY_FIELDS).filter(([, r]) => r.source.includes('recheck 2026-11-12'));
-    expect(rechecked).toHaveLength(62);
+    expect(rechecked).toHaveLength(60);
     for (const [id, r] of rechecked) expect(/recheck 2026-11-12 \((high|medium|low)[^)]*\)/.test(r.source), id).toBe(true);
   });
 });
