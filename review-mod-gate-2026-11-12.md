@@ -92,4 +92,10 @@ Graded minor because an attacker present at the time can also simply never show 
 
 ## Tests run
 
-(see bottom; run in a detached worktree on f4b486ab after a fresh `npm ci`, under `flock ~/x2f-comms/check.lock` + the scratchpad runner)
+Detached worktree on f4b486ab, fresh `npm ci`, each run under `flock ~/x2f-comms/check.lock` plus the scratchpad serialised runner; worktree and node_modules removed afterwards.
+
+- `apps/moderation/test/gate.test.ts` + review PoC file (`zz-review-poc.test.ts`, uncommitted, kept at `/tmp/claude-0/-home-user-X2F/992ece86-f5cc-5ebc-82cc-7f9bc9dec1c0/scratchpad/mod-gate-review-poc.test.ts`): 29/29 passed = 23 branch tests + 6 PoCs. The PoCs assert the ATTACK SUCCEEDS: P1, P2 (B1), P3 (B2), P4, P5 (M1) and P6 (I4). After a fix, flip them into refusals.
+- `apps/api/test/staff/members.test.ts`: 28/28 passed.
+- `apps/moderation/test/buyerCancel.test.ts`: 26/26 passed.
+- `npx tsc -p apps/moderation --noEmit`: clean.
+- Not run: `apps/api/test/schema.test.ts` (only migration-list edits; read), the full suites (not allowed on this box).
