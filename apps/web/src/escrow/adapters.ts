@@ -40,6 +40,15 @@ export interface EscrowTradeView {
    * the attested `payWindowMin` must equal it (runtime.ts, `wrong-terms`).
    */
   payWindowMin: number | null;
+  /** The payment method chosen at take, as the view shows it, or null when it has none; the attested `deal.methodId` must equal it (runtime.ts). */
+  methodId: string | null;
+  /**
+   * The payment instructions locked at take, as the (unsigned) view shows them: null before the
+   * escrow is secured, '' when the offer gave none. Never shown as such: runtime.ts passes them on
+   * (`EscrowStatus.paymentInstructions`) only when they hash to the attested
+   * `terms.deal.instructionsSha256` (Task 34 review I1, restored after J-16).
+   */
+  paymentInstructions: string | null;
 }
 
 const big = (v: unknown): bigint | null => (typeof v === 'string' && /^(?:0|[1-9]\d{0,30})$/.test(v) ? BigInt(v) : null);
@@ -70,6 +79,8 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
     paidAt: typeof v.paidAt === 'string' ? v.paidAt : null,
     payWindowMin:
       typeof v.payWindowMin === 'number' && Number.isSafeInteger(v.payWindowMin) && v.payWindowMin >= 1 && v.payWindowMin <= MAX_PAY_WINDOW_MIN ? v.payWindowMin : null,
+    methodId: typeof v.methodId === 'string' && v.methodId.length > 0 ? v.methodId : null,
+    paymentInstructions: typeof v.paymentInstructions === 'string' ? v.paymentInstructions : null,
   };
 }
 

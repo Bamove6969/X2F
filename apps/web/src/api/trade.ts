@@ -80,7 +80,9 @@ export interface TradeView {
   methodId: string;
   /**
    * The chosen method's instructions from the offer, locked at take (J-16): null until the escrow is
-   * secured, '' when the offer gave none. Not shown by the web yet; missing from an older API.
+   * secured, '' when the offer gave none; missing from an older API. UNSIGNED: never show this field.
+   * A screen shows payment instructions only from the escrow status (`EscrowStatus.paymentInstructions`),
+   * which passes them on only when they hash to the moderator-attested ones (Task 34 review I1).
    */
   paymentInstructions?: string | null;
   profile: unknown;

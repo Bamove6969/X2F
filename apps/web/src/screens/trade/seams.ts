@@ -117,6 +117,8 @@ export const PENDING_ESCROW: TradeEscrow = {
   phase: 'idle',
   escrowAddress: null,
   deal: null,
+  paymentInstructions: null,
+  instructionsMismatch: false,
   receivedAtomic: null,
   confirmedAtomic: null,
   paidRecorded: false,

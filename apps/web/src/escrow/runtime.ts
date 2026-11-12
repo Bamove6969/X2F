@@ -20,6 +20,7 @@ import {
   escrowCheckWords,
   fiatCents,
   identityProofBytes,
+  instructionsMatch,
   verifyAttestation,
   type Attestation,
   type AttestedTerms,
@@ -75,7 +76,9 @@ export interface ConfirmedTrade {
  * not retried (the trade needs a dispute or another outcome). `view-mismatch`: the API's trade
  * view disagrees with the deal this device signed (role, poster, currency, rate or maximum);
  * nothing is settled while it does, and the trade goes on once the view is right again (a lying
- * or drifting API never stops the device's key share for good).
+ * or drifting API never stops the device's key share for good). It is also `view-mismatch` when the
+ * view's method or payment instructions are not the attested ones (`instructionsMismatch`, Task 34
+ * review I1): the API may be showing the buyer someone else's payment details.
  */
 export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'paid-amount-waiting' | 'amount-unknown' | 'attempts-exhausted' | 'view-mismatch';
 
@@ -108,6 +111,16 @@ export interface EscrowStatus {
   escrowAddress: string | null;
   /** The deal this device stored from what the user confirmed (never the API's), or null before the record exists. */
   deal: Deal | null;
+  /**
+   * The payment instructions locked at take, ONLY when the API view's text hashes to the
+   * moderator-attested `terms.deal.instructionsSha256` and the view's method is the attested one
+   * (Task 34 review I1, restored after J-16); null otherwise (before the escrow is secured, before
+   * the attestation, or on a mismatch). A screen shows payment details only from here, never from
+   * the TradeView.
+   */
+  paymentInstructions: string | null;
+  /** The view's payment instructions (or their method) differ from the attested ones: show a warning, never the text. */
+  instructionsMismatch: boolean;
   /**
    * Buyer only: this device recorded the buyer's own "I've paid" (the tap fixed the amount, saved
    * before `trade.paid` left). False for the seller, and for a buyer that knows of paid only from
@@ -302,6 +315,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     /** The moderator-attested terms, from the attestation verified in this run. */
     private attested: AttestedTerms | null = null;
     private view: EscrowTradeView | null = null;
+    /** The view's payment instructions as last checked against the attested hash (review I1); null while the view has none. */
+    private instructions: { text: string; ok: boolean } | null = null;
     private isReady = false;
     private words: string[] | null = null;
     /** The address `party.ready()` resolved with (EscrowStatus.escrowAddress). */
@@ -359,6 +374,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         fiatCents: amountAtomic === null ? null : fiatCents(amountAtomic, { currency: this.rec.deal.currency, centsPerXmr: this.rec.deal.centsPerXmr }),
         escrowAddress: this.address,
         deal: (this.rec as EscrowRecord | undefined)?.deal ?? null,
+        paymentInstructions: this.instructions?.ok === true ? this.instructions.text : null,
+        instructionsMismatch: this.instructions !== null && !this.instructions.ok,
         paidRecorded: this.rec?.role === 'buyer' && this.rec.paidSeen === true && (this.rec.acceptedAtomic ?? null) !== null,
         intentKind: (() => {
           const i = (this.rec as EscrowRecord | undefined)?.intent ?? null;
@@ -553,14 +570,17 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // and the API ship together, so a view without a valid one fails closed (launch-rules review
       // F2): only a lying API leaves it out. The first value this device saw is kept in its record,
       // and a later view that shows another one is refused too, so it cannot be changed afterwards.
-      const shown = await this.retry(async () => {
+      // The payment method the view shows is read with it: the attested one must be the same (review
+      // I1, restored after J-16); a view without one fails closed the same way.
+      const view0 = await this.retry(async () => {
         const v = parseTradeView(await deps.api.getTrade(this.code));
         if (!v) throw new Error('unreadable trade view');
-        return v.payWindowMin;
+        return { payWindowMin: v.payWindowMin, methodId: v.methodId };
       });
-      if (shown === undefined || this.stopped) return;
+      if (view0 === undefined || this.stopped) return;
+      const shown = view0.payWindowMin;
       // A deal mismatch: not kept as failed, found again on the next start (as `fail` says).
-      if (shown === null) return this.fail('deal-mismatch');
+      if (shown === null || view0.methodId === null) return this.fail('deal-mismatch');
       const pinned = this.rec.payWindowMin ?? null;
       if (pinned !== null && pinned !== shown) return this.fail('deal-mismatch');
       try {
@@ -571,6 +591,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           {
             trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress,
             payWindowMin: shown,
+            methodId: view0.methodId,
           },
         );
       } catch (e) {
@@ -905,6 +926,23 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (view) this.view = view; // a view that disagrees with the deal stops the trade in tick()
     }
 
+    /**
+     * The view's method is the attested one and its payment instructions, if it carries any, hash to
+     * the attested `instructionsSha256` (Task 34 review I1, restored after J-16). Records the result
+     * for the status (the text is passed on only when it holds). False before the attestation.
+     */
+    private async instructionsAttested(v: EscrowTradeView): Promise<boolean> {
+      const terms = this.attested;
+      const methodOk = terms !== null && v.methodId === terms.deal.methodId;
+      const text = v.paymentInstructions;
+      if (text === null) {
+        this.instructions = null;
+        return methodOk;
+      }
+      this.instructions = { text, ok: methodOk && terms !== null && (await instructionsMatch(text, terms)) };
+      return this.instructions.ok;
+    }
+
     /** The counterparty's signed address is the one the moderator attested for its role (or none yet). */
     private theirAddressAttested(): boolean {
       const r = this.rec;
@@ -954,6 +992,14 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // nothing kept (the view may be right again next tick). The counterparty's terms cannot
       // disagree: only the attested ones are ever adopted (signals.ts), and context() checks again.
       if (!viewMatches(v, r.role, r.deal)) {
+        this.refusal = 'view-mismatch';
+        this.refresh();
+        return;
+      }
+      // Task 34 review I1 (restored after J-16): the method and the payment instructions the view
+      // shows must be the attested ones; otherwise the text is never shown, the mismatch is, and
+      // nothing is settled this tick (a buyer may be about to pay someone else).
+      if (!(await this.instructionsAttested(v))) {
         this.refusal = 'view-mismatch';
         this.refresh();
         return;
@@ -1178,6 +1224,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           // maximum) is the shown `view-mismatch`: no tap is taken on it, even when the total
           // agrees (Task 23 round 2, I1), since nothing settles while it lasts.
           if (v && !viewMatches(v, r.role, r.deal)) throw new Error('escrow: the trade view does not match this device\'s deal');
+          // Nor on payment instructions (or a method) that are not the attested ones (Task 34 review
+          // I1): the buyer may have paid someone else, so the tap is not taken on this device.
+          if (v && !(await this.instructionsAttested(v))) throw new Error('escrow: the trade view\'s payment instructions are not the attested ones');
           // The tap itself fixes the amount: the one already fixed, or the API's within [take, device size].
           const fixed = r.acceptedAtomic ?? null;
           const inRange = (x: bigint): boolean => x >= r.deal.takeAmountAtomic && x <= r.sizeAtomic;

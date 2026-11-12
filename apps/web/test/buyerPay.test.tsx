@@ -86,6 +86,8 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
     deal: DEAL,
     amountAtomic: 1_250_000_000_000n,
     fiatCents: 41_250n,
+    paymentInstructions: null,
+    instructionsMismatch: false,
     receivedAtomic: null,
     confirmedAtomic: null,
     paidRecorded: false,

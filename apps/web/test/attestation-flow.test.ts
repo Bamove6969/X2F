@@ -386,7 +386,7 @@ describe('what this device signs comes from what the user confirmed, never the A
     await buyer.runtime.start(CODE);
     await seller.runtime.start(CODE);
     await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
-    t.parties.funds = funded();
+    // Not funded yet: nothing could settle in any case until the instructions check passes below.
     // Before the escrow is secured the view carries none: nothing to show, nothing refused.
     t.state.view = tradeView({ state: 'securing', paymentInstructions: null });
     expect(await buyer.status((s) => s.phase === 'ready')).toMatchObject({ refusal: null, paymentInstructions: null, instructionsMismatch: false });
@@ -405,6 +405,10 @@ describe('what this device signs comes from what the user confirmed, never the A
       expect(t.parties.settles).toEqual([]);
       expect((await buyer.store.load(CODE))?.failed ?? null).toBeNull();
     }
+    // Funded while the view still lies: still nothing settled.
+    t.parties.funds = funded();
+    await Promise.all([t.parties.ticks('seller', 3), t.parties.ticks('buyer', 3)]);
+    expect(t.parties.settles).toEqual([]);
     // The view is right again: the text shows and the trade goes on.
     t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS });
     expect(await buyer.status((s) => s.paymentInstructions === INSTRUCTIONS)).toMatchObject({ refusal: null, instructionsMismatch: false });

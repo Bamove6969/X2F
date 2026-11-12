@@ -28,9 +28,26 @@ export interface Attestation {
  * at take, the buyer's time to pay fixed at take, and both sides' addresses, filled from the trade
  * record. Bigints are decimal strings without leading zeros (canonical JSON has no bigints); the
  * key sets are exact.
+ *
+ * Payment instructions (Task 34 review I1, restored for flex offers after J-16 dropped it): the deal
+ * carries the method chosen at take (`methodId`) and the SHA-256 of that method's instructions for
+ * the trade's currency, as locked in the trade record (`instructionsSha256`, lower-case hex over the
+ * UTF-8 text, exactly, with no trimming or normalising). The instructions reach a device only
+ * through the unsigned TradeView, so a device shows them only when `instructionsMatch` holds and the
+ * view's method is the attested one; an API that serves other payment details is caught. The
+ * confirmed deal carries neither (the taker never sees the instructions before the take), so
+ * `verifyAttestation` checks their form, and the method only when the app passes the one it was shown.
  */
 export interface AttestedTerms {
-  deal: { poster: 'buyer' | 'seller'; takeAmountAtomic: string; currency: string; centsPerXmr: string; maxFiatCents: string };
+  deal: {
+    poster: 'buyer' | 'seller';
+    takeAmountAtomic: string;
+    currency: string;
+    centsPerXmr: string;
+    maxFiatCents: string;
+    methodId: string;
+    instructionsSha256: string;
+  };
   /**
    * The buyer's time to pay in minutes, the payment method's, fixed at take (`Trade.payWindowMin`,
    * owner p9-6): an integer from 1 to MAX_PAY_WINDOW_MIN. The moderation service's shadow trade
@@ -55,6 +72,25 @@ export interface ConfirmedDeal {
 const DECIMAL = /^[1-9]\d{0,30}$/;
 const MAX_ADDRESS = 256;
 const MAX_CURRENCY = 16;
+const MAX_METHOD_ID = 64;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/** Lower-case hex SHA-256 of the UTF-8 payment instructions, as `AttestedTerms.deal.instructionsSha256` carries it. */
+export async function instructionsSha256(text: string): Promise<string> {
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
+  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The payment instructions a device was shown are exactly the ones the moderator attested for this
+ * trade (Task 34 review I1). A device shows instructions only when this holds, and otherwise warns;
+ * it never shows unattested payment details. False for a non-string text or a malformed hash.
+ */
+export async function instructionsMatch(text: string, terms: Pick<AttestedTerms, 'deal'>): Promise<boolean> {
+  const want = terms?.deal?.instructionsSha256;
+  if (typeof text !== 'string' || typeof want !== 'string' || !SHA256_HEX.test(want)) return false;
+  return (await instructionsSha256(text)) === want;
+}
 
 function exactKeys(o: Record<string, unknown>, keys: readonly string[]): boolean {
   const own = Object.keys(o);
@@ -76,13 +112,15 @@ export function isAttestedTerms(t: unknown): t is AttestedTerms {
   if (!isPayWindowMin(t.payWindowMin)) return false;
   for (const a of [t.buyerPayout, t.sellerRefund]) if (typeof a !== 'string' || a.length === 0 || a.length > MAX_ADDRESS) return false;
   const d = t.deal;
-  if (!isRecord(d) || !exactKeys(d, ['poster', 'takeAmountAtomic', 'currency', 'centsPerXmr', 'maxFiatCents'])) return false;
+  if (!isRecord(d) || !exactKeys(d, ['poster', 'takeAmountAtomic', 'currency', 'centsPerXmr', 'maxFiatCents', 'methodId', 'instructionsSha256'])) return false;
   if (d.poster !== 'buyer' && d.poster !== 'seller') return false;
+  if (typeof d.methodId !== 'string' || d.methodId.length === 0 || d.methodId.length > MAX_METHOD_ID) return false;
+  if (typeof d.instructionsSha256 !== 'string' || !SHA256_HEX.test(d.instructionsSha256)) return false;
   if (typeof d.currency !== 'string' || d.currency.length === 0 || d.currency.length > MAX_CURRENCY) return false;
   return [d.takeAmountAtomic, d.centsPerXmr, d.maxFiatCents].every((x) => typeof x === 'string' && DECIMAL.test(x));
 }
 
-/** The attested deal equals the confirmed one, field by field. */
+/** The attested deal equals the confirmed one, field by field (the method and the instructions hash are not in the confirmed deal: see `AttestedTerms`). */
 function sameDeal(t: AttestedTerms['deal'], d: ConfirmedDeal): boolean {
   return (
     t.poster === d.poster &&
@@ -196,6 +234,12 @@ export interface AttestationSelf {
    * checked for shape.
    */
   payWindowMin?: number;
+  /**
+   * Trade context, optional: the payment method this app was shown for the trade (the API's trade
+   * view). When given, the attested `deal.methodId` must equal it (`wrong-terms`). Not given: the
+   * attested value is only checked for shape.
+   */
+  methodId?: string;
 }
 
 /**
@@ -265,4 +309,5 @@ export async function verifyAttestation(
   if (!sameDeal(t.deal, me.deal)) throw new AttestationError('wrong-terms');
   if ((me.role === 'buyer' ? t.buyerPayout : t.sellerRefund) !== me.ownAddress) throw new AttestationError('wrong-terms');
   if (me.payWindowMin !== undefined && t.payWindowMin !== me.payWindowMin) throw new AttestationError('wrong-terms');
+  if (me.methodId !== undefined && t.deal.methodId !== me.methodId) throw new AttestationError('wrong-terms');
 }
