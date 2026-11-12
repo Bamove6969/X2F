@@ -24,10 +24,16 @@ async function build(mode: string): Promise<string> {
   return out;
 }
 
+/**
+ * Our own output: index.html and everything vite built. The copied OCR files (dist/ocr/, Plan 5 Task
+ * 13) are third-party code checked byte for byte against tools/ocr-assets.sha256 instead.
+ */
 async function bundleText(dir: string): Promise<string> {
   const files = await readdir(dir, { recursive: true, withFileTypes: true });
   const parts = await Promise.all(
-    files.filter((f) => f.isFile() && /\.(js|css|html)$/.test(f.name)).map((f) => readFile(join(f.parentPath, f.name), 'utf8')),
+    files
+      .filter((f) => f.isFile() && /\.(js|css|html)$/.test(f.name) && f.parentPath !== join(dir, 'ocr'))
+      .map((f) => readFile(join(f.parentPath, f.name), 'utf8')),
   );
   return parts.join('\n');
 }
@@ -67,15 +73,19 @@ describe('production bundle', () => {
       expect(c).not.toBe(entry);
       expect(preloaded).not.toContain(c);
     }
-    expect(await readFile(join(dir, entry!), 'utf8')).not.toContain('createWorker');
+    // Neither proof/ocr.ts nor the engine is in the entry: both are loaded with the first proof.
+    const entryText = await readFile(join(dir, entry!), 'utf8');
+    for (const internal of ['Legacy model requested', 'regeneratorRuntime', 'wasm-feature-detect', '/ocr/worker.min.js']) expect(entryText, internal).not.toContain(internal);
   });
 
-  it('no CDN default reaches the bundle, and no OCR core or model is bundled', { timeout: 200_000 }, async () => {
+  it('no CDN default reaches the bundle; the OCR core and model are served from /ocr/, never bundled', { timeout: 200_000 }, async () => {
     const dir = await build('production');
     const text = await bundleText(dir);
     expect(text).not.toMatch(/jsdelivr|unpkg\.com/);
-    const files = (await readdir(dir, { recursive: true })).map(String);
-    expect(files.filter((f) => /traineddata|tesseract-core/.test(f))).toEqual([]);
+    expect((await readdir(join(dir, 'assets'))).filter((f) => /traineddata|tesseract-core|worker\.min/.test(f))).toEqual([]);
+    expect((await readdir(join(dir, 'ocr'))).sort()).toEqual(
+      ['eng.traineddata.gz', 'tesseract-core-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'worker.min.js'],
+    );
   });
 
   it('inlines nothing the CSP would block: no inline scripts or styles, no data: fonts', { timeout: 200_000 }, async () => {

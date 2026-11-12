@@ -20,8 +20,8 @@
  * apps/web/test/proofUpload.test.ts.
  *
  * Seams (named, not wired here):
- * - NEEDS_PLAN_5_TASK_13 (the self-hosted OCR, `ocr`): `browserProofImageDeps().ocr` answers null
- *   until it lands, so the editor opens with no regions and says so (Review Focus 3).
+ * - The OCR (Plan 5 Task 13, proof/ocr.ts): on this device, in one worker, from /ocr/ only. When it
+ *   cannot run it answers null, so the editor opens with no regions and says so (Review Focus 3).
  * - NEEDS_PLAN_5_TASK_14 (proof storage): `putProof` calls `PUT /v1/trades/:code/proofs/:id?kind=`
  *   as Task 14 specifies; the API has no such route on main yet, so the screen is behind
  *   `VITE_X2F_PROOF_UPLOAD=1` (`proofUploadOn`).

@@ -38,8 +38,9 @@ export function browserProofImageDeps(): ProofImageDeps {
       const blob = await ctx.canvas.convertToBlob(mime === 'image/jpeg' ? { type: mime, quality: JPEG_QUALITY } : { type: mime });
       return new Uint8Array(await blob.arrayBuffer());
     },
-    // NEEDS_PLAN_5_TASK_13: the self-hosted Tesseract OCR (`ocr(bitmap)`, /ocr/* assets, worker CSP).
-    // Until it lands nothing is read automatically: the editor opens with no regions and says so.
-    ocr: async () => null,
+    // Plan 5 Task 13: the self-hosted OCR in its own worker (ocr.ts), loaded on the first proof (both
+    // ocr.ts and tesseract.js are lazy chunks). It answers null when it cannot run, and a chunk that
+    // fails to load throws, which prepareProof treats the same: no regions, and the editor says so.
+    ocr: async (rgba, width, height) => (await import('./ocr.js')).ocr(rgba, width, height),
   };
 }
