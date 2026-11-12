@@ -2,11 +2,13 @@ import type { ProofExpected } from '@x2f/proof';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ChatFailed, chatClient, openTradeChat } from '../../chat/client.js';
 import { browserProofImageDeps } from '../../proof/browserImage.js';
-import { hiddenByUploader } from '../../proof/uploaderChecks.js';
+import { hiddenByUploader, proofCodeNotice } from '../../proof/uploaderChecks.js';
+import { proofPosted } from '../../api/blurCheck.js';
 import {
   type BlurKind,
   type EditorRegion,
   type PreparedProof,
+  type ProofSendDeps,
   PROOF_CANT_USE,
   ProofInputError,
   prepareProof,
@@ -39,20 +41,42 @@ export interface SendArgs {
 }
 
 /** The real send: the ciphertext up, the key in the trade's chat. */
-export async function sendTradeProof(a: SendArgs): Promise<{ proofId: string; blur: BlurKind }> {
-  const r = await sendProof(
-    { code: a.code, prepared: a.prepared, regions: a.regions },
-    {
-      encode: browserProofImageDeps().encode,
-      put: (code, proofId, kind, ciphertext) => putProof(code, proofId, kind, ciphertext),
-      postAttached: async (code, payload) => {
-        await chatClient().sendProof(await openTradeChat(code), payload);
-      },
-      // NEEDS_BRANCH_PROOF_CHECK: wip/lead-proof-check's `proofPosted(code, proofId, blur)` goes here.
+/**
+ * The real send's parts: the ciphertext up (Task 14), its key in the trade's chat, then the blur
+ * check's announcement (proof stack: wip/lead-proof-check's `proofPosted`, the proof id and the blur
+ * kind only; a failure there never fails the send, upload.ts).
+ */
+export function tradeProofDeps(): ProofSendDeps {
+  return {
+    encode: browserProofImageDeps().encode,
+    put: (code, proofId, kind, ciphertext) => putProof(code, proofId, kind, ciphertext),
+    postAttached: async (code, payload) => {
+      await chatClient().sendProof(await openTradeChat(code), payload);
     },
-  );
-  // NEEDS_BRANCH_PROOF_CODE: wip/lead-proof-code's `proofCodeNotice(a.ownHidden)` is sent here,
-  // through its `chatClient().sendNotice`, when it is not null.
+    onPosted: async (code, proofId, blur) => {
+      await proofPosted(code, proofId, blur);
+    },
+  };
+}
+
+/**
+ * P-020 with the proof (proof stack: wip/lead-proof-code's `proofCodeNotice`): when the poster's own
+ * blur covers the memo with the trade code, the fixed notice goes into the trade's chat. Nothing
+ * when it does not.
+ */
+export async function sendCodeNotice(code: string, ownHidden: { amount: boolean; memo: boolean }): Promise<void> {
+  const notice = proofCodeNotice(ownHidden);
+  if (notice === null) return;
+  await chatClient().sendNotice(await openTradeChat(code), notice);
+}
+
+export async function sendTradeProof(a: SendArgs): Promise<{ proofId: string; blur: BlurKind }> {
+  const r = await sendProof({ code: a.code, prepared: a.prepared, regions: a.regions }, tradeProofDeps());
+  try {
+    await sendCodeNotice(a.code, a.ownHidden);
+  } catch {
+    // The proof is sent; the notice is a courtesy line (the seller's card checks the memo itself).
+  }
   return r;
 }
 

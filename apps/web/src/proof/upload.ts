@@ -27,9 +27,8 @@
  *   (apps/api/src/proofs/routes.ts), proven end to end in apps/api/test/proofUploadWire.test.ts.
  *   The screen stays behind `VITE_X2F_PROOF_UPLOAD=1` (`proofUploadOn`, off by default) until the
  *   proof stack lands on main.
- * - NEEDS_BRANCH_PROOF_CHECK (wip/lead-proof-check's blur check): `ProofSendDeps.onPosted(code,
- *   proofId, blur)` is where its `proofPosted` goes; the blur kind is `blurKindOf`.
- * - NEEDS_BRANCH_PROOF_CODE (wip/lead-proof-code's proofCodeNotice): see BlurEditor.tsx.
+ * - Wired in the proof stack (screens/proof/AddProof.tsx): `ProofSendDeps.onPosted` is the blur check's
+ *   `proofPosted(code, proofId, blurKindOf(...))`, and the code notice (`proofCodeNotice`) goes with the proof.
  */
 import {
   type Box,
@@ -241,7 +240,7 @@ export interface ProofSendDeps extends Pick<ProofImageDeps, 'encode'> {
   put(code: string, proofId: string, kind: ProofKind, ciphertext: Uint8Array): Promise<void>;
   /** Seal `proof.attached` to buyer, seller and mod and post it in the trade's chat (chat engine). */
   postAttached(code: string, payload: ProofAttachedPayload): Promise<void>;
-  /** NEEDS_BRANCH_PROOF_CHECK: the blur check's `proofPosted(code, proofId, blur)`. Its failure never fails the send. */
+  /** The blur check's `proofPosted(code, proofId, blur)` (AddProof.tsx tradeProofDeps). Its failure never fails the send. */
   onPosted?(code: string, proofId: string, blur: BlurKind): Promise<void>;
 }
 

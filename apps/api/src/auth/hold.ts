@@ -631,6 +631,9 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/chats/:chat/identity': "the caller's chat identity key for one chat; no account, session, approval or security state",
   'POST /v1/trades/:code/chat': "a participant's chat for an open trade (R42: finishing open trades stays allowed); no new obligation",
   // Plan 5 Task 14.
+  // P-012/P-013 (proof/blurCheck.ts), classified in the proof stack.
+  'POST /v1/trades/:code/proofs/:proofId/blur-check': "a participant's announcement of their own stored proof to the blur check (rows in blur_check_*); no account, session, approval or security state, no new obligation",
+  'POST /v1/trades/:code/blur-checks/:proofId': "a participant's Yes/No on a blur check (an anonymous answer row); no account, session, approval or security state, no new obligation",
   'PUT /v1/trades/:code/proofs/:id': "a participant's proof ciphertext for their own trade (R42: finishing open trades stays allowed); no account, session, approval or security state, no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
   // Plan 5 Task 3 (reviews), classified at its merge with Tasks 16-17.

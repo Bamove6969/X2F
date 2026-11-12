@@ -138,7 +138,7 @@ export function BlurEditor({
           {dateLine.text}
         </Notice>
       ) : null}
-      {/* NEEDS_BRANCH_PROOF_CODE: wip/lead-proof-code's proofCodeNotice(ownHidden) is sent with the proof (AddProof). */}
+      {/* proofCodeNotice(ownHidden) is sent with the proof (AddProof.tsx sendCodeNotice, proof stack). */}
       <div className="x2f-stack">
         <Button variant="secondary" data-part="add-blur" aria-pressed={drawing} disabled={busy} onClick={() => setDrawing((d) => !d)}>
           {drawing ? 'Cancel' : 'Add blur'}

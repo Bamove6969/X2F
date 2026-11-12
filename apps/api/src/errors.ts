@@ -122,8 +122,7 @@ export type ApiErrorCode =
   | 'comment-too-long'
   | 'comment-bad-character'
   | 'review-exists'
-  // Plan 5, Task 14: proof storage (proofs/routes.ts).
-  | 'too-many-proofs'
+  // Plan 5, Task 14: proof storage (proofs/routes.ts); its 409 too-many-proofs is declared above (blur check).
   | 'proof-exists'
   | 'not-requested'
   | 'review-pending'

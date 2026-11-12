@@ -3,11 +3,11 @@
 // runs the receiving device's check (showableProof -> @x2f/proof's receiveProof: type allowlist, header
 // walk, size cap, metadata stripped, decode, redraw on a fresh canvas) and shows the redrawn copy as a
 // data: URL. The decrypted bytes never reach an <img>, a Blob URL, a FileReader or a download link, in
-// the trader app or the staff app. Today nothing mounts ProofThumb: ChatPanel's `proof.attached` card,
-// the paid card's proof slot, DisputeRoom's evidence chips (seams.tsx: tradeProofs is empty) and the
-// moderator's view are Task 15's, so the only <img> in either app is ProofThumb's own. When Task 15
-// lands, each of those places mounts ProofThumb with the decrypted bytes and the envelope's mime, width
-// and height, and this test keeps passing without a change. Extend IMG_ALLOWED only for an image that
+// the trader app or the staff app. Proof stack (wip/lead-proof-stack): ChatPanel's `proof.attached`
+// card mounts ChatProof, which decrypts and mounts ProofThumb (checked below). Still to come, each
+// mounting ProofThumb the same way: the paid card's proof slot, DisputeRoom's evidence chips
+// (seams.tsx: tradeProofs is empty) and the moderator's view (NEEDS_P4_CHAT_MEMBERSHIP); the only <img>
+// in either app is ProofThumb's own. Extend IMG_ALLOWED only for an image that
 // is not a proof (a logo or avatar from the app's own files), never for a proof.
 // Re-verify of f8c9fa78 (10 Nov 2026, F-R1): the wire also catches the other ways to put bytes on the
 // screen (createElement('img'), new Image(), HTML strings, SVG <image>, CSS url(), <video poster>,
@@ -132,6 +132,15 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
       if (RECEIVE_PATH.includes(f)) continue;
       expect(code(f), `${f}: showableProof / receiveProof / browserReceiveDeps belong to the receive path; mount <ProofThumb> instead`).not.toMatch(/\b(showableProof|receiveProof|browserReceiveDeps)\b/);
     }
+  });
+
+  it("the chat's proof lines are wired: ChatPanel mounts ChatProof for a proof line, and ChatProof gives ProofThumb the decrypted bytes", () => {
+    const panel = code('apps/web/src/chat/ChatPanel.tsx');
+    expect(panel).toMatch(/import \{ ChatProof \} from '\.\.\/screens\/proof\/ChatProof\.js'/);
+    expect(panel).toMatch(/l\.proof !== undefined \? \([\s\S]{0,200}<ChatProof tradeCode=\{tradeCode\} proof=\{l\.proof\} \/>/);
+    const card = code('apps/web/src/screens/proof/ChatProof.tsx');
+    expect(card).toMatch(/<ProofThumb bytes=\{state\.bytes\}/);
+    expect(card).toMatch(/\bdecryptProof\(/);
   });
 
   it('a file that decrypts a proof hands the bytes to ProofThumb, never to a Blob, a URL or an <img> of its own', () => {

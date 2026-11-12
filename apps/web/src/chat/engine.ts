@@ -27,8 +27,8 @@
  *   the start and the held package is decrypted and shown in its place.
  * - A fixed notice (P-020, notices.ts) is a line with `notice` set and the reader's own wording as
  *   its text. `sendNotice` seals one (chatCrypto's sealChatNotice), only once the trade is secured
- *   (a proof only exists then), like a package. Nothing sends one yet: NEEDS_PLAN_5_TASK_15 (the
- *   BlurEditor sends `proofCodeNotice(...)` with the proof).
+ *   (a proof only exists then), like a package. The upload sends `proofCodeNotice(...)` with the
+ *   proof (screens/proof/AddProof.tsx sendCodeNotice, proof stack).
  * - No message text is stored on the device (owner p11-10, design 2026-11-08 section 5): the store
  *   keeps keys, the ChatState, the cursor and a receipt per accepted line. The first sync of a chat
  *   in this worker re-reads the whole chat from the server and decrypts it again; a line the guard
