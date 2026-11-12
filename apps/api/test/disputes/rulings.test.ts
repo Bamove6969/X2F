@@ -298,6 +298,10 @@ describe('at or above the large-trade limit: two people', () => {
       expect(res.statusCode, res.body).toBe(200);
       expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'awaiting-approval', publishedAt: null });
       expect(await published(code)).toEqual([]);
+      // Plan 4 Task 18 (ModCase): the case says whether the viewer made the waiting proposal, so
+      // the approve panel never shows to its proposer.
+      expect(((await senior.b.get(`/staff/v1/disputes/${code}`)).json() as { proposedByYou: boolean }).proposedByYou).toBe(true);
+      expect(((await owner.b.get(`/staff/v1/disputes/${code}`)).json() as { proposedByYou: boolean }).proposedByYou).toBe(false);
 
       const self = await approve(senior, code, rulingId, { outcome: 'refund-to-seller', evidence: TWO_PERSON_EVIDENCE });
       expect({ status: self.statusCode, error: errorOf(self) }).toEqual({ status: 409, error: 'same-person' });

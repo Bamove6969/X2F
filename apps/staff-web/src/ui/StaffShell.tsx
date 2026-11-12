@@ -1,5 +1,5 @@
 import type { NavItem } from '@x2f/staff';
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { codeOf, logout, me as fetchMe, serverNow, setSessionEndListener, type Me } from '../api.js';
 import { Button, Countdown, EmptyState } from './kit.js';
@@ -32,6 +32,13 @@ export const NAV_PATHS: Readonly<Record<NavItem, string>> = {
   feedback: '/feedback',
   settings: '/settings',
 };
+
+/**
+ * The signed-in staff member as the shell last read `GET /staff/v1/me`, for the pages inside it
+ * (review mod-screens I3: a page reads the role here instead of asking the API again).
+ */
+const MeContext = createContext<Me | null>(null);
+export const useMe = (): Me | null => useContext(MeContext);
 
 /** The countdown shows when the session ends this soon (Plan 4 Task 16). */
 export const COUNTDOWN_FROM_MS = 10 * 60_000;
@@ -97,7 +104,7 @@ export function StaffShell({ pages }: { pages: Partial<Record<NavItem, ReactNode
     <div className="x2f-staff" data-shell="staff">
       <aside className="x2f-staff__rail">
         <p className="x2f-staff__brand">
-          <span className="x2f-wordmark">X2F</span>
+          <span className="x2f-wordmark">X2F</span>{' '}
           <span className="x2f-staff__brand-tag">Staff</span>
         </p>
         <nav aria-label="Staff" className="x2f-staff__nav">
@@ -116,13 +123,15 @@ export function StaffShell({ pages }: { pages: Partial<Record<NavItem, ReactNode
         </div>
       </aside>
       <main className="x2f-staff__main">
-        <Routes>
-          <Route index element={first ? <Navigate to={NAV_PATHS[first]} replace /> : <NothingForRole />} />
-          {who.nav.map((item) => (
-            <Route key={item} path={`${NAV_PATHS[item]}/*`} element={pages[item] ?? <PageTitle title={NAV_LABELS[item]} />} />
-          ))}
-          <Route path="*" element={<NothingForRole />} />
-        </Routes>
+        <MeContext.Provider value={who}>
+          <Routes>
+            <Route index element={first ? <Navigate to={NAV_PATHS[first]} replace /> : <NothingForRole />} />
+            {who.nav.map((item) => (
+              <Route key={item} path={`${NAV_PATHS[item]}/*`} element={pages[item] ?? <PageTitle title={NAV_LABELS[item]} />} />
+            ))}
+            <Route path="*" element={<NothingForRole />} />
+          </Routes>
+        </MeContext.Provider>
       </main>
     </div>
   );

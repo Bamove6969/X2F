@@ -265,3 +265,93 @@ export interface Member {
 export const members = () => staffApi<{ members: Member[] }>('/staff/v1/members');
 export const setGrants = (accountId: string, grants: GrantablePerm[], tapId: string) =>
   staffApi<{ grants: GrantablePerm[] }>(`/staff/v1/members/${encodeURIComponent(accountId)}/grants`, { method: 'PUT', body: { grants, tapId } });
+
+// ---------------------------------------------------------------------------------------------
+// Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)
+
+export type DisputeStatus = 'open' | 'awaiting-approval' | 'published' | 'appealed' | 'final' | 'complying' | 'closed';
+export interface QueueRow {
+  code: string;
+  incidentId: string;
+  status: DisputeStatus;
+  round: 1 | 2;
+  /** The trade's XMR, atomic units. */
+  xmr: string;
+  /** Dollars, "412.50". */
+  usd: string;
+  method: string;
+  /** The catalog's display name (data/payment-methods.json, sent by the staff API), never shown as the raw id. */
+  methodName: string;
+  openedBy: 'buyer' | 'seller' | 'system';
+  waitingMs: number;
+  replyDueAt: string;
+  rulingDueAt: string;
+  deadlineTone: 'due' | 'overdue' | 'replied';
+  approval: 'not-needed' | 'needs-second' | { waitingFor: 'second-approval'; proposedBy: string | null };
+  assignee: string | null;
+  mine: boolean;
+}
+export interface Queue {
+  rows: QueueRow[];
+  counts: { open: number; overdue: number; unassigned: number; needApproval: number };
+  settings: { firstResponseH: number; largeTradeLimitUsd: number };
+}
+
+export interface CaseTrader {
+  displayName: string;
+  completedTrades: number;
+  positivePct: number | null;
+}
+export interface CaseRuling {
+  proposal: { rulingId: string; reason: string; evidence: string[]; proposer: string; proposedAt: string } | null;
+  sentBack: { rulingId: string; note: string | null; at: string } | null;
+  draft: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
+  publishedAt: string | null;
+  appealEndsAt: string | null;
+}
+export interface DisputeCase {
+  code: string;
+  incidentId: string;
+  status: DisputeStatus;
+  round: 1 | 2;
+  openedBy: 'buyer' | 'seller' | 'system';
+  reason: string;
+  note: string;
+  afterRefund: boolean;
+  openedAt: string;
+  replyDueAt: string;
+  rulingDueAt: string;
+  firstReplyAt: string | null;
+  usd: string;
+  overLimit: boolean;
+  /** The large-trade limit the dispute snapshotted when it opened, whole dollars. */
+  limitUsd: number;
+  assignee: string | null;
+  assignedToYou: boolean;
+  proposedByYou: boolean;
+  mayWork: boolean;
+  traders: { buyer: CaseTrader | null; seller: CaseTrader | null };
+  escrow: { state: string; amountAtomic: string; methodId: string; methodName: string; currency: string; centsPerXmr: string; fiatCents: string; confirmations: number };
+  ruling: CaseRuling;
+  freezes: { buyer: boolean; seller: boolean };
+}
+export type Side = 'buyer' | 'seller';
+
+const casePath = (code: string, rest = '') => `/staff/v1/disputes/${encodeURIComponent(code)}${rest}`;
+
+export const disputeQueue = () => staffApi<Queue>('/staff/v1/disputes?filter=all');
+export const takeNext = () => staffApi<{ code: string | null }>('/staff/v1/disputes/next', { method: 'POST', body: {} });
+export const takeCase = (code: string) => staffApi<{ code: string }>(casePath(code, '/take'), { method: 'POST', body: {} });
+export const disputeCase = (code: string) => staffApi<DisputeCase>(casePath(code));
+export const messageTraders = (code: string, text: string) => staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: { text } });
+export const requestProof = (code: string, side: Side) => staffApi<unknown>(casePath(code, '/proof-request'), { method: 'POST', body: { side } });
+export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
+  staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });
+export const proposeRuling = (
+  code: string,
+  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string },
+) => staffApi<{ code: string; ruling: CaseRuling }>(casePath(code, '/rulings'), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
+export const approveRuling = (code: string, rulingId: string, tapId: string) =>
+  staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/approve`), { method: 'POST', body: { tapId } });
+export const sendBackRuling = (code: string, rulingId: string, note: string) =>
+  staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/send-back`), { method: 'POST', body: { note } });
