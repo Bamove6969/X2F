@@ -92,6 +92,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { memberOf } from '../../session/member.js';
+import { useResumeSync } from '../../session/syncFirst.js';
 import { displayNameOf, useSession } from '../../session/useSession.js';
 import { setConfirmUser } from './confirmSkip.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
@@ -196,18 +197,29 @@ type Load = { kind: 'loading' } | { kind: 'missing' } | { kind: 'failed' } | { k
 function useTradeView(code: string): { load: Load; refresh: () => Promise<void> } {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const seq = useRef(0);
-  const refresh = useCallback(async () => {
+  /** One read; whether it got the trade (a 404 is an answer: the trade is gone). */
+  const pull = useCallback(async (): Promise<boolean> => {
     const mine = ++seq.current;
     try {
       const view = await getTrade(code);
       if (mine === seq.current) setLoad({ kind: 'ready', view });
+      return true;
     } catch (e) {
-      if (mine !== seq.current) return;
-      if (e instanceof ApiCallError && e.status === 404) setLoad({ kind: 'missing' });
+      const gone = e instanceof ApiCallError && e.status === 404;
+      if (mine !== seq.current) return gone;
+      if (gone) setLoad({ kind: 'missing' });
       // A failed re-read keeps the last good view on screen.
       else setLoad((prev) => (prev.kind === 'ready' ? prev : { kind: 'failed' }));
+      return gone;
     }
   }, [code]);
+  const refresh = useCallback(async () => {
+    await pull();
+  }, [pull]);
+  // C-021: on resume the room's trade is read again before its actions work (session/syncFirst.ts).
+  useResumeSync(async () => {
+    if (!(await pull())) throw new Error('trade not read');
+  });
   useEffect(() => {
     setLoad({ kind: 'loading' });
     void refresh();
