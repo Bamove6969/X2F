@@ -324,3 +324,57 @@ Logs are in the scratchpad's `logs/rv2-staffpay-*`.
 ### Still open for the owner or lead (from round 1, unchanged)
 m1 (coarsen `earned_at` at purge), m2 (rates on the first save after deploy), m3 (stranded positive pay of
 someone who leaves), m4, m5, m6 as before. New: r2-m1.
+
+## Re-verify 2 (12 Nov, wip/lead-staff-pay at 3b2eaa2c, on 41e8e1e5) (MONEY)
+
+Independent reviewer. No code edits and no mutation runs. Detached worktree `rv-pay` from origin, fresh `npm ci`, removed afterwards. dockerd was not restarted.
+
+### Verdict: PASS. r2-m1, r2-m2 and the session-binding test gap are closed; no new Must-fix or Should-fix.
+
+### 1. Can the nonce be raced? No.
+- **How it works.** Each preview stores a fresh `randomUUID()` in its own open shift (`update staff_shifts set latest_quote = … where session_id = $1 and staff_id = $3 and ended is null`). The nonce is also put inside the HMAC-signed quote, so it cannot be forged or edited.
+  - `openQuote` refuses a quote without a string nonce.
+  - The POST, inside its transaction, locks the member's row (`staff_members … for update`, as before) and then the shift row (`for update`). Only then does it compare `latest_quote` with the quote's nonce.
+  - An unset nonce (`null`) never matches.
+  - Both sides are lower-case UUID text.
+- **Two previews at once.** Both UPDATEs take the shift's row lock, so they run one after the other. Exactly one nonce is left as the latest, and only that preview's quote pays. The other gets `quote-changed`, and staff-web re-reads the sheet. Whichever response the browser shows last, the worst case is one extra re-read. It is never a second payment or a different amount.
+- **A preview during a POST.**
+  - If the preview committed first, the POST's `for update` read sees the new nonce, so the older sheet is refused.
+  - If the POST holds the lock first, the preview's UPDATE waits. When the POST commits, the shift is `ended`, so the preview updates no rows. It returns a quote that can never pay, because the session is revoked and there is no open shift.
+- **Two sessions.** Each nonce lives on its own session's shift. A quote from session A posted from session B fails on `sessionId` with `quote-invalid`, before any lock. This is the new test, which closes the round-2 test gap. The existing two-session race test still proves exactly one payout.
+
+### 2. Can the preview's write be abused? No.
+- It is scoped to the caller's own session, own staff id and open shift. It can only make that session's earlier sheets unredeemable, which is the point of the change.
+- It cannot touch another member or another session, and it changes no amount.
+- `staff_shifts` has no triggers, so the write has no side effects.
+- A cross-site GET carries no session, because the cookie is `SameSite=Strict` (`COOKIE_ATTRS`). So a third party cannot use this GET to invalidate someone's sheet.
+- Repeated previews only let the member pick the *moment* they are paid at, which was already accepted in round 1. They can no longer keep several quotes and choose among them: r2-m1 is closed, and the new test shows the older, cheaper sheet refused while the newest pays its own price.
+
+### 3. Does the POST still pay exactly the quote? Yes.
+- The order is: lock the member, lock the unpaid items, lock the shift and check the nonce, then check the items hash. The amount is `clockOutTotals(locked items, quote.price)`, the same as at 41e8e1e5.
+- The new r2-m1 test checks the exact atomic amount: `3300 × XMR / 16 500`.
+- `shift_id` is now always set. The old "no shift" path, which paid with a `null` `shift_id`, now returns 409. That is only a change in practice if a live staff session could have no open shift, and it cannot:
+  - the session-insert trigger opens a shift for every staff session, and migration 420 backfills one for sessions already open;
+  - the hours sweep ends a shift as `auto-logout` only in the same transaction that revokes the session.
+  So the change cannot strand a member, and it makes R43 stricter.
+- Migration 420 was edited in place. That is fine, because 420 is not on main yet (checked against origin/main 6ebed537).
+
+### staff-web (r2-m2)
+- `quote-expired` now has its own wording. `quote-changed` keeps the old wording.
+- When a reload fails, its error is kept, and `sheet` is set to null, so no stale quote can be sent: the submit button is disabled with no sheet (tested).
+- An empty sheet with an error now shows "Try again". Previously it showed "Working out your pay…" indefinitely.
+- New copy is unsigned, as before.
+
+### Info only
+- **i1.** With no sheet and an error, the dialog's `describedBy={textId}` points at an element that is not rendered. The fault is still announced by the danger notice. Suggest moving the id onto the notice in that state.
+- **i2.** "Try again" tapped twice quickly runs two previews. The sheet shown may then be the earlier nonce, and the next POST gets `quote-changed` and one more re-read. This heals itself and moves no money.
+
+### Tests run (serialised runner, at 3b2eaa2c)
+| Suite | File | Passed | Change since 41e8e1e5 |
+|---|---|---|---|
+| api | staff/pay | 24/24 | +2: r2-m1 latest sheet only; another session's quote refused |
+| staff-web | clockOut | 7/7 | +1: the r2-m2 expired path |
+
+Not re-run this round: matrix, schema, purge, keyTap. Only `staff_shifts` and pay.ts changed. schema.test only lists migration file names, so a new column does not affect it.
+
+Still open for the owner or lead: m1 to m6 from round 1, unchanged. r2-m1 is resolved.
