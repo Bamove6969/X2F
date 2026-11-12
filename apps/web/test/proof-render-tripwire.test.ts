@@ -155,6 +155,10 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
       expect(c, f).not.toMatch(/new Blob\(|new File\(|<img[\s/>]|data:image\//);
       // Review I3: and never out of the page.
       expect(c, `${f} decrypts a proof: it sends nothing out`).not.toMatch(/\bpostMessage\b|\bsendBeacon\b|\bWebSocket\b|\bEventSource\b|\bbody\s*:/);
+      // Re-verify R3: the shorthand `{ body }`, XMLHttpRequest, and writes to the browser's storage.
+      expect(c, `${f} decrypts a proof: no shorthand body`).not.toMatch(/[{,]\s*body\s*[,}]/);
+      expect(c, `${f} decrypts a proof: no XMLHttpRequest`).not.toMatch(/\bXMLHttpRequest\b/);
+      expect(c, `${f} decrypts a proof: nothing stored`).not.toMatch(/\b(localStorage|sessionStorage|indexedDB|caches)\b|\bdocument\.cookie\b/);
     }
   });
 });

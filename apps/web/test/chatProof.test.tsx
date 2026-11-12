@@ -307,9 +307,55 @@ describe('review M4: the upload and the receive half together', () => {
     }
     expect(sent).toEqual([['CHAT1', payload]]);
     expect(latestChatSnapshot(code)).toBe(after);
-    // A proof line is there (not checked on this page yet): never 'none'.
+    // Re-verify R1: this page sent it, so it is attached at once (the device's own cleaned copy).
     vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
-    expect(chatProofState(code)).toBe('unavailable');
+    expect(chatProofState(code)).toBe('attached');
+    vi.unstubAllEnvs();
+  });
+
+  it('re-verify R1: a successful send marks its proof checked on this page, even with the chat panel closed', async () => {
+    const { chatProofState, proofCheckOf } = await import('../src/proof/chatProof.js');
+    const { publishPaySnapshot } = await import('../src/chat/payDetailsFeed.js');
+    const { setChatClient } = await import('../src/chat/client.js');
+    const { postProofToChat } = await import('../src/screens/proof/AddProof.js');
+    const code = 'DDDD-EEEE-FFFF-GGGG';
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    publishPaySnapshot(code, ready([]));
+    const { payload } = await made();
+    const after = ready([{ id: '3', from: 'buyer', text: '', at: null, mine: true, gapBefore: false, proof: payload }]);
+    setChatClient({ sync: async () => after, send: async () => after, sendPay: async () => after, sendProof: async () => after, sendNotice: async () => after });
+    try {
+      expect(proofCheckOf(payload.proofId)).toBeUndefined();
+      await postProofToChat(code, payload, async () => 'CHAT2');
+      expect(proofCheckOf(payload.proofId)).toBe('ready');
+      expect(chatProofState(code)).toBe('attached');
+    } finally {
+      setChatClient(null);
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('re-verify R2: a send whose read-back lacks the new proof never publishes that stale snapshot; the state still reads attached', async () => {
+    const { chatProofState } = await import('../src/proof/chatProof.js');
+    const { publishPaySnapshot, latestChatSnapshot } = await import('../src/chat/payDetailsFeed.js');
+    const { setChatClient } = await import('../src/chat/client.js');
+    const { postProofToChat } = await import('../src/screens/proof/AddProof.js');
+    const code = 'EEEE-FFFF-GGGG-HHHH';
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    const before = ready([]);
+    publishPaySnapshot(code, before);
+    const { payload } = await made();
+    // The post was stored but the read after it failed: the engine answers its pre-post snapshot.
+    const stale = ready([]);
+    setChatClient({ sync: async () => stale, send: async () => stale, sendPay: async () => stale, sendProof: async () => stale, sendNotice: async () => stale });
+    try {
+      await postProofToChat(code, payload, async () => 'CHAT3');
+      expect(latestChatSnapshot(code)).toBe(before);
+      expect(chatProofState(code)).toBe('attached');
+    } finally {
+      setChatClient(null);
+      vi.unstubAllEnvs();
+    }
   });
 });
 

@@ -3,7 +3,7 @@ import { publishPaySnapshot } from '../../chat/payDetailsFeed.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ChatFailed, chatClient, openTradeChat } from '../../chat/client.js';
 import { browserProofImageDeps } from '../../proof/browserImage.js';
-import { noteProofChecked } from '../../proof/chatProof.js';
+import { noteProofSent } from '../../proof/chatProof.js';
 import { hiddenByUploader, proofCodeNotice } from '../../proof/uploaderChecks.js';
 import { proofPosted } from '../../api/blurCheck.js';
 import {
@@ -49,7 +49,11 @@ export interface SendArgs {
  */
 export async function postProofToChat(code: string, payload: ProofAttachedPayload, open: (code: string) => Promise<string> = openTradeChat): Promise<void> {
   const snap = await chatClient().sendProof(await open(code), payload);
-  publishPaySnapshot(code, snap);
+  // The chat took it: this page's own proof counts at once (chat-receive re-verify R1).
+  noteProofSent(code, payload.proofId);
+  // R2: when the read after a stored post failed, the engine answers its pre-post snapshot; never
+  // publish one that lacks the proof just sent (the pay feed's next sync brings the line).
+  if (snap.lines.some((l) => l.proof?.proofId === payload.proofId)) publishPaySnapshot(code, snap);
 }
 
 /** The real send: the ciphertext up, the key in the trade's chat. */
@@ -83,8 +87,6 @@ export async function sendCodeNotice(code: string, ownHidden: { amount: boolean;
 
 export async function sendTradeProof(a: SendArgs): Promise<{ proofId: string; blur: BlurKind }> {
   const r = await sendProof({ code: a.code, prepared: a.prepared, regions: a.regions }, tradeProofDeps());
-  // Proof-receive review M3 ("or this page sent it"): this page's own proof counts as attached at once.
-  noteProofChecked(r.proofId, true);
   try {
     await sendCodeNotice(a.code, a.ownHidden);
   } catch {

@@ -1,5 +1,5 @@
 // The proof state BuyerPay's "Mark paid without proof?" reads, from the buyer's chat: a proof counts
-// once ChatProof checked it on this page, or this page sent it (AddProof sendTradeProof notes its id).
+// once ChatProof checked it on this page, or this page sent it (AddProof postProofToChat, noteProofSent).
 // Fetching and decrypting a proof is screens/proof/ChatProof.tsx's (it hands the plaintext straight
 // to ProofThumb, proof-render-tripwire.test.ts).
 import type { ChatSnapshot } from '../chat/engine.js';
@@ -18,6 +18,23 @@ export function noteProofChecked(proofId: string, ok: boolean): void {
 
 export function proofCheckOf(proofId: string): ProofCheck | undefined {
   return checks.get(proofId);
+}
+
+const norm = (c: string): string => c.replace(/-/g, '').toUpperCase();
+/** The payment proofs this page sent, by trade (ids only): the chat-receive re-verify, R1 and R2. */
+const sent = new Map<string, Set<string>>();
+
+/**
+ * A payment proof this page sent and the chat took (AddProof postProofToChat): checked, since its
+ * bytes are this device's own cleaned copy (R1), and counted for its trade even before a snapshot
+ * with its line arrives (R2).
+ */
+export function noteProofSent(code: string, proofId: string): void {
+  noteProofChecked(proofId, true);
+  const key = norm(code);
+  const ids = sent.get(key) ?? new Set<string>();
+  ids.add(proofId);
+  sent.set(key, ids);
 }
 
 /**
@@ -41,6 +58,8 @@ export function proofStateOfSnapshot(snap: ChatSnapshot | null, uploadOn: boolea
 
 /** The ProofSource App.tsx installs (paySeams setProofSource): this trade's newest chat snapshot. */
 export function chatProofState(code: string): ProofState {
+  // A proof this page sent for this trade is attached, whatever the latest snapshot holds (R2).
+  if ((sent.get(norm(code))?.size ?? 0) > 0) return 'attached';
   // The proof slot can take a proof only in a build with the upload (one flag function, review M4).
   return proofStateOfSnapshot(latestChatSnapshot(code), proofUploadOn());
 }
