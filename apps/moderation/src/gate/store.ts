@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { access, mkdir, open as openFile, readFile, rename, rm } from 'node:fs/promises';
+import { access, link, mkdir, open as openFile, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { modSubkey, open, seal } from '../keystore.js';
 
@@ -149,21 +149,20 @@ function fromJson(text: string): GateState {
 
 /**
  * Opens `dir/gate.bin`. A missing file is an error (re-verify P6): a deleted or moved gate must
- * never come back as an empty, re-pinnable one. Only `init: true` (the `init-gate` command, after
- * the operator's "yes", `initGate`) starts a fresh gate, and only where none exists yet.
+ * never come back as an empty, re-pinnable one. Only `initGate` (the `init-gate` command, after the
+ * operator's "yes") makes a new one, and only where none exists yet.
  */
-export async function openGateStore(dir: string, keystoreKey: Uint8Array, o: { init?: boolean } = {}): Promise<GateStore> {
+export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promise<GateStore> {
   const key = modSubkey(keystoreKey, 'gate');
   const path = join(dir, GATE_FILE);
-  let sealed: Buffer | null = null;
+  let sealed: Buffer;
   try {
     sealed = await readFile(path);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`gate: ${GATE_FILE} is missing (a new gate is made only by init-gate)`);
+    throw e;
   }
-  if (sealed === null && o.init !== true) throw new Error(`gate: ${GATE_FILE} is missing (a new gate is made only by init-gate)`);
-  if (sealed === null) await mkdir(dir, { recursive: true, mode: 0o700 });
-  let state: GateState = sealed === null ? emptyGate() : fromJson(new TextDecoder().decode(open(key, AAD, sealed)));
+  let state: GateState = fromJson(new TextDecoder().decode(open(key, AAD, sealed)));
   const saving = serial();
   const store: GateStore = {
     get state() {
@@ -212,20 +211,25 @@ export async function initGate(o: { dir: string; keystoreKey: Uint8Array; print:
   o.print(`No ruling gate at ${path}. A new gate trusts nobody until pin-owner pins the owner's keys.`);
   o.print('If a gate was here before, it was deleted or moved: find out why before you make a new one.');
   if ((await o.confirm('Type yes to make a new, empty gate: ')).trim() !== 'yes') return 'declined';
-  // Created with O_EXCL (round 3): a gate.bin that appeared while this asked is never replaced.
+  // Written to a temp file of its own (fsynced), then published under the name with link(), which
+  // fails if gate.bin exists: atomic, and a gate.bin that appeared while this asked is never
+  // replaced (rename would replace it). The temp name is then removed and the directory fsynced.
   await mkdir(o.dir, { recursive: true, mode: 0o700 });
-  let f;
-  try {
-    f = await openFile(path, 'wx', 0o600);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EEXIST') return 'exists';
-    throw e;
-  }
+  const tmp = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
+  const f = await openFile(tmp, 'wx', 0o600);
   try {
     await f.writeFile(seal(modSubkey(o.keystoreKey, 'gate'), AAD, new TextEncoder().encode(toJson(emptyGate()))));
     await f.sync();
   } finally {
     await f.close();
+  }
+  try {
+    await link(tmp, path);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') return 'exists';
+    throw e;
+  } finally {
+    await rm(tmp, { force: true });
   }
   const d = await openFile(o.dir, 'r');
   try {

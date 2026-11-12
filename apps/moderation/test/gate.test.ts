@@ -157,6 +157,12 @@ async function world(): Promise<World> {
   return { api, gate, owner, ownerKey2, hire };
 }
 
+/** A new gate the way an operator makes one: init-gate with "yes", then open it. */
+async function freshGate(dir: string, key: Uint8Array) {
+  expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'yes' })).toBe('created');
+  return openGateStore(dir, key);
+}
+
 const BUYER = '4'.padEnd(95, 'B');
 const SELLER = '8'.padEnd(95, 'S');
 const FEE = '5'.repeat(95);
@@ -538,7 +544,7 @@ describe('authorizeRuling', () => {
     w.api.taps.push(t);
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
     try {
-      const store = await openGateStore(dir, new Uint8Array(32).fill(7), { init: true });
+      const store = await freshGate(dir, new Uint8Array(32).fill(7));
       store.state = w.gate;
       await store.save();
       const check = () => gateCheck(store, w.api, { ruling: c.ruling, recorded: recorded(1n), balanceAtomic: BALANCE, involved: [] }, ctx());
@@ -730,7 +736,7 @@ describe('security review 2026-11-12', () => {
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
     try {
       const key = new Uint8Array(randomBytes(32));
-      const s = await openGateStore(dir, key, { init: true });
+      const s = await freshGate(dir, key);
       await Promise.all(Array.from({ length: 8 }, (_, i) => {
         s.state.usedNonces[`n${i}`] = 'x';
         return s.save();
@@ -965,7 +971,7 @@ describe('re-verify round 3', () => {
         print: () => {},
         // Another init-gate (or a restore) wins the race while this one waits for "yes".
         confirm: async () => {
-          const other = await openGateStore(dir, key, { init: true });
+          const other = await freshGate(dir, key);
           other.state.ownerAccountId = 'pinned-elsewhere';
           await other.save();
           return 'yes';
@@ -1017,7 +1023,7 @@ describe('GateStore', () => {
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
     try {
       const key = new Uint8Array(randomBytes(32));
-      const s = await openGateStore(dir, key, { init: true });
+      const s = await freshGate(dir, key);
       expect(s.state.ownerCreds).toEqual([]);
       s.state.limitUsdCents = 123_400n;
       s.state.usedNonces.abc = 'x';

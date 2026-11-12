@@ -37,6 +37,26 @@ describe('WebAuthn on the staff site (re-verify X2, X3)', () => {
     expect(c).toMatch(/ownerSetupChallenge\(/);
   });
 
+  it('nothing on the staff site touches navigator.credentials directly (round 4)', () => {
+    expect(uses(/\bcredentials\s*\.\s*(get|create)\b|navigator\s*(\.|\[)\s*['"`]?credentials/)).toEqual([]);
+  });
+
+  it('@simplewebauthn/browser is imported only by name, and only in the five allowed files (round 4)', () => {
+    expect(uses(/@simplewebauthn\/browser/)).toEqual(['api.ts', 'screens/Invite.tsx', 'screens/Login.tsx', 'screens/OwnerSetup.tsx', 'ui/KeyTapDialog.tsx']);
+    const allowed: Record<string, RegExp> = {
+      'api.ts': /^import type \{[\w\s,]+\} from '@simplewebauthn\/browser';$/m,
+      'screens/Invite.tsx': /^import \{ startRegistration \} from '@simplewebauthn\/browser';$/m,
+      'screens/OwnerSetup.tsx': /^import \{ startRegistration \} from '@simplewebauthn\/browser';$/m,
+      'screens/Login.tsx': /^import \{ startAuthentication \} from '@simplewebauthn\/browser';$/m,
+      'ui/KeyTapDialog.tsx': /^import \{ startAuthentication \} from '@simplewebauthn\/browser';$/m,
+    };
+    for (const f of files.filter((x) => /@simplewebauthn\/browser/.test(x.text))) {
+      // Exactly one mention, and it is the allowed named import (no namespace, default or dynamic import, no re-export).
+      expect(f.text.match(/@simplewebauthn\/browser/g), f.path).toHaveLength(1);
+      expect(f.text, f.path).toMatch(allowed[f.path]!);
+    }
+  });
+
   it('tapStart is called only from KeyTapDialog', () => {
     expect(uses(/\btapStart\s*\(/).filter((p) => p !== 'api.ts')).toEqual(['ui/KeyTapDialog.tsx']);
   });
