@@ -105,7 +105,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
   },
   {
     table: 'account_blocks', accountColumn: 'account_id', ops: ALL,
-    changes: ['account_id', 'blocked_id', 'created_at'],
+    // S-093 (migration 362): the blocker's own note is a change they made, like the block itself.
+    changes: ['account_id', 'blocked_id', 'created_at', 'note'],
     bookkeeping: {},
   },
   {

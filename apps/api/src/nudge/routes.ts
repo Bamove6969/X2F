@@ -310,7 +310,43 @@ async function unblockHandler(req: FastifyRequest, reply: FastifyReply) {
 /** One entry of my Blocked list: the public display name only (never the login name). */
 export interface BlockedEntry {
   displayName: string;
+  /** When I blocked them (S-093: shown with its date and time). */
   blockedAt: string;
+  /** S-093 (owner p7-6): my own private note on them, or null; nobody else ever reads it. */
+  note: string | null;
+}
+
+/** S-093: a block note's most characters (migration 362). */
+export const BLOCK_NOTE_MAX = 500;
+/** Control characters other than a new line (and a tab): refused in a note. */
+const NOTE_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
+
+/**
+ * `PUT /v1/account/blocks/:displayName/note { note }` (S-093, owner p7-6): sets, changes or clears
+ * (null, or blank text) my private note on someone I blocked → 200 `{ note }` as stored (trimmed).
+ * By the stored name key, as unblock, and only on my own block: 404 `not-found` for an unknown name
+ * and for someone I did not block (names are public, so the two need not differ). 400
+ * `bad-request` for a missing or non-string note, over BLOCK_NOTE_MAX characters, or control
+ * characters other than a new line or a tab. The note is stored as plain text (as S-094's trader
+ * notes); the blocked person and staff never read it.
+ */
+async function blockNoteHandler(req: FastifyRequest) {
+  const deps = req.server.deps;
+  const { displayName } = req.params as { displayName: string };
+  if (displayName.length > NAME_MAX) throw new ApiError(400, 'bad-request');
+  const raw = bodyOf(req).note;
+  if (raw !== null && typeof raw !== 'string') throw new ApiError(400, 'bad-request', { field: 'note' });
+  const trimmed = raw === null ? '' : raw.trim();
+  if ([...trimmed].length > BLOCK_NOTE_MAX || NOTE_CONTROL.test(trimmed)) throw new ApiError(400, 'bad-request', { field: 'note' });
+  const note = trimmed === '' ? null : trimmed;
+  const { rows } = await deps.db.query<{ note: string | null }>(
+    `update account_blocks b set note = $3 from accounts a
+      where a.display_key = lower($2) and b.account_id = $1 and b.blocked_id = a.id
+      returning b.note`,
+    [req.auth.accountId, displayName, note],
+  );
+  if (rows.length === 0) throw new ApiError(404, 'not-found');
+  return { note: rows[0]!.note };
 }
 
 /**
@@ -318,12 +354,12 @@ export interface BlockedEntry {
  * Who blocked me is never answered anywhere (blocks are private, spec 2.4).
  */
 async function listBlocks(req: FastifyRequest): Promise<BlockedEntry[]> {
-  const { rows } = await req.server.deps.db.query<{ name: string; created_at: Date }>(
-    `select a.${PUBLIC_NAME} as name, b.created_at from account_blocks b join accounts a on a.id = b.blocked_id
+  const { rows } = await req.server.deps.db.query<{ name: string; created_at: Date; note: string | null }>(
+    `select a.${PUBLIC_NAME} as name, b.created_at, b.note from account_blocks b join accounts a on a.id = b.blocked_id
       where b.account_id = $1 order by b.created_at desc, a.${PUBLIC_NAME}`,
     [req.auth.accountId],
   );
-  return rows.map((r) => ({ displayName: r.name, blockedAt: r.created_at.toISOString() }));
+  return rows.map((r) => ({ displayName: r.name, blockedAt: r.created_at.toISOString(), note: r.note }));
 }
 
 /** Deletes nudge records older than an hour (registered in main.ts). */
@@ -344,4 +380,5 @@ export function nudgeRoutes(app: FastifyInstance): void {
   app.get('/v1/account/blocks', { preHandler: trader }, listBlocks);
   app.post('/v1/account/blocks', { preHandler: trader }, blockHandler);
   app.delete('/v1/account/blocks/:displayName', { preHandler: trader }, unblockHandler);
+  app.put('/v1/account/blocks/:displayName/note', { preHandler: trader }, blockNoteHandler);
 }
