@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { isIncidentId } from '@x2f/staff';
 import { ModerationError, NO_MODERATION } from '../../src/disputes/moderationClient.js';
+import { disputeSettings } from '../../src/disputes/settings.js';
 import { loadDispute } from '../../src/disputes/store.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
 import { appealDirect, publishRuling } from '../helpers/disputes.js';
@@ -191,6 +192,11 @@ describe('the queue', () => {
     expect(body.counts.overdue).toBeGreaterThanOrEqual(1);
     expect(body.counts.unassigned).toBeGreaterThanOrEqual(2);
     expect(body.counts).toHaveProperty('needApproval');
+    // Plan 4 Task 18 (ModQueue): the header's reply time and the footer's large-trade limit.
+    expect((all.json() as { settings: unknown }).settings).toEqual({
+      firstResponseH: (await disputeSettings(deps.db)).firstResponseH,
+      largeTradeLimitUsd: (await disputeSettings(deps.db)).largeTradeLimitUsd,
+    });
 
     // `next` takes the unassigned dispute due first (here: b or an older one from another test).
     const next = await mod.b.post('/staff/v1/disputes/next', {});
