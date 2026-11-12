@@ -54,6 +54,7 @@ const RULING: KeyTapIntent = {
   accountAction: { kind: 'none' },
   amountAtomic: '1500000000000',
   reasonSha256: 'a'.repeat(64),
+  evidenceSha256: 'c'.repeat(64),
 };
 
 beforeAll(async () => {
@@ -448,6 +449,13 @@ describe('keyTapRoutes', () => {
     expect(await count()).toBe(0);
     const propose = await app.inject({ method: 'POST', url: '/staff/v1/taps/start', headers: { 'x-test-account': id, 'x-test-perms': 'self,disputes.handle' }, payload: { ...RULING, step: 'propose' } });
     expect(propose.statusCode).toBe(200);
+    expect(await count()).toBe(1);
+    // Review mod-screens M1: a ruling intent without the evidence hash, or with a bad one, is refused.
+    const { evidenceSha256: _e, ...noEvidence } = RULING as Extract<KeyTapIntent, { kind: 'ruling' }>;
+    for (const payload of [noEvidence, { ...RULING, evidenceSha256: 'not-hex' }]) {
+      const bad = await app.inject({ method: 'POST', url: '/staff/v1/taps/start', headers: { 'x-test-account': id, 'x-test-perms': 'self,disputes.handle' }, payload });
+      expect([bad.statusCode, bad.json()]).toEqual([400, { error: 'bad-request' }]);
+    }
     expect(await count()).toBe(1);
   });
 

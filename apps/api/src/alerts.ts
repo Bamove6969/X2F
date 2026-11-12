@@ -49,7 +49,10 @@ export type AlertKind =
   | 'fee-sweep-failed'
   // Owner only (D-032 review S2): a staff member's security was reset, and the reset link was used.
   | 'staff-security-reset'
-  | 'staff-security-reset-finished';
+  | 'staff-security-reset-finished'
+  // Owner only: an appeal nobody may review (every senior moderator and the owner was involved in
+  // round 1, or none is switched on); it waits in the queue until one is added (D-011, Plan 4 Task 24).
+  | 'appeal-no-reviewer';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

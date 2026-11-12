@@ -95,6 +95,9 @@ export default async function setup(project: TestProject): Promise<() => Promise
       // clock); tests run on fixed fake clocks from before that, so the template counts every trade.
       // reviews-gate.test.ts sets its own cutoff to test it.
       await tpl.query(`update site_flags set reviews_since = '-infinity'`);
+      // J-06 review L2: liens are dark in production until switched on (400); every test runs with
+      // them on, and lien.test.ts checks them off.
+      await tpl.query('update site_flags set liens_enabled = true');
     } finally {
       await tpl.end();
     }

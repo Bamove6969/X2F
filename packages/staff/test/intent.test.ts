@@ -4,6 +4,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import {
   BAN_REASON_CODES,
   canonicalJson,
+  evidenceSha256,
   inviteRegistrationChallenge,
   keyCheckCode,
   sha256,
@@ -76,6 +77,7 @@ const ruling: KeyTapIntent = {
   accountAction: { kind: 'none' },
   amountAtomic: '1250000000000',
   reasonSha256: 'a'.repeat(64),
+  evidenceSha256: 'c'.repeat(64),
 };
 const nonce = new Uint8Array(32).fill(7);
 
@@ -104,6 +106,7 @@ describe('tapChallenge', () => {
       { ...ruling, accountAction: { kind: 'trade-ban', until: null, reasonCode: 'abuse' } },
       { ...ruling, amountAtomic: '1250000000001' },
       { ...ruling, reasonSha256: 'b'.repeat(64) },
+      { ...ruling, evidenceSha256: 'd'.repeat(64) },
     ];
     const seen = new Set([base]);
     for (const v of variants) seen.add(hex(tapChallenge(v, nonce)));
@@ -169,5 +172,26 @@ describe('inviteRegistrationChallenge', () => {
   test('is SHA-256 of the labelled token hash', () => {
     const th = 'e'.repeat(64);
     expect(hex(inviteRegistrationChallenge(th))).toBe(nodeSha(`x2f-invite-v1\n${th}`));
+  });
+});
+
+describe('evidenceSha256 (review mod-screens M1: the ruling tap binds the evidence lines)', () => {
+  test('is SHA-256 of the UTF-8 canonical JSON array of the lines, in order', () => {
+    const lines = ['The trade chat', 'Bank statement: “paid” 08:51', '日本語 ✓'];
+    expect(evidenceSha256(lines)).toBe(nodeSha(canonicalJson(lines)));
+    expect(evidenceSha256(lines)).toBe(nodeSha(JSON.stringify(lines)));
+    expect(evidenceSha256([])).toBe(nodeSha('[]'));
+  });
+
+  test('changes with the order, the split and the text of the lines', () => {
+    const seen = new Set([
+      evidenceSha256(['a', 'b']),
+      evidenceSha256(['b', 'a']),
+      evidenceSha256(['a,b']),
+      evidenceSha256(['a', 'b ']),
+      evidenceSha256(['a']),
+      evidenceSha256([]),
+    ]);
+    expect(seen.size).toBe(6);
   });
 });

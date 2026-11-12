@@ -19,6 +19,7 @@ import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
+import { ACTIVE_LIEN_SQL, hasActiveLien } from '../disputes/lien.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -138,13 +139,14 @@ interface OfferRow {
   /** The unit every band is in (migration 324; one per offer). */
   amount_unit: 'xmr' | 'fiat';
   status: 'live' | 'paused' | 'removed';
-  /** The poster may be seen: a trader, not disabled, with no trading hold and no recovery-code hold (Task 4's LISTED). */
+  /** The poster may be seen: a trader, not disabled, with no trading hold, no active lien and no recovery-code hold (Task 4's LISTED). */
   poster_ok: boolean;
 }
 
 const OFFER_SQL = `select o.account_id, o.side, o.amount_unit, o.status,
     (a.kind = 'trader' and a.disabled_at is null
       and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+      and not ${ACTIVE_LIEN_SQL('o.account_id')}
       and not ${recoveryHoldHidesSql('o.account_id')}) as poster_ok
   from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`;
 
@@ -329,15 +331,18 @@ export function takeRoutes(app: FastifyInstance): void {
       if (posterId === takerId) throw new ApiError(409, 'own-offer');
       const now = deps.clock();
       const flags = (
-        await c.query<{ paused: boolean | null; held: boolean }>(
+        await c.query<{ paused: boolean | null; held: boolean; lien: boolean }>(
           `select (select trading_paused from site_flags for share) as paused,
-                  exists (select 1 from trading_holds where account_id = $1 and lifted_at is null) as held`,
+                  exists (select 1 from trading_holds where account_id = $1 and lifted_at is null) as held,
+                  ${ACTIVE_LIEN_SQL('$1::uuid')} as lien`,
           [takerId],
         )
       ).rows[0]!;
       // No site_flags row fails closed.
       if (flags.paused !== false) throw new ApiError(409, 'trading-paused');
       if (flags.held) throw new ApiError(409, 'trading-hold');
+      // Task 25 (J-06): an active lien takes away every trading privilege until it is repaid.
+      if (flags.lien) throw new ApiError(409, 'lien');
       // Plan 5 Task 3, the rate-first gate (spec 5.1, P5-A4), for both sides, under the account locks
       // above (a review submitted meanwhile is seen at the next take). The taker's own pending review
       // is named (409 `review-pending`); the poster's is the generic `offer-busy`, so a taker learns
@@ -472,6 +477,7 @@ export function takeRoutes(app: FastifyInstance): void {
       await c.query('select id from accounts where id = $1 for update', [me]);
       const held = await c.query('select 1 from trading_holds where account_id = $1 and lifted_at is null', [me]);
       if ((held.rowCount ?? 0) > 0) throw new ApiError(409, 'trading-hold');
+      if (await hasActiveLien(c, me)) throw new ApiError(409, 'lien');
       // Plan 5 Task 3: the poster rates their last trade before setting up a new one (P5-A4).
       await assertNoPendingReview(c, me, now);
       await c.query('select id from wallets where id = $1 and account_id = $2 for share', [walletId, me]);

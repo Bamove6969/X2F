@@ -1,5 +1,5 @@
 import { normalizeTradeCode } from '@x2f/core';
-import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, applyDispute, markSeen, normalizeIncidentId, type Actor, type Dispute } from '@x2f/staff';
+import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, appealReviewers, applyDispute, markSeen, normalizeIncidentId, type Actor, type Dispute } from '@x2f/staff';
 import { CHAT_TEXT_MAX_BYTES, ChatEnvelopeError, channelFor, checkChatEnvelope } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
@@ -12,6 +12,8 @@ import { requireStaff } from '../staff/guard.js';
 import { traderSummaries } from '../traders/summary.js';
 import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
+import { rulingExtras } from './rulingDrafts.js';
+import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
 
@@ -85,7 +87,7 @@ interface CaseTrade {
   taken_at: Date;
 }
 
-function body(req: FastifyRequest, keys: readonly string[], required: readonly string[] = keys): Record<string, unknown> {
+export function body(req: FastifyRequest, keys: readonly string[], required: readonly string[] = keys): Record<string, unknown> {
   const b = req.body;
   if (b === null || typeof b !== 'object' || Array.isArray(b)) throw new ApiError(400, 'bad-request');
   const o = b as Record<string, unknown>;
@@ -97,7 +99,7 @@ const isSide = (v: unknown): v is Side => v === 'buyer' || v === 'seller';
 const isSeniorOrOwner = (role: string) => role === 'senior' || role === 'owner';
 
 /** The trade code a `:code` names: a trade code, or a dispute's incident ID (G37, as a trader quotes it). */
-async function codeOf(q: Queryable, req: FastifyRequest): Promise<string> {
+export async function codeOf(q: Queryable, req: FastifyRequest): Promise<string> {
   const raw = (req.params as { code?: unknown }).code;
   if (typeof raw !== 'string') throw new ApiError(404, 'not-found');
   const code = normalizeTradeCode(raw);
@@ -120,7 +122,7 @@ async function caseTrade(q: Queryable, code: string): Promise<CaseTrade> {
   return rows[0];
 }
 
-const actorOf = (req: FastifyRequest): Extract<Actor, { kind: 'staff' }> => ({ kind: 'staff', id: req.staff.accountId, role: req.staff.role });
+export const actorOf = (req: FastifyRequest): Extract<Actor, { kind: 'staff' }> => ({ kind: 'staff', id: req.staff.accountId, role: req.staff.role });
 
 /** Whether this person may work the case's chat, messages, proof and freeze. */
 function mayWork(d: Dispute, req: FastifyRequest): boolean {
@@ -136,7 +138,7 @@ function usd(cents: bigint): string {
   return `${neg ? '-' : ''}${a / 100n}.${(a % 100n).toString().padStart(2, '0')}`;
 }
 
-function ruleError(err: unknown): never {
+export function ruleError(err: unknown): never {
   if (err instanceof DisputeRuleError) {
     if (err.code === 'not-eligible' || err.code === 'wrong-party') throw new ApiError(403, 'forbidden-case');
     throw new ApiError(409, 'wrong-state');
@@ -248,11 +250,13 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       code: string; incident_id: string; status: string; round: number; amount_atomic: string; usd_cents: string; limit_usd_cents: string;
       method_id: string; opened_by: string; opened_at: Date; appealed_at: Date | null; reply_due_at: Date; ruling_due_at: Date;
       first_reply_at: Date | null; assignee: string | null; assignee_name: string | null; ruling: { proposer?: string } | null; proposer_name: string | null; mine: boolean;
+      involved: string[] | null;
     }>(
       `select d.code, d.incident_id, d.status, d.round, t.amount_atomic::text as amount_atomic, d.usd_cents::text as usd_cents,
               d.limit_usd_cents::text as limit_usd_cents, t.method_id, d.opened_by, d.opened_at, ap.at as appealed_at,
               d.reply_due_at, d.ruling_due_at, d.first_reply_at, d.assignee::text as assignee, a.${PUBLIC_NAME_COLUMN} as assignee_name,
-              d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine
+              d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine,
+              case when d.round1 is null then null else array(select jsonb_array_elements_text(d.round1->'involved')) end as involved
          from disputes d
          join trades t on t.code = d.code
          left join dispute_appeals ap on ap.code = d.code and ap.seq = d.seq
@@ -272,6 +276,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       [QUEUE_STATUSES, now],
     );
     const c = counts.rows[0]!;
+    // D-011: an untaken appeal nobody may review is marked, so the owner sees which case waits.
+    const candidates = rows.some((r) => r.status === 'appealed') ? await reviewerCandidates(deps.db) : [];
     return {
       rows: rows.map((r) => {
         const usdCents = BigInt(r.usd_cents);
@@ -296,6 +302,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           approval,
           assignee: r.assignee_name,
           mine: r.mine,
+          noReviewer: r.status === 'appealed' && appealReviewers(candidates, r.involved ?? []).length === 0,
         };
       }),
       counts: { open: c.open, overdue: c.overdue, unassigned: c.unassigned, needApproval: c.need_approval },
@@ -417,6 +424,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         takenAt: t.taken_at.toISOString(),
       },
       ruling: {
+        // Task 12: the waiting proposal's reason and evidence (staff-only) and the latest send-back.
+        ...(await rulingExtras(deps.db, code)),
         draft: d.ruling,
         round1: d.round1,
         publishedAt: d.publishedAt?.toISOString() ?? null,
@@ -426,6 +435,28 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       },
       freezes: await freezesOf(deps.db, t, code),
     };
+  });
+
+  // Plan 4 Task 24 (D-011): who may review this case's appeal (senior moderators and the owner
+  // with no log entry on round 1, R37), by display name, and whether the appeal waits for one.
+  // Review M1 (lead call 12 Nov): the owner's alone (`staff.manage`; the owner acts on D-011 by
+  // adding or switching on a reviewer), and refused (403 `forbidden-case`) to a caller involved in
+  // the case, so nobody involved learns who will review their ruling even if the perm widens later.
+  // Never logged and nobody is added to `seen`: under R37 any log entry on the trade is involvement,
+  // so a logged read would shrink the reviewer pool (lead correction 12 Nov).
+  const ownerGuard = requireStaff('staff.manage');
+  app.get('/staff/v1/disputes/:code/appeal-reviewers', { preHandler: ownerGuard, config: { perm: 'staff.manage' } }, async (req) => {
+    const db = req.server.deps.db;
+    const code = await codeOf(db, req);
+    const rec = await loadDisputeRecord(db, code);
+    if (rec === null) throw new ApiError(404, 'not-found');
+    const d = rec.dispute;
+    const me = req.staff.accountId;
+    const involvedNow = await db.query('select 1 from activity_log where trade_code = $1 and actor_kind = $2 and actor_id = $3 limit 1', [code, 'staff', me]);
+    if ((d.round1?.involved.includes(me) ?? false) || d.seen.includes(me) || involvedNow.rows.length > 0) throw new ApiError(403, 'forbidden-case');
+    // Before an appeal, round 1's involvement is not frozen yet: no list.
+    const reviewers = d.round === 2 ? await eligibleReviewers(db, d) : [];
+    return { reviewers: reviewers.map((s) => ({ name: s.name })), waiting: await appealWaiting(db, d) };
   });
 
   // NEEDS_P4_CHAT_MEMBERSHIP: no `POST /staff/v1/disputes/:code/chat` here on purpose (see the top

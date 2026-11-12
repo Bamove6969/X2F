@@ -300,7 +300,8 @@ function outcomeInForce(d: Dispute): RulingOutcome | null {
  * read as a reversal here (no fee); the owner is asked to confirm.
  * Round 1's coins move with its own set (@x2f/trade `payoutsFor`: `dispute-buyer` pays the fee,
  * `dispute-seller` none); a fee this rule charges that no escrow output carried is owed by the
- * poster (fees_owed, not built yet).
+ * poster: in their lien when they are its debtor (D-063), else as an owed fee (D-062), both from
+ * `lienSteps` (lien.ts) once the ruling is final.
  */
 export type RulingFee = 'poster-pays' | 'none' | 'waits';
 

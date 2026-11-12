@@ -100,6 +100,17 @@ async function poster(): Promise<Who> {
   return t;
 }
 
+/** An active lien on `debtorId` from a dispute (J-06, migration 400), owed to a fresh account; returns its id. */
+async function placeLien(debtorId: string): Promise<string> {
+  const creditor = await trader();
+  const { rows } = await deps.db.query<{ id: string }>(
+    `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
+     values ($1, $2, 1000, gen_random_uuid()::text, 1, 1, 'restitution', $3, $3) returning id::text`,
+    [debtorId, creditor.id, deps.clock()],
+  );
+  return rows[0]!.id;
+}
+
 /** Tests share one database: most use a currency of their own to keep their lists apart. */
 const BODY = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 50 },
@@ -285,6 +296,19 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     } finally {
       await deps.db.query('update site_flags set trading_paused = false');
     }
+  });
+
+  it('an account with an active lien cannot post or relist (409 lien); a suspended one can (J-06, owner D-008)', async () => {
+    const p = await poster();
+    const id = await post(p, { currency: 'NZD' });
+    await p.browser.patch(`/v1/offers/${id}`, { status: 'paused' });
+    const lienId = await placeLien(p.id);
+    const res = await p.browser.post('/v1/offers', flexBody(BODY));
+    expect({ status: res.statusCode, body: res.json() }).toEqual({ status: 409, body: { error: 'lien' } });
+    expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'live' })).json()).toEqual({ error: 'lien' });
+    await deps.db.query(`update liens set status = 'suspended', changed_at = $2 where id = $1`, [lienId, deps.clock()]);
+    expect((await p.browser.post('/v1/offers', flexBody(BODY))).statusCode).toBe(201);
+    expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'live' })).json()).toEqual({ id, status: 'live' });
   });
 
   it('no usable wallet → 409 no-wallet, also with one waiting (24-hour) wallet only', async () => {
@@ -514,6 +538,20 @@ describe('who is listed', () => {
     await deps.db.query('insert into trading_holds (account_id, created_at) values ($1, $2)', [held.id, deps.clock()]);
     await deps.db.query('update accounts set disabled_at = $2 where id = $1', [off.id, deps.clock()]);
     expect((await list('side=sell&method=ZELLE&currency=CHF')).map((c) => c.id)).toEqual([keep]);
+  });
+
+  it('hides the live offers of a poster with an active lien; they come back by themselves once it is no longer active (J-06)', async () => {
+    const owing = await poster();
+    const ok = await poster();
+    const theirs = await post(owing, { currency: 'SGD' });
+    const keep = await post(ok, { currency: 'SGD' });
+    const lienId = await placeLien(owing.id);
+    expect((await list('side=sell&method=ZELLE&currency=SGD')).map((c) => c.id)).toEqual([keep]);
+    // Their own list says why.
+    const mine = (await owing.browser.get('/v1/account/offers')).json() as { id: string; hidden?: string }[];
+    expect(mine.find((o) => o.id === theirs)?.hidden).toBe('lien');
+    await deps.db.query(`update liens set status = 'void', changed_at = $2, lifted_at = $2 where id = $1`, [lienId, deps.clock()]);
+    expect((await list('side=sell&method=ZELLE&currency=SGD')).map((c) => c.id).sort()).toEqual([keep, theirs].sort());
   });
 
   it('/v1/methods counts live offers from the offers table, with the best rate', async () => {

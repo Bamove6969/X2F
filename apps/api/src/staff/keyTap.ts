@@ -416,7 +416,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       return { kind: 'fee-sweep', thresholdAtomic: opt('thresholdAtomic', ATOMIC), floatAtomic: opt('floatAtomic', ATOMIC), coldAddress: opt('coldAddress', COLD_ADDRESS) };
     }
     case 'ruling': {
-      exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256']);
+      exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256']);
       const code = typeof r.code === 'string' ? normalizeTradeCode(r.code) : null;
       if (code === null) throw badRequest();
       if (r.round !== 1 && r.round !== 2) throw badRequest();
@@ -430,6 +430,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         accountAction: accountAction(r.accountAction),
         amountAtomic: match(r, 'amountAtomic', ATOMIC),
         reasonSha256: match(r, 'reasonSha256', HEX64),
+        evidenceSha256: match(r, 'evidenceSha256', HEX64),
       };
     }
     default:

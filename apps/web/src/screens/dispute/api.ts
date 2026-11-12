@@ -89,6 +89,11 @@ export interface DisputeView {
   moderator: { name: string; joinedAt: string } | null;
   ruling: RulingView | null;
   appeal: { by: Party; at: string } | null;
+  /**
+   * D-011 (Plan 4 Task 24): the appeal waits for an independent reviewer (every senior moderator
+   * and the owner was involved in round 1). Absent from an older API: false.
+   */
+  appealWaiting?: boolean;
   /** The appeal window's length in hours, from the owner's settings (absent from an older API: 48). */
   appealWindowH?: number | null;
   serverNow: string;
@@ -220,6 +225,10 @@ export function parseDispute(v: unknown): DisputeView {
     moderator,
     ruling,
     appeal,
+    appealWaiting: d.appealWaiting === undefined ? false : (() => {
+      if (typeof d.appealWaiting !== 'boolean') throw new ShapeError('appealWaiting');
+      return d.appealWaiting;
+    })(),
     appealWindowH: later(d.appealWindowH, (v) => {
       if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) throw new ShapeError('appealWindowH');
       return v;

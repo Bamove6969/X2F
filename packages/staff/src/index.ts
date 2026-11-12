@@ -22,6 +22,7 @@ export {
   BAN_REASON_CODES,
   ESCROW_OUTCOMES,
   KEY_TAP_KINDS,
+  evidenceSha256,
   inviteRegistrationChallenge,
   keyCheckCode,
   tapChallenge,
@@ -68,3 +69,13 @@ export {
   type BanTermError,
 } from './banRules.js';
 export { INCIDENT_ALPHABET, INCIDENT_ID_LENGTH, incidentCheckChar, isIncidentId, normalizeIncidentId } from './incident.js';
+export {
+  lienCreditor,
+  lienSteps,
+  type LienCause,
+  type LienFacts,
+  type LienRef,
+  type LienSide,
+  type LienStatus,
+  type LienStep,
+} from './lien.js';
