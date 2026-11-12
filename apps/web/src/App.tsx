@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
@@ -203,6 +203,13 @@ function useWatchSession(session: ReturnType<typeof useSession>): void {
   }, [session]);
 }
 
+/**
+ * The owner's intro proof of concept (/lab/intro, Three.js), in demo builds only (vite.config.ts
+ * `demoOn`). Everywhere else `__X2F_DEMO__` is false, so this folds to null and the lab, Three.js
+ * included, is never built.
+ */
+const IntroLab = __X2F_DEMO__ ? lazy(() => import('./lab/intro/IntroLab.js')) : null;
+
 export function App() {
   const session = useSession();
   useWatchSession(session);
@@ -271,6 +278,16 @@ export function App() {
           <Route path="/team/join" element={<MemberInvite />} />
         </Route>
         {/* Anything else: the front door, which sends a set-up trader on to /sell. */}
+        {IntroLab !== null ? (
+          <Route
+            path="/lab/intro"
+            element={
+              <Suspense fallback={null}>
+                <IntroLab />
+              </Suspense>
+            }
+          />
+        ) : null}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

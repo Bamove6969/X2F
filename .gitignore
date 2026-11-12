@@ -3,6 +3,8 @@ node_modules/
 dist/
 dist-fixtures/
 dist-fixtures-*/
+dist-demo/
+dist-demo-*/
 .regtest/
 .claude/worktrees/
 test-results/
