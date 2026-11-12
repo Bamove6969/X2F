@@ -3,7 +3,7 @@
 // chat envelope), so the server can neither read nor check the picture, and never parses the body.
 //
 // PUT /v1/trades/:code/proofs/:id?kind=   (a party to the trade, octet-stream, at most PROOF_MAX_CIPHERTEXT)
-//   proof      the buyer only, in securing | secured | paid | refund_requested | disputed
+//   proof      the buyer only, in secured | paid | refund_requested | disputed (not while securing)
 //   evidence   either side, while a dispute is open (P5-A30)
 //   unblurred  only the side a moderator asked (Plan 4's request on the dispute), once per request
 // GET /v1/trades/:code/proofs/:id         (a party) the ciphertext of proof or evidence; unblurred is 404 to everyone
@@ -125,10 +125,19 @@ describe('PUT /v1/trades/:code/proofs/:id: the payment proof', () => {
       expect(res.statusCode, state).toBe(409);
       expect(errorOf(res)).toBe('wrong-state');
     }
-    for (const state of ['securing', 'paid'] as const) {
+    for (const state of ['secured', 'paid'] as const) {
       const { buyer, code } = await tradeIn(state);
       expect((await put(buyer, code, newProofId(), 'proof')).statusCode, state).toBe(204);
     }
+  });
+
+  it('lead 2026-11-12 (proof-upload review M4): no payment proof while the escrow is still securing; nothing is stored', async () => {
+    const { buyer, code } = await tradeIn('securing');
+    const id = newProofId();
+    const res = await put(buyer, code, id, 'proof');
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('wrong-state');
+    expect(await stored(id)).toBeUndefined();
   });
 
   it('someone outside the trade gets 404 for both routes, as for an unknown trade', async () => {
