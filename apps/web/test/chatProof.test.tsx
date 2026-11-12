@@ -11,7 +11,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSnapshot } from '../src/chat/engine.js';
 import { PROOF_REFUSED_TITLE } from '../src/screens/proof/ProofThumb.js';
 import { CHAT_PROOF_GONE, ChatProof } from '../src/screens/proof/ChatProof.js';
-import { proofStateOfSnapshot } from '../src/proof/chatProof.js';
+import { proofCheckOf, proofStateOfSnapshot } from '../src/proof/chatProof.js';
+import { PROOF_MAX_CIPHERTEXT } from '@x2f/proof';
 import { render } from './render.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
@@ -120,20 +121,107 @@ describe('ChatProof', () => {
   });
 });
 
+describe('review M3: ChatProof records whether the proof checked out', () => {
+  it('shown is ready; refused, gone or not decrypting is failed', async () => {
+    const good = await made();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(good.ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
+    const r1 = render(<ChatProof tradeCode={CODE} proof={good.payload} deps={deps()} />);
+    await settle();
+    expect(r1.host.querySelector('img')).not.toBeNull();
+    expect(proofCheckOf(good.payload.proofId)).toBe('ready');
+    const gone = await made();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not-found' }), { status: 404 })));
+    render(<ChatProof tradeCode={CODE} proof={gone.payload} deps={deps()} />);
+    await settle();
+    expect(proofCheckOf(gone.payload.proofId)).toBe('failed');
+    const bad = await made('proof', latin1('<svg onload=alert(1)>'));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(bad.ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
+    render(<ChatProof tradeCode={CODE} proof={bad.payload} deps={deps()} />);
+    await settle();
+    expect(proofCheckOf(bad.payload.proofId)).toBe('failed');
+    expect(proofCheckOf(newProofId())).toBeUndefined();
+  });
+});
+
+describe('review M5: one fetch per proof, and a bounded read', () => {
+  it('a new snapshot object for the same proof (every chat poll) does not fetch, decrypt or check it again', async () => {
+    const { payload, ciphertext } = await made();
+    const f = vi.fn(async () => new Response(ciphertext as Uint8Array<ArrayBuffer>, { status: 200 }));
+    vi.stubGlobal('fetch', f);
+    const d = deps();
+    const r = render(<ChatProof tradeCode={CODE} proof={payload} deps={d} />);
+    await settle();
+    for (let i = 0; i < 3; i++) {
+      r.rerender(<ChatProof tradeCode={CODE} proof={{ ...payload, hidden: [...payload.hidden] }} deps={d} />);
+      await settle();
+    }
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(d.decode).toHaveBeenCalledTimes(1);
+    expect(r.host.querySelector('img')).not.toBeNull();
+  });
+
+  it('an answer that says it is over the cap is refused unread', async () => {
+    const { payload } = await made();
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        // Bounded (1 MiB) so that a reader that ignores the length cannot take the test's memory.
+        if (++pulled > 16) return c.close();
+        c.enqueue(new Uint8Array(65536));
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200, headers: { 'content-length': String(PROOF_MAX_CIPHERTEXT + 1) } })));
+    const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
+    await settle();
+    expect(host.textContent).toContain(PROOF_REFUSED_TITLE);
+    expect(pulled).toBeLessThanOrEqual(2);
+  });
+
+  it('an endless answer with no length is cut at the cap', async () => {
+    const { payload } = await made();
+    let read = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        read += 65536;
+        // 8 MiB, twice the cap: enough to show the cut, small enough for the test's memory.
+        if (read > 8 * 1024 * 1024) return c.close();
+        c.enqueue(new Uint8Array(65536));
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
+    const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
+    await settle();
+    expect(host.textContent).toContain(PROOF_REFUSED_TITLE);
+    expect(read).toBeLessThanOrEqual(PROOF_MAX_CIPHERTEXT + 3 * 65536);
+  });
+});
+
 describe('proofStateOfSnapshot: "Mark paid without proof?"', () => {
   const snap = (lines: ChatSnapshot['lines'], phase: ChatSnapshot['phase'] = 'ready'): ChatSnapshot => ({
     phase, problem: null, role: 'buyer', counterparty: 'Sam', disputeOpen: false, paySecured: true, more: false, lines,
   });
   const line = (o: Partial<ChatSnapshot['lines'][number]>): ChatSnapshot['lines'][number] => ({ id: '1', from: 'buyer', text: '', at: null, mine: true, gapBefore: false, ...o });
 
-  it("'attached' once the buyer's payment proof is in the chat; evidence or the seller's never counts", async () => {
+  it("'attached' once the buyer's payment proof is in the chat and checked out; evidence or the seller's never counts", async () => {
     const { payload } = await made();
-    expect(proofStateOfSnapshot(snap([line({ proof: payload })]), true)).toBe('attached');
-    expect(proofStateOfSnapshot(snap([line({ proof: payload })]), false)).toBe('attached');
+    const ok = () => 'ready' as const;
+    expect(proofStateOfSnapshot(snap([line({ proof: payload })]), true, ok)).toBe('attached');
+    expect(proofStateOfSnapshot(snap([line({ proof: payload })]), false, ok)).toBe('attached');
     const ev = (await made('evidence')).payload;
-    expect(proofStateOfSnapshot(snap([line({ proof: ev })]), true)).toBe('none');
-    expect(proofStateOfSnapshot(snap([line({ from: 'seller', mine: false, proof: payload })]), true)).toBe('none');
-    expect(proofStateOfSnapshot(snap([line({ text: 'hi' })]), true)).toBe('none');
+    expect(proofStateOfSnapshot(snap([line({ proof: ev })]), true, ok)).toBe('none');
+    expect(proofStateOfSnapshot(snap([line({ from: 'seller', mine: false, proof: payload })]), true, ok)).toBe('none');
+    expect(proofStateOfSnapshot(snap([line({ text: 'hi' })]), true, ok)).toBe('none');
+  });
+
+  it("review M3: a key line alone is not 'attached': not checked yet is 'unavailable', and a proof that is gone or refused is 'none'", async () => {
+    const a = await made();
+    const b = await made();
+    const lines = [line({ id: '1', proof: a.payload }), line({ id: '2', proof: b.payload })];
+    expect(proofStateOfSnapshot(snap(lines), true, () => undefined)).toBe('unavailable');
+    expect(proofStateOfSnapshot(snap(lines), true, (id) => (id === a.payload.proofId ? 'failed' : undefined))).toBe('unavailable');
+    expect(proofStateOfSnapshot(snap(lines), true, () => 'failed')).toBe('none');
+    expect(proofStateOfSnapshot(snap(lines), false, () => 'failed')).toBe('unavailable');
+    expect(proofStateOfSnapshot(snap(lines), true, (id) => (id === b.payload.proofId ? 'ready' : 'failed'))).toBe('attached');
   });
 
   it("'none' only when the chat is read in full and this build can take a proof; otherwise 'unavailable'", () => {
@@ -153,6 +241,10 @@ describe('chatProofState: the source App installs for proofStateOf', () => {
     expect(chatProofState(code)).toBe('unavailable');
     const { payload } = await made();
     publishPaySnapshot(code, { phase: 'ready', problem: null, role: 'buyer', counterparty: 'Sam', disputeOpen: false, paySecured: true, more: false, lines: [{ id: '1', from: 'buyer', text: '', at: null, mine: true, gapBefore: false, proof: payload }] });
+    // Review M3: the key line alone is not enough; once this device checked the proof, it is attached.
+    expect(chatProofState(code.toLowerCase())).toBe('unavailable');
+    const { noteProofChecked } = await import('../src/proof/chatProof.js');
+    noteProofChecked(payload.proofId, true);
     expect(chatProofState(code.toLowerCase())).toBe('attached');
   });
 });

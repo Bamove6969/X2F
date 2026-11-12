@@ -759,17 +759,44 @@ describe('chat engine: proof.attached lines (NEEDS_PROOF_RECEIVE)', () => {
     expect(JSON.stringify([...store.records.values()])).not.toContain(p.key);
   });
 
-  it("evidence outside a dispute, and a 'payment proof' from the seller, are refused for good; the next line still shows", async () => {
+  it("a 'payment proof' from the seller is refused for good; evidence outside a dispute is held, not shown; the next line still shows", async () => {
     const e = engine();
     await e.sync(chat);
     const parts = attest();
-    await fromSellerProof('evidence', parts);
+    const ev = await fromSellerProof('evidence', parts);
     await fromSellerProof('proof', parts);
     await fromSeller('after', parts);
     const snap = await e.sync(chat);
     expect(snap.lines.map((l) => [l.text, l.proof === undefined])).toEqual([['after', true]]);
-    // Decided for good: a dispute opening later does not bring them back.
+    // The seller's 'payment proof' is decided for good; the evidence is held (review M2) and shows
+    // once a dispute is open.
     api.view.disputeOpen = true;
+    expect((await e.sync(chat)).lines.map((l) => l.proof ?? l.text)).toEqual([ev, 'after']);
+  });
+
+  it('review M1: evidence shown during an open dispute is shown again after a reload (a new worker), not as a gap', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await fromSellerProof('evidence', parts);
+    expect((await e.sync(chat)).lines.map((l) => l.proof)).toEqual([p]);
+    const again = await engine().sync(chat);
+    expect(again.lines).toEqual([{ id: '1', from: 'seller', text: '', proof: p, at: expect.any(String), mine: false, gapBefore: false }]);
+  });
+
+  it('review M2: evidence that arrives before the dispute record is held, not refused; it shows once a dispute is open, after a reload too', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await fromSellerProof('evidence', parts);
+    await fromSeller('after', parts);
     expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['after']);
+    const r = (await store.load(chat))!.receipts.find((x) => x.id === '1')!;
+    expect(r.refused).toBeUndefined();
+    expect(JSON.stringify([...store.records.values()])).not.toContain(p.key);
+    api.view.disputeOpen = true;
+    expect((await e.sync(chat)).lines.map((l) => [l.id, l.proof ?? l.text])).toEqual([['1', p], ['2', 'after']]);
+    expect((await engine().sync(chat)).lines.map((l) => [l.id, l.proof ?? l.text])).toEqual([['1', p], ['2', 'after']]);
   });
 });
