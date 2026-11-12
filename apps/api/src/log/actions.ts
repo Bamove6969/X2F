@@ -190,6 +190,9 @@ export const LOG_ACTIONS = {
   'ticket.replied': { ticketId: 'id' },
   'ticket.closed': { ticketId: 'id' },
   'training.copy-saved': {},
+  // D-058 (lead 12 Nov): a staff member opened a page of the feedback form list, which names the
+  // sender of a named row; how many rows on that page were named (never who).
+  'feedback.form-opened': { namedRows: 'number' },
   'log.checkpoint': { id: 'id', hash: 'hex64' },
 } as const satisfies Record<string, Schema>;
 

@@ -585,12 +585,14 @@ describe('per-person grants (owner Q60)', () => {
     expect((await mod.browser.get('/staff/v1/me')).json().nav).toContain('feedback');
     // J-21: the Staff page's checkboxes read the stored grants from the member list.
     expect(((await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string; grants: string[] }>).find((r) => r.accountId === mod.id)!.grants).toEqual(['feedback.read']);
-    // Lead review 7 Nov M5: a named row's sender is the owner's and seniors' to see, not a grant holder's.
+    // D-058 (owner G20; lead 12 Nov, replacing lead review 7 Nov M5): a named row shows the sender's
+    // account to everyone who reads feedback, a grant holder included, so staff can follow up.
     await t.deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'named', $1, null, '2026-11-02')", [mod.id]);
-    const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
-    expect(asMod.find((i) => i.text === 'named')!.accountId).toBeNull();
-    const asOwner = (await owner.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
-    expect(asOwner.find((i) => i.text === 'named')!.accountId).toBe(mod.id);
+    const name = (await t.deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [mod.id])).rows[0]!.display_name;
+    const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null; accountName: string | null }>;
+    expect(asMod.find((i) => i.text === 'named')).toMatchObject({ accountId: mod.id, accountName: name });
+    const asOwner = (await owner.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null; accountName: string | null }>;
+    expect(asOwner.find((i) => i.text === 'named')).toMatchObject({ accountId: mod.id, accountName: name });
     expect(await logEntries(t.deps, 'staff.grants-set')).toContainEqual({
       actor_kind: 'staff', detail: JSON.stringify({ feedbackRead: true, staffId: mod.id, ticketsHandle: false }),
     });

@@ -70,7 +70,8 @@ describe('News on the staff API (site.control)', () => {
 
 describe('feedback on the staff API (feedback.read)', () => {
   it('lists platform feedback with the 30-day counts, and the feedback form rows, newest first with a cursor', async () => {
-    const traderId = await seedAccount(deps, { loginName: uniqueName('trader'), kind: 'trader' });
+    const loginName = uniqueName('trader');
+    const traderId = await seedAccount(deps, { loginName, displayName: uniqueName('Shown'), kind: 'trader' });
     await deps.db.query(
       `insert into platform_feedback (mood, note, created_on) values ('great', 'Smooth', '2026-11-02'), ('needs-work', null, '2026-11-01'), ('ok', null, '2026-09-01')`,
     );
@@ -90,11 +91,22 @@ describe('feedback on the staff API (feedback.read)', () => {
     const page2 = (await owner.get(`/staff/v1/feedback?before=${first.createdOn}_${first.id}`)).json();
     expect(page2.items).toHaveLength(2);
 
+    const opened = (await logEntries(deps, 'feedback.form-opened')).length;
     const form = (await owner.get('/staff/v1/feedback/form')).json();
     expect(form.items.map((i: { kind: string; text: string; accountId: string | null; from: string | null }) => [i.kind, i.text, i.accountId, i.from])).toEqual([
       ['complaint', 'Too slow', traderId, 'take-offer'], ['feedback', 'Nice', null, null],
     ]);
+    // D-058 (owner G20): a named row shows the sender's account (its public display name, never the
+    // login name), so staff can follow up; an anonymous row shows nothing.
+    const shown = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [traderId])).rows[0]!.display_name;
+    expect(form.items.map((i: { accountName: string | null }) => i.accountName)).toEqual([shown, null]);
+    expect(shown).not.toBe(loginName);
+    expect(JSON.stringify(form)).not.toContain(loginName);
     expect(form.next).toBeNull();
+    // D-058 (lead 12 Nov): each opening of the list is logged, with how many named rows it showed.
+    const log = await logEntries(deps, 'feedback.form-opened');
+    expect(log).toHaveLength(opened + 1);
+    expect(log.at(-1)).toEqual({ actor_kind: 'staff', detail: JSON.stringify({ namedRows: 1 }) });
   });
 
   it('refuses a malformed cursor', async () => {

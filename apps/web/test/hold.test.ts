@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { holdLoginSentence, holdSentence, momentText, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
-import { TOO_MANY_APPROVALS, WEAK_SESSION_TEXT, holdText, teamCantDoText } from '../src/ui/cantDoCodes.js';
+import { holdApproveSentence, holdLoginSentence, holdSentence, momentText, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
+import { HOLD_CONTACT_TEXT, TOO_MANY_APPROVALS, WEAK_SESSION_TEXT, holdApproveText, holdLoginText, holdText, teamCantDoText } from '../src/ui/cantDoCodes.js';
 import { ruleLines, ruleNote } from '../src/screens/wallets-model.js';
 import { walletWaitNote } from '../src/screens/auth/ConfirmSheet.js';
 import { HOLD_COPY } from '../src/screens/settings/holdCopy.js';
@@ -111,5 +111,36 @@ describe('owner 6 Nov 2026: Q14 wording and Q81 (a PGP key login is strong)', ()
       expect(t).toMatch(/a passkey, a security key or a PGP key/);
       expect(t).not.toContain('authenticator');
     }
+  });
+});
+
+// S-026 (owner 30 Oct, lead window N50 and N55): during a recovery hold X2F contacts the person only
+// through Matrix, Telegram or their own secure Jabber. D-064 (wip/lead-mod-rules): staff may end the
+// hold only after reaching the person on a secure Jabber address proven before the hold began, so the
+// words name that address and never one added during the hold.
+describe('S-026: during a recovery hold, X2F contacts you only on Matrix, Telegram or your own secure Jabber', () => {
+  it('the contact line names exactly those channels and says "only"', () => {
+    expect(HOLD_CONTACT_TEXT).toMatch(/\bonly\b/);
+    expect(HOLD_CONTACT_TEXT).toContain('Matrix');
+    expect(HOLD_CONTACT_TEXT).toContain('Telegram');
+    expect(HOLD_CONTACT_TEXT).toContain('secure Jabber account you set up before the hold');
+  });
+
+  it('every screen that tells the person about the hold carries it', () => {
+    for (const t of [
+      holdText('for a day'),
+      holdLoginText('for a day'),
+      holdApproveText('for a day'),
+      holdSentence(UNTIL),
+      holdLoginSentence(UNTIL),
+      holdApproveSentence(UNTIL),
+    ]) {
+      expect(t).toContain(HOLD_CONTACT_TEXT);
+    }
+  });
+
+  it('the earlier hold wording is kept around it', () => {
+    expect(holdSentence(UNTIL)).toContain('Your open trades are paused until the hold ends or a moderator decides.');
+    expect(holdApproveText('for a day')).toContain("New devices can't be let in until then, but you can still block this login.");
   });
 });

@@ -3,7 +3,9 @@ import { ApiError } from '../errors.js';
 import { listFeedbackForm } from '../feedback/form.js';
 import { feedbackMoodCounts, listFeedback } from '../feedback/mood.js';
 import { blurCheckCounts, listBlurChecks } from '../proof/blurCheck.js';
+import { withTx } from '../auth/hold.js';
 import { requireStaff } from './guard.js';
+import { log } from './members.js';
 
 /** A page cursor as the client sends it back: `<YYYY-MM-DD>_<uuid>` (the last row's day and id). */
 const CURSOR = /^(\d{4}-\d{2}-\d{2})_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
@@ -24,15 +26,17 @@ const nextOf = (items: readonly { createdOn: string; id: string }[]) => {
 
 /**
  * Plan 5 Tasks 4 and 21 on the staff API (perm `feedback.read`: the owner and senior moderators by
- * role, moderators and helpers when the owner ticks it, owner Q60). A named form row's `accountId`
- * goes only to the owner and senior moderators (lead review 7 Nov M5): a moderator or helper
- * reading by grant gets `accountId: null` on every row, so feedback can't be used to look people up.
+ * role, moderators and helpers when the owner ticks it, owner Q60). D-058 (owner G20, "named shows
+ * the account so staff can follow up"; lead 12 Nov, replacing lead review 7 Nov M5): a named form
+ * row carries its `accountId` and the account's public display name (`accountName`, never the
+ * login name) for everyone who reads feedback, and every opening of the list is logged
+ * (`feedback.form-opened`) so the owner can see who looked.
  * - `GET /staff/v1/feedback?before` → `{ items: { id, mood, note, createdOn }[], counts, next }`,
  *   the one-tap "How's X2F doing?" answers (`listFeedback`) with the 30-day Great / OK / Needs work
  *   counts (`feedbackMoodCounts`);
- * - `GET /staff/v1/feedback/form?before` → `{ items: { id, kind, text, accountId, from, createdOn }[], next }`,
+ * - `GET /staff/v1/feedback/form?before` → `{ items: { id, kind, text, accountId, accountName, from, createdOn }[], next }`,
  *   the feedback form every "can't do that" popup links to (`listFeedbackForm`; `accountId` null
- *   for an anonymous row).
+ *   and `accountName` null for an anonymous row).
  * - `GET /staff/v1/feedback/blur-checks?before` → `{ items: { id, correct, comment, role, method, blur, createdOn }[], counts: { yes, no }, next }`,
  *   the "Was this proof blurred correctly?" answers (P-012/P-013, proof/blurCheck.ts), with the 30-day
  *   Yes / No counts. They name no trade and no person, so every reader gets the same rows.
@@ -55,9 +59,10 @@ export function staffFeedbackRoutes(app: FastifyInstance): void {
   });
   app.get('/staff/v1/feedback/form', opts, async (req) => {
     const before = cursorOf(req);
-    const items = await listFeedbackForm(req.server.deps.db, before ? { before } : {});
-    // Lead review 7 Nov M5: who sent a named row is for the owner and senior moderators only.
-    const named = req.staff.role === 'owner' || req.staff.role === 'senior';
-    return { items: named ? items : items.map((i) => ({ ...i, accountId: null })), next: nextOf(items) };
+    const { db } = req.server.deps;
+    const items = await listFeedbackForm(db, before ? { before } : {});
+    // D-058: the list names senders, so each opening (every page) is logged with how many it named.
+    await withTx(db, (c) => log(c, req, 'feedback.form-opened', { namedRows: items.filter((i) => i.accountId !== null).length }));
+    return { items, next: nextOf(items) };
   });
 }
