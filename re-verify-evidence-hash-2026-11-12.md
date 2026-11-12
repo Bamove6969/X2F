@@ -107,3 +107,17 @@ Not run: staff-web, moderation, Playwright, `npm run check`. The staff-web and m
 - Tests:
   - at 91e784a2: staff `lien.test.ts` 42/42, API `disputes/lien.test.ts` 28/28
   - at 5770f6e5: staff `lien.test.ts` 42/42, API `lien` + `rulings` 46/46
+
+## Follow-up (lead request): E3 fixed and test gaps closed, `wip/lead-rulings` c43e1c43
+- ef01af42 (red tests) and c43e1c43 (fix), on 5770f6e5. Fetched before pushing; a fast-forward, nothing forced.
+- **E3:** `parseEvidence` now refuses a line with a lone surrogate (`/\p{Surrogate}/u`; the lib is ES2022, so `isWellFormed` is not available) with 400 `bad-request`, before the tap check.
+  - New test: `\ud800`, `\udc00` and a reversed pair are each 400 with the tap unused; an emoji pair is accepted.
+  - Red on 5770f6e5 (500 `internal`), green after the fix.
+- **Test gaps** (coverage only, green on the old code too):
+  - The two-person test now proposes lines that are not the default and asserts that the published evidence equals them. A tap for the default lines is refused at approve.
+  - New NFD-vs-NFC test: a tap for the NFC form of NFD lines gets 403 with the tap unused and nothing published. The right tap then publishes the NFD lines exactly.
+  - The mismatch loop now checks `tapUsed === false`.
+- Tests under the lock:
+  - red: `disputes/rulings` 1 failed, 19 passed;
+  - green: `disputes/rulings` + `staff/keyTap` + `disputes/lien`, 76/76; `tsc -p apps/api` clean.
+- The reason and the send-back note still take lone surrogates into `text` columns. node-pg stores U+FFFD there, and the reason's hash agrees. Unchanged, as it was out of scope.
