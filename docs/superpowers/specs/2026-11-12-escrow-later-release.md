@@ -150,3 +150,45 @@ Regtest (a real chain, three parties, an in-process relay):
   amount is refused at that point, and nothing is signed.
 - **No product limit, but a hard safety cap of 10 later releases per escrow** (`MAX_LATER_RELEASES`).
   An 11th is refused (`bad-outcome`), so a bug cannot loop.
+
+## Review round 1 (review-escrow-later-release-2026-11-12, NOT READY → fixes, lead calls)
+
+- **B1, fixed:** past the first release (a history, or a current later release), every outcome
+  must carry `after`. A first outcome is refused (`bad-outcome`), and so is any outcome whose
+  digest is already in the history. The first release's tag and its stored messages never come back;
+  a trader-built release cannot slip in either.
+- **B2, fixed (lead OK):** a `built` builder marks its release done when its wallet shows the escrow
+  outputs spent by the reported tx in a block (`spentBy`) and the daemon has it (`txSeen`), whatever
+  the balance (after a wallet sync: `spentBy` reads the wallet's own view). Late coins before the
+  builder saw the escrow empty no longer strand the escrow.
+- **M1, fixed:** a later outcome is accepted only when the party's current release is done, or it
+  has none. A first release in progress, exhausted or superseded refuses. An uncommitted later
+  release may still be replaced by another naming the same `after`.
+- **M2 and M3, reconciled (please confirm):** `after` is the latest tx that emptied the escrow.
+  - **Who keeps the full pre-export check:** every builder, and a co-signer whose own latest done
+    release is `after` (it knows the true balance).
+  - **Who gets the relaxed check:** a co-signer that took no part in the release `after` names
+    (none of its own, or an older one: alternating co-signers, M3). Its wallet cannot see that spend.
+  - **What such a co-signer still must do before signing:** after importing the builder's export,
+    the exact payout match, and, when it has releases of its own, `spentBy(after)` with
+    `txSeen(after)`. Otherwise the attempt is refused (nothing signed).
+  - **At settle time, a co-signer naming a tx not its own** (newer than its latest) is accepted
+    only if the daemon has that tx in a block (`txSeen`). A made-up hash is refused there and then,
+    with nothing saved or sent; the spend of this escrow is proven after the import, as above.
+  - **The builder** must name its own latest done tx, or have none.
+  - **Why this reconciliation:** taken alone, M2 (a full check for anyone with a release) would
+    deadlock M3's buyer, whose wallet still counts L1's coins.
+- **M4, fixed:** the spend.info a trader owes for a release the moderator did not sign is found in
+  the history too. It is exported and sent before a later release's first export (`waiting-funds`
+  waits for it), so it is never dropped and never clobbers the later release's nonces.
+- **I1, fixed:** `ReleaseState.after` marks a later release; the cap counts those (history and
+  current) for every party alike: at most 10 per escrow.
+- **I2, fixed:** `releases` is validated on load (`bad-state` otherwise).
+- **I3, fixed:** `PartyHandle.builderOf(txHash)` names the builder of the release that tx belongs
+  to; the moderation watcher uses it for its own txs.
+- **I6:** the promised checks run on regtest (the package has no fake engine), in `later-release.test.ts`:
+  nothing saved or sent on a refusal, the history absent in an older state and kept across a restart,
+  `ownTxs` of both releases.
+- **Not changed (not in the lead's calls):** the review's M2 suggestion of a way out for a signed
+  later release whose tx is `none`, and the moderator-builder importing the co-signer's export
+  before its own balance check (M4, second part). Both stay liveness gaps.
