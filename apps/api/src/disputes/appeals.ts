@@ -1,4 +1,5 @@
 import { appealReviewers, type Dispute, type StaffRole } from '@x2f/staff';
+import { addOwnerAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 
@@ -44,13 +45,34 @@ export async function eligibleReviewers(q: Queryable, d: Pick<Dispute, 'round1'>
 }
 
 /**
- * D-011: whether this dispute's appeal is waiting for an independent reviewer: the appeal round,
- * nobody has taken it, and nobody eligible exists. Once an eligible reviewer has taken the case
- * (or proposed a ruling) nobody waits for one.
+ * D-011: whether this dispute's appeal is waiting for an independent reviewer: the appeal round
+ * with no ruling proposed, and nobody eligible exists. An assignee who is still eligible is in the
+ * list, so a taken case waits only once its assignee can no longer review (switched off, removed,
+ * disabled) and nobody else can.
  */
-export async function appealWaiting(q: Queryable, d: Pick<Dispute, 'round' | 'status' | 'assignee' | 'round1'>): Promise<boolean> {
-  if (d.round !== 2 || d.status !== 'appealed' || d.assignee !== null) return false;
+export async function appealWaiting(q: Queryable, d: Pick<Dispute, 'round' | 'status' | 'round1'>): Promise<boolean> {
+  if (d.round !== 2 || d.status !== 'appealed') return false;
   return (await eligibleReviewers(q, d)).length === 0;
+}
+
+/**
+ * D-011, idempotent (lead call 12 Nov): brings `disputes.no_reviewer_alerted_at` in line with
+ * whether the appeal waits, on `client` inside the dispute's locked transaction. Entering the
+ * no-reviewer state writes the owner's `appeal-no-reviewer` alert and marks the row, once; leaving
+ * it clears the mark, so a later loss alerts again. Returns true when an alert was written (the
+ * caller pushes after the commit).
+ */
+export async function syncNoReviewerAlert(q: Queryable, d: Pick<Dispute, 'code' | 'seq' | 'round' | 'status' | 'round1'>, now: Date): Promise<boolean> {
+  const waiting = await appealWaiting(q, d);
+  const { rows } = await q.query<{ at: Date | null }>('select no_reviewer_alerted_at as at from disputes where code = $1 and seq = $2', [d.code, d.seq]);
+  const alerted = (rows[0]?.at ?? null) !== null;
+  if (waiting && !alerted) {
+    await addOwnerAlert(q, 'appeal-no-reviewer', { trade: d.code }, now);
+    await q.query('update disputes set no_reviewer_alerted_at = $3 where code = $1 and seq = $2', [d.code, d.seq, now]);
+    return true;
+  }
+  if (!waiting && alerted) await q.query('update disputes set no_reviewer_alerted_at = null where code = $1 and seq = $2', [d.code, d.seq]);
+  return false;
 }
 
 /** D-005: until when an appeal can still be filed on the trade's current dispute, or null. */

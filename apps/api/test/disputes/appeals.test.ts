@@ -11,6 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { Deps } from '../../src/app.js';
 import { buildStaffApi } from '../../src/staff/app.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
+import { disputeTimerJob } from '../../src/disputes/timers.js';
 import { appendLog } from '../../src/log/append.js';
 import { rolesToAbilities } from '../../src/team/abilities.js';
 import { makeVendor, seedAccount } from '../helpers/accounts.js';
@@ -146,7 +147,10 @@ describe('D-005: the trade view says until when this viewer may file an appeal',
     expect(await appealUntil(buyer.browser, code)).toBeNull();
   });
 
-  it('a team member sees it only with the File an appeal box (the route refuses the others)', async () => {
+  // Review S1 (lead call 12 Nov): the button opens the dispute page, which needs Answer the
+  // moderator, so the deadline goes only to a member holding both boxes; an appeal-only member's
+  // POST answers 204 with no dispute view (it cannot read that view through GET either).
+  it('a team member sees it only with both the File an appeal and the Answer the moderator boxes', async () => {
     setNow(new Date(START.getTime() - 120 * MIN));
     const team = await trader();
     await makeVendor(deps, team.id);
@@ -166,9 +170,16 @@ describe('D-005: the trade view says until when this viewer may file an appeal',
     };
     const withBox = await member(rolesToAbilities(['trades']));
     const noBox = await member(rolesToAbilities(['trades']).filter((a) => a !== 'disputes-appeal'));
+    const appealOnly = await member(rolesToAbilities(['trades']).filter((a) => a !== 'disputes-answer'));
     expect(await appealUntil(withBox, code)).toBe(iso(49 * H));
     expect(await appealUntil(noBox, code)).toBeNull();
+    expect(await appealUntil(appealOnly, code)).toBeNull();
     expect((await noBox.post(appealOf(code), { why: WHY })).statusCode).toBe(403);
+    expect((await appealOnly.get(disputeOf(code))).statusCode).toBe(403);
+    const res = await appealOnly.post(appealOf(code), { why: WHY });
+    expect(res.statusCode, res.body).toBe(204);
+    expect(res.body).toBe('');
+    expect((await withBox.get(disputeOf(code))).json()).toMatchObject({ status: 'appealed', appeal: { by: 'seller' } });
   });
 });
 
@@ -216,22 +227,19 @@ describe('D-011: no eligible reviewer', () => {
     }
   });
 
-  it('a fresh senior moderator added later ends the wait for the traders; the staff routes name who may review', async () => {
+  it('a fresh senior moderator added later ends the wait for the traders and the queue mark', async () => {
     const { seller, buyer, code } = await ruled();
     await involve(code, ownerId, 'owner');
     setNow(at(2 * H));
     await relogin(seller, buyer);
     expect((await buyer.browser.post(appealOf(code), { why: WHY })).json()).toMatchObject({ appealWaiting: true });
     const owner = await staff('owner', ownerId);
-    const before = (await owner.b.get(`/staff/v1/disputes/${code}/appeal-reviewers`)).json();
-    expect(before).toEqual({ reviewers: [], waiting: true });
+    // The owner was involved here, so the reviewer list refuses them (review M1); the queue marks the case.
     const queue = (await owner.b.get('/staff/v1/disputes')).json() as { rows: Array<{ code: string; noReviewer?: boolean }> };
     expect(queue.rows.find((r) => r.code === code)).toMatchObject({ noReviewer: true });
 
     const fresh = await staff('senior');
-    const name = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [fresh.id])).rows[0]!.display_name;
     expect((await buyer.browser.get(disputeOf(code))).json()).toMatchObject({ appealWaiting: false });
-    expect((await owner.b.get(`/staff/v1/disputes/${code}/appeal-reviewers`)).json()).toEqual({ reviewers: [{ name }], waiting: false });
     const after = (await owner.b.get('/staff/v1/disputes')).json() as { rows: Array<{ code: string; noReviewer?: boolean }> };
     expect(after.rows.find((r) => r.code === code)).toMatchObject({ noReviewer: false });
     expect((await fresh.b.post(`/staff/v1/disputes/${code}/take`)).statusCode).toBe(200);
@@ -260,9 +268,104 @@ describe('D-011: no eligible reviewer', () => {
     expect(await ownerAlerts(code)).toHaveLength(1);
   });
 
-  it('the reviewer list is for seniors and the owner only (a moderator gets 403)', async () => {
-    const { code } = await ruled();
+  // Lead call (12 Nov): a reviewer who drops away after the appeal was filed (switched off, removed,
+  // disabled) leaves it reviewer-less; the dispute timer then alerts the owner once (in-app and push)
+  // per transition into that state, never on every pass.
+  it('the timer re-alerts the owner once per transition into no reviewer, and not again while it lasts', async () => {
+    const { seller, buyer, code } = await ruled();
+    await involve(code, ownerId, 'owner');
+    const senior = (await seedStaff(deps, { role: 'senior' })).id;
+    setNow(at(2 * H));
+    await relogin(seller, buyer);
+    expect((await buyer.browser.post(appealOf(code), { why: WHY })).json()).toMatchObject({ appealWaiting: false });
+    const push = { send: vi.fn(async () => true) };
+    const tick = () => disputeTimerJob(undefined, push).run(deps.db, deps.clock());
+    await tick();
+    expect(await ownerAlerts(code)).toEqual([]);
+    // The only eligible reviewer is switched off: one alert and one push, however many passes run.
+    await deps.db.query('update staff_members set switched_off_at = $2 where account_id = $1', [senior, deps.clock()]);
+    await tick();
+    await tick();
+    expect(await ownerAlerts(code)).toEqual([{ detail: { trade: code } }]);
+    expect(push.send.mock.calls).toEqual([[ownerId, 'alert']]);
+    expect((await buyer.browser.get(disputeOf(code))).json()).toMatchObject({ appealWaiting: true });
+    // Back on: no alert. Off again: a new transition, so one more alert and push.
+    await deps.db.query('update staff_members set switched_off_at = null where account_id = $1', [senior]);
+    await tick();
+    expect(await ownerAlerts(code)).toHaveLength(1);
+    await deps.db.query('update staff_members set switched_off_at = $2 where account_id = $1', [senior, deps.clock()]);
+    await tick();
+    await tick();
+    expect(await ownerAlerts(code)).toHaveLength(2);
+    expect(push.send.mock.calls).toEqual([[ownerId, 'alert'], [ownerId, 'alert']]);
+  });
+
+  it('an appeal already reviewer-less at filing is not alerted again by the timer; one whose reviewer took it and was then switched off is', async () => {
+    const { seller, buyer, code } = await ruled();
+    await involve(code, ownerId, 'owner');
+    setNow(at(2 * H));
+    await relogin(seller, buyer);
+    expect((await buyer.browser.post(appealOf(code), { why: WHY })).json()).toMatchObject({ appealWaiting: true });
+    const push = { send: vi.fn(async () => true) };
+    await disputeTimerJob(undefined, push).run(deps.db, deps.clock());
+    expect(await ownerAlerts(code)).toHaveLength(1);
+    expect(push.send).not.toHaveBeenCalled();
+
+    const other = await ruled();
+    setNow(at(2 * H));
+    await relogin(other.seller, other.buyer);
+    await involve(other.code, ownerId, 'owner');
+    const fresh = await staff('senior');
+    expect((await other.buyer.browser.post(appealOf(other.code), { why: WHY })).statusCode).toBe(200);
+    expect((await fresh.b.post(`/staff/v1/disputes/${other.code}/take`)).statusCode).toBe(200);
+    // Taken by the only eligible reviewer: nobody waits.
+    expect((await other.buyer.browser.get(disputeOf(other.code))).json()).toMatchObject({ appealWaiting: false });
+    await disputeTimerJob(undefined, push).run(deps.db, deps.clock());
+    expect(await ownerAlerts(other.code)).toEqual([]);
+    // The assignee switched off can decide nothing: the appeal waits again, alerted once.
+    await deps.db.query('update staff_members set switched_off_at = $2 where account_id = $1', [fresh.id, deps.clock()]);
+    await disputeTimerJob(undefined, push).run(deps.db, deps.clock());
+    await disputeTimerJob(undefined, push).run(deps.db, deps.clock());
+    expect(await ownerAlerts(other.code)).toHaveLength(1);
+    expect(push.send.mock.calls).toEqual([[ownerId, 'alert']]);
+    expect((await other.buyer.browser.get(disputeOf(other.code))).json()).toMatchObject({ appealWaiting: true });
+  });
+
+  // Review M1 (lead call 12 Nov): the reviewer list is the owner's alone (the owner acts on D-011),
+  // an involved caller is refused whatever their role, and a read is never logged (R37 counts any
+  // log entry on the trade as involvement).
+  it('the reviewer list is owner-only, refuses an involved caller, and is never logged', async () => {
+    const { seller, buyer, code } = await ruled();
+    const involvedSenior = await staff('senior');
+    await involve(code, involvedSenior.id, 'senior');
+    await involve(code, ownerId, 'owner');
+    setNow(at(2 * H));
+    await relogin(seller, buyer);
+    expect((await buyer.browser.post(appealOf(code), { why: WHY })).statusCode).toBe(200);
+    const url = `/staff/v1/disputes/${code}/appeal-reviewers`;
     const mod = await staff('mod');
-    expect((await mod.b.get(`/staff/v1/disputes/${code}/appeal-reviewers`)).statusCode).toBe(403);
+    const freshSenior = await staff('senior');
+    expect((await mod.b.get(url)).statusCode).toBe(403);
+    expect((await freshSenior.b.get(url)).statusCode).toBe(403);
+    expect((await involvedSenior.b.get(url)).statusCode).toBe(403);
+    const logCount = async () =>
+      Number((await deps.db.query<{ n: string }>('select count(*) as n from activity_log where trade_code = $1', [code])).rows[0]!.n);
+    const before = await logCount();
+    // The owner was involved in round 1: refused too.
+    const owner = await staff('owner', ownerId);
+    const res = await owner.b.get(url);
+    expect({ status: res.statusCode, error: (res.json() as { error?: string }).error }).toEqual({ status: 403, error: 'forbidden-case' });
+    expect(await logCount()).toBe(before);
+
+    // An uninvolved owner reads it, unlogged, and stays uninvolved.
+    const other = await ruled();
+    setNow(at(2 * H));
+    await relogin(other.seller, other.buyer);
+    expect((await other.buyer.browser.post(appealOf(other.code), { why: WHY })).statusCode).toBe(200);
+    const n = Number((await deps.db.query<{ n: string }>('select count(*) as n from activity_log where trade_code = $1', [other.code])).rows[0]!.n);
+    const ok = await owner.b.get(`/staff/v1/disputes/${other.code}/appeal-reviewers`);
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(ok.json()).toMatchObject({ reviewers: expect.arrayContaining([expect.objectContaining({ name: expect.any(String) })]) });
+    expect(Number((await deps.db.query<{ n: string }>('select count(*) as n from activity_log where trade_code = $1', [other.code])).rows[0]!.n)).toBe(n);
   });
 });

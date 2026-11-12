@@ -300,7 +300,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           approval,
           assignee: r.assignee_name,
           mine: r.mine,
-          noReviewer: r.status === 'appealed' && r.assignee === null && appealReviewers(candidates, r.involved ?? []).length === 0,
+          noReviewer: r.status === 'appealed' && appealReviewers(candidates, r.involved ?? []).length === 0,
         };
       }),
       counts: { open: c.open, overdue: c.overdue, unassigned: c.unassigned, needApproval: c.need_approval },
@@ -430,15 +430,21 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
 
   // Plan 4 Task 24 (D-011): who may review this case's appeal (senior moderators and the owner
   // with no log entry on round 1, R37), by display name, and whether the appeal waits for one.
-  // Under `rulings.approve`: seniors and the owner only (a moderator never reviews an appeal).
-  // Reading it is not an action on the case: nothing is logged and nobody is added to `seen`.
-  const seniorGuard = requireStaff('rulings.approve');
-  app.get('/staff/v1/disputes/:code/appeal-reviewers', { preHandler: seniorGuard, config: { perm: 'rulings.approve' } }, async (req) => {
+  // Review M1 (lead call 12 Nov): the owner's alone (`staff.manage`; the owner acts on D-011 by
+  // adding or switching on a reviewer), and refused (403 `forbidden-case`) to a caller involved in
+  // the case, so nobody involved learns who will review their ruling even if the perm widens later.
+  // Never logged and nobody is added to `seen`: under R37 any log entry on the trade is involvement,
+  // so a logged read would shrink the reviewer pool (lead correction 12 Nov).
+  const ownerGuard = requireStaff('staff.manage');
+  app.get('/staff/v1/disputes/:code/appeal-reviewers', { preHandler: ownerGuard, config: { perm: 'staff.manage' } }, async (req) => {
     const db = req.server.deps.db;
     const code = await codeOf(db, req);
     const rec = await loadDisputeRecord(db, code);
     if (rec === null) throw new ApiError(404, 'not-found');
     const d = rec.dispute;
+    const me = req.staff.accountId;
+    const involvedNow = await db.query('select 1 from activity_log where trade_code = $1 and actor_kind = $2 and actor_id = $3 limit 1', [code, 'staff', me]);
+    if ((d.round1?.involved.includes(me) ?? false) || d.seen.includes(me) || involvedNow.rows.length > 0) throw new ApiError(403, 'forbidden-case');
     // Before an appeal, round 1's involvement is not frozen yet: no list.
     const reviewers = d.round === 2 ? await eligibleReviewers(db, d) : [];
     return { reviewers: reviewers.map((s) => ({ name: s.name })), waiting: await appealWaiting(db, d) };

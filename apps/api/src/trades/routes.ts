@@ -111,9 +111,11 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       counterpartyProblem: await counterpartyProblem(deps.db, t.code, other),
       cancelWaiting: await cancelWaiting(deps.db, t.code),
       paymentInstructions: row.method_instructions,
-      // D-005: the File appeal button's deadline, only for a viewer the appeal route lets through
-      // (the account owner, or a member with the File an appeal box).
-      appealUntil: t.dispute !== null && (req.auth.memberId === null || hasAbility(req.auth.memberAbilities, 'disputes-appeal'))
+      // D-005: the File appeal button's deadline, only for the account owner or a member who can
+      // both appeal and open the dispute page the button leads to (review S1, lead call 12 Nov:
+      // File an appeal AND Answer the moderator).
+      appealUntil: t.dispute !== null
+        && (req.auth.memberId === null || (hasAbility(req.auth.memberAbilities, 'disputes-appeal') && hasAbility(req.auth.memberAbilities, 'disputes-answer')))
         ? await appealOpenUntil(deps.db, t.code, now)
         : null,
     });
