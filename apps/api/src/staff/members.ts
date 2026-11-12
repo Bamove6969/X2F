@@ -10,7 +10,7 @@ import { appendLog } from '../log/append.js';
 import type { LogAction } from '../log/actions.js';
 import { requireStaff } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
-import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
+import { THREE_METHOD_ROLES, holdsModeratorMethods } from './login.js';
 
 // Plan 4 Task 7: the owner's staff management (perm `staff.manage`).
 //
@@ -20,12 +20,13 @@ import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
 //   removes power): `accounts.disabled_at` and `switched_off_at` set and logged in one transaction,
 //   then every session ended (`endAllSessions` with the app's bus). Already off: 409 `wrong-state`.
 // - `POST /staff/v1/members/:id/switch-on { tapId }` (tap `switch-on`, bound to the person and
-//   their current role) → `{ status: 'active' }`. A moderator or senior must hold all three methods
-//   (owner G3; 409 `all-three-methods-required`, the tap left unused).
+//   their current role) → `{ status: 'active' }`. A moderator or senior must hold a PGP key and a
+//   passkey (D-070, changing G3; 409 `moderator-methods-required`, the tap left unused).
 //   `GET /staff/v1/members` lists, per moderator and senior, the methods they still lack (`missingMethods`).
 // - `PUT /staff/v1/members/:id/hours { hours }` → `{ hours }` (`validateHours`; 400 `bad-request`).
 // - `PUT /staff/v1/members/:id/role { role, tapId }` (tap `set-role`) → `{ role }`. A senior or mod
-//   role needs an attested security key (409 `security-key-required`): they rule or approve.
+//   role needs a PGP key and a passkey (D-070, owner p11-19; 409 `moderator-methods-required`). The
+//   security key is optional, though rulings and approvals are still tapped with one (owner question).
 // - `DELETE /staff/v1/members/:id` → 204: removed (spec 6.6, "add, remove and switch off"): switched
 //   off for good, gone from the list, never switched on again; the row and the log stay.
 //
@@ -137,7 +138,8 @@ export interface MemberRow {
   /**
    * Owner G3 (review P-m2): the methods a moderator or senior moderator lacks of the three (an
    * attested security key, a PGP key, a passkey), so the owner can follow up with those who joined
-   * before G3; empty for everyone else and for invites.
+   * before G3; empty for everyone else and for invites. Since D-070 a missing security key is listed
+   * but no longer refuses anything (the moderator cannot tap rulings without one).
    */
   missingMethods: Array<'security-key' | 'pgp' | 'passkey'>;
 }
@@ -213,8 +215,9 @@ export function staffMemberRoutes(app: FastifyInstance): void {
     await withTx(db, async (c) => {
       const target = await lockTarget(c, id);
       if (!target.switchedOff) throw new ApiError(409, 'wrong-state');
-      // Owner G3 (review P-m2): a moderator or senior is switched on only holding all three methods.
-      if (THREE_METHOD_ROLES.includes(target.role) && !(await holdsAllThree(c, id))) throw new ApiError(409, 'all-three-methods-required');
+      // Owner G3 (review P-m2), as D-070 changed it: a moderator or senior is switched on only holding
+      // a PGP key and a passkey.
+      if (THREE_METHOD_ROLES.includes(target.role) && !(await holdsModeratorMethods(c, id))) throw new ApiError(409, 'moderator-methods-required');
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'switch-on', accountId: id, role: target.role as InvitableRole }, now, { sessionId: req.auth.sessionId });
       await c.query('update accounts set disabled_at = null where id = $1', [id]);
       await c.query('update staff_members set switched_off_at = null where account_id = $1', [id]);
@@ -243,9 +246,9 @@ export function staffMemberRoutes(app: FastifyInstance): void {
     await withTx(req.server.deps.db, async (c) => {
       const target = await lockTarget(c, id);
       const keys = await attestedKeyCount(c, id);
-      if ((role === 'mod' || role === 'senior') && keys === 0) throw new ApiError(409, 'security-key-required');
-      // Owner G3 (7 Nov): a moderator or senior holds all three methods.
-      if (THREE_METHOD_ROLES.includes(role) && !(await holdsAllThree(c, id))) throw new ApiError(409, 'all-three-methods-required');
+      // D-070 (owner p11-19, changing G3): a moderator or senior holds a PGP key and a passkey; the
+      // security key is optional.
+      if (THREE_METHOD_ROLES.includes(role) && !(await holdsModeratorMethods(c, id))) throw new ApiError(409, 'moderator-methods-required');
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-role', accountId: id, role }, now, { sessionId: req.auth.sessionId });
       await c.query('update staff_members set role = $2, has_security_key = $3 where account_id = $1', [id, role, keys > 0]);
       await log(c, req, 'staff.role-set', { staffId: id, from: target.role, to: role });

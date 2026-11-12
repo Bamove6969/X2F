@@ -79,8 +79,9 @@ export function staffAccountRoutes(app: FastifyInstance): void {
       if (req.staff.role === 'owner') {
         await consumeSecondOwnerTap(c, body(req).secondTapId, first, intent, now, { sessionId: req.auth.sessionId });
       }
-      // Owner G3 (7 Nov): a moderator or senior keeps all three methods; one of a kind may go only
-      // while another of that kind stays.
+      // Owner G3 (7 Nov), as D-070 changed it: a moderator or senior keeps a PGP key and a passkey;
+      // one of a kind may go only while another of that kind stays. The last security key stays for
+      // lead review I-2 above (taps), not for the login rule.
       if (THREE_METHOD_ROLES.includes(req.staff.role)) {
         const sameKind = methodType === 'pgp'
           ? (await c.query<{ n: number }>('select count(*)::int as n from pgp_keys where account_id = $1', [me])).rows[0]!.n
@@ -88,7 +89,7 @@ export function staffAccountRoutes(app: FastifyInstance): void {
               `select count(*)::int as n from webauthn_credentials where account_id = $1 and kind = $2 and (kind <> 'security-key' or attested)`,
               [me, methodType],
             )).rows[0]!.n;
-        if (sameKind <= 1) throw new ApiError(409, methodType === 'security-key' ? 'security-key-required' : 'all-three-methods-required');
+        if (sameKind <= 1) throw new ApiError(409, methodType === 'security-key' ? 'security-key-required' : 'moderator-methods-required');
       }
       await applyRemoval(c, config, me, methodType, id, req.auth.sessionId, now);
       // Keep staff_members.has_security_key true to what is stored (202's column).

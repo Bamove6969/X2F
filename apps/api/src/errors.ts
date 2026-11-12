@@ -149,8 +149,11 @@ export type ApiErrorCode =
   | 'two-factors-required'
   | 'owner-protected'
   | 'owner-needs-two-keys'
-  // Owner G3 (7 Nov): a moderator holds a security key, a PGP key and a passkey.
+  // Owner G3 (7 Nov): a moderator holds a security key, a PGP key and a passkey. Not answered since
+  // D-070 (owner p11-19, 9 Nov), which made the security key optional: see the next code.
   | 'all-three-methods-required'
+  // D-070 (owner p11-19): a moderator or senior moderator holds a PGP key and a passkey.
+  | 'moderator-methods-required'
   // Owner G4 (7 Nov): adding or removing an owner key needs taps by both owner keys.
   | 'both-owner-keys-required'
   // Owner G3 (review P-m1): a staff passkey that reports a security-key model is that key again.

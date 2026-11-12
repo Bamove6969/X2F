@@ -14,7 +14,7 @@ import type { RetentionJob } from '../retention.js';
 import { SIGNED_BODY_LIMIT, eraseTermsSignature } from '../termsSignature.js';
 import type { StaffDeps } from './app.js';
 import { requireStaff } from './guard.js';
-import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
+import { THREE_METHOD_ROLES, holdsModeratorMethods } from './login.js';
 import { consumeKeyTap } from './keyTap.js';
 import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type InvitableRole } from './members.js';
 
@@ -50,9 +50,9 @@ import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type In
 // - `POST …/:token/pgp/start { publicKey }` and `…/pgp/finish { challengeId, code }` → 201, from the
 //   same browser (device cookie);
 // - `POST …/:token/finish` → 201 `{ keyCheckCode }` (the first attested security key's, or null):
-//   409 `security-key-required` for a senior or mod without an attested security key, 409
-//   `two-factors-required` unless the account holds a staff login pair (PGP and a key or passkey,
-//   or two PGP keys; spec 6.6); then the invite is used, the account enabled, the staff row
+//   409 `two-factors-required` unless the account holds a staff login pair (PGP and a key or passkey,
+//   or two PGP keys; spec 6.6), 409 `moderator-methods-required` for a senior or mod without a PGP
+//   key and a passkey (D-070: the security key is optional); then the invite is used, the account enabled, the staff row
 //   inserted and `staff.joined` logged, in one transaction.
 
 /** An invite link works for 24 hours (spec 6.6). */
@@ -329,10 +329,9 @@ export function staffInviteRoutes(app: FastifyInstance): void {
         [accountId],
       );
       const { webauthn, pgp } = rows[0]!;
-      if ((i.role === 'mod' || i.role === 'senior') && keys === 0) throw new ApiError(409, 'security-key-required');
       if (!((pgp >= 1 && webauthn >= 1) || pgp >= 2)) throw new ApiError(409, 'two-factors-required');
-      // Owner G3 (7 Nov): a moderator holds all three: a security key, a PGP key and a passkey.
-      if (THREE_METHOD_ROLES.includes(i.role) && !(await holdsAllThree(c, accountId))) throw new ApiError(409, 'all-three-methods-required');
+      // D-070 (owner p11-19, changing G3): a moderator holds a PGP key and a passkey; a security key is optional.
+      if (THREE_METHOD_ROLES.includes(i.role) && !(await holdsModeratorMethods(c, accountId))) throw new ApiError(409, 'moderator-methods-required');
       await c.query('update staff_invites set used_at = $2 where id = $1', [i.id, now]);
       await c.query('update accounts set disabled_at = null where id = $1', [accountId]);
       await c.query(
