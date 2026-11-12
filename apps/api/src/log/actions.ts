@@ -54,8 +54,8 @@ const TRADE: Record<`trade.${TradeEvent['type']}`, Schema> = {
 };
 
 /**
- * A ruling's account action is flattened (M6): `accountAction` is its kind (`none`, `freeze`,
- * `trade-ban`, `site-ban`), and a ban's `until` (null = permanent) and `reasonCode` are their own keys.
+ * A ruling's account action is flattened (M6): `accountAction` is its kind (`none`, `trade-ban`,
+ * `site-ban`; D-015: never `freeze`), and a ban's `until` (null = permanent) and `reasonCode` are their own keys.
  */
 const RULING: Schema = {
   rulingId: 'id',

@@ -5,15 +5,19 @@
  * still works, what is paused. "Go to your dispute" is the one primary; Close and "Not now" go home.
  * Every string is COPY-UNSIGNED. The wording matches My offers' hold notice.
  *
- * NEEDS_API_FROZEN_STATE: the API has trading holds (trading_holds; refusals 'trading-hold') but no
- * call that tells the web an account is frozen, since when, or from which dispute. Until it does,
- * the screen is reached only at FROZEN_PATH, whose route reads `setFrozenSource` (nothing installs
- * one yet) and goes home while there is no state. Not wired yet, waiting on that state: opening it
- * at the next login after a freeze, and when a frozen user tries to start or join a trade or post
- * an offer; the Jabber alert.
+ * The frozen state comes from `GET /v1/account/freeze` (D-013..D-016: a moderator froze the account
+ * as a party who ignored a dispute or a ruling; no end time; a moderator lifts it once the person
+ * has done what the dispute asks, which they tell the moderator in the dispute chat). FROZEN_PATH
+ * reads it and goes home while the account is not frozen. `FrozenWatch` opens the notice once per
+ * freeze in this browser session after a login (the account owner's sessions; a team member's
+ * login never asks). The Jabber alert is the generic account-change notice the freeze row already
+ * sends (jabber/changePaths.ts). Not wired here: opening the notice from a refused take or post
+ * (those show their CantDoThat words).
  */
-import { Link, Navigate, useNavigate } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 import { formatXmr } from '@x2f/trade';
+import { api } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { formatDateTime as utcDateTime } from '../../ui/dates.js';
 import { Hero, ResultHeadline } from '../../ui/Hero.js';
@@ -34,12 +38,49 @@ export interface FrozenState {
   dispute: { code: string; incidentId: string | null; side: 'buying' | 'selling'; amountAtomic: string; counterparty: string };
 }
 
-let source: (() => FrozenState | null) | null = null;
+const AMOUNT = /^[1-9][0-9]{0,30}$/;
+const isText = (v: unknown): v is string => typeof v === 'string' && v !== '';
 
-/** Installs where the frozen state comes from (the API, once it says; a test); null removes it. */
-export function setFrozenSource(s: (() => FrozenState | null) | null): void {
+/**
+ * `GET /v1/account/freeze`'s answer as the notice reads it: the oldest active freeze that still
+ * names its dispute (a freeze whose trade record is gone, `dispute: null`, cannot fill the board's
+ * Dispute row or its "Go to your dispute"), with the account's side as the board words it. Null
+ * when the account is not frozen, and for anything malformed.
+ */
+export function parseFreeze(raw: unknown): FrozenState | null {
+  if (raw === null || typeof raw !== 'object' || !Array.isArray((raw as { freezes?: unknown }).freezes)) return null;
+  for (const f of (raw as { freezes: unknown[] }).freezes) {
+    if (f === null || typeof f !== 'object') return null;
+    const { since, dispute } = f as { since?: unknown; dispute?: unknown };
+    if (typeof since !== 'string' || Number.isNaN(Date.parse(since))) return null;
+    if (dispute === null) continue;
+    if (dispute === undefined || typeof dispute !== 'object') return null;
+    const d = dispute as Record<string, unknown>;
+    if (!isText(d.code) || !isText(d.counterparty) || typeof d.amountAtomic !== 'string' || !AMOUNT.test(d.amountAtomic)) return null;
+    if (d.side !== 'buyer' && d.side !== 'seller') return null;
+    if (d.incidentId !== null && !isText(d.incidentId)) return null;
+    return {
+      since,
+      dispute: { code: d.code, incidentId: d.incidentId, side: d.side === 'seller' ? 'selling' : 'buying', amountAtomic: d.amountAtomic, counterparty: d.counterparty },
+    };
+  }
+  return null;
+}
+
+/** The account's frozen state from the API; null when it is not frozen or the call fails. */
+export function loadFrozenState(): Promise<FrozenState | null> {
+  return api<unknown>('/v1/account/freeze').then(parseFreeze, () => null);
+}
+
+type Source = () => FrozenState | null | Promise<FrozenState | null>;
+let source: Source | null = null;
+
+/** Replaces where the frozen state comes from (a test); null restores the API. */
+export function setFrozenSource(s: Source | null): void {
   source = s;
 }
+
+const readState = (): FrozenState | null | Promise<FrozenState | null> => (source ?? loadFrozenState)();
 
 const HOME = '/';
 
@@ -128,8 +169,77 @@ export function AccountFrozen({ state }: { state: FrozenState }) {
   );
 }
 
-/** FROZEN_PATH: the notice for the frozen state its source gives; home while there is none. */
+/** FROZEN_PATH: the notice for the account's frozen state; home while there is none. */
 export function AccountFrozenRoute() {
-  const state = source?.() ?? null;
+  const pending = useRef<Promise<FrozenState | null> | null>(null);
+  const [state, setState] = useState<FrozenState | null | 'loading'>(() => {
+    const first = readState();
+    if (!(first instanceof Promise)) return first;
+    pending.current = first;
+    return 'loading';
+  });
+  useEffect(() => {
+    const p = pending.current;
+    if (p === null) return;
+    let live = true;
+    void p.then((s) => live && setState(s), () => live && setState(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (state === 'loading') return null;
   return state === null ? <Navigate to={HOME} replace /> : <AccountFrozen state={state} />;
+}
+
+/** Freezes this page load has already opened the notice for (`since`), when storage is unavailable. */
+const shownHere = new Set<string>();
+const SHOWN_KEY = 'x2f.frozen-shown';
+
+function shownBefore(since: string): boolean {
+  if (shownHere.has(since)) return true;
+  try {
+    return sessionStorage.getItem(SHOWN_KEY) === since;
+  } catch {
+    return false;
+  }
+}
+
+function markShown(since: string): void {
+  shownHere.add(since);
+  try {
+    sessionStorage.setItem(SHOWN_KEY, since);
+  } catch {
+    // Private window or blocked storage: this page load still remembers it.
+  }
+}
+
+/**
+ * D-016: after a login (`enabled`: the account owner's signed-in trader session), reads the frozen
+ * state once and, when the account is frozen and this freeze's notice has not been opened in this
+ * browser session, opens FROZEN_PATH. Never from the notice itself or a dispute (where the notice
+ * sends the person).
+ */
+export function FrozenWatch({ enabled }: { enabled: boolean }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const where = useRef(pathname);
+  where.current = pathname;
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    void Promise.resolve(readState()).then(
+      (s) => {
+        if (!live || s === null || shownBefore(s.since)) return;
+        const at = where.current;
+        if (at === FROZEN_PATH || /^\/trade\/[^/]+\/dispute$/.test(at)) return;
+        markShown(s.since);
+        void navigate(FROZEN_PATH);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [enabled, navigate]);
+  return null;
 }

@@ -107,9 +107,8 @@ describe('needsSecond', () => {
     expect(needsSecond(base({ usdCents: 100_000n }), 'release-to-buyer', { kind: 'none' })).toBe(true);
     expect(needsSecond(base({ usdCents: 99_999n }), 'release-to-buyer', { kind: 'none' })).toBe(false);
   });
-  test('a freeze or any ban needs a second approver', () => {
+  test('any ban needs a second approver', () => {
     const d = base({ usdCents: 1_000n });
-    expect(needsSecond(d, 'release-to-buyer', { kind: 'freeze' })).toBe(true);
     expect(needsSecond(d, 'release-to-buyer', { kind: 'trade-ban', until: null, reasonCode: 'terms' })).toBe(true);
     expect(needsSecond(d, 'release-to-buyer', { kind: 'site-ban', until: '2027-03-01T00:00:00.000Z', reasonCode: 'abuse' })).toBe(true);
   });
@@ -569,9 +568,11 @@ describe('M7: the account action is checked at propose', () => {
     rule('invalid-action', propose({ kind: 'freeze', until: null }));
     rule('invalid-action', propose(null));
   });
+  test('D-015 (owner 2026-11-02 08:12): a freeze is never an option on the ruling card', () => {
+    rule('invalid-action', propose({ kind: 'freeze' }));
+  });
   test('accepts the valid shapes', () => {
     expect(propose({ kind: 'none' })().status).toBe('published');
-    expect(propose({ kind: 'freeze' })().status).toBe('awaiting-approval');
     expect(propose({ kind: 'site-ban', until: at(100).toISOString(), reasonCode: 'abuse' })().status).toBe('awaiting-approval');
     expect(propose({ kind: 'trade-ban', until: null, reasonCode: 'terms' })().status).toBe('awaiting-approval');
   });

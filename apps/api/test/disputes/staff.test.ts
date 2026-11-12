@@ -550,6 +550,65 @@ describe('the freeze', () => {
   });
 });
 
+describe('D-016: the frozen trader reads their freeze (GET /v1/account/freeze)', () => {
+  const freezeOf = async (p: Awaited<ReturnType<typeof newTrader>>) => {
+    expect((await p.browser.post('/t/login', { accountId: p.id })).statusCode).toBe(200);
+    const res = await p.browser.get('/v1/account/freeze');
+    expect(res.statusCode, res.body).toBe(200);
+    return res.json() as { freezes: unknown[] };
+  };
+
+  it('none before a freeze; the frozen side then reads since, the dispute, its incident ID, their side, the amount and the partner; the partner reads none; lifted, none', async () => {
+    const mod = await staff('mod');
+    const { code, seller, buyer } = await disputed();
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/take'), {})).statusCode).toBe(200);
+    expect(await freezeOf(seller)).toEqual({ freezes: [] });
+
+    setNow(new Date(START.getTime() + 49 * H));
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' })).statusCode).toBe(200);
+    const { rows } = await deps.db.query<{ incident_id: string; amount_atomic: string; name: string }>(
+      `select d.incident_id, t.amount_atomic::text as amount_atomic, b.display_name as name
+         from disputes d join trades t on t.code = d.code join accounts b on b.id = t.buyer_account_id where d.code = $1`,
+      [code],
+    );
+    expect(await freezeOf(seller)).toEqual({
+      freezes: [{
+        since: new Date(START.getTime() + 49 * H).toISOString(),
+        dispute: { code, incidentId: rows[0]!.incident_id, side: 'seller', amountAtomic: rows[0]!.amount_atomic, counterparty: rows[0]!.name },
+      }],
+    });
+    // A dispute alone never blocks trading (D-013): the partner is not frozen.
+    expect(await freezeOf(buyer)).toEqual({ freezes: [] });
+
+    const lift = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: false });
+    expect(lift.statusCode, lift.body).toBe(200);
+    expect(await freezeOf(seller)).toEqual({ freezes: [] });
+    setNow(START);
+  });
+
+  it('a freeze that outlived its trade (R36 whole-record delete) still reads, with no dispute details', async () => {
+    const mod = await staff('mod');
+    const { code, seller } = await disputed();
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/take'), {})).statusCode).toBe(200);
+    setNow(new Date(START.getTime() + 49 * H));
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' })).statusCode).toBe(200);
+    // As if the trade's record were gone: the freeze names a dispute code no trade has.
+    await deps.db.query(`update trading_holds set dispute_code = 'ZZZZ-ZZZZ-ZZZZ-ZZZZ' where account_id = $1 and lifted_at is null`, [seller.id]);
+    expect(await freezeOf(seller)).toEqual({ freezes: [{ since: new Date(START.getTime() + 49 * H).toISOString(), dispute: null }] });
+    await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1 and lifted_at is null', [seller.id, deps.clock()]);
+    setNow(START);
+  });
+
+  it('needs a trader session', async () => {
+    const res = await trader.inject({ method: 'GET', url: '/v1/account/freeze' });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
 describe('helpers', () => {
   it('a helper is refused on every dispute route', async () => {
     const helper = await staff('helper');

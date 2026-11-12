@@ -31,12 +31,14 @@ export type BanReasonCode = (typeof BAN_REASON_CODES)[number];
  * The account action a ruling carries. Revisions: the `hold` action is gone (2026-10-29c: replaced
  * by the lien of Task 25, which follows from the outcome and is not chosen); the single `ban` is
  * replaced by the owner's ban stages (Task 27): a trade ban or a site ban, each until an exact
- * ISO time or, with `until: null`, permanent. Any ban or freeze needs a second approver (Task 2),
- * who is a senior moderator or the owner, so a moderator alone can never ban.
+ * ISO time or, with `until: null`, permanent. Any ban needs a second approver (Task 2), who is a
+ * senior moderator or the owner, so a moderator alone can never ban.
+ * D-015 (owner 2026-11-02 08:12): the freeze is NOT an account action of a ruling. It is only a
+ * separate, later act on a party who ignored the dispute or the ruling (`POST
+ * /staff/v1/disputes/:code/freeze`), never an option on the ruling card.
  */
 export type AccountAction =
   | { kind: 'none' }
-  | { kind: 'freeze' }
   | { kind: 'trade-ban' | 'site-ban'; until: string | null; reasonCode: BanReasonCode };
 
 type Invitable = Exclude<StaffRole, 'owner'>;

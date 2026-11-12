@@ -332,9 +332,10 @@ function amount(r: Record<string, unknown>, key: string, o: { integer?: boolean 
 
 function accountAction(v: unknown): AccountAction {
   const r = rec(v);
-  if (r.kind === 'none' || r.kind === 'freeze') {
+  // D-015 (owner 2026-11-02 08:12): a freeze is never a ruling's account action.
+  if (r.kind === 'none') {
     exactKeys(r, ['kind']);
-    return { kind: r.kind };
+    return { kind: 'none' };
   }
   exactKeys(r, ['kind', 'until', 'reasonCode']);
   const kind = oneOf(r, 'kind', ['trade-ban', 'site-ban'] as const);

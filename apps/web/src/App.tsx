@@ -13,7 +13,7 @@ import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
-import { AccountFrozenRoute, FROZEN_PATH } from './screens/account/AccountFrozen.js';
+import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -218,6 +218,8 @@ export function App() {
       <SessionPrompt />
       <IdleReminder />
       {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
+      {/* D-016: a frozen account owner gets the notice once per freeze after a login (GET /v1/account/freeze is the owner's alone). */}
+      <FrozenWatch enabled={isTrader(session) && memberOf(session) === null} />
       <Routes>
         {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
         <Route element={<BehindTheDoor />}>
@@ -247,7 +249,7 @@ export function App() {
             <Route path="/settings/account-type" element={<AccountType />} />
             <Route path="/news" element={<News />} />
             <Route path="/feedback" element={<Feedback />} />
-            {/* D-016: the frozen-account notice, until the API says an account is frozen (NEEDS_API_FROZEN_STATE). */}
+            {/* D-016: the frozen-account notice, from GET /v1/account/freeze (home while not frozen). */}
             <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
           </Route>
         </Route>
