@@ -4,9 +4,11 @@
 // the detector is a safety net (owner item 35), the sender always sees the blur and can add more.
 //
 // The app ships no other language yet (no locales in apps/web), so the languages are those of the
-// countries the plans name (US UK CA DE FR NL ES IT BE PT; Belgium is Dutch and French).
+// countries the plans name (US UK CA DE FR NL ES IT BE PT; Belgium is Dutch and French), and, for
+// P-014, Russian and Turkish, the other main payment-method languages (SBP, FAST receipts).
 //
-// Each label is lower case, single-spaced; accents are optional when matching (OCR drops them).
+// Each label is lower case, single-spaced; accents are optional when matching (OCR drops them; `ё`
+// reads `е`, `й` reads `и`, `İ` reads `I`), and a Turkish dotless `ı` also matches `i` and `I`.
 // `labels` count at the start of a line with or without a colon (`Empfänger Max`), and later in a
 // line with a colon. `colonOnly` are short words that are also everyday prepositions (`De nada`,
 // `Van harte`, `Para su seguridad`, review RV4-M3): they count only when a colon follows them.
@@ -44,5 +46,13 @@ export const NAME_LABELS: Readonly<Record<string, LabelSet>> = {
   pt: {
     labels: ['titular', 'beneficiário', 'destinatário', 'favorecido', 'remetente', 'ordenante', 'pagador', 'recebedor', 'nome', 'pago a', 'enviado para'],
     colonOnly: ['de', 'para'],
+  },
+  ru: {
+    labels: ['владелец счёта', 'владелец карты', 'держатель карты', 'получатель платежа', 'получатель', 'отправитель', 'плательщик', 'фио', 'имя', 'кому', 'от кого'],
+    colonOnly: ['от'],
+  },
+  tr: {
+    labels: ['hesap sahibi', 'kart sahibi', 'alıcı adı', 'alıcı', 'gönderen', 'gönderici', 'ödeyen', 'lehtar', 'ad soyad', 'adı soyadı', 'isim', 'kime', 'kimden'],
+    colonOnly: ['ad'],
   },
 };
