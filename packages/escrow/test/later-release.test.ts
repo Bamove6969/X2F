@@ -123,6 +123,9 @@ describe('a later release from a paid-out escrow, on regtest', () => {
     // The refusals first (nothing saved or sent): no `after`, an `after` that is not the seller's own
     // done release, a trader-built later release.
     const sentBefore = t.taps.seller.sent;
+    let saves = 0;
+    t.stores.seller.onSave = () => void (saves += 1);
+    expect(t.stores.seller.current()!.releases).toBeUndefined(); // a state from before the history: none
     const to = [{ address: seller.address, amountAtomic: lateAmount }];
     for (const bad of [
       { kind: 'release', to, builder: 'mod', cosigner: 'seller' } as Outcome,
@@ -132,6 +135,8 @@ describe('a later release from a paid-out escrow, on regtest', () => {
       await expect(t.parties.seller.settle(bad), JSON.stringify(bad.after ?? null)).rejects.toMatchObject({ code: 'bad-outcome' });
     }
     expect(t.taps.seller.sent).toBe(sentBefore);
+    expect(saves).toBe(0); // nothing saved for a refused outcome either
+    t.stores.seller.onSave = undefined;
 
     const o = laterRelease(to, first);
     const [m, s] = await mining(Promise.all([t.parties.mod.settle(o), t.parties.seller.settle(o)]));
@@ -147,6 +152,12 @@ describe('a later release from a paid-out escrow, on regtest', () => {
     // The seller's history keeps its first release; the moderator lists the tx it signed.
     expect(t.stores.seller.current()!.releases?.map((r) => [r.phase, r.txHash])).toEqual([['done', first]]);
     expect((await t.parties.mod.funds()).ownTxs).toContain(s);
+    expect(t.parties.mod.builderOf?.(s!)).toBe('mod');
+    await t.parties.seller.stop();
+    t.parties.seller = kit.startParty(t, 'seller').party;
+    await t.parties.seller.ready();
+    expect(t.stores.seller.current()!.releases?.map((r) => r.txHash)).toEqual([first]); // kept across the restart
+    expect(t.parties.seller.builderOf?.(first)).toBe('seller');
 
     // A third episode: more late coins, named by the second release; and the cap holds.
     const more = 200_000_000_000n;
@@ -265,6 +276,9 @@ describe('a later release from a paid-out escrow, on regtest', () => {
     const own = (await t.parties.mod.funds()).ownTxs;
     expect(own).toContain(first);
     expect(own).toContain(s);
+    // Review I3: each tx is named by its own release's builder, not the current one's.
+    expect(t.parties.mod.builderOf?.(first)).toBe('buyer');
+    expect(t.parties.mod.builderOf?.(s!)).toBe('mod');
   });
 
   it(`the safety cap: after ${MAX_LATER_RELEASES} later releases an escrow refuses another`, async () => {
@@ -277,13 +291,122 @@ describe('a later release from a paid-out escrow, on regtest', () => {
     const s = t.stores.seller.current()!;
     const done = s.release!;
     const history: NonNullable<PartyState['releases']> = [{ ...done }];
-    for (let i = 1; i < MAX_LATER_RELEASES; i++) history.push({ ...done, outcome: String(i).repeat(64).slice(0, 64), txHash: String(i % 10).repeat(64) });
+    for (let i = 1; i < MAX_LATER_RELEASES; i++) history.push({ ...done, outcome: String(i).repeat(64).slice(0, 64), after: String((i - 1) % 10).repeat(64), txHash: String(i % 10).repeat(64) });
     const last = 'e'.repeat(64);
-    t.stores.seller.set({ ...s, releases: history, release: { ...done, outcome: 'f'.repeat(64), txHash: last } });
+    // The tenth later release, done: ten after the first in all (review I1: every later one counts).
+    t.stores.seller.set({ ...s, releases: history, release: { ...done, outcome: 'f'.repeat(64), after: '9'.repeat(64), txHash: last } });
     t.parties.seller = kit.startParty(t, 'seller').party;
     await t.parties.seller.ready();
     await expect(t.parties.seller.settle(laterRelease([{ address: buyer.address, amountAtomic: 1n }], last))).rejects.toBeInstanceOf(PartyError);
     await expect(t.parties.seller.settle(laterRelease([{ address: buyer.address, amountAtomic: 1n }], last))).rejects.toMatchObject({ code: 'bad-outcome' });
     expect(first).toMatch(/^[0-9a-f]{64}$/);
+  });
+  it('review B1: once a later release has started, a first outcome (no after) or a trader-built one is refused; the first tag never comes back', async () => {
+    const amount = XMR;
+    const { t, escrow } = await funded(amount);
+    const buyer = await wallet();
+    const o0: Outcome = { kind: 'release', to: [{ address: buyer.address, amountAtomic: amount }], builder: 'seller', cosigner: 'buyer' };
+    const t0 = await firstRelease(t, o0);
+    await late(t, escrow, amount, ['buyer']); // a duplicate payment: the late coins equal the first amount
+    const L1 = laterRelease([{ address: buyer.address, amountAtomic: amount }], t0, 'buyer');
+    t.parties.buyer.settle(L1).catch(() => undefined); // the moderator never joins: L1 stays uncommitted
+    await expect.poll(() => t.stores.buyer.current()!.release!.outcome.slice(0, 16), { timeout: 60_000 }).toBe(releaseTag(L1));
+    await expect(t.parties.buyer.settle(o0)).rejects.toMatchObject({ code: 'bad-outcome' });
+    const traderBuilt: Outcome = { kind: 'release', to: [{ address: (await wallet()).address, amountAtomic: amount }], builder: 'seller', cosigner: 'buyer' };
+    await expect(t.parties.buyer.settle(traderBuilt)).rejects.toMatchObject({ code: 'bad-outcome' });
+    expect(t.stores.buyer.current()!.release!.outcome.slice(0, 16)).toBe(releaseTag(L1));
+  });
+
+  it('review B2: the builder of the earlier release reaches done though late coins landed first, and then builds the later release', async () => {
+    const amount = XMR;
+    const { t, escrow } = await funded(amount);
+    const seller = await wallet();
+    const o0: Outcome = { kind: 'release', to: [{ address: seller.address, amountAtomic: amount }], builder: 'mod', cosigner: 'seller' };
+    t.parties.mod.settle(o0).catch(() => undefined);
+    const sellerP = t.parties.seller.settle(o0);
+    await expect.poll(() => t.stores.mod.current()?.release?.phase, { timeout: 120_000 }).toBe('built');
+    await t.parties.mod.stop(); // the moderator's party is down while the seller signs and submits
+    const t0 = (await mining(sellerP))!;
+    const lateAmount = 200_000_000_000n;
+    await pay(escrow, lateAmount); // late coins before the moderator's party saw the escrow empty
+    t.parties.mod = kit.startParty(t, 'mod').party;
+    t.parties.mod.settle(o0).catch(() => undefined);
+    await mining(expect.poll(() => t.stores.mod.current()!.release!.phase, { timeout: 120_000, interval: 1000 }).toBe('done'));
+    expect(t.stores.mod.current()!.release!.txHash).toBe(t0);
+    const before = await balanceOf(seller.w);
+    const L1 = laterRelease([{ address: seller.address, amountAtomic: lateAmount }], t0);
+    const [, s] = await mining(Promise.all([t.parties.mod.settle(L1), t.parties.seller.settle(L1)]));
+    expect(s).toMatch(/^[0-9a-f]{64}$/);
+    await mine(node.rpcUri, 12, funderAddress);
+    expect(await balanceOf(seller.w)).toBeGreaterThan(before + lateAmount - MAX_NET_FEE);
+  });
+
+  it('review M1: a first release in progress refuses a later outcome naming any tx', async () => {
+    const amount = XMR;
+    const { t } = await funded(amount);
+    const a = (await wallet()).address;
+    const short: Outcome = { kind: 'release', to: [{ address: a, amountAtomic: amount - 1n }], builder: 'seller', cosigner: 'buyer' };
+    t.parties.seller.settle(short).catch(() => undefined); // never funds-ready: stays waiting-funds, uncommitted
+    await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('waiting-funds');
+    await expect(t.parties.seller.settle(laterRelease([{ address: a, amountAtomic: amount }], 'c'.repeat(64)))).rejects.toMatchObject({ code: 'bad-outcome' });
+    expect(t.stores.seller.current()!.release!.outcome.slice(0, 16)).toBe(releaseTag(short));
+  });
+
+  it('review M3: alternating co-signers: R0 seller-built, L1 to the seller, L2 to the buyer (who took no part in L1)', async () => {
+    const amount = XMR;
+    const { t, escrow } = await funded(amount);
+    const buyer = await wallet();
+    const seller = await wallet();
+    const t0 = await firstRelease(t, { kind: 'release', to: [{ address: buyer.address, amountAtomic: amount }], builder: 'seller', cosigner: 'buyer' });
+    const l1 = 300_000_000_000n;
+    await late(t, escrow, l1, ['mod', 'seller']);
+    const L1 = laterRelease([{ address: seller.address, amountAtomic: l1 }], t0, 'seller');
+    const [, t1] = await mining(Promise.all([t.parties.mod.settle(L1), t.parties.seller.settle(L1)]));
+    expect(t1).toMatch(/^[0-9a-f]{64}$/);
+    await mine(node.rpcUri, 12, funderAddress);
+    const l2 = 150_000_000_000n;
+    await late(t, escrow, l2, ['mod']);
+    const buyerBefore = await balanceOf(buyer.w);
+    const L2 = laterRelease([{ address: buyer.address, amountAtomic: l2 }], t1!, 'buyer');
+    const [, t2] = await mining(Promise.all([t.parties.mod.settle(L2), t.parties.buyer.settle(L2)]));
+    expect(t2).toMatch(/^[0-9a-f]{64}$/);
+    await mine(node.rpcUri, 12, funderAddress);
+    expect(await balanceOf(buyer.w)).toBeGreaterThan(buyerBefore + l2 - MAX_NET_FEE);
+    // The buyer named t1 though its own latest is R0: it proved t1 before signing.
+    expect(t.stores.buyer.current()!.releases?.map((r) => r.txHash)).toEqual([t0]);
+  });
+
+  it("review M4: a trader that starts a later release before its earlier release's spend.info went out sends it first", async () => {
+    const amount = XMR;
+    const { t, escrow } = await funded(amount);
+    const buyer = await wallet();
+    const seller = await wallet();
+    const t0 = await firstRelease(t, { kind: 'release', to: [{ address: buyer.address, amountAtomic: amount }], builder: 'seller', cosigner: 'buyer' });
+    const lateAmount = 250_000_000_000n;
+    await late(t, escrow, lateAmount, ['mod']);
+    // As if the seller's export of its spend.info had not happened yet (the next tick's work).
+    await t.parties.seller.stop();
+    const st = t.stores.seller.current()!;
+    const { ['spend.info:0']: _info, ['spend.claim:0']: _claim, ...sent } = st.sent;
+    t.stores.seller.set({ ...st, sent });
+    const L1 = laterRelease([{ address: seller.address, amountAtomic: lateAmount }], t0);
+    const order: string[] = [];
+    t.stores.seller.onSave = (x) => {
+      if (x.sent['spend.info:0'] && !order.includes('spend.info')) order.push('spend.info');
+      if (x.sent[`state.export:${releaseTag(L1)}.1`] && !order.includes('export')) order.push('export');
+    };
+    t.parties.seller = kit.startParty(t, 'seller').party;
+    const [, s] = await mining(Promise.all([t.parties.mod.settle(L1), t.parties.seller.settle(L1)]));
+    expect(s).toMatch(/^[0-9a-f]{64}$/);
+    expect(order).toEqual(['spend.info', 'export']);
+  });
+
+  it('review I2: a saved history that is not a list of releases is refused on load (bad-state)', async () => {
+    const amount = XMR;
+    const { t } = await funded(amount);
+    await t.parties.seller.stop();
+    t.stores.seller.set({ ...t.stores.seller.current()!, releases: { not: 'a list' } } as unknown as PartyState);
+    t.parties.seller = kit.startParty(t, 'seller').party;
+    await expect(t.parties.seller.ready()).rejects.toMatchObject({ code: 'bad-state' });
   });
 });
