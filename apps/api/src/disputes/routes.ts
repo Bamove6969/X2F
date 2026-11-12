@@ -320,7 +320,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
           d.code,
           { beforeId: entry.id },
         );
-        // NEEDS_TASK_25_LIEN_ON_APPEAL: the appellant's round-1 lien is suspended here (Task 25).
+        // Task 25 (J-06): the appellant's own round-1 lien is suspended by withDispute's lien rules
+        // (disputes/lien.ts) in this same transaction, once this change is accepted.
         return applyDispute(d, { type: 'appeal', involved: [...involved] }, by, now, s);
       });
     } catch (err) {

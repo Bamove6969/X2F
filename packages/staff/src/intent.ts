@@ -7,7 +7,8 @@ import { sha256, toHex, utf8 } from './sha256.js';
 export type EscrowOutcome = 'release-to-buyer' | 'refund-to-seller';
 /**
  * How a dispute after a refund can end (A6). `seller-sends-xmr` and `seller-returns-fiat` order
- * restitution the escrow cannot pay, so they put a lien on the seller at publish (Task 25).
+ * restitution the escrow cannot pay. `seller-sends-xmr` puts a lien on the seller at publish (Task
+ * 25, `lienSteps`); `seller-returns-fiat` does not yet (NEEDS_OWNER_FIAT_LIEN in lien.ts).
  */
 export type AfterRefundOutcome = 'seller-sends-xmr' | 'seller-returns-fiat' | 'no-action';
 export type RulingOutcome = EscrowOutcome | AfterRefundOutcome;

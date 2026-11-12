@@ -57,3 +57,13 @@ export {
 } from './dispute.js';
 export { appealReviewers, involvedIn, type InvolvementEntry } from './appealReviewers.js';
 export { INCIDENT_ALPHABET, INCIDENT_ID_LENGTH, incidentCheckChar, isIncidentId, normalizeIncidentId } from './incident.js';
+export {
+  lienCreditor,
+  lienSteps,
+  type LienCause,
+  type LienFacts,
+  type LienRef,
+  type LienSide,
+  type LienStatus,
+  type LienStep,
+} from './lien.js';

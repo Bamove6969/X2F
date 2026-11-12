@@ -73,16 +73,6 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     expect(/feeOwed|fees_owed/.test(routes), 'the dispute view sends the owed fee: check parseDispute against it').toBe(false);
   });
 
-  it('NEEDS_TASK_25_LIENS: the appeal lines promise a lien that Plan 4 Task 25 builds', () => {
-    // Lead review 7 Nov: rules.ts overturnLien and appealSentText tell the receiver an overturn
-    // gives them a lien ("You can't trade until you pay the XMR back"). No lien exists yet. When
-    // Task 25 lands (a liens table): check that an overturn really places one on the receiver, that
-    // it blocks trading as the line says, and that the amount it names is what was paid out (the
-    // payout, not the trade amount, on a buyer's ad); then delete this.
-    const migrations = readdirSync(ROOT + 'apps/api/migrations').join('\n');
-    expect(/lien/i.test(migrations), 'liens landed: check the lien lines in screens/dispute/rules.ts').toBe(false);
-  });
-
   it('NEEDS_TASK_12_TX_PROOF: the seller-sends-xmr proof form is shown only with a handler', () => {
     // Plan 4 Task 15 (A6/A8): the seller sends the XMR and proves it (tx hash, tx key). No API route
     // takes the proof yet, and the view does not carry the buyer's address, so DisputeScreen passes no

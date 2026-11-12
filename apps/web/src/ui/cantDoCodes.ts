@@ -74,9 +74,10 @@ export const CANT_DO_CODES = [
   'vendor-needs-key',
   // Plan 5 Task 3: rate (or skip rating) your last trade first (the rate-first gate, spec 5.1).
   'review-pending',
-  // Guessed for refusals whose API tasks are not on the main line yet (Plan 4's lien and trade
-  // ban): check them when those land.
+  // Plan 4 Task 25 (J-06): an active lien from a dispute (409 `lien` on post, relist, take and set-up).
   'lien',
+  // Guessed for a refusal whose API task is not on the main line yet (Plan 4's trade ban): check it
+  // when it lands.
   'trade-ban',
   // Plan 4 Task 4: a staff member's login hours (a staff login, and a staff session when the
   // window closes). Classified here for the error-code test; its words come with the staff web app
@@ -289,6 +290,8 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       return `This offer needs at least ${o.minTrades} completed ${o.minTrades === 1 ? 'trade' : 'trades'}.`;
     case 'trading-hold':
       return 'Your account is on a trading hold while a dispute is open, so it cannot start trades.';
+    case 'lien':
+      return "Your account has a lien from a dispute, so it can't start trades until you pay back what the ruling says you owe."; // COPY-UNSIGNED (J-06, owner D-008: no trading until the lien is repaid)
     case 'already-waiting':
       return 'You already have a trade on this offer waiting to be funded.';
     case 'offer-busy':
@@ -346,6 +349,8 @@ export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null):
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
+    case 'lien':
+      return "Your account has a lien from a dispute, so you can't post offers until you pay back what the ruling says you owe."; // COPY-UNSIGNED (J-06)
     case 'too-many-offers':
       return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
     case 'launch-cap':
@@ -407,6 +412,8 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
       return 'Only vendor accounts can turn offers on. Switch to a vendor account in Settings, Account type.';
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
+    case 'lien':
+      return 'Your account has a lien from a dispute, so your offers stay off until you pay back what the ruling says you owe.'; // COPY-UNSIGNED (J-06)
     case 'too-many-offers':
       // C2-A1: the cap is per side now (owner 2026-11-01), not per market. COPY-UNSIGNED
       return n === 1
@@ -424,6 +431,8 @@ export function myOffersCantDoRow(code: CantDoCode): string {
       return 'Stayed off: only vendor accounts can turn offers on.';
     case 'trading-hold':
       return 'Stayed off: your account has a trading hold.';
+    case 'lien':
+      return 'Stayed off: your account has a lien.'; // COPY-UNSIGNED (J-06)
     case 'too-many-offers':
       return 'Stayed off: over the offer limit.'; // C2-A1: per side, not per market. COPY-UNSIGNED
     default:
@@ -471,6 +480,7 @@ export const TRADING_HOLD_CODE = 'trading-hold' satisfies CantDoCode;
 export const MY_OFFERS_HIDDEN = {
   'trading-paused': 'On, hidden while trading is paused',
   'trading-hold': 'On, hidden while your account has a trading hold',
+  'lien': 'On, hidden while your account has a lien', // COPY-UNSIGNED (J-06, owner D-008)
   'review-pending': 'On, hidden until you rate your last trade', // COPY-UNSIGNED (Plan 5 Task 3 review M3)
   'method-unavailable': "On, hidden: this payment method isn't available right now",
   // COPY-UNSIGNED (J-16; Task 34 review M4): none of the offer's currencies has a market price now.
