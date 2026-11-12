@@ -489,6 +489,15 @@ export const TOO_MANY_APPROVALS_CODE = 'too-many-approvals' satisfies CantDoCode
 export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
 
 /**
+ * S-026 (owner 30 Oct; lead window N50, N55): during a recovery hold X2F reaches the person only on
+ * Matrix, Telegram or a secure Jabber account set up before the hold (D-064: staff end a hold by
+ * Jabber only on an address proven before it began). Every hold message carries it, so a message
+ * that arrives any other way during the hold can be recognised as not from X2F. COPY-UNSIGNED
+ */
+export const HOLD_CONTACT_TEXT =
+  'While the hold is on, X2F will contact you only on Matrix, Telegram or the secure Jabber account you set up before the hold.';
+
+/**
  * 403 `recovery-hold`: the account's 24-hour hold (hold model v3: only a recovery-code login starts
  * one; a passkey, security key or PGP key the account held before it ends it, an authenticator
  * code does not; owner 2 Nov and 6 Nov 2026, Q81). `when` is "until Tue 3:05 PM" or "for a day".
@@ -496,7 +505,7 @@ export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
 export function holdText(when: string): string {
   // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: held trades
   // are paused for the account's own sessions too, owner G7; the old "can still be finished" was wrong).
-  return `Your account is on a 24-hour hold after a login with a recovery code, so new trades, wallet changes and login changes wait ${when}. Your open trades are paused until the hold ends or a moderator decides. Logging in with a passkey, a security key or a PGP key you had before the hold ends it.`;
+  return `Your account is on a 24-hour hold after a login with a recovery code, so new trades, wallet changes and login changes wait ${when}. Your open trades are paused until the hold ends or a moderator decides. Logging in with a passkey, a security key or a PGP key you had before the hold ends it. ${HOLD_CONTACT_TEXT}`;
 }
 
 /**
@@ -509,7 +518,7 @@ export function holdText(when: string): string {
 export function holdLoginText(when: string): string {
   // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: no backup
   // login meanwhile, as the used code is spent and its replacement sealed; held trades are paused).
-  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with a recovery code, and a login like this one waits until the hold ends. If you had a passkey, a security key or a PGP key set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. Your open trades are paused until the hold ends or a moderator decides.`;
+  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with a recovery code, and a login like this one waits until the hold ends. If you had a passkey, a security key or a PGP key set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. Your open trades are paused until the hold ends or a moderator decides. ${HOLD_CONTACT_TEXT}`;
 }
 
 /** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */

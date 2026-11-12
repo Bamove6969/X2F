@@ -219,6 +219,8 @@ export interface FormItem {
   kind: 'complaint' | 'feedback' | 'recommendation';
   text: string;
   accountId: string | null;
+  /** D-058: the sender's public display name (never the login name); null for an anonymous row. */
+  accountName: string | null;
   from: string | null;
   createdOn: string;
 }
