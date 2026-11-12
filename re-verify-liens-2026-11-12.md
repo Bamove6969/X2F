@@ -94,3 +94,16 @@ The new "stands" expectation (`fee-owed` on the buyer) is not new behaviour. f97
 - Matrix probe (tsx, scratch): 4,656 runs, 0 failures. The mutation run: 2,024 failures.
 
 Not run: the other API suites (take, offers, offersBulk, schema, the rest of disputes), web, Playwright, `npm run check`, anything Monero. The commit touches only the two lien sources and their tests.
+
+## Follow-up (lead request): N2 and N3 fixed, merged into rulings
+- `wip/lead-liens` 3e85b068 (tests only, on f3f238c2):
+  - N3: the "Decision stands after the seller paid" pure test now cites g63 (poster pays) and owner question O3 instead of D-062.
+  - N2: a new API test, `re-verify N2`: a seller's ad, liens on at publish and off at finality. It checks that no `fees_owed` row is written, that the lien keeps fee F and stays `active`, and that the log holds only `lien.placed`.
+  - Mutation check: with round-1 finality keyed on the flag instead of `round1Carries`, the new test fails.
+- `wip/lead-rulings` beb759a8: merges 3e85b068 onto 601bcc8f, the evidenceSha256 head pushed by another helper while I worked.
+  - My first merge, on 7e36d13e, was not a fast-forward, so I did not push it. I redid the merge on the new head; nothing was forced.
+  - The merge touches only the two lien test files.
+- Tests (`flock ~/x2f-comms/check.lock`):
+  - liens 3e85b068: staff `lien.test.ts` 42/42, API `disputes/lien.test.ts` 28/28
+  - rulings beb759a8: staff `lien.test.ts` 42/42, API `disputes/lien.test.ts` + `disputes/rulings.test.ts` 46/46
+- Not changed, and possibly worth the same citation fix later: other test names cite D-062 for a buyer poster who did not lose (`packages/staff/test/lien.test.ts:143`, `apps/api/test/disputes/lien.test.ts:155` and `:202`). They charge the winner under g63, which is the same O3 question.
