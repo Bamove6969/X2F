@@ -142,3 +142,14 @@ Gift cards (all "nothing to send", except Amazon's optional delivery email). For
 4. **SPEI:** add the card-number and phone boxes now, or wait until the Banxico circular is checked?
 5. Sign the label changes: NEQUI, POSTEPAY, LYDIA, ALI_PAY, WECHAT_PAY, ESSO.
 6. Sign the added optional boxes: WORLDREMIT address, CASH_AT_ATM phone, LYDIA username.
+
+## Follow-up: applied on `wip/lead-payee-fields-2` 20de07e8 (from main 8246e64b)
+- **SPEI confirmed by the circular itself:** Banxico Circular 10/2026, which amends Circular 3/2012 (DOF 17 Jun 2026; https://sidof.segob.gob.mx/notas/docFuente/5790863).
+  - Art. 17 Ter IV obliges institutions to accept a transfer order that names the beneficiary account by its CLABE, by "los dieciséis dígitos de la tarjeta de débito", or by "los diez dígitos del número de línea de telefonía móvil" linked to it.
+  - Fr. III obliges institutions to link a mobile number to a level 2, 3 or 4 account when the holder asks; for a level 1 account it is optional.
+  - Deadline: 14 Dec 2026.
+  - Both boxes were added as optional, and SPEI joined the coverage test's card-number list.
+- Applied: CASH_AT_ATM, NEQUI, WORLDREMIT, POSTEPAY, LYDIA, ALI_PAY, WECHAT_PAY, the ESSO catalogue name, and the notes for MONESE and CASH_DEPOSIT.
+- Confidence: every one of the 62 rows records its recheck in `source`. The doc was regenerated: 97 high, 29 medium, 1 low.
+- Left for the owner: CAPITUAL, PAPARA, CANADIAN_TIRE_GIFT_CARD.
+- PAY_DETAILS_V stays at 2, because the payload shape is unchanged.
