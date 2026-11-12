@@ -39,7 +39,7 @@
  * Task 23's `setTradeChat` seam takes (`{ code, name, methodId }`); `OfferChatPanel` opens the
  * pre-trade chat on an offer (the quote's Chat button).
  */
-import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
+import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payNoteFor, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
@@ -61,6 +61,8 @@ export const CHAT_CLOSED = 'This chat has been closed.';
 /** Review I2: a line this device took earlier whose envelope the server no longer serves as it was. */
 // COPY-UNSIGNED (chat shred review I2: the gap line). not-a-refusal: a note in place of a chat line, not a rule the user ran into
 export const MISSING_LINE = 'A message you saw earlier is no longer on the server.';
+// COPY-UNSIGNED (review payee-fields-2 m-4): the payer's line for a package this device could not show. not-a-refusal: a note in place of a chat line, not a rule the user ran into
+export const UNREADABLE_PAY_LINE = "Their payment details couldn't be shown. Ask them to send again.";
 /** How often an open panel syncs with no live event: quickly while the chat is being secured. */
 export const CHAT_POLL_MS = { waiting: 3_000, ready: 15_000 } as const;
 
@@ -254,6 +256,10 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
               {/* A line this device showed before that the server no longer serves (review I2): a gap, not a silence. */}
               {l.pay !== undefined ? (
                 <PayCard pay={l.pay} />
+              ) : l.unreadablePay === true ? (
+                <span className="x2f-chat__text" data-pay-unreadable="">
+                  {UNREADABLE_PAY_LINE}
+                </span>
               ) : (
                 <span className="x2f-chat__text">
                   {l.missing ? (
@@ -304,7 +310,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
         payeeGivesNothing(pay.methodId) ? (
           // Review F1: like the boxes' Send, only once the escrow is secured (owner Q12).
           snap.paySecured ? (
-            // COPY-UNSIGNED (payee fields, 10 Nov 2026): a gift card, ATM or face-to-face cash method has no boxes.
+            // COPY-UNSIGNED (payee fields, 10 Nov 2026): a gift card or face-to-face cash method has no boxes.
             <p className="x2f-chat__pay-hint" data-pay-nothing="">
               Nothing to send: the buyer sends the card or cash details here in the chat.
             </p>
@@ -421,6 +427,7 @@ function payErrorText(e: unknown, spec: readonly PayFieldSpec[]): string {
  */
 function PayBoxes({ chat, name, methodId, secured, onSent }: { chat: string; name: string; methodId: string; secured: boolean; onSent: (s: ChatSnapshot) => void }) {
   const spec = payFieldsFor(methodId);
+  const note = payNoteFor(methodId);
   const whyId = useId();
   const [values, setValues] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
@@ -433,10 +440,13 @@ function PayBoxes({ chat, name, methodId, secured, onSent }: { chat: string; nam
     };
   }, []);
   const groups = groupsOf(spec);
+  // Review payee-fields-2 m-3: a method whose boxes are all optional (ATM cash, Amazon) has nothing to
+  // send until one is filled; an empty package is refused, so no Send is offered for it.
+  const nothingYet = spec.length > 0 && spec.every((f) => f.need === 'no') && spec.every((f) => (values[f.key] ?? '').trim() === '');
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     // Owner Q12: nothing is sent before the escrow is secured (the button is closed; a submit by key is not).
-    if (sending || !secured) return;
+    if (sending || !secured || nothingYet) return;
     setError(null);
     let pay: PayDetailsPayload;
     try {
@@ -461,6 +471,12 @@ function PayBoxes({ chat, name, methodId, secured, onSent }: { chat: string; nam
       {/* COPY-UNSIGNED (J-08): the boxes' title and lead. */}
       <p className="x2f-chat__pay-title">Your payment details</p>
       <p className="x2f-chat__pay-lead">Fill these in and send them to {name} here, encrypted.</p>
+      {/* COPY-UNSIGNED (12 Nov recheck): the method's own note, from the table. */}
+      {note !== undefined ? (
+        <p className="x2f-chat__pay-hint" data-pay-note="">
+          {note}
+        </p>
+      ) : null}
       {spec.map((f) => {
         const id = `pay-${chat}-${f.key}`;
         const common = {
@@ -487,9 +503,16 @@ function PayBoxes({ chat, name, methodId, secured, onSent }: { chat: string; nam
           {oneOfHint(labels)}
         </p>
       ))}
-      <button type="submit" className="x2f-chat__send" disabled={!secured} aria-disabled={sending ? 'true' : undefined} aria-describedby={secured ? undefined : whyId}>
-        Send payment details
-      </button>
+      {nothingYet ? (
+        // COPY-UNSIGNED (payee fields, 10 Nov 2026; review payee-fields-2 m-3): every box is optional and none is filled.
+        <p className="x2f-chat__pay-hint" data-pay-nothing="">
+          Nothing to send: the buyer sends the card or cash details here in the chat.
+        </p>
+      ) : (
+        <button type="submit" className="x2f-chat__send" disabled={!secured} aria-disabled={sending ? 'true' : undefined} aria-describedby={secured ? undefined : whyId}>
+          Send payment details
+        </button>
+      )}
       {secured ? null : (
         <p id={whyId} className="x2f-chat__pay-hint" data-pay-block="not-secured">
           {PAY_NOT_SECURED}

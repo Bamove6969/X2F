@@ -16,9 +16,12 @@
  * DuitNow combined boxes, CUSTOM's multi-line box). Each row's `source` names the confidence, the
  * first source URL and any lead decision. Where a method needs "A or B" the fields share a `oneOf`
  * group: at least one of the group must be filled; a field the payer can do without is optional
- * (`need: 'no'`). Gift cards, ATM cash and face-to-face cash are `payeeGivesNothing`: the buyer
- * sends the card or cash details in the chat, and the seller is shown no boxes.
- * docs/payment-fields-2026-11-10.md lists every row for the owner's wording page.
+ * (`need: 'no'`). Gift cards and face-to-face cash are `payeeGivesNothing`: the buyer sends the card
+ * or cash details in the chat, and the seller is shown no boxes (ATM cash was too until the 12 Nov
+ * recheck gave it an optional phone box).
+ * docs/payment-fields-2026-11-10.md lists every row for the owner's wording page. The 12 Nov recheck
+ * (comms research-payee-fields-confirm-2026-11-12, lead 12 Nov) raised confidence on 62 rows, appended
+ * to each row's `source`, and applied its corrections; CASH_AT_ATM now has one optional box.
  *
  * Open owner questions on what is required vs optional are listed in the helper's report, not
  * decided here.
@@ -47,10 +50,15 @@ export interface PayFieldsSpec {
   /** The boxes, in order. Empty only when `payeeGivesNothing`. */
   fields: readonly PayFieldSpec[];
   /**
-   * The payee has nothing to send (gift cards, ATM and face-to-face cash): the buyer sends the card
+   * The payee has nothing to send (gift cards, face-to-face cash): the buyer sends the card
    * or cash details in the chat. The seller is shown a line in place of the boxes.
    */
   payeeGivesNothing?: true;
+  /**
+   * A line for the payee shown with the boxes (12 Nov recheck): something the method's own rules mean
+   * they should know, e.g. a reference to ask for. COPY-UNSIGNED.
+   */
+  note?: string;
   /** The research row this was built from: its confidence, first source URL, and any lead decision. */
   source: string;
 }
@@ -77,7 +85,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   // Payment apps. COPY-UNSIGNED (payee-fields research 2026-11-10): every label in this block.
   UPHOLD: {
     fields: [one('reach', 'email', 'Email on the Uphold account', 'email'), one('reach', 'username', 'Uphold username', 'account'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://support.uphold.com/hc/en-us/articles/360038596552',
+    source: 'research 2026-11-10 (medium): https://support.uphold.com/hc/en-us/articles/360038596552; recheck 2026-11-12 (medium): https://gts.ai/defi/how-to-send-crypto-on-uphold',
   },
   MONEY_BEAM: {
     fields: [yes('name', 'Name'), one('reach', 'phone', 'Phone number', 'phone'), one('reach', 'email', 'Email', 'email')],
@@ -89,19 +97,19 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   GCASH: {
     fields: [yes('phone', 'GCash mobile number', 'phone'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://help.gcash.com/hc/articles/360017566614',
+    source: 'research 2026-11-10 (medium): https://help.gcash.com/hc/articles/360017566614; recheck 2026-11-12 (high): https://help.gcash.com/hc/en-us/articles/47623669730073-What-is-Express-Send',
   },
   SWISH: {
     fields: [yes('phone', 'Swish mobile number', 'phone'), no('name', 'Name on the account')],
     source: 'research 2026-11-10 (high): https://www.swedbank.se/privat/digitala-tjanster/swish/fragor-och-svar-om-swish',
   },
   ALI_PAY: {
-    fields: [yes('alipayId', 'Alipay ID (phone number or email)', 'account'), yes('name', 'Full name on the Alipay account')],
-    source: 'research 2026-11-10 (medium): https://wise.com/help/articles/2kTApouGnjRj6JM1yduMIL/sending-cny-via-alipay',
+    fields: [yes('alipayId', 'Alipay ID (phone number or email)', 'account'), yes('name', 'Full name as registered on Alipay (in pinyin or Latin letters)')],
+    source: 'research 2026-11-10 (medium): https://wise.com/help/articles/2kTApouGnjRj6JM1yduMIL/sending-cny-via-alipay; recheck 2026-11-12 (medium): https://support.orbitremit.com/hc/en-us/articles/360012806657-Paying-to-an-Alipay-ID',
   },
   WECHAT_PAY: {
-    fields: [one('reach', 'weChatId', 'WeChat ID', 'account'), one('reach', 'phone', 'Phone number linked to WeChat', 'phone'), no('name', 'Real name (as verified in WeChat Pay)')],
-    source: 'research 2026-11-10 (low): https://www.expatden.com/china/wechat-pay/',
+    fields: [one('reach', 'weChatId', 'WeChat ID', 'account'), one('reach', 'phone', 'Phone number linked to WeChat', 'phone'), no('name', 'Real name as verified in Weixin Pay (pinyin)')],
+    source: 'research 2026-11-10 (low): https://www.expatden.com/china/wechat-pay/; recheck 2026-11-12 (medium): https://www.westernunion.com/sg/en/send-to-wechat.html',
   },
   ZELLE: {
     fields: [one('contact', 'email', 'Email', 'email'), one('contact', 'phone', 'US phone number', 'phone'), no('name', 'Name on the account')],
@@ -109,7 +117,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   MERCADO_PAGO: {
     fields: [one('reach', 'cvu', 'CVU / CBU', 'account'), one('reach', 'alias', 'Alias', 'account'), one('reach', 'email', 'Email', 'email'), one('reach', 'phone', 'Mobile number', 'phone'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.iproup.com/finanzas/31784-como-transferir-y-pedir-plata-por-mercado-pago; lead: Argentina flow (CVU, alias, email or phone); Brazil pays by Pix and Mexico by CLABE, a later per-country refinement',
+    source: 'research 2026-11-10 (medium): https://www.iproup.com/finanzas/31784-como-transferir-y-pedir-plata-por-mercado-pago; lead: Argentina flow (CVU, alias, email or phone); Brazil pays by Pix and Mexico by CLABE, a later per-country refinement; recheck 2026-11-12 (medium): https://www.global66.com/blog/enviar-dinero-por-mercado-pago/',
   },
   MOMO: {
     fields: [yes('phone', 'MoMo phone number', 'phone'), no('name', 'Name on the account')],
@@ -117,7 +125,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   ADVANCED_CASH: {
     fields: [one('reach', 'walletId', 'Volet wallet number', 'account'), one('reach', 'email', 'Email registered with Volet', 'email'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://profinvestment.com/volet/',
+    source: 'research 2026-11-10 (medium): https://profinvestment.com/volet/; recheck 2026-11-12 (medium): https://volet.gitbook.io/volet',
   },
   TRANSFERWISE: {
     fields: [yes('name', 'Name on the account'), one('reach', 'wisetag', 'Wisetag', 'account'), one('reach', 'email', 'Email registered with Wise', 'email'), one('reach', 'phone', 'Phone number registered with Wise', 'phone'), one('reach', 'iban', 'IBAN (EUR and other IBAN currencies)', 'iban'), one('reach', 'ukAccount', 'Sort code and account number (GBP)', 'account'), one('reach', 'otherBank', 'Other bank details for the currency')],
@@ -133,27 +141,28 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   PAXUM: {
     fields: [yes('email', 'Paxum email', 'email'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://home-internal.paxum.com/faq/how-paxum-works',
+    source: 'research 2026-11-10 (medium): https://home-internal.paxum.com/faq/how-paxum-works; recheck 2026-11-12 (medium): https://api.paxum.com',
   },
   PAYTM: {
     fields: [one('reach', 'upiId', 'UPI ID', 'account'), one('reach', 'phone', 'Mobile number (UPI-linked)', 'phone'), one('reach', 'bankAccount', 'Bank account number and IFSC', 'account'), no('name', 'Name on the account')],
     source: 'research 2026-11-10 (high): https://paytm.com/support/money-transfers/how-to-send-money-on-paytm-4-quick-methods-explained',
   },
   NEQUI: {
-    fields: [yes('phone', 'Nequi mobile number', 'phone'), no('breBKey', 'Bre-B key (if different)', 'account'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.bbva.com.co/personas/blog/educacion-financiera/cuentas/transferencia-nequi.html',
+    fields: [yes('phone', 'Nequi mobile number', 'phone'), no('breBKey', 'Bre-B key (phone, email or the key your bank gave you)', 'account'), no('name', 'Name on the account')],
+    source: 'research 2026-11-10 (medium): https://www.bbva.com.co/personas/blog/educacion-financiera/cuentas/transferencia-nequi.html; recheck 2026-11-12 (medium): https://www.bbva.com.co/personas/servicios-digitales/bre-b.html',
   },
   BIZUM: {
     fields: [yes('phone', 'Spanish mobile number', 'phone'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.bbva.es/finanzas-vistazo/ef/banca-digital/enviar-dinero-bizum.html',
+    source: 'research 2026-11-10 (medium): https://www.bbva.es/finanzas-vistazo/ef/banca-digital/enviar-dinero-bizum.html; recheck 2026-11-12 (high): https://www.bbva.es/finanzas-vistazo/ef/banca-digital/enviar-dinero-bizum.html',
   },
   CAPITUAL: {
     fields: [yes('accountNr', 'Capitual account number', 'account'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (low, status unclear): https://boldsuck.codeberg.page/haveno-docs/the-project/payment_methods/Capitual/; lead: kept, low confidence; owner question p11-145 on keeping the method',
+    source: 'research 2026-11-10 (low, status unclear): https://boldsuck.codeberg.page/haveno-docs/the-project/payment_methods/Capitual/; lead: kept, low confidence; owner question p11-145 on keeping the method; recheck 2026-11-12 (low, status flag: site live but B2B only): https://capitual.com',
   },
   MONESE: {
     fields: [yes('name', 'Name on the account'), one('reach', 'phone', 'Phone number (Monese to Monese)', 'phone'), one('reach', 'ukAccount', 'Sort code and account number (GBP)', 'account'), one('reach', 'iban', 'IBAN (EUR/RON)', 'iban')],
-    source: 'research 2026-11-10 (medium): https://support.monese.com/en/articles/99-what-s-considered-a-domestic-payment',
+    note: 'If the buyer pays from abroad, ask them to put your Monese ID in the payment reference.',
+    source: 'research 2026-11-10 (medium): https://support.monese.com/en/articles/99-what-s-considered-a-domestic-payment; recheck 2026-11-12 (high): https://support.monese.com/en/articles/91-can-i-use-my-multi-currency-iban-for-local-payments',
   },
   MPESA: {
     fields: [yes('phone', 'M-PESA phone number', 'phone'), no('name', 'Name on the account')],
@@ -165,7 +174,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   TIKKIE: {
     fields: [yes('paymentLink', 'Tikkie payment link', 'account'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.tikkie.me/faq',
+    source: 'research 2026-11-10 (medium): https://www.tikkie.me/faq; recheck 2026-11-12 (high): https://www.abnamro.nl/nl/prive/internet-en-mobiel/slim-bankieren/tikkie.html',
   },
   STRIKE: {
     fields: [one('reach', 'username', 'Strike username', 'account'), one('reach', 'lightningAddress', 'Lightning address', 'account')],
@@ -185,7 +194,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   BLIK: {
     fields: [yes('phone', 'Polish mobile number', 'phone'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.mbank.pl/komunikaty/klienci-indywidualni/6977-przelewy-na-numer-telefonu-blik-wszystko-co-musisz-wiedziec/',
+    source: 'research 2026-11-10 (medium): https://www.mbank.pl/komunikaty/klienci-indywidualni/6977-przelewy-na-numer-telefonu-blik-wszystko-co-musisz-wiedziec/; recheck 2026-11-12 (high): https://www.mbank.pl/indywidualny/aplikacja-i-serwis/platnosci/przelewy-na-numer-telefonu/',
   },
   VIPPS_MOBILEPAY: {
     fields: [yes('phone', 'Vipps / MobilePay mobile number', 'phone'), no('name', 'Name on the account')],
@@ -197,15 +206,15 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   PAPARA: {
     fields: [yes('name', 'Name on the account'), one('reach', 'paparaNo', 'Papara number', 'account'), one('reach', 'phone', 'Turkish mobile number', 'phone'), one('reach', 'email', 'Email', 'email'), one('reach', 'iban', 'IBAN', 'iban')],
-    source: 'research 2026-11-10 (medium): https://shiftdelete.net/ziraat-hesabindan-papara-hesabina-para-gonderme-rehberi?amp=1; lead: kept; TCMB revoked the e-money licence 31 Oct 2025, a court stayed it 9 Dec 2025, operations reported resumed 22 Jan 2026',
+    source: 'research 2026-11-10 (medium): https://shiftdelete.net/ziraat-hesabindan-papara-hesabina-para-gonderme-rehberi?amp=1; lead: kept; TCMB revoked the e-money licence 31 Oct 2025, a court stayed it 9 Dec 2025, operations reported resumed 22 Jan 2026; recheck 2026-11-12 (medium, status flag: under state trusteeship since 2025): https://thepaypers.com/fraud-and-fincrime/news/turkiye-reinstates-paparas-license-amid-money-laundering-probe',
   },
   WERO: {
     fields: [one('reach', 'phone', 'Mobile number registered for Wero', 'phone'), one('reach', 'email', 'Email registered for Wero', 'email'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://support.n26.com/en-de/payments-transfers-and-withdrawals/cards-and-online-payments/what-is-wero-and-how-do-i-use-it',
+    source: 'research 2026-11-10 (medium): https://support.n26.com/en-de/payments-transfers-and-withdrawals/cards-and-online-payments/what-is-wero-and-how-do-i-use-it; recheck 2026-11-12 (high): https://support.wero-wallet.eu/hc/en-us/articles/46163263600017-How-do-I-send-money-to-friends-and-family',
   },
   MB_WAY: {
     fields: [yes('phone', 'Portuguese mobile number', 'phone'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.cgd.pt/Site/Saldo-Positivo/o-banco-e-eu/Pages/mb-way-como-aderir-como-funciona.aspx',
+    source: 'research 2026-11-10 (medium): https://www.cgd.pt/Site/Saldo-Positivo/o-banco-e-eu/Pages/mb-way-como-aderir-como-funciona.aspx; recheck 2026-11-12 (high): https://www.cgd.pt/Particulares/Cartoes/Pages/App-MBWay.aspx',
   },
   PAYPAY: {
     fields: [one('reach', 'phone', 'Japanese mobile number', 'phone'), one('reach', 'paypayId', 'PayPay ID', 'account'), no('name', 'Name on the account')],
@@ -229,7 +238,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   APPLE_CASH: {
     fields: [one('reach', 'phone', 'US phone number', 'phone'), one('reach', 'email', 'Apple Account email', 'email'), no('name', 'Name')],
-    source: 'research 2026-11-10 (medium): https://support.apple.com/105013',
+    source: 'research 2026-11-10 (medium): https://support.apple.com/105013; recheck 2026-11-12 (high): https://support.apple.com/105013',
   },
   CHIME: {
     fields: [one('reach', 'chimesign', '$ChimeSign', 'account'), one('reach', 'phone', 'US phone number', 'phone'), one('reach', 'email', 'Email', 'email'), no('name', 'Name on the account')],
@@ -237,15 +246,15 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   PAYSEND: {
     fields: [yes('name', 'Full name (Latin letters)'), one('reach', 'cardNumber', 'Card number', 'account'), one('reach', 'iban', 'IBAN or account number', 'iban'), no('bic', 'SWIFT/BIC', 'account'), one('reach', 'wallet', 'Mobile wallet number', 'phone')],
-    source: 'research 2026-11-10 (medium): https://paysend.com/en/blog/how-to-make-first-paysend-transfer; lead: card number allowed as one option',
+    source: 'research 2026-11-10 (medium): https://paysend.com/en/blog/how-to-make-first-paysend-transfer; lead: card number allowed as one option; recheck 2026-11-12 (high): https://help.paysend.com/hc/en-us/articles/21058675269533-What-details-do-I-need-to-send-a-bank-transfer',
   },
   MTN_MOMO: {
     fields: [yes('phone', 'MTN MoMo number', 'phone'), yes('name', 'Registered name')],
-    source: 'research 2026-11-10 (medium): https://mtn.co.ug/momo/customer',
+    source: 'research 2026-11-10 (medium): https://mtn.co.ug/momo/customer; recheck 2026-11-12 (medium): https://www.mtn.com.af/?p=6995',
   },
   MIXX_BY_YAS: {
     fields: [yes('phone', 'Mixx by Yas mobile number', 'phone'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://yas.co.tz/?p=27235',
+    source: 'research 2026-11-10 (medium): https://yas.co.tz/?p=27235; recheck 2026-11-12 (medium): https://yas.co.tz/?p=27235',
   },
   CHIPPER_CASH: {
     fields: [yes('chipperTag', 'Chipper Tag', 'account'), no('phone', 'Phone number on the account', 'phone'), no('name', 'Name on the account')],
@@ -253,7 +262,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   EASYPAISA: {
     fields: [yes('phone', 'Easypaisa mobile account number', 'phone'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://easypaisa.com.pk/?p=1881',
+    source: 'research 2026-11-10 (medium): https://easypaisa.com.pk/?p=1881; recheck 2026-11-12 (high): https://www.westernunion.com/gb/en/providers/easypaisa.html',
   },
   AIRTM: {
     fields: [one('reach', 'email', 'Email registered with Airtm', 'email'), one('reach', 'username', 'Airtm username', 'account'), no('name', 'Name on the account')],
@@ -264,12 +273,12 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
     source: 'research 2026-11-10 (high): https://intercom.help/astropay-hc/en/articles/15084818-send-money-to-another-astropay-user',
   },
   LYDIA: {
-    fields: [one('reach', 'phone', 'Mobile number', 'phone'), one('reach', 'email', 'Email', 'email'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.lydia.me/en',
+    fields: [one('reach', 'phone', 'Mobile number', 'phone'), one('reach', 'email', 'Email', 'email'), one('reach', 'username', 'Lydia username', 'account'), no('name', 'Name on the account')],
+    source: 'research 2026-11-10 (medium): https://www.lydia.me/en; recheck 2026-11-12 (medium): https://www.presse-citron.net/applications/utilitaires/lydia-com/',
   },
   POSTEPAY: {
-    fields: [yes('name', 'Name on the account'), one('reach', 'phone', 'Mobile number (Postepay P2P)', 'phone'), one('reach', 'iban', 'IBAN (Postepay Evolution)', 'iban'), one('reach', 'cardNumber', 'Postepay card number', 'account')],
-    source: 'research 2026-11-10 (medium): https://www.poste.it/resources/bancoposta/pdf/trasparenza/FI_PE.pdf; lead: card number allowed as one option; codice fiscale never a box',
+    fields: [yes('name', 'Name on the account'), one('reach', 'phone', 'Mobile number or Postepay alias (P2P)', 'account'), one('reach', 'iban', 'IBAN (Postepay Evolution)', 'iban'), one('reach', 'cardNumber', 'Postepay card number', 'account')],
+    source: 'research 2026-11-10 (medium): https://www.poste.it/resources/bancoposta/pdf/trasparenza/FI_PE.pdf; lead: card number allowed as one option; codice fiscale never a box; recheck 2026-11-12 (medium): https://www.aranzulla.it/come-attivare-p2p-1536428.html',
   },
   PAYONEER: {
     fields: [yes('email', 'Payoneer email', 'email'), no('name', 'Name on the account')],
@@ -285,15 +294,15 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   REMITLY: {
     fields: [yes('name', 'Full legal name (as on ID / account)'), one('delivery', 'bankDetails', 'Bank details for your country'), one('delivery', 'mobileWallet', 'Mobile wallet number and provider'), one('delivery', 'cashPickup', 'Cash pickup city or agent'), no('phone', 'Phone number', 'phone'), no('address', 'Address', 'postal')],
-    source: 'research 2026-11-10 (medium): https://www.remitly.com/financial-glossary/recipient; lead: as researched (legal name, one delivery route)',
+    source: 'research 2026-11-10 (medium): https://www.remitly.com/financial-glossary/recipient; lead: as researched (legal name, one delivery route); recheck 2026-11-12 (medium): https://wise.com/ph/blog/receive-money-remitly',
   },
   WORLDREMIT: {
-    fields: [yes('name', 'Full name (as on ID / account)'), yes('phone', 'Mobile number', 'phone'), one('delivery', 'bankDetails', 'Bank details for your country'), one('delivery', 'mobileWallet', 'Mobile money number and provider'), one('delivery', 'cashPickup', 'Cash pickup city'), no('email', 'Email', 'email')],
-    source: 'research 2026-11-10 (medium): https://www.worldremit.com/en/blog/product/use-worldremit; lead: as researched (legal name, one delivery route)',
+    fields: [yes('name', 'Full name (as on ID / account)'), yes('phone', 'Mobile number', 'phone'), one('delivery', 'bankDetails', 'Bank details for your country'), one('delivery', 'mobileWallet', 'Mobile money number and provider'), one('delivery', 'cashPickup', 'Cash pickup city'), no('email', 'Email', 'email'), no('address', 'Address', 'postal')],
+    source: 'research 2026-11-10 (medium): https://www.worldremit.com/en/blog/product/use-worldremit; lead: as researched (legal name, one delivery route); recheck 2026-11-12 (high): https://www.worldremit.com/en/blog/product/use-worldremit',
   },
   XOOM: {
     fields: [yes('name', 'Full name (as on bank account / ID)'), one('delivery', 'bankDetails', 'Bank name and account number / IBAN'), one('delivery', 'mobileWallet', 'Mobile wallet number'), one('delivery', 'cashPickup', 'Cash pickup city'), no('phone', 'Phone number', 'phone'), no('address', 'Address', 'postal')],
-    source: 'research 2026-11-10 (medium): https://help.xoom.com/s/article/what-are-the-bank-deposit-requirements-in-el-salvador; lead: bank, wallet or cash pickup only; no debit-card payout box',
+    source: 'research 2026-11-10 (medium): https://help.xoom.com/s/article/what-are-the-bank-deposit-requirements-in-el-salvador; lead: bank, wallet or cash pickup only; no debit-card payout box; recheck 2026-11-12 (high): https://help.xoom.com/s/article/what-information-about-my-contact-is-needed-to-send-a-transaction',
   },
   // Bank transfers. COPY-UNSIGNED (payee-fields research 2026-11-10): every label in this block.
   SEPA: {
@@ -305,8 +314,8 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
     source: 'research 2026-11-10 (high): https://www.europeanpaymentscouncil.eu/what-we-do/sepa-instant-credit-transfer; lead: additions as researched',
   },
   SPEI: {
-    fields: [yes('name', 'Name on the account'), yes('clabe', 'CLABE (18 digits)', 'account'), no('bankName', 'Bank')],
-    source: 'research 2026-11-10 (medium): https://www.banxico.org.mx/servicios/sistema-pagos-electronicos-in.html; lead: CLABE only, no debit-card option',
+    fields: [yes('name', 'Name on the account'), yes('clabe', 'CLABE (18 digits)', 'account'), no('bankName', 'Bank'), no('cardNumber', 'Debit card number (16 digits)', 'account'), no('phone', 'Mobile number linked to the account (10 digits)', 'phone')],
+    source: 'research 2026-11-10 (medium): https://www.banxico.org.mx/servicios/sistema-pagos-electronicos-in.html; lead 12 Nov: debit card and mobile added as optional receiving identifiers, Banxico Circular 10/2026 Art. 17 Ter IV (in force by 14 Dec 2026), replacing the 10 Nov CLABE-only call; recheck 2026-11-12 (high): https://sidof.segob.gob.mx/notas/docFuente/5790863',
   },
   FASTER_PAYMENTS: {
     fields: [yes('name', 'Name on the account'), yes('sortCode', 'Sort code', 'account'), yes('account', 'Account number', 'account'), no('reference', 'Payment reference to use')],
@@ -314,11 +323,11 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   NATIONAL_BANK: {
     fields: [yes('name', 'Name on the account'), yes('bankName', 'Bank name'), no('bankCode', 'Bank code / institution number', 'account'), no('branchCode', 'Branch code (sort code, routing, BSB, transit, agency)', 'account'), yes('account', 'Account number (or IBAN / CLABE)', 'account'), no('accountType', 'Account type')],
-    source: 'research 2026-11-10 (medium): https://github.com/haveno-dex/haveno/tree/master/core/src/main/java/haveno/core/payment/payload/BankAccountPayload.java; lead: name and account required, country extras optional, no country logic; holder tax/ID never a box',
+    source: 'research 2026-11-10 (medium): https://github.com/haveno-dex/haveno/tree/master/core/src/main/java/haveno/core/payment/payload/BankAccountPayload.java; lead: name and account required, country extras optional, no country logic; holder tax/ID never a box; recheck 2026-11-12 (medium): https://www.natwest.com/support-centre/banking-from-home/make-payments/what-payee-details-are-required-to-send-money-abroad.html',
   },
   JAPAN_BANK: {
     fields: [yes('bankName', 'Bank name'), no('bankCode', 'Bank code', 'account'), yes('branch', 'Branch name or number'), yes('accountType', 'Account type (futsu or toza)'), yes('account', 'Account number', 'account'), yes('name', 'Account holder name (katakana)')],
-    source: 'research 2026-11-10 (medium): https://www.zengin-net.jp/en/zengin_net/outline/',
+    source: 'research 2026-11-10 (medium): https://www.zengin-net.jp/en/zengin_net/outline/; recheck 2026-11-12 (medium): https://www.wise.com/help/articles/2932156/guide-to-jpy-transfers',
   },
   AUSTRALIA_PAYID: {
     fields: [yes('payId', 'PayID (phone, email, ABN or organisation ID)', 'account'), yes('name', 'Name shown for the PayID')],
@@ -326,11 +335,11 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   SAME_BANK: {
     fields: [yes('name', 'Name on the account'), yes('bankName', 'Bank name'), yes('account', 'Account number', 'account'), no('branchCode', 'Branch code', 'account'), no('accountType', 'Account type')],
-    source: 'research 2026-11-10 (medium): https://github.com/haveno-dex/haveno/tree/master/core/src/main/java/haveno/core/payment/payload/SameBankAccountPayload.java; lead: name and account required, country extras optional, no country logic; holder tax/ID never a box',
+    source: 'research 2026-11-10 (medium): https://github.com/haveno-dex/haveno/tree/master/core/src/main/java/haveno/core/payment/payload/SameBankAccountPayload.java; lead: name and account required, country extras optional, no country logic; holder tax/ID never a box; recheck 2026-11-12 (medium): https://www.natwest.com/support-centre/banking-from-home/make-payments/what-payee-details-are-required-to-send-money-abroad.html',
   },
   SPECIFIC_BANKS: {
     fields: [yes('name', 'Name on the account'), yes('bankName', 'Bank name'), yes('account', 'Account number', 'account'), no('branchCode', 'Branch code (sort code, routing, BSB, transit, agency)', 'account'), no('bankCode', 'Bank code', 'account'), no('accountType', 'Account type')],
-    source: 'research 2026-11-10 (medium): https://github.com/haveno-dex/haveno/tree/master/core/src/main/java/haveno/core/payment/payload/SpecificBanksAccountPayload.java; lead: name and account required, country extras optional, no country logic; holder tax/ID never a box',
+    source: 'research 2026-11-10 (medium): https://github.com/haveno-dex/haveno/tree/master/core/src/main/java/haveno/core/payment/payload/SpecificBanksAccountPayload.java; lead: name and account required, country extras optional, no country logic; holder tax/ID never a box; recheck 2026-11-12 (medium): https://www.natwest.com/support-centre/banking-from-home/make-payments/what-payee-details-are-required-to-send-money-abroad.html',
   },
   INTERAC_E_TRANSFER: {
     fields: [yes('name', 'Full name'), one('contact', 'email', 'Email', 'email'), one('contact', 'phone', 'Mobile number', 'phone')],
@@ -338,7 +347,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   PROMPT_PAY: {
     fields: [yes('promptPayId', 'PromptPay ID (mobile number or e-wallet ID)', 'account'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.bangkokbank.com/en/personal/digital-banking/promptpay; personal-ID rule: citizen ID and tax ID options left out of the label',
+    source: 'research 2026-11-10 (medium): https://www.bangkokbank.com/en/personal/digital-banking/promptpay; personal-ID rule: citizen ID and tax ID options left out of the label; recheck 2026-11-12 (high): https://www.bangkokbank.com/en/personal/digital-banking/promptpay',
   },
   NEFT: {
     fields: [yes('name', 'Name on the account'), yes('account', 'Account number', 'account'), yes('ifsc', 'IFSC', 'account'), no('bankName', 'Bank and branch name')],
@@ -350,11 +359,11 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   IMPS: {
     fields: [yes('name', 'Name on the account'), one('reach', 'accountIfsc', 'Account number and IFSC', 'account'), one('reach', 'phone', 'Mobile number linked to the account', 'phone'), no('mmid', 'MMID', 'account'), no('bankName', 'Bank name')],
-    source: 'research 2026-11-10 (medium): https://www.npci.org.in/what-we-do/imps/product-overview; lead: account number and IFSC in one box, so IFSC always comes with the account',
+    source: 'research 2026-11-10 (medium): https://www.npci.org.in/what-we-do/imps/product-overview; lead: account number and IFSC in one box, so IFSC always comes with the account; recheck 2026-11-12 (high): https://www.npci.org.in/PDF/npci/imps/Product-Booklet.pdf',
   },
   UPI: {
     fields: [one('reach', 'upiId', 'UPI ID', 'account'), one('reach', 'phone', 'Mobile number registered with UPI', 'phone'), one('reach', 'accountIfsc', 'Account number and IFSC', 'account'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://nationalbank.bank.in/english/upi-service.aspx',
+    source: 'research 2026-11-10 (medium): https://nationalbank.bank.in/english/upi-service.aspx; recheck 2026-11-12 (high): https://npci.org.in/what-we-do/upi/faqs',
   },
   PIX: {
     fields: [yes('pixKey', 'Pix key (phone, email, CPF/CNPJ or random key)', 'account'), no('name', 'Name on the account')],
@@ -362,7 +371,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   SWIFT: {
     fields: [yes('name', 'Name on the account'), yes('account', 'IBAN or account number', 'account'), yes('bic', 'BIC (SWIFT code)', 'account'), yes('address', 'Beneficiary address', 'postal'), no('bankName', 'Bank name'), no('localCode', 'Local bank code (if your country uses one)', 'account')],
-    source: 'research 2026-11-10 (medium): https://www.rocklandtrust.com/assets/files/yPcUEuue/International%20Wire%20Transfer%20information%20required.pdf; lead: beneficiary address required',
+    source: 'research 2026-11-10 (medium): https://www.rocklandtrust.com/assets/files/yPcUEuue/International%20Wire%20Transfer%20information%20required.pdf; lead: beneficiary address required; recheck 2026-11-12 (high): https://www.natwest.com/support-centre/banking-from-home/make-payments/what-payee-details-are-required-to-send-money-abroad.html',
   },
   ACH_TRANSFER: {
     fields: [yes('name', 'Name on the account'), yes('routing', 'Routing number (ABA)', 'account'), yes('account', 'Account number', 'account'), yes('accountType', 'Account type (checking or savings)'), no('bankName', 'Bank name')],
@@ -370,7 +379,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   DOMESTIC_WIRE_TRANSFER: {
     fields: [yes('name', 'Name on the account'), yes('address', 'Beneficiary address', 'postal'), yes('bankName', 'Bank name'), yes('routing', 'Wire routing number (ABA)', 'account'), yes('account', 'Account number', 'account')],
-    source: 'research 2026-11-10 (medium): https://www.frbservices.org/financial-services/wires',
+    source: 'research 2026-11-10 (medium): https://www.frbservices.org/financial-services/wires; recheck 2026-11-12 (high): https://www.adviacu.org/resources/banking-tools/wire-transfers/outgoing-domestic-transfers',
   },
   NIP: {
     fields: [yes('bankName', 'Bank name'), yes('account', 'Account number (NUBAN)', 'account'), yes('name', 'Name on the account')],
@@ -378,15 +387,15 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   PAGO_MOVIL: {
     fields: [yes('phone', 'Mobile number affiliated to Pago Móvil', 'phone'), yes('idNumber', 'Cédula or RIF', 'account'), yes('bank', 'Bank (name or 4-digit code)'), no('name', 'Full name')],
-    source: 'research 2026-11-10 (medium): https://finanzasdigital.com/como-hacer-un-pago-movil-pasos-y-comisiones/; lead (review, 10 Nov): cedula or RIF required, the method\'s own payee identifier (an exception to the personal-ID rule, like the card-number one)',
+    source: 'research 2026-11-10 (medium): https://finanzasdigital.com/como-hacer-un-pago-movil-pasos-y-comisiones/; lead (review, 10 Nov): cedula or RIF required, the method\'s own payee identifier (an exception to the personal-ID rule, like the card-number one); recheck 2026-11-12 (medium): https://finanzasdigital.com/como-hacer-un-pago-movil-pasos-y-comisiones/',
   },
   QRIS: {
     fields: [yes('qris', 'QR code text', 'account', 512), no('name', 'Name shown on the QRIS'), no('provider', 'Bank or e-wallet')],
-    source: 'research 2026-11-10 (medium): https://www.bi.go.id/id/fungsi-utama/sistem-pembayaran/ritel/kanal-layanan/qris/qris-tuntas/default.aspx; lead: interim text box for the string inside the QR; an image box is a later feature',
+    source: 'research 2026-11-10 (medium): https://www.bi.go.id/id/fungsi-utama/sistem-pembayaran/ritel/kanal-layanan/qris/qris-tuntas/default.aspx; lead: interim text box for the string inside the QR; an image box is a later feature; recheck 2026-11-12 (high): https://www.bi.go.id/id/fungsi-utama/sistem-pembayaran/ritel/kanal-layanan/qris/qris-tuntas/default.aspx',
   },
   RAAST: {
     fields: [one('reach', 'raastId', 'Raast ID (mobile number)', 'phone'), one('reach', 'iban', 'IBAN', 'iban'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.sbp.org.pk/circulars/disd-circular-no-1-of-2022',
+    source: 'research 2026-11-10 (medium): https://www.sbp.org.pk/circulars/disd-circular-no-1-of-2022; recheck 2026-11-12 (high): https://www.sbp.org.pk/circulars/disd-circular-no-1-of-2022',
   },
   PAYNOW: {
     fields: [one('reach', 'phone', 'Mobile number registered for PayNow', 'phone'), one('reach', 'uen', 'UEN (businesses)', 'account'), one('reach', 'vpa', 'PayNow VPA', 'account'), no('name', 'Name shown on PayNow')],
@@ -394,36 +403,37 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   },
   FPS: {
     fields: [one('reach', 'phone', 'Mobile number registered for FPS', 'phone'), one('reach', 'email', 'Email registered for FPS', 'email'), one('reach', 'fpsId', 'FPS ID', 'account'), one('reach', 'account', 'Bank code and account number', 'account'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://www.hkma.gov.hk/eng/key-functions/international-financial-centre/financial-market-infrastructure/faster-payment-system-fps/',
+    source: 'research 2026-11-10 (medium): https://www.hkma.gov.hk/eng/key-functions/international-financial-centre/financial-market-infrastructure/faster-payment-system-fps/; recheck 2026-11-12 (high): https://www.hkma.gov.hk/eng/smart-consumers/faster-payment-system/',
   },
   DUITNOW: {
     fields: [one('reach', 'duitnowId', 'DuitNow ID (mobile number or business registration number)', 'account'), one('reach', 'accountBank', 'Account number and bank', 'account'), no('name', 'Name on the account')],
-    source: 'research 2026-11-10 (medium): https://knowledgebase.paynet.my/hc/en-us/articles/49480498637849-Overview; lead: account number and bank in one box; MyKad, passport, army and police numbers never a box',
+    source: 'research 2026-11-10 (medium): https://knowledgebase.paynet.my/hc/en-us/articles/49480498637849-Overview; lead: account number and bank in one box; MyKad, passport, army and police numbers never a box; recheck 2026-11-12 (high): https://docs.developer.paynet.my/docs/duitnow-transfer/introduction/overview',
   },
   SBP: {
     fields: [yes('phone', 'Phone number linked to SBP', 'phone'), yes('bankName', 'Bank to receive in'), no('name', 'Name (as the bank shows it)')],
-    source: 'research 2026-11-10 (medium): https://www.nspk.ru/en/; lead: phone and bank; owner question p11-144 (Russian methods, sanctions)',
+    source: 'research 2026-11-10 (medium): https://www.nspk.ru/en/; lead: phone and bank; owner question p11-144 (Russian methods, sanctions); recheck 2026-11-12 (high): https://www.cbr.ru/eng/PSystem/sfp',
   },
   MIR: {
     fields: [yes('cardNumber', 'Mir card number', 'account'), no('name', 'Cardholder name'), no('bankName', 'Issuing bank')],
-    source: 'research 2026-11-10 (medium): https://mironline.ru/; lead: card number required (the only route); owner question p11-144 (Russian methods, sanctions)',
+    source: 'research 2026-11-10 (medium): https://mironline.ru/; lead: card number required (the only route); owner question p11-144 (Russian methods, sanctions); recheck 2026-11-12 (medium): https://finance.mail.ru/card/natsionalnaya-sistema-platezhnyih-kart-747/',
   },
   UKRAINE_CARD: {
     fields: [one('reach', 'cardNumber', 'Card number (16 digits)', 'account'), one('reach', 'iban', 'IBAN (UA..., 29 characters)', 'iban'), one('reach', 'phone', 'Phone number linked to the card', 'phone'), no('name', 'Name on the card or account')],
-    source: 'research 2026-11-10 (medium): https://en.privatbank.ua/payments-and-transfers/transfer-to-a-card-in-another-bank; lead: card number allowed (one of card, IBAN, phone); tax ID never a box',
+    source: 'research 2026-11-10 (medium): https://en.privatbank.ua/payments-and-transfers/transfer-to-a-card-in-another-bank; lead: card number allowed (one of card, IBAN, phone); tax ID never a box; recheck 2026-11-12 (high): https://en.privatbank.ua/transfers-to-card-by-phone-number',
   },
   // Cash & money orders. COPY-UNSIGNED (payee-fields research 2026-11-10): every label in this block.
   US_POSTAL_MONEY_ORDER: {
     fields: [yes('name', 'Full name (Pay to)'), yes('address', 'Mailing address', 'postal')],
-    source: 'research 2026-11-10 (medium): https://www.usps.com/shop/money-orders.htm',
+    source: 'research 2026-11-10 (medium): https://www.usps.com/shop/money-orders.htm; recheck 2026-11-12 (medium): https://eco.com/support/en/articles/17345348-how-to-fill-out-a-money-order-step-by-step-with-examples',
   },
   CASH_DEPOSIT: {
     fields: [yes('name', 'Name on the account'), yes('bankName', 'Bank name'), yes('account', 'Account number', 'account'), no('branchCode', 'Branch / routing code (if your bank needs it)', 'account')],
-    source: 'research 2026-11-10 (low): no provider source',
+    note: 'Some banks no longer take cash deposits into an account the depositor does not own. Check yours before the buyer goes.',
+    source: 'research 2026-11-10 (low): no provider source; recheck 2026-11-12 (medium): https://www.bankrate.com/banking/checking/deposit-cash-into-someone-elses-account-these-are-your-options/',
   },
   MONEY_GRAM: {
     fields: [yes('fullName', 'Full name as on your ID'), yes('country', 'Country'), no('city', 'City and state/province'), no('phone', 'Phone number', 'phone')],
-    source: 'research 2026-11-10 (medium): https://www.moneygram.com/us/en/receive-money-with-moneygram; lead: cash pickup only',
+    source: 'research 2026-11-10 (medium): https://www.moneygram.com/us/en/receive-money-with-moneygram; lead: cash pickup only; recheck 2026-11-12 (high): https://www.moneygram.com/us/en/receive-money-with-moneygram',
   },
   WESTERN_UNION: {
     fields: [yes('fullName', 'Full name as on your ID'), yes('country', 'Country'), no('city', 'City and state/province'), no('phone', 'Phone number', 'phone')],
@@ -438,7 +448,11 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
     fields: [yes('name', 'Full name'), yes('address', 'Mailing address', 'postal')],
     source: 'research 2026-11-10 (high): https://www.usps.com',
   },
-  CASH_AT_ATM: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): https://clientebancario.bde.es/pcb/en/blog/sabias-que-puedes-sacar-dinero-en-un-cajero-sin-tarjeta--te-contamos-como%E2%80%A6.html' },
+  CASH_AT_ATM: {
+    fields: [no('phone', 'Mobile number to receive the cash code (if the bank texts it to you)', 'phone')],
+    note: 'Some banks text the cash code to your phone, others give it to the buyer to send you here.',
+    source: 'research 2026-11-10 (medium): https://clientebancario.bde.es/pcb/en/blog/sabias-que-puedes-sacar-dinero-en-un-cajero-sin-tarjeta--te-contamos-como%E2%80%A6.html; recheck 2026-11-12 (medium): https://www.pbebank.com/en/digital-banking/mobile-banking/cardless-withdrawal/',
+  },
   RIA: {
     fields: [yes('fullName', 'Full name as on your ID'), yes('country', 'Country'), no('city', 'City and state/province'), no('phone', 'Phone number', 'phone')],
     source: 'research 2026-11-10 (high): https://www.riamoneytransfer.com/en/blog/how-to-receive-money-ria-money-transfer/; lead: cash pickup only',
@@ -446,39 +460,39 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
   // Gift cards & vouchers. COPY-UNSIGNED (payee-fields research 2026-11-10): every label in this block.
   AMAZON_GIFT_CARD: {
     fields: [no('email', 'Email to deliver the eGift card to', 'email')],
-    source: 'research 2026-11-10 (medium): https://www.amazon.co.uk/gc-legal; lead: one optional email box for the eGift; otherwise the claim code goes in the chat',
+    source: 'research 2026-11-10 (medium): https://www.amazon.co.uk/gc-legal; lead: one optional email box for the eGift; otherwise the claim code goes in the chat; recheck 2026-11-12 (high): https://digprjsurvey.amazon.com/csad/help/node/G5D4TA7NBKQT7GW2',
   },
-  APPLE_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): https://www.apple.com/legal/internet-services/itunes/giftcards/' },
-  GOOGLE_PLAY_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): https://play.google/intl/en_us/card-terms/' },
+  APPLE_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): https://www.apple.com/legal/internet-services/itunes/giftcards/; recheck 2026-11-12 (medium): no provider page reachable' },
+  GOOGLE_PLAY_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): https://play.google/intl/en_us/card-terms/; recheck 2026-11-12 (high): https://support.google.com/googleplay/answer/3422659' },
   UBER_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   UBER_EATS_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
-  DOORDASH_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
+  DOORDASH_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (high): https://help.doordash.com/consumers/s/article/doordash-gift-cards' },
   WALMART_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
-  BEST_BUY_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
-  HOME_DEPOT_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
+  BEST_BUY_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (high): https://www.bestbuy.ca/en-ca/help/bltc6e4ac9d6a7f34c4/blt5f505a77ab8458ec' },
+  HOME_DEPOT_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (high): https://www.homedepot.com/giftcard' },
   STEAM_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   PLAYSTATION_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   XBOX_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
-  IKEA_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
+  IKEA_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (high): https://www.ikea.com/us/en/customer-service/knowledge/articles/c9058a6c-b980-449b-8855-63b5ef55152a.html' },
   SEPHORA_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   STARBUCKS_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
-  AIRBNB_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
+  AIRBNB_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (medium): https://webcf.waybackmachine.org/web/20210421061637/https://www.airbnb.com/gift-cards' },
   ROBLOX_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   NINTENDO_ESHOP_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   VISA_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   MASTERCARD_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
-  INSTACART_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
-  AIR_CANADA_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
+  INSTACART_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (medium): https://www.bitrefill.com/buy/instacart-usa/' },
+  AIR_CANADA_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (high): https://www.aircanada.com/us/en/aco/home/book/air-canada-gift-cards.html' },
   PETRO_CANADA_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
-  ESSO_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
+  ESSO_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (medium): https://www.bitrefill.com/buy/esso-and-mobil-canada' },
   SKIPTHEDISHES_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   SOBEYS_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   WINNERS_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
-  LULULEMON_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
+  LULULEMON_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (medium): https://www.giftronaut.com/blog/lululemon-gift-cards' },
   TIM_HORTONS_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   TARGET_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
-  HOME_HARDWARE_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
-  CANADIAN_TIRE_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source' },
+  HOME_HARDWARE_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (high): https://homehardware.ca/en/home-egift-cards' },
+  CANADIAN_TIRE_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (medium): no provider source; recheck 2026-11-12 (medium, owner question: online redemption unconfirmed): https://thesmallsuccess.pages.dev/canadian-tire-gift-card-gas-online-purchases' },
   OTHER_GIFT_CARD: { fields: [], payeeGivesNothing: true, source: 'research 2026-11-10 (high): no provider source' },
   // Other. COPY-UNSIGNED (payee-fields research 2026-11-10): every label in this block.
   CUSTOM: {
@@ -500,6 +514,11 @@ export function payFieldsFor(methodId: string): readonly PayFieldSpec[] {
 /** True when the payee has nothing to send for this method (the buyer sends the card or cash details in the chat). */
 export function payeeGivesNothing(methodId: string): boolean {
   return rowOf(methodId)?.payeeGivesNothing === true;
+}
+
+/** The method's note for the payee, shown with the boxes (12 Nov recheck), if it has one. COPY-UNSIGNED */
+export function payNoteFor(methodId: string): string | undefined {
+  return rowOf(methodId)?.note;
 }
 
 export type PayDetailsErrorCode = 'missing' | 'one-of' | 'unknown-field' | 'bad-value' | 'bad-chars' | 'too-long' | 'bad-shape';

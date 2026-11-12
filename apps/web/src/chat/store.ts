@@ -61,9 +61,15 @@ export interface StoredChatReceipt {
    * An envelope that can never become a line (pay-details review M1): a payload that is not a chat
    * message, a package whose text is not the rendering of its boxes, a malformed or mod-signed
    * package. The cursor passed it and a re-read never opens it again; the guard did not move for it
-   * (the sender may reuse the seq). Never a line, not even a placeholder. Never set with `heldPay`.
+   * (the sender may reuse the seq). Never a line, not even a placeholder, except a counterparty's package
+   * refused for its contents (`refusedPay`), which is a neutral line. Never set with `heldPay`.
    */
   refused?: true;
+  /**
+   * With `refused` (review payee-fields-2 m-4): the envelope was the counterparty's package, signed
+   * and allowed, refused for its contents. Shown as a neutral line ("couldn't be shown"), never its text.
+   */
+  refusedPay?: true;
 }
 
 export interface ChatRecord {

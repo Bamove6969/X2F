@@ -60,10 +60,17 @@ export type ChatErrorCode = 'bad-text' | 'too-large' | 'bad-state' | 'bad-messag
 /** Chat-level refusals. Envelope rejections stay ProtocolError / ChatEnvelopeError. */
 export class ChatError extends Error {
   readonly code: ChatErrorCode;
-  constructor(code: ChatErrorCode, message: string) {
+  /**
+   * Review payee-fields-2 m-4: set on a 'bad-message' for a trader's package, signed and allowed, that
+   * this reader refuses for its contents (a box its table does not know, a text that is not the
+   * rendering of its boxes): the verified sender, so the payer can be told it could not be shown.
+   */
+  readonly refusedPackageFrom?: ChatRole;
+  constructor(code: ChatErrorCode, message: string, refusedPackageFrom?: ChatRole) {
     super(message);
     this.name = 'ChatError';
     this.code = code;
+    if (refusedPackageFrom !== undefined) this.refusedPackageFrom = refusedPackageFrom;
   }
 }
 
@@ -292,14 +299,16 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
     // Only a trader has payment details to send, only once the escrow is secured (owner Q12), and
     // the text must render exactly the boxes' values (review F3: whatever labels it was sealed under).
     if (opened.from === 'mod' || a.payAllowed !== true) throw notChat();
+    const from: ChatRole = opened.from;
+    const unshowable = (): ChatError => new ChatError('bad-message', 'Not a chat message', from);
     let pay: PayDetailsPayload;
     try {
       pay = parsePayDetails((p as { pay: unknown }).pay);
     } catch (e) {
-      if (e instanceof PayDetailsError) throw notChat();
+      if (e instanceof PayDetailsError) throw unshowable();
       throw e;
     }
-    if (!payTextMatches(pay, text)) throw notChat();
+    if (!payTextMatches(pay, text)) throw unshowable();
     // Review R1: nothing downstream sees the sender's label text, only this reader's own rendering.
     message.text = renderPayDetailsText(pay);
     message.pay = pay;
