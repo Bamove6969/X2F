@@ -165,3 +165,21 @@ describe('review notes: no card or phone field labels (REVIEW_NOTE_NUMBER_LABELS
     expect(masked(ocr('Mobile 2500'))).toEqual([['2500', 'phone']]);
   });
 });
+
+describe('P-014: Russian and Turkish number labels', () => {
+  it('a Russian label names the kind of the number after it', () => {
+    expect(masked(ocr('Телефон: 5550134'))).toEqual([['5550134', 'phone']]);
+    expect(masked(ocr('Карта •• 4821'))).toEqual([['••', 'card'], ['4821', 'card']]);
+    expect(masked(ocr('Номер карты 4821'))).toEqual([['4821', 'card']]);
+    expect(masked(ocr('Счёт № 70221'))).toEqual([['70221', 'account']]);
+    expect(masked(ocr('Счет: 70221'))).toEqual([['70221', 'account']]);
+  });
+
+  it('a Turkish label names the kind of the number after it', () => {
+    expect(masked(ocr('Cep telefonu: 5550134'))).toEqual([['5550134', 'phone']]);
+    expect(masked(ocr('Kart no: 4821'))).toEqual([['4821', 'card']]);
+    expect(masked(ocr('Kart numarası 4821'))).toEqual([['4821', 'card']]);
+    expect(masked(ocr('Hesap no: 70221'))).toEqual([['70221', 'account']]);
+    expect(masked(ocr('HESAP NUMARASI 70221'))).toEqual([['70221', 'account']]);
+  });
+});

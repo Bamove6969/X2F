@@ -1084,3 +1084,50 @@ describe('codePattern: regex metacharacters', () => {
     expect(re.test('AxxB')).toBe(false);
   });
 });
+
+describe('P-014: Russian and Turkish name labels', () => {
+  it('a Russian or Turkish label masks the name after it', () => {
+    const lines: Array<[string, string]> = [
+      ['ru', 'Получатель: Иван Петров'],
+      ['ru', 'ПОЛУЧАТЕЛЬ: ИВАН ПЕТРОВ'],
+      ['ru', 'Отправитель Иван Петров'],
+      ['ru', 'ФИО: Иван Петров'],
+      ['ru', 'Владелец счёта: Иван Петров'],
+      ['ru', 'Держатель карты: Иван Петров'],
+      ['tr', 'Alıcı: Ayşe Kaya'],
+      ['tr', 'ALICI: AYŞE KAYA'],
+      ['tr', 'Gönderen Ayşe Kaya'],
+      ['tr', 'Hesap sahibi: Ayşe Kaya'],
+      ['tr', 'Ad Soyad: Ayşe Kaya'],
+      ['tr', 'İSİM: AYŞE KAYA'],
+    ];
+    for (const [lang, line] of lines) {
+      const name = line.split(' ').slice(-2);
+      expect(masked(ocr(line)), `${lang}: ${line}`).toEqual(name.map((t) => [t, 'name']));
+    }
+  });
+
+  it('OCR that drops the marks still finds the label (ё, й, ı, ş, ö, İ)', () => {
+    expect(maskedTexts(ocr('Владелец счета: Иван Петров'))).toEqual(['Иван', 'Петров']);
+    expect(maskedTexts(ocr('Alici: Ayse Kaya'))).toEqual(['Ayse', 'Kaya']);
+    expect(maskedTexts(ocr('Gonderen: Ayse Kaya'))).toEqual(['Ayse', 'Kaya']);
+    expect(maskedTexts(ocr('ISIM: AYSE KAYA'))).toEqual(['AYSE', 'KAYA']);
+  });
+
+  it('a label alone on its line masks the next line', () => {
+    expect(maskedTexts(ocr('Получатель', 'Иван Петров', 'СБП'))).toEqual(['Иван', 'Петров']);
+    expect(maskedTexts(ocr('Alıcı', 'Ayşe Kaya', 'FAST'))).toEqual(['Ayşe', 'Kaya']);
+  });
+
+  it('short everyday words count only with a colon', () => {
+    expect(maskedTexts(ocr('От: Иван Петров'))).toEqual(['Иван', 'Петров']);
+    expect(maskedTexts(ocr('Ad: Ayşe Kaya'))).toEqual(['Ayşe', 'Kaya']);
+    expect(maskedTexts(ocr('От души спасибо'))).toEqual([]);
+    expect(maskedTexts(ocr('Ad blokesi yok'))).toEqual([]);
+  });
+
+  it('a label inside a longer word is not a label', () => {
+    expect(maskedTexts(ocr('Получателям спасибо'))).toEqual([]);
+    expect(maskedTexts(ocr('Adres doğrulandı'))).toEqual([]);
+  });
+});
