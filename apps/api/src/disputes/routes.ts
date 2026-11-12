@@ -11,6 +11,9 @@ import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow }
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
 import { appendLog } from '../log/append.js';
+import { addOwnerAlert } from '../alerts.js';
+import { pushOwnerAlert } from '../push/ownerAlert.js';
+import { appealWaiting, eligibleReviewers } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, startDispute, withDispute } from './store.js';
 import { refuseHeldTradeEvent } from '../trades/held.js';
@@ -78,6 +81,12 @@ export interface DisputeView {
     destination: { walletApp: string | null; addressEnd: string } | null;
   } | null;
   appeal: { by: Party; at: string } | null;
+  /**
+   * D-011 (Plan 4 Task 24, lead default): the appeal waits for an independent reviewer: nobody has
+   * taken it and every senior moderator and the owner was involved in round 1 (or none is switched
+   * on). Both traders are told; the owner was alerted when it was filed. False otherwise.
+   */
+  appealWaiting: boolean;
   /**
    * Plan 4 Task 11: the moderator's latest request for this trader's unblurred proof (only the side
    * it names sees it), from server records only.
@@ -206,6 +215,7 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
       rec.moderatorName !== null && rec.moderatorJoinedAt !== null ? { name: rec.moderatorName, joinedAt: rec.moderatorJoinedAt.toISOString() } : null,
     ruling,
     appeal: d.appealBy !== null && d.appealedAt !== null ? { by: d.appealBy, at: d.appealedAt.toISOString() } : null,
+    appealWaiting: await appealWaiting(q, d),
     proofRequest:
       extra.proof_request_side === side && extra.proof_requested_at !== null && extra.proof_requested_by !== null
         ? { username: extra.proof_requested_by, at: extra.proof_requested_at.toISOString() }
@@ -292,6 +302,7 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     const why = b.why;
     const { row, side } = await participant(req);
     const deps = req.server.deps;
+    let noReviewer = false;
     try {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {
         // A held trade's own account may not appeal while held (lead hold v3 review, minor).
@@ -321,12 +332,21 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
           { beforeId: entry.id },
         );
         // NEEDS_TASK_25_LIEN_ON_APPEAL: the appellant's round-1 lien is suspended here (Task 25).
-        return applyDispute(d, { type: 'appeal', involved: [...involved] }, by, now, s);
+        const next = applyDispute(d, { type: 'appeal', involved: [...involved] }, by, now, s);
+        // D-011 (lead default): nobody may review it. It waits in the queue (no involved person is
+        // let in instead, R37) and the owner is alerted in this transaction, once (one appeal per
+        // dispute); the phone push follows the commit. The traders see `appealWaiting`.
+        if ((await eligibleReviewers(client, next)).length === 0) {
+          await addOwnerAlert(client, 'appeal-no-reviewer', { trade: d.code }, now);
+          noReviewer = true;
+        }
+        return next;
       });
     } catch (err) {
       if (err instanceof DisputeRuleError) throw new ApiError(409, err.code === 'too-late' ? 'too-late' : 'wrong-state');
       throw err;
     }
+    if (noReviewer) await pushOwnerAlert({ db: deps.db, push: req.server.push }, 'appeal-no-reviewer').catch(() => undefined);
     return loadView(deps.db, row, side, req.auth.accountId, deps.clock());
   });
 }

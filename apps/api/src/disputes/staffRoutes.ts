@@ -1,5 +1,5 @@
 import { normalizeTradeCode } from '@x2f/core';
-import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, applyDispute, markSeen, normalizeIncidentId, type Actor, type Dispute } from '@x2f/staff';
+import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, appealReviewers, applyDispute, markSeen, normalizeIncidentId, type Actor, type Dispute } from '@x2f/staff';
 import { CHAT_TEXT_MAX_BYTES, ChatEnvelopeError, channelFor, checkChatEnvelope } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
@@ -11,6 +11,7 @@ import { appendLog } from '../log/append.js';
 import { requireStaff } from '../staff/guard.js';
 import { traderSummaries } from '../traders/summary.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
+import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
 
@@ -247,11 +248,13 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       code: string; incident_id: string; status: string; round: number; amount_atomic: string; usd_cents: string; limit_usd_cents: string;
       method_id: string; opened_by: string; opened_at: Date; appealed_at: Date | null; reply_due_at: Date; ruling_due_at: Date;
       first_reply_at: Date | null; assignee: string | null; assignee_name: string | null; ruling: { proposer?: string } | null; proposer_name: string | null; mine: boolean;
+      involved: string[] | null;
     }>(
       `select d.code, d.incident_id, d.status, d.round, t.amount_atomic::text as amount_atomic, d.usd_cents::text as usd_cents,
               d.limit_usd_cents::text as limit_usd_cents, t.method_id, d.opened_by, d.opened_at, ap.at as appealed_at,
               d.reply_due_at, d.ruling_due_at, d.first_reply_at, d.assignee::text as assignee, a.${PUBLIC_NAME_COLUMN} as assignee_name,
-              d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine
+              d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine,
+              case when d.round1 is null then null else array(select jsonb_array_elements_text(d.round1->'involved')) end as involved
          from disputes d
          join trades t on t.code = d.code
          left join dispute_appeals ap on ap.code = d.code and ap.seq = d.seq
@@ -271,6 +274,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       [QUEUE_STATUSES, now],
     );
     const c = counts.rows[0]!;
+    // D-011: an untaken appeal nobody may review is marked, so the owner sees which case waits.
+    const candidates = rows.some((r) => r.status === 'appealed') ? await reviewerCandidates(deps.db) : [];
     return {
       rows: rows.map((r) => {
         const usdCents = BigInt(r.usd_cents);
@@ -295,6 +300,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           approval,
           assignee: r.assignee_name,
           mine: r.mine,
+          noReviewer: r.status === 'appealed' && r.assignee === null && appealReviewers(candidates, r.involved ?? []).length === 0,
         };
       }),
       counts: { open: c.open, overdue: c.overdue, unassigned: c.unassigned, needApproval: c.need_approval },
@@ -420,6 +426,22 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       },
       freezes: await freezesOf(deps.db, t, code),
     };
+  });
+
+  // Plan 4 Task 24 (D-011): who may review this case's appeal (senior moderators and the owner
+  // with no log entry on round 1, R37), by display name, and whether the appeal waits for one.
+  // Under `rulings.approve`: seniors and the owner only (a moderator never reviews an appeal).
+  // Reading it is not an action on the case: nothing is logged and nobody is added to `seen`.
+  const seniorGuard = requireStaff('rulings.approve');
+  app.get('/staff/v1/disputes/:code/appeal-reviewers', { preHandler: seniorGuard, config: { perm: 'rulings.approve' } }, async (req) => {
+    const db = req.server.deps.db;
+    const code = await codeOf(db, req);
+    const rec = await loadDisputeRecord(db, code);
+    if (rec === null) throw new ApiError(404, 'not-found');
+    const d = rec.dispute;
+    // Before an appeal, round 1's involvement is not frozen yet: no list.
+    const reviewers = d.round === 2 ? await eligibleReviewers(db, d) : [];
+    return { reviewers: reviewers.map((s) => ({ name: s.name })), waiting: await appealWaiting(db, d) };
   });
 
   // NEEDS_P4_CHAT_MEMBERSHIP: no `POST /staff/v1/disputes/:code/chat` here on purpose (see the top
