@@ -11,9 +11,13 @@
  *   - `evidence`: either side while a dispute is open (409 wrong-state; P5-A30);
  *   - `unblurred`: only the side the open dispute's moderator asked (Plan 4's `proof_request_*` on
  *     `disputes`), one per request (409 not-requested).
- *   An id ever stored before is 409 proof-exists (one-time ids, kept after a purge); over
- *   PROOF_MAX_PER_SIDE is 409 too-many-proofs. The trade row is locked for the whole check, so
- *   parallel uploads cannot pass the cap. 204, no body.
+ *   An id ever stored before is 409 proof-exists (one-time ids, kept after a purge). Over the cap
+ *   is 409 too-many-proofs: PROOF_MAX_PER_SIDE payment proofs and, apart, EVIDENCE_MAX_PER_SIDE
+ *   pieces of evidence per side; an unblurred copy never counts (one per request already; lead
+ *   2026-11-12, review M4). The trade row is locked for the whole check, so parallel uploads
+ *   cannot pass the cap, and only for a party (review M2: the party test is in the locking query,
+ *   so an outsider never takes or waits on another trade's lock). The session is checked in an
+ *   onRequest hook before any of the body is read (review M1), and again before the handler. 204, no body.
  * - `GET /v1/trades/:code/proofs/:id`: a party reads a `proof` or `evidence` ciphertext; an
  *   `unblurred` one is 404 to every trader (it is for the moderator only).
  *   NEEDS_P4_CHAT_MEMBERSHIP: no moderator read here (lead 2026-11-08: the moderator's copy follows
@@ -25,16 +29,24 @@
  */
 import { normalizeTradeCode } from '@x2f/core';
 import { PROOF_MAX_CIPHERTEXT, isProofId } from '@x2f/proof';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, onRequestAsyncHookHandler } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
-import { PROOF_MAX_PER_SIDE, PROOF_MIN_CIPHERTEXT, type StoredProofKind, claimProofId, countProofs, insertProof, readableProof } from './store.js';
+import { EVIDENCE_MAX_PER_SIDE, PROOF_MAX_PER_SIDE, PROOF_MIN_CIPHERTEXT, type StoredProofKind, claimProofId, countProofs, insertProof, readableProof } from './store.js';
 
 const KINDS: readonly StoredProofKind[] = ['proof', 'evidence', 'unblurred'];
 /** Where the buyer's payment proof belongs: from the escrow arriving to a dispute. */
 const PROOF_STATES = new Set(['secured', 'paid', 'refund_requested', 'disputed']);
 
 const requireTrader = requireSession({ kinds: ['trader'] });
+/**
+ * Review M1: the session is checked in an onRequest hook too, so a PUT with no live session is 401
+ * before any of its body is read. The preHandler (the route lists' guard) checks it again after the
+ * upload and records the activity; this early check does not touch the session.
+ */
+const requireTraderFirst = requireSession({ kinds: ['trader'], touch: false }) as unknown as onRequestAsyncHookHandler;
+/** The cap per side for each kind; an unblurred copy has none (one per moderator request). */
+const CAP: Readonly<Record<StoredProofKind, number | null>> = { proof: PROOF_MAX_PER_SIDE, evidence: EVIDENCE_MAX_PER_SIDE, unblurred: null };
 const notFound = () => new ApiError(404, 'not-found');
 const bad = () => new ApiError(400, 'bad-request');
 
@@ -52,7 +64,7 @@ export function proofRoutes(app: FastifyInstance): void {
     scope.removeAllContentTypeParsers();
     scope.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: PROOF_MAX_CIPHERTEXT }, (_req, b, done) => done(null, b));
 
-    scope.put('/v1/trades/:code/proofs/:id', { preHandler: requireTrader, bodyLimit: PROOF_MAX_CIPHERTEXT }, async (req, reply) => {
+    scope.put('/v1/trades/:code/proofs/:id', { onRequest: requireTraderFirst, preHandler: requireTrader, bodyLimit: PROOF_MAX_CIPHERTEXT }, async (req, reply) => {
       const { code, id } = target(req);
       const q = req.query as Record<string, unknown>;
       const kind = q.kind;
@@ -66,12 +78,13 @@ export function proofRoutes(app: FastifyInstance): void {
       try {
         await client.query('begin');
         try {
+          // Only a party's row is locked: an outsider (or an unknown code) matches nothing and is 404.
           const { rows } = await client.query<{ buyer_account_id: string; seller_account_id: string; state: string }>(
-            'select buyer_account_id, seller_account_id, state from trades where code = $1 for update',
-            [code],
+            'select buyer_account_id, seller_account_id, state from trades where code = $1 and $2 in (buyer_account_id, seller_account_id) for update',
+            [code, me],
           );
           const t = rows[0];
-          if (!t || (t.buyer_account_id !== me && t.seller_account_id !== me)) throw notFound();
+          if (!t) throw notFound();
           const role = t.buyer_account_id === me ? 'buyer' : 'seller';
           if (kind === 'proof') {
             if (role !== 'buyer') throw new ApiError(403, 'wrong-party');
@@ -91,7 +104,8 @@ export function proofRoutes(app: FastifyInstance): void {
             );
             if (r.rows.length === 0) throw new ApiError(409, 'not-requested');
           }
-          if ((await countProofs(client, code, role)) >= PROOF_MAX_PER_SIDE) throw new ApiError(409, 'too-many-proofs');
+          const cap = CAP[kind as StoredProofKind];
+          if (cap !== null && (await countProofs(client, code, role, kind as StoredProofKind)) >= cap) throw new ApiError(409, 'too-many-proofs');
           if (!(await claimProofId(client, id, now))) throw new ApiError(409, 'proof-exists');
           await insertProof(client, { id, code, role, kind: kind as StoredProofKind, ciphertext, now });
           await client.query('commit');

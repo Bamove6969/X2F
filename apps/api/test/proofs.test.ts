@@ -184,7 +184,7 @@ describe('PUT /v1/trades/:code/proofs/:id: the payment proof', () => {
       { column_name: 'used_on', data_type: 'date' },
     ]);
     const { buyer, code } = await tradeIn('secured');
-    setNow(new Date('2026-10-17T23:59:30Z'));
+    // The clock is START (2026-10-17T12:00Z): only its UTC day is kept.
     const id = newProofId();
     expect((await put(buyer, code, id, 'proof')).statusCode).toBe(204);
     const { rows } = await deps.db.query<{ d: string }>(
