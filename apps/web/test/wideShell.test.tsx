@@ -92,6 +92,15 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     }
   });
 
+  it('leaves out My trades for a session that may read no part of the trades list (review m1), as the phone tab bar does', () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/sell']}>
+        <DesktopRail trades={false} />
+      </MemoryRouter>,
+    );
+    expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+  });
+
   it('leaves out Post offer for a team member without the Offers role, as the phone tab bar does', () => {
     const host = rail('/sell', false);
     expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Wallets', 'Profile', 'Settings', 'Help']);

@@ -5,7 +5,7 @@ import { Amount } from '../src/ui/Amount.js';
 import { BadgePill } from '../src/ui/BadgePill.js';
 import { ActionBar } from '../src/ui/ActionBar.js';
 import { BottomNav } from '../src/ui/BottomNav.js';
-import { mayPostOffers } from '../src/session/member.js';
+import { mayPostOffers, mayReadTrades } from '../src/session/member.js';
 import type { Session } from '../src/session/useSession.js';
 import { Button } from '../src/ui/Button.js';
 import { Checkbox } from '../src/ui/Checkbox.js';
@@ -413,6 +413,32 @@ describe('BottomNav', () => {
     // Review N2: while the session loads the role is not known, so the tab waits (a Trades-only
     // member never sees it appear and vanish on a cold load).
     expect(mayPostOffers({ status: 'loading' })).toBe(false);
+  });
+
+  // Review m1 (trades-list, 12 Nov 2026; design review shot 26): no tab that only leads to a refusal.
+  it('hides My trades when the session may read no part of the trades list', () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/sell']}>
+        <BottomNav trades={false} />
+      </MemoryRouter>,
+    );
+    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile']);
+  });
+
+  it('mayReadTrades: the account owner, and a member with See active trades or See trade history', () => {
+    const me = (member: unknown) => ({ status: 'signed-in', me: { displayName: 'Calcium', member } }) as unknown as Session;
+    expect(mayReadTrades(me(null))).toBe(true);
+    expect(mayReadTrades(me(undefined))).toBe(true);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: [], abilities: ['trades-see-active'] }))).toBe(true);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: [], abilities: ['trades-see-history'] }))).toBe(true);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: ['offers'], abilities: ['offers-see', 'offers-post'] }))).toBe(false);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: [], abilities: [] }))).toBe(false);
+    // An older API with roles only: the Trades role reads trades.
+    expect(mayReadTrades(me({ name: 'Aurora', roles: ['trades'] }))).toBe(true);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: ['offers'] }))).toBe(false);
+    expect(mayReadTrades({ status: 'signed-out' })).toBe(true);
+    // As for Post offer (review N2): while the session loads, the tab waits.
+    expect(mayReadTrades({ status: 'loading' })).toBe(false);
   });
 
   it('the tab bar carries no data-primary: the Main and BuyMain boards have no primary action', () => {

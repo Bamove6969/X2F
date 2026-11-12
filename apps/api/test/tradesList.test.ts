@@ -169,6 +169,15 @@ describe('GET /v1/trades', () => {
     for (const q of ['?status=closed', '?status=', '?status=open&status=completed', '?limit=0', '?limit=101', '?limit=2.5', '?limit=x', '?cursor=', '?cursor=nope', '?cursor=' + 'A'.repeat(300)]) {
       expect(err(await me.browser.get(`/v1/trades${q}`)), q).toEqual({ status: 400, error: 'bad-request' });
     }
+    // Review M1: a cursor in the right shape whose date does not exist is a 400 too, never a 500.
+    const code = 'K7M2-9QXA-4FTR-8WPN';
+    for (const when of ['2026-02-30T10:00:00.000000', '2026-13-01T10:00:00.000000', '2026-01-01T25:61:61.000000', '0000-01-01T00:00:00.000000']) {
+      const cursor = Buffer.from(`${when}|${code}`, 'utf8').toString('base64url');
+      expect(err(await me.browser.get(`/v1/trades?cursor=${cursor}`)), when).toEqual({ status: 400, error: 'bad-request' });
+    }
+    // A real date in that shape still pages.
+    const fine = Buffer.from(`2026-02-28T10:00:00.000000|${code}`, 'utf8').toString('base64url');
+    expect((await me.browser.get(`/v1/trades?cursor=${fine}`)).statusCode).toBe(200);
     expect((await new Browser(app).get('/v1/trades')).statusCode).toBe(401);
   });
 
@@ -197,6 +206,36 @@ describe('GET /v1/trades', () => {
 
     const offersOnly = await member(owner.id, rolesToAbilities(['offers']));
     expect(err(await offersOnly.get('/v1/trades'))).toEqual({ status: 403, error: 'forbidden' });
+  });
+
+  it("review I1: a member opens a trade's room only with the box for its part (open: See active trades; completed: See trade history)", async () => {
+    const owner = await trader();
+    await makeVendor(deps, owner.id);
+    const other = await trader();
+    tick();
+    const open = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
+    tick();
+    const done = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    await driveTo(deps, done.trade, 'released');
+    const room = async (b: Browser, c: string) => {
+      const res = await b.get(`/v1/trades/${c}`);
+      return res.statusCode === 200 ? 200 : err(res);
+    };
+
+    const active = await member(owner.id, ['trades-see-active']);
+    expect(await room(active, open.code)).toBe(200);
+    expect(await room(active, done.code)).toEqual({ status: 403, error: 'forbidden' });
+
+    const history = await member(owner.id, ['trades-see-history']);
+    expect(await room(history, done.code)).toBe(200);
+    expect(await room(history, open.code)).toEqual({ status: 403, error: 'forbidden' });
+
+    const both = await member(owner.id, ['trades-see-active', 'trades-see-history']);
+    expect([await room(both, open.code), await room(both, done.code)]).toEqual([200, 200]);
+    // The owner reads both, and a trade not the account's stays a 404 for a member with the box.
+    expect([await room(owner.browser, open.code), await room(owner.browser, done.code)]).toEqual([200, 200]);
+    const stranger = await seedTrade(deps, { sellerId: other.id, buyerId: (await trader()).id, poster: 'seller' });
+    expect(await room(both, stranger.code)).toEqual({ status: 404, error: 'not-found' });
   });
 
   it('a trade deleted by the retention rule (R36) is simply gone: no row, no stub', async () => {
