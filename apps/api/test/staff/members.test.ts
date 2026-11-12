@@ -637,6 +637,23 @@ describe('per-person grants (owner Q60)', () => {
     expect(await listed(mod.id)).toEqual([]);
     expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
   });
+
+  // J-21 re-verify R1 (12 Nov): a role-held box stored before the F5 fix is dropped on any role
+  // change, including a demotion, so it never comes back on its own.
+  it('a senior with a stored Feedback left from before, demoted to moderator, does not get it back (R1)', async () => {
+    t.setNow(new Date(MON_NOON.getTime() + 40 * 60_000));
+    const senior = await staffWithKeys(t, { role: 'senior' });
+    await addPgpKey(t.deps, senior.id);
+    await registerKey(t.app, senior.id, t.newKey({ passkey: true }), { passkey: true });
+    await t.deps.db.query("update staff_members set grants = '{feedback.read}' where account_id = $1", [senior.id]);
+    const down = await owner.browser.send('PUT', `/staff/v1/members/${senior.id}/role`, {
+      role: 'mod', tapId: await tap(owner, { kind: 'set-role', accountId: senior.id, role: 'mod' }),
+    });
+    expect(down.statusCode, down.body).toBe(200);
+    const { rows } = await t.deps.db.query<{ grants: string[] }>('select grants from staff_members where account_id = $1', [senior.id]);
+    expect(rows[0]!.grants).toEqual([]);
+    expect((await senior.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
+  });
 });
 
 describe('Task 7 tripwires (local tree only)', () => {
