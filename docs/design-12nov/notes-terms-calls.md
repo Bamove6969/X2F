@@ -324,7 +324,7 @@ The D-020 ban notice itself is already settled (`settled-register-calls.md` D-02
 
 ## Owner answers, 12 Nov (OQ1–OQ3): FINAL
 
-- **OQ1, closing accounts (T15):** the owner keeps his words. It's a standard policy that protects the site; when we have to make a drastic decision it's better not to explain ourselves; it's used very rarely. Terms: "We may close any account without warning and without giving a reason. We do this very rarely, and only to protect X2F and the people who use it." The ban screen still shows its general reason line (G39): that is a courtesy, not a promise in the Terms.
+- **OQ1, closing accounts (T15):** the owner keeps his own words exactly, with nothing added: X2F may close any account "without warning and without reason". (His note that it is used very rarely was an explanation for us, not Terms text.) The ban screen still shows its general reason line (G39) as a courtesy.
 - **OQ2, the training copy (T12):** delete it at day 90. Nothing from a disputed trade survives day 90.
 - **OQ3, "all data" (T11):** the owner: "Trades and accounts are two different things." The Terms keep the two apart:
   - Trades: "30 days after a trade ends, everything about that trade, including its chat, is erased for good. If the trade had a dispute, it's erased 90 days after the dispute closes."
