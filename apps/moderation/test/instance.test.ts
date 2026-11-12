@@ -87,6 +87,9 @@ describe('one moderation process (security review 7 Nov, finding 2)', () => {
     const top = entry.slice(0, start);
     for (const call of ['openGateStore(', 'startGateSync(', 'rulingExecutor(', 'gateConfig.apiReaderUrl']) expect(top, call).not.toContain(call);
     expect(entry).toMatch(/connectionString: gateConfig\.apiReaderUrl[^}]*statement_timeout: \d+/);
+    // Re-verify, M1 residual: the entry's gate store holds MOD_STATE_DIR's lock file for its life, and its stop closes it.
+    expect(entry).toMatch(/openGateStore\(gateConfig\.stateDir, [^)]*\{ lock: true \}\)/);
+    expect(entry).toMatch(/stop: async \(\) => \{[^}]*sync\.stop\(\)[^}]*store\.close\(\)/);
   });
 
   it('the process entry exits non-zero when the start is refused', () => {
