@@ -258,7 +258,7 @@ describe('review L1: the seller paid, then the appeal overrules the payment orde
     ]);
   });
 
-  it('"Decision stands" after the seller paid: no lien; the buyer poster owes the 1% now it is final (D-062)', () => {
+  it('"Decision stands" after the seller paid: no lien; the buyer poster owes the 1% now it is final (g63 poster pays; owner question O3)', () => {
     const a = paidThenAppealed('buyer');
     expect(lienSteps(a, decide(a, 'seller-sends-xmr'), buyerPosted, [lien({ status: 'repaid' })])).toEqual([{ op: 'fee-owed', side: 'buyer', amountAtomic: F }]);
   });
