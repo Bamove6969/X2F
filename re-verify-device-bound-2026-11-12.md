@@ -109,3 +109,58 @@ Every rotation also makes other tabs' in-flight requests renew again, which spen
 | RED: f2e037be's tests on c73a1e69's code, `apps/web` | `deviceKey`: most fail on the missing `setProofLock`, plus v1-vs-v2, failed-vs-retry-later, and the gone-after-retry counts |
 
 Not run: the rest of the suites, Playwright, `npm run check`.
+
+---
+
+# Re-verify 2: `wip/lead-device-bound` c7552c9d (R1, R2, and the disabled-account Info)
+
+Reviewer: independent reviewer (cloud helper), 12 Nov 2026. Read-only on code. Detached worktree `rv-dbv2` at c7552c9d (one commit on f2e037be: 6 files, +157/-30), fresh `npm ci`, removed afterwards; dockerd not restarted. One temporary probe test was added and reverted, never committed.
+
+## Verdict: R1 PASS, Info PASS, R2 NOT FIXED (still CHANGES REQUIRED before either flag is on; safe to merge with both off)
+
+| Item | Fixed at cause | Red on f2e037be |
+|---|---|---|
+| R1 bound-cookie overlap | yes | yes (both R1 tests) |
+| R2 split budgets | **partly**: valid proofs are no longer charged, but the victim's challenge still is (R2b) | yes |
+| Info: disabled before proof | yes | yes |
+
+## R1: the previous bound cookie keeps working for 60 s: PASS
+- **Server:** `issueBoundCookie` now moves the current hash to `bound_prev_hash`, with `bound_prev_until = least(old bound_until, now + BOUND_OVERLAP_MS)` (60 s), in the same update that stores the new one. So the overlap **never extends** a cookie's life: a copied old cookie gets no more than it already had, and is dead within its own `BOUND_TTL_MS` (test "the overlap never outlives the old cookie's own end").
+- `boundCookieValid` compares the presented cookie against both hashes, always computing both, so the time taken doesn't say which matched. Each match is checked as `now < until`. `requireSession` reads both columns. Migration 570 adds `bound_prev_hash` and `bound_prev_until`, edited in place, which is fine since the branch is unmerged.
+- **My probe from re-verify 1 now passes the other way:** a tab's request sent with the cookie the browser held, after another tab renewed, gets 200 (new test "R1: the previous bound cookie keeps working for BOUND_OVERLAP_MS after a renewal").
+- **Remaining depth (Info, acceptable):** there is one previous slot. If three renewals land within 60 s (W→X, X→Y, Y→Z), a request still carrying X that reaches the server *after* the Y→Z renewal is refused. Under the `x2f-proof` lock each renewal takes two round trips, and a tab sends its retry the moment its own renewal returns, so its retry has at least two round trips' head start on the next tab's renewal. In steady state the 200 s per-tab timers rotate the cookie every 200/N s, and a request is checked when it arrives, so it only needs one generation. I see no realistic path to a second refusal on the one retry. The test "only the one previous cookie gets it" pins the design. If it ever shows up in the field, the web can skip a renewal a sibling tab did seconds ago.
+
+## R2: split budgets: NOT FIXED. The thief still shares the victim's challenge budget (R2b)
+**What changed, and it's right as far as it goes:**
+- `budgets.sessionProof` (20, then 10 a minute) is now charged only by **refused** proofs (`refused()`), so a valid proof is never 429. Tested: after 20 garbage proofs, a valid one still renews.
+- The challenge route has its own `budgets.sessionChallenge` (`SESSION_CHALLENGE_BUCKET`, 120, then 60 a minute).
+
+**What's still wrong.** `sessionChallenge` is keyed by `req.auth.sessionId`, and the challenge route is `allowUnproven`. So whoever holds only a copied **session** cookie shares it with the victim. The victim needs a fresh challenge for every renewal: the 200 s timer, and every wake after sleep. A thief who spends the cap and then 60 a minute (one request a second) keeps every one of the victim's challenge requests at 429. On the web that is `retry-later`, so once the bound cookie expires, every request the victim makes fails like the network for as long as the thief keeps going, with nothing telling the victim to log in again. This is my re-verify-1 R2, moved from one bucket to another and a bit more expensive for the attacker.
+
+**The new test misses it.** "R2: a cookie thief drains the challenge cap; the victim's valid proof still passes" fetches the victim's challenge *before* the thief drains the cap, then answers it. It never tests the victim asking for a challenge *after* the drain, which is the next renewal.
+
+**Proved** with a temporary API test at c7552c9d (reverted):
+1. log in bound, then let the bound cookie expire;
+2. the thief (session cookie only) spends `SESSION_CHALLENGE_BUCKET.capacity` challenges;
+3. the victim's `POST /v1/account/session/proof/challenge` gets **`429 slow-down`**, and the victim's `GET /v1/account/me` gets `session-proof-required`;
+4. after 60 s, the thief spends 60 more, and the victim's challenge is 429 again.
+
+The run printed `PROBE victim-challenge-after-drain: 429 slow-down` and passed.
+
+**Fix (cause):** don't budget challenges per session at all. Since MF1 they write nothing; the cost is one HMAC and one indexed `select`, which the app's general request limits already cover. If a cap is wanted, key it on something the thief doesn't share, such as the client address, or apply it only to challenges that are never answered. Then add the missing test: drain, then the victim asks for a **new** challenge and renews.
+
+## Info: a disabled account says so before the proof: PASS
+- `requireSession` now checks `disabled_at` and `member_disabled` (403 `account-disabled`) **before** the bound-cookie check. A disabled bound session without a fresh bound cookie therefore lands on the "account disabled" screen, instead of renewal leading to the login page.
+- Tested: "a disabled account gets account-disabled before session-proof-required" (red on f2e037be: 401 instead of 403).
+- The cost: someone holding only a copied session cookie of a disabled bound account now learns it is disabled without proving the key. That is negligible: it says nothing about the person, and a disabled account can do nothing.
+
+## Tests run (serialised runner)
+
+| Run | Result |
+|---|---|
+| At c7552c9d, `apps/api`: `deviceBound`, `deviceBoundLogins`, `staff/deviceBound`, `team`, `frontDoor`, `coolingOff`, `schema` | 293/293 passed (7 files), the R2b probe included |
+| At c7552c9d, `apps/web`: `deviceKey` | 21/21 passed |
+| At c7552c9d, `tsc --noEmit` for `apps/api` and `apps/web` | clean |
+| RED: c7552c9d's `deviceBound.test.ts` on f2e037be's code | 5 failed, 14 passed: both R2 tests, both R1 tests, and the disabled-order test |
+
+Not run: the rest of the suites, Playwright, `npm run check`.
