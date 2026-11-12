@@ -127,11 +127,11 @@ const CONFIRM_WINDOW_MIN = 120;
  * lets the buyer open a dispute only after "I've paid" and the method's full wait, so `at` is the
  * first moment the dispute may open.
  */
-async function disputed(at = START) {
+async function disputed(at = START, o: { methodId?: string } = {}) {
   setNow(new Date(at.getTime() - CONFIRM_WINDOW_MIN * MIN));
   const seller = await newTrader();
   const buyer = await newTrader();
-  const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+  const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', ...(o.methodId ? { methodId: o.methodId } : {}) });
   expect(trade.confirmWindowMin).toBe(CONFIRM_WINDOW_MIN);
   const t = await driveTo(deps, trade, 'paid');
   expect(t.confirmBy).toEqual(at);
@@ -265,12 +265,15 @@ describe('the case view', () => {
     expect(first.statusCode, first.body).toBe(200);
     // The trade helper seeds `zelle`, which is not a catalog id: the id is shown as it is.
     expect(((await mod.b.get(url(code))).json() as { escrow: { methodName: string } }).escrow.methodName).toBe('zelle');
-    await deps.db.query("update trades set method_id = 'ZELLE' where code = $1", [code]);
-    const v = (await mod.b.get(url(code))).json() as { escrow: { methodId: string; methodName: string } };
+    // A trade's deal never changes, so the catalog case is its own dispute, on the catalog's id.
+    const named = (await disputed(START, { methodId: 'ZELLE' })).code;
+    await mod.fresh();
+    const v = (await mod.b.get(url(named))).json() as { escrow: { methodId: string; methodName: string } };
     expect(v.escrow).toMatchObject({ methodId: 'ZELLE', methodName: getMethod('ZELLE')!.name });
     expect(getMethod('ZELLE')!.name).toBe('Zelle');
     const q = (await mod.b.get('/staff/v1/disputes?filter=all')).json() as { rows: Array<{ code: string; method: string; methodName: string }> };
-    expect(q.rows.find((r) => r.code === code)).toMatchObject({ method: 'ZELLE', methodName: 'Zelle' });
+    expect(q.rows.find((r) => r.code === named)).toMatchObject({ method: 'ZELLE', methodName: 'Zelle' });
+    expect(q.rows.find((r) => r.code === code)).toMatchObject({ method: 'zelle', methodName: 'zelle' });
   });
 
   it('shows the header, both traders, the escrow and the ruling state; logs case.opened once per person; returns no chat', async () => {

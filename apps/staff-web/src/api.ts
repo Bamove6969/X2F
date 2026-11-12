@@ -251,6 +251,8 @@ export interface QueueRow {
   /** Dollars, "412.50". */
   usd: string;
   method: string;
+  /** The catalog's display name (data/payment-methods.json, sent by the staff API), never shown as the raw id. */
+  methodName: string;
   openedBy: 'buyer' | 'seller' | 'system';
   waitingMs: number;
   replyDueAt: string;
@@ -300,7 +302,7 @@ export interface DisputeCase {
   proposedByYou: boolean;
   mayWork: boolean;
   traders: { buyer: CaseTrader | null; seller: CaseTrader | null };
-  escrow: { state: string; amountAtomic: string; methodId: string; currency: string; centsPerXmr: string; fiatCents: string; confirmations: number };
+  escrow: { state: string; amountAtomic: string; methodId: string; methodName: string; currency: string; centsPerXmr: string; fiatCents: string; confirmations: number };
   ruling: CaseRuling;
   freezes: { buyer: boolean; seller: boolean };
 }

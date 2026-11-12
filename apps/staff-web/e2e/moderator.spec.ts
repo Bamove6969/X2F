@@ -20,17 +20,20 @@ const row = (o: Record<string, unknown>) => ({
   incidentId: 'D-0000', status: 'open', round: 1, openedBy: 'buyer', rulingDueAt: at(40 * H), approval: 'not-needed', assignee: null, mine: false, ...o,
 });
 
-/** Board ModQueue's five example cases, in its order. */
+/**
+ * Board ModQueue's five example cases, in its order, with the catalog's real ids and names
+ * (data/payment-methods.json), as the staff API sends them.
+ */
 const QUEUE = {
   settings: { firstResponseH: 4, largeTradeLimitUsd: 1000 },
   counts: { open: 5, overdue: 1, unassigned: 1, needApproval: 2 },
   rows: [
-    row({ code: 'M3TB9HQZ6WCR1FXA', xmr: '2100000000000', usd: '693.00', method: 'Cash by mail', openedBy: 'seller', waitingMs: 4 * H + 25 * MIN, replyDueAt: at(-25 * MIN), deadlineTone: 'overdue', assignee: 'dmitri_k', mine: true }),
-    row({ code: 'P9VC6KE1YB4M2HJD', xmr: '400000000000', usd: '132.00', method: 'Revolut', openedBy: 'seller', waitingMs: 3 * H + 45 * MIN, replyDueAt: at(15 * MIN), deadlineTone: 'due' }),
-    row({ code: '7RWD3MXEKQ84HN2T', xmr: '4000000000000', usd: '1320.00', method: 'Zelle', waitingMs: 2 * H + 40 * MIN, replyDueAt: at(80 * MIN), deadlineTone: 'due', approval: 'needs-second', assignee: 'dmitri_k', mine: true }),
-    row({ code: 'K7M29QXA4FTR8WPN', xmr: '1250000000000', usd: '412.50', method: 'Zelle', waitingMs: 3 * H + 16 * MIN, replyDueAt: at(44 * MIN), deadlineTone: 'replied', assignee: 'sarah.v' }),
+    row({ code: 'M3TB9HQZ6WCR1FXA', xmr: '2100000000000', usd: '693.00', method: 'PAY_BY_MAIL', methodName: 'Cash by mail', openedBy: 'seller', waitingMs: 4 * H + 25 * MIN, replyDueAt: at(-25 * MIN), deadlineTone: 'overdue', assignee: 'dmitri_k', mine: true }),
+    row({ code: 'P9VC6KE1YB4M2HJD', xmr: '400000000000', usd: '132.00', method: 'REVOLUT', methodName: 'Revolut', openedBy: 'seller', waitingMs: 3 * H + 45 * MIN, replyDueAt: at(15 * MIN), deadlineTone: 'due' }),
+    row({ code: '7RWD3MXEKQ84HN2T', xmr: '4000000000000', usd: '1320.00', method: 'ZELLE', methodName: 'Zelle', waitingMs: 2 * H + 40 * MIN, replyDueAt: at(80 * MIN), deadlineTone: 'due', approval: 'needs-second', assignee: 'dmitri_k', mine: true }),
+    row({ code: 'K7M29QXA4FTR8WPN', xmr: '1250000000000', usd: '412.50', method: 'ZELLE', methodName: 'Zelle', waitingMs: 3 * H + 16 * MIN, replyDueAt: at(44 * MIN), deadlineTone: 'replied', assignee: 'sarah.v' }),
     row({
-      code: 'B8NE4YJW2PVK7DSG', status: 'awaiting-approval', xmr: '6500000000000', usd: '2145.00', method: 'Bank transfer (ACH)', waitingMs: 26 * H, replyDueAt: at(-22 * H),
+      code: 'B8NE4YJW2PVK7DSG', status: 'awaiting-approval', xmr: '6500000000000', usd: '2145.00', method: 'ACH_TRANSFER', methodName: 'ACH bank transfer (US)', waitingMs: 26 * H, replyDueAt: at(-22 * H),
       deadlineTone: 'replied', approval: { waitingFor: 'second-approval', proposedBy: 'sarah.v' }, assignee: 'sarah.v',
     }),
   ],
@@ -46,7 +49,7 @@ const CASE = {
   afterRefund: false, openedAt: at(-(2 * H + 40 * MIN)), replyDueAt: at(80 * MIN), rulingDueAt: at(45 * H), firstReplyAt: null,
   usd: '1320.00', overLimit: true, limitUsd: 1000, assignee: 'dmitri_k', assignedToYou: true, proposedByYou: false, taken: null, mayWork: true, moderator: null,
   traders: { buyer: trader('harbor_lin', 31, 100), seller: trader('quietfox', 145, 97) },
-  escrow: { state: 'escrow-secured', amountAtomic: '4000000000000', methodId: 'Zelle', currency: 'USD', centsPerXmr: '33000', fiatCents: '132000', confirmations: 10, takenAt: at(-4 * H) },
+  escrow: { state: 'escrow-secured', amountAtomic: '4000000000000', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', centsPerXmr: '33000', fiatCents: '132000', confirmations: 10, takenAt: at(-4 * H) },
   ruling: { proposal: null, sentBack: null, draft: null, round1: null, publishedAt: null, appealEndsAt: null, appeal: null, complyBy: null },
   freezes: { buyer: false, seller: false },
 };

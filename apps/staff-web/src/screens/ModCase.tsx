@@ -162,7 +162,7 @@ function caseLine(c: DisputeCase): string {
   const e = c.escrow;
   const by = c.openedBy === 'system' ? 'X2F' : `the ${c.openedBy}`;
   const ago = span(serverNow().getTime() - Date.parse(c.openedAt));
-  return `${e.methodId} · ${xmrShort(e.amountAtomic)} XMR for ${fiatText(e.fiatCents, e.currency)} at ${fiatText(e.centsPerXmr, e.currency)} / XMR · opened by ${by} ${ago} ago: ${reasonText(c.openedBy, c.reason)}`;
+  return `${e.methodName} · ${xmrShort(e.amountAtomic)} XMR for ${fiatText(e.fiatCents, e.currency)} at ${fiatText(e.centsPerXmr, e.currency)} / XMR · opened by ${by} ${ago} ago: ${reasonText(c.openedBy, c.reason)}`;
 }
 
 const STATUS_TEXT: Readonly<Record<DisputeCase['status'], string>> = {

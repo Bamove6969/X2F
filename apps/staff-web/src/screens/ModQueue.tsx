@@ -147,7 +147,7 @@ export function ModQueue({ role }: { role: StaffRole }) {
                   </>
                 ),
               },
-              { title: 'Method', cell: (r) => r.method },
+              { title: 'Method', cell: (r) => r.methodName },
               { title: 'Opened by', cell: (r) => OPENED_BY[r.openedBy] },
               { title: 'Waiting · deadline', cell: (r) => <DeadlineCell row={r} hours={queue.settings.firstResponseH} now={now} /> },
               {

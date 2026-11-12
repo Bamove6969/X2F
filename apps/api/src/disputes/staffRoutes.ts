@@ -9,6 +9,7 @@ import type { EventBus, LiveEvent } from '../events/bus.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { appendLog } from '../log/append.js';
 import { requireStaff } from '../staff/guard.js';
+import { getMethod } from '../methods/profiles.js';
 import { traderSummaries } from '../traders/summary.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
 import { rulingExtras } from './rulingDrafts.js';
@@ -129,6 +130,9 @@ function mayWork(d: Dispute, req: FastifyRequest): boolean {
   if (d.round === 2 && d.round1 !== null && d.round1.involved.includes(id)) return false;
   return d.assignee === id || isSeniorOrOwner(req.staff.role);
 }
+
+/** A method's display name from the one catalog (`getMethod`), or its id when the catalog has none. */
+const methodName = (id: string): string => getMethod(id)?.name ?? id;
 
 /** "412.50": whole cents as dollars. */
 function usd(cents: bigint): string {
@@ -296,6 +300,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           xmr: r.amount_atomic,
           usd: usd(usdCents),
           method: r.method_id,
+          // The catalog's name (data/payment-methods.json, as the trader API's /v1/methods), else the id.
+          methodName: methodName(r.method_id),
           openedBy: r.opened_by,
           waitingMs: Math.max(0, now.getTime() - since.getTime()),
           replyDueAt: r.reply_due_at.toISOString(),
@@ -419,6 +425,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         state: t.state,
         amountAtomic: t.amount_atomic,
         methodId: t.method_id,
+        methodName: methodName(t.method_id),
         currency: t.locked_currency,
         centsPerXmr: t.locked_cents_per_xmr,
         fiatCents: t.fiat_cents,
