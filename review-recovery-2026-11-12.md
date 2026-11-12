@@ -162,3 +162,97 @@ Fix, in two parts:
 
 Should-fix: L1 (count throttled misses), tests T1 and T2. Owner question: F2 (show the replacement
 code to the S-110 caller once, or fix the copy).
+
+## Re-verify at 5115ec1d (12 Nov 2026)
+
+Fix commit 5115ec1d (on 780f2539) changes password.ts (+21), recovery.ts (+8/-4) and
+recoveryRulings.test.ts (+184/-?).
+
+**Verdict: M1(a), L1, T1 and T2 are closed. The branch is READY to land.** M1(b) (should S-110
+cancel every waiting change) remains an owner question, and so does F2 (the replacement code for
+an owner who logs in with only a password).
+
+### Checks
+
+- Runner, API: recoveryRulings, recovery, password, holdV3, security-review, throttle: 6 files,
+  151 passed, 0 failed (previously 146; the new tests are counted).
+- semgrep on the 3 changed files: 0 findings.
+- dockerd was not touched.
+
+### M1(a): `dropSupersededPasswordChanges` (password.ts)
+
+- It runs inside the S-110 transaction. It is called with `client`, after the code is spent,
+  `applyPassword` runs and `renewRecoveryCode` runs, and before the commit. The account lock from
+  `requireLiveSessionInTx` is still held, and a throw anywhere rolls the drop back too.
+- It cannot touch another account's rows: `delete from hold_changes where account_id = $1 and
+  change->>'kind' = 'password'`, with `$1` = `req.auth.accountId`, the caller's own account. It
+  takes no ids from the request.
+- It drops both kinds: waiting (submitted) password changes, the thief's case, and unsubmitted
+  drafts. Both are superseded by the password just set, so this is correct.
+- **Race with the settle job.** The minute job takes the same account lock. If it runs first and
+  applies a due thief password, that revokes the owner's session, and the S-110 request then fails
+  `requireLiveSessionInTx` with 401 and spends nothing; the owner can log in again and retry. If
+  S-110 runs first, the drop wins. `holdInTx` settles only `account_holds`, not `hold_changes`, so
+  nothing applies a waiting change inside the S-110 transaction. No new race.
+- **The alert leaks nothing.** `hold-changes-cancelled` `{ count, changes: [{ kind: 'password' }]
+  × n, reason: 'superseded-by-recovery-code' }`. It carries no hash, no session or device names,
+  and no ids. The shape matches the existing cancel alert (`describeChange` for a password is
+  just the kind). The web's Alerts.tsx renders it as "n thrown away.", because the unknown reason
+  falls through to the generic text. It is sent only when a submitted change was dropped.
+- **Test.** The thief stages and submits a password change and a payout wallet, and the owner
+  does S-110. The test then checks:
+  - the password change is gone;
+  - exactly one alert with that detail;
+  - after the 24 h settle the password is still the owner's, the thief's password does not
+    match, and the owner's session was not revoked;
+  - the wallet still applies. This is today's behaviour, pinned until M1(b) is ruled.
+
+### L1: throttled misses are counted (recovery.ts `matchRecoveryCode`)
+
+- `throttleFail` now runs before the throttle's 429 is rethrown.
+- **The true owner's correct code cannot be locked out.** The lookup and `if (codeId !== null)
+  return` come before both the count and the rethrow, and `throttleCheck`'s 429 is caught and
+  held, never thrown first. However high the count, a correct code returns its id.
+- The `recovery-code:` key is read only by `throttleCheck` on the same method. No password or
+  other login reads it; challenges.ts only purges old rows. Counting cannot spill into other
+  logins.
+- Tests: 4 counted misses plus 3 throttled ones gives 7, and the correct code then gets 200.
+  4 misses plus 6 throttled ones gives 10 with no clock moved, and exactly one `login-locked`
+  alert. The older "after the lock, the correct code still logs in" test still passes.
+- **The rewritten earlier test** ("a wrong code while throttled ... is counted") changes only the
+  failure-count assertion, from unchanged to 7, which is exactly the L1 rule. It keeps the 429
+  `slow-down` and `retryAfterSeconds` checks and the unused-code check, and adds the
+  correct-code-still-gets-in assertion. It is stronger, not weaker.
+
+### T1: the race tests really race
+
+`racing()` wraps `deps.db.query` (the pool). After each run's code lookup (`select id from
+recovery_codes`, which `matchRecoveryCode` issues on the pool), it holds that run at a barrier
+until every run has completed its lookup, and it asserts `reached === runs.length`. So both
+requests have matched the same unused code before either spends it. The spend then happens on
+pooled clients (`client.query`, not spied), each under its own transaction: S-110's conditional
+`update ... used_at is null`, and the backup login's `backupSession`. That is a real race on the
+one row.
+- Backup login vs S-110: exactly one 200 and one 401. The password changed only if S-110 won,
+  and a recovery session exists only if the login won.
+- Two S-110s: exactly one 200 and one 401, and the winner's password is stored.
+
+### T2: the in-transaction hold check
+
+After the code lookup, which comes after `requireNotHeld`, the test inserts an `account_holds`
+row. The request then gets 403 `recovery-hold` from `holdInTx` inside the transaction, the code
+stays unused and the password is unchanged. The in-transaction check is now exercised.
+
+### The M1(b) flag
+
+`OWNER_RULED_S110_CANCELS_ALL_WAITING_CHANGES = false` lives only in recoveryRulings.test.ts. A
+grep finds no reference to it in apps/api/src. The code always keeps non-password waiting changes,
+and the flag only picks which expectation the test asserts. Note for whoever flips it: flipping
+it alone makes the test fail until the code changes, which is intended.
+
+### Still open
+
+- M1(b) is an owner question; I still recommend cancelling all waiting changes on S-110.
+- F2 is an owner question: show the replacement code once to the S-110 caller, or reword the S-111
+  copy.
+- I1 is information only.
