@@ -3,9 +3,10 @@ import { signedIn } from './session.js';
 
 // C-021 (owner p11-33, 9 Nov): when a device becomes active again it syncs first, before the
 // person can act. In the real build: back online (or back from the background) on a screen whose
-// actions change state, "Updating…" shows and its controls are held while GET /v1/site (one of
-// the pulls) is read again; the page stays readable; a failed read lets go and says so, with Try
-// again. src/session/syncFirst.ts, src/ui/SyncGate.tsx.
+// actions change state, "Updating…" shows and its controls are held while GET /v1/site and the
+// screen's own reads (Post offer: its methods, prices and currencies) are read again; the page
+// stays readable; a failed read lets go and says so, with Try again. src/session/syncFirst.ts,
+// src/ui/SyncGate.tsx.
 
 const OFF = { banner: null, tradingPaused: false, maintenance: null, plannedMaintenance: null };
 
@@ -20,24 +21,40 @@ async function site(page: Page) {
   return s;
 }
 
+/** Post offer's own reads; counts the method list's reads (it is read again on resume, review S1). */
 async function stubPost(page: Page) {
-  await page.route(/\/v1\/methods\?/, (r) => r.fulfill({ json: [] }));
+  const n = { methods: 0 };
+  await page.route(/\/v1\/methods\?/, (r) => {
+    n.methods++;
+    return r.fulfill({ json: { live: [], all: [] } });
+  });
   await page.route('**/v1/offers?*', (r) => r.fulfill({ json: [] }));
   await page.route(/\/v1\/price\?/, (r) => r.fulfill({ status: 404, json: { error: 'not-found' } }));
+  await page.route('**/v1/currencies', (r) => r.fulfill({ json: { currencies: [] } }));
+  return n;
 }
 
 test('back online on Post offer: "Updating…" and held controls until the site is read again; the page stays readable', async ({ page }) => {
   const s = await site(page);
   await signedIn(page);
-  await stubPost(page);
+  const n = await stubPost(page);
   await page.goto('/post');
   await expect(page.locator('main')).toBeVisible();
   await expect(page.locator('[data-part="sync-gate"]')).toHaveCount(0);
+  await expect.poll(() => n.methods).toBeGreaterThan(0);
+  const methodsBefore = n.methods;
+  // Review S2: the live region is on the page, empty, before the sync; "Updating…" goes into it.
+  const live = page.locator('[role="status"][data-part="sync-live"]');
+  await expect(live).toHaveCount(1);
+  await expect(live).toHaveText('');
   s.hold = true;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  const status = page.locator('[data-part="sync-gate"]');
+  const status = live.locator('[data-part="sync-gate"]');
   await expect(status).toHaveText('Updating…');
-  await expect(status).toHaveAttribute('role', 'status');
+  await expect(page.locator('main')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.getByRole('button', { name: 'Post offer', exact: true })).toHaveAttribute('aria-disabled', 'true');
+  // Review S1: the screen's own data is read again, not only the site.
+  await expect.poll(() => n.methods).toBe(methodsBefore + 1);
   expect(await page.evaluate(() => document.documentElement.hasAttribute('data-sync-held'))).toBe(true);
   // Reading never waits: the screen is still on show under it.
   await expect(page.locator('main')).toBeVisible();
@@ -46,6 +63,10 @@ test('back online on Post offer: "Updating…" and held controls until the site 
   s.hold = false;
   s.release();
   await expect(status).toHaveCount(0);
+  // Every read answered: ready, not stale.
+  await expect(page.locator('[data-part="sync-stale"]')).toHaveCount(0);
+  await expect(live).toHaveText('');
+  await expect(page.locator('main')).not.toHaveAttribute('aria-busy', 'true');
   expect(await page.evaluate(() => document.documentElement.hasAttribute('data-sync-held'))).toBe(false);
 });
 

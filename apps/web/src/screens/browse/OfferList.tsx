@@ -1,4 +1,5 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { useResumeSync } from '../../session/syncFirst.js';
 import { Checkbox } from '../../ui/Checkbox.js';
 import { Link, useLocation, useParams } from 'react-router';
 import { Icon } from '../../ui/icons.js';
@@ -18,12 +19,21 @@ const SORT_IDS: readonly OfferSort[] = ['best', 'online', 'trades'];
 
 type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'failed'; shape: boolean };
 
+/**
+ * One read, again whenever `deps` change; and again on resume (C-021, session/syncFirst.ts): that
+ * read must answer before the board's actions work again. A failed resume read keeps what is shown
+ * (the gate says it may be out of date) and an answer for older `deps` is dropped.
+ */
 function useLoad<T>(run: (signal: AbortSignal) => Promise<T>, deps: unknown[]): Load<T> {
   const [load, setLoad] = useState<Load<T>>({ kind: 'loading' });
+  const gen = useRef(0);
   useEffect(() => {
+    const mine = ++gen.current;
     const abort = new AbortController();
     run(abort.signal).then(
-      (value) => setLoad({ kind: 'ready', value }),
+      (value) => {
+        if (mine === gen.current) setLoad({ kind: 'ready', value });
+      },
       (err: unknown) => {
         if (abort.signal.aborted) return;
         if (err instanceof ApiShapeError) console.error(err);
@@ -32,6 +42,11 @@ function useLoad<T>(run: (signal: AbortSignal) => Promise<T>, deps: unknown[]): 
     );
     return () => abort.abort();
   }, deps);
+  useResumeSync(async () => {
+    const mine = gen.current;
+    const value = await run(new AbortController().signal);
+    if (mine === gen.current) setLoad({ kind: 'ready', value });
+  });
   return load;
 }
 

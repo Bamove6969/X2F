@@ -13,6 +13,7 @@ import {
   allHint, applyResults, batches, cantDoFor, countLine, idsFor, isHeld, offerLimits, offerMethods, offerPrice, offerPriceParts, offerTitle, refusalLine, statusLine, summaryLine,
 } from '../src/screens/myoffers/model.js';
 import { CANT_DO_TITLE, MY_OFFERS_HOLD, myOffersCantDoText, postCantDoText } from '../src/ui/cantDoCodes.js';
+import { resetSyncFirst, syncNow } from '../src/session/syncFirst.js';
 import { fire, render } from './render.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
@@ -543,5 +544,31 @@ describe('My offers on a fold: two panes (Fold-MyOffers)', () => {
     const host = await mount();
     expect(host.querySelector('[data-pane="side"]')).toBeNull();
     expect(host.querySelector('button[aria-pressed]')).toBeNull();
+  });
+});
+
+describe('C-021 review S1: My offers reads its list again on resume', () => {
+  afterEach(() => resetSyncFirst());
+
+  it('a resume re-reads GET /v1/account/offers before it is ready, and shows what changed meanwhile; a failed read is stale and keeps the list', async () => {
+    const host = await mount();
+    expect(isOn(host, A)).toBe(true);
+    const reads = () => calls.filter((c) => c.url === '/v1/account/offers' && c.method === 'GET').length;
+    const before = reads();
+    // Paused from another device while this tab was in the background.
+    list = list.map((o) => (o.id === A ? { ...o, status: 'paused' } : o));
+    let phase: unknown;
+    await act(async () => {
+      phase = await syncNow();
+    });
+    expect(phase).toBe('ready');
+    expect(reads()).toBe(before + 1);
+    expect(isOn(host, A)).toBe(false);
+    vi.stubGlobal('fetch', vi.fn(async () => json(500, { error: 'internal' })));
+    await act(async () => {
+      phase = await syncNow();
+    });
+    expect(phase).toBe('stale');
+    expect(row(host, A)).not.toBeNull();
   });
 });

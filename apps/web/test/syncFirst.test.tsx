@@ -12,6 +12,7 @@ import { setEscrowClient, type EscrowClient } from '../src/escrow/useEscrow.js';
 import '../src/screens/trade/screens.js';
 import { TradeRoom } from '../src/screens/trade/TradeRoom.js';
 import {
+  ONLINE_DEBOUNCE_MS,
   RESUME_AFTER_HIDDEN_MS,
   SYNC_COPY,
   SYNC_TIMEOUT_MS,
@@ -22,6 +23,7 @@ import {
   watchResume,
 } from '../src/session/syncFirst.js';
 import { refreshSession } from '../src/session/useSession.js';
+import { PostOffer } from '../src/screens/PostOffer.js';
 import { HoldButton } from '../src/ui/HoldButton.js';
 import { SyncGate, syncGated } from '../src/ui/SyncGate.js';
 import { SERVER_NOW, sellerView } from '../e2e/refundViews.js';
@@ -107,7 +109,7 @@ describe('watchResume: what counts as becoming active again', () => {
     document.dispatchEvent(new Event('visibilitychange'));
   };
 
-  it(`back from the background after ${RESUME_AFTER_HIDDEN_MS} ms or more, back online, a page restored from the back-forward cache, a frozen page resumed`, () => {
+  it(`back from the background after ${RESUME_AFTER_HIDDEN_MS} ms or more, back online, a page restored from the back-forward cache, a frozen page resumed`, async () => {
     const sync = vi.fn(async () => undefined);
     registerResumeSync(sync);
     const stop = watchResume({ now: () => now });
@@ -119,8 +121,11 @@ describe('watchResume: what counts as becoming active again', () => {
     now += RESUME_AFTER_HIDDEN_MS;
     show('visible');
     expect(sync).toHaveBeenCalledTimes(1);
+    await flush();
+    now += ONLINE_DEBOUNCE_MS;
     window.dispatchEvent(new Event('online'));
     expect(sync).toHaveBeenCalledTimes(2);
+    await flush();
     const restored = new Event('pageshow') as PageTransitionEvent;
     Object.defineProperty(restored, 'persisted', { value: true });
     window.dispatchEvent(restored);
@@ -128,11 +133,44 @@ describe('watchResume: what counts as becoming active again', () => {
     Object.defineProperty(fresh, 'persisted', { value: false });
     window.dispatchEvent(fresh);
     expect(sync).toHaveBeenCalledTimes(3);
+    await flush();
     document.dispatchEvent(new Event('resume'));
     expect(sync).toHaveBeenCalledTimes(4);
+    await flush();
     stop();
+    now += ONLINE_DEBOUNCE_MS;
     window.dispatchEvent(new Event('online'));
     expect(sync).toHaveBeenCalledTimes(4);
+  });
+
+  it(`review S3: back online syncs at most once per ${ONLINE_DEBOUNCE_MS} ms, and not while a sync is already running`, async () => {
+    let finish!: () => void;
+    const sync = vi.fn(() => new Promise<void>((r) => (finish = r)));
+    registerResumeSync(sync);
+    const stop = watchResume({ now: () => now });
+    const t0 = now;
+    window.dispatchEvent(new Event('online'));
+    expect(sync).toHaveBeenCalledTimes(1);
+    now = t0 + 1_000;
+    window.dispatchEvent(new Event('online'));
+    expect(sync).toHaveBeenCalledTimes(1);
+    finish();
+    await flush();
+    expect(getSyncPhase()).toBe('ready');
+    // Settled, but still within the window of the last online sync: a flaky link holds nothing again.
+    now = t0 + ONLINE_DEBOUNCE_MS - 1;
+    window.dispatchEvent(new Event('online'));
+    expect(sync).toHaveBeenCalledTimes(1);
+    now = t0 + ONLINE_DEBOUNCE_MS;
+    window.dispatchEvent(new Event('online'));
+    expect(sync).toHaveBeenCalledTimes(2);
+    // A sync already running: online is ignored however long ago the last one was.
+    now = t0 + 3 * ONLINE_DEBOUNCE_MS;
+    window.dispatchEvent(new Event('online'));
+    expect(sync).toHaveBeenCalledTimes(2);
+    finish();
+    await flush();
+    stop();
   });
 });
 
@@ -197,7 +235,7 @@ describe('SyncGate: reading never waits; the actions that change state do', () =
       p = syncNow();
     });
     const status = g.host.querySelector('[data-part="sync-gate"]');
-    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.closest('[role="status"]')).not.toBeNull();
     expect(status?.textContent).toBe(SYNC_COPY.updating);
     expect(g.host.querySelector('[data-part="reading"]')?.textContent).toBe('0.500000 XMR');
     expect(document.documentElement.hasAttribute('data-sync-held')).toBe(true);
@@ -220,6 +258,47 @@ describe('SyncGate: reading never waits; the actions that change state do', () =
     expect(document.documentElement.hasAttribute('data-sync-held')).toBe(false);
     g.click(g.button());
     expect(g.act1).toHaveBeenCalledOnce();
+  });
+
+  it('review S2: the live region is on the page before the sync and "Updating…" is put into it; main is busy and the held controls say they are disabled', async () => {
+    let done!: () => void;
+    registerResumeSync(() => new Promise<void>((r) => (done = r)));
+    const g = gate();
+    const live = g.host.querySelector('[data-part="sync-live"]');
+    expect(live?.getAttribute('role')).toBe('status');
+    expect(live?.textContent).toBe('');
+    const already = document.createElement('button');
+    already.setAttribute('aria-disabled', 'true');
+    g.host.querySelector('main')!.append(already);
+    const main = g.host.querySelector('main')!;
+    expect(main.hasAttribute('aria-busy')).toBe(false);
+    let p!: Promise<unknown>;
+    act(() => {
+      p = syncNow();
+    });
+    // The same element, now filled: a screen reader announces the change.
+    expect(g.host.querySelector('[data-part="sync-live"]')).toBe(live);
+    expect(live?.textContent).toBe(SYNC_COPY.updating);
+    expect(main.getAttribute('aria-busy')).toBe('true');
+    expect(g.button().getAttribute('aria-disabled')).toBe('true');
+    // A control that mounts during the sync (a sheet opening) is marked too.
+    const late = document.createElement('button');
+    main.append(late);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(late.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => {
+      done();
+      await p;
+    });
+    expect(live?.isConnected).toBe(true);
+    expect(live?.textContent).toBe('');
+    expect(main.hasAttribute('aria-busy')).toBe(false);
+    expect(g.button().hasAttribute('aria-disabled')).toBe(false);
+    expect(late.hasAttribute('aria-disabled')).toBe(false);
+    // One the screen itself had disabled stays disabled.
+    expect(already.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('stale (failed or timed out): said plainly, actions work again, and Try again syncs again', async () => {
@@ -294,6 +373,47 @@ describe('SyncGate and the hold-to-release button (SellerConfirm, HoldButton)', 
   });
 });
 
+describe('SyncGate without a PointerEvent constructor (review info)', () => {
+  it('a running hold is still stopped and the guard still installed', async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    registerResumeSync(() => new Promise<void>((r) => (finish = r)));
+    const done = vi.fn();
+    const r = render(
+      <MemoryRouter initialEntries={['/trade/7F3A-9C21-4FTR-8WPN']}>
+        <SyncGate />
+        <main>
+          <HoldButton label="Release" holdingLabel="Keep holding" holdMs={1000} onComplete={done} />
+        </main>
+      </MemoryRouter>,
+    );
+    const btn = () => r.host.querySelector('.x2f-hold')!;
+    fire(btn(), new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerId: 1, isPrimary: true }));
+    expect(btn().getAttribute('data-holding')).toBe('true');
+    vi.stubGlobal('PointerEvent', function NoPointerEvent() {
+      throw new TypeError('Illegal constructor');
+    });
+    let p!: Promise<unknown>;
+    act(() => {
+      p = syncNow();
+    });
+    vi.unstubAllGlobals();
+    expect(btn().getAttribute('data-holding')).toBe('false');
+    expect(document.documentElement.hasAttribute('data-sync-held')).toBe(true);
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    fire(btn(), click);
+    expect(click.defaultPrevented).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(done).not.toHaveBeenCalled();
+    await act(async () => {
+      finish();
+      await p;
+    });
+  });
+});
+
 describe('the trade room pulls its trade on resume', () => {
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const ME = { kind: 'trader', level: 'full', displayName: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } };
@@ -341,6 +461,62 @@ describe('the trade room pulls its trade on resume', () => {
     });
     expect(reads).toBe(before + 1);
     expect(phase).toBe('ready');
+    down = true;
+    await act(async () => {
+      phase = await syncNow();
+    });
+    expect(phase).toBe('stale');
+  });
+});
+
+describe('review S1: Post offer reads its methods, prices and currencies again on resume', () => {
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  let reads: Record<string, number>;
+  let down: boolean;
+  beforeEach(() => {
+    reads = {};
+    down = false;
+    sessionStorage.clear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://x2f.test');
+        reads[url.pathname] = (reads[url.pathname] ?? 0) + 1;
+        if (url.pathname === '/v1/account/me') return json({ error: 'not-authenticated' }, 401);
+        if (down) return json({ error: 'internal' }, 500);
+        if (url.pathname === '/v1/methods') return json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', giftCard: false }] });
+        if (url.pathname === '/v1/price') {
+          const currency = url.searchParams.get('currency');
+          return json({ currency, centsPerXmr: '33000', exponent: 2, at: '2026-11-12T00:00:00.000Z', usdCentsPerXmr: '33000' });
+        }
+        if (url.pathname === '/v1/currencies') return json({ currencies: [{ code: 'USD', flag: '🇺🇸', available: true }] });
+        return json({ error: 'not-found' }, 404);
+      }),
+    );
+    refreshSession();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    refreshSession();
+  });
+
+  it('a resume reads GET /v1/methods, /v1/price and /v1/currencies again before it is ready; a failed read is stale', async () => {
+    render(
+      <MemoryRouter initialEntries={['/post?method=ZELLE&side=sell']}>
+        <PostOffer />
+      </MemoryRouter>,
+    );
+    await flush();
+    const before = { ...reads };
+    expect(before['/v1/methods']).toBeGreaterThan(0);
+    expect(before['/v1/price']).toBeGreaterThan(0);
+    expect(before['/v1/currencies']).toBeGreaterThan(0);
+    let phase: unknown;
+    await act(async () => {
+      phase = await syncNow();
+    });
+    expect(phase).toBe('ready');
+    for (const path of ['/v1/methods', '/v1/price', '/v1/currencies']) expect(reads[path], path).toBe(before[path]! + 1);
     down = true;
     await act(async () => {
       phase = await syncNow();

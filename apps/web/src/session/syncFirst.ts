@@ -3,12 +3,13 @@
  * or app) it syncs first: every change is pushed before the user can act (a few seconds)."
  *
  * The sync-first gate. When this tab becomes active again (`watchResume`: back from the background
- * after RESUME_AFTER_HIDDEN_MS, back online, restored from the back-forward cache, or a frozen page
- * resumed), `syncNow` runs every registered sync at once: the pulls of fresh state (the open trade
- * room's trade, the dispute, the site's maintenance and trading-paused state) and the flush of
- * anything this device has queued (none on main yet: the chat sends go straight out; the erased-chat
- * markers of C-014 register here when they land). The phase is `syncing` until they all succeed
- * (`ready`). `SyncGate` holds the actions that change state while it is `syncing`; reading never
+ * after RESUME_AFTER_HIDDEN_MS, back online (at most once per ONLINE_DEBOUNCE_MS), restored from the
+ * back-forward cache, or a frozen page resumed), `syncNow` runs every registered sync at once: the
+ * pulls of fresh state (the open trade room's trade, the dispute, the site's maintenance and
+ * trading-paused state, the offers and their quote, My offers, Post offer's methods and prices)
+ * and the flush of anything this device has queued (none on main yet: the chat sends go straight
+ * out; the erased-chat markers of C-014 register here when they land). The phase is `syncing`
+ * until they all succeed (`ready`). `SyncGate` holds the actions that change state while it is `syncing`; reading never
  * waits. A sync that fails, or is still running after SYNC_TIMEOUT_MS, ends `stale`: the actions
  * work again and the page says plainly that it may be out of date, with Try again (never stuck).
  * The server still judges every action against the current trade (a stale tap is refused there).
@@ -24,6 +25,11 @@ export type SyncPhase = 'ready' | 'syncing' | 'stale';
 export const SYNC_TIMEOUT_MS = 8_000;
 /** A tab switch shorter than this is not "becoming active again" (no Updating flash on every glance away). */
 export const RESUME_AFTER_HIDDEN_MS = 5_000;
+/**
+ * Back online syncs at most once in this long, and never while a sync is already running: a flaky
+ * connection that drops and comes back again and again must not hold the page again and again.
+ */
+export const ONLINE_DEBOUNCE_MS = 3_000;
 
 /** COPY-UNSIGNED (C-021; no board draws the gate yet: design writes the final words). */
 export const SYNC_COPY = {
@@ -101,18 +107,26 @@ export function watchResume(o: { now?: () => number } = {}): () => void {
     hiddenAt = null;
     if (was !== null && now() - was >= RESUME_AFTER_HIDDEN_MS) go();
   };
+  let onlineAt: number | null = null;
+  const onOnline = () => {
+    if (phase === 'syncing') return;
+    const t = now();
+    if (onlineAt !== null && t - onlineAt < ONLINE_DEBOUNCE_MS) return;
+    onlineAt = t;
+    go();
+  };
   const onPageShow = (e: Event) => {
     if ((e as PageTransitionEvent).persisted) go();
   };
   document.addEventListener('visibilitychange', onVisibility);
   // Page Lifecycle: a page the browser froze in the background, now running again.
   document.addEventListener('resume', go);
-  window.addEventListener('online', go);
+  window.addEventListener('online', onOnline);
   window.addEventListener('pageshow', onPageShow);
   return () => {
     document.removeEventListener('visibilitychange', onVisibility);
     document.removeEventListener('resume', go);
-    window.removeEventListener('online', go);
+    window.removeEventListener('online', onOnline);
     window.removeEventListener('pageshow', onPageShow);
   };
 }
