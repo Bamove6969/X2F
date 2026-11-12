@@ -18,6 +18,7 @@ import {
 } from '@x2f/trade';
 import type pg from 'pg';
 import { NO_DESK_FACTS, sweepKindAgrees, WATCH_FRESH_MS, type Desk } from './desk.js';
+import type { DeskArmed } from './execute.js';
 import type { Link, WatchItem } from './link.js';
 
 /**
@@ -50,13 +51,17 @@ export interface WatcherOptions {
    */
   openDesk?: (a: ModPartyArgs) => Promise<Desk>;
   /**
+   * Plan 4 Task 14 (R-M2): the kind of the ruling payout the executor recorded for this trade, or
+   * null. Non-null also means a payout is recorded: the desk then hands nothing (review M5).
+   */
+  rulingKind?: (code: string) => RulingKind | null;
+  /**
    * Plan 4 Task 14: the ruling executor's pass for this trade, after the desk's, with the same
    * accepted facts (the trade's party, the API item read for this pass, the funds the party read),
-   * this service's own args and the desk's shadow trade. Absent: no rulings are executed.
+   * this service's own args, the desk's shadow trade and its armed refund (review M5). Absent: no
+   * rulings are executed.
    */
-  /** Plan 4 Task 14 (R-M2): the kind of the ruling payout the executor recorded for this trade, or null. */
-  rulingKind?: (code: string) => RulingKind | null;
-  executeRuling?: (s: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null }) => Promise<unknown>;
+  executeRuling?: (s: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null; deskArmed: DeskArmed }) => Promise<unknown>;
 }
 
 export interface Watcher {
@@ -457,7 +462,9 @@ export function createWatcher(o: WatcherOptions): Watcher {
     const builder = own ? (handle.committedBuilder?.() ?? null) : null;
     // Plan 4 Task 14 (R-M2): a mod-built sweep is a ruling's payout, named by the executor's own record.
     const signedKind = ownSweepKind(builder, builder === 'mod' ? (o.rulingKind?.(row.trade) ?? null) : null);
-    const settledKind = own ? (signedKind ?? deskNow?.record().armed?.kind ?? item.settleKind) : settleKind;
+    // Review M4: a mod-built sweep is named by the executor's record or by nothing (the API then
+    // refuses settle-kind-unknown and the watcher backs off), never by the desk or the API.
+    const settledKind = own ? (builder === 'mod' ? signedKind : (signedKind ?? deskNow?.record().armed?.kind ?? item.settleKind)) : settleKind;
     if (!(await post(row.trade, step.reports, settledKind))) return true;
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
     await ensureDesk(args);
@@ -474,6 +481,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
           funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked },
           apiAt: fresh.at,
           refresh: () => freshItem(row.trade, unlisted),
+          rulingRecorded: (o.rulingKind?.(row.trade) ?? null) !== null,
         })
         .catch(() => o.log({ reason: 'desk-step-failed' }));
     }
@@ -486,6 +494,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
           funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked },
           args,
           shadow: desks.get(row.trade)?.record().shadow ?? null,
+          deskArmed: desks.get(row.trade)?.record().armed ?? null,
         })
         .catch(() => o.log({ reason: 'ruling-step-failed' }));
     }

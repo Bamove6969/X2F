@@ -428,7 +428,7 @@ describe('POST /internal/v1/reports: watcher reports', () => {
   });
 });
 
-// Plan 4 Task 14, R-M2 (NEEDS_PLAN_4_RULING_PAYOUT): the moderation process executed a round-1
+// Plan 4 Task 14, R-M2: the moderation process executed a round-1
 // escrow ruling (mod-built, the winner co-signed) and its watcher reports the sweep with the ruling's
 // own kind. The API applies it in one transaction: the trade released (dispute-buyer) or refunded
 // (dispute-seller), the dispute's `executed` (it closes once final: the appeal window still runs,

@@ -15,8 +15,9 @@ import { loadDisputeRecord, saveDispute } from './store.js';
  * round 1 executes once and round 2 never moves coins). It must be published, not after a refund,
  * an escrow outcome, and pay exactly the reported kind: `release-to-buyer` is `dispute-buyer` (the
  * buyer first, then the fee), `refund-to-seller` is `dispute-seller` (everything back to the seller).
- * Anything else: `settle-kind-unknown` (no escrow payout to record) or `settle-kind-changed` (the
- * report contradicts the ruling); the caller refuses the report and nothing is written.
+ * Anything else: `settle-kind-unknown` (no escrow payout to record), `settle-kind-changed` (the
+ * report contradicts the ruling) or `dispute-closed` (security review 2026-11-12 I7: the case was
+ * closed before its payout was seen); the caller refuses the report and nothing is written here.
  *
  * Then the dispute machine's `executed` (closed at once when the case is already final, else when
  * its appeal window ends, `resolveFinal`), its lien rules, and `ruling.executed {rulingId, txHash}`
@@ -28,7 +29,7 @@ export async function recordRulingExecution(
   kind: RulingKind,
   txHash: string,
   now: Date,
-): Promise<'ok' | 'settle-kind-unknown' | 'settle-kind-changed'> {
+): Promise<'ok' | 'settle-kind-unknown' | 'settle-kind-changed' | 'dispute-closed'> {
   const rec = await loadDisputeRecord(client, code, { lock: true });
   if (rec === null) return 'settle-kind-unknown';
   const d: Dispute = rec.dispute;
@@ -47,8 +48,9 @@ export async function recordRulingExecution(
   try {
     next = applyDispute(d, { type: 'executed' }, { kind: 'system' }, now, await disputeSettings(client));
   } catch (e) {
-    // Executed already (another tx for the same escrow would be refused by the trade first), or closed.
-    if (e instanceof DisputeRuleError) return 'settle-kind-unknown';
+    // Review I7: a case a senior already closed is its own reason (the caller raises it to the
+    // owner: the coins moved, the trade stays disputed); executed already is settle-kind-unknown.
+    if (e instanceof DisputeRuleError) return d.status === 'closed' ? 'dispute-closed' : 'settle-kind-unknown';
     throw e;
   }
   await applyLienRules(client, d, next, now);

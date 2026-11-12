@@ -233,6 +233,32 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * trade store as `system`. The state machine's refusal is 409 with its rule code, so a repeated
    * report is refused `wrong-state` and the watcher counts it as done.
    */
+  /**
+   * Security review 2026-11-12 I7: a ruling's payout seen after its case was closed (by a senior's
+   * close). The coins moved but the trade stays disputed and the watcher backs off, so the owner is
+   * alerted, once per trade (the case row locked, so two reports never alert twice).
+   */
+  const raiseClosedCase = async (x: { code: string; txHash: string }): Promise<void> => {
+    const c = await o.db.connect();
+    try {
+      await c.query('begin');
+      const { rows } = await c.query<{ seq: number }>(
+        'select seq from disputes where code = $1 and seq = (select max(seq) from disputes where code = $1) for update',
+        [x.code],
+      );
+      const seen = await c.query("select 1 from alerts where kind = 'ruling-payout-dispute-closed' and detail->>'trade' = $1 limit 1", [x.code]);
+      if (rows[0] !== undefined && seen.rows.length === 0) {
+        await addOwnerAlert(c, 'ruling-payout-dispute-closed', { trade: x.code, seq: rows[0].seq, txHash: x.txHash }, o.clock?.() ?? new Date(now()));
+      }
+      await c.query('commit');
+    } catch (e) {
+      await c.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      c.release();
+    }
+  };
+
   const watcherReport = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
     if (code === null) throw new Refused(400, 'bad-body');
@@ -282,6 +308,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     // a signing window that reverted and a new settlement started in between is refused, never
     // recorded as the other kind.
     let within: Parameters<typeof applyEvent>[4];
+    /** Review I7: a ruling payout's trade and tx, raised to the owner if its case turns out closed. */
+    let closedCase: { code: string; txHash: string } | null = null;
     if (event.type === 'settled' && isRulingKind(claimedKind)) {
       // Plan 4 Task 14 (R-M2): the moderation process executed a round-1 escrow ruling and its watcher
       // saw the mod-built sweep. Never named by the trade alone: only a disputed trade whose published
@@ -304,6 +332,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         const r = await recordRulingExecution(c, code, kind, txHash, at);
         if (r !== 'ok') throw new Refused(409, r);
       };
+      closedCase = { code, txHash };
     } else if (event.type === 'settled') {
       const t = await loadTrade(o.db, code);
       const kind = t ? settleKindFor(t) : null;
@@ -323,8 +352,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         // `resolveFinal` close a `release-to-buyer` case with nothing owed, so it is left as it is
         // (it waits for an execution that cannot come, and never closes) and raised for staff to
         // re-rule with `seller-sends-xmr`: logged on the case and the owner alerted.
-        // NEEDS_PLAN_4_RULING_PAYOUT (R-M2): a ruling's own payout must report its own kind
-        // (`RulingKind`), never `auto-refund`, before ruling execution lands; see machine.ts `settled`.
+        // R-M2 (Plan 4 Task 14): a ruling's own payout reports its own kind (`RulingKind`, the branch
+        // above), never `auto-refund`; machine.ts `settled` refuses a ruling kind once txHash is set.
         if (prev.state === 'disputed' && next.state === 'disputed' && prev.txHash === null && next.txHash !== null) {
           const { rows } = await c.query<{ seq: number; status: string }>(
             `select seq, status from disputes
@@ -346,6 +375,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     try {
       await applyEvent({ db: o.db, clock: o.clock ?? (() => new Date(now())), ...(o.publish ? { publish: o.publish } : {}) }, code, event, 'system', within);
     } catch (e) {
+      // Review I7: the payout's transaction rolled back; the owner is told once, in its own transaction.
+      if (e instanceof Refused && e.reason === 'dispute-closed' && closedCase !== null) await raiseClosedCase(closedCase).catch(() => log({ reason: 'internal-dispute-closed-alert-failed' }));
       if (e instanceof TradeRuleError) throw new Refused(409, e.code);
       if (e instanceof ApiError && e.status === 404) throw new Refused(404, 'not-found');
       if (e instanceof RangeError) throw new Refused(400, 'bad-body');

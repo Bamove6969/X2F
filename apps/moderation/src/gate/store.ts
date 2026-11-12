@@ -68,7 +68,7 @@ export interface GateState {
   /** Every tap nonce (hex) the gate has relied on, with what it was used for. */
   usedNonces: Record<string, string>;
   rulingsSeen: Record<string, RulingSeen>;
-  /** Task 14's log checkpoints (NEEDS_TASK_14). */
+  /** Task 14's log checkpoints (checkpoint.ts): the head's id and hash, sealed here when taken. */
   checkpoints: Array<{ id: string; hash: string; at: string }>;
   /**
    * Each owner invite the gate has acted on (review B1): the account it was bound to the first time

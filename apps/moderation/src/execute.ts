@@ -21,6 +21,8 @@ import { gateCheck, type GateContext, type GateRuling, type GateSource, type Gat
  * - no recorded terms for the trade: `no-terms`; the escrow not wholly unlocked: `waiting-funds`;
  * - the gate (`gateCheck`: the registry synced first, so a tapped emergency stop or a switch-off
  *   counts at once; then the ruling's stored taps) refuses: `refused-<reason>` (e.g. `stopped`);
+ * - the trade's desk armed a refund that is not blocked: `desk-armed` (review M5; the desk, in turn,
+ *   hands nothing once a payout is recorded here);
  * - a payout is recorded for this trade but it is not this ruling or not these payouts (a later
  *   surplus, a different ruling): `mismatch`, logged; nothing else is ever settled for the trade;
  * - else the payout is recorded in the sealed gate store (saved) BEFORE the party is asked, then
@@ -39,6 +41,9 @@ import { gateCheck, type GateContext, type GateRuling, type GateSource, type Gat
  */
 export type RulingSource = GateSource & { storedRulings(code: string): Promise<StoredRulings> };
 
+/** The refund this trade's desk armed (`DeskRecord.armed`), or null (security review 2026-11-12 M5). */
+export type DeskArmed = { kind: 'auto-refund' | 'buyer-cancel'; blocked?: string | null } | null;
+
 export interface RulingStepInput {
   code: string;
   /** The trade's moderator party (only its settle() is used). */
@@ -49,9 +54,16 @@ export interface RulingStepInput {
   funds: { balance: bigint; unlocked: bigint };
   /** This process's own recorded terms (`recordedTerms`), or null when it has none. */
   recorded: RecordedTerms | null;
+  /**
+   * Review M5: the desk's armed refund for the trade. While one is armed and not blocked, nothing is
+   * recorded or handed (`desk-armed`): the party would otherwise trade the desk's uncommitted refund
+   * for the ruling's payout, or the reverse. An armed buyer cancel is never handed while the API
+   * shows the trade disputed (the desk's `apiAllows`), so only an unblocked auto-refund waits.
+   */
+  deskArmed?: DeskArmed;
 }
 
-export type RulingStepResult = 'none' | 'settled' | 'paused' | 'no-terms' | 'waiting-funds' | `refused-${string}` | 'mismatch' | 'handed' | 'in-flight';
+export type RulingStepResult = 'none' | 'settled' | 'paused' | 'no-terms' | 'waiting-funds' | 'desk-armed' | `refused-${string}` | 'mismatch' | 'handed' | 'in-flight';
 
 export interface RulingExecutor {
   step(s: RulingStepInput): Promise<RulingStepResult>;
@@ -97,6 +109,11 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
       return `refused-${auth.reason}`;
     }
     if (auth.settle === null) return 'none';
+    // Review M5: the desk's armed, unblocked refund goes first; the ruling waits until it is blocked.
+    if (s.deskArmed?.kind === 'auto-refund' && (s.deskArmed.blocked ?? null) === null && o.store.state.executions[s.code] === undefined) {
+      o.log({ reason: 'ruling-waits-desk-armed' });
+      return 'desk-armed';
+    }
     const { winner } = auth.settle;
     const payouts = asRecord(auth.settle.payouts);
     const key = keyOf(r1.id, winner, payouts);
