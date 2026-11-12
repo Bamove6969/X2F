@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { needsProof, renewProof } from '../session/deviceKey.js';
 
 /**
  * A refused API call, shaped like Plan 2's `AuthApiError`: the HTTP status, the API's error code
@@ -141,7 +142,13 @@ export async function api<T = unknown>(path: string, init: ApiInit = {}): Promis
   }
   if (init.signal) req.signal = init.signal;
 
-  const res = await fetch(path, req);
+  let res = await fetch(path, req);
+  // S-085: a bound session's short-lived cookie ran out: renew it with the device key and retry once.
+  if (await needsProof(res)) {
+    const r = await renewProof();
+    if (r === 'renewed') res = await fetch(path, req);
+    else if (path !== '/v1/account/me') sessionGoneListener?.();
+  }
   let data: unknown = null;
   try {
     data = await res.json();

@@ -831,6 +831,9 @@ describe('the audit log covers every member action (review M3)', () => {
       // Owner Q75: the member's own idle reminder, on their own login account.
       'PUT /v1/account/idle-reminder': "the member's own reminder preference on their own login: not an account action",
       'POST /v1/account/terms': "the member's own agreement to the Terms, written to their own login account (review 2026-11-08 F1); it changes nothing of the team account",
+      // S-085: renewing the calling session's short-lived bound cookie with its own device key.
+      'POST /v1/account/session/proof/challenge': "a single-use challenge for the member's own bound session: writes the session row only, not an account action",
+      'POST /v1/account/session/proof': "renews the member's own bound-session cookie with their own device key: not an account action",
     };
     const found: string[] = [];
     const audited = new Set<string>();

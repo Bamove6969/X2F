@@ -4,6 +4,7 @@ import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS } from './device.js';
+import { requireSession } from './sessions.js';
 
 /**
  * S-085 device-bound sessions (owner, 30 Oct 2026; docs/superpowers/specs/2026-11-12-device-bound-sessions.md),
@@ -93,10 +94,12 @@ const flagGate: preHandlerAsyncHookHandler = async function (req) {
  * Both take any live session of the account, a member's, a recovery or held one, or one on stale
  * Terms (`allowUnproven`), and touch nothing: keeping the proof fresh is not the person's activity.
  */
-export function deviceBoundRoutes(app: FastifyInstance, session: (opts: { allowUnproven: true }) => preHandlerAsyncHookHandler): void {
-  const guard = [flagGate, session({ allowUnproven: true })];
+export function deviceBoundRoutes(app: FastifyInstance): void {
+  // Built here, as a literal `requireSession({ … member: … })`, so team.test.ts's source scan sees
+  // these as member-allowed routes (both are recorded exemptions there: the member's own session).
+  const session = requireSession({ allowRecovery: true, allowHeld: true, allowStaleTerms: true, member: 'any', touch: false, allowUnproven: true });
 
-  app.post('/v1/account/session/proof/challenge', { preHandler: guard }, async (req) => {
+  app.post('/v1/account/session/proof/challenge', { preHandler: [flagGate, session] }, async (req) => {
     const b = req.body;
     if (b !== undefined && b !== null && (typeof b !== 'object' || Array.isArray(b) || Object.keys(b).length > 0)) throw new ApiError(400, 'bad-request');
     const { db, clock } = req.server.deps;
@@ -109,7 +112,7 @@ export function deviceBoundRoutes(app: FastifyInstance, session: (opts: { allowU
     return { challenge };
   });
 
-  app.post('/v1/account/session/proof', { preHandler: guard }, async (req, reply) => {
+  app.post('/v1/account/session/proof', { preHandler: [flagGate, session] }, async (req, reply) => {
     const b = req.body;
     if (b === null || typeof b !== 'object' || Array.isArray(b)) throw new ApiError(400, 'bad-request');
     const o = b as Record<string, unknown>;

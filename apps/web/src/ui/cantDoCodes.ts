@@ -106,6 +106,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'both-owner-keys-required': "a change to the owner's keys is tapped with both owner keys (staff app only)",
   'passkey-is-security-key': 'a staff passkey must be another device than the security key (staff app only)',
   'bad-request': 'a malformed request (a fault)',
+  // S-085 device-bound sessions: handled by the API client (renew the bound cookie and retry, or end the session), never shown.
+  'session-proof-required': "a bound session's short-lived cookie ran out: the client renews it with the device key",
+  'proof-invalid': 'this browser could not prove the session key: the session ends',
+  'not-bound': 'the session has no device key: nothing to renew',
   // Hold model v3: the drafts submitted are not the ones there are (another tab changed them): reload and review again.
   'changes-changed': 'a state conflict: the list changed since it was reviewed',
   'not-found': 'nothing there',

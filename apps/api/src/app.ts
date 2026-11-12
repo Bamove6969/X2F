@@ -310,7 +310,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   chatKeyRoutes(app);
   // S-085: the bound-cookie renewal (off unless X2F_DEVICE_BOUND_SESSIONS=on). Any live session of
   // the account, a member's, a recovery or held one, or one on stale Terms; touches nothing.
-  deviceBoundRoutes(app, (o) => requireSession({ allowRecovery: true, allowHeld: true, allowStaleTerms: true, member: 'any', touch: false, ...o }));
+  deviceBoundRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   // Staff accounts log in only on the staff API (owner 2026-11-03): see `TRADER_LOGIN_KINDS`.
   webauthnRoutes(app);

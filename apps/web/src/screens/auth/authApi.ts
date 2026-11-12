@@ -10,6 +10,7 @@
 import { createAuthApi, defaultDeviceLabel, type LoginResult, type PasswordLoginResult, type PgpChallenge } from '@x2f/auth-client';
 import { goLogin } from '../../api/client.js';
 import { hasUnseenNews } from '../news-model.js';
+import { SESSION_KEY_HEADER, needsProof, renewProof, sessionKeyHeader } from '../../session/deviceKey.js';
 import { publishIdleReminder } from '../../session/idleReminderWatch.js';
 import { publishSessionWatch } from '../../session/sessionWatch.js';
 import { refreshSession } from '../../session/useSession.js';
@@ -27,8 +28,29 @@ async function sessionGone(res: Response): Promise<boolean> {
   }
 }
 
+/**
+ * S-085 (behind `VITE_X2F_DEVICE_BOUND=1`): every POST carries this browser's session key, so a
+ * session the call opens is bound to it; a 401 `session-proof-required` renews the bound cookie
+ * and retries once, and one that cannot be renewed is a gone session.
+ */
 const authFetch: typeof fetch = async (input, init) => {
-  const res = await globalThis.fetch(input, init);
+  let sent = init;
+  if ((init?.method ?? 'GET').toUpperCase() === 'POST') {
+    const key = await sessionKeyHeader();
+    if (key !== null) {
+      const headers = new Headers(init?.headers);
+      headers.set(SESSION_KEY_HEADER, key);
+      sent = { ...init, headers };
+    }
+  }
+  let res = await globalThis.fetch(input, sent);
+  if (await needsProof(res)) {
+    if ((await renewProof()) !== 'renewed') {
+      goLogin();
+      return res;
+    }
+    res = await globalThis.fetch(input, sent);
+  }
   if (await sessionGone(res)) goLogin();
   return res;
 };

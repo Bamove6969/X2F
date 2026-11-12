@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AccountOverview } from '@x2f/auth-client';
 import { ApiCallError, api, setSessionGoneListener } from '../api/client.js';
+import { startProofRefresh, stopProofRefresh } from './deviceKey.js';
 
 /**
  * The signed-in account, a thin hook over Plan 2's `me()` (`GET /v1/account/me`). It goes through
@@ -21,7 +22,11 @@ const listeners = new Set<() => void>();
 
 function load(): Promise<Session> {
   once ??= api<Me>('/v1/account/me').then(
-    (me): Session => ({ status: 'signed-in', me }),
+    (me): Session => {
+      // S-085: keep a bound session's short-lived cookie fresh while signed in (no-op when the flag is off).
+      startProofRefresh();
+      return { status: 'signed-in', me };
+    },
     (e: unknown): Session => {
       if (e instanceof ApiCallError && e.status === 401) return { status: 'signed-out' };
       return { status: 'error', code: e instanceof ApiCallError ? e.code : 'network' };
@@ -42,6 +47,7 @@ export function refreshSession(): void {
  * go to the login (session/frontDoor.tsx), which keeps `returnTo`.
  */
 export function sessionEnded(): void {
+  stopProofRefresh();
   once = Promise.resolve({ status: 'signed-out' });
   for (const l of [...listeners]) l();
 }

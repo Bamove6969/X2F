@@ -105,7 +105,7 @@ thing in page JavaScript, which works in every browser with WebCrypto and Indexe
 
 ## 4. Server data
 
-Migration `540_device_bound_sessions.sql` adds these columns to `sessions`, all null by default:
+Migration `570_device_bound_sessions.sql` adds these columns to `sessions`, all null by default:
 - `bound_key bytea`: SPKI DER of a P-256 public key, at most 200 bytes;
 - `bound_token_hash bytea`, `bound_until timestamptz`;
 - `proof_challenge_hash bytea`, `proof_challenge_until timestamptz`.
@@ -122,6 +122,12 @@ The key is a public key: it is not secret and is never logged.
   - both proof routes answer 404 `not-found`.
 - **Web:** `VITE_X2F_DEVICE_BOUND=1` at build time. Without it, the app makes no key, sends no
   header and runs no refresh.
+  - Where it lives: `apps/web/src/session/deviceKey.ts` (the key, the header value, `renewProof`,
+    the refresh timer); `authFetch` in `apps/web/src/screens/auth/authApi.ts` adds the header to
+    every auth-client POST; `api()` (`apps/web/src/api/client.ts`) and `authFetch` renew once and
+    retry once on `session-proof-required`, and a session that cannot renew is gone; `useSession`
+    starts the timer on a signed-in answer and `sessionEnded` stops it. The timer also stops for
+    good on 409 `not-bound` or the flag-off 404. Tests: `apps/web/test/deviceKey.test.ts`.
 
 ## 6. Fallback when the key is missing
 
