@@ -458,7 +458,8 @@ test('Mira.K_ shows exactly as typed after setup (password path, extra backup sk
   await expect(name).toHaveText('Mira.K_');
   expect(await name.evaluate((el) => getComputedStyle(el).textTransform)).toBe('none');
   await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
-  await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.')).toBeVisible();
+  // Owner demo notes 12 Nov 2026: Welcome's fee line is now his own (owner-copy.spec.ts).
+  await expect(page.getByText('Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.')).toBeVisible();
   expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.K_', loginName: 'mira-signin-01' });
 
   await page.click('[data-part="start-trading"]');
