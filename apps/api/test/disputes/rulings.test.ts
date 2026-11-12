@@ -5,7 +5,7 @@
 // and the reviews' erasure on an overturn follow by themselves.
 // NEEDS_TASK_14: nothing moves the escrow's coins yet; the ruling stops at published (or final).
 import { createHash, randomUUID } from 'node:crypto';
-import { type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
+import { evidenceSha256, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
@@ -70,10 +70,12 @@ async function disputed(o: { afterRefund?: boolean } = {}) {
   return { seller, buyer, code: t.code };
 }
 
-function intent(code: string, step: 'propose' | 'approve', o: { rulingId: string; round?: 1 | 2 | undefined; outcome: RulingOutcome; accountAction?: AccountAction | undefined; reason?: string | undefined }): KeyTapIntent {
+function intent(code: string, step: 'propose' | 'approve', o: { rulingId: string; round?: 1 | 2 | undefined; outcome: RulingOutcome; accountAction?: AccountAction | undefined; reason?: string | undefined; evidence?: string[] | undefined }): KeyTapIntent {
   return {
     kind: 'ruling', step, rulingId: o.rulingId, code, round: o.round ?? 1, outcome: o.outcome,
     accountAction: o.accountAction ?? NONE, amountAtomic: AMOUNT.toString(), reasonSha256: sha(o.reason ?? REASON),
+    // Review mod-screens M1: the evidence lines are bound too, as the ruling stores them.
+    evidenceSha256: evidenceSha256(o.evidence ?? EVIDENCE),
   };
 }
 
@@ -86,8 +88,8 @@ async function propose(who: { id: string; b: StaffBrowser }, code: string, o: { 
   return { res, rulingId, tapId };
 }
 
-async function approve(who: { id: string; b: StaffBrowser }, code: string, rulingId: string, o: { outcome: RulingOutcome; round?: 1 | 2; reason?: string }) {
-  const tapId = await seedTap(deps, who.id, intent(code, 'approve', { rulingId, round: o.round, outcome: o.outcome, reason: o.reason }));
+async function approve(who: { id: string; b: StaffBrowser }, code: string, rulingId: string, o: { outcome: RulingOutcome; round?: 1 | 2; reason?: string; evidence?: string[] }) {
+  const tapId = await seedTap(deps, who.id, intent(code, 'approve', { rulingId, round: o.round, outcome: o.outcome, reason: o.reason, evidence: o.evidence }));
   return who.b.post(url(code, `/rulings/${rulingId}/approve`), { tapId });
 }
 
@@ -143,6 +145,11 @@ describe('a proposal under the large-trade limit', () => {
     expect({ status: wrongOutcome.res.statusCode, error: errorOf(wrongOutcome.res) }).toEqual({ status: 403, error: 'tap-invalid' });
     const wrongReason = await propose(mod, code, { outcome: 'refund-to-seller', tapFor: { reason: `${REASON} Extra.` } });
     expect(errorOf(wrongReason.res)).toBe('tap-invalid');
+    // Review mod-screens M1: a tap for other evidence lines (another line, another order) is refused.
+    for (const evidence of [[...EVIDENCE, 'A line the moderator never saw'], [...EVIDENCE].reverse(), []]) {
+      const wrongEvidence = await propose(mod, code, { outcome: 'refund-to-seller', tapFor: { evidence } });
+      expect(errorOf(wrongEvidence.res), JSON.stringify(evidence)).toBe('tap-invalid');
+    }
     // Another moderator's tap is not this one's.
     const rulingId = randomUUID();
     const tapId = await seedTap(deps, other.id, intent(code, 'propose', { rulingId, outcome: 'refund-to-seller' }));
@@ -241,6 +248,9 @@ describe('at or above the large-trade limit: two people', () => {
       // The approval tap binds the same content: a tap for another outcome is refused.
       const mismatch = await approve(owner, code, rulingId, { outcome: 'release-to-buyer' });
       expect(errorOf(mismatch)).toBe('tap-invalid');
+      // ... and for evidence other than the lines the proposal stored (review mod-screens M1).
+      const otherEvidence = await approve(owner, code, rulingId, { outcome: 'refund-to-seller', evidence: ['Something else'] });
+      expect(errorOf(otherEvidence)).toBe('tap-invalid');
 
       setNow(at(2 * H));
       const ok = await approve(owner, code, rulingId, { outcome: 'refund-to-seller' });
