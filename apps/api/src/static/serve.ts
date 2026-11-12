@@ -150,8 +150,6 @@ export function webOptionsFromEnv(env: Record<string, string | undefined>): WebO
  */
 const FILE_EXTENSIONS = new Set([
   'js', 'mjs', 'css', 'html', 'map', 'json', 'txt', 'xml', 'wasm',
-  // The OCR model (Plan 5 Task 13): a missing one must be a 404, never the app page.
-  'gz',
   'woff', 'woff2', 'ttf', 'otf',
   'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'webmanifest',
 ]);
@@ -182,7 +180,11 @@ export function isApiOrFilePath(url: string, apiSegment = 'v1'): boolean {
   if (first === apiSegment) return true;
   const last = segments.at(-1) ?? '';
   const dot = last.lastIndexOf('.');
-  return dot > 0 && FILE_EXTENSIONS.has(last.slice(dot + 1));
+  const ext = last.slice(dot + 1);
+  // The OCR model (Plan 5 Task 13): a missing /ocr/*.gz is a 404, never the app page. Only there, so
+  // a profile such as /u/alice.gz stays the app page (review m-4).
+  if (dot > 0 && ext === 'gz') return first === 'ocr';
+  return dot > 0 && FILE_EXTENSIONS.has(ext);
 }
 
 const IMMUTABLE = 'public, max-age=31536000, immutable';

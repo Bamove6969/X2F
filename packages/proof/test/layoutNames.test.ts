@@ -101,7 +101,7 @@ describe('an avatar caption (Wise, Revolut)', () => {
 
   it('an avatar whose initials the OCR did not read: the first line, name-shaped and a little larger, is the caption', () => {
     // Measured on e2e/fixtures/proofs/avatar-caption.jpg: white initials on a coloured circle are not read.
-    const w = sized(['Devon Marsh', 24], ['You sent $412.50', 20], ['To account GB82 WEST 1234 5698 7654 32', 20], ['Reference K7M2-9QXA-4FTR-8WPN', 22]);
+    const w = sized(['Devon Marsh', 24], ['You sent $412.50', 20], ['Account GB82 WEST 1234 5698 7654 32', 20], ['Reference K7M2-9QXA-4FTR-8WPN', 22]);
     expect(names(w)).toEqual(['Devon', 'Marsh']);
   });
 

@@ -17,6 +17,8 @@ function ocrAssets(): Plugin {
 
 /** tesseract.js's browser defaults, whose `workerPath` is a jsdelivr URL. */
 const TESSERACT_DEFAULTS = /[\\/]tesseract\.js[\\/]src[\\/]worker[\\/]browser[\\/]defaultOptions\.js$/;
+/** tesseract.js's browser `spawnWorker`, which can build a blob: worker. */
+const TESSERACT_SPAWN = /[\\/]tesseract\.js[\\/]src[\\/]worker[\\/]browser[\\/]spawnWorker\.js$/;
 
 /**
  * Plan 5 Task 13: replaces tesseract.js's browser defaults so no CDN URL reaches the bundle: the
@@ -28,7 +30,21 @@ function tesseractNoCdn(): Plugin {
     name: 'x2f-tesseract-no-cdn',
     enforce: 'pre',
     load(id) {
-      if (!TESSERACT_DEFAULTS.test(id.split('?', 1)[0] ?? '')) return null;
+      const path = id.split('?', 1)[0] ?? '';
+      if (TESSERACT_SPAWN.test(path)) {
+        // Never a blob: worker, and the raw Worker goes to proof/ocr.ts's `onSpawn`, so a load that
+        // hangs or fails can still be terminated (review m-2). Only named fields of the options are
+        // ever posted to the worker, so the function never has to be cloned.
+        return [
+          "'use strict';",
+          'module.exports = ({ workerPath, onSpawn }) => {',
+          '  const worker = new Worker(workerPath);',
+          "  if (typeof onSpawn === 'function') onSpawn(worker);",
+          '  return worker;',
+          '};',
+        ].join('\n');
+      }
+      if (!TESSERACT_DEFAULTS.test(path)) return null;
       return [
         "'use strict';",
         "const defaultOptions = require('../../constants/defaultOptions');",
