@@ -90,6 +90,12 @@ describe('parseTradeList', () => {
       { trades: [{ ...OPEN, takenAt: 'yesterday' }], next: null },
       { trades: [{ ...OPEN, closedAt: 5 }], next: null },
       { trades: [OPEN], next: 7 },
+      // Review m2: only a trade code in its own form, so the row's link cannot lead elsewhere.
+      { trades: [{ ...OPEN, code: '../settings' }], next: null },
+      { trades: [{ ...OPEN, code: 'k7m2-9qxa-4ftr-8wpn' }], next: null },
+      { trades: [{ ...OPEN, code: 'K7M29QXA4FTR8WPN' }], next: null },
+      { trades: [{ ...OPEN, code: 'K7M2-9QXA-4FTR' }], next: null },
+      { trades: [{ ...OPEN, code: 'K7M2-9QXA-4FTR-8WPN?x=1' }], next: null },
     ]) {
       expect(() => parseTradeList(bad), JSON.stringify(bad)).toThrow();
     }

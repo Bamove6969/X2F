@@ -18,19 +18,19 @@ const row = (code: string, over: Row = {}): Row => ({
   counterparty: { displayName: 'Calcium' }, takenAt: '2026-11-10T09:00:00.000Z', closedAt: null, ...over,
 });
 
-const OPEN_1 = [row('K7Q2-9XPA'), row('M3RT-4WZB', { role: 'seller', state: 'paid', amountAtomic: '500000000000', fiatCents: '15000', currency: 'EUR', counterparty: { displayName: 'aurora_9' } })];
-const OPEN_2 = [row('P8LD-2NCE', { state: 'funding', counterparty: { displayName: 'quietfox' } })];
+const OPEN_1 = [row('K7M2-9QXA-4FTR-8WPN'), row('AB2C-3DEF-4GHJ-5KMN', { role: 'seller', state: 'paid', amountAtomic: '500000000000', fiatCents: '15000', currency: 'EUR', counterparty: { displayName: 'aurora_9' } })];
+const OPEN_2 = [row('P8MD-2NCE-7HJK-3QRS', { state: 'funding', counterparty: { displayName: 'quietfox' } })];
 const DONE = [
-  row('T5HJ-6YVM', { state: 'released', closedAt: '2026-11-08T12:15:00.000Z' }),
-  row('W2KS-8QFN', { role: 'seller', state: 'refunded', closedAt: '2026-11-07T10:00:00.000Z' }),
+  row('T5HJ-6YVM-8WQZ-2ABC', { state: 'released', closedAt: '2026-11-08T12:15:00.000Z' }),
+  row('W2KS-8QFN-4RTX-9DEF', { role: 'seller', state: 'refunded', closedAt: '2026-11-07T10:00:00.000Z' }),
 ];
 
 type Answer = (status: string, cursor: string | null) => (r: Route) => Promise<void>;
 
-/** Signed in, with GET /v1/trades answered by `answer`; returns each request's status and cursor. */
-async function base(page: Page, answer: Answer): Promise<string[]> {
+/** Signed in (as `me`, the owner by default), with GET /v1/trades answered by `answer`; returns each request's status and cursor. */
+async function base(page: Page, answer: Answer, me: Record<string, unknown> = ME): Promise<string[]> {
   const asked: string[] = [];
-  await page.route('**/v1/account/me', json(ME));
+  await page.route('**/v1/account/me', json(me));
   await page.route(/\/v1\/trades\?/, (r) => {
     const u = new URL(r.request().url());
     const status = u.searchParams.get('status') ?? '';
@@ -68,7 +68,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expect(first).toContainText('Buying 1.250000 XMR');
     await expect(first).toContainText('$412.50');
     await expect(first).toContainText('with Calcium');
-    await expect(first).toContainText('K7Q2-9XPA');
+    await expect(first).toContainText('K7M2-9QXA-4FTR-8WPN');
     await expect(first).toContainText('Started ');
     await expect(first).toContainText('Escrow secured');
     await expect(rows(page).nth(1)).toContainText('Selling 0.500000 XMR');
@@ -115,6 +115,32 @@ for (const viewport of PHONE_VIEWPORTS) {
   });
 }
 
+for (const viewport of PHONE_VIEWPORTS) {
+  // Review m1 (design review shot 26: no tab that only leads to a refusal): a member with neither
+  // trades box gets no My trades tab; one with either box gets it.
+  test(`a team member's tab bar at ${viewport}: no My trades without a trades box, My trades with See trade history`, async ({ page }) => {
+    const member = (abilities: string[], roles: string[]) => ({ ...ME, accountType: 'vendor', member: { name: 'Aurora', abilities, preset: null, roles } });
+    let me: Record<string, unknown> = member(['offers-see', 'offers-post'], ['offers']);
+    await base(page, normal, me);
+    // The last route wins: /me answers whoever `me` is now.
+    await page.route('**/v1/account/me', (r) => json(me)(r));
+    await page.route(/\/v1\/methods\?/, json({ live: [], all: [] }));
+    await page.route(/\/v1\/price\?/, json({ error: 'price-unavailable' }, 503));
+    await setPhone(page, viewport);
+    await page.goto('/sell');
+    const bar = page.getByRole('navigation', { name: 'Main' });
+    await expect(bar.getByRole('link', { name: 'Trade' })).toBeVisible();
+    await expect(bar.getByRole('link', { name: 'My trades' })).toHaveCount(0);
+    await expectPhoneLayout(page);
+
+    me = member(['trades-see-history'], []);
+    await page.reload();
+    await expect(bar.getByRole('link', { name: 'My trades' })).toBeVisible();
+    await expect(bar.getByRole('link', { name: 'Post offer' })).toHaveCount(0);
+    await expectPhoneLayout(page);
+  });
+}
+
 test('a row opens its trade room; the Completed tab survives a reload', async ({ page }) => {
   await base(page, normal);
   await page.goto('/trades?tab=completed');
@@ -123,7 +149,7 @@ test('a row opens its trade room; the Completed tab survives a reload', async ({
   await page.reload();
   await expect(page.getByRole('tab', { name: 'Completed' })).toHaveAttribute('aria-selected', 'true');
   await rows(page).first().getByRole('link').click();
-  await expect(page).toHaveURL(/\/trade\/T5HJ-6YVM$/);
+  await expect(page).toHaveURL(/\/trade\/T5HJ-6YVM-8WQZ-2ABC$/);
 });
 
 for (const viewport of PHONE_VIEWPORTS) {
