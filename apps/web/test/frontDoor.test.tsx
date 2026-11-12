@@ -23,8 +23,6 @@ const APP = join(dirname(fileURLToPath(import.meta.url)), '../src/App.tsx');
 const PATHS = [...readFileSync(APP, 'utf8').matchAll(/<Route\s+path="([^"]+)"/g)]
   .map((m) => m[1]!)
   .filter((p) => p !== '*')
-  // Demo builds only (vite.config.ts demoOn; tests run as production, where the lab is not built).
-  .filter((p) => !p.startsWith('/lab/'))
   .map((p) => p.replace(':methodId', 'ZELLE').replace(':offerId', '00000000-0000-4000-8000-000000000000').replace(':code', 'ABCD-EFGH').replace('/*', ''));
 
 const DOOR = ['/', '/setup', '/terms', '/login', '/login/backup', '/team/join'];

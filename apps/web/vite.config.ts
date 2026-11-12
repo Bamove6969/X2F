@@ -20,24 +20,9 @@ export function fixturesOn(command: 'build' | 'serve', mode: string, flag: strin
   return command === 'serve' ? mode !== 'production' : mode === FIXTURES_BUILD_MODE;
 }
 
-/** The only build mode that may carry the demo lab (/lab/intro, the owner's intro proof of concept). */
-export const DEMO_BUILD_MODE = 'demo';
-/** Where a demo build goes, so it can never overwrite (or be deployed as) the production `dist`. */
-export const DEMO_OUT_DIR = 'dist-demo';
-
-/**
- * The demo lab needs VITE_X2F_DEMO=1 and either the dev server (not in production mode) or
- * `vite build --mode demo`. Every other build leaves it out, Three.js with it.
- */
-export function demoOn(command: 'build' | 'serve', mode: string, flag: string | undefined): boolean {
-  if (flag !== '1') return false;
-  return command === 'serve' ? mode !== 'production' : mode === DEMO_BUILD_MODE;
-}
-
 export default defineConfig(({ command, mode }) => {
   const env = { ...loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_'), ...process.env };
   const fixtures = fixturesOn(command, mode, env.VITE_FIXTURES);
-  const demo = demoOn(command, mode, env.VITE_X2F_DEMO);
   return {
     plugins: [react(), moneroGlue()],
     // The escrow worker (where the wallets run) is bundled with its own plugin list.
@@ -50,9 +35,9 @@ export default defineConfig(({ command, mode }) => {
         { find: /^(node:)?assert$/, replacement: assertShim },
       ],
     },
-    define: { __X2F_FIXTURES__: JSON.stringify(fixtures), __X2F_DEMO__: JSON.stringify(demo) },
+    define: { __X2F_FIXTURES__: JSON.stringify(fixtures) },
     build: {
-      outDir: mode === FIXTURES_BUILD_MODE ? FIXTURES_OUT_DIR : mode === DEMO_BUILD_MODE ? DEMO_OUT_DIR : 'dist',
+      outDir: mode === FIXTURES_BUILD_MODE ? FIXTURES_OUT_DIR : 'dist',
       // font-src and img-src allow 'self' only for fonts: never inline assets as data: URIs.
       assetsInlineLimit: 0,
       sourcemap: false,
