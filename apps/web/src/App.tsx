@@ -53,7 +53,7 @@ import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
 import { BehindTheDoor, isInside } from './session/frontDoor.js';
-import { mayPostOffers, mayReadTrades, mayViewWallets, memberOf } from './session/member.js';
+import { mayOpenLiveEvents, mayPostOffers, mayReadTrades, mayViewWallets, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { ScreenHeader, screenName } from './ui/ScreenHeader.js';
@@ -213,7 +213,11 @@ function LiveAccepted({ member }: { member: boolean }) {
   );
 }
 
-/** Only full trader sessions have live events (`GET /v1/events` is `requireTrader`). */
+
+/**
+ * A full trader session (`kind` trader, `level` full, current Terms), for the alarm listener and the
+ * freeze watch; a member needs the Trades role. The live stream uses `mayOpenLiveEvents` instead.
+ */
 function isTrader(session: ReturnType<typeof useSession>): boolean {
   if (session.status !== 'signed-in') return false;
   const me = session.me;
@@ -263,7 +267,8 @@ export function App() {
       <RouterBridge />
       <SessionPrompt />
       <IdleReminder />
-      {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
+      {/* Live events: full trader sessions; a member's with either trades box (session/member.ts). */}
+      {mayOpenLiveEvents(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       {/* W-006: the loud alarm rings in an open tab when a push arrives (off until turned on). */}
       {isTrader(session) ? <AlarmListener /> : null}
       {/* D-016: a frozen account owner gets the notice once per freeze after a login (GET /v1/account/freeze is the owner's alone). */}

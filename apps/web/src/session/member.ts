@@ -60,6 +60,19 @@ export function mayReadTrades(session: Session): boolean {
 }
 
 /**
+ * Whether this session opens the live stream (`GET /v1/events`): a full trader session with current
+ * Terms (the API's requireTrader), the account owner's or a member's with either trades box (the
+ * API carries a member only the events of their parts; lead, after review trades-list I1).
+ */
+export function mayOpenLiveEvents(session: Session): boolean {
+  if (session.status !== 'signed-in') return false;
+  const me = session.me as { kind?: unknown; level?: unknown; termsCurrent?: unknown } | null;
+  if (me === null || typeof me !== 'object') return false;
+  if (me.kind !== 'trader' || me.level !== 'full' || me.termsCurrent === false) return false;
+  return mayReadTrades(session);
+}
+
+/**
  * Owner 2 Nov 2026: the signed-in account's type, 'trader' or 'vendor'; null when signed out,
  * loading, or the API sent none (an older build: the API still refuses a trader's post).
  */
