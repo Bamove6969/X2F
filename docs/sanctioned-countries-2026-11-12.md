@@ -3,7 +3,7 @@
 Owner rulings, 12 Nov 2026, relayed by the lead:
 
 - "Russian anything is banned." Russia only. Ukrainian, Kazakh and other Cyrillic-script countries' currencies and methods stay, and so does Cyrillic OCR.
-- "Anything Iranian is banned too."
+- "Anything Iranian unfortunately is banned too" (owner-decisions-2026-11-06.md).
 - "I'm sticking to the US sanction laws." The removal follows US OFAC sanctions, not a list picked by hand.
 
 This is engineering, not legal advice. The borderline list below is for the owner and the lawyer.
@@ -52,4 +52,5 @@ OFAC FAQ 10 (updated 26 Oct 2026) lists these jurisdictions as under broad (comp
 - **OCR and text:** `packages/proof` keeps the `₽` symbol, RUB, IRR, KPW and CUP in its ISO 4217 detection tables. Owner: Cyrillic OCR stays. Reading a figure on a proof is not offering a currency.
 - **Gift-card countries** (lead, 12 Nov, following the owner's rule): no gift card from RU, IR, KP or CU. `BANNED_GIFT_CARD_COUNTRIES` in `packages/trade/src/giftCards.ts` makes `giftCardCurrencyOk` false for them, so the API refuses such an offer with 400. The web picker (`apps/web/src/screens/post/countries.ts`) lists 245 countries instead of 249. The ISO table itself still maps those four to their currencies, as an ISO record.
 - **Research and history** (`research/`, past plans and reviews): left as written records.
-- **Trades, reviews and the revenue ledger:** past rows keep their method and currency. Nothing is live there.
+- **Trades already running** in RUB or on SBP, MIR or YOOMONEY when this deploys finish normally (lead, 12 Nov, review m-2). A funded escrow can only be stopped by a moderator, so only new offers and new takes are refused. A dispute on such a trade fails closed: with no RUB price, the trade's USD value is set to the limit and the two-person rule applies (`disputeUsdCents`). Release and refund need no price. Test: `events-route.test.ts`, "a trade taken before the ban ... finishes normally".
+- **Reviews and the revenue ledger:** past rows keep their method and currency. Nothing there can be posted or taken.
