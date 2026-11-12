@@ -6,7 +6,7 @@ Range checked: 069c0d23..6370915e (ddc9fec2 RED tests, 6370915e fixes).
 ## Verdict
 
 **M1, M2, I1 and I4 are fixed at their cause and no regression shows (227/227 web tests pass at
-the head).** The red tests fail on the 069c0d23 sources (RED_PLACEHOLDER). The hash cache cannot be
+the head).** The red tests fail on the 069c0d23 sources (9 vitest failures, plus a tsc failure for I1). The hash cache cannot be
 poisoned. Two minor points remain. **R1:** the new "secured" rule leaves a gap at the tap (confirmed
 by a probe). **R2:** the cache has no size limit. Neither lets a lying API settle on, or be shown,
 unattested text. R1 is the same kind of fail-open as M1, at a narrower door, so I would fix it
@@ -140,5 +140,5 @@ None weakened:
   PROBE-GAP, PROBE-GAP2 and PROBE-CACHE; I deleted them afterwards.
 - **Typecheck at head:** `tsc -p apps/web` and `tsc -p apps/moderation` exit 0.
 - **Red check:** the head's tests against the sources of 069c0d23 (apps/web/src, apps/web
-  tsconfig, apps/moderation/src): RED_DETAIL_PLACEHOLDER. `tsc -p apps/web` fails there with
+  tsconfig, apps/moderation/src): 3 files, 9 failed / 114 passed. Five failures are the new tests: M1 (the probe), M2 (status methodId), the escrowView parse, and the tradeRoomEscrow pair for M2 (screen gets Zelle, catalog name). The other four are older settling tests: the starter-cap refusal, propose-cancel then paid, the mutual-cancel fallback, and "paid whose save fails". They fail only because the head's `tradeView()` now always carries the instructions, so every tick on the old code awaits a SHA-256. That is the tick-versus-cancel/tap window the builder describes. They pass at the head, so the per-text cache closes it, and the four act as its regression tests. `tsc -p apps/web` fails there with
   TS2578 for I1 and TS2339/TS2353 for `methodId`.
