@@ -591,8 +591,24 @@ describe('rulings', () => {
   it('NEEDS_TASK_14: the ruling gate decides, and nothing in it calls settle yet', () => {
     // Plan 4 Task 13 replaced Plan 3's refuse-everything `verifyRuling` with the gate (gate.test.ts).
     // Until Task 14's executor lands, no ruling reaches `settle`: the gate only answers.
-    const dir = new URL('../src/gate/', import.meta.url);
-    for (const f of readdirSync(dir)) expect(readFileSync(new URL(f, dir), 'utf8'), f).not.toMatch(/\.settle\(/);
+    // Review M3: every file under gate/ and cli/, recursively. With the comments stripped, none calls
+    // or names `.settle`, none imports anything from @x2f/escrow but types, and none imports the party,
+    // the desk, the watcher or the service (where a PartyHandle comes from).
+    const files = (rel: string): string[] =>
+      readdirSync(new URL(rel, import.meta.url), { recursive: true, withFileTypes: true })
+        .filter((e) => e.isFile() && /\.ts$/.test(e.name))
+        .map((e) => `${e.parentPath}/${e.name}`);
+    const all = [...files('../src/gate/'), ...files('../src/cli/')];
+    expect(all.length).toBeGreaterThan(5);
+    for (const f of all) {
+      const code = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+      expect(code, f).not.toMatch(/\bsettle\s*\(|\.settle\b|PartyHandle/);
+      for (const m of code.matchAll(/^\s*import\s+(type\s+)?[^;]*?from\s+'([^']+)'/gm)) {
+        if (m[2] === '@x2f/escrow') expect(m[1], `${f}: ${m[0]}`).toBeDefined();
+        expect(m[2], f).not.toMatch(/(^|\/)(party|desk|watcher|main|autoRefund|buyerCancel)\.js$/);
+      }
+      expect(code, f).not.toMatch(/import\(\s*'[^']*(party|desk|watcher|main)\.js'/);
+    }
   });
 });
 

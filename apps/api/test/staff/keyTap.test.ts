@@ -55,6 +55,7 @@ const RULING: KeyTapIntent = {
   amountAtomic: '1500000000000',
   reasonSha256: 'a'.repeat(64),
   evidenceSha256: 'c'.repeat(64),
+  round1Id: null,
 };
 
 beforeAll(async () => {
@@ -167,6 +168,14 @@ describe('startKeyTap', () => {
     expect(() => parseKeyTapIntent({ kind: 'nope' })).toThrow(ApiError);
     expect(() => parseKeyTapIntent({ ...RULING, outcome: 'pay-me' })).toThrow(ApiError);
     expect(() => parseKeyTapIntent({ ...RULING, round: 3 })).toThrow(ApiError);
+    // mod-gate review B2: a round-2 ruling names the round-1 ruling it reviews; round 1 names none.
+    const R1 = '0d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
+    expect(() => parseKeyTapIntent({ ...RULING, round: 2 })).toThrow(ApiError);
+    expect(() => parseKeyTapIntent({ ...RULING, round1Id: R1 })).toThrow(ApiError);
+    expect(() => parseKeyTapIntent({ ...RULING, round: 2, round1Id: 'x' })).toThrow(ApiError);
+    const { round1Id: _drop, ...noKey } = RULING as Extract<KeyTapIntent, { kind: 'ruling' }>;
+    expect(() => parseKeyTapIntent(noKey)).toThrow(ApiError);
+    expect(parseKeyTapIntent({ ...RULING, round: 2, round1Id: R1.toUpperCase() })).toMatchObject({ round: 2, round1Id: R1 });
     expect(() => parseKeyTapIntent({ ...RULING, code: 'not a code' })).toThrow(ApiError);
     expect(() => parseKeyTapIntent({ ...RULING, accountAction: { kind: 'site-ban', until: null } })).toThrow(ApiError);
     expect(() => parseKeyTapIntent({ kind: 'set-role', accountId: RULING.rulingId, role: 'owner' })).toThrow(ApiError);

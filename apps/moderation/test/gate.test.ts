@@ -183,7 +183,7 @@ function ruling(proposer: Person, o: { approver?: Person | null; outcome?: Rulin
     ruling: r,
     intent: (step, over = {}) => ({
       kind: 'ruling', step, rulingId: r.id, code: r.code, round: r.round, outcome: r.outcome, accountAction: r.accountAction,
-      amountAtomic: AMOUNT.toString(), reasonSha256: r.reasonSha256, ...over,
+      amountAtomic: AMOUNT.toString(), reasonSha256: r.reasonSha256, round1Id: r.round === 2 ? (r.round1Id ?? null) : null, ...over,
     }),
   };
 }
@@ -497,7 +497,7 @@ describe('authorizeRuling', () => {
     expect(await authorize(w, ok, [tapBy(senior2, ok.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: true, settle: null });
     // A round 2 with no round 1 named is not one the gate can check.
     const bare = ruling(senior2, { round: 2 });
-    expect(await authorize(w, bare, [tapBy(senior2, bare.intent('propose'))])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    expect(await authorize(w, bare, [tapBy(senior2, bare.intent('propose', { round1Id: r1.ruling.id }))])).toEqual({ ok: false, reason: 'intent-mismatch' });
   });
 
   it('an after-refund ruling is authorised but never co-signed', async () => {
@@ -538,6 +538,225 @@ describe('authorizeRuling', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// The security review of 12 Nov (review-mod-gate-2026-11-12.md): each PoC there, flipped to the refusal.
+describe('security review 2026-11-12', () => {
+  /** An attacker's own genuine, allowlisted key registered for `tokenHash` (the challenge needs no secret). */
+  const attackerReg = (key: SoftAuthenticator, tokenHash: string) =>
+    key.register(
+      { challenge: b64url(inviteRegistrationChallenge(tokenHash)), rp: { id: RP_ID, name: 'X2F Staff' }, user: { id: 'AAAA', name: 'x', displayName: 'x' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }], attestation: 'direct' },
+      ORIGIN,
+    );
+
+  it('B1/P1: an expired owner create-invite tap brings nobody in, whatever the database registers for it', async () => {
+    const w = await world();
+    const inviteId = randomUUID();
+    const tokenHash = sha256Hex('a token only the invitee ever saw');
+    w.api.taps.push(tapBy(w.owner, { kind: 'create-invite', inviteId, role: 'senior', tokenHash, expiresAt: '2026-01-01T00:00:00.000Z' }));
+    const attacker: Person = { id: randomUUID(), key: newKey(), role: 'senior' };
+    w.api.invites.set(inviteId, { inviteId, tokenHash, accountId: attacker.id, registrations: [{ credentialId: attacker.key.credentialId, response: attackerReg(attacker.key, tokenHash) }] });
+    w.api.staffRows.set(attacker.id, { accountId: attacker.id, role: 'senior', switchedOff: false, removed: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[attacker.id]).toBeUndefined();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod, { approver: attacker });
+    expect(await authorize(w, c, [tapBy(mod, c.intent('propose')), tapBy(attacker, c.intent('approve'))], 10_000_000n)).toEqual({ ok: false, reason: 'unknown-key' });
+  });
+
+  it('B1: the invite stays bound to the account the gate first saw for it; re-pointing it adds nobody', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    w.api.staffRows.delete(mod.id); // registered, not finished yet
+    await syncRegistry(w.api, w.gate, ctx());
+    const inv = [...w.api.invites.values()][0]!;
+    const attacker: Person = { id: randomUUID(), key: newKey(), role: 'mod' };
+    inv.accountId = attacker.id;
+    inv.registrations.push({ credentialId: attacker.key.credentialId, response: attackerReg(attacker.key, inv.tokenHash) });
+    w.api.staffRows.set(attacker.id, { accountId: attacker.id, role: 'mod', switchedOff: false, removed: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[attacker.id]).toBeUndefined();
+    expect(w.gate.staff[mod.id]!.creds.map((c) => c.credentialId)).toEqual([mod.key.credentialId]);
+  });
+
+  it('B1/P2: once the person has joined, the invite is closed in the gate: no later registration adds a key', async () => {
+    const w = await world();
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const inv = [...w.api.invites.values()][0]!;
+    const evil = newKey();
+    inv.registrations.push({ credentialId: evil.credentialId, response: attackerReg(evil, inv.tokenHash) });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[senior.id]!.creds.map((c) => c.credentialId)).toEqual([senior.key.credentialId]);
+    expect(w.gate.staff[senior.id]!.inviteClosed).toBe(true);
+  });
+
+  it('B1: a registration first seen after the invite expired is refused', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const late = (): GateContext => ({ ...ctx(), now: () => new Date('2026-11-13T12:00:00.000Z') });
+    await syncRegistry(w.api, w.gate, late());
+    expect(w.gate.staff[mod.id]).toBeUndefined();
+  });
+
+  it('B2/P3: a round-2 ruling needs round 1 as the gate itself authorised it, and its taps name it', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r1 = ruling(mod);
+    expect((await authorize(w, r1, [tapBy(mod, r1.intent('propose'))])).ok).toBe(true);
+    // Unseen round 1 (with an empty log list, by round 1's own proposer).
+    const unseen = ruling(mod, { round: 2, round1Id: randomUUID(), code: r1.ruling.code });
+    expect(await authorize(w, unseen, [tapBy(mod, unseen.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'round1-unseen' });
+    // Even by an uninvolved senior.
+    const unseen2 = ruling(senior, { round: 2, round1Id: randomUUID(), code: r1.ruling.code });
+    expect(await authorize(w, unseen2, [tapBy(senior, unseen2.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'round1-unseen' });
+    // A round 1 the gate saw on another trade.
+    const elsewhere = ruling(mod);
+    expect((await authorize(w, elsewhere, [tapBy(mod, elsewhere.intent('propose'))])).ok).toBe(true);
+    const wrong = ruling(senior, { round: 2, round1Id: elsewhere.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, wrong, [tapBy(senior, wrong.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'round1-unseen' });
+    // The database names round 1 but the taps named another: they never agreed to review this one.
+    const swapped = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, swapped, [tapBy(senior, swapped.intent('propose', { round1Id: elsewhere.ruling.id }))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'intent-mismatch' });
+    // The log list only adds to the gate's own: an empty one never clears round 1's proposer.
+    const self = ruling(mod, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, self, [tapBy(mod, self.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'involved' });
+    const fine = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, fine, [tapBy(senior, fine.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: true, settle: null });
+  });
+
+  it('M1/P5: a held-back older settings tap never undoes a newer one (the key\'s signature counter)', async () => {
+    const w = await world();
+    const high = tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 1_000_000, firstResponseH: 4, appealWindowH: 48 });
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 100, firstResponseH: 4, appealWindowH: 48 }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.limitUsdCents).toBe(10_000n);
+    w.api.taps.push(high);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.limitUsdCents).toBe(10_000n);
+    // Both in one sync, older served first: the newer still wins.
+    const v = await world();
+    const older = tapBy(v.owner, { kind: 'settings', largeTradeLimitUsd: 1_000_000, firstResponseH: 4, appealWindowH: 48 });
+    const newer = tapBy(v.owner, { kind: 'settings', largeTradeLimitUsd: 100, firstResponseH: 4, appealWindowH: 48 });
+    v.api.taps.push(newer, older);
+    await syncRegistry(v.api, v.gate, ctx());
+    expect(v.gate.limitUsdCents).toBe(10_000n);
+  });
+
+  it('M1/P4: a held-back switch-on older than an owner tap the gate has since seen by that key restores nobody', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const old = tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }); // held back by the database
+    // The owner uses the same key again afterwards (any tap the gate sees).
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 }));
+    await syncRegistry(w.api, w.gate, ctx());
+    w.api.staffRows.get(mod.id)!.switchedOff = true;
+    await syncRegistry(w.api, w.gate, ctx());
+    w.api.staffRows.get(mod.id)!.switchedOff = false;
+    w.api.taps.push(old);
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod);
+    expect(await authorize(w, c, [tapBy(mod, c.intent('propose'))])).toEqual({ ok: false, reason: 'revoked' });
+    // And an older set-role never promotes after a newer demotion by the same key.
+    const senior = w.hire('senior');
+    const promote = tapBy(w.owner, { kind: 'set-role', accountId: senior.id, role: 'senior' });
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: senior.id, role: 'mod' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[senior.id]!.role).toBe('mod');
+    w.api.taps.push(promote);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[senior.id]!.role).toBe('mod');
+    // The gate keeps each owner key's high-water mark.
+    expect(w.gate.ownerCreds.find((k) => k.credentialId === w.owner.key.credentialId)!.counter).toBeGreaterThan(0);
+  });
+
+  it('I1: the owner\'s tapped remove-staff removes for good, whatever the database shows', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    w.api.taps.push(tapBy(w.owner, { kind: 'remove-staff', accountId: mod.id }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[mod.id]!.removed).toBe(true);
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod);
+    expect(await authorize(w, c, [tapBy(mod, c.intent('propose'))])).toEqual({ ok: false, reason: 'revoked' });
+  });
+
+  it('I1: the owner\'s tapped emergency stop refuses every ruling until a newer tapped resume', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    w.api.taps.push(tapBy(w.owner, { kind: 'emergency-stop' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod);
+    const t = tapBy(mod, c.intent('propose'));
+    expect(await authorize(w, c, [t])).toEqual({ ok: false, reason: 'stopped' });
+    w.api.taps.push(tapBy(w.owner, { kind: 'resume-trading' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await authorize(w, c, [t])).ok).toBe(true);
+  });
+
+  it('I3: the recorded trade must agree with the attested deal', () => {
+    const terms = { deal: { poster: 'seller' as const, takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16500', maxFiatCents: '100000' }, payWindowMin: 90, buyerPayout: BUYER, sellerRefund: SELLER };
+    const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
+    const trade = { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' as const };
+    expect(() => recordedTerms({ terms, trade: { ...trade, poster: 'buyer' }, feeWallet: FEE })).toThrow(RangeError);
+    expect(() => recordedTerms({ terms, trade: { ...trade, amountAtomic: AMOUNT - 1n }, feeWallet: FEE })).toThrow(RangeError);
+    // A trade funded above its amount grows (spec 11.1): more than the take amount is its own.
+    const grown = escrowPlan({ amountAtomic: AMOUNT * 2n, poster: 'seller' });
+    expect(recordedTerms({ terms, trade: { amountAtomic: AMOUNT * 2n, feeAtomic: grown.feeAtomic, sellerFundsAtomic: grown.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE }).usdCents).toBe(8_250n);
+  });
+
+  it('M2: saves are serialised, each through its own temp file; the gate opens after concurrent saves', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
+    try {
+      const key = new Uint8Array(randomBytes(32));
+      const s = await openGateStore(dir, key);
+      await Promise.all(Array.from({ length: 8 }, (_, i) => {
+        s.state.usedNonces[`n${i}`] = 'x';
+        return s.save();
+      }));
+      const again = await openGateStore(dir, key);
+      expect(Object.keys(again.state.usedNonces).sort()).toEqual(Array.from({ length: 8 }, (_, i) => `n${i}`).sort());
+      const { readdir } = await import('node:fs/promises');
+      expect(await readdir(dir)).toEqual(['gate.bin']);
+      // `exclusive` runs one critical section at a time.
+      let inside = 0;
+      let most = 0;
+      await Promise.all(Array.from({ length: 4 }, () => s.exclusive(async () => {
+        inside++;
+        most = Math.max(most, inside);
+        await new Promise((r) => setTimeout(r, 5));
+        inside--;
+      })));
+      expect(most).toBe(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the attestation allowlists, gate and API (review I2)', () => {
+  it('both parsers read the same README fixtures the same way, CRLF included', async () => {
+    const { parseAllowlist } = await import('../../api/src/auth/attestation.js');
+    const { parseGateAllowlist } = await import('../src/gate/attestation.js');
+    const A = '11111111-2222-4333-8444-555555555555';
+    const B = '22222222-2222-4333-8444-555555555555';
+    const good = `# M\n\n- \`00000000-0000-4000-8000-000000000000\` ignored\n\n## Owner allowlist\n\n- \`${A}\` one\n\n## Staff allowlist  \n\n- \`${A.toUpperCase()}\` one\n- \`${B}\` two\ntext\n### Sub\n- \`${B}\` still\n## Next\n- \`33333333-2222-4333-8444-555555555555\` not\n`;
+    const fixtures = [good, good.replace(/\n/g, '\r\n'), '## Owner allowlist\n', '## Staff allowlist\n- `nope`\n', 'nothing here', `## Owner allowlist\t\n- \`${A}\`\n## Staff allowlist\n- \`${B}\``];
+    for (const f of fixtures) {
+      for (const kind of ['owner', 'staff'] as const) {
+        const api = (() => { try { return parseAllowlist(f, kind); } catch { return 'throws'; } })();
+        const gate = (() => { try { return parseGateAllowlist(f, kind); } catch { return 'throws'; } })();
+        expect(gate, `${kind}: ${JSON.stringify(f).slice(0, 60)}`).toEqual(api);
+      }
+    }
+    expect(parseGateAllowlist(good.replace(/\n/g, '\r\n'), 'staff')).toEqual([A, B, B]);
   });
 });
 
@@ -679,7 +898,7 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
         [tapIds.invite, ownerId, k1.credentialId, intent, nonce, JSON.stringify({ id: k1.credentialId })],
       );
       const rulingId = randomUUID();
-      const ri = canonicalJson({ kind: 'ruling', step: 'propose', rulingId, code: 'ABCD-EFGH-JKMN-PQRS', round: 1, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, amountAtomic: '1', reasonSha256: 'b'.repeat(64) });
+      const ri = canonicalJson({ kind: 'ruling', step: 'propose', rulingId, code: 'ABCD-EFGH-JKMN-PQRS', round: 1, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, amountAtomic: '1', reasonSha256: 'b'.repeat(64), round1Id: null });
       await c.query(
         `insert into key_taps (id, account_id, credential_id, intent, nonce, response, started_at, finished_at, used_at) values ($1, $2, $3, $4, $5, $6, now(), now(), now())`,
         [tapIds.ruling, modId, mk.credentialId, ri, randomBytes(16), JSON.stringify({ id: mk.credentialId })],

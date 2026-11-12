@@ -78,6 +78,7 @@ const ruling: KeyTapIntent = {
   amountAtomic: '1250000000000',
   reasonSha256: 'a'.repeat(64),
   evidenceSha256: 'c'.repeat(64),
+  round1Id: null,
 };
 const nonce = new Uint8Array(32).fill(7);
 
@@ -85,6 +86,13 @@ describe('tapChallenge', () => {
   test('is SHA-256 of the labelled canonical intent and the nonce', () => {
     const expected = nodeSha(`x2f-keytap-v1\n${canonicalJson(ruling)}\n${hex(nonce)}`);
     expect(hex(tapChallenge(ruling, nonce))).toBe(expected);
+  });
+
+  test('a round-2 ruling binds the round-1 ruling it reviews; round 1 binds none (mod-gate review B2)', () => {
+    expect(() => tapChallenge({ ...ruling, round: 2 }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, round: 2, round1Id: 'not-a-uuid' }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' }, nonce)).not.toThrow();
   });
 
   test('is the same for the same intent with keys in another order', () => {
@@ -98,7 +106,8 @@ describe('tapChallenge', () => {
       { ...ruling, step: 'approve' },
       { ...ruling, rulingId: '7d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e50' },
       { ...ruling, code: 'K7M2-9QXA-4FTR-8WPM' },
-      { ...ruling, round: 2 },
+      { ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' },
+      { ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e50' },
       { ...ruling, outcome: 'refund-to-seller' },
       { ...ruling, accountAction: { kind: 'freeze' } },
       { ...ruling, accountAction: { kind: 'site-ban', until: '2027-01-01T00:00:00.000Z', reasonCode: 'terms' } },

@@ -72,27 +72,32 @@ async function disputed(o: { afterRefund?: boolean } = {}) {
   return { seller, buyer, code: t.code };
 }
 
-function intent(code: string, step: 'propose' | 'approve', o: { rulingId: string; round?: 1 | 2 | undefined; outcome: RulingOutcome; accountAction?: AccountAction | undefined; reason?: string | undefined; evidence?: string[] | undefined }): KeyTapIntent {
+function intent(code: string, step: 'propose' | 'approve', o: { rulingId: string; round?: 1 | 2 | undefined; round1Id?: string | null | undefined; outcome: RulingOutcome; accountAction?: AccountAction | undefined; reason?: string | undefined; evidence?: string[] | undefined }): KeyTapIntent {
   return {
     kind: 'ruling', step, rulingId: o.rulingId, code, round: o.round ?? 1, outcome: o.outcome,
     accountAction: o.accountAction ?? NONE, amountAtomic: AMOUNT.toString(), reasonSha256: sha(o.reason ?? REASON),
     // Review mod-screens M1: the evidence lines are bound too, as the ruling stores them.
     evidenceSha256: evidenceSha256(o.evidence ?? EVIDENCE),
+    round1Id: o.round1Id ?? null,
   };
 }
+
+/** A round-2 tap binds the round-1 ruling it reviews (mod-gate review B2). */
+const round1IdOf = async (code: string, round: 1 | 2 | undefined): Promise<string | null> =>
+  round === 2 ? (await loadDispute(deps.db, code))!.round1!.id : null;
 
 /** Proposes through the route with a fresh tap made for exactly this ruling (or for `tapFor`). */
 async function propose(who: { id: string; b: StaffBrowser }, code: string, o: { outcome: RulingOutcome; round?: 1 | 2; reason?: string; accountAction?: AccountAction; evidence?: string[]; tapFor?: Partial<Parameters<typeof intent>[2]> }) {
   const rulingId = randomUUID();
   const reason = o.reason ?? REASON;
   const evidence = o.evidence ?? EVIDENCE;
-  const tapId = await seedTap(deps, who.id, intent(code, 'propose', { rulingId, round: o.round, outcome: o.outcome, reason, accountAction: o.accountAction, evidence, ...o.tapFor }));
+  const tapId = await seedTap(deps, who.id, intent(code, 'propose', { rulingId, round: o.round, round1Id: await round1IdOf(code, o.round), outcome: o.outcome, reason, accountAction: o.accountAction, evidence, ...o.tapFor }));
   const res = await who.b.post(url(code, '/rulings'), { rulingId, outcome: o.outcome, accountAction: o.accountAction ?? NONE, reason, evidence, tapId });
   return { res, rulingId, tapId };
 }
 
 async function approve(who: { id: string; b: StaffBrowser }, code: string, rulingId: string, o: { outcome: RulingOutcome; round?: 1 | 2; reason?: string; evidence?: string[] }) {
-  const tapId = await seedTap(deps, who.id, intent(code, 'approve', { rulingId, round: o.round, outcome: o.outcome, reason: o.reason, evidence: o.evidence }));
+  const tapId = await seedTap(deps, who.id, intent(code, 'approve', { rulingId, round: o.round, round1Id: await round1IdOf(code, o.round), outcome: o.outcome, reason: o.reason, evidence: o.evidence }));
   return who.b.post(url(code, `/rulings/${rulingId}/approve`), { tapId });
 }
 
@@ -399,6 +404,17 @@ describe('the appeal round', () => {
     expect(JSON.parse(rows[0]!.detail)).toMatchObject({ round: 2, overturned: true });
     const liens = await deps.db.query(`select debtor_account_id::text as debtor, cause from liens where from_code = $1`, [code]);
     expect(liens.rows).toEqual([{ debtor: buyer.id, cause: 'overturned' }]);
+  });
+
+  it('a round-2 tap must name round 1\'s ruling: one naming another is tap-invalid (mod-gate review B2)', async () => {
+    const { code } = await appealed();
+    const senior = await staff('senior');
+    setNow(at(3 * H));
+    await take(senior, code);
+    for (const round1Id of [randomUUID(), randomUUID()]) {
+      const r = await propose(senior, code, { outcome: 'refund-to-seller', round: 2, tapFor: { round1Id } });
+      expect({ status: r.res.statusCode, error: errorOf(r.res) }).toEqual({ status: 403, error: 'tap-invalid' });
+    }
   });
 
   it('the round-1 moderator can take no part (R37)', async () => {
