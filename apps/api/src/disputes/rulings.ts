@@ -80,6 +80,8 @@ export const SEND_BACK_NOTE_MAX = 1000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
+/** A lone (unpaired) surrogate: in `u` mode a valid pair is one code point and never matches. */
+const LONE_SURROGATE = /\p{Surrogate}/u;
 const OUTCOMES: readonly string[] = [...ESCROW_OUTCOMES, ...AFTER_REFUND_OUTCOMES];
 const NONE: AccountAction = { kind: 'none' };
 
@@ -90,7 +92,9 @@ const isText = (v: unknown, max: number): v is string => typeof v === 'string' &
 
 function parseEvidence(v: unknown): string[] {
   if (!Array.isArray(v) || v.length > EVIDENCE_MAX) throw new ApiError(400, 'bad-request');
-  for (const x of v) if (!isText(x, EVIDENCE_LINE_MAX) || x.trim() === '') throw new ApiError(400, 'bad-request');
+  // Re-verify E3: a line must be well-formed UTF-16 (no lone surrogate), which jsonb can store and
+  // `evidenceSha256` hashes as sent; otherwise the insert fails after the tap check (a 500).
+  for (const x of v) if (!isText(x, EVIDENCE_LINE_MAX) || x.trim() === '' || LONE_SURROGATE.test(x)) throw new ApiError(400, 'bad-request');
   return [...(v as string[])];
 }
 
