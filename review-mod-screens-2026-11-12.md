@@ -48,7 +48,13 @@ Reviewer: independent security and code review (Claude helper). This file is not
 
 ## Tests run (on 5c2497e7, through the serialised runner, single files)
 
-TESTS_PLACEHOLDER
+- `apps/staff-web/test/moderator.test.tsx`: 15/15 passed
+- `apps/staff-web/test/shell.test.tsx`: 13/13 passed
+- `apps/api/test/disputes/staff.test.ts`: 28 passed, 1 todo
+- `apps/api/test/disputes/rulings.test.ts`: 16/16 passed
+- `apps/api/test/staff/matrix.test.ts`: 103/103 passed
+- `tsc --noEmit` for apps/staff-web and apps/api: clean
+- Client SHA-256 against node `createHash` (scratchpad `rvms-sha.ts`): 5/5 match
 
 Not run: Playwright `e2e/moderator.spec.ts`, because the brief did not ask for Playwright. The builder reports it at 2/2 on b3aeac5c. The spec changed again in 7aa7057e, and I read it but did not run it.
 
