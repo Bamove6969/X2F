@@ -1,0 +1,69 @@
+{
+  "file": "bank-labelled.png",
+  "name": "labelled",
+  "width": 760,
+  "height": 452,
+  "keep": {
+    "tradeCode": "K7M2-9QXA-4FTR-8WPN",
+    "fiatCents": "41250",
+    "exponent": 2
+  },
+  "marks": [
+    {
+      "kind": "name",
+      "text": "Avery Quinlan",
+      "x0": 186,
+      "y0": 104,
+      "x1": 368,
+      "y1": 134
+    },
+    {
+      "kind": "card",
+      "text": "4111 1111 1111 1111",
+      "x0": 126,
+      "y0": 148,
+      "x1": 415,
+      "y1": 178
+    },
+    {
+      "kind": "iban",
+      "text": "GB82 WEST 1234 5698 7654 32",
+      "x0": 128,
+      "y0": 192,
+      "x1": 546,
+      "y1": 222
+    },
+    {
+      "kind": "email",
+      "text": "avery.quinlan@example.com",
+      "x0": 137,
+      "y0": 236,
+      "x1": 513,
+      "y1": 266
+    },
+    {
+      "kind": "phone",
+      "text": "+44 7700 900123",
+      "x0": 146,
+      "y0": 280,
+      "x1": 382,
+      "y1": 310
+    },
+    {
+      "kind": "amount",
+      "text": "$412.50",
+      "x0": 167,
+      "y0": 324,
+      "x1": 275,
+      "y1": 354
+    },
+    {
+      "kind": "code",
+      "text": "K7M2-9QXA-4FTR-8WPN",
+      "x0": 196,
+      "y0": 368,
+      "x1": 510,
+      "y1": 398
+    }
+  ]
+}

@@ -52,6 +52,32 @@ describe('production bundle', () => {
     expect(text).toContain('fixture');
   });
 
+  // Plan 5 Task 13: the OCR engine is loaded on demand and its files are served, never bundled.
+  it('tesseract.js is a lazily loaded chunk: not in the entry script, not preloaded, but present', { timeout: 200_000 }, async () => {
+    const dir = await build('production');
+    const html = await readFile(join(dir, 'index.html'), 'utf8');
+    const entry = /<script[^>]*\bsrc="\/(assets\/[^"]+\.js)"/.exec(html)?.[1];
+    expect(entry).toBeDefined();
+    const preloaded = [...html.matchAll(/rel="modulepreload"[^>]*href="\/(assets\/[^"]+)"/g)].map((m) => m[1]!);
+    const chunks = (await readdir(join(dir, 'assets'))).filter((f) => f.endsWith('.js'));
+    const withEngine: string[] = [];
+    for (const f of chunks) if ((await readFile(join(dir, 'assets', f), 'utf8')).includes('Legacy model requested but code missing')) withEngine.push(`assets/${f}`);
+    expect(withEngine.length, 'some chunk carries the engine').toBeGreaterThan(0);
+    for (const c of withEngine) {
+      expect(c).not.toBe(entry);
+      expect(preloaded).not.toContain(c);
+    }
+    expect(await readFile(join(dir, entry!), 'utf8')).not.toContain('createWorker');
+  });
+
+  it('no CDN default reaches the bundle, and no OCR core or model is bundled', { timeout: 200_000 }, async () => {
+    const dir = await build('production');
+    const text = await bundleText(dir);
+    expect(text).not.toMatch(/jsdelivr|unpkg\.com/);
+    const files = (await readdir(dir, { recursive: true })).map(String);
+    expect(files.filter((f) => /traineddata|tesseract-core/.test(f))).toEqual([]);
+  });
+
   it('inlines nothing the CSP would block: no inline scripts or styles, no data: fonts', { timeout: 200_000 }, async () => {
     const dir = await build('production');
     const html = await readFile(join(dir, 'index.html'), 'utf8');

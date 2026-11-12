@@ -1,0 +1,45 @@
+{
+  "file": "avatar-caption.jpg",
+  "name": "avatar-caption",
+  "width": 760,
+  "height": 379,
+  "keep": {
+    "tradeCode": "K7M2-9QXA-4FTR-8WPN",
+    "fiatCents": "41250",
+    "exponent": 2
+  },
+  "marks": [
+    {
+      "kind": "name",
+      "text": "Devon Marsh",
+      "x0": 281,
+      "y0": 146,
+      "x1": 479,
+      "y1": 181
+    },
+    {
+      "kind": "amount",
+      "text": "$412.50",
+      "x0": 166,
+      "y0": 207,
+      "x1": 273,
+      "y1": 237
+    },
+    {
+      "kind": "iban",
+      "text": "GB82 WEST 1234 5698 7654 32",
+      "x0": 195,
+      "y0": 251,
+      "x1": 614,
+      "y1": 281
+    },
+    {
+      "kind": "code",
+      "text": "K7M2-9QXA-4FTR-8WPN",
+      "x0": 187,
+      "y0": 295,
+      "x1": 501,
+      "y1": 325
+    }
+  ]
+}
