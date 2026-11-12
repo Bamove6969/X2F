@@ -107,7 +107,7 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     await block(a, c);
     const list = (await a.browser.get('/v1/account/blocks')).json() as { displayName: string; blockedAt: string }[];
     expect(list.map((e) => e.displayName)).toEqual([c.displayName, b.displayName]);
-    expect(Object.keys(list[0]!).sort()).toEqual(['blockedAt', 'displayName']);
+    expect(Object.keys(list[0]!).sort()).toEqual(['blockedAt', 'displayName', 'note']);
     // Who blocked me is never answered: c blocked a, and a's list only has a's own blocks.
     expect(((await b.browser.get('/v1/account/blocks')).json() as unknown[]).length).toBe(0);
     // The private login name is never sent. The database holds only its tag (FU-D), so the test
@@ -142,6 +142,74 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     expect((await a.browser.delete(`/v1/account/blocks/${'x'.repeat(65)}`)).statusCode).toBe(400);
     expect((await anon.get('/v1/account/blocks')).statusCode).toBe(401);
     expect((await anon.delete(`/v1/account/blocks/${a.displayName}`)).statusCode).toBe(401);
+  });
+});
+
+// S-093 (owner p7-6, 8 Nov 2026): "a blocked list with optional notes and the date/time blocked". The
+// note is the blocker's own private text on the person they blocked; only the blocker ever reads it.
+describe('S-093: a private note per blocked person, and when they were blocked', () => {
+  const noteOf = async (a: Who, b: Who) =>
+    ((await a.browser.get('/v1/account/blocks')).json() as { displayName: string; note: string | null; blockedAt: string }[]).find((e) => e.displayName === b.displayName);
+  const putNote = (a: Who, name: string, note: unknown) => a.browser.put(`/v1/account/blocks/${encodeURIComponent(name)}/note`, { note });
+
+  it('a block starts with no note and its exact time; the blocker sets, changes and clears the note', async () => {
+    const a = await trader();
+    const b = await trader();
+    await block(a, b);
+    const first = await noteOf(a, b);
+    expect(first).toEqual({ displayName: b.displayName, blockedAt: deps.clock().toISOString(), note: null });
+    const set = await putNote(a, b.displayName, '  Asked for my phone number in chat.  ');
+    expect([set.statusCode, set.json()]).toEqual([200, { note: 'Asked for my phone number in chat.' }]);
+    expect((await noteOf(a, b))!.note).toBe('Asked for my phone number in chat.');
+    // By the name case-insensitively, as unblock.
+    expect((await putNote(a, b.displayName.toUpperCase(), 'Second try.')).json()).toEqual({ note: 'Second try.' });
+    // A note keeps the block's time.
+    expect((await noteOf(a, b))!.blockedAt).toBe(first!.blockedAt);
+    // Null or blank text clears it.
+    expect((await putNote(a, b.displayName, null)).json()).toEqual({ note: null });
+    await putNote(a, b.displayName, 'Again.');
+    expect((await putNote(a, b.displayName, '   ')).json()).toEqual({ note: null });
+    expect((await noteOf(a, b))!.note).toBeNull();
+  });
+
+  it('only the blocker ever sees the note: not the blocked person, not a moderator\'s blocksBetween, and unblocking deletes it', async () => {
+    const a = await trader();
+    const b = await trader();
+    await block(a, b);
+    await putNote(a, b.displayName, 'Private words 7Q2.');
+    await block(b, a);
+    // The blocked person's own list has their own block of a, with no note of a's.
+    expect(await noteOf(b, a)).toMatchObject({ note: null });
+    expect((await b.browser.get('/v1/account/blocks')).body).not.toContain('7Q2');
+    // Staff see a block only in a dispute between the two (blocksBetween): never its note.
+    const between = await blocksBetween(deps.db, a.id, b.id);
+    expect(JSON.stringify(between)).not.toContain('7Q2');
+    for (const e of between) expect(Object.keys(e).sort()).toEqual(['blockedId', 'blockerId', 'since']);
+    // Unblocking removes the row and its note; blocking again starts with none.
+    await unblock(a, b);
+    await block(a, b);
+    expect((await noteOf(a, b))!.note).toBeNull();
+  });
+
+  it('a note needs a block of mine: someone I did not block, or an unknown name, is 404; bad notes are 400; signed-in traders only', async () => {
+    const a = await trader();
+    const b = await trader();
+    const c = await trader();
+    // c blocked b; a did not block b: a cannot write a note on c's row or on a block that does not exist.
+    await block(c, b);
+    expect((await putNote(a, b.displayName, 'x')).json()).toEqual({ error: 'not-found' });
+    expect((await putNote(a, 'Dnobody1234567x', 'x')).json()).toEqual({ error: 'not-found' });
+    expect((await noteOf(c, b))!.note).toBeNull();
+    await block(a, b);
+    for (const bad of [12, ['x'], { t: 'x' }, 'x'.repeat(501), 'tab\u0000nul', undefined]) {
+      const res = await putNote(a, b.displayName, bad);
+      expect(res.statusCode, String(bad)).toBe(400);
+    }
+    // 500 characters (not bytes) is the limit, and a new line is allowed.
+    expect((await putNote(a, b.displayName, '\u00e9'.repeat(500))).statusCode).toBe(200);
+    expect((await putNote(a, b.displayName, 'line one\nline two')).json()).toEqual({ note: 'line one\nline two' });
+    expect((await a.browser.put(`/v1/account/blocks/${'x'.repeat(65)}/note`, { note: 'x' })).statusCode).toBe(400);
+    expect((await anon.put(`/v1/account/blocks/${encodeURIComponent(b.displayName)}/note`, { note: 'x' })).statusCode).toBe(401);
   });
 });
 

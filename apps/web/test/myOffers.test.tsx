@@ -223,8 +223,9 @@ describe('the model', () => {
     expect(cantDoFor([{ id: A, status: 'paused', refused: 'no-wallet' }])).toBeNull();
     expect(cantDoFor([{ id: A, status: 'paused', refused: 'too-many-offers' }, { id: B, status: 'paused', refused: 'trading-hold' }])).toEqual({ code: 'trading-hold', count: 1 });
     expect(cantDoFor([{ id: A, refused: 'too-many-offers' }, { id: B, refused: 'too-many-offers' }, { id: C, refused: 'trading-hold' }])).toEqual({ code: 'too-many-offers', count: 2 });
-    expect(myOffersCantDoText('too-many-offers', 1)).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then turn this one on.');
-    expect(myOffersCantDoText('too-many-offers', 2)).toBe('You can have 3 buying and 3 selling offers. Remove ones you no longer need, then turn these on.');
+    // O-028 (owner 28 Oct Q14): the limit pop-up in the owner's words.
+    expect(myOffersCantDoText('too-many-offers', 1)).toBe("Sorry, you're limited to 3 offers per side: 3 buying and 3 selling. Remove one you no longer need, then turn this one on.");
+    expect(myOffersCantDoText('too-many-offers', 2)).toBe("Sorry, you're limited to 3 offers per side: 3 buying and 3 selling. Remove ones you no longer need, then turn these on.");
     for (const n of [1, 2]) expect(myOffersCantDoText('too-many-offers', n)).not.toMatch(/market/);
   });
 });

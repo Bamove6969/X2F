@@ -16,7 +16,7 @@ interface Call {
 }
 
 let calls: Call[];
-let blocks: { displayName: string; blockedAt: string }[];
+let blocks: { displayName: string; blockedAt: string; note?: string | null }[];
 let signedIn: boolean;
 let failNext: number | null;
 
@@ -29,8 +29,8 @@ beforeEach(() => {
   signedIn = true;
   failNext = null;
   blocks = [
-    { displayName: 'mira.k', blockedAt: '2026-10-29T10:00:00.000Z' },
-    { displayName: 'Bob', blockedAt: '2026-10-28T10:00:00.000Z' },
+    { displayName: 'mira.k', blockedAt: '2026-10-29T10:00:00.000Z', note: null },
+    { displayName: 'Bob', blockedAt: '2026-10-28T10:00:00.000Z', note: 'Asked for my phone number.' },
   ];
   refreshSession();
   vi.stubGlobal('fetch', async (input: string, init: RequestInit = {}) => {
@@ -45,6 +45,13 @@ beforeEach(() => {
     }
     if (input === '/v1/account/blocks' && method === 'GET') return json(200, blocks);
     if (input === '/v1/account/blocks' && method === 'POST') return json(204, null);
+    const n = /^\/v1\/account\/blocks\/(.+)\/note$/.exec(input);
+    if (n && method === 'PUT') {
+      const raw = (body as { note: string | null }).note;
+      const note = raw === null || raw.trim() === '' ? null : raw.trim();
+      blocks = blocks.map((b) => (b.displayName === decodeURIComponent(n[1]!) ? { ...b, note } : b));
+      return json(200, { note });
+    }
     const m = /^\/v1\/account\/blocks\/(.+)$/.exec(input);
     if (m && method === 'DELETE') {
       blocks = blocks.filter((b) => b.displayName !== decodeURIComponent(m[1]!));
@@ -72,7 +79,8 @@ describe('Blocked (settings)', () => {
     const names = [...host.querySelectorAll('[data-part="blocked-list"] [data-username]')].map((e) => e.textContent);
     expect(names).toEqual(['mira.k', 'Bob']);
     expect(byPart(host, 'blocked-count')?.textContent).toBe('2 blocked traders');
-    expect(host.textContent).toContain('Blocked 29 Oct 2026');
+    // S-093 (owner p7-6): the date and the time they were blocked.
+    expect(host.textContent).toContain('Blocked 29 Oct 2026, 10:00 UTC');
     const first = host.querySelector<HTMLButtonElement>('[data-part="unblock"]')!;
     expect(first.textContent).toBe('Unblock');
     expect(first.getAttribute('aria-label')).toBe('Unblock mira.k');
@@ -146,7 +154,67 @@ describe('Blocked (settings)', () => {
   it('parses the list strictly', () => {
     expect(() => parseBlocked({})).toThrow();
     expect(() => parseBlocked([{ displayName: 'x' }])).toThrow();
-    expect(parseBlocked([{ displayName: 'x', blockedAt: 't', extra: 1 }])).toEqual([{ displayName: 'x', blockedAt: 't' }]);
+    // S-093: the note is optional (an older API sends none) and a string or null; anything else fails loudly.
+    expect(parseBlocked([{ displayName: 'x', blockedAt: 't', extra: 1 }])).toEqual([{ displayName: 'x', blockedAt: 't', note: null }]);
+    expect(parseBlocked([{ displayName: 'x', blockedAt: 't', note: 'n' }])).toEqual([{ displayName: 'x', blockedAt: 't', note: 'n' }]);
+    expect(() => parseBlocked([{ displayName: 'x', blockedAt: 't', note: 3 }])).toThrow();
+  });
+
+  it('S-093: each row shows my private note; I add, change and clear it in place (saved by name, at most 500 characters)', async () => {
+    const { host } = render(<MemoryRouter><Blocked /></MemoryRouter>);
+    await settle();
+    const row = (name: string) => [...host.querySelectorAll('[data-part="blocked-list"] li')].find((li) => li.querySelector('[data-username]')?.textContent === name)!;
+    expect(row('Bob').querySelector('[data-part="block-note"]')?.textContent).toBe('Asked for my phone number.');
+    expect(row('mira.k').querySelector('[data-part="block-note"]')).toBeNull();
+    expect(row('Bob').textContent).toContain('Only you can see this note.');
+    // Add a note to mira.k.
+    const add = row('mira.k').querySelector<HTMLButtonElement>('[data-part="note-edit"]')!;
+    expect(add.textContent).toBe('Add a note');
+    fire(add, new MouseEvent('click', { bubbles: true }));
+    const box = row('mira.k').querySelector<HTMLTextAreaElement>('textarea[data-part="note-text"]')!;
+    expect(box.maxLength).toBe(500);
+    expect(document.activeElement).toBe(box);
+    const type = (el: HTMLTextAreaElement, v: string) => {
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+      set.call(el, v);
+      fire(el, new Event('input', { bubbles: true }));
+    };
+    type(box, 'Rude in chat.');
+    fire(row('mira.k').querySelector('[data-part="note-save"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(calls.at(-1)).toEqual({ url: '/v1/account/blocks/mira.k/note', method: 'PUT', body: { note: 'Rude in chat.' } });
+    expect(row('mira.k').querySelector('[data-part="block-note"]')?.textContent).toBe('Rude in chat.');
+    expect(byPart(host, 'blocked-said')?.textContent).toBe('Note saved for mira.k.');
+    // Change Bob's, then clear it (an empty note is sent as null).
+    const edit = row('Bob').querySelector<HTMLButtonElement>('[data-part="note-edit"]')!;
+    expect(edit.textContent).toBe('Edit note');
+    fire(edit, new MouseEvent('click', { bubbles: true }));
+    const bobBox = row('Bob').querySelector<HTMLTextAreaElement>('textarea[data-part="note-text"]')!;
+    expect(bobBox.value).toBe('Asked for my phone number.');
+    type(bobBox, '   ');
+    fire(row('Bob').querySelector('[data-part="note-save"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(calls.at(-1)).toEqual({ url: '/v1/account/blocks/Bob/note', method: 'PUT', body: { note: null } });
+    expect(row('Bob').querySelector('[data-part="block-note"]')).toBeNull();
+    expect(byPart(host, 'blocked-said')?.textContent).toBe('Note removed for Bob.');
+  });
+
+  it('S-093: Cancel keeps the note as it was; a failed save says so and keeps the old note', async () => {
+    const { host } = render(<MemoryRouter><Blocked /></MemoryRouter>);
+    await settle();
+    const bob = () => [...host.querySelectorAll('[data-part="blocked-list"] li')].find((li) => li.querySelector('[data-username]')?.textContent === 'Bob')!;
+    fire(bob().querySelector('[data-part="note-edit"]')!, new MouseEvent('click', { bubbles: true }));
+    fire(bob().querySelector('[data-part="note-cancel"]')!, new MouseEvent('click', { bubbles: true }));
+    expect(bob().querySelector('textarea')).toBeNull();
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    fire(bob().querySelector('[data-part="note-edit"]')!, new MouseEvent('click', { bubbles: true }));
+    failNext = 500;
+    fire(bob().querySelector('[data-part="note-save"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Could not save the note for Bob. Try again.');
+    expect(bob().querySelector('textarea')).not.toBeNull();
+    fire(bob().querySelector('[data-part="note-cancel"]')!, new MouseEvent('click', { bubbles: true }));
+    expect(bob().querySelector('[data-part="block-note"]')?.textContent).toBe('Asked for my phone number.');
   });
 });
 
