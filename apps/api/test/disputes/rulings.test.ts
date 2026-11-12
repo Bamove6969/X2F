@@ -216,6 +216,25 @@ describe('a proposal under the large-trade limit', () => {
     expect(await actions(code)).toEqual(['ruling.proposed', 'ruling.published']);
   });
 
+  it('review E3: a reason with a lone surrogate is 400 bad-request (never stored as U+FFFD under a hash of other text); the tap stays unused', async () => {
+    const mod = await staff('mod');
+    const { code } = await disputed();
+    await take(mod, code);
+    for (const bad of ['\ud800', '\udc00', '\udc00\ud800']) {
+      const reason = `${REASON} Broken ${bad} here.`;
+      const r = await propose(mod, code, { outcome: 'release-to-buyer', reason });
+      expect({ status: r.res.statusCode, error: errorOf(r.res) }, JSON.stringify(bad)).toEqual({ status: 400, error: 'bad-request' });
+      expect(await tapUsed(r.tapId)).toBe(false);
+    }
+    expect(await actions(code)).toEqual([]);
+    expect(await published(code)).toEqual([]);
+    // A well-formed pair (an emoji) is fine, and is published exactly as signed.
+    const reason = `${REASON} Photo \u{1F4F7} attached.`;
+    const ok = await propose(mod, code, { outcome: 'release-to-buyer', reason });
+    expect(ok.res.statusCode, ok.res.body).toBe(200);
+    expect(await published(code)).toEqual([expect.objectContaining({ reason })]);
+  });
+
   it('a reason under 40 characters is reason-too-short; a bad body is 400', async () => {
     const mod = await staff('mod');
     const { code } = await disputed();
@@ -323,6 +342,24 @@ describe('at or above the large-trade limit: two people', () => {
       // A moderator cannot send back.
       const mod2 = await staff('mod');
       expect((await mod2.b.post(url(code, `/rulings/${again.rulingId}/send-back`), { note: 'No.' })).statusCode).toBe(403);
+    });
+  });
+
+  it('review E3: a send-back note with a lone surrogate is 400 bad-request; the proposal still waits', async () => {
+    await withLimit(300, async () => {
+      const mod = await staff('mod');
+      const senior = await staff('senior');
+      const { code } = await disputed();
+      await take(mod, code);
+      const { rulingId } = await propose(mod, code, { outcome: 'refund-to-seller' });
+      for (const bad of ['\ud800', '\udc00', '\udc00\ud800']) {
+        const back = await senior.b.post(url(code, `/rulings/${rulingId}/send-back`), { note: `Ask for the reference ${bad} first.` });
+        expect({ status: back.statusCode, error: errorOf(back) }, JSON.stringify(bad)).toEqual({ status: 400, error: 'bad-request' });
+      }
+      expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'awaiting-approval' });
+      expect(await actions(code)).toEqual(['ruling.proposed']);
+      const ok = await senior.b.post(url(code, `/rulings/${rulingId}/send-back`), { note: 'Ask for the reference \u{1F4F7} first.' });
+      expect(ok.statusCode, ok.body).toBe(200);
     });
   });
 });
