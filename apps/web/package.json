@@ -23,6 +23,7 @@
     "@fontsource/familjen-grotesk": "5.3.0",
     "@simplewebauthn/browser": "14.0.0",
     "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/rus": "1.0.0",
     "@x2f/auth-client": "0.0.0",
     "@x2f/core": "0.0.0",
     "@x2f/escrow": "0.0.0",

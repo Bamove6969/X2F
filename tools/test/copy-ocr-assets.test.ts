@@ -30,10 +30,10 @@ async function fakeModules(): Promise<string> {
 }
 
 describe('the manifest', () => {
-  it('names exactly the five served files, each with a SHA-256', async () => {
+  it('names exactly the six served files, each with a SHA-256', async () => {
     const m = await readManifest();
     expect([...m.keys()].sort()).toEqual(
-      ['eng.traineddata.gz', 'tesseract-core-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'worker.min.js'].sort(),
+      ['eng.traineddata.gz', 'rus.traineddata.gz', 'tesseract-core-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'worker.min.js'].sort(),
     );
     for (const h of m.values()) expect(h).toMatch(/^[0-9a-f]{64}$/);
     expect(OCR_ASSETS.map((a) => a.to).sort()).toEqual([...m.keys()].sort());
@@ -42,6 +42,8 @@ describe('the manifest', () => {
   it('the model is the LSTM-only 4.0.0_best_int file, and the relaxed-SIMD core is among the cores', () => {
     expect(OCR_ASSETS.find((a) => a.to === 'eng.traineddata.gz')?.from).toBe('@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz');
     expect(OCR_ASSETS.map((a) => a.from)).toContain('tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js');
+    // The Russian model (a second pass for Cyrillic only), the same LSTM-only 4.0.0_best_int build.
+    expect(OCR_ASSETS.find((a) => a.to === 'rus.traineddata.gz')?.from).toBe('@tesseract.js-data/rus/4.0.0_best_int/rus.traineddata.gz');
   });
 });
 

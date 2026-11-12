@@ -2,7 +2,7 @@
 // these drive `createOcr` with a stand-in engine; e2e/proof-ocr.spec.ts runs the real one in a
 // browser (one worker, assets from /ocr/ only, the worker CSP, the fallbacks).
 import { describe, expect, it, vi } from 'vitest';
-import { OCR_TIMEOUT_MS, OCR_WORKER_OPTIONS, PROOF_OCR_LANGS, createOcr, wordsOf, type OcrEngine, type OcrBlock } from '../src/proof/ocr.js';
+import { OCR_TIMEOUT_MS, OCR_WORKER_OPTIONS, PROOF_OCR_CYRILLIC_LANGS, PROOF_OCR_LANGS, createOcr, looksCyrillicGarbage, wordsOf, type OcrEngine, type OcrBlock } from '../src/proof/ocr.js';
 
 const RGBA = new Uint8ClampedArray(4 * 2 * 2);
 
@@ -168,6 +168,58 @@ describe('createOcr', () => {
   });
 
   it('the default timeout is 30 seconds (Review Focus 3)', () => {
+    expect(OCR_TIMEOUT_MS).toBe(30_000);
+  });
+});
+
+const ws = (...texts: string[]) => texts.map((text, i) => ({ text, x0: i * 10, y0: 0, x1: i * 10 + 9, y1: 10, line: 0, conf: 80 }));
+const blocksOf = (...texts: string[]): OcrBlock[] => [{ paragraphs: [{ lines: [{ words: texts.map((t, i) => word(t, i * 20, 0)) }] }] }];
+
+describe('looksCyrillicGarbage (when the Russian model is worth fetching)', () => {
+  it('the English model on "Анна Петрова" (measured: AHHa lNMeTpoBa) is Cyrillic garbage', () => {
+    expect(looksCyrillicGarbage(ws('You', 'sent', 'money', 'to', 'AHHa', 'lNMeTpoBa', '$412.50'))).toBe(true);
+    expect(looksCyrillicGarbage(ws('CepreN', 'NBaHoB'))).toBe(true);
+  });
+
+  it('an English receipt is not: words, emails, codes, currency codes, one brand with odd case', () => {
+    expect(looksCyrillicGarbage(ws('Payment', 'sent', 'Recipient:', 'Avery', 'Quinlan', 'IBAN:', 'GB82', 'WEST', 'USD', 'avery.quinlan@example.com', 'K7M2-9QXA-4FTR-8WPN'))).toBe(false);
+    expect(looksCyrillicGarbage(ws('Paid', 'with', 'PayPal', 'balance'))).toBe(false);
+    expect(looksCyrillicGarbage(ws('iPhone', 'McDonald'))).toBe(false);
+    expect(looksCyrillicGarbage([])).toBe(false);
+  });
+});
+
+describe('the Cyrillic second pass', () => {
+  it('only when the English pass reads Cyrillic garbage: a second worker for English and Russian, and its words', async () => {
+    const terminate = vi.fn(async () => undefined);
+    const recognize = vi.fn(async () => ({ data: { blocks: blocksOf('Анна', 'Петрова') } }));
+    const english = vi.fn(async () => ({ data: { blocks: blocksOf('AHHa', 'lNMeTpoBa') } }));
+    const createWorker = vi.fn(async (langs: string[]) => ({ recognize: langs.includes('rus') ? recognize : english, terminate }));
+    const ocr = createOcr({ load: async () => ({ createWorker, OEM: { LSTM_ONLY: 1 } }), toImage, timeoutMs: 1000 });
+    expect((await ocr(RGBA, 2, 2))!.map((w) => w.text)).toEqual(['Анна', 'Петрова']);
+    expect(createWorker.mock.calls.map((c) => c[0])).toEqual([['eng'], ['eng', 'rus']]);
+    expect(PROOF_OCR_CYRILLIC_LANGS).toEqual(['eng', 'rus']);
+    // Both workers are kept for the next proof.
+    await ocr(RGBA, 2, 2);
+    expect(createWorker).toHaveBeenCalledTimes(2);
+  });
+
+  it('an English receipt never loads the Russian model', async () => {
+    const e = engine();
+    await createOcr({ load: e.load, toImage, timeoutMs: 1000 })(RGBA, 2, 2);
+    expect(e.createWorker.mock.calls.map((c) => c[0])).toEqual([['eng']]);
+  });
+
+  it('a second pass that fails or hangs keeps the English words (still checked, never worse)', async () => {
+    for (const second of [async () => Promise.reject(new Error('404 rus.traineddata.gz')), () => new Promise<never>(() => undefined)]) {
+      const english = vi.fn(async () => ({ data: { blocks: blocksOf('AHHa', 'lNMeTpoBa') } }));
+      const createWorker = vi.fn(async (langs: string[]) => (langs.includes('rus') ? second() : { recognize: english, terminate: vi.fn(async () => undefined) }));
+      const ocr = createOcr({ load: async () => ({ createWorker, OEM: { LSTM_ONLY: 1 } }) as unknown as OcrEngine, toImage, timeoutMs: 30 });
+      expect((await ocr(RGBA, 2, 2))!.map((w) => w.text)).toEqual(['AHHa', 'lNMeTpoBa']);
+    }
+  });
+
+  it('the default timeout applies to each pass on its own', () => {
     expect(OCR_TIMEOUT_MS).toBe(30_000);
   });
 });

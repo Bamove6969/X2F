@@ -9,7 +9,7 @@
 // region, as for every other class.
 import { type OcrLine } from './ocr.js';
 
-/** A big line is this many times the page's typical line height, or more. */
+/** A big line is this many times the page's typical word height (the median of all words), or more. */
 export const PROMINENT_RATIO = 1.3;
 /** The first line counts as an avatar's caption from this size (its initials were not read). */
 export const CAPTION_RATIO = 1.1;
@@ -80,7 +80,9 @@ function geometry(l: OcrLine): Geometry {
 export function layoutNameLines(lines: readonly OcrLine[]): number[] {
   if (lines.length < 2) return [];
   const geo = lines.map(geometry);
-  const typical = median(geo.map((g) => g.height));
+  // The page's typical text size: the median of every word's height, so body text (most words) sets it
+  // and one huge line (the amount) on a short page does not (measured on the Cyrillic fixture).
+  const typical = median(lines.flatMap((l) => l.words.map((p) => p.word.y1 - p.word.y0)));
   const top = Math.min(...geo.map((g) => g.y0));
   const bottom = Math.max(...geo.map((g) => g.y1));
   const limit = top + (bottom - top) * TOP_SHARE;
