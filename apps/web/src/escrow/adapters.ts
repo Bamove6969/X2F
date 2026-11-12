@@ -49,6 +49,13 @@ export interface EscrowTradeView {
    * `terms.deal.instructionsSha256` (Task 34 review I1, restored after J-16).
    */
   paymentInstructions: string | null;
+  /**
+   * Review M1: the view carried a `paymentInstructions` that is neither text nor null (a number, an
+   * object, ...): malformed, never read as "none". The runtime counts it as a mismatch.
+   */
+  instructionsMalformed: boolean;
+  /** Review M1: the escrow has been secured per the view (`securedAt` set); from then on the view must carry the instructions. */
+  securedSeen: boolean;
 }
 
 const big = (v: unknown): bigint | null => (typeof v === 'string' && /^(?:0|[1-9]\d{0,30})$/.test(v) ? BigInt(v) : null);
@@ -81,6 +88,8 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
       typeof v.payWindowMin === 'number' && Number.isSafeInteger(v.payWindowMin) && v.payWindowMin >= 1 && v.payWindowMin <= MAX_PAY_WINDOW_MIN ? v.payWindowMin : null,
     methodId: typeof v.methodId === 'string' && v.methodId.length > 0 ? v.methodId : null,
     paymentInstructions: typeof v.paymentInstructions === 'string' ? v.paymentInstructions : null,
+    instructionsMalformed: v.paymentInstructions !== undefined && v.paymentInstructions !== null && typeof v.paymentInstructions !== 'string',
+    securedSeen: typeof v.securedAt === 'string',
   };
 }
 

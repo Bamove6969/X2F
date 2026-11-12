@@ -389,7 +389,7 @@ describe('what this device signs comes from what the user confirmed, never the A
     // Not funded yet: nothing could settle in any case until the instructions check passes below.
     // Before the escrow is secured the view carries none: nothing to show, nothing refused.
     t.state.view = tradeView({ state: 'securing', paymentInstructions: null });
-    expect(await buyer.status((s) => s.phase === 'ready')).toMatchObject({ refusal: null, paymentInstructions: null, instructionsMismatch: false });
+    expect(await buyer.status((s) => s.phase === 'ready' && s.paymentInstructions === null)).toMatchObject({ refusal: null, paymentInstructions: null, instructionsMismatch: false });
     // The locked text: shown, on both sides.
     t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS });
     expect(await buyer.status((s) => s.paymentInstructions === INSTRUCTIONS)).toMatchObject({ refusal: null, instructionsMismatch: false });

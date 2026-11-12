@@ -212,6 +212,8 @@ export function tradeView(over: Record<string, unknown> = {}): Record<string, un
     // The time to pay the API sends with every trade (owner p9-6); the attestation below signs the same.
     payWindowMin: 90,
     methodId: METHOD_ID,
+    // The locked text the attestation signs (review M1: once secured, a view must carry it).
+    paymentInstructions: INSTRUCTIONS,
     ...over,
   };
 }

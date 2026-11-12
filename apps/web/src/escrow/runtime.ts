@@ -119,6 +119,12 @@ export interface EscrowStatus {
    * the TradeView.
    */
   paymentInstructions: string | null;
+  /**
+   * Review M2 (lead's call): the payment method the moderator attested for this trade
+   * (`terms.deal.methodId`), or null before an attestation verified. The trade screens show the
+   * method of this id (named from the bundled catalog), never the API view's own.
+   */
+  methodId: string | null;
   /** The view's payment instructions (or their method) differ from the attested ones: show a warning, never the text. */
   instructionsMismatch: boolean;
   /**
@@ -286,6 +292,12 @@ function viewMatches(v: EscrowTradeView, role: 'buyer' | 'seller', d: Deal): boo
   );
 }
 
+/**
+ * States in which the escrow has been secured, so the view must carry the payment instructions
+ * (review M1). Closed states are judged by the after-close rules, never by this check.
+ */
+const INSTRUCTIONS_DUE: readonly TradeState[] = ['secured', 'paid', 'settling'];
+
 /** Party failures that mean someone cheated or the escrow is gone: never retried. */
 function integrityError(e: unknown): boolean {
   return e instanceof PartyError && (e.code === 'equivocation' || e.code === 'address-mismatch' || e.code === 'settled-elsewhere');
@@ -316,7 +328,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private attested: AttestedTerms | null = null;
     private view: EscrowTradeView | null = null;
     /** The view's payment instructions as last checked against the attested hash (review I1); null while the view has none. */
-    private instructions: { text: string; ok: boolean } | null = null;
+    private instructions: { text: string | null; ok: boolean } | null = null;
     private isReady = false;
     private words: string[] | null = null;
     /** The address `party.ready()` resolved with (EscrowStatus.escrowAddress). */
@@ -374,6 +386,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         fiatCents: amountAtomic === null ? null : fiatCents(amountAtomic, { currency: this.rec.deal.currency, centsPerXmr: this.rec.deal.centsPerXmr }),
         escrowAddress: this.address,
         deal: (this.rec as EscrowRecord | undefined)?.deal ?? null,
+        methodId: this.attested?.deal.methodId ?? null,
         paymentInstructions: this.instructions?.ok === true ? this.instructions.text : null,
         instructionsMismatch: this.instructions !== null && !this.instructions.ok,
         paidRecorded: this.rec?.role === 'buyer' && this.rec.paidSeen === true && (this.rec.acceptedAtomic ?? null) !== null,
@@ -609,6 +622,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // verifyAttestation refused a trade attestation without terms, so they are here.
       if (attestation.terms === undefined) return this.fail('participants-mismatch');
       this.attested = attestation.terms;
+      this.instructionsHashOk.clear();
       if (!this.rec.attestation) {
         this.rec.attestation = att;
         await this.persist();
@@ -927,20 +941,44 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     /**
+     * The hash check of a text, kept per text for this run (the attested terms do not change once
+     * verified), so a tick that has seen the text before checks it without awaiting: an extra await
+     * here would widen the window in which a tick holding an older view meets a fresh tap.
+     */
+    private instructionsHashOk = new Map<string, boolean>();
+
+    /**
      * The view's method is the attested one and its payment instructions, if it carries any, hash to
      * the attested `instructionsSha256` (Task 34 review I1, restored after J-16). Records the result
      * for the status (the text is passed on only when it holds). False before the attestation.
      */
-    private async instructionsAttested(v: EscrowTradeView): Promise<boolean> {
+    private instructionsAttested(v: EscrowTradeView): boolean | Promise<boolean> {
       const terms = this.attested;
       const methodOk = terms !== null && v.methodId === terms.deal.methodId;
+      // Review M1: a value that is not text is malformed, and once the escrow is secured the view
+      // must carry the text: null or missing then is a mismatch too, never "the offer gave none"
+      // (fails closed, as a view without a time to pay, launch-rules F2). The API sends null only
+      // while the escrow is not yet secured.
+      if (v.instructionsMalformed || (v.paymentInstructions === null && (v.securedSeen || INSTRUCTIONS_DUE.includes(v.state)))) {
+        this.instructions = { text: null, ok: false };
+        return false;
+      }
       const text = v.paymentInstructions;
       if (text === null) {
         this.instructions = null;
         return methodOk;
       }
-      this.instructions = { text, ok: methodOk && terms !== null && (await instructionsMatch(text, terms)) };
-      return this.instructions.ok;
+      const done = (hashOk: boolean): boolean => {
+        this.instructions = { text, ok: methodOk && hashOk };
+        return this.instructions.ok;
+      };
+      const known = this.instructionsHashOk.get(text);
+      if (known !== undefined) return done(known);
+      if (terms === null) return done(false);
+      return instructionsMatch(text, terms).then((ok) => {
+        this.instructionsHashOk.set(text, ok);
+        return done(ok);
+      });
     }
 
     /** The counterparty's signed address is the one the moderator attested for its role (or none yet). */
@@ -999,7 +1037,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // Task 34 review I1 (restored after J-16): the method and the payment instructions the view
       // shows must be the attested ones; otherwise the text is never shown, the mismatch is, and
       // nothing is settled this tick (a buyer may be about to pay someone else).
-      if (!(await this.instructionsAttested(v))) {
+      const instr = this.instructionsAttested(v);
+      if (!(typeof instr === 'boolean' ? instr : await instr)) {
         this.refusal = 'view-mismatch';
         this.refresh();
         return;
@@ -1226,7 +1265,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           if (v && !viewMatches(v, r.role, r.deal)) throw new Error('escrow: the trade view does not match this device\'s deal');
           // Nor on payment instructions (or a method) that are not the attested ones (Task 34 review
           // I1): the buyer may have paid someone else, so the tap is not taken on this device.
-          if (v && !(await this.instructionsAttested(v))) throw new Error('escrow: the trade view\'s payment instructions are not the attested ones');
+          const instr = v ? this.instructionsAttested(v) : true;
+          if (!(typeof instr === 'boolean' ? instr : await instr)) throw new Error('escrow: the trade view\'s payment instructions are not the attested ones');
           // The tap itself fixes the amount: the one already fixed, or the API's within [take, device size].
           const fixed = r.acceptedAtomic ?? null;
           const inRange = (x: bigint): boolean => x >= r.deal.takeAmountAtomic && x <= r.sizeAtomic;

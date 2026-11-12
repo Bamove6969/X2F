@@ -56,6 +56,7 @@ export const RUNTIME_FAILED: EscrowStatus = {
   fiatCents: null,
   escrowAddress: null,
   deal: null,
+  methodId: null,
   paymentInstructions: null,
   instructionsMismatch: false,
   receivedAtomic: null,
