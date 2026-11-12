@@ -136,3 +136,68 @@ custom sets are.
 1. **B2:** a non-moderator tone for the disputed chip (or a recorded allowlist entry, if design
    wants the moderator look there).
 2. **m3:** apply the per-part box to the events and appeal writes (recommended).
+
+---
+
+## Addendum: 2c323dc7 (B2, m3, and the web live stream for either trades box)
+
+**Commits:**
+- d9c1245a (RED) and 62aa87b7: the web live stream;
+- 263e6696 (RED) and 2c323dc7: B2 and m3.
+
+**Method:** same as above (throwaway worktree, removed afterwards; every run under the lock).
+
+### Verdict: APPROVE to land
+
+B2 and m3 are fixed at their cause, the web stream now matches the API, and every new test was red
+before its fix. The full apps/api and apps/web run is green, with no failures.
+
+### Red before, green after
+
+| Run | Result |
+|---|---|
+| Tests at 2c323dc7 with `apps/api/src` and `apps/web/src` from 6004eebb | **6 failed**, 141 passed: `mayOpenLiveEvents`, the moderator-scope tone test, "every trade state has words" (now asserts that no state is `mod`), the disputed-row chip, m3 events, m3 appeal |
+| e2e trades.spec, same swap | **1 failed**: "a member with See trade history only gets live updates…". The other new e2e test, "a member with no trades box opens no live stream", passed before and after; it is a pin. |
+| apps/api + apps/web full vitest at 2c323dc7 | 233 files, **4532 passed**, 1 todo, 0 failed |
+| `tsc --noEmit` apps/api, apps/web; copy-lint | clean |
+| Playwright trades.spec, shell.spec, team.spec (production build) | **50 passed** |
+
+The earlier tests changed only by adding assertions (the disputed tone in "every trade state has
+words"). Nothing was loosened.
+
+### B2: fixed
+
+- `STATE_LABEL.disputed` is now `caution` with the `alert` icon.
+- `STATE_LABEL`'s tone type is `RowTone` (`caution | escrow | neutral`), so the compiler rejects a
+  `mod` row tone.
+- `Trades.tsx` draws the chip through `StateChip`, which passes each tone as a literal. The
+  moderator-scope test therefore sees no tone taken from a variable, and Trades.tsx needs no
+  allowlist entry.
+- Tested: the rendered chip is `data-tone="caution"`, and no `data-tone="mod"` appears anywhere on
+  the screen.
+
+### m3: fixed
+
+`assertMemberMay(req.auth, tradePartAbility(row.closed_at))` now runs, after the participant check
+(so a stranger still gets 404), in:
+- `POST /v1/trades/:code/events`, besides the event's own box and `TRADE_READ`;
+- `POST /v1/trades/:code/appeal`, besides `disputes-appeal`.
+
+Tested in both directions for custom sets.
+
+### Web live stream: fixed
+
+- `mayOpenLiveEvents(session)` replaces App.tsx's `isTrader`: a signed-in, full, current-Terms
+  trader session, and then `mayReadTrades` (the owner, or a member with either trades box).
+- The old check opened the stream for members with the Trades role only. A history-only member never
+  got the updates the API now sends them.
+- This now matches the API's `STREAM_ABILITY` (either box), and the bus still filters a member's
+  events by part.
+- Tested in e2e: a history-only member's stream opens and a completed trade's room reloads on its
+  event; a member with no trades box opens none.
+
+### What remains (no change asked)
+
+- **Copy and design:** the row copy and tones are COPY-UNSIGNED and DESIGNER-REVIEW.
+- **Info from the first pass:** an active-only member's room loses a trade when it closes.
+- **NEEDS_APPEALS_MERGE:** the `rowAction` seam (in Trades.tsx) is still open.
