@@ -16,7 +16,7 @@ export {
   checkPassword,
   normalizePassword,
 } from './password.js';
-export { newLoginCode, newRecoveryCode, normalizeLoginCode, normalizeRecoveryCode } from './loginCode.js';
+export { formatRecoveryInput, newLoginCode, newRecoveryCode, normalizeLoginCode, normalizeRecoveryCode } from './loginCode.js';
 export {
   type InspectOptions,
   type KeyInspection,

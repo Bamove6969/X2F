@@ -13,18 +13,28 @@ import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { expectParity, type ParityViewport } from './parity.js';
 
 const PHONES = ['390x844', '360x800'] as const satisfies readonly ParityViewport[];
-const RECOVERY_CODES = Array.from({ length: 10 }, (_, i) => `ABCD-EFGH-JKMN-PQR${i}`);
+/** The server's one recovery code (hold model v3), 64 symbols since the owner's demo notes (12 Nov 2026). */
+const RECOVERY_CODE = 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789';
 
-/** Owner S-017: make the recovery codes, tick "I've written it down" and type back the code asked for. */
+/**
+ * Owner S-017 and demo notes (12 Nov 2026): make the recovery code, tick "I've written it down",
+ * Next, then type it back on the next screen (the code out of sight) and Next.
+ */
 async function saveRecoveryCodes(page: Page): Promise<void> {
   await expect(page.locator('[data-part="backup-skip"]')).toHaveCount(0);
   await page.click('[data-part="recovery-make"]');
-  const input = page.locator('#recovery-typeback');
-  const n = Number(await input.getAttribute('data-code-number'));
-  await expect(page.locator('[data-part="recovery-continue"]')).toBeDisabled();
+  await expect(page.locator('[data-part="recovery-next"]')).toBeDisabled();
   await page.check('[data-part="recovery-written"]');
-  await input.fill(RECOVERY_CODES[n - 1]!);
+  await page.click('[data-part="recovery-next"]');
+  await expect(page.locator('[data-part="recovery-continue"]')).toBeDisabled();
+  await page.fill('#recovery-typeback', RECOVERY_CODE);
   await page.click('[data-part="recovery-continue"]');
+}
+
+/** Owner demo notes (12 Nov 2026): the login methods are checkboxes, PGP ticked first; tick only `id`. */
+async function chooseOnly(page: Page, id: 'password' | 'passkey'): Promise<void> {
+  await page.uncheck('[data-method="pgp"] input[type="checkbox"]');
+  await page.check(`[data-method="${id}"] input[type="checkbox"]`);
 }
 
 const TERMS_VERSION = '2026-11-12';
@@ -138,7 +148,7 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
   await page.route('**/v1/account/recovery-codes', (r) => {
     record('recovery-codes', r);
     s.methods = [...s.methods, 'recovery-codes'];
-    return json({ codes: RECOVERY_CODES })(r);
+    return json({ codes: [RECOVERY_CODE] })(r);
   });
   await page.route('**/v1/account/totp/start', (r) => {
     record('totp-start', r);
@@ -244,9 +254,9 @@ for (const v of PHONES) {
     await pickNames(page, 'lumen.k', 'lumen-login-7');
 
     await expect(page).toHaveURL(/\/setup\/login\?/);
-    // PGP is first and picked by default.
-    await expect(page.locator('[role="radio"]').first()).toContainText('PGP key');
-    await expect(page.locator('[role="radio"]').first()).toHaveAttribute('aria-checked', 'true');
+    // PGP is first and picked (ticked) by default.
+    await expect(page.locator('[data-method]').first()).toContainText('PGP key');
+    await expect(page.locator('[data-method]').first().locator('input[type="checkbox"]')).toBeChecked();
     await expectParity(page, 'SetupLogin', { viewport: v });
     await page.click('[data-part="method-continue"]');
 
@@ -325,8 +335,8 @@ for (const v of PHONES) {
     await page.goto('/setup');
     await acceptTerms(page);
     await pickNames(page, 'lumen.k', 'lumen-login-7');
-    await page.click('[data-method="password"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'password');
+    await page.click('[data-part=\"method-continue\"]');
     await expect(page).toHaveURL(/\/setup\/password\?/);
 
     const setBtn = page.locator('[data-part="password-set"]');
@@ -424,8 +434,8 @@ test('the signature pad: drawn by touch, or a typed name by keyboard only; the s
   await expect(page).toHaveURL(/\/setup\/name\?/);
 
   await pickNames(page, 'lumen.k', 'lumen-login-7');
-  await page.click('[data-method="password"]');
-  await page.click('[data-part="method-continue"]');
+  await chooseOnly(page, 'password');
+  await page.click('[data-part=\"method-continue\"]');
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
@@ -441,8 +451,8 @@ test('Mira.K_ shows exactly as typed after setup (password path, extra backup sk
   await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
   await acceptTerms(page);
   await pickNames(page, 'Mira.K_', 'mira-signin-01');
-  await page.click('[data-method="password"]');
-  await page.click('[data-part="method-continue"]');
+  await chooseOnly(page, 'password');
+  await page.click('[data-part=\"method-continue\"]');
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
@@ -512,8 +522,8 @@ test('a taken display name at register sends the person back to change their nam
   await page.goto('/setup');
   await acceptTerms(page);
   await pickNames(page, 'lumen.k', 'lumen-login-7');
-  await page.click('[data-method="password"]');
-  await page.click('[data-part="method-continue"]');
+  await chooseOnly(page, 'password');
+  await page.click('[data-part=\"method-continue\"]');
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
@@ -773,8 +783,8 @@ test.describe('review fix round', () => {
     await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
     await acceptTerms(page);
     await pickNames(page, 'lumen.k', 'lumen-login-7');
-    await page.click('[data-method="password"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'password');
+    await page.click('[data-part=\"method-continue\"]');
     await page.fill('#pw', 'Quiet-harbour-58');
     await page.fill('#pw2', 'Quiet-harbour-58');
   }
@@ -870,8 +880,8 @@ test.describe('review fix round', () => {
     });
     await acceptTerms(page);
     await pickNames(page, 'lumen.k', 'lumen-login-7');
-    await page.click('[data-method="passkey"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'passkey');
+    await page.click('[data-part=\"method-continue\"]');
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     expect(s.bodies['webauthn-start']).toEqual([{ displayName: 'lumen.k', loginName: 'lumen-login-7', kind: 'passkey' }]);
     const finish = s.bodies['webauthn-finish']?.[0] as { acceptedTerms: string; termsSignature: unknown; deviceLabel: string; challengeId: string };
@@ -888,8 +898,8 @@ test.describe('review fix round', () => {
     await page.goto('/setup');
     await acceptTerms(page);
     await pickNames(page, 'lumen.k', 'lumen-login-7');
-    await page.click('[data-method="passkey"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'passkey');
+    await page.click('[data-part=\"method-continue\"]');
     await expect(page.locator('[data-part="register-error"]')).toContainText('pick another way to log in');
     await expect(page).toHaveURL(/\/setup\/login\?/);
   });
@@ -919,8 +929,8 @@ test.describe('review fix round', () => {
     await page.click('[data-part="names-continue"]');
     await expect(page.locator('#display-name')).toHaveValue('lumen.k');
     await page.click('[data-part="display-continue"]');
-    await page.click('[data-method="password"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'password');
+    await page.click('[data-part=\"method-continue\"]');
     await page.fill('#pw', 'Quiet-harbour-58');
     await page.fill('#pw2', 'Quiet-harbour-58');
     await page.click('[data-part="password-set"]');
@@ -1028,7 +1038,7 @@ test.describe('review fix round', () => {
     await expect(page.locator('[data-part="wallet-error"]')).toHaveText('That is an integrated address. Paste a normal receive address from your wallet.');
   });
 
-  test('M8: the choice groups follow the radio pattern (arrow keys, one tab stop) and help text is linked', async ({ page }) => {
+  test('M8: the choice groups follow their pattern (login methods: checkboxes, one tab stop each) and help text is linked', async ({ page }) => {
     await stubApi(page);
     await page.goto('/setup');
     await expect(page.locator('[data-part="terms-tick"]')).toHaveAttribute('aria-describedby', /.+/);
@@ -1052,15 +1062,20 @@ test.describe('review fix round', () => {
     await described('display-name', 'display-name-help');
     await page.fill('#display-name', 'lumen.k');
     await page.click('[data-part="display-continue"]');
-    const radios = page.locator('[role="radiogroup"][aria-label="Login method"] [role="radio"]');
-    await expect(radios.nth(0)).toHaveAttribute('tabindex', '0');
-    await expect(radios.nth(1)).toHaveAttribute('tabindex', '-1');
-    await radios.nth(0).focus();
-    await page.keyboard.press('ArrowDown');
-    await expect(radios.nth(1)).toHaveAttribute('aria-checked', 'true');
-    await expect(radios.nth(1)).toBeFocused();
-    await page.keyboard.press('ArrowUp');
-    await page.keyboard.press('ArrowUp');
-    await expect(radios.nth(3)).toHaveAttribute('aria-checked', 'true');
+    // Owner demo notes (12 Nov 2026): the login methods are checkboxes now, each its own tab stop,
+    // ticked with Space, each linked to its description.
+    const boxes = page.locator('[role="group"][aria-label="Login methods"] input[type="checkbox"]');
+    await expect(boxes).toHaveCount(5);
+    await expect(boxes.nth(0)).toBeChecked();
+    await boxes.nth(0).focus();
+    await page.keyboard.press('Tab');
+    await expect(boxes.nth(1)).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(boxes.nth(1)).toBeChecked();
+    await expect(boxes.nth(0)).toBeChecked();
+    for (let i = 0; i < 5; i++) {
+      const d = (await boxes.nth(i).getAttribute('aria-describedby'))!;
+      await expect(page.locator(`[id="${d}"]`)).toHaveCount(1);
+    }
   });
 });

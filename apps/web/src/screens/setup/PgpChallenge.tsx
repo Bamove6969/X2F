@@ -9,14 +9,15 @@ import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
-import { RegisterError, SetupFrame, SetupIntro, useSetup } from './kit.js';
+import { RegisterError, SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
 import { errorCode, registerPgpFinish, registerPgpStart, setupError, termsChanged, type SetupError } from './register.js';
 
 /** Each login code expires 5 minutes after X2F sends it (spec 6.2). */
 const CODE_LIFETIME_MS = 5 * 60_000;
 
 export function PgpChallenge() {
-  const { state, update, go, path } = useSetup();
+  const api = useSetup();
+  const { state, update, go, path } = api;
   const challenge = state.challenge!;
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -86,7 +87,7 @@ export function PgpChallenge() {
       {...(done ? {} : { back: path('pgp-key') })}
       footer={
         done ? (
-          <Button variant="primary" onClick={() => go('backup', { replace: true })} data-part="pgp-continue">
+          <Button variant="primary" onClick={() => finishMethod(api, 'pgp')} data-part="pgp-continue">
             Continue
           </Button>
         ) : (

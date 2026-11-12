@@ -272,10 +272,11 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first, knownName }:
           <label className="x2f-label" htmlFor="pgp-key">
             Your PGP public key
           </label>
+          {/* Owner demo note (12 Nov 2026, /login): the same width, much taller, so the whole key shows. */}
           <textarea
-            className="x2f-input x2f-textarea"
+            className="x2f-input x2f-textarea x2f-textarea--tall"
             id="pgp-key"
-            rows={6}
+            rows={18}
             autoComplete="off"
             spellCheck={false}
             value={publicKey}

@@ -91,10 +91,11 @@ export function PgpKey() {
       </SetupIntro>
       <label className="x2f-field x2f-label" htmlFor="pub">
         Public key
+        {/* Owner demo note (12 Nov 2026): a much bigger box, so the whole key shows. */}
         <textarea
-          className="x2f-input x2f-textarea"
+          className="x2f-input x2f-textarea x2f-textarea--key"
           id="pub"
-          rows={6}
+          rows={18}
           autoComplete="off"
           autoCapitalize="none"
           autoCorrect="off"

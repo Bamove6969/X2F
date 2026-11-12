@@ -46,8 +46,11 @@ export function Username({ check }: { check?: NameChecker } = {}) {
         </Button>
       }
     >
-      <SetupIntro title="Pick a username">
-        You type this to log in. Only you see it. Nobody can work it out from your display name. Nothing else to give us, now or ever.
+      {/* COPY-UNSIGNED (owner, 12 Nov 2026: the heading is his words; the lead no longer says there is
+          nothing else to give, since the next screens ask for a login method and a payout wallet) */}
+      <SetupIntro title="Pick a unique username">
+        You type this to log in. Only you see it. Nobody can work it out from your display name. X2F never asks for your email address or phone
+        number.
       </SetupIntro>
       <div className="x2f-field">
         <label className="x2f-label" htmlFor="uname">

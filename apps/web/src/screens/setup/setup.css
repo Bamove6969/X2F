@@ -147,6 +147,64 @@
   resize: none;
 }
 
+/*
+ * The public key box (owner demo note, 12 Nov 2026, /setup/pgp-key: "lots of screen real estate
+ * here so make the box MUCH wider so they can see their key fit"): the column's full width and
+ * about half the screen's height, so a whole key shows.
+ */
+.x2f-start .x2f-textarea--key {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: max(320px, 48dvh);
+  font-family: var(--x2f-font-mono);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The recovery code typed back unseen: red until it matches, green when it does (owner, 12 Nov 2026). */
+.x2f-start__typeback {
+  font-family: var(--x2f-font-mono);
+  letter-spacing: 0.02em;
+}
+
+.x2f-start__typeback[data-match='no'] {
+  border-color: var(--x2f-danger);
+  outline-color: var(--x2f-danger);
+  color: var(--x2f-danger);
+}
+
+.x2f-start__typeback[data-match='yes'] {
+  border-color: var(--x2f-escrow);
+  outline-color: var(--x2f-escrow);
+  color: var(--x2f-escrow);
+}
+
+.x2f-start__match {
+  display: block;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.x2f-start__match[data-tone='no'] {
+  color: var(--x2f-danger);
+}
+
+.x2f-start__match[data-tone='yes'] {
+  color: var(--x2f-escrow);
+}
+
+/* The 64-symbol recovery code: four groups to a row. */
+.x2f-start .x2f-codes--long {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: var(--x2f-space-3);
+}
+
+.x2f-start .x2f-codes--long .x2f-codes__item {
+  font-size: 16px;
+  text-align: center;
+}
+
 .x2f-start__name,
 #phrase,
 #addr {
@@ -295,9 +353,64 @@
   cursor: pointer;
 }
 
-.x2f-start__choice[aria-checked='true'] {
+.x2f-start__choice[aria-checked='true'],
+.x2f-start__choice[data-checked='true'] {
   border-color: var(--x2f-ink);
   background: var(--x2f-surface-raised);
+}
+
+/* The login step's checkboxes (owner demo notes, 12 Nov 2026: tick every method wanted). */
+.x2f-start__choice--check:focus-within {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+}
+
+.x2f-start__choice--check[data-disabled='true'] {
+  cursor: default;
+}
+
+.x2f-start__choice--check[data-disabled='true'] .x2f-start__choice-name {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-start__tick {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--x2f-ink);
+}
+
+/*
+ * The strength words (owner, 12 Nov 2026: "strong in green letters"). The design system's own
+ * "good" colour is --x2f-escrow (teal), so Strong uses it until design adds a green; Medium and
+ * Weak take the caution and danger colours (for design to confirm).
+ */
+.x2f-start__strength {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.x2f-start__strength[data-strength='strong'] {
+  color: var(--x2f-escrow);
+}
+
+.x2f-start__strength[data-strength='medium'] {
+  color: var(--x2f-caution);
+}
+
+.x2f-start__strength[data-strength='weak'] {
+  color: var(--x2f-danger);
+}
+
+.x2f-start__choice-warn {
+  color: var(--x2f-ink);
+  font-weight: 600;
+}
+
+.x2f-start__choice-needs {
+  font-style: italic;
 }
 
 .x2f-start__choice-head {
@@ -657,6 +770,12 @@
   gap: 10px;
   font-size: 15px;
   line-height: 22px;
+}
+
+/* A tick box whose whole row is the tap target (44 px tall), as on the recovery code's screen A. */
+.x2f-check--tap {
+  align-items: center;
+  min-height: 44px;
 }
 
 .x2f-check input {

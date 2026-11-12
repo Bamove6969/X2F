@@ -205,14 +205,15 @@ const holdView = async (b: Browser) => (await b.get('/v1/account/hold')).json() 
 
 const submit = (b: Browser, ids: string[]) => b.post('/v1/account/hold/changes/submit', { ids });
 
-describe('recovery code: one 16-character code', () => {
-  it('RECOVERY_CODE_COUNT is 1 and the route answers one code in the trade-code format', async () => {
+// Owner demo note (12 Nov 2026, /setup/backup): the one code is about four times longer, 64 symbols (was 16).
+describe('recovery code: one 64-character code', () => {
+  it('RECOVERY_CODE_COUNT is 1 and the route answers one code of 64 symbols', async () => {
     expect(RECOVERY_CODE_COUNT).toBe(1);
     const t = await passwordTrader();
     await onboarding(t.id, new Date(now.getTime() + HOUR));
     const r = (await t.b.post('/v1/account/recovery-codes', {})).json() as { codes: string[] };
     expect(r.codes).toHaveLength(1);
-    expect(normalizeRecoveryCode(r.codes[0]!)?.replace(/-/g, '')).toHaveLength(16);
+    expect(normalizeRecoveryCode(r.codes[0]!)?.replace(/-/g, '')).toHaveLength(64);
   });
 });
 

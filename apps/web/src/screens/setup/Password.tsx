@@ -13,11 +13,13 @@
  * server's answer to "Set password" is the check (a leaked one drops to Weak).
  */
 import { useState } from 'react';
-import { checkPassword } from '@x2f/auth-client';
+import { checkPassword, isStaged } from '@x2f/auth-client';
+import { authApi } from '../auth/authApi.js';
+import { HOLD_COPY } from '../settings/holdCopy.js';
 import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
-import { RegisterError, SetupFrame, SetupIntro, useSetup } from './kit.js';
+import { RegisterError, SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
 import { errorCode, registerPassword, setupError, termsChanged, type SetupError } from './register.js';
 
 type Met = 'true' | 'false' | 'unknown';
@@ -96,7 +98,12 @@ function StrengthMeter({ level }: { level: PasswordStrength | null }) {
 }
 
 export function Password() {
-  const { state, update, go, path } = useSetup();
+  const api = useSetup();
+  const { state, update, go, path } = api;
+  // Owner demo notes (12 Nov 2026): a password ticked after a stronger method is added to the
+  // account that method made (`PUT /v1/account/password`, no confirm in the sign-up window).
+  const adding = state.registered;
+  const [held, setHeld] = useState(false);
   const [pw, setPw] = useState('');
   const [again, setAgain] = useState('');
   const [leaked, setLeaked] = useState<Met>('unknown');
@@ -112,12 +119,19 @@ export function Password() {
     setBusy(true);
     setError(null);
     try {
+      if (adding) {
+        const staged = await authApi.setPassword({ password: pw });
+        setPw('');
+        setAgain('');
+        if (staged !== undefined && isStaged(staged)) setHeld(true);
+        else finishMethod(api, 'password');
+        return;
+      }
       await registerPassword({ displayName: state.displayName, loginName: state.loginName }, pw, state.terms!);
       setPw('');
       setAgain('');
-      update({ registered: true, method: 'password' });
       refreshSession();
-      go('backup', { replace: true });
+      finishMethod(api, 'password', { registered: true, method: 'password' });
     } catch (e) {
       const code = errorCode(e);
       if (termsChanged(e)) {
@@ -139,13 +153,24 @@ export function Password() {
     <SetupFrame
       screen="setup-password"
       step={3}
-      back={path('login')}
+      {...(adding ? {} : { back: path('login') })}
       footer={
-        <Button variant="primary" disabled={!canSet || busy} onClick={() => void submit()} data-part="password-set">
-          Set password
-        </Button>
+        held ? (
+          <Button variant="primary" onClick={() => finishMethod(api, 'password')} data-part="method-next">
+            Continue
+          </Button>
+        ) : (
+          <Button variant="primary" disabled={!canSet || busy} onClick={() => void submit()} data-part="password-set">
+            Set password
+          </Button>
+        )
       }
     >
+      {held ? (
+        <p className="x2f-note" role="status" data-part="held-note">
+          {HOLD_COPY.staged}
+        </p>
+      ) : null}
       <SetupIntro title="Choose a password">At least 10 characters, with upper and lower case letters, a number and a symbol.</SetupIntro>
       <label className="x2f-field x2f-label" htmlFor="pw">
         Password
