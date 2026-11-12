@@ -47,7 +47,7 @@ The page CSS sets `--iso-hi` and `--iso-lo` for each theme: night uses `--ink` /
 3. The objects.
 4. Fixed DOM text and buttons, which never move with the art.
 
-**Design-system exceptions inside the illustration only (OPEN, head designer to confirm).** v2 §3 and Don't ban drop shadows and gradients outside the hero wash. The iso art needs face gradients and soft contact shadows to get the depth the owner asked for. I propose allowing them **inside `.illus` and the tour card's mini tile only**. UI chrome stays shadow-free.
+**Design-system exception (DECIDED, head designer, 12 Nov): face gradients and contact shadows are ALLOWED inside the iso art only.** That means `.illus` and the tour card's mini tile. Everywhere else, v2 §3 and its Don't list still apply: no drop shadows, and no gradients outside the hero wash.
 
 ## 2. Landing intro scenes (READY)
 
@@ -161,10 +161,18 @@ Staff and team tours reuse the shell. They swap the tones to `--mod` (staff) and
 | Trade 2/4, Buy/Sell switch | Buy or sell | Switch between buying and selling Monero. The list below changes to match. | Next |
 | Trade 3/4, first offer row | Pick an offer | Check the price, the limits and the trader's feedback. Starting a trade is always free. | Next |
 | Trade 4/4, Post offer tab | Post your own offer | Set your price and how you get paid. You only pay a fee when you post an offer. | Next screen |
-| Wallets 1/2, wallet card | Your wallets | Add the Monero wallet you send from and receive to. Coins from a trade land here. | Next |
+| Wallets 1/2, linked wallet row | Your wallets | Link the Monero wallet you already use. When you buy, the coins go straight to it. | Next |
 | Wallets 2/2, Profile tab | Your profile | Your feedback, badges and settings live here. | Done |
 
-Other COPY-UNSIGNED strings: "Welcome" (the screen name), "Skip tour", "Next screen", "Done".
+Other COPY-UNSIGNED strings: "Welcome" (the screen name), "Skip tour", "Next screen", "Done", plus these on the Wallets mock: "Linked wallet", "Payouts go here", "Link another wallet".
+
+**The Wallets mock never shows a balance.** X2F has no built-in wallet (head designer, 12 Nov). The mock shows a linked wallet row instead:
+- a wallet tile;
+- the wallet name, "Cake Wallet";
+- the address in mono chunks, "4Ax9 … k2Qm";
+- a muted line, "Payouts go here".
+
+A "Link another wallet" row sits under it.
 
 ## 5. Reduced motion (READY)
 
@@ -209,7 +217,8 @@ Rive is the fallback if the owner later wants characters or organic motion. Rive
 - Keep boxes non-intersecting. Safari's 3D depth sorting misorders planes that intersect. Test on iOS Safari.
 - Pause the intro when the tab is hidden (`visibilitychange`).
 
-## 7. Open questions
+## 7. Decisions and open items
 
-1. **Design-system exceptions:** confirm face gradients and contact shadows are allowed inside the iso art only (§1).
-2. **Copy:** scene 4 says "No email and no IP addresses logged." Is that the owner's wording to keep, or is the Landing line's wording the one to use? It needs his sign-off with the rest of the COPY-UNSIGNED strings.
+- **Decided:** face gradients and contact shadows are allowed inside the iso art only (§1).
+- **Confirmed:** scene 4's "No email and no IP addresses logged." The lead confirms it matches deployment. It stays COPY-UNSIGNED until the owner signs off the copy.
+- **Open:** nothing beyond owner sign-off of the COPY-UNSIGNED strings.
