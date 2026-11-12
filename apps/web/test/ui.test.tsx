@@ -5,7 +5,7 @@ import { Amount } from '../src/ui/Amount.js';
 import { BadgePill } from '../src/ui/BadgePill.js';
 import { ActionBar } from '../src/ui/ActionBar.js';
 import { BottomNav } from '../src/ui/BottomNav.js';
-import { mayPostOffers, mayReadTrades, mayViewWallets } from '../src/session/member.js';
+import { mayOpenLiveEvents, mayPostOffers, mayReadTrades, mayViewWallets } from '../src/session/member.js';
 import type { Session } from '../src/session/useSession.js';
 import { Button } from '../src/ui/Button.js';
 import { Checkbox } from '../src/ui/Checkbox.js';
@@ -460,6 +460,23 @@ describe('BottomNav', () => {
     expect(mayReadTrades({ status: 'signed-out' })).toBe(true);
     // As for Post offer (review N2): while the session loads, the tab waits.
     expect(mayReadTrades({ status: 'loading' })).toBe(false);
+  });
+
+  it('mayOpenLiveEvents: a full trader session, the owner or a member with either trades box (lead, after review trades-list I1)', () => {
+    const me = (over: Record<string, unknown>) => ({ status: 'signed-in', me: { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, member: null, ...over } }) as unknown as Session;
+    expect(mayOpenLiveEvents(me({}))).toBe(true);
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: [], abilities: ['trades-see-history'] } }))).toBe(true);
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: ['trades'], abilities: ['trades-see-active'] } }))).toBe(true);
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: ['offers'], abilities: ['offers-see'] } }))).toBe(false);
+    // An older API with roles only.
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: ['trades'] } }))).toBe(true);
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: ['offers'] } }))).toBe(false);
+    // Not a full, current trader session: no stream (the API's requireTrader).
+    expect(mayOpenLiveEvents(me({ level: 'recovery' }))).toBe(false);
+    expect(mayOpenLiveEvents(me({ termsCurrent: false }))).toBe(false);
+    expect(mayOpenLiveEvents(me({ kind: 'staff' }))).toBe(false);
+    expect(mayOpenLiveEvents({ status: 'signed-out' })).toBe(false);
+    expect(mayOpenLiveEvents({ status: 'loading' })).toBe(false);
   });
 
   it('the tab bar carries no data-primary: the Main and BuyMain boards have no primary action', () => {
