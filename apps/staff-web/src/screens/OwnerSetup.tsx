@@ -12,6 +12,7 @@ import {
   setupPgpStart,
   setupState,
 } from '../api.js';
+import { setupOptions } from '../challenges.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Icon, Notice } from '../ui/kit.js';
 import { PgpProof } from '../ui/PgpProof.js';
@@ -191,8 +192,9 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
   const registerKey = (slot: KeySlot) =>
     withNames(async () => {
       await ensureAccount();
-      const { challengeId, options } = await setupKeyStart();
-      const response = await startRegistration({ optionsJSON: options });
+      const { challengeId, options, setupNonce } = await setupKeyStart();
+      // Re-verify X2: the key signs ownerSetupChallenge(setupNonce), never the server's challenge.
+      const response = await startRegistration({ optionsJSON: setupOptions(options, setupNonce) });
       await setupKeyFinish({ challengeId, response, label: slot === 'main' ? 'Main key' : 'Spare key' });
       setKeys((k) => ({ ...k, [slot]: true }));
     }, 'That key was not registered. Try again.');

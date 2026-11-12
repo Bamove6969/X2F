@@ -212,7 +212,26 @@ export async function initGate(o: { dir: string; keystoreKey: Uint8Array; print:
   o.print(`No ruling gate at ${path}. A new gate trusts nobody until pin-owner pins the owner's keys.`);
   o.print('If a gate was here before, it was deleted or moved: find out why before you make a new one.');
   if ((await o.confirm('Type yes to make a new, empty gate: ')).trim() !== 'yes') return 'declined';
-  const store = await openGateStore(o.dir, o.keystoreKey, { init: true });
-  await store.save();
+  // Created with O_EXCL (round 3): a gate.bin that appeared while this asked is never replaced.
+  await mkdir(o.dir, { recursive: true, mode: 0o700 });
+  let f;
+  try {
+    f = await openFile(path, 'wx', 0o600);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') return 'exists';
+    throw e;
+  }
+  try {
+    await f.writeFile(seal(modSubkey(o.keystoreKey, 'gate'), AAD, new TextEncoder().encode(toJson(emptyGate()))));
+    await f.sync();
+  } finally {
+    await f.close();
+  }
+  const d = await openFile(o.dir, 'r');
+  try {
+    await d.sync();
+  } finally {
+    await d.close();
+  }
   return 'created';
 }

@@ -177,6 +177,32 @@ export function keyCheckCode(publicKey: Uint8Array): string {
   return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}`;
 }
 
+/**
+ * Re-verify round 3, X2 (lead call): every WebAuthn ceremony on the staff site signs a challenge in
+ * its own domain, which the staff site derives itself from a server nonce (64 lower-case hex), so
+ * no login or setup assertion can ever be a tap's (`x2f-keytap-v1`) or another ceremony's.
+ */
+const NONCE_HEX = /^[0-9a-f]{64}$/;
+function domainChallenge(prefix: string, nonceHex: string): Uint8Array {
+  if (typeof nonceHex !== 'string' || !NONCE_HEX.test(nonceHex)) throw new TypeError(`${prefix}: the nonce must be 64 lower-case hex characters`);
+  return sha256(utf8(`${prefix}\n${nonceHex}`));
+}
+
+/** The staff login's WebAuthn challenge: SHA-256 of `"x2f-staff-login-v1\n" + nonce`. */
+export function staffLoginChallenge(nonceHex: string): Uint8Array {
+  return domainChallenge('x2f-staff-login-v1', nonceHex);
+}
+
+/** The owner setup's key-registration challenge: SHA-256 of `"x2f-owner-setup-v1\n" + nonce`. */
+export function ownerSetupChallenge(nonceHex: string): Uint8Array {
+  return domainChallenge('x2f-owner-setup-v1', nonceHex);
+}
+
+/** An invite token's hash (lower-case hex SHA-256 of its UTF-8): what the owner's tap and the registration challenge bind. */
+export function inviteTokenHash(token: string): string {
+  return toHex(sha256(utf8(token)));
+}
+
 /** The registration challenge for an invited staff member's key: SHA-256 of `"x2f-invite-v1\n" + tokenHash`. */
 export function inviteRegistrationChallenge(tokenHash: string): Uint8Array {
   return sha256(utf8(`x2f-invite-v1\n${tokenHash}`));

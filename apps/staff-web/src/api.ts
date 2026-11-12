@@ -121,7 +121,7 @@ export interface PgpChallenge {
 }
 
 export const keyLoginStart = (b: { loginName: string } | { pendingId: string }) =>
-  staffApi<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON }>('/staff/v1/login/security-key/start', { method: 'POST', body: b });
+  staffApi<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON; loginNonce?: string }>('/staff/v1/login/security-key/start', { method: 'POST', body: b });
 export const keyLoginFinish = (b: { challengeId: string; response: AuthenticationResponseJSON; pendingId?: string }) =>
   staffApi<LoginResult>('/staff/v1/login/security-key/finish', { method: 'POST', body: { ...b, deviceLabel: deviceLabel() } });
 export const pgpLoginStart = (b: { key: string; pendingId?: string }) => staffApi<PgpChallenge>('/staff/v1/login/pgp/start', { method: 'POST', body: b });
@@ -160,7 +160,7 @@ const fetchProbe = () => staffApi<unknown>('/staff/v1/setup/finish', { method: '
 export const setupCode = (code: string) => staffApi<{ ok: true; expiresAt: string }>('/staff/v1/setup/code', { method: 'POST', body: { code } });
 export const setupAccount = (b: { displayName: string; loginName: string }) => staffApi<{ ok: true }>('/staff/v1/setup/account', { method: 'POST', body: b });
 export const setupKeyStart = () =>
-  staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
+  staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON; setupNonce?: string }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
 export const setupKeyFinish = (b: { challengeId: string; response: RegistrationResponseJSON; label?: string }) =>
   staffApi<{ keys: number }>('/staff/v1/setup/key/finish', { method: 'POST', body: b });
 export const setupPgpStart = (publicKey: string) => staffApi<PgpChallenge>('/staff/v1/setup/pgp/start', { method: 'POST', body: { publicKey } });

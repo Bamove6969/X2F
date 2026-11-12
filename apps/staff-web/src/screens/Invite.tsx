@@ -3,6 +3,7 @@ import type { TermsSignature } from '@x2f/auth-client';
 import type { LoginHours } from '@x2f/staff';
 import { useEffect, useId, useState } from 'react';
 import { useParams } from 'react-router';
+import { inviteOptions } from '../challenges.js';
 import { codeOf, inviteAccount, inviteFinish, inviteKeyFinish, inviteKeyStart, invitePgpFinish, invitePgpStart, inviteRead, type InviteView } from '../api.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Icon, Notice } from '../ui/kit.js';
@@ -154,7 +155,8 @@ export function Invite() {
   const addKey = (kind: 'security-key' | 'passkey') =>
     run(async () => {
       const { options } = await inviteKeyStart(token, kind);
-      const response = await startRegistration({ optionsJSON: options });
+      // Re-verify X2: the key signs inviteRegistrationChallenge(the token in this link's hash), never the server's challenge.
+      const response = await startRegistration({ optionsJSON: inviteOptions(options, token) });
       const r = await inviteKeyFinish(token, { kind, response });
       if (kind === 'passkey') setAdded((a) => ({ ...a, passkeys: a.passkeys + 1 }));
       else if (r.keyCheckCode === null) setFault('X2F could not check who made that key, so it cannot be used for staff work. Use a hardware security key such as a YubiKey.');

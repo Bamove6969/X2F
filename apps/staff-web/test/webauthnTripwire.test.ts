@@ -23,14 +23,18 @@ const KEY_TAP_CALLERS: string[] = [];
 describe('WebAuthn on the staff site (re-verify X2, X3)', () => {
   it('startAuthentication only in KeyTapDialog (the checked tap) and Login (the derived login challenge)', () => {
     expect(uses(/\bstartAuthentication\s*\(/)).toEqual(['screens/Login.tsx', 'ui/KeyTapDialog.tsx']);
-    const login = files.find((f) => f.path === 'screens/Login.tsx')!.text;
-    expect(login).toMatch(/staffLoginChallenge\(/);
+    // Login's challenge is challenges.ts loginOptions: staffLoginChallenge(loginNonce), never the server's.
+    expect(files.find((f) => f.path === 'screens/Login.tsx')!.text).toMatch(/startAuthentication\(\{ optionsJSON: loginOptions\(/);
+    expect(files.find((f) => f.path === 'challenges.ts')!.text).toMatch(/staffLoginChallenge\(/);
   });
 
   it('startRegistration only in Invite (the invite token\'s challenge) and OwnerSetup (the derived setup challenge)', () => {
     expect(uses(/\bstartRegistration\s*\(/)).toEqual(['screens/Invite.tsx', 'screens/OwnerSetup.tsx']);
-    expect(files.find((f) => f.path === 'screens/Invite.tsx')!.text).toMatch(/inviteRegistrationChallenge\(/);
-    expect(files.find((f) => f.path === 'screens/OwnerSetup.tsx')!.text).toMatch(/ownerSetupChallenge\(/);
+    expect(files.find((f) => f.path === 'screens/Invite.tsx')!.text).toMatch(/startRegistration\(\{ optionsJSON: inviteOptions\(/);
+    expect(files.find((f) => f.path === 'screens/OwnerSetup.tsx')!.text).toMatch(/startRegistration\(\{ optionsJSON: setupOptions\(/);
+    const c = files.find((f) => f.path === 'challenges.ts')!.text;
+    expect(c).toMatch(/inviteRegistrationChallenge\(inviteTokenHash\(token\)\)/);
+    expect(c).toMatch(/ownerSetupChallenge\(/);
   });
 
   it('tapStart is called only from KeyTapDialog', () => {
