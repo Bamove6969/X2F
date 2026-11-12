@@ -36,11 +36,14 @@ alter table settings
 --    `clock-out` (the staff member's own correct clock-out, the only end that pays), `auto-logout`
 --    (the session ran out: idle, the 12-hour cap or the login-hours window; information only) and
 --    `ended` (logged out without clocking out, signed out elsewhere, switched off). `session_id`
---    carries no foreign key: purging a session must keep its shift.
+--    carries no foreign key: purging a session must keep its shift. A shift is information only,
+--    so it goes with its account (`on delete cascade`): owner setup replaces a pending owner
+--    account that may already have had a staff session (batch 9 full check). The pay rows below
+--    keep their account (no cascade): what someone earned or owes is never deleted with it.
 create table staff_shifts (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null unique,
-  staff_id uuid not null references accounts (id),
+  staff_id uuid not null references accounts (id) on delete cascade,
   clocked_in_at timestamptz not null,
   ended_at timestamptz,
   ended text check (ended in ('clock-out', 'auto-logout', 'ended')),

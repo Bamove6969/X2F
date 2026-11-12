@@ -7,6 +7,7 @@
 // no expectParity until the board lands.
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { screenStatus } from './session.js';
 
 const ME = { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
 const A = '11111111-1111-4111-8111-111111111111';
@@ -137,14 +138,14 @@ test('Select all only ticks; the bar turns the ticked offers on or off; a reload
   await page.goto('/profile/offers');
   await sw(page, B).click();
   await expect(sw(page, B)).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByRole('status')).toHaveText('1 offer turned on.');
+  await expect(screenStatus(page)).toHaveText('1 offer turned on.');
   expect(s.posts.at(-1)).toEqual({ ids: [B], status: 'live' });
 
   await page.getByRole('checkbox', { name: 'Select all' }).click();
   await expect(page.getByRole('region', { name: 'Selected offers' })).toContainText('3 selected');
   expect(s.posts).toHaveLength(1);
   await page.getByRole('button', { name: 'Turn off' }).click();
-  await expect(page.getByRole('status')).toHaveText('3 offers turned off.');
+  await expect(screenStatus(page)).toHaveText('3 offers turned off.');
   expect(s.posts.at(-1)).toEqual({ ids: [A, B, C], status: 'paused' });
   for (const id of [A, B, C]) await expect(sw(page, id)).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByRole('region', { name: 'Selected offers' })).toHaveCount(0);

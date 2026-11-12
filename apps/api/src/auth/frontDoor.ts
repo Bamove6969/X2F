@@ -77,6 +77,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/trades/:code': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/attestation': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/confirmations': 'one of my own trades (participants only)',
+  // P-012/P-013 (proof-check, classified at the batch 9 merge): my own side's blur-check asks.
+  'GET /v1/trades/:code/blur-checks': 'one of my own trades (participants only): my side\'s blur-check asks',
   'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
   'GET /v1/wallets': 'my own payout wallets',
@@ -165,6 +167,9 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/identity': 'my identity for one of my own trades (participants only)',
   'POST /v1/trades/:code/chat': 'the chat of one of my own trades (participants only)',
   'POST /v1/trades/:code/dispute': 'opens a dispute on one of my own trades (participants only)',
+  // P-012/P-013 (proof-check, classified at the batch 9 merge): the blur check on my own trades.
+  'POST /v1/trades/:code/proofs/:proofId/blur-check': 'counts my own proof on one of my own trades for the blur-check sample (participants only); answers only whether to ask',
+  'POST /v1/trades/:code/blur-checks/:proofId': 'my anonymous blur-check answer on one of my own trades (participants only); no data back',
   'POST /v1/trades/:code/appeal': 'appeals a ruling on one of my own trades (participants only)',
   'POST /v1/trades/:code/review': 'my review of one of my own finished trades',
   'POST /v1/trades/:code/review/skip': 'skips my review of one of my own finished trades',
