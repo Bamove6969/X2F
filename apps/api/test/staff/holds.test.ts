@@ -78,6 +78,36 @@ describe('staff and a recovery-code hold', () => {
     expect(entries.map((e) => JSON.parse(e.detail))).toContainEqual({ accountId: id });
   });
 
+  it('D-064 (owner 30 Oct N50-N51): staff who reached the account holder on their secure Jabber may end the hold, recorded as such', async () => {
+    const b = await senior();
+    const jabber = (id: string, verifiedAt: Date) =>
+      deps.db.query('insert into jabber_contacts (account_id, jid_sealed, verified_at, enabled) values ($1, $2, $3, true)', [id, randomBytes(48), verifiedAt]);
+    // No proven Jabber address on the account: refused, and the hold stays.
+    const none = await held();
+    const r1 = await b.send('POST', `/staff/v1/accounts/${none}/hold/end`, { via: 'secure-jabber' });
+    expect([r1.statusCode, r1.json().error]).toEqual([409, 'no-secure-jabber']);
+    expect(await holdUntil(none)).not.toBeNull();
+    // An address proven after the hold began is not the account holder's channel (Jabber changes
+    // wait out a hold, so only an address proven before it counts).
+    const late = await held();
+    await jabber(late, new Date(NOW.getTime() + 1000));
+    expect((await b.send('POST', `/staff/v1/accounts/${late}/hold/end`, { via: 'secure-jabber' })).json().error).toBe('no-secure-jabber');
+    expect(await holdUntil(late)).not.toBeNull();
+    // Proven before the hold: the hold ends and the log says how the person was reached.
+    const ok = await held();
+    await jabber(ok, new Date(NOW.getTime() - 24 * HOUR));
+    expect((await b.send('POST', `/staff/v1/accounts/${ok}/hold/end`, { via: 'secure-jabber' })).statusCode).toBe(204);
+    expect(await holdUntil(ok)).toBeNull();
+    const entries = (await logEntries(deps, 'hold.ended')).map((e) => JSON.parse(e.detail));
+    expect(entries).toContainEqual({ accountId: ok, via: 'secure-jabber' });
+    // Anything else in the body is refused before anything changes.
+    const other = await held();
+    for (const body of [{ via: 'email' }, { via: 'secure-jabber', note: 'x' }, { x: 1 }]) {
+      expect((await b.send('POST', `/staff/v1/accounts/${other}/hold/end`, body)).statusCode, JSON.stringify(body)).toBe(400);
+    }
+    expect(await holdUntil(other)).not.toBeNull();
+  });
+
   it('lead review 8 Nov minor 6: the end and its log entry are one transaction; the partner hears the resume', async () => {
     const id = await held();
     const partner = await seedAccount(deps, { loginName: `hp${randomBytes(4).toString('hex')}`, kind: 'trader' });
