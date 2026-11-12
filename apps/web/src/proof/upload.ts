@@ -65,13 +65,8 @@ export const PROOF_NO_AUTO_CHECK = "We couldn't check this image automatically. 
 // not-a-refusal: an input check on the picked image (try another), not an X2F rule
 export const PROOF_CANT_USE = "This image can't be used. Try a screenshot.";
 
-/** The upload screen is built but its storage route (Task 14) is not: off unless the build says so. */
-export function proofUploadOn(): boolean {
-  // Written as the literal `import.meta.env.VITE_...` so Vite (and Vitest) replace it: a cast around
-  // `import.meta` hides it from that, and the flag then reads undefined even when set to 1 (review M6,
-  // proofUpload.test.ts). The vite/client reference at the top types it for the API's tests too.
-  return (import.meta.env.VITE_X2F_PROOF_UPLOAD as string | undefined) === '1';
-}
+/** The flag lives in proof/flag.ts (one flag function); re-exported for the upload's callers. */
+export { proofUploadOn } from './flag.js';
 
 export type ProofInputErrorCode = 'too-large' | 'unsupported' | 'undecodable';
 

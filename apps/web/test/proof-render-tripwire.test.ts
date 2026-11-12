@@ -143,7 +143,7 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
     expect(panel).toMatch(/import \{ ChatProof \} from '\.\.\/screens\/proof\/ChatProof\.js'/);
     expect(panel).toMatch(/l\.proof !== undefined \? \([\s\S]{0,200}<ChatProof tradeCode=\{tradeCode\} proof=\{l\.proof\} \/>/);
     const card = code('apps/web/src/screens/proof/ChatProof.tsx');
-    expect(card).toMatch(/<ProofThumb bytes=\{state\.bytes\}/);
+    expect(card).toMatch(/<ProofThumb\s+bytes=\{state\.bytes\}/);
     expect(card).toMatch(/\bdecryptProof\(/);
   });
 

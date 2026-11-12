@@ -977,6 +977,10 @@ describe('Task 11 tripwires (local tree only)', () => {
       if (f === 'proof/blurCheck.ts') {
         expect(c, f).toMatch(/import \{ isStoredProof \} from '\.\.\/proofs\/store\.js';/);
         expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|ciphertext/);
+        // Stack review S-M1: that one import and nothing else from the store (no second named import,
+        // no namespace import), and no dynamic import(.
+        expect(c.match(/proofs\/store/g), f).toHaveLength(1);
+        expect(c, f).not.toMatch(/\bimport\s*\(/);
         continue;
       }
       expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|proofs\/store/);
