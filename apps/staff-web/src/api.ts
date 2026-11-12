@@ -265,3 +265,44 @@ export interface Member {
 export const members = () => staffApi<{ members: Member[] }>('/staff/v1/members');
 export const setGrants = (accountId: string, grants: GrantablePerm[], tapId: string) =>
   staffApi<{ grants: GrantablePerm[] }>(`/staff/v1/members/${encodeURIComponent(accountId)}/grants`, { method: 'PUT', body: { grants, tapId } });
+
+// ---------------------------------------------------------------------------------------------
+// Pay at clock-out (Plan 4 Task 33, D-041..D-045; perm self: one's own pay only)
+
+export interface PayoutAddress {
+  id: string;
+  address: string;
+  addedAt: string;
+}
+/** What is due at a correct clock-out: `pay`, `nothing-due`, `owed` (a clawback debt) or `no-price`. */
+export type ClockOutDue = 'pay' | 'nothing-due' | 'owed' | 'no-price';
+export interface ClockOutSheet {
+  /** The signed quote the POST must carry: it pays exactly these figures (security review S2). */
+  quote: string;
+  expiresAt: string;
+  due: ClockOutDue;
+  disputes: number;
+  largeTrades: number;
+  clawbacks: number;
+  /** Decimal strings: the dollar part in US cents, the XMR part in atomic units, the net in atomic units (null with no price). */
+  usdCents: string;
+  atomic: string;
+  usdCentsPerXmr: string | null;
+  amountAtomic: string | null;
+  addresses: PayoutAddress[];
+}
+export interface ClockOutResult {
+  due: ClockOutDue;
+  payout: { id: string; amountAtomic: string; addressId: string; status: 'waiting-send' } | null;
+}
+
+export const clockOutSheet = () => staffApi<ClockOutSheet>('/staff/v1/pay/clock-out');
+/**
+ * The correct clock-out: pays exactly the sheet's `quote` to `addressId` and ends the session. 409
+ * `quote-changed` or `quote-expired`: the pay moved since the sheet was shown; show it again.
+ */
+export const clockOut = (quote: string, addressId: string | null) =>
+  staffApi<ClockOutResult>('/staff/v1/pay/clock-out', { method: 'POST', body: addressId === null ? { quote } : { quote, addressId } });
+/** Adds a payout address; `tapId` is a tap of intent `payout-address` for exactly this address. */
+export const addPayoutAddress = (address: string, tapId: string) =>
+  staffApi<PayoutAddress>('/staff/v1/pay/addresses', { method: 'POST', body: { address, tapId } });

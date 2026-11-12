@@ -190,7 +190,16 @@ export type ApiErrorCode =
   | 'jabber-unavailable'
   | 'jabber-address-invalid'
   // W-021 review F1: a security notice can't be turned off (owner to rule).
-  | 'jabber-event-always-on';
+  | 'jabber-event-always-on'
+  // Plan 4 Task 33 (D-041): the clock-out needs a pre-approved payout address of one's own.
+  | 'address-required'
+  | 'address-unknown'
+  | 'address-exists'
+  | 'too-many-addresses'
+  // Security review S2: the clock-out pays exactly the sheet's signed quote.
+  | 'quote-invalid'
+  | 'quote-expired'
+  | 'quote-changed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

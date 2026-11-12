@@ -131,4 +131,15 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // B-006: the fee wallet's sweep settings (a body that changes nothing needs no tap).
   { method: 'GET', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER, body: { thresholdAtomic: null, floatAtomic: null, coldAddress: null, tapId: '00000000-0000-4000-8000-000000000000' } },
+  // Plan 4 Task 33 (D-041..D-045): one's own pay page, the clock-out, payout addresses (a bad body
+  // stops at validation); the owner's pay settings (a body that changes nothing needs no tap) and
+  // every member's unpaid net.
+  { method: 'GET', url: '/staff/v1/pay', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'GET', url: '/staff/v1/pay/clock-out', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/pay/clock-out', perm: 'self', allowed: EVERY_ROLE, body: { quote: 'x', addressId: 'not-a-uuid' } },
+  { method: 'POST', url: '/staff/v1/pay/addresses', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'DELETE', url: '/staff/v1/pay/addresses/:id', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'GET', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER, body: { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, tapId: '00000000-0000-4000-8000-000000000000' } },
+  { method: 'GET', url: '/staff/v1/pay/staff', perm: 'earnings.read', allowed: OWNER },
 ];

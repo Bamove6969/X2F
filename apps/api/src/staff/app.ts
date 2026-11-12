@@ -24,6 +24,7 @@ import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffHoldRoutes } from './holds.js';
 import { staffPastRepRoutes } from './pastrep.js';
+import { staffPayRoutes } from './pay.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
 import { ownerSetupRoutes } from './ownerSetup.js';
 import { serveStaffWeb } from './web.js';
@@ -179,6 +180,8 @@ export async function buildStaffApi(
   staffRevenueRoutes(app);
   // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
   staffFeeSweepRoutes(app);
+  // Plan 4 Task 33 (D-041..D-045): clock-out pay, payout addresses and the owner's pay settings.
+  staffPayRoutes(app);
   // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.
   if (deps.staffWebRoot !== undefined) await serveStaffWeb(app, deps.staffWebRoot);
 
