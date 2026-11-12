@@ -391,6 +391,14 @@ export interface JabberStatus {
   lastSentAt: string | null;
 }
 
+/** W-021: the Jabber notice kinds a user can turn on or off (`NOTICE_KINDS` in apps/api jabber/sender.ts). */
+export type JabberEventKind = 'account-change' | 'trade-attention';
+
+/** W-021 (owner p11-27): which events send a Jabber notice (`GET /v1/account/jabber/events`), every kind in the server's order. */
+export interface JabberEvents {
+  events: Array<{ kind: JabberEventKind; on: boolean }>;
+}
+
 /**
  * J-23 chat-key courier (`apps/api` auth/chatKeys.ts): a box sealed by one of the person's devices
  * to another device's X25519 key. The API stores and serves it exactly as posted and opens nothing.
@@ -537,6 +545,10 @@ export interface AuthApi {
   verifyJabber(b: { code: string }): Promise<JabberStatus>;
   setJabberEnabled(b: { on: boolean }): Promise<JabberStatus>;
   turnOffJabber(): Promise<void>;
+  /** W-021: which events send a Jabber notice. */
+  getJabberEvents(): Promise<JabberEvents>;
+  /** W-021: turns one event on or off; 404 `not-found` until an address is proven. */
+  setJabberEvent(b: { kind: JabberEventKind; on: boolean }): Promise<JabberEvents>;
 
   // J-23 chat-key courier (dormant groundwork): full trader sessions of the owner, strong strictly
   // (403 `weak-session`), never during a hold (403 `recovery-hold`).
@@ -749,6 +761,8 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     verifyJabber: (b) => post('/v1/account/jabber/verify', b),
     setJabberEnabled: (b) => call('PUT', '/v1/account/jabber/enabled', b),
     turnOffJabber: () => done(call('DELETE', '/v1/account/jabber')),
+    getJabberEvents: () => get('/v1/account/jabber/events'),
+    setJabberEvent: (b) => call('PUT', '/v1/account/jabber/events', b),
     listChatKeys: () => get('/v1/account/chat-keys'),
     postChatKey: (b) => post('/v1/account/chat-keys', b),
     collectChatKey: (id) => done(call('DELETE', `/v1/account/chat-keys/${seg(id)}`)),

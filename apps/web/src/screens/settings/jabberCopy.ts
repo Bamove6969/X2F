@@ -48,4 +48,24 @@ export const JABBER_COPY = {
   /** Review M4: the address is sealed under a key the server no longer holds. */
   needsSetUpAgain: 'Needs setting up again',
   brokenRowLabel: 'Jabber address needs setting up again, set it up',
+
+  // W-021 (owner p11-27): the Jabber notifications settings page. COPY-UNSIGNED: builder's words,
+  // no board draws this page yet (design to draw it). One entry per notice kind the API lists.
+  eventsRow: 'Choose which events send a message',
+  eventsTitle: 'Jabber notifications',
+  eventsLead: 'Pick which events send you a secure Jabber message. Every message is one short sentence with no details in it.',
+  eventsNeedSetUp: 'Set up a Jabber address first.',
+  eventsSetUpLink: 'Set up Jabber alerts',
+  events: {
+    'account-change': {
+      label: 'Account changes',
+      note: 'A change to your login methods, wallets, team, holds or settings. Message: "An account change was made on your X2F account."',
+    },
+    'trade-attention': {
+      label: 'A trade needs your attention',
+      note: 'A dispute was opened on a trade where you are the one who pays. Message: "A trade on your X2F account needs your attention."',
+    },
+  },
+  /** Shown while account changes are off. */
+  accountChangeOffWarning: 'Account changes are off: you will not be told if someone changes your account. Changing these choices is always told to your address.',
 } as const;

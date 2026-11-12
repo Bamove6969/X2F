@@ -46,6 +46,21 @@ const COLUMN: Readonly<Record<Field, string>> = {
 /** An https link of at most 198 characters with no spaces (migration 206's check). */
 const LINK = /^https:\/\/[^\s]{1,190}$/;
 
+/**
+ * D-067 (lead call 2026-10-29, owner confirmed 28 Oct notes): the moderator contact link takes a
+ * Matrix or a Telegram link (Matrix preferred: no phone number) and nothing else. Read as a
+ * matrix.to link to a room, alias or user (`https://matrix.to/#/<id>`) or a t.me link
+ * (`https://t.me/<name>`): exact host, no user info, no port, something after the prefix.
+ */
+export function isModeratorContactLink(v: string): boolean {
+  if (!URL.canParse(v)) return false;
+  const u = new URL(v);
+  if (u.protocol !== 'https:' || u.username !== '' || u.password !== '' || u.port !== '') return false;
+  if (u.hostname === 'matrix.to') return u.pathname === '/' && u.search === '' && /^#\/[#!@+]\S+$/.test(u.hash);
+  if (u.hostname === 't.me') return /^\/[A-Za-z0-9_+/-]+$/.test(u.pathname) && u.hash === '';
+  return false;
+}
+
 interface Row {
   large_trade_limit_usd: number;
   first_response_h: number;
@@ -90,6 +105,7 @@ export function parseSettingsChange(body: unknown): { change: Partial<Settings>;
       change[k as NumberField] = v;
     } else if ((LINK_FIELDS as string[]).includes(k)) {
       if (v !== null && (typeof v !== 'string' || !LINK.test(v) || !URL.canParse(v))) throw badRequest(k);
+      if (k === 'moderatorContactUrl' && v !== null && !isModeratorContactLink(v)) throw badRequest(k);
       change[k as LinkField] = v;
     } else {
       throw badRequest();

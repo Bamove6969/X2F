@@ -11,6 +11,8 @@ export {
   type AlertEntry,
   type ChatKeyEnvelope,
   type JabberStatus,
+  type JabberEventKind,
+  type JabberEvents,
   type ApiErrorCode,
   type ApprovalDecision,
   type ApprovalPoll,

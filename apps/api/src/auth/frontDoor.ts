@@ -54,6 +54,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
   'GET /v1/account/jabber': 'my own Jabber alert set-up (the masked address, its state); never another account',
+  'GET /v1/account/jabber/events': 'which events send my own Jabber notices (W-021); never another account',
   'GET /v1/account/methods': 'my own login methods',
   'GET /v1/account/notes/:displayName': "my own account's private notes on a trader (the account owner, or a member with the notes-view box); the notes themselves, never the trader's data",
   'GET /v1/account/nudges': 'my own nudge setting',
@@ -125,6 +126,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/account/jabber/test': 'sends a test code to a Jabber address I typed, for my own account; answers the masked address',
   'POST /v1/account/jabber/verify': 'proves my own typed Jabber address with its test code; answers my set-up state',
   'PUT /v1/account/jabber/enabled': 'switches my own Jabber alerts on or off; answers my set-up state',
+  'PUT /v1/account/jabber/events': 'turns one event of my own Jabber notices on or off (W-021); answers my event list',
   'DELETE /v1/account/jabber': 'removes my own Jabber set-up; no data back',
   // J-23 groundwork: the chat-key courier between my own devices (a strong session of the account owner only).
   'POST /v1/account/chat-keys': "stores a sealed chat-key envelope for one of my own devices; answers its id and expiry",

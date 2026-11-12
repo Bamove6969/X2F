@@ -1608,6 +1608,11 @@ describe('review round 2', () => {
           const o = await jabberOn();
           return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/jabber/enabled', { on: false }) };
         },
+        // W-021: the Jabber notifications settings page.
+        'PUT /v1/account/jabber/events': async () => {
+          const o = await jabberOn();
+          return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false }) };
+        },
         'DELETE /v1/account/jabber': async () => {
           const o = await jabberOn();
           return { b: o.b, accountId: o.id, fire: () => o.b.delete('/v1/account/jabber') };
