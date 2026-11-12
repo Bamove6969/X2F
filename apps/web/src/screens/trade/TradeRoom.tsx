@@ -100,6 +100,7 @@ import { CourtesySheet } from '../quote/CourtesySheet.js';
 import { courtesyDue, markCourtesyShown } from '../quote/courtesy.js';
 import { tradeFromView } from '../dispute/api.js';
 import { DisputeEntry } from '../dispute/DisputeEntry.js';
+import { FileAppeal } from '../dispute/FileAppeal.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
 import { hasPanes, useFoldLayout, type FoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
@@ -325,6 +326,7 @@ function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; re
       )}
       <div className="x2f-stack" data-part="member-dispute">
         <DisputeEntry trade={tradeFromView(view)} now={clock()} />
+        {view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
       </div>
     </main>
   );
@@ -381,14 +383,19 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
         glance={broken ? null : <TradeGlance view={view} escrow={escrow} serverClock={clock} layout={layout === 'cover' ? 'cover' : 'tabletop'} />}
         glanceLabel="Trade at a glance"
         main={
-          Screen ? (
-            <Screen {...props} />
-          ) : broken ? (
-            // Fails closed even if no screen module registered the danger state.
-            <p role="alert">Security check failed. Don't fund this trade.</p>
-          ) : (
-            <StatusCard view={view} serverClock={clock} />
-          )
+          <>
+            {Screen ? (
+              <Screen {...props} />
+            ) : broken ? (
+              // Fails closed even if no screen module registered the danger state.
+              <p role="alert">Security check failed. Don't fund this trade.</p>
+            ) : (
+              <StatusCard view={view} serverClock={clock} />
+            )}
+            {/* D-005: File appeal on the trade's page while the ruling can still be appealed; inside a
+                disputed trade the ruling card has the appeal form itself. DESIGNER-REVIEW: placement. */}
+            {!broken && view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
+          </>
         }
         side={
           chatPane ? (

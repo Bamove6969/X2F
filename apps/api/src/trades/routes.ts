@@ -13,6 +13,8 @@ import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
 import { actorOfBy, appendLog } from '../log/append.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
+import { appealOpenUntil } from '../disputes/appeals.js';
+import { hasAbility } from '../team/abilities.js';
 
 /** Task 3's `getProfile`; the default (until Task 3 is wired in) knows no profiles. */
 export type ProfileLookup = (methodId: string) => unknown;
@@ -109,6 +111,13 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       counterpartyProblem: await counterpartyProblem(deps.db, t.code, other),
       cancelWaiting: await cancelWaiting(deps.db, t.code),
       paymentInstructions: row.method_instructions,
+      // D-005: the File appeal button's deadline, only for the account owner or a member who can
+      // both appeal and open the dispute page the button leads to (review S1, lead call 12 Nov:
+      // File an appeal AND Answer the moderator).
+      appealUntil: t.dispute !== null
+        && (req.auth.memberId === null || (hasAbility(req.auth.memberAbilities, 'disputes-appeal') && hasAbility(req.auth.memberAbilities, 'disputes-answer')))
+        ? await appealOpenUntil(deps.db, t.code, now)
+        : null,
     });
   };
 

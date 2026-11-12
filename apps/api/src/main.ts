@@ -116,7 +116,8 @@ const stopHolds = startRetention(
   60_000,
 );
 // Plan 4 Task 10: every 30 s, appeal windows close and maintenance shifts dispute deadlines (A7).
-const stopDisputeTimers = startDisputeTimers(deps, app.events);
+// D-011 (lead call 12 Nov): an appeal whose last eligible reviewer dropped away alerts the owner by push too.
+const stopDisputeTimers = startDisputeTimers(deps, app.events, app.push);
 // Owner rule p5-7: queued Jabber notices go out every 5 s, after the change committed (counts-only logs).
 const stopJabber = deps.jabberSender
   ? startOutbox({ db, clock, config, sender: deps.jabberSender }, (e) => app.log.info(e, 'jabber outbox'))
