@@ -107,6 +107,21 @@ async function lockInvite(c: Queryable, req: FastifyRequest, accountId: string):
   return i;
 }
 
+/**
+ * Only the fields of a registration response that verification read (Task 13 re-verifies them):
+ * called after `verifyWebAuthnRegistrationOnly` succeeded, so they are there and are strings.
+ */
+function registrationFields(response: unknown): Record<string, unknown> {
+  const r = response as { id: string; rawId: string; response: { clientDataJSON: string; attestationObject: string } };
+  return {
+    id: r.id,
+    rawId: r.rawId,
+    type: 'public-key',
+    clientExtensionResults: {},
+    response: { clientDataJSON: r.response.clientDataJSON, attestationObject: r.response.attestationObject },
+  };
+}
+
 function str(b: Record<string, unknown>, key: string): string {
   const v = b[key];
   if (typeof v !== 'string') throw new ApiError(400, 'bad-request');
@@ -276,11 +291,20 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const cred = await verifyWebAuthnRegistrationOnly(deps, accountId, b.response, inviteRegistrationChallenge(i.token_hash), {
       kind, ...(label !== undefined ? { label } : {}),
     });
-    await withTx(deps.db, async (c) => {
-      await lockInvite(c, req, accountId);
-      await cred.store(c);
-    });
     const attestedKey = cred.kind === 'security-key' && cred.attested;
+    await withTx(deps.db, async (c) => {
+      const locked = await lockInvite(c, req, accountId);
+      await cred.store(c);
+      // Plan 4 Task 13: the moderation gate verifies this registration again itself (with its
+      // attestation, against the owner's `create-invite` tap for this token hash), so the fields
+      // verification read are kept with the key (migration 211).
+      if (attestedKey) {
+        await c.query(
+          `insert into staff_key_registrations (credential_id, invite_id, response, created_at) values ($1, $2, $3, $4)`,
+          [Buffer.from(cred.credentialId, 'base64url'), locked.id, JSON.stringify(registrationFields(b.response)), deps.clock()],
+        );
+      }
+    });
     return reply.code(201).send({ kind: cred.kind, keyCheckCode: attestedKey ? keyCheckCode(cred.publicKey) : null });
   });
 

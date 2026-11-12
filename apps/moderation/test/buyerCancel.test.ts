@@ -5,7 +5,7 @@ import { fiatCents } from '@x2f/trade';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { REFUND_UNVERIFIED_MS } from '../src/autoRefund.js';
 import { buyerCancelStep } from '../src/buyerCancel.js';
-import { verifyRuling } from '../src/rulings.js';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fromJson, toJson } from '../src/shadow.js';
 import { NO_DESK_FACTS, sweepKindAgrees, type DeskRecord } from '../src/desk.js';
 import {
@@ -588,10 +588,11 @@ describe('buyerCancelStep (pure)', () => {
 });
 
 describe('rulings', () => {
-  it('verifyRuling refuses every input in Plan 3', () => {
-    for (const r of [undefined, null, {}, { ok: true }, 'ruling', 1, [], { kind: 'release', to: [{ address: TERMS.buyerPayout, amountAtomic: FUNDS }], sig: 'aa' }]) {
-      expect(verifyRuling(r)).toBe(false);
-    }
+  it('NEEDS_TASK_14: the ruling gate decides, and nothing in it calls settle yet', () => {
+    // Plan 4 Task 13 replaced Plan 3's refuse-everything `verifyRuling` with the gate (gate.test.ts).
+    // Until Task 14's executor lands, no ruling reaches `settle`: the gate only answers.
+    const dir = new URL('../src/gate/', import.meta.url);
+    for (const f of readdirSync(dir)) expect(readFileSync(new URL(f, dir), 'utf8'), f).not.toMatch(/\.settle\(/);
   });
 });
 

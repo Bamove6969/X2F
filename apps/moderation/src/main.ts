@@ -62,7 +62,7 @@ export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './part
 export { autoRefundStep, REFUND_UNVERIFIED_MS, type AutoRefundInputs, type AutoRefundStep } from './autoRefund.js';
 export { buyerCancelStep, type BuyerCancelInputs, type BuyerCancelStep } from './buyerCancel.js';
 export { openDesk, type Desk, type DeskRecord, type DeskStep } from './desk.js';
-export { verifyRuling } from './rulings.js';
+export * from './gate/index.js';
 export { newShadow } from './shadow.js';
 export { readSignal, sealAck, termsMatch, type ModSignal } from './signals.js';
 export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_BACKOFF_MS, type SweepContext, type Watcher } from './watcher.js';
@@ -748,6 +748,27 @@ function envNetwork(env: Record<string, string | undefined>): ModerationOptions[
   return v;
 }
 
+/**
+ * Plan 4 Task 13: the ruling gate's settings. `MOD_STATE_DIR` (an absolute path) unset: no gate
+ * runs, and nothing is ever co-signed for a ruling. Set, it needs the staff site's relying party
+ * (`MOD_STAFF_ORIGIN`, an https origin, and `MOD_STAFF_RP_ID`), the FIDO metadata snapshot
+ * (`MOD_FIDO_MDS_DIR`) and the read-only API role (`MOD_API_READER_DATABASE_URL`).
+ */
+export function gateFromEnv(
+  env: Record<string, string | undefined>,
+): { stateDir: string; origin: string; rpId: string; mdsDir: string; apiReaderUrl: string } | null {
+  const stateDir = env.MOD_STATE_DIR;
+  if (stateDir === undefined || stateDir === '') return null;
+  if (!stateDir.startsWith('/')) throw new Error('moderation: MOD_STATE_DIR is malformed (an absolute path)');
+  const origin = envString(env, 'MOD_STAFF_ORIGIN');
+  if (!/^https:\/\/[a-z0-9.-]+(:[0-9]{1,5})?$/.test(origin)) throw new Error('moderation: MOD_STAFF_ORIGIN is malformed (https://host)');
+  const rpId = envString(env, 'MOD_STAFF_RP_ID');
+  if (!/^[a-z0-9.-]+$/.test(rpId) || !(new URL(origin).hostname === rpId || new URL(origin).hostname.endsWith(`.${rpId}`))) {
+    throw new Error('moderation: MOD_STAFF_RP_ID is malformed (the staff origin\'s host or a parent domain)');
+  }
+  return { stateDir, origin, rpId, mdsDir: envString(env, 'MOD_FIDO_MDS_DIR'), apiReaderUrl: envString(env, 'MOD_API_READER_DATABASE_URL') };
+}
+
 // `tsx apps/moderation/src/main.ts`: the moderation process. Its one listener is the internal Unix socket (Plan 4 Task 11), and only when MOD_INTERNAL_SOCKET is set.
 if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {
   const env = process.env;
@@ -794,7 +815,30 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       devModChat: internal.devModChat,
     });
   }
+  // Plan 4 Task 13: the ruling gate keeps its registry in step with the owner's taps. NEEDS_TASK_14:
+  // the ruling executor (gate/execute.ts) calls `gateCheck` on this store for each final ruling and
+  // settles what it authorises; until then no ruling is co-signed.
+  const gateConfig = gateFromEnv(env);
+  let gateReader: pg.Pool | null = null;
+  let gateSync: { stop(): Promise<void> } | null = null;
+  if (gateConfig) {
+    const { fileGateAttestation, openGateStore, pgGateSource, startGateSync } = await import('./gate/index.js');
+    const attestation = fileGateAttestation(gateConfig.mdsDir);
+    await attestation.init();
+    const store = await openGateStore(gateConfig.stateDir, envBytes(env, 'MOD_KEYSTORE_KEY', 32));
+    if (store.state.ownerAccountId === null) process.stderr.write('{"level":40,"msg":"ruling gate: owner not pinned (npm run pin-owner -w @x2f/moderation)"}\n');
+    gateReader = new pgMod.Pool({ connectionString: gateConfig.apiReaderUrl, max: 2 });
+    gateReader.on('error', () => process.stderr.write('{"level":50,"msg":"gate reader idle client error"}\n'));
+    gateSync = startGateSync(store, pgGateSource(gateReader), {
+      rp: { origins: [gateConfig.origin], rpId: gateConfig.rpId },
+      attestation,
+      now: () => new Date(),
+      log: (e) => process.stderr.write(`${JSON.stringify({ level: 40, msg: e.reason })}\n`),
+    });
+  }
   const shutdown = async () => {
+    await gateSync?.stop();
+    await gateReader?.end();
     await server?.close();
     await handle.stop();
     await apiReader?.end();
@@ -803,6 +847,8 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   // Re-verify R3: a lost instance lock ends the process non-zero (the service already stopped), so a
   // supervisor restarts it and the new process waits for the lock.
   void handle.lockLost.then(async () => {
+    await gateSync?.stop().catch(() => undefined);
+    await gateReader?.end().catch(() => undefined);
     await server?.close().catch(() => undefined);
     await apiReader?.end().catch(() => undefined);
     await db.end().catch(() => undefined);

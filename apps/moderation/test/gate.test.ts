@@ -215,6 +215,23 @@ describe('the chain of trust (syncRegistry)', () => {
     expect(await authorize(w, c, [tapBy(mod, c.intent('propose'), { key: planted })])).toEqual({ ok: false, reason: 'unknown-key' });
   });
 
+  it('a key registered before the invite is finished signs nothing until the staff row is there, and is not revoked by the wait', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    w.api.staffRows.delete(mod.id); // the invitee registered a key but has not pressed finish yet
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod);
+    const t = tapBy(mod, c.intent('propose'));
+    expect(await authorize(w, c, [t])).toEqual({ ok: false, reason: 'revoked' });
+    w.api.staffRows.set(mod.id, { accountId: mod.id, role: 'mod', switchedOff: false, removed: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await authorize(w, c, [t])).ok).toBe(true);
+    // Gone from the API after joining: revoked.
+    w.api.staffRows.delete(mod.id);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await authorize(w, c, [t])).toEqual({ ok: false, reason: 'revoked' });
+  });
+
   it('a create-invite tap made by a staff member, not the owner, invites nobody', async () => {
     const w = await world();
     const senior = w.hire('senior');
@@ -426,7 +443,7 @@ describe('authorizeRuling', () => {
     const c = ruling(mod);
     const good = tapBy(mod, c.intent('propose'));
     const sig = Buffer.from(good.response.response.signature, 'base64url');
-    sig[sig.length - 1] ^= 1;
+    sig[sig.length - 1] = sig[sig.length - 1]! ^ 1;
     const flipped: StoredTap = { ...good, response: { ...good.response, response: { ...good.response.response, signature: b64url(sig) } } };
     expect(await authorize(w, c, [flipped])).toEqual({ ok: false, reason: 'bad-signature' });
     // The stored intent rewritten (here: the other outcome) no longer matches what the key signed.
@@ -553,7 +570,7 @@ describe('GateStore', () => {
       expect((await openGateStore(dir, key)).state.limitUsdCents).toBe(123_400n);
       await expect(openGateStore(dir, new Uint8Array(randomBytes(32)))).rejects.toThrow();
       // A flipped byte is refused, never read as an empty gate.
-      raw[raw.length - 1] ^= 1;
+      raw[raw.length - 1] = raw[raw.length - 1]! ^ 1;
       await writeFile(join(dir, 'gate.bin'), raw);
       await expect(openGateStore(dir, key)).rejects.toThrow();
     } finally {
@@ -632,7 +649,12 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
     try {
       await c.query('set session_replication_role = replica');
       for (const [id, kind] of [[ownerId, 'owner'], [modId, 'staff']] as const) {
-        await c.query(`insert into accounts (id, kind, webauthn_user_id, created_at) values ($1, $2, $3, now())`, [id, kind, randomBytes(32)]);
+        const n = `G${randomBytes(4).toString('hex')}`;
+        await c.query(
+          `insert into accounts (id, display_name, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at)
+           values ($1, $2, lower($2), $3, 1, true, $4, $5, '2026-10-17', now(), now())`,
+          [id, n, randomBytes(32), kind, randomBytes(32)],
+        );
       }
       for (const [acct, k, kind] of [[ownerId, k1, 'security-key'], [ownerId, k2, 'security-key'], [modId, mk, 'security-key']] as const) {
         await c.query(
@@ -686,11 +708,43 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
       expect(taps.map((t) => t.id)).toEqual([tapIds.ruling]);
       expect(taps[0]).toMatchObject({ accountId: modId, credentialId: mk.credentialId, intent: ri, response: { id: mk.credentialId } });
       expect(await src.invite(inviteId)).toEqual({
-        inviteId, tokenHash: 'a'.repeat(64), accountId: modId,
+        inviteId, tokenHash: 'a'.repeat(64), accountId: modId, used: true,
         registrations: [{ credentialId: mk.credentialId, response: { id: mk.credentialId, rawId: mk.credentialId } }],
       });
       expect(await src.invite(randomUUID())).toBeNull();
       expect(await src.credential(mk.credentialId)).toEqual({ accountId: modId, publicKey: expect.any(Uint8Array), aaguid: AAGUID });
+      // The stored ruling: round 1 kept whole in `round1` after an appeal, each with its published
+      // reason's SHA-256, and R37's list from the log entries before the appeal.
+      const code = 'ABCD-EFGH-JKMN-PQRS';
+      const r1 = { id: randomUUID(), outcome: 'release-to-buyer', accountAction: { kind: 'none' }, proposer: modId, approver: null, needsSecond: false };
+      const r2 = { id: randomUUID(), outcome: 'refund-to-seller', accountAction: { kind: 'none' }, proposer: ownerId, approver: null, needsSecond: false };
+      await c.query(
+        `insert into disputes (code, seq, opened_by, reason, note, opened_at, after_refund, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents, round, ruling, round1)
+         values ($1, 1, 'buyer', 'paid', '', now(), false, 'published', now(), now(), 0, 100000, 2, $2, $3)`,
+        [code, JSON.stringify(r2), JSON.stringify({ ...r1, firstReplyAt: null, involved: [modId] })],
+      );
+      for (const [round, reason] of [[1, 'r'.repeat(40)], [2, 's'.repeat(40)]] as const) {
+        await c.query(
+          `insert into dispute_rulings (code, seq, round, outcome, reason, moderator_name, ruled_at, appeal_until) values ($1, 1, $2, 'release-to-buyer', $3, 'Mod', now(), $4)`,
+          [code, round, reason, round === 1 ? new Date() : null],
+        );
+      }
+      const helper = randomUUID();
+      const late = randomUUID();
+      for (const [id, actor, action] of [[1, modId, 'case.opened'], [2, helper, 'chat.read'], [3, null, 'appeal.opened'], [4, late, 'case.opened']] as const) {
+        await c.query(
+          `insert into activity_log (id, at, actor_kind, actor_id, actor_role, trade_code, action, detail, prev_hash, hash) values ($1, now(), $2, $3, $4, $5, $6, '{}', $7, $8)`,
+          [id, actor === null ? 'system' : 'staff', actor, actor === null ? null : 'mod', code, action, id === 1 ? null : Buffer.alloc(32, id - 1), Buffer.alloc(32, id)],
+        );
+      }
+      const stored = await src.storedRulings(code);
+      expect(stored).toEqual({
+        current: { id: r2.id, code, round: 2, outcome: 'refund-to-seller', accountAction: { kind: 'none' }, proposer: ownerId, approver: null, reasonSha256: sha256Hex('s'.repeat(40)), round1Id: r1.id },
+        round1: { id: r1.id, code, round: 1, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, proposer: modId, approver: null, reasonSha256: sha256Hex('r'.repeat(40)) },
+        involved: expect.arrayContaining([modId, helper]),
+      });
+      expect(stored.involved).not.toContain(late);
+      expect(await src.storedRulings('ZZZZ-ZZZZ-ZZZZ-ZZZZ')).toEqual({ current: null, round1: null, involved: [] });
       // Read only, and only those columns.
       await expect(reader.query('select label from webauthn_credentials')).rejects.toMatchObject({ code: '42501' });
       await expect(reader.query('select session_id from key_taps')).rejects.toMatchObject({ code: '42501' });
@@ -699,6 +753,31 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
       await expect(reader.query(`delete from key_taps`)).rejects.toMatchObject({ code: '42501' });
     } finally {
       c.release();
+    }
+  });
+});
+
+describe('gateFromEnv', () => {
+  it('runs no gate without MOD_STATE_DIR; with it, needs the staff relying party, the metadata and the reader', async () => {
+    const { gateFromEnv } = await import('../src/main.js');
+    expect(gateFromEnv({})).toBeNull();
+    const base = {
+      MOD_STATE_DIR: '/var/lib/x2f-mod',
+      MOD_STAFF_ORIGIN: 'https://staff.x2f.example',
+      MOD_STAFF_RP_ID: 'staff.x2f.example',
+      MOD_FIDO_MDS_DIR: '/srv/x2f/fido-mds',
+      MOD_API_READER_DATABASE_URL: 'postgres://r@db/x2f',
+    };
+    expect(gateFromEnv(base)).toEqual({ stateDir: '/var/lib/x2f-mod', origin: 'https://staff.x2f.example', rpId: 'staff.x2f.example', mdsDir: '/srv/x2f/fido-mds', apiReaderUrl: 'postgres://r@db/x2f' });
+    expect(gateFromEnv({ ...base, MOD_STAFF_RP_ID: 'x2f.example' })?.rpId).toBe('x2f.example');
+    for (const [env, name] of [
+      [{ ...base, MOD_STATE_DIR: 'state' }, 'MOD_STATE_DIR'],
+      [{ ...base, MOD_STAFF_ORIGIN: 'http://staff.x2f.example' }, 'MOD_STAFF_ORIGIN'],
+      [{ ...base, MOD_STAFF_RP_ID: 'evil.example' }, 'MOD_STAFF_RP_ID'],
+      [{ ...base, MOD_FIDO_MDS_DIR: undefined }, 'MOD_FIDO_MDS_DIR'],
+      [{ ...base, MOD_API_READER_DATABASE_URL: undefined }, 'MOD_API_READER_DATABASE_URL'],
+    ] as const) {
+      expect(() => gateFromEnv(env), name).toThrow(name);
     }
   });
 });

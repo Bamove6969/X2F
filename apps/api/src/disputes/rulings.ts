@@ -63,8 +63,9 @@ import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staf
  * transaction when the ruling is published, never a copy of it). So every ruling here carries
  * `{kind: 'none'}`.
  *
- * NEEDS_TASK_13: the moderation process still refuses every ruling (`apps/moderation` rulings.ts);
- * its gate re-verifies these taps itself. NEEDS_TASK_14: nothing moves the escrow's coins on a
+ * Plan 4 Task 13: the moderation process's ruling gate (`apps/moderation/src/gate`) re-verifies these
+ * taps itself, against the owner's pinned keys, and computes the payouts from its own records; it
+ * reads the ruling, its taps and the reason through `x2f_mod_reader` (migration 211). NEEDS_TASK_14: nothing moves the escrow's coins on a
  * published ruling yet; the dispute stops at `published` (or `final`) until the executor reports
  * the payout. NEEDS_TASK_12_TX_PROOF: the seller's payment proof for `seller-sends-xmr` is not
  * built (it needs a regtest-checked `checkTxKey`).
