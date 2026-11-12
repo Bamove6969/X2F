@@ -7,6 +7,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { BOUND_COOKIE, BOUND_TTL_MS, PROOF_CHALLENGE_TTL_MS, SESSION_KEY_HEADER, proofMessage } from '../src/auth/deviceBound.js';
+import { SESSION_PROOF_BUCKET } from '../src/limits.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import type { Config } from '../src/config.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -67,14 +68,26 @@ async function login(key?: Device | string): Promise<{ jar: Jar; login: LightMyR
 }
 const me = (jar: Jar) => send(jar, 'GET', '/v1/account/me');
 
-async function prove(jar: Jar, key: Device, o: { tamper?: boolean } = {}) {
+type Challenge = { challenge: string; session: string };
+async function challengeOf(jar: Jar): Promise<Challenge> {
   const c = await send(jar, 'POST', '/v1/account/session/proof/challenge', {});
   expect(c.statusCode, c.body).toBe(200);
-  const challenge = (c.json() as { challenge: string }).challenge;
-  let signature = sign('sha256', Buffer.from(proofMessage(challenge), 'utf8'), { key: key.privateKey, dsaEncoding: 'ieee-p1363' });
-  if (o.tamper) signature = Buffer.from(signature.map((b, i) => (i === 0 ? b ^ 1 : b)));
-  return { challenge, res: await send(jar, 'POST', '/v1/account/session/proof', { challenge, signature: signature.toString('base64url') }) };
+  return c.json() as Challenge;
 }
+/** The signature over the v2 message (S1: the origin and the session are in the signed bytes). */
+const signOf = (key: Device, c: Challenge, origin = ORIGIN) =>
+  sign('sha256', Buffer.from(proofMessage(origin, c.session, c.challenge), 'utf8'), { key: key.privateKey, dsaEncoding: 'ieee-p1363' });
+const answer = (jar: Jar, c: Challenge, signature: Buffer) =>
+  send(jar, 'POST', '/v1/account/session/proof', { challenge: c.challenge, signature: signature.toString('base64url') });
+
+async function prove(jar: Jar, key: Device, o: { tamper?: boolean } = {}) {
+  const c = await challengeOf(jar);
+  let signature = signOf(key, c);
+  if (o.tamper) signature = Buffer.from(signature.map((b, i) => (i === 0 ? b ^ 1 : b)));
+  return { challenge: c.challenge, c, res: await answer(jar, c, signature) };
+}
+const sessionIdOf = async (jar: Jar): Promise<string> =>
+  (await deps.db.query<{ id: string }>("select id from sessions where token_hash = sha256(convert_to($1, 'utf8'))", [jar[SESSION_COOKIE]])).rows[0]!.id;
 
 describe('flag off (the default)', () => {
   it('ignores the header: no bound cookie, nothing new is checked, both proof routes are 404', async () => {
@@ -128,21 +141,84 @@ describe('a bound session', () => {
     const { jar } = await login(key);
     const first = await prove(jar, key);
     expect(first.res.statusCode).toBe(200);
-    const sig = sign('sha256', Buffer.from(proofMessage(first.challenge)), { key: key.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
-    expect(errorOf(await send(jar, 'POST', '/v1/account/session/proof', { challenge: first.challenge, signature: sig }))).toBe('proof-invalid');
+    expect(errorOf(await answer(jar, first.c, signOf(key, first.c)))).toBe('proof-invalid');
     // A tampered signature fails and burns the challenge.
     const bad = await prove(jar, key, { tamper: true });
     expect(errorOf(bad.res)).toBe('proof-invalid');
-    const retry = sign('sha256', Buffer.from(proofMessage(bad.challenge)), { key: key.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
-    expect(errorOf(await send(jar, 'POST', '/v1/account/session/proof', { challenge: bad.challenge, signature: retry }))).toBe('proof-invalid');
+    expect(errorOf(await answer(jar, bad.c, signOf(key, bad.c)))).toBe('proof-invalid');
     // Too late.
-    const c = (await send(jar, 'POST', '/v1/account/session/proof/challenge', {})).json() as { challenge: string };
+    const c = await challengeOf(jar);
     advance(PROOF_CHALLENGE_TTL_MS);
-    const late = sign('sha256', Buffer.from(proofMessage(c.challenge)), { key: key.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
-    expect(errorOf(await send(jar, 'POST', '/v1/account/session/proof', { challenge: c.challenge, signature: late }))).toBe('proof-invalid');
+    expect(errorOf(await answer(jar, c, signOf(key, c)))).toBe('proof-invalid');
     // Malformed bodies.
     expect((await send(jar, 'POST', '/v1/account/session/proof', { challenge: c.challenge })).statusCode).toBe(400);
     expect((await send(jar, 'POST', '/v1/account/session/proof', { challenge: c.challenge, signature: 'x', extra: 1 })).statusCode).toBe(400);
+  });
+
+  it('MF1: several challenges may be outstanding at once (tabs renewing together); each is single-use', async () => {
+    const key = device();
+    const { jar } = await login(key);
+    advance(BOUND_TTL_MS);
+    const [a, b, c] = [await challengeOf(jar), await challengeOf(jar), await challengeOf(jar)];
+    // Answered out of order: every one still works, once.
+    for (const ch of [b, a, c]) expect((await answer(jar, ch, signOf(key, ch))).statusCode).toBe(200);
+    for (const ch of [a, b, c]) expect(errorOf(await answer(jar, ch, signOf(key, ch)))).toBe('proof-invalid');
+    expect((await me(jar)).statusCode).toBe(200);
+  });
+
+  it('MF1: a cookie thief asking for challenges or sending garbage cannot spoil the victim\'s renewal', async () => {
+    const key = device();
+    const { jar } = await login(key);
+    const thief: Jar = { [SESSION_COOKIE]: jar[SESSION_COOKIE]! };
+    advance(BOUND_TTL_MS);
+    const mine = await challengeOf(jar);
+    const theirs = await challengeOf(thief);
+    expect(errorOf(await answer(thief, theirs, signOf(device(), theirs)))).toBe('proof-invalid');
+    expect(errorOf(await send(thief, 'POST', '/v1/account/session/proof', { challenge: mine.challenge.replace(/.$/, (x) => (x === 'A' ? 'B' : 'A')), signature: 'A'.repeat(86) }))).toBe('proof-invalid');
+    expect((await answer(jar, mine, signOf(key, mine))).statusCode).toBe(200);
+    expect((await me(jar)).statusCode).toBe(200);
+  });
+
+  it('MF1: a challenge is tied to its session (one device key signs for every session of the profile)', async () => {
+    const key = device();
+    const one = await login(key);
+    const two = await login(key);
+    const c = await challengeOf(one.jar);
+    // Signed over the other session's id, or sent on the other session: refused.
+    expect(errorOf(await answer(two.jar, c, signOf(key, { ...c, session: await sessionIdOf(two.jar) })))).toBe('proof-invalid');
+    expect(errorOf(await answer(two.jar, c, signOf(key, c)))).toBe('proof-invalid');
+    expect((await answer(one.jar, c, signOf(key, c))).statusCode).toBe(200);
+  });
+
+  it('S1: the signed message is v2 and names the origin and the session', async () => {
+    const key = device();
+    const { jar } = await login(key);
+    const c = await challengeOf(jar);
+    expect(c.session).toBe(await sessionIdOf(jar));
+    expect(proofMessage('https://a.example', 's', 'c')).toBe('x2f-session-proof-v2\nhttps://a.example\ns\nc');
+    // The v1 bytes, another origin, or another session id: refused (each answer uses the challenge up).
+    const v1 = sign('sha256', Buffer.from(`x2f-session-proof-v1:${c.challenge}`), { key: key.privateKey, dsaEncoding: 'ieee-p1363' });
+    expect(errorOf(await answer(jar, c, v1))).toBe('proof-invalid');
+    const c2 = await challengeOf(jar);
+    expect(errorOf(await answer(jar, c2, signOf(key, c2, 'https://evil.example')))).toBe('proof-invalid');
+    const c3 = await challengeOf(jar);
+    expect(errorOf(await answer(jar, c3, signOf(key, { ...c3, session: '00000000-0000-4000-8000-000000000000' })))).toBe('proof-invalid');
+    const c4 = await challengeOf(jar);
+    expect((await answer(jar, c4, signOf(key, c4))).statusCode).toBe(200);
+  });
+
+  it('S2: the proof routes have a per-session budget (429 slow-down), which refills', async () => {
+    const key = device();
+    const { jar } = await login(key);
+    for (let i = 0; i < SESSION_PROOF_BUCKET.capacity; i++) expect((await send(jar, 'POST', '/v1/account/session/proof/challenge', {})).statusCode).toBe(200);
+    const res = await send(jar, 'POST', '/v1/account/session/proof/challenge', {});
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 429, error: 'slow-down' });
+    expect(errorOf(await send(jar, 'POST', '/v1/account/session/proof', { challenge: 'A'.repeat(75), signature: 'A'.repeat(86) }))).toBe('slow-down');
+    // Another session of the same account has its own budget.
+    const other = await login(key);
+    expect((await send(other.jar, 'POST', '/v1/account/session/proof/challenge', {})).statusCode).toBe(200);
+    advance(60_000);
+    expect((await prove(jar, key)).res.statusCode).toBe(200);
   });
 
   it('logout needs no proof', async () => {
@@ -174,6 +250,17 @@ describe('binding at login', () => {
     expect((await me({ [SESSION_COOKIE]: jar[SESSION_COOKIE]! })).statusCode).toBe(200);
     const res = await send(jar, 'POST', '/v1/account/session/proof/challenge', {});
     expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'not-bound' });
+  });
+
+  it('S5: a malformed header is refused at the top of a login route, before the login factor is checked', async () => {
+    for (const bad of ['not base64!', 'AAAA']) {
+      const res = await send({}, 'POST', '/v1/login/password', { loginName: 'nobody-at-all', password: 'Wrong-Password-1', deviceLabel: 'x' }, { [SESSION_KEY_HEADER]: bad });
+      expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 400, error: 'bad-request' });
+    }
+    // Flag off: the header is not read at all.
+    flag(false);
+    const res = await send({}, 'POST', '/v1/login/password', { loginName: 'nobody-at-all', password: 'Wrong-Password-1', deviceLabel: 'x' }, { [SESSION_KEY_HEADER]: 'AAAA' });
+    expect(errorOf(res)).not.toBe('bad-request');
   });
 
   it('a malformed header, or a key that is not P-256, is refused with 400 and no session', async () => {

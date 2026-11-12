@@ -68,7 +68,9 @@ fresh server challenge.
    - With the server flag on and a well-formed P-256 key, the new session row stores `bound_key`
      and is issued its first bound cookie in the same response.
    - A malformed header is 400 `bad-request`: the client asked for binding and must not be left
-     believing it got it.
+     believing it got it. It is checked in an `onRequest` hook on the trader API, at the top of
+     every request that carries it, before any body is read or any login factor (a code, an
+     approval, a challenge) is checked or spent (review S5). The staff API ignores the header.
    - No header leaves the session unbound (§6).
    - Binding happens at creation, so there is no window in which a thief can bind first, and the
      key can never be changed or removed for the life of the session: no route unbinds.
@@ -81,17 +83,36 @@ fresh server challenge.
    cookies like any request.
 4. **Refresh.** Two routes, the only ones that accept a bound session without a fresh bound cookie
    (`requireSession({ allowUnproven: true })`; every other session check still applies):
-   - `POST /v1/account/session/proof/challenge` → `{ challenge }`. The challenge is 32 random bytes;
-     its hash is stored on the row for 2 minutes, one at a time; a new one replaces the old. An
-     unbound session gets 409 `not-bound`.
-   - `POST /v1/account/session/proof { challenge, signature }`. The signature is ECDSA P-256 /
-     SHA-256 in WebCrypto's IEEE-P1363 form, over the UTF-8 bytes of
-     `x2f-session-proof-v1:` + challenge. The challenge is single-use: it is cleared whether the
-     check passes or fails. On success a new bound cookie is set and `{ boundUntil }` is returned.
-     On failure the answer is 401 `proof-invalid`.
+   - `POST /v1/account/session/proof/challenge` → `{ challenge, session }` (`session` is the
+     session's id, as `GET /v1/account/sessions` shows it). The challenge is stateless (review
+     MF1): base64url of a 16-byte nonce, its expiry (now + 2 minutes) and an HMAC-SHA-256 under
+     `subkey('session-proof')` over the session id, the expiry and the nonce. Nothing is stored,
+     so any number may be outstanding (several tabs renewing at once), and asking for one, or
+     answering one wrongly, never spoils another (a cookie thief cannot log the person out this
+     way). An unbound session gets 409 `not-bound`.
+   - `POST /v1/account/session/proof { challenge, signature }`. The challenge must be this
+     session's own (the HMAC) and unexpired. It is single-use: the first answer to it records its
+     nonce in `session_proof_nonces` until it expires, whether the signature then passes or fails.
+     The signature is ECDSA P-256 / SHA-256 in WebCrypto's IEEE-P1363 form, over the UTF-8 bytes
+     of the v2 message (review S1):
+
+     ```
+     x2f-session-proof-v2\n<origin>\n<session id>\n<challenge>
+     ```
+
+     `<origin>` is the page's origin (the server uses the request's checked `Origin`). On success
+     a new bound cookie is set and `{ boundUntil }` is returned; on failure, 401 `proof-invalid`.
+   - Both routes take from one per-session budget (`SESSION_PROOF_BUCKET`, 20 at once, 10 a
+     minute; 429 `slow-down`, review S2).
 
    The web app refreshes ahead of time, at a third of `BOUND_TTL`, while a bound session is open.
-   `api()` and the auth client also refresh once and retry once on a 401 `session-proof-required`.
+   Renewals are serialised across the profile's tabs with the Web Lock `x2f-proof` where the
+   browser has Web Locks (review MF1). `api()` and the auth client renew once on a 401
+   `session-proof-required` and retry the request once, also when the renewal was refused
+   (another tab may have renewed the shared cookie); only a second `session-proof-required`, or a
+   renewal answering `not-authenticated`, ends the session. A renewal that meets the network, a
+   5xx or a 429 is `retry-later` (review MF2): the request fails like a network error, and the
+   session is not ended; the timer or the person's next action renews again.
 5. **Logout** never needs the proof (`logoutRoute` reads only the session cookie), so a browser
    that lost its key can always log out.
 
@@ -108,7 +129,9 @@ thing in page JavaScript, which works in every browser with WebCrypto and Indexe
 Migration `570_device_bound_sessions.sql` adds these columns to `sessions`, all null by default:
 - `bound_key bytea`: SPKI DER of a P-256 public key, at most 200 bytes;
 - `bound_token_hash bytea`, `bound_until timestamptz`;
-- `proof_challenge_hash bytea`, `proof_challenge_until timestamptz`.
+
+and the table `session_proof_nonces (nonce, session_id, expires_at)`: the used challenges' nonces,
+deleted with their session, and pruned per session by the proof route once expired.
 
 The key is a public key: it is not secret and is never logged.
 
@@ -125,7 +148,7 @@ The key is a public key: it is not secret and is never logged.
   - Where it lives: `apps/web/src/session/deviceKey.ts` (the key, the header value, `renewProof`,
     the refresh timer); `authFetch` in `apps/web/src/screens/auth/authApi.ts` adds the header to
     every auth-client POST; `api()` (`apps/web/src/api/client.ts`) and `authFetch` renew once and
-    retry once on `session-proof-required`, and a session that cannot renew is gone; `useSession`
+    retry once on `session-proof-required` (§3.4: `retry-later` never ends the session); `useSession`
     starts the timer on a signed-in answer and `sessionEnded` stops it. The timer also stops for
     good on 409 `not-bound` or the flag-off 404. Tests: `apps/web/test/deviceKey.test.ts`.
 
@@ -136,8 +159,9 @@ The key is a public key: it is not secret and is never logged.
   such a session should be refused, or count as weaker, before mainnet is an owner question (§8).
 - **Key lost after binding** (site data cleared while the session cookie survived, or another
   profile): the bound cookie expires within 10 minutes. The challenge then cannot be signed (the
-  app has a different key, or none), so the session ends: `api()` treats `proof-invalid` and a
-  persistent `session-proof-required` as a gone session and sends the person to log in again.
+  app has a different key, or none), so the session ends: `api()` treats a refused renewal
+  followed by a second `session-proof-required` as a gone session and sends the person to log in
+  again.
   Logging in binds a new session to a new key.
 - **Unsupported key type sent:** 400 at login, so a client bug is seen at once rather than leaving
   a silently unbound session.

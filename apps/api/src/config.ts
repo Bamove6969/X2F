@@ -331,7 +331,7 @@ function parseXmpp(env: Env): XmppConfig | null {
  */
 export function subkey(
   config: Config,
-  label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name' | 'login-seal' | 'owner-setup' | 'terms-signature',
+  label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name' | 'login-seal' | 'owner-setup' | 'terms-signature' | 'session-proof',
 ): Uint8Array {
   return new Uint8Array(hkdfSync('sha256', config.serverKey, new Uint8Array(0), `x2f/${label}`, 32));
 }

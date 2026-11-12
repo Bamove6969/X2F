@@ -1,9 +1,10 @@
-import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify, type KeyObject } from 'node:crypto';
+import { createHash, createHmac, createPublicKey, randomBytes, timingSafeEqual, verify, type KeyObject } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
-import type { Config } from '../config.js';
+import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS } from './device.js';
+import { requestOrigin } from './origin.js';
 import { requireSession } from './sessions.js';
 
 /**
@@ -16,7 +17,12 @@ import { requireSession } from './sessions.js';
  *   life of the session: no route changes or removes it.
  * - A bound session also needs `__Host-x2f_bound`, valid `BOUND_TTL_MS` (`requireSession` answers
  *   401 `session-proof-required` otherwise). Only the two proof routes here run without it: a
- *   single-use challenge, and a signature over `proofMessage(challenge)` that renews the cookie.
+ *   challenge, and a signature over `proofMessage(origin, session, challenge)` that renews the cookie.
+ * - Challenges are stateless (review MF1): an HMAC under `subkey('session-proof')` over the session
+ *   id, an expiry and a nonce, so any number may be outstanding (several tabs renewing at once) and
+ *   asking for one, or answering one wrongly, never spoils another. Each is single-use: the first
+ *   answer to a genuine, unexpired challenge records its nonce (`session_proof_nonces`), right or
+ *   wrong. Both routes take from a per-session budget (`budgets.sessionProof`, review S2).
  *   A copied session cookie (with or without a copied bound cookie) is dead within BOUND_TTL_MS.
  * - Behind `X2F_DEVICE_BOUND_SESSIONS` (off by default): off, the header is ignored, nothing new is
  *   checked even on a bound session (the kill switch), and both routes answer 404.
@@ -30,13 +36,20 @@ export const BOUND_TTL_MS = 10 * 60_000;
 /** How long a proof challenge may be answered. */
 export const PROOF_CHALLENGE_TTL_MS = 2 * 60_000;
 
-/** The exact bytes signed (UTF-8): a fixed context string, so the key signs nothing else of ours. */
-export const proofMessage = (challenge: string): string => `x2f-session-proof-v1:${challenge}`;
+/**
+ * The exact bytes signed (UTF-8), v2 (review S1): a fixed context string, so the key signs nothing
+ * else of ours, then the origin the browser is on, the session id the challenge was issued for and
+ * the challenge, one per line.
+ */
+export const proofMessage = (origin: string, session: string, challenge: string): string => `x2f-session-proof-v2\n${origin}\n${session}\n${challenge}`;
 
 export const boundSessionsOn = (config: Pick<Config, 'deviceBoundSessions'>): boolean => config.deviceBoundSessions === true;
 
 const B64URL = /^[A-Za-z0-9_-]+$/;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
+/** nonce (16) || expiry in ms (8, big-endian) || HMAC-SHA-256 (32), base64url: 56 bytes. */
+const CHALLENGE = /^[A-Za-z0-9_-]{75}$/;
+const NONCE_BYTES = 16;
 /** An ECDSA P-256 signature in WebCrypto's IEEE-P1363 form: r || s, 32 bytes each. */
 const SIG = /^[A-Za-z0-9_-]{86}$/;
 const hash = (v: string): Buffer => createHash('sha256').update(v).digest();
@@ -73,6 +86,31 @@ export async function issueBoundCookie(db: Queryable, sessionId: string, now: Da
   return () => void reply.setCookie(BOUND_COOKIE, token, { ...COOKIE_ATTRS, maxAge: Math.floor(BOUND_TTL_MS / 1000) });
 }
 
+function challengeMac(config: Config, sessionId: string, untilAndNonce: Buffer): Buffer {
+  return createHmac('sha256', subkey(config, 'session-proof')).update('x2f-proof-challenge-v1\0').update(sessionId, 'utf8').update('\0').update(untilAndNonce).digest();
+}
+
+/** A challenge for this session, valid PROOF_CHALLENGE_TTL_MS. */
+export function newChallenge(config: Config, sessionId: string, now: Date): string {
+  const body = Buffer.alloc(NONCE_BYTES + 8);
+  randomBytes(NONCE_BYTES).copy(body, 0);
+  body.writeBigUInt64BE(BigInt(now.getTime() + PROOF_CHALLENGE_TTL_MS), NONCE_BYTES);
+  return Buffer.concat([body, challengeMac(config, sessionId, body)]).toString('base64url');
+}
+
+/** The challenge's nonce and expiry when it is this session's own and unexpired; else null. */
+export function openChallenge(config: Config, sessionId: string, challenge: string, now: Date): { nonce: Buffer; until: Date } | null {
+  if (!CHALLENGE.test(challenge)) return null;
+  const raw = Buffer.from(challenge, 'base64url');
+  if (raw.length !== NONCE_BYTES + 8 + 32) return null;
+  const body = raw.subarray(0, NONCE_BYTES + 8);
+  const mac = raw.subarray(NONCE_BYTES + 8);
+  if (!timingSafeEqual(mac, challengeMac(config, sessionId, body))) return null;
+  const until = Number(body.readBigUInt64BE(NONCE_BYTES));
+  if (!(now.getTime() < until)) return null;
+  return { nonce: Buffer.from(body.subarray(0, NONCE_BYTES)), until: new Date(until) };
+}
+
 /** Whether the request's bound cookie is the session's current one and still valid. */
 export function boundCookieValid(req: FastifyRequest, stored: Buffer | null, until: Date | null, now: Date): boolean {
   const v = req.cookies?.[BOUND_COOKIE];
@@ -88,9 +126,9 @@ const flagGate: preHandlerAsyncHookHandler = async function (req) {
 };
 
 /**
- * `POST /v1/account/session/proof/challenge` → `{ challenge }` (409 `not-bound` for an unbound
- * session); `POST /v1/account/session/proof { challenge, signature }` → `{ boundUntil }` and a new
- * bound cookie, or 401 `proof-invalid`. The challenge is cleared by any answer to it (single use).
+ * `POST /v1/account/session/proof/challenge` → `{ challenge, session }` (409 `not-bound` for an
+ * unbound session); `POST /v1/account/session/proof { challenge, signature }` → `{ boundUntil }`
+ * and a new bound cookie, or 401 `proof-invalid`. The first answer to a challenge uses it up.
  * Both take any live session of the account, a member's, a recovery or held one, or one on stale
  * Terms (`allowUnproven`), and touch nothing: keeping the proof fresh is not the person's activity.
  */
@@ -98,45 +136,60 @@ export function deviceBoundRoutes(app: FastifyInstance): void {
   // Built here, as a literal `requireSession({ … member: … })`, so team.test.ts's source scan sees
   // these as member-allowed routes (both are recorded exemptions there: the member's own session).
   const session = requireSession({ allowRecovery: true, allowHeld: true, allowStaleTerms: true, member: 'any', touch: false, allowUnproven: true });
+  // Review S2: tries per session, refused ones included (a copied cookie runs dry, not the server).
+  const budget: preHandlerAsyncHookHandler = async function (req) {
+    req.server.budgets.sessionProof.take(req.auth.sessionId);
+  };
 
-  app.post('/v1/account/session/proof/challenge', { preHandler: [flagGate, session] }, async (req) => {
+  app.post('/v1/account/session/proof/challenge', { preHandler: [flagGate, session, budget] }, async (req) => {
     const b = req.body;
     if (b !== undefined && b !== null && (typeof b !== 'object' || Array.isArray(b) || Object.keys(b).length > 0)) throw new ApiError(400, 'bad-request');
-    const { db, clock } = req.server.deps;
-    const challenge = randomBytes(32).toString('base64url');
-    const r = await db.query(
-      'update sessions set proof_challenge_hash = $2, proof_challenge_until = $3 where id = $1 and bound_key is not null',
-      [req.auth.sessionId, hash(challenge), new Date(clock().getTime() + PROOF_CHALLENGE_TTL_MS)],
-    );
+    const { db, clock, config } = req.server.deps;
+    const r = await db.query('select 1 from sessions where id = $1 and bound_key is not null', [req.auth.sessionId]);
     if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'not-bound');
-    return { challenge };
+    // Nothing is written: any number may be outstanding (review MF1).
+    return { challenge: newChallenge(config, req.auth.sessionId, clock()), session: req.auth.sessionId };
   });
 
-  app.post('/v1/account/session/proof', { preHandler: [flagGate, session] }, async (req, reply) => {
+  app.post('/v1/account/session/proof', { preHandler: [flagGate, session, budget] }, async (req, reply) => {
     const b = req.body;
     if (b === null || typeof b !== 'object' || Array.isArray(b)) throw new ApiError(400, 'bad-request');
     const o = b as Record<string, unknown>;
     if (Object.keys(o).some((k) => k !== 'challenge' && k !== 'signature')) throw new ApiError(400, 'bad-request');
-    if (typeof o.challenge !== 'string' || !TOKEN.test(o.challenge) || typeof o.signature !== 'string' || !SIG.test(o.signature)) {
+    if (typeof o.challenge !== 'string' || !CHALLENGE.test(o.challenge) || typeof o.signature !== 'string' || !SIG.test(o.signature)) {
       throw new ApiError(400, 'bad-request');
     }
-    const { db, clock } = req.server.deps;
+    const { db, clock, config } = req.server.deps;
     const now = clock();
-    // Read and clear in one statement: whatever happens next, this challenge is used up.
-    const { rows } = await db.query<{ h: Buffer | null; u: Date | null; k: Buffer | null }>(
-      `with old as (select proof_challenge_hash as h, proof_challenge_until as u, bound_key as k from sessions where id = $1 for update)
-       update sessions s set proof_challenge_hash = null, proof_challenge_until = null from old where s.id = $1
-       returning old.h, old.u, old.k`,
-      [req.auth.sessionId],
+    const sessionId = req.auth.sessionId;
+    const opened = openChallenge(config, sessionId, o.challenge, now);
+    if (opened === null) throw new ApiError(401, 'proof-invalid');
+    // Single use: the first answer to this challenge records its nonce, whatever happens next.
+    // Expired nonces of this session go at the same time (their challenges are refused by expiry anyway).
+    await db.query('delete from session_proof_nonces where session_id = $1 and expires_at <= $2', [sessionId, now]);
+    const used = await db.query(
+      'insert into session_proof_nonces (nonce, session_id, expires_at) values ($1, $2, $3) on conflict (nonce) do nothing',
+      [opened.nonce, sessionId, opened.until],
     );
-    const r = rows[0];
-    const want = hash(o.challenge);
-    const fresh = r !== undefined && r.h !== null && r.u !== null && now.getTime() < r.u.getTime() && r.h.length === want.length && timingSafeEqual(r.h, want);
-    const key = fresh && r.k !== null ? p256(r.k) : null;
-    const ok = key !== null && verify('sha256', Buffer.from(proofMessage(o.challenge), 'utf8'), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(o.signature, 'base64url'));
+    if ((used.rowCount ?? 0) === 0) throw new ApiError(401, 'proof-invalid');
+    const { rows } = await db.query<{ k: Buffer | null }>('select bound_key as k from sessions where id = $1', [sessionId]);
+    const key = rows[0]?.k ? p256(rows[0].k) : null;
+    const message = proofMessage(requestOrigin(req).origin, sessionId, o.challenge);
+    const ok = key !== null && verify('sha256', Buffer.from(message, 'utf8'), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(o.signature, 'base64url'));
     if (!ok) throw new ApiError(401, 'proof-invalid');
-    const set = await issueBoundCookie(db, req.auth.sessionId, now, reply);
+    const set = await issueBoundCookie(db, sessionId, now, reply);
     set();
     return { boundUntil: new Date(now.getTime() + BOUND_TTL_MS).toISOString() };
   });
 }
+
+/**
+ * Review S5: `X2F-Session-Key` is checked at the top of every trader request that carries it (an
+ * `onRequest` hook, before any body is read or any login factor is checked or spent), so a
+ * malformed one is 400 `bad-request` before a code, an approval or a challenge is used up. Flag
+ * off, it is not read. The staff API does not register this (it ignores the header).
+ */
+export const sessionKeyHook = async function (req: FastifyRequest): Promise<void> {
+  if (req.headers[SESSION_KEY_HEADER] === undefined) return;
+  sessionKeyOf(req, 'trader');
+};

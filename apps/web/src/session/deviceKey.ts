@@ -7,7 +7,10 @@
  * - Every auth-client POST carries it in `X2F-Session-Key` (`sessionKeyHeader`), so the session the
  *   server opens is bound to it and gets its first `__Host-x2f_bound` cookie in the same answer.
  * - `renewProof` renews that short-lived cookie: a single-use challenge from the server, signed
- *   with the device key over `x2f-session-proof-v1:` + challenge (IEEE-P1363, as WebCrypto gives it).
+ *   with the device key over `proofMessage(origin, session, challenge)` (v2, review S1;
+ *   IEEE-P1363, as WebCrypto gives it). Renewals are serialised across this profile's tabs with
+ *   the `x2f-proof` Web Lock (review MF1). A network error, a 5xx or a 429 is `retry-later` and
+ *   never ends the session (review MF2).
  * - `startProofRefresh` renews at a third of the cookie's 10 minutes while a session is signed in.
  *   It stops for good when the session turns out not to be bound (409 `not-bound`), the server's
  *   flag is off (404) or the session is gone.
@@ -23,7 +26,10 @@ export const SESSION_KEY_HEADER = 'X2F-Session-Key';
 /** The bound cookie's life on the server (`BOUND_TTL_MS`); renewed at a third of it. */
 export const BOUND_TTL_MS = 10 * 60_000;
 export const REFRESH_EVERY_MS = Math.floor(BOUND_TTL_MS / 3);
-export const proofMessage = (challenge: string): string => `x2f-session-proof-v1:${challenge}`;
+/** The exact bytes signed (the server's `proofMessage`, v2): context, origin, session id, challenge. */
+export const proofMessage = (origin: string, session: string, challenge: string): string => `x2f-session-proof-v2\n${origin}\n${session}\n${challenge}`;
+const CHALLENGE = /^[A-Za-z0-9_-]{75}$/;
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export function deviceBoundOn(): boolean {
   return (import.meta.env.VITE_X2F_DEVICE_BOUND as string | undefined) === '1';
@@ -109,9 +115,14 @@ export async function sessionKeyHeader(): Promise<string | null> {
 /**
  * `renewed`: a new bound cookie is set. `not-bound`: this session has no key (or the server's flag
  * is off), nothing to renew. `gone`: the session ended. `failed`: this browser could not prove the
- * key (no key, a different key, or the network); the session ends once its bound cookie expires.
+ * key (no key, a different key, a refused proof); the caller retries its request once (another tab
+ * may have renewed the shared cookie) before it counts the session as gone. `retry-later`: the
+ * network, a 5xx or a 429 (the budget): nothing is known about the session, try again later.
  */
-export type ProofResult = 'renewed' | 'not-bound' | 'gone' | 'failed';
+export type ProofResult = 'renewed' | 'not-bound' | 'gone' | 'failed' | 'retry-later';
+
+/** A status that says nothing about the session: try again later. */
+const later = (status: number): boolean => status === 429 || status >= 500;
 
 async function errorOf(res: Response): Promise<string> {
   try {
@@ -132,33 +143,71 @@ const post = (path: string, body: unknown): Promise<Response> =>
 
 let inFlight: Promise<ProofResult> | undefined;
 
-async function renewOnce(): Promise<ProofResult> {
+/** `fetch`, with a thrown (network) error as null. */
+async function tryPost(path: string, body: unknown): Promise<Response | null> {
   try {
-    const c = await post('/v1/account/session/proof/challenge', {});
-    if (c.status === 404 || c.status === 409) return 'not-bound';
-    if (c.status === 401) return (await errorOf(c)) === 'not-authenticated' ? 'gone' : 'failed';
-    if (!c.ok) return 'failed';
-    const { challenge } = (await c.json()) as { challenge?: unknown };
-    if (typeof challenge !== 'string') return 'failed';
-    const k = await deviceKey();
-    if (!k) return 'failed';
-    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, k.privateKey, new TextEncoder().encode(proofMessage(challenge)));
-    const p = await post('/v1/account/session/proof', { challenge, signature: b64url(sig) });
-    if (p.ok) return 'renewed';
-    if (p.status === 404) return 'not-bound';
-    if (p.status === 401 && (await errorOf(p)) === 'not-authenticated') return 'gone';
-    return 'failed';
+    return await post(path, body);
   } catch {
-    return 'failed';
+    return null;
   }
 }
 
-/** Renews the bound cookie; concurrent callers share one attempt. */
+async function renewOnce(): Promise<ProofResult> {
+  const c = await tryPost('/v1/account/session/proof/challenge', {});
+  if (c === null || later(c.status)) return 'retry-later';
+  if (c.status === 404 || c.status === 409) return 'not-bound';
+  if (c.status === 401) return (await errorOf(c)) === 'not-authenticated' ? 'gone' : 'failed';
+  if (!c.ok) return 'failed';
+  let challenge: unknown;
+  let session: unknown;
+  try {
+    ({ challenge, session } = (await c.json()) as { challenge?: unknown; session?: unknown });
+  } catch {
+    return 'retry-later';
+  }
+  // Only these shapes are ever signed: nothing else can ride into the message.
+  if (typeof challenge !== 'string' || !CHALLENGE.test(challenge) || typeof session !== 'string' || !SESSION_ID.test(session)) return 'failed';
+  const origin = (globalThis as { location?: { origin?: unknown } }).location?.origin;
+  if (typeof origin !== 'string' || origin === '' || origin === 'null') return 'failed';
+  const k = await deviceKey();
+  if (!k) return 'failed';
+  let sig: ArrayBuffer;
+  try {
+    sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, k.privateKey, new TextEncoder().encode(proofMessage(origin, session, challenge)));
+  } catch {
+    return 'failed';
+  }
+  const p = await tryPost('/v1/account/session/proof', { challenge, signature: b64url(sig) });
+  if (p === null || later(p.status)) return 'retry-later';
+  if (p.ok) return 'renewed';
+  if (p.status === 404) return 'not-bound';
+  if (p.status === 401 && (await errorOf(p)) === 'not-authenticated') return 'gone';
+  return 'failed';
+}
+
+type ProofLock = (name: string, fn: () => Promise<ProofResult>) => Promise<ProofResult>;
+let lockOverride: ProofLock | undefined;
+/** Tests: the cross-tab lock to use; undefined is the browser's (navigator.locks). */
+export function setProofLock(lock: ProofLock | undefined): void {
+  lockOverride = lock;
+}
+
+/** Runs `fn` holding the profile-wide `x2f-proof` lock (Web Locks), or directly where there are none. */
+function withProofLock(fn: () => Promise<ProofResult>): Promise<ProofResult> {
+  if (lockOverride) return lockOverride('x2f-proof', fn);
+  const locks = (globalThis.navigator as Navigator | undefined)?.locks;
+  if (!locks?.request) return fn();
+  return locks.request('x2f-proof', { mode: 'exclusive' }, fn) as Promise<ProofResult>;
+}
+
+/** Renews the bound cookie; concurrent callers in this tab share one attempt, and tabs take turns. */
 export function renewProof(): Promise<ProofResult> {
   if (!deviceBoundOn()) return Promise.resolve('not-bound');
-  inFlight ??= renewOnce().finally(() => {
-    inFlight = undefined;
-  });
+  inFlight ??= withProofLock(renewOnce)
+    .catch((): ProofResult => 'retry-later')
+    .finally(() => {
+      inFlight = undefined;
+    });
   return inFlight;
 }
 

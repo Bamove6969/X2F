@@ -12,7 +12,7 @@ import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
 import { chatKeyRoutes } from './auth/chatKeys.js';
 import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, requireSession, runsWithSession, type SessionRealm } from './auth/sessions.js';
-import { deviceBoundRoutes } from './auth/deviceBound.js';
+import { deviceBoundRoutes, sessionKeyHook } from './auth/deviceBound.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
@@ -269,6 +269,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
 
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);
+  // S-085 review S5: a malformed X2F-Session-Key is refused before any login factor is checked.
+  app.addHook('onRequest', sessionKeyHook);
 
   // Plan 4, Task 8: while maintenance is on, every /v1/* route but GET /v1/site answers 503 `maintenance`.
   app.addHook('onRequest', maintenanceGate);

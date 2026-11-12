@@ -169,6 +169,13 @@ export const CHAT_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
  * J-23 review F6: the chat-key courier's writes per account (lead default). A handover posts one
  * box per device and collects it once, so a person never comes near these; a loop runs dry.
  */
+/**
+ * S-085 review S2, per session: the two proof routes together (`POST /v1/account/session/proof/challenge`
+ * and `/proof`). A tab renews every 200 s with two calls, plus one renewal per 401 after a sleep; 20
+ * at once and 10 a minute leave room for many tabs while a copied cookie runs dry. The web treats
+ * the 429 as "retry later", never as a logout.
+ */
+export const SESSION_PROOF_BUCKET: BucketSize = { capacity: 20, perMinute: 10 };
 export const CHAT_KEY_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 export const CHAT_KEY_COLLECT_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 
@@ -213,6 +220,8 @@ export interface Budgets {
   chatKeyCollect: KeyedBuckets;
   /** Per account: `POST /v1/account/past-rep/finish`. */
   pastRepFinish: KeyedBuckets;
+  /** Per session: the two S-085 proof routes (review S2). */
+  sessionProof: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -231,5 +240,6 @@ export function newBudgets(clock: () => Date): Budgets {
     chatKeyPost: new KeyedBuckets(CHAT_KEY_POST_BUCKET, clock),
     chatKeyCollect: new KeyedBuckets(CHAT_KEY_COLLECT_BUCKET, clock),
     pastRepFinish: new KeyedBuckets(PAST_REP_FINISH_BUCKET, clock),
+    sessionProof: new KeyedBuckets(SESSION_PROOF_BUCKET, clock),
   };
 }
