@@ -52,6 +52,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
   'GET /v1/account/blocks': 'the traders I blocked',
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
+  'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",
   'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
   'GET /v1/account/jabber': 'my own Jabber alert set-up (the masked address, its state); never another account',
   'GET /v1/account/jabber/events': 'which events send my own Jabber notices (W-021); never another account',

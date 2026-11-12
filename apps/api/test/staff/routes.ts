@@ -123,6 +123,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/disputes/:code/messages', perm: 'disputes.handle', allowed: MODERATORS, body: { text: 'Hello' } },
   { method: 'POST', url: '/staff/v1/disputes/:code/proof-request', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'buyer' } },
   { method: 'POST', url: '/staff/v1/disputes/:code/freeze', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', on: true, reason: 'no-reply' } },
+  { method: 'POST', url: '/staff/v1/freezes/:id/lift', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
   // Plan 4 Task 32: the owner's revenue totals (the internal revenue ledger).
   { method: 'GET', url: '/staff/v1/revenue', perm: 'earnings.read', allowed: OWNER },
   // B-006: the fee wallet's sweep settings (a body that changes nothing needs no tap).

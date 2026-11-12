@@ -19,6 +19,9 @@ import { ModerationError, NO_MODERATION } from '../../src/disputes/moderationCli
 import { loadDispute } from '../../src/disputes/store.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
 import { appealDirect, publishRuling } from '../helpers/disputes.js';
+import { seedAccount } from '../helpers/accounts.js';
+import { Browser } from '../helpers/totp.js';
+import { rolesToAbilities } from '../../src/team/abilities.js';
 import { insertOffer } from '../helpers/offers.js';
 import { STAFF_ORIGIN, StaffBrowser, insertSession, seedStaff } from '../helpers/staffApp.js';
 import { tradeApp } from '../helpers/tradeApp.js';
@@ -593,6 +596,168 @@ describe('the freeze', () => {
     res = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'ignored-ruling' });
     expect(res.statusCode, res.body).toBe(200);
     setNow(START);
+  });
+});
+
+describe('D-016: the frozen trader reads their freeze (GET /v1/account/freeze)', () => {
+  const freezeOf = async (p: Awaited<ReturnType<typeof newTrader>>) => {
+    expect((await p.browser.post('/t/login', { accountId: p.id })).statusCode).toBe(200);
+    const res = await p.browser.get('/v1/account/freeze');
+    expect(res.statusCode, res.body).toBe(200);
+    return res.json() as { freezes: unknown[] };
+  };
+
+  it('none before a freeze; the frozen side then reads since, the dispute, its incident ID, their side, the amount and the partner; the partner reads none; lifted, none', async () => {
+    const mod = await staff('mod');
+    const { code, seller, buyer } = await disputed();
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/take'), {})).statusCode).toBe(200);
+    expect(await freezeOf(seller)).toEqual({ freezes: [] });
+
+    setNow(new Date(START.getTime() + 49 * H));
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' })).statusCode).toBe(200);
+    const { rows } = await deps.db.query<{ incident_id: string; amount_atomic: string; name: string }>(
+      `select d.incident_id, t.amount_atomic::text as amount_atomic, b.display_name as name
+         from disputes d join trades t on t.code = d.code join accounts b on b.id = t.buyer_account_id where d.code = $1`,
+      [code],
+    );
+    expect(await freezeOf(seller)).toEqual({
+      freezes: [{
+        since: new Date(START.getTime() + 49 * H).toISOString(),
+        dispute: { code, incidentId: rows[0]!.incident_id, side: 'seller', amountAtomic: rows[0]!.amount_atomic, counterparty: rows[0]!.name },
+      }],
+    });
+    // A dispute alone never blocks trading (D-013): the partner is not frozen.
+    expect(await freezeOf(buyer)).toEqual({ freezes: [] });
+
+    const lift = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: false });
+    expect(lift.statusCode, lift.body).toBe(200);
+    expect(await freezeOf(seller)).toEqual({ freezes: [] });
+    setNow(START);
+  });
+
+  it('a freeze that outlived its trade (R36 whole-record delete) still reads, with no dispute details', async () => {
+    const mod = await staff('mod');
+    const { code, seller } = await disputed();
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/take'), {})).statusCode).toBe(200);
+    setNow(new Date(START.getTime() + 49 * H));
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' })).statusCode).toBe(200);
+    // As if the trade's record were gone: the freeze names a dispute code no trade has.
+    await deps.db.query(`update trading_holds set dispute_code = 'ZZZZ-ZZZZ-ZZZZ-ZZZZ' where account_id = $1 and lifted_at is null`, [seller.id]);
+    expect(await freezeOf(seller)).toEqual({ freezes: [{ since: new Date(START.getTime() + 49 * H).toISOString(), dispute: null }] });
+    await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1 and lifted_at is null', [seller.id, deps.clock()]);
+    setNow(START);
+  });
+
+  it('needs a trader session', async () => {
+    const res = await trader.inject({ method: 'GET', url: '/v1/account/freeze' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('T1: a team member is refused (owner-only); a backup session and a held one read it', async () => {
+    const mod = await staff('mod');
+    const { code, seller } = await disputed();
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/take'), {})).statusCode).toBe(200);
+    setNow(new Date(START.getTime() + 49 * H));
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' })).statusCode).toBe(200);
+    const since = new Date(START.getTime() + 49 * H).toISOString();
+
+    const loginId = await seedAccount(deps, { loginName: `fzmember${randomUUID().slice(0, 8)}`, kind: 'member' });
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'FzMember', 'fzmember', $2, $3, $4, $3, $3)`,
+      [seller.id, rolesToAbilities(['offers', 'trades']), deps.clock(), loginId],
+    );
+    const mb = new Browser(trader);
+    expect((await mb.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+    const asMember = await mb.get('/v1/account/freeze');
+    expect({ status: asMember.statusCode, error: errorOf(asMember) }).toEqual({ status: 403, error: 'owner-only' });
+
+    const backup = new Browser(trader);
+    const login = await backup.post('/t/login', { accountId: seller.id, level: 'recovery' });
+    expect(login.statusCode, login.body).toBe(200);
+    const sessionId = (login.json() as { sessionId: string }).sessionId;
+    const read = async () => {
+      const res = await backup.get('/v1/account/freeze');
+      expect(res.statusCode, res.body).toBe(200);
+      return (res.json() as { freezes: Array<{ since: string }> }).freezes.map((f) => f.since);
+    };
+    expect(await read()).toEqual([since]);
+    await deps.db.query('update sessions set hold_until = $2 where id = $1', [sessionId, new Date(deps.clock().getTime() + 24 * H)]);
+    expect(await read()).toEqual([since]);
+    await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1 and lifted_at is null', [seller.id, deps.clock()]);
+    setNow(START);
+  });
+});
+
+describe('F1 (D-014): a moderator lifts a freeze by its id (POST /staff/v1/freezes/:id/lift)', () => {
+  /** A dispute whose seller a mod froze (the mod took the case); the freeze's id. */
+  async function frozen() {
+    const mod = await staff('mod');
+    const d = await disputed();
+    await mod.fresh();
+    expect((await mod.b.post(url(d.code, '/take'), {})).statusCode).toBe(200);
+    setNow(new Date(START.getTime() + 49 * H));
+    await mod.fresh();
+    expect((await mod.b.post(url(d.code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' })).statusCode).toBe(200);
+    const id = (await deps.db.query<{ id: string }>('select id::text as id from trading_holds where account_id = $1 and lifted_at is null', [d.seller.id])).rows[0]!.id;
+    return { ...d, mod, id };
+  }
+  const lift = (b: StaffBrowser, id: string) => b.post(`/staff/v1/freezes/${id}/lift`, {});
+  const liftLogs = async (accountId: string) =>
+    (await deps.db.query<{ trade_code: string | null; detail: string; actor_id: string }>(
+      `select trade_code, detail, actor_id::text as actor_id from activity_log where action = 'account.freeze-lifted' and detail like '%' || $1 || '%' order by id`,
+      [accountId],
+    )).rows;
+
+  it('while the case exists: the same check as the case route (the assignee, a senior or the owner), logged on the case; once only', async () => {
+    const { id, mod, seller, code } = await frozen();
+    const other = await staff('mod');
+    const refused = await lift(other.b, id);
+    expect({ status: refused.statusCode, error: errorOf(refused) }).toEqual({ status: 403, error: 'forbidden-case' });
+    expect(await activeFreezes(seller.id)).toHaveLength(1);
+    const ok = await lift(mod.b, id);
+    expect(ok.statusCode, ok.body).toBe(204);
+    expect(await activeFreezes(seller.id)).toEqual([]);
+    expect((await liftLogs(seller.id)).map((r) => ({ ...r, detail: JSON.parse(r.detail) }))).toEqual([
+      { trade_code: code, detail: { accountId: seller.id, side: 'seller' }, actor_id: mod.id },
+    ]);
+    const again = await lift(mod.b, id);
+    expect({ status: again.statusCode, error: errorOf(again) }).toEqual({ status: 409, error: 'wrong-state' });
+    // Nothing new for the trader: the freeze is simply gone from their view.
+    expect((await seller.browser.post('/t/login', { accountId: seller.id })).statusCode).toBe(200);
+    expect((await seller.browser.get('/v1/account/freeze')).json()).toEqual({ freezes: [] });
+    setNow(START);
+  });
+
+  it('once the trade record is gone (R36): only a senior or the owner (there is no case to be assigned), logged against the account', async () => {
+    const { id, mod, seller } = await frozen();
+    await deps.db.query(`update trading_holds set dispute_code = 'ZZZZ-ZZZZ-ZZZZ-ZZZZ' where id = $1`, [id]);
+    const refused = await lift(mod.b, id);
+    expect({ status: refused.statusCode, error: errorOf(refused) }).toEqual({ status: 403, error: 'forbidden-case' });
+    const senior = await staff('senior');
+    const ok = await lift(senior.b, id);
+    expect(ok.statusCode, ok.body).toBe(204);
+    expect(await activeFreezes(seller.id)).toEqual([]);
+    expect((await liftLogs(seller.id)).map((r) => ({ ...r, detail: JSON.parse(r.detail) }))).toEqual([
+      { trade_code: null, detail: { accountId: seller.id, side: 'seller' }, actor_id: senior.id },
+    ]);
+    setNow(START);
+  });
+
+  it('an unknown or malformed id is not-found; a helper is refused', async () => {
+    const mod = await staff('mod');
+    for (const bad of [randomUUID(), 'not-a-uuid']) {
+      const res = await lift(mod.b, bad);
+      expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 404, error: 'not-found' });
+    }
+    const helper = await staff('helper');
+    expect((await lift(helper.b, randomUUID())).statusCode).toBe(403);
   });
 });
 

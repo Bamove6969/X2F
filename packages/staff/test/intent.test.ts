@@ -98,7 +98,6 @@ describe('tapChallenge', () => {
       { ...ruling, code: 'K7M2-9QXA-4FTR-8WPM' },
       { ...ruling, round: 2 },
       { ...ruling, outcome: 'refund-to-seller' },
-      { ...ruling, accountAction: { kind: 'freeze' } },
       { ...ruling, accountAction: { kind: 'site-ban', until: '2027-01-01T00:00:00.000Z', reasonCode: 'terms' } },
       { ...ruling, accountAction: { kind: 'site-ban', until: null, reasonCode: 'terms' } },
       { ...ruling, accountAction: { kind: 'trade-ban', until: null, reasonCode: 'terms' } },

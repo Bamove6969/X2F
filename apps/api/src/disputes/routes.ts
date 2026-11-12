@@ -11,6 +11,7 @@ import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow }
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
 import { appendLog } from '../log/append.js';
+import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, startDispute, withDispute } from './store.js';
 import { refuseHeldTradeEvent } from '../trades/held.js';
@@ -217,6 +218,15 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
   };
 }
 
+/** What `GET /v1/account/freeze` returns (D-016): the account's active freezes, oldest first. */
+export interface FreezeView {
+  freezes: Array<{
+    since: string;
+    /** Null once the trade's record is gone (R36). `side` is this account's side of that trade. */
+    dispute: { code: string; incidentId: string | null; side: Party; amountAtomic: string; counterparty: string } | null;
+  }>;
+}
+
 export interface DisputeRouteOptions {
   /** Task 19's event bus (the same hook the trade events route uses); a no-op until then. */
   publish?: TradePublisher;
@@ -238,6 +248,40 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
       app.log.error({ err }, 'trade publish failed');
     }
   };
+
+  // D-013..D-016 (owner 2026-11-02, Q39): the account's active trading freezes, for the
+  // AccountFrozen notice. A moderator placed each on this account as the party who ignored a
+  // dispute or a ruling (staffRoutes.ts); it has no end time and only a moderator lifts it. Each
+  // names when it began and the dispute it came from: the code, the dispute's incident ID (G37), the
+  // account's side, the amount and the partner's public display name. A freeze outlives its trade
+  // (R36 whole-record delete, migration 208): then `dispute` is null. The account owner's sessions
+  // only, a backup or held one too (FINISH_OPEN_TRADES), so the notice shows whatever else holds the
+  // account. Oldest first. Never the reason, who placed it, or anything about the partner beyond
+  // the name both traders already see.
+  app.get('/v1/account/freeze', { preHandler: owner }, async (req): Promise<FreezeView> => {
+    const { rows } = await req.server.deps.db.query<{
+      since: Date; code: string | null; incident_id: string | null; side: Party | null; amount_atomic: string | null; counterparty: string | null;
+    }>(
+      `select h.created_at as since, t.code, d.incident_id,
+              case when t.code is null then null when t.seller_account_id = h.account_id then 'seller' else 'buyer' end as side,
+              t.amount_atomic::text as amount_atomic, p.${PUBLIC_NAME_COLUMN} as counterparty
+         from trading_holds h
+         left join trades t on t.code = h.dispute_code and (t.seller_account_id = h.account_id or t.buyer_account_id = h.account_id)
+         left join disputes d on d.code = t.code and d.seq = h.dispute_seq
+         left join accounts p on p.id = case when t.seller_account_id = h.account_id then t.buyer_account_id else t.seller_account_id end
+        where h.account_id = $1 and h.lifted_at is null and h.kind = 'freeze'
+        order by h.created_at, h.id`,
+      [req.auth.accountId],
+    );
+    return {
+      freezes: rows.map((r) => ({
+        since: r.since.toISOString(),
+        dispute: r.code === null || r.side === null || r.amount_atomic === null || r.counterparty === null
+          ? null
+          : { code: r.code, incidentId: r.incident_id, side: r.side, amountAtomic: r.amount_atomic, counterparty: r.counterparty },
+      })),
+    };
+  });
 
   app.get('/v1/trades/:code/dispute', { preHandler: answer }, async (req) => {
     const { row, side } = await participant(req);
