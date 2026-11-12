@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newTradeCode } from '@x2f/core';
-import { canonicalJson, inviteRegistrationChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
+import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 import { escrowPlan } from '@x2f/trade';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
@@ -161,6 +161,7 @@ function recorded(usdCents: bigint | null): RecordedTerms {
 const BALANCE = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }).sellerFundsAtomic;
 const NONE: AccountAction = { kind: 'none' };
 const REASON = 'The buyer showed a bank statement with the payment and the seller did not answer.';
+const EVIDENCE = ['Bank statement, 11 Nov', 'No reply from the seller for 30 hours'];
 
 interface Case {
   ruling: GateRuling;
@@ -177,13 +178,14 @@ function ruling(proposer: Person, o: { approver?: Person | null; outcome?: Rulin
     proposer: proposer.id,
     approver: o.approver?.id ?? null,
     reasonSha256: sha256Hex(REASON),
+    evidenceSha256: evidenceSha256(EVIDENCE),
     ...(o.round1Id ? { round1Id: o.round1Id } : {}),
   };
   return {
     ruling: r,
     intent: (step, over = {}) => ({
       kind: 'ruling', step, rulingId: r.id, code: r.code, round: r.round, outcome: r.outcome, accountAction: r.accountAction,
-      amountAtomic: AMOUNT.toString(), reasonSha256: r.reasonSha256, round1Id: r.round === 2 ? (r.round1Id ?? null) : null, ...over,
+      amountAtomic: AMOUNT.toString(), reasonSha256: r.reasonSha256, evidenceSha256: r.evidenceSha256, round1Id: r.round === 2 ? (r.round1Id ?? null) : null, ...over,
     }),
   };
 }
@@ -421,6 +423,10 @@ describe('authorizeRuling', () => {
     expect(await authorize(w, { ...c, ruling: { ...c.ruling, outcome: 'refund-to-seller' } }, [t])).toEqual({ ok: false, reason: 'intent-mismatch' });
     expect(await authorize(w, { ...c, ruling: { ...c.ruling, code: newTradeCode() } }, [t])).toEqual({ ok: false, reason: 'intent-mismatch' });
     expect(await authorize(w, { ...c, ruling: { ...c.ruling, reasonSha256: sha256Hex('another reason') } }, [t])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    // The evidence lines as stored (rulings review mod-screens M1): another line, another order or another split.
+    for (const lines of [[...EVIDENCE, 'more'], [...EVIDENCE].reverse(), [EVIDENCE.join(' ')]]) {
+      expect(await authorize(w, { ...c, ruling: { ...c.ruling, evidenceSha256: evidenceSha256(lines) } }, [t])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    }
     expect(await authorize(w, { ...c, ruling: { ...c.ruling, proposer: other.id } }, [t])).toEqual({ ok: false, reason: 'intent-mismatch' });
     // The trade's amount as tapped is not the amount this process recorded.
     const d = ruling(mod);
@@ -898,7 +904,7 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
         [tapIds.invite, ownerId, k1.credentialId, intent, nonce, JSON.stringify({ id: k1.credentialId })],
       );
       const rulingId = randomUUID();
-      const ri = canonicalJson({ kind: 'ruling', step: 'propose', rulingId, code: 'ABCD-EFGH-JKMN-PQRS', round: 1, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, amountAtomic: '1', reasonSha256: 'b'.repeat(64), round1Id: null });
+      const ri = canonicalJson({ kind: 'ruling', step: 'propose', rulingId, code: 'ABCD-EFGH-JKMN-PQRS', round: 1, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, amountAtomic: '1', reasonSha256: 'b'.repeat(64), evidenceSha256: 'c'.repeat(64), round1Id: null });
       await c.query(
         `insert into key_taps (id, account_id, credential_id, intent, nonce, response, started_at, finished_at, used_at) values ($1, $2, $3, $4, $5, $6, now(), now(), now())`,
         [tapIds.ruling, modId, mk.credentialId, ri, randomBytes(16), JSON.stringify({ id: mk.credentialId })],
@@ -944,8 +950,8 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
       );
       for (const [round, reason] of [[1, 'r'.repeat(40)], [2, 's'.repeat(40)]] as const) {
         await c.query(
-          `insert into dispute_rulings (code, seq, round, outcome, reason, moderator_name, ruled_at, appeal_until) values ($1, 1, $2, 'release-to-buyer', $3, 'Mod', now(), $4)`,
-          [code, round, reason, round === 1 ? new Date() : null],
+          `insert into dispute_rulings (code, seq, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until) values ($1, 1, $2, 'release-to-buyer', $3, $4, 'Mod', now(), $5)`,
+          [code, round, reason, JSON.stringify(round === 1 ? EVIDENCE : ['é line', 'two']), round === 1 ? new Date() : null],
         );
       }
       const helper = randomUUID();
@@ -958,8 +964,8 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
       }
       const stored = await src.storedRulings(code);
       expect(stored).toEqual({
-        current: { id: r2.id, code, round: 2, outcome: 'refund-to-seller', accountAction: { kind: 'none' }, proposer: ownerId, approver: null, reasonSha256: sha256Hex('s'.repeat(40)), round1Id: r1.id },
-        round1: { id: r1.id, code, round: 1, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, proposer: modId, approver: null, reasonSha256: sha256Hex('r'.repeat(40)) },
+        current: { id: r2.id, code, round: 2, outcome: 'refund-to-seller', accountAction: { kind: 'none' }, proposer: ownerId, approver: null, reasonSha256: sha256Hex('s'.repeat(40)), evidenceSha256: evidenceSha256(['é line', 'two']), round1Id: r1.id },
+        round1: { id: r1.id, code, round: 1, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, proposer: modId, approver: null, reasonSha256: sha256Hex('r'.repeat(40)), evidenceSha256: evidenceSha256(EVIDENCE) },
         involved: expect.arrayContaining([modId, helper]),
       });
       expect(stored.involved).not.toContain(late);
