@@ -44,14 +44,19 @@ export function ClockOut({ onDone, onCancel }: { onDone: (r: ClockOutResult) => 
   const [adding, setAdding] = useState<string | null>(null);
   const [typed, setTyped] = useState('');
 
-  const load = async () => {
+  /** Reads the sheet; false (the fault shown, the stale figures dropped) when it could not be read. */
+  const load = async (): Promise<boolean> => {
     try {
       const s = await clockOutSheet();
       setSheet(s);
       // The shown one is the newest address unless one is already chosen.
       setChosen((c) => (c !== null && s.addresses.some((a) => a.id === c) ? c : (s.addresses.at(-1)?.id ?? null)));
+      return true;
     } catch (e) {
+      // Review r2-m2: never leave a stale quote to send.
+      setSheet(null);
       setFault(faultText(e, 'Your pay could not be worked out just now. Try again.'));
+      return false;
     }
   };
   useEffect(() => {
@@ -67,8 +72,13 @@ export function ClockOut({ onDone, onCancel }: { onDone: (r: ClockOutResult) => 
       const c = codeOf(e);
       // not-a-refusal: the figures moved since the sheet was shown (a wait, not a rule); show them again.
       if (c === 'quote-changed' || c === 'quote-expired') {
-        await load();
-        setFault('Your pay changed while this was open. Check the new total, then clock out.');
+        // Review r2-m2: an expired sheet says so in its own words; a failed re-read keeps its error too.
+        const why =
+          c === 'quote-expired'
+            ? 'This total is more than 5 minutes old, so it was worked out again.'
+            : 'Your pay changed while this was open.';
+        if (await load()) setFault(`${why} Check the new total, then clock out.`);
+        else setFault(`${why} Your pay could not be worked out just now. Try again.`);
         return;
       }
       // not-a-refusal: an input check on the chosen address, shown as a fault.
@@ -112,7 +122,13 @@ export function ClockOut({ onDone, onCancel }: { onDone: (r: ClockOutResult) => 
     <Sheet open title="Clock out" describedBy={textId} wide="dialog" onClose={onCancel}>
       <div className="x2f-stack" data-part="clock-out">
         {sheet === null ? (
-          <p id={textId}>Working out your pay…</p>
+          fault === null ? (
+            <p id={textId}>Working out your pay…</p>
+          ) : (
+            <Button variant="quiet" onClick={() => void load().then((ok) => ok && setFault(null))}>
+              Try again
+            </Button>
+          )
         ) : (
           <>
             <ClockOutTotal sheet={sheet} id={textId} />

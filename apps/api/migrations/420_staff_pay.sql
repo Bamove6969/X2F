@@ -44,6 +44,9 @@ create table staff_shifts (
   clocked_in_at timestamptz not null,
   ended_at timestamptz,
   ended text check (ended in ('clock-out', 'auto-logout', 'ended')),
+  -- Review r2-m1: the nonce of the newest clock-out sheet shown in this session; only that sheet's
+  -- quote pays, so an older sheet's price cannot be picked.
+  latest_quote uuid,
   check ((ended is null) = (ended_at is null))
 );
 create index staff_shifts_staff on staff_shifts (staff_id, clocked_in_at desc);

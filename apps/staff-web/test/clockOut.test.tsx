@@ -129,6 +129,25 @@ describe('the clock-out sheet', () => {
     expect(document.querySelector('[data-screen="login"]')).toBeNull();
   });
 
+  it('review r2-m2: an expired sheet has its own words, and a failed re-read keeps the error and drops the stale figures', async () => {
+    let n = 0;
+    fakeApi({
+      'GET /staff/v1/me': { body: me('mod') },
+      'GET /staff/v1/pay/clock-out': () => (++n === 1 ? { body: sheet() } : { status: 503, body: { error: 'busy' } }),
+      'POST /staff/v1/pay/clock-out': { status: 409, body: { error: 'quote-expired' } },
+    });
+    await open();
+    await click(button('Clock out'));
+    await click(button('Send my pay and clock out'));
+    const fault = document.querySelector('[data-part="clock-out-fault"]')?.textContent ?? '';
+    expect(fault).toContain('more than 5 minutes old');
+    expect(fault).not.toContain('Your pay changed while this was open');
+    expect(fault).toContain('could not be worked out');
+    // The stale total is gone and nothing can be sent on it.
+    expect(document.querySelector('[data-part="clock-out-text"]')).toBeNull();
+    expect(button('Clock out', document.querySelector('[data-part="clock-out"]')!)?.disabled).toBe(true);
+  });
+
   it('formats XMR truncated to 6 places and dollars with their sign', () => {
     expect(xmrText('1234567890123')).toBe('1.234567 XMR');
     expect(xmrText('-1250000000')).toBe('-0.001250 XMR');

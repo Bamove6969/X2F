@@ -528,6 +528,39 @@ describe('review S2: the clock-out pays exactly the quote it showed', () => {
     await setPay(UNSET);
   });
 
+  it('review r2-m1: only the latest sheet of a session pays; an older one is refused as changed (no picking a price from the last 5 minutes)', async () => {
+    await setPay({ modDisputeUsdCents: 3300, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null });
+    const mod = await member('mod');
+    const addr = await addAddress(mod);
+    await rule(await disputed(), mod);
+    const cheap = await quoteOf(mod);
+    usdPerXmr = 16_500n;
+    let dear: string;
+    try {
+      dear = await quoteOf(mod);
+    } finally {
+      usdPerXmr = USD_PER_XMR;
+    }
+    // The member would rather have the first sheet's price: refused, the newest one stands.
+    expect(errorOf(await postClockOut(mod, cheap, addr))).toBe('quote-changed');
+    const res = await postClockOut(mod, dear, addr);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ due: 'pay', payout: { amountAtomic: ((3300n * XMR) / 16_500n).toString() } });
+    await setPay(UNSET);
+  });
+
+  it('a quote of the same member from another of their sessions is refused as invalid', async () => {
+    await setPay({ modDisputeUsdCents: 3300, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null });
+    const mod = await member('mod');
+    const addr = await addAddress(mod);
+    await rule(await disputed(), mod);
+    const other = new StaffBrowser(app).withSession((await insertSession(deps, mod.id, 'staff')).token);
+    const fromOther = ((await other.get('/staff/v1/pay/clock-out')).json() as { quote: string }).quote;
+    expect(errorOf(await postClockOut(mod, fromOther, addr))).toBe('quote-invalid');
+    expect((await deps.db.query('select 1 from staff_payouts where staff_id = $1', [mod.id])).rows).toHaveLength(0);
+    await setPay(UNSET);
+  });
+
   it('two clock-outs at once (two sessions) pay once: the other is refused as changed', async () => {
     await setPay({ modDisputeUsdCents: 3300, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null });
     const mod = await member('mod');

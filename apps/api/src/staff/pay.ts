@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { withTx } from '../auth/hold.js';
@@ -285,6 +285,8 @@ interface QuoteBody {
   v: 1;
   staffId: string;
   sessionId: string;
+  /** Review r2-m1: this sheet's nonce; only the session's newest one (`staff_shifts.latest_quote`) pays. */
+  nonce: string;
   /** SHA-256 (hex) of the sorted ids of the unpaid items the sheet was made from. */
   items: string;
   /** The USD price used (US cents per XMR), or null when there was none. */
@@ -319,7 +321,7 @@ export function openQuote(config: Config, quote: string, staffId: string, sessio
   } catch {
     throw invalid();
   }
-  if (q.v !== 1 || q.staffId !== staffId.toLowerCase() || q.sessionId !== sessionId.toLowerCase()) throw invalid();
+  if (q.v !== 1 || typeof q.nonce !== 'string' || q.staffId !== staffId.toLowerCase() || q.sessionId !== sessionId.toLowerCase()) throw invalid();
   const ends = Date.parse(q.expiresAt);
   if (!Number.isFinite(ends)) throw invalid();
   if (now.getTime() >= ends) throw new ApiError(409, 'quote-expired');
@@ -332,8 +334,11 @@ async function clockOutPreview(q: Queryable, config: Config, staffId: string, se
   const price = usdPrice(prices);
   const t = clockOutTotals(items, price);
   const expiresAt = new Date(now.getTime() + QUOTE_TTL_MS).toISOString();
+  // Review r2-m1: this sheet replaces any earlier one of the session.
+  const nonce = randomUUID();
+  await q.query('update staff_shifts set latest_quote = $2 where session_id = $1 and staff_id = $3 and ended is null', [sessionId, nonce, staffId]);
   return {
-    quote: signQuote(config, { v: 1, staffId: staffId.toLowerCase(), sessionId: sessionId.toLowerCase(), items: itemsHash(items), price: str(price), expiresAt }),
+    quote: signQuote(config, { v: 1, staffId: staffId.toLowerCase(), sessionId: sessionId.toLowerCase(), nonce, items: itemsHash(items), price: str(price), expiresAt }),
     expiresAt,
     due: t.due,
     disputes: items.filter((i) => i.kind === 'dispute').length,
@@ -378,18 +383,20 @@ export async function clockOut(
   staff: Pick<StaffContext, 'accountId' | 'role'>,
   sessionId: string,
   addressId: string | null,
-  quote: Pick<QuoteBody, 'items' | 'price'>,
+  quote: Pick<QuoteBody, 'items' | 'price' | 'nonce'>,
   now: Date,
 ): Promise<ClockOutResult> {
   await client.query('select 1 from staff_members where account_id = $1 for update', [staff.accountId]);
   const items = await unpaidItems(client, staff.accountId, true);
+  const shift = (await client.query<{ id: string; clocked_in_at: Date; latest_quote: string | null }>(
+    "select id::text, clocked_in_at, latest_quote::text from staff_shifts where session_id = $1 and staff_id = $2 and ended is null for update",
+    [sessionId, staff.accountId],
+  )).rows[0];
+  // Review r2-m1: only the session's newest sheet pays (an older one's price cannot be chosen).
+  if (shift === undefined || shift.latest_quote !== quote.nonce) throw new ApiError(409, 'quote-changed');
   if (itemsHash(items) !== quote.items) throw new ApiError(409, 'quote-changed');
   const t = clockOutTotals(items, quote.price === null ? null : BigInt(quote.price));
   let payout: ClockOutResult['payout'] = null;
-  const shift = (await client.query<{ id: string; clocked_in_at: Date }>(
-    "select id::text, clocked_in_at from staff_shifts where session_id = $1 and staff_id = $2 and ended is null for update",
-    [sessionId, staff.accountId],
-  )).rows[0];
   if (t.due === 'pay') {
     if (addressId === null) throw new ApiError(400, 'address-required');
     const a = await client.query(
@@ -400,7 +407,7 @@ export async function clockOut(
     const { rows } = await client.query<{ id: string }>(
       `insert into staff_payouts (staff_id, at, shift_id, address_id, usd_cents, usd_cents_per_xmr, atomic, amount_atomic)
        values ($1, $2, $3, $4, $5, $6, $7, $8) returning id::text`,
-      [staff.accountId, now, shift?.id ?? null, addressId, t.usdCents.toString(), t.usdCents === 0n ? null : t.usdCentsPerXmr!.toString(),
+      [staff.accountId, now, shift.id, addressId, t.usdCents.toString(), t.usdCents === 0n ? null : t.usdCentsPerXmr!.toString(),
         t.atomic.toString(), t.amountAtomic!.toString()],
     );
     const payoutId = rows[0]!.id;
@@ -410,13 +417,12 @@ export async function clockOut(
     await appendLog(client, { at: now, actor: { kind: 'staff', id: staff.accountId, role: staff.role }, tradeCode: null, action: 'pay.paid', detail });
     payout = { id: payoutId, amountAtomic: t.amountAtomic!.toString(), addressId, status: 'waiting-send' };
   }
-  if (shift) {
-    await client.query("update staff_shifts set ended = 'clock-out', ended_at = $2 where id = $1", [shift.id, now]);
-    await appendLog(client, {
-      at: now, actor: { kind: 'staff', id: staff.accountId, role: staff.role }, tradeCode: null, action: 'shift.clocked-out',
-      detail: { shiftId: shift.id, minutes: Math.max(0, Math.floor((now.getTime() - shift.clocked_in_at.getTime()) / 60_000)) },
-    });
-  }
+  // The shift ends as a correct clock-out (it exists: the quote check above found it).
+  await client.query("update staff_shifts set ended = 'clock-out', ended_at = $2 where id = $1", [shift.id, now]);
+  await appendLog(client, {
+    at: now, actor: { kind: 'staff', id: staff.accountId, role: staff.role }, tradeCode: null, action: 'shift.clocked-out',
+    detail: { shiftId: shift.id, minutes: Math.max(0, Math.floor((now.getTime() - shift.clocked_in_at.getTime()) / 60_000)) },
+  });
   await client.query("update sessions set revoked_at = $2 where id = $1 and app = 'staff' and revoked_at is null", [sessionId, now]);
   return { due: t.due, payout };
 }
