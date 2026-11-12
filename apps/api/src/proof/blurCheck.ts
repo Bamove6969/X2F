@@ -30,7 +30,7 @@ import type { RetentionJob } from '../retention.js';
  * What is kept (the owner's minimum): an ask names the trade, the proof id and the side, and goes
  * with its trade (on delete cascade). An answer keeps only the day, the role, Yes/No, the No's
  * comment, the payment method and the blur kind: no trade code, no proof id, no account, no time,
- * never the image. Answers are deleted after BLUR_CHECK_RETENTION_DAYS (as the feedback form).
+ * never the image. Answers are deleted after BLUR_CHECK_RETENTION_DAYS (90; lead call, the owner may extend it).
  *
  * Settings (owner_settings, whole numbers; a missing or bad row means the default):
  * `blur_check_all_until` YYYYMMDD, every proof through that UTC day (none: every proof, so it fails
@@ -38,7 +38,7 @@ import type { RetentionJob } from '../retention.js';
  */
 
 export const BLUR_CHECK_MAX_PROOFS = 20;
-export const BLUR_CHECK_RETENTION_DAYS = 365;
+export const BLUR_CHECK_RETENTION_DAYS = 90;
 export const BLUR_CHECK_SETTING_KEYS = { allUntil: 'blur_check_all_until', everyNth: 'blur_check_every_nth' } as const;
 const DAY_MS = 86_400_000;
 

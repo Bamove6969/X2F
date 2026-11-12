@@ -5,7 +5,7 @@ import type { Deps } from '../src/app.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { purgeBlurChecks } from '../src/proof/blurCheck.js';
 import { seedAccount } from './helpers/accounts.js';
-import { StaffBrowser, insertSession, seedStaff, staffApps } from './helpers/staffApp.js';
+import { StaffBrowser, TRADER_ORIGIN, insertSession, seedStaff, staffApps } from './helpers/staffApp.js';
 import { seedTrade } from './helpers/trades.js';
 
 // P-012 (owner Q47, 6 Nov 2026) and P-013 (owner p9-8, 8 Nov): "Was this proof blurred correctly?"
@@ -41,7 +41,7 @@ async function person(): Promise<Who> {
   return { id, token: (await insertSession(deps, id, 'trader')).token };
 }
 const call = (who: Who, method: 'GET' | 'POST', url: string, payload?: unknown) =>
-  trader.inject({ method, url, cookies: { [SESSION_COOKIE]: who.token }, ...(payload === undefined ? {} : { payload: payload as object }) });
+  trader.inject({ method, url, headers: { origin: TRADER_ORIGIN }, cookies: { [SESSION_COOKIE]: who.token }, ...(payload === undefined ? {} : { payload: payload as object }) });
 
 async function pair() {
   const seller = await person();
@@ -140,7 +140,7 @@ describe('answers', () => {
     expect((await answer(buyer, code, newProofId(), { correct: true })).statusCode).toBe(404);
   });
 
-  it('the asks go with their trade; the answers outlive it and are deleted after a year', async () => {
+  it('the asks go with their trade; the answers outlive it and are deleted after 90 days', async () => {
     const { seller, buyer, code } = await pair();
     const proofId = newProofId();
     await posted(buyer, code, proofId);
@@ -152,7 +152,9 @@ describe('answers', () => {
     expect(await fk('blur_check_asks')).toEqual([{ ref: 'blur_check_proofs', del: 'c' }]);
     expect(await fk('blur_check_answers')).toEqual([]);
     expect(await pending(seller, code)).toHaveLength(1);
-    const n = await purgeBlurChecks.run(deps.db, new Date(T0.getTime() + 366 * 86_400_000));
+    await purgeBlurChecks.run(deps.db, new Date(T0.getTime() + 89 * 86_400_000));
+    expect((await deps.db.query(`select 1 from blur_check_answers where comment = 'Old one'`)).rowCount).toBe(1);
+    const n = await purgeBlurChecks.run(deps.db, new Date(T0.getTime() + 91 * 86_400_000));
     expect(n).toBeGreaterThanOrEqual(1);
     expect((await deps.db.query(`select 1 from blur_check_answers where comment = 'Old one'`)).rowCount).toBe(0);
   });

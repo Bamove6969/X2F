@@ -35,7 +35,7 @@ create table blur_check_asks (
 );
 
 -- 4. blur_check_answers: what the feedback readers see. No trade, proof, account or time of day;
---    the id is random. Deleted after a year (BLUR_CHECK_RETENTION_DAYS, as the feedback form).
+--    the id is random. Deleted after 90 days (BLUR_CHECK_RETENTION_DAYS; lead call, the owner may extend it).
 create table blur_check_answers (
   id uuid primary key default gen_random_uuid(),
   answered_on date not null,
