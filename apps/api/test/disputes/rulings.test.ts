@@ -29,6 +29,8 @@ const H = 60 * MIN;
 const at = (ms: number) => new Date(START.getTime() + ms);
 const REASON = "The seller's bank statement shows the payment arrived on time, in full.";
 const EVIDENCE = ['The trade chat', "The seller's bank statement"];
+/** Lines other than the default, so the approve path shows it binds and publishes the stored ones. */
+const TWO_PERSON_EVIDENCE = ['The escrow refund transaction', 'Seller\u2019s note, "sent"', '\u00e9t\u00e9 \u2014 2026'];
 
 beforeAll(async () => {
   const t = await tradeApp();
@@ -80,17 +82,23 @@ function intent(code: string, step: 'propose' | 'approve', o: { rulingId: string
 }
 
 /** Proposes through the route with a fresh tap made for exactly this ruling (or for `tapFor`). */
-async function propose(who: { id: string; b: StaffBrowser }, code: string, o: { outcome: RulingOutcome; round?: 1 | 2; reason?: string; accountAction?: AccountAction; tapFor?: Partial<Parameters<typeof intent>[2]> }) {
+async function propose(who: { id: string; b: StaffBrowser }, code: string, o: { outcome: RulingOutcome; round?: 1 | 2; reason?: string; accountAction?: AccountAction; evidence?: string[]; tapFor?: Partial<Parameters<typeof intent>[2]> }) {
   const rulingId = randomUUID();
   const reason = o.reason ?? REASON;
-  const tapId = await seedTap(deps, who.id, intent(code, 'propose', { rulingId, round: o.round, outcome: o.outcome, reason, accountAction: o.accountAction, ...o.tapFor }));
-  const res = await who.b.post(url(code, '/rulings'), { rulingId, outcome: o.outcome, accountAction: o.accountAction ?? NONE, reason, evidence: EVIDENCE, tapId });
+  const evidence = o.evidence ?? EVIDENCE;
+  const tapId = await seedTap(deps, who.id, intent(code, 'propose', { rulingId, round: o.round, outcome: o.outcome, reason, accountAction: o.accountAction, evidence, ...o.tapFor }));
+  const res = await who.b.post(url(code, '/rulings'), { rulingId, outcome: o.outcome, accountAction: o.accountAction ?? NONE, reason, evidence, tapId });
   return { res, rulingId, tapId };
 }
 
 async function approve(who: { id: string; b: StaffBrowser }, code: string, rulingId: string, o: { outcome: RulingOutcome; round?: 1 | 2; reason?: string; evidence?: string[] }) {
   const tapId = await seedTap(deps, who.id, intent(code, 'approve', { rulingId, round: o.round, outcome: o.outcome, reason: o.reason, evidence: o.evidence }));
   return who.b.post(url(code, `/rulings/${rulingId}/approve`), { tapId });
+}
+
+/** Whether a tap was consumed (a refused action must leave it unused). */
+async function tapUsed(tapId: string): Promise<boolean | undefined> {
+  return (await deps.db.query<{ used: boolean }>('select used_at is not null as used from key_taps where id = $1', [tapId])).rows[0]?.used;
 }
 
 async function take(who: { b: StaffBrowser }, code: string) {
@@ -149,6 +157,7 @@ describe('a proposal under the large-trade limit', () => {
     for (const evidence of [[...EVIDENCE, 'A line the moderator never saw'], [...EVIDENCE].reverse(), []]) {
       const wrongEvidence = await propose(mod, code, { outcome: 'refund-to-seller', tapFor: { evidence } });
       expect(errorOf(wrongEvidence.res), JSON.stringify(evidence)).toBe('tap-invalid');
+      expect(await tapUsed(wrongEvidence.tapId), JSON.stringify(evidence)).toBe(false);
     }
     // Another moderator's tap is not this one's.
     const rulingId = randomUUID();
@@ -173,6 +182,38 @@ describe('a proposal under the large-trade limit', () => {
     // Used once: it cannot publish a second ruling.
     const again = await mod.b.post(url(code, '/rulings'), { rulingId: randomUUID(), outcome: 'release-to-buyer', accountAction: NONE, reason: REASON, evidence: EVIDENCE, tapId });
     expect(again.statusCode).toBeGreaterThanOrEqual(400);
+  });
+
+  it('review mod-screens M1: the evidence is bound code point for code point (NFD is not NFC); what is published is what was bound', async () => {
+    const mod = await staff('mod');
+    const { code } = await disputed();
+    await take(mod, code);
+    const nfd = ['Cafe\u0301 receipt, 08:51', 'Bank statement: "paid"'];
+    const nfc = nfd.map((l) => l.normalize('NFC'));
+    expect(nfc[0]).not.toBe(nfd[0]);
+    const other = await propose(mod, code, { outcome: 'release-to-buyer', evidence: nfd, tapFor: { evidence: nfc } });
+    expect({ status: other.res.statusCode, error: errorOf(other.res) }).toEqual({ status: 403, error: 'tap-invalid' });
+    expect(await tapUsed(other.tapId)).toBe(false);
+    expect(await published(code)).toEqual([]);
+    const ok = await propose(mod, code, { outcome: 'release-to-buyer', evidence: nfd });
+    expect(ok.res.statusCode, ok.res.body).toBe(200);
+    expect(await tapUsed(ok.tapId)).toBe(true);
+    expect(await published(code)).toEqual([expect.objectContaining({ evidence: nfd })]);
+  });
+
+  it('review E3: an evidence line that is not well-formed UTF-16 (a lone surrogate) is 400 bad-request; the tap stays unused', async () => {
+    const mod = await staff('mod');
+    const { code } = await disputed();
+    await take(mod, code);
+    for (const line of ['broken \ud800 line', 'broken \udc00 line', 'reversed \udc00\ud800 pair']) {
+      const r = await propose(mod, code, { outcome: 'release-to-buyer', evidence: [line] });
+      expect({ status: r.res.statusCode, error: errorOf(r.res) }, JSON.stringify(line)).toEqual({ status: 400, error: 'bad-request' });
+      expect(await tapUsed(r.tapId)).toBe(false);
+    }
+    // A well-formed pair (an emoji) is fine.
+    const ok = await propose(mod, code, { outcome: 'release-to-buyer', evidence: ['A photo \u{1F4F7} of the receipt'] });
+    expect(ok.res.statusCode, ok.res.body).toBe(200);
+    expect(await actions(code)).toEqual(['ruling.proposed', 'ruling.published']);
   });
 
   it('a reason under 40 characters is reason-too-short; a bad body is 400', async () => {
@@ -234,29 +275,32 @@ describe('at or above the large-trade limit: two people', () => {
       const { code } = await disputed();
       setNow(at(H));
       await take(senior, code);
-      const { res, rulingId } = await propose(senior, code, { outcome: 'refund-to-seller' });
+      const { res, rulingId } = await propose(senior, code, { outcome: 'refund-to-seller', evidence: TWO_PERSON_EVIDENCE });
       expect(res.statusCode, res.body).toBe(200);
       expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'awaiting-approval', publishedAt: null });
       expect(await published(code)).toEqual([]);
 
-      const self = await approve(senior, code, rulingId, { outcome: 'refund-to-seller' });
+      const self = await approve(senior, code, rulingId, { outcome: 'refund-to-seller', evidence: TWO_PERSON_EVIDENCE });
       expect({ status: self.statusCode, error: errorOf(self) }).toEqual({ status: 409, error: 'same-person' });
-      const byMod = await approve(mod, code, rulingId, { outcome: 'refund-to-seller' });
+      const byMod = await approve(mod, code, rulingId, { outcome: 'refund-to-seller', evidence: TWO_PERSON_EVIDENCE });
       expect({ status: byMod.statusCode, error: errorOf(byMod) }).toEqual({ status: 403, error: 'forbidden' });
-      const unknown = await approve(owner, code, randomUUID(), { outcome: 'refund-to-seller' });
+      const unknown = await approve(owner, code, randomUUID(), { outcome: 'refund-to-seller', evidence: TWO_PERSON_EVIDENCE });
       expect({ status: unknown.statusCode, error: errorOf(unknown) }).toEqual({ status: 409, error: 'wrong-state' });
       // The approval tap binds the same content: a tap for another outcome is refused.
-      const mismatch = await approve(owner, code, rulingId, { outcome: 'release-to-buyer' });
+      const mismatch = await approve(owner, code, rulingId, { outcome: 'release-to-buyer', evidence: TWO_PERSON_EVIDENCE });
       expect(errorOf(mismatch)).toBe('tap-invalid');
       // ... and for evidence other than the lines the proposal stored (review mod-screens M1).
       const otherEvidence = await approve(owner, code, rulingId, { outcome: 'refund-to-seller', evidence: ['Something else'] });
       expect(errorOf(otherEvidence)).toBe('tap-invalid');
+      // The default lines are not the ones this proposal stored either.
+      expect(errorOf(await approve(owner, code, rulingId, { outcome: 'refund-to-seller' }))).toBe('tap-invalid');
 
       setNow(at(2 * H));
-      const ok = await approve(owner, code, rulingId, { outcome: 'refund-to-seller' });
+      const ok = await approve(owner, code, rulingId, { outcome: 'refund-to-seller', evidence: TWO_PERSON_EVIDENCE });
       expect(ok.statusCode, ok.body).toBe(200);
       expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'published', ruling: { approver: owner.id }, appealEndsAt: at(50 * H) });
-      expect(await published(code)).toEqual([expect.objectContaining({ round: 1, outcome: 'refund-to-seller', reason: REASON, appeal_until: at(50 * H) })]);
+      // Review mod-screens M1: what the traders see is exactly the lines both taps bound.
+      expect(await published(code)).toEqual([expect.objectContaining({ round: 1, outcome: 'refund-to-seller', reason: REASON, evidence: TWO_PERSON_EVIDENCE, appeal_until: at(50 * H) })]);
       expect(await actions(code)).toEqual(['ruling.proposed', 'ruling.approved', 'ruling.published']);
     });
   });
