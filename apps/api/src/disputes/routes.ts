@@ -294,6 +294,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     if (!isText(b.why, APPEAL_MAX) || b.why.trim().length < APPEAL_MIN) throw new ApiError(400, 'bad-request');
     const why = b.why;
     const { row, side } = await participant(req);
+    // Re-verify trades-list m3: besides the appeal box, the box for the trade's part.
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     const deps = req.server.deps;
     try {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {

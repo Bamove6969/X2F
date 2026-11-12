@@ -165,8 +165,23 @@ export function Trades({ rowAction }: { rowAction?: (t: TradeListItem) => ReactN
   );
 }
 
+/**
+ * The state chip, each tone a literal (re-verify trades-list B2; moderator-badge-scope.test.ts: no
+ * tone from a variable outside the dispute screens, and RowTone has no moderator tone).
+ */
+function StateChip({ state }: { state: TradeListItem['state'] }) {
+  const { text, tone, icon } = STATE_LABEL[state];
+  switch (tone) {
+    case 'caution':
+      return <StatusChip tone="caution" icon={icon} label={text} />;
+    case 'escrow':
+      return <StatusChip tone="escrow" icon={icon} label={text} />;
+    case 'neutral':
+      return <StatusChip tone="neutral" icon={icon} label={text} />;
+  }
+}
+
 function TradeRow({ trade: t, action }: { trade: TradeListItem; action: ReactNode }) {
-  const state = STATE_LABEL[t.state];
   return (
     <li className="x2f-trades__row" data-part="trade-row" data-state={t.state}>
       <Link to={`/trade/${encodeURIComponent(t.code)}`} className="x2f-trades__link">
@@ -183,7 +198,7 @@ function TradeRow({ trade: t, action }: { trade: TradeListItem; action: ReactNod
         <span className="x2f-trades__line">
           <span className="x2f-trades__mono">{t.code}</span> · {whenLine(t)}
         </span>
-        <StatusChip tone={state.tone} icon={state.icon} label={state.text} />
+        <StateChip state={t.state} />
       </Link>
       {action ? <div className="x2f-trades__action">{action}</div> : null}
     </li>

@@ -137,6 +137,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     // `by` is the session's side in this trade (P3-C2); the two sides never change after take.
     const by = roleOf(rowToTrade(row), req.auth.accountId);
     if (by === null) throw new ApiError(404, 'not-found');
+    // Re-verify trades-list m3: no acting on a part one cannot see (open: See active trades; completed: See trade history).
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     const deps = req.server.deps;
     // Once the server recorded the full count (cancel_confirmable_at) the node is not asked again (review M1).
     if (e.type === 'confirm-cancel' && row.tx_hash !== null && row.cancel_confirmable_at === null) {
