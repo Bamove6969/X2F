@@ -7,7 +7,7 @@ owner to sign the wording. "one of: X" means at least one box of group X must be
 
 127 methods. Confidence: high = provider documentation, medium = several secondary sources agree, low = unclear.
 
-Rechecked 12 Nov 2026 (the 3 low and 59 medium rows, against provider, operator or central-bank pages; comms research-payee-fields-confirm-2026-11-12, lead 12 Nov): now 97 high, 29 medium, 1 low. Each row's recheck source is in its `source` in payFields.ts. Applied: SPEI also takes a debit card number or a linked mobile (Banxico Circular 10/2026, Art. 17 Ter IV); ATM cash has an optional phone box for banks that text the code; label changes for Nequi, Alipay, Weixin Pay, Postepay; WorldRemit address and Lydia username added; notes for Monese and cash deposit; the catalogue names Esso's card "Esso and Mobil gift card". Left for the owner: Capitual (now B2B), Papara (state trusteeship), Canadian Tire (online redemption unconfirmed).
+Rechecked 12 Nov 2026 (the 3 low and 59 medium rows, against provider, operator or central-bank pages; comms research-payee-fields-confirm-2026-11-12, lead 12 Nov): now 98 high, 28 medium, 1 low. Each row's recheck source is in its `source` in payFields.ts. Applied: SPEI also takes a debit card number or a linked mobile (Banxico Circular 10/2026, Art. 17 Ter IV); ATM cash has an optional phone box for banks that text the code; label changes for Nequi, Alipay, Weixin Pay, Postepay; WorldRemit address and Lydia username added; notes for Monese and cash deposit; the catalogue names Esso's card "Esso and Mobil gift card". Left for the owner: Capitual (now B2B), Papara (state trusteeship), Canadian Tire (online redemption unconfirmed).
 
 Notes:
 

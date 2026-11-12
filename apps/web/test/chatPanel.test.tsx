@@ -537,7 +537,8 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     expect(interac.host.querySelector('[data-pay-note]')).toBeNull();
     const atm = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'CASH_AT_ATM' }} />);
     await flush();
-    expect(atm.host.querySelector('[data-pay-nothing]')).toBeNull();
+    // The boxes show (review payee-fields-2 m-3 puts the nothing-to-send line inside them until one is filled).
+    expect(boxes(atm.host)).not.toBeNull();
     expect([...boxes(atm.host)!.querySelectorAll('[data-pay-field]')].map((e) => e.getAttribute('data-pay-field'))).toEqual(['phone']);
   });
 
