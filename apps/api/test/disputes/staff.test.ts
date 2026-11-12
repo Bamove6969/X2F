@@ -17,6 +17,7 @@ import type { Deps } from '../../src/app.js';
 import { isIncidentId } from '@x2f/staff';
 import { ModerationError, NO_MODERATION } from '../../src/disputes/moderationClient.js';
 import { disputeSettings } from '../../src/disputes/settings.js';
+import { getMethod } from '../../src/methods/profiles.js';
 import { loadDispute } from '../../src/disputes/store.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
 import { appealDirect, publishRuling } from '../helpers/disputes.js';
@@ -257,6 +258,21 @@ describe('the queue', () => {
 });
 
 describe('the case view', () => {
+  it('names the payment method from the catalog (data/payment-methods.json), and gives the id where the catalog has none', async () => {
+    const { code } = await disputed();
+    const mod = await staff('mod');
+    const first = await mod.b.get(url(code));
+    expect(first.statusCode, first.body).toBe(200);
+    // The trade helper seeds `zelle`, which is not a catalog id: the id is shown as it is.
+    expect(((await mod.b.get(url(code))).json() as { escrow: { methodName: string } }).escrow.methodName).toBe('zelle');
+    await deps.db.query("update trades set method_id = 'ZELLE' where code = $1", [code]);
+    const v = (await mod.b.get(url(code))).json() as { escrow: { methodId: string; methodName: string } };
+    expect(v.escrow).toMatchObject({ methodId: 'ZELLE', methodName: getMethod('ZELLE')!.name });
+    expect(getMethod('ZELLE')!.name).toBe('Zelle');
+    const q = (await mod.b.get('/staff/v1/disputes?filter=all')).json() as { rows: Array<{ code: string; method: string; methodName: string }> };
+    expect(q.rows.find((r) => r.code === code)).toMatchObject({ method: 'ZELLE', methodName: 'Zelle' });
+  });
+
   it('shows the header, both traders, the escrow and the ruling state; logs case.opened once per person; returns no chat', async () => {
     const mod = await staff('mod');
     const { code, seller } = await disputed();

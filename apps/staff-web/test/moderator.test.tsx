@@ -24,7 +24,7 @@ const CODE = '7RWD3MXEKQ84HN2T';
 const REASON = 'The bank statement shows the Zelle payment arrived on time and in full.';
 
 const row = (o: Record<string, unknown> = {}) => ({
-  code: CODE, incidentId: 'D-7RWD', status: 'open', round: 1, xmr: '4000000000000', usd: '1320.00', method: 'zelle', openedBy: 'buyer',
+  code: CODE, incidentId: 'D-7RWD', status: 'open', round: 1, xmr: '4000000000000', usd: '1320.00', method: 'ZELLE', methodName: 'Zelle', openedBy: 'buyer',
   waitingMs: 2 * H, replyDueAt: new Date(Date.now() + 2 * H).toISOString(), rulingDueAt: new Date(Date.now() + 46 * H).toISOString(),
   deadlineTone: 'due', approval: 'needs-second', assignee: null, mine: false, ...o,
 });
@@ -51,7 +51,7 @@ const kase = (o: Record<string, unknown> = {}, ruling: Record<string, unknown> =
   rulingDueAt: new Date(Date.now() + 46 * H).toISOString(), firstReplyAt: null, usd: '1320.00', overLimit: true, limitUsd: 1000,
   assignee: 'dmitri_k', assignedToYou: true, proposedByYou: false, taken: null, mayWork: true, moderator: null,
   traders: { buyer: trader('harbor_lin', 31, 100), seller: trader('quietfox', 145, 97) },
-  escrow: { state: 'escrow-secured', amountAtomic: '4000000000000', methodId: 'zelle', currency: 'USD', centsPerXmr: '33000', fiatCents: '132000', confirmations: 10, takenAt: new Date(Date.now() - 3 * H).toISOString() },
+  escrow: { state: 'escrow-secured', amountAtomic: '4000000000000', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', centsPerXmr: '33000', fiatCents: '132000', confirmations: 10, takenAt: new Date(Date.now() - 3 * H).toISOString() },
   ruling: { proposal: null, sentBack: null, draft: null, round1: null, publishedAt: null, appealEndsAt: null, appeal: null, complyBy: null, ...ruling },
   freezes: { buyer: false, seller: false },
   ...o,
@@ -97,6 +97,8 @@ describe('ModQueue (board ModQueue)', () => {
     expect(rows()[1]!.textContent).toContain('Unassigned');
     expect(rows()[1]!.textContent).toContain('$1,320.00');
     expect(rows()[1]!.textContent).toContain('4.00 XMR');
+    expect(rows()[1]!.textContent).toContain('Zelle');
+    expect(rows()[1]!.textContent).not.toContain('ZELLE');
     expect(rows()[2]!.textContent).toContain('Not needed');
     expect(rows()[2]!.textContent).toContain('sarah.v');
     expect(rows()[3]!.textContent).toContain('Ruling waiting for a second approval');
@@ -158,7 +160,9 @@ describe('ModCase (board ModCase)', () => {
     await open(`/disputes/${CODE}`);
     expect(screen()).toBe('mod-case');
     expect(document.querySelector('h1')?.textContent).toBe('7RWD-3MXE-KQ84-HN2T');
-    expect(text('case-line')).toContain('zelle · 4.00 XMR for $1,320.00 at $330.00 / XMR · opened by the buyer');
+    // The catalog's name (data/payment-methods.json, through the staff API), never the raw id.
+    expect(text('case-line')).toContain('Zelle · 4.00 XMR for $1,320.00 at $330.00 / XMR · opened by the buyer');
+    expect(text('case-line')).not.toContain('ZELLE');
     expect(text('case-line')).toContain("paid, but the seller hasn't released");
     const chips = text('case-chips');
     expect(chips).toContain('First reply due in');
