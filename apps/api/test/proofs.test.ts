@@ -335,6 +335,15 @@ describe('dispute evidence and the unblurred copy', () => {
     expect((await put(buyer, code, newProofId(), 'unblurred', body(64))).statusCode).toBe(204);
   });
 
+  it('re-verify N1: an unblurred copy first takes no evidence slot (5 evidence still go)', async () => {
+    const { buyer, code } = await tradeIn('paid');
+    await openDispute(code);
+    await requestUnblurred(code, 'buyer');
+    expect((await put(buyer, code, newProofId(), 'unblurred', body(64))).statusCode).toBe(204);
+    for (let i = 0; i < EVIDENCE_MAX_PER_SIDE; i++) expect((await put(buyer, code, newProofId(), 'evidence', body(64))).statusCode, `evidence ${i}`).toBe(204);
+    expect(errorOf(await put(buyer, code, newProofId(), 'evidence', body(64)))).toBe('too-many-proofs');
+  });
+
   it('a request on a closed dispute does not count', async () => {
     const { buyer, code } = await tradeIn('paid');
     await openDispute(code);
@@ -427,6 +436,8 @@ describe('retention: proofs go with the trade, on the chat rule', () => {
       await dispute.query('commit');
       expect(await purge).toBe(0);
     } finally {
+      // Re-verify N3: a failed poll must not hand a transaction holding the trade's lock back to the pool.
+      await dispute.query('rollback').catch(() => undefined);
       dispute.release();
     }
     expect(await stored(id)).toBeDefined();

@@ -7,7 +7,9 @@
  *   only (415 otherwise), 40 bytes to PROOF_MAX_CIPHERTEXT (400 / 413). A party to the trade:
  *   - `proof`: the buyer only (403 wrong-party), in secured | paid | refund_requested | disputed
  *     (409 wrong-state). Not while securing (lead 2026-11-12): no proof before the escrow is
- *     secured, as the web's chat engine refuses its `proof.attached` (`not-ready`);
+ *     secured. The server decides this on its own; the upload's web half has the same gate
+ *     (wip/lead-proof-upload review M4: its proof slot and the chat engine's sendProof wait for
+ *     secured), which a client need not have;
  *   - `evidence`: either side while a dispute is open (409 wrong-state; P5-A30);
  *   - `unblurred`: only the side the open dispute's moderator asked (Plan 4's `proof_request_*` on
  *     `disputes`), one per request (409 not-requested).
