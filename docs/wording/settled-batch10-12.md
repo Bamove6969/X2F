@@ -326,3 +326,7 @@ Also recorded: 15 owner answers, kept as he gave them (w10-1 to w10-8, w10-22 to
 
 Already with the owner, so no new question: p11-96 (bands that differ only by price, w10-32 and w10-36) and p11-51 (the 48 or 72 hours to dispute after a refund, w11-72). The words above fit either answer.
 
+
+## Owner answers, 12 Nov (these override the rows above)
+- **w10-22 (SetupPassword meter):** "Strength: Weak" | "Strength: Almost there" | "Strength: Strong"
+- **w10-23 (rules met, before the leak check):** "Meets the rules — we'll check it hasn't leaked when you continue"
