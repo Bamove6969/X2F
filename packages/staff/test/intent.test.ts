@@ -5,6 +5,9 @@ import {
   BAN_REASON_CODES,
   ISSUED_AT_KINDS,
   hasIssuedAt,
+  inviteTokenHash,
+  ownerSetupChallenge,
+  staffLoginChallenge,
   stampIssuedAt,
   canonicalJson,
   evidenceSha256,
@@ -221,3 +224,26 @@ describe('evidenceSha256 (review mod-screens M1: the ruling tap binds the eviden
     expect(seen.size).toBe(6);
   });
 });
+
+// Re-verify round 3, X2 (lead call): every WebAuthn ceremony on the staff site has its own domain,
+// derived by the staff site itself, so no login or setup assertion can ever be a tap's.
+describe('staff-site challenge domains (X2)', () => {
+  const N = 'ab'.repeat(32);
+  test('the login and the owner-setup challenges are SHA-256 of their own prefix and the nonce', () => {
+    expect(hex(staffLoginChallenge(N))).toBe(nodeSha(`x2f-staff-login-v1\n${N}`));
+    expect(hex(ownerSetupChallenge(N))).toBe(nodeSha(`x2f-owner-setup-v1\n${N}`));
+    expect(inviteTokenHash('tok_1')).toBe(nodeSha('tok_1'));
+    expect(hex(inviteRegistrationChallenge(inviteTokenHash('tok_1')))).toBe(nodeSha(`x2f-invite-v1\n${nodeSha('tok_1')}`));
+  });
+  test('a malformed nonce is refused', () => {
+    for (const bad of ['', 'AB'.repeat(32), 'ab'.repeat(31), `${'ab'.repeat(32)}0`, 'zz'.repeat(32)]) {
+      expect(() => staffLoginChallenge(bad), bad).toThrow(TypeError);
+      expect(() => ownerSetupChallenge(bad), bad).toThrow(TypeError);
+    }
+  });
+  test('no domain can collide with a tap: the preimages differ in their first line', () => {
+    expect(hex(staffLoginChallenge(N))).not.toBe(hex(ownerSetupChallenge(N)));
+    expect(hex(staffLoginChallenge(N))).not.toBe(hex(tapChallenge(stampIssuedAt({ kind: 'emergency-stop' }, AT), new Uint8Array(32).fill(0xab))));
+  });
+});
+

@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newTradeCode } from '@x2f/core';
-import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
+import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, staffLoginChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 import { escrowPlan } from '@x2f/trade';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
@@ -931,6 +931,51 @@ describe('re-verify 2026-11-12', () => {
     };
     const got = await pgGateSource(fake as never).storedRulings('ABCD-EFGH-JKMN-PQRS');
     expect(got.current?.reasonSha256).toBe(sha256Hex(reason));
+  });
+});
+
+// Round 3 (re-verify-mod-gate-2026-11-12.md, X2 and the init race; lead calls).
+describe('re-verify round 3', () => {
+  it('X2: a staff login assertion is never accepted as a tap, whatever intent and nonce it is shown with', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const loginNonce = 'cd'.repeat(32);
+    // What the owner's key signs at a login: the staff site's own derived challenge.
+    const login = w.owner.key.authenticate({ challenge: b64url(staffLoginChallenge(loginNonce)), rpId: RP_ID, allowCredentials: [] }, ORIGIN);
+    const settings = canonicalJson({ kind: 'settings', largeTradeLimitUsd: 1_000_000, firstResponseH: 4, appealWindowH: 48, issuedAt: NOW.toISOString() });
+    for (const nonceHex of [loginNonce.slice(0, 32), loginNonce, randomBytes(16).toString('hex')]) {
+      w.api.taps.push({ id: randomUUID(), accountId: w.owner.id, credentialId: w.owner.key.credentialId, intent: settings, nonceHex, response: login });
+    }
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.limitUsdCents).toBe(100_000n);
+    // As a ruling approval too.
+    const c = ruling(mod, { approver: w.owner });
+    const forged: StoredTap = { id: randomUUID(), accountId: w.owner.id, credentialId: w.owner.key.credentialId, intent: canonicalJson(c.intent('approve')), nonceHex: loginNonce, response: login };
+    expect(await authorize(w, c, [tapBy(mod, c.intent('propose')), forged], 200_000n)).toEqual({ ok: false, reason: 'bad-signature' });
+  });
+
+  it('init-gate creates gate.bin atomically: a gate.bin that appears while it asks is never replaced', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
+    try {
+      const key = new Uint8Array(32).fill(7);
+      const result = await initGate({
+        dir,
+        keystoreKey: key,
+        print: () => {},
+        // Another init-gate (or a restore) wins the race while this one waits for "yes".
+        confirm: async () => {
+          const other = await openGateStore(dir, key, { init: true });
+          other.state.ownerAccountId = 'pinned-elsewhere';
+          await other.save();
+          return 'yes';
+        },
+      });
+      expect(result).toBe('exists');
+      expect((await openGateStore(dir, key)).state.ownerAccountId).toBe('pinned-elsewhere');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
