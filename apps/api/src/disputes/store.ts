@@ -5,7 +5,9 @@ import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import type { EventBus } from '../events/bus.js';
 import { appendLog } from '../log/append.js';
-import { eraseReviewsOfTrade } from '../reviews/store.js';
+import { eraseReversedReviews } from '../reviews/store.js';
+import { DECIDED_STATUSES } from '../traders/finalOutcome.js';
+import { countTradeTotals } from '../traders/tradedTotal.js';
 import type { MarketPrices } from '../price/market.js';
 import { usdCentsOf } from '../traders/stage.js';
 import { disputeSettings } from './settings.js';
@@ -133,10 +135,15 @@ export async function saveDispute(client: pg.PoolClient, d: Dispute, now: Date):
       d.ruling === null ? null : JSON.stringify(d.ruling), round1Json(d.round1), d.publishedAt, d.appealEndsAt, d.complyBy,
       d.executedAt, d.compliedAt, d.overturned, d.seen, now],
   );
-  // C12 / owner 2026-11-02 (NEEDS_P4_OVERTURN_ERASES_REVIEWS): an appeal that overturns the ruling
-  // makes the trade as if it never happened, so its reviews and skips go in this same transaction.
-  // Idempotent (a later save of the same final dispute deletes nothing). A decision that stands keeps them.
-  if (d.overturned === true) await eraseReviewsOfTrade(client, d.code);
+  // R-011 / R-012 (owner Q40, Q41; NEEDS_P4_OVERTURN_ERASES_REVIEWS): feedback and totals follow the
+  // final binding outcome, in this same transaction. A trade that ends REVERSED loses its reviews and
+  // skips; one that ends as a sale keeps them (and counts); while an appeal is pending they are held
+  // (traders/finalOutcome.ts reviewHeldSql). Both are idempotent and decide from the rows just saved;
+  // only a decided dispute can change them, so an undecided save takes no trade lock here.
+  if ((DECIDED_STATUSES as readonly string[]).includes(d.status)) {
+    await eraseReversedReviews(client, d.code);
+    await countTradeTotals(client, d.code);
+  }
   if (d.appealEndsAt !== null) {
     await client.query(
       'update dispute_rulings set appeal_until = $3 where code = $1 and seq = $2 and round = 1 and appeal_until is distinct from $3',

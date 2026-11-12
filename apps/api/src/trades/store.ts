@@ -7,7 +7,8 @@ import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { bookTradeRevenue } from '../staff/revenue.js';
-import { countActionTimes } from '../traders/actionTimes.js';
+import { eraseReversedReviews } from '../reviews/store.js';
+import { countActionTimes, countFastPayment } from '../traders/actionTimes.js';
 import { countTradeTotals } from '../traders/tradedTotal.js';
 
 /**
@@ -402,12 +403,19 @@ export async function applyEvent(
       // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
       if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) {
         await countTradeTotals(client, code);
+        // R-011: a disputed trade that ends reversed (a decided dispute with no ruling follows the
+        // trade's own end) loses its reviews here; disputes/store.ts saveDispute covers the rulings.
+        await eraseReversedReviews(client, code);
         // Plan 4 Task 32: the 1% the settlement paid to the fee wallet goes into the aggregate
         // revenue ledger, once per trade; a cancel or a refund pays none (staff/revenue.ts).
         await bookTradeRevenue(client, code);
       }
       // P5-A8: a release by the seller adds both sides' action times to their running lists (once; traders/actionTimes.ts).
-      if (next.state !== prev.state && next.state === 'released') await countActionTimes(client, code);
+      if (next.state !== prev.state && next.state === 'released') {
+        await countActionTimes(client, code);
+        // R-042: a payment sent in under half the time to pay counts toward the buyer's Fast badge (once).
+        await countFastPayment(client, code);
+      }
       if (within) await within(client, prev, next, now);
       // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction. It is the
       // last statement before the commit (M2): the log lock serialises every append on the site,

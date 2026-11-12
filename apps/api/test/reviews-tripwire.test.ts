@@ -24,9 +24,9 @@ describe('the whole-trade purge forgets which trade and reviewer a review came f
 // no API code moves a dispute to `final`, writes the trader-facing rulings (`dispute_rulings`, 108),
 // records `overturned` or logs `ruling.final`. Checks the local tree only: once any file under
 // apps/api/src does one of those, that same file must call `eraseReviewsOfTrade(client, code)` (or
-// `eraseOverturnedReviews`, which calls it only for an overturned trade), apps/api/src/reviews/
-// store.ts, in the transaction that records the overturning ruling. A ruling that is not overturned
-// keeps the reviews (reviews.test.ts "late funds escalate").
+// `eraseReversedReviews`, which calls it only for a trade whose final outcome is a reversal: R-011,
+// owner Q40, which replaced C12's "overturned"), apps/api/src/reviews/store.ts, in the transaction
+// that records the deciding ruling. A ruling that ends as a sale keeps the reviews.
 function sourceFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -46,11 +46,11 @@ function writesFinalRuling(path: string, src: string): boolean {
   );
 }
 
-// `withDispute` / `saveDispute` (disputes/store.ts) erase an overturned trade's reviews in the
+// `withDispute` / `saveDispute` (disputes/store.ts) erase a reversed trade's reviews in the
 // same transaction (checked below), so a file that writes rulings through them is covered.
 const callsErase = (src: string): boolean =>
-  /\b(eraseReviewsOfTrade|eraseOverturnedReviews|withDispute|saveDispute)\(/.test(
-    src.replace(/export\s+async\s+function\s+(eraseReviewsOfTrade|eraseOverturnedReviews|withDispute|saveDispute)\(/g, ''),
+  /\b(eraseReviewsOfTrade|eraseReversedReviews|withDispute|saveDispute)\(/.test(
+    src.replace(/export\s+async\s+function\s+(eraseReviewsOfTrade|eraseReversedReviews|withDispute|saveDispute)\(/g, ''),
   );
 
 describe('an overturned trade loses its reviews once Plan 4 records final rulings', () => {
@@ -62,11 +62,11 @@ describe('an overturned trade loses its reviews once Plan 4 records final ruling
     expect(offenders, 'Plan 4 rulings landed: call eraseReviewsOfTrade(client, code) in the transaction that records an overturning ruling').toEqual([]);
   });
 
-  it('saveDispute erases the reviews of an overturned dispute (the seam the detector trusts)', () => {
+  it('saveDispute erases the reviews of a trade decided as a reversal (the seam the detector trusts)', () => {
     const store = readFileSync(join(ROOT, 'apps/api/src/disputes/store.ts'), 'utf8');
     const save = store.slice(store.indexOf('export async function saveDispute('));
     const body = save.slice(0, save.indexOf('\n}\n'));
-    expect(body).toMatch(/if \(d\.overturned === true\) await eraseReviewsOfTrade\(client, d\.code\)/);
+    expect(body).toMatch(/await eraseReversedReviews\(client, d\.code\)/);
     expect(store).toMatch(/await saveDispute\(client, next, now\)/);
   });
 
