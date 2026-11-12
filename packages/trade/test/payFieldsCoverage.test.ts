@@ -15,8 +15,11 @@ const BAD_LABEL = /password|passcode|passphrase|\bpin\b|\bcvv\b|\bcvc\b|\bcvv2\b
 const CPF = /\bcpf\b/i;
 /** The lead's exceptions (10 Nov): a box that is the method's own payee identifier. */
 const ID_EXEMPT = new Set(['PAGO_MOVIL.idNumber']);
-/** Receiving to a card number is allowed only where it is the method's route (lead, 10 Nov). */
-const CARD_METHODS = new Set(['MIR', 'UKRAINE_CARD', 'PAYSEND', 'POSTEPAY']);
+/**
+ * Receiving to a card number is allowed only where it is the method's route (lead, 10 Nov). SPEI since
+ * 12 Nov: Banxico Circular 10/2026 (Art. 17 Ter IV) makes a debit card's 16 digits a receiving identifier.
+ */
+const CARD_METHODS = new Set(['MIR', 'UKRAINE_CARD', 'PAYSEND', 'POSTEPAY', 'SPEI']);
 const CARD = /card ?number/i;
 const BAD_WORDS = new Set(['password', 'passcode', 'pin', 'cvv', 'cvc', 'expiry', 'expiration', 'exp', 'tax', 'nric', 'ssn', 'login']);
 
@@ -57,7 +60,7 @@ describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)
     }
   });
 
-  it('review F4: a card-number box appears only in MIR, UKRAINE_CARD, PAYSEND and POSTEPAY', () => {
+  it('review F4: a card-number box appears only in MIR, UKRAINE_CARD, PAYSEND, POSTEPAY and SPEI', () => {
     const where = new Set<string>();
     for (const [id, row] of Object.entries(PAY_FIELDS)) for (const f of row.fields) if (CARD.test(f.key) || CARD.test(f.label)) where.add(id);
     expect([...where].sort()).toEqual([...CARD_METHODS].sort());
