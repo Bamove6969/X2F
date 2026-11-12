@@ -116,6 +116,22 @@ describe('PUT /staff/v1/settings', () => {
     expect((await put({ moderatorContactUrl: null })).json()).toMatchObject({ moderatorContactUrl: null });
   });
 
+  it('D-067: the moderator contact link takes a Matrix (matrix.to) or Telegram (t.me) link and nothing else', async () => {
+    for (const ok of ['https://matrix.to/#/#x2f-mods:matrix.org', 'https://matrix.to/#/@mod:example.org', 'https://t.me/x2f_mods']) {
+      const res = await put({ moderatorContactUrl: ok });
+      expect(res.statusCode, `${ok} ${res.body}`).toBe(200);
+      expect(res.json()).toMatchObject({ moderatorContactUrl: ok });
+    }
+    for (const bad of [
+      'https://example.org/mods', 'https://matrix.to.evil.example/#/#x', 'https://evil.example/https://t.me/x', 'https://t.me.evil.example/x',
+      'https://user@matrix.to/#/#x', 'https://matrix.to:8443/#/#x', 'https://matrix.to/', 'https://matrix.to/#/', 'https://t.me/', 'https://wa.me/15551234567',
+    ]) {
+      const res = await put({ moderatorContactUrl: bad });
+      expect({ status: res.statusCode, error: errorOf(res) }, bad).toEqual({ status: 400, error: 'bad-request' });
+    }
+    expect((await put({ moderatorContactUrl: null })).json()).toMatchObject({ moderatorContactUrl: null });
+  });
+
   it('a value equal to the current one changes nothing, needs no tap and logs nothing', async () => {
     const before = (await changes()).length;
     const res = await put({ largeTradeLimitUsd: 1000, appealWindowH: 48 });
