@@ -5,7 +5,7 @@
 import type { ChatSnapshot } from '../chat/engine.js';
 import { latestChatSnapshot } from '../chat/payDetailsFeed.js';
 import type { ProofState } from '../screens/trade/paySeams.js';
-import { proofUploadOn } from './upload.js';
+import { proofUploadOn } from './flag.js';
 
 export type ProofCheck = 'ready' | 'failed';
 /** Proof ids this page fetched, decrypted and checked (ChatProof), or sent itself: ids only, no key or bytes. */
@@ -29,6 +29,12 @@ const sent = new Map<string, Set<string>>();
  * bytes are this device's own cleaned copy (R1), and counted for its trade even before a snapshot
  * with its line arrives (R2).
  */
+/** A log-out (push/usePush.ts forgetLocalSession): this tab forgets the ids it sent and checked (re-verify V-I1). */
+export function forgetSentProofs(): void {
+  sent.clear();
+  checks.clear();
+}
+
 export function noteProofSent(code: string, proofId: string): void {
   noteProofChecked(proofId, true);
   const key = norm(code);

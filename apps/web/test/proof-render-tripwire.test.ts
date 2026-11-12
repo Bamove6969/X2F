@@ -148,17 +148,75 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
   });
 
   it('a file that decrypts a proof hands the bytes to ProofThumb, never to a Blob, a URL or an <img> of its own', () => {
+    let gated = 0;
     for (const f of files) {
       const c = code(f);
-      if (!/\bdecryptProof\s*\(/.test(c)) continue;
+      if (!decryptsAProof(c)) continue;
+      gated++;
+      // Re-verify V-M1: naming decryptProof at all (an alias, .call, a re-export) is for ChatProof only.
+      expect(DECRYPT_ALLOWED, `${f} names decryptProof: only ChatProof decrypts a proof`).toContain(f);
       expect(c, `${f} decrypts a proof: show it with <ProofThumb>`).toMatch(/\bProofThumb\b/);
       expect(c, f).not.toMatch(/new Blob\(|new File\(|<img[\s/>]|data:image\//);
-      // Review I3: and never out of the page.
-      expect(c, `${f} decrypts a proof: it sends nothing out`).not.toMatch(/\bpostMessage\b|\bsendBeacon\b|\bWebSocket\b|\bEventSource\b|\bbody\s*:/);
-      // Re-verify R3: the shorthand `{ body }`, XMLHttpRequest, and writes to the browser's storage.
-      expect(c, `${f} decrypts a proof: no shorthand body`).not.toMatch(/[{,]\s*body\s*[,}]/);
-      expect(c, `${f} decrypts a proof: no XMLHttpRequest`).not.toMatch(/\bXMLHttpRequest\b/);
-      expect(c, `${f} decrypts a proof: nothing stored`).not.toMatch(/\b(localStorage|sessionStorage|indexedDB|caches)\b|\bdocument\.cookie\b/);
+      // Review I3, re-verify R3 and V-M2: and never out of the page.
+      expect(sendsOut(c), `${f} decrypts a proof: it sends nothing out and stores nothing`).toEqual([]);
     }
+    expect(gated, 'the gate still finds ChatProof').toBe(DECRYPT_ALLOWED.length);
+  });
+});
+
+/** The one file that may decrypt a proof (it mounts ProofThumb with the plaintext). */
+const DECRYPT_ALLOWED = ['apps/web/src/screens/proof/ChatProof.tsx'];
+
+/** Re-verify V-M1: any mention of the name, so an aliased import, `.call` or a re-export is checked too. */
+function decryptsAProof(c: string): boolean {
+  return /\bdecryptProof\b/.test(c);
+}
+
+/** Each way out of the page (or into storage) a decrypting file must not use, by name. */
+const OUT_RULES: readonly [string, RegExp][] = [
+  ['a channel out (postMessage, sendBeacon, WebSocket, EventSource)', /\bpostMessage\b|\bsendBeacon\b|\bWebSocket\b|\bEventSource\b/],
+  ['a request body (`body:`)', /\bbody\s*:/],
+  ['a shorthand body (`{ body }`)', /[{,]\s*body\s*[,}]/],
+  // V-M2: a body set after the object is built (`init.body = …`), never a comparison (`res.body === null`).
+  ['a body assigned (`.body =`)', /\.body\s*=(?!=)/],
+  ['a quoted body (`[\'body\']`, `\'body\':`)', /\[\s*['"`]body['"`]\s*\]|['"`]body['"`]\s*:/],
+  ['a computed key (`{ [k]: … }`)', /[{,]\s*\[[^\]\n]+\]\s*:/],
+  ['XMLHttpRequest', /\bXMLHttpRequest\b/],
+  ['storage (local/session storage, IndexedDB, caches, cookieStore, document.cookie or document[…])', /\b(localStorage|sessionStorage|indexedDB|caches|cookieStore)\b|\bdocument\s*(\.\s*cookie\b|\[)/],
+];
+
+function sendsOut(c: string): string[] {
+  return OUT_RULES.filter(([, re]) => re.test(c)).map(([name]) => name);
+}
+
+describe('the decrypt rules themselves (re-verify V-M1, V-M2)', () => {
+  it('V-M1: an aliased import, a .call and a re-export of decryptProof are all gated', () => {
+    for (const snippet of [
+      "import { decryptProof as open } from '@x2f/proof';\nconst plain = await open(c, k, a);",
+      'const plain = await decryptProof.call(null, c, k, a);',
+      "export { decryptProof } from '@x2f/proof';",
+      "import * as proof from '@x2f/proof';\nconst plain = await proof['decryptProof'](c, k, a);",
+    ]) expect(decryptsAProof(snippet), snippet).toBe(true);
+  });
+
+  it('V-M2: a body set afterwards, quoted or computed keys, cookieStore and document[…] are caught', () => {
+    for (const snippet of [
+      "const init: RequestInit = { method: 'POST' };\ninit.body = plain;\nawait fetch(u, init);",
+      "init['body'] = plain;",
+      "await fetch(u, { method: 'POST', 'body': plain });",
+      'await fetch(u, { method: "POST", ["body"]: plain });',
+      "const k = 'bo' + 'dy';\nawait fetch(u, { method: 'POST', [k]: plain });",
+      "await cookieStore.set('p', text);",
+      "document['cookie'] = text;",
+      'document .cookie = text;',
+      "await fetch(u, { method: 'POST', body });",
+    ]) expect(sendsOut(snippet), snippet).not.toEqual([]);
+  });
+
+  it("does not trip on reading a response body (ChatProof's own readCapped)", () => {
+    for (const snippet of ['void res.body?.cancel().catch(() => undefined);', 'if (res.body === null) return new Uint8Array(0);', 'const reader = res.body.getReader();', 'if (res.body !== null) n++;']) {
+      expect(sendsOut(snippet), snippet).toEqual([]);
+    }
+    expect(sendsOut(code('apps/web/src/screens/proof/ChatProof.tsx'))).toEqual([]);
   });
 });

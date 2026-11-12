@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type ApiInit } from '../api/client.js';
 import { clearFeedbackDraft } from '../screens/feedbackDraft.js';
 import { forgetKeptText } from '../ui/fold.js';
+import { forgetSentProofs } from '../proof/chatProof.js';
 
 export type PushStatus = 'unsupported' | 'denied' | 'off' | 'on';
 
@@ -114,6 +115,8 @@ export function forgetLocalSession(): void {
   clearFeedbackDraft();
   // Nor a trade chat draft kept across a fold (Task 40 review M5).
   forgetKeptText();
+  // Nor the proof ids this tab sent or checked (proof-stack re-verify V-I1).
+  forgetSentProofs();
 }
 
 /** Phone alerts on or off for this browser (Security settings and onboarding use it). */
