@@ -3,7 +3,7 @@ import { verifyRegistrationResponse, type RegistrationResponseJSON } from '@simp
 import { decodeAttestationObject } from '@simplewebauthn/server/helpers';
 import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, involvedIn, type KeyTapIntent } from '@x2f/staff';
 import type pg from 'pg';
-import type { GateState, InvitableRole, PinnedCred } from './store.js';
+import { SWITCH_ON_SKEW_MS, type GateState, type InvitableRole, type PinnedCred } from './store.js';
 import { noteCounter, olderThanSeen, verifyTap, type GateContext, type GateRuling, type StoredTap } from './verify.js';
 
 /**
@@ -22,10 +22,10 @@ import { noteCounter, olderThanSeen, verifyTap, type GateContext, type GateRulin
  *   credential whose public key hashes to the tapped `publicKeySha256`.
  * - **the owner's tapped `remove-staff`** removes for good, and **`emergency-stop`** stops every
  *   ruling until a newer tapped `resume-trading` (review I1);
- * - registry taps apply in each owner key's signature-counter order (review M1): an older tap the
- *   database held back is refused once a newer one by that key was accepted. A tap held back past
- *   a revocation the gate read unsigned (a switch-off) is caught only once the gate has seen any
- *   newer tap by that key; a tapped switch-off or a signed issued-at would close it (owner question).
+ * - registry taps carry a signed `issuedAt` (the API's start time; a tap without one has no valid
+ *   challenge) and apply in order (review M1, lead call on P4): per subject not issued before the
+ *   last one applied, by either owner key, and per key above its signature-counter high-water mark;
+ *   a switch-on counts only when issued after the switch-off this gate first saw, less 2 minutes.
  * Anything else is ignored and logged as `gate.refused` (a reason only).
  */
 
@@ -132,19 +132,23 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
    * from that key (its signature counter), and newer than the last one applied to its subject by
    * the same key. An older tap held back and released late is spent and ignored.
    */
-  const inOrder = (t: { tap: StoredTap; credentialId: string; counter: number }, subject: string | null): boolean => {
+  const issuedOf = (t: { intent: KeyTapIntent }): number => Date.parse((t.intent as { issuedAt?: string }).issuedAt ?? '');
+  const inOrder = (t: { tap: StoredTap; intent: KeyTapIntent; credentialId: string; counter: number }, subject: string | null): boolean => {
     const last = subject === null ? undefined : g.applied[subject];
-    if (olderThanSeen(g, ownerId, t.credentialId, t.counter) || (last !== undefined && last.credentialId === t.credentialId && t.counter <= last.counter)) {
+    // By the signed issuedAt, across both owner keys (lead call on P4), and by each key's counter.
+    const earlier = last?.issuedAt !== undefined && issuedOf(t) < Date.parse(last.issuedAt);
+    if (earlier || olderThanSeen(g, ownerId, t.credentialId, t.counter) || (last !== undefined && last.credentialId === t.credentialId && t.counter <= last.counter)) {
       spend(t.tap, 'out-of-order');
       refused(ctx, 'out-of-order');
       return false;
     }
     return true;
   };
-  const accept = (t: { tap: StoredTap; credentialId: string; counter: number }, what: string, subject: string | null): void => {
+  const accept = (t: { tap: StoredTap; intent: KeyTapIntent; credentialId: string; counter: number }, what: string, subject: string | null): void => {
     spend(t.tap, what);
     noteCounter(g, ownerId, t.credentialId, t.counter);
-    if (subject !== null) g.applied[subject] = { credentialId: t.credentialId, counter: t.counter };
+    const issuedAt = (t.intent as { issuedAt?: string }).issuedAt;
+    if (subject !== null) g.applied[subject] = { credentialId: t.credentialId, counter: t.counter, ...(issuedAt !== undefined ? { issuedAt } : {}) };
   };
 
   // 1. Invites (review B1). An invite is bound, the first time the gate acts on it, to the account
@@ -231,6 +235,7 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
         if (!g.removedIds.includes(intent.accountId)) g.removedIds.push(intent.accountId);
         const s = Object.hasOwn(g.staff, intent.accountId) ? g.staff[intent.accountId] : undefined;
         if (s) {
+          if (!s.revoked) s.offSeenAt = ctx.now().toISOString();
           s.removed = true;
           s.revoked = true;
         }
@@ -241,6 +246,13 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
         const s = Object.hasOwn(g.staff, intent.accountId) ? g.staff[intent.accountId] : undefined;
         if (s === undefined) continue; // not (yet) someone the gate knows: keep the tap for later
         if (!inOrder(t, `role:${intent.accountId}`)) continue;
+        // Lead call on P4: a switch-on counts only when signed as issued after the switch-off this
+        // gate saw (less the clock skew); an older one held back and released late is spent.
+        if (intent.kind === 'switch-on' && s.offSeenAt !== undefined && !(issuedOf(t) > Date.parse(s.offSeenAt) - SWITCH_ON_SKEW_MS)) {
+          spend(tap, 'switch-on-before-off');
+          refused(ctx, 'switch-on-before-off');
+          continue;
+        }
         accept(t, intent.kind, `role:${intent.accountId}`);
         if (s.removed || !INVITABLE.includes(intent.role)) continue;
         const row = rows.get(intent.accountId);
@@ -259,26 +271,33 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
   //    invite in the gate (review B1), whatever `used_at` says.
   for (const [accountId, s] of Object.entries(g.staff)) {
     const row = rows.get(accountId);
+    const revoke = (): void => {
+      // The first sight of this switch-off, by the gate's clock (lead call on P4).
+      if (!s.revoked) s.offSeenAt = ctx.now().toISOString();
+      s.revoked = true;
+    };
     if (row === undefined) {
-      if (s.joined) s.revoked = true;
+      if (s.joined) revoke();
       continue;
     }
     s.joined = true;
     s.inviteClosed = true;
     if (Object.hasOwn(g.invites, s.inviteId)) g.invites[s.inviteId]!.closed = true;
-    if (row.switchedOff || row.removed) s.revoked = true;
+    if (row.switchedOff || row.removed) revoke();
     if (row.removed) s.removed = true;
   }
 
   // 4. New owner keys: two in-order taps by two different pinned owner keys for the same key.
-  const byKey = new Map<string, Array<{ tap: StoredTap; credentialId: string; counter: number }>>();
+  const byKey = new Map<string, Array<{ tap: StoredTap; intent: KeyTapIntent; credentialId: string; counter: number }>>();
   for (const t of owner) {
     if (t.intent.kind !== 'add-owner-key' || !fresh(t.tap)) continue;
     if (olderThanSeen(g, ownerId, t.credentialId, t.counter)) {
       spend(t.tap, 'out-of-order');
       continue;
     }
-    const k = canonicalJson(t.intent);
+    // The same key to add, whenever each of the two taps was issued.
+    const { issuedAt: _at, ...what } = t.intent as KeyTapIntent & { issuedAt?: string };
+    const k = canonicalJson(what as KeyTapIntent);
     byKey.set(k, [...(byKey.get(k) ?? []), t]);
   }
   for (const [k, list] of byKey) {

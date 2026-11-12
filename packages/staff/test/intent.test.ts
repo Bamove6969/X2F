@@ -3,6 +3,9 @@ import { describe, expect, test } from 'vitest';
 import { normalizeTradeCode } from '@x2f/core';
 import {
   BAN_REASON_CODES,
+  ISSUED_AT_KINDS,
+  hasIssuedAt,
+  stampIssuedAt,
   canonicalJson,
   evidenceSha256,
   inviteRegistrationChallenge,
@@ -81,6 +84,7 @@ const ruling: KeyTapIntent = {
   round1Id: null,
 };
 const nonce = new Uint8Array(32).fill(7);
+const AT = new Date('2026-11-12T12:00:00.000Z');
 
 describe('tapChallenge', () => {
   test('is SHA-256 of the labelled canonical intent and the nonce', () => {
@@ -149,8 +153,22 @@ describe('tapChallenge', () => {
       { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 },
       ruling,
       { ...ruling, outcome: 'seller-sends-xmr' },
-    ];
+    ].map((i) => stampIssuedAt(i as KeyTapIntent, AT));
     expect(new Set(all.map((i) => hex(tapChallenge(i, nonce)))).size).toBe(all.length);
+  });
+
+  test('an owner registry intent carries its signed issuedAt; any other carries none (lead call on mod-gate P4)', () => {
+    for (const kind of ISSUED_AT_KINDS) expect(hasIssuedAt(kind)).toBe(true);
+    expect(hasIssuedAt('ruling')).toBe(false);
+    expect(hasIssuedAt('fee-sweep')).toBe(false);
+    const stop: KeyTapIntent = { kind: 'emergency-stop' };
+    expect(stampIssuedAt(stop, AT)).toEqual({ kind: 'emergency-stop', issuedAt: AT.toISOString() });
+    expect(stampIssuedAt(ruling, AT)).toEqual(ruling);
+    expect(() => tapChallenge(stop, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...stop, issuedAt: '2026-11-12T12:00:00Z' }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, issuedAt: AT.toISOString() } as unknown as KeyTapIntent, nonce)).toThrow(TypeError);
+    // Signed: another issuedAt is another challenge.
+    expect(hex(tapChallenge(stampIssuedAt(stop, AT), nonce))).not.toBe(hex(tapChallenge(stampIssuedAt(stop, new Date(AT.getTime() + 1)), nonce)));
   });
 
   test('the ban reasons are the lead default list', () => {

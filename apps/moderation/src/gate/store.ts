@@ -35,6 +35,12 @@ export interface StaffEntry {
   removed: boolean;
   /** The API has shown their staff row (the invite was finished); before that they sign nothing. */
   joined: boolean;
+  /**
+   * When this gate first saw their latest switch-off (or removal, or their row gone), by its own
+   * clock (lead call on review P4). Only an owner switch-on signed as issued after it, less
+   * `SWITCH_ON_SKEW_MS`, switches them on again.
+   */
+  offSeenAt?: string;
   /** The invite that brought them in; no key is taken from it once it is closed. */
   inviteId: string;
   inviteClosed: boolean;
@@ -75,7 +81,7 @@ export interface GateState {
   /** The owner's tapped emergency stop (review I1): while set, no ruling is authorised. */
   stopped: boolean;
   /** Review M1: the last tap applied per subject (`settings`, `role:<id>`, `stop`), by key and counter. */
-  applied: Record<string, { credentialId: string; counter: number }>;
+  applied: Record<string, { credentialId: string; counter: number; issuedAt?: string }>;
 }
 
 /** The API's defaults (`settings` in migration 206) until the owner taps a change. */
@@ -99,6 +105,9 @@ export function emptyGate(): GateState {
     applied: {},
   };
 }
+
+/** The clock skew allowed between the API (which stamps a tap's issuedAt) and this gate: 2 minutes (lead call). */
+export const SWITCH_ON_SKEW_MS = 2 * 60_000;
 
 export const GATE_FILE = 'gate.bin';
 const AAD = 'x2f/mod/gate/v1';

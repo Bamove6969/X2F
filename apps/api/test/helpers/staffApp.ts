@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { canonicalJson, type KeyTapIntent, type LoginHours, type StaffRole } from '@x2f/staff';
+import { canonicalJson, stampIssuedAt, type KeyTapIntent, type LoginHours, type StaffRole } from '@x2f/staff';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type { Deps } from '../../src/app.js';
 import { SESSION_COOKIE, STAFF_SESSION_COOKIE } from '../../src/auth/sessions.js';
@@ -130,7 +130,8 @@ export async function seedTap(deps: Deps, accountId: string, intent: KeyTapInten
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into key_taps (account_id, credential_id, intent, nonce, response, started_at, finished_at)
      values ($1, $2, $3, $4, $5, $6, $6) returning id`,
-    [accountId, credentialId.toString('base64url'), canonicalJson(intent), randomBytes(16), JSON.stringify({ id: 'test' }), startedAt],
+    // As `startKeyTap` stores it: an owner registry kind carries its start time (lead P4 call).
+    [accountId, credentialId.toString('base64url'), canonicalJson(stampIssuedAt(intent, startedAt)), randomBytes(16), JSON.stringify({ id: 'test' }), startedAt],
   );
   return rows[0]!.id;
 }

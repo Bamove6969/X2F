@@ -135,8 +135,9 @@ describe('startKeyTap', () => {
   });
 
   it('stamps issuedAt only on the registry kinds the moderation gate orders; a client cannot send one (lead P4 call)', async () => {
-    const { id } = await staffWith();
+    // A fresh account per start: at most 5 open taps per account (RV5 m12).
     const read = async (i: KeyTapIntent) => {
+      const { id } = await staffWith();
       const { tapId } = await startKeyTap(deps, id, i);
       return JSON.parse((await deps.db.query<{ intent: string }>('select intent from key_taps where id = $1', [tapId])).rows[0]!.intent) as Record<string, unknown>;
     };

@@ -101,7 +101,12 @@ function tapBy(p: Person, intent: KeyTapIntent, o: { key?: SoftAuthenticator; is
   const key = o.key ?? p.key;
   const nonce = randomBytes(16);
   const norm = (STAMPED.includes(intent.kind) && o.issuedAt !== null && !('issuedAt' in intent) ? { ...intent, issuedAt: (o.issuedAt ?? NOW).toISOString() } : intent) as KeyTapIntent;
-  const response = key.authenticate({ challenge: b64url(tapChallenge(norm, nonce)), rpId: RP_ID, allowCredentials: [] }, ORIGIN);
+  // `issuedAt: null`: a tap as an older API stored it, signed over the same challenge formula
+  // without the field (which `tapChallenge` itself now refuses to build).
+  const challenge = o.issuedAt === null && STAMPED.includes(intent.kind)
+    ? createHash('sha256').update(`x2f-keytap-v1\n${canonicalJson(norm)}\n${nonce.toString('hex')}`).digest()
+    : tapChallenge(norm, nonce);
+  const response = key.authenticate({ challenge: b64url(challenge), rpId: RP_ID, allowCredentials: [] }, ORIGIN);
   return { id: randomUUID(), accountId: p.id, credentialId: key.credentialId, intent: canonicalJson(norm), nonceHex: nonce.toString('hex'), response };
 }
 

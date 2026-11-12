@@ -42,17 +42,36 @@ export type AccountAction =
 
 type Invitable = Exclude<StaffRole, 'owner'>;
 
+/**
+ * Lead call on mod-gate review P4 (12 Nov): the owner registry kinds the moderation gate orders
+ * carry `issuedAt`, the API's own start time of the tap (`startKeyTap` stamps it; a client never
+ * sends it), as an ISO UTC time with milliseconds. Signed with the rest of the intent, so the gate
+ * can tell a switch-on made after a switch-off it saw from an older one held back. A tap of these
+ * kinds without it has no valid challenge.
+ */
+export const ISSUED_AT_KINDS = [
+  'create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading',
+] as const;
+const ISSUED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+export const hasIssuedAt = (kind: string): boolean => (ISSUED_AT_KINDS as readonly string[]).includes(kind);
+
+/** The intent as the API stores it for a tap started at `at`: `issuedAt` set on the kinds that carry one. */
+export function stampIssuedAt(i: KeyTapIntent, at: Date): KeyTapIntent {
+  return hasIssuedAt(i.kind) ? ({ ...i, issuedAt: at.toISOString() } as KeyTapIntent) : i;
+}
+
 /** What a security-key tap authorises (Task 5 binds each tap to exactly one of these). */
 export type KeyTapIntent =
-  | { kind: 'emergency-stop' }
-  | { kind: 'resume-trading' }
-  | { kind: 'create-invite'; inviteId: string; role: Invitable; tokenHash: string; expiresAt: string }
-  | { kind: 'switch-on'; accountId: string; role: Invitable }
-  | { kind: 'set-role'; accountId: string; role: Invitable }
+  | { kind: 'emergency-stop'; issuedAt?: string }
+  | { kind: 'resume-trading'; issuedAt?: string }
+  | { kind: 'create-invite'; inviteId: string; role: Invitable; tokenHash: string; expiresAt: string; issuedAt?: string }
+  | { kind: 'switch-on'; accountId: string; role: Invitable; issuedAt?: string }
+  | { kind: 'set-role'; accountId: string; role: Invitable; issuedAt?: string }
   // Owner G4 (7 Nov): permanently removing a staff member is tapped.
-  | { kind: 'remove-staff'; accountId: string }
-  | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string }
-  | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number }
+  | { kind: 'remove-staff'; accountId: string; issuedAt?: string }
+  | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string; issuedAt?: string }
+  | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number; issuedAt?: string }
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
   // staff site, each change confirmed by a tap of one of their security keys.
   | { kind: 'add-pgp-key'; fingerprint: string }
@@ -128,6 +147,10 @@ export function tapChallenge(i: KeyTapIntent, nonce: Uint8Array): Uint8Array {
   if (!(KEY_TAP_KINDS as readonly string[]).includes(i.kind)) throw new TypeError('tapChallenge: unknown intent kind');
   if (!(nonce instanceof Uint8Array) || nonce.length < MIN_NONCE) throw new TypeError('tapChallenge: nonce too short');
   let intent: KeyTapIntent = i;
+  const issued = (i as { issuedAt?: unknown }).issuedAt;
+  if (hasIssuedAt(i.kind) ? typeof issued !== 'string' || !ISSUED_AT.test(issued) || Number.isNaN(Date.parse(issued)) : issued !== undefined) {
+    throw new TypeError('tapChallenge: an owner registry intent carries its issuedAt, any other none');
+  }
   if (i.kind === 'ruling') {
     const code = normalizeTradeCode(i.code);
     if (code === null) throw new TypeError('tapChallenge: invalid trade code');
