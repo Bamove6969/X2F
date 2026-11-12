@@ -222,3 +222,129 @@ blocked.
 - `npx vitest run --project @x2f/moderation --project @x2f/logchain`: 15 files, **202 passed, 0 failed**.
 - `npx vitest run --project @x2f/moderation-regtest`: 1 file, **1 passed** (monerod fetched to the worktree's .regtest).
 - `npx vitest run --project @x2f/api`: 106 files, **2578 passed, 1 todo, 0 failed**.
+
+---
+
+## Re-verify at 3617efee (red e6d08f1e on top of 544cf81c), 2026-11-12
+
+**Verdict: M1, M2, M4, M5, I2, I7, I8 and I9 are fixed. M3 is only partly fixed: I broke it three ways
+with runnable proofs, and a compromised database can still keep the alarm silent. I grade that one
+minor, not blocking: no money is at risk, and it is the log-integrity layer's own residual. But it is
+not closed as the module comment claims, so it should be fixed or the comment narrowed before landing.**
+
+Tests (detached worktree at 3617efee, fresh `npm ci`, under ~/x2f-comms/check.lock with the timeout
+inside the flock; worktree and node_modules removed afterwards):
+- moderation + logchain: 15 files, **212 passed**.
+- moderation-regtest: **2 passed** (buyer wins, seller wins).
+- API: 106 files, **2579 passed, 1 todo, 0 failed**.
+- My bypass proof (`m3-bypass-poc.test.ts`, a scratch file run alone in the moderation project and not
+  committed; a copy is in the lead scratchpad): **3 of 3 attacks pass**, so the alarm stays silent in
+  all three.
+
+Test changes in the fix: `buyerCancel.test.ts` and `rulings.test.ts` changed only their comment and
+test title (stale NEEDS_TASK_14). The other changes are new tests (instance, checkpoint, execute,
+autoRefund, watchReports, regtest). Nothing is weakened or skipped.
+
+### M1: fixed
+- `startModeration` now calls `deps.gate()` only after `pg_try_advisory_lock` succeeded and the
+  lock-loss and lock-end handlers are wired.
+- The process entry passes the gate as a factory. Store open, attestation init, reader pool, gate sync
+  and executor all live inside it. Nothing opens or saves gate.bin before the lock.
+- A factory that throws unhooks both handlers, runs `pg_advisory_unlock`, releases the client and
+  rethrows. The entry then ends the reader if it was made.
+- `stop` runs `gate.stop()` (the sync's final save) before it unlocks.
+- `instance.test.ts` covers a refused second process (gate.bin unchanged) and the entry's shape.
+
+Residual (info): on a lost lock (connection terminated), `stopForLoss` runs the same stop. The gate's
+sync and any pass already running can still save gate.bin after Postgres freed the lock, and a
+supervisor-started successor may already have opened the file. The successor's next save overwrites
+it, and the party still dedups outcomes. A `flock` on `MOD_STATE_DIR/gate.lock` held by the gate
+store would fence this completely; it can be done later.
+
+### M2: fixed
+`verify()` calls `verifyChain(chain)` from the first row (`prev_hash` null), then re-checks every
+checkpoint's row. Nothing in the API deletes `activity_log` rows (no retention), so there is no false
+alarm from that. Test: "review M2".
+
+### M3: partly fixed; still possible to silence (minor)
+What was added and works:
+- a 409 `checkpoint-mismatch` raises the alarm;
+- a head not past the last *accepted* checkpoint raises it;
+- an overdue verification (24 h plus 1 h since the last success, checked first in each pass) raises
+  it once;
+- `statement_timeout: 30_000` is set on the reader pool;
+- stderr is always written.
+
+What still keeps it silent:
+- **A. Frozen view at the API's own checkpoint row, which now looks like an idle site.** As soon as the
+  API appends its `log.checkpoint` for checkpoint N (row N+1), the database adds
+  `create policy ... as restrictive for select to x2f_mod_reader using (id <= N+1)` on
+  `activity_log`. On the next pass the head N+1 is past N, so no stuck-head alarm. Every later pass
+  sees exactly that one row after N, and `onlyOwnCheckpoint` (the I2 fix) reads it as an idle site:
+  no new checkpoint, no report, no `accepted`, and the daily verify passes on the frozen part.
+  Meanwhile the real table keeps growing and can be rewritten at will.
+  - Proof: 3 simulated days of activity, 1 checkpoint, 0 alarms.
+  - The I2 change turned the frozen view into a normal-looking idle log.
+- **B. The API refuses `log-checkpoint` with anything other than 201 or 409 `checkpoint-mismatch`**
+  (503, 500, 400, or 409 with another code). The answer is only logged, `accepted` stays null, and
+  the stuck-head check never arms. With the reader's view frozen at the checkpointed head, no new
+  report is ever sent.
+  - Proof: 3 days of 503s on a frozen head, 0 alarms.
+- **C. The overdue timer lives only in memory.** `lastOk` starts at `now()` on every start. The
+  database can revoke 212's grant and also end the moderation lock session (`pg_terminate_backend`)
+  every 20 h or so. The process exits on `lockLost`, the supervisor restarts it, and the overdue clock
+  resets each time.
+  - Proof: 5 restarts × 20 h = 100 h with no successful verification, 0 alarms.
+  - The restarts show only as level-30 `moderation-instance-lock-lost` lines.
+
+Fixes I recommend:
+- (A) Bound the I2 skip: take and report a checkpoint at least every few hours even when the only new
+  row is the API's own `log.checkpoint`. Each report forces an append, which arms the stuck-head
+  check. A filter-only view can then hide new rows only by breaking `prev_hash` links, which the
+  verify catches. Forged content still needs a substituted relation, the declared residual.
+- (B) Count consecutive refused `log-checkpoint` reports of any kind, and alarm after a few, say 3
+  passes or 30 minutes.
+- (C) Seal `lastOkAt` (and whether an overdue alarm has been raised) in gate.bin, and judge the
+  overdue state from that across restarts. Also consider alarming when a start's first verify cannot
+  read the log.
+
+The declared residual (a consistently forged view, rows after the newest checkpoint) stays as stated.
+
+### M4: fixed
+`settledKind = own ? (builder === 'mod' ? signedKind : …) : settleKind`. With no record, a mod-built
+sweep is reported with kind `null`, and the API refuses `settle-kind-unknown`. Test: "review M4" (the
+API's `auto-refund` is ignored).
+
+### M5: fixed
+- The desk does nothing once `rulingRecorded` (`rulingKind(code) !== null`), checked before its armed
+  branch, so it neither arms nor hands.
+- The executor returns `desk-armed` while the desk's auto-refund is armed and unblocked and no
+  execution is recorded.
+- Under the alternating-state attack: on the pass where the API shows `disputed`, the desk's
+  auto-refund becomes `auto-refund-api-disputed`. That is a final block, so the executor goes ahead
+  and replaces the uncommitted refund, and the desk never hands again.
+- A refund that already committed wins (the executor's settle is rejected and the kind comes from the
+  builder), as before.
+- A buyer cancel handed before the dispute is replaced by the ruling, and the desk does not hand it
+  again.
+- Tests in `autoRefund.test.ts` and `execute.test.ts`.
+
+### I7: fixed, written once
+- `recordRulingExecution` returns `dispute-closed` when `executed` is refused on a `closed` case.
+- The route then refuses 409 and, in its own transaction, locks the latest dispute row `for update`,
+  checks for an existing `ruling-payout-dispute-closed` alert for that trade and adds the owner alert
+  only if there is none.
+- Concurrent reports serialise on the row lock, so the alert is written once. The test sends two
+  reports and gets exactly one alert with `{trade, seq, txHash}`.
+- Caveat (info): it is once per trade for good. A later payout on a newer `seq` that also hits a
+  closed case would not alert again. Keying the check on `seq` too would cover it; this is rare.
+
+### I2, I8, I9
+- I2: fixed, but see M3 A: the skip must be bounded.
+- I8: the stale `NEEDS_TASK_14` and `NEEDS_PLAN_4_RULING_PAYOUT` comments are updated, and the
+  `executeRuling` doc block is in its right place.
+- I9: the regtest now runs seller wins above the limit with two taps (propose and owner approve):
+  - the record is `[{sellerRefund, BALANCE}]`, co-signed by the seller;
+  - the fee wallet and the buyer get 0, and the seller gets the balance less the network fee;
+  - the watcher's kind is `dispute-seller`, and the trade ends `refunded`;
+  - it passed on regtest.
