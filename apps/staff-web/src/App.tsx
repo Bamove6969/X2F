@@ -3,6 +3,7 @@ import { Feedback } from './screens/Feedback.js';
 import { Invite } from './screens/Invite.js';
 import { Login } from './screens/Login.js';
 import { NewsEditor } from './screens/NewsEditor.js';
+import { OwnerAlerts } from './screens/OwnerAlerts.js';
 import { OwnerSetup } from './screens/OwnerSetup.js';
 import { PageTitle, StaffShell } from './ui/StaffShell.js';
 
@@ -17,7 +18,7 @@ export function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/invite/:token" element={<Invite />} />
       <Route path="/setup" element={<OwnerSetup />} />
-      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, feedback: <Feedback /> }} />} />
+      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, feedback: <Feedback /> }} notifications={<OwnerAlerts />} />} />
     </Routes>
   );
 }

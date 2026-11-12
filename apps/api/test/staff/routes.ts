@@ -77,6 +77,10 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/owner/keys', perm: 'self', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/owner/keys/start', perm: 'self', allowed: OWNER, body: {} },
   { method: 'POST', url: '/staff/v1/owner/keys/finish', perm: 'self', allowed: OWNER, body: {} },
+  // O-040 (owner Q35): the owner's notifications (perm self, the owner only).
+  { method: 'GET', url: '/staff/v1/owner/alerts', perm: 'self', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/owner/alerts/read-all', perm: 'self', allowed: OWNER, body: {} },
+  { method: 'POST', url: '/staff/v1/owner/alerts/:id/read', perm: 'self', allowed: OWNER, body: {} },
   // Plan 4 Task 6: owner first-run setup (public; 404 setup-locked once locked, and here: an owner exists).
   { method: 'POST', url: '/staff/v1/setup/code', perm: 'public-setup', allowed: 'public', body: { code: 'AAAA-AAAA-AAAA' } },
   { method: 'POST', url: '/staff/v1/setup/account', perm: 'public-setup', allowed: 'public', body: { displayName: 'matrix.owner', loginName: 'matrix-login' } },

@@ -236,3 +236,20 @@ export const newsList = () => staffApi<{ items: NewsItem[] }>('/staff/v1/news');
 export const newsAdd = (d: { title: string; body: string }) => staffApi<NewsItem>('/staff/v1/news', { method: 'POST', body: d });
 export const newsEdit = (id: number, d: { title: string; body: string }) => staffApi<NewsItem>(`/staff/v1/news/${id}`, { method: 'PUT', body: d });
 export const newsDelete = (id: number) => staffApi<unknown>(`/staff/v1/news/${id}`, { method: 'DELETE' });
+
+// ---------------------------------------------------------------------------------------------
+// The owner's notifications (O-040, owner Q35; perm self, the owner only)
+
+export interface OwnerAlert {
+  id: string;
+  kind: string;
+  /** The alert's own sentence, when it has one. */
+  message: string | null;
+  detail: Record<string, unknown>;
+  createdAt: string;
+  seenAt: string | null;
+}
+export const ownerAlerts = (before?: string) =>
+  staffApi<{ items: OwnerAlert[]; unread: number; next: string | null }>(page('/staff/v1/owner/alerts', before));
+export const markOwnerAlertRead = (id: string) => staffApi<unknown>(`/staff/v1/owner/alerts/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} });
+export const markAllOwnerAlertsRead = () => staffApi<unknown>('/staff/v1/owner/alerts/read-all', { method: 'POST', body: {} });
