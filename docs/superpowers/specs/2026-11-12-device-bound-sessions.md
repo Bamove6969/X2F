@@ -104,14 +104,12 @@ fresh server challenge.
 
      `<origin>` is the page's origin (the server uses the request's checked `Origin`). On success
      a new bound cookie is set and `{ boundUntil }` is returned; on failure, 401 `proof-invalid`.
-   - Budgets, per session (review S2, re-verify R2): the challenge route has a generous cap of its
-     own (`SESSION_CHALLENGE_BUCKET`, 120 at once, 60 a minute; it writes nothing). Refused proofs
-     are charged to a strict one (`SESSION_PROOF_BUCKET`, 20 at once, 10 a minute). A valid proof
-     is charged to neither, so whoever holds a copied session cookie cannot spend the budget a
-     valid renewal needs. Both answer 429 `slow-down` when empty. Residual: a thief can still use
-     up the challenge cap, so the person cannot get a *new* challenge until it refills (a
-     challenge already issued still works). The person's next request then fails like the
-     network (`retry-later`), and is not logged out.
+   - Budget (review S2, re-verify R2): refused proofs are charged to a strict per-session budget
+     (`SESSION_PROOF_BUCKET`, 20 at once, 10 a minute; 429 `slow-down`). A valid proof is never
+     charged, so whoever holds a copied session cookie cannot spend what a valid renewal needs.
+     Challenges have no per-session cap (re-verify 2): they write nothing (one HMAC, one indexed
+     select), the app's general request limits cover them, and a per-session cap would be shared
+     with the thief while the person needs a new challenge for every renewal.
    - Renewal keeps the previous bound cookie valid until the earlier of its own end and now + 60 s
      (`BOUND_OVERLAP_MS`, columns `bound_prev_hash` / `bound_prev_until`, re-verify R1), as the
      session token's `prev_token_hash` does. Every tab shares the one cookie jar, so a request

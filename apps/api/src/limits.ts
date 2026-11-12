@@ -170,17 +170,11 @@ export const CHAT_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
  * box per device and collects it once, so a person never comes near these; a loop runs dry.
  */
 /**
- * S-085 review S2, per session: the two proof routes together (`POST /v1/account/session/proof/challenge`
- * and `/proof`). A tab renews every 200 s with two calls, plus one renewal per 401 after a sleep; 20
- * at once and 10 a minute leave room for many tabs while a copied cookie runs dry. The web treats
- * the 429 as "retry later", never as a logout.
+ * S-085 review S2 and re-verify R2, per session: refused proofs only (`POST /v1/account/session/proof`
+ * answered 401 `proof-invalid`). A valid proof is never charged, and challenges are not capped per
+ * session (they write nothing). The web treats the 429 as "retry later", never as a logout.
  */
 export const SESSION_PROOF_BUCKET: BucketSize = { capacity: 20, perMinute: 10 };
-/**
- * Re-verify R2, per session: `POST /v1/account/session/proof/challenge` alone, generous (it writes
- * nothing). Refused proofs are charged to SESSION_PROOF_BUCKET; a valid proof is charged to neither.
- */
-export const SESSION_CHALLENGE_BUCKET: BucketSize = { capacity: 120, perMinute: 60 };
 export const CHAT_KEY_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 export const CHAT_KEY_COLLECT_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 
@@ -227,8 +221,6 @@ export interface Budgets {
   pastRepFinish: KeyedBuckets;
   /** Per session: refused S-085 proofs (review S2, re-verify R2). */
   sessionProof: KeyedBuckets;
-  /** Per session: S-085 proof challenges (re-verify R2). */
-  sessionChallenge: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -248,6 +240,5 @@ export function newBudgets(clock: () => Date): Budgets {
     chatKeyCollect: new KeyedBuckets(CHAT_KEY_COLLECT_BUCKET, clock),
     pastRepFinish: new KeyedBuckets(PAST_REP_FINISH_BUCKET, clock),
     sessionProof: new KeyedBuckets(SESSION_PROOF_BUCKET, clock),
-    sessionChallenge: new KeyedBuckets(SESSION_CHALLENGE_BUCKET, clock),
   };
 }

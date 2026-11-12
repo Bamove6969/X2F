@@ -7,7 +7,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { BOUND_COOKIE, BOUND_OVERLAP_MS, BOUND_TTL_MS, PROOF_CHALLENGE_TTL_MS, SESSION_KEY_HEADER, proofMessage } from '../src/auth/deviceBound.js';
-import { SESSION_CHALLENGE_BUCKET, SESSION_PROOF_BUCKET } from '../src/limits.js';
+import { SESSION_PROOF_BUCKET } from '../src/limits.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import type { Config } from '../src/config.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -223,21 +223,19 @@ describe('a bound session', () => {
     expect(errorOf(await garbage())).toBe('proof-invalid');
   });
 
-  it('R2: a cookie thief drains the challenge cap; the victim\'s valid proof still passes', async () => {
+  it('R2: challenges have no per-session cap: after a cookie thief asks for hundreds, the victim asks for a NEW challenge and renews', async () => {
     const key = device();
     const { jar } = await login(key);
     const thief: Jar = { [SESSION_COOKIE]: jar[SESSION_COOKIE]! };
     advance(BOUND_TTL_MS);
-    const mine = await challengeOf(jar);
-    let res = await send(thief, 'POST', '/v1/account/session/proof/challenge', {});
-    let n = 0;
-    while (res.statusCode === 200 && n < 10_000) {
-      n++;
-      res = await send(thief, 'POST', '/v1/account/session/proof/challenge', {});
+    expect(errorOf(await me(jar))).toBe('session-proof-required');
+    // A challenge writes nothing, so the thief spending them costs the victim nothing.
+    for (let i = 0; i < 300; i++) {
+      const res = await send(thief, 'POST', '/v1/account/session/proof/challenge', {});
+      if (res.statusCode !== 200) throw new Error(`thief challenge ${i}: ${res.statusCode} ${res.body}`);
     }
-    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 429, error: 'slow-down' });
-    expect(n).toBe(SESSION_CHALLENGE_BUCKET.capacity - 1);
-    expect((await answer(jar, mine, signOf(key, mine))).statusCode).toBe(200);
+    const fresh = await challengeOf(jar);
+    expect((await answer(jar, fresh, signOf(key, fresh))).statusCode).toBe(200);
     expect((await me(jar)).statusCode).toBe(200);
   });
 

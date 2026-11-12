@@ -160,18 +160,17 @@ export function deviceBoundRoutes(app: FastifyInstance): void {
   // Built here, as a literal `requireSession({ … member: … })`, so team.test.ts's source scan sees
   // these as member-allowed routes (both are recorded exemptions there: the member's own session).
   const session = requireSession({ allowRecovery: true, allowHeld: true, allowStaleTerms: true, member: 'any', touch: false, allowUnproven: true });
-  // Review S2, re-verify R2: challenges have a generous cap of their own (they write nothing); the
-  // strict budget is charged only to refused proofs, so a valid proof is never refused by a budget
-  // that whoever holds a copied session cookie can spend.
-  const challengeBudget: preHandlerAsyncHookHandler = async function (req) {
-    req.server.budgets.sessionChallenge.take(req.auth.sessionId);
-  };
+  // Review S2, re-verify R2: the per-session budget is charged only to refused proofs, so a valid
+  // proof is never refused by a budget that whoever holds a copied session cookie can spend.
+  // Challenges have no per-session cap at all (re-verify 2): they write nothing (one HMAC and one
+  // indexed select), the app's general request limits cover them, and a per-session cap is one the
+  // thief shares with the person, who needs a new challenge for every renewal.
   const refused = (req: FastifyRequest): never => {
     req.server.budgets.sessionProof.take(req.auth.sessionId);
     throw new ApiError(401, 'proof-invalid');
   };
 
-  app.post('/v1/account/session/proof/challenge', { preHandler: [flagGate, session, challengeBudget] }, async (req) => {
+  app.post('/v1/account/session/proof/challenge', { preHandler: [flagGate, session] }, async (req) => {
     const b = req.body;
     if (b !== undefined && b !== null && (typeof b !== 'object' || Array.isArray(b) || Object.keys(b).length > 0)) throw new ApiError(400, 'bad-request');
     const { db, clock, config } = req.server.deps;
