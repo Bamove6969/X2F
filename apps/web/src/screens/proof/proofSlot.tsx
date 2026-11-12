@@ -4,6 +4,11 @@ import { markProofSent } from '../../proof/chatProof.js';
 import { AddProof, type SendArgs } from './AddProof.js';
 import type { PreparedProof } from '../../proof/upload.js';
 
+// COPY-UNSIGNED: a placeholder for design (proof-upload review point 4, lead 2026-11-12). No proof
+// goes before the escrow is secured (the chat engine and the API refuse it), so until then the slot
+// is the board's disabled one with this line under it.
+export const PROOF_AFTER_SECURED = 'Add your proof here after the escrow is secured.';
+
 /** The app keeps fiat in cents (`fiatCents`), so a proof's amount has 2 decimals. */
 const FIAT_EXPONENT = 2;
 const DAY_MS = 86_400_000;
@@ -49,9 +54,13 @@ function DisabledSlot() {
   );
 }
 
-/** BuyerPay's payment proof slot: the live upload when `enabled` (VITE_X2F_PROOF_UPLOAD=1) and the total is known. */
+/**
+ * BuyerPay's payment proof slot: the live upload when `enabled` (VITE_X2F_PROOF_UPLOAD=1), the trade
+ * is `secured` (from secured on; never while the escrow is securing) and the total is known.
+ */
 export function ProofSlotLive({
   enabled,
+  secured,
   code,
   expected,
   wide,
@@ -59,13 +68,14 @@ export function ProofSlotLive({
   send,
 }: {
   enabled: boolean;
+  secured: boolean;
   code: string;
   expected: ProofExpected | null;
   wide: boolean;
   prepare?: (file: File) => Promise<PreparedProof>;
   send?: (a: SendArgs) => Promise<unknown>;
 }) {
-  const live = enabled && expected !== null;
+  const live = enabled && secured && expected !== null;
   return (
     <section aria-label="Payment proof" className="x2f-proof" data-wide={wide || undefined}>
       {live ? (
@@ -79,7 +89,14 @@ export function ProofSlotLive({
           }}
         />
       ) : (
-        <DisabledSlot />
+        <>
+          <DisabledSlot />
+          {enabled && !secured ? (
+            <p className="x2f-note" data-part="proof-after-secured">
+              {PROOF_AFTER_SECURED}
+            </p>
+          ) : null}
+        </>
       )}
     </section>
   );
