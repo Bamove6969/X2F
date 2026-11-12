@@ -42,6 +42,7 @@ import type { JabberSender } from './jabber/sender.js';
 import { noteRoutes } from './team/notes.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
 import { chatRoutes } from './chat/routes.js';
+import { proofRoutes } from './proofs/routes.js';
 import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
 import { EventBus, type EventBusOptions } from './events/bus.js';
@@ -330,6 +331,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
   tradeIdentityRoutes(app);
   chatRoutes(app);
+  // Plan 5 Task 14: proof ciphertexts (proofs/routes.ts).
+  proofRoutes(app);
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
   // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
