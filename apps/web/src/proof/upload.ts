@@ -21,12 +21,12 @@
  * apps/web/test/proofUpload.test.ts.
  *
  * Seams (named, not wired here):
- * - NEEDS_PLAN_5_TASK_13 (the self-hosted OCR, `ocr`): `browserProofImageDeps().ocr` answers null
- *   until it lands, so the editor opens with no regions and says so (Review Focus 3).
+ * - The OCR (Plan 5 Task 13, proof/ocr.ts): on this device, in one worker, from /ocr/ only. When it
+ *   cannot run it answers null, so the editor opens with no regions and says so (Review Focus 3).
  * - Task 14 (proof storage), wired: `putProof` calls `PUT /v1/trades/:code/proofs/:id?kind=`
- *   (apps/api/src/proofs/routes.ts, from wip/lead-proof-store), proven end to end in
- *   apps/api/test/proofUploadWire.test.ts. The screen stays behind `VITE_X2F_PROOF_UPLOAD=1`
- *   (`proofUploadOn`, off by default) until Task 13's OCR lands and both are on main.
+ *   (apps/api/src/proofs/routes.ts), proven end to end in apps/api/test/proofUploadWire.test.ts.
+ *   The screen stays behind `VITE_X2F_PROOF_UPLOAD=1` (`proofUploadOn`, off by default) until the
+ *   proof stack lands on main.
  * - NEEDS_BRANCH_PROOF_CHECK (wip/lead-proof-check's blur check): `ProofSendDeps.onPosted(code,
  *   proofId, blur)` is where its `proofPosted` goes; the blur kind is `blurKindOf`.
  * - NEEDS_BRANCH_PROOF_CODE (wip/lead-proof-code's proofCodeNotice): see BlurEditor.tsx.

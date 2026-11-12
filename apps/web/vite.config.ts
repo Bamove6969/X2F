@@ -1,10 +1,42 @@
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { copyOcrAssets } from '../../tools/copy-ocr-assets.js';
 import { moneroGlue } from './vite-monero-glue.js';
 
 const empty = fileURLToPath(new URL('./src/empty.ts', import.meta.url));
 const assertShim = fileURLToPath(new URL('./src/assertShim.ts', import.meta.url));
+
+/**
+ * Plan 5 Task 13: every build (and the dev server) first copies the self-hosted OCR files into
+ * public/ocr/ and checks them against tools/ocr-assets.sha256; a file that differs fails the build.
+ */
+function ocrAssets(): Plugin {
+  return { name: 'x2f-ocr-assets', buildStart: () => copyOcrAssets() };
+}
+
+/** tesseract.js's browser defaults, whose `workerPath` is a jsdelivr URL. */
+const TESSERACT_DEFAULTS = /[\\/]tesseract\.js[\\/]src[\\/]worker[\\/]browser[\\/]defaultOptions\.js$/;
+
+/**
+ * Plan 5 Task 13: replaces tesseract.js's browser defaults so no CDN URL reaches the bundle: the
+ * defaults themselves point at this origin's /ocr/ and never use a blob: worker. proof/ocr.ts passes
+ * the same paths explicitly; the worker CSP on /ocr/* is the backstop.
+ */
+function tesseractNoCdn(): Plugin {
+  return {
+    name: 'x2f-tesseract-no-cdn',
+    enforce: 'pre',
+    load(id) {
+      if (!TESSERACT_DEFAULTS.test(id.split('?', 1)[0] ?? '')) return null;
+      return [
+        "'use strict';",
+        "const defaultOptions = require('../../constants/defaultOptions');",
+        "module.exports = { ...defaultOptions, workerPath: '/ocr/worker.min.js', workerBlobURL: false };",
+      ].join('\n');
+    },
+  };
+}
 
 /** The only build mode that may carry fixture mode (Playwright's board fixtures); see `fixturesOn`. */
 export const FIXTURES_BUILD_MODE = 'fixtures';
@@ -24,7 +56,7 @@ export default defineConfig(({ command, mode }) => {
   const env = { ...loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_'), ...process.env };
   const fixtures = fixturesOn(command, mode, env.VITE_FIXTURES);
   return {
-    plugins: [react(), moneroGlue()],
+    plugins: [react(), moneroGlue(), ocrAssets(), tesseractNoCdn()],
     // The escrow worker (where the wallets run) is bundled with its own plugin list.
     worker: { plugins: () => [moneroGlue()] },
     resolve: {

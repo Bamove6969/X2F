@@ -1,0 +1,140 @@
+// Plan 5 Task 13: the self-hosted OCR behind `ProofImageDeps.ocr`. Node has no Worker or canvas, so
+// these drive `createOcr` with a stand-in engine; e2e/proof-ocr.spec.ts runs the real one in a
+// browser (one worker, assets from /ocr/ only, the worker CSP, the fallbacks).
+import { describe, expect, it, vi } from 'vitest';
+import { OCR_TIMEOUT_MS, OCR_WORKER_OPTIONS, PROOF_OCR_LANGS, createOcr, wordsOf, type OcrEngine, type OcrBlock } from '../src/proof/ocr.js';
+
+const RGBA = new Uint8ClampedArray(4 * 2 * 2);
+
+function word(text: string, x0: number, y0: number, confidence = 91) {
+  return { text, confidence, bbox: { x0, y0, x1: x0 + 10, y1: y0 + 8 } };
+}
+
+const BLOCKS: OcrBlock[] = [
+  {
+    paragraphs: [
+      { lines: [{ words: [word('Sent', 1, 2), word('to', 14, 2)] }, { words: [word('jane@example.com', 1, 20, 77)] }] },
+    ],
+  },
+  { paragraphs: [{ lines: [{ words: [word(' ', 0, 40), word('$412.50', 30, 40)] }] }] },
+];
+
+function engine(o: { createWorker?: OcrEngine['createWorker']; blocks?: OcrBlock[] | null } = {}) {
+  const terminate = vi.fn(async () => undefined);
+  const recognize = vi.fn(async () => ({ data: { blocks: o.blocks === undefined ? BLOCKS : o.blocks } }));
+  const createWorker = vi.fn(o.createWorker ?? (async () => ({ recognize, terminate })));
+  const eng: OcrEngine = { createWorker, OEM: { LSTM_ONLY: 1 } };
+  const load = vi.fn(async () => eng);
+  return { eng, load, createWorker, recognize, terminate };
+}
+
+const toImage = (rgba: Uint8ClampedArray, width: number, height: number) => ({ rgba, width, height });
+
+describe('wordsOf', () => {
+  it('flattens blocks into words with one line number per OCR line, in reading order, blanks left out', () => {
+    expect(wordsOf(BLOCKS)).toEqual([
+      { text: 'Sent', x0: 1, y0: 2, x1: 11, y1: 10, line: 0, conf: 91 },
+      { text: 'to', x0: 14, y0: 2, x1: 24, y1: 10, line: 0, conf: 91 },
+      { text: 'jane@example.com', x0: 1, y0: 20, x1: 11, y1: 28, line: 1, conf: 77 },
+      { text: '$412.50', x0: 30, y0: 40, x1: 40, y1: 48, line: 2, conf: 91 },
+    ]);
+  });
+
+  it('no blocks (nothing read) is no words', () => {
+    expect(wordsOf(null)).toEqual([]);
+    expect(wordsOf([])).toEqual([]);
+  });
+});
+
+describe('createOcr', () => {
+  it('loads nothing until the first call, then one worker for every later call', async () => {
+    const e = engine();
+    const ocr = createOcr({ load: e.load, toImage, timeoutMs: 1000 });
+    expect(e.load).not.toHaveBeenCalled();
+    expect(await ocr(RGBA, 2, 2)).toHaveLength(4);
+    expect(await ocr(RGBA, 2, 2)).toHaveLength(4);
+    expect(e.load).toHaveBeenCalledTimes(1);
+    expect(e.createWorker).toHaveBeenCalledTimes(1);
+    expect(e.recognize).toHaveBeenCalledTimes(2);
+  });
+
+  it('creates the worker from this origin only: /ocr/ paths, no blob: worker, no cache, LSTM only, errors kept in', async () => {
+    const e = engine();
+    await createOcr({ load: e.load, toImage, timeoutMs: 1000 })(RGBA, 2, 2);
+    const [langs, oem, options] = e.createWorker.mock.calls[0]!;
+    expect(langs).toEqual(['eng']);
+    expect(PROOF_OCR_LANGS).toEqual(['eng']);
+    expect(oem).toBe(1);
+    expect(options).toEqual({ ...OCR_WORKER_OPTIONS, errorHandler: expect.any(Function), logger: expect.any(Function) });
+    expect(OCR_WORKER_OPTIONS).toEqual({
+      workerPath: '/ocr/worker.min.js',
+      corePath: '/ocr/',
+      langPath: '/ocr/',
+      workerBlobURL: false,
+      gzip: true,
+      cacheMethod: 'none',
+      legacyCore: false,
+      legacyLang: false,
+    });
+    // An engine error must never escape as an uncaught exception (tesseract.js throws without one).
+    expect(() => (options as { errorHandler: (e: unknown) => void }).errorHandler('boom')).not.toThrow();
+  });
+
+  it('asks for the word boxes and gives the engine the scaled pixels', async () => {
+    const e = engine();
+    await createOcr({ load: e.load, toImage, timeoutMs: 1000 })(RGBA, 2, 2);
+    const [image, , output] = e.recognize.mock.calls[0]! as unknown as [unknown, unknown, Record<string, boolean>];
+    expect(image).toEqual({ rgba: RGBA, width: 2, height: 2 });
+    expect(output).toMatchObject({ blocks: true });
+  });
+
+  it('a failed load (the module or the worker) answers null, never throws, and the next proof tries again', async () => {
+    const e = engine({ createWorker: async () => Promise.reject(new Error('404 eng.traineddata.gz')) });
+    const ocr = createOcr({ load: e.load, toImage, timeoutMs: 1000 });
+    await expect(ocr(RGBA, 2, 2)).resolves.toBeNull();
+    await expect(ocr(RGBA, 2, 2)).resolves.toBeNull();
+    expect(e.createWorker).toHaveBeenCalledTimes(2);
+    const broken = createOcr({ load: async () => Promise.reject(new Error('chunk failed')), toImage, timeoutMs: 1000 });
+    await expect(broken(RGBA, 2, 2)).resolves.toBeNull();
+  });
+
+  it('past the timeout it answers null and terminates the worker (a load that never finishes)', async () => {
+    const terminate = vi.fn(async () => undefined);
+    let finish: (w: unknown) => void = () => undefined;
+    const e = engine({
+      createWorker: () =>
+        new Promise((resolve) => {
+          finish = resolve as (w: unknown) => void;
+        }),
+    });
+    const ocr = createOcr({ load: e.load, toImage, timeoutMs: 30 });
+    const t0 = Date.now();
+    await expect(ocr(RGBA, 2, 2)).resolves.toBeNull();
+    expect(Date.now() - t0).toBeLessThan(1000);
+    // The worker that turns up late is terminated, not kept.
+    finish({ recognize: vi.fn(), terminate });
+    await vi.waitFor(() => expect(terminate).toHaveBeenCalledTimes(1));
+  });
+
+  it('a recognize that hangs past the timeout answers null and terminates the worker', async () => {
+    const e = engine();
+    e.recognize.mockImplementationOnce(() => new Promise(() => undefined));
+    const ocr = createOcr({ load: e.load, toImage, timeoutMs: 30 });
+    await expect(ocr(RGBA, 2, 2)).resolves.toBeNull();
+    expect(e.terminate).toHaveBeenCalledTimes(1);
+    // A fresh worker for the next proof.
+    expect(await ocr(RGBA, 2, 2)).toHaveLength(4);
+    expect(e.createWorker).toHaveBeenCalledTimes(2);
+  });
+
+  it('a recognize that fails answers null and terminates the worker', async () => {
+    const e = engine();
+    e.recognize.mockRejectedValueOnce(new Error('bad image'));
+    await expect(createOcr({ load: e.load, toImage, timeoutMs: 1000 })(RGBA, 2, 2)).resolves.toBeNull();
+    expect(e.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('the default timeout is 30 seconds (Review Focus 3)', () => {
+    expect(OCR_TIMEOUT_MS).toBe(30_000);
+  });
+});

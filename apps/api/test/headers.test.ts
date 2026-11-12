@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
+import { OCR_WORKER_CSP, cspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
 import { testApp } from './helpers/app.js';
 
 const RELAY = 'wss://relay.x2f.test';
@@ -23,6 +23,12 @@ beforeAll(async () => {
   await writeFile(join(root, 'index.html'), '<!doctype html><html><body><div id="root"></div></body></html>');
   await writeFile(join(root, 'assets', 'app-abc123.js'), 'console.log(1)');
   await writeFile(join(root, 'sw.js'), "self.addEventListener('push', () => undefined);");
+  // Plan 5 Task 13: the self-hosted OCR files (tools/copy-ocr-assets.ts copies the real ones).
+  await mkdir(join(root, 'ocr'));
+  await writeFile(join(root, 'ocr', 'worker.min.js'), 'self.onmessage = () => undefined;');
+  await writeFile(join(root, 'ocr', 'tesseract-core-simd-lstm.wasm.js'), 'var TesseractCore;');
+  await writeFile(join(root, 'ocr', 'eng.traineddata.gz'), Buffer.from([0x1f, 0x8b, 0x08, 0x00, 1, 2, 3]));
+  await writeFile(join(root, 'assets', 'ocr-abc123.js'), 'console.log(2)');
   ({ app } = await testApp());
   await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE });
 });
@@ -91,6 +97,41 @@ describe('security headers', () => {
     const res = await app.inject({ method: 'GET', url: '/assets/missing.js' });
     expect(res.statusCode).toBe(404);
     expectBaseHeaders(res.headers);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+});
+
+describe('the OCR files (Plan 5 Task 13, Global Constraints: the worker\'s own CSP)', () => {
+  it('the policy is exactly the plan\'s: nothing but this origin, wasm allowed', () => {
+    expect(OCR_WORKER_CSP).toBe("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'");
+  });
+
+  it.each(['/ocr/worker.min.js', '/ocr/tesseract-core-simd-lstm.wasm.js', '/ocr/eng.traineddata.gz'])('%s carries the worker CSP', async (url) => {
+    const res = await app.inject({ method: 'GET', url });
+    expect(res.statusCode).toBe(200);
+    expectBaseHeaders(res.headers);
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'");
+  });
+
+  it('the model is served as gzip bytes, not as a gzip-encoded response (tesseract.js reads the magic itself)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/ocr/eng.traineddata.gz', headers: { 'accept-encoding': 'gzip, br' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('application/gzip');
+    expect(res.headers['content-encoding']).toBeUndefined();
+    expect([...res.rawPayload.subarray(0, 2)]).toEqual([0x1f, 0x8b]);
+  });
+
+  it('a missing OCR file is a 404, never the app page (so a missing model fails OCR, not parses HTML)', async () => {
+    for (const url of ['/ocr/missing.gz', '/ocr/tesseract-core-relaxedsimd-lstm.wasm.js']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(404);
+      expect(res.headers['content-type'], url).not.toMatch(/^text\/html/);
+    }
+  });
+
+  it('only the ocr folder gets it: a built asset named ocr-… keeps no CSP', async () => {
+    const res = await app.inject({ method: 'GET', url: '/assets/ocr-abc123.js' });
+    expect(res.statusCode).toBe(200);
     expect(res.headers['content-security-policy']).toBeUndefined();
   });
 });
