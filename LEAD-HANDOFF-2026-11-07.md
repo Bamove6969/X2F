@@ -235,3 +235,6 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 - Drive x2f folder skimmed: nothing to recover. Owner told to check claude_backup.tar.gz sharing.
 
 - 2026-11-12T08:27:37Z owner: his Google Drive (2 TB) holds the old x2f folders and may be used as overflow storage/archive if cloud limits bite (via the Drive connector; read/write archive only, not a working disk).
+
+## 2026-11-12 11:33Z
+2026-11-12T11:33:00Z LEAD: batch 8 landed on main 8246e64b (recovery, team, jabber-settings + loud alarm 44px fix, J-21 staff pages, freeze, reputation, mod-rules). Full check 6692 pass, Playwright 506 pass, Monero 4 suites green. Next base for all work: 8246e64b. Batch 9 assembling on wip/lead-land-9. One test lock for everyone: ~/x2f-comms/check.lock.
