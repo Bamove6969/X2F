@@ -102,7 +102,7 @@ export function StaffShell({ pages }: { pages: Partial<Record<NavItem, ReactNode
         </p>
         <nav aria-label="Staff" className="x2f-staff__nav">
           {who.nav.map((item) => (
-            <Link key={item} to={NAV_PATHS[item]} aria-current={pathname === NAV_PATHS[item] || pathname.startsWith(`${NAV_PATHS[item]}/`) ? 'page' : undefined}>
+            <Link key={item} to={NAV_PATHS[item]} data-nav={item} aria-current={pathname === NAV_PATHS[item] || pathname.startsWith(`${NAV_PATHS[item]}/`) ? 'page' : undefined}>
               {NAV_LABELS[item]}
             </Link>
           ))}
@@ -110,7 +110,7 @@ export function StaffShell({ pages }: { pages: Partial<Record<NavItem, ReactNode
         <div className="x2f-staff__foot">
           <SessionCountdown endsAt={who.sessionEndsAt} />
           <RoleChip username={who.displayName} role={who.role} />
-          <Button variant="quiet" onClick={() => void onLogout()}>
+          <Button variant="quiet" data-part="logout" onClick={() => void onLogout()}>
             Log out
           </Button>
         </div>
