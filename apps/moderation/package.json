@@ -22,6 +22,8 @@
     "pg": "8.23.1"
   },
   "devDependencies": {
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "@x2f/regtest": "0.0.0",
+    "@x2f/relay": "0.0.0"
   }
 }
