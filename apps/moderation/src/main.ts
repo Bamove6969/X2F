@@ -222,6 +222,19 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   };
   const onLockError = (): void => loseLock();
   lock.on('error', onLockError);
+  // The lock is Postgres's until the session that took it has ended on the server. A lost lock's
+  // client hears of it first (a terminated backend sends its FATAL before it exits and frees its
+  // locks; a destroyed client only starts closing), so `stop` waits for the connection's end
+  // before it resolves, and a new process started on `lockLost` finds the lock free.
+  let lockEnded = false;
+  let onLockEnd!: () => void;
+  const lockEnd = new Promise<void>((resolve) => {
+    onLockEnd = () => {
+      lockEnded = true;
+      resolve();
+    };
+  });
+  lock.once('end', onLockEnd);
   const lockHeld = deps.lockHeld ?? (() => instanceLockHeld(lock));
   const rawLink: Link = createLink({
     apiInternalUrl: o.apiInternalUrl,
@@ -563,8 +576,19 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       await watcher.stop();
       if (!lost) await lock.query('select pg_advisory_unlock($1)', [MOD_INSTANCE_LOCK]).catch(() => undefined);
       lock.off('error', onLockError);
-      // A lost connection is destroyed, never handed back to the pool.
+      // A lost connection is destroyed, never handed back to the pool, and waited for until it has
+      // ended (bounded: a half-open one that never answers is cut after LOCK_CHECK_TIMEOUT_MS; its
+      // server session then ends on keepalive, and a new process waits for the lock meanwhile).
       lock.release(lost ? true : undefined);
+      if (lost && !lockEnded) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const cut = new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, LOCK_CHECK_TIMEOUT_MS);
+        });
+        await Promise.race([lockEnd, cut]);
+        clearTimeout(timer);
+      }
+      lock.off('end', onLockEnd);
     })());
   stopForLoss = stop;
 
