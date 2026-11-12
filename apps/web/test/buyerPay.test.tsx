@@ -342,6 +342,35 @@ describe('"Do not show me this warning again" on I\'ve paid (owner 8 Nov p7-2; p
   });
 });
 
+// Proof-upload review point 4 (lead 2026-11-12): no proof before the trade is secured (the engine
+// and the API refuse it), so with the flag on the slot stays the board's disabled slot while the
+// escrow is securing, with a line saying when it opens; it goes live from secured.
+describe('the payment proof slot waits for securing (flag on)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    setProofSource(null);
+  });
+
+  it('securing: disabled, with the not-yet line; secured: the live picker', async () => {
+    const { PROOF_AFTER_SECURED } = await import('../src/screens/proof/proofSlot.js');
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    for (const wide of [false, true]) {
+      const securing = mount(props({ wide }));
+      const input = document.body.querySelector<HTMLInputElement>('section[aria-label="Payment proof"] input[type="file"]');
+      expect(input, `securing wide=${wide}`).not.toBeNull();
+      expect(input!.disabled, `securing wide=${wide}`).toBe(true);
+      expect(typeof PROOF_AFTER_SECURED).toBe('string');
+      expect(text()).toContain(PROOF_AFTER_SECURED);
+      securing.unmount();
+      const secured = mount(props({ wide, view: tradeView(SECURED) }));
+      const live = document.body.querySelector<HTMLInputElement>('section[aria-label="Payment proof"] input[type="file"]');
+      expect(live!.disabled, `secured wide=${wide}`).toBe(false);
+      expect(text()).not.toContain(PROOF_AFTER_SECURED);
+      secured.unmount();
+    }
+  });
+});
+
 // Build spec j31a section 4 (T-079; owner's words kept, docs/to-lead.md 9 Nov): I've paid with no
 // proof attached asks first, every time. The proof slot is Plan 5's: until it can hold a proof
 // (setProofSource), there is nothing to warn about and I've paid goes straight to the confirm sheet.
