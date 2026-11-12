@@ -45,7 +45,7 @@ import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
 import { BehindTheDoor, isInside } from './session/frontDoor.js';
-import { mayPostOffers, mayReadTrades, memberOf } from './session/member.js';
+import { mayOpenLiveEvents, mayPostOffers, mayReadTrades, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { PlannedMaintenanceBanner } from './ui/PlannedMaintenanceBanner.js';
@@ -175,17 +175,6 @@ function LiveAccepted({ member }: { member: boolean }) {
   );
 }
 
-/** Only full trader sessions have live events (`GET /v1/events` is `requireTrader`). */
-function isTrader(session: ReturnType<typeof useSession>): boolean {
-  if (session.status !== 'signed-in') return false;
-  const me = session.me;
-  if (me === null || typeof me !== 'object') return false;
-  const m = me as { kind?: unknown; level?: unknown; termsCurrent?: unknown; member?: { roles?: unknown } | null };
-  // Plan 2 Task 18: a team member without Trades gets no trade stream (the API answers 403 forbidden).
-  const member = m.member;
-  if (member !== undefined && member !== null && !(Array.isArray(member.roles) && member.roles.includes('trades'))) return false;
-  return m.kind === 'trader' && m.level === 'full' && m.termsCurrent !== false;
-}
 
 /**
  * Session length (owner, 2 Nov 2026): on page load the signed-in session's length and end are
@@ -218,7 +207,8 @@ export function App() {
       <RouterBridge />
       <SessionPrompt />
       <IdleReminder />
-      {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
+      {/* Live events: full trader sessions; a member's with either trades box (session/member.ts). */}
+      {mayOpenLiveEvents(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       <Routes>
         {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
         <Route element={<BehindTheDoor />}>
