@@ -98,6 +98,25 @@ describe('the event list', () => {
     expect((await t.browser.get('/v1/account/jabber/events')).json()).toEqual(ALL_ON);
   });
 
+  it("the database takes every kind in NOTICE_KINDS, and J-20's team-member-first-login ahead of its landing", async () => {
+    const t = await withJabber();
+    for (const k of [...NOTICE_KINDS, 'team-member-first-login']) {
+      await deps.db.query('update jabber_contacts set muted_kinds = array[$2::text] where account_id = $1', [t.id, k]);
+    }
+  });
+
+  it('a muted kind is skipped by jabber_queue itself, so a notice queued from code (as J-20 queues the first login) is muted too', async () => {
+    const t = await withJabber();
+    expect((await t.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false })).statusCode).toBe(200);
+    await clearOutbox(t.id);
+    const q = (k: string) =>
+      deps.db.query('select jabber_queue(c.account_id, c.jid_sealed, $2) from jabber_contacts c where c.account_id = $1', [t.id, k]);
+    await q('trade-attention');
+    expect(await queued(t.id)).toEqual([]);
+    await q('account-change');
+    expect(await queued(t.id)).toEqual(['account-change']);
+  });
+
   it('the database refuses a kind the outbox does not carry', async () => {
     const t = await withJabber();
     await expect(deps.db.query("update jabber_contacts set muted_kinds = '{wallet-added}' where account_id = $1", [t.id])).rejects.toThrow(/check/);
