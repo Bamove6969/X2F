@@ -58,7 +58,7 @@ describe('api()', () => {
     const go = vi.fn();
     setNavigator(go, () => here);
     vi.stubGlobal('fetch', respond(403, { error: 'banned', kind: 'site', reasonCode: 'abuse', until: null }));
-    await expect(api('/v1/wallets')).rejects.toMatchObject({ code: 'banned', reasonCode: 'abuse' });
+    await expect(api('/v1/wallets')).rejects.toMatchObject({ code: 'banned', extra: { kind: 'site', reasonCode: 'abuse', until: null } });
     expect(go).toHaveBeenCalledExactlyOnceWith('/account/banned?returnTo=%2Fsell%2Fzelle%3Fsort%3Drate');
   });
 

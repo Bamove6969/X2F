@@ -148,6 +148,14 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wallet-exists': 'an input check (already linked)',
   'terms-not-accepted': 'sends the person to the Terms',
   'terms-required': 'sends the person to the Terms',
+  // Plan 4 Task 27: a site ban sends the person to the ban notice (screens/account/AccountBanned.tsx).
+  banned: 'sends the person to the ban notice',
+  'already-banned': 'a staff ban action (staff app only)',
+  'lifetime-required': 'a staff ban action: D-017 term rules (staff app only)',
+  'lifetime-not-allowed': 'a staff ban action: D-017 term rules (staff app only)',
+  // mod-rules: D-070 moderator methods and D-064's channel check (staff app only).
+  'moderator-methods-required': 'a moderator keeps a PGP key and a passkey (staff app only)',
+  'no-secure-jabber': 'ending a recovery hold via secure Jabber (staff app only)',
   // Owner, 8 Nov 2026: the signature given with the Terms; the pad never sends these.
   'signature-required': 'an input check on the Terms signature',
   'signature-invalid': 'an input check on the Terms signature',
@@ -272,6 +280,13 @@ export const CANT_DO_TITLE = {
   changes: "This change can't be saved yet",
 } as const;
 
+/**
+ * Plan 4 Task 27: a trade ban on take and post. COPY-UNSIGNED. The plan wants the ban's reason and
+ * end on this popup too; the popup texts take only the code today (lead question), so it points to
+ * the notice that has them.
+ */
+export const TRADE_BAN_TEXT = 'Your account has been banned from trading for now. Trades you already started carry on. See Account banned for the reason and when it ends.';
+
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
 export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; capText: string | null; maxOpen: number | null; minTrades: number }): string {
   switch (code) {
@@ -289,6 +304,8 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       return `This offer needs at least ${o.minTrades} completed ${o.minTrades === 1 ? 'trade' : 'trades'}.`;
     case 'trading-hold':
       return 'Your account is on a trading hold while a dispute is open, so it cannot start trades.';
+    case 'trade-ban':
+      return TRADE_BAN_TEXT;
     case 'already-waiting':
       return 'You already have a trade on this offer waiting to be funded.';
     case 'offer-busy':
@@ -346,6 +363,8 @@ export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null):
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
+    case 'trade-ban':
+      return TRADE_BAN_TEXT;
     case 'too-many-offers':
       return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
     case 'launch-cap':
