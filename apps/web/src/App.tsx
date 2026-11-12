@@ -49,6 +49,8 @@ import { BehindTheDoor, isInside } from './session/frontDoor.js';
 import { mayPostOffers, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
+import { ScreenHeader, screenName } from './ui/ScreenHeader.js';
+import { HelpTopic } from './screens/HelpTopic.js';
 import { PlannedMaintenanceBanner } from './ui/PlannedMaintenanceBanner.js';
 import { SiteBanner } from './ui/SiteBanner.js';
 import { DesktopRail, WideTop, wideFrameOf } from './ui/DesktopShell.js';
@@ -86,13 +88,17 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
   const frame = outside ? 'centred' : wideFrameOf(pathname);
   let top: ReactNode = null;
   if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} />;
-  else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop />;
+  else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop name={screenName(pathname)} />;
   return (
     <div data-shell={wide ? 'desktop' : 'phone'} data-wide-frame={wide ? frame : undefined} className={wide ? 'x2f-desktop' : undefined}>
       {top}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
         {/* Plan 4 Task 8: the owner's banner at the top of every trader screen. */}
         {/* J-04 (owner G19): a planned maintenance announced ahead, in the big bright banner, on every layout, the front door's too (lead default, owner p11-120). */}
+        {/* Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): logo D and the screen name on every phone screen;
+            the Landing board has its own large logo, and Buy/Sell draw this header in their own bar. The
+            foldable layouts (cover, panes, tabletop) keep their hinge-placed frames without it for now. */}
+        {layout === 'phone' && pathname !== '/' && !BROWSE.test(pathname) && !TRADE_ROOM.test(pathname) ? <ScreenHeader /> : null}
         <PlannedMaintenanceBanner plan={planned} />
         <SiteBanner banner={banner} />
         {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}
@@ -104,6 +110,15 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
     </div>
   );
 }
+
+/** Buy and Sell's own bar carries the shared header (MethodList). */
+const BROWSE = /^\/(buy|sell)\/?$/;
+/**
+ * The trade room and its dispute keep their own header (TradeHeader: who, the code) for now: the room
+ * keeps one tree and its scroll across folding, which a header appearing above it would move.
+ * DESIGNER-REVIEW: logo D in TradeHeader itself, a follow-up.
+ */
+const TRADE_ROOM = /^\/trade\//;
 
 /** Each screen's task replaces its placeholder (Tasks 16-30). */
 function Screen({ name }: { name: string }) {
@@ -269,6 +284,8 @@ export function App() {
           <Route path={SESSION_LENGTH_PATH} element={<SessionLengthScreen />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/team/join" element={<MemberInvite />} />
+          {/* Owner demo notes 12 Nov #42: the help placeholders linked from /login and /session-length. */}
+          <Route path="/help/:topic" element={<HelpTopic />} />
         </Route>
         {/* Anything else: the front door, which sends a set-up trader on to /sell. */}
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -77,12 +77,8 @@ describe('ScreenHeader: logo D top left, the screen name beside it', () => {
     expect(none.querySelector('[data-part="screen-name"]')).toBeNull();
   });
 
-  it('the wide pre-login top is the same header: the 32 px logo top left with the name', () => {
-    const { host } = render(
-      <MemoryRouter initialEntries={['/login']}>
-        <WideTop />
-      </MemoryRouter>,
-    );
+  it('the wide pre-login top is the same header: the 32 px logo top left with the name the shell gives it', () => {
+    const { host } = render(<WideTop name={screenName('/login')} />);
     const header = host.querySelector('header.x2f-wide-top')!;
     expect(header.querySelector('svg[role="img"][aria-label="X2F"]')!.getAttribute('height')).toBe('32');
     expect(header.querySelector('[data-part="screen-name"]')!.textContent).toBe('Log in');
@@ -92,6 +88,7 @@ describe('ScreenHeader: logo D top left, the screen name beside it', () => {
   it('the app shell draws it on every phone screen but the Landing board; browse draws it in its own bar', () => {
     const app = read('App.tsx');
     expect(app).toContain('<ScreenHeader');
+    expect(app).toContain('<WideTop name={screenName(pathname)} />');
     expect(read('screens/browse/MethodList.tsx')).toContain('<ScreenHeader');
   });
 });
