@@ -751,11 +751,25 @@ describe('Task 11 tripwires (local tree only)', () => {
     expect(/create table\s+trade_proofs\b/i.test(sql)).toBe(true);
     const staff = readFileSync(`${ROOT}apps/api/src/disputes/staffRoutes.ts`, 'utf8');
     expect(staff).not.toMatch(/['`]\/staff\/v1\/disputes\/:code\/proof['`]/);
-    expect(staff).not.toMatch(/trade_proofs|readableProof/);
-    const internal = readdirSync(`${ROOT}apps/api/src/internal`).map((f) => readFileSync(`${ROOT}apps/api/src/internal/${f}`, 'utf8')).join('\n');
-    expect(internal).not.toMatch(/trade_proofs|proofs\/:id/);
-    const routes = readFileSync(`${ROOT}apps/api/src/proofs/routes.ts`, 'utf8');
-    expect(routes).toMatch(/kind in \('proof', 'evidence'\)|readableProof/);
+    // Review I2: the whole API tree, not only staffRoutes.ts and src/internal: only proofs/ and the
+    // retention job list may name the proof tables, the store or a proof route (src/staff/*,
+    // trades/held.ts and disputes/moderationClient.ts included).
+    const SRC = `${ROOT}apps/api/src/`;
+    const files = (readdirSync(SRC, { recursive: true }) as string[]).filter((f) => /\.ts$/.test(f)).map((f) => f.replace(/\\/g, '/'));
+    expect(files).toEqual(expect.arrayContaining(['staff/app.ts', 'trades/held.ts', 'disputes/moderationClient.ts', 'disputes/staffRoutes.ts']));
+    expect(files.some((f) => f.startsWith('internal/'))).toBe(true);
+    for (const f of files) {
+      if (f.startsWith('proofs/') || f === 'retentionJobs.ts') continue;
+      const c = readFileSync(SRC + f, 'utf8');
+      expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|proofs\/store/);
+      // The route lists (auth/frontDoor.ts, auth/hold.ts) name the trader's proof route; staff,
+      // internal and dispute code never does.
+      if (/^(staff|internal|disputes)\//.test(f) || f === 'trades/held.ts') expect(c, f).not.toMatch(/proofs\/:id/);
+    }
+    // Review I1: the GET's kind filter itself (a match on the import of readableProof proved nothing).
+    const store = readFileSync(`${SRC}proofs/store.ts`, 'utf8');
+    const readable = /export async function readableProof\b[\s\S]*?\n}/.exec(store)?.[0] ?? '';
+    expect(readable).toMatch(/\bkind in \('proof', 'evidence'\)/);
     expect(existsSync(`${ROOT}packages/proof`)).toBe(true);
   });
 

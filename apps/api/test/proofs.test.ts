@@ -16,7 +16,7 @@ import { PROOF_MAX_CIPHERTEXT, newProofId } from '@x2f/proof';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { PROOF_MAX_PER_SIDE, purgeProofs } from '../src/proofs/store.js';
+import { EVIDENCE_MAX_PER_SIDE, PROOF_MAX_PER_SIDE, purgeProofs } from '../src/proofs/store.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { startDispute } from '../src/disputes/store.js';
 import { loadTrade } from '../src/trades/store.js';
@@ -150,6 +150,50 @@ describe('PUT /v1/trades/:code/proofs/:id: the payment proof', () => {
     expect((await get(buyer, 'AAAA-BBBB-CCCC-DDDD', id)).statusCode).toBe(404);
   });
 
+  it('review M1: with no session the PUT is 401 before its body is read, even one over the size cap', async () => {
+    const { code } = await tradeIn('secured');
+    for (const n of [PROOF_MAX_CIPHERTEXT, PROOF_MAX_CIPHERTEXT + 1]) {
+      const res = await app.inject({ method: 'PUT', url: url(code, newProofId(), 'proof'), headers: { origin: ORIGIN, 'content-type': 'application/octet-stream' }, payload: body(n) });
+      expect(res.statusCode, String(n)).toBe(401);
+    }
+  });
+
+  it("review M2: an outsider's PUT never waits on (or locks) the trade's row: 404 at once, as for an unknown code", async () => {
+    const { buyer, code } = await tradeIn('secured');
+    const other = await trader();
+    const lock = await deps.db.connect();
+    try {
+      await lock.query('begin');
+      await lock.query('select 1 from trades where code = $1 for update', [code]);
+      const res = await Promise.race([put(other, code, newProofId(), 'proof'), new Promise<'blocked'>((r) => setTimeout(() => r('blocked'), 3000))]);
+      expect(res === 'blocked' ? 'blocked' : res.statusCode).toBe(404);
+    } finally {
+      await lock.query('rollback');
+      lock.release();
+    }
+    // The party still gets through once the row is free.
+    expect((await put(buyer, code, newProofId(), 'proof')).statusCode).toBe(204);
+  });
+
+  it('review M3: an id\'s one-time tag keeps the day it was used, not the time', async () => {
+    const { rows: cols } = await deps.db.query<{ column_name: string; data_type: string }>(
+      `select column_name, data_type from information_schema.columns where table_name = 'proof_id_tags' order by ordinal_position`,
+    );
+    expect(cols).toEqual([
+      { column_name: 'tag', data_type: 'bytea' },
+      { column_name: 'used_on', data_type: 'date' },
+    ]);
+    const { buyer, code } = await tradeIn('secured');
+    setNow(new Date('2026-10-17T23:59:30Z'));
+    const id = newProofId();
+    expect((await put(buyer, code, id, 'proof')).statusCode).toBe(204);
+    const { rows } = await deps.db.query<{ d: string }>(
+      `select to_char(used_on, 'YYYY-MM-DD') as d from proof_id_tags where tag = sha256(convert_to('x2f/proof-id/v1|' || $1::text, 'UTF8'))`,
+      [id],
+    );
+    expect(rows).toEqual([{ d: '2026-10-17' }]);
+  });
+
   it(`size: at most PROOF_MAX_CIPHERTEXT (413 one byte over), at least a nonce and a tag (400)`, async () => {
     const { buyer, code } = await tradeIn('secured');
     const over = await put(buyer, code, newProofId(), 'proof', body(PROOF_MAX_CIPHERTEXT + 1));
@@ -260,6 +304,21 @@ describe('dispute evidence and the unblurred copy', () => {
     expect((await put(buyer, code, newProofId(), 'unblurred')).statusCode).toBe(204);
   });
 
+  it('review M4 (lead 2026-11-12): evidence has its own 5 per side, and an unblurred copy never counts', async () => {
+    expect(EVIDENCE_MAX_PER_SIDE).toBe(5);
+    const { buyer, code } = await tradeIn('paid');
+    for (let i = 0; i < PROOF_MAX_PER_SIDE; i++) expect((await put(buyer, code, newProofId(), 'proof', body(64))).statusCode).toBe(204);
+    await openDispute(code);
+    for (let i = 0; i < EVIDENCE_MAX_PER_SIDE; i++) expect((await put(buyer, code, newProofId(), 'evidence', body(64))).statusCode, `evidence ${i}`).toBe(204);
+    const sixth = await put(buyer, code, newProofId(), 'evidence', body(64));
+    expect(sixth.statusCode).toBe(409);
+    expect(errorOf(sixth)).toBe('too-many-proofs');
+    expect(errorOf(await put(buyer, code, newProofId(), 'proof', body(64)))).toBe('too-many-proofs');
+    // The moderator's request can always be answered.
+    await requestUnblurred(code, 'buyer');
+    expect((await put(buyer, code, newProofId(), 'unblurred', body(64))).statusCode).toBe(204);
+  });
+
   it('a request on a closed dispute does not count', async () => {
     const { buyer, code } = await tradeIn('paid');
     await openDispute(code);
@@ -322,6 +381,67 @@ describe('retention: proofs go with the trade, on the chat rule', () => {
     expect(await stored(id)).toBeDefined();
     await purgeProofs(deps.db, at(101 * DAY));
     expect(await stored(id)).toBeUndefined();
+  });
+
+  it('review M2: a dispute not yet committed makes the purge wait on the trade, and the proofs stay', async () => {
+    const { buyer, code } = await tradeIn('paid');
+    const id = newProofId();
+    await put(buyer, code, id, 'proof');
+    await deps.db.query(`update trades set state = 'released', closed_at = $2 where code = $1`, [code, at(DAY)]);
+    const dispute = await deps.db.connect();
+    try {
+      // As applyEvent does when a dispute opens: the trade's row lock, the state, then the dispute row.
+      await dispute.query('begin');
+      await dispute.query('select 1 from trades where code = $1 for update', [code]);
+      await dispute.query(`update trades set state = 'disputed', closed_at = null where code = $1`, [code]);
+      await dispute.query(
+        `insert into disputes (code, seq, opened_by, reason, opened_at, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents)
+         values ($1, 1, 'system', 'escalated', $2, 'open', $2, $2, 0, 100000)`,
+        [code, at(30 * DAY)],
+      );
+      const purge = purgeProofs(deps.db, at(40 * DAY));
+      for (let i = 0; ; i++) {
+        const { rows } = await deps.db.query(
+          `select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%for share%'`,
+        );
+        if (rows.length > 0) break;
+        if (i > 200) throw new Error('the purge never waited on the trade lock');
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      await dispute.query('commit');
+      expect(await purge).toBe(0);
+    } finally {
+      dispute.release();
+    }
+    expect(await stored(id)).toBeDefined();
+  });
+
+  // The rule says due, so only the delete's own checks can keep the proofs: one case per check, so
+  // that removing either is caught by itself (review M2, as chat.test.ts M3 for the chat).
+  it.each([
+    ['a dispute row not yet closed, on a trade already closed', { state: 'released', closed: true, row: true }],
+    ['a trade in dispute with no dispute row', { state: 'disputed', closed: false, row: false }],
+  ])('the delete keeps proofs the rule calls due: %s', async (_name, c) => {
+    const { buyer, code } = await tradeIn('paid');
+    const id = newProofId();
+    await put(buyer, code, id, 'proof');
+    await deps.db.query(`update trades set state = $2, closed_at = $3 where code = $1`, [code, c.state, c.closed ? at(DAY) : null]);
+    if (c.row) {
+      await deps.db.query(
+        `insert into disputes (code, seq, opened_by, reason, opened_at, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents)
+         values ($1, 1, 'system', 'escalated', $2, 'open', $2, $2, 0, 100000)`,
+        [code, at(DAY)],
+      );
+    }
+    const seen: string[] = [];
+    const removed = await purgeProofs(deps.db, at(500 * DAY), (_facts, _now, rowCode) => {
+      if (rowCode !== code) return false;
+      seen.push(rowCode);
+      return true;
+    });
+    expect(seen).toEqual([code]);
+    expect(removed).toBe(0);
+    expect(await stored(id)).toBeDefined();
   });
 
   it('an open trade keeps its proofs', async () => {
