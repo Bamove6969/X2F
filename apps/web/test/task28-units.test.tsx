@@ -125,9 +125,14 @@ describe('copy', () => {
     expect(FEE_SENTENCE).toBe('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.');
   });
 
-  it('the Terms draft carries the fee sentence and has no exclamation marks', () => {
+  // 2026-11-12: the Terms' fee paragraph is the owner's own wording (his /setup comment 10475770,
+  // comms terms-draft-2026-11-12.md item 7) in place of FEE_SENTENCE; it states the same rule (OD-7,
+  // p10-1): the ad's poster pays 1%, taking an ad is free.
+  it('the Terms draft states the fee rule (poster pays 1%, taking is free) and has no exclamation marks', () => {
     const all = TERMS.flatMap((s) => [s.heading, ...s.paragraphs]).join('\n');
-    expect(all).toContain(FEE_SENTENCE);
+    const fees = TERMS.find((s) => s.heading === '4. Fees')!.paragraphs.join('\n');
+    expect(fees).toContain('X2F collects a fee of 1% of the total amount traded, paid in XMR when the trade completes. Whoever posts the ad pays it.');
+    expect(fees).toContain('Taking someone else’s ad is free.');
     expect(all).not.toContain('!');
   });
 });
