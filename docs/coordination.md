@@ -822,7 +822,7 @@ Owner Q21 (2026-11-03): built now on the existing kit; every new piece carries `
   - I3: `recordedTerms` refuses a trade whose poster is not the attested one or whose amount is below the attested take amount.
   - evidenceSha256 (wip/lead-rulings 601bcc8f): `GateRuling.evidenceSha256` is `evidenceSha256(dispute_rulings.evidence)` (the @x2f/staff function the API binds with; 211 grants the `evidence` column); every tap must agree with it.
 
-## Plan 4 Task 14 (the ruling payout), `wip/lead-ruling-payout` on `wip/lead-mod-gate` 4313e164 (lead helper, 2026-11-12)
+## Plan 4 Task 14 (the ruling payout), `wip/lead-ruling-payout` on `wip/lead-mod-gate` 23e36785 (lead helper, 2026-11-12)
 
 - **Built:** `apps/moderation/src/execute.ts` (`rulingExecutor`, outside `gate/` so the gate's settle tripwire holds). The watcher calls it every pass for every trade (`WatcherOptions.executeRuling`, after the desk), with the trade's party, the API item, the funds the party read and `recordedFor(args, shadow)` (`recordedTerms` from this service's own attested terms and the desk's shadow trade). The process entry opens the gate (`MOD_STATE_DIR`) before the service and passes `rulings`; without a gate no ruling is settled.
 - **Rules:** only a trade the API shows `disputed`, not paused for maintenance; only the round-1 escrow ruling (`storedRulings`: `current` in round 1, `round1` once appealed; after-refund outcomes and round 2 never reach settle); the escrow wholly unlocked; `gateCheck` authorises it (registry synced first, so the owner's tapped emergency stop refuses at once, `stopped`). It settles exactly `settle.payouts` through `PartyHandle.settle({ kind: 'release', builder: 'mod', cosigner: winner })`, no new signing route.
