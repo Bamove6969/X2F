@@ -1,11 +1,11 @@
 import { ROLES } from '@x2f/core';
 import { EscrowError, PartyError, TransportClosedError } from '@x2f/escrow';
 import { open, ReplayGuard, seal, type Participants } from '@x2f/protocol';
-import { channelFor, escrowPlan, fiatCents } from '@x2f/trade';
+import { channelFor, escrowPlan, fiatCents, instructionsSha256 } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Attestation } from '@x2f/trade';
 import { cosignPolicy } from '../src/escrow/policy.js';
-import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, Parties, confirmedFor, device, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
+import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
 
 const running: Device[] = [];
 const fiatOf = (a: bigint): bigint => fiatCents(a, { currency: 'USD', centsPerXmr: 33_000n });
@@ -377,6 +377,94 @@ describe('what this device signs comes from what the user confirmed, never the A
     await until(async () => (await buyer.store.load(CODE))?.theirAddress != null);
     expect((await buyer.store.load(CODE))?.theirAddress).toBe(ADDR.seller);
     expect((await buyer.store.load(CODE))?.theirDeal).toEqual((await seller.store.load(CODE))?.deal);
+  });
+
+  it('payment instructions are shown only when they hash to the attested ones; other text is view-mismatch and nothing is settled (Task 34 review I1, restored after J-16)', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    // Before the escrow is secured the view carries none: nothing to show, nothing refused.
+    t.state.view = tradeView({ state: 'securing', paymentInstructions: null });
+    expect(await buyer.status((s) => s.phase === 'ready')).toMatchObject({ refusal: null, paymentInstructions: null, instructionsMismatch: false });
+    // The locked text: shown, on both sides.
+    t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS });
+    expect(await buyer.status((s) => s.paymentInstructions === INSTRUCTIONS)).toMatchObject({ refusal: null, instructionsMismatch: false });
+    expect(await seller.status((s) => s.paymentInstructions === INSTRUCTIONS)).toMatchObject({ refusal: null, instructionsMismatch: false });
+    // A compromised API serves other payment details (or a near copy): never shown, flagged, nothing settled.
+    for (const other of ['IBAN DE00 <attacker>', `${INSTRUCTIONS} `, INSTRUCTIONS.replace('pay@', 'pay1@')]) {
+      t.state.view = tradeView({ state: 'secured', paymentInstructions: other });
+      await until(() => buyer.last()?.instructionsMismatch === true && seller.last()?.instructionsMismatch === true);
+      for (const d of [buyer, seller]) expect(d.last()).toMatchObject({ refusal: 'view-mismatch', paymentInstructions: null, error: null });
+      await expect(buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) })).rejects.toThrow(/instructions/);
+      expect((await buyer.store.load(CODE))?.paidSeen).toBe(false);
+      await Promise.all([t.parties.ticks('seller', 3), t.parties.ticks('buyer', 3)]);
+      expect(t.parties.settles).toEqual([]);
+      expect((await buyer.store.load(CODE))?.failed ?? null).toBeNull();
+    }
+    // The view is right again: the text shows and the trade goes on.
+    t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS });
+    expect(await buyer.status((s) => s.paymentInstructions === INSTRUCTIONS)).toMatchObject({ refusal: null, instructionsMismatch: false });
+    await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
+  });
+
+  it('a lying API can tell one side other instructions: only that side refuses and shows nothing', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS });
+    t.state.roleView = { buyer: { paymentInstructions: 'Zelle to thief@example.test' } };
+    await until(() => buyer.last()?.instructionsMismatch === true);
+    expect(buyer.last()).toMatchObject({ refusal: 'view-mismatch', paymentInstructions: null });
+    expect(await seller.status((s) => s.paymentInstructions === INSTRUCTIONS)).toMatchObject({ instructionsMismatch: false });
+  });
+
+  it('a view whose method differs from the attested one: deal-mismatch at start, view-mismatch mid-trade (instructions never shown)', async () => {
+    const start = await setup({ view: tradeView({ methodId: 'PAYPAL' }) });
+    const b0 = await start.mk('buyer');
+    await b0.runtime.start(CODE);
+    // The buyer registers, then the attestation (method ZELLE) disagrees with the view (PAYPAL).
+    const s0 = await start.mk('seller');
+    await s0.runtime.start(CODE);
+    expect(await b0.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(start.parties.calls.filter((c) => c.role === 'buyer')).toEqual([]);
+    await b0.runtime.stopAll();
+    await s0.runtime.stopAll();
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    for (const methodId of ['PAYPAL', undefined]) {
+      t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS, methodId });
+      await until(() => buyer.last()?.refusal === 'view-mismatch');
+      expect(buyer.last()).toMatchObject({ paymentInstructions: null, instructionsMismatch: true });
+      await t.parties.ticks('buyer', 3);
+      expect(t.parties.settles).toEqual([]);
+    }
+  });
+
+  it('an offer that gave no instructions: the attested empty text is shown as empty, any other text is refused', async () => {
+    const empty = await instructionsSha256('');
+    const t = await setup({ tamper: (a) => ({ ...a, terms: { ...a.terms!, deal: { ...a.terms!.deal, instructionsSha256: empty } } }) });
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'secured', paymentInstructions: '' });
+    expect(await buyer.status((s) => s.paymentInstructions === '')).toMatchObject({ refusal: null, instructionsMismatch: false });
+    t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS });
+    await until(() => buyer.last()?.instructionsMismatch === true);
+    expect(buyer.last()).toMatchObject({ refusal: 'view-mismatch', paymentInstructions: null });
   });
 
   it('a view that turns into another poster mid-trade: view-mismatch shown and nothing is settled', async () => {
