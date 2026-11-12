@@ -16,7 +16,8 @@ export const NUMBER_LABELS: Readonly<Record<NumberLabelKind, readonly string[]>>
   phone: [
     'phone', 'telephone', 'tel', 'mobile', 'mob', 'cell', 'cellphone', 'whatsapp', 'contact',
     'teléfono', 'telefono', 'móvil', 'celular', 'telefone', 'telemóvel', 'téléphone', 'portable', 'telefon', 'handy', 'telefoon', 'mobiel', 'gsm', 'cellulare',
-    'телефон', 'тел', 'мобильный', 'cep telefonu', 'cep',
+    // Review m1: the genitive "телефона" ("Номер телефона", the usual Russian receipt label) too.
+    'телефон', 'телефона', 'номер телефона', 'тел', 'мобильный', 'cep telefonu', 'cep',
   ],
   card: [
     'card', 'debit card', 'credit card', 'visa', 'mastercard', 'amex', 'maestro',
