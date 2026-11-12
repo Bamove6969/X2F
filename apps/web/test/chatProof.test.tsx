@@ -143,6 +143,30 @@ describe('review M3: ChatProof records whether the proof checked out', () => {
   });
 });
 
+describe('review I5: the decrypted picture is zeroed once ProofThumb has checked it', () => {
+  it('shown or refused, the plaintext bytes ChatProof held are zeros afterwards', async () => {
+    for (const plain of [PLAIN, latin1('<svg onload=alert(1)>')]) {
+      const { payload, ciphertext } = await made('proof', plain);
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
+      const seen: Uint8Array[] = [];
+      const d = deps();
+      const inner = d.decode.getMockImplementation()!;
+      d.decode.mockImplementation(async (bytes: Uint8Array) => {
+        seen.push(bytes);
+        return inner(bytes);
+      });
+      const r = render(<ChatProof tradeCode={CODE} proof={payload} deps={d} />);
+      await settle();
+      if (plain === PLAIN) {
+        expect(r.host.querySelector('img')).not.toBeNull();
+        expect(seen.length).toBeGreaterThan(0);
+      }
+      for (const b of seen) expect(b.every((x) => x === 0)).toBe(true);
+      r.unmount();
+    }
+  });
+});
+
 describe('review M5: one fetch per proof, and a bounded read', () => {
   it('a new snapshot object for the same proof (every chat poll) does not fetch, decrypt or check it again', async () => {
     const { payload, ciphertext } = await made();
@@ -213,13 +237,13 @@ describe('proofStateOfSnapshot: "Mark paid without proof?"', () => {
     expect(proofStateOfSnapshot(snap([line({ text: 'hi' })]), true, ok)).toBe('none');
   });
 
-  it("review M3: a key line alone is not 'attached': not checked yet is 'unavailable', and a proof that is gone or refused is 'none'", async () => {
+  it("review M3 (lead 2026-11-12): 'attached' only once ChatProof could show the proof; not checked yet, gone or refused is 'unavailable'", async () => {
     const a = await made();
     const b = await made();
     const lines = [line({ id: '1', proof: a.payload }), line({ id: '2', proof: b.payload })];
     expect(proofStateOfSnapshot(snap(lines), true, () => undefined)).toBe('unavailable');
     expect(proofStateOfSnapshot(snap(lines), true, (id) => (id === a.payload.proofId ? 'failed' : undefined))).toBe('unavailable');
-    expect(proofStateOfSnapshot(snap(lines), true, () => 'failed')).toBe('none');
+    expect(proofStateOfSnapshot(snap(lines), true, () => 'failed')).toBe('unavailable');
     expect(proofStateOfSnapshot(snap(lines), false, () => 'failed')).toBe('unavailable');
     expect(proofStateOfSnapshot(snap(lines), true, (id) => (id === b.payload.proofId ? 'ready' : 'failed'))).toBe('attached');
   });
