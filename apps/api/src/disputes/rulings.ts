@@ -88,13 +88,14 @@ const NONE: AccountAction = { kind: 'none' };
 /** The SHA-256 of a reason's UTF-8 bytes, lower-case hex: the `reasonSha256` its taps bind. */
 export const reasonSha256 = (reason: string): string => createHash('sha256').update(reason, 'utf8').digest('hex');
 
-const isText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max && !CONTROL.test(v);
+// Re-verify E3: no lone surrogate in any text a ruling stores (reason, evidence, send-back note): the
+// database would keep U+FFFD in its place, which is not the text a tap's hash was taken over.
+const isText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max && !CONTROL.test(v) && !LONE_SURROGATE.test(v);
 
 function parseEvidence(v: unknown): string[] {
   if (!Array.isArray(v) || v.length > EVIDENCE_MAX) throw new ApiError(400, 'bad-request');
-  // Re-verify E3: a line must be well-formed UTF-16 (no lone surrogate), which jsonb can store and
-  // `evidenceSha256` hashes as sent; otherwise the insert fails after the tap check (a 500).
-  for (const x of v) if (!isText(x, EVIDENCE_LINE_MAX) || x.trim() === '' || LONE_SURROGATE.test(x)) throw new ApiError(400, 'bad-request');
+  // Re-verify E3: `isText` refuses a lone surrogate, which jsonb cannot store (a 500 after the tap check).
+  for (const x of v) if (!isText(x, EVIDENCE_LINE_MAX) || x.trim() === '') throw new ApiError(400, 'bad-request');
   return [...(v as string[])];
 }
 
