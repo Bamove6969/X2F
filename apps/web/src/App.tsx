@@ -17,6 +17,7 @@ import { BadgeSettings } from './screens/profile/BadgeSettings.js';
 import { MyProfile, TraderProfileRoute } from './screens/profile/Profile.js';
 import { DisputeReview } from './screens/review/DisputeReview.js';
 import { PublicRecord, RecordExport } from './screens/profile/Record.js';
+import { Trades } from './screens/Trades.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
 import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
@@ -287,6 +288,7 @@ export function App() {
             <Route path="/buy/:methodId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
             <Route path="/sell/:methodId/:offerId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
             <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+            <Route path="/trades" element={<Trades />} />
             <Route path="/trade/:code" element={<TradeRoom />} />
             {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
             <Route path="/trade/:code/dispute" element={<DisputeScreen />} />

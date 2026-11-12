@@ -524,7 +524,9 @@
   bottom: 0;
   display: grid;
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* One column per tab (five with My trades, four without Post offer). DESIGNER-REVIEW */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   border-top: 1px solid var(--x2f-surface-raised);
   background: var(--x2f-ground);
 }
