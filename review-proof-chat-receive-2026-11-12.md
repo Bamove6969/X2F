@@ -135,7 +135,16 @@ It shows no placeholder, which is silent rather than a gap line.
 
 ## Tests run (worktree a547aa4f, fresh npm ci, `flock ~/x2f-comms/check.lock timeout 900 npx vitest run --project @x2f/web <file>`)
 
-RESULTS_PLACEHOLDER
+All 9 passed, 218 tests:
+- chatProof.test.tsx 8/8
+- chatProofReceive.test.ts 6/6
+- chatEngine.test.ts 41/41
+- proof-render-tripwire.test.ts 8/8
+- cantDoThat-lint.test.ts 13/13
+- chatPanel.test.tsx 31/31
+- payDetailsFeed.test.tsx 6/6
+- buyerPay.test.tsx 91/91
+- proofThumb.test.tsx 14/14
 
 Plus one probe (M1), which failed as expected and was then discarded with `git checkout`. Not run:
 typecheck, Playwright, the API's proofs.test.ts (wip/lead-proof-store's).
