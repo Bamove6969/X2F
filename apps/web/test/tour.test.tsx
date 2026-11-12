@@ -11,10 +11,14 @@ import { FIRST_TRADE_TEXT, FIRST_TRADE_TOUR } from '../src/tour/firstTradeTour.j
 import { clearTourProgress, replayLabel, saveTourProgress, tourProgress } from '../src/tour/progress.js';
 import { TourProvider, useTour } from '../src/tour/TourProvider.js';
 import { WELCOME_SEEN_KEY, markWelcomeSeen, resetWelcomeMemory, welcomeSeen } from '../src/tour/welcomeSeen.js';
+import { Sheet } from '../src/ui/Sheet.js';
 import { fire, render, setReducedMotion } from './render.js';
 
 const click = (el: Element) => fire(el, new MouseEvent('click', { bubbles: true, cancelable: true }));
 const press = (key: string) => fire(document.body, new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+/** A key on whatever has focus, as a browser sends it. */
+const pressOn = (key: string, shiftKey = false) =>
+  fire(document.activeElement ?? document.body, new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }));
 
 /** A page-by-page tour, as the staff and team-member tours will be. */
 const TWO_PAGES: TourDef = {
@@ -332,6 +336,104 @@ describe('the tour shell', () => {
     } finally {
       setReducedMotion(false);
     }
+  });
+
+  // Review 12 Nov, T2: the app behind the tour is inert, and Tab never leaves the card.
+  it('makes #root inert while the tour runs, and lets it go when the tour ends', async () => {
+    const { host } = mount();
+    host.id = 'root';
+    expect(host.hasAttribute('inert')).toBe(false);
+    click(host.querySelector('#start')!);
+    await settle();
+    expect(host.hasAttribute('inert')).toBe(true);
+    // The tour itself is outside the inert tree.
+    expect(host.contains(card())).toBe(false);
+    click(btn('tour-skip')!);
+    await settle();
+    expect(host.hasAttribute('inert')).toBe(false);
+  });
+
+  it('Tab and Shift+Tab stay in the card, round its buttons', async () => {
+    const { host } = mount();
+    click(host.querySelector('#start')!);
+    await settle();
+    click(btn('tour-next')!);
+    await settle();
+    // Second A: Skip tour, Back and Next are all enabled.
+    btn('tour-next')!.focus();
+    const seen: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      pressOn('Tab');
+      expect(card()!.contains(document.activeElement)).toBe(true);
+      seen.push((document.activeElement as HTMLElement).dataset.part!);
+    }
+    expect(seen).toEqual(['tour-skip', 'tour-back', 'tour-next', 'tour-skip', 'tour-back', 'tour-next']);
+    pressOn('Tab', true);
+    expect((document.activeElement as HTMLElement).dataset.part).toBe('tour-back');
+    pressOn('Tab', true);
+    pressOn('Tab', true);
+    expect((document.activeElement as HTMLElement).dataset.part).toBe('tour-next');
+  });
+
+  // Review 12 Nov, T1: a Sheet ("Stay logged in?", the idle reminder) that opens during a tour is never
+  // covered or cut off from the keyboard: the tour waits, out of the way, and comes back where it was.
+  it('waits while a Sheet is open: no scrim or card, the keys are the Sheet\'s, then it carries on at the same stop', async () => {
+    const { host } = mount();
+    click(host.querySelector('#start')!);
+    await settle();
+    click(btn('tour-next')!);
+    await settle();
+    expect(card()?.querySelector('h2')?.textContent).toBe('Second A');
+    let closed = 0;
+    const sheet = render(
+      <Sheet open title="Stay logged in?" onClose={() => closed++}>
+        <button type="button" id="stay">
+          Stay logged in
+        </button>
+      </Sheet>,
+    );
+    await settle();
+    expect(document.querySelector('[data-part="tour"]')).toBeNull();
+    expect(card()).toBeNull();
+    // The Sheet has focus, and the keys reach it: Escape closes the Sheet, not the tour.
+    expect(document.querySelector('.x2f-sheet')!.contains(document.activeElement)).toBe(true);
+    pressOn('ArrowRight');
+    pressOn('Escape');
+    expect(closed).toBe(1);
+    sheet.unmount();
+    await settle();
+    expect(card()?.querySelector('h2')?.textContent).toBe('Second A');
+    expect(tourProgress('test')).toBe(1);
+  });
+
+  it('cuts the hole with an even-odd path, not an SVG mask (the proof tripwire allows no url())', async () => {
+    const { host } = mount();
+    click(host.querySelector('#start')!);
+    await settle();
+    expect(document.querySelector('[data-part="tour-overlay"] mask')).toBeNull();
+    const dim = document.querySelector('[data-part="tour-overlay"] [data-part="tour-dim"]')!;
+    expect(dim.getAttribute('fill-rule')).toBe('evenodd');
+    // The screen, then the rounded hole round the target.
+    expect(dim.getAttribute('d')!.match(/Z/g)).toHaveLength(2);
+    click(btn('tour-next')!);
+    await settle();
+    click(btn('tour-next')!);
+    await settle();
+    // A centred stop has no hole.
+    expect(document.querySelector('[data-part="tour-dim"]')!.getAttribute('d')!.match(/Z/g)).toHaveLength(1);
+  });
+
+  it('the example trader is example_seller, a reserved name nobody can register', async () => {
+    const { host } = mount(FIRST_TRADE_TOUR);
+    click(host.querySelector('#start')!);
+    await settle();
+    for (let i = 1; i < 12; i++) {
+      click(btn('tour-next')!);
+      await settle();
+    }
+    const text = document.querySelector('[data-part="tour-stage"]')!.textContent!;
+    expect(text).toContain('example_seller');
+    expect(text).not.toContain('satoshi_ghost');
   });
 
   it('has no illustration or 3D layer (owner, 12 Nov: the isometric style is rejected)', async () => {

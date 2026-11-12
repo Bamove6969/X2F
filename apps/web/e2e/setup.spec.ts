@@ -627,6 +627,43 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   expect(s.registered).toBe(true);
 });
 
+// Review 12 Nov (the playwright.config change): every other spec starts on a device that has seen
+// the welcome screen. This journey is what a new device really does: sign up, log in, and the
+// first /sell is the welcome screen (owner, 12 Nov 2026, demo note #47).
+test.describe('on a new device', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('sign-up, then the first login, lands on the welcome screen; Skip goes on to /sell', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/setup');
+    await acceptTerms(page);
+    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await page.click('[data-method="password"]');
+    await page.click('[data-part="method-continue"]');
+    await page.fill('#pw', 'Quiet-harbour-58');
+    await page.fill('#pw2', 'Quiet-harbour-58');
+    await page.click('[data-part="password-set"]');
+    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    await saveRecoveryCodes(page);
+    await page.click('[data-part="backup-skip"]');
+    await page.fill('#addr', ADDRESS);
+    await page.click('[data-part="wallet-finish"]');
+    await page.click('[data-part="start-trading"]');
+    await expect(page.locator('[data-screen="login"]')).toBeVisible();
+    await page.click('[data-method="password"]');
+    await page.fill('#login-name', 'lumen-login-7');
+    await page.fill('#login-password', 'Quiet-harbour-58');
+    await page.click('[data-part="password-login"]');
+    await expect(page.locator('[data-screen="session-length"]')).toBeVisible();
+    await page.click('[data-part="session-length-continue"]');
+    await expect(page).toHaveURL(/\/welcome$/);
+    await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
+    await page.getByRole('button', { name: 'Skip and get started' }).click();
+    await expect(page).toHaveURL(/\/sell$/);
+    expect(await page.evaluate(() => localStorage.getItem('x2f.welcome.seen'))).toBe('1');
+  });
+});
+
 test('someone who already has an account goes from the Terms to Log in, keeping returnTo', async ({ page }) => {
   await stubApi(page);
   await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);

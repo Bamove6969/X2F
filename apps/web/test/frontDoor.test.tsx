@@ -355,6 +355,26 @@ describe('logged in, first visit on this device', () => {
     expect(where.split('?')[0]).toBe('/wallets');
   });
 
+  // Review 12 Nov, T3: the gate keeps the query, and Skip takes it on to /sell.
+  it('keeps /sell\'s query through the welcome screen', async () => {
+    me = { status: 200, body: FULL };
+    const host = await open('/sell?currency=EUR');
+    expect(where).toBe('/welcome?currency=EUR');
+    act(() => host.querySelector<HTMLButtonElement>('.x2f-hello__skip')!.click());
+    await settle();
+    expect(where).toBe('/sell?currency=EUR');
+  });
+
+  // Lead, 12 Nov 2026: a team member never sees the welcome screen or the trader's tour (they get
+  // the member tour), and so never its Settings link to an owner-only screen.
+  it('a team member goes straight to /sell, and /welcome sends them there too', async () => {
+    me = { status: 200, body: { ...FULL, member: { name: 'Ana', roles: ['trades'], abilities: [] } } };
+    await open('/sell');
+    expect(where.split('?')[0]).toBe('/sell');
+    await open('/welcome');
+    expect(where.split('?')[0]).toBe('/sell');
+  });
+
   it('once seen, /sell opens and /welcome still opens (from Settings)', async () => {
     window.localStorage.setItem(WELCOME_SEEN_KEY, '1');
     me = { status: 200, body: FULL };

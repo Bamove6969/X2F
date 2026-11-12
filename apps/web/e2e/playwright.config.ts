@@ -27,8 +27,14 @@ export default defineConfig({
     colorScheme: 'dark',
     serviceWorkers: 'block',
     // Every spec opens on a device that has already seen the welcome screen (owner, 12 Nov 2026: the
-    // first visit to /sell goes to /welcome once per device); tour.spec.ts starts from a new device.
-    storageState: { cookies: [], origins: [{ origin: `http://127.0.0.1:${PORT}`, localStorage: [{ name: 'x2f.welcome.seen', value: '1' }] }] },
+    // first visit to /sell goes to /welcome once per device); tour.spec.ts and setup.spec.ts's
+    // first-device journey start from a new device. Both origins the specs open: 127.0.0.1 (baseURL)
+    // and localhost (team.spec, for WebAuthn), as localStorage is per origin (review 12 Nov, B5).
+    // A context a spec makes itself (browser.newContext) is a new device: it gets none of this.
+    storageState: {
+      cookies: [],
+      origins: [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`].map((origin) => ({ origin, localStorage: [{ name: 'x2f.welcome.seen', value: '1' }] })),
+    },
   },
   projects: [{ name: 'chromium', use: { browserName: 'chromium', ...(executablePath ? { launchOptions: { executablePath } } : {}) } }],
   webServer: {

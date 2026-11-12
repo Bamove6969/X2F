@@ -101,8 +101,10 @@ for (const size of PHONES) {
       // Both phones are 760+ tall, so the links show.
       const links = screen.locator('nav[aria-label="Help and settings"] a');
       await expect(links).toHaveText(['FAQ', 'Getting started', 'Support', 'Settings']);
-      await expect(links.nth(2)).toHaveAttribute('href', '/feedback');
-      await expect(links.nth(3)).toHaveAttribute('href', '/settings/security');
+      // One help page for every link (review 12 Nov, L3: /help/:topic, as /login's help links).
+      for (const [i, to] of ['/help/faq', '/help/getting-started', '/help/support', '/help/settings'].entries()) {
+        await expect(links.nth(i)).toHaveAttribute('href', to);
+      }
       // The tab bar, with no tab current.
       await expect(page.locator('nav[aria-label="Main"].x2f-bottom-nav')).toBeVisible();
       await expect(page.locator('nav[aria-label="Main"] [aria-current="page"]')).toHaveCount(0);
@@ -138,6 +140,12 @@ for (const size of PHONES) {
       await expect(card(page).locator('[data-part="tour-back"]')).toBeDisabled();
       await expect44(card(page).locator('button'));
       await noSidewaysScroll(page);
+      // Review 12 Nov, T2: the app behind is inert, and Tab and Shift+Tab never leave the card.
+      await expect(page.locator('#root')).toHaveAttribute('inert', '');
+      for (const k of ['Tab', 'Tab', 'Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab']) {
+        await page.keyboard.press(k);
+        expect(await card(page).evaluate((c) => c.contains(document.activeElement) && document.activeElement !== c), k).toBe(true);
+      }
 
       // Stop 2: Sell is tapped and fills; the heading changes.
       await next(page).click();
@@ -182,6 +190,7 @@ for (const size of PHONES) {
       await page.keyboard.press('Escape');
       await expect(card(page)).toHaveCount(0);
       // The welcome screen is usable again.
+      await expect(page.locator('#root')).not.toHaveAttribute('inert', '');
       await expect(page.getByRole('button', { name: 'Take the tour' })).toBeVisible();
     });
 
