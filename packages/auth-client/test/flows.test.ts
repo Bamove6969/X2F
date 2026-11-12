@@ -37,7 +37,8 @@ const LABEL = 'Browser on Linux';
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
  * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
  * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
- * Post an offer in apps/web/src/screens/post/api.ts). Any other new route still needs a client method.
+ * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
+ * apps/web/src/screens/account/AccountFrozen.tsx). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
@@ -45,6 +46,7 @@ const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
   'GET /v1/account/blocks',
+  'GET /v1/account/freeze',
   'GET /v1/account/notes/:displayName|:id',
   'GET /v1/account/nudges',
   'GET /v1/account/offers',

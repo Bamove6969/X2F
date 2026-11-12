@@ -146,8 +146,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // field rules the API's checkBands and rateFor share, not refusals.
     // 64 -> 65 (owner item 64, 3 Nov 2026; proof pop-ups landed 10 Nov): screens/proof/ProofPrompts.tsx's
     // "Our automated system was unable to detect the amount ..." is a check on the screenshot asking
-    // for an explanation; the proof can still be sent.
-    expect(notARefusal).toBeLessThanOrEqual(65);
+    // for an explanation; the proof can still be sent. 65 -> 66 (jabber-settings F1, 23fe5783, batch 8):
+    // jabberCopy.ts's always-on note under the disabled security box, a standing note; nothing was tried.
+    expect(notARefusal).toBeLessThanOrEqual(66);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });
