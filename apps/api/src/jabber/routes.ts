@@ -235,7 +235,7 @@ export function jabberRoutes(app: FastifyInstance): void {
       // Sorted and without duplicates, so setting a pick to what it is writes nothing (and tells nobody).
       const { rows } = await c.query<{ muted_kinds: string[] }>(
         `update jabber_contacts set muted_kinds = array(
-             select distinct k from unnest(case when $3 then array_remove(muted_kinds, $2) else array_append(muted_kinds, $2) end) k order by k)
+             select distinct k from unnest(case when $3::boolean then array_remove(muted_kinds, $2::text) else array_append(muted_kinds, $2::text) end) k order by k)
           where account_id = $1 and jid_sealed is not null
           returning muted_kinds`,
         [accountId, kind, on],

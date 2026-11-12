@@ -32,6 +32,8 @@ let n = 0;
 
 beforeAll(async () => {
   ({ app, deps, logs, setNow, trader } = await tradeApp({}, { jabberSender: fake }));
+  // Start the clock here, so no session is created before a jump of the clock.
+  setNow(now);
 });
 afterAll(async () => {
   expect(logs.join('\n')).not.toMatch(/@xmpp\.example|events-user/);
@@ -115,7 +117,7 @@ describe('a muted event sends nothing; the others still do', () => {
     await dispute(buyer.id, seller.id);
     expect(await queued(buyer.id)).toEqual(['trade-attention']);
     await sendAll();
-    expect(sent).toEqual([{ to: buyer.jid, message: { kind: 'trade-attention' } }]);
+    expect(sent.filter((x) => x.to === buyer.jid)).toEqual([{ to: buyer.jid, message: { kind: 'trade-attention' } }]);
   });
 
   it('trade attention off: a dispute queues nothing, an account change still does', async () => {
@@ -151,11 +153,14 @@ describe('changing the picks is itself an account change, told to the address (s
     expect((await t.browser.put('/v1/account/jabber/events', { kind: 'account-change', on: false })).statusCode).toBe(200);
     expect(await queued(t.id)).toEqual(['account-change']);
     await sendAll();
-    expect(sent).toEqual([{ to: t.jid, message: { kind: 'account-change' } }]);
+    // The outbox is shared with earlier tests' accounts: look at this address only.
+    expect(sent.filter((x) => x.to === t.jid)).toEqual([{ to: t.jid, message: { kind: 'account-change' } }]);
     sent.length = 0;
     expect((await t.browser.put('/v1/account/jabber/events', { kind: 'account-change', on: true })).statusCode).toBe(200);
-    expect((await t.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false })).statusCode).toBe(200);
     expect(await queued(t.id)).toEqual(['account-change']);
+    // Each change of the picks is its own notice.
+    expect((await t.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false })).statusCode).toBe(200);
+    expect(await queued(t.id)).toEqual(['account-change', 'account-change']);
   });
 
   it('setting a pick to what it already is changes nothing and tells nobody', async () => {
