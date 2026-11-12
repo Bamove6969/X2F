@@ -1117,7 +1117,7 @@
       "x": 2520,
       "y": 82534,
       "w": 390,
-      "h": 5033,
+      "h": 5481,
       "page": "all",
       "title": "I5 \u00b7 Check your payment proof (blur)",
       "is_interactive": true
@@ -1126,7 +1126,7 @@
       "x": 3060,
       "y": 82534,
       "w": 1280,
-      "h": 2755,
+      "h": 2969,
       "page": "all",
       "title": "I5 \u00b7 Check your payment proof (wide)",
       "is_interactive": true
@@ -1445,6 +1445,33 @@
       "page": "all",
       "title": "FirstScreen-Wide",
       "is_interactive": true
+    },
+    "SetupWallet-Wide.dc.html": {
+      "x": 4230,
+      "y": 18166,
+      "w": 1280,
+      "h": 1369,
+      "page": "all",
+      "title": "SetupWallet-Wide",
+      "is_interactive": true
+    },
+    "Wallet-Wide.dc.html": {
+      "x": 1410,
+      "y": 13894,
+      "w": 1280,
+      "h": 1477,
+      "page": "all",
+      "title": "Wallet-Wide",
+      "is_interactive": true
+    },
+    "TradeFund-Wide.dc.html": {
+      "x": 4180,
+      "y": 7604,
+      "w": 1280,
+      "h": 1375,
+      "page": "all",
+      "title": "TradeFund-Wide",
+      "is_interactive": true
     }
   },
   "createdOnFiles": {
@@ -1622,6 +1649,7 @@
     "PostOffer.dc.html",
     "GiftCardBrand.dc.html",
     "TradeFund.dc.html",
+    "TradeFund-Wide.dc.html",
     "BuyerPay.dc.html",
     "SellerConfirm.dc.html",
     "Review.dc.html",
@@ -1632,6 +1660,7 @@
     "Profile.dc.html",
     "BadgeSettings.dc.html",
     "Wallet.dc.html",
+    "Wallet-Wide.dc.html",
     "SetupTerms.dc.html",
     "SetupUsername.dc.html",
     "SetupLogin.dc.html",
@@ -1639,6 +1668,7 @@
     "SetupPgpChallenge.dc.html",
     "SetupBackup.dc.html",
     "SetupWallet.dc.html",
+    "SetupWallet-Wide.dc.html",
     "SetupPassword.dc.html",
     "SetupWelcome.dc.html",
     "OwnerSetup.dc.html",
