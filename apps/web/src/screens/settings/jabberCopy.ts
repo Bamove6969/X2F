@@ -72,5 +72,6 @@ export const JABBER_COPY = {
     },
   },
   /** Review F1: under a security notice's box, which is ticked and cannot be unticked. */
+  // not-a-refusal: a standing note under a disabled box; nothing was tried and refused
   alwaysOnNote: "Security alerts can't be turned off.",
 } as const;
