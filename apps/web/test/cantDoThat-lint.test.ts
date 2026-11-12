@@ -147,7 +147,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 64 -> 65 (owner item 64, 3 Nov 2026; proof pop-ups landed 10 Nov): screens/proof/ProofPrompts.tsx's
     // "Our automated system was unable to detect the amount ..." is a check on the screenshot asking
     // for an explanation; the proof can still be sent.
-    expect(notARefusal).toBeLessThanOrEqual(65);
+    // 65 -> 66 (NEEDS_PROOF_RECEIVE): screens/proof/ChatProof.tsx's CHAT_PROOF_GONE ("This proof is no
+    // longer stored."), a note in place of a proof past its retention, not a rule the user ran into.
+    expect(notARefusal).toBeLessThanOrEqual(66);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

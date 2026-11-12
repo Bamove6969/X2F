@@ -734,3 +734,42 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     expect(api.posted).toHaveLength(1);
   });
 });
+
+describe('chat engine: proof.attached lines (NEEDS_PROOF_RECEIVE)', () => {
+  async function fromSellerProof(kind: 'proof' | 'evidence', parts: Participants) {
+    const { newProofId, proofKeyToBase64, sealProofEnvelope } = await import('@x2f/proof');
+    const payload = {
+      proofId: newProofId(), kind, key: await proofKeyToBase64(new Uint8Array(32).fill(5)), sha256: 'ef'.repeat(32),
+      width: 200, height: 100, mime: 'image/png' as const, hidden: [], photoTakenAt: null,
+    };
+    const env = await sealProofEnvelope({ type: 'proof.attached', payload }, { trade: channel, from: 'seller', seq: sellerState.nextSeq, me: seller, participants: parts });
+    sellerState = { ...sellerState, nextSeq: sellerState.nextSeq + 1 };
+    api.add('seller', env);
+    return payload;
+  }
+
+  it('evidence from the other trader is a proof line while a dispute is open; the key is never stored', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await fromSellerProof('evidence', parts);
+    const snap = await e.sync(chat);
+    expect(snap.lines).toEqual([{ id: '1', from: 'seller', text: '', proof: p, at: expect.any(String), mine: false, gapBefore: false }]);
+    expect(JSON.stringify([...store.records.values()])).not.toContain(p.key);
+  });
+
+  it("evidence outside a dispute, and a 'payment proof' from the seller, are refused for good; the next line still shows", async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await fromSellerProof('evidence', parts);
+    await fromSellerProof('proof', parts);
+    await fromSeller('after', parts);
+    const snap = await e.sync(chat);
+    expect(snap.lines.map((l) => [l.text, l.proof === undefined])).toEqual([['after', true]]);
+    // Decided for good: a dispute opening later does not bring them back.
+    api.view.disputeOpen = true;
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['after']);
+  });
+});

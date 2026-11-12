@@ -46,6 +46,7 @@
  *   record (a block hides a chat with that same 404, and it may come back).
  */
 import type { Role } from '@x2f/core';
+import type { ProofAttachedPayload } from '@x2f/proof';
 import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
@@ -95,6 +96,11 @@ export interface ChatLine {
   missing?: true;
   /** The payee's packaged payment details (J-08): the panel shows a card; `text` is its plain rendering. */
   pay?: PayDetailsPayload;
+  /**
+   * NEEDS_PROOF_RECEIVE: a payment proof or dispute evidence (`proof.attached`): `text` is empty and
+   * the panel shows the picture (ChatProof). Carries the proof's key: it stays in the page's memory.
+   */
+  proof?: ProofAttachedPayload;
 }
 
 export interface ChatSnapshot {
@@ -220,6 +226,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           const line = { id: m.id, from: m.from, at: m.at, mine: m.from === view.role, gapBefore: m.gapBefore };
           const shown = session?.texts.get(m.id);
           if (shown === undefined) return { ...line, text: '', missing: true };
+          if (shown.proof !== undefined) return { ...line, text: shown.text, proof: shown.proof };
           return shown.pay === undefined ? { ...line, text: shown.text } : { ...line, text: shown.text, pay: shown.pay };
         }),
     };
@@ -345,7 +352,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         let advance = true;
         try {
           if (!ROLES_SET.has(e.senderRole)) throw new ChatError('bad-message', 'unknown sender');
-          const args = { role: rec.role, me, participants: parts, state, modMayPost: view.disputeOpen };
+          const args = { role: rec.role, me, participants: parts, state, modMayPost: view.disputeOpen, evidenceAllowed: view.disputeOpen };
           let r: Awaited<ReturnType<typeof openChatMessage>>;
           let withhold = false;
           try {
@@ -508,5 +515,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
 interface Shown {
   text: string;
   pay?: PayDetailsPayload;
+  /** A `proof.attached`'s key and facts: kept in memory only, never in the store (like the text). */
+  proof?: ProofAttachedPayload;
 }
-const shownOf = (m: { text: string; pay?: PayDetailsPayload }): Shown => (m.pay === undefined ? { text: m.text } : { text: m.text, pay: m.pay });
+const shownOf = (m: { text: string; pay?: PayDetailsPayload; proof?: ProofAttachedPayload }): Shown =>
+  m.proof !== undefined ? { text: m.text, proof: m.proof } : m.pay === undefined ? { text: m.text } : { text: m.text, pay: m.pay };
