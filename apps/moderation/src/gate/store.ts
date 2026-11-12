@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, open as openFile, readFile, rename, rm } from 'node:fs/promises';
+import { mkdir, open as openFile, readFile, rename, rm, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { modSubkey, open, seal } from '../keystore.js';
 
@@ -71,6 +71,13 @@ export interface GateState {
   /** Task 14's log checkpoints (checkpoint.ts): the head's id and hash, sealed here when taken. */
   checkpoints: Array<{ id: string; hash: string; at: string }>;
   /**
+   * Security review 2026-11-12, M3 re-verify (C): the last successful verification of the log (or
+   * when the checkpoints first started, before any), and when the overdue alarm was raised since;
+   * sealed here so a restart never resets the overdue clock. ISO times, or null.
+   */
+  logVerifiedAt: string | null;
+  logOverdueAlarmAt: string | null;
+  /**
    * Each owner invite the gate has acted on (review B1): the account it was bound to the first time
    * (never re-pointed by the database), and whether it is closed (the person joined, or it expired):
    * a closed invite adds no key.
@@ -120,6 +127,8 @@ export function emptyGate(): GateState {
     usedNonces: {},
     rulingsSeen: {},
     checkpoints: [],
+    logVerifiedAt: null,
+    logOverdueAlarmAt: null,
     invites: {},
     removedIds: [],
     stopped: false,
@@ -132,6 +141,8 @@ export function emptyGate(): GateState {
 export const SWITCH_ON_SKEW_MS = 2 * 60_000;
 
 export const GATE_FILE = 'gate.bin';
+/** The gate store's lock file in MOD_STATE_DIR (`openGateStore(…, { lock: true })`): the holder's pid. */
+export const GATE_LOCK_FILE = 'gate.lock';
 const AAD = 'x2f/mod/gate/v1';
 
 export interface GateStore {
@@ -143,6 +154,54 @@ export interface GateStore {
   save(): Promise<void>;
   /** Runs `fn` alone: one critical section (sync, authorize, save) on this gate at a time (review M2). */
   exclusive<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Waits for any save under way, then refuses every later one (`gate store closed`) and gives up
+   * the lock file, if this store holds it. Idempotent.
+   */
+  close(): Promise<void>;
+}
+
+/** True while a process with this pid runs (EPERM: it runs as someone else). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Security review 2026-11-12, M1 residual: `dir/gate.lock`, made exclusively (`wx`) with this
+ * process's pid, for the store's life. Another live holder (this process included) refuses the
+ * open; a lock left by a process that no longer runs is taken over. Node has no flock(2), so the
+ * file and the holder's liveness are the lock: it fences a successor started on the same host
+ * while this process still stops (a lost instance lock), the case the database lock cannot.
+ */
+async function lockDir(dir: string): Promise<() => Promise<void>> {
+  const path = join(dir, GATE_LOCK_FILE);
+  const mine = `${process.pid}\n`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const f = await openFile(path, 'wx', 0o600);
+      try {
+        await f.writeFile(mine);
+        await f.sync();
+      } finally {
+        await f.close();
+      }
+      return async () => {
+        const now = await readFile(path, 'utf8').catch(() => null);
+        if (now === mine) await unlink(path).catch(() => undefined);
+      };
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      const held = Number.parseInt((await readFile(path, 'utf8').catch(() => '')).trim(), 10);
+      if (Number.isInteger(held) && held > 0 && alive(held)) throw new Error(`gate: ${GATE_LOCK_FILE} is locked by process ${held} (another moderation process uses this state directory)`);
+      await unlink(path).catch(() => undefined);
+    }
+  }
+  throw new Error(`gate: ${GATE_LOCK_FILE} could not be taken`);
 }
 
 /** A promise-chain mutex: each call runs after the previous one settled. */
@@ -165,19 +224,31 @@ function fromJson(text: string): GateState {
   return { ...emptyGate(), ...o, limitUsdCents: BigInt(o.limitUsdCents) };
 }
 
-/** Opens `dir/gate.bin` (a fresh gate when there is none yet; the directory is made, 0700). */
-export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promise<GateStore> {
+/**
+ * Opens `dir/gate.bin` (a fresh gate when there is none yet; the directory is made, 0700). With
+ * `lock`, the store holds `dir/gate.lock` until `close()` (the process entry's gate does; tests and
+ * read-only tools open without it).
+ */
+export async function openGateStore(dir: string, keystoreKey: Uint8Array, o: { lock?: boolean } = {}): Promise<GateStore> {
   const key = modSubkey(keystoreKey, 'gate');
   await mkdir(dir, { recursive: true, mode: 0o700 });
+  let closed = false;
   const path = join(dir, GATE_FILE);
+  // Taken before the file is read, so the state read is the last holder's final save.
+  const unlock = o.lock === true ? await lockDir(dir) : null;
   let state: GateState;
-  let sealed: Buffer | null = null;
   try {
-    sealed = await readFile(path);
+    let sealed: Buffer | null = null;
+    try {
+      sealed = await readFile(path);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    }
+    state = sealed === null ? emptyGate() : fromJson(new TextDecoder().decode(open(key, AAD, sealed)));
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    await unlock?.();
+    throw e;
   }
-  state = sealed === null ? emptyGate() : fromJson(new TextDecoder().decode(open(key, AAD, sealed)));
   const saving = serial();
   const store: GateStore = {
     get state() {
@@ -188,6 +259,7 @@ export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promi
     },
     save: () =>
       saving(async () => {
+        if (closed) throw new Error('gate: the gate store is closed');
         const tmp = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
         const f = await openFile(tmp, 'wx', 0o600);
         try {
@@ -209,6 +281,14 @@ export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promi
         }
       }),
     exclusive: serial(),
+    async close() {
+      if (closed) return;
+      // After any save already queued, never during one.
+      await saving(async () => {
+        closed = true;
+      });
+      await unlock?.();
+    },
   };
   return store;
 }

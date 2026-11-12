@@ -905,7 +905,8 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
               const { rulingExecutor } = await import('./execute.js');
               const attestation = fileGateAttestation(gateConfig.mdsDir);
               await attestation.init();
-              const store = await openGateStore(gateConfig.stateDir, envBytes(env, 'MOD_KEYSTORE_KEY', 32));
+              // Re-verify, M1 residual: the store holds MOD_STATE_DIR/gate.lock for its life (a successor on this host waits for it).
+              const store = await openGateStore(gateConfig.stateDir, envBytes(env, 'MOD_KEYSTORE_KEY', 32), { lock: true });
               if (store.state.ownerAccountId === null) process.stderr.write('{"level":40,"msg":"ruling gate: owner not pinned (npm run pin-owner -w @x2f/moderation)"}\n');
               // Review M3: a locked or stalled table fails the reader's query instead of stopping the checkpoint loop for good.
               const reader = new pgMod.Pool({ connectionString: gateConfig.apiReaderUrl, max: 2, statement_timeout: 30_000 });
@@ -920,7 +921,14 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
               const source = pgGateSource(reader);
               const sync = startGateSync(store, source, gateCtx);
               const rulings = rulingExecutor({ store, source, ctx: gateCtx, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
-              return { rulings, checkpoints: { store, reader }, stop: () => sync.stop() };
+              return {
+                rulings,
+                checkpoints: { store, reader },
+                stop: async () => {
+                  await sync.stop();
+                  await store.close();
+                },
+              };
             },
           }
         : {}),

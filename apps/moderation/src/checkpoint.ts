@@ -8,7 +8,9 @@ import type { Link } from './link.js';
  * (`x2f_mod_reader`, migration 212), records `{ id, hash, at }` in the sealed gate store (saved
  * before anything leaves) when the head moved, and reports it (`log-checkpoint`: the API logs
  * `log.checkpoint` only for the row that still has that hash). A head whose only new row is the
- * API's own `log.checkpoint` for the newest checkpoint is not a move (review I2). Once
+ * API's own `log.checkpoint` for the newest checkpoint is not a move (review I2), for at most
+ * `CHECKPOINT_IDLE_MAX_MS` (3 hours; M3 re-verify A): then it is checkpointed and reported anyway, so
+ * the API appends again and a reader view frozen at that row shows as a head that did not move. Once
  * `verifyEveryMs` (a day) has passed since the last verification, the pass also verifies: the whole
  * chain from its first row (`verifyChain`, @x2f/logchain, the API's own function; review M2: the
  * oldest checkpoint then anchors every row before it, since a rewrite re-chained up to it changes
@@ -17,10 +19,14 @@ import type { Link } from './link.js';
  * The alarm (`log-alarm`: the API sets `site_flags.log_alarm`, shown on Overview; `log-alarm` in the
  * log; and stderr, which an API that ignores the report cannot silence) is raised on (review M3):
  * a failed verification; a 409 `checkpoint-mismatch` (the API's view of a row differs from the
- * reader's, read moments before); a head that has not moved past an accepted checkpoint (the API
- * appends its `log.checkpoint`, so an unmoving head is a frozen view); and no successful
- * verification for longer than `verifyEveryMs` plus `OVERDUE_MARGIN_MS` (the reader refused, locked
- * or the table gone: an overdue verify alarms once until one succeeds). The reader's pool has a
+ * reader's, read moments before); `CHECKPOINT_REFUSALS_MAX` (3) reports in a row refused or failed
+ * with any other status (a refused report is sent again each pass; M3 re-verify B); a head that has
+ * not moved past an accepted checkpoint (the API appends its `log.checkpoint`, so an unmoving head is
+ * a frozen view); and no successful verification for longer than `verifyEveryMs` plus
+ * `OVERDUE_MARGIN_MS` (the reader refused, locked or the table gone: an overdue verify alarms once
+ * until one succeeds). The time of the last successful verification and of the overdue alarm are
+ * sealed in gate.bin (`logVerifiedAt`, `logOverdueAlarmAt`), so restarts reset neither (M3 re-verify
+ * C); before any verification the clock runs from the first start. The reader's pool has a
  * `statement_timeout` (main.ts), so a locked table fails a pass rather than stopping the loop.
  *
  * Residual: an entry rewritten and re-chained after the newest checkpoint is found only by the next
@@ -56,17 +62,33 @@ export const CHECKPOINT_INTERVAL_MS = 10 * 60_000;
 export const VERIFY_EVERY_MS = 24 * 60 * 60_000;
 /** How late the daily verification may be before its absence raises the alarm (review M3). */
 export const OVERDUE_MARGIN_MS = 60 * 60_000;
+/**
+ * M3 re-verify (A): the longest an idle log goes without a new checkpoint. Past it, the head is
+ * checkpointed and reported even when its only new row is the API's own `log.checkpoint`, so the
+ * API appends again and the head must move past it: a reader view frozen at that row alarms.
+ */
+export const CHECKPOINT_IDLE_MAX_MS = 3 * 60 * 60_000;
+/** M3 re-verify (B): consecutive refused or failed `log-checkpoint` reports (any status) that raise the alarm. */
+export const CHECKPOINT_REFUSALS_MAX = 3;
 
 export function startCheckpoints(o: CheckpointOptions): Checkpoints {
   const every = o.verifyEveryMs ?? VERIFY_EVERY_MS;
   const alarmLine = o.alarm ?? ((line: string) => process.stderr.write(`${line}\n`));
   const chain = pgChainReader(o.reader);
   let lastVerify: number | null = null;
-  /** The last successful verification, or the start: an overdue one is an alarm (review M3). */
-  let lastOk = o.now().getTime();
-  let overdueRaised = false;
   /** The checkpoint the API accepted last pass: the head must have moved past it since (review M3). */
   let accepted: string | null = null;
+  /** The newest checkpoint while its report was refused: reported again each pass (M3 re-verify B). */
+  let unreported: { id: string; hash: string } | null = null;
+  let refusals = 0;
+
+  /** Seals the overdue clock's fields in gate.bin (M3 re-verify C: they survive restarts). */
+  const seal = (f: (s: GateStore['state']) => void): Promise<void> =>
+    o.store.exclusive(async () => {
+      f(o.store.state);
+      await o.store.save();
+    });
+  const iso = () => o.now().toISOString();
 
   const raise = async (why: string): Promise<void> => {
     o.log({ reason: 'log-alarm' });
@@ -90,8 +112,10 @@ export function startCheckpoints(o: CheckpointOptions): Checkpoints {
     }
     lastVerify = o.now().getTime();
     if (ok) {
-      lastOk = lastVerify;
-      overdueRaised = false;
+      await seal((st) => {
+        st.logVerifiedAt = iso();
+        st.logOverdueAlarmAt = null;
+      });
       o.log({ reason: 'log-verified' });
       return true;
     }
@@ -111,10 +135,29 @@ export function startCheckpoints(o: CheckpointOptions): Checkpoints {
     }
   };
 
+  /** Reports a checkpoint; counts refusals of any kind (M3 re-verify B), alarms at once on a mismatch. */
+  const report = async (cp: { id: string; hash: string }): Promise<void> => {
+    const res = await o.link.report({ kind: 'log-checkpoint', id: cp.id, hash: cp.hash }).catch(() => ({ status: 0, error: null }));
+    if (res.status === 201 || res.status === 200) {
+      accepted = cp.id;
+      unreported = null;
+      refusals = 0;
+      return;
+    }
+    unreported = cp;
+    refusals++;
+    o.log({ reason: `log-checkpoint-refused-${res.status}` });
+    if (res.status === 409 && res.error === 'checkpoint-mismatch') await raise('the API and this reader see different rows (checkpoint-mismatch)');
+    else if (refusals === CHECKPOINT_REFUSALS_MAX) await raise(`${refusals} checkpoint reports in a row were refused or failed`);
+  };
+
   const pass = async (): Promise<void> => {
-    // Review M3: checked first, so a reader that fails every query still raises it.
-    if (!overdueRaised && o.now().getTime() - lastOk > every + OVERDUE_MARGIN_MS) {
-      overdueRaised = true;
+    // M3 re-verify C: the overdue clock is sealed in gate.bin; before the first verification it runs from the first start.
+    if (o.store.state.logVerifiedAt === null) await seal((st) => void (st.logVerifiedAt ??= iso()));
+    const lastOk = Date.parse(o.store.state.logVerifiedAt!);
+    // Review M3: checked first, so a reader that fails every query still raises it, once until a verification succeeds.
+    if (o.store.state.logOverdueAlarmAt === null && o.now().getTime() - lastOk > every + OVERDUE_MARGIN_MS) {
+      await seal((st) => void (st.logOverdueAlarmAt = iso()));
       await raise('the daily verification is overdue (the log could not be read)');
     }
     const head = await logHead(o.reader);
@@ -124,15 +167,17 @@ export function startCheckpoints(o: CheckpointOptions): Checkpoints {
       accepted = null;
       if (head === null || BigInt(head.id) <= BigInt(was)) await raise('the head did not move past an accepted checkpoint (a frozen view)');
     }
-    if (head !== null && last?.id !== head.id && !(last !== undefined && (await onlyOwnCheckpoint(last)))) {
+    // Review I2, bounded (M3 re-verify A): the API's own log.checkpoint is no move for at most CHECKPOINT_IDLE_MAX_MS.
+    const idle = last !== undefined && o.now().getTime() - Date.parse(last.at) < CHECKPOINT_IDLE_MAX_MS && (await onlyOwnCheckpoint(last));
+    if (head !== null && last?.id !== head.id && !idle) {
+      const cp = { id: head.id, hash: head.hash };
       await o.store.exclusive(async () => {
-        o.store.state.checkpoints.push({ id: head.id, hash: head.hash, at: o.now().toISOString() });
+        o.store.state.checkpoints.push({ ...cp, at: iso() });
         await o.store.save();
       });
-      const res = await o.link.report({ kind: 'log-checkpoint', id: head.id, hash: head.hash }).catch(() => ({ status: 0, error: null }));
-      if (res.status === 201 || res.status === 200) accepted = head.id;
-      else if (res.status === 409 && res.error === 'checkpoint-mismatch') await raise('the API and this reader see different rows (checkpoint-mismatch)');
-      else o.log({ reason: `log-checkpoint-refused-${res.status}` });
+      await report(cp);
+    } else if (unreported !== null) {
+      await report(unreported);
     }
     if (lastVerify === null || o.now().getTime() - lastVerify >= every) await verify();
   };
