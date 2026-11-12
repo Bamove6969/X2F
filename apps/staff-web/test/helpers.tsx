@@ -3,6 +3,7 @@
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, vi } from 'vitest';
+import { hasIssuedAt, stampIssuedAt, tapChallenge } from '@x2f/staff';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -117,3 +118,20 @@ export function fakeApi(routes: Record<string, Answer>): { calls: Call[]; set(ro
 }
 
 export const refused = (status: number, error: string, extra: Record<string, unknown> = {}) => ({ status, body: { error, ...extra } });
+
+/**
+ * What an honest API answers to `taps/start` (re-verify X1): a fresh nonce, the server's issuedAt
+ * on the kinds that carry one, and the challenge `tapChallenge(intent + issuedAt, nonce)`, so the
+ * dialog's own check passes. Use it as the route's answer: `'POST /staff/v1/taps/start': honestTapStart('tap-1')`.
+ */
+export function honestTapStart(tapId: string) {
+  return (body: unknown) => {
+    const intent = body as import('@x2f/staff').KeyTapIntent;
+    const nonce = new Uint8Array(16).map(() => Math.floor(Math.random() * 256));
+    const at = new Date();
+    const signed = stampIssuedAt(intent, at);
+    const challenge = Buffer.from(tapChallenge(signed, nonce)).toString('base64url');
+    return { body: { tapId, options: { challenge }, nonce: Buffer.from(nonce).toString('hex'), issuedAt: hasIssuedAt(intent.kind) ? at.toISOString() : null } };
+  };
+}
+

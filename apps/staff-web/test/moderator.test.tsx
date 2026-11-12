@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { hhmm } from '../src/screens/modModel.js';
 import { button, click, fakeApi, field, refused, render, settle, typeInto } from './helpers.js';
+import { honestTapStart } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
@@ -196,7 +197,7 @@ describe('ModCase (board ModCase)', () => {
     const api = fakeApi({
       'GET /staff/v1/me': { body: MOD },
       'GET /staff/v1/disputes/:code': { body: kase() },
-      'POST /staff/v1/taps/start': { body: { tapId: 'tap-1', options: { challenge: 'c' } } },
+      'POST /staff/v1/taps/start': honestTapStart('tap-1'),
       'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-1' } },
       'POST /staff/v1/disputes/:code/rulings': { body: { code: CODE, ruling: { proposal: null, sentBack: null } } },
     });
@@ -224,6 +225,7 @@ describe('ModCase (board ModCase)', () => {
       accountAction: { kind: 'none' }, amountAtomic: '4000000000000', reasonSha256: sha(REASON),
       // Review mod-screens M1: the evidence lines as posted, bound by the tap.
       evidenceSha256: sha(JSON.stringify(['Bank statement line 08:51', 'Zelle confirmation'])),
+      round1Id: null,
     });
     expect(post.body).toEqual({
       rulingId: (start.body as { rulingId: string }).rulingId, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, reason: REASON,
@@ -261,7 +263,7 @@ describe('ModCase (board ModCase)', () => {
     const api = fakeApi({
       'GET /staff/v1/me': { body: OWNER },
       'GET /staff/v1/disputes/:code': { body: waiting },
-      'POST /staff/v1/taps/start': { body: { tapId: 'tap-2', options: { challenge: 'c' } } },
+      'POST /staff/v1/taps/start': honestTapStart('tap-2'),
       'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-2' } },
       'POST /staff/v1/disputes/:code/rulings/:id/approve': { body: { code: CODE, ruling: { proposal: null, sentBack: null } } },
       'POST /staff/v1/disputes/:code/rulings/:id/send-back': { body: { code: CODE, ruling: { proposal: null, sentBack: null } } },
@@ -276,7 +278,7 @@ describe('ModCase (board ModCase)', () => {
     await click(button('Tap security key'));
     expect(api.calls.find((c) => c.path === '/staff/v1/taps/start')!.body).toEqual({
       kind: 'ruling', step: 'approve', rulingId: 'r1', code: CODE, round: 1, outcome: 'refund-to-seller', accountAction: { kind: 'none' },
-      amountAtomic: '4000000000000', reasonSha256: sha(REASON), evidenceSha256: sha(JSON.stringify(['Bank statement'])),
+      amountAtomic: '4000000000000', reasonSha256: sha(REASON), evidenceSha256: sha(JSON.stringify(['Bank statement'])), round1Id: null,
     });
     expect(api.calls.find((c) => c.path === `/staff/v1/disputes/${CODE}/rulings/r1/approve`)!.body).toEqual({ tapId: 'tap-2' });
 
@@ -285,6 +287,52 @@ describe('ModCase (board ModCase)', () => {
     await settle();
     await click(button('Send back to the moderator'));
     expect(api.calls.find((c) => c.path === `/staff/v1/disputes/${CODE}/rulings/r1/send-back`)!.body).toEqual({ note: 'Look at the bank statement again.' });
+  });
+
+  // X3 (re-verify round 3, lead call 12 Nov): each KeyTapDialog caller computes its intent's
+  // hashes itself, from what the person typed or sees, and shows names next to ids.
+  const dialogText = () => document.querySelector('[data-part="key-tap-intent"]')?.textContent ?? '';
+  const dd = (k: string) => [...document.querySelectorAll('[data-part="key-tap-intent"] div')].find((d) => d.querySelector('dt')?.textContent === k)?.querySelector('dd')?.textContent ?? '';
+
+  it('X3 propose: the hashes are of the reason and evidence typed here, and the dialog names what each id is', async () => {
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes/:code': { body: kase({ overLimit: false }) } });
+    await open(`/disputes/${CODE}`);
+    const panel = part('ruling')!;
+    await click(panel.querySelector('input[value="refund-to-seller"]'));
+    typeInto(field('Reason (required, both traders see it)'), REASON);
+    typeInto(field('Evidence'), 'One line\nTwo line');
+    await settle();
+    await click(button('Send ruling', panel));
+    expect(dd('reasonSha256')).toContain(sha(REASON));
+    expect(dd('reasonSha256')).toContain('the reason above');
+    expect(dd('evidenceSha256')).toContain(sha(JSON.stringify(['One line', 'Two line'])));
+    expect(dd('evidenceSha256')).toContain('the evidence lines above');
+    expect(dd('code')).toContain('incident D-7RWD');
+    expect(dd('outcome')).toContain('Refund to seller');
+    expect(dd('amountAtomic')).toContain('4.00 XMR');
+    expect(dialogText()).toContain('this ruling');
+  });
+
+  it('X3 approve: the hashes are of the reason and evidence shown in the panel, and round 2 names round 1\'s ruling', async () => {
+    const waiting = kase(
+      { status: 'awaiting-approval', assignedToYou: false, assignee: 'dmitri_k', round: 2 },
+      {
+        proposal: { rulingId: 'r2', reason: REASON, evidence: ['Shown line'], proposer: 'p', proposedAt: new Date().toISOString() },
+        draft: { id: 'r2', outcome: 'refund-to-seller' }, round1: { id: 'r1-round-one', outcome: 'release-to-buyer' },
+      },
+    );
+    const api = fakeApi({ 'GET /staff/v1/me': { body: OWNER }, 'GET /staff/v1/disputes/:code': { body: waiting }, 'POST /staff/v1/taps/start': honestTapStart('tap-9') });
+    await open(`/disputes/${CODE}`);
+    const approve = part('approve')!;
+    expect(approve.textContent).toContain(REASON);
+    expect(approve.textContent).toContain('Shown line');
+    await click(button('Approve ruling', approve));
+    expect(dd('reasonSha256')).toContain(sha(REASON));
+    expect(dd('evidenceSha256')).toContain(sha(JSON.stringify(['Shown line'])));
+    expect(dd('round1Id')).toContain('r1-round-one');
+    expect(dd('round1Id')).toContain('round 1 ruling (Release to buyer)');
+    await click(button('Tap security key'));
+    expect(api.calls.find((c) => c.path === '/staff/v1/taps/start')!.body).toMatchObject({ round: 2, round1Id: 'r1-round-one' });
   });
 
   it('a moderator never sees the approval panel of a waiting ruling (rulings.approve is owner and senior only)', async () => {
@@ -304,7 +352,7 @@ describe('ModCase (board ModCase)', () => {
       fakeApi({
         'GET /staff/v1/me': { body: MOD },
         'GET /staff/v1/disputes/:code': { body: kase() },
-        'POST /staff/v1/taps/start': { body: { tapId: 'tap-1', options: { challenge: 'c' } } },
+        'POST /staff/v1/taps/start': honestTapStart('tap-1'),
         'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-1' } },
         'POST /staff/v1/disputes/:code/rulings': refused(409, code),
       });
