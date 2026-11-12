@@ -344,8 +344,8 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
 export function overturnLien(outcome: RulingView['outcome'], me: Party, other: string): string {
   const receiver = paidSide(outcome);
   if (receiver === null) return '';
-  // not-a-refusal: what an overturned ruling would mean, explained before any appeal (board DisputeRuling)
   // Review O2 (J-06): the lien is the trade's XMR (owner D-006), on a buyer's ad more than the payout. COPY-UNSIGNED
+  // not-a-refusal: what an overturned ruling would mean, explained before any appeal (board DisputeRuling)
   if (receiver === me) return " If an appeal overturns the ruling, you get a lien. You can't trade until you pay the trade's XMR back.";
   return ` If an appeal overturns the ruling, ${other} gets a lien until they pay the trade's XMR back.`; // COPY-UNSIGNED
 }
