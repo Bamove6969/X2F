@@ -1,6 +1,6 @@
 # A later release from a paid-out escrow (late-funds step 1), design note, 2026-11-12
 
-Status: **for lead review before any code.** Scope: `packages/escrow` only (`party.ts`, its types,
+Status: **approved by the lead 2026-11-12** (decisions at the end); building on `wip/lead-late-funds`. Scope: `packages/escrow` only (`party.ts`, its types,
 regtests). Integration (relay expiry and re-registration, the moderator's party restart, the trader
 apps rejoining, the executor once per ruling, the trade machine and API) is steps 2 to 6, after this
 note and its code are reviewed.
@@ -26,15 +26,18 @@ these hold. Anything else keeps today's behaviour: `settle()` rejects with
 `PartyError('bad-outcome')` and nothing is saved or sent.
 
 1. **After a recorded done release.** The outcome names the tx that last emptied the escrow:
-   `Outcome.after` (64 lower-case hex). The party must have its own evidence that this tx paid the
-   escrow out:
-   - its own last episode is `done` with `txHash === after`; or,
-   - for a party that took no part in that release (most often the moderator after a
-     seller–buyer release), `after` is an in-block tx its wallet showed spending the escrow
-     (`PartyState.shown`, or `outgoing` from the same sync). That is the same evidence the moderation
-     watcher already relies on.
+   `Outcome.after` (64 lower-case hex).
+   - A party that has a release of its own may start a later one only when that release is `done`
+     with `txHash === after`. One that is still in progress, or ended `exhausted` or `superseded`, refuses.
+   - A party with no release of its own (it took no part in the earlier one: the moderator after a
+     seller–buyer release, or the seller after a buyer's cancel the moderator co-signed) treats it as
+     its first release.
 
-   A party with an episode in progress (not `done`, `exhausted` or `superseded`) refuses.
+   *Refined while building (2026-11-12):* the first draft also asked a party with no release for
+   evidence of `after`, such as a sweep its wallet showed. A trader who took no part in the earlier
+   release cannot see that spend, so it could never co-sign. Accepting it adds no risk: a
+   moderator-built release a trader co-signs is already allowed today as a first release, and
+   safety rests on rule 3 and `checkRelease`.
 2. **Moderator-built.** `builder === 'mod'`: a later release is a ruling's payout, never a trader's
    own set. The co-signer is the trader the ruling pays. This keeps spend.info as it is (it is sent
    only after a release the moderator did not sign, and the moderator signs every later one) and
@@ -139,11 +142,11 @@ Regtest (a real chain, three parties, an in-process relay):
 5. **A third episode.** More coins arrive after episode 1. Episode 2, named by episode 1's
    transaction, pays them.
 
-## Questions for review
+## Decisions (lead, 2026-11-12)
 
-- **Rule 2 (later releases moderator-built only).** Is that right, or should a later release
-  between the traders, by agreement, be possible too? I propose not now.
-- **The co-signer's relaxed pre-export check.** Accept it, or require the co-signer to have imported
-  the earlier release's spend info first?
-- **How many episodes?** I propose no fixed limit: each one needs a moderator's ruling and its own
-  late coins. The attempt limit still applies per episode.
+- **Later releases are moderator-built only.** No trader-agreed later releases for now.
+- **The relaxed pre-export check for the co-signer is accepted.** The exact payout match and
+  `checkRelease` still run on the imported set before the co-signer signs. Added regtest: a wrong
+  amount is refused at that point, and nothing is signed.
+- **No product limit, but a hard safety cap of 10 later releases per escrow** (`MAX_LATER_RELEASES`).
+  An 11th is refused (`bad-outcome`), so a bug cannot loop.
