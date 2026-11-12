@@ -9,6 +9,7 @@
 import { ProofError, parseProofPayload, type ProofAttachedPayload } from '@x2f/proof';
 import { PayDetailsError, parsePayDetails } from '@x2f/trade';
 import { ChatSendFailed, type ChatEngine, type ChatSnapshot } from './engine.js';
+import { isChatNotice } from './notices.js';
 
 export type ToChatWorker =
   | { t: 'chat-sync'; id: number; chat: string }
@@ -16,7 +17,9 @@ export type ToChatWorker =
   /** The payee's packaged payment details (J-08): the page sends the boxes, the worker seals them. */
   | { t: 'chat-send-pay'; id: number; chat: string; pay: unknown }
   /** Plan 5 Task 15: a `proof.attached` payload (the proof's key); the worker checks and seals it. */
-  | { t: 'chat-send-proof'; id: number; chat: string; proof: unknown };
+  | { t: 'chat-send-proof'; id: number; chat: string; proof: unknown }
+  /** A fixed notice (P-020): the page names it, the worker seals its own wording. */
+  | { t: 'chat-send-notice'; id: number; chat: string; notice: unknown };
 
 export type ChatFailure = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused' | 'uncertain' | 'unavailable' | 'not-found';
 
@@ -73,7 +76,7 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
   let engine: Promise<ChatEngine> | null = make();
   port.addEventListener('message', (e) => {
     const m = e.data as Partial<ToChatWorker> | null;
-    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send' && m.t !== 'chat-send-pay' && m.t !== 'chat-send-proof') || typeof m.id !== 'number') return;
+    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send' && m.t !== 'chat-send-pay' && m.t !== 'chat-send-proof' && m.t !== 'chat-send-notice') || typeof m.id !== 'number') return;
     const id = m.id;
     void (async () => {
       try {
@@ -92,6 +95,10 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
           // Checked here too, so that nothing but a well-formed proof payload reaches the engine.
           const parsed = parseProofPayload('proof.attached', m.proof);
           snapshot = await eng.sendProof(m.chat, parsed.payload as ProofAttachedPayload);
+        } else if (m.t === 'chat-send-notice') {
+          // Only a known notice reaches the engine; anything else is a page bug, refused.
+          if (!isChatNotice(m.notice)) throw new ChatSendFailed('refused');
+          snapshot = await eng.sendNotice(m.chat, m.notice);
         } else {
           snapshot = await eng.sync(m.chat);
         }

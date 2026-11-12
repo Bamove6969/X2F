@@ -35,6 +35,10 @@
  *   secured (`snapshot.paySecured`); the engine refuses a package sent early on the reading side. Each snapshot of a trade's chat is handed to payDetailsFeed, so
  *   the buyer's "Send exactly" card follows the chat.
  *
+ * - A fixed notice (P-020, notices.ts: e.g. "the trade code was covered in this proof") is a
+ *   system-styled line with its sender, in this panel's own wording (CHAT_NOTICES), never the
+ *   line's text. Muted, never the moderator's violet: a trader's device sent it.
+ *
  * `TradeChatPanel` resolves a trade's chat (`POST /v1/trades/:code/chat`) and is the component
  * Task 23's `setTradeChat` seam takes (`{ code, name, methodId }`); `OfferChatPanel` opens the
  * pre-trade chat on an offer (the quote's Chat button).
@@ -51,6 +55,7 @@ import { BlockAction } from '../screens/settings/BlockAction.js';
 import { useTradeLive } from '../screens/trade/seams.js';
 import { ChatFailed, chatClient, openOfferChat, openTradeChat, type ChatFailure, type ChatSnapshot } from './client.js';
 import { useChatLive } from './live.js';
+import { CHAT_NOTICES } from './notices.js';
 import { panelPublishing, publishPaySnapshot } from './payDetailsFeed.js';
 import './chat.css';
 
@@ -128,7 +133,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
     }
     const grew = newest !== seen.current;
     // Review R1: a package is read with this reader's own labels, never the line's text.
-    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'Moderator' : nameRef.current}: ${incoming.pay !== undefined ? announcePay(incoming.pay) : incoming.text}`);
+    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'Moderator' : nameRef.current}: ${incoming.notice !== undefined ? CHAT_NOTICES[incoming.notice] : incoming.pay !== undefined ? announcePay(incoming.pay) : incoming.text}`);
     seen.current = newest ?? -1n;
     return grew;
   }, []);
@@ -245,7 +250,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
             );
           }
           items.push(
-            <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined} data-missing={l.missing ? '' : undefined}>
+            <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined} data-missing={l.missing ? '' : undefined} data-notice={l.notice}>
               <span className="x2f-chat__who">
                 {l.from === 'mod' ? (
                   dispute !== undefined && snap?.disputeOpen === true && dispute.moderator ? (
@@ -260,6 +265,8 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
               {l.proof !== undefined ? (
                 // NEEDS_PROOF_RECEIVE: a proof is fetched and decrypted here, shown only through ProofThumb.
                 tradeCode ? <ChatProof tradeCode={tradeCode} proof={l.proof} /> : null
+              ) : l.notice !== undefined ? (
+                <span className="x2f-chat__autonotice">{CHAT_NOTICES[l.notice]}</span>
               ) : l.pay !== undefined ? (
                 <PayCard pay={l.pay} />
               ) : (

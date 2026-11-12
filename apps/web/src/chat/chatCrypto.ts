@@ -14,7 +14,9 @@
  *   `pay` the boxes for the card. A reader checks that the text IS the rendering of the boxes, so
  *   the two can never say different things. Only a trader sends one; a mod-signed package is
  *   refused, and so is any package while the reader's trade is not secured (`payAllowed`, owner
- *   Q12), so no client can push details to the buyer early. Messages carry no names: the UI shows each role's display name (never a login name)
+ *   Q12), so no client can push details to the buyer early.
+ * - Or `{ text, notice }` for a fixed notice (P-020, notices.ts): `text` must be exactly that
+ *   notice's wording and the reader keeps its own copy; only a trader sends one. Messages carry no names: the UI shows each role's display name (never a login name)
  *   from its own records.
  * - Every message is sealed to buyer, seller and the chat's mod identity (spec 6.6: a moderator
  *   can read the chat once a dispute opens), including the sender, so it can re-read its own.
@@ -53,6 +55,7 @@ import {
   renderPayDetailsText,
   type PayDetailsPayload,
 } from '@x2f/trade';
+import { CHAT_NOTICES, isChatNotice, type ChatNoticeId } from './notices.js';
 
 import { type ProofAttachedPayload, parseProofPayload, sealProofEnvelope } from '@x2f/proof';
 
@@ -92,6 +95,8 @@ export interface ChatMessage {
    * decrypted by the page (proof/chatProof.ts) and shown only through ProofThumb.
    */
   proof?: ProofAttachedPayload;
+  /** A fixed notice (P-020); `text` is then this reader's own wording of it (CHAT_NOTICES). */
+  notice?: ChatNoticeId;
 }
 
 const ALL: readonly Role[] = ['buyer', 'seller', 'mod'];
@@ -243,7 +248,25 @@ function nextSeqOf(state: ChatState, role: ChatRole): number {
   return seq;
 }
 
-async function sealInner(a: Omit<SealChatArgs, 'text'>, payload: { text: string; pay?: PayDetailsPayload }): Promise<{ envelope: Envelope; state: ChatState }> {
+export interface SealNoticeArgs {
+  role: ChatRole;
+  me: Identity;
+  participants: Participants;
+  state: ChatState;
+  notice: ChatNoticeId;
+}
+
+/**
+ * Seals a fixed notice (P-020): `{ text, notice }` with the notice's own wording, under the same
+ * rules as sealChatMessage. Throws TypeError for an unknown notice or a role other than a trader.
+ */
+export async function sealChatNotice(a: SealNoticeArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealChatNotice: role must be buyer or seller');
+  if (!isChatNotice(a.notice)) throw new TypeError('sealChatNotice: unknown notice');
+  return sealInner(a, { text: checkChatText(CHAT_NOTICES[a.notice]), notice: a.notice });
+}
+
+async function sealInner(a: Omit<SealChatArgs, 'text'>, payload: { text: string; pay?: PayDetailsPayload; notice?: ChatNoticeId }): Promise<{ envelope: Envelope; state: ChatState }> {
   if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealChatMessage: role must be buyer or seller');
   const state = parseChatState(a.state, a.state.channel);
   // Never reuse a seq this device has already seen from itself (e.g. a counter restored from an
@@ -342,7 +365,8 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
   if (opened.type !== CHAT_MSG_TYPE || typeof p !== 'object' || p === null || Array.isArray(p) || !Object.prototype.hasOwnProperty.call(p, 'text')) throw notChat();
   const keys = Object.keys(p);
   const packaged = keys.length === 2 && Object.prototype.hasOwnProperty.call(p, 'pay');
-  if (!packaged && keys.length !== 1) throw notChat();
+  const noticed = keys.length === 2 && Object.prototype.hasOwnProperty.call(p, 'notice');
+  if (!packaged && !noticed && keys.length !== 1) throw notChat();
   let text: string;
   try {
     text = checkChatText((p as { text: unknown }).text);
@@ -350,6 +374,14 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
     throw notChat();
   }
   const message: ChatMessage = { from: opened.from, seq: env.seq, text };
+  if (noticed) {
+    // P-020: only a trader's app sends a notice, a known one, in exactly its words; the reader
+    // keeps its own copy (nothing downstream sees the sender's text).
+    const id = (p as { notice: unknown }).notice;
+    if (opened.from === 'mod' || !isChatNotice(id) || text !== CHAT_NOTICES[id]) throw notChat();
+    message.text = CHAT_NOTICES[id];
+    message.notice = id;
+  }
   if (packaged) {
     // Only a trader has payment details to send, only once the escrow is secured (owner Q12), and
     // the text must render exactly the boxes' values (review F3: whatever labels it was sealed under).

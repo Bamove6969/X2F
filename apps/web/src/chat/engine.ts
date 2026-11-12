@@ -25,6 +25,10 @@
  *   sender's later lines are not blocked behind it: a seq once passed can never be accepted) with
  *   a receipt marked `heldPay`, and no text; once the trade is secured the chat is read again from
  *   the start and the held package is decrypted and shown in its place.
+ * - A fixed notice (P-020, notices.ts) is a line with `notice` set and the reader's own wording as
+ *   its text. `sendNotice` seals one (chatCrypto's sealChatNotice), only once the trade is secured
+ *   (a proof only exists then), like a package. Nothing sends one yet: NEEDS_PLAN_5_TASK_15 (the
+ *   BlurEditor sends `proofCodeNotice(...)` with the proof).
  * - No message text is stored on the device (owner p11-10, design 2026-11-08 section 5): the store
  *   keeps keys, the ChatState, the cursor and a receipt per accepted line. The first sync of a chat
  *   in this worker re-reads the whole chat from the server and decrypts it again; a line the guard
@@ -49,7 +53,8 @@ import type { Role } from '@x2f/core';
 import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ProofError, type ProofAttachedPayload } from '@x2f/proof';
-import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealPayDetails, sealProofAttached, signChatIdentity, type ChatState } from './chatCrypto.js';
+import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, sealProofAttached, signChatIdentity, type ChatState } from './chatCrypto.js';
+import type { ChatNoticeId } from './notices.js';
 import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
 
 export interface ChatApiView {
@@ -101,6 +106,8 @@ export interface ChatLine {
    * the panel shows the picture (ChatProof). Carries the proof's key: it stays in the page's memory.
    */
   proof?: ProofAttachedPayload;
+  /** A fixed notice (P-020): the panel shows its own wording as a system line; `text` is that wording. */
+  notice?: ChatNoticeId;
 }
 
 export interface ChatSnapshot {
@@ -139,6 +146,8 @@ export interface ChatEngine {
   send(chat: string, text: string): Promise<ChatSnapshot>;
   /** Seals and posts the payee's packaged payment details (J-08); 'bad-details' for a bad package, 'not-ready' while the trade is not secured (owner Q12). */
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
+  /** Seals and posts a fixed notice (P-020); 'not-ready' while the trade is not secured. */
+  sendNotice(chat: string, notice: ChatNoticeId): Promise<ChatSnapshot>;
   /**
    * Plan 5 Task 15: seals and posts a `proof.attached` (the proof's key, to buyer, seller and mod);
    * 'bad-proof' for a malformed payload or a payment proof from the seller; 'not-ready' while the
@@ -241,6 +250,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           const shown = session?.texts.get(m.id);
           if (shown === undefined) return { ...line, text: '', missing: true };
           if (shown.proof !== undefined) return { ...line, text: shown.text, proof: shown.proof };
+          if (shown.notice !== undefined) return { ...line, text: shown.text, notice: shown.notice };
           return shown.pay === undefined ? { ...line, text: shown.text } : { ...line, text: shown.text, pay: shown.pay };
         }),
     };
@@ -548,6 +558,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           throw e;
         }
       }, { secured: true, proof: true }),
+    sendNotice: (chat, notice) => post(chat, (a) => sealChatNotice({ ...a, notice }), { secured: true }),
   };
 }
 
@@ -557,6 +568,13 @@ interface Shown {
   pay?: PayDetailsPayload;
   /** A `proof.attached`'s key and facts: kept in memory only, never in the store (like the text). */
   proof?: ProofAttachedPayload;
+  notice?: ChatNoticeId;
 }
-const shownOf = (m: { text: string; pay?: PayDetailsPayload; proof?: ProofAttachedPayload }): Shown =>
-  m.proof !== undefined ? { text: m.text, proof: m.proof } : m.pay === undefined ? { text: m.text } : { text: m.text, pay: m.pay };
+const shownOf = (m: { text: string; pay?: PayDetailsPayload; proof?: ProofAttachedPayload; notice?: ChatNoticeId }): Shown =>
+  m.proof !== undefined
+    ? { text: m.text, proof: m.proof }
+    : m.notice !== undefined
+      ? { text: m.text, notice: m.notice }
+      : m.pay === undefined
+        ? { text: m.text }
+        : { text: m.text, pay: m.pay };

@@ -7,6 +7,7 @@ import type { PayDetailsPayload } from '@x2f/trade';
 import { api } from '../api/client.js';
 import { escrowWorker } from '../escrow/useEscrow.js';
 import type { ChatSnapshot } from './engine.js';
+import type { ChatNoticeId } from './notices.js';
 import type { ChatFailure, FromChatWorker, ToChatWorker } from './serve.js';
 
 export type { ChatLine, ChatSnapshot } from './engine.js';
@@ -26,6 +27,8 @@ export interface ChatClient {
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
   /** Plan 5 Task 15: the proof's `proof.attached` (its key), sealed in the worker. */
   sendProof(chat: string, proof: ProofAttachedPayload): Promise<ChatSnapshot>;
+  /** A fixed notice (P-020), sealed in the worker. NEEDS_PLAN_5_TASK_15: the BlurEditor calls it. */
+  sendNotice(chat: string, notice: ChatNoticeId): Promise<ChatSnapshot>;
 }
 
 /** A ChatClient over a worker speaking serve.ts's protocol. */
@@ -52,6 +55,7 @@ export function workerChatClient(w: Pick<Worker, 'postMessage' | 'addEventListen
     send: (chat, text) => ask({ t: 'chat-send', chat, text } as Omit<ToChatWorker, 'id'>),
     sendPay: (chat, pay) => ask({ t: 'chat-send-pay', chat, pay } as Omit<ToChatWorker, 'id'>),
     sendProof: (chat, proof) => ask({ t: 'chat-send-proof', chat, proof } as Omit<ToChatWorker, 'id'>),
+    sendNotice: (chat, notice) => ask({ t: 'chat-send-notice', chat, notice } as Omit<ToChatWorker, 'id'>),
   };
 }
 
