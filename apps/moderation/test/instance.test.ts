@@ -15,6 +15,7 @@ import { instanceLockHeld, MOD_INSTANCE_LOCK } from '../src/main.js';
 import { fromJson } from '../src/shadow.js';
 import type { DeskRecord } from '../src/desk.js';
 import { fakeNetwork, inFunding, makeCtx, moderation, secured, type Ctx, stopAll } from './harness.js';
+import { newGate } from './gateWorld.js';
 
 let ctx: Ctx;
 beforeAll(async () => {
@@ -49,6 +50,7 @@ describe('one moderation process (security review 7 Nov, finding 2)', () => {
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-m1-'));
     try {
       const key = new Uint8Array(randomBytes(32));
+      await newGate(dir, key);
       const seeded = await openGateStore(dir, key);
       await seeded.save();
       const file = join(dir, GATE_FILE);

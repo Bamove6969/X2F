@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { GATE_FILE, GATE_LOCK_FILE, openGateStore } from '../src/gate/index.js';
+import { newGate } from './gateWorld.js';
 
 const dirs: string[] = [];
 afterAll(async () => {
@@ -24,6 +25,7 @@ describe('the gate store lock (MOD_STATE_DIR/gate.lock)', () => {
   it('a second locked open of the same directory is refused while the first is open; after close it opens', async () => {
     const dir = await fresh();
     const key = new Uint8Array(randomBytes(32));
+    await newGate(dir, key);
     const a = await openGateStore(dir, key, { lock: true });
     expect((await readFile(join(dir, GATE_LOCK_FILE), 'utf8')).trim()).toBe(String(process.pid));
     await expect(openGateStore(dir, key, { lock: true })).rejects.toThrow(/locked/);
@@ -35,6 +37,7 @@ describe('the gate store lock (MOD_STATE_DIR/gate.lock)', () => {
   it('a closed store saves nothing more (a pass still running after the stop cannot write gate.bin)', async () => {
     const dir = await fresh();
     const key = new Uint8Array(randomBytes(32));
+    await newGate(dir, key);
     const a = await openGateStore(dir, key, { lock: true });
     await a.save();
     const before = await readFile(join(dir, GATE_FILE));
@@ -46,6 +49,7 @@ describe('the gate store lock (MOD_STATE_DIR/gate.lock)', () => {
   it('a lock file left by a process that no longer runs is taken over', async () => {
     const dir = await fresh();
     const key = new Uint8Array(randomBytes(32));
+    await newGate(dir, key);
     // A pid far above any live one (Linux pid_max is at most 4194304).
     await writeFile(join(dir, GATE_LOCK_FILE), '4194999\n');
     const a = await openGateStore(dir, key, { lock: true });

@@ -22,7 +22,7 @@ import { rulingExecutor } from '../../src/execute.js';
 import { ownSweepKind } from '../../src/watcher.js';
 import { memoryRelay } from '../chain.js';
 import { openGateStore } from '../../src/gate/index.js';
-import { BALANCE, ctx, recorded, ruling, tapBy, world } from '../gateWorld.js';
+import { BALANCE, ctx, newGate, recorded, ruling, tapBy, world } from '../gateWorld.js';
 
 const engine = new MoneroMultisigEngine({ network: 'regtest' });
 /** The most a network fee may take (Plan 1's MAX_NETWORK_FEE is 0.01 XMR). */
@@ -105,6 +105,7 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     const dir = await mkdtemp(join(tmpdir(), 'x2f-exec-rt-'));
     dirs.push(dir);
     const key = new Uint8Array(randomBytes(32));
+    await newGate(dir, key);
     const store = await openGateStore(dir, key);
     store.state = w.gate;
     await store.save();

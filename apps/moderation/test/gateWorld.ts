@@ -10,6 +10,7 @@ import { createSoftAuthenticator, createTestCa, type SoftAuthenticator, type Tes
 import {
   authorizeRuling,
   emptyGate,
+  initGate,
   pinOwner,
   type GateContext,
   type GateRuling,
@@ -194,3 +195,9 @@ export function ruling(proposer: Person, o: { approver?: Person | null; outcome?
 
 export const authorize = (w: World, c: Case, taps: StoredTap[], usdCents: bigint | null = 41_250n, extra: { involved?: string[] } = {}) =>
   authorizeRuling(w.gate, { ruling: c.ruling, taps, recorded: recorded(usdCents), balanceAtomic: BALANCE, ...extra }, ctx());
+
+/** A new gate.bin in `dir`, the way an operator makes one (init-gate, "yes"): a missing one never opens. */
+export async function newGate(dir: string, key: Uint8Array): Promise<void> {
+  expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'yes' })).toBe('created');
+}
+

@@ -14,7 +14,7 @@ import { escrowPlan } from '@x2f/trade';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rulingExecutor, type RulingStepInput } from '../src/execute.js';
 import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, syncRegistry, type GateStore } from '../src/gate/index.js';
-import { BALANCE, ctx, recorded, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
+import { BALANCE, ctx, newGate, recorded, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
 import { DEAL, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
 
 const dirs: string[] = [];
@@ -53,6 +53,7 @@ async function setup(o: { outcome?: 'release-to-buyer' | 'refund-to-seller' | 's
   const dir = await mkdtemp(join(tmpdir(), 'x2f-exec-'));
   dirs.push(dir);
   const key = new Uint8Array(randomBytes(32));
+  await newGate(dir, key);
   const store = await openGateStore(dir, key);
   store.state = w.gate;
   await store.save();

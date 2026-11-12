@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startCheckpoints } from '../src/checkpoint.js';
 import { openGateStore, type GateStore } from '../src/gate/index.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
+import { newGate } from './gateWorld.js';
 
 let schema: ApiSchema;
 const dirs: string[] = [];
@@ -71,7 +72,9 @@ const apiAnswer: Answer = async (r) => {
 async function setup(now: { t: Date }, o: { answer?: Answer; reader?: ApiSchema['reader']; verifyEveryMs?: number } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'x2f-cp-'));
   dirs.push(dir);
-  const store: GateStore = await openGateStore(dir, new Uint8Array(randomBytes(32)));
+  const gateKey = new Uint8Array(randomBytes(32));
+  await newGate(dir, gateKey);
+  const store: GateStore = await openGateStore(dir, gateKey);
   const reports: unknown[] = [];
   const logs: string[] = [];
   const alarms: string[] = [];
