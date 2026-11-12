@@ -107,7 +107,9 @@ describe('Blocked (settings)', () => {
     // Undo blocks again.
     fire(again, new MouseEvent('click', { bubbles: true }));
     await settle();
-    expect(calls.at(-1)).toEqual({ url: '/v1/account/blocks', method: 'POST', body: { displayName: 'mira.k' } });
+    expect(calls.at(-2)).toEqual({ url: '/v1/account/blocks', method: 'POST', body: { displayName: 'mira.k' } });
+    // Review M1: then the list is read again, so the row shows the new block as the server holds it.
+    expect(calls.at(-1)).toMatchObject({ url: '/v1/account/blocks', method: 'GET' });
     expect(byPart(host, 'blocked-said')?.textContent).toBe('Blocked mira.k again.');
   });
 

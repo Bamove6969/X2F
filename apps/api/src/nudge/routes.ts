@@ -318,16 +318,21 @@ export interface BlockedEntry {
 
 /** S-093: a block note's most characters (migration 362). */
 export const BLOCK_NOTE_MAX = 500;
-/** Control characters other than a new line (and a tab): refused in a note. */
-const NOTE_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
+/**
+ * Control and format characters other than a new line, refused in a note: S-094's rule for trader
+ * notes (team/notes.ts, `[\p{Cc}\p{Cf}]` but a new line), so C1 controls, bidi and zero-width
+ * characters, the BOM, a tab and a carriage return are refused (review m1, lead's call); and the line
+ * and paragraph separators U+2028/2029 too, which are not Cc or Cf.
+ */
+const NOTE_CONTROL = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
 
 /**
  * `PUT /v1/account/blocks/:displayName/note { note }` (S-093, owner p7-6): sets, changes or clears
  * (null, or blank text) my private note on someone I blocked → 200 `{ note }` as stored (trimmed).
  * By the stored name key, as unblock, and only on my own block: 404 `not-found` for an unknown name
  * and for someone I did not block (names are public, so the two need not differ). 400
- * `bad-request` for a missing or non-string note, over BLOCK_NOTE_MAX characters, or control
- * characters other than a new line or a tab. The note is stored as plain text (as S-094's trader
+ * `bad-request` for a missing or non-string note, over BLOCK_NOTE_MAX characters, or control or
+ * format characters other than a new line. The note is stored as plain text (as S-094's trader
  * notes); the blocked person and staff never read it.
  */
 async function blockNoteHandler(req: FastifyRequest) {
@@ -337,7 +342,7 @@ async function blockNoteHandler(req: FastifyRequest) {
   const raw = bodyOf(req).note;
   if (raw !== null && typeof raw !== 'string') throw new ApiError(400, 'bad-request', { field: 'note' });
   const trimmed = raw === null ? '' : raw.trim();
-  if ([...trimmed].length > BLOCK_NOTE_MAX || NOTE_CONTROL.test(trimmed)) throw new ApiError(400, 'bad-request', { field: 'note' });
+  if ([...trimmed].length > BLOCK_NOTE_MAX || NOTE_CONTROL.test(trimmed.replace(/\n/g, ''))) throw new ApiError(400, 'bad-request', { field: 'note' });
   const note = trimmed === '' ? null : trimmed;
   const { rows } = await deps.db.query<{ note: string | null }>(
     `update account_blocks b set note = $3 from accounts a

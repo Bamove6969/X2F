@@ -8,7 +8,9 @@
  *
  * S-093 (owner p7-6, 8 Nov 2026): each row shows when the person was blocked (date and time) and my
  * own private note, which I add, change or clear in place ("Add a note" / "Edit note", Save,
- * Cancel). Only I ever see it. DESIGN: not drawn (the Block board has no note); COPY-UNSIGNED.
+ * Cancel). Only I ever see it, and unblocking deletes it (the row says so). After Undo the row
+ * shows the server's new block, with no note (review M1). DESIGN: not drawn (the Block board has no
+ * note); COPY-UNSIGNED.
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router';
@@ -62,11 +64,17 @@ export function Blocked() {
   const reblock = async (name: string) => {
     try {
       await blockTrader(name);
-      mark(name, false);
-      setSaid(C.reblocked(name));
     } catch {
       setError(C.failed(name));
+      return;
     }
+    // Review M1: the unblock deleted the row and its note, and this block is a new row (no note, a
+    // new time). Show the server's row, keeping every other row (and its undo) as it is; if the list
+    // cannot be read, at least drop the deleted note.
+    const now = await fetchBlocked().catch(() => null);
+    const fresh = now?.find((x) => x.displayName === name);
+    setRows((l) => (l ?? []).map((r) => (r.displayName === name ? { ...r, ...(fresh ?? { note: null }), unblocked: false } : r)));
+    setSaid(C.reblocked(name));
   };
 
   const toggle = async (r: Row) => {
@@ -236,6 +244,10 @@ function BlockNote({ name, note, save }: { name: string; note: string | null; sa
           </span>
           <br />
           <span className="x2f-note">{C.notePrivate}</span>
+          <br />
+          <span className="x2f-note" data-part="note-unblock-warning">
+            {C.noteGoesOnUnblock}
+          </span>
         </>
       ) : null}
       <br />

@@ -34,6 +34,8 @@ export const BLOCK_COPY = {
   noteEdit: 'Edit note',
   noteLabel: (name: string) => `Your note on ${name}`,
   notePrivate: 'Only you can see this note.',
+  // Review Q1: unblocking deletes the row and its note (migration 362). COPY-UNSIGNED
+  noteGoesOnUnblock: 'Unblocking deletes your note.',
   noteSave: 'Save note',
   noteCancel: 'Cancel',
   noteSaved: (name: string) => `Note saved for ${name}.`,
