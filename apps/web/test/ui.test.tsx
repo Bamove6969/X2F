@@ -385,7 +385,7 @@ describe('BottomNav', () => {
     );
     const nav = host.querySelector('nav[aria-label="Main"]')!;
     const links = [...nav.querySelectorAll('a')];
-    expect(links.map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile']);
+    expect(links.map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Post offer', 'Wallets', 'Profile']);
     expect(links[0]!.getAttribute('aria-current')).toBe('page');
     expect(links.slice(1).every((a) => !a.hasAttribute('aria-current'))).toBe(true);
   });
@@ -397,7 +397,7 @@ describe('BottomNav', () => {
         <BottomNav postOffers={false} />
       </MemoryRouter>,
     );
-    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile']);
+    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Wallets', 'Profile']);
   });
 
   it('mayPostOffers: the account owner and an Offers member may; a Trades-only member may not', () => {
@@ -455,7 +455,7 @@ describe('DesktopShell', () => {
     );
     expect(host.querySelector('[data-shell="desktop"]')).not.toBeNull();
     const nav = host.querySelector('nav[aria-label="Main"]')!;
-    expect([...nav.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+    expect([...nav.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
     expect(nav.querySelector('a[aria-current="page"]')!.textContent).toBe('Trade');
     expect(nav.querySelector('svg')).not.toBeNull();
     expect(host.textContent).toContain('room');
