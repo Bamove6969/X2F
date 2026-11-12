@@ -1,0 +1,704 @@
+// Plan 4 Task 13: the ruling gate. The moderation process accepts a ruling only when its whole
+// signature chain checks out, rooted in the owner's keys pinned outside the API's database, and
+// co-signs only what the ruling says, to the addresses it recorded itself. Pure tests on software
+// authenticators (real WebAuthn signatures and packed attestation), plus the API schema's reader.
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { newTradeCode } from '@x2f/core';
+import { canonicalJson, inviteRegistrationChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
+import { escrowPlan } from '@x2f/trade';
+import pg from 'pg';
+import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
+import { createSoftAuthenticator, createTestCa, type SoftAuthenticator, type TestCa } from '../../api/test/helpers/softAuthenticator.js';
+import {
+  authorizeRuling,
+  emptyGate,
+  gateCheck,
+  openGateStore,
+  pgGateSource,
+  pinOwner,
+  recordedTerms,
+  syncRegistry,
+  type GateContext,
+  type GateRuling,
+  type GateSource,
+  type GateState,
+  type RecordedTerms,
+  type StoredTap,
+} from '../src/gate/index.js';
+
+const ORIGIN = 'https://staff.x2f.test';
+const RP_ID = 'staff.x2f.test';
+const AAGUID = '11111111-2222-4333-8444-555555555555';
+const OTHER_AAGUID = '99999999-2222-4333-8444-555555555555';
+const NOW = new Date('2026-11-12T12:00:00Z');
+const b64url = (b: Uint8Array): string => Buffer.from(b).toString('base64url');
+const sha256Hex = (s: string | Uint8Array): string => createHash('sha256').update(s).digest('hex');
+
+let ca: TestCa;
+beforeAll(() => {
+  ca = createTestCa();
+});
+
+const ctx = (): GateContext => ({
+  rp: { origins: [ORIGIN], rpId: RP_ID },
+  attestation: { isAllowed: (aaguid, kind) => aaguid === AAGUID && (kind === 'staff' || kind === 'owner') },
+  now: () => NOW,
+  log: () => {},
+});
+
+const newKey = (o: { attest?: 'x5c' | 'self' | 'none'; aaguid?: string } = {}): SoftAuthenticator =>
+  createSoftAuthenticator({
+    backedUp: false,
+    userVerified: true,
+    attestation:
+      o.attest === 'none' ? 'none' : o.attest === 'self' ? { aaguid: o.aaguid ?? AAGUID, self: true } : { aaguid: o.aaguid ?? AAGUID, ca },
+  });
+
+interface Person {
+  id: string;
+  key: SoftAuthenticator;
+  role: 'owner' | 'senior' | 'mod' | 'helper';
+}
+
+/** The API's database as the gate reads it, in memory: everything here is what a compromised API could write. */
+class FakeApi implements GateSource {
+  owner: { accountId: string; keys: Array<{ credentialId: string; publicKey: Uint8Array; aaguid: string | null }> } | null = null;
+  taps: StoredTap[] = [];
+  creds = new Map<string, { accountId: string; publicKey: Uint8Array; aaguid: string | null }>();
+  invites = new Map<string, { inviteId: string; tokenHash: string; accountId: string | null; registrations: Array<{ credentialId: string; response: unknown }> }>();
+  staffRows = new Map<string, { accountId: string; role: string; switchedOff: boolean; removed: boolean }>();
+
+  async ownerKeys() {
+    return this.owner;
+  }
+  async usedTaps(kinds: readonly string[]) {
+    return this.taps.filter((t) => kinds.includes((JSON.parse(t.intent) as { kind: string }).kind));
+  }
+  async credential(credentialId: string) {
+    return this.creds.get(credentialId) ?? null;
+  }
+  async invite(inviteId: string) {
+    return this.invites.get(inviteId) ?? null;
+  }
+  async staff() {
+    return [...this.staffRows.values()];
+  }
+  async rulingTaps(rulingId: string) {
+    return this.taps.filter((t) => {
+      const i = JSON.parse(t.intent) as { kind: string; rulingId?: string };
+      return i.kind === 'ruling' && i.rulingId === rulingId;
+    });
+  }
+}
+
+/** A tap as the API stores it: the person's key answered `tapChallenge(intent, nonce)` on the staff origin. */
+function tapBy(p: Person, intent: KeyTapIntent, o: { key?: SoftAuthenticator } = {}): StoredTap {
+  const key = o.key ?? p.key;
+  const nonce = randomBytes(16);
+  const norm = intent.kind === 'ruling' ? intent : intent;
+  const response = key.authenticate({ challenge: b64url(tapChallenge(norm, nonce)), rpId: RP_ID, allowCredentials: [] }, ORIGIN);
+  return { id: randomUUID(), accountId: p.id, credentialId: key.credentialId, intent: canonicalJson(norm), nonceHex: nonce.toString('hex'), response };
+}
+
+interface World {
+  api: FakeApi;
+  gate: GateState;
+  owner: Person;
+  ownerKey2: SoftAuthenticator;
+  /** Invites a staff member the proper way: an owner `create-invite` tap and an attested registration. */
+  hire(role: 'senior' | 'mod' | 'helper', o?: { attest?: 'x5c' | 'self' | 'none'; aaguid?: string; noTap?: boolean; wrongToken?: boolean }): Person;
+}
+
+async function world(): Promise<World> {
+  const api = new FakeApi();
+  const owner: Person = { id: randomUUID(), key: newKey(), role: 'owner' };
+  const ownerKey2 = newKey();
+  api.owner = {
+    accountId: owner.id,
+    keys: [owner.key, ownerKey2].map((k) => ({ credentialId: k.credentialId, publicKey: new Uint8Array(k.cosePublicKey), aaguid: AAGUID })),
+  };
+  const gate = emptyGate();
+  const pinned = await pinOwner({ source: api, gate, print: () => {}, confirm: async () => 'yes' });
+  expect(pinned).toBe('pinned');
+  const hire: World['hire'] = (role, o = {}) => {
+    const p: Person = { id: randomUUID(), key: newKey(o), role };
+    const inviteId = randomUUID();
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = sha256Hex(token);
+    const intent: KeyTapIntent = { kind: 'create-invite', inviteId, role, tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' };
+    if (!o.noTap) api.taps.push(tapBy(owner, intent));
+    const challengeHash = o.wrongToken ? sha256Hex('another token') : tokenHash;
+    const response = p.key.register(
+      {
+        challenge: b64url(inviteRegistrationChallenge(challengeHash)),
+        rp: { id: RP_ID, name: 'X2F Staff' },
+        user: { id: b64url(randomBytes(16)), name: 'x', displayName: 'x' },
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+        attestation: 'direct',
+      },
+      ORIGIN,
+    );
+    api.invites.set(inviteId, { inviteId, tokenHash, accountId: p.id, registrations: [{ credentialId: p.key.credentialId, response }] });
+    api.creds.set(p.key.credentialId, { accountId: p.id, publicKey: new Uint8Array(p.key.cosePublicKey), aaguid: o.aaguid ?? AAGUID });
+    api.staffRows.set(p.id, { accountId: p.id, role, switchedOff: false, removed: false });
+    return p;
+  };
+  return { api, gate, owner, ownerKey2, hire };
+}
+
+const BUYER = '4'.padEnd(95, 'B');
+const SELLER = '8'.padEnd(95, 'S');
+const FEE = '5'.repeat(95);
+const AMOUNT = 250_000_000_000n;
+
+function recorded(usdCents: bigint | null): RecordedTerms {
+  const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
+  return { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller', buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, usdCents };
+}
+const BALANCE = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }).sellerFundsAtomic;
+const NONE: AccountAction = { kind: 'none' };
+const REASON = 'The buyer showed a bank statement with the payment and the seller did not answer.';
+
+interface Case {
+  ruling: GateRuling;
+  intent(step: 'propose' | 'approve', over?: Partial<Extract<KeyTapIntent, { kind: 'ruling' }>>): KeyTapIntent;
+}
+
+function ruling(proposer: Person, o: { approver?: Person | null; outcome?: RulingOutcome; round?: 1 | 2; round1Id?: string; code?: string } = {}): Case {
+  const r: GateRuling = {
+    id: randomUUID(),
+    code: o.code ?? newTradeCode(),
+    round: o.round ?? 1,
+    outcome: o.outcome ?? 'release-to-buyer',
+    accountAction: NONE,
+    proposer: proposer.id,
+    approver: o.approver?.id ?? null,
+    reasonSha256: sha256Hex(REASON),
+    ...(o.round1Id ? { round1Id: o.round1Id } : {}),
+  };
+  return {
+    ruling: r,
+    intent: (step, over = {}) => ({
+      kind: 'ruling', step, rulingId: r.id, code: r.code, round: r.round, outcome: r.outcome, accountAction: r.accountAction,
+      amountAtomic: AMOUNT.toString(), reasonSha256: r.reasonSha256, ...over,
+    }),
+  };
+}
+
+const authorize = (w: World, c: Case, taps: StoredTap[], usdCents: bigint | null = 41_250n, extra: { involved?: string[] } = {}) =>
+  authorizeRuling(w.gate, { ruling: c.ruling, taps, recorded: recorded(usdCents), balanceAtomic: BALANCE, ...extra }, ctx());
+
+describe('the chain of trust (syncRegistry)', () => {
+  it('accepts a staff key only through an owner create-invite tap and an attested registration for that token', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const noTap = w.hire('mod', { noTap: true });
+    const selfAttested = w.hire('mod', { attest: 'self' });
+    const unattested = w.hire('mod', { attest: 'none' });
+    const offList = w.hire('mod', { aaguid: OTHER_AAGUID });
+    const wrongToken = w.hire('mod', { wrongToken: true });
+    // A key the API added to the credentials table on its own, under an existing mod's account.
+    const planted = newKey();
+    w.api.creds.set(planted.credentialId, { accountId: mod.id, publicKey: new Uint8Array(planted.cosePublicKey), aaguid: AAGUID });
+    await syncRegistry(w.api, w.gate, ctx());
+
+    expect(Object.keys(w.gate.staff)).toEqual([mod.id]);
+    expect(w.gate.staff[mod.id]!.role).toBe('mod');
+    for (const p of [noTap, selfAttested, unattested, offList, wrongToken]) {
+      const c = ruling(p);
+      expect(await authorize(w, c, [tapBy(p, c.intent('propose'))])).toEqual({ ok: false, reason: 'unknown-key' });
+    }
+    const c = ruling(mod);
+    expect(await authorize(w, c, [tapBy(mod, c.intent('propose'), { key: planted })])).toEqual({ ok: false, reason: 'unknown-key' });
+  });
+
+  it('a create-invite tap made by a staff member, not the owner, invites nobody', async () => {
+    const w = await world();
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const p: Person = { id: randomUUID(), key: newKey(), role: 'mod' };
+    const tokenHash = sha256Hex('t');
+    const inviteId = randomUUID();
+    w.api.taps.push(tapBy(senior, { kind: 'create-invite', inviteId, role: 'mod', tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' }));
+    const response = p.key.register(
+      { challenge: b64url(inviteRegistrationChallenge(tokenHash)), rp: { id: RP_ID, name: 'X2F' }, user: { id: 'AAAA', name: 'x', displayName: 'x' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }] },
+      ORIGIN,
+    );
+    w.api.invites.set(inviteId, { inviteId, tokenHash, accountId: p.id, registrations: [{ credentialId: p.key.credentialId, response }] });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[p.id]).toBeUndefined();
+  });
+
+  it('role changes need an owner tap; the role in the database alone changes nothing', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    w.api.staffRows.get(mod.id)!.role = 'senior';
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[mod.id]!.role).toBe('mod');
+    // A senior's set-role tap is not the owner's.
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    w.api.taps.push(tapBy(senior, { kind: 'set-role', accountId: mod.id, role: 'senior' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[mod.id]!.role).toBe('mod');
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'senior' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[mod.id]!.role).toBe('senior');
+    // Demoted again: an old promotion tap the gate has already seen never promotes again.
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'mod' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[mod.id]!.role).toBe('mod');
+    w.api.taps.reverse(); // the API serves its taps in any order it likes
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[mod.id]!.role).toBe('mod');
+  });
+
+  it('a switch-off revokes without a signature; only a new owner switch-on tap restores', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' })); // an earlier switch-on
+    await syncRegistry(w.api, w.gate, ctx());
+    w.api.staffRows.get(mod.id)!.switchedOff = true;
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod);
+    const t = tapBy(mod, c.intent('propose'));
+    expect(await authorize(w, c, [t])).toEqual({ ok: false, reason: 'revoked' });
+    // The API shows the mod switched on again, with no new tap: still revoked (the old tap is spent).
+    w.api.staffRows.get(mod.id)!.switchedOff = false;
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await authorize(w, c, [t])).toEqual({ ok: false, reason: 'revoked' });
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await authorize(w, c, [t])).ok).toBe(true);
+    // Removed for good: no switch-on tap brings them back.
+    w.api.staffRows.get(mod.id)!.removed = true;
+    w.api.staffRows.get(mod.id)!.switchedOff = true;
+    await syncRegistry(w.api, w.gate, ctx());
+    w.api.staffRows.get(mod.id)!.removed = false;
+    w.api.staffRows.get(mod.id)!.switchedOff = false;
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    const c2 = ruling(mod);
+    expect(await authorize(w, c2, [tapBy(mod, c2.intent('propose'))])).toEqual({ ok: false, reason: 'revoked' });
+  });
+
+  it('the large-trade limit comes only from an owner settings tap; the settings row is never read', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.limitUsdCents).toBe(100_000n);
+    w.api.taps.push(tapBy(senior, { kind: 'settings', largeTradeLimitUsd: 5000, firstResponseH: 4, appealWindowH: 48 }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.limitUsdCents).toBe(100_000n);
+    const c = ruling(mod);
+    expect(await authorize(w, c, [tapBy(mod, c.intent('propose'))], 200_000n)).toEqual({ ok: false, reason: 'needs-second' });
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 5000, firstResponseH: 4, appealWindowH: 72 }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect({ limit: w.gate.limitUsdCents, window: w.gate.appealWindowH }).toEqual({ limit: 500_000n, window: 72 });
+    expect((await authorize(w, c, [tapBy(mod, c.intent('propose'))], 200_000n)).ok).toBe(true);
+  });
+
+  it('a new owner key needs taps by both pinned owner keys for it', async () => {
+    const w = await world();
+    const third = newKey();
+    w.api.creds.set(third.credentialId, { accountId: w.owner.id, publicKey: new Uint8Array(third.cosePublicKey), aaguid: AAGUID });
+    const intent: KeyTapIntent = { kind: 'add-owner-key', credentialId: third.credentialId, publicKeySha256: sha256Hex(third.cosePublicKey) };
+    w.api.taps.push(tapBy(w.owner, intent));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.ownerCreds).toHaveLength(2);
+    // A second tap by the same key does not count as the other key's.
+    w.api.taps.push(tapBy(w.owner, intent));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.ownerCreds).toHaveLength(2);
+    w.api.taps.push(tapBy(w.owner, intent, { key: w.ownerKey2 }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.ownerCreds.map((c) => c.credentialId)).toContain(third.credentialId);
+    // A credential row whose public key is not the one tapped for is never pinned.
+    const fourth = newKey();
+    const decoy = newKey();
+    w.api.creds.set(fourth.credentialId, { accountId: w.owner.id, publicKey: new Uint8Array(decoy.cosePublicKey), aaguid: AAGUID });
+    const bad: KeyTapIntent = { kind: 'add-owner-key', credentialId: fourth.credentialId, publicKeySha256: sha256Hex(fourth.cosePublicKey) };
+    w.api.taps.push(tapBy(w.owner, bad), tapBy(w.owner, bad, { key: w.ownerKey2 }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.ownerCreds.map((c) => c.credentialId)).not.toContain(fourth.credentialId);
+  });
+});
+
+describe('authorizeRuling', () => {
+  it('below the limit, one registered moderator tap authorises it; the payouts are its own, to the recorded addresses', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod);
+    const r = await authorize(w, c, [tapBy(mod, c.intent('propose'))]);
+    const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
+    expect(r).toEqual({
+      ok: true,
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT }, { address: FEE, amountAtomic: plan.feeAtomic }] },
+    });
+    const s = ruling(mod, { outcome: 'refund-to-seller' });
+    expect(await authorize(w, s, [tapBy(mod, s.intent('propose'))])).toEqual({
+      ok: true,
+      settle: { winner: 'seller', payouts: [{ address: SELLER, amountAtomic: BALANCE }] },
+    });
+  });
+
+  it('at the limit: one tap needs a second; the same person twice, or a moderator approving, is refused; the owner approves', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const mod2 = w.hire('mod');
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const at = 100_000n;
+    const one = ruling(mod);
+    expect(await authorize(w, one, [tapBy(mod, one.intent('propose'))], at)).toEqual({ ok: false, reason: 'needs-second' });
+    const same = ruling(senior, { approver: senior });
+    expect(await authorize(w, same, [tapBy(senior, same.intent('propose')), tapBy(senior, same.intent('approve'))], at)).toEqual({ ok: false, reason: 'same-person' });
+    const byMod = ruling(mod, { approver: mod2 });
+    expect(await authorize(w, byMod, [tapBy(mod, byMod.intent('propose')), tapBy(mod2, byMod.intent('approve'))], at)).toEqual({ ok: false, reason: 'approver-role' });
+    const byOwner = ruling(mod, { approver: w.owner });
+    expect((await authorize(w, byOwner, [tapBy(mod, byOwner.intent('propose')), tapBy(w.owner, byOwner.intent('approve'))], at)).ok).toBe(true);
+    const bySenior = ruling(mod, { approver: senior });
+    expect((await authorize(w, bySenior, [tapBy(mod, bySenior.intent('propose')), tapBy(senior, bySenior.intent('approve'))], at)).ok).toBe(true);
+  });
+
+  it('decides "needs second" from its own recorded value: a database 99,999 for a trade recorded at 100,000 still needs it', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    // The ruling row the API stored says it needed no second approval (and the API's usd_cents
+    // said 99,999): the gate reads neither.
+    const c = ruling(mod);
+    expect(await authorize(w, c, [tapBy(mod, c.intent('propose'))], 100_000n)).toEqual({ ok: false, reason: 'needs-second' });
+    expect((await authorize(w, c, [tapBy(mod, c.intent('propose'))], 99_999n)).ok).toBe(true);
+    // A value it could not record itself (a trade not priced in US dollars) always needs a second person.
+    const n = ruling(mod);
+    expect(await authorize(w, n, [tapBy(mod, n.intent('propose'))], null)).toEqual({ ok: false, reason: 'needs-second' });
+    // So does any account action, whatever the value.
+    const f = ruling(mod);
+    f.ruling.accountAction = { kind: 'freeze' };
+    expect(await authorize(w, f, [tapBy(mod, f.intent('propose', { accountAction: { kind: 'freeze' } }))], 1_000n)).toEqual({ ok: false, reason: 'needs-second' });
+  });
+
+  it('a helper cannot propose', async () => {
+    const w = await world();
+    const helper = w.hire('helper');
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(helper);
+    expect(await authorize(w, c, [tapBy(helper, c.intent('propose'))])).toEqual({ ok: false, reason: 'proposer-role' });
+  });
+
+  it('the taps must agree with the ruling the API stored and the amount recorded here', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const other = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod);
+    const t = tapBy(mod, c.intent('propose'));
+    // The database row changed to refund-to-seller after the taps.
+    expect(await authorize(w, { ...c, ruling: { ...c.ruling, outcome: 'refund-to-seller' } }, [t])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    expect(await authorize(w, { ...c, ruling: { ...c.ruling, code: newTradeCode() } }, [t])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    expect(await authorize(w, { ...c, ruling: { ...c.ruling, reasonSha256: sha256Hex('another reason') } }, [t])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    expect(await authorize(w, { ...c, ruling: { ...c.ruling, proposer: other.id } }, [t])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    // The trade's amount as tapped is not the amount this process recorded.
+    const d = ruling(mod);
+    expect(await authorize(w, d, [tapBy(mod, d.intent('propose', { amountAtomic: (AMOUNT + 1n).toString() }))])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    // Two proposals, or an approval alone.
+    const e = ruling(mod);
+    expect(await authorize(w, e, [tapBy(mod, e.intent('propose')), tapBy(other, e.intent('propose'))])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    expect(await authorize(w, e, [])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    // A tap for something else.
+    expect(await authorize(w, e, [tapBy(mod, { kind: 'emergency-stop' })])).toEqual({ ok: false, reason: 'intent-mismatch' });
+    // The code may be written with or without its dashes (tapChallenge normalises it).
+    const f = ruling(mod);
+    expect((await authorize(w, { ...f, ruling: { ...f.ruling, code: f.ruling.code.replace(/-/g, '').toLowerCase() } }, [tapBy(mod, f.intent('propose'))])).ok).toBe(true);
+  });
+
+  it('re-verifies every signature itself', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod);
+    const good = tapBy(mod, c.intent('propose'));
+    const sig = Buffer.from(good.response.response.signature, 'base64url');
+    sig[sig.length - 1] ^= 1;
+    const flipped: StoredTap = { ...good, response: { ...good.response, response: { ...good.response.response, signature: b64url(sig) } } };
+    expect(await authorize(w, c, [flipped])).toEqual({ ok: false, reason: 'bad-signature' });
+    // The stored intent rewritten (here: the other outcome) no longer matches what the key signed.
+    const swapped: StoredTap = { ...good, intent: canonicalJson(c.intent('propose', { outcome: 'refund-to-seller' })) };
+    expect(await authorize(w, { ...c, ruling: { ...c.ruling, outcome: 'refund-to-seller' } }, [swapped])).toEqual({ ok: false, reason: 'bad-signature' });
+    // Another nonce than the one signed over.
+    expect(await authorize(w, c, [{ ...good, nonceHex: randomBytes(16).toString('hex') }])).toEqual({ ok: false, reason: 'bad-signature' });
+    // Signed for another relying party.
+    const elsewhere = mod.key.authenticate({ challenge: b64url(tapChallenge(c.intent('propose'), Buffer.from(good.nonceHex, 'hex'))), rpId: 'evil.test', allowCredentials: [] }, 'https://evil.test');
+    expect(await authorize(w, c, [{ ...good, response: elsewhere }])).toEqual({ ok: false, reason: 'bad-signature' });
+    expect((await authorize(w, c, [good])).ok).toBe(true);
+  });
+
+  it('a tap used for one ruling is never accepted for another', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const a = ruling(mod);
+    const t = tapBy(mod, a.intent('propose'));
+    expect((await authorize(w, a, [t])).ok).toBe(true);
+    // The same ruling checked again (the executor re-checks every pass) is still fine.
+    expect((await authorize(w, a, [t])).ok).toBe(true);
+    const b = ruling(mod);
+    expect(await authorize(w, b, [t])).toEqual({ ok: false, reason: 'nonce-reused' });
+    // A registry tap's nonce is spent too.
+    const s = tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 });
+    w.api.taps.push(s);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.usedNonces[s.nonceHex]).toBeDefined();
+  });
+
+  it('an appeal ruling by anyone involved in round 1 is refused (R37)', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    const senior2 = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r1 = ruling(mod);
+    expect((await authorize(w, r1, [tapBy(mod, r1.intent('propose'))])).ok).toBe(true);
+    // Round 1's proposer, as this process saw them sign, even with a log that leaves them out.
+    const r2 = ruling(mod, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, r2, [tapBy(mod, r2.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'involved' });
+    // Anyone with a log entry on round 1.
+    const r2b = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, r2b, [tapBy(senior, r2b.intent('propose'))], 41_250n, { involved: [senior.id] })).toEqual({ ok: false, reason: 'involved' });
+    // An approver involved in round 1 too.
+    const r2c = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code, approver: senior });
+    expect(await authorize(w, r2c, [tapBy(senior2, r2c.intent('propose')), tapBy(senior, r2c.intent('approve'))], 100_000n, { involved: [senior.id] })).toEqual({ ok: false, reason: 'involved' });
+    // An independent reviewer: authorised, and nothing to co-sign (round 2 never pays; an overturn is a lien).
+    const ok = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, ok, [tapBy(senior2, ok.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: true, settle: null });
+    // A round 2 with no round 1 named is not one the gate can check.
+    const bare = ruling(senior2, { round: 2 });
+    expect(await authorize(w, bare, [tapBy(senior2, bare.intent('propose'))])).toEqual({ ok: false, reason: 'intent-mismatch' });
+  });
+
+  it('an after-refund ruling is authorised but never co-signed', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod, { outcome: 'seller-sends-xmr' });
+    expect(await authorize(w, c, [tapBy(mod, c.intent('propose'))])).toEqual({ ok: true, settle: null });
+  });
+
+  it('refuses everything until the owner is pinned', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const c = ruling(mod);
+    const fresh = emptyGate();
+    expect(await authorizeRuling(fresh, { ruling: c.ruling, taps: [tapBy(mod, c.intent('propose'))], recorded: recorded(1n), balanceAtomic: BALANCE }, ctx())).toEqual({ ok: false, reason: 'unpinned' });
+  });
+
+  it('gateCheck syncs the registry first, so a switch-off a moment ago already counts', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const c = ruling(mod);
+    const t = tapBy(mod, c.intent('propose'));
+    w.api.taps.push(t);
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
+    try {
+      const store = await openGateStore(dir, new Uint8Array(32).fill(7));
+      store.state = w.gate;
+      await store.save();
+      const check = () => gateCheck(store, w.api, { ruling: c.ruling, recorded: recorded(1n), balanceAtomic: BALANCE, involved: [] }, ctx());
+      expect((await check()).ok).toBe(true);
+      w.api.staffRows.get(mod.id)!.switchedOff = true;
+      expect(await check()).toEqual({ ok: false, reason: 'revoked' });
+      // What it learnt is saved.
+      const again = await openGateStore(dir, new Uint8Array(32).fill(7));
+      expect(again.state.staff[mod.id]!.revoked).toBe(true);
+      expect(again.state.usedNonces[t.nonceHex]).toBe(`ruling:${c.ruling.id}:propose`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('recordedTerms', () => {
+  it('takes the addresses this process attested and its own trade, never the API row', () => {
+    const terms = { deal: { poster: 'seller' as const, takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16500', maxFiatCents: '100000' }, payWindowMin: 90, buyerPayout: BUYER, sellerRefund: SELLER };
+    const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
+    const r = recordedTerms({ terms, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE });
+    // 0.25 XMR at $165.00: $41.25, rounded up to the cent.
+    expect(r).toEqual({ ...recorded(4_125n) });
+    // Not US dollars: no value of its own, so every ruling on it needs a second person.
+    expect(recordedTerms({ terms: { ...terms, deal: { ...terms.deal, currency: 'EUR' } }, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE }).usdCents).toBeNull();
+    // A part cent rounds up (toward needing a second approval at the limit).
+    expect(recordedTerms({ terms: { ...terms, deal: { ...terms.deal, centsPerXmr: '16501' } }, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE }).usdCents).toBe(4_126n);
+  });
+});
+
+describe('GateStore', () => {
+  it('is AES-256-GCM sealed in gate.bin and unreadable with another MOD_KEYSTORE_KEY', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
+    try {
+      const key = new Uint8Array(randomBytes(32));
+      const s = await openGateStore(dir, key);
+      expect(s.state.ownerCreds).toEqual([]);
+      s.state.limitUsdCents = 123_400n;
+      s.state.usedNonces.abc = 'x';
+      await s.save();
+      const raw = await readFile(join(dir, 'gate.bin'));
+      expect(raw.includes(Buffer.from('123400'))).toBe(false);
+      expect((await openGateStore(dir, key)).state.limitUsdCents).toBe(123_400n);
+      await expect(openGateStore(dir, new Uint8Array(randomBytes(32)))).rejects.toThrow();
+      // A flipped byte is refused, never read as an empty gate.
+      raw[raw.length - 1] ^= 1;
+      await writeFile(join(dir, 'gate.bin'), raw);
+      await expect(openGateStore(dir, key)).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('pin-owner', () => {
+  it('prints each key check code, pins only on "yes", and never twice', async () => {
+    const api = new FakeApi();
+    const k1 = newKey();
+    const k2 = newKey();
+    const ownerId = randomUUID();
+    api.owner = { accountId: ownerId, keys: [k1, k2].map((k) => ({ credentialId: k.credentialId, publicKey: new Uint8Array(k.cosePublicKey), aaguid: AAGUID })) };
+    const printed: string[] = [];
+    const gate = emptyGate();
+    expect(await pinOwner({ source: api, gate, print: (l) => printed.push(l), confirm: async () => 'no' })).toBe('declined');
+    expect(gate.ownerCreds).toEqual([]);
+    expect(printed.join('\n')).toContain(keyCheckCode(new Uint8Array(k1.cosePublicKey)));
+    expect(printed.join('\n')).toContain(keyCheckCode(new Uint8Array(k2.cosePublicKey)));
+    expect(await pinOwner({ source: api, gate, print: () => {}, confirm: async () => 'yes' })).toBe('pinned');
+    expect({ owner: gate.ownerAccountId, creds: gate.ownerCreds.map((c) => c.credentialId) }).toEqual({ owner: ownerId, creds: [k1.credentialId, k2.credentialId] });
+    expect(await pinOwner({ source: api, gate, print: () => {}, confirm: async () => 'yes' })).toBe('already-pinned');
+    // Fewer than two owner keys: nothing to pin.
+    const one = new FakeApi();
+    one.owner = { accountId: ownerId, keys: api.owner.keys.slice(0, 1) };
+    expect(await pinOwner({ source: one, gate: emptyGate(), print: () => {}, confirm: async () => 'yes' })).toBe('no-owner-keys');
+  });
+});
+
+describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
+  let admin: string;
+  let owner: pg.Pool;
+  let reader: pg.Pool;
+  let name: string;
+
+  beforeAll(async () => {
+    admin = inject('modPgUrl');
+    name = `x2f_mod_g_${randomBytes(8).toString('hex')}`;
+    const c = new pg.Client({ connectionString: `${admin}/postgres` });
+    await c.connect();
+    try {
+      await c.query(`create database ${name}`);
+    } finally {
+      await c.end();
+    }
+    owner = new pg.Pool({ connectionString: `${admin}/${name}`, max: 1 });
+    const dir = new URL('../../api/migrations/', import.meta.url);
+    const { readdir } = await import('node:fs/promises');
+    for (const f of (await readdir(dir)).filter((n) => /^\d{3}_[a-z0-9_]+\.sql$/.test(n)).sort()) {
+      await owner.query(await readFile(new URL(f, dir), 'utf8'));
+    }
+    const login = `modg_${randomBytes(4).toString('hex')}`;
+    const pass = randomBytes(12).toString('hex');
+    await owner.query(`create role ${login} login password '${pass}' in role x2f_mod_reader`);
+    const u = new URL(admin);
+    reader = new pg.Pool({ connectionString: `postgres://${login}:${pass}@${u.host}/${name}`, max: 1 });
+  });
+  afterAll(async () => {
+    await reader?.end();
+    await owner?.end();
+  });
+
+  beforeEach(() => {});
+
+  it('reads the owner keys, staff, invites with registrations, used taps and a ruling, and writes nothing', async () => {
+    const ownerId = randomUUID();
+    const modId = randomUUID();
+    const inviteId = randomUUID();
+    const k1 = newKey();
+    const k2 = newKey();
+    const mk = newKey();
+    const c = await owner.connect();
+    const tapIds = { invite: randomUUID(), ruling: randomUUID(), open: randomUUID() };
+    try {
+      await c.query('set session_replication_role = replica');
+      for (const [id, kind] of [[ownerId, 'owner'], [modId, 'staff']] as const) {
+        await c.query(`insert into accounts (id, kind, webauthn_user_id, created_at) values ($1, $2, $3, now())`, [id, kind, randomBytes(32)]);
+      }
+      for (const [acct, k, kind] of [[ownerId, k1, 'security-key'], [ownerId, k2, 'security-key'], [modId, mk, 'security-key']] as const) {
+        await c.query(
+          `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, aaguid, label, created_at)
+           values ($1, $2, $3, 0, $4, false, 'singleDevice', true, $5, 'k', now())`,
+          [acct, Buffer.from(k.credentialId, 'base64url'), k.cosePublicKey, kind, AAGUID],
+        );
+      }
+      // A passkey on the owner account is never offered as an owner key to pin.
+      const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
+      await c.query(
+        `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, label, created_at)
+         values ($1, $2, $3, 0, 'passkey', true, 'multiDevice', false, 'p', now())`,
+        [ownerId, Buffer.from(pk.credentialId, 'base64url'), pk.cosePublicKey],
+      );
+      await c.query(`insert into staff_members (account_id, role, hours, has_security_key, joined_at) values ($1, 'owner', '"any"', true, now()), ($2, 'mod', '"any"', true, now())`, [ownerId, modId]);
+      await c.query(`update staff_members set switched_off_at = now() where account_id = $1`, [modId]);
+      const nonce = randomBytes(16);
+      const intent = canonicalJson({ kind: 'create-invite', inviteId, role: 'mod', tokenHash: 'a'.repeat(64), expiresAt: '2026-11-13T12:00:00.000Z' });
+      await c.query(
+        `insert into key_taps (id, account_id, credential_id, intent, nonce, response, started_at, finished_at, used_at) values ($1, $2, $3, $4, $5, $6, now(), now(), now())`,
+        [tapIds.invite, ownerId, k1.credentialId, intent, nonce, JSON.stringify({ id: k1.credentialId })],
+      );
+      const rulingId = randomUUID();
+      const ri = canonicalJson({ kind: 'ruling', step: 'propose', rulingId, code: 'ABCD-EFGH-JKMN-PQRS', round: 1, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, amountAtomic: '1', reasonSha256: 'b'.repeat(64) });
+      await c.query(
+        `insert into key_taps (id, account_id, credential_id, intent, nonce, response, started_at, finished_at, used_at) values ($1, $2, $3, $4, $5, $6, now(), now(), now())`,
+        [tapIds.ruling, modId, mk.credentialId, ri, randomBytes(16), JSON.stringify({ id: mk.credentialId })],
+      );
+      // Finished but never used by its action: not a tap anything relied on.
+      await c.query(
+        `insert into key_taps (id, account_id, credential_id, intent, nonce, response, started_at, finished_at) values ($1, $2, $3, $4, $5, $6, now(), now())`,
+        [tapIds.open, modId, mk.credentialId, ri.replace('"propose"', '"approve"'), randomBytes(16), JSON.stringify({ id: mk.credentialId })],
+      );
+      await c.query(
+        `insert into staff_invites (id, token_hash, role, hours, created_by, created_at, expires_at, used_at, tap_id, account_id) values ($1, $2, 'mod', '"any"', $3, now(), now() + interval '1 day', now(), $4, $5)`,
+        [inviteId, 'a'.repeat(64), ownerId, tapIds.invite, modId],
+      );
+      await c.query(`insert into staff_key_registrations (credential_id, invite_id, response, created_at) values ($1, $2, $3, now())`, [
+        Buffer.from(mk.credentialId, 'base64url'), inviteId, JSON.stringify({ id: mk.credentialId, rawId: mk.credentialId }),
+      ]);
+
+      const src = pgGateSource(reader);
+      const ok = await src.ownerKeys();
+      expect(ok?.accountId).toBe(ownerId);
+      expect(ok?.keys.map((k) => k.credentialId).sort()).toEqual([k1.credentialId, k2.credentialId].sort());
+      expect(Buffer.from(ok!.keys.find((k) => k.credentialId === k1.credentialId)!.publicKey)).toEqual(k1.cosePublicKey);
+      expect(await src.staff()).toEqual(expect.arrayContaining([{ accountId: modId, role: 'mod', switchedOff: true, removed: false }]));
+      expect((await src.usedTaps(['create-invite'])).map((t) => t.id)).toEqual([tapIds.invite]);
+      const taps = await src.rulingTaps(rulingId);
+      expect(taps.map((t) => t.id)).toEqual([tapIds.ruling]);
+      expect(taps[0]).toMatchObject({ accountId: modId, credentialId: mk.credentialId, intent: ri, response: { id: mk.credentialId } });
+      expect(await src.invite(inviteId)).toEqual({
+        inviteId, tokenHash: 'a'.repeat(64), accountId: modId,
+        registrations: [{ credentialId: mk.credentialId, response: { id: mk.credentialId, rawId: mk.credentialId } }],
+      });
+      expect(await src.invite(randomUUID())).toBeNull();
+      expect(await src.credential(mk.credentialId)).toEqual({ accountId: modId, publicKey: expect.any(Uint8Array), aaguid: AAGUID });
+      // Read only, and only those columns.
+      await expect(reader.query('select label from webauthn_credentials')).rejects.toMatchObject({ code: '42501' });
+      await expect(reader.query('select session_id from key_taps')).rejects.toMatchObject({ code: '42501' });
+      await expect(reader.query('select hours from staff_members')).rejects.toMatchObject({ code: '42501' });
+      await expect(reader.query(`update staff_members set role = 'senior'`)).rejects.toMatchObject({ code: '42501' });
+      await expect(reader.query(`delete from key_taps`)).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      c.release();
+    }
+  });
+});
