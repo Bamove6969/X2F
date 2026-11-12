@@ -474,7 +474,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
   it('review M3: sweeps the stored chats for purged ones when the worker starts, before any chat message, and once', async () => {
     const { serveChat } = await import('../src/chat/serve.js');
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sweep: async () => (sweeps++, []) };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sweep: async () => (sweeps++, []) };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -502,7 +502,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
       async () => [],
     ];
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -732,5 +732,72 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     await settle();
     expect(out.shift()).toEqual({ t: 'chat', id: 3, ok: false, error: 'bad-details' });
     expect(api.posted).toHaveLength(1);
+  });
+});
+
+describe('chat engine: the payment proof (Plan 5 Task 15)', () => {
+  async function attached(over: Record<string, unknown> = {}) {
+    const { newProofId, proofKeyToBase64 } = await import('@x2f/proof');
+    return {
+      proofId: newProofId(),
+      kind: 'proof' as const,
+      key: await proofKeyToBase64(new Uint8Array(32).fill(7)),
+      sha256: 'ab'.repeat(32),
+      width: 300,
+      height: 120,
+      mime: 'image/png' as const,
+      hidden: ['card' as const, 'email' as const],
+      photoTakenAt: null,
+      ...over,
+    };
+  }
+
+  it('sendProof seals proof.attached to buyer, seller and mod: the key is readable by the seller and the mod, never in the clear', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await attached();
+    await e.sendProof(chat, p);
+    expect(api.posted).toHaveLength(1);
+    const wire = JSON.stringify(api.posted[0]);
+    expect(() => checkChatEnvelope(JSON.parse(wire), channel, 'buyer')).not.toThrow();
+    for (const s of [p.key, p.proofId, p.sha256, 'proof.attached', '"hidden"']) expect(wire, s).not.toContain(s);
+    const { open, ReplayGuard } = await import('@x2f/protocol');
+    for (const [me, myRole] of [[seller, 'seller'], [mod, 'mod']] as const) {
+      const o = await open(api.posted[0] as Envelope, { me, myRole, participants: parts, trade: channel, guard: new ReplayGuard(channel) });
+      expect(o.type).toBe('proof.attached');
+      expect(o.payload).toEqual(p);
+    }
+    // The next line follows on the next seq: the proof used exactly one.
+    await e.send(chat, 'sent it');
+    expect((api.posted[1] as Envelope).seq).toBe((api.posted[0] as Envelope).seq + 1);
+  });
+
+  it('a malformed payload, or a seller sending a proof, is refused as bad-proof with nothing posted', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.sendProof(chat, await attached({ key: 'nope' }))).rejects.toMatchObject({ code: 'bad-proof' });
+    await expect(e.sendProof(chat, await attached({ extra: 1 }))).rejects.toMatchObject({ code: 'bad-proof' });
+    expect(api.posted).toHaveLength(0);
+    // Only the buyer sends a payment proof (kind 'proof'): the sealing itself refuses another role.
+    const { sealProofAttached } = await import('../src/chat/chatCrypto.js');
+    const parts = attest();
+    await expect(sealProofAttached({ role: 'seller', me: seller, participants: parts, state: sellerState, proof: await attached() })).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('the worker checks the payload before the engine sees it (chat-send-proof)', async () => {
+    const { serveChat } = await import('../src/chat/serve.js');
+    const got: unknown[] = [];
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async (_c: string, p: unknown) => (got.push(p), {} as never), sweep: async () => [] };
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
+    handler({ data: { t: 'chat-send-proof', id: 1, chat, proof: { ...(await attached()), key: 'bad' } } });
+    handler({ data: { t: 'chat-send-proof', id: 2, chat, proof: await attached() } });
+    for (let i = 0; i < 200 && out.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(out).toContainEqual({ t: 'chat', id: 1, ok: false, error: 'bad-proof' });
+    expect(out).toContainEqual(expect.objectContaining({ t: 'chat', id: 2, ok: true }));
+    expect(got).toHaveLength(1);
   });
 });

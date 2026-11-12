@@ -69,6 +69,8 @@ const SEND_ERRORS: Record<ChatFailure, string> = {
   'bad-text': 'Type a message first, and leave out hidden characters.',
   // COPY-UNSIGNED (J-08): the worker refused the package (a box the page's own check let through).
   'bad-details': 'Check the details and try again.',
+  // COPY-UNSIGNED (Plan 5 Task 15): the worker refused a proof's envelope (the composer never sends one).
+  'bad-proof': "Couldn't send this proof. Try again.",
   'too-large': 'This message is too long.',
   'slow-down': "You're sending messages too fast. Wait a minute and try again.",
   refused: "Couldn't send. Check your connection and try again.",

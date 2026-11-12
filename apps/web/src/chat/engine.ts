@@ -48,7 +48,8 @@
 import type { Role } from '@x2f/core';
 import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
-import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
+import { ProofError, type ProofAttachedPayload } from '@x2f/proof';
+import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealPayDetails, sealProofAttached, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
 
 export interface ChatApiView {
@@ -114,7 +115,7 @@ export interface ChatSnapshot {
   more: boolean;
 }
 
-export type ChatSendError = 'not-ready' | 'bad-text' | 'bad-details' | 'too-large' | 'slow-down' | 'refused';
+export type ChatSendError = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused';
 
 export class ChatSendFailed extends Error {
   /** `cause`: the API's refusal behind a 'refused' (a 410 there erases the chat). */
@@ -129,6 +130,14 @@ export interface ChatEngine {
   send(chat: string, text: string): Promise<ChatSnapshot>;
   /** Seals and posts the payee's packaged payment details (J-08); 'bad-details' for a bad package, 'not-ready' while the trade is not secured (owner Q12). */
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
+  /**
+   * Plan 5 Task 15: seals and posts a `proof.attached` (the proof's key, to buyer, seller and mod);
+   * 'bad-proof' for a malformed payload or a payment proof from the seller. The image itself went up
+   * as ciphertext before this (proof/upload.ts). NEEDS_PROOF_RECEIVE: syncs do not open
+   * `proof.attached` yet (ChatPanel's ProofThumb, Task 15's receiving half), so a device that reads
+   * one keeps a refused receipt for it.
+   */
+  sendProof(chat: string, proof: ProofAttachedPayload): Promise<ChatSnapshot>;
   /**
    * Asks the API about every chat stored on this device and erases each one it answers 410
    * `chat-purged` for; resolves with those. Any other answer (or none) keeps the record. Rejects on
@@ -501,6 +510,16 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     },
     send: (chat, text) => post(chat, (a) => sealChatMessage({ ...a, text })),
     sendPay: (chat, pay) => post(chat, (a) => sealPayDetails({ ...a, pay }), true),
+    sendProof: (chat, proof) =>
+      post(chat, async (a) => {
+        try {
+          return await sealProofAttached({ ...a, proof });
+        } catch (e) {
+          // A malformed payload, or a payment proof from the seller: nothing sealed, no seq spent.
+          if (e instanceof ProofError || e instanceof TypeError) throw new ChatSendFailed('bad-proof', e);
+          throw e;
+        }
+      }),
   };
 }
 

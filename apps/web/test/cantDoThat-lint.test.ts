@@ -147,7 +147,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 64 -> 65 (owner item 64, 3 Nov 2026; proof pop-ups landed 10 Nov): screens/proof/ProofPrompts.tsx's
     // "Our automated system was unable to detect the amount ..." is a check on the screenshot asking
     // for an explanation; the proof can still be sent.
-    expect(notARefusal).toBeLessThanOrEqual(65);
+    // 65 -> 66 (Plan 5 Task 15, proof upload): proof/upload.ts's PROOF_CANT_USE ("This image can't be
+    // used. Try a screenshot."), an input check on the picked image (Review Focus 2); another can be picked.
+    expect(notARefusal).toBeLessThanOrEqual(66);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

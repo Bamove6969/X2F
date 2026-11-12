@@ -110,6 +110,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'changes-changed': 'a state conflict: the list changed since it was reviewed',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',
+  // Plan 5 Task 15: a picked proof image that can't be read (ProofInputError); shown as PROOF_CANT_USE.
+  unsupported: 'an input check on the picked proof image',
   internal: 'a server fault',
   busy: 'the server is busy (try again)',
   'display-name-invalid': 'an input check on a typed name',
