@@ -636,6 +636,7 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/confirm/webauthn/finish': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',
   'POST /v1/account/blocks': 'social: a block row only; no account, session, approval or security state, no obligation',
   'DELETE /v1/account/blocks/:displayName': 'social: removes a block row only; no account, session, approval or security state',
+  'PUT /v1/account/blocks/:displayName/note': "social: the note on a block row of mine only (S-093); no account, session, approval or security state",
   'PUT /v1/account/nudges': "the caller's own nudge preferences; no session, approval or security state",
   'POST /v1/nudges': 'a nudge to a trade counterparty; no account, session, approval or security state',
   'POST /v1/method-suggestions': 'a method suggestion row only',

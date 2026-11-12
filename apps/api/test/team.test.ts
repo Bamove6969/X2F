@@ -1688,6 +1688,16 @@ describe('notes on traders (S-094, p7-8)', () => {
     expect(err(await m.browser.post('/v1/account/notes', { about: subjectName, text: 'Mine.' }))).toEqual({ status: 409, error: 'too-many-notes' });
     expect(await auditRows(owner.id)).toEqual([]);
   });
+
+  it('S-093 review m1: a note refuses control and format characters and the line and paragraph separators; a new line is allowed', async () => {
+    const owner = await team();
+    const subject = await team();
+    const subjectName = ((await subject.browser.get('/v1/account/me')).json() as { displayName: string }).displayName;
+    for (const bad of ['a\u2028b', 'a\u2029b', 'a\u202eb', 'a\u200bb', 'a\u0085b', 'a\tb']) {
+      expect(err(await owner.browser.post('/v1/account/notes', { about: subjectName, text: bad })), JSON.stringify(bad)).toEqual({ status: 400, error: 'bad-request' });
+    }
+    expect((await owner.browser.post('/v1/account/notes', { about: subjectName, text: 'one\ntwo' })).statusCode).toBe(201);
+  });
 });
 
 describe('S-104 (owner p11-21): a lead on a username-and-password login may invite; the member\'s boxes wait 24 h', () => {

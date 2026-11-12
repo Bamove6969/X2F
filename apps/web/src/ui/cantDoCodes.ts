@@ -325,10 +325,10 @@ export function chatCantDoText(code: CantDoCode): string {
 
 /**
  * The offer cap the API enforces (owner 6 Nov 2026, Q31: 3 buying and 3 selling offers per
- * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said wherever the cap is explained:
- * PostOffer's and My offers' CantDoThat for `too-many-offers` and the My offers footnote.
- * PostOffer says the 409's own number (`offerCapLine`, review M2); the My offers footnote and its
- * bulk turn-on refusal (whose per-offer result carries no cap) say this default. COPY-UNSIGNED
+ * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said in the My offers footnote. The
+ * refusals themselves (PostOffer's and My offers' CantDoThat for `too-many-offers`) open with the
+ * owner's limit words (`offerLimitLine`, O-028): PostOffer with the 409's own numbers (review M2),
+ * My offers' bulk turn-on (whose per-offer result carries no cap) with this default. COPY-UNSIGNED
  */
 export const OFFER_CAP_LINE = 'You can have 3 buying and 3 selling offers.'; // COPY-UNSIGNED
 
@@ -348,11 +348,16 @@ export function offerCapsOf(extra: Record<string, unknown> | undefined): OfferCa
   return extra && ok(extra.buy) && ok(extra.sell) ? { buy: extra.buy, sell: extra.sell } : null;
 }
 
-/** The cap line with the numbers the API sent (the owner settings), else the default line. COPY-UNSIGNED */
-export function offerCapLine(caps: OfferCaps | null): string {
-  if (caps === null || (caps.buy === 3 && caps.sell === 3)) return OFFER_CAP_LINE;
-  const { buy, sell } = caps;
-  return `You can have ${buy} buying and ${sell} selling ${sell === 1 ? 'offer' : 'offers'}.`;
+/**
+ * O-028 (owner 28 Oct 2026, Q14): the limit pop-up opens in the owner's words, "Sorry, you're
+ * limited to N offers per side ..." (his number then was 2; the cap is 3 + 3 since Q31, and owner
+ * settings may set each side apart). CantDoThat adds his feedback line and link, and the feedback
+ * form's thank-you is his too (screens/Feedback.tsx FEEDBACK_THANKS). COPY-UNSIGNED
+ */
+export function offerLimitLine(caps: OfferCaps | null): string {
+  const { buy, sell } = caps ?? { buy: 3, sell: 3 };
+  if (buy === sell) return `Sorry, you're limited to ${buy} ${buy === 1 ? 'offer' : 'offers'} per side: ${buy} buying and ${sell} selling.`;
+  return `Sorry, you're limited to ${buy} buying and ${sell} selling ${sell === 1 ? 'offer' : 'offers'}.`;
 }
 
 /** What a refused Post offer says; `caps` from the API's refusal (offerCapsOf). */
@@ -361,7 +366,7 @@ export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null):
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
-      return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
+      return `${offerLimitLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED (O-028)
     case 'launch-cap':
       // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
       return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Lower your offer's maximum to ${LAUNCH_CAP_TEXT} or less.`;
@@ -423,10 +428,11 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
     case 'too-many-offers':
-      // C2-A1: the cap is per side now (owner 2026-11-01), not per market. COPY-UNSIGNED
+      // C2-A1: the cap is per side now (owner 2026-11-01), not per market; O-028: the owner's
+      // limit pop-up words (the bulk result carries no cap, so the default 3 + 3). COPY-UNSIGNED
       return n === 1
-        ? `${OFFER_CAP_LINE} Remove one you no longer need, then turn this one on.`
-        : `${OFFER_CAP_LINE} Remove ones you no longer need, then turn these on.`;
+        ? `${offerLimitLine(null)} Remove one you no longer need, then turn this one on.`
+        : `${offerLimitLine(null)} Remove ones you no longer need, then turn these on.`;
     // J-20 review F2: a team member turning on an offer outside their band. COPY-UNSIGNED // DESIGN: wording
     case 'outside-trade-band':
       return n === 1
