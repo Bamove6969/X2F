@@ -230,7 +230,7 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
     // The ticket: the account, the ticked kinds, the comment; never the typed login name.
     const t = await deps.db.query<{ account_id: string; methods_left: string[]; kind: string }>("select * from tickets where kind = 'compromised' and account_id = $1", [victim.id]);
     expect(t.rows[0]).toMatchObject({ account_id: victim.id, methods_left: ['password', 'recovery-code'] });
-    const dump = JSON.stringify((await deps.db.query("select t.*, m.body from tickets t left join ticket_messages m on m.ticket_id = t.id where t.kind = 'compromised'")).rows);
+    const dump = JSON.stringify((await deps.db.query("select t.*, to_jsonb(m) as m from tickets t left join ticket_messages m on m.ticket_id = t.id where t.kind = 'compromised'")).rows);
     expect(dump.toLowerCase()).not.toContain(victim.loginName.toLowerCase());
     expect((await logEntries(deps, 'account.locked')).some((e) => e.actor_kind === 'system' && JSON.stringify(e.detail).includes(victim.id))).toBe(true);
     for (const e of await logEntries(deps, 'account.locked')) expect(JSON.stringify(e)).not.toContain(SECRET);

@@ -12,7 +12,9 @@ import type { Deps } from '../src/app.js';
 import type { Keyring } from '../src/config.js';
 import { loadConfig } from '../src/config.js';
 import { COMPROMISED_BUCKET } from '../src/limits.js';
-import { assertTicketsSealed, rewrapTicketSecrets, sealPlaintextTickets } from '../src/tickets/seal.js';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import * as sealModule from '../src/tickets/seal.js';
+import { rewrapTicketSecrets } from '../src/tickets/seal.js';
 import { afterLocksSettled } from '../src/tickets/traderRoutes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testRing } from './helpers/app.js';
@@ -103,10 +105,9 @@ async function compromisedFlow() {
 describe('J6 sealing: ticket text at rest', () => {
   it('a support ticket thread (trader, staff, trader) is stored sealed: no plaintext column, no plaintext bytes', async () => {
     const { t, texts } = await supportFlow();
-    const { rows } = await deps.db.query<{ body: string | null; body_sealed: Buffer | null }>('select body, body_sealed from ticket_messages where ticket_id = $1 order by seq', [t.id]);
+    const { rows } = await deps.db.query<{ body_sealed: Buffer | null }>('select body_sealed from ticket_messages where ticket_id = $1 order by seq', [t.id]);
     expect(rows).toHaveLength(3);
     for (const r of rows) {
-      expect(r.body).toBeNull();
       expect(r.body_sealed).toBeInstanceOf(Buffer);
       // The key store's format 1 under the ring's current key.
       expect(r.body_sealed![0]).toBe(0x01);
@@ -125,16 +126,22 @@ describe('J6 sealing: ticket text at rest', () => {
     expect(raw).not.toBe('');
     expect(raw).not.toContain(secret);
     expect(raw).not.toContain(hex(secret));
-    const { rows } = await deps.db.query<{ body: string | null }>('select body from ticket_messages where ticket_id = $1', [id]);
-    expect(rows).toEqual([{ body: null }]);
+    const { rows } = await deps.db.query<{ sealed: boolean }>('select body_sealed is not null as sealed from ticket_messages where ticket_id = $1', [id]);
+    expect(rows).toEqual([{ sealed: true }]);
   });
 
-  it('the database refuses a row in both forms or in neither', async () => {
+  // Review S2 (12 Nov): 451 folded into 450 before landing. The table has no plaintext column at
+  // all, so no code path can ever store ticket text in clear, and a row without sealed text is refused.
+  it('the table has no plaintext column; a row without sealed text, or not in the sealed format, is refused', async () => {
     const { t } = await supportFlow();
-    await expect(deps.db.query("insert into ticket_messages (ticket_id, author, at) values ($1, 'trader', now())", [t.id])).rejects.toThrow(/ticket_messages_one_form/);
+    const cols = await deps.db.query<{ column_name: string; is_nullable: string }>(
+      "select column_name, is_nullable from information_schema.columns where table_name = 'ticket_messages' and column_name like 'body%' order by column_name",
+    );
+    expect(cols.rows).toEqual([{ column_name: 'body_sealed', is_nullable: 'NO' }]);
+    await expect(deps.db.query("insert into ticket_messages (ticket_id, author, at) values ($1, 'trader', now())", [t.id])).rejects.toMatchObject({ code: '23502' });
     await expect(
-      deps.db.query("insert into ticket_messages (ticket_id, author, body, body_sealed, at) values ($1, 'trader', 'x', $2, now())", [t.id, randomBytes(40)]),
-    ).rejects.toThrow(/ticket_messages_one_form/);
+      deps.db.query("insert into ticket_messages (ticket_id, author, body_sealed, at) values ($1, 'trader', $2, now())", [t.id, Buffer.concat([Buffer.from([2]), randomBytes(40)])]),
+    ).rejects.toThrow(/ticket_messages_sealed_size/);
   });
 });
 
@@ -274,20 +281,13 @@ describe('J6 sealing: keys', () => {
   });
 });
 
-describe('J6 sealing: rows written before sealing (migration 451)', () => {
-  it('the API refuses to start while a plaintext row exists; sealPlaintextTickets seals each one once and clears the plaintext', async () => {
-    const { t } = await supportFlow();
-    const legacy = marker('written-before-451');
-    await deps.db.query("insert into ticket_messages (ticket_id, author, body, at) values ($1, 'trader', $2, now())", [t.id, legacy]);
-    await expect(assertTicketsSealed(deps.db)).rejects.toThrow(/seal-tickets/);
-    await expect(assertTicketsSealed(deps.db)).rejects.not.toThrow(legacy);
-    const first = await sealPlaintextTickets({ db: deps.db, config: deps.config });
-    expect(first.sealed).toBeGreaterThanOrEqual(1);
-    expect(JSON.stringify(first)).not.toContain(legacy);
-    expect(await sealPlaintextTickets({ db: deps.db, config: deps.config })).toEqual({ sealed: 0 });
-    await expect(assertTicketsSealed(deps.db)).resolves.toBeUndefined();
-    expect(await rawRows(t.id)).not.toContain(legacy);
-    const helper = await staff('helper', ['tickets.handle']);
-    expect((await helper.b.get(`/staff/v1/tickets/${t.id}`)).json().messages.at(-1).body).toBe(legacy);
+describe('J6 sealing: no plaintext step (review S2)', () => {
+  it('there is no migration 451, no seal-tickets tool and no plaintext seal or startup check', () => {
+    const root = new URL('../', import.meta.url);
+    expect(readdirSync(new URL('migrations/', root)).filter((f) => f.startsWith('451_'))).toEqual([]);
+    expect(existsSync(new URL('src/tools/seal-tickets.ts', root))).toBe(false);
+    expect(JSON.parse(readFileSync(new URL('package.json', root), 'utf8')).scripts['seal-tickets']).toBeUndefined();
+    expect(Object.keys(sealModule).filter((k) => /plaintext|TicketsSealed/i.test(k))).toEqual([]);
   });
 });
+
