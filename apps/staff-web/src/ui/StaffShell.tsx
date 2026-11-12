@@ -94,7 +94,7 @@ export function StaffShell({ pages }: { pages: Partial<Record<NavItem, ReactNode
     <div className="x2f-staff" data-shell="staff">
       <aside className="x2f-staff__rail">
         <p className="x2f-staff__brand">
-          <span className="x2f-wordmark">X2F</span>
+          <span className="x2f-wordmark">X2F</span>{' '}
           <span className="x2f-staff__brand-tag">Staff</span>
         </p>
         <nav aria-label="Staff" className="x2f-staff__nav">

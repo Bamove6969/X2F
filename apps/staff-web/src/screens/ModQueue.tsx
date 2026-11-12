@@ -110,19 +110,19 @@ export function ModQueue({ role }: { role: StaffRole }) {
           <ul className="x2f-staff-counts" aria-label="Open disputes" data-part="queue-counts">
             <li>
               <span className="x2f-staff-counts__n">{queue.counts.open}</span>
-              Open
+              <span>Open</span>
             </li>
             <li>
               <span className="x2f-staff-counts__n">{queue.counts.overdue}</span>
-              Overdue
+              <span>Overdue</span>
             </li>
             <li>
               <span className="x2f-staff-counts__n">{queue.counts.unassigned}</span>
-              Unassigned
+              <span>Unassigned</span>
             </li>
             <li>
               <span className="x2f-staff-counts__n">{queue.counts.needApproval}</span>
-              Need a second approval
+              <span>Need a second approval</span>
             </li>
           </ul>
           <div className="x2f-staff-chips" role="group" aria-label="Show" data-part="queue-filters">

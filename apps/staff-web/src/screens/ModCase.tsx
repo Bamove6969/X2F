@@ -330,7 +330,9 @@ function EscrowCard({ c, buyer, seller }: { c: DisputeCase; buyer: string; selle
       <h2 className="x2f-h2">Escrow</h2>
       <p>{`${c.escrow.confirmations} confirmations`}</p>
       <p className="x2f-staff-code">{`${xmrSix(c.escrow.amountAtomic)} XMR locked`}</p>
-      <p className="x2f-staff-hint">{`3 keys, any 2 release it: ${buyer}, ${seller} and the moderator key. Your ruling signs with the winning side's key.`}</p>
+      <p className="x2f-staff-hint">
+        {`3 keys, any 2 release it: ${buyer}, ${seller} and the moderator key. Your ruling signs with the winning side's key.${c.ruling.publishedAt === null ? ' Nothing has moved yet.' : ''}`}
+      </p>
     </section>
   );
 }
@@ -444,6 +446,10 @@ const rulingFault = (e: unknown, fallback: string) => {
   if (code === 'tap-invalid') return 'The tap did not match this ruling. Try again.';
   // not-a-refusal: the case moved on meanwhile (taken, decided or sent back).
   if (code === 'wrong-state') return 'The case changed meanwhile. Reload it.';
+  // not-a-refusal: a wait, not a rule against this person (lead call Q1): maintenance holds the dispute's timers.
+  if (code === 'dispute-paused') return 'Rulings wait while maintenance pauses this dispute. Try again when it ends.';
+  // not-a-refusal: a wait, not a rule against this person (lead call Q1): the emergency stop.
+  if (code === 'trading-paused') return 'Rulings wait while trading is stopped. Try again when it resumes.';
   // not-a-refusal: R37, someone involved in round 1 never decides the appeal.
   if (code === 'forbidden-case') return 'You took part in this case before, so you cannot decide it.';
   return faultText(e, fallback);
@@ -491,7 +497,8 @@ function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buy
         Your ruling
       </h2>
       <ChoiceGroup look="card" labelledBy={headId} options={outcomeChoices(c.afterRefund, { xmr, buyer, seller })} value={outcome} onChange={setOutcome} part="ruling-outcome" />
-      <p className="x2f-staff-hint">Account action: none. A freeze is its own action (Freeze, above); bans come later.</p>
+      <h3 className="x2f-staff-eyebrow">Account action</h3>
+      <p className="x2f-staff-hint">None. A freeze is its own action (Freeze, above); bans come later.</p>
       <div className="x2f-field">
         <label className="x2f-label" htmlFor={reasonId}>
           Reason (required, both traders see it)
