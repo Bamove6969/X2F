@@ -97,14 +97,33 @@ test('at 1280x800 before login the logo is top left with the screen name, and th
   await expect(page.locator('header.x2f-wide-top [data-part="screen-name"]')).toHaveText('Log in');
 });
 
+// Review 12 Nov, L3: the help pages are read signed in too. Someone inside keeps the rail there;
+// someone not logged in gets the pre-login frame, as on /login.
+test('at 1280x800 the help pages keep the rail when signed in, and the pre-login frame when not', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/help/faq');
+  await expect(page.locator('main[data-screen="help-faq"]')).toBeVisible();
+  await expect(page.locator('[data-shell="desktop"][data-wide-frame="rail"] > nav.x2f-rail')).toBeVisible();
+  await expect(page.locator('[data-part="help-back"]')).toHaveAttribute('href', '/sell');
+  await signedOut(page);
+  await page.goto('/help/faq');
+  await expect(page.locator('main[data-screen="help-faq"]')).toBeVisible();
+  await expect(page.locator('[data-shell="desktop"][data-wide-frame="centred"]')).toBeAttached();
+  await expect(page.locator('nav.x2f-rail')).toHaveCount(0);
+  await expect(page.locator('[data-part="help-back"]')).toHaveAttribute('href', '/login');
+});
+
 // Owner demo notes 12 Nov #37, #38, #42, #48 (DESIGNER-REVIEW): logo D top left with the screen name
 // on every phone screen, one logo on Buy/Sell, help links on /login, and nothing scrolls sideways at 360.
 test('on a phone every screen has logo D top left with its name; /login has the help links (owner 12 Nov)', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   for (const [path, name] of [['/buy', 'Find a trade'], ['/sell', 'Find a trade'], ['/wallets', 'Wallets'], ['/settings/security', 'Security']] as const) {
     await page.goto(path);
-    const header = page.locator('header[data-screen-header]:visible');
+    // A header on its own screen, a div inside the Buy/Sell bar (review 12 Nov, L5): one either way.
+    const header = page.locator('[data-screen-header]:visible');
     await expect(header, path).toHaveCount(1);
+    // Valid markup: no header inside another header, and no header inside phrasing content.
+    await expect(page.locator(':is(header, span) header'), path).toHaveCount(0);
     await expect(header.locator('[data-part="screen-name"]'), path).toHaveText(name);
     const logo = (await header.locator('svg[role="img"][aria-label="X2F"]').boundingBox())!;
     expect(logo.x, path).toBeLessThanOrEqual(24);
@@ -127,7 +146,7 @@ test('on a phone every screen has logo D top left with its name; /login has the 
   await expectPhoneLayout(page);
   // The Landing board keeps its own large logo and no header.
   await page.goto('/');
-  await expect(page.locator('header[data-screen-header]')).toHaveCount(0);
+  await expect(page.locator('[data-screen-header]')).toHaveCount(0);
 });
 
 test('on a phone the browse header shows logo D where the letters X2F were, and no rail', async ({ page }) => {

@@ -461,6 +461,11 @@ test.describe('folding keeps the screen, the scroll position and typed text', ()
     // Still in view, allowing one of its own line heights past either edge.
     expect(after.top).toBeGreaterThanOrEqual(-before.line);
     expect(after.bottom).toBeLessThanOrEqual(after.view + before.line);
+    // And it did not drift far: the rewrap above it may move it, but by no more than a quarter of the
+    // phone's view (review 12 Nov, L2; 125 px at 500 tall, 43 px seen). Without this cap a jump of most
+    // of a screen (about 300 px) would still pass. Two of the anchor's own lines was tried first, but the
+    // anchor is often a button (a 20 px line), and the rewrap alone moves it 43 px.
+    expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(after.view / 4);
     // The trade header carries logo D and the room's name on the phone (lead 12 Nov follow-up).
     await expect(page.locator('.x2f-trade-header__brand [data-part="screen-name"]').first()).toContainText('Trade');
     await expect(page.locator('[data-pane="side"]')).toHaveCount(0);
