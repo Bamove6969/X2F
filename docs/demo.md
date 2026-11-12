@@ -185,6 +185,27 @@ send in the browser (regtest only); keep each trader's page open from take to se
   tunnel is public: anyone who has the URL can open the demo and sign up.** It is fake money only
   (regtest), and the tunnels end with `npm run demo:stop`. Passkeys are made for the tunnel's host
   name; password logins work everywhere.
+- **Any one https origin (a preview pane, a tunnel).** The demo's web build is made with
+  placeholder origins for the relay and the node proxy; the gateway fills them, in the app's
+  JavaScript and in the CSP, with the origin each request was sent to, and routes `/relay` and the
+  node's RPC paths by path. So the app, the API, the relay and the node all work on one origin, port
+  4400 alone, whatever https host name sits in front of it (`tools/demo/self-origin.ts`,
+  `tools/test/demo-self-origin.test.ts`). The gateway accepts a request's own origin only when it is
+  `https://` plus the request's Host or X-Forwarded-Host, and hands the API and the node proxy the
+  demo's primary origin in its place. An http Origin is never taken this way: the gateway is clear
+  text on 127.0.0.1, so an https Origin can only come through a TLS front, never from a page that
+  rebinds a name to 127.0.0.1. Nothing in `apps/*` changed.
+- **Codes on a page.** `GET /__demo/codes` on the gateway shows the seeded accounts' current
+  authenticator codes (what `npm run demo:code` prints), for a phone. Only the seeded accounts'
+  throwaway secrets are in it; it never reaches the API (`tools/demo/codes-page.ts`).
+- **On the phone itself (Android "Linux Terminal").** Inside the Android Terminal Debian VM,
+  `npm run demo` (or `X2F_DEMO_PHONE=1 npm run demo` anywhere; auto-detected from `/dev/vsock` and
+  the `droid` user, `X2F_DEMO_PHONE=0` turns it off) also makes the gateway's port 4400, and
+  nothing else, listen on the VM's private address (`hostname -I`), because the Terminal app
+  forwards only ports the VM listens on at its own interface. Allow port 4400 in the Terminal app's
+  port notification or its settings, then open http://localhost:4400 in Chrome on the phone: the
+  origin stays http://localhost:4400. Every other service stays on 127.0.0.1 (`tools/demo/phone.ts`,
+  `tools/test/demo-phone.test.ts`).
 - **The node proxy needs its own origin.** monero-ts drops any path in a daemon URI, so
   `VITE_NODE_PROXY_URL` (here and in production) must be a bare origin such as
   `https://node.example.org`, never `https://example.org/node`.

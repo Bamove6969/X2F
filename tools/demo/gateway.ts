@@ -9,10 +9,13 @@
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
+import { createCodesHandler } from './codes-page.js';
 import { createDoor } from './door.js';
 import { createGateway, type Route } from './gateway-core.js';
 import { assertDemo } from './guard.js';
 import { createNotesHandler, notesFiles } from './notes-server.js';
+import { isPrivateIpv4 } from './phone.js';
+import { readTotpSecrets } from './totp.js';
 
 // X2F_DEMO=1 and a regtest daemon on 127.0.0.1, before anything listens.
 await assertDemo(process.env, process.env.DEMO_MONEROD_RPC ?? '');
@@ -31,6 +34,8 @@ const NODE_TLS_PORT = Number(env('DEMO_GATEWAY_NODE_TLS_PORT'));
 /** The one origin the node proxy accepts (the web build's origin). */
 const PRIMARY = env('DEMO_PRIMARY_ORIGIN');
 const TS_IP = process.env.DEMO_TAILSCALE_IP ?? '';
+/** The Android Terminal VM's private address (phone.ts): only the web port also listens there. */
+const PHONE_IP = process.env.DEMO_PHONE_IP ?? '';
 /** Every origin the demo is opened from (localhost, 127.0.0.1, the tailnet one); the node proxy is told it is the primary one. */
 const ORIGINS = new Set(env('DEMO_ORIGINS').split(','));
 
@@ -40,11 +45,17 @@ function isTailscaleIp(ip: string): boolean {
   return m !== null && Number(m[1]) >= 64 && Number(m[1]) <= 127 && Number(m[2]) <= 255 && Number(m[3]) <= 255;
 }
 
-const demo = createNotesHandler({
+const notes = createNotesHandler({
   files: notesFiles(process.env),
   origins: ORIGINS,
   clientJs: readFileSync(new URL('./notes.js', import.meta.url)),
 });
+// The seeded accounts' authenticator codes as a page (codes-page.ts), for a phone.
+const codes = createCodesHandler({ origins: ORIGINS, secrets: readTotpSecrets });
+const demo = (req: http.IncomingMessage, res: http.ServerResponse): void => {
+  if ((req.url ?? '').split(/[?#]/, 1)[0] === '/__demo/codes') codes(req, res);
+  else notes(req, res);
+};
 // The seeded accounts' way in from a fresh browser (door.ts).
 const passwordStep = createDoor(env('DATABASE_URL'));
 const { web, node, handle, upgrade } = createGateway({ api: API, relay: RELAY, node: NODE, primary: PRIMARY, origins: ORIGINS, demo, passwordStep });
@@ -58,6 +69,11 @@ function serve(route: Route, port: number, host: string, tls: { key: Buffer; cer
 
 serve(web, PORT, '127.0.0.1', null);
 serve(node, NODE_PORT, '127.0.0.1', null);
+if (PHONE_IP !== '') {
+  if (!isPrivateIpv4(PHONE_IP)) throw new Error('gateway: DEMO_PHONE_IP is not a private IPv4 address');
+  // The browser still opens http://localhost:4400 (the Terminal app forwards it), so the origin is unchanged.
+  serve(web, PORT, PHONE_IP, null);
+}
 if (TS_IP !== '') {
   if (!isTailscaleIp(TS_IP)) throw new Error('gateway: DEMO_TAILSCALE_IP is not a Tailscale 100.64.0.0/10 address');
   const tls = { key: readFileSync(env('DEMO_TLS_KEY')), cert: readFileSync(env('DEMO_TLS_CERT')) };

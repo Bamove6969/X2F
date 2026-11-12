@@ -16,7 +16,9 @@ import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.j
 import { DEMO_DIR, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_IMAGE, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
 import { assertDemoFlag, assertRegtestDaemon } from './guard.js';
 import { demoOrigins, quickTunnelUrl } from './origins.js';
+import { phoneIp } from './phone.js';
 import { readPids, startDetached, startTs, stopAll } from './procs.js';
+import { SELF_HTTP, SELF_WS } from './self-origin.js';
 import { makeSecrets } from './secrets.js';
 
 assertDemoFlag(process.env);
@@ -51,6 +53,9 @@ async function main(): Promise<void> {
   const ts = spawnSync('tailscale', ['ip', '-4'], { encoding: 'utf8' });
   if (ts.status === 0) tsIp = (ts.stdout.split('\n')[0] ?? '').trim();
   const TS_ORIGIN = tsIp ? `https://${tsIp}:${PORTS.gatewayTls}` : '';
+  // ── The Android Terminal VM (X2F_DEMO_PHONE, phone.ts): the gateway's 4400 also on the VM's address ──
+  const phone = phoneIp(process.env);
+  if (phone) step(`phone mode: the gateway's port ${PORTS.gateway} also listens on ${phone} (the Android Terminal VM's address)`);
 
   // ── A public tunnel (optional, DEMO_TUNNEL=cloudflared): two Cloudflare quick tunnels ─────────
   // Anyone with the URL can open the demo (fake money only). The tunnels connect out to Cloudflare;
@@ -69,11 +74,10 @@ async function main(): Promise<void> {
   }
   const o = demoOrigins(originEnv, tsIp);
   const LOCAL_ORIGIN = o.local;
-  // The web build talks to the relay through its own origin and to the node proxy through the
-  // gateway's node port (or their public tunnels), both baked in at build time.
+  // The web build talks to the relay (/relay) and the node proxy (its RPC paths) on the origin it
+  // is opened from: it is built with placeholders that the gateway fills with the request's own
+  // origin (self-origin.ts), so one build works on localhost, the tailnet, a tunnel or a preview pane.
   const PRIMARY = o.primary;
-  const primaryWs = o.primaryWs;
-  const NODE_ORIGIN = o.node;
   const PUBLIC_ORIGIN = o.public;
 
   step('making throwaway secrets in .demo/secrets');
@@ -141,8 +145,8 @@ async function main(): Promise<void> {
       VITE_MONERO_NETWORK: 'regtest',
       VITE_MOD_SIGNING_PUBLIC: s.modSigningPublic,
       VITE_FEE_WALLET: s.feeWallet,
-      VITE_RELAY_URL: `${primaryWs}/relay`,
-      VITE_NODE_PROXY_URL: NODE_ORIGIN,
+      VITE_RELAY_URL: `${SELF_WS}/relay`,
+      VITE_NODE_PROXY_URL: SELF_HTTP,
     },
   });
 
@@ -179,8 +183,9 @@ async function main(): Promise<void> {
     X2F_HOST: HOST,
     X2F_PORT: String(PORTS.api),
     X2F_WEB_ROOT: WEB_DIST,
-    X2F_RELAY_ORIGIN: primaryWs,
-    X2F_NODE_PROXY_ORIGIN: NODE_ORIGIN,
+    // The CSP's relay and node origins: the placeholders, which the gateway fills per request.
+    X2F_RELAY_ORIGIN: SELF_WS,
+    X2F_NODE_PROXY_ORIGIN: SELF_HTTP,
     X2F_MOD_SIGNING_PUBLIC: s.modSigningPublic,
     X2F_INTERNAL_HOST: HOST,
     X2F_INTERNAL_PORT: String(PORTS.apiInternal),
@@ -214,6 +219,7 @@ async function main(): Promise<void> {
     DEMO_GATEWAY_PORT: String(PORTS.gateway), DEMO_GATEWAY_TLS_PORT: String(PORTS.gatewayTls), DEMO_GATEWAY_NODE_PORT: String(PORTS.gatewayNode), DEMO_GATEWAY_NODE_TLS_PORT: String(PORTS.gatewayNodeTls), DEMO_PRIMARY_ORIGIN: PRIMARY, DEMO_ORIGINS: origins.join(','), DEMO_MONEROD_RPC: MONEROD_RPC,
     DATABASE_URL: pgUrl('x2f'),
     ...(tsIp ? { DEMO_TAILSCALE_IP: tsIp, DEMO_TLS_KEY: tlsKey, DEMO_TLS_CERT: tlsCert } : {}),
+    ...(phone ? { DEMO_PHONE_IP: phone } : {}),
   });
   await waitFor('the gateway', httpUp(`${LOCAL_ORIGIN}/`));
   await waitFor('the node proxy', httpUp(`http://${HOST}:${PORTS.nodeProxy}/get_info`));
@@ -238,7 +244,12 @@ async function main(): Promise<void> {
   if (PUBLIC_ORIGIN) console.log(`  Public:   ${PUBLIC_ORIGIN}  (anyone with this URL can open it; fake money only)`);
   if (TS_ORIGIN) console.log(`  Tailnet:  ${TS_ORIGIN}  (self-signed certificate; your tailnet only)`);
   else console.log('  Tailnet:  not available (tailscale is not installed on this machine)');
+  if (phone) {
+    console.log(`  Phone:    open ${LOCAL_ORIGIN} in Chrome on this phone. First allow port ${PORTS.gateway} in the Terminal app:`);
+    console.log(`            tap "Allow" on its port notification, or turn on ${PORTS.gateway} in the Terminal app's settings (Port control).`);
+  }
   console.log('  Logins:   see docs/demo.md (or .demo/logins.txt)');
+  console.log(`  Codes:    ${LOCAL_ORIGIN}/__demo/codes (the authenticator codes; or npm run demo:code <login name>)`);
   console.log(`  Logs:     ${LOG_DIR}`);
 }
 

@@ -10,6 +10,7 @@ import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { forwardedHttps, isSelfOrigin } from './self-origin.js';
 
 export interface NotesFiles {
   notes: string;
@@ -260,11 +261,12 @@ export function createNotesHandler(cfg: NotesConfig): (req: IncomingMessage, res
   const rateWindow = cfg.rateWindowMs ?? 60_000;
   let writes: number[] = [];
 
-  const hostAllowed = (req: IncomingMessage): boolean => hosts.has(req.headers.host ?? '');
-  /** The Origin is one of the demo's own, and is the host this request was sent to. */
+  /** One of the demo's hosts, or a request through an https front (self-origin.ts: a preview pane, a tunnel). */
+  const hostAllowed = (req: IncomingMessage): boolean => hosts.has(req.headers.host ?? '') || forwardedHttps(req.headers);
+  /** The Origin is one of the demo's own and is the host this request was sent to, or is the request's own https origin. */
   const originAllowed = (req: IncomingMessage): boolean => {
     const o = req.headers.origin;
-    return typeof o === 'string' && cfg.origins.has(o) && new URL(o).host === req.headers.host;
+    return typeof o === 'string' && ((cfg.origins.has(o) && new URL(o).host === req.headers.host) || isSelfOrigin(o, req.headers));
   };
   const rateOk = (): boolean => {
     const t = now();

@@ -9,10 +9,15 @@ import net from 'node:net';
 import type { Duplex } from 'node:stream';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { pendingIdOf } from './door-parse.js';
+import { fillSelf, isSelfOrigin, selfOriginOf } from './self-origin.js';
 
 export const NOTES_TAG = '<script src="/__demo/notes.js" defer></script>';
 /** Larger HTML than this is passed on untouched rather than held in memory. */
 const MAX_HTML_BYTES = 4 * 1024 * 1024;
+/** The app's JavaScript is held up to this size to put the request's own origin in it (self-origin.ts). */
+const MAX_JS_BYTES = 32 * 1024 * 1024;
+/** The built app's hashed JavaScript, the only files that carry the self-origin placeholders. */
+const isAssetJs = (path: string): boolean => /^\/assets\/[^/?#]+\.js$/.test(path);
 
 /** The node proxy's paths (apps/node-proxy server.ts), so one host name with no port can carry both origins. */
 const NODE_PATHS = new Set(['/json_rpc', '/getblocks.bin', '/getblocks_by_height.bin', '/gethashes.bin', '/get_o_indexes.bin', '/getouts.bin', '/get_outs.bin', '/get_transaction_pool_hashes.bin', '/get_output_distribution.bin', '/get_transactions', '/sendrawtransaction', '/get_height', '/get_info', '/is_key_image_spent', '/get_transaction_pool']);
@@ -132,6 +137,49 @@ function injectInto(r: IncomingMessage, res: ServerResponse, out: IncomingHttpHe
   r.on('error', () => res.destroy());
 }
 
+/** Holds a JavaScript file, puts the request's own origin in place of the placeholders, answers unencoded. */
+function fillInto(r: IncomingMessage, res: ServerResponse, out: IncomingHttpHeaders, self: { http: string; ws: string }): void {
+  const status = r.statusCode ?? 502;
+  const chunks: Buffer[] = [];
+  let size = 0;
+  r.on('data', (c: Buffer) => {
+    size += c.length;
+    if (size > MAX_JS_BYTES) {
+      // Never pass on a half-filled file: the app would talk to the placeholder.
+      r.destroy();
+      res.destroy();
+      return;
+    }
+    chunks.push(c);
+  });
+  r.on('error', () => res.destroy());
+  r.on('end', () => {
+    const plain = decode(Buffer.concat(chunks), out['content-encoding']);
+    if (plain === null) {
+      res.destroy();
+      return;
+    }
+    const filled = Buffer.from(fillSelf(plain.toString('utf8'), self), 'utf8');
+    stripValidators(out);
+    delete out['content-encoding'];
+    delete out['transfer-encoding'];
+    out['content-length'] = String(filled.length);
+    // The same path holds other bytes under another origin.
+    out.vary = out.vary ? `${String(out.vary)}, Host, X-Forwarded-Host` : 'Host, X-Forwarded-Host';
+    res.writeHead(status, out);
+    res.end(filled);
+  });
+}
+
+/** Hosts already logged as a request's own https origin (one line each, to see what a front sends). */
+const loggedSelf = new Set<string>();
+function logSelf(self: { http: string } | null, h: IncomingHttpHeaders): void {
+  if (self === null || !self.http.startsWith('https://') || loggedSelf.has(self.http) || loggedSelf.size > 50) return;
+  loggedSelf.add(self.http);
+  const pick = (k: string): string => String(h[k] ?? '');
+  console.log(JSON.stringify({ reason: 'self-origin', origin: self.http, host: pick('host'), xForwardedHost: pick('x-forwarded-host'), xForwardedProto: pick('x-forwarded-proto'), secFetchDest: pick('sec-fetch-dest'), secFetchSite: pick('sec-fetch-site') }));
+}
+
 export function createGateway(cfg: GatewayConfig): {
   web: Route;
   node: Route;
@@ -158,11 +206,23 @@ export function createGateway(cfg: GatewayConfig): {
     }
     const t = route(req.url ?? '/');
     const headers = { ...req.headers };
+    const self = selfOriginOf(req.headers);
+    logSelf(self, req.headers);
     // The node proxy accepts one exact origin (the web build's): a request from another demo origin
     // is passed on as the primary one, and its CORS answer is given back to the origin that asked.
+    // The request's own https origin (self-origin.ts) is one of the demo's, for the API too.
     const from = typeof headers.origin === 'string' ? headers.origin : null;
-    const known = t.node && from !== null && cfg.origins.has(from);
+    const own = from !== null && !cfg.origins.has(from) && isSelfOrigin(from, req.headers);
+    const known = from !== null && ((t.node && cfg.origins.has(from)) || own);
     if (known) headers.origin = cfg.primary;
+    const fill = t.api && req.method === 'GET' && self !== null && isAssetJs(t.path.split('?')[0] ?? '');
+    if (fill) {
+      delete headers['if-none-match'];
+      delete headers['if-modified-since'];
+      delete headers.range;
+      delete headers['if-range'];
+      headers['accept-encoding'] = 'identity';
+    }
     const page = t.api && (req.method === 'GET' || req.method === 'HEAD') && (headers.accept ?? '').includes('text/html');
     if (page) {
       // A browser that cached the page before this tag existed must get the full page, not a 304.
@@ -176,6 +236,10 @@ export function createGateway(cfg: GatewayConfig): {
       const out = { ...r.headers };
       if (known && out['access-control-allow-origin'] === cfg.primary) out['access-control-allow-origin'] = from;
       const status = r.statusCode ?? 502;
+      // The CSP names the placeholders for the relay and the node proxy: this request's own origin.
+      const csp = out['content-security-policy'];
+      if (self !== null && typeof csp === 'string') out['content-security-policy'] = fillSelf(csp, self);
+      if (fill && status === 200) return fillInto(r, res, out, self);
       if (t.api && cfg.passwordStep && req.method === 'POST' && t.path.split('?')[0] === PASSWORD_STEP && status === 200) {
         return holdPasswordStep(r, res, out, cfg.passwordStep, pendingIdOf);
       }
