@@ -162,7 +162,7 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     const after = await parties.mod.funds();
     expect(after.balance).toBe(0n);
     expect(after.ownTxs).toContain(tx);
-    const kind = ownSweepKind(parties.mod.committedBuilder(), exec.kindFor(code));
+    const kind = ownSweepKind(parties.mod.committedBuilder?.() ?? null, exec.kindFor(code));
     expect(kind).toBe('dispute-buyer');
     const T0 = new Date('2026-11-12T10:00:00Z');
     const at = (min: number) => new Date(T0.getTime() + min * 60_000);

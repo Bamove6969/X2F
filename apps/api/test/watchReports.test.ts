@@ -439,12 +439,14 @@ describe('a ruling\'s payout reported by the watcher (Plan 4 Task 14, R-M2)', ()
     const t = await trade();
     await driveTo(deps, t, 'settling');
     expect((await report({ kind: 'spend-unshown', trade: t.code })).statusCode).toBe(201);
+    // An after-refund ruling needs an after-refund dispute (the API marks one when a refund lands first).
+    if (outcome === 'seller-sends-xmr') await deps.db.query('update disputes set after_refund = true where code = $1', [t.code]);
     const d = await publishRuling(deps, t.code, { outcome });
     return { t, d };
   }
   const executedLog = async (code: string) =>
     (await deps.db.query<{ detail: string }>(`select detail from activity_log where trade_code = $1 and action = 'ruling.executed' order by id`, [code])).rows.map((r) => JSON.parse(r.detail));
-  const booked = async (code: string) => (await deps.db.query('select 1 from revenue_booked where code = $1', [code])).rows.length;
+  const booked = async (code: string) => (await deps.db.query("select 1 from revenue_booked where trade_code = $1 and kind = 'fee'", [code])).rows.length;
 
   it('release to the buyer: the trade is released, the dispute executed (closed once final), ruling.executed logged, the fee booked', async () => {
     const { t, d } = await ruled('release-to-buyer');

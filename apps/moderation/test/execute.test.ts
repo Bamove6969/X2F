@@ -201,7 +201,7 @@ describe('the watcher hands each disputed trade to the executor', () => {
   it('with this process\'s own recorded terms (the attested deal and addresses), the funds the party read and the API item', async () => {
     const { net, fetch } = fakeNetwork(c);
     const seen: Array<Omit<RulingStepInput, 'handle'>> = [];
-    const m = await moderation(c, fetch, { rulings: { step: async ({ handle: _h, ...rest }) => (seen.push(rest), 'none') } });
+    const m = await moderation(c, fetch, { rulings: { step: async ({ handle: _h, ...rest }) => (seen.push(rest), 'none'), kindFor: () => null } });
     const l = await inFunding(c, m, net);
     await secured(c, l);
     net.states.set(l.code, 'disputed');

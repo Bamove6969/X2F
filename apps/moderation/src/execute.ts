@@ -1,5 +1,6 @@
 import type { Outcome, PartyHandle, Payout } from '@x2f/escrow';
 import { ESCROW_OUTCOMES } from '@x2f/staff';
+import type { RulingKind } from '@x2f/trade';
 import { gateCheck, type GateContext, type GateRuling, type GateSource, type GateStore, type RecordedTerms, type RulingExecution, type StoredRulings } from './gate/index.js';
 
 /**
@@ -31,10 +32,10 @@ import { gateCheck, type GateContext, type GateRuling, type GateSource, type Gat
  * in this process is not withdrawn by a later stop or pause (`PartyHandle` has no withdraw); a
  * restart then holds it until the stop or pause ends.
  *
- * NEEDS_PLAN_4_RULING_PAYOUT (R-M2, follow-up): the watcher's `settled` report for this sweep must
- * name the ruling's own kind (`RulingKind`) and the API must apply it to the disputed trade (released
- * or refunded, the dispute closed, `ruling.executed` appended); until then the API refuses the report
- * (`settle-kind-unknown`, the watcher backs off) and the trade stays disputed after the payout.
+ * R-M2: the watcher's `settled` report for the mod-built sweep names the ruling's own kind
+ * (`kindFor`, from this record), and the API applies it to the disputed trade in one transaction
+ * (released or refunded, the dispute's execution recorded, `ruling.executed` logged:
+ * apps/api disputes/execution.ts).
  */
 export type RulingSource = GateSource & { storedRulings(code: string): Promise<StoredRulings> };
 
@@ -54,6 +55,12 @@ export type RulingStepResult = 'none' | 'settled' | 'paused' | 'no-terms' | 'wai
 
 export interface RulingExecutor {
   step(s: RulingStepInput): Promise<RulingStepResult>;
+  /**
+   * R-M2: the kind of the payout recorded for this trade (`dispute-buyer` when it pays the buyer,
+   * `dispute-seller` the seller), from the sealed gate store only, or null: the watcher's `settled`
+   * report for the mod-built sweep names it.
+   */
+  kindFor(code: string): RulingKind | null;
 }
 
 export interface RulingExecutorOptions {
@@ -134,5 +141,10 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     return 'handed';
   };
 
-  return { step };
+  const kindFor = (code: string): RulingKind | null => {
+    const ex = o.store.state.executions[code];
+    return ex === undefined ? null : ex.winner === 'buyer' ? 'dispute-buyer' : 'dispute-seller';
+  };
+
+  return { step, kindFor };
 }

@@ -7,11 +7,13 @@ import {
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
   isAttestedTerms,
+  isRulingKind,
   SETTLE_KINDS,
   settleKindFor,
   TradeRuleError,
   type Attestation,
   type AttestedTerms,
+  type RulingKind,
   type SettleKind,
   type TradeEvent,
   type TradeState,
@@ -22,6 +24,7 @@ import type pg from 'pg';
 import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
+import { recordRulingExecution } from '../disputes/execution.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
 /**
@@ -234,8 +237,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
     if (code === null) throw new Refused(400, 'bad-body');
     let event: TradeEvent | null = null;
-    /** `settled`: the kind the watcher counted the sweep for (security review 7 Nov, finding 3). */
-    let claimedKind: SettleKind | null = null;
+    /** `settled`: the kind the watcher counted the sweep for (security review 7 Nov, finding 3), or a ruling's (R-M2). */
+    let claimedKind: SettleKind | RulingKind | null = null;
     switch (body.kind) {
       case 'setup-done':
         if (!keysAre(body, ['kind', 'trade', 'escrowAddress']) || typeof body.escrowAddress !== 'string' || !/^[0-9A-Za-z]{1,128}$/.test(body.escrowAddress)) break;
@@ -251,8 +254,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       }
       case 'settled':
         if (!keysAre(body, ['kind', 'trade', 'txHash', 'settleKind']) || typeof body.txHash !== 'string' || !TX_HASH.test(body.txHash)) break;
-        if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind)) break;
-        claimedKind = body.settleKind as SettleKind | null;
+        if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind) && !isRulingKind(body.settleKind)) break;
+        claimedKind = body.settleKind as SettleKind | RulingKind | null;
         event = { type: 'settled', kind: 'release', txHash: body.txHash }; // kind set below from the trade
         break;
       case 'late-funds':
@@ -279,7 +282,29 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     // a signing window that reverted and a new settlement started in between is refused, never
     // recorded as the other kind.
     let within: Parameters<typeof applyEvent>[4];
-    if (event.type === 'settled') {
+    if (event.type === 'settled' && isRulingKind(claimedKind)) {
+      // Plan 4 Task 14 (R-M2): the moderation process executed a round-1 escrow ruling and its watcher
+      // saw the mod-built sweep. Never named by the trade alone: only a disputed trade whose published
+      // round-1 escrow ruling pays exactly this way (checked again under the dispute's row lock).
+      const t = await loadTrade(o.db, code);
+      const closedAs = claimedKind === 'dispute-buyer' ? 'released' : 'refunded';
+      // The same report again (the watcher retries until a pass is saved) changes nothing.
+      if (t !== null && t.state === closedAs && t.txHash === body.txHash && t.settling === null) {
+        log({ reason: 'internal-settled' });
+        return reply.code(201).send({ ok: true });
+      }
+      if (t === null || t.state !== 'disputed') {
+        if (t !== null && (t.state === 'released' || t.state === 'refunded')) throw new Refused(409, 'wrong-state');
+        throw new Refused(409, 'settle-kind-unknown');
+      }
+      const kind = claimedKind;
+      const txHash = body.txHash as string;
+      event = { type: 'settled', kind, txHash };
+      within = async (c, _prev, _next, at) => {
+        const r = await recordRulingExecution(c, code, kind, txHash, at);
+        if (r !== 'ok') throw new Refused(409, r);
+      };
+    } else if (event.type === 'settled') {
       const t = await loadTrade(o.db, code);
       const kind = t ? settleKindFor(t) : null;
       if (kind === null || claimedKind === null) throw new Refused(409, 'settle-kind-unknown');

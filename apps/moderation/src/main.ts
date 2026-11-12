@@ -133,7 +133,7 @@ export interface ModerationDeps {
    * Plan 4 Task 14: the ruling executor (`rulingExecutor` on the gate's store), run for every trade
    * each watcher pass. Absent (no gate configured): no ruling is ever settled.
    */
-  rulings?: Pick<RulingExecutor, 'step'>;
+  rulings?: Pick<RulingExecutor, 'step' | 'kindFor'>;
 }
 
 export interface ModerationHandle {
@@ -288,6 +288,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       : {}),
     ...(deps.rulings
       ? {
+          rulingKind: (code: string) => deps.rulings!.kindFor(code),
           executeRuling: (x: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null }) =>
             deps.rulings!.step({ code: x.code, handle: x.handle, api: x.api, funds: x.funds, recorded: recordedFor(x.args, x.shadow, log) }),
         }
