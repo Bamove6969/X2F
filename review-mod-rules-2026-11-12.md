@@ -168,3 +168,67 @@ The local rules (`tools/semgrep`) matched no files.
   Should a staff reset (a takeover surface) also take both? Recommend yes, given MF1's stakes.
 - **Q4 (D-032, register):** the owner said "username + password"; staff have no passwords, so a
   link is built (Q-B3 open). Confirm the link.
+
+## Re-verify at 5c19ddbe (12 Nov 2026)
+
+Fix commits 94687587 (red tests) and 5c19ddbe (fix) on 7940be9e. Checked in a detached worktree
+(/home/user/X2F/.claude/worktrees/review-modrules) at origin/wip/lead-mod-rules = 5c19ddbe.
+
+**Verdict: MF1, S1 and S2 are closed. The branch is READY to land.** The owner questions from
+the first review are unchanged.
+
+### Checks
+
+- Runner, API: staff/securityReset, staff/ownerLockout, staff/matrix, staff/keyTap: 4 files,
+  147 passed, 0 failed.
+- semgrep on the 6 changed files: 0 findings.
+- dockerd was not touched.
+
+### MF1: the owner only, by role
+
+- **Route.** The first statement of `POST /staff/v1/members/:id/reset-security` is
+  `if (req.staff.role !== 'owner') throw 403 forbidden`. It runs before `idParam`, before the
+  body is read, and before any query on the target. Only the guard's own load of the caller's
+  staff row comes earlier.
+- **Tap.** `tapPermOf('reset-staff-security')` now returns `'owner'`. The tap-start check
+  (staff/app.ts `allows`) treats `'owner'` as `req.staff.role === 'owner'` and never consults
+  `can()` or grants. So the tap start refuses non-owners whatever they hold. `consumeKeyTap` is
+  reached only past the route's role check.
+- **No grantable perm can reach it.** The role check ignores perms entirely. The new
+  ownerLockout test gives a senior, a mod and a helper every perm in `GRANTABLE_PERMS`. Each
+  gets 403 `forbidden` on the route and 403 on `taps/start` for the reset intent. The
+  securityReset test pins `tapPermOf` to `'owner'`.
+
+### S1: in-flight state cleared, only the target's
+
+- Inside the reset transaction, after `lockTarget(c, id)`, three statements run:
+  - `delete from key_taps where account_id = $1 and used_at is null`;
+  - `delete from challenges where account_id = $1 and used_at is null`;
+  - `delete from login_approvals where account_id = $1 and used_at is null`.
+- `lockTarget` gives 404 for someone not on the staff, 409 `owner-protected` for the owner, and
+  refuses a removed member. `$1` is that validated target id from `idParam`. The caller's id and
+  anything from the body never reach these deletes.
+- `key_taps.account_id` is the account that *started* the tap. The owner's own reset tap is
+  bound to the owner's account and has already been consumed, so neither condition can touch it.
+  Other staff's taps carry their own account ids.
+- The TRIPWIRE comment (delete `recovery_codes` here once staff codes land) is in place.
+- Test: the target's unused tap, open challenge and pending approval are gone, and its used tap
+  stays.
+- Minor test gap, not a blocker: there is no negative control showing that another account's
+  unused tap or challenge survives. The SQL makes that clear anyway.
+
+### S2: alerts and push
+
+- The alerts are `staff-security-reset` (written in the reset transaction) and
+  `staff-security-reset-finished` (in the accept-finish transaction, only for `kind = 'reset'`).
+  Both go through `addOwnerAlert` to every live owner account. Their detail is exactly
+  `{ staffId }`. It carries no token, no link, no invite id and no token hash. The link stays in
+  the owner's own 201 answer, as before.
+- The push uses `pushOwnerAlert`, and both kinds are now in `PUSHED_OWNER_ALERTS`. It sends only
+  the fixed `alert` text ("Something needs your attention", no detail) after the commit, and a
+  failure is swallowed, so a push failure can't undo the reset.
+- Test: both kinds are in the pushed set, and each alert holds `{ staffId: mod.id }`.
+
+### Still open
+
+The first review's owner questions are unchanged.
