@@ -115,7 +115,11 @@ export interface ChatSnapshot {
   more: boolean;
 }
 
-export type ChatSendError = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused';
+/**
+ * `uncertain` (proof review M2, a proof only): the post got no answer from the API (the connection
+ * dropped, or a 5xx), so the envelope may be stored and with the other side already.
+ */
+export type ChatSendError = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused' | 'uncertain';
 
 export class ChatSendFailed extends Error {
   /** `cause`: the API's refusal behind a 'refused' (a 410 there erases the chat). */
@@ -132,8 +136,10 @@ export interface ChatEngine {
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
   /**
    * Plan 5 Task 15: seals and posts a `proof.attached` (the proof's key, to buyer, seller and mod);
-   * 'bad-proof' for a malformed payload or a payment proof from the seller. The image itself went up
-   * as ciphertext before this (proof/upload.ts). NEEDS_PROOF_RECEIVE: syncs do not open
+   * 'bad-proof' for a malformed payload or a payment proof from the seller; 'not-ready' while the
+   * trade is not secured, for evidence too (proof review M4, as sendPay); 'uncertain' when the post
+   * got no answer and may be stored (review M2). Once the API answered the post, it resolves even if
+   * the read after it fails. The image itself went up as ciphertext before this (proof/upload.ts). NEEDS_PROOF_RECEIVE: syncs do not open
    * `proof.attached` yet (ChatPanel's ProofThumb, Task 15's receiving half), so a device that reads
    * one keeps a refused receipt for it.
    */
@@ -459,9 +465,15 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
   /**
    * Seals with `make` and posts, the same way for a line and a package. A package (`secured`) is
    * refused with 'not-ready' while the API's view says the trade is not secured (owner Q12): the
-   * page's closed button is not the only gate (pay-details review M2), and no seq is spent.
+   * page's closed button is not the only gate (pay-details review M2), and no seq is spent. A proof
+   * (`proof`) tells an unanswered post ('uncertain') from a refusal, and counts a post the API
+   * answered as sent even when the read after it fails (proof review M2).
    */
-  function post(chat: string, make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>) => Promise<{ envelope: Envelope; state: ChatState }>, secured = false): Promise<ChatSnapshot> {
+  function post(
+    chat: string,
+    make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>) => Promise<{ envelope: Envelope; state: ChatState }>,
+    { secured = false, proof = false }: { secured?: boolean; proof?: boolean } = {},
+  ): Promise<ChatSnapshot> {
     return serial(chat, () => purging(chat, async () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const s = await syncLocked(chat);
@@ -485,9 +497,19 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           if (code === 'too-large' || (e as { status?: unknown }).status === 413) throw new ChatSendFailed('too-large');
           // The per-account envelope budget (review M7). The seq stays used: the next line follows a gap.
           if ((e as { status?: unknown }).status === 429) throw new ChatSendFailed('slow-down');
+          // No answer, or a 5xx (a proxy's 502/504 among them): the API may have stored it.
+          const status = (e as { status?: unknown }).status;
+          if (proof && !(typeof status === 'number' && status >= 400 && status < 500)) throw new ChatSendFailed('uncertain', e);
           throw new ChatSendFailed('refused', e);
         }
-        return (await syncLocked(chat)).snap;
+        if (!proof) return (await syncLocked(chat)).snap;
+        try {
+          return (await syncLocked(chat)).snap;
+        } catch (e) {
+          // Stored: the proof is sent. The snapshot from before it is what the page gets.
+          if (isPurged(e)) throw e;
+          return s.snap;
+        }
       }
       throw new ChatSendFailed('refused');
     }));
@@ -509,7 +531,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       return gone;
     },
     send: (chat, text) => post(chat, (a) => sealChatMessage({ ...a, text })),
-    sendPay: (chat, pay) => post(chat, (a) => sealPayDetails({ ...a, pay }), true),
+    sendPay: (chat, pay) => post(chat, (a) => sealPayDetails({ ...a, pay }), { secured: true }),
     sendProof: (chat, proof) =>
       post(chat, async (a) => {
         try {
@@ -519,7 +541,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           if (e instanceof ProofError || e instanceof TypeError) throw new ChatSendFailed('bad-proof', e);
           throw e;
         }
-      }),
+      }, { secured: true, proof: true }),
   };
 }
 

@@ -74,6 +74,8 @@ const SEND_ERRORS: Record<ChatFailure, string> = {
   'too-large': 'This message is too long.',
   'slow-down': "You're sending messages too fast. Wait a minute and try again.",
   refused: "Couldn't send. Check your connection and try again.",
+  // COPY-UNSIGNED (proof review M2): only a proof's send is ever uncertain, and the composer never sends one.
+  uncertain: 'This may have been sent. Check the chat before you send it again.',
   unavailable: "Couldn't send. Check your connection and try again.",
   'not-found': CHAT_CLOSED,
 };

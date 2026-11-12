@@ -23,11 +23,19 @@ export function browserProofImageDeps(): ProofImageDeps {
         const width = Math.max(1, Math.round(bitmap.width * scale));
         const height = Math.max(1, Math.round(bitmap.height * scale));
         const ctx = canvas(width, height);
-        // Transparency flattened onto white, so a hidden layer cannot carry anything.
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(bitmap, 0, 0, width, height);
-        return { rgba: ctx.getImageData(0, 0, width, height).data, width, height };
+        try {
+          // Transparency flattened onto white, so a hidden layer cannot carry anything.
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(bitmap, 0, 0, width, height);
+          return { rgba: ctx.getImageData(0, 0, width, height).data, width, height };
+        } finally {
+          // Review M1: the canvas holds the unblurred picture. getImageData returned a copy, so it
+          // is wiped and shrunk now rather than left to GC.
+          ctx.clearRect(0, 0, width, height);
+          ctx.canvas.width = 0;
+          ctx.canvas.height = 0;
+        }
       } finally {
         bitmap.close();
       }

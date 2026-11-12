@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * The buyer's payment proof, on this device (Plan 5 Task 15). PRIVACY-critical.
  *
@@ -67,8 +68,10 @@ export const PROOF_CANT_USE = "This image can't be used. Try a screenshot.";
 
 /** The upload screen is built but its storage route (Task 14) is not: off unless the build says so. */
 export function proofUploadOn(): boolean {
-  // Typed by hand so the API's tests (proofUploadWire.test.ts) can load this file; it is still Vite's `import.meta.env`.
-  return (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_X2F_PROOF_UPLOAD === '1';
+  // Written as the literal `import.meta.env.VITE_...` so Vite (and Vitest) replace it: a cast around
+  // `import.meta` hides it from that, and the flag then reads undefined even when set to 1 (review M6,
+  // proofUpload.test.ts). The vite/client reference at the top types it for the API's tests too.
+  return (import.meta.env.VITE_X2F_PROOF_UPLOAD as string | undefined) === '1';
 }
 
 export type ProofInputErrorCode = 'too-large' | 'unsupported' | 'undecodable';
@@ -92,7 +95,7 @@ export interface EditorRegion extends Region {
 
 /** The decoded picture and what the tool proposed. Holds no reference to the picked file. */
 export interface PreparedProof {
-  /** Upright, at most PROOF_MAX_SIDE a side, flattened onto white. Never changed after this. */
+  /** Upright, at most PROOF_MAX_SIDE a side, flattened onto white. Never changed after this, but zeroed when dropped (AddProof, review M1). */
   rgba: Uint8ClampedArray;
   width: number;
   height: number;
@@ -121,19 +124,33 @@ export interface ProofImageDeps {
 export async function prepareProof(file: Blob, keep: Keep, deps: ProofImageDeps): Promise<PreparedProof> {
   if (file.size === 0) throw new ProofInputError('undecodable');
   if (file.size > PROOF_MAX_INPUT_BYTES) throw new ProofInputError('too-large');
-  try {
-    readInputHeader(new Uint8Array(await file.arrayBuffer()));
-  } catch (e) {
-    if (e instanceof ProofReceiveError && (e.code === 'too-large' || e.code === 'unsupported')) throw new ProofInputError(e.code);
-    throw new ProofInputError('undecodable');
-  }
-  // Before the decode: the time comes from the file's own metadata, which the decode drops.
-  const takenAt = await photoTakenAt(file);
+  // The picked file is read ONCE (review M3): the header check, the photo time and the decode all
+  // use these bytes, so a file that changes on disk between reads cannot slip past the check, and
+  // the decoder is told the type the check found, not the file's own. The bytes are the original
+  // file, metadata included: they are zeroed on every way out (review M1). The Blob made from them
+  // is the browser's copy, like the File itself, and goes with it to GC.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let takenAt: string | null;
   let img: { rgba: Uint8ClampedArray; width: number; height: number };
   try {
-    img = await deps.decode(file, PROOF_MAX_SIDE);
-  } catch {
-    throw new ProofInputError('undecodable');
+    if (bytes.length === 0) throw new ProofInputError('undecodable');
+    if (bytes.length > PROOF_MAX_INPUT_BYTES) throw new ProofInputError('too-large');
+    let checked: Blob;
+    try {
+      checked = new Blob([bytes], { type: readInputHeader(bytes).mime });
+    } catch (e) {
+      if (e instanceof ProofReceiveError && (e.code === 'too-large' || e.code === 'unsupported')) throw new ProofInputError(e.code);
+      throw new ProofInputError('undecodable');
+    }
+    // Before the decode: the time comes from the file's own metadata, which the decode drops.
+    takenAt = await photoTakenAt(checked);
+    try {
+      img = await deps.decode(checked, PROOF_MAX_SIDE);
+    } catch {
+      throw new ProofInputError('undecodable');
+    }
+  } finally {
+    bytes.fill(0);
   }
   const { rgba, width, height } = img;
   if (!(width >= 1 && height >= 1 && width <= PROOF_MAX_SIDE && height <= PROOF_MAX_SIDE) || rgba.length !== width * height * 4) throw new ProofInputError('undecodable');

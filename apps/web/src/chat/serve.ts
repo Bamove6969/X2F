@@ -1,7 +1,10 @@
 /**
  * The chat half of the escrow worker's message protocol (Task 20). The page asks for `chat-sync`
  * and `chat-send`; the worker answers with a ChatSnapshot of verified plain lines, or an error code.
- * No key, ciphertext or ChatState ever crosses postMessage.
+ * No chat key, ciphertext or ChatState ever crosses postMessage. One key does (proof review I6):
+ * `chat-send-proof` carries a proof's own key from the page, base64 in clear on this same-origin
+ * channel, because the page made it and encrypted the image under it (proof/upload.ts); the worker
+ * seals it into `proof.attached` and keeps nothing. Its string cannot be zeroed (a known residual).
  */
 import { ProofError, parseProofPayload, type ProofAttachedPayload } from '@x2f/proof';
 import { PayDetailsError, parsePayDetails } from '@x2f/trade';
@@ -15,7 +18,7 @@ export type ToChatWorker =
   /** Plan 5 Task 15: a `proof.attached` payload (the proof's key); the worker checks and seals it. */
   | { t: 'chat-send-proof'; id: number; chat: string; proof: unknown };
 
-export type ChatFailure = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused' | 'unavailable' | 'not-found';
+export type ChatFailure = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused' | 'uncertain' | 'unavailable' | 'not-found';
 
 export type FromChatWorker = { t: 'chat'; id: number; ok: true; snapshot: ChatSnapshot } | { t: 'chat'; id: number; ok: false; error: ChatFailure };
 

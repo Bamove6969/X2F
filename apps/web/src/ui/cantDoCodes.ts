@@ -112,6 +112,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'unsupported-media-type': 'a fault',
   // Plan 5 Task 15: a picked proof image that can't be read (ProofInputError); shown as PROOF_CANT_USE.
   unsupported: 'an input check on the picked proof image',
+  // Proof review M2: a proof's post got no answer (it may have been stored); shown as PROOF_SEND_UNCERTAIN.
+  uncertain: 'a fault: no answer, so the send may have gone through',
   internal: 'a server fault',
   busy: 'the server is busy (try again)',
   'display-name-invalid': 'an input check on a typed name',

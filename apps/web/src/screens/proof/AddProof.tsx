@@ -1,6 +1,6 @@
 import type { ProofExpected } from '@x2f/proof';
-import { useId, useRef, useState } from 'react';
-import { chatClient, openTradeChat } from '../../chat/client.js';
+import { useEffect, useId, useRef, useState } from 'react';
+import { ChatFailed, chatClient, openTradeChat } from '../../chat/client.js';
 import { browserProofImageDeps } from '../../proof/browserImage.js';
 import { hiddenByUploader } from '../../proof/uploaderChecks.js';
 import {
@@ -8,6 +8,7 @@ import {
   type EditorRegion,
   type PreparedProof,
   PROOF_CANT_USE,
+  ProofInputError,
   prepareProof,
   putProof,
   sendProof,
@@ -21,6 +22,9 @@ import { BlurEditor } from './BlurEditor.js';
 export const PROOF_SENT = 'Proof sent. The seller can see it in the chat.';
 // COPY-UNSIGNED
 export const PROOF_SEND_FAILED = "Couldn't send your proof. Check your connection and try again.";
+// COPY-UNSIGNED: a placeholder line for design to word (review M2, owner question). The send got no
+// answer after the envelope went to the API, so the proof may be with the seller already.
+export const PROOF_SEND_UNCERTAIN = 'Your proof may have been sent. Check the chat before you send it again.';
 // COPY-UNSIGNED
 export const PROOF_PREPARING = 'Getting your proof ready…';
 
@@ -52,12 +56,32 @@ export async function sendTradeProof(a: SendArgs): Promise<{ proofId: string; bl
   return r;
 }
 
-type Step = { s: 'pick'; error: string | null } | { s: 'preparing' } | { s: 'edit'; prepared: PreparedProof; busy: boolean; error: string | null } | { s: 'sent' };
+/** What a send that did not go through says: not sent, maybe sent (review M2), or an unusable image (M5). */
+type SendNotice = { part: 'proof-send-error' | 'proof-send-uncertain' | 'proof-send-cant-use'; text: string };
+
+function noticeOf(e: unknown): SendNotice {
+  if (e instanceof ChatFailed && e.code === 'uncertain') return { part: 'proof-send-uncertain', text: PROOF_SEND_UNCERTAIN };
+  // Too large even as JPEG (finishProof): another try fails the same way, so it is not the connection.
+  if (e instanceof ProofInputError) return { part: 'proof-send-cant-use', text: PROOF_CANT_USE };
+  return { part: 'proof-send-error', text: PROOF_SEND_FAILED };
+}
+
+type Step = { s: 'pick'; error: string | null } | { s: 'preparing' } | { s: 'edit'; prepared: PreparedProof; busy: boolean; notice: SendNotice | null } | { s: 'sent' };
+
+/** Review M1: zero the unblurred pixels and drop the OCR words (their strings cannot be zeroed). */
+const drop = (p: PreparedProof): void => {
+  p.rgba.fill(0);
+  p.words.length = 0;
+};
 
 /**
  * BuyerPay's "Add payment proof": pick a picture, check the blur, send. The picked file is read on
- * this device only; its name is never shown or sent. Once sent or dropped, the decoded pixels are
- * zeroed.
+ * this device only; its name is never shown or sent. The decoded pixels are zeroed (`drop`) on
+ * every way out (review M1): after the send, on Choose another, and when this screen goes while it
+ * holds them (leaving the trade room, the chat opening, the layout crossing its breakpoint, which
+ * remounts the slot and loses the edits): at once, or when a send in flight settles. A decode that
+ * finishes after the screen went is zeroed as it arrives. A failed send keeps them for the retry.
+ * The picked file's bytes are zeroed in prepareProof, and the decode canvas in browserImage.ts.
  */
 export function AddProof({
   code,
@@ -75,19 +99,41 @@ export function AddProof({
   const inputId = useId();
   const input = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>({ s: 'pick', error: null });
-
-  const drop = (p: PreparedProof) => p.rgba.fill(0);
+  /** The prepared proof this screen holds, whatever step it shows; `sending` while a send is in flight. */
+  const held = useRef<PreparedProof | null>(null);
+  const sending = useRef(false);
+  const alive = useRef(true);
+  const release = () => {
+    if (held.current !== null) drop(held.current);
+    held.current = null;
+  };
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      // A send in flight still reads them; it zeroes them when it settles.
+      if (!sending.current) release();
+    };
+  }, []);
 
   const pick = async (file: File | undefined) => {
     if (input.current) input.current.value = '';
     if (!file) return;
     setStep({ s: 'preparing' });
+    let p: PreparedProof;
     try {
-      setStep({ s: 'edit', prepared: await prepare(file), busy: false, error: null });
+      p = await prepare(file);
     } catch {
       // Any refusal reads the same (Review Focus 2: ProofInputError's code is not shown); nothing is logged.
-      setStep({ s: 'pick', error: PROOF_CANT_USE });
+      if (alive.current) setStep({ s: 'pick', error: PROOF_CANT_USE });
+      return;
     }
+    if (!alive.current) {
+      drop(p);
+      return;
+    }
+    held.current = p;
+    setStep({ s: 'edit', prepared: p, busy: false, notice: null });
   };
 
   if (step.s === 'sent') {
@@ -102,9 +148,9 @@ export function AddProof({
     const { prepared } = step;
     return (
       <>
-        {step.error ? (
-          <Notice tone="caution" live="alert" data-part="proof-send-error">
-            {step.error}
+        {step.notice ? (
+          <Notice tone="caution" live="alert" data-part={step.notice.part}>
+            {step.notice.text}
           </Notice>
         ) : null}
         <BlurEditor
@@ -112,19 +158,25 @@ export function AddProof({
           expected={expected}
           busy={step.busy}
           onChooseAnother={() => {
-            drop(prepared);
+            release();
             setStep({ s: 'pick', error: null });
           }}
           onSend={(regions, explanation) => {
-            setStep({ s: 'edit', prepared, busy: true, error: null });
+            setStep({ s: 'edit', prepared, busy: true, notice: null });
             const ownHidden = hiddenByUploader(regions.filter((r) => r.source === 'manual'), prepared.amount, prepared.memo);
+            sending.current = true;
             send({ code, prepared, regions, explanation, ownHidden }).then(
               () => {
-                drop(prepared);
-                setStep({ s: 'sent' });
+                sending.current = false;
+                release();
                 onSent?.();
+                if (alive.current) setStep({ s: 'sent' });
               },
-              () => setStep({ s: 'edit', prepared, busy: false, error: PROOF_SEND_FAILED }),
+              (e: unknown) => {
+                sending.current = false;
+                if (!alive.current) release();
+                else setStep({ s: 'edit', prepared, busy: false, notice: noticeOf(e) });
+              },
             );
           }}
         />
