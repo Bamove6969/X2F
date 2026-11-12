@@ -215,6 +215,15 @@ describe('approve and send back', () => {
   test('only in awaiting-approval', () => {
     rule('wrong-state', () => applyDispute(published(), { type: 'approve' }, owner, at(3), S));
   });
+  test('L1: the stored draft\'s account action is checked again at approve (a pre-D-015 freeze draft, a ban whose end has passed)', () => {
+    const p = pending();
+    const freezeDraft = { ...p, ruling: { ...p.ruling!, accountAction: { kind: 'freeze' } as never } };
+    rule('invalid-action', () => applyDispute(freezeDraft, { type: 'approve' }, owner, at(5), S));
+    const lapsed = { ...p, ruling: { ...p.ruling!, accountAction: { kind: 'trade-ban' as const, until: at(4).toISOString(), reasonCode: 'terms' as const } } };
+    rule('invalid-action', () => applyDispute(lapsed, { type: 'approve' }, owner, at(5), S));
+    // Sending such a draft back stays possible (it clears the ruling).
+    expect(applyDispute(freezeDraft, { type: 'send-back' }, senior, at(5), S).status).toBe('open');
+  });
   test('send-back returns the case to open and clears the ruling', () => {
     const d = applyDispute(pending(), { type: 'send-back' }, senior, at(5), S);
     expect(d.status).toBe('open');

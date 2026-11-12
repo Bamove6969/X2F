@@ -213,25 +213,33 @@ function markShown(since: string): void {
   }
 }
 
+/** Pages the watch never leaves: the notice, and every trade page (its room, chat and dispute). */
+const stayOn = (at: string) => at === FROZEN_PATH || at === '/trade' || at.startsWith('/trade/');
+
 /**
  * D-016: after a login (`enabled`: the account owner's signed-in trader session), reads the frozen
  * state once and, when the account is frozen and this freeze's notice has not been opened in this
- * browser session, opens FROZEN_PATH. Never from the notice itself or a dispute (where the notice
- * sends the person).
+ * browser session, opens FROZEN_PATH. F2 (freeze review 12 Nov): never from the notice itself or any
+ * trade page (`/trade/...`: the frozen person may still have to pay or release there); the notice
+ * then waits, and opens on the first page they go to that is not one.
  */
 export function FrozenWatch({ enabled }: { enabled: boolean }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const where = useRef(pathname);
   where.current = pathname;
+  /** The frozen state read, not yet shown because the person was on a trade page. */
+  const [waiting, setWaiting] = useState<FrozenState | null>(null);
   useEffect(() => {
     if (!enabled) return;
     let live = true;
     void Promise.resolve(readState()).then(
       (s) => {
         if (!live || s === null || shownBefore(s.since)) return;
-        const at = where.current;
-        if (at === FROZEN_PATH || /^\/trade\/[^/]+\/dispute$/.test(at)) return;
+        if (stayOn(where.current)) {
+          setWaiting(s);
+          return;
+        }
         markShown(s.since);
         void navigate(FROZEN_PATH);
       },
@@ -239,7 +247,15 @@ export function FrozenWatch({ enabled }: { enabled: boolean }) {
     );
     return () => {
       live = false;
+      setWaiting(null);
     };
   }, [enabled, navigate]);
+  useEffect(() => {
+    if (waiting === null || stayOn(pathname)) return;
+    setWaiting(null);
+    if (shownBefore(waiting.since)) return;
+    markShown(waiting.since);
+    void navigate(FROZEN_PATH);
+  }, [waiting, pathname, navigate]);
   return null;
 }

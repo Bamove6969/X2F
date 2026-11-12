@@ -559,6 +559,72 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     }
     return { freezes: await freezesOf(deps.db, t, code) };
   });
+
+  staffFreezeLiftRoute(app, o);
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * F1 (freeze review 12 Nov; D-014 "mods lift it"): `POST /staff/v1/freezes/:id/lift` lifts one
+ * freeze by its id, so a freeze that outlived its trade (R36 whole-record delete) still has a
+ * lift. The case route's own rules: `disputes.handle`; while the case exists, `mayWork` on it (the
+ * assignee, a senior or the owner; R37 on an appeal), the log entry on the case and the person
+ * added to `seen`; once the case is gone there is no assignee, so only a senior or the owner, and
+ * the log entry carries no trade. Like the case route's lift, no maintenance gate (lifting only
+ * gives trading back). 204; 404 `not-found` for an unknown id; 409 `wrong-state` once lifted.
+ * Nothing new is shown to traders.
+ */
+function staffFreezeLiftRoute(app: FastifyInstance, o: StaffDisputeDeps): void {
+  const guard = requireStaff('disputes.handle');
+  const cfg = { perm: 'disputes.handle' as const };
+  const log = o.appendLog ?? appendLog;
+  app.post('/staff/v1/freezes/:id/lift', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
+    const id = (req.params as { id?: unknown }).id;
+    if (typeof id !== 'string' || !UUID.test(id)) throw new ApiError(404, 'not-found');
+    const deps = req.server.deps;
+    const { rows } = await deps.db.query<{ account_id: string; dispute_code: string | null; side: Side | null; has_case: boolean }>(
+      `select h.account_id::text as account_id, h.dispute_code, h.side,
+              exists (select 1 from disputes d where d.code = h.dispute_code) as has_case
+         from trading_holds h where h.id = $1 and h.kind = 'freeze'`,
+      [id.toLowerCase()],
+    );
+    const f = rows[0];
+    if (!f || f.dispute_code === null || f.side === null) throw new ApiError(404, 'not-found');
+    const me = actorOf(req);
+    const liftIn = async (client: pg.PoolClient, now: Date, tradeCode: string | null) => {
+      const active = await client.query('select 1 from trading_holds where id = $1 and lifted_at is null for update', [id]);
+      if ((active.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
+      await client.query('update trading_holds set lifted_at = $2, lifted_by = $3 where id = $1', [id, now, me.id]);
+      await log(client, { at: now, actor: me, tradeCode, action: 'account.freeze-lifted', detail: { accountId: f.account_id, side: f.side } });
+    };
+    if (f.has_case) {
+      const code = f.dispute_code;
+      try {
+        await withDispute({ db: deps.db, clock: deps.clock, ...(o.traderEvents ? { events: o.traderEvents } : {}) }, { code }, async (d, client, now) => {
+          if (!mayWork(d, req)) throw new ApiError(403, 'forbidden-case');
+          await liftIn(client, now, code);
+          return markSeen(d, me.id);
+        });
+      } catch (err) {
+        ruleError(err);
+      }
+    } else {
+      if (!isSeniorOrOwner(req.staff.role)) throw new ApiError(403, 'forbidden-case');
+      const client = await deps.db.connect();
+      try {
+        await client.query('begin');
+        await liftIn(client, deps.clock(), null);
+        await client.query('commit');
+      } catch (err) {
+        await client.query('rollback');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+    return reply.code(204).send();
+  });
 }
 
 /** Whether a moderator may freeze `side` now (owner 2026-11-02). */

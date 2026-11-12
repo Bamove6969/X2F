@@ -3,7 +3,7 @@
 // that reads the API's frozen state (GET /v1/account/freeze, D-013..D-016), and the watch that opens
 // the notice once after a freeze.
 import { act } from 'react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccountFrozen, AccountFrozenRoute, FROZEN_PATH, FrozenWatch, parseFreeze, setFrozenSource, type FrozenState } from '../src/screens/account/AccountFrozen.js';
 import { fire, render } from './render.js';
@@ -197,9 +197,46 @@ describe('the frozen state from the API', () => {
     expect(not.host.querySelector('[data-where]')?.getAttribute('data-where')).toBe('/x');
   });
 
-  it('the watch does not pull someone off their dispute (where the notice would send them)', async () => {
-    const { host } = mount(<><FrozenWatch enabled /><Where /></>, '/trade/7F3A-9C21-4FTR-8WPN/dispute');
+  it('F2: the watch never pulls someone off a trade page (the dispute, the trade room, its chat), and opens the notice on a later page', async () => {
+    // A freeze no earlier test opened the notice for.
+    answer = { status: 200, body: { freezes: [{ ...API_FROZEN.freezes[0]!, since: '2026-11-11T09:30:00.000Z' }] } };
+    const watchAt = (at: string) =>
+      render(
+        <MemoryRouter initialEntries={[at]}>
+          <FrozenWatch enabled />
+          <Routes>
+            <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
+            <Route path="*" element={<Where />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    for (const at of ['/trade/7F3A-9C21-4FTR-8WPN/dispute', '/trade/7F3A-9C21-4FTR-8WPN', '/trade/7F3A-9C21-4FTR-8WPN?view=chat', '/trade/OTHER-CODE']) {
+      const { host, unmount } = watchAt(at);
+      await settle();
+      expect(calls.at(-1), at).toBe('/v1/account/freeze');
+      expect(host.querySelector('[data-where]')?.getAttribute('data-where'), at).toBe(at.split('?')[0]);
+      unmount();
+    }
+    // Not marked as shown: going on from the trade page to one that is not opens it.
+    const room = render(
+      <MemoryRouter initialEntries={['/trade/7F3A-9C21-4FTR-8WPN']}>
+        <FrozenWatch enabled />
+        <Routes>
+          <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
+          <Route path="/trade/:code" element={<Link to="/sell">Leave</Link>} />
+          <Route path="*" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    );
     await settle();
-    expect(host.querySelector('[data-where]')?.getAttribute('data-where')).toBe('/trade/7F3A-9C21-4FTR-8WPN/dispute');
+    expect(room.host.querySelector('a')?.textContent).toBe('Leave');
+    fire(room.host.querySelector('a')!, new MouseEvent('click', { bubbles: true, button: 0 }));
+    await settle();
+    expect(room.host.querySelector('h1')?.textContent).toBe('A moderator froze trading on your account');
+    room.unmount();
+    // Once shown, a later page load does not open it again.
+    const later = watchAt('/sell');
+    await settle();
+    expect(later.host.querySelector('[data-where]')?.getAttribute('data-where')).toBe('/sell');
   });
 });

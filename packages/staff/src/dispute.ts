@@ -483,6 +483,10 @@ export function applyDispute(
     case 'approve':
     case 'send-back': {
       if (d.status !== 'awaiting-approval' || d.ruling === null) return fail('wrong-state');
+      // L1 (freeze review 12 Nov): the stored draft's action is checked again, so a draft stored
+      // before a rule changed (D-015: no freeze) or a ban whose end has passed is never approved.
+      // Sending it back stays possible.
+      if (e.type === 'approve' && !validAction(d.ruling.accountAction, now)) return fail('invalid-action');
       if (!canApprove(by.role, d.ruling.accountAction)) return fail('wrong-party');
       if (d.ruling.proposer === by.id) return fail('same-person');
       if (d.round === 2 && !eligibleForAppeal(d, by.id, by.role)) return fail('not-eligible');
