@@ -132,7 +132,7 @@ export const pgpLoginFinish = (b: { challengeId: string; code: string }) =>
 // Key taps (Task 5): every tapped action first proves a security-key tap bound to its intent.
 
 export const tapStart = (intent: KeyTapIntent) =>
-  staffApi<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON }>('/staff/v1/taps/start', { method: 'POST', body: intent });
+  staffApi<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON; nonce: string; issuedAt: string | null }>('/staff/v1/taps/start', { method: 'POST', body: intent });
 export const tapFinish = (tapId: string, response: AuthenticationResponseJSON) =>
   staffApi<{ tapId: string }>(`/staff/v1/taps/${encodeURIComponent(tapId)}/finish`, { method: 'POST', body: { response } });
 

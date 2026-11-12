@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, open as openFile, readFile, rename, rm } from 'node:fs/promises';
+import { access, mkdir, open as openFile, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { modSubkey, open, seal } from '../keystore.js';
 
@@ -108,6 +108,10 @@ export function emptyGate(): GateState {
 
 /** The clock skew allowed between the API (which stamps a tap's issuedAt) and this gate: 2 minutes (lead call). */
 export const SWITCH_ON_SKEW_MS = 2 * 60_000;
+/** Re-verify N4 (lead call): a registry tap first seen more than this long after its issuedAt is refused. */
+export const MAX_TAP_AGE_MS = 24 * 3_600_000;
+/** Re-verify N6 (lead call): the two `add-owner-key` taps are issued within this long of each other. */
+export const ADD_OWNER_KEY_PAIR_MS = 10 * 60_000;
 
 export const GATE_FILE = 'gate.bin';
 const AAD = 'x2f/mod/gate/v1';
@@ -143,19 +147,23 @@ function fromJson(text: string): GateState {
   return { ...emptyGate(), ...o, limitUsdCents: BigInt(o.limitUsdCents) };
 }
 
-/** Opens `dir/gate.bin` (a fresh gate when there is none yet; the directory is made, 0700). */
-export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promise<GateStore> {
+/**
+ * Opens `dir/gate.bin`. A missing file is an error (re-verify P6): a deleted or moved gate must
+ * never come back as an empty, re-pinnable one. Only `init: true` (the `init-gate` command, after
+ * the operator's "yes", `initGate`) starts a fresh gate, and only where none exists yet.
+ */
+export async function openGateStore(dir: string, keystoreKey: Uint8Array, o: { init?: boolean } = {}): Promise<GateStore> {
   const key = modSubkey(keystoreKey, 'gate');
-  await mkdir(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, GATE_FILE);
-  let state: GateState;
   let sealed: Buffer | null = null;
   try {
     sealed = await readFile(path);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
   }
-  state = sealed === null ? emptyGate() : fromJson(new TextDecoder().decode(open(key, AAD, sealed)));
+  if (sealed === null && o.init !== true) throw new Error(`gate: ${GATE_FILE} is missing (a new gate is made only by init-gate)`);
+  if (sealed === null) await mkdir(dir, { recursive: true, mode: 0o700 });
+  let state: GateState = sealed === null ? emptyGate() : fromJson(new TextDecoder().decode(open(key, AAD, sealed)));
   const saving = serial();
   const store: GateStore = {
     get state() {
@@ -189,4 +197,22 @@ export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promi
     exclusive: serial(),
   };
   return store;
+}
+
+export type InitResult = 'created' | 'declined' | 'exists';
+
+/**
+ * `init-gate` (re-verify P6): makes a new, empty, unpinned `gate.bin` only where none exists, and
+ * only after the operator types `yes`. Then `pin-owner` pins the owner's keys.
+ */
+export async function initGate(o: { dir: string; keystoreKey: Uint8Array; print: (line: string) => void; confirm: (q: string) => Promise<string> }): Promise<InitResult> {
+  const path = join(o.dir, GATE_FILE);
+  const exists = await access(path).then(() => true, () => false);
+  if (exists) return 'exists';
+  o.print(`No ruling gate at ${path}. A new gate trusts nobody until pin-owner pins the owner's keys.`);
+  o.print('If a gate was here before, it was deleted or moved: find out why before you make a new one.');
+  if ((await o.confirm('Type yes to make a new, empty gate: ')).trim() !== 'yes') return 'declined';
+  const store = await openGateStore(o.dir, o.keystoreKey, { init: true });
+  await store.save();
+  return 'created';
 }

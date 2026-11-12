@@ -3,8 +3,8 @@ import { verifyRegistrationResponse, type RegistrationResponseJSON } from '@simp
 import { decodeAttestationObject } from '@simplewebauthn/server/helpers';
 import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, involvedIn, type KeyTapIntent } from '@x2f/staff';
 import type pg from 'pg';
-import { SWITCH_ON_SKEW_MS, type GateState, type InvitableRole, type PinnedCred } from './store.js';
-import { noteCounter, olderThanSeen, verifyTap, type GateContext, type GateRuling, type StoredTap } from './verify.js';
+import { ADD_OWNER_KEY_PAIR_MS, MAX_TAP_AGE_MS, SWITCH_ON_SKEW_MS, type GateState, type InvitableRole, type PinnedCred } from './store.js';
+import { credOf, noteCounter, verifyTap, type GateContext, type GateRuling, type StoredTap } from './verify.js';
 
 /**
  * Plan 4 Task 13: the chain of trust. Everything here is read from the API's database through the
@@ -127,17 +127,56 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
     g.usedNonces[t.nonceHex] = what;
   };
   const ownerId = g.ownerAccountId;
+  const issuedOf = (t: { intent: KeyTapIntent }): number => Date.parse((t.intent as { issuedAt?: string }).issuedAt ?? '');
+
+  // 0. Every fresh owner tap is checked once, before any step acts (re-verify N1-N4, N7):
+  //    - its signed issuedAt is not after the gate's clock plus the skew (a far-future stamp would
+  //      pin its subject for good), nor more than MAX_TAP_AGE_MS before it (a stale tap first shown
+  //      a day late is not applied);
+  //    - its key's signature counter is above the key's high-water mark, judged in (key, counter)
+  //      order across the whole batch, so a step that runs first can never make a later step's
+  //      older-but-legitimate tap look out of order.
+  //    A tap that fails is spent and logged, and counts for nothing.
+  //    A create-invite tap that passes is spent at once as `invite:<id>` (its key's mark rises
+  //    now), so step 1 can keep re-reading the invite until the invitee has registered.
+  const pending = new Set<StoredTap>();
+  const byCred = new Map<string, typeof owner>();
+  for (const t of owner) if (fresh(t.tap)) byCred.set(t.credentialId, [...(byCred.get(t.credentialId) ?? []), t]);
+  for (const [credentialId, list] of byCred) {
+    list.sort((a, b) => a.counter - b.counter);
+    let hw = credOf(g, ownerId, credentialId)?.counter ?? 0;
+    for (const t of list) {
+      const issued = issuedOf(t);
+      let why: string | null = null;
+      if (!Number.isFinite(issued)) why = 'no-issued-at';
+      else if (issued > now + SWITCH_ON_SKEW_MS) why = 'issued-in-future';
+      else if (now - issued > MAX_TAP_AGE_MS) why = 'issued-too-long-ago';
+      else if (hw > 0 && t.counter <= hw) why = 'out-of-order';
+      if (why !== null) {
+        spend(t.tap, why);
+        refused(ctx, why);
+        continue;
+      }
+      hw = Math.max(hw, t.counter);
+      pending.add(t.tap);
+      if (t.intent.kind === 'create-invite') {
+        spend(t.tap, `invite:${t.intent.inviteId}`);
+        noteCounter(g, ownerId, credentialId, t.counter);
+      }
+    }
+  }
+  const ready = (t: { tap: StoredTap }): boolean => pending.has(t.tap);
   /**
    * Review M1: a fresh owner tap counts only when it is newer than every tap the gate has accepted
    * from that key (its signature counter), and newer than the last one applied to its subject by
    * the same key. An older tap held back and released late is spent and ignored.
    */
-  const issuedOf = (t: { intent: KeyTapIntent }): number => Date.parse((t.intent as { issuedAt?: string }).issuedAt ?? '');
   const inOrder = (t: { tap: StoredTap; intent: KeyTapIntent; credentialId: string; counter: number }, subject: string | null): boolean => {
     const last = subject === null ? undefined : g.applied[subject];
-    // By the signed issuedAt, across both owner keys (lead call on P4), and by each key's counter.
+    // Per subject, by the signed issuedAt across both owner keys (lead call on P4), and by the
+    // same key's counter; the key's own high-water mark was step 0's.
     const earlier = last?.issuedAt !== undefined && issuedOf(t) < Date.parse(last.issuedAt);
-    if (earlier || olderThanSeen(g, ownerId, t.credentialId, t.counter) || (last !== undefined && last.credentialId === t.credentialId && t.counter <= last.counter)) {
+    if (earlier || (last !== undefined && last.credentialId === t.credentialId && t.counter <= last.counter)) {
       spend(t.tap, 'out-of-order');
       refused(ctx, 'out-of-order');
       return false;
@@ -155,9 +194,10 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
   //    the database then names, and never re-pointed. Keys are taken from it only while it is open:
   //    before its signed `expiresAt` by the gate's clock and before the person has joined. It is
   //    re-read each sync while open, because the invitee registers after the owner's tap was used.
-  for (const { tap, intent, credentialId, counter } of owner) {
+  for (const { tap, intent } of owner) {
     if (intent.kind !== 'create-invite') continue;
-    if (Object.hasOwn(g.usedNonces, tap.nonceHex) && g.usedNonces[tap.nonceHex] !== `invite:${intent.inviteId}`) continue;
+    // Only a tap step 0 let through (now or in an earlier sync): spent as this invite's.
+    if (g.usedNonces[tap.nonceHex] !== `invite:${intent.inviteId}`) continue;
     const binding = Object.hasOwn(g.invites, intent.inviteId) ? g.invites[intent.inviteId] : undefined;
     if (binding?.closed) continue;
     const expires = Date.parse(intent.expiresAt);
@@ -180,8 +220,6 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
         continue;
       }
       g.invites[intent.inviteId] = { accountId, closed: false };
-      spend(tap, `invite:${intent.inviteId}`);
-      noteCounter(g, ownerId, credentialId, counter);
     }
     const have = Object.hasOwn(g.staff, accountId) ? g.staff[accountId] : undefined;
     if (have?.joined) {
@@ -207,7 +245,7 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
   const rows = new Map((await source.staff()).map((s) => [s.accountId, s]));
   for (const t of owner) {
     const { tap, intent } = t;
-    if (!fresh(tap)) continue;
+    if (!fresh(tap) || !ready(t)) continue;
     switch (intent.kind) {
       case 'settings': {
         if (!inOrder(t, 'settings')) continue;
@@ -290,20 +328,23 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
   // 4. New owner keys: two in-order taps by two different pinned owner keys for the same key.
   const byKey = new Map<string, Array<{ tap: StoredTap; intent: KeyTapIntent; credentialId: string; counter: number }>>();
   for (const t of owner) {
-    if (t.intent.kind !== 'add-owner-key' || !fresh(t.tap)) continue;
-    if (olderThanSeen(g, ownerId, t.credentialId, t.counter)) {
-      spend(t.tap, 'out-of-order');
-      continue;
-    }
+    if (t.intent.kind !== 'add-owner-key' || !fresh(t.tap) || !ready(t)) continue;
     // The same key to add, whenever each of the two taps was issued.
     const { issuedAt: _at, ...what } = t.intent as KeyTapIntent & { issuedAt?: string };
     const k = canonicalJson(what as KeyTapIntent);
     byKey.set(k, [...(byKey.get(k) ?? []), t]);
   }
   for (const [k, list] of byKey) {
-    const keys = new Set(list.map((l) => l.credentialId));
-    if (keys.size < 2) continue;
-    for (const l of list) accept(l, 'add-owner-key', null);
+    // Re-verify N6 (lead call): two taps by two different pinned keys, issued within
+    // ADD_OWNER_KEY_PAIR_MS of each other. An unpaired tap waits (step 0's age limit ends it).
+    let pair: [typeof list[number], typeof list[number]] | null = null;
+    for (const a of list) {
+      for (const b of list) {
+        if (a.credentialId !== b.credentialId && Math.abs(issuedOf(a) - issuedOf(b)) <= ADD_OWNER_KEY_PAIR_MS) pair = [a, b];
+      }
+    }
+    if (pair === null) continue;
+    for (const l of pair) accept(l, 'add-owner-key', null);
     const intent = JSON.parse(k) as Extract<KeyTapIntent, { kind: 'add-owner-key' }>;
     if (g.ownerCreds.some((c) => c.credentialId === intent.credentialId)) continue;
     const row = await source.credential(intent.credentialId);
@@ -428,8 +469,9 @@ export function pgGateSource(db: Pick<pg.Pool, 'query'>): PgGateSource {
       );
       const d = rows[0];
       if (!d) return { current: null, round1: null, involved: [] };
-      const { rows: pub } = await db.query<{ round: 1 | 2; h: string; evidence: unknown }>(
-        `select round, encode(sha256(convert_to(reason, 'UTF8')), 'hex') as h, evidence from dispute_rulings where code = $1 and seq = $2`,
+      // Re-verify M-R1: the reason's text, hashed here, never a hash the database computed.
+      const { rows: pub } = await db.query<{ round: 1 | 2; reason: string; evidence: unknown }>(
+        'select round, reason, evidence from dispute_rulings where code = $1 and seq = $2',
         [code, d.seq],
       );
       const of = (r: Draft, round: 1 | 2, round1Id?: string): GateRuling | null => {
@@ -442,7 +484,9 @@ export function pgGateSource(db: Pick<pg.Pool, 'query'>): PgGateSource {
         } catch {
           return null;
         }
-        return { id: r.id, code, round, outcome: r.outcome, accountAction: r.accountAction, proposer: r.proposer, approver: r.approver, reasonSha256: p.h, evidenceSha256: ev, ...(round1Id ? { round1Id } : {}) };
+        if (typeof p.reason !== 'string') return null;
+        const reasonSha256 = createHash('sha256').update(p.reason, 'utf8').digest('hex');
+        return { id: r.id, code, round, outcome: r.outcome, accountAction: r.accountAction, proposer: r.proposer, approver: r.approver, reasonSha256, evidenceSha256: ev, ...(round1Id ? { round1Id } : {}) };
       };
       const round1 = d.round1 ? of(d.round1, 1) : null;
       const current = d.ruling ? of(d.ruling, d.round, d.round === 2 ? d.round1?.id : undefined) : null;

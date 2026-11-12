@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { staffApi } from '../src/api.js';
 import { App } from '../src/App.js';
 import { NAV_LABELS } from '../src/ui/StaffShell.js';
-import { KeyTapDialog } from '../src/ui/KeyTapDialog.js';
+import { KeyTapDialog, checkTapChallenge } from '../src/ui/KeyTapDialog.js';
 import { RoleChip } from '../src/ui/RoleChip.js';
 import { button, click, fakeApi, refused, render, settle } from './helpers.js';
 
@@ -132,7 +132,8 @@ describe('the staff API client', () => {
 function started(intent: KeyTapIntent, over: { issuedAt?: string | null; signs?: KeyTapIntent } = {}) {
   const nonce = new Uint8Array(16).fill(9);
   const issuedAt = over.issuedAt !== undefined ? over.issuedAt : hasIssuedAt(intent.kind) ? new Date().toISOString() : null;
-  const signed = over.signs ?? (issuedAt !== null && hasIssuedAt(intent.kind) ? ({ ...stampIssuedAt(intent, new Date(issuedAt)) } as KeyTapIntent) : intent);
+  // A server that answers no issuedAt for a stamped kind still signed one (now).
+  const signed = over.signs ?? (hasIssuedAt(intent.kind) ? stampIssuedAt(intent, issuedAt !== null ? new Date(issuedAt) : new Date()) : intent);
   const challenge = Buffer.from(tapChallenge(signed, nonce)).toString('base64url');
   return { tapId: 't1', options: { challenge }, nonce: Buffer.from(nonce).toString('hex'), issuedAt };
 }
@@ -201,19 +202,22 @@ describe('KeyTapDialog', () => {
   });
 
   it('refuses an issuedAt more than 2 minutes from this device\'s clock, or one on a kind that has none', async () => {
-    for (const issuedAt of [new Date(Date.now() + 3 * 60_000).toISOString(), new Date(Date.now() - 3 * 60_000).toISOString(), null]) {
-      fakeApi({ 'POST /staff/v1/taps/start': { body: started(SETTINGS, { issuedAt }) } });
-      dialog(SETTINGS);
-      await click(button('Tap security key'));
-      expect(webauthn.startAuthentication, String(issuedAt)).not.toHaveBeenCalled();
-      document.body.innerHTML = '';
+    const now = Date.now();
+    expect(checkTapChallenge(SETTINGS, started(SETTINGS), now)).toBe(true);
+    for (const issuedAt of [new Date(now + 3 * 60_000).toISOString(), new Date(now - 3 * 60_000).toISOString(), null]) {
+      expect(checkTapChallenge(SETTINGS, started(SETTINGS, { issuedAt }), now), String(issuedAt)).toBe(false);
     }
+    // Within 2 minutes either way is fine.
+    expect(checkTapChallenge(SETTINGS, started(SETTINGS, { issuedAt: new Date(now + 90_000).toISOString() }), now)).toBe(true);
     const RULING: KeyTapIntent = {
       kind: 'ruling', step: 'propose', rulingId: '7d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d', code: 'ABCD-EFGH-JKMN-PQRS', round: 1, outcome: 'release-to-buyer',
       accountAction: { kind: 'none' }, amountAtomic: '1', reasonSha256: 'a'.repeat(64), evidenceSha256: 'b'.repeat(64), round1Id: null,
     };
-    fakeApi({ 'POST /staff/v1/taps/start': { body: { ...started(RULING), issuedAt: new Date().toISOString() } } });
-    dialog(RULING);
+    expect(checkTapChallenge(RULING, started(RULING), now)).toBe(true);
+    expect(checkTapChallenge(RULING, { ...started(RULING), issuedAt: new Date(now).toISOString() }, now)).toBe(false);
+    // And the dialog never asks the key when the check fails.
+    fakeApi({ 'POST /staff/v1/taps/start': { body: started(SETTINGS, { issuedAt: new Date(now + 3 * 60_000).toISOString() }) } });
+    dialog(SETTINGS);
     await click(button('Tap security key'));
     expect(webauthn.startAuthentication).not.toHaveBeenCalled();
   });

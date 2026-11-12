@@ -104,7 +104,7 @@ export async function startKeyTap(
   accountId: string,
   intent: KeyTapIntent,
   o: { sessionId?: string } = {},
-): Promise<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON }> {
+): Promise<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON; nonce: string; issuedAt: string | null }> {
   const parsed = normalized(intent);
   if (parsed === null) throw badRequest();
   const now = deps.clock();
@@ -147,7 +147,9 @@ export async function startKeyTap(
     client.release();
   }
   if (id === undefined) throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.ceil(KEY_TAP_TTL_MS / 1000) });
-  return { tapId: id, options };
+  // Re-verify X1: the nonce and the stamped issuedAt go back too, so the staff site can rebuild
+  // `tapChallenge` from the intent it shows and refuse a challenge for anything else.
+  return { tapId: id, options, nonce: nonce.toString('hex'), issuedAt: (norm as { issuedAt?: string }).issuedAt ?? null };
 }
 
 interface TapRow {

@@ -849,7 +849,15 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
     const { fileGateAttestation, openGateStore, pgGateSource, startGateSync } = await import('./gate/index.js');
     const attestation = fileGateAttestation(gateConfig.mdsDir);
     await attestation.init();
-    const store = await openGateStore(gateConfig.stateDir, envBytes(env, 'MOD_KEYSTORE_KEY', 32));
+    // Re-verify P6: a missing gate.bin stops the process (only init-gate, with the operator's yes, makes one).
+    const store = await openGateStore(gateConfig.stateDir, envBytes(env, 'MOD_KEYSTORE_KEY', 32)).catch(async (e: unknown) => {
+      process.stderr.write(`${JSON.stringify({ level: 50, msg: e instanceof Error ? e.message : 'ruling gate: gate.bin did not open' })}\n`);
+      await server?.close().catch(() => undefined);
+      await handle.stop().catch(() => undefined);
+      await apiReader?.end().catch(() => undefined);
+      await db.end().catch(() => undefined);
+      process.exit(1);
+    });
     if (store.state.ownerAccountId === null) process.stderr.write('{"level":40,"msg":"ruling gate: owner not pinned (npm run pin-owner -w @x2f/moderation)"}\n');
     gateReader = new pgMod.Pool({ connectionString: gateConfig.apiReaderUrl, max: 2 });
     gateReader.on('error', () => process.stderr.write('{"level":50,"msg":"gate reader idle client error"}\n'));
