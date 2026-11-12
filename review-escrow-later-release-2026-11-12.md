@@ -30,8 +30,8 @@ what an uncommitted party accepts (M1).
 ## Checks run
 
 - Typecheck `packages/escrow`: clean.
-- Scratch regtest probe (3 tests, deleted afterwards, copy in the lead's scratchpad as
-  `zz-review-probe.test.ts.txt`): 3 passed. These reproduce B1, B2 and M1. Output below.
+- Scratch regtest probe (3 tests, deleted afterwards, copy at
+  /tmp/claude-0/-home-user-X2F/992ece86-f5cc-5ebc-82cc-7f9bc9dec1c0/scratchpad/zz-review-probe.test.ts.txt): 3 passed. These reproduce B1, B2 and M1. Output below.
 - Whole `@x2f/escrow` project on regtest (monerod v0.18.5.3; fetch-monerod.sh verified the pinned
   sha256): see "Full project run" at the end.
 - Existing tests: the diff touches no existing test file. `git diff --stat 544cf81c c1c248b8 --
@@ -217,3 +217,8 @@ P3 forged later over in-progress first -> pending (accepted); current tag == for
 ```
 
 ## Full project run
+
+`npx vitest run --project @x2f/escrow` at c1c248b8 (probe removed first), under
+`flock ~/x2f-comms/check.lock timeout 3000`: **17 files, 110 tests passed, 0 failed** (1570 s), the
+5 tests in later-release.test.ts included. dockerd was not touched. The worktree, its node_modules
+and the .regtest copy were removed afterwards.
