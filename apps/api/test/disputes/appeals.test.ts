@@ -357,15 +357,22 @@ describe('D-011: no eligible reviewer', () => {
     expect({ status: res.statusCode, error: (res.json() as { error?: string }).error }).toEqual({ status: 403, error: 'forbidden-case' });
     expect(await logCount()).toBe(before);
 
-    // An uninvolved owner reads it, unlogged, and stays uninvolved.
+    // An uninvolved owner reads it, unlogged, and stays uninvolved. One senior was involved in this
+    // case's round 1 (R37): the list names exactly the owner and the fresh senior, never that one.
     const other = await ruled();
+    await involve(other.code, involvedSenior.id, 'senior');
     setNow(at(2 * H));
     await relogin(other.seller, other.buyer);
     expect((await other.buyer.browser.post(appealOf(other.code), { why: WHY })).statusCode).toBe(200);
     const n = Number((await deps.db.query<{ n: string }>('select count(*) as n from activity_log where trade_code = $1', [other.code])).rows[0]!.n);
     const ok = await owner.b.get(`/staff/v1/disputes/${other.code}/appeal-reviewers`);
     expect(ok.statusCode, ok.body).toBe(200);
-    expect(ok.json()).toMatchObject({ reviewers: expect.arrayContaining([expect.objectContaining({ name: expect.any(String) })]) });
+    const nameOf = async (id: string) =>
+      (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [id])).rows[0]!.display_name;
+    const body = ok.json() as { reviewers: Array<{ name: string }>; waiting: boolean };
+    expect(body.waiting).toBe(false);
+    expect(body.reviewers.map((r) => r.name).sort()).toEqual([await nameOf(ownerId), await nameOf(freshSenior.id)].sort());
+    expect(body.reviewers.map((r) => r.name)).not.toContain(await nameOf(involvedSenior.id));
     expect(Number((await deps.db.query<{ n: string }>('select count(*) as n from activity_log where trade_code = $1', [other.code])).rows[0]!.n)).toBe(n);
   });
 });
