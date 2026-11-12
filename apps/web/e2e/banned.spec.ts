@@ -41,7 +41,7 @@ test('a site ban with an open trade: the notice says the exact end, links a mode
     { kind: 'site', reasonCode: 'abuse', until: UNTIL },
   );
   await page.goto('/sell');
-  await expect(page).toHaveURL(/\/account\/banned$/);
+  await expect(page).toHaveURL(/\/account\/banned(\?|$)/);
   const notice = page.locator('[data-screen="account-banned"]');
   await expect(notice.locator('h1')).toHaveText('Your account has been banned');
   await expect(notice.locator('[data-part="ban-end"]')).toHaveText('Your account will be fully working again on 19 Nov 2026, 12:00 UTC.');
@@ -62,7 +62,7 @@ test('a lifetime site ban with nothing unfinished: Permanent, and no trade links
     kind: 'site', reasonCode: 'trade-problems', until: null,
   });
   await page.goto('/sell');
-  await expect(page).toHaveURL(/\/account\/banned$/);
+  await expect(page).toHaveURL(/\/account\/banned(\?|$)/);
   const notice = page.locator('[data-screen="account-banned"]');
   await expect(notice.locator('[data-part="ban-end"]')).toHaveText('Permanent');
   await expect(notice.locator('[data-part="ban-unfinished"]')).toHaveCount(0);
@@ -74,5 +74,5 @@ test('once the ban has ended (no bans in force) the notice sends the person home
   await page.route('**/v1/account/ban', json({ bans: [], unfinished: [], contacts: CONTACTS }));
   await signedIn(page);
   await page.goto('/account/banned');
-  await expect(page).not.toHaveURL(/\/account\/banned$/);
+  await expect(page).not.toHaveURL(/\/account\/banned(\?|$)/);
 });
