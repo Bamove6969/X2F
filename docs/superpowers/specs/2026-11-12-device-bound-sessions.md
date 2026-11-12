@@ -77,6 +77,8 @@ fresh server challenge.
    - No proof of possession is needed at binding. Binding a key you do not hold only locks out your
      own new session.
 3. **Bound cookie.** `__Host-x2f_bound` (HttpOnly, Secure, SameSite=Strict) holds 32 random bytes.
+   A disabled account answers 403 `account-disabled` before this check (re-verify Info), so a
+   bound session on a disabled account sees "account disabled", not the login page.
    The row stores its SHA-256 and `bound_until = now + BOUND_TTL` (10 min). For a bound session,
    `requireSession` refuses any request whose bound cookie is missing, wrong or past
    `bound_until` with 401 `session-proof-required`. That includes `GET /v1/events`, which carries
@@ -102,8 +104,19 @@ fresh server challenge.
 
      `<origin>` is the page's origin (the server uses the request's checked `Origin`). On success
      a new bound cookie is set and `{ boundUntil }` is returned; on failure, 401 `proof-invalid`.
-   - Both routes take from one per-session budget (`SESSION_PROOF_BUCKET`, 20 at once, 10 a
-     minute; 429 `slow-down`, review S2).
+   - Budgets, per session (review S2, re-verify R2): the challenge route has a generous cap of its
+     own (`SESSION_CHALLENGE_BUCKET`, 120 at once, 60 a minute; it writes nothing). Refused proofs
+     are charged to a strict one (`SESSION_PROOF_BUCKET`, 20 at once, 10 a minute). A valid proof
+     is charged to neither, so whoever holds a copied session cookie cannot spend the budget a
+     valid renewal needs. Both answer 429 `slow-down` when empty. Residual: a thief can still use
+     up the challenge cap, so the person cannot get a *new* challenge until it refills (a
+     challenge already issued still works). The person's next request then fails like the
+     network (`retry-later`), and is not logged out.
+   - Renewal keeps the previous bound cookie valid until the earlier of its own end and now + 60 s
+     (`BOUND_OVERLAP_MS`, columns `bound_prev_hash` / `bound_prev_until`, re-verify R1), as the
+     session token's `prev_token_hash` does. Every tab shares the one cookie jar, so a request
+     another tab already sent with the old cookie still passes. Only the one previous cookie gets
+     the overlap. A copied cookie still dies within `BOUND_TTL`.
 
    The web app refreshes ahead of time, at a third of `BOUND_TTL`, while a bound session is open.
    Renewals are serialised across the profile's tabs with the Web Lock `x2f-proof` where the
@@ -129,6 +142,7 @@ thing in page JavaScript, which works in every browser with WebCrypto and Indexe
 Migration `570_device_bound_sessions.sql` adds these columns to `sessions`, all null by default:
 - `bound_key bytea`: SPKI DER of a P-256 public key, at most 200 bytes;
 - `bound_token_hash bytea`, `bound_until timestamptz`;
+- `bound_prev_hash bytea`, `bound_prev_until timestamptz`: the previous bound cookie during its overlap;
 
 and the table `session_proof_nonces (nonce, session_id, expires_at)`: the used challenges' nonces,
 deleted with their session, and pruned per session by the proof route once expired.

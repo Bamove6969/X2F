@@ -10,7 +10,11 @@
 alter table sessions
   add column bound_key bytea check (bound_key is null or octet_length(bound_key) between 26 and 200),
   add column bound_token_hash bytea,
-  add column bound_until timestamptz;
+  add column bound_until timestamptz,
+  -- The previous bound cookie after a renewal, valid until `bound_prev_until` (at most 60 s, never
+  -- past its own end): tabs share one cookie jar, so a request already sent with it still passes.
+  add column bound_prev_hash bytea,
+  add column bound_prev_until timestamptz;
 
 create table session_proof_nonces (
   nonce bytea primary key check (octet_length(nonce) = 16),

@@ -6,8 +6,8 @@ import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { BOUND_COOKIE, BOUND_TTL_MS, PROOF_CHALLENGE_TTL_MS, SESSION_KEY_HEADER, proofMessage } from '../src/auth/deviceBound.js';
-import { SESSION_PROOF_BUCKET } from '../src/limits.js';
+import { BOUND_COOKIE, BOUND_OVERLAP_MS, BOUND_TTL_MS, PROOF_CHALLENGE_TTL_MS, SESSION_KEY_HEADER, proofMessage } from '../src/auth/deviceBound.js';
+import { SESSION_CHALLENGE_BUCKET, SESSION_PROOF_BUCKET } from '../src/limits.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import type { Config } from '../src/config.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -207,18 +207,81 @@ describe('a bound session', () => {
     expect((await answer(jar, c4, signOf(key, c4))).statusCode).toBe(200);
   });
 
-  it('S2: the proof routes have a per-session budget (429 slow-down), which refills', async () => {
+  it('S2/R2: refused proofs spend a strict per-session budget (429 slow-down); a valid proof is never refused', async () => {
     const key = device();
     const { jar } = await login(key);
-    for (let i = 0; i < SESSION_PROOF_BUCKET.capacity; i++) expect((await send(jar, 'POST', '/v1/account/session/proof/challenge', {})).statusCode).toBe(200);
-    const res = await send(jar, 'POST', '/v1/account/session/proof/challenge', {});
+    const garbage = () => send(jar, 'POST', '/v1/account/session/proof', { challenge: 'A'.repeat(75), signature: 'A'.repeat(86) });
+    for (let i = 0; i < SESSION_PROOF_BUCKET.capacity; i++) expect(errorOf(await garbage())).toBe('proof-invalid');
+    const res = await garbage();
     expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 429, error: 'slow-down' });
-    expect(errorOf(await send(jar, 'POST', '/v1/account/session/proof', { challenge: 'A'.repeat(75), signature: 'A'.repeat(86) }))).toBe('slow-down');
+    // The budget is spent, yet a valid proof still renews (a thief cannot make one).
+    expect((await prove(jar, key)).res.statusCode).toBe(200);
     // Another session of the same account has its own budget.
     const other = await login(key);
-    expect((await send(other.jar, 'POST', '/v1/account/session/proof/challenge', {})).statusCode).toBe(200);
+    expect(errorOf(await send(other.jar, 'POST', '/v1/account/session/proof', { challenge: 'A'.repeat(75), signature: 'A'.repeat(86) }))).toBe('proof-invalid');
     advance(60_000);
+    expect(errorOf(await garbage())).toBe('proof-invalid');
+  });
+
+  it('R2: a cookie thief drains the challenge cap; the victim\'s valid proof still passes', async () => {
+    const key = device();
+    const { jar } = await login(key);
+    const thief: Jar = { [SESSION_COOKIE]: jar[SESSION_COOKIE]! };
+    advance(BOUND_TTL_MS);
+    const mine = await challengeOf(jar);
+    let res = await send(thief, 'POST', '/v1/account/session/proof/challenge', {});
+    let n = 0;
+    while (res.statusCode === 200 && n < 10_000) {
+      n++;
+      res = await send(thief, 'POST', '/v1/account/session/proof/challenge', {});
+    }
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 429, error: 'slow-down' });
+    expect(n).toBe(SESSION_CHALLENGE_BUCKET.capacity - 1);
+    expect((await answer(jar, mine, signOf(key, mine))).statusCode).toBe(200);
+    expect((await me(jar)).statusCode).toBe(200);
+  });
+
+  it('R1: the previous bound cookie keeps working for BOUND_OVERLAP_MS after a renewal (tabs share one cookie jar)', async () => {
+    const key = device();
+    const { jar } = await login(key);
+    advance(60_000);
+    const tabA: Jar = { ...jar };
+    expect((await me(tabA)).statusCode).toBe(200);
+    // Tab B renews: the shared jar now holds a new bound cookie, but tab A's request was already sent with the old one.
     expect((await prove(jar, key)).res.statusCode).toBe(200);
+    expect(jar[BOUND_COOKIE]).not.toBe(tabA[BOUND_COOKIE]);
+    expect((await me(tabA)).statusCode).toBe(200);
+    advance(BOUND_OVERLAP_MS - 1000);
+    expect((await me(tabA)).statusCode).toBe(200);
+    advance(1000);
+    expect(errorOf(await me(tabA))).toBe('session-proof-required');
+    expect((await me(jar)).statusCode).toBe(200);
+  });
+
+  it('R1: the overlap never outlives the old cookie\'s own end, and only the one previous cookie gets it', async () => {
+    const key = device();
+    const { jar } = await login(key);
+    const first: Jar = { ...jar };
+    advance(BOUND_TTL_MS - 10_000);
+    expect((await prove(jar, key)).res.statusCode).toBe(200);
+    const second: Jar = { ...jar };
+    expect((await me(first)).statusCode).toBe(200);
+    advance(10_000);
+    // `first` reached its own BOUND_TTL end before the overlap did.
+    expect(errorOf(await me(first))).toBe('session-proof-required');
+    expect((await prove(jar, key)).res.statusCode).toBe(200);
+    // Two renewals on: the first cookie is not the previous one any more.
+    expect((await me(second)).statusCode).toBe(200);
+    expect(errorOf(await me(first))).toBe('session-proof-required');
+  });
+
+  it('a disabled account gets account-disabled before session-proof-required', async () => {
+    const key = device();
+    const { jar } = await login(key);
+    advance(BOUND_TTL_MS);
+    await deps.db.query("update accounts set disabled_at = $2 where id = (select account_id from sessions where token_hash = sha256(convert_to($1, 'utf8')))", [jar[SESSION_COOKIE], now]);
+    const res = await me(jar);
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 403, error: 'account-disabled' });
   });
 
   it('logout needs no proof', async () => {

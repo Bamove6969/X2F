@@ -346,6 +346,9 @@ interface SessionRow {
   bound: boolean;
   bound_token_hash: Buffer | null;
   bound_until: Date | null;
+  /** The previous bound cookie's hash, valid until `bound_prev_until` (re-verify R1). */
+  bound_prev_hash: Buffer | null;
+  bound_prev_until: Date | null;
 }
 
 /** Marks the preHandlers `requireSession` returns, so the app can list the routes that run with a session. */
@@ -407,7 +410,7 @@ export function requireSession(
               tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
               ma.terms_version as member_terms_version, s.app,
               case when s.token_hash = $1 then null else s.prev_token_until end as prev_until,
-              s.bound_key is not null as bound, s.bound_token_hash, s.bound_until
+              s.bound_key is not null as bound, s.bound_token_hash, s.bound_until, s.bound_prev_hash, s.bound_prev_until
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
          left join accounts ma on ma.id = tm.member_account_id
@@ -436,12 +439,17 @@ export function requireSession(
     }
     // A removed member's session ends at once, whatever the route (Task 18).
     if (row.member_id !== null && row.member_live !== true) throw new ApiError(401, 'not-authenticated');
-    // S-085: a bound session also shows a bound cookie the key renewed within BOUND_TTL_MS, before
-    // anything else about the account is answered (a copied session cookie learns nothing more).
-    if (row.bound && boundSessionsOn(deps.config) && !opts.allowUnproven && !boundCookieValid(req, row.bound_token_hash, row.bound_until, now)) {
+    // A disabled account says so first, also to a bound session without a fresh bound cookie
+    // (re-verify Info: otherwise renewal loops to the login page instead of "account disabled").
+    if (row.disabled_at !== null || row.member_disabled === true) throw new ApiError(403, 'account-disabled');
+    // S-085: a bound session also shows a bound cookie the key renewed within BOUND_TTL_MS (or the
+    // one before it, within BOUND_OVERLAP_MS of a renewal), before anything else is answered.
+    if (
+      row.bound && boundSessionsOn(deps.config) && !opts.allowUnproven
+      && !boundCookieValid(req, { hash: row.bound_token_hash, until: row.bound_until }, { hash: row.bound_prev_hash, until: row.bound_prev_until }, now)
+    ) {
       throw new ApiError(401, 'session-proof-required');
     }
-    if (row.disabled_at !== null || row.member_disabled === true) throw new ApiError(403, 'account-disabled');
     if (row.member_id !== null) {
       if (opts.member === undefined) throw new ApiError(403, 'owner-only');
       if (!hasAbility(row.member_abilities ?? [], opts.member)) throw new ApiError(403, 'forbidden');

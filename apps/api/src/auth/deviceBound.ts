@@ -33,6 +33,12 @@ export const SESSION_KEY_HEADER = 'x2f-session-key';
 export const BOUND_COOKIE = '__Host-x2f_bound';
 /** How long a bound cookie proves the key (spec section 8, question 3). */
 export const BOUND_TTL_MS = 10 * 60_000;
+/**
+ * Re-verify R1: after a renewal the previous bound cookie stays valid this long (never past its own
+ * end), as the session token's `prev_token_hash` does. Every tab shares the one cookie jar, so a
+ * request another tab already sent with it must not fail because this tab renewed.
+ */
+export const BOUND_OVERLAP_MS = 60_000;
 /** How long a proof challenge may be answered. */
 export const PROOF_CHALLENGE_TTL_MS = 2 * 60_000;
 
@@ -79,10 +85,19 @@ export function sessionKeyOf(req: FastifyRequest, app: 'trader' | 'staff'): Buff
   return key.export({ type: 'spki', format: 'der' });
 }
 
-/** A fresh bound cookie for the session, stored as its hash; returns the setter to run after commit. */
+/**
+ * A fresh bound cookie for the session, stored as its hash; returns the setter to run after commit.
+ * The one it replaces stays valid until the earlier of its own end and now + BOUND_OVERLAP_MS (R1).
+ */
 export async function issueBoundCookie(db: Queryable, sessionId: string, now: Date, reply: FastifyReply): Promise<() => void> {
   const token = randomBytes(32).toString('base64url');
-  await db.query('update sessions set bound_token_hash = $2, bound_until = $3 where id = $1', [sessionId, hash(token), new Date(now.getTime() + BOUND_TTL_MS)]);
+  await db.query(
+    `update sessions set bound_prev_hash = bound_token_hash,
+            bound_prev_until = case when bound_token_hash is null or bound_until is null then null else least(bound_until, $4::timestamptz) end,
+            bound_token_hash = $2, bound_until = $3
+      where id = $1`,
+    [sessionId, hash(token), new Date(now.getTime() + BOUND_TTL_MS), new Date(now.getTime() + BOUND_OVERLAP_MS)],
+  );
   return () => void reply.setCookie(BOUND_COOKIE, token, { ...COOKIE_ATTRS, maxAge: Math.floor(BOUND_TTL_MS / 1000) });
 }
 
@@ -111,13 +126,22 @@ export function openChallenge(config: Config, sessionId: string, challenge: stri
   return { nonce: Buffer.from(body.subarray(0, NONCE_BYTES)), until: new Date(until) };
 }
 
-/** Whether the request's bound cookie is the session's current one and still valid. */
-export function boundCookieValid(req: FastifyRequest, stored: Buffer | null, until: Date | null, now: Date): boolean {
+/** Whether the request's bound cookie is the session's current one, or the previous one within its overlap (R1), and still valid. */
+export function boundCookieValid(
+  req: FastifyRequest,
+  current: { hash: Buffer | null; until: Date | null },
+  previous: { hash: Buffer | null; until: Date | null },
+  now: Date,
+): boolean {
   const v = req.cookies?.[BOUND_COOKIE];
-  if (typeof v !== 'string' || !TOKEN.test(v) || stored === null || until === null) return false;
-  if (now.getTime() >= until.getTime()) return false;
+  if (typeof v !== 'string' || !TOKEN.test(v)) return false;
   const h = hash(v);
-  return h.length === stored.length && timingSafeEqual(h, stored);
+  const matches = (c: { hash: Buffer | null; until: Date | null }) =>
+    c.hash !== null && c.until !== null && now.getTime() < c.until.getTime() && c.hash.length === h.length && timingSafeEqual(h, c.hash);
+  // Both are compared, so the time taken does not say which one matched.
+  const a = matches(current);
+  const b = matches(previous);
+  return a || b;
 }
 
 /** 404 unless the flag is on (registered first, so a caller learns nothing more with it off). */
@@ -136,12 +160,18 @@ export function deviceBoundRoutes(app: FastifyInstance): void {
   // Built here, as a literal `requireSession({ … member: … })`, so team.test.ts's source scan sees
   // these as member-allowed routes (both are recorded exemptions there: the member's own session).
   const session = requireSession({ allowRecovery: true, allowHeld: true, allowStaleTerms: true, member: 'any', touch: false, allowUnproven: true });
-  // Review S2: tries per session, refused ones included (a copied cookie runs dry, not the server).
-  const budget: preHandlerAsyncHookHandler = async function (req) {
+  // Review S2, re-verify R2: challenges have a generous cap of their own (they write nothing); the
+  // strict budget is charged only to refused proofs, so a valid proof is never refused by a budget
+  // that whoever holds a copied session cookie can spend.
+  const challengeBudget: preHandlerAsyncHookHandler = async function (req) {
+    req.server.budgets.sessionChallenge.take(req.auth.sessionId);
+  };
+  const refused = (req: FastifyRequest): never => {
     req.server.budgets.sessionProof.take(req.auth.sessionId);
+    throw new ApiError(401, 'proof-invalid');
   };
 
-  app.post('/v1/account/session/proof/challenge', { preHandler: [flagGate, session, budget] }, async (req) => {
+  app.post('/v1/account/session/proof/challenge', { preHandler: [flagGate, session, challengeBudget] }, async (req) => {
     const b = req.body;
     if (b !== undefined && b !== null && (typeof b !== 'object' || Array.isArray(b) || Object.keys(b).length > 0)) throw new ApiError(400, 'bad-request');
     const { db, clock, config } = req.server.deps;
@@ -151,7 +181,7 @@ export function deviceBoundRoutes(app: FastifyInstance): void {
     return { challenge: newChallenge(config, req.auth.sessionId, clock()), session: req.auth.sessionId };
   });
 
-  app.post('/v1/account/session/proof', { preHandler: [flagGate, session, budget] }, async (req, reply) => {
+  app.post('/v1/account/session/proof', { preHandler: [flagGate, session] }, async (req, reply) => {
     const b = req.body;
     if (b === null || typeof b !== 'object' || Array.isArray(b)) throw new ApiError(400, 'bad-request');
     const o = b as Record<string, unknown>;
@@ -163,7 +193,7 @@ export function deviceBoundRoutes(app: FastifyInstance): void {
     const now = clock();
     const sessionId = req.auth.sessionId;
     const opened = openChallenge(config, sessionId, o.challenge, now);
-    if (opened === null) throw new ApiError(401, 'proof-invalid');
+    if (opened === null) return refused(req);
     // Single use: the first answer to this challenge records its nonce, whatever happens next.
     // Expired nonces of this session go at the same time (their challenges are refused by expiry anyway).
     await db.query('delete from session_proof_nonces where session_id = $1 and expires_at <= $2', [sessionId, now]);
@@ -171,12 +201,12 @@ export function deviceBoundRoutes(app: FastifyInstance): void {
       'insert into session_proof_nonces (nonce, session_id, expires_at) values ($1, $2, $3) on conflict (nonce) do nothing',
       [opened.nonce, sessionId, opened.until],
     );
-    if ((used.rowCount ?? 0) === 0) throw new ApiError(401, 'proof-invalid');
+    if ((used.rowCount ?? 0) === 0) return refused(req);
     const { rows } = await db.query<{ k: Buffer | null }>('select bound_key as k from sessions where id = $1', [sessionId]);
     const key = rows[0]?.k ? p256(rows[0].k) : null;
     const message = proofMessage(requestOrigin(req).origin, sessionId, o.challenge);
     const ok = key !== null && verify('sha256', Buffer.from(message, 'utf8'), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(o.signature, 'base64url'));
-    if (!ok) throw new ApiError(401, 'proof-invalid');
+    if (!ok) return refused(req);
     const set = await issueBoundCookie(db, sessionId, now, reply);
     set();
     return { boundUntil: new Date(now.getTime() + BOUND_TTL_MS).toISOString() };
