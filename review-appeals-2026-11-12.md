@@ -102,7 +102,17 @@ owner questions.
 - **Typecheck** (`tsc -p apps/api` and `tsc -p apps/web`, `--noEmit`): clean.
 
 ## Tests run (serialised runner, my worktree at 384a8803)
-RESULTS_PLACEHOLDER
+All passed (logs in the scratchpad's logs/rv-appeals-*):
+- api disputes/appeals.test.ts: 9/9
+- api disputes/trader.test.ts: 18/18
+- api disputes/staff.test.ts: 27 passed, 1 todo (the todo is already on main)
+- api staff/matrix.test.ts: 102/102
+- api view.test.ts: 9/9
+- web appeals.test.tsx: 8/8
+- web dispute.test.tsx: 47/47
+
+Docker was up the whole time. Gap: no test covers an involved senior calling the reviewer list (M1), a
+member who has the appeal box without the answer box (S1), or a reviewer removed after filing (m1).
 
 ## Must-fix list
 1. M1: decide who may read `appeal-reviewers`. Recommended: owner-only. Otherwise refuse callers in
