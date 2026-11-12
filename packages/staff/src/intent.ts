@@ -73,6 +73,11 @@ export type KeyTapIntent =
       accountAction: AccountAction;
       amountAtomic: string;
       reasonSha256: string;
+      /**
+       * Review mod-screens M1: the evidence lines both traders read beside the reason, as the ruling
+       * stores them (in order), bound like the reason: `evidenceSha256(lines)`.
+       */
+      evidenceSha256: string;
     };
 
 export const KEY_TAP_KINDS = [
@@ -90,6 +95,18 @@ export const KEY_TAP_KINDS = [
   'fee-sweep',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
+
+/**
+ * Review mod-screens M1: what a ruling tap binds of its evidence lines. SHA-256 (lower-case hex) of
+ * the UTF-8 bytes of `canonicalJson(lines)`: a JSON array of the lines as strings, in their order,
+ * with no whitespace (`["a","b"]`), so the order, the split into lines and every character count.
+ * The staff web, the API (which rebuilds it from the lines it stores) and the moderation gate all
+ * use this one function.
+ */
+export function evidenceSha256(lines: readonly string[]): string {
+  if (!Array.isArray(lines) || lines.some((l) => typeof l !== 'string')) throw new TypeError('evidenceSha256: lines must be strings');
+  return toHex(sha256(utf8(canonicalJson([...lines]))));
+}
 
 /** Shortest nonce accepted (bytes). The server issues 16 (Task 5, `startKeyTap`). */
 const MIN_NONCE = 16;

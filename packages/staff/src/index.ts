@@ -21,6 +21,7 @@ export {
   BAN_REASON_CODES,
   ESCROW_OUTCOMES,
   KEY_TAP_KINDS,
+  evidenceSha256,
   inviteRegistrationChallenge,
   keyCheckCode,
   tapChallenge,

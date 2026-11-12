@@ -4,6 +4,7 @@ import {
   ESCROW_OUTCOMES,
   DisputeRuleError,
   applyDispute,
+  evidenceSha256,
   type AccountAction,
   type Dispute,
   type KeyTapIntent,
@@ -28,8 +29,9 @@ import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staf
  * - `POST /staff/v1/disputes/:code/rulings {rulingId, outcome, accountAction, reason, evidence,
  *   tapId}` (perm `disputes.handle`): the assignee proposes. The security-key tap must be the
  *   caller's own, made for exactly this ruling (`ruling` intent, step `propose`: the ruling id, the
- *   trade, the round, the outcome, the account action, the trade's XMR and the SHA-256 of the
- *   reason's UTF-8 bytes); anything else is 403 `tap-invalid` and nothing is written (the tap stays
+ *   trade, the round, the outcome, the account action, the trade's XMR, the SHA-256 of the
+ *   reason's UTF-8 bytes and, review mod-screens M1, `evidenceSha256` of the evidence lines as
+ *   stored); anything else is 403 `tap-invalid` and nothing is written (the tap stays
  *   unused). Under the large-trade limit it is published at once (round 1: the 48-hour appeal window
  *   opens; round 2: it is final). At or above it, it waits for a second person.
  * - `POST …/rulings/:id/approve {tapId}` (perm `rulings.approve`, a senior moderator or the owner,
@@ -117,7 +119,7 @@ async function tradeAmount(client: pg.PoolClient, code: string): Promise<string>
   return rows[0].amount_atomic;
 }
 
-const rulingIntent = (step: 'propose' | 'approve', a: { rulingId: string; code: string; round: 1 | 2; outcome: RulingOutcome; amountAtomic: string; reason: string }): KeyTapIntent => ({
+const rulingIntent = (step: 'propose' | 'approve', a: { rulingId: string; code: string; round: 1 | 2; outcome: RulingOutcome; amountAtomic: string; reason: string; evidence: readonly string[] }): KeyTapIntent => ({
   kind: 'ruling',
   step,
   rulingId: a.rulingId,
@@ -127,6 +129,9 @@ const rulingIntent = (step: 'propose' | 'approve', a: { rulingId: string; code: 
   accountAction: NONE,
   amountAtomic: a.amountAtomic,
   reasonSha256: reasonSha256(a.reason),
+  // Review mod-screens M1: rebuilt from the lines this ruling stores (propose: the body's, as stored;
+  // approve: the draft's), so a tap made for other evidence is tap-invalid.
+  evidenceSha256: evidenceSha256(a.evidence),
 });
 
 const rulingDetail = (r: { id: string; outcome: RulingOutcome }, round: 1 | 2, amountAtomic: string) => ({
@@ -221,7 +226,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         await assertNotPaused(client, rec);
         const amountAtomic = await tradeAmount(client, code);
         // The tap first: a tap that is not for exactly this ruling writes nothing.
-        await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: d.round, outcome, amountAtomic, reason }), now, { sessionId: req.auth.sessionId });
+        await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: d.round, outcome, amountAtomic, reason, evidence }), now, { sessionId: req.auth.sessionId });
         const s = await disputeSettings(client);
         const next = applyDispute(d, { type: 'propose', ruling: { id: rulingId, outcome, accountAction: NONE, proposer: me.id } }, me, now, s);
         const ins = await client.query(
@@ -266,7 +271,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
         const amountAtomic = await tradeAmount(client, code);
         const r = d.ruling!;
-        await consumeKeyTap(client, tapId, me.id, rulingIntent('approve', { rulingId: r.id, code, round: d.round, outcome: r.outcome, amountAtomic, reason: draft.reason }), now, { sessionId: req.auth.sessionId });
+        await consumeKeyTap(client, tapId, me.id, rulingIntent('approve', { rulingId: r.id, code, round: d.round, outcome: r.outcome, amountAtomic, reason: draft.reason, evidence: draft.evidence }), now, { sessionId: req.auth.sessionId });
         const next = applyDispute(d, { type: 'approve' }, me, now, await disputeSettings(client));
         await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.approved', detail: rulingDetail(r, d.round, amountAtomic) });
         if (decided(d, next)) await publishDecided(client, next, draft, amountAtomic, now, me);
