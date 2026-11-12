@@ -116,6 +116,11 @@ export type ApiErrorCode =
   | 'no-shared-context'
   // Plan 5, Task 3: reviews and the rate-first gate.
   | 'not-reviewable'
+  // P-012/P-013 (proof/blurCheck.ts): a trade announced too many proofs; @x2f/proof BlurCheckError codes (400).
+  | 'too-many-proofs'
+  | 'comment-on-yes'
+  | 'comment-too-long'
+  | 'comment-bad-character'
   | 'review-exists'
   // Plan 5, Task 14: proof storage (proofs/routes.ts).
   | 'too-many-proofs'

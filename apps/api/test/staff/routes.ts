@@ -116,6 +116,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Owner Q60: senior moderators by role, moderators and helpers by grant.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  // P-012/P-013: the blur-check answers, read by the feedback readers.
+  { method: 'GET', url: '/staff/v1/feedback/blur-checks', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
   // incident ID: 404 past the guard).
   { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },

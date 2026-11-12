@@ -55,3 +55,16 @@ export {
   receiveProof,
   sniffImage,
 } from './receive.js';
+export {
+  type BlurCheckErrorCode,
+  type BlurCheckSchedule,
+  type BlurKind,
+  BLUR_CHECK_COMMENT_MAX,
+  BLUR_CHECK_EVERY_NTH_DEFAULT,
+  BLUR_CHECK_EVERY_NTH_MAX,
+  BLUR_KINDS,
+  BlurCheckError,
+  blurCheckDue,
+  parseBlurCheckAnswer,
+  ymdEnd,
+} from './blurCheck.js';
