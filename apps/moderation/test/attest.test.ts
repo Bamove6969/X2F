@@ -34,7 +34,7 @@ const RELAY = 'http://relay-admin.test';
 const NOW = new Date('2026-10-24T12:00:00Z');
 /** The trade record's terms, as the API's work list hands them over (lead answer 4). */
 const TERMS: AttestedTerms = {
-  deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+  deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
   payWindowMin: 90,
   buyerPayout: '4'.padEnd(95, 'B'),
   sellerRefund: '8'.padEnd(95, 'S'),

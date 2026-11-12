@@ -4,6 +4,8 @@ export {
   attestationBytes,
   identityProofBytes,
   identityProofValid,
+  instructionsMatch,
+  instructionsSha256,
   isAttestedTerms,
   verifyAttestation,
   type Attestation,

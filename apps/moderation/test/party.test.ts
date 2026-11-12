@@ -43,7 +43,7 @@ async function args(): Promise<ModPartyArgs> {
     daemonUri: 'http://127.0.0.1:1',
     feeWallet: '5'.repeat(95),
     terms: {
-      deal: { poster: 'seller', takeAmountAtomic: '1', currency: 'USD', centsPerXmr: '1', maxFiatCents: '1' },
+      deal: { poster: 'seller', takeAmountAtomic: '1', currency: 'USD', centsPerXmr: '1', maxFiatCents: '1', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
       payWindowMin: 90,
       buyerPayout: '4'.padEnd(95, 'B'),
       sellerRefund: '8'.padEnd(95, 'S'),

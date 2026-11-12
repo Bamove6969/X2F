@@ -93,6 +93,12 @@ export interface UseEscrow {
   escrowAddress: string | null;
   /** `EscrowStatus.deal`: the deal this device stored from what the user confirmed. */
   deal: Deal | null;
+  /** `EscrowStatus.methodId`: the attested method (review M2); the trade room shows this one. */
+  methodId: string | null;
+  /** `EscrowStatus.paymentInstructions`: the locked payment instructions, only when they match the attested hash; the only ones a screen may show. */
+  paymentInstructions: string | null;
+  /** `EscrowStatus.instructionsMismatch`: the API showed other instructions; warn, never show them. */
+  instructionsMismatch: boolean;
   /** `EscrowStatus.receivedAtomic`: the escrow `balance` from this device's own last `funds()` reading. */
   receivedAtomic: bigint | null;
   /** `EscrowStatus.confirmedAtomic`: the 1+-confirmation part of what arrived, from the same reading (see EscrowStatus). */
@@ -115,7 +121,7 @@ export interface UseEscrow {
   signal(type: Exclude<UserSignal, 'trade.paid'>): Promise<void>;
 }
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, methodId: null, paymentInstructions: null, instructionsMismatch: false, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null };
 
 /**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
@@ -143,6 +149,9 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     fiatCents: status.fiatCents,
     escrowAddress: status.escrowAddress,
     deal: status.deal,
+    methodId: status.methodId,
+    paymentInstructions: status.paymentInstructions,
+    instructionsMismatch: status.instructionsMismatch,
     receivedAtomic: status.receivedAtomic,
     confirmedAtomic: status.confirmedAtomic,
     paidRecorded: status.paidRecorded,
