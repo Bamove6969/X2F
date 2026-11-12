@@ -117,6 +117,8 @@ test.describe('on-device OCR for the proof blur', () => {
     for (const [layout, n] of Object.entries(names)) test.info().annotations.push({ type: 'name-recall', description: `${layout}: ${n.hit}/${n.all}` });
     const labelled = names.labelled!;
     expect(labelled.hit / labelled.all, 'names after a label').toBeGreaterThanOrEqual(DETECT_MIN_RECALL_NAMES);
+    // Lead 2026-11-12 (second call): the Cyrillic name is covered too, through the Russian second pass.
+    expect(names['top-name-non-latin'], 'the Cyrillic name').toEqual({ hit: 1, all: 1 });
     // Lead 2026-11-12: names with no label (a big line at the top, an avatar caption) in Latin script
     // are held to the same recall. A non-Latin name is measured, not promised (the model is English).
     const unlabelled = { hit: 0, all: 0 };
@@ -127,23 +129,34 @@ test.describe('on-device OCR for the proof blur', () => {
     expect(unlabelled.all).toBeGreaterThanOrEqual(5);
     expect(unlabelled.hit / unlabelled.all, 'names with no label (Latin script)').toBeGreaterThanOrEqual(DETECT_MIN_RECALL_NAMES);
 
-    // One dedicated worker, from this origin's /ocr/, never a blob: worker.
-    expect(w.workers).toEqual([`${ORIGIN}/ocr/worker.min.js`]);
+    // Dedicated workers from this origin's /ocr/ only, never a blob: worker.
     // Every request, page and worker alike, to this origin only.
     expect(w.requests.filter((u) => !u.startsWith(`${ORIGIN}/`) && !u.startsWith('data:'))).toEqual([]);
     // Chromium supports relaxed SIMD: exactly that core, plus the worker and the model, each once.
     const ocr = w.requests.filter((u) => u.startsWith(`${ORIGIN}/ocr/`)).map((u) => u.slice(ORIGIN.length)).sort();
-    expect(ocr).toEqual(['/ocr/eng.traineddata.gz', '/ocr/tesseract-core-relaxedsimd-lstm.wasm.js', '/ocr/worker.min.js']);
+    // The Cyrillic receipt brings a second worker (English and Russian): its core and the English model
+    // come again from the HTTP cache or the network, the Russian model once, for that receipt only.
+    expect([...new Set(ocr)]).toEqual(['/ocr/eng.traineddata.gz', '/ocr/rus.traineddata.gz', '/ocr/tesseract-core-relaxedsimd-lstm.wasm.js', '/ocr/worker.min.js']);
+    expect(ocr.filter((u) => u === '/ocr/rus.traineddata.gz')).toHaveLength(1);
+    expect(w.workers).toEqual([`${ORIGIN}/ocr/worker.min.js`, `${ORIGIN}/ocr/worker.min.js`]);
     expect(w.violations).toEqual([]);
     expect(w.errors).toEqual([]);
   });
 
   test('every /ocr/ file is served with the worker CSP', async ({ request }) => {
-    for (const f of ['worker.min.js', 'tesseract-core-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'eng.traineddata.gz']) {
+    for (const f of ['worker.min.js', 'tesseract-core-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'eng.traineddata.gz', 'rus.traineddata.gz']) {
       const res = await request.get(`${ORIGIN}/ocr/${f}`);
       expect(res.status(), f).toBe(200);
       expect(res.headers()['content-security-policy'], f).toBe("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'");
     }
+  });
+
+  test('Latin-script receipts never fetch the Russian model, and one worker does', async ({ page }) => {
+    test.setTimeout(240_000);
+    const w = await open(page);
+    for (const file of ['bank-labelled.png', 'top-name.png', 'wise-style.jpg']) expect((await lab(page, file)).out.ocrOk, file).toBe(true);
+    expect(w.requests.filter((u) => u.endsWith('/ocr/rus.traineddata.gz'))).toEqual([]);
+    expect(w.workers).toEqual([`${ORIGIN}/ocr/worker.min.js`]);
   });
 
   for (const [what, how] of [

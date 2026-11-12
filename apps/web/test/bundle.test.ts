@@ -84,7 +84,7 @@ describe('production bundle', () => {
     expect(text).not.toMatch(/jsdelivr|unpkg\.com/);
     expect((await readdir(join(dir, 'assets'))).filter((f) => /traineddata|tesseract-core|worker\.min/.test(f))).toEqual([]);
     expect((await readdir(join(dir, 'ocr'))).sort()).toEqual(
-      ['eng.traineddata.gz', 'tesseract-core-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'worker.min.js'],
+      ['eng.traineddata.gz', 'rus.traineddata.gz', 'tesseract-core-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'worker.min.js'],
     );
   });
 
