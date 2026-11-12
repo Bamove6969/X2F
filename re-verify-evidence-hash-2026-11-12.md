@@ -121,3 +121,14 @@ Not run: staff-web, moderation, Playwright, `npm run check`. The staff-web and m
   - red: `disputes/rulings` 1 failed, 19 passed;
   - green: `disputes/rulings` + `staff/keyTap` + `disputes/lien`, 76/76; `tsc -p apps/api` clean.
 - The reason and the send-back note still take lone surrogates into `text` columns. node-pg stores U+FFFD there, and the reason's hash agrees. Unchanged, as it was out of scope.
+
+## Follow-up 2: reason and send-back note, `wip/lead-rulings` 41f0021a
+- **08dc22a0 (red):** a reason, or a send-back note, containing `\ud800`, `\udc00` or a reversed pair gets 400 `bad-request`.
+  - A refused reason leaves the tap unused and writes nothing.
+  - A refused note leaves the proposal waiting.
+  - A text with an emoji is accepted, and the reason is published exactly as signed.
+  - On c43e1c43 both tests fail (the request returns 200), so 2 failed and 20 passed.
+- **41f0021a (fix):** the rulings routes' `isText` now refuses a lone surrogate. That one check covers the reason, every evidence line and the note. `parseEvidence` keeps no separate check.
+  - Green: `disputes/rulings` + `staff/keyTap` + `disputes/lien`, 78/78. `tsc -p apps/api` clean.
+- Fetched before pushing; a fast-forward from c43e1c43, nothing forced.
+- **Not changed:** the trader dispute routes (`apps/api/src/disputes/routes.ts`, the dispute note and the appeal's `why`) have their own `isText` and still accept lone surrogates. No tap hash covers those texts, so they are not part of this binding. Refusing them too would be a consistency fix only.
