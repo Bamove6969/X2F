@@ -355,6 +355,26 @@ const checkChangeCode: preHandlerAsyncHookHandler = async function (req) {
 };
 
 /**
+ * Review M1(a) (12 Nov 2026): inside S-110's transaction, every staged or waiting password change
+ * of the account is dropped. It is superseded by the password just set, and one submitted earlier
+ * (a thief's) must never apply 24 h later over it. Alert `hold-changes-cancelled` `{ count,
+ * changes, reason: 'superseded-by-recovery-code' }` when a waiting (submitted) one went. Other
+ * waiting changes stay (whether S-110 cancels them all is the owner's question, review M1(b)).
+ */
+async function dropSupersededPasswordChanges(db: Queryable, accountId: string, now: Date): Promise<void> {
+  const { rows } = await db.query<{ submitted_at: Date | null }>(
+    "delete from hold_changes where account_id = $1 and change->>'kind' = 'password' returning submitted_at",
+    [accountId],
+  );
+  const waiting = rows.filter((r) => r.submitted_at !== null).length;
+  if (waiting > 0) {
+    await addAlert(db, accountId, 'hold-changes-cancelled', {
+      count: waiting, changes: Array.from({ length: waiting }, () => ({ kind: 'password' })), reason: 'superseded-by-recovery-code',
+    }, now);
+  }
+}
+
+/**
  * `PUT /v1/account/password { password, confirmToken?, recoveryCode? }`: sets or replaces the account's password.
  * With a correct `recoveryCode` (owner S-110, `checkChangeCode`) it applies at once, never staged,
  * spends and replaces the code, and answers `{ ok: true, recoveryCodeBurned: true }` (S-111).
@@ -390,6 +410,7 @@ async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
         if ((spent.rowCount ?? 0) === 0) throw new ApiError(401, 'credentials-invalid');
         ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
         await renewRecoveryCode(client, deps.config, accountId, now);
+        await dropSupersededPasswordChanges(client, accountId, now);
       } else {
         // Hold model v3: a waiting login's change is staged (in this transaction); it applies 24 h after it is submitted.
         held = await gateChange(client, req, { kind: 'password', hash, pepperId });

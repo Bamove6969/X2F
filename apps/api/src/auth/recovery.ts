@@ -152,8 +152,7 @@ type Who = { id: string } | { nameTag: string };
  * throttled. So the throttle's refusal is held back until the code has been looked up: a correct
  * code returns its id whatever the throttle says (the code has 80 random bits, so the throttle adds
  * nothing against guessing it; it slows only the wrong ones); a wrong one gets the throttle's 429
- * while it waits (and, as before, no failure is counted for a refused try), else a failure is counted
- * and `codeId` is null. The caller spends the code and clears the streak (`throttleReset`) on
+ * while it waits, else `codeId` is null; either way the miss is counted (review L1). The caller spends the code and clears the streak (`throttleReset`) on
  * success. Returns the throttle key too.
  */
 export async function matchRecoveryCode(
@@ -181,8 +180,11 @@ export async function matchRecoveryCode(
   );
   const codeId = accountId !== null && normalized !== null ? (rows[0]?.id ?? null) : null;
   if (codeId !== null) return { key, codeId };
-  if (throttled !== null) throw throttled;
+  // Review L1 (12 Nov 2026): a wrong code is counted even while the throttle refuses it (no
+  // count can block the correct code any more, S-109), so the streak stays live through an attack
+  // and its lock alert follows it.
   await throttleFail(deps, key, accountId);
+  if (throttled !== null) throw throttled;
   return { key, codeId: null };
 }
 
