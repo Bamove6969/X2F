@@ -165,6 +165,8 @@ describe('tapChallenge', () => {
     for (const kind of ISSUED_AT_KINDS) expect(hasIssuedAt(kind)).toBe(true);
     expect(hasIssuedAt('ruling')).toBe(false);
     expect(hasIssuedAt('fee-sweep')).toBe(false);
+    // Lead call on the D-032 reset gap: the gate orders the owner's tapped reset like the other registry taps.
+    expect(hasIssuedAt('reset-staff-security')).toBe(true);
     const stop: KeyTapIntent = { kind: 'emergency-stop' };
     expect(stampIssuedAt(stop, AT)).toEqual({ kind: 'emergency-stop', issuedAt: AT.toISOString() });
     expect(stampIssuedAt(ruling, AT)).toEqual(ruling);

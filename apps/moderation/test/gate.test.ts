@@ -29,7 +29,7 @@ import {
   type RecordedTerms,
   type StoredTap,
 } from '../src/gate/index.js';
-import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize } from './gateWorld.js';
+import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity } from './gateWorld.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
 
 /** A new gate the way an operator makes one: init-gate with "yes", then open it. */
@@ -823,6 +823,121 @@ describe('Haveno review 2026-11-12, finding 2 (lead call): rulings only move for
     await syncRegistry(w.api, w.gate, ctx());
     const r2again = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
     expect(await authorize(w, r2again, [tapBy(senior2, r2again.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'stale-round' });
+  });
+});
+
+// Lead call on the D-032 reset gap (disputes-stack review): the API's reset-staff-security deletes
+// a person's credentials and opens a `kind = 'reset'` link. The gate honours it only on a verified
+// owner tap (the same tap rules as the other owner registry taps): it drops the person's old keys,
+// binds the reset link, and takes the re-enrolled keys only through that link while it is open.
+describe('D-032 the owner\'s tapped security reset (lead call)', () => {
+  const canRule = async (w: Awaited<ReturnType<typeof world>>, p: Person) => {
+    const c = ruling(p);
+    return authorize(w, c, [tapBy(p, c.intent('propose'))]);
+  };
+
+  it('after a reset, the old keys are refused', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await canRule(w, mod)).ok).toBe(true);
+    resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, mod)).toEqual({ ok: false, reason: 'unknown-key' });
+    // Even with the API putting the old key back.
+    w.api.creds.set(mod.key.credentialId, { accountId: mod.id, publicKey: new Uint8Array(mod.key.cosePublicKey), aaguid: AAGUID });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, mod)).toEqual({ ok: false, reason: 'unknown-key' });
+  });
+
+  it('the keys re-enrolled through the reset link are accepted; a key the API adds any other way is not', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await canRule(w, r.again)).ok).toBe(true);
+    // A key registered through the person's old (closed) invite, or only in the API's credentials.
+    const stray = newKey();
+    w.api.creds.set(stray.credentialId, { accountId: mod.id, publicKey: new Uint8Array(stray.cosePublicKey), aaguid: AAGUID });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, { ...mod, key: stray })).toEqual({ ok: false, reason: 'unknown-key' });
+    // A key registered with another token than the link's.
+    const wrong = newKey();
+    w.api.invites.get(r.inviteId)!.registrations.push(registration(wrong, sha256Hex('another token')));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, { ...mod, key: wrong })).toEqual({ ok: false, reason: 'unknown-key' });
+  });
+
+  it('a reset without an owner tap (the API assumed compromised) is refused: no new key, the gate keeps its own', async () => {
+    for (const tap of [false, 'senior'] as const) {
+      const w = await world();
+      const mod = w.hire('mod');
+      const senior = w.hire('senior');
+      await syncRegistry(w.api, w.gate, ctx());
+      const r = resetSecurity(w, mod, { tap: tap === false ? false : senior });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect(await canRule(w, r.again), String(tap)).toEqual({ ok: false, reason: 'unknown-key' });
+      // The gate never dropped what it verified itself (the API's deletion is only the API's word).
+      expect((await canRule(w, mod)).ok, String(tap)).toBe(true);
+    }
+    // An owner tap for another person, or another link, resets nobody else.
+    const w = await world();
+    const mod = w.hire('mod');
+    const other = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod, { tap: false });
+    w.api.taps.push(tapBy(w.owner, { kind: 'reset-staff-security', accountId: other.id, inviteId: r.inviteId, tokenHash: r.tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, r.again)).toEqual({ ok: false, reason: 'unknown-key' });
+    expect((await canRule(w, mod)).ok).toBe(true);
+  });
+
+  it('the reset link cannot be replayed: not after it finished or expired, not for another person, not as an invite', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const other = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await canRule(w, r.again)).ok).toBe(true);
+    // The link finished: a key registered on it afterwards is never taken.
+    w.api.invites.get(r.inviteId)!.used = true;
+    await syncRegistry(w.api, w.gate, ctx());
+    const late = newKey();
+    w.api.invites.get(r.inviteId)!.registrations.push(registration(late, r.tokenHash));
+    w.api.invites.get(r.inviteId)!.used = false; // the API pretends it is open again
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, { ...mod, key: late })).toEqual({ ok: false, reason: 'unknown-key' });
+    // The same link re-pointed to another person, with a fresh owner tap naming it for them.
+    w.api.invites.get(r.inviteId)!.accountId = other.id;
+    w.api.taps.push(tapBy(w.owner, { kind: 'reset-staff-security', accountId: other.id, inviteId: r.inviteId, tokenHash: r.tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await canRule(w, other)).ok).toBe(true);
+    expect(await canRule(w, { ...other, key: late })).toEqual({ ok: false, reason: 'unknown-key' });
+    // The link's id reused for an owner create-invite: nobody joins through it.
+    const newcomer = { id: randomUUID(), key: newKey(), role: 'mod' as const };
+    w.api.taps.push(tapBy(w.owner, { kind: 'create-invite', inviteId: r.inviteId, role: 'mod', tokenHash: r.tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' }));
+    w.api.invites.set(r.inviteId, { inviteId: r.inviteId, tokenHash: r.tokenHash, accountId: newcomer.id, registrations: [registration(newcomer.key, r.tokenHash)] });
+    w.api.staffRows.set(newcomer.id, { accountId: newcomer.id, role: 'mod', switchedOff: false, removed: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, newcomer)).toEqual({ ok: false, reason: 'unknown-key' });
+    // An expired reset link takes no key; a newer reset closes the older link.
+    const w2 = await world();
+    const m2 = w2.hire('mod');
+    await syncRegistry(w2.api, w2.gate, ctx());
+    const expired = resetSecurity(w2, m2, { expiresAt: '2026-11-12T11:59:00.000Z' });
+    await syncRegistry(w2.api, w2.gate, ctx());
+    expect(await canRule(w2, expired.again)).toEqual({ ok: false, reason: 'unknown-key' });
+    const first = resetSecurity(w2, m2, { register: false });
+    await syncRegistry(w2.api, w2.gate, ctx());
+    const second = resetSecurity(w2, m2);
+    await syncRegistry(w2.api, w2.gate, ctx());
+    const onFirst = newKey();
+    w2.api.invites.get(first.inviteId)!.registrations.push(registration(onFirst, first.tokenHash));
+    await syncRegistry(w2.api, w2.gate, ctx());
+    expect(await canRule(w2, { ...m2, key: onFirst })).toEqual({ ok: false, reason: 'unknown-key' });
+    expect((await canRule(w2, second.again)).ok).toBe(true);
   });
 });
 
