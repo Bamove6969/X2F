@@ -12,6 +12,7 @@ import type { EscrowStatus } from '../src/escrow/runtime.js';
 import { readConfirmed, storeConfirmed, type ConfirmedTrade } from '../src/screens/quote/confirmed.js';
 import { sellerView } from '../e2e/refundViews.js';
 import { registerTradeScreen, TradeRoom, type TradeScreenProps } from '../src/screens/trade/TradeRoom.js';
+import { methodOf } from '../src/api/trade.js';
 import { MEMBER_TRADE_COPY } from '../src/screens/settings/teamCopy.js';
 import { refreshSession } from '../src/session/useSession.js';
 import { render } from './render.js';
@@ -25,7 +26,7 @@ let client: EscrowClient & { start: ReturnType<typeof vi.fn<EscrowClient["start"
 /** Pushes a status to the room's subscription. */
 let push: (s: EscrowStatus) => void = () => undefined;
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, paymentInstructions: null, instructionsMismatch: false, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, methodId: null, paymentInstructions: null, instructionsMismatch: false, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null };
 const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 beforeEach(() => {
@@ -169,5 +170,34 @@ describe('a team member’s device (Plan 2 Task 18, review I1/I2)', () => {
     } finally {
       refreshSession();
     }
+  });
+});
+
+// Review M2 (instr-hash, lead's call): the trade screens show the method of the attested id, named
+// from the bundled catalog, never the API's own method id or profile name.
+describe('the method the screens show is the attested one', () => {
+  it('the API view says PayPal (id and profile name); the escrow attested Zelle: the screen gets Zelle', async () => {
+    const seen: Array<{ id: string; name: string; profile: unknown }> = [];
+    const Spy = ({ view }: TradeScreenProps) => {
+      seen.push({ id: view.methodId, name: methodOf(view).name, profile: view.profile });
+      return <p data-spy="">{methodOf(view).name}</p>;
+    };
+    const off = registerTradeScreen({ owner: 'test', role: 'any', states: ['secured'], when: () => true, screen: Spy });
+    try {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...sellerView(), code: CODE, methodId: 'PAYPAL', profile: { name: 'PayPal', whatItIs: 'PayPal: x', giftCard: false } })));
+      const r = await open({ confirmed: FROM_STATE });
+      await act(async () => push({ ...IDLE, phase: 'ready', methodId: 'ZELLE' }));
+      expect(r.host.querySelector('[data-spy]')!.textContent).toBe('Zelle');
+      expect(seen.at(-1)).toMatchObject({ id: 'ZELLE', name: 'Zelle', profile: null });
+    } finally {
+      off();
+    }
+  });
+
+  it('the name comes from the catalog by id, not from the profile the API sends', () => {
+    expect(methodOf({ methodId: 'ZELLE', profile: { name: 'PayPal' } }).name).toBe('Zelle');
+    expect(methodOf({ methodId: 'AMAZON_GIFT_CARD', profile: null }).name).toBe('Amazon gift card');
+    // An id the catalog does not know is shown as the id itself (as before).
+    expect(methodOf({ methodId: 'NOT_A_METHOD', profile: { name: 'PayPal' } }).name).toBe('NOT_A_METHOD');
   });
 });

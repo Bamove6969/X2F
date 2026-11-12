@@ -415,6 +415,46 @@ describe('what this device signs comes from what the user confirmed, never the A
     await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
   });
 
+  it('review M1 (the probe): past securing, missing, null or non-string instructions are a mismatch, never "none"; during securing null is fine', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'securing', paymentInstructions: null });
+    expect(await buyer.status((s) => s.phase === 'ready')).toMatchObject({ refusal: null, instructionsMismatch: false });
+    for (const lie of [{ paymentInstructions: 42 }, { paymentInstructions: false }, { paymentInstructions: { text: INSTRUCTIONS } }, { paymentInstructions: null }, {}]) {
+      for (const state of ['secured', 'paid'] as const) {
+        t.state.view = { ...tradeView({ state, ...(state === 'paid' ? { paidAt: '2026-10-23T12:30:00.000Z' } : {}) }), ...lie };
+        if (!('paymentInstructions' in lie)) delete t.state.view.paymentInstructions;
+        await until(() => buyer.last()?.instructionsMismatch === true && seller.last()?.instructionsMismatch === true);
+        for (const d of [buyer, seller]) expect(d.last(), JSON.stringify(lie)).toMatchObject({ refusal: 'view-mismatch', paymentInstructions: null });
+      }
+      t.state.view = { ...tradeView({ state: 'secured' }), ...lie };
+      if (!('paymentInstructions' in lie)) delete t.state.view.paymentInstructions;
+      await expect(buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) })).rejects.toThrow(/instructions/);
+      expect((await buyer.store.load(CODE))?.paidSeen).toBe(false);
+    }
+    t.parties.funds = funded();
+    await Promise.all([t.parties.ticks('seller', 3), t.parties.ticks('buyer', 3)]);
+    expect(t.parties.settles).toEqual([]);
+  });
+
+  it('review M2: the status carries the attested method id (null before the attestation)', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    expect(buyer.last()?.methodId ?? null).toBeNull();
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    expect(await buyer.status((s) => s.phase === 'ready')).toMatchObject({ methodId: 'ZELLE' });
+    // A view showing another method mid-trade does not change it: the status keeps the signed one.
+    t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS, methodId: 'PAYPAL' });
+    await until(() => buyer.last()?.refusal === 'view-mismatch');
+    expect(buyer.last()?.methodId).toBe('ZELLE');
+  });
+
   it('a lying API can tell one side other instructions: only that side refuses and shows nothing', async () => {
     const t = await setup();
     const buyer = await t.mk('buyer');
