@@ -391,8 +391,8 @@ export interface JabberStatus {
   lastSentAt: string | null;
 }
 
-/** W-021: the Jabber notice kinds a user can turn on or off (`NOTICE_KINDS` in apps/api jabber/sender.ts). */
-export type JabberEventKind = 'account-change' | 'trade-attention';
+/** W-021: the Jabber notice kinds a user can turn on or off (`NOTICE_KINDS` in apps/api jabber/sender.ts; J-20 adds the first login). The page lists whatever the API answers. */
+export type JabberEventKind = 'account-change' | 'trade-attention' | 'team-member-first-login';
 
 /** W-021 (owner p11-27): which events send a Jabber notice (`GET /v1/account/jabber/events`), every kind in the server's order. */
 export interface JabberEvents {

@@ -109,3 +109,19 @@ describe('the Alerts section links to the events page once an address is proven'
     expect(off.host.querySelector('a[href="/settings/jabber/events"]')).toBeNull();
   });
 });
+
+describe('the list follows the API (J-20 adds team-member-first-login)', () => {
+  it('a third kind from the API gets its own labelled box; an unknown kind is never shown raw', async () => {
+    api.getJabber.mockResolvedValue(ON);
+    api.getJabberEvents.mockResolvedValue({
+      events: [{ kind: 'account-change', on: true }, { kind: 'trade-attention', on: true }, { kind: 'team-member-first-login', on: true }, { kind: 'future-kind', on: true }],
+    });
+    const { host } = render(<MemoryRouter><JabberEventsScreen /></MemoryRouter>);
+    await flush();
+    expect([...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map((b) => b.dataset.kind)).toEqual([
+      'account-change', 'trade-attention', 'team-member-first-login', 'future-kind',
+    ]);
+    expect(host.textContent).toContain(JABBER_COPY.events['team-member-first-login'].label);
+    expect(host.textContent).not.toContain('future-kind');
+  });
+});

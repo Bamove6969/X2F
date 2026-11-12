@@ -65,6 +65,11 @@ export const JABBER_COPY = {
       label: 'A trade needs your attention',
       note: 'A dispute was opened on a trade where you are the one who pays. Message: "A trade on your X2F account needs your attention."',
     },
+    // J-20 (wip/second-team-limits): listed once the API has this kind.
+    'team-member-first-login': {
+      label: 'A team member logs in for the first time',
+      note: 'Message: "A team member logged in to your X2F account for the first time."',
+    },
   },
   /** Shown while account changes are off. */
   accountChangeOffWarning: 'Account changes are off: you will not be told if someone changes your account. Changing these choices is always told to your address.',
