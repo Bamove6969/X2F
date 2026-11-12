@@ -218,8 +218,10 @@ export interface FormItem {
   id: string;
   kind: 'complaint' | 'feedback' | 'recommendation';
   text: string;
-  accountId: string | null;
-  /** D-058: the sender's public display name (never the login name); null for an anonymous row. */
+  /**
+   * D-058: the sender's public display name (never the login name); null for an anonymous row. The
+   * API sends no raw account id (review m1, lead 12 Nov).
+   */
   accountName: string | null;
   from: string | null;
   createdOn: string;

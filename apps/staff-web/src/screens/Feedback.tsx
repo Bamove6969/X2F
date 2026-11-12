@@ -23,7 +23,7 @@ interface Pages<T> {
  * form's messages (the "can't do that" popups link to it), each newest first, 50 a page with
  * "Show older". D-058 (owner G20; lead 12 Nov): a named message shows its sender's public display
  * name so staff can follow up, an anonymous one says "Anonymous"; the raw account id is never
- * shown, and the API logs every opening of the list.
+ * sent or shown, and the API logs the opening of the list (once per session per 5 minutes, review m2).
  */
 export function Feedback() {
   const [moods, setMoods] = useState<Pages<MoodItem> | null>(null);
@@ -120,7 +120,7 @@ export function Feedback() {
             { title: 'Day', cell: (r) => r.createdOn, mono: true },
             { title: 'Kind', cell: (r) => KIND_LABELS[r.kind] },
             { title: 'From the popup', cell: (r) => r.from ?? '', mono: true },
-            { title: 'Sender', cell: (r) => (r.accountId === null ? 'Anonymous' : (r.accountName ?? 'Named')) },
+            { title: 'Sender', cell: (r) => r.accountName ?? 'Anonymous' },
             { title: 'Message', cell: (r) => r.text },
           ]}
         />

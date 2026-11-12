@@ -589,10 +589,13 @@ describe('per-person grants (owner Q60)', () => {
     // account to everyone who reads feedback, a grant holder included, so staff can follow up.
     await t.deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'named', $1, null, '2026-11-02')", [mod.id]);
     const name = (await t.deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [mod.id])).rows[0]!.display_name;
-    const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null; accountName: string | null }>;
-    expect(asMod.find((i) => i.text === 'named')).toMatchObject({ accountId: mod.id, accountName: name });
-    const asOwner = (await owner.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null; accountName: string | null }>;
-    expect(asOwner.find((i) => i.text === 'named')).toMatchObject({ accountId: mod.id, accountName: name });
+    // Review m1 (lead 12 Nov): the sender's display name only, never the raw account id, for anyone.
+    const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountName: string | null }>;
+    expect(asMod.find((i) => i.text === 'named')).toMatchObject({ accountName: name });
+    expect(asMod.find((i) => i.text === 'named')).not.toHaveProperty('accountId');
+    const asOwner = (await owner.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountName: string | null }>;
+    expect(asOwner.find((i) => i.text === 'named')).toMatchObject({ accountName: name });
+    expect(asOwner.find((i) => i.text === 'named')).not.toHaveProperty('accountId');
     expect(await logEntries(t.deps, 'staff.grants-set')).toContainEqual({
       actor_kind: 'staff', detail: JSON.stringify({ feedbackRead: true, staffId: mod.id, ticketsHandle: false }),
     });
