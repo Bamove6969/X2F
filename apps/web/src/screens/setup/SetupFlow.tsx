@@ -3,18 +3,22 @@
  * short setup runs while the trade waits, in the canvas's board order:
  *
  *   0 Terms (`/setup`)  1 the private username (`name`, with the live "is available" tick), then
- *   the public display name (`display-name`)  2 login method (`login`)  3 PGP key and code
- *   (`pgp-key`, `pgp-code`) or a password (`password`), or a passkey / security key straight from
- *   step 2  4 backup login (`backup`: the recovery codes first, required (owner S-017), then an
- *   optional security key or second PGP key, "Skip for now")  5 first payout wallet (`wallet`)  then
- *   Welcome (`welcome`) with Start trading back to `returnTo`.
+ *   the public display name (`display-name`)  2 login methods (`login`: every one wanted is ticked,
+ *   owner demo notes 12 Nov 2026)  3 each ticked method in turn (kit.ts SIGNUP_ORDER): PGP key and
+ *   code (`pgp-key`, `pgp-code`), a security key (`security-key`), a passkey (`passkey`), a
+ *   password (`password`), an authenticator app (`authenticator`); the first one makes the account
+ *   (a passkey or security key ticked first straight from step 2)  4 backup login (`backup`: the
+ *   recovery code, required (owner S-017), after all the ticked methods, then an optional security
+ *   key or second PGP key, "Skip for now")  5 first payout wallet (`wallet`)  then Welcome
+ *   (`welcome`) with Start trading back to `returnTo`.
  *
  * What the person has entered lives only in this component's memory: nothing goes to the URL,
  * localStorage or logs. Every step carries `returnTo` in its query (always through safeReturnTo).
  * A step opened without the steps before it (a reload before the account exists) goes back to the
- * Terms. From the backup step on, the account exists and the session is the source of truth: the
- * steps before it redirect to the backup step (with `replace`), and the step after each sign-up is
- * entered with `replace`, so Back never offers a second sign-up. A finished PGP code step stays
+ * Terms. Once the account exists the session is the source of truth: the steps that would make it
+ * again redirect to the next step still to do (the next ticked method, else the backup step, with
+ * `replace`), a method step opens only while that method is still to do, and the step after each
+ * one is entered with `replace`, so Back never offers a second sign-up. A finished PGP code step stays
  * (it shows "Key verified" and Continue only).
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -24,8 +28,9 @@ import { useSession } from '../../session/useSession.js';
 import { authApi } from '../auth/authApi.js';
 import { Backup } from './Backup.js';
 import { DisplayName } from './DisplayName.js';
-import { INITIAL, SetupContext, stepPath, useSetup, type SetupState, type Step } from './kit.js';
+import { INITIAL, SetupContext, nextStep, stepPath, useSetup, type SetupState, type SignupMethod, type Step } from './kit.js';
 import { Login } from './Login.js';
+import { AuthenticatorStep, KeyStep } from './MoreMethods.js';
 import { Password } from './Password.js';
 import { PgpChallenge } from './PgpChallenge.js';
 import { PgpKey } from './PgpKey.js';
@@ -57,7 +62,10 @@ export function SetupFlow() {
   const need = (ok: boolean, el: ReactNode) => (ok ? el : <Navigate to={path('')} replace />);
   // Once the account exists, the steps that create it are closed (review I2): Back, or a stale tab,
   // lands on the backup step instead of a second sign-up that would read "That username is taken".
-  const before = (ok: boolean, el: ReactNode) => (state.registered ? <Navigate to={path('backup')} replace /> : need(ok, el));
+  const before = (ok: boolean, el: ReactNode) => (state.registered ? <Navigate to={path(nextStep(state))} replace /> : need(ok, el));
+  // A ticked method's own step, once the account exists: open while that method is still to do.
+  const todo = (m: SignupMethod) => state.methods.includes(m) && !state.done.includes(m);
+  const more = (m: SignupMethod, el: ReactNode) => (state.registered ? (todo(m) ? el : <Navigate to={path(nextStep(state))} replace />) : need(false, el));
   const after = (el: ReactNode) => (needsBackup(state) ? <Navigate to={path('backup')} replace /> : el);
 
   return (
@@ -70,7 +78,10 @@ export function SetupFlow() {
         <Route path="login" element={before(named, <Login />)} />
         <Route path="pgp-key" element={before(named, <PgpKey />)} />
         <Route path="pgp-code" element={need(state.challenge !== null, <PgpChallenge />)} />
-        <Route path="password" element={before(named, <Password />)} />
+        <Route path="password" element={state.registered ? more('password', <Password />) : before(named, <Password />)} />
+        <Route path="security-key" element={more('security-key', <KeyStep key="security-key" kind="security-key" />)} />
+        <Route path="passkey" element={more('passkey', <KeyStep key="passkey" kind="passkey" />)} />
+        <Route path="authenticator" element={more('totp', <AuthenticatorStep />)} />
         <Route path="backup" element={<Backup />} />
         <Route path="wallet" element={after(<Wallet />)} />
         <Route path="welcome" element={after(<Welcome />)} />

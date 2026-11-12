@@ -18,7 +18,9 @@ import { Browser, STEP_MS, addTestLogin, codeAt, wrongCodeAt } from './helpers/t
 
 const T0 = new Date('2026-10-17T06:00:00Z'); // a step boundary, early in the UTC day
 const HOUR = 3600_000;
-const CODE = /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
+// Owner demo note, 12 Nov 2026 (/setup/backup): the recovery code is about four times longer than
+// the old 16 symbols: 64 Crockford base32 symbols in 16 groups of four (320 bits).
+const CODE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){15}$/;
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -140,7 +142,7 @@ async function racing<T>(prefix: string, n: number, run: () => Promise<T>): Prom
 }
 
 describe('POST /v1/account/recovery-codes', () => {
-  it('returns one code (hold model v3) in the trade-code format, stored only as its hash', async () => {
+  it('returns one code (hold model v3) of 64 symbols, stored only as its keyed hash', async () => {
     const { id } = await account();
     const codes = await newCodes(await loggedIn(id));
     expect(codes).toHaveLength(1);
@@ -258,6 +260,25 @@ describe('backup login with a recovery code', () => {
     const again = await backup(new Browser(app), username, 'recovery-code', codes[0]!);
     expect(again.statusCode).toBe(401);
     expect(again.json()).toEqual({ error: 'credentials-invalid' });
+  });
+
+  it('the long code logs in exactly as shown, dashes and all (79 characters), and once only', async () => {
+    const { id, username } = await account();
+    const [code] = await newCodes(await loggedIn(id));
+    expect(code).toHaveLength(79);
+    const res = await backup(new Browser(app), username, 'recovery-code', code!);
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { level: string }).level).toBe('recovery');
+    expect((await backup(new Browser(app), username, 'recovery-code', code!)).statusCode).toBe(401);
+  });
+
+  it('a code of the old 16-symbol format, stored before the change, still logs in once', async () => {
+    const { id, username } = await account();
+    const old = 'K7M2-9QXA-4FTR-8WPN';
+    const keyId = deps.config.recoveryCodeKeys.current;
+    await deps.db.query('insert into recovery_codes (account_id, code_hash, key_id) values ($1, $2, $3)', [id, currentKeyed(id, old), keyId]);
+    expect((await backup(new Browser(app), username, 'recovery-code', old.toLowerCase())).statusCode).toBe(200);
+    expect((await backup(new Browser(app), username, 'recovery-code', old)).statusCode).toBe(401);
   });
 
   it('a recovery session is refused on full-only routes and cannot confirm', async () => {
@@ -558,7 +579,7 @@ describe('no patterns in recovery codes (R9)', () => {
     const { id } = await account();
     expect((await newCodes(await loggedIn(id)))[0]).toMatch(CODE);
     const all = new Set<string>();
-    const counts = Array.from({ length: 16 }, () => new Array<number>(32).fill(0));
+    const counts = Array.from({ length: 64 }, () => new Array<number>(32).fill(0));
     const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
     for (let i = 0; i < 10_000; i++) {
       const c = newRecoveryCode();

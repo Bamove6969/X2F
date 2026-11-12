@@ -2,7 +2,8 @@
  * The recovery code, the backup login and its 24-hour hold (Task 9, P2-I1; hold model v3, owner
  * 1-2 Nov 2026, see hold.ts).
  *
- * - Hold model v3: ONE 16-character code (`RECOVERY_CODE_COUNT`). A recovery-code login logs
+ * - Hold model v3: ONE code (`RECOVERY_CODE_COUNT`), 64 symbols since the owner's demo notes of 12 Nov
+ *   2026 ("much longer"; it was 16, and a code of the old length still works until used or replaced). A recovery-code login logs
  *   everyone on the account out, holds the account 24 h (reason `recovery-code`), holds its open
  *   trades (trades/held.ts) and keeps the waiting changes (owner G32: they still wait their 24 h and
  *   the recovery session may cancel them), all in the login's transaction; the code
@@ -11,7 +12,7 @@
  *   `GET /v1/account` `recoveryCodeToShow` is the reminder). An authenticator code alone is no
  *   backup login any more (owner: TOTP-only login is not allowed): 403 `method-not-allowed`.
  *
- * - Recovery codes come only from `newRecoveryCode()` (80 bits from `getRandomValues`, bias-free)
+ * - Recovery codes come only from `newRecoveryCode()` (320 bits from `getRandomValues`, bias-free)
  *   and are stored only as `recoveryCodeHash`: HMAC-SHA-256 under the current `X2F_RECOVERY_CODE_KEYS`
  *   key, bound to the account (FU-C, ASVS 2.6.2), its key id in `key_id`. Sets made before FU-C are
  *   plain SHA-256 with `key_id` null; they cannot be converted (only the hash is kept) and keep
@@ -170,7 +171,8 @@ export async function matchRecoveryCode(
     if (!(e instanceof ApiError) || e.status !== 429) throw e;
     throttled = e;
   }
-  const normalized = normalizeRecoveryCode(code.slice(0, 64));
+  // The longest input normalizeRecoveryCode reads (a 64-symbol code with generous separators).
+  const normalized = normalizeRecoveryCode(code.slice(0, 200));
   const { ids, hashes } = candidates(deps.config, accountId ?? '', normalized ?? '');
   const { rows } = await deps.db.query<{ id: string }>(
     `select id from recovery_codes

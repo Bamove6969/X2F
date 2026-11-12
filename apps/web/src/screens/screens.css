@@ -91,6 +91,11 @@ textarea.x2f-input {
   font-size: 13px;
 }
 
+/* A box for a whole pasted PGP key (owner demo note, 12 Nov 2026, /login: "much bigger" top to bottom). */
+textarea.x2f-textarea--tall {
+  min-height: max(320px, 45dvh);
+}
+
 .x2f-select {
   width: 100%;
   box-sizing: border-box;

@@ -230,6 +230,15 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling): two key points, "Completed trades are erased on day 30." and "Disputed trades are kept up to 90 days, …"; this repo\'s mirror of the board is from 26 Oct.',
     },
   ],
+  // Owner demo notes (12 Nov 2026, /setup/login): every method is a checkbox, several can be
+  // ticked and are set up one after another, so the lead says so (COPY-UNSIGNED). The board predates
+  // the notes.
+  SetupLogin: [
+    {
+      text: 'Choose one for now. You can add others later in Settings.',
+      why: 'Owner demo notes (12 Nov 2026): several methods can be ticked; the lead reads "Tick every way you want to use. We\'ll set them up one after another, then show you your recovery code. …" (COPY-UNSIGNED). The board predates the notes.',
+    },
+  ],
   SetupPgpKey: [
     {
       text: 'Public key -----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
@@ -254,6 +263,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   // username, and the public display name has its own screen after it (DisplayName.tsx). The board
   // still draws the old public username; it is not updated yet (the page's copy is for design).
   SetupUsername: [
+    {
+      text: 'Pick a username',
+      why: 'Owner demo note (12 Nov 2026, /setup/name): the heading reads "Pick a unique username" (his words). The board predates the note.',
+    },
     {
       text: 'lumen.k is available',
       why: "The board's example name. The page's live tick (POST /v1/register/name-check) says the same sentence for the name typed (\"lumen-login-7 is available\" in setup.spec), which is not the board's public example.",
