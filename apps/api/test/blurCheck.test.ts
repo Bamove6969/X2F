@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { newProofId } from '@x2f/proof';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -173,5 +174,60 @@ describe('the feedback readers (staff perm feedback.read)', () => {
     expect(item).toMatchObject({ correct: false, role: 'receiver', method: 'Zelle', blur: 'auto', createdOn: '2026-11-12' });
     expect(Object.keys(item!).sort()).toEqual(['blur', 'comment', 'correct', 'createdOn', 'id', 'method', 'role']);
     expect(body.counts.no).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// Security review PC1: a team member works the account's trades, so the blur check follows the
+// member boxes the other trade routes use. Listing and answering the asks read the trade (one of
+// TRADE_READ, `trades-see-active` or `trades-see-history`); announcing a proof posts to the trade's
+// chat (`chat-reply`). A member without the box gets 403 `forbidden`.
+describe('team members (review PC1)', () => {
+  let seq = 0;
+  async function memberOf(teamId: string, abilities: string[]): Promise<Who> {
+    const name = `Bcm${String(++seq).padStart(4, '0')}${Math.random().toString(36).slice(2, 6)}`;
+    const loginId = await seedAccount(deps, { loginName: name.toLowerCase(), kind: 'member' });
+    const now = deps.clock();
+    const m = await deps.db.query<{ id: string }>(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
+      [teamId, name, name.toLowerCase(), abilities, now, loginId],
+    );
+    const token = randomBytes(32).toString('base64url');
+    await deps.db.query(
+      `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at, strength, app, member_id)
+       values ($1, $2, 'full', 'Test', $3, $3, $4, 'strong', 'trader', $5)`,
+      [teamId, createHash('sha256').update(token).digest(), now, new Date(now.getTime() + 2 * 3600_000), m.rows[0]!.id],
+    );
+    return { id: teamId, token };
+  }
+
+  it('announcing a proof needs chat-reply; listing and answering the asks need a trade-read box', async () => {
+    const { seller, buyer, code } = await pair();
+    const reader = await memberOf(seller.id, ['trades-see-active']);
+    const poster = await memberOf(seller.id, ['chat-reply']);
+    const neither = await memberOf(seller.id, ['offers-see']);
+
+    // The buyer's proof asks both sides.
+    const p1 = newProofId();
+    expect((await posted(buyer, code, p1)).statusCode).toBe(200);
+
+    // Announcing: the chat-reply member may, the others may not.
+    expect((await posted(reader, code, newProofId())).statusCode).toBe(403);
+    expect((await posted(neither, code, newProofId())).statusCode).toBe(403);
+    const p2 = newProofId();
+    const ok = await posted(poster, code, p2);
+    expect(ok.statusCode, ok.body).toBe(200);
+
+    // Listing: the trade reader sees the seller side's asks; the others are refused.
+    expect((await call(poster, 'GET', `/v1/trades/${code}/blur-checks`)).statusCode).toBe(403);
+    expect((await call(neither, 'GET', `/v1/trades/${code}/blur-checks`)).statusCode).toBe(403);
+    expect((await pending(reader, code)).map((c) => c.proofId)).toEqual(expect.arrayContaining([p1, p2]));
+
+    // Answering: the trade reader may, the others may not.
+    expect((await answer(poster, code, p1, { correct: true })).statusCode).toBe(403);
+    expect((await answer(neither, code, p1, { correct: true })).statusCode).toBe(403);
+    const done = await answer(reader, code, p1, { correct: true });
+    expect(done.statusCode, done.body).toBe(204);
+    expect((await pending(seller, code)).map((c) => c.proofId)).not.toContain(p1);
   });
 });

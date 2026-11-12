@@ -831,6 +831,10 @@ describe('the audit log covers every member action (review M3)', () => {
       // Owner Q75: the member's own idle reminder, on their own login account.
       'PUT /v1/account/idle-reminder': "the member's own reminder preference on their own login: not an account action",
       'POST /v1/account/terms': "the member's own agreement to the Terms, written to their own login account (review 2026-11-08 F1); it changes nothing of the team account",
+      // Review PC1 (P-012/P-013): the blur check is anonymous by design ("never the trade, the proof
+      // id or who answered"), so a team-audit row naming the member and the trade would undo that.
+      'POST /v1/trades/:code/blur-checks/:proofId': 'the blur-check answer is anonymous by design (P-012): a row would tie the member and the trade to the answer',
+      'POST /v1/trades/:code/proofs/:proofId/blur-check': 'only counts a proof for the blur-check sample (P-013): the proof itself is the chat upload; a row would tie the member to the ask',
     };
     const found: string[] = [];
     const audited = new Set<string>();

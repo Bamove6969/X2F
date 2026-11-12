@@ -3,6 +3,7 @@ import { BLUR_CHECK_EVERY_NTH_DEFAULT, BLUR_CHECK_EVERY_NTH_MAX, BLUR_KINDS, Blu
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
+import { TRADE_READ } from '../team/perms.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { getMethod } from '../methods/profiles.js';
@@ -58,7 +59,12 @@ export async function loadBlurCheckSchedule(db: Queryable): Promise<BlurCheckSch
   };
 }
 
-const trader = requireSession({ kinds: ['trader'] });
+// Security review PC1: a team member works the account's trades, so the routes take the member
+// boxes the other trade routes use: listing and answering the asks read the trade (TRADE_READ, as
+// the trade room); announcing a proof posts to the trade's chat (`chat-reply`). Without the box a
+// member gets 403 `forbidden`; the account owner is unaffected.
+const readTrade = requireSession({ kinds: ['trader'], member: TRADE_READ });
+const postChat = requireSession({ kinds: ['trader'], member: 'chat-reply' });
 
 function paramsOf(req: FastifyRequest): { code: string; proofId: string | null } {
   const p = req.params as { code?: unknown; proofId?: unknown };
@@ -99,7 +105,7 @@ async function inTx<T>(db: pg.Pool, fn: (c: pg.PoolClient) => Promise<T>): Promi
 }
 
 export function blurCheckRoutes(app: FastifyInstance): void {
-  app.post('/v1/trades/:code/proofs/:proofId/blur-check', { preHandler: trader }, async (req) => {
+  app.post('/v1/trades/:code/proofs/:proofId/blur-check', { preHandler: postChat }, async (req) => {
     const { code, proofId } = paramsOf(req);
     const b = req.body as { blur?: unknown } | null;
     if (b === null || typeof b !== 'object' || Array.isArray(b) || Object.keys(b).some((k) => k !== 'blur')) throw new ApiError(400, 'bad-request');
@@ -127,7 +133,7 @@ export function blurCheckRoutes(app: FastifyInstance): void {
     });
   });
 
-  app.get('/v1/trades/:code/blur-checks', { preHandler: trader }, async (req) => {
+  app.get('/v1/trades/:code/blur-checks', { preHandler: readTrade }, async (req) => {
     const { code } = paramsOf(req);
     const db = req.server.deps.db;
     const { side } = await sideOf(db, code, req.auth.accountId);
@@ -138,7 +144,7 @@ export function blurCheckRoutes(app: FastifyInstance): void {
     return { checks: rows.map((r) => ({ proofId: r.proof_id, role: r.role })) };
   });
 
-  app.post('/v1/trades/:code/blur-checks/:proofId', { preHandler: trader }, async (req, reply) => {
+  app.post('/v1/trades/:code/blur-checks/:proofId', { preHandler: readTrade }, async (req, reply) => {
     const { code, proofId } = paramsOf(req);
     let answer: { correct: boolean; comment: string | null };
     try {
