@@ -33,12 +33,22 @@ const nextOf = (items: readonly { createdOn: string; id: string }[]) => {
  * - `GET /staff/v1/feedback?before` → `{ items: { id, mood, note, createdOn }[], counts, next }`,
  *   the one-tap "How's X2F doing?" answers (`listFeedback`) with the 30-day Great / OK / Needs work
  *   counts (`feedbackMoodCounts`);
- * - `GET /staff/v1/feedback/form?before` → `{ items: { id, kind, text, accountId, accountName, from, createdOn }[], next }`,
- *   the feedback form every "can't do that" popup links to (`listFeedbackForm`; `accountId` null
- *   and `accountName` null for an anonymous row).
+ * - `GET /staff/v1/feedback/form?before` → `{ items: { id, kind, text, accountName, from, createdOn }[], next }`,
+ *   the feedback form every "can't do that" popup links to (`listFeedbackForm`; `accountName` null
+ *   for an anonymous row). The raw account id is never sent (review m1, lead 12 Nov), and the
+ *   opening is logged once per staff session per FORM_OPEN_LOG_WINDOW_MS (review m2).
  * `before` is the `next` of the previous page.
  */
+/**
+ * Review m2 (lead 12 Nov): the list opening is logged at most once per staff session in this long
+ * (the first read of the window, with how many named rows it showed); later reads and pages in the
+ * window are not logged again, so the hash-chained log (and its lock) cannot be flooded.
+ */
+export const FORM_OPEN_LOG_WINDOW_MS = 5 * 60_000;
+
 export function staffFeedbackRoutes(app: FastifyInstance): void {
+  /** Staff session id → when its window's entry was logged (this API process; pruned as it goes). */
+  const formOpenLogged = new Map<string, number>();
   const perm = 'feedback.read' as const;
   const opts = { config: { perm }, preHandler: requireStaff(perm) };
   app.get('/staff/v1/feedback', opts, async (req) => {
@@ -49,10 +59,24 @@ export function staffFeedbackRoutes(app: FastifyInstance): void {
   });
   app.get('/staff/v1/feedback/form', opts, async (req) => {
     const before = cursorOf(req);
-    const { db } = req.server.deps;
-    const items = await listFeedbackForm(db, before ? { before } : {});
-    // D-058: the list names senders, so each opening (every page) is logged with how many it named.
-    await withTx(db, (c) => log(c, req, 'feedback.form-opened', { namedRows: items.filter((i) => i.accountId !== null).length }));
-    return { items, next: nextOf(items) };
+    const { db, clock } = req.server.deps;
+    // Review m2: claim this session's window synchronously, before any await, so parallel reads of one
+    // session log once; given back if the read or the log fails, so a failure never skips an entry.
+    const now = clock().getTime();
+    for (const [session, at] of formOpenLogged) if (now - at >= FORM_OPEN_LOG_WINDOW_MS) formOpenLogged.delete(session);
+    const session = req.auth.sessionId;
+    const due = !formOpenLogged.has(session);
+    if (due) formOpenLogged.set(session, now);
+    try {
+      const rows = await listFeedbackForm(db, before ? { before } : {});
+      // D-058: the list names senders, so the session's first opening in the window is logged with how many it named.
+      if (due) await withTx(db, (c) => log(c, req, 'feedback.form-opened', { namedRows: rows.filter((i) => i.accountId !== null).length }));
+      // Review m1 (lead 12 Nov): the sender's public display name only; the raw account id never leaves the API.
+      const items = rows.map((r) => ({ id: r.id, kind: r.kind, text: r.text, accountName: r.accountName, from: r.from, createdOn: r.createdOn }));
+      return { items, next: nextOf(rows) };
+    } catch (e) {
+      if (due && formOpenLogged.get(session) === now) formOpenLogged.delete(session);
+      throw e;
+    }
   });
 }
