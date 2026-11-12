@@ -444,7 +444,11 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
       await expect(reader.query('select envelope from chat_envelopes')).rejects.toMatchObject({ code: '42501' });
       // Nothing else is readable to the reader role.
       await expect(reader.query('select * from accounts')).rejects.toMatchObject({ code: '42501' });
-      await expect(reader.query('select detail from activity_log')).rejects.toMatchObject({ code: '42501' });
+      // Plan 4 Task 14 (migration 212, reviewed widening): the reader reads every column the log's
+      // chain hashes, so this process recomputes the chain itself for its checkpoints. The log holds
+      // ids, enums, codes and amounts only (Task 3). It still writes nothing.
+      await expect(reader.query('select detail, prev_hash, hash from activity_log')).resolves.toBeDefined();
+      await expect(reader.query("update activity_log set detail = '{}'")).rejects.toMatchObject({ code: '42501' });
       await expect(reader.query('select note from disputes')).rejects.toMatchObject({ code: '42501' });
       await expect(reader.query(`insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ('x', 'mod', 0, '{}', now())`)).rejects.toMatchObject({ code: '42501' });
     } finally {

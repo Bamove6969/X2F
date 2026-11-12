@@ -29,6 +29,7 @@ import {
   type StoredTap,
 } from '../src/gate/index.js';
 import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize } from './gateWorld.js';
+import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
 
 describe('the chain of trust (syncRegistry)', () => {
   it('accepts a staff key only through an owner create-invite tap and an attested registration for that token', async () => {

@@ -11,6 +11,7 @@ import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
 import { openDesk } from './desk.js';
 import { createWatcher } from './watcher.js';
 import type { RulingExecutor } from './execute.js';
+import { startCheckpoints, type CheckpointOptions } from './checkpoint.js';
 import { recordedTerms, type RecordedTerms } from './gate/verify.js';
 
 /**
@@ -64,6 +65,7 @@ export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './part
 export { autoRefundStep, REFUND_UNVERIFIED_MS, type AutoRefundInputs, type AutoRefundStep } from './autoRefund.js';
 export { buyerCancelStep, type BuyerCancelInputs, type BuyerCancelStep } from './buyerCancel.js';
 export { openDesk, type Desk, type DeskRecord, type DeskStep } from './desk.js';
+export { CHECKPOINT_INTERVAL_MS, startCheckpoints, VERIFY_EVERY_MS, type CheckpointOptions, type Checkpoints } from './checkpoint.js';
 export { rulingExecutor, type RulingExecutor, type RulingExecutorOptions, type RulingSource, type RulingStepInput, type RulingStepResult } from './execute.js';
 export * from './gate/index.js';
 export { newShadow } from './shadow.js';
@@ -134,6 +136,11 @@ export interface ModerationDeps {
    * each watcher pass. Absent (no gate configured): no ruling is ever settled.
    */
   rulings?: Pick<RulingExecutor, 'step' | 'kindFor'>;
+  /**
+   * Plan 4 Task 14: the activity log's checkpoints (`startCheckpoints`), on the gate's store and the
+   * API database's read-only role; reported over this service's own signed link. Absent: none.
+   */
+  checkpoints?: Pick<CheckpointOptions, 'store' | 'reader'> & Partial<Pick<CheckpointOptions, 'intervalMs' | 'verifyEveryMs'>>;
 }
 
 export interface ModerationHandle {
@@ -253,6 +260,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   });
   // The shred pass's own facts (recordingLink): every watch list read and every escalation report.
   const link: Link = recordingLink(rawLink, o.db, now);
+  const checkpoints = deps.checkpoints ? startCheckpoints({ ...deps.checkpoints, link, now, log }) : null;
   let io: PartyIO | undefined = deps.partyIO;
   const startParty =
     deps.startParty ??
@@ -589,6 +597,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       await running.catch(() => undefined);
       await watching.catch(() => undefined);
       await watcher.stop();
+      await checkpoints?.stop();
       if (!lost) await lock.query('select pg_advisory_unlock($1)', [MOD_INSTANCE_LOCK]).catch(() => undefined);
       lock.off('error', onLockError);
       // A lost connection is destroyed, never handed back to the pool, and waited for until it has
@@ -842,6 +851,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   let gateReader: pg.Pool | null = null;
   let gateSync: { stop(): Promise<void> } | null = null;
   let rulings: RulingExecutor | undefined;
+  let checkpoints: ModerationDeps['checkpoints'];
   if (gateConfig) {
     const { fileGateAttestation, openGateStore, pgGateSource, startGateSync } = await import('./gate/index.js');
     const { rulingExecutor } = await import('./execute.js');
@@ -860,6 +870,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
     const source = pgGateSource(gateReader);
     gateSync = startGateSync(store, source, gateCtx);
     rulings = rulingExecutor({ store, source, ctx: gateCtx, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
+    checkpoints = { store, reader: gateReader };
   }
   let handle: ModerationHandle;
   try {
@@ -875,7 +886,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       relayUrl: envString(env, 'RELAY_URL'),
       network: envNetwork(env),
     },
-    { log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`), ...(rulings ? { rulings } : {}) },
+    { log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`), ...(rulings ? { rulings } : {}), ...(checkpoints ? { checkpoints } : {}) },
     );
   } catch (e) {
     // A refused start (another process holds the instance lock, finding 2) or bad settings: exit non-zero.

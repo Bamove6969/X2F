@@ -492,6 +492,46 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * `{ kind: 'chat-shredded', chat }`: the moderation service destroyed its copy of the chat's keys.
    * The order is removed; a repeat (or a chat with no order) is still 201, so the report is idempotent.
    */
+  /**
+   * Plan 4 Task 14: the moderation process's log checkpoint `{ id, hash }` (the head it recorded in
+   * its own sealed gate store). Logged as `log.checkpoint` only when that row still has that hash
+   * (else 409 `checkpoint-mismatch`, nothing written): the log then shows every checkpoint the
+   * moderation process holds, and an API that rewrote the row cannot have it logged.
+   */
+  const logCheckpoint = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'id', 'hash']) || typeof body.id !== 'string' || !/^[1-9][0-9]{0,18}$/.test(body.id) || typeof body.hash !== 'string' || !TX_HASH.test(body.hash)) {
+      throw new Refused(400, 'bad-body');
+    }
+    const id = body.id;
+    const hash = body.hash;
+    const client = await o.db.connect();
+    try {
+      await client.query('begin');
+      const { rows } = await client.query<{ hash: Buffer }>('select hash from activity_log where id = $1', [id]);
+      if (rows[0] === undefined || rows[0].hash.toString('hex') !== hash) {
+        await client.query('rollback');
+        throw new Refused(409, 'checkpoint-mismatch');
+      }
+      await appendLog(client, { at: o.clock?.() ?? new Date(now()), actor: { kind: 'system' }, tradeCode: null, action: 'log.checkpoint', detail: { id, hash } });
+      await client.query('commit');
+    } catch (e) {
+      await client.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+    log({ reason: 'internal-log-checkpoint' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /** Plan 4 Task 14: the moderation process's daily verification failed: `site_flags.log_alarm` (the first time stays). */
+  const logAlarm = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind'])) throw new Refused(400, 'bad-body');
+    await o.db.query('update site_flags set log_alarm = coalesce(log_alarm, $1)', [o.clock?.() ?? new Date(now())]);
+    log({ reason: 'internal-log-alarm' });
+    return reply.code(201).send({ ok: true });
+  };
+
   const chatShredded = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind', 'chat'])) throw new Refused(400, 'bad-body');
     const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
@@ -594,6 +634,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-refused') return refuseChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
+    if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
+    if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;
