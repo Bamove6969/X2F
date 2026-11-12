@@ -6,6 +6,7 @@ import type { Queryable } from '../db/pool.js';
 import type { EventBus } from '../events/bus.js';
 import { appendLog } from '../log/append.js';
 import { eraseReviewsOfTrade } from '../reviews/store.js';
+import { accrueDisputePay } from '../staff/payAccrual.js';
 import type { MarketPrices } from '../price/market.js';
 import { usdCentsOf } from '../traders/stage.js';
 import { disputeSettings } from './settings.js';
@@ -137,6 +138,9 @@ export async function saveDispute(client: pg.PoolClient, d: Dispute, now: Date):
   // makes the trade as if it never happened, so its reviews and skips go in this same transaction.
   // Idempotent (a later save of the same final dispute deletes nothing). A decision that stands keeps them.
   if (d.overturned === true) await eraseReviewsOfTrade(client, d.code);
+  // Plan 4 Task 33 (D-041..D-044): a published round 1 earns its decider's pay; an overruled one is
+  // clawed back from future pay. Idempotent, in this same transaction.
+  await accrueDisputePay(client, d, now);
   if (d.appealEndsAt !== null) {
     await client.query(
       'update dispute_rulings set appeal_until = $3 where code = $1 and seq = $2 and round = 1 and appeal_until is distinct from $3',

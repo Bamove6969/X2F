@@ -236,3 +236,38 @@ export const newsList = () => staffApi<{ items: NewsItem[] }>('/staff/v1/news');
 export const newsAdd = (d: { title: string; body: string }) => staffApi<NewsItem>('/staff/v1/news', { method: 'POST', body: d });
 export const newsEdit = (id: number, d: { title: string; body: string }) => staffApi<NewsItem>(`/staff/v1/news/${id}`, { method: 'PUT', body: d });
 export const newsDelete = (id: number) => staffApi<unknown>(`/staff/v1/news/${id}`, { method: 'DELETE' });
+
+// ---------------------------------------------------------------------------------------------
+// Pay at clock-out (Plan 4 Task 33, D-041..D-045; perm self: one's own pay only)
+
+export interface PayoutAddress {
+  id: string;
+  address: string;
+  addedAt: string;
+}
+/** What is due at a correct clock-out: `pay`, `nothing-due`, `owed` (a clawback debt) or `no-price`. */
+export type ClockOutDue = 'pay' | 'nothing-due' | 'owed' | 'no-price';
+export interface ClockOutSheet {
+  due: ClockOutDue;
+  disputes: number;
+  largeTrades: number;
+  clawbacks: number;
+  /** Decimal strings: the dollar part in US cents, the XMR part in atomic units, the net in atomic units (null with no price). */
+  usdCents: string;
+  atomic: string;
+  usdCentsPerXmr: string | null;
+  amountAtomic: string | null;
+  addresses: PayoutAddress[];
+}
+export interface ClockOutResult {
+  due: ClockOutDue;
+  payout: { id: string; amountAtomic: string; addressId: string; status: 'waiting-send' } | null;
+}
+
+export const clockOutSheet = () => staffApi<ClockOutSheet>('/staff/v1/pay/clock-out');
+/** The correct clock-out: pays what is due to `addressId` and ends the session. */
+export const clockOut = (addressId: string | null) =>
+  staffApi<ClockOutResult>('/staff/v1/pay/clock-out', { method: 'POST', body: addressId === null ? {} : { addressId } });
+/** Adds a payout address; `tapId` is a tap of intent `payout-address` for exactly this address. */
+export const addPayoutAddress = (address: string, tapId: string) =>
+  staffApi<PayoutAddress>('/staff/v1/pay/addresses', { method: 'POST', body: { address, tapId } });

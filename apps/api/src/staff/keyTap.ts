@@ -405,6 +405,20 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       const opt = (key: string, re: RegExp): string | null => (r[key] === null ? null : match(r, key, re));
       return { kind: 'fee-sweep', thresholdAtomic: opt('thresholdAtomic', ATOMIC), floatAtomic: opt('floatAtomic', ATOMIC), coldAddress: opt('coldAddress', COLD_ADDRESS) };
     }
+    case 'payout-address':
+      exactKeys(r, ['kind', 'address']);
+      return { kind: 'payout-address', address: match(r, 'address', COLD_ADDRESS) };
+    case 'pay-settings': {
+      exactKeys(r, ['kind', 'modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd']);
+      const opt = (key: string): number | null => (r[key] === null ? null : amount(r, key, { integer: true }));
+      return {
+        kind: 'pay-settings',
+        modDisputeUsdCents: opt('modDisputeUsdCents'),
+        seniorDisputeUsdCents: opt('seniorDisputeUsdCents'),
+        seniorLargeTradeBp: opt('seniorLargeTradeBp'),
+        largeTradeThresholdUsd: opt('largeTradeThresholdUsd'),
+      };
+    }
     case 'ruling': {
       exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256']);
       const code = typeof r.code === 'string' ? normalizeTradeCode(r.code) : null;
@@ -452,11 +466,14 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return 'staff.manage';
     case 'settings':
     case 'fee-sweep':
+    case 'pay-settings':
       return 'settings.write';
     case 'add-owner-key':
       return 'owner';
     case 'add-pgp-key':
     case 'remove-method':
+    // Task 33: one's own payout address (the action route binds it to the signed-in account).
+    case 'payout-address':
       // One's own login methods: any staff member or the owner, for their own account only (the
       // action route binds the tap to the signed-in account).
       return 'self';

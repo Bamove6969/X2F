@@ -179,7 +179,12 @@ export type ApiErrorCode =
   | 'moderation-unavailable'
   // Owner rule p5-7: secure Jabber account-change alerts.
   | 'jabber-unavailable'
-  | 'jabber-address-invalid';
+  | 'jabber-address-invalid'
+  // Plan 4 Task 33 (D-041): the clock-out needs a pre-approved payout address of one's own.
+  | 'address-required'
+  | 'address-unknown'
+  | 'address-exists'
+  | 'too-many-addresses';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {
