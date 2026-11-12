@@ -8,6 +8,7 @@
 // (expectPhoneLayout) at PHONE_VIEWPORTS and 44 px targets only.
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { sellerView } from './refundViews.js';
 
 const ME = { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -213,4 +214,46 @@ test('a member refused both tabs is sent to Trade, never round in circles', asyn
   await expect(page.getByRole('tab', { name: 'Completed' })).toHaveAttribute('aria-selected', 'true');
   await page.locator('[data-part="cant-do-that"]').getByRole('button', { name: 'OK' }).click();
   await expect(page).toHaveURL(/\/sell$/);
+});
+
+// The lead's ruling after review trades-list I1: the API opens the live stream to a member with
+// either trades box and carries them only the events of their parts, so the web opens it for a
+// member with See trade history alone too (not only the Trades role), and their room updates live.
+test('a member with See trade history only gets live updates: the stream opens and a completed trade\'s room reloads on its event', async ({ page }) => {
+  const view = { ...sellerView({ state: 'released' }), closedAt: '2026-10-25T13:40:00.000Z' };
+  const reads: string[] = [];
+  let streams = 0;
+  await page.route('**/v1/account/me', json({ ...ME, accountType: 'vendor', member: { name: 'Aurora', abilities: ['trades-see-history'], preset: null, roles: [] } }));
+  await page.route(`**/v1/trades/${view.code}`, (r) => {
+    reads.push(r.request().url());
+    return json(view)(r);
+  });
+  await page.route('**/v1/events', (r) => {
+    streams += 1;
+    return r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' },
+      // Every connection carries the trade's event; the short retry reconnects for the next one.
+      body: `retry: 400\n\ndata: ${JSON.stringify({ type: 'trade', code: view.code, state: 'released' })}\n\n`,
+    });
+  });
+  await page.goto(`/trade/${view.code}`);
+  await expect.poll(() => streams, { timeout: 5000 }).toBeGreaterThan(0);
+  // The room reads the trade again on its live event, well before its 15 s poll.
+  await expect.poll(() => reads.length, { timeout: 5000 }).toBeGreaterThan(1);
+});
+
+test('a member with no trades box opens no live stream', async ({ page }) => {
+  let streams = 0;
+  await page.route('**/v1/account/me', json({ ...ME, accountType: 'vendor', member: { name: 'Aurora', abilities: ['offers-see', 'offers-post'], preset: null, roles: ['offers'] } }));
+  await page.route('**/v1/events', (r) => {
+    streams += 1;
+    return r.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'forbidden' }) });
+  });
+  await page.route(/\/v1\/methods\?/, json({ live: [], all: [] }));
+  await page.route(/\/v1\/price\?/, json({ error: 'price-unavailable' }, 503));
+  await page.goto('/sell');
+  await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+  await page.waitForTimeout(1500);
+  expect(streams).toBe(0);
 });
