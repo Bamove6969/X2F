@@ -87,6 +87,26 @@ A buyer reusing one proof id across two trades only affects their own prompt (in
 
 ## Tests run (worktree fdc5d83d, fresh npm ci, `flock ~/x2f-comms/check.lock timeout 900 npx vitest run --project <p> <file>`)
 
-RESULTS_PLACEHOLDER
+All 12 files passed, 280 tests:
+
+| File | Passed |
+|---|---|
+| apps/web chatEngine | 51/51 |
+| apps/web chatProof | 16/16 |
+| apps/web chatProofReceive | 6/6 |
+| apps/web proof-render-tripwire | 8/8 |
+| apps/web cantDoThat-lint | 13/13 |
+| apps/web proofUpload | 18/18 |
+| apps/web blurEditor | 21/21 |
+| apps/web buyerPay | 92/92 |
+| apps/web chatPanel | 31/31 |
+| apps/web payDetailsFeed | 6/6 |
+| apps/web proofThumb | 14/14 |
+| packages/proof inputHeader | 4/4 |
+
+`npx tsc -p apps/web --noEmit` is clean.
+
+Not run: the API's proofs.test.ts and proofUploadWire.test.ts (these are wip/lead-proof-store's and
+need Postgres), and Playwright.
 
 Worktree and its node_modules removed after the run.
