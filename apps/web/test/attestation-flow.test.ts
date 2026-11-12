@@ -2,7 +2,7 @@ import { ROLES } from '@x2f/core';
 import { EscrowError, PartyError, TransportClosedError } from '@x2f/escrow';
 import { open, ReplayGuard, seal, type Participants } from '@x2f/protocol';
 import { channelFor, escrowPlan, fiatCents, instructionsSha256 } from '@x2f/trade';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Attestation } from '@x2f/trade';
 import { cosignPolicy } from '../src/escrow/policy.js';
 import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
@@ -453,6 +453,95 @@ describe('what this device signs comes from what the user confirmed, never the A
     t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS, methodId: 'PAYPAL' });
     await until(() => buyer.last()?.refusal === 'view-mismatch');
     expect(buyer.last()?.methodId).toBe('ZELLE');
+  });
+
+  it('re-verify R1: "I\'ve paid" needs this device\'s own view to be secured; a view that says securing (no securedAt, no text) is refused', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
+    // The screen's own fetch may say secured; the runtime's says securing with nothing due yet.
+    for (const state of ['setup', 'funding', 'securing'] as const) {
+      t.state.view = tradeView({ state, paymentInstructions: null });
+      await t.parties.ticks('buyer', 2);
+      await expect(buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) }), state).rejects.toThrow(/secured/);
+      expect((await buyer.store.load(CODE))?.paidSeen).toBe(false);
+    }
+    // Secured with the attested text: the tap is taken.
+    t.state.view = tradeView({ state: 'secured' });
+    await buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) });
+    expect((await buyer.store.load(CODE))?.paidSeen).toBe(true);
+  });
+
+  it('re-verify R1: "secured seen" is latched in the record; a later view cannot un-secure the trade to drop the text', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'securing', paymentInstructions: null });
+    await t.parties.ticks('buyer', 2);
+    expect((await buyer.store.load(CODE))?.securedSeen ?? false).toBe(false);
+    t.state.view = tradeView({ state: 'securing', securedAt: '2026-10-23T12:00:00.000Z' });
+    await until(async () => (await buyer.store.load(CODE))?.securedSeen === true);
+    // The API now says securing again, with no securedAt and no text, or a post-secure state not in the list.
+    for (const state of ['securing', 'disputed', 'lapsed'] as const) {
+      t.state.view = tradeView({ state, paymentInstructions: null });
+      await until(() => buyer.last()?.instructionsMismatch === true && buyer.last()?.refusal === 'view-mismatch');
+      t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS });
+      await until(() => buyer.last()?.instructionsMismatch === false && buyer.last()?.paymentInstructions === INSTRUCTIONS);
+    }
+    // A fresh run on the same record keeps the latch.
+    await buyer.runtime.stop(CODE);
+    t.state.view = tradeView({ state: 'securing', paymentInstructions: null });
+    const again = await t.mk('buyer', { idb: buyer.idb });
+    await again.runtime.start(CODE);
+    await until(() => again.last()?.instructionsMismatch === true);
+  });
+
+  it('re-verify R2: the hash cache keeps at most two texts, and a hit never stands in for another text', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
+    // Only the buyer's runtime hashes from here on (the spy counts every runtime in this process).
+    await seller.runtime.stop(CODE);
+    const hashed: string[] = [];
+    const real = globalThis.crypto.subtle.digest.bind(globalThis.crypto.subtle);
+    const spy = vi.spyOn(globalThis.crypto.subtle, 'digest').mockImplementation(async (alg, data) => {
+      hashed.push(new TextDecoder().decode(data as Uint8Array));
+      return real(alg, data);
+    });
+    try {
+      const show = async (text: string) => {
+        t.state.view = tradeView({ state: 'secured', paymentInstructions: text });
+        const good = text === INSTRUCTIONS;
+        await until(() => buyer.last()?.instructionsMismatch === !good && buyer.last()?.paymentInstructions === (good ? INSTRUCTIONS : null));
+      };
+      const junk = (i: number) => `junk ${i} ${'x'.repeat(500)}`;
+      await show(INSTRUCTIONS);
+      for (let i = 0; i < 40; i++) {
+        await show(junk(i));
+        await until(() => hashed.includes(junk(i)));
+      }
+      const before = hashed.filter((h) => h === INSTRUCTIONS).length;
+      // Evicted after the junk: hashed once more, then cached again (two texts alternating stay cached).
+      await show(INSTRUCTIONS);
+      expect(hashed.filter((h) => h === INSTRUCTIONS).length).toBe(before + 1);
+      await show(junk(39));
+      await show(INSTRUCTIONS);
+      await show(junk(39));
+      expect(hashed.filter((h) => h === INSTRUCTIONS).length).toBe(before + 1);
+      // A near copy is never answered by the cached attested text.
+      await show(`${INSTRUCTIONS} `);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('a lying API can tell one side other instructions: only that side refuses and shows nothing', async () => {
