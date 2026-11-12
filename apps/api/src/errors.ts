@@ -154,6 +154,8 @@ export type ApiErrorCode =
   | 'all-three-methods-required'
   // D-070 (owner p11-19): a moderator or senior moderator holds a PGP key and a passkey.
   | 'moderator-methods-required'
+  // D-064: ending a recovery hold `via: 'secure-jabber'` on an account with no Jabber address proven before the hold.
+  | 'no-secure-jabber'
   // Owner G4 (7 Nov): adding or removing an owner key needs taps by both owner keys.
   | 'both-owner-keys-required'
   // Owner G3 (review P-m1): a staff passkey that reports a security-key model is that key again.

@@ -110,7 +110,8 @@ export const LOG_ACTIONS = {
   'account.freeze-lifted': { accountId: 'uuid', side: 'id' },
   // A recovery-code hold extended or ended by staff (lead hold v3 review; owner G35).
   'hold.extended': { accountId: 'uuid', holdUntil: 'iso' },
-  'hold.ended': { accountId: 'uuid' },
+  // D-064: `via` 'secure-jabber' when staff reached the account holder on their proven Jabber address.
+  'hold.ended': { accountId: 'uuid', via: 'id' },
   'account.trade-banned': BAN,
   'account.site-banned': BAN,
   'account.ban-lifted': { accountId: 'uuid', kind: 'id' },
