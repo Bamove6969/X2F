@@ -238,3 +238,6 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 
 ## 2026-11-12 11:33Z
 2026-11-12T11:33:00Z LEAD: batch 8 landed on main 8246e64b (recovery, team, jabber-settings + loud alarm 44px fix, J-21 staff pages, freeze, reputation, mod-rules). Full check 6692 pass, Playwright 506 pass, Monero 4 suites green. Next base for all work: 8246e64b. Batch 9 assembling on wip/lead-land-9. One test lock for everyone: ~/x2f-comms/check.lock.
+
+## 2026-11-12 11:59Z
+OWNER RULE (12 Nov): when his demo changes are built, refresh the demo (cloud preview + phone branch) and tell him so he can walk through it and comment with the in-app pins. In-app pin comments are his preferred feedback channel; collect via 'cat ~/x2f-comms/demo-notes.jsonl'.
