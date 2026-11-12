@@ -145,6 +145,10 @@ The tag is unlinkable, but its full-precision timestamp equals `trade_proofs.cre
 - **Tests I ran** (detached worktree at 6bbadbbf, fresh `npm ci`, serialised runner, single files):
   - `proofs.test.ts`: 18/18 pass.
   - My throwaway probe file: 6/6 ran; the results are in the table above. Deleted after.
-  - `disputes/staff.test.ts`, `frontDoor.test.ts`, `purge.test.ts`, `coolingOff.test.ts`: see the report
-    (filled in below).
+  - `disputes/staff.test.ts`: 27 pass, plus 1 todo that was already on the base.
+  - `frontDoor.test.ts`: 21/21 pass.
+  - `purge.test.ts`: 8/8 pass.
+  - `coolingOff.test.ts` (checks the LIVE_SESSION_EXEMPT classification): 95/95 pass.
+  - Not run: `schema.test.ts`. Its edit only appends `580_trade_proofs.sql` to the expected migration
+    lists. All the files above apply that migration.
   - `tsc -p apps/api --noEmit`: clean.
