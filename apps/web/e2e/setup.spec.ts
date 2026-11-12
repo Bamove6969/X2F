@@ -290,7 +290,7 @@ for (const v of PHONES) {
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
     await expect(page.locator('h1')).toHaveText('Welcome to X2F, lumen.k');
     // Owner S-017: the backup login is the recovery codes saved on the backup step (parity.ts SetupWelcome).
-    await expect(page.locator('[data-part="summary-backup"]')).toHaveText('Recovery codes');
+    await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
     await expectParity(page, 'SetupWelcome', { viewport: v });
     await page.click('[data-part="start-trading"]');
     // Owner G25: the sign-up session ends and Log in comes next, carrying the take on.
@@ -457,7 +457,7 @@ test('Mira.K_ shows exactly as typed after setup (password path, extra backup sk
   const name = page.locator('[data-username]');
   await expect(name).toHaveText('Mira.K_');
   expect(await name.evaluate((el) => getComputedStyle(el).textTransform)).toBe('none');
-  await expect(page.locator('[data-part="summary-backup"]')).toHaveText('Recovery codes');
+  await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
   await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.')).toBeVisible();
   expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.K_', loginName: 'mira-signin-01' });
 
