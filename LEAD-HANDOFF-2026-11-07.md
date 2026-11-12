@@ -241,3 +241,6 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 
 ## 2026-11-12 11:59Z
 OWNER RULE (12 Nov): when his demo changes are built, refresh the demo (cloud preview + phone branch) and tell him so he can walk through it and comment with the in-app pins. In-app pin comments are his preferred feedback channel; collect via 'cat ~/x2f-comms/demo-notes.jsonl'.
+
+## 2026-11-12 12:35Z
+DEMO REFRESH PLAN (owner wants to walk the next demo): when ready, build wip/lead-demo-r2 = main + wip/lead-terms-v2 a467c7e7 + wip/lead-signup-v2 + wip/lead-owner-copy-1 + wip/lead-demo tooling; restart the cloud demo; tell the owner to git pull that branch on the phone. Demo reads X2F_TERMS_VERSION from TERMS_TEXT_VERSION, so no env change needed.
