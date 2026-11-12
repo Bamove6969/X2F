@@ -194,6 +194,22 @@ describe('PUT /v1/trades/:code/proofs/:id: the payment proof', () => {
     expect(rows).toEqual([{ d: '2026-10-17' }]);
   });
 
+  it('lead 2026-11-12: a per-account budget on the PUT (429 slow-down), taken before the body is read; another account is not charged', async () => {
+    const { PROOF_PUT_BUCKET } = await import('../src/limits.js');
+    expect(PROOF_PUT_BUCKET.capacity).toBeGreaterThanOrEqual(2 * PROOF_MAX_PER_SIDE);
+    const { buyer, seller, code } = await tradeIn('secured');
+    // Every try counts, refused ones too (past the cap these are too-many-proofs).
+    for (let i = 0; i < PROOF_PUT_BUCKET.capacity; i++) expect((await put(buyer, code, newProofId(), 'proof', body(64))).statusCode, `try ${i}`).not.toBe(429);
+    const over = await put(buyer, code, newProofId(), 'proof', body(PROOF_MAX_CIPHERTEXT + 1));
+    expect(over.statusCode).toBe(429);
+    expect(errorOf(over)).toBe('slow-down');
+    expect((over.json() as { retryAfterSeconds?: number }).retryAfterSeconds).toBeGreaterThan(0);
+    expect((await put(seller, code, newProofId(), 'proof', body(64))).statusCode).toBe(403);
+    // It refills with time.
+    setNow(new Date(deps.clock().getTime() + Math.ceil(60_000 / PROOF_PUT_BUCKET.perMinute)));
+    expect((await put(buyer, code, newProofId(), 'proof', body(64))).statusCode).not.toBe(429);
+  });
+
   it(`size: at most PROOF_MAX_CIPHERTEXT (413 one byte over), at least a nonce and a tag (400)`, async () => {
     const { buyer, code } = await tradeIn('secured');
     const over = await put(buyer, code, newProofId(), 'proof', body(PROOF_MAX_CIPHERTEXT + 1));
