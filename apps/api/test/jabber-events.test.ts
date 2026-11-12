@@ -9,7 +9,7 @@ import { startHold, withTx } from '../src/auth/hold.js';
 import { startDispute } from '../src/disputes/store.js';
 import { sendDueNotices } from '../src/jabber/outbox.js';
 import { RESEND_WAIT_S } from '../src/jabber/routes.js';
-import { NOTICE_KINDS, type JabberMessage, type JabberSender } from '../src/jabber/sender.js';
+import { ALWAYS_ON_KINDS, NOTICE_KINDS, type JabberMessage, type JabberSender } from '../src/jabber/sender.js';
 import { seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -54,7 +54,7 @@ const queued = async (accountId: string) =>
   (await deps.db.query<{ kind: string }>('select kind from jabber_outbox where account_id = $1 order by id', [accountId])).rows.map((r) => r.kind);
 const clearOutbox = (accountId: string) => deps.db.query('delete from jabber_outbox where account_id = $1', [accountId]);
 const sendAll = () => sendDueNotices({ db: deps.db, clock: deps.clock, config: deps.config, sender: fake });
-const ALL_ON = { events: [{ kind: 'account-change', on: true }, { kind: 'trade-attention', on: true }] };
+const ALL_ON = { events: [{ kind: 'account-change', on: true, canTurnOff: false }, { kind: 'trade-attention', on: true, canTurnOff: true }] };
 const nudgeChange = (b: Browser) => b.put('/v1/account/nudges', { enabled: false, quietFrom: null, quietTo: null, tz: null });
 
 async function withJabber(jid = address()) {
@@ -98,11 +98,19 @@ describe('the event list', () => {
     expect((await t.browser.get('/v1/account/jabber/events')).json()).toEqual(ALL_ON);
   });
 
-  it("the database takes every kind in NOTICE_KINDS, and J-20's team-member-first-login ahead of its landing", async () => {
+  it("review F1 (safe default until the owner rules): security notices can't be turned off, by the API or in the database", async () => {
+    // One named constant holds the rule; J-20's first login is in it ahead of its landing.
+    expect(ALWAYS_ON_KINDS).toEqual(['account-change', 'team-member-first-login']);
     const t = await withJabber();
-    for (const k of [...NOTICE_KINDS, 'team-member-first-login']) {
-      await deps.db.query('update jabber_contacts set muted_kinds = array[$2::text] where account_id = $1', [t.id, k]);
+    await clearOutbox(t.id);
+    for (const kind of ['account-change', 'team-member-first-login']) {
+      expect(err(await t.browser.put('/v1/account/jabber/events', { kind, on: false })), kind).toEqual({ status: 409, error: 'jabber-event-always-on' });
+      await expect(deps.db.query('update jabber_contacts set muted_kinds = array[$2::text] where account_id = $1', [t.id, kind]), kind).rejects.toThrow(/check/);
     }
+    // Asking for it on is not a change and is accepted.
+    expect((await t.browser.put('/v1/account/jabber/events', { kind: 'account-change', on: true })).json()).toEqual(ALL_ON);
+    expect(await queued(t.id)).toEqual([]);
+    await deps.db.query("update jabber_contacts set muted_kinds = '{trade-attention}' where account_id = $1", [t.id]);
   });
 
   it('a muted kind is skipped by jabber_queue itself, so a notice queued from code (as J-20 queues the first login) is muted too', async () => {
@@ -124,21 +132,6 @@ describe('the event list', () => {
 });
 
 describe('a muted event sends nothing; the others still do', () => {
-  it('account changes off: a change queues nothing, a dispute on a trade the user pays still tells them', async () => {
-    const buyer = await withJabber();
-    const seller = await trader();
-    const r = await buyer.browser.put('/v1/account/jabber/events', { kind: 'account-change', on: false });
-    expect(r.statusCode, r.body).toBe(200);
-    expect(r.json()).toEqual({ events: [{ kind: 'account-change', on: false }, { kind: 'trade-attention', on: true }] });
-    await clearOutbox(buyer.id);
-    expect((await nudgeChange(buyer.browser)).statusCode).toBe(200);
-    expect(await queued(buyer.id)).toEqual([]);
-    await dispute(buyer.id, seller.id);
-    expect(await queued(buyer.id)).toEqual(['trade-attention']);
-    await sendAll();
-    expect(sent.filter((x) => x.to === buyer.jid)).toEqual([{ to: buyer.jid, message: { kind: 'trade-attention' } }]);
-  });
-
   it('trade attention off: a dispute queues nothing, an account change still does', async () => {
     const buyer = await withJabber();
     const seller = await trader();
@@ -150,9 +143,9 @@ describe('a muted event sends nothing; the others still do', () => {
     expect(await queued(buyer.id)).toEqual(['account-change']);
   });
 
-  it("a member's change does not notify a team account that turned account changes off", async () => {
+  it("a member's change still notifies the team account (account changes are always on)", async () => {
     const owner = await withJabber();
-    expect((await owner.browser.put('/v1/account/jabber/events', { kind: 'account-change', on: false })).statusCode).toBe(200);
+    expect((await owner.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false })).statusCode).toBe(200);
     await clearOutbox(owner.id);
     const loginId = await seedAccount(deps, { loginName: `evmember${n}x`, displayName: `em-${n}-placeholder`, kind: 'member' });
     await deps.db.query(
@@ -160,22 +153,21 @@ describe('a muted event sends nothing; the others still do', () => {
        values ($1, 'Evmate', 'evmate', '{offers-see}', $2, $3, $2, $2)`,
       [owner.id, deps.clock(), loginId],
     );
-    await deps.db.query("update accounts set display_name = 'em-renamed', display_key = 'em-renamed' where id = $1", [loginId]);
-    expect(await queued(owner.id)).toEqual([]);
+    expect(await queued(owner.id)).toEqual(['account-change']);
   });
 });
 
 describe('changing the picks is itself an account change, told to the address (so a thief cannot quietly silence it)', () => {
-  it('turning an event off or on queues one account-change notice, even when account changes are the event turned off', async () => {
+  it('turning an event off or on queues one account-change notice, even while that event is the one off', async () => {
     const t = await withJabber();
     await clearOutbox(t.id);
-    expect((await t.browser.put('/v1/account/jabber/events', { kind: 'account-change', on: false })).statusCode).toBe(200);
+    expect((await t.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false })).statusCode).toBe(200);
     expect(await queued(t.id)).toEqual(['account-change']);
     await sendAll();
     // The outbox is shared with earlier tests' accounts: look at this address only.
     expect(sent.filter((x) => x.to === t.jid)).toEqual([{ to: t.jid, message: { kind: 'account-change' } }]);
     sent.length = 0;
-    expect((await t.browser.put('/v1/account/jabber/events', { kind: 'account-change', on: true })).statusCode).toBe(200);
+    expect((await t.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: true })).statusCode).toBe(200);
     expect(await queued(t.id)).toEqual(['account-change']);
     // Each change of the picks is its own notice.
     expect((await t.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false })).statusCode).toBe(200);
@@ -209,10 +201,10 @@ describe('who may change the picks', () => {
   it('a waiting (weak) session gets weak-session; during a hold the write gets recovery-hold', async () => {
     const t = await withJabber();
     await deps.db.query("update sessions set strength = 'weak-single', onboarding_until = null where account_id = $1", [t.id]);
-    expect(err(await t.browser.put('/v1/account/jabber/events', { kind: 'account-change', on: false }))).toEqual({ status: 403, error: 'weak-session' });
+    expect(err(await t.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false }))).toEqual({ status: 403, error: 'weak-session' });
     const h = await withJabber();
     await startHold(deps.db, h.id, deps.clock(), { reason: 'weak-change', startedBy: null });
-    expect(err(await h.browser.put('/v1/account/jabber/events', { kind: 'account-change', on: false }))).toMatchObject({ status: 403, error: 'recovery-hold' });
+    expect(err(await h.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false }))).toMatchObject({ status: 403, error: 'recovery-hold' });
     for (const x of [t, h]) expect((await x.browser.get('/v1/account/jabber/events')).json()).toEqual(ALL_ON);
   });
 
@@ -227,7 +219,7 @@ describe('who may change the picks', () => {
     const mb = new Browser(app);
     expect((await mb.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
     expect(err(await mb.get('/v1/account/jabber/events'))).toEqual({ status: 403, error: 'owner-only' });
-    expect(err(await mb.put('/v1/account/jabber/events', { kind: 'account-change', on: false }))).toEqual({ status: 403, error: 'owner-only' });
+    expect(err(await mb.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false }))).toEqual({ status: 403, error: 'owner-only' });
   });
 
   it('signed out: 401', async () => {
