@@ -12,6 +12,7 @@ import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { abilitiesView } from '../team/members.js';
+import { assistantLabel } from '../team/label.js';
 import type { PresetId, TeamRole } from '../team/abilities.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
@@ -120,8 +121,10 @@ function sessionInfo(type: SessionAccountType, row: { length_hours: number | nul
 }
 
 export interface MemberOverview {
-  /** The member's name, as chat labels show it. */
+  /** The member's name inside the team (the lead's list, the activity log, notes); never in chats (S-105). */
   name: string;
+  /** Owner p11-25 (S-105): how trade chats show this member, "<the lead's display name> Assistant N" (team/label.ts). */
+  chatLabel: string;
   /** The member's ticked boxes (team/abilities.ts; `GET /v1/team/permissions` names them). */
   abilities: string[];
   preset: PresetId | null;
@@ -256,7 +259,18 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
   if (!row) throw new ApiError(401, 'not-authenticated');
   const counts = await methodCounts(deps.db, methodsOf);
   const now = deps.clock();
-  const member = req.auth.memberId !== null ? { name: req.auth.memberName ?? '', ...abilitiesView(req.auth.memberAbilities) } : null;
+  let member: MemberOverview | null = null;
+  if (req.auth.memberId !== null) {
+    // A live member always holds a number (migration 390); a row without one is no live member.
+    const n = await deps.db.query<{ assistant_no: number | null }>('select assistant_no from team_members where id = $1 and removed_at is null', [req.auth.memberId]);
+    const no = n.rows[0]?.assistant_no;
+    if (no == null) throw new ApiError(401, 'not-authenticated');
+    member = {
+      name: req.auth.memberName ?? '',
+      chatLabel: assistantLabel(row.display_name, no),
+      ...abilitiesView(req.auth.memberAbilities),
+    };
+  }
   const held = row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime();
   return {
     displayName: row.display_name,

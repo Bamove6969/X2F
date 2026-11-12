@@ -238,7 +238,7 @@ export interface AccountOverview {
    * Plan 2 Task 18: set when the caller is a team member (the overview is of the account they work
    * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
    */
-  member?: { name: string; roles: TeamRole[] } | null;
+  member?: { name: string; roles: TeamRole[]; chatLabel?: string } | null;
   /**
    * The calling session's length (owner, 2 Nov 2026): set for a full trader session, null for staff,
    * owner and backup sessions. Optional: older API builds do not send it.
@@ -281,6 +281,8 @@ export interface TeamMember {
   /** True when the roles above do not describe the boxes exactly (a custom set): show "Custom", not the roles. */
   custom?: boolean;
   status: 'invited' | 'joining' | 'active';
+  /** Owner p11-25 (S-105): how trade chats show the member, "<lead's display name> Assistant N". Optional: older API builds do not send it. */
+  chatLabel?: string;
   inviteExpiresAt: string | null;
   joinedAt: string | null;
   createdAt: string;
@@ -599,8 +601,12 @@ export interface AuthApi {
 
   // Team members (Plan 2 Task 18). The account owner's side: a member gets 403 `owner-only`.
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
-  /** Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once. */
-  inviteMember(b: { displayName: string; roles: TeamRole[] } & Token): Promise<{ id: string; invite: string; expiresAt: string }>;
+  /**
+   * Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once.
+   * Owner p11-21 (S-104): from a login that waits (a username and password) the invite still goes out, and the answer is also
+   * `Staged` (`isStaged`): the member's boxes are a draft that applies 24 h after it is submitted.
+   */
+  inviteMember(b: { displayName: string; roles: TeamRole[] } & Token): Promise<{ id: string; invite: string; expiresAt: string } & Partial<Staged>>;
   /** Confirm `team-roles` (`teamRolesAction`). From a login that waits (a username and password), 202 `Staged`. */
   setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember | Staged>;
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */

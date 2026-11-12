@@ -114,7 +114,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await page.goto('/settings/team');
     await setPhone(page, viewport);
     await expect(page.locator('[data-part="team-count"]')).toHaveText('0 of 3 members');
-    await page.getByLabel('Their name in trade chats').fill('Aurora.K');
+    await page.getByLabel('Their name on your team').fill('Aurora.K');
     await page.locator('input[data-role="offers"]').uncheck();
     await page.locator('input[data-role="trades"]').check();
     await expectPhoneLayout(page);
@@ -141,7 +141,7 @@ test('a 4th member is refused through CantDoThat (too-many-members), from the se
     inviteAnswer: () => ({ status: 409, body: { error: 'too-many-members', max: 3 } }),
   });
   await page.goto('/settings/team');
-  await page.getByLabel('Their name in trade chats').fill('Cedric');
+  await page.getByLabel('Their name on your team').fill('Cedric');
   await page.locator('[data-part="invite"]').click();
   await confirmWithPassword(page, 'invite Cedric as a team member (Offers)');
   const popup = page.locator('[data-part="cant-do-that"]');
@@ -161,7 +161,7 @@ test('a full team: the invite control is disabled with the board note, and tappi
   await expect(page.locator('[data-part="team-full"]')).toHaveText('You have 3 members, the most allowed. Remove one to add another.');
   const invite = page.locator('[data-part="invite"]');
   await expect(invite).toHaveAttribute('aria-disabled', 'true');
-  await page.getByLabel('Their name in trade chats').fill('Dora');
+  await page.getByLabel('Their name on your team').fill('Dora');
   // aria-disabled keeps it focusable; Playwright's click waits for an enabled control, so dispatch the tap.
   await invite.dispatchEvent('click');
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);

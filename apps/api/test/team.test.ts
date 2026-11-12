@@ -276,7 +276,11 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown; termsCurrent: boolean };
     expect(me.displayName).toBe(owner.displayName);
     // Job 1c: the member's boxes (the old Trades role's), their preset (none: Custom) and the old roles they read as.
-    expect(me.member).toEqual({ name: `Joiner${n}x`, abilities: rolesToAbilities(['trades']), preset: null, roles: ['trades'] });
+    expect(me.member).toEqual({
+      name: `Joiner${n}x`, abilities: rolesToAbilities(['trades']), preset: null, roles: ['trades'],
+      // S-105 (owner p11-25): how chats show them, the lead's name and their number; never their own name.
+      chatLabel: `${owner.displayName} Assistant 1`,
+    });
     // The member's own login account carries the Terms they signed, and they are inside.
     expect(me.termsCurrent).toBe(true);
     const signed = await deps.db.query<{ id: string; terms_version: string | null; terms_accepted_at: Date | null; terms_signature: Buffer | null }>(
@@ -1059,10 +1063,14 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     (await deps.db.query('select 1 from confirm_tokens where token_hash = sha256(convert_to($1, \'utf8\')) and used_at is null', [token])).rowCount;
 
   // Owner 6 Nov 2026 (Q81): a PGP key login is strong, so only a username-and-password session is weak here.
+  // Owner p11-21 (S-104, 9 Nov 2026, replacing 1 Nov's refusal): a weak session's invite goes
+  // out; only the member's boxes wait (the describe block for S-104 below). Inside its sign-up
+  // window a weak session is still refused, as a role change is.
   for (const strength of ['weak-single'] as const) {
-    it(`a ${strength} session's invite gets weak-session, writes nothing and spends no confirm token`, async () => {
+    it(`a ${strength} session inside its sign-up window gets weak-session for an invite, writes nothing and spends no confirm token`, async () => {
       const owner = await team();
       await weaken(owner.browser, strength);
+      await deps.db.query('update sessions set onboarding_until = $2 where id = $1', [await sessionId(owner.browser), new Date(deps.clock().getTime() + 10 * 60_000)]);
       const displayName = `Weak${++n}x`;
       const bare = await owner.browser.post('/v1/team/invites', { displayName, roles: ['offers'] });
       expect(err(bare)).toEqual({ status: 403, error: 'weak-session' });
@@ -1156,11 +1164,15 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     const sid = await sessionId(owner.browser);
     const displayName = `LateWeak${++n}x`;
     const confirmToken = await confirmed(owner, { kind: 'team-invite', name: displayName, roles: 'offers' });
+    // S-104: the route reads the session's strength once more after the confirm (a weak one is
+    // staged); the session turns weak just after that read, so only the account lock sees it.
+    let armed = false;
     let weakened = false;
     const orig = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
     const q = vi.spyOn(deps.db, 'query').mockImplementation((async (...args: unknown[]) => {
       const out = await orig(...args);
-      if (!weakened && typeof args[0] === 'string' && args[0].includes('update confirm_tokens')) {
+      if (typeof args[0] === 'string' && args[0].includes('update confirm_tokens')) armed = true;
+      else if (armed && !weakened && typeof args[0] === 'string' && args[0].includes('select strength from sessions')) {
         weakened = true;
         await orig('update sessions set strength = $2 where id = $1', [sid, 'weak-single']);
       }
@@ -1664,5 +1676,181 @@ describe('notes on traders (S-094, p7-8)', () => {
     const m = await member(owner.id, { abilities: ['notes-add'] });
     expect(err(await m.browser.post('/v1/account/notes', { about: subjectName, text: 'Mine.' }))).toEqual({ status: 409, error: 'too-many-notes' });
     expect(await auditRows(owner.id)).toEqual([]);
+  });
+});
+
+describe('S-104 (owner p11-21): a lead on a username-and-password login may invite; the member\'s boxes wait 24 h', () => {
+  const weaken = async (b: Browser) => deps.db.query("update sessions set strength = 'weak-single' where id = $1", [await sessionId(b)]);
+  const boxesOf = async (memberId: string) =>
+    (await deps.db.query<{ abilities: string[] }>('select abilities from team_members where id = $1', [memberId])).rows[0]!.abilities;
+  const unspent = async (token: string) =>
+    (await deps.db.query('select 1 from confirm_tokens where token_hash = sha256(convert_to($1, \'utf8\')) and used_at is null', [token])).rowCount;
+
+  /** The member's real sign-up with an invite code (a PGP key, then a second PGP key); their browser, logged in. */
+  async function join(code: string): Promise<Browser> {
+    const b = new Browser(app);
+    const k1 = await genKey();
+    const k2 = await genKey();
+    const s1 = await b.post('/v1/team/join/start', { invite: code, loginName: `s104login${++n}`, publicKey: k1.publicKey, acceptedTerms: deps.config.termsVersion });
+    expect(s1.statusCode, s1.body).toBe(200);
+    const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
+    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: codeOf(await decrypt(c1.encryptedMessage, k1.privateKey, undefined, deps.clock())), termsSignature: SIG });
+    expect(f1.statusCode, f1.body).toBe(201);
+    const { setupId } = f1.json() as { setupId: string };
+    const s2 = await b.post('/v1/team/join/second/pgp/start', { setupId, publicKey: k2.publicKey });
+    expect(s2.statusCode, s2.body).toBe(200);
+    const c2 = s2.json() as { challengeId: string; encryptedMessage: string };
+    const f2 = await b.post('/v1/team/join/second/pgp/finish', {
+      setupId, challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k2.privateKey, undefined, deps.clock())), deviceLabel: 'Test',
+    });
+    expect(f2.statusCode, f2.body).toBe(201);
+    return b;
+  }
+
+  for (const shape of ['roles', 'abilities'] as const) {
+    it(`a weak session's invite (${shape} body) goes out with no boxes; the boxes are a draft that applies 24 h after it is submitted`, async () => {
+      const owner = await team();
+      await weaken(owner.browser);
+      const displayName = `WeakInv${++n}x`;
+      const wanted = rolesToAbilities(['offers']);
+      const confirmToken = shape === 'roles'
+        ? await confirmed(owner, { kind: 'team-invite', name: displayName, roles: 'offers' })
+        : await confirmed(owner, { kind: 'team-invite-abilities', name: displayName, abilities: wanted.join(',') });
+      const res = await owner.browser.post('/v1/team/invites', shape === 'roles' ? { displayName, roles: ['offers'], confirmToken } : { displayName, abilities: wanted, confirmToken });
+      expect(res.statusCode, res.body).toBe(201);
+      const body = res.json() as { id: string; invite: string; expiresAt: string; status: string; changeId: string };
+      expect(body.invite).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(body).toMatchObject({ status: 'staged', changeId: expect.any(String) });
+      expect(await unspent(confirmToken)).toBe(0);
+      // The invite exists at once, with no boxes; the boxes wait as the session's draft.
+      expect(await boxesOf(body.id)).toEqual([]);
+      const staged = await deps.db.query<{ change: Record<string, unknown>; submitted_at: Date | null }>('select change, submitted_at from hold_changes where id = $1', [body.changeId]);
+      expect(staged.rows[0]).toEqual({ change: { kind: 'team-abilities', memberId: body.id, abilities: wanted }, submitted_at: null });
+
+      // The member accepts at once; the lead is told (in-app; the Jabber notice is the trigger's, below).
+      const mb = await join(body.invite);
+      const me = (await mb.get('/v1/account/me')).json() as { member: { abilities: string[] } };
+      expect(me.member.abilities).toEqual([]);
+      expect(((await owner.browser.get('/v1/account/alerts')).json() as { kind: string }[]).map((a) => a.kind)).toContain('team-member-joined');
+      // With no boxes the member can do nothing yet.
+      expect(err(await mb.get('/v1/account/offers'))).toEqual({ status: 403, error: 'forbidden' });
+
+      // The lead submits the boxes: they apply 24 h after, not before.
+      expect((await owner.browser.post('/v1/account/hold/changes/submit', { ids: [body.changeId] })).statusCode).toBe(200);
+      const due = new Date(deps.clock().getTime() + HOLD_MS);
+      await settleDueChanges(deps.config, app.events).run(deps.db, new Date(due.getTime() - 1000));
+      expect(await boxesOf(body.id)).toEqual([]);
+      await settleDueChanges(deps.config, app.events).run(deps.db, due);
+      expect(await boxesOf(body.id)).toEqual(wanted);
+      expect((await mb.get('/v1/account/offers')).statusCode).toBe(200);
+    });
+  }
+
+  it('a strong login approves the waiting boxes now (G58); a cancelled draft never gives any', async () => {
+    const owner = await team();
+    await weaken(owner.browser);
+    const a = (await invite(owner, `WeakA${++n}x`, ['trades'])).json() as { id: string; changeId: string };
+    const b = (await invite(owner, `WeakB${n}x`, ['offers'])).json() as { id: string; changeId: string };
+    expect((await owner.browser.post('/v1/account/hold/changes/submit', { ids: [a.changeId, b.changeId] })).statusCode).toBe(200);
+    expect((await owner.browser.delete(`/v1/account/hold/changes/${b.changeId}`)).statusCode).toBe(204);
+    await deps.db.query("update sessions set strength = 'strong' where id = $1", [await sessionId(owner.browser)]);
+    const ok = await owner.browser.post('/v1/account/hold/changes/approve', { ids: [a.changeId] });
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(await boxesOf(a.id)).toEqual(rolesToAbilities(['trades']));
+    await settleDueChanges(deps.config, app.events).run(deps.db, new Date(deps.clock().getTime() + 2 * HOLD_MS));
+    expect(await boxesOf(b.id)).toEqual([]);
+  });
+
+  it('migration 390 lets a set be empty (only a weak invite makes one) and still refuses exactly HARD_OWNER_ONLY', async () => {
+    const sql = readFileSync(`${ROOT}apps/api/migrations/390_team_assistants.sql`, 'utf8');
+    const lists = [...sql.matchAll(/'\{([a-z,-]+)\}'::text\[\]/g)].map((m) => m[1]!.split(','));
+    expect(lists).toHaveLength(1);
+    expect(new Set(lists[0])).toEqual(HARD_OWNER_ONLY);
+    const owner = await team();
+    for (const id of HARD_OWNER_ONLY) {
+      await expect(deps.db.query(
+        `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Hardrule1', 'hardrule1', $2, $3, $3)`,
+        [owner.id, [id], deps.clock()],
+      )).rejects.toThrow();
+    }
+    // The API never takes an empty set from a request.
+    const confirmToken = await confirmed(owner, { kind: 'team-invite-abilities', name: `Empty${++n}x`, abilities: '' });
+    expect(err(await owner.browser.post('/v1/team/invites', { displayName: `Empty${n}x`, abilities: [], confirmToken }))).toEqual({ status: 400, error: 'bad-request' });
+  });
+
+  it('a strong session\'s invite still carries its boxes at once (no staging)', async () => {
+    const owner = await team();
+    const res = await invite(owner, `StrongInv${++n}x`, ['offers']);
+    expect(res.statusCode, res.body).toBe(201);
+    const body = res.json() as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(['expiresAt', 'id', 'invite']);
+    expect(await boxesOf(body.id as string)).toEqual(rolesToAbilities(['offers']));
+  });
+
+  it('the member accepting tells the lead over secure Jabber too (the team_members trigger, behind the opt-in)', async () => {
+    const owner = await team();
+    await deps.db.query('insert into jabber_contacts (account_id, jid_sealed, verified_at, enabled) values ($1, $2, $3, true)', [owner.id, Buffer.from('sealed'), deps.clock()]);
+    await weaken(owner.browser);
+    const created = (await invite(owner, `WeakJ${++n}x`, ['offers'])).json() as { invite: string };
+    await deps.db.query('delete from jabber_outbox where account_id = $1', [owner.id]);
+    await join(created.invite);
+    const { rows } = await deps.db.query<{ kind: string }>('select kind from jabber_outbox where account_id = $1', [owner.id]);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.kind === 'account-change' || r.kind === 'team-member-first-login')).toBe(true);
+  });
+});
+
+describe('S-105 (owner p11-25): a member shows in chats as "<lead display name> Assistant N", never by their own name', () => {
+  type Listed = { id: string; displayName: string; chatLabel: string };
+  const listed = async (owner: Who) => ((await owner.browser.get('/v1/team')).json() as { members: Listed[] }).members;
+
+  it('members are numbered 1, 2, 3 in the order they were added; the label never carries the member\'s name', async () => {
+    const owner = await team();
+    const names = [0, 1, 2].map((i) => `Aide${n}${i}x`);
+    for (const name of names) expect((await invite(owner, name, ['offers'])).statusCode).toBe(201);
+    const ms = await listed(owner);
+    // (The test clock stands still, so the list's own order is by id; each name keeps its number.)
+    expect(Object.fromEntries(ms.map((m) => [m.displayName, m.chatLabel]))).toEqual(
+      Object.fromEntries(names.map((name, i) => [name, `${owner.displayName} Assistant ${i + 1}`])),
+    );
+    for (const m of ms) expect(m.chatLabel).not.toContain(m.displayName);
+  });
+
+  it('a freed number is used again by the next member (the lowest free one)', async () => {
+    const owner = await team();
+    for (let i = 0; i < 3; i++) expect((await invite(owner, `Slot${++n}x`, ['offers'])).statusCode).toBe(201);
+    const first = (await listed(owner))[0]!;
+    const confirmToken = await confirmed(owner, { kind: 'team-remove', memberId: first.id });
+    const del = await app.inject({
+      method: 'DELETE', url: `/v1/team/members/${first.id}`, headers: { origin: 'https://x2f.test' }, cookies: owner.browser.cookies, payload: { confirmToken },
+    });
+    expect(del.statusCode, del.body).toBe(204);
+    expect((await invite(owner, `Slot${++n}x`, ['offers'])).statusCode).toBe(201);
+    expect((await listed(owner)).map((m) => m.chatLabel).sort()).toEqual([1, 2, 3].map((k) => `${owner.displayName} Assistant ${k}`));
+  });
+
+  it('a member sees their own label on /v1/account/me (a member seeded straight into the table is numbered too)', async () => {
+    const owner = await team();
+    const m1 = await member(owner.id, ['offers']);
+    const m2 = await member(owner.id, ['trades']);
+    const me1 = (await m1.browser.get('/v1/account/me')).json() as { member: { name: string; chatLabel: string } };
+    const me2 = (await m2.browser.get('/v1/account/me')).json() as { member: { name: string; chatLabel: string } };
+    expect(me1.member.chatLabel).toBe(`${owner.displayName} Assistant 1`);
+    expect(me2.member.chatLabel).toBe(`${owner.displayName} Assistant 2`);
+    expect(me1.member.chatLabel).not.toContain(m1.name);
+    // The owner's own overview has no member part.
+    expect(((await owner.browser.get('/v1/account/me')).json() as { member: unknown }).member).toBeNull();
+  });
+
+  it('the database keeps one live member per number in a team', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    const { rows } = await deps.db.query<{ assistant_no: number }>('select assistant_no from team_members where id = $1', [m.id]);
+    expect(rows[0]!.assistant_no).toBe(1);
+    await expect(deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at, assistant_no)
+       values ($1, 'Clashing1', 'clashing1', '{offers-see}', $2, $2, 1)`,
+      [owner.id, deps.clock()],
+    )).rejects.toThrow();
   });
 });

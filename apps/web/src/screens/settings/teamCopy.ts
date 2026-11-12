@@ -75,6 +75,11 @@ export const TEAM_COPY = {
   status: { invited: 'Invited', joining: 'Setting up their login', active: 'Active' } as const,
   inviteUntil: (iso: string) => `Invite works until ${when(iso)}`,
   roles: (roles: readonly TeamRole[]) => rolesText(roles),
+  // Owner p11-21 (S-104): a member invited from a username-and-password login holds no box until
+  // the waiting boxes apply. COPY-UNSIGNED
+  noBoxes: 'No roles yet',
+  // Owner p11-25 (S-105): how chats show the member (the owner's words for the label itself). COPY-UNSIGNED
+  chatLabel: (label: string) => `In chats: ${label}`,
   // Job 1c (review 2026-11-09 m3): a member whose boxes no role describes. COPY-UNSIGNED.
   custom: 'Custom',
   changeRoles: (name: string) => `Change roles for ${name}`,
@@ -85,11 +90,11 @@ export const TEAM_COPY = {
   rolesSaved: (name: string) => `Roles saved for ${name}.`,
   pickRole: 'Pick at least one role.',
   inviteTitle: 'Invite a member',
-  nameLabel: 'Their name in trade chats',
-  // Owner 2026-10-28 (R44): chat labels name the member, "Team Calcium member: Aurora", which the
-  // owner chose over design's "never which member". Design build gaps Job 1 (and board TeamChat)
-  // still ask for "never which member": left as the owner ruled, raised with the lead 2026-11-08.
-  nameHint: 'Chat shows it as "Team <your name> member: <their name>".',
+  // Owner p11-25 (S-105, 9 Nov 2026, replacing R44's "Team <name> member: <member>"): chats show a
+  // member as "<your display name> Assistant 1", "Assistant 2"; the member's name stays inside the
+  // team (this list and the activity log). COPY-UNSIGNED
+  nameLabel: 'Their name on your team',
+  nameHint: 'Only you and your team see it. Chats show them as "<your name> Assistant 1", "Assistant 2" and so on.',
   inviteButton: 'Make an invite link',
   // Team board (wip/design-brief), the full state, with the 1 Nov limit as a number.
   full: (max: number) => `You have ${max} members, the most allowed. Remove one to add another.`,
@@ -114,7 +119,9 @@ export const JOIN_COPY = {
   loading: 'Checking your invite…',
   gone: 'This invite link has been used, has run out or is not complete. Ask for a new one.',
   // Never the team's name before joining (review 2026-11-08 F3). COPY-UNSIGNED.
-  invited: (name: string, roles: readonly TeamRole[]) => `You are invited to a team as ${name}, for ${rolesText(roles)}.`,
+  // S-104 (owner p11-21): an invite from a username-and-password login carries no boxes yet. COPY-UNSIGNED
+  invited: (name: string, roles: readonly TeamRole[]) =>
+    roles.length === 0 ? `You are invited to a team as ${name}. The team lead sets what you may do; it starts later.` : `You are invited to a team as ${name}, for ${rolesText(roles)}.`,
   // The member's Terms step before joining (review 2026-11-08 F1). COPY-UNSIGNED.
   termsIntro: 'Before you join, read the Terms of Service to the end and accept them. The key points first:',
   // What the join enforces today; owner p7-9 (any login method) is not built yet (see TEAM_COPY.twoFactors).

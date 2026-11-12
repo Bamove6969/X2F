@@ -83,6 +83,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     changes: [
       'id', 'account_id', 'display_name', 'display_key', 'abilities', 'invite_hash', 'invite_expires_at', 'member_account_id',
       'joined_at', 'created_at', 'removed_at',
+      // Migration 390 (S-105): the member's chat number, set with the invite (its insert notifies).
+      'assistant_no',
     ],
     bookkeeping: {},
   },

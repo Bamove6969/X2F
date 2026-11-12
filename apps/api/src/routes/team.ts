@@ -7,7 +7,11 @@
  * - `POST /v1/team/invites { displayName, abilities, confirmToken }` (confirm `team-invite-abilities`,
  *   bound to the name and the boxes) → 201 `{ id, invite, expiresAt }`: `invite` is the one-time
  *   code, shown once. The old body `{ displayName, roles }` (confirm `team-invite`) still works: each
- *   role ticks the boxes it allowed (`ROLE_ABILITIES`).
+ *   role ticks the boxes it allowed (`ROLE_ABILITIES`). Owner p11-21 (S-104, 9 Nov 2026): from a
+ *   username-and-password session the invite still goes out (201 with the code), with no boxes;
+ *   the boxes are staged as that session's draft and the answer also carries `{ status: 'staged',
+ *   changeId }`: they apply 24 h after they are submitted (hold v3), or at once if a strong login
+ *   approves them. Each member's list entry carries `chatLabel` (S-105, team/label.ts).
  * - `PATCH /v1/team/members/:id { abilities, confirmToken }` (confirm `team-abilities`) → the member;
  *   the old `{ roles }` (confirm `team-roles`) still works. A box the owner's hard rules keep
  *   owner-only, an always-on one or an unknown id is 400 `bad-request` (team/abilities.ts). From a
@@ -16,8 +20,10 @@
  *   sessions end at once.
  * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
  *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent). Owner
- *   1 Nov 2026 (landing review I1): an invite needs a strong session, at any time (403
- *   `weak-session`, before the confirm token is spent); a removal does not. Hold model v3 (owner
+ *   1 Nov 2026 (landing review I1): no box reaches a member at once from a session that is not
+ *   strong; S-104 (above) replaced the refusal of a weak invite with staging its boxes, except
+ *   inside the sign-up window (403 `weak-session`, before the confirm token is spent, as a role
+ *   change); a removal needs no strong session. Hold model v3 (owner
  *   2 Nov 2026): a role change by a username-and-password session is staged like the other changes of
  *   such a session (202 `{ status: 'staged', changeId }`, applied 24 h after it is submitted;
  *   hold.ts); inside the sign-up window it is still refused (403 `weak-session`). Owner 2 Nov 2026:
@@ -183,14 +189,20 @@ async function useSetup(c: pg.PoolClient, setupId: string, now: Date): Promise<v
 const caller = (req: FastifyRequest): Caller => ({ accountId: req.auth.accountId, sessionId: req.auth.sessionId, settle: settleOf(req) });
 
 /**
- * preHandler after `requireSession` and before `requireConfirm` (owner 1 Nov 2026, landing review
- * I1): 403 `weak-session` unless the calling session is strong (strength.ts), so a weak session is
- * refused before it spends a confirm token. Re-checked under the account lock in the write's
- * transaction (`ownerWriteGate`).
+ * preHandler after `requireSession` and before `requireConfirm` for an invite (owner 1 Nov 2026,
+ * landing review I1; owner p11-21, S-104): 403 `weak-session` for a session whose login waits but
+ * whose change would not be staged (inside its sign-up window, as `gateChange` decides), so it is
+ * refused before it spends a confirm token. A weak session outside that window passes: its
+ * invite's boxes are staged. Re-checked under the account lock in the write's transaction
+ * (`createInvite`: `ownerWriteGate`, then `gateChange`).
  */
-const requireStrongSession: preHandlerAsyncHookHandler = async function (req) {
-  const { rows } = await req.server.deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
-  if (waits(rows[0]?.strength)) throw weakRefusal();
+const requireStageableSession: preHandlerAsyncHookHandler = async function (req) {
+  const { rows } = await req.server.deps.db.query<{ strength: LoginStrength | null; onboarding_until: Date | null }>(
+    'select strength, onboarding_until from sessions where id = $1',
+    [req.auth.sessionId],
+  );
+  const r = rows[0];
+  if (waits(r?.strength) && r?.onboarding_until != null && r.onboarding_until.getTime() > req.server.deps.clock().getTime()) throw weakRefusal();
 };
 
 export function teamRoutes(app: FastifyInstance): void {
@@ -205,7 +217,7 @@ export function teamRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/team/invites',
     {
-      preHandler: [owner, checkInvite, requireVendor, requireNotHeld, requireStrongSession, requireConfirm((req) => {
+      preHandler: [owner, checkInvite, requireVendor, requireNotHeld, requireStageableSession, requireConfirm((req) => {
         const i = input(req);
         return i.roles
           ? { kind: 'team-invite', name: i.name!.name, roles: i.roles.join(',') }
@@ -215,8 +227,14 @@ export function teamRoutes(app: FastifyInstance): void {
     async (req, reply) => {
       const deps = req.server.deps;
       const { name, abilities } = input(req);
-      const r = await createInvite(deps, caller(req), { name: name!, abilities });
-      return reply.code(201).send({ id: r.id, invite: r.code, expiresAt: r.expiresAt });
+      // Owner p11-21 (S-104): a username-and-password session's invite goes out with no boxes and
+      // its boxes wait as a `team-abilities` change of the new member (both body shapes alike).
+      const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
+      const stage = waits(rows[0]?.strength)
+        ? (c: Parameters<typeof gateChange>[0], memberId: string) => gateChange(c, req, { kind: 'team-abilities', memberId, abilities })
+        : undefined;
+      const r = await createInvite(deps, caller(req), { name: name!, abilities }, stage);
+      return reply.code(201).send({ id: r.id, invite: r.code, expiresAt: r.expiresAt, ...(r.staged ? stagedReply(r.staged) : {}) });
     },
   );
 
