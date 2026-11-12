@@ -17,7 +17,8 @@
  *   2026-11-12, review M4). The trade row is locked for the whole check, so parallel uploads
  *   cannot pass the cap, and only for a party (review M2: the party test is in the locking query,
  *   so an outsider never takes or waits on another trade's lock). The session is checked in an
- *   onRequest hook before any of the body is read (review M1), and again before the handler. 204, no body.
+ *   onRequest hook before any of the body is read (review M1), and again before the handler; a
+ *   per-account budget (PROOF_PUT_BUCKET, 429 slow-down) is taken there too. 204, no body.
  * - `GET /v1/trades/:code/proofs/:id`: a party reads a `proof` or `evidence` ciphertext; an
  *   `unblurred` one is 404 to every trader (it is for the moderator only).
  *   NEEDS_P4_CHAT_MEMBERSHIP: no moderator read here (lead 2026-11-08: the moderator's copy follows
@@ -45,6 +46,8 @@ const requireTrader = requireSession({ kinds: ['trader'] });
  * upload and records the activity; this early check does not touch the session.
  */
 const requireTraderFirst = requireSession({ kinds: ['trader'], touch: false }) as unknown as onRequestAsyncHookHandler;
+/** Per account, after the early session check and before the body is read: 429 slow-down (PROOF_PUT_BUCKET). */
+const proofBudget: onRequestAsyncHookHandler = async (req) => req.server.budgets.proofPut.take(req.auth.accountId);
 /** The cap per side for each kind; an unblurred copy has none (one per moderator request). */
 const CAP: Readonly<Record<StoredProofKind, number | null>> = { proof: PROOF_MAX_PER_SIDE, evidence: EVIDENCE_MAX_PER_SIDE, unblurred: null };
 const notFound = () => new ApiError(404, 'not-found');
@@ -64,7 +67,7 @@ export function proofRoutes(app: FastifyInstance): void {
     scope.removeAllContentTypeParsers();
     scope.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: PROOF_MAX_CIPHERTEXT }, (_req, b, done) => done(null, b));
 
-    scope.put('/v1/trades/:code/proofs/:id', { onRequest: requireTraderFirst, preHandler: requireTrader, bodyLimit: PROOF_MAX_CIPHERTEXT }, async (req, reply) => {
+    scope.put('/v1/trades/:code/proofs/:id', { onRequest: [requireTraderFirst, proofBudget], preHandler: requireTrader, bodyLimit: PROOF_MAX_CIPHERTEXT }, async (req, reply) => {
       const { code, id } = target(req);
       const q = req.query as Record<string, unknown>;
       const kind = q.kind;
