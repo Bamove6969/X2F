@@ -120,3 +120,88 @@ unchanged and covered by the passing staff tests:
 ## Must-fix list
 
 None for this branch. Recommended before launch: F1(a). Owner/design questions: F1(b) or (c).
+
+## Re-verify at ac3ab777 (12 Nov 2026)
+
+Fix commit ac3ab777 (on b05777cf): staffRoutes.ts +66, dispute.ts +4, AccountFrozen.tsx +24,
+plus tests (staff.test.ts +106, matrix row, dispute.test.ts +9, accountFrozen.test.tsx +45).
+
+**Verdict: F1(a), F2, L1 and T1 are closed. The branch is READY to land.** F1(b)/(c) (a notice for
+an orphaned freeze, or keeping the record past R36) remain owner and design questions.
+
+### Checks
+
+- Runner: disputes/staff + staff/matrix: 2 files, 135 passed, 1 todo, 0 failed.
+- Runner: packages/staff: 8 files, 208 passed.
+- Runner: web accountFrozen: 1 file, 11 passed.
+- semgrep on the 7 changed files: 0 findings.
+- dockerd was not touched.
+
+### F1(a): `POST /staff/v1/freezes/:id/lift`
+
+- **Guard and matrix.** It requires `disputes.handle` (declared and guarded, so `assertRoutePerm`
+  holds), and the matrix row is `allowed: MODERATORS`. Helpers get 403 (tested).
+- **Id parsing is safe.** An anchored, case-insensitive UUID regex runs before any query; anything
+  else is 404 `not-found`, the same answer as an unknown id (tested with both). The id is used only
+  as a bound parameter. The row must be `kind = 'freeze'`, and a row with no dispute is 404 too.
+  That leaves a 102-era freeze with no dispute unliftable here, but no code writes such rows.
+- **While the case exists, a plain moderator cannot lift unless they are the assignee.** The route
+  runs `withDispute` (the dispute row is locked) and then `mayWork`: the assignee, a senior or the
+  owner, with R37 applied to an appealed case. Anyone else gets 403 `forbidden-case`, the freeze
+  stays, and this is tested with a second mod. The lift writes under the dispute lock, re-locks the
+  freeze row (`for update`), and gives 409 `wrong-state` if it was already lifted (tested). The log
+  entry is on the case's trade code and the person is added to `seen`, the same as the case route.
+- **Once the case is gone: only a senior or the owner, with no R37 check.** I judge this safe.
+  R37 keeps round-1 staff out of an *appeal*. With the dispute record gone there is no appeal to
+  protect, and there is no assignee to defer to. Lifting only gives trading back. It cannot move
+  money, rule, or reveal anything, and the frozen account is a trader, never a staff account, so
+  nobody can lift their own freeze. Limiting it to seniors and the owner is the stricter choice
+  (plain mods are refused; tested). The lift runs in its own transaction with the same `for update`
+  and 409.
+- **Race.** `has_case` is read before the transaction. If the case is purged in between,
+  `withDispute` finds no record and answers 409 (`DisputeRuleError('wrong-state')`), and nothing is
+  written; a retry takes the senior-only path. The reverse cannot happen, because codes are never
+  reused. This fails closed.
+- **Log entry without a trade code: correct.** `tradeCode: null` (the column is nullable and the
+  index is partial). Any trade code would point at a record that R36 has deleted. The detail is
+  `{accountId, side}` and the actor is the senior; tested exactly.
+  - Optional minor: add the freeze id to the detail, so a reader of the audit can tie the entry to
+    the `trading_holds` row. That needs a log-schema key. The row's own `lifted_by`/`lifted_at`
+    already record it, so this is not needed.
+- **Nothing new for traders.** The freeze simply leaves `GET /v1/account/freeze` (tested).
+
+### L1: approve re-checks `validAction`
+
+- `approve` (only, not `send-back`) now returns `invalid-action` when the stored draft's action
+  fails `validAction(…, now)`. That covers a pre-D-015 `freeze` draft, any malformed shape, and a
+  ban whose `until` has passed. The check runs before `canApprove` and changes nothing, so it fails
+  closed.
+- It is harmless: send-back stays possible (tested), so a stale draft is cleared and re-proposed.
+  `{kind:'none'}` always passes.
+- A new side effect: a short timed ban can lapse while it waits for approval, which forces a send
+  back and a new proposal and costs time against the ruling deadline. That is correct (approving
+  a ban that has already ended would be wrong), and it shows up as a refusal, not silently.
+
+### F2: FrozenWatch
+
+- `stayOn` covers FROZEN_PATH, `/trade`, and every `/trade/...` path (room, chat via the pathname,
+  dispute). On those pages the watch keeps the state in `waiting` and does not mark it shown. A
+  second effect opens the notice on the first page that is not a trade page, marks it shown first,
+  and clears `waiting`. There is no loop: it opens once, and the shown check runs again before it
+  navigates. A cleanup (logout or remount) clears `waiting`.
+- **The new test really mounts outside the routes.** `<FrozenWatch enabled />` is a sibling of
+  `<Routes>` inside one `MemoryRouter`, with the real `AccountFrozenRoute` at FROZEN_PATH, as in
+  App.tsx. It covers:
+  - the dispute page, the room, `?view=chat` and another code: each stays put and the API was read;
+  - clicking from the room to `/sell`: the notice heading renders;
+  - a later page load at `/sell`: the notice does not open again.
+
+### T1
+
+T1 is covered: a team member gets 403 `owner-only`; a backup session, and then a held one, read
+the freeze.
+
+### Still open
+
+- F1(b)/(c): owner and design questions.
+- Optional: the freeze id in the lift log detail.
