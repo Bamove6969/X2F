@@ -10,8 +10,11 @@
 // - `popup: 'no-amount'` -> <ProofNoAmount>; its Send proof sends, with an explanation or none
 //   (optional, lead default pending owner p11-141; the explanation goes nowhere yet).
 // - `hidden.amount` / `hidden.memo` -> <ProofHiddenByYou> beside the preview; posting still allowed.
+// - P-020: with the proof, `proofCodeNotice(hidden)` -> `chatClient().sendNotice(chat, notice)` in
+//   the trade's chat when not null (NEEDS_PLAN_5_TASK_15: nothing calls it until the BlurEditor lands).
 // The seller's card (Task 16) runs its own check on the blurred image and trusts none of this.
 import { type Box, type OcrWord, type ProofCheck, type ProofExpected, amountBoxes, checkProof, codeBoxes } from '@x2f/proof';
+import type { ChatNoticeId } from '../chat/notices.js';
 
 export type UploaderPopup = 'not-current' | 'no-amount';
 
@@ -64,4 +67,13 @@ export function uploadPrompts(
   const check = checkProof(words, expected, [], takenAt);
   const keep = { tradeCode: expected.tradeCode, fiatCents: expected.fiatCents, exponent: expected.exponent };
   return { popup: uploaderPopup(check), date: check.date, hidden: hiddenByUploader(manual, amountBoxes(words, keep), codeBoxes(words, expected.tradeCode)) };
+}
+
+/**
+ * P-020: the chat notice the poster's app sends with the proof when the poster's own blur covered
+ * the trade code (`uploadPrompts(...).hidden`), else null. NEEDS_PLAN_5_TASK_15: the BlurEditor
+ * sends it through `chatClient().sendNotice` right after the proof; until then nothing calls this.
+ */
+export function proofCodeNotice(hidden: { amount: boolean; memo: boolean }): ChatNoticeId | null {
+  return hidden.memo ? 'proof-code-hidden' : null;
 }

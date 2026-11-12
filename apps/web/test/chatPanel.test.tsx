@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHAT_NOTICE, ChatPanel, MISSING_LINE, OfferChatPanel, OTHER_DEVICE, TradeChatPanel } from '../src/chat/ChatPanel.js';
 import { ChatFailed, setChatClient, type ChatClient, type ChatSnapshot } from '../src/chat/client.js';
 import { emitChatLive } from '../src/chat/live.js';
+import { CHAT_NOTICES } from '../src/chat/notices.js';
 import { render } from './render.js';
 
 const CHAT = 'K7M2-9QXA-4FTR-8WPN';
@@ -22,7 +23,12 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
 });
 
 let current: ChatSnapshot;
-let client: { sync: ReturnType<typeof vi.fn<ChatClient['sync']>>; send: ReturnType<typeof vi.fn<ChatClient['send']>>; sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>> };
+let client: {
+  sync: ReturnType<typeof vi.fn<ChatClient['sync']>>;
+  send: ReturnType<typeof vi.fn<ChatClient['send']>>;
+  sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>>;
+  sendNotice: ReturnType<typeof vi.fn<ChatClient['sendNotice']>>;
+};
 
 const flush = async (): Promise<void> => {
   await act(async () => {
@@ -32,7 +38,7 @@ const flush = async (): Promise<void> => {
 
 beforeEach(() => {
   current = snap();
-  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current) };
+  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current), sendNotice: vi.fn(async () => current) };
   setChatClient(client);
 });
 
@@ -83,6 +89,28 @@ describe('ChatPanel', () => {
     expect(host.querySelector('[data-system="dispute"]')).toBeNull();
     // The panel never adds a second primary action to the screen it sits in.
     expect(host.querySelector('[data-primary]')).toBeNull();
+  });
+
+  it('P-020: a proof notice is a system-styled line with its sender, in this reader\'s own wording (never the line\'s text), and is announced', async () => {
+    const WORDS = CHAT_NOTICES['proof-code-hidden'];
+    current = snap({ lines: [{ id: '1', from: 'buyer', text: 'hi', at: null, mine: true, gapBefore: false }] });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    current = snap({
+      lines: [
+        ...current.lines,
+        { id: '2', from: 'seller', text: 'anything else', notice: 'proof-code-hidden', at: null, mine: false, gapBefore: false },
+        { id: '3', from: 'buyer', text: WORDS, notice: 'proof-code-hidden', at: null, mine: true, gapBefore: false },
+      ],
+    });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    const items = [...host.querySelectorAll('li')].map((li) => li.textContent);
+    expect(items).toEqual(['You: hi', `Sam: ${WORDS}`, `You: ${WORDS}`]);
+    const theirs = host.querySelector('li[data-notice="proof-code-hidden"][data-from="seller"]')!;
+    expect(theirs.querySelector('.x2f-chat__autonotice')?.textContent).toBe(WORDS);
+    expect(host.querySelectorAll('li[data-notice]')).toHaveLength(2);
+    expect(host.querySelector('[data-chat-announce]')?.textContent).toBe(`Sam: ${WORDS}`);
   });
 
   it('review I2: a line the server no longer serves stays in place as a note with its sender and time, never as its text', async () => {
