@@ -10,6 +10,7 @@ import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { appendLog } from '../log/append.js';
 import { requireStaff } from '../staff/guard.js';
 import { traderSummaries } from '../traders/summary.js';
+import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
@@ -335,7 +336,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     return { code: d.code };
   });
 
-  // The case: header, both traders, the escrow, the ruling state and the freezes. Never the chat.
+  // The case: header, both traders (and each one's cancel figure, J-21), the escrow, the ruling
+  // state and the freezes. Never the chat.
   // The first opening per person is logged (G37: when the moderator opened the trade) and adds them to `seen`.
   app.get('/staff/v1/disputes/:code', { preHandler: guard, config: cfg }, async (req) => {
     const deps = req.server.deps;
@@ -362,6 +364,9 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const t = await caseTrade(deps.db, code);
     const now = deps.clock();
     const summaries = await traderSummaries(deps.db, [t.buyer, t.seller], now, null);
+    // J-21 (owner T-017): each trader's ONE cancel figure, every kind together: moderators only,
+    // so never inside the public summaries.
+    const cancels = await cancelFigures(deps.db, [t.buyer, t.seller]);
     const extra = await deps.db.query<{ incident_id: string; note: string; assignee_name: string | null }>(
       `select d.incident_id, d.note, a.${PUBLIC_NAME_COLUMN} as assignee_name
          from disputes d left join accounts a on a.id = d.assignee where d.code = $1 and d.seq = $2`,
@@ -400,6 +405,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       mayWork: mayWork(d, req),
       moderator: r.moderatorName !== null && r.moderatorJoinedAt !== null ? { name: r.moderatorName, joinedAt: r.moderatorJoinedAt.toISOString() } : null,
       traders: { buyer: summaries.get(t.buyer) ?? null, seller: summaries.get(t.seller) ?? null },
+      cancels: { buyer: cancels.get(t.buyer) ?? 0, seller: cancels.get(t.seller) ?? 0 },
       escrow: {
         state: t.state,
         amountAtomic: t.amount_atomic,

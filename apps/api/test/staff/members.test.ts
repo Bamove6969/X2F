@@ -385,10 +385,12 @@ describe('members', () => {
       joinedAt: MON_NOON.toISOString(), lastActiveAt: MON_NOON.toISOString(), openCases: 0, expiresAt: null,
       // Owner G3 (review P-m2): this moderator holds only a security key so far.
       missingMethods: ['pgp', 'passkey'],
+      // J-21 (owner Q60): the per-person checkboxes as stored.
+      grants: [],
     });
     expect(rows).toContainEqual({
       accountId: null, inviteId: inv.inviteId, displayName: null, role: 'helper', status: 'waiting', hours: OFFICE,
-      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt, missingMethods: [],
+      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt, missingMethods: [], grants: [],
     });
     expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any', missingMethods: [] });
     await addPgpKey(t.deps, mod.id);
@@ -569,6 +571,8 @@ describe('per-person grants (owner Q60)', () => {
     expect([res.statusCode, res.json()]).toEqual([200, { grants: ['feedback.read'] }]);
     expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
     expect((await mod.browser.get('/staff/v1/me')).json().nav).toContain('feedback');
+    // J-21: the Staff page's checkboxes read the stored grants from the member list.
+    expect(((await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string; grants: string[] }>).find((r) => r.accountId === mod.id)!.grants).toEqual(['feedback.read']);
     // Lead review 7 Nov M5: a named row's sender is the owner's and seniors' to see, not a grant holder's.
     await t.deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'named', $1, null, '2026-11-02')", [mod.id]);
     const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;

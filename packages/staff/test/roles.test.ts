@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { GRANTABLE_PERMS, NAV, PERMS, STAFF_ROLES, can, navFor, type Perm, type StaffRole } from '@x2f/staff';
+import { GRANTABLE_PERMS, NAV, NAV_PERM, PERMS, STAFF_ROLES, can, navFor, type Perm, type StaffRole } from '@x2f/staff';
 
 // Every role × perm pair, written out so a grant change shows up in review (Plan 4 Task 1).
 // Revisions: `stats.read` (owner only, Revision 2026-10-28), `reputation.review` (mods and senior
@@ -76,8 +76,15 @@ describe('can', () => {
 });
 
 describe('NAV', () => {
-  test('owner sees the boards\' seven, plus feedback (Plan 5 Task 4)', () => {
-    expect(NAV.owner).toEqual(['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'feedback', 'settings']);
+  test('owner sees the boards\' seven, plus feedback (Plan 5 Task 4) and Prices (owner Q13, J-21)', () => {
+    expect(NAV.owner).toEqual(['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings']);
+  });
+  test('J-21: every menu item needs a perm its role holds; Prices is the price-health data (stats.read)', () => {
+    for (const role of STAFF_ROLES) {
+      for (const item of NAV[role]) expect(can(role, NAV_PERM[item]), `${role} ${item}`).toBe(true);
+    }
+    expect(NAV_PERM.prices).toBe('stats.read');
+    expect(NAV_PERM.feedback).toBe('feedback.read');
   });
   test('senior and mod', () => {
     expect(NAV.mod).toEqual(['disputes', 'training', 'log']);

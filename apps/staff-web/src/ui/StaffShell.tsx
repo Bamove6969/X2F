@@ -12,6 +12,8 @@ export const NAV_LABELS: Readonly<Record<NavItem, string>> = {
   disputes: 'Disputes',
   staff: 'Staff',
   performance: 'Performance',
+  // Owner Q13 (J-21): the price-health page. DESIGN: not drawn (no board places it); COPY-UNSIGNED
+  prices: 'Prices',
   training: 'Training library',
   log: 'Activity log',
   // Plan 5 Task 4: no board places it yet (NAV puts it before Settings). DESIGNER-REVIEW
@@ -24,6 +26,7 @@ export const NAV_PATHS: Readonly<Record<NavItem, string>> = {
   disputes: '/disputes',
   staff: '/staff',
   performance: '/performance',
+  prices: '/prices',
   training: '/training',
   log: '/log',
   feedback: '/feedback',

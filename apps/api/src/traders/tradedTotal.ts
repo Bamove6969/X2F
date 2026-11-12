@@ -11,8 +11,8 @@ import { verifiedPastRepBySite, type VerifiedSiteVolume } from '../pastrep/store
  * `countTradeTotals` runs in the transaction that stores a trade event (trades/store.ts
  * `applyEvent`) and is idempotent per trade: a COMPLETED trade (released, or refunded to settle a
  * dispute: R38, the same rule as `COMPLETED_TRADES_SQL`) adds its take-time USD value
- * (`trades.usd_cents`; null counts nothing) to both sides' `own_usd_cents` once; a settled
- * `buyer-cancel` adds one to the buyer's `buyer_cancels` once (moderators only, a Plan 4 seam). A
+ * (`trades.usd_cents`; null counts nothing) to both sides' `own_usd_cents` once; a cancel of any
+ * kind adds one to the `cancels` of the side that ended it (`countCancel`, J-21; moderators only). A
  * review or a Skip review changes neither. The totals have no link to trades, so they survive the
  * 30-day purge. SEAM for Plan 5 Task 20's `account_totals`.
  *
@@ -41,19 +41,69 @@ export async function countTradeTotals(q: Queryable, code: string): Promise<void
        own_xmr_atomic = account_traded_totals.own_xmr_atomic + excluded.own_xmr_atomic`,
     [code],
   );
-  // A settled buyer cancel: one for the buyer, once.
+  await countCancel(q, code);
+}
+
+/**
+ * J-21 (owner 2 Nov 01:50, T-017): the ONE cancel figure, moderators only (the case view). A trade
+ * that ended as a cancel of any kind adds one, once, to the side that ended it. Lead default until
+ * the owner confirms (P5-A9's "ended alone or by proposing an accepted mutual cancel", widened to
+ * every kind):
+ * - the buyer's cancel (closed before any coins, or its refund settled): the buyer;
+ * - the seller's walk-away before funding: the seller;
+ * - an accepted mutual cancel: the side that PROPOSED it (the other side of the stored
+ *   `accept-cancel` event);
+ * - the seller's "Cancel and get refund" once the buyer's time to pay ran out (`auto-refund` with
+ *   no dispute): the buyer, whose time ran out;
+ * - nobody for what no trader tapped: the setup time-out, a funding lapse, a hold's system cancel.
+ * A refund that settles a dispute is a completed trade, never a cancel. The trade's events are
+ * still stored when it closes (they go with the 30-day purge, the figure stays). Runs in the
+ * transaction that stores the closing event, after that event.
+ */
+export async function countCancel(q: Queryable, code: string): Promise<void> {
   await q.query(
     `with t as (
-       select code, buyer_account_id from trades where code = $1 and state = 'refunded' and settling = 'buyer-cancel'
+       select code, state, settling, buyer_account_id, seller_account_id from trades
+        where code = $1 and dispute_by is null
+          and (state = 'cancelled' or (state = 'refunded' and settling in ('buyer-cancel', 'mutual-cancel', 'auto-refund')))
+     ), closing as (
+       select e.by, e.event->>'type' as type from trade_events e where e.code = $1 order by e.id desc limit 1
+     ), accepted as (
+       select e.by from trade_events e where e.code = $1 and e.event->>'type' = 'accept-cancel' order by e.id desc limit 1
+     ), side as (
+       select t.code, t.buyer_account_id, t.seller_account_id,
+              case
+                when t.state = 'cancelled' then
+                  case (select type from closing)
+                    when 'buyer-cancel' then 'buyer'
+                    when 'walk-away' then 'seller'
+                    when 'accept-cancel' then case (select by from closing) when 'buyer' then 'seller' when 'seller' then 'buyer' end
+                  end
+                when t.settling = 'buyer-cancel' then 'buyer'
+                when t.settling = 'auto-refund' then 'buyer'
+                when t.settling = 'mutual-cancel' then case (select by from accepted) when 'buyer' then 'seller' when 'seller' then 'buyer' end
+              end as who
+         from t
      ), mark as (
-       insert into trade_totals_counted (trade_code, kind) select code, 'buyer-cancel' from t
+       insert into trade_totals_counted (trade_code, kind) select code, 'cancel' from side where who is not null
        on conflict do nothing returning trade_code
      )
-     insert into account_traded_totals (account_id, buyer_cancels)
-     select t.buyer_account_id, 1 from t join mark on mark.trade_code = t.code
-     on conflict (account_id) do update set buyer_cancels = account_traded_totals.buyer_cancels + 1`,
+     insert into account_traded_totals (account_id, cancels)
+     select case side.who when 'buyer' then side.buyer_account_id else side.seller_account_id end, 1
+       from side join mark on mark.trade_code = side.code
+     on conflict (account_id) do update set cancels = account_traded_totals.cancels + 1`,
     [code],
   );
+}
+
+/** J-21: each account's one cancel figure (0 with no row), for the moderator's case view only. */
+export async function cancelFigures(q: Queryable, accountIds: readonly string[]): Promise<Map<string, number>> {
+  const { rows } = await q.query<{ id: string; cancels: number }>(
+    `select a.id::text as id, coalesce(tt.cancels, 0)::int as cancels
+       from unnest($1::uuid[]) as a (id) left join account_traded_totals tt on tt.account_id = a.id`,
+    [[...new Set(accountIds)]],
+  );
+  return new Map(rows.map((r) => [r.id, r.cancels]));
 }
 
 /**

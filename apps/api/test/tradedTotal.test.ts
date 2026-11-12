@@ -18,7 +18,7 @@ import { driveTo, seedReviews, seedTrade } from './helpers/trades.js';
 //   when the trader opted in;
 // - imported volume is one line per site in US dollars (owner p4-1), from the dollar figure a
 //   moderator verified on an APPROVED past-reputation claim, rounded down (`tradedBucketUsd`);
-// - the dollar running total stays for moderators, and a buyer-cancel count (Plan 4 seam); neither
+// - the dollar running total stays for moderators, and the one cancel figure (owner T-017); neither
 //   is in a trader-facing answer. Real Postgres.
 
 let app: FastifyInstance;
@@ -58,8 +58,8 @@ async function trade(seller: Who, buyer: Who, amountAtomic: bigint, o: { state?:
 }
 
 const totals = async (id: string) =>
-  (await deps.db.query<{ own_usd_cents: string; own_xmr_atomic: string; buyer_cancels: number }>(
-    'select own_usd_cents, own_xmr_atomic, buyer_cancels from account_traded_totals where account_id = $1', [id],
+  (await deps.db.query<{ own_usd_cents: string; own_xmr_atomic: string; cancels: number }>(
+    'select own_usd_cents, own_xmr_atomic, cancels from account_traded_totals where account_id = $1', [id],
   )).rows[0] ?? null;
 const setting = (who: Who) => who.browser.get('/v1/account/profile/traded-total');
 const optIn = (who: Who, show: unknown) => who.browser.put('/v1/account/profile/traded-total', { show });
@@ -75,7 +75,7 @@ describe('the running totals', () => {
     const seller = await trader();
     const buyer = await trader();
     const code = await trade(seller, buyer, xmr(3) + 5n, { usdCents: 1_234_567n });
-    const want = { own_usd_cents: '1234567', own_xmr_atomic: (xmr(3) + 5n).toString(), buyer_cancels: 0 };
+    const want = { own_usd_cents: '1234567', own_xmr_atomic: (xmr(3) + 5n).toString(), cancels: 0 };
     expect(await totals(seller.id)).toEqual(want);
     expect(await totals(buyer.id)).toEqual(want);
     // Idempotent per trade: counting it again changes nothing.
@@ -193,7 +193,7 @@ describe('the opt-in XMR line (owner Q63; off by default)', () => {
     expect((await app.inject({ method: 'GET', url: '/v1/account/profile/traded-total' })).statusCode).toBe(401);
   });
 
-  it('the exact totals and the buyer-cancel count never appear in any answer', async () => {
+  it('the exact totals and the cancel figure never appear in any answer', async () => {
     const seller = await trader();
     const buyer = await trader();
     const code = await trade(seller, buyer, 12_345_678_901_234n, { usdCents: 1_234_567n });
@@ -205,34 +205,102 @@ describe('the opt-in XMR line (owner Q63; off by default)', () => {
       (await seller.browser.get('/v1/account/me')).body,
     ];
     for (const b of bodies) {
-      expect(b).not.toMatch(/1234567|12345\.67|12,345|12345678901234|12\.345678|own_usd|own_xmr|usd_?cents|buyer_?cancels/i);
+      expect(b).not.toMatch(/1234567|12345\.67|12,345|12345678901234|12\.345678|own_usd|own_xmr|usd_?cents|buyer_?cancels|"cancels"/i);
     }
   });
 });
 
-describe('buyer cancels (moderators only, a Plan 4 seam)', () => {
-  it('a buyer cancel is counted once for the buyer, never for the seller, and never in a trader-facing answer', async () => {
-    const seller = await trader();
-    const buyer = await trader();
-    const code = await trade(seller, buyer, xmr(40), { state: 'secured' });
-    await applyEvent(deps, code, { type: 'settled', kind: 'buyer-cancel', txHash: tx() }, 'system');
-    expect(await totals(buyer.id)).toEqual({ own_usd_cents: '0', own_xmr_atomic: '0', buyer_cancels: 1 });
-    expect((await totals(seller.id))?.buyer_cancels ?? 0).toBe(0);
+// Owner 2 Nov 01:50 (T-017, J-21): "all cancel types grouped into ONE cancel figure, seen ONLY by
+// moderators as an extra stat on the account (not public)". Lead default (BLOCKED question for the
+// owner): the figure counts each cancelled trade once, for the side that ended it (P5-A9's rule,
+// widened to every kind): the buyer's cancel, the seller's walk-away before funding, the PROPOSER
+// of an accepted mutual cancel, and the buyer whose time to pay ran out when the seller then
+// cancelled. Nobody tapped a time-out (setup, funding lapse) or a hold's system cancel: not counted.
+describe('one cancel figure (moderators only)', () => {
+  const cancels = async (who: Who) => (await totals(who.id))?.cancels ?? 0;
+  const pair = async () => ({ seller: await trader(), buyer: await trader() });
+  const recount = async (code: string) => {
     const c = await deps.db.connect();
     try {
       await countTradeTotals(c, code);
     } finally {
       c.release();
     }
-    expect((await totals(buyer.id))!.buyer_cancels).toBe(1);
-    const { summary } = await summaryOf(seller, code);
+  };
+
+  it('a settled buyer cancel counts once for the buyer, never for the seller, and never in a trader-facing answer', async () => {
+    const { seller, buyer } = await pair();
+    const code = await trade(seller, buyer, xmr(40), { state: 'secured' });
+    await applyEvent(deps, code, { type: 'buyer-cancel' }, 'buyer');
+    await applyEvent(deps, code, { type: 'settled', kind: 'buyer-cancel', txHash: tx() }, 'system');
+    expect(await totals(buyer.id)).toEqual({ own_usd_cents: '0', own_xmr_atomic: '0', cancels: 1 });
+    expect(await cancels(seller)).toBe(0);
+    await recount(code);
+    expect(await cancels(buyer)).toBe(1);
+    const { summary, body } = await summaryOf(seller, code);
     expect(Object.keys(summary).sort()).toEqual(
-      ['badges', 'completedTrades', 'displayName', 'imported', 'lastSeenAt', 'online', 'positivePct', 'stage', 'tradedOverXmr', 'typicalMinutes'],
+      ['badges', 'completedTrades', 'displayName', 'disputes', 'imported', 'lastSeenAt', 'online', 'positivePct', 'stage', 'tradedOverXmr', 'typicalMinutes'],
     );
-    // A mutual cancel is not a buyer cancel.
-    const mutual = await trade(seller, buyer, xmr(1), { state: 'secured' });
-    await applyEvent(deps, mutual, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
-    expect((await totals(buyer.id))!.buyer_cancels).toBe(1);
+    // The public cancel rate is gone (owner T-017): no cancel figure of any kind on the trade view.
+    expect(body).not.toMatch(/cancelRate|cancel_rate|cancels"|cancelledByMe/i);
+  });
+
+  it('a buyer cancel before any coins (the trade closes as cancelled) counts for the buyer', async () => {
+    const { seller, buyer } = await pair();
+    const { trade: t } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE', amountAtomic: xmr(1), ...WIDE });
+    await driveTo(deps, t, 'funding');
+    const next = await applyEvent(deps, t.code, { type: 'buyer-cancel' }, 'buyer');
+    expect(next.state).toBe('cancelled');
+    expect([await cancels(buyer), await cancels(seller)]).toEqual([1, 0]);
+    await recount(t.code);
+    expect(await cancels(buyer)).toBe(1);
+  });
+
+  it("the seller's walk-away before funding counts for the seller", async () => {
+    const { seller, buyer } = await pair();
+    const { trade: t } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE', amountAtomic: xmr(1), ...WIDE });
+    expect((await applyEvent(deps, t.code, { type: 'walk-away' }, 'seller')).state).toBe('cancelled');
+    expect([await cancels(buyer), await cancels(seller)]).toEqual([0, 1]);
+  });
+
+  it('an accepted mutual cancel counts for the side that proposed it, before funding and after it', async () => {
+    const { seller, buyer } = await pair();
+    // Before coins: it closes as cancelled at once.
+    const { trade: early } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE', amountAtomic: xmr(1), ...WIDE });
+    await driveTo(deps, early, 'funding');
+    await applyEvent(deps, early.code, { type: 'propose-cancel' }, 'seller');
+    expect((await applyEvent(deps, early.code, { type: 'accept-cancel' }, 'buyer')).state).toBe('cancelled');
+    expect([await cancels(buyer), await cancels(seller)]).toEqual([0, 1]);
+    // Secured: the refund settles later; the proposer is read from the stored events.
+    const code = await trade(seller, buyer, xmr(1), { state: 'secured' });
+    await applyEvent(deps, code, { type: 'propose-cancel' }, 'buyer');
+    await applyEvent(deps, code, { type: 'accept-cancel' }, 'seller');
+    await applyEvent(deps, code, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
+    expect([await cancels(buyer), await cancels(seller)]).toEqual([1, 1]);
+    await recount(code);
+    expect([await cancels(buyer), await cancels(seller)]).toEqual([1, 1]);
+  });
+
+  it("the seller's cancel after the buyer's time to pay ran out counts for the buyer", async () => {
+    const { seller, buyer } = await pair();
+    const code = await trade(seller, buyer, xmr(1), { state: 'secured' });
+    const row = await deps.db.query<{ pay_by: Date }>('select pay_by from trades where code = $1', [code]);
+    setNow(new Date(row.rows[0]!.pay_by.getTime() + 60_000));
+    try {
+      await applyEvent(deps, code, { type: 'request-refund' }, 'seller');
+      await applyEvent(deps, code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system');
+    } finally {
+      setNow(START);
+    }
+    expect([await cancels(buyer), await cancels(seller)]).toEqual([1, 0]);
+  });
+
+  it('a time-out nobody tapped and a hold\'s system cancel count for nobody; a completed trade is no cancel', async () => {
+    const { seller, buyer } = await pair();
+    const { trade: t } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE', amountAtomic: xmr(1), ...WIDE });
+    expect((await applyEvent(deps, t.code, { type: 'system-cancel' }, 'system')).state).toBe('cancelled');
+    await trade(seller, buyer, xmr(1));
+    expect([await cancels(buyer), await cancels(seller)]).toEqual([0, 0]);
   });
 });
 

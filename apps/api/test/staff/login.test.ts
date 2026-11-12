@@ -246,7 +246,7 @@ describe('staff login with login hours', () => {
     expect((await fullLogin(b, o.id, o.loginName, key)).json()).toEqual({ status: 'ok' });
     const me = (await b.get('/staff/v1/me')).json();
     expect(me.role).toBe('owner');
-    expect(me.nav).toEqual(['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'feedback', 'settings']);
+    expect(me.nav).toEqual(['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings']);
   });
 
   it('refuses a switched-off staff member at login and on every request', async () => {
