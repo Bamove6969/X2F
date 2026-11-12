@@ -26,6 +26,10 @@
  *   early. The account's hold (Task 17, hold.ts) starts in the same transaction. Any full session
  *   of the account can end a recovery session; a strong one ends the hold it started too.
  * - The backup login starts with the private login name (owner, 2026-10-23), never the display name.
+ * - Owner S-109 (p11-34, 9 Nov 2026): a correct recovery code always gets in, even while wrong codes
+ *   are being throttled (`matchRecoveryCode`); only wrong codes wait.
+ * - Owner S-110 (p11-35): a password change that also gives the recovery code applies at once
+ *   (password.ts); the code is spent and replaced as after a recovery-code login.
  * - Staff and the owner have no backup login (R2): their login names take the unknown-name path.
  */
 import { createHash, createHmac } from 'node:crypto';
@@ -47,6 +51,7 @@ import { totpBox } from './totp.js';
 import { holdTrades, syncHeldTrades } from '../trades/held.js';
 import { loginStrength, waits } from './strength.js';
 import type { Queryable } from '../db/pool.js';
+import type { Deps } from '../app.js';
 
 export const RECOVERY_HOLD_MS = 24 * 3_600_000;
 /** Hold model v3 (owner 2 Nov 2026): one code, required at sign-up, replaced after use. */
@@ -138,6 +143,50 @@ export async function applyRecoveryCodes(db: Queryable, accountId: string, keyId
 type Who = { id: string } | { nameTag: string };
 
 /**
+ * The throttled check of a typed recovery code against `accountId`'s unused code (the backup login
+ * and S-110's password change). Always one lookup with the same hashing work; a malformed code or a
+ * missing account simply matches nothing. A row matches only under its own scheme: its key's HMAC,
+ * or SHA-256 if legacy.
+ *
+ * Owner S-109 (p11-34, 9 Nov 2026): "a correct recovery code always gets in", even when logins are
+ * throttled. So the throttle's refusal is held back until the code has been looked up: a correct
+ * code returns its id whatever the throttle says (the code has 80 random bits, so the throttle adds
+ * nothing against guessing it; it slows only the wrong ones); a wrong one gets the throttle's 429
+ * while it waits (and, as before, no failure is counted for a refused try), else a failure is counted
+ * and `codeId` is null. The caller spends the code and clears the streak (`throttleReset`) on
+ * success. Returns the throttle key too.
+ */
+export async function matchRecoveryCode(
+  deps: Deps,
+  req: FastifyRequest,
+  accountId: string | null,
+  who: Who,
+  code: string,
+): Promise<{ key: string; codeId: string | null }> {
+  const key = await throttleKey(deps, req, 'recovery-code', who);
+  let throttled: ApiError | null = null;
+  try {
+    await throttleCheck(deps, key);
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 429) throw e;
+    throttled = e;
+  }
+  const normalized = normalizeRecoveryCode(code.slice(0, 64));
+  const { ids, hashes } = candidates(deps.config, accountId ?? '', normalized ?? '');
+  const { rows } = await deps.db.query<{ id: string }>(
+    `select id from recovery_codes
+      where account_id = $1 and used_at is null
+        and (coalesce(key_id, 0), code_hash) in (select * from unnest($2::int[], $3::bytea[]))`,
+    [accountId, ids, hashes],
+  );
+  const codeId = accountId !== null && normalized !== null ? (rows[0]?.id ?? null) : null;
+  if (codeId !== null) return { key, codeId };
+  if (throttled !== null) throw throttled;
+  await throttleFail(deps, key, accountId);
+  return { key, codeId: null };
+}
+
+/**
  * `POST /v1/login/backup { loginName, kind: 'recovery-code', code, deviceLabel }`. `kind: 'totp'` is
  * 403 `method-not-allowed` and any other `kind` 400 `bad-request`, before any lookup. Unknown login names, accounts of other
  * kinds (R2) and accounts without recovery codes take the same path and fail the same way: 401
@@ -164,31 +213,19 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   // unknown-name path.
   const accountId = found && allowedMethods(found.kind).includes('recovery-codes') ? found.id : null;
   const who: Who = accountId !== null ? { id: accountId } : { nameTag: name.tag };
-  const refuse = async (key: string): Promise<never> => {
-    await throttleFail(deps, key, accountId);
-    throw new ApiError(401, 'credentials-invalid');
-  };
-
   if (kind === 'recovery-code') {
-    const key = await throttleKey(deps, req, 'recovery-code', who);
-    await throttleCheck(deps, key);
-    const normalized = normalizeRecoveryCode(code.slice(0, 64));
-    // Always one lookup with the same hashing work; a malformed code or a missing account simply
-    // matches nothing. A row matches only under its own scheme: its key's HMAC, or SHA-256 if legacy.
-    const { ids, hashes } = candidates(deps.config, accountId ?? '', normalized ?? '');
-    const { rows } = await deps.db.query<{ id: string }>(
-      `select id from recovery_codes
-        where account_id = $1 and used_at is null
-          and (coalesce(key_id, 0), code_hash) in (select * from unnest($2::int[], $3::bytea[]))`,
-      [accountId, ids, hashes],
-    );
-    const codeId = rows[0]?.id;
-    if (accountId === null || normalized === null || codeId === undefined) return refuse(key);
+    // A miss is counted (or answered with the throttle's wait) inside `matchRecoveryCode`.
+    const { key, codeId } = await matchRecoveryCode(deps, req, accountId, who, code);
+    if (accountId === null || codeId === null) throw new ApiError(401, 'credentials-invalid');
     await assertNotDisabled(deps.db, accountId);
     // Hold model v3: the account's 24-hour hold starts with the session (`backupSession`). The code
     // is spent in that same transaction, so a failure there leaves the account's one code unused.
     const holdUntil = new Date(deps.clock().getTime() + RECOVERY_HOLD_MS);
-    if (!(await backupSession(req, reply, accountId, codeId, deviceLabel, holdUntil))) return refuse(key);
+    if (!(await backupSession(req, reply, accountId, codeId, deviceLabel, holdUntil))) {
+      // A parallel use spent the code first: counted as a miss, as before S-109.
+      await throttleFail(deps, key, accountId);
+      throw new ApiError(401, 'credentials-invalid');
+    }
     await throttleReset(deps, key);
     await retagLoginName(deps, found!, name.candidates.current);
     return { status: 'ok' as const, level: 'recovery' as const, holdUntil: holdUntil.toISOString() };
@@ -251,7 +288,7 @@ const revealContext = (accountId: string) => `x2f/recovery-code-reveal/${account
  * once (`recovery_code_reveals`; sealed by the TOTP key store under its own context). Alert
  * `recovery-code-renewed`.
  */
-async function renewRecoveryCode(db: Queryable, config: Config, accountId: string, now: Date): Promise<void> {
+export async function renewRecoveryCode(db: Queryable, config: Config, accountId: string, now: Date): Promise<void> {
   const code = newRecoveryCode();
   const keyId = config.recoveryCodeKeys.current;
   await applyRecoveryCodes(db, accountId, keyId, [recoveryCodeHash(config, keyId, accountId, normalized(code))], now, { alert: false });

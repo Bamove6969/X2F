@@ -170,6 +170,22 @@ export const MEMBER_HOLD_COPY = {
   bannerLink: 'See the hold',
 } as const;
 
+/**
+ * A used recovery code is burned (owner S-111, p11-36, 9 Nov 2026: "tell them that this recovery
+ * code is now burned and in the security settings, they should go and generate a new recovery
+ * code"), and the password change that takes the code (owner S-110, p11-35). COPY-UNSIGNED: design
+ * words the notice; DESIGN: the password form's code field is not drawn yet.
+ */
+export const BURNED_CODE_COPY = {
+  title: 'Your recovery code is now burned',
+  body: 'The recovery code you just used will never work again. Go to Security settings for a new recovery code.',
+  link: 'Go to Security',
+  done: 'Done',
+  passwordCodeLabel: 'Recovery code (optional)',
+  passwordCodeHint: 'Add your recovery code and the new password takes effect at once, with no 24-hour wait. The code is then used up.',
+  passwordCodeWrong: "That recovery code doesn't match.",
+} as const;
+
 /** The new recovery code (RecoveryCode board, reminder and show steps; owner G32). COPY-UNSIGNED */
 export const NEW_CODE_COPY = {
   title: 'Write down your new recovery code',

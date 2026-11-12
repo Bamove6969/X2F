@@ -489,8 +489,11 @@ export interface AuthApi {
    * Hold model v3: each change below answers `Staged` (202) instead when made from a login with just
    * a username and password: nothing changed yet; it is a draft to review and submit (`isStaged`).
    */
-  /** `PUT /v1/account/password` (Task 10). */
-  setPassword(b: { password: string } & Token): Promise<Staged | undefined>;
+  /**
+   * `PUT /v1/account/password` (Task 10). With `recoveryCode` (owner S-110) the change applies at
+   * once, never staged, and the code is burned (the server answers `recoveryCodeBurned: true`).
+   */
+  setPassword(b: { password: string; recoveryCode?: string } & Token): Promise<Staged | undefined>;
   addPgpKeyStart(b: { publicKey: string } & Token): Promise<PgpChallenge>;
   addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string } & Partial<Staged>>;
   addWebAuthnStart(b: { kind: WebAuthnKind } & Token): Promise<RegistrationChallenge>;

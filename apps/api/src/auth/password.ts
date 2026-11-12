@@ -17,7 +17,8 @@ import { issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './con
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { methodAllowed, passwordAllowed } from './methods.js';
 import { traderLogin } from './approval.js';
-import { gateChange, stagedReply, requireNotHeld } from './hold.js';
+import { gateChange, holdInTx, holdRefusal, requireLiveSessionInTx, settleOf, stagedReply, requireNotHeld } from './hold.js';
+import { matchRecoveryCode, renewRecoveryCode } from './recovery.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
 import {
   claimPasswordTry, passwordMiss, throttleCheck, throttleFail, throttleKey, throttleReset, visitorMiss, visitorReset,
@@ -333,8 +334,30 @@ const checkNewPassword: preHandlerAsyncHookHandler = async function (req) {
   checkedPassword.set(req, password);
 };
 
+/** The recovery code a password change gave and `checkChangeCode` matched (owner S-110). */
+const matchedCode = new WeakMap<FastifyRequest, { key: string; codeId: string }>();
+
 /**
- * `PUT /v1/account/password { password, confirmToken? }`: sets or replaces the account's password.
+ * Owner S-110 (p11-35, 9 Nov 2026): `PUT /v1/account/password` may also carry `recoveryCode`. Checked
+ * here, before `requireConfirm`, so a wrong code never uses up the confirm token: 400 `bad-request`
+ * when it is not a string; a wrong code is 401 `credentials-invalid`, counted on the account's
+ * `recovery-code` throttle key (a correct one gets through that throttle, S-109). The code is spent
+ * only in the handler's transaction.
+ */
+const checkChangeCode: preHandlerAsyncHookHandler = async function (req) {
+  const given = (req.body as Record<string, unknown>).recoveryCode;
+  if (given === undefined) return;
+  if (typeof given !== 'string') throw new ApiError(400, 'bad-request');
+  const { accountId } = req.auth;
+  const { key, codeId } = await matchRecoveryCode(req.server.deps, req, accountId, { id: accountId }, given);
+  if (codeId === null) throw new ApiError(401, 'credentials-invalid');
+  matchedCode.set(req, { key, codeId });
+};
+
+/**
+ * `PUT /v1/account/password { password, confirmToken?, recoveryCode? }`: sets or replaces the account's password.
+ * With a correct `recoveryCode` (owner S-110, `checkChangeCode`) it applies at once, never staged,
+ * spends and replaces the code, and answers `{ ok: true, recoveryCodeBurned: true }` (S-111).
  * Behind `requireSession({ allowRecovery: true })` (a held TOTP backup session is refused by
  * `requireSession` until its hold ends), a per-session throttle (`SECURITY_CHANGE_BUCKET`, 429 `slow-down`), `assertMethodAllowed` (staff and the owner never get one,
  * R2), the password checks, then `requireConfirm({ kind: 'set-password' })` with the onboarding and
@@ -348,15 +371,30 @@ async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
   const { hash, pepperId } = await hashPassword(deps.config, password);
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
+  const code = matchedCode.get(req);
   const client = await deps.db.connect();
   let held: { changeId: string } | null = null;
   let ended = 0;
   try {
     await client.query('begin');
     try {
-      // Hold model v3: a waiting login's change is staged (in this transaction); it applies 24 h after it is submitted.
-      held = await gateChange(client, req, { kind: 'password', hash, pepperId });
-      if (held === null) ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
+      if (code !== undefined) {
+        // Owner S-110: with the recovery code the change applies at once, whatever the session's
+        // login. Still only for a live session (under the account lock) and never during a running
+        // account hold; the code is spent under the lock (a parallel use of it loses) and replaced
+        // by a new one as after a recovery-code login (S-018; shown once to a strong login later).
+        await requireLiveSessionInTx(client, req.auth, now);
+        const running = await holdInTx(client, settleOf(req), accountId, now);
+        if (running !== null) throw holdRefusal(running.holdUntil);
+        const spent = await client.query('update recovery_codes set used_at = $2 where id = $1 and account_id = $3 and used_at is null', [code.codeId, now, accountId]);
+        if ((spent.rowCount ?? 0) === 0) throw new ApiError(401, 'credentials-invalid');
+        ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
+        await renewRecoveryCode(client, deps.config, accountId, now);
+      } else {
+        // Hold model v3: a waiting login's change is staged (in this transaction); it applies 24 h after it is submitted.
+        held = await gateChange(client, req, { kind: 'password', hash, pepperId });
+        if (held === null) ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
+      }
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -370,6 +408,11 @@ async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
   }
   // The other sessions are revoked: end their live streams now, not at the stream lifetime.
   if (ended > 0) req.server.events.closeAccount(accountId, sessionId);
+  if (code !== undefined) {
+    await throttleReset(deps, code.key);
+    // Owner S-111 (p11-36): the page tells the person the code is burned.
+    return { ok: true, recoveryCodeBurned: true };
+  }
   return { ok: true };
 }
 
@@ -426,6 +469,8 @@ export function passwordRoutes(app: FastifyInstance): void {
         // Task 17: refused during the hold before a confirm token is spent (the gate checks again).
         requireNotHeld,
         checkNewPassword,
+        // Owner S-110: an optional recovery code, checked before the confirm token is spent.
+        checkChangeCode,
         requireConfirm({ kind: 'set-password' }, { onboarding: true, recovery: true }),
       ],
     },
