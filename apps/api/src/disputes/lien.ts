@@ -94,10 +94,12 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
     amountAtomic: BigInt(r.amount_atomic),
     feeAtomic: BigInt(r.fee_atomic),
   }));
-  const all = lienSteps(prev, next, { poster: t.poster, amountAtomic: BigInt(t.amount_atomic), feeAtomic: BigInt(t.fee_atomic) }, refs);
-  // Review L2: while liens are switched off nothing is placed; owed fees are still recorded (and
-  // the changes to liens placed before a switch-off still follow the dispute).
+  // Reviews L2 and R2: while liens are switched off nothing is placed, and a 1% a lien would have
+  // carried is owed from future trades once the ruling is final (lienSteps decides both); the
+  // changes to liens placed before a switch-off still follow the dispute.
   const on = (await client.query<{ on: boolean }>(`select ${LIENS_ON_SQL} as on`)).rows[0]?.on === true;
+  const all = lienSteps(prev, next, { poster: t.poster, amountAtomic: BigInt(t.amount_atomic), feeAtomic: BigInt(t.fee_atomic), liensOn: on }, refs);
+  // Belt and braces: never a place while off, even if the rules above change.
   const steps = on ? all : all.filter((s) => s.op !== 'place');
   const system = { kind: 'system' as const };
   for (const s of steps) {
