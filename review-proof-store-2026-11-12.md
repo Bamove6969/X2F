@@ -19,6 +19,7 @@ gaps, and none of them leaks a proof today. M4 is an owner question.
 
 | Attack | Result |
 |---|---|
+| Note on `securing` | At this head, `securing` is accepted for `kind=proof`, and the test asserts it. The lead has said a follow-up commit will refuse `securing` (409 `wrong-state`, accepted only from secured). That commit is not reviewed here; it gets its own quick look |
 | Seller uploads `kind=proof` | 403 `wrong-party`, nothing stored (test) |
 | `proof` in funding / released | 409 `wrong-state`. securing, secured and paid pass (test) |
 | `evidence` with no dispute, or after it closes | 409 `wrong-state` (test) |
