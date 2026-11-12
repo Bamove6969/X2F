@@ -772,6 +772,60 @@ describe('re-verify 2026-11-12', () => {
 });
 
 // Round 3 (re-verify-mod-gate-2026-11-12.md, X2 and the init race; lead calls).
+describe('Haveno review 2026-11-12, finding 2 (lead call): rulings only move forward, never replayed', () => {
+  it('a ruling the gate authorised on one trade is refused on another, even with fresh taps that name the other trade', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const a = ruling(mod);
+    expect((await authorize(w, a, [tapBy(mod, a.intent('propose'))])).ok).toBe(true);
+    // The same ruling id moved to another trade's dispute (a replay through the database).
+    const other = newTradeCode();
+    const moved = { ...a, ruling: { ...a.ruling, code: other } };
+    const tap = tapBy(mod, a.intent('propose', { code: other }));
+    expect(await authorize(w, moved, [tap])).toEqual({ ok: false, reason: 'replayed' });
+    // Or the same id as another round on the same trade.
+    const asRound2 = { ...a, ruling: { ...a.ruling, round: 2 as const, round1Id: randomUUID() } };
+    expect(await authorize(w, asRound2, [tapBy(mod, a.intent('propose', { round: 2, round1Id: asRound2.ruling.round1Id }))])).toEqual({ ok: false, reason: 'replayed' });
+    // The ruling as authorised is still fine (the executor re-checks every pass).
+    expect((await authorize(w, a, [tapBy(mod, a.intent('propose'))])).ok).toBe(true);
+  });
+
+  it('a stale round: once round 2 is authorised on a trade, a round-1 ruling the gate never saw is refused; round 1 as authorised still pays', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r1 = ruling(mod);
+    const r1Tap = tapBy(mod, r1.intent('propose'));
+    expect((await authorize(w, r1, [r1Tap])).ok).toBe(true);
+    const r2 = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, r2, [tapBy(senior, r2.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: true, settle: null });
+    // A new round-1 ruling on the same trade (another outcome), properly tapped: stale.
+    const late = ruling(senior, { code: r1.ruling.code, outcome: 'refund-to-seller' });
+    expect(await authorize(w, late, [tapBy(senior, late.intent('propose'))])).toEqual({ ok: false, reason: 'stale-round' });
+    // Round 1 as the gate authorised it is unchanged.
+    expect((await authorize(w, r1, [r1Tap])).ok).toBe(true);
+  });
+
+  it('a second ruling for a round the gate already authorised on the trade is refused (round 1 pays once, from one ruling)', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r1 = ruling(mod);
+    expect((await authorize(w, r1, [tapBy(mod, r1.intent('propose'))])).ok).toBe(true);
+    const again = ruling(senior, { code: r1.ruling.code, outcome: 'refund-to-seller' });
+    expect(await authorize(w, again, [tapBy(senior, again.intent('propose'))])).toEqual({ ok: false, reason: 'stale-round' });
+    const r2 = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect((await authorize(w, r2, [tapBy(senior, r2.intent('propose'))], 41_250n, { involved: [] })).ok).toBe(true);
+    const senior2 = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r2again = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, r2again, [tapBy(senior2, r2again.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'stale-round' });
+  });
+});
+
 describe('re-verify round 3', () => {
   it('X2: a staff login assertion is never accepted as a tap, whatever intent and nonce it is shown with', async () => {
     const w = await world();

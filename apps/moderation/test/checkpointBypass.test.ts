@@ -6,6 +6,9 @@
 // B. every log-checkpoint report refused (any status): the alarm after CHECKPOINT_REFUSALS_MAX;
 // C. the reader revoked and the process restarted before the overdue alarm: the last successful
 //    verification is sealed in gate.bin, so "overdue" survives restarts.
+// D (review of ruling-payout a42dad1b, N1): the reader sees an empty log from the first start (no
+//    checkpoint ever taken): an empty log never counts as verified (a live site always holds
+//    owner.setup-completed), so the alarm is raised.
 // Its own database (row-level security is switched on and off on its activity_log).
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -15,6 +18,7 @@ import { chainHash } from '@x2f/logchain';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startCheckpoints } from '../src/checkpoint.js';
 import { openGateStore } from '../src/gate/index.js';
+import { newGate } from './gateWorld.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
 
 let schema: ApiSchema;
@@ -30,6 +34,12 @@ const tmp = async (p: string) => {
   const d = await mkdtemp(join(tmpdir(), p));
   dirs.push(d);
   return d;
+};
+/** A gate made by init-gate in a fresh directory, then opened (re-verify P6: a missing gate.bin never opens). */
+const freshStore = async (p: string, key = new Uint8Array(randomBytes(32))) => {
+  const d = await tmp(p);
+  await newGate(d, key);
+  return openGateStore(d, key);
 };
 
 async function append(action = 'site.stopped', detail = '{}'): Promise<{ id: string; hash: string }> {
@@ -51,7 +61,7 @@ const H = 60 * 60_000;
 
 describe('the log alarm cannot be kept silent (security review 2026-11-12, M3 re-verify)', () => {
   it('A: the reader view frozen at the API own log.checkpoint row (RLS) while later rows are written: the alarm is raised', async () => {
-    const store = await openGateStore(await tmp('cp-a-'), new Uint8Array(randomBytes(32)));
+    const store = await freshStore('cp-a-');
     const reports: Array<{ kind: string }> = [];
     const alarms: string[] = [];
     const now = { t: new Date('2026-11-20T00:00:00Z') };
@@ -102,7 +112,7 @@ describe('the log alarm cannot be kept silent (security review 2026-11-12, M3 re
   });
 
   it('B: the API answers log-checkpoint with 503 (not 201, not 409) while the view is frozen: the alarm after a few refusals', async () => {
-    const store = await openGateStore(await tmp('cp-b-'), new Uint8Array(randomBytes(32)));
+    const store = await freshStore('cp-b-');
     const alarms: string[] = [];
     const now = { t: new Date('2026-11-21T00:00:00Z') };
     const c = startCheckpoints({
@@ -129,7 +139,7 @@ describe('the log alarm cannot be kept silent (security review 2026-11-12, M3 re
     await c.stop();
     // Every status counts, a 409 with another code too.
     for (const answer of [{ status: 500, error: null }, { status: 400, error: 'bad-body' }, { status: 409, error: 'wrong-state' }, { status: 0, error: null }]) {
-      const s2 = await openGateStore(await tmp('cp-b2-'), new Uint8Array(randomBytes(32)));
+      const s2 = await freshStore('cp-b2-');
       const got: string[] = [];
       const c2 = startCheckpoints({ store: s2, reader: schema.reader, link: { report: async () => answer }, now: () => now.t, log: () => {}, alarm: (l) => got.push(l), intervalMs: 0 });
       for (let i = 0; i < 4; i++) {
@@ -144,6 +154,7 @@ describe('the log alarm cannot be kept silent (security review 2026-11-12, M3 re
   it('C: reader revoked, and the process restarted every 20 h (e.g. the database ends its lock session): the overdue alarm still fires, once', async () => {
     const dir = await tmp('cp-c-');
     const key = new Uint8Array(randomBytes(32));
+    await newGate(dir, key);
     const broken = { query: async () => Promise.reject(new Error('permission denied for table activity_log')) };
     const alarms: string[] = [];
     const now = { t: new Date('2026-11-22T00:00:00Z') };
@@ -159,5 +170,34 @@ describe('the log alarm cannot be kept silent (security review 2026-11-12, M3 re
     }
     // 100 hours without a verification: overdue after 25 h, raised once across the restarts.
     expect(alarms.filter((l) => /overdue/.test(l))).toHaveLength(1);
+  });
+
+  it('D (N1): the reader sees an empty log from the first start (RLS using false): an empty log is never verified, the alarm is raised', async () => {
+    await schema.owner.query('alter table activity_log enable row level security');
+    await schema.owner.query('create policy pocd_all on activity_log for all to public using (true) with check (true)');
+    await schema.owner.query('create policy pocd_hide on activity_log as restrictive for select to x2f_mod_reader using (false)');
+    try {
+      const store = await freshStore('cp-d-');
+      const alarms: string[] = [];
+      const now = { t: new Date('2026-12-01T00:00:00Z') };
+      for (let restart = 0; restart < 3; restart++) {
+        const c = startCheckpoints({ store, reader: schema.reader, link: { report: async () => ({ status: 201, error: null }) }, now: () => now.t, log: () => {}, alarm: (l) => alarms.push(l), intervalMs: 0 });
+        for (let i = 0; i < 6 * 24; i++) {
+          if (i % 6 === 0) await append('site.resumed');
+          await c.pass().catch(() => undefined);
+          now.t = new Date(now.t.getTime() + 10 * 60_000);
+        }
+        await c.stop();
+      }
+      expect(Number((await schema.owner.query<{ n: string }>('select count(*)::text as n from activity_log')).rows[0]!.n)).toBeGreaterThan(50);
+      expect(store.state.checkpoints).toHaveLength(0);
+      expect(alarms.some((l) => /empty/.test(l))).toBe(true);
+      // Never verified: the overdue clock still runs from the first start.
+      expect(store.state.logVerifiedAt).toBe('2026-12-01T00:00:00.000Z');
+    } finally {
+      await schema.owner.query('drop policy pocd_hide on activity_log');
+      await schema.owner.query('drop policy pocd_all on activity_log');
+      await schema.owner.query('alter table activity_log disable row level security');
+    }
   });
 });

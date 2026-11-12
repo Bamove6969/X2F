@@ -193,6 +193,8 @@ export interface ApiState {
   refuse?: { identity?: 'identity-conflict'; attestation?: 'attestation-refused' | 'trade-closed' };
   /** Per-role fields laid over the view (a lying API telling each side something else). */
   roleView?: Partial<Record<'buyer' | 'seller', Record<string, unknown>>>;
+  /** Haveno review finding 2: what GET /v1/trades/:code/ruling-statement serves (null: 204). */
+  ruling?: { statement: unknown; sig: unknown } | null;
 }
 
 export function tradeView(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -249,6 +251,7 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
       if (state.refuse?.attestation) throw Object.assign(new Error('api 409'), { status: 409, code: state.refuse.attestation });
       return attest();
     },
+    getRulingStatement: async () => state.ruling ?? null,
   });
   return { modId, forRole };
 }
