@@ -7,10 +7,11 @@
 //   own CSP (apps/api/src/static/serve.ts `OCR_WORKER_CSP`), so even a default that pointed at a CDN
 //   could not be fetched; the CDN default is also dropped from the bundle (vite.config.ts).
 // - Loaded lazily: tesseract.js is a separate chunk, imported on the first proof, never at start.
-// - It never throws. A load that fails or takes longer than OCR_TIMEOUT_MS, and a recognition that
-//   fails or hangs, answer null: the editor then says it could not check the image and starts with
-//   no regions (Review Focus 3). A worker that failed or timed out is terminated; the next proof
-//   tries afresh.
+// - It never throws. A load that fails or takes longer than OCR_TIMEOUT_MS, a recognition that fails
+//   or hangs, and a result with no blocks answer null: the editor then says it could not check the
+//   image and starts with no regions (Review Focus 3). A worker that failed or timed out is
+//   terminated, even one whose load never settles (review m-2: the vite plugin's `spawnWorker`
+//   hands the raw Worker to `onSpawn`); the next proof tries afresh.
 // - Nothing here logs: tesseract's logger and error handler are silent.
 import type { OcrWord } from '@x2f/proof';
 
@@ -47,6 +48,12 @@ export interface OcrEngine {
   OEM: { LSTM_ONLY: number };
 }
 
+interface Attempt {
+  worker: Promise<OcrWorker>;
+  /** Terminates the Worker this attempt spawned, whether or not its load ever settled. */
+  kill(): void;
+}
+
 /** Words in reading order, one `line` number per OCR line across the page; blanks left out. */
 export function wordsOf(blocks: readonly OcrBlock[] | null): OcrWord[] {
   const out: OcrWord[] = [];
@@ -78,19 +85,41 @@ const TIMED_OUT = Symbol('timed out');
 
 /** `ProofImageDeps.ocr` over `deps`: one lazily created worker, null (never a throw) on any failure. */
 export function createOcr(deps: OcrDeps): (rgba: Uint8ClampedArray, width: number, height: number) => Promise<OcrWord[] | null> {
-  let worker: Promise<OcrWorker> | null = null;
+  let current: Attempt | null = null;
 
-  const start = (): Promise<OcrWorker> =>
-    deps.load().then((engine) => engine.createWorker([...PROOF_OCR_LANGS], engine.OEM.LSTM_ONLY, { ...OCR_WORKER_OPTIONS, logger: silent, errorHandler: silent }));
+  const start = (): Attempt => {
+    let spawned: { terminate(): void } | null = null;
+    let killed = false;
+    const onSpawn = (w: { terminate(): void }): void => {
+      spawned = w;
+      if (killed) w.terminate();
+    };
+    const worker = deps
+      .load()
+      .then((engine) => engine.createWorker([...PROOF_OCR_LANGS], engine.OEM.LSTM_ONLY, { ...OCR_WORKER_OPTIONS, logger: silent, errorHandler: silent, onSpawn }));
+    return {
+      worker,
+      kill: () => {
+        killed = true;
+        try {
+          (spawned as { terminate(): void } | null)?.terminate();
+        } catch {
+          // already gone
+        }
+      },
+    };
+  };
 
-  /** Drops the current worker and terminates it whenever (if ever) it turns up. */
-  const discard = (w: Promise<OcrWorker>): void => {
-    if (worker === w) worker = null;
-    w.then((x) => x.terminate()).catch(silent);
+  /** Drops this attempt and terminates its Worker now, and the tesseract wrapper if it ever turns up. */
+  const discard = (a: Attempt): void => {
+    if (current === a) current = null;
+    a.kill();
+    a.worker.then((x) => x.terminate()).catch(silent);
   };
 
   return async (rgba, width, height) => {
-    const w = (worker ??= start());
+    const a = (current ??= start());
+    const w = a.worker;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<typeof TIMED_OUT>((resolve) => {
       timer = setTimeout(() => resolve(TIMED_OUT), deps.timeoutMs);
@@ -98,12 +127,14 @@ export function createOcr(deps: OcrDeps): (rgba: Uint8ClampedArray, width: numbe
     try {
       const result = await Promise.race([w.then((x) => x.recognize(deps.toImage(rgba, width, height), {}, { blocks: true, text: false })), deadline]);
       if (result === TIMED_OUT) {
-        discard(w);
+        discard(a);
         return null;
       }
+      // Review m-3: no blocks is a result that cannot be read (a changed output), not "nothing found".
+      if (!Array.isArray(result.data.blocks)) return null;
       return wordsOf(result.data.blocks);
     } catch {
-      discard(w);
+      discard(a);
       return null;
     } finally {
       clearTimeout(timer);

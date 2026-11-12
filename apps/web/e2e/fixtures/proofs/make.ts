@@ -22,7 +22,7 @@ const m = (kind: Mark, text: string) => `<span data-gt="${kind}">${text}</span>`
 interface Layout {
   file: string;
   /** Where the recipient's name sits: after a label (the detector's case), or not (Zelle/Cash App/Wise style). */
-  name: 'labelled' | 'top-name' | 'avatar-caption';
+  name: 'labelled' | 'top-name' | 'avatar-caption' | 'top-name-non-latin';
   type: 'png' | 'jpeg';
   css: string;
   body: string;
@@ -80,6 +80,49 @@ const LAYOUTS: Layout[] = [
       <div class="row"><span class="lbl">Card:</span> ${m('card', '5555 5555 5555 4444')}</div>
       <div class="row"><span class="lbl">Total:</span> ${m('amount', '$412.50')}</div>
       <div class="row"><span class="lbl">Note:</span> ${m('code', FIXTURE_CODE)}</div>`,
+  },
+  {
+    file: 'venmo-style.png',
+    name: 'top-name',
+    type: 'png',
+    css: `${BASE} #r{background:#fff;color:#1b1b1b;text-align:center} .big{font-size:42px;font-weight:bold;margin:6px 0} .amt{font-size:52px;font-weight:bold;margin:18px 0}`,
+    body: `<div class="big">${m('name', 'Jordan Pike')}</div>
+      <div class="row lbl">@jordan-pike</div>
+      <div class="amt">${m('amount', '$412.50')}</div>
+      <div class="row">Pizza night ${m('code', FIXTURE_CODE)}</div>
+      <div class="row lbl">Paid with Venmo balance</div>`,
+  },
+  {
+    file: 'revolut-style.png',
+    name: 'avatar-caption',
+    type: 'png',
+    css: `${BASE} #r{background:#fff;color:#191c1f;text-align:center} .amt{font-size:52px;font-weight:bold;margin:8px 0 26px} .av{width:88px;height:88px;border-radius:50%;background:#e3e6ff;color:#3b3f99;font-size:36px;font-weight:bold;line-height:88px;margin:0 auto 10px} .cap{font-size:28px;margin-bottom:22px}`,
+    body: `<div class="amt">-${m('amount', '$412.50')}</div>
+      <div class="av">CM</div>
+      <div class="cap">${m('name', 'Casey Morgan')}</div>
+      <div class="row lbl">Reference</div>
+      <div class="row">${m('code', FIXTURE_CODE)}</div>`,
+  },
+  {
+    file: 'wise-style.jpg',
+    name: 'avatar-caption',
+    type: 'jpeg',
+    css: `${BASE} #r{background:#fff;color:#0e0f0c} .head{font-size:30px;font-weight:bold;margin-bottom:24px} .av{width:84px;height:84px;border-radius:50%;background:#c5e6a6;color:#163300;font-size:34px;font-weight:bold;line-height:84px;text-align:center;margin:0 0 8px} .cap{font-size:28px;margin-bottom:20px}`,
+    body: `<div class="head">You sent ${m('amount', '$412.50')}</div>
+      <div class="av">MO</div>
+      <div class="cap">${m('name', 'Morgan Ortiz')}</div>
+      <div class="row"><span class="lbl">Account ending in</span> ${m('card', '4321')}</div>
+      <div class="row"><span class="lbl">Reference</span> ${m('code', FIXTURE_CODE)}</div>`,
+  },
+  {
+    file: 'cyrillic-top-name.png',
+    name: 'top-name-non-latin',
+    type: 'png',
+    css: `${BASE} #r{background:#fff;color:#1a1a1a;text-align:center} .big{font-size:44px;font-weight:bold;margin:8px 0 18px} .amt{font-size:56px;font-weight:bold;margin:16px 0}`,
+    body: `<div class="row lbl">You sent money to</div>
+      <div class="big">${m('name', 'Анна Петрова')}</div>
+      <div class="amt">${m('amount', '$412.50')}</div>
+      <div class="row">Memo ${m('code', FIXTURE_CODE)}</div>`,
   },
 ];
 

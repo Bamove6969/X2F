@@ -13,6 +13,7 @@
 // off it too. The uploader can only add blur (a `manual` region), never take an automatic one away.
 import { normalizeTradeCode } from '@x2f/core';
 import { findAmounts } from './amounts.js';
+import { layoutNameLines } from './layoutNames.js';
 import { NAME_LABELS } from './nameLabels.js';
 import { NUMBER_LABELS, type NumberLabelKind } from './numberLabels.js';
 import { type OcrWord, linesOf } from './ocr.js';
@@ -851,6 +852,10 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
       spans[i]!.push({ start: ns, end: text.length, kind: 'name', rank: RANK.name });
     }
   });
+
+  // Names with no label (lead 2026-11-12): a big name near the top, an avatar's caption. As every
+  // other class, a kept character (the amount, the code, a date) is never covered.
+  for (const i of layoutNameLines(lines)) spans[i]!.push({ start: 0, end: texts[i]!.length, kind: 'name', rank: RANK.name });
 
   // A Monero-class token on one line: a base58 token of 20 or more on the next line is its rest.
   texts.forEach((_, i) => {

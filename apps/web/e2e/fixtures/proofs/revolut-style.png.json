@@ -1,0 +1,37 @@
+{
+  "file": "revolut-style.png",
+  "name": "avatar-caption",
+  "width": 760,
+  "height": 415,
+  "keep": {
+    "tradeCode": "K7M2-9QXA-4FTR-8WPN",
+    "fiatCents": "41250",
+    "exponent": 2
+  },
+  "marks": [
+    {
+      "kind": "amount",
+      "text": "$412.50",
+      "x0": 272,
+      "y0": 48,
+      "x1": 509,
+      "y1": 108
+    },
+    {
+      "kind": "name",
+      "text": "Casey Morgan",
+      "x0": 281,
+      "y0": 232,
+      "x1": 479,
+      "y1": 265
+    },
+    {
+      "kind": "code",
+      "text": "K7M2-9QXA-4FTR-8WPN",
+      "x0": 223,
+      "y0": 331,
+      "x1": 537,
+      "y1": 361
+    }
+  ]
+}
