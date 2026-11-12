@@ -1,7 +1,10 @@
 /**
  * The chat half of the escrow worker's message protocol (Task 20). The page asks for `chat-sync`
  * and `chat-send`; the worker answers with a ChatSnapshot of verified plain lines, or an error code.
- * No key, ciphertext or ChatState ever crosses postMessage.
+ * No chat key, ciphertext or ChatState ever crosses postMessage. One kind of key does, worker to
+ * page (proof-receive review I4): a `proof.attached` line carries its proof's key in the snapshot,
+ * so the page can fetch and decrypt that one picture (screens/proof/ChatProof.tsx). It stays in the
+ * page's memory (React state and payDetailsFeed's last snapshot), never in storage or a log.
  */
 import { PayDetailsError, parsePayDetails } from '@x2f/trade';
 import { ChatSendFailed, type ChatEngine, type ChatSnapshot } from './engine.js';

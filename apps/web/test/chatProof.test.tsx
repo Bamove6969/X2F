@@ -15,6 +15,20 @@ import { proofCheckOf, proofStateOfSnapshot } from '../src/proof/chatProof.js';
 import { PROOF_MAX_CIPHERTEXT } from '@x2f/proof';
 import { render } from './render.js';
 
+// Review I5: every plaintext decryptProof hands ChatProof, to check that it is zeroed afterwards.
+const { decrypted } = vi.hoisted(() => ({ decrypted: [] as Uint8Array[] }));
+vi.mock('@x2f/proof', async (importOriginal) => {
+  const m = await importOriginal<typeof import('@x2f/proof')>();
+  return {
+    ...m,
+    decryptProof: async (...a: Parameters<typeof m.decryptProof>) => {
+      const out = await m.decryptProof(...a);
+      decrypted.push(out);
+      return out;
+    },
+  };
+});
+
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
 const latin1 = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0));
 function chunk(type: string, data: Uint8Array): Uint8Array {
@@ -144,24 +158,18 @@ describe('review M3: ChatProof records whether the proof checked out', () => {
 });
 
 describe('review I5: the decrypted picture is zeroed once ProofThumb has checked it', () => {
-  it('shown or refused, the plaintext bytes ChatProof held are zeros afterwards', async () => {
+  it('shown or refused, the plaintext ChatProof decrypted is zeros afterwards', async () => {
     for (const plain of [PLAIN, latin1('<svg onload=alert(1)>')]) {
+      decrypted.length = 0;
       const { payload, ciphertext } = await made('proof', plain);
       vi.stubGlobal('fetch', vi.fn(async () => new Response(ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
-      const seen: Uint8Array[] = [];
-      const d = deps();
-      const inner = d.decode.getMockImplementation()!;
-      d.decode.mockImplementation(async (bytes: Uint8Array) => {
-        seen.push(bytes);
-        return inner(bytes);
-      });
-      const r = render(<ChatProof tradeCode={CODE} proof={payload} deps={d} />);
+      const r = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
       await settle();
-      if (plain === PLAIN) {
-        expect(r.host.querySelector('img')).not.toBeNull();
-        expect(seen.length).toBeGreaterThan(0);
-      }
-      for (const b of seen) expect(b.every((x) => x === 0)).toBe(true);
+      if (plain === PLAIN) expect(r.host.querySelector('img')).not.toBeNull();
+      else expect(r.host.textContent).toContain(PROOF_REFUSED_TITLE);
+      expect(decrypted).toHaveLength(1);
+      expect(decrypted[0]!.length).toBe(plain.length);
+      expect(decrypted[0]!.every((x) => x === 0)).toBe(true);
       r.unmount();
     }
   });
