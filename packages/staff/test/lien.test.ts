@@ -226,6 +226,47 @@ describe('the seller pays the XMR and the proof is accepted', () => {
   });
 });
 
+describe('review L1: the seller paid, then the appeal overrules the payment order', () => {
+  // publish seller-sends-xmr → complied (lien repaid) → an appeal → round 2 overrules.
+  function paidThenAppealed(by: 'buyer' | 'seller') {
+    const p = publish(opened(true), 'seller-sends-xmr');
+    const paid = applyDispute(p, { type: 'complied' }, system, at(2.5), S);
+    expect(lienSteps(p, paid, buyerPosted, [lien()])).toEqual([{ op: 'repaid', id: 'l1' }]);
+    const appealed = appeal(paid, by);
+    // A repaid lien is over: the appeal suspends nothing.
+    expect(lienSteps(paid, appealed, buyerPosted, [lien({ status: 'repaid' })])).toEqual([]);
+    return appealed;
+  }
+
+  for (const by of ['seller', 'buyer'] as const) {
+    it(`overruled to no-action (appeal by the ${by}): the buyer who received the XMR is liened for it, owed to the seller`, () => {
+      const a = paidThenAppealed(by);
+      const done = decide(a, 'no-action');
+      expect(done.status).toBe('closed');
+      expect(lienSteps(a, done, buyerPosted, [lien({ status: 'repaid' })])).toEqual([
+        { op: 'place', round: 2, debtor: 'buyer', cause: 'overturned', amountAtomic: A, feeAtomic: 0n },
+      ]);
+    });
+  }
+
+  it('overruled to seller-returns-fiat: the XMR paid is still owed back by the buyer', () => {
+    const a = paidThenAppealed('seller');
+    expect(lienSteps(a, decide(a, 'seller-returns-fiat'), sellerPosted, [lien({ status: 'repaid' })])).toEqual([
+      { op: 'place', round: 2, debtor: 'buyer', cause: 'overturned', amountAtomic: A, feeAtomic: 0n },
+    ]);
+  });
+
+  it('"Decision stands" after the seller paid: nothing more', () => {
+    const a = paidThenAppealed('buyer');
+    expect(lienSteps(a, decide(a, 'seller-sends-xmr'), sellerPosted, [lien({ status: 'repaid' })])).toEqual([]);
+  });
+
+  it('a void round-1 lien (never paid) brings no lien on the buyer', () => {
+    const p = appeal(publish(opened(true), 'seller-sends-xmr'), 'seller');
+    expect(lienSteps(p, decide(p, 'no-action'), buyerPosted, [lien({ status: 'void' })])).toEqual([]);
+  });
+});
+
 describe('input checks', () => {
   it('refuses two different disputes', () => {
     const a = opened(true);

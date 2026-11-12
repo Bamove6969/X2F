@@ -139,6 +139,15 @@ export function lienSteps(prev: Dispute, next: Dispute, facts: LienFacts, liens:
       steps.push({ op: 'place', round: 2, debtor, cause: 'overturned', amountAtomic: facts.amountAtomic, feeAtomic: fee.inLien }, ...fee.owed);
       return steps;
     }
+    // Review L1: the seller already paid under round 1 (its restitution lien `repaid` by the accepted
+    // proof), and the appeal overruled the order: the XMR moved like escrow coins, so whoever
+    // received it (the creditor) owes it back. g63: an overruled order to pay is no completion, so
+    // no 1% goes with it.
+    for (const l of liens) {
+      if (l.round === 1 && l.cause === 'restitution' && l.status === 'repaid') {
+        steps.push({ op: 'place', round: 2, debtor: other(l.debtor), cause: 'overturned', amountAtomic: l.amountAtomic, feeAtomic: 0n });
+      }
+    }
     const debtor = restitutionDebtor(final);
     if (debtor !== null) {
       const fee = feeSplit(debtor, facts, false);

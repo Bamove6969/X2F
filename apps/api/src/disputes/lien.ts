@@ -27,8 +27,15 @@ import { appendLog } from '../log/append.js';
  * every app) is not built.
  */
 
-/** SQL: whether account `p` (a parameter or column) has an active lien. */
-export const ACTIVE_LIEN_SQL = (p: string) => `exists (select 1 from liens l where l.debtor_account_id = ${p} and l.status = 'active')`;
+/**
+ * SQL: whether liens are switched on (review L2, migration 400's `site_flags.liens_enabled`; no
+ * site_flags row counts as off).
+ */
+export const LIENS_ON_SQL = `coalesce((select f.liens_enabled from site_flags f), false)`;
+
+/** SQL: whether account `p` (a parameter or column) has an active lien that binds (liens switched on). */
+export const ACTIVE_LIEN_SQL = (p: string) =>
+  `(${LIENS_ON_SQL} and exists (select 1 from liens l where l.debtor_account_id = ${p} and l.status = 'active'))`;
 
 /** Whether the account has an active lien (the trading guard's 409 `lien`). */
 export async function hasActiveLien(q: Queryable, accountId: string): Promise<boolean> {
@@ -87,7 +94,11 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
     amountAtomic: BigInt(r.amount_atomic),
     feeAtomic: BigInt(r.fee_atomic),
   }));
-  const steps = lienSteps(prev, next, { poster: t.poster, amountAtomic: BigInt(t.amount_atomic), feeAtomic: BigInt(t.fee_atomic) }, refs);
+  const all = lienSteps(prev, next, { poster: t.poster, amountAtomic: BigInt(t.amount_atomic), feeAtomic: BigInt(t.fee_atomic) }, refs);
+  // Review L2: while liens are switched off nothing is placed; owed fees are still recorded (and
+  // the changes to liens placed before a switch-off still follow the dispute).
+  const on = (await client.query<{ on: boolean }>(`select ${LIENS_ON_SQL} as on`)).rows[0]?.on === true;
+  const steps = on ? all : all.filter((s) => s.op !== 'place');
   const system = { kind: 'system' as const };
   for (const s of steps) {
     switch (s.op) {

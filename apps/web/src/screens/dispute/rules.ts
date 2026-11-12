@@ -345,8 +345,9 @@ export function overturnLien(outcome: RulingView['outcome'], me: Party, other: s
   const receiver = paidSide(outcome);
   if (receiver === null) return '';
   // not-a-refusal: what an overturned ruling would mean, explained before any appeal (board DisputeRuling)
-  if (receiver === me) return " If an appeal overturns the ruling, you get a lien. You can't trade until you pay the XMR back.";
-  return ` If an appeal overturns the ruling, ${other} gets a lien until they pay the XMR back.`; // COPY-UNSIGNED
+  // Review O2 (J-06): the lien is the trade's XMR (owner D-006), on a buyer's ad more than the payout. COPY-UNSIGNED
+  if (receiver === me) return " If an appeal overturns the ruling, you get a lien. You can't trade until you pay the trade's XMR back.";
+  return ` If an appeal overturns the ruling, ${other} gets a lien until they pay the trade's XMR back.`; // COPY-UNSIGNED
 }
 
 /**
@@ -367,8 +368,8 @@ export function appealSentText(d: DisputeView, me: Party, other: string): string
     receiver === null
       ? ''
       : receiver === me
-        ? ' If they overturn the ruling, you get a lien until you pay the XMR back.' // COPY-UNSIGNED (review I1)
-        : ' If they overturn the ruling, the other trader gets a lien until they pay the XMR back.'; // COPY-UNSIGNED (review I1)
+        ? " If they overturn the ruling, you get a lien until you pay the trade's XMR back." // COPY-UNSIGNED (review I1)
+        : " If they overturn the ruling, the other trader gets a lien until they pay the trade's XMR back."; // COPY-UNSIGNED (review I1)
   return `${who} A second moderator will look at it.${lien}`;
 }
 
