@@ -9,6 +9,7 @@ import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { FIAT, XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/hold.js';
+import { insertBan } from './helpers/bans.js';
 import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 5: taking an offer, and the poster's wallet route. Real Postgres (one database per
@@ -360,6 +361,10 @@ describe('POST /v1/offers/:id/take', () => {
     }
     await deps.db.query('insert into trading_holds (account_id, created_at) values ($1, $2)', [buyer.id, deps.clock()]);
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'trading-hold' });
+    // Plan 4 Task 27: a trade-banned taker is refused; past its end (by the clock) the take goes on.
+    const bannedTaker = await person();
+    await insertBan(deps, bannedTaker.id, 'trade', new Date(deps.clock().getTime() + 3_600_000));
+    expect(refusal(await take(bannedTaker, offer, body(bannedTaker, tenth)))).toEqual({ status: 409, error: 'trade-ban' });
 
     const other = await person();
     await renameOfferMethod(deps.db, offer, 'SBP');
