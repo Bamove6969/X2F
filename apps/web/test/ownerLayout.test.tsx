@@ -11,6 +11,7 @@ import { ScreenHeader, screenName } from '../src/ui/ScreenHeader.js';
 import { HelpLinks, HELP_LINKS } from '../src/ui/HelpLinks.js';
 import { HelpTopic } from '../src/screens/HelpTopic.js';
 import { WideTop } from '../src/ui/DesktopShell.js';
+import { TradeHeader } from '../src/ui/TradeHeader.js';
 import { Route, Routes } from 'react-router';
 import { render } from './render.js';
 
@@ -122,4 +123,22 @@ describe('help links on /login and /session-length (owner #38, #42)', () => {
     expect(faq.querySelector('main[data-screen="help-faq"] h1')!.textContent).toBe('FAQ');
     expect(at('/help/nope').querySelector('main[data-screen="help-unknown"]')).not.toBeNull();
   });
+});
+
+describe('the trade room and its dispute: logo D and the name in TradeHeader (lead 12 Nov follow-up)', () => {
+  const ZELLE = { name: 'Zelle', whatItIs: 'A US bank app.' };
+  for (const [path, name] of [['/trade/K7M29QXA4FTR8WPN', 'Trade · K7M2'], ['/trade/K7M29QXA4FTR8WPN/dispute', 'Dispute · K7M2']] as const) {
+    it(`${path}: the shared header sits at the top of the trade header, hidden with it on a tabletop`, () => {
+      const { host } = render(
+        <MemoryRouter initialEntries={[path]}>
+          <TradeHeader title="Selling to mira.k" code="K7M2-9QXA-4FTR-8WPN" method={ZELLE} backTo="/sell" />
+        </MemoryRouter>,
+      );
+      const brand = host.querySelector('[data-fold-glance="header"].x2f-trade-header__brand')!;
+      expect(brand.querySelector('header[data-screen-header] svg[role="img"][aria-label="X2F"]')).not.toBeNull();
+      expect(brand.querySelector('[data-part="screen-name"]')!.textContent).toBe(name);
+      // The board's header row is unchanged after it.
+      expect(brand.nextElementSibling?.matches('header.x2f-trade-header')).toBe(true);
+    });
+  }
 });

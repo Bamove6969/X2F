@@ -430,10 +430,37 @@ test.describe('folding keeps the screen, the scroll position and typed text', ()
     const max = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
     expect(max).toBeGreaterThan(100);
     await page.evaluate(() => window.scrollTo(0, 100));
+    // What folding promises the person is that the same content stays in view, not that scrollY is
+    // the same number of pixels: text can wrap at 390 px where it did not in the 840 px pane (the
+    // owner's bigger type, 12 Nov), and the browser's scroll anchoring then shifts scrollY to keep
+    // the content in place. So: the first line of content in view before the fold is still in view
+    // after it, within one of its own line heights of where it was (lead, 12 Nov).
+    const before = await page.evaluate(() => {
+      const el = [...document.querySelectorAll('[data-pane="main"] :is(h1, h2, h3, p, li, button, label)')].find((e) => {
+        const r = e.getBoundingClientRect();
+        return r.top >= 0 && r.height > 0;
+      })!;
+      el.setAttribute('data-fold-anchor', '');
+      const cs = getComputedStyle(el);
+      // A computed line height of 'normal' (a button) counts as 1.5 times the font size.
+      const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+      return { top: el.getBoundingClientRect().top, line };
+    });
+    expect(before.line).toBeGreaterThan(0);
     await page.setViewportSize({ width: 390, height: 500 });
     await expect(page.locator('html')).toHaveAttribute('data-fold', 'phone');
     expect(page.url()).toBe(ROOM);
-    expect(await page.evaluate(() => window.scrollY)).toBeCloseTo(100, -1);
+    // The page did not jump back to the top.
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    const after = await page.evaluate(() => {
+      const r = document.querySelector('[data-fold-anchor]')!.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, view: window.innerHeight };
+    });
+    expect(after.top).toBeGreaterThanOrEqual(0);
+    expect(after.bottom).toBeLessThanOrEqual(after.view);
+    expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(before.line);
+    // The trade header carries logo D and the room's name on the phone (lead 12 Nov follow-up).
+    await expect(page.locator('.x2f-trade-header__brand [data-part="screen-name"]').first()).toContainText('Trade');
     await expect(page.locator('[data-pane="side"]')).toHaveCount(0);
     await page.locator('[data-chat-link]').click();
     await expect(page.getByRole('dialog').locator('#msg')).toHaveValue('paying now, one minute');
