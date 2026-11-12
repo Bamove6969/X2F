@@ -43,7 +43,7 @@
  * Task 23's `setTradeChat` seam takes (`{ code, name, methodId }`); `OfferChatPanel` opens the
  * pre-trade chat on an offer (the quote's Chat button).
  */
-import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
+import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payNoteFor, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
 import { ChatProof } from '../screens/proof/ChatProof.js';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
@@ -343,7 +343,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
         payeeGivesNothing(pay.methodId) ? (
           // Review F1: like the boxes' Send, only once the escrow is secured (owner Q12).
           snap.paySecured ? (
-            // COPY-UNSIGNED (payee fields, 10 Nov 2026): a gift card, ATM or face-to-face cash method has no boxes.
+            // COPY-UNSIGNED (payee fields, 10 Nov 2026): a gift card or face-to-face cash method has no boxes.
             <p className="x2f-chat__pay-hint" data-pay-nothing="">
               Nothing to send: the buyer sends the card or cash details here in the chat.
             </p>
@@ -460,6 +460,7 @@ function payErrorText(e: unknown, spec: readonly PayFieldSpec[]): string {
  */
 function PayBoxes({ chat, name, methodId, secured, onSent }: { chat: string; name: string; methodId: string; secured: boolean; onSent: (s: ChatSnapshot) => void }) {
   const spec = payFieldsFor(methodId);
+  const note = payNoteFor(methodId);
   const whyId = useId();
   const [values, setValues] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
@@ -500,6 +501,12 @@ function PayBoxes({ chat, name, methodId, secured, onSent }: { chat: string; nam
       {/* COPY-UNSIGNED (J-08): the boxes' title and lead. */}
       <p className="x2f-chat__pay-title">Your payment details</p>
       <p className="x2f-chat__pay-lead">Fill these in and send them to {name} here, encrypted.</p>
+      {/* COPY-UNSIGNED (12 Nov recheck): the method's own note, from the table. */}
+      {note !== undefined ? (
+        <p className="x2f-chat__pay-hint" data-pay-note="">
+          {note}
+        </p>
+      ) : null}
       {spec.map((f) => {
         const id = `pay-${chat}-${f.key}`;
         const common = {

@@ -34,8 +34,9 @@ describe('the payee fields table', () => {
         expect(/^[a-z][a-zA-Z0-9]*$/.test(f.key), `${id}.${f.key}`).toBe(true);
         expect(f.label.trim().length, `${id}.${f.key}`).toBeGreaterThan(0);
       }
-      // Something must be filled: a required field or a one-of group (Amazon: one optional email box, lead 10 Nov).
-      if (id !== 'AMAZON_GIFT_CARD') expect(spec.fields.some((f) => f.need !== 'no'), id).toBe(true);
+      // Something must be filled: a required field or a one-of group (Amazon: one optional email box, lead 10 Nov;
+      // ATM cash: one optional phone box, only for banks that text the code, lead 12 Nov).
+      if (id !== 'AMAZON_GIFT_CARD' && id !== 'CASH_AT_ATM') expect(spec.fields.some((f) => f.need !== 'no'), id).toBe(true);
     }
   });
 
