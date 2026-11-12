@@ -1,4 +1,5 @@
-import { mkdir, open as openFile, readFile, rename } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { mkdir, open as openFile, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { modSubkey, open, seal } from '../keystore.js';
 
@@ -15,6 +16,12 @@ export interface PinnedCred {
   credentialId: string;
   publicKey: string;
   aaguid: string | null;
+  /**
+   * The highest WebAuthn signature counter this gate has accepted from the key (review M1). A
+   * registry tap by the key at or below it is an older tap held back and released late, and is
+   * refused. 0: none seen yet.
+   */
+  counter?: number;
 }
 
 export type InvitableRole = 'senior' | 'mod' | 'helper';
@@ -57,6 +64,18 @@ export interface GateState {
   rulingsSeen: Record<string, RulingSeen>;
   /** Task 14's log checkpoints (NEEDS_TASK_14). */
   checkpoints: Array<{ id: string; hash: string; at: string }>;
+  /**
+   * Each owner invite the gate has acted on (review B1): the account it was bound to the first time
+   * (never re-pointed by the database), and whether it is closed (the person joined, or it expired):
+   * a closed invite adds no key.
+   */
+  invites: Record<string, { accountId: string; closed: boolean }>;
+  /** Accounts the owner removed with a tapped `remove-staff` (review I1): never staff again. */
+  removedIds: string[];
+  /** The owner's tapped emergency stop (review I1): while set, no ruling is authorised. */
+  stopped: boolean;
+  /** Review M1: the last tap applied per subject (`settings`, `role:<id>`, `stop`), by key and counter. */
+  applied: Record<string, { credentialId: string; counter: number }>;
 }
 
 /** The API's defaults (`settings` in migration 206) until the owner taps a change. */
@@ -74,6 +93,10 @@ export function emptyGate(): GateState {
     usedNonces: {},
     rulingsSeen: {},
     checkpoints: [],
+    invites: {},
+    removedIds: [],
+    stopped: false,
+    applied: {},
   };
 }
 
@@ -82,8 +105,23 @@ const AAD = 'x2f/mod/gate/v1';
 
 export interface GateStore {
   state: GateState;
-  /** Seals the state and replaces `gate.bin` atomically (write, fsync, rename), mode 0600. */
+  /**
+   * Seals the state and replaces `gate.bin` atomically: a temp file of its own (unique name, 0600),
+   * fsync, rename, fsync of the directory. Saves run one at a time (review M2).
+   */
   save(): Promise<void>;
+  /** Runs `fn` alone: one critical section (sync, authorize, save) on this gate at a time (review M2). */
+  exclusive<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+/** A promise-chain mutex: each call runs after the previous one settled. */
+function serial(): <T>(fn: () => Promise<T>) => Promise<T> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = tail.then(fn, fn);
+    tail = run.catch(() => undefined);
+    return run;
+  };
 }
 
 function toJson(s: GateState): string {
@@ -109,6 +147,7 @@ export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promi
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
   }
   state = sealed === null ? emptyGate() : fromJson(new TextDecoder().decode(open(key, AAD, sealed)));
+  const saving = serial();
   const store: GateStore = {
     get state() {
       return state;
@@ -116,17 +155,29 @@ export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promi
     set state(s: GateState) {
       state = s;
     },
-    async save() {
-      const tmp = `${path}.${process.pid}.tmp`;
-      const f = await openFile(tmp, 'w', 0o600);
-      try {
-        await f.writeFile(seal(key, AAD, new TextEncoder().encode(toJson(state))));
-        await f.sync();
-      } finally {
+    save: () =>
+      saving(async () => {
+        const tmp = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
+        const f = await openFile(tmp, 'wx', 0o600);
+        try {
+          await f.writeFile(seal(key, AAD, new TextEncoder().encode(toJson(state))));
+          await f.sync();
+        } catch (e) {
+          await f.close();
+          await rm(tmp, { force: true });
+          throw e;
+        }
         await f.close();
-      }
-      await rename(tmp, path);
-    },
+        await rename(tmp, path);
+        // The rename is durable only once the directory is: else a crash can bring back an older gate.
+        const d = await openFile(dir, 'r');
+        try {
+          await d.sync();
+        } finally {
+          await d.close();
+        }
+      }),
+    exclusive: serial(),
   };
   return store;
 }

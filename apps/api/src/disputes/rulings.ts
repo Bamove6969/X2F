@@ -125,7 +125,8 @@ async function tradeAmount(client: pg.PoolClient, code: string): Promise<string>
   return rows[0].amount_atomic;
 }
 
-const rulingIntent = (step: 'propose' | 'approve', a: { rulingId: string; code: string; round: 1 | 2; outcome: RulingOutcome; amountAtomic: string; reason: string; evidence: readonly string[] }): KeyTapIntent => ({
+/** `round1Id`: round 2's taps name the round-1 ruling they review (mod-gate review B2); null in round 1. */
+const rulingIntent = (step: 'propose' | 'approve', a: { rulingId: string; code: string; round: 1 | 2; round1Id: string | null; outcome: RulingOutcome; amountAtomic: string; reason: string; evidence: readonly string[] }): KeyTapIntent => ({
   kind: 'ruling',
   step,
   rulingId: a.rulingId,
@@ -138,6 +139,7 @@ const rulingIntent = (step: 'propose' | 'approve', a: { rulingId: string; code: 
   // Review mod-screens M1: rebuilt from the lines this ruling stores (propose: the body's, as stored;
   // approve: the draft's), so a tap made for other evidence is tap-invalid.
   evidenceSha256: evidenceSha256(a.evidence),
+  round1Id: a.round === 2 ? a.round1Id : null,
 });
 
 const rulingDetail = (r: { id: string; outcome: RulingOutcome }, round: 1 | 2, amountAtomic: string) => ({
@@ -232,7 +234,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         await assertNotPaused(client, rec);
         const amountAtomic = await tradeAmount(client, code);
         // The tap first: a tap that is not for exactly this ruling writes nothing.
-        await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: d.round, outcome, amountAtomic, reason, evidence }), now, { sessionId: req.auth.sessionId });
+        await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: d.round, round1Id: d.round1?.id ?? null, outcome, amountAtomic, reason, evidence }), now, { sessionId: req.auth.sessionId });
         const s = await disputeSettings(client);
         const next = applyDispute(d, { type: 'propose', ruling: { id: rulingId, outcome, accountAction: NONE, proposer: me.id } }, me, now, s);
         const ins = await client.query(
@@ -277,7 +279,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
         const amountAtomic = await tradeAmount(client, code);
         const r = d.ruling!;
-        await consumeKeyTap(client, tapId, me.id, rulingIntent('approve', { rulingId: r.id, code, round: d.round, outcome: r.outcome, amountAtomic, reason: draft.reason, evidence: draft.evidence }), now, { sessionId: req.auth.sessionId });
+        await consumeKeyTap(client, tapId, me.id, rulingIntent('approve', { rulingId: r.id, code, round: d.round, round1Id: d.round1?.id ?? null, outcome: r.outcome, amountAtomic, reason: draft.reason, evidence: draft.evidence }), now, { sessionId: req.auth.sessionId });
         const next = applyDispute(d, { type: 'approve' }, me, now, await disputeSettings(client));
         await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.approved', detail: rulingDetail(r, d.round, amountAtomic) });
         if (decided(d, next)) await publishDecided(client, next, draft, amountAtomic, now, me);

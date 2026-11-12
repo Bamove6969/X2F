@@ -14,12 +14,15 @@ import { authorizeRuling, type Authorization, type GateContext, type RulingInput
  * mod party, and settles `settle.payouts` once with `builder: 'mod', cosigner: settle.winner`.
  * Nothing here calls `settle`.
  */
-export async function gateCheck(store: GateStore, source: GateSource, input: Omit<RulingInput, 'taps'>, ctx: GateContext): Promise<Authorization> {
-  await syncRegistry(source, store.state, ctx);
-  const taps = await source.rulingTaps(input.ruling.id);
-  const result = await authorizeRuling(store.state, { ...input, taps }, ctx);
-  await store.save();
-  return result;
+export function gateCheck(store: GateStore, source: GateSource, input: Omit<RulingInput, 'taps'>, ctx: GateContext): Promise<Authorization> {
+  // One critical section per gate (review M2): never alongside the periodic sync or another check.
+  return store.exclusive(async () => {
+    await syncRegistry(source, store.state, ctx);
+    const taps = await source.rulingTaps(input.ruling.id);
+    const result = await authorizeRuling(store.state, { ...input, taps }, ctx);
+    await store.save();
+    return result;
+  });
 }
 
 /** Syncs the registry every `intervalMs` (and saves the gate), until `stop`. A failed pass is logged and the next one runs. */
@@ -29,8 +32,11 @@ export function startGateSync(store: GateStore, source: GateSource, ctx: GateCon
   let running: Promise<void> = Promise.resolve();
   const pass = (): void => {
     if (stopped) return;
-    running = syncRegistry(source, store.state, ctx)
-      .then(() => store.save())
+    running = store
+      .exclusive(async () => {
+        await syncRegistry(source, store.state, ctx);
+        await store.save();
+      })
       .catch(() => ctx.log({ reason: 'gate-sync-failed' }))
       .finally(() => {
         if (!stopped) timer = setTimeout(pass, intervalMs);

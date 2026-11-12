@@ -55,11 +55,14 @@ export type GateRefusal =
   | 'needs-second'
   | 'revoked'
   | 'involved'
+  | 'round1-unseen'
+  | 'stopped'
   | 'bad-terms';
 
 export type SignerRole = 'owner' | 'senior' | 'mod' | 'helper';
 
-export type TapCheck = { ok: true; intent: KeyTapIntent; accountId: string; role: SignerRole; credentialId: string } | { ok: false; reason: GateRefusal };
+/** `counter`: the signature counter the key reported (`authenticatorData.signCount`), for review M1's ordering. */
+export type TapCheck = { ok: true; intent: KeyTapIntent; accountId: string; role: SignerRole; credentialId: string; counter: number } | { ok: false; reason: GateRefusal };
 
 const NONCE_HEX = /^(?:[0-9a-f]{2}){16,64}$/;
 
@@ -99,6 +102,7 @@ export async function verifyTap(g: GateState, tap: StoredTap, ctx: GateContext):
   } catch {
     return { ok: false, reason: 'bad-signature' };
   }
+  let counter: number;
   try {
     const v = await verifyAuthenticationResponse({
       response: tap.response,
@@ -110,10 +114,32 @@ export async function verifyTap(g: GateState, tap: StoredTap, ctx: GateContext):
       requireUserVerification: false,
     });
     if (!v.verified) return { ok: false, reason: 'bad-signature' };
+    counter = v.authenticationInfo.newCounter;
   } catch {
     return { ok: false, reason: 'bad-signature' };
   }
-  return { ok: true, intent, accountId: tap.accountId, role: who.role, credentialId: cred.credentialId };
+  return { ok: true, intent, accountId: tap.accountId, role: who.role, credentialId: cred.credentialId, counter };
+}
+
+/** The pinned credential a verified tap came from (owner or staff), or undefined. */
+export function credOf(g: GateState, accountId: string, credentialId: string): PinnedCred | undefined {
+  const creds = accountId === g.ownerAccountId ? g.ownerCreds : Object.hasOwn(g.staff, accountId) ? g.staff[accountId]!.creds : [];
+  return creds.find((c) => c.credentialId === credentialId);
+}
+
+/**
+ * Review M1: true when a tap by this key is older than one the gate has already accepted from it
+ * (its counter at or below the key's high-water mark, once the key has reported any counter).
+ */
+export function olderThanSeen(g: GateState, accountId: string, credentialId: string, counter: number): boolean {
+  const hw = credOf(g, accountId, credentialId)?.counter ?? 0;
+  return hw > 0 && counter <= hw;
+}
+
+/** Raises the key's high-water mark to `counter` (never lowers it). */
+export function noteCounter(g: GateState, accountId: string, credentialId: string, counter: number): void {
+  const c = credOf(g, accountId, credentialId);
+  if (c && counter > (c.counter ?? 0)) c.counter = counter;
 }
 
 /** What this process recorded for a trade at escrow setup (its attestation and its own trade), never the API's row. */
@@ -143,6 +169,9 @@ export function recordedTerms(a: {
   feeWallet: string;
 }): RecordedTerms {
   const { deal } = a.terms;
+  // Review I3: the trade is the deal this process attested (it may only grow, spec 11.1).
+  if (a.trade.poster !== deal.poster) throw new RangeError('recordedTerms: the poster is not the attested one');
+  if (a.trade.amountAtomic < BigInt(deal.takeAmountAtomic)) throw new RangeError('recordedTerms: the amount is below the attested take amount');
   const usdCents = deal.currency === 'USD' ? (a.trade.amountAtomic * BigInt(deal.centsPerXmr) + ATOMIC_PER_XMR - 1n) / ATOMIC_PER_XMR : null;
   return {
     amountAtomic: a.trade.amountAtomic,
@@ -195,18 +224,20 @@ export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: A
 
 /**
  * Decides whether the moderator key may act on a ruling, and what it may co-sign. In order:
- * - the owner is pinned (`unpinned`);
+ * - the owner is pinned (`unpinned`) and has not tapped the emergency stop (`stopped`);
  * - one proposal tap and at most one approval tap, each verified against the registry
  *   (`unknown-key`, `revoked`, `bad-signature`), each a `ruling` intent (`intent-mismatch`), whose
  *   nonce was never used for anything else (`nonce-reused`);
  * - both intents agree with the stored ruling (id, code, round, outcome, account action, the
- *   reason's SHA-256, proposer and approver) and with the XMR amount recorded here (`intent-mismatch`);
+ *   reason's SHA-256, round 2's `round1Id`, proposer and approver) and with the XMR amount recorded
+ *   here (`intent-mismatch`);
  * - the proposer is a moderator, a senior moderator or the owner (`proposer-role`);
  * - at or above the gate's own limit, by its own recorded value, or with any account action: an
  *   approval by another person (`needs-second`, `same-person`), a senior moderator or the owner
  *   (`approver-role`);
- * - an appeal ruling's proposer and approver had no part in round 1 (`involved`, R37): the log's
- *   list and round 1's signers as this gate saw them;
+ * - an appeal ruling reviews a round 1 this gate itself authorised on the same trade
+ *   (`round1-unseen`), and its proposer and approver had no part in it (`involved`, R37): round 1's
+ *   signers as this gate saw them, plus anyone on the log's list (which can only add);
  * - the payouts, for a round-1 escrow outcome only, from `payoutsFor` on the recorded terms
  *   (`bad-terms` when they do not make a payout). Round 2 and after-refund rulings are authorised
  *   with nothing to co-sign: round 1 pays once, and an overturn is a lien (Task 25).
@@ -215,8 +246,11 @@ export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: A
  */
 export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateContext): Promise<Authorization> {
   if (g.ownerAccountId === null || g.ownerCreds.length < 2) return refuse('unpinned');
+  if (g.stopped) return refuse('stopped');
   if (!Array.isArray(r.taps) || r.taps.length < 1 || r.taps.length > 2) return refuse('intent-mismatch');
   const checked: Array<Extract<TapCheck, { ok: true }> & { nonceHex: string }> = [];
+  // Review B2: the round-1 ruling a round-2 ruling reviews, as the taps must name it.
+  const round1Id = r.ruling.round === 2 ? (r.ruling.round1Id ?? null) : null;
   for (const tap of r.taps) {
     const c = await verifyTap(g, tap, ctx);
     if (!c.ok) return refuse(c.reason);
@@ -241,6 +275,7 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
       i.outcome === rul.outcome &&
       canonicalJson(i.accountAction) === canonicalJson(rul.accountAction) &&
       i.reasonSha256 === rul.reasonSha256 &&
+      i.round1Id === round1Id &&
       i.amountAtomic === r.recorded.amountAtomic.toString();
     if (!agrees) return refuse('intent-mismatch');
   }
@@ -260,9 +295,11 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
   }
   if (rul.round === 2) {
     if (typeof rul.round1Id !== 'string' || rul.round1Id === rul.id) return refuse('intent-mismatch');
+    // Review B2: R37 rests on round 1 as this gate authorised it (same trade, round 1), never on
+    // the database alone; the log's list can only add people to it.
     const r1 = Object.hasOwn(g.rulingsSeen, rul.round1Id) ? g.rulingsSeen[rul.round1Id] : undefined;
-    if (r1 !== undefined && (r1.code !== code || r1.round !== 1)) return refuse('intent-mismatch');
-    const involved = new Set([...(r.involved ?? []), ...(r1?.signers ?? [])]);
+    if (r1 === undefined || r1.code !== code || r1.round !== 1) return refuse('round1-unseen');
+    const involved = new Set([...r1.signers, ...(r.involved ?? [])]);
     if (involved.has(proposer.accountId) || (approver !== null && involved.has(approver.accountId))) return refuse('involved');
   }
   let settle: { payouts: Payout[]; winner: 'buyer' | 'seller' } | null = null;
@@ -286,6 +323,7 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
     }
   }
   for (const s of steps) g.usedNonces[s.nonceHex] = `ruling:${rul.id}:${s.step}`;
+  for (const c of checked) noteCounter(g, c.accountId, c.credentialId, c.counter);
   const seen = Object.hasOwn(g.rulingsSeen, rul.id) ? g.rulingsSeen[rul.id] : undefined;
   g.rulingsSeen[rul.id] = {
     code,

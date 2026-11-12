@@ -14,20 +14,28 @@ import type { GateAttestation } from './verify.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HEADINGS = { owner: 'Owner allowlist', staff: 'Staff allowlist' } as const;
 
-function allowlist(readme: string, kind: keyof typeof HEADINGS): string[] {
+/**
+ * The AAGUIDs listed as ``- `<aaguid>` ...`` lines under "## Owner allowlist" or "## Staff
+ * allowlist", lower-cased: the API's `parseAllowlist` line for line (review I2 pins the two together
+ * on shared fixtures, CRLF included). Throws on a missing heading, a non-AAGUID line or an empty list.
+ */
+export function parseGateAllowlist(text: string, kind: keyof typeof HEADINGS): string[] {
+  const readme = text.replace(/\r\n?/g, '\n');
+  const heading = HEADINGS[kind];
   const lines = readme.split('\n');
-  const start = lines.findIndex((l) => l.trimEnd() === `## ${HEADINGS[kind]}`);
-  if (start < 0) throw new Error(`gate: README.md has no "## ${HEADINGS[kind]}" section`);
+  const start = lines.findIndex((l) => l.startsWith(`## ${heading}`) && /^[ \t]*$/.test(l.slice(`## ${heading}`.length)));
+  if (start < 0) throw new Error(`gate: README.md has no "## ${heading}" section`);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((l) => /^#{1,2} /.test(l));
   const ids: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^#{1,2} /.test(line)) break;
+  for (const line of end < 0 ? rest : rest.slice(0, end)) {
     const m = /^- `([^`]*)`/.exec(line);
     if (!m) continue;
     const id = m[1]!.toLowerCase();
-    if (!UUID.test(id)) throw new Error(`gate: README.md "## ${HEADINGS[kind]}" has a line that is not an AAGUID`);
+    if (!UUID.test(id)) throw new Error(`gate: README.md "## ${heading}" has a line that is not an AAGUID`);
     ids.push(id);
   }
-  if (ids.length === 0) throw new Error(`gate: README.md "## ${HEADINGS[kind]}" is empty`);
+  if (ids.length === 0) throw new Error(`gate: README.md "## ${heading}" is empty`);
   return ids;
 }
 
@@ -36,8 +44,8 @@ export function fileGateAttestation(dir: string): GateAttestation & { init(): Pr
   return {
     async init() {
       const readme = await readFile(join(dir, 'README.md'), 'utf8');
-      const owner = allowlist(readme, 'owner');
-      const staff = allowlist(readme, 'staff');
+      const owner = parseGateAllowlist(readme, 'owner');
+      const staff = parseGateAllowlist(readme, 'staff');
       const statements: MetadataStatement[] = [];
       for (const file of (await readdir(dir)).filter((f) => f.endsWith('.json')).sort()) {
         const s = JSON.parse(await readFile(join(dir, file), 'utf8')) as Partial<MetadataStatement>;

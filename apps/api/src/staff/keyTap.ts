@@ -406,10 +406,14 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       return { kind: 'fee-sweep', thresholdAtomic: opt('thresholdAtomic', ATOMIC), floatAtomic: opt('floatAtomic', ATOMIC), coldAddress: opt('coldAddress', COLD_ADDRESS) };
     }
     case 'ruling': {
-      exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256']);
+      exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256', 'round1Id']);
       const code = typeof r.code === 'string' ? normalizeTradeCode(r.code) : null;
       if (code === null) throw badRequest();
       if (r.round !== 1 && r.round !== 2) throw badRequest();
+      // mod-gate review B2: a round-2 ruling names the round-1 ruling it reviews; round 1 names none.
+      let round1Id: string | null = null;
+      if (r.round === 2) round1Id = match(r, 'round1Id', UUID).toLowerCase();
+      else if (r.round1Id !== null) throw badRequest();
       return {
         kind: 'ruling',
         step: oneOf(r, 'step', ['propose', 'approve'] as const),
@@ -421,6 +425,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         amountAtomic: match(r, 'amountAtomic', ATOMIC),
         reasonSha256: match(r, 'reasonSha256', HEX64),
         evidenceSha256: match(r, 'evidenceSha256', HEX64),
+        round1Id,
       };
     }
     default:

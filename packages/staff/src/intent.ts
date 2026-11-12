@@ -78,6 +78,12 @@ export type KeyTapIntent =
        * stores them (in order), bound like the reason: `evidenceSha256(lines)`.
        */
       evidenceSha256: string;
+      /**
+       * Round 2: the id of the round-1 ruling this appeal ruling reviews; round 1: null. Signed so
+       * the moderation gate's R37 check rests on the ruling the taps agreed to review, never on the
+       * database's word (mod-gate review B2).
+       */
+      round1Id: string | null;
     };
 
 export const KEY_TAP_KINDS = [
@@ -108,6 +114,8 @@ export function evidenceSha256(lines: readonly string[]): string {
   return toHex(sha256(utf8(canonicalJson([...lines]))));
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /** Shortest nonce accepted (bytes). The server issues 16 (Task 5, `startKeyTap`). */
 const MIN_NONCE = 16;
 
@@ -123,6 +131,9 @@ export function tapChallenge(i: KeyTapIntent, nonce: Uint8Array): Uint8Array {
   if (i.kind === 'ruling') {
     const code = normalizeTradeCode(i.code);
     if (code === null) throw new TypeError('tapChallenge: invalid trade code');
+    if (i.round === 1 ? i.round1Id !== null : typeof i.round1Id !== 'string' || !UUID.test(i.round1Id)) {
+      throw new TypeError('tapChallenge: a round-2 ruling names its round-1 ruling, a round-1 ruling none');
+    }
     intent = { ...i, code };
   }
   return sha256(utf8(`x2f-keytap-v1\n${canonicalJson(intent)}\n${toHex(nonce)}`));
