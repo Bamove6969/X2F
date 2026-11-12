@@ -22,9 +22,10 @@
  * Seams (named, not wired here):
  * - NEEDS_PLAN_5_TASK_13 (the self-hosted OCR, `ocr`): `browserProofImageDeps().ocr` answers null
  *   until it lands, so the editor opens with no regions and says so (Review Focus 3).
- * - NEEDS_PLAN_5_TASK_14 (proof storage): `putProof` calls `PUT /v1/trades/:code/proofs/:id?kind=`
- *   as Task 14 specifies; the API has no such route on main yet, so the screen is behind
- *   `VITE_X2F_PROOF_UPLOAD=1` (`proofUploadOn`).
+ * - Task 14 (proof storage), wired: `putProof` calls `PUT /v1/trades/:code/proofs/:id?kind=`
+ *   (apps/api/src/proofs/routes.ts, from wip/lead-proof-store), proven end to end in
+ *   apps/api/test/proofUploadWire.test.ts. The screen stays behind `VITE_X2F_PROOF_UPLOAD=1`
+ *   (`proofUploadOn`, off by default) until Task 13's OCR lands and both are on main.
  * - NEEDS_BRANCH_PROOF_CHECK (wip/lead-proof-check's blur check): `ProofSendDeps.onPosted(code,
  *   proofId, blur)` is where its `proofPosted` goes; the blur kind is `blurKindOf`.
  * - NEEDS_BRANCH_PROOF_CODE (wip/lead-proof-code's proofCodeNotice): see BlurEditor.tsx.
@@ -66,7 +67,8 @@ export const PROOF_CANT_USE = "This image can't be used. Try a screenshot.";
 
 /** The upload screen is built but its storage route (Task 14) is not: off unless the build says so. */
 export function proofUploadOn(): boolean {
-  return (import.meta.env.VITE_X2F_PROOF_UPLOAD as string | undefined) === '1';
+  // Typed by hand so the API's tests (proofUploadWire.test.ts) can load this file; it is still Vite's `import.meta.env`.
+  return (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_X2F_PROOF_UPLOAD === '1';
 }
 
 export type ProofInputErrorCode = 'too-large' | 'unsupported' | 'undecodable';

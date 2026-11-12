@@ -40,7 +40,7 @@ function installSource(): void {
   setProofSource((code) => (sent.has(code) ? 'attached' : 'unavailable'));
 }
 
-/** The board's slot, disabled (flag off: no storage route yet, NEEDS_PLAN_5_TASK_14). */
+/** The board's slot, disabled (flag off until Task 13's OCR and Task 14's storage are both on main). */
 function DisabledSlot() {
   return (
     <label htmlFor="proof" className="x2f-proof__slot" aria-disabled="true">
