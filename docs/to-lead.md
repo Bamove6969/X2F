@@ -1072,3 +1072,4 @@ J-34 rulings: docs/design-rulings-J34-2026-11-09.md (28d45d74). Canvas v167.
 - docs/wording/settled-freeze-recovery-jabber.md: the 12 Nov list (freeze refusals, See why, deleted-record freeze, recovery code strings, reviews on hold, Fast badge, the J-20 messages).
 - Boards: new JabberEvents (+Wide); Loud alarm card added to Alerts (+Wide).
 - Owner decision 12 Nov: the Russian methods (MIR, SBP, YooMoney) are REMOVED at launch. Capitual is still waiting on the owner.
+- Owner decision 12 Nov: REMOVE Capitual (p11-145). MIR, SBP, YooMoney and Capitual all come off at launch.
