@@ -5,7 +5,8 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { assertNotBlocked, blockedEitherWay, blocksBetween, hasBlocked } from '../src/traders/blocks.js';
 import { applyEvent } from '../src/trades/store.js';
-import { makeVendor } from './helpers/accounts.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
+import { rolesToAbilities } from '../src/team/abilities.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
@@ -210,6 +211,52 @@ describe('S-093: a private note per blocked person, and when they were blocked',
     expect((await putNote(a, b.displayName, 'line one\nline two')).json()).toEqual({ note: 'line one\nline two' });
     expect((await a.browser.put(`/v1/account/blocks/${'x'.repeat(65)}/note`, { note: 'x' })).statusCode).toBe(400);
     expect((await anon.put(`/v1/account/blocks/${encodeURIComponent(b.displayName)}/note`, { note: 'x' })).statusCode).toBe(401);
+  });
+});
+
+describe('S-093 review: the note check, team members and the Jabber notice', () => {
+  const putNote = (a: Who, name: string, note: unknown) => a.browser.put(`/v1/account/blocks/${encodeURIComponent(name)}/note`, { note });
+  const block = async (a: Who, b: Who) => expect((await a.browser.post('/v1/account/blocks', { displayName: b.displayName })).statusCode).toBe(204);
+
+  it('m1: the same character rule as S-094 trader notes: C1 controls, format characters and tab are refused; a new line is allowed', async () => {
+    const a = await trader();
+    const b = await trader();
+    await block(a, b);
+    for (const bad of ['a\u0085b', 'a\u009fb', 'a\u202eb', 'a\u2066b', 'a\u200bb', 'a\u200db', 'a\u2028b', 'a\u2029b', 'a\ufeffb', 'a\tb', 'a\rb']) {
+      expect((await putNote(a, b.displayName, bad)).statusCode, JSON.stringify(bad)).toBe(400);
+    }
+    expect((await putNote(a, b.displayName, 'one\ntwo')).json()).toEqual({ note: 'one\ntwo' });
+  });
+
+  it('m4: a team member cannot read or write the lead\'s block notes (403 owner-only)', async () => {
+    const lead = await trader();
+    const b = await trader();
+    await block(lead, b);
+    const loginId = await seedAccount(deps, { loginName: 'blocknotemember1x', displayName: 'bn-m-1', kind: 'member' });
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'BnMember1', 'bnmember1', $2, $3, $4, $3, $3)`,
+      [lead.id, rolesToAbilities(['offers', 'trades']), deps.clock(), loginId],
+    );
+    const mb = new Browser(app);
+    expect((await mb.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+    const res = await mb.put(`/v1/account/blocks/${encodeURIComponent(b.displayName)}/note`, { note: 'x' });
+    expect([res.statusCode, res.json()]).toEqual([403, { error: 'owner-only' }]);
+    expect((await mb.get('/v1/account/blocks')).json()).toEqual({ error: 'owner-only' });
+  });
+
+  it('m4: a note-only change queues one Jabber notice for the blocker; the same note again queues none', async () => {
+    const a = await trader();
+    const b = await trader();
+    await deps.db.query('insert into jabber_contacts (account_id, jid_sealed, verified_at, enabled) values ($1, $2, now(), true)', [a.id, Buffer.from('01aa', 'hex')]);
+    const notices = async () => (await deps.db.query<{ n: number }>('select count(*)::int as n from jabber_outbox where account_id = $1', [a.id])).rows[0]!.n;
+    await block(a, b);
+    await deps.db.query('delete from jabber_outbox where account_id = $1', [a.id]);
+    expect((await putNote(a, b.displayName, 'Pushy in chat.')).statusCode).toBe(200);
+    expect(await notices()).toBe(1);
+    expect((await putNote(a, b.displayName, 'Pushy in chat.')).statusCode).toBe(200);
+    expect(await notices()).toBe(1);
+    expect((await deps.db.query<{ n: number }>('select count(*)::int as n from jabber_outbox where account_id = $1', [b.id])).rows[0]!.n).toBe(0);
   });
 });
 

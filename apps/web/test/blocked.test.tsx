@@ -44,7 +44,12 @@ beforeEach(() => {
       return json(s, { error: s === 404 ? 'not-found' : 'internal' });
     }
     if (input === '/v1/account/blocks' && method === 'GET') return json(200, blocks);
-    if (input === '/v1/account/blocks' && method === 'POST') return json(204, null);
+    if (input === '/v1/account/blocks' && method === 'POST') {
+      // As the server: a new block row, with no note and its own time.
+      const name = (body as { displayName: string }).displayName;
+      if (!blocks.some((b) => b.displayName === name)) blocks = [{ displayName: name, blockedAt: '2026-11-12T08:30:00.000Z', note: null }, ...blocks];
+      return json(204, null);
+    }
     const n = /^\/v1\/account\/blocks\/(.+)\/note$/.exec(input);
     if (n && method === 'PUT') {
       const raw = (body as { note: string | null }).note;
@@ -197,6 +202,33 @@ describe('Blocked (settings)', () => {
     expect(calls.at(-1)).toEqual({ url: '/v1/account/blocks/Bob/note', method: 'PUT', body: { note: null } });
     expect(row('Bob').querySelector('[data-part="block-note"]')).toBeNull();
     expect(byPart(host, 'blocked-said')?.textContent).toBe('Note removed for Bob.');
+  });
+
+  it('review M1: Unblock then Undo shows what the server holds: the note is gone and the block time is the new one', async () => {
+    const { host } = render(<MemoryRouter><Blocked /></MemoryRouter>);
+    await settle();
+    const bob = () => [...host.querySelectorAll('[data-part="blocked-list"] li')].find((li) => li.querySelector('[data-username]')?.textContent === 'Bob')!;
+    const mira = () => [...host.querySelectorAll('[data-part="blocked-list"] li')].find((li) => li.querySelector('[data-username]')?.textContent === 'mira.k')!;
+    // Unblock mira.k first: her undo row must survive Bob's Undo.
+    fire(mira().querySelector('[data-part="unblock"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    fire(bob().querySelector('[data-part="unblock"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    fire(bob().querySelector('[data-part="unblock"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(bob().querySelector('[data-part="block-note"]')).toBeNull();
+    expect(bob().textContent).not.toContain('Only you can see this note.');
+    expect(bob().querySelector('[data-part="note-edit"]')?.textContent).toBe('Add a note');
+    expect(bob().textContent).toContain('Blocked 12 Nov 2026, 08:30 UTC');
+    expect(mira().getAttribute('data-unblocked')).toBe('true');
+  });
+
+  it('review Q1: a row with a note says that unblocking deletes it; a row with none does not', async () => {
+    const { host } = render(<MemoryRouter><Blocked /></MemoryRouter>);
+    await settle();
+    const row = (name: string) => [...host.querySelectorAll('[data-part="blocked-list"] li')].find((li) => li.querySelector('[data-username]')?.textContent === name)!;
+    expect(row('Bob').querySelector('[data-part="note-unblock-warning"]')?.textContent).toBe('Unblocking deletes your note.');
+    expect(row('mira.k').querySelector('[data-part="note-unblock-warning"]')).toBeNull();
   });
 
   it('S-093: Cancel keeps the note as it was; a failed save says so and keeps the old note', async () => {
