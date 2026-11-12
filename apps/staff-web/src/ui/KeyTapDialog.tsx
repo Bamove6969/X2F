@@ -61,6 +61,7 @@ export function KeyTapDialog({
   onDone,
   onCancel,
   tapLabel = 'Tap security key',
+  labels = {},
 }: {
   intent: KeyTapIntent;
   title: string;
@@ -69,6 +70,11 @@ export function KeyTapDialog({
   onCancel: () => void;
   /** The button's words where a board names them ("Tap key and pause"). */
   tapLabel?: string;
+  /**
+   * X3 (re-verify round 3): what each signed field is, in words the person knows, shown next to its
+   * value ("nightowl_44" next to an account id, "the reason above" next to its hash). COPY-UNSIGNED.
+   */
+  labels?: Readonly<Partial<Record<string, string>>>;
 }) {
   const bodyId = useId();
   const [busy, setBusy] = useState(false);
@@ -111,7 +117,10 @@ export function KeyTapDialog({
           {intentLines(intent).map(([k, v]) => (
             <div key={k}>
               <dt>{k}</dt>
-              <dd>{v}</dd>
+              <dd>
+                {v}
+                {labels[k] !== undefined ? <span className="x2f-keytap__label">{` (${labels[k]})`}</span> : null}
+              </dd>
             </div>
           ))}
         </dl>

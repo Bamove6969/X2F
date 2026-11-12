@@ -50,7 +50,27 @@ interface Tap {
   intent: KeyTapIntent;
   title: string;
   body: string;
+  /** X3: names next to the ids and hashes the key signs (KeyTapDialog `labels`). */
+  labels: Readonly<Record<string, string>>;
   onDone: (tapId: string) => Promise<void>;
+}
+
+/**
+ * X3 (re-verify round 3): what each field of a ruling tap is, in the words of this screen. The
+ * hashes are this screen's own (`rulingIntent` hashes the reason and the evidence lines shown
+ * here), and round 2 names round 1's ruling with its outcome. COPY-UNSIGNED, DESIGNER-REVIEW.
+ */
+function rulingLabels(c: DisputeCase, outcome: RulingOutcome): Record<string, string> {
+  const r1 = c.ruling.round1 ?? null;
+  return {
+    rulingId: 'this ruling',
+    code: `incident ${c.incidentId}`,
+    outcome: OUTCOME_LABELS[outcome],
+    amountAtomic: `${xmrShort(c.escrow.amountAtomic)} XMR`,
+    reasonSha256: 'the reason above',
+    evidenceSha256: 'the evidence lines above',
+    ...(c.round === 2 && r1 !== null ? { round1Id: `round 1 ruling (${OUTCOME_LABELS[r1.outcome]})` } : {}),
+  };
 }
 
 /**
@@ -146,6 +166,7 @@ export function ModCase({ role }: { role: StaffRole }) {
           intent={tap.intent}
           title={tap.title}
           body={tap.body}
+          labels={tap.labels}
           onCancel={() => setTap(null)}
           onDone={(tapId) => {
             const t = tap;
@@ -481,6 +502,7 @@ function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buy
       intent: rulingIntent('propose', { rulingId, code: c.code, round: c.round, round1Id: c.ruling.round1?.id ?? null, outcome, amountAtomic: c.escrow.amountAtomic, reason: text, evidence: ev }),
       title: label,
       body: `Tap your security key to sign this ruling: ${OUTCOME_LABELS[outcome]}.`,
+      labels: rulingLabels(c, outcome),
       onDone: async (tapId) => {
         try {
           await proposeRuling(c.code, { rulingId, outcome, reason: text, evidence: ev, tapId });
@@ -554,6 +576,7 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
       intent: rulingIntent('approve', { rulingId: p.rulingId, code: c.code, round: c.round, round1Id: c.ruling.round1?.id ?? null, outcome, amountAtomic: c.escrow.amountAtomic, reason: p.reason, evidence: p.evidence }),
       title: 'Approve ruling',
       body: `Tap your security key to approve and publish this ruling: ${OUTCOME_LABELS[outcome]}.`,
+      labels: rulingLabels(c, outcome),
       onDone: async (tapId) => {
         try {
           await approveRuling(c.code, p.rulingId, tapId);
