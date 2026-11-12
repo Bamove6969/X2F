@@ -1,21 +1,26 @@
 // @vitest-environment happy-dom
-// The welcome screen and the guided tour (owner, 12 Nov 2026, demo note #47 on /sell; to-design
-// 12 Nov, "Guided site tour"): the tour engine's step order and labels, the once-per-device welcome
-// flag, the trader tour's content, and the tour shell (card, Back / Next / Next screen, Skip, the
-// optional illustration slot for the isometric scene).
-import { act, type ReactNode } from 'react';
+// The welcome screen and the guided tours (owner, 12 Nov 2026, demo note #47; design,
+// wip/design-brief b3b8315b tour-stops.md and tour-motion.md): the engine's two flows, the
+// once-per-device welcome flag, the remembered stop, the first-trade tour's 17 stops word for word,
+// and the shell (scrim and ring, card, Skip / Back / Next, keys, the closed line, reduced motion).
+import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { backPos, nextLabel, nextPos, stepAt, type TourDef } from '../src/tour/engine.js';
+import { backPos, indexOf, nextLabel, nextPos, posOf, progressOf, stepAt, type TourDef } from '../src/tour/engine.js';
+import { FIRST_TRADE_TEXT, FIRST_TRADE_TOUR } from '../src/tour/firstTradeTour.js';
+import { clearTourProgress, replayLabel, saveTourProgress, tourProgress } from '../src/tour/progress.js';
 import { TourProvider, useTour } from '../src/tour/TourProvider.js';
-import { TRADER_TOUR } from '../src/tour/traderTour.js';
 import { WELCOME_SEEN_KEY, markWelcomeSeen, resetWelcomeMemory, welcomeSeen } from '../src/tour/welcomeSeen.js';
 import { fire, render, setReducedMotion } from './render.js';
 
 const click = (el: Element) => fire(el, new MouseEvent('click', { bubbles: true, cancelable: true }));
+const press = (key: string) => fire(document.body, new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 
+/** A page-by-page tour, as the staff and team-member tours will be. */
 const TWO_PAGES: TourDef = {
   id: 'test',
+  flow: 'screens',
+  label: 'Test tour',
   pages: [
     {
       id: 'a',
@@ -23,7 +28,7 @@ const TWO_PAGES: TourDef = {
       path: '/a',
       steps: [
         { id: 'a1', target: '#a1', title: 'First A', body: 'The first thing on page A.', placement: 'auto' },
-        { id: 'a2', target: '#a2', title: 'Second A', body: 'The second thing on page A.', placement: 'below', illustration: 'scene-a2' },
+        { id: 'a2', target: '#a2', title: 'Second A', body: 'The second thing on page A.', placement: 'below' },
       ],
     },
     {
@@ -48,13 +53,24 @@ describe('tour engine', () => {
     expect(backPos(TWO_PAGES, { page: 0, step: 0 })).toBeNull();
   });
 
-  it('labels Next, then "Next screen" after the last feature on a page, then Finish', () => {
+  it('page by page: Next, then "Next screen" after the last stop on a page, then Finish; counted per page', () => {
     expect(nextLabel(TWO_PAGES, { page: 0, step: 0 })).toBe('Next');
     expect(nextLabel(TWO_PAGES, { page: 0, step: 1 })).toBe('Next screen');
     expect(nextLabel(TWO_PAGES, { page: 1, step: 0 })).toBe('Finish');
+    expect(progressOf(TWO_PAGES, { page: 0, step: 1 })).toEqual({ index: 2, total: 2 });
+    expect(progressOf(TWO_PAGES, { page: 1, step: 0 })).toEqual({ index: 1, total: 1 });
   });
 
-  it('finds the step at a position', () => {
+  it('a story: Next on every stop, Done on the last, never "Next screen"; counted across the tour', () => {
+    const labels = FIRST_TRADE_TEXT.map((_, i) => nextLabel(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, i)));
+    expect(labels.slice(0, 16).every((l) => l === 'Next')).toBe(true);
+    expect(labels[16]).toBe('Done');
+    expect(progressOf(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, 5))).toEqual({ index: 6, total: 17 });
+  });
+
+  it('maps tour-wide indexes and positions both ways', () => {
+    for (let i = 0; i < 17; i++) expect(indexOf(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, i))).toBe(i);
+    expect(posOf(FIRST_TRADE_TOUR, 99)).toEqual(posOf(FIRST_TRADE_TOUR, 16));
     expect(stepAt(TWO_PAGES, { page: 1, step: 0 }).id).toBe('b1');
   });
 });
@@ -86,45 +102,56 @@ describe('the welcome flag (once per device)', () => {
   });
 });
 
-describe('the trader tour content', () => {
-  const ids = TRADER_TOUR.pages.map((p) => p.id);
-  const all = TRADER_TOUR.pages.flatMap((p) => p.steps);
-  const text = (pageId: string) =>
-    TRADER_TOUR.pages
-      .find((p) => p.id === pageId)!
-      .steps.map((s) => `${s.title} ${s.body}`)
-      .join(' ');
+describe('the remembered stop', () => {
+  beforeEach(() => window.localStorage.clear());
 
-  it('covers the main screens in order', () => {
-    expect(ids).toEqual(['buy-sell', 'offers', 'post', 'trades', 'wallets', 'security']);
-    for (const p of TRADER_TOUR.pages) expect(p.steps.length, p.id).toBeGreaterThanOrEqual(2);
+  it('reads "Carry on the tour" while one is half done, "Take the tour again" otherwise', () => {
+    expect(replayLabel('first-trade')).toBe('Take the tour again');
+    saveTourProgress('first-trade', 4);
+    expect(tourProgress('first-trade')).toBe(4);
+    expect(replayLabel('first-trade')).toBe('Carry on the tour');
+    clearTourProgress('first-trade');
+    expect(replayLabel('first-trade')).toBe('Take the tour again');
+  });
+});
+
+describe('the first-trade tour (design, tour-stops.md §2)', () => {
+  const steps = FIRST_TRADE_TOUR.pages.flatMap((p) => p.steps);
+
+  it('is 17 stops on 6 screens, every one on an example stage', () => {
+    expect(FIRST_TRADE_TOUR.flow).toBe('story');
+    expect(FIRST_TRADE_TOUR.pages.map((p) => p.name)).toEqual(['Find a trade', 'Offers', 'Quote', 'Fund', 'Check and release', 'Released']);
+    expect(FIRST_TRADE_TOUR.pages.map((p) => p.steps.length)).toEqual([5, 5, 2, 2, 2, 1]);
+    for (const p of FIRST_TRADE_TOUR.pages) expect(p.stage, p.id).toBeDefined();
   });
 
-  it('every step has a unique id, a short title and a real explanation, with no exclamation marks', () => {
-    expect(new Set(all.map((s) => s.id)).size).toBe(all.length);
-    for (const s of all) {
-      expect(s.title.length, s.id).toBeLessThanOrEqual(40);
-      expect(s.body.length, s.id).toBeGreaterThanOrEqual(60);
-      expect(s.body.length, s.id).toBeLessThanOrEqual(320);
-      expect(`${s.title}${s.body}`, s.id).not.toContain('!');
-    }
+  it('uses design\'s card text exactly, with no titles', () => {
+    expect(steps.map((s) => s.body)).toEqual([
+      "First, decide why you're here: to buy Monero or to sell it.",
+      "Let's pretend we're selling. Tap Sell.",
+      'Next, pick the currency you want to be paid in.',
+      'Then pick how you want to be paid.',
+      "X2F hides every offer you don't qualify for yet. If a buyer only trades with people who have 10 or more completed trades, a brand-new account won't see that offer. Everything you see, you can take right now.",
+      'Here are the offers open to you.',
+      "Each card tells you about the trader: the badges they've earned...",
+      "...how far above the market price they'll pay: this one pays 2% above market...",
+      '...and the trade sizes they accept: this one takes $50 to $1,000. In other currencies we convert at the real exchange rate, with nothing added.',
+      "Let's take this one. Tap the offer.",
+      "Enter how much you want to sell. You'll see exactly what you get.",
+      'Send your request. The buyer accepts, and the trade starts.',
+      'Now lock your Monero in escrow. Scan this code with your wallet, or copy the address and amount.',
+      "Once it's secured, the buyer is told to pay you. Nobody can touch the coins while the trade is open.",
+      "The buyer sends $200 by Cash App and taps I've paid. Check your Cash App: only your own account proves the money arrived.",
+      'Got the money? Press and hold to release. The Monero goes to the buyer.',
+      "That's your first trade. Rate the buyer, and you're done. Buying works the same way, the other way round.",
+    ]);
+    expect(steps.every((s) => s.title === undefined)).toBe(true);
   });
 
-  it('says how X2F works: the method picker, 2-of-3 escrow, the poster-only 1% fee, I\'ve paid, release, dispute', () => {
-    expect(text('buy-sell')).toMatch(/payment method/i);
-    expect(text('offers')).toMatch(/taking an offer is free/i);
-    expect(text('post')).toMatch(/1%/);
-    expect(text('post')).toMatch(/only when someone takes your offer|only the person who posted/i);
-    expect(text('trades')).toMatch(/2-of-3/);
-    expect(text('trades')).toMatch(/I.ve paid/);
-    expect(text('trades')).toMatch(/hold/i);
-    expect(text('trades')).toMatch(/dispute/i);
-    expect(text('trades')).toMatch(/end-to-end encrypted/i);
-    expect(text('wallets')).toMatch(/never holds your coins/i);
-  });
-
-  it('never tells the taker they pay the X2F fee', () => {
-    expect(text('offers')).not.toMatch(/you pay (a |the )?1%/i);
+  it('centres stops 5 and 17 with their tiles; stop 1 alternates; every other stop has a target', () => {
+    expect([steps[4]!.icon, steps[4]!.target, steps[16]!.icon, steps[16]!.target]).toEqual(['eye-off', null, 'tick', null]);
+    expect(steps[0]!.alternate).toHaveLength(2);
+    expect(steps.filter((s, i) => i !== 4 && i !== 16).every((s) => s.target !== null)).toBe(true);
   });
 });
 
@@ -136,9 +163,14 @@ function Where() {
 function Starter({ tour }: { tour: TourDef }) {
   const t = useTour();
   return (
-    <button type="button" id="start" onClick={() => t.start(tour)}>
-      Start
-    </button>
+    <>
+      <button type="button" id="start" onClick={() => t.start(tour)}>
+        Start
+      </button>
+      <button type="button" id="resume" onClick={() => t.start(tour, { resume: true })}>
+        Resume
+      </button>
+    </>
   );
 }
 function Page({ name }: { name: string }) {
@@ -158,15 +190,17 @@ async function settle(): Promise<void> {
   }
 }
 
-function mount(renderIllustration?: (scene: string) => ReactNode) {
+function mount(tour: TourDef = TWO_PAGES) {
   return render(
     <MemoryRouter initialEntries={['/start']}>
       <Where />
-      <TourProvider {...(renderIllustration ? { renderIllustration } : {})}>
+      <TourProvider>
+        <Starter tour={tour} />
         <Routes>
-          <Route path="/start" element={<Starter tour={TWO_PAGES} />} />
+          <Route path="/start" element={null} />
           <Route path="/a" element={<Page name="a" />} />
           <Route path="/b" element={<Page name="b" />} />
+          <Route path="/sell" element={null} />
         </Routes>
       </TourProvider>
     </MemoryRouter>,
@@ -174,74 +208,118 @@ function mount(renderIllustration?: (scene: string) => ReactNode) {
 }
 
 const card = () => document.querySelector<HTMLElement>('[data-part="tour-card"]');
-const btn = (label: string) => [...(card()?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === label);
+const btn = (part: string) => card()?.querySelector<HTMLButtonElement>(`[data-part="${part}"]`) ?? null;
 
 describe('the tour shell', () => {
-  it('opens on the first page, goes Next, then "Next screen" goes to the next page', async () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it('opens on the first page, Next, then "Next screen" goes to the next page, Back returns', async () => {
     const { host } = mount();
     click(host.querySelector('#start')!);
     await settle();
     expect(where).toBe('/a');
     expect(card()?.querySelector('h2')?.textContent).toBe('First A');
-    expect(card()?.textContent).toContain('1 of 3');
-    expect(btn('Back')?.disabled).toBe(true);
-    click(btn('Next')!);
+    expect(card()?.querySelector('[data-part="tour-count"]')?.textContent).toBe('1 of 2');
+    expect(card()?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Page 1 of 2, Page A');
+    expect(btn('tour-back')?.disabled).toBe(true);
+    click(btn('tour-next')!);
     await settle();
     expect(card()?.querySelector('h2')?.textContent).toBe('Second A');
-    click(btn('Next screen')!);
+    expect(btn('tour-next')?.textContent).toBe('Next screen');
+    click(btn('tour-next')!);
     await settle();
     expect(where).toBe('/b');
     expect(card()?.querySelector('h2')?.textContent).toBe('Only B');
-    // Back from the first step of page B returns to page A's last step.
-    click(btn('Back')!);
+    click(btn('tour-back')!);
     await settle();
     expect(where).toBe('/a');
     expect(card()?.querySelector('h2')?.textContent).toBe('Second A');
   });
 
-  it('highlights the target, and centres the card with no arrow when a step has none', async () => {
+  it('cuts a hole with a ring round the target and draws no ring for a centred stop', async () => {
     const { host } = mount();
     click(host.querySelector('#start')!);
     await settle();
-    expect(document.querySelector('[data-part="tour-spot"]')).not.toBeNull();
-    expect(document.querySelector('[data-part="tour-arrow"]')).not.toBeNull();
-    click(btn('Next')!);
+    expect(document.querySelector('[data-part="tour-overlay"]')).not.toBeNull();
+    expect(document.querySelector('[data-part="tour-ring"]')).not.toBeNull();
+    click(btn('tour-next')!);
     await settle();
-    click(btn('Next screen')!);
+    click(btn('tour-next')!);
     await settle();
-    expect(document.querySelector('[data-part="tour-spot"]')).toBeNull();
+    expect(document.querySelector('[data-part="tour-ring"]')).toBeNull();
     expect(document.querySelector('[data-part="tour-arrow"]')).toBeNull();
     expect(card()?.dataset.placement).toBe('center');
   });
 
-  it('Skip ends the tour at any step, and so does Escape', async () => {
+  it('keys: → Next, ← Back, Esc Skip tour', async () => {
     const { host } = mount();
     click(host.querySelector('#start')!);
     await settle();
-    click(card()!.querySelector('[data-part="tour-skip"]')!);
+    press('ArrowRight');
     await settle();
-    expect(card()).toBeNull();
-    click(host.querySelector('#start')!);
+    expect(card()?.querySelector('h2')?.textContent).toBe('Second A');
+    press('ArrowLeft');
     await settle();
-    expect(card()).not.toBeNull();
-    act(() => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    });
+    expect(card()?.querySelector('h2')?.textContent).toBe('First A');
+    press('Escape');
     await settle();
     expect(card()).toBeNull();
   });
 
-  it('Finish on the last step ends the tour', async () => {
+  it('Skip tour closes it at once and shows "Tour closed" with Restart', async () => {
     const { host } = mount();
     click(host.querySelector('#start')!);
     await settle();
-    click(btn('Next')!);
-    await settle();
-    click(btn('Next screen')!);
-    await settle();
-    click(btn('Finish')!);
+    click(btn('tour-skip')!);
     await settle();
     expect(card()).toBeNull();
+    const line = document.querySelector('[data-part="tour-closed"]');
+    expect(line?.textContent).toContain('Tour closed. Take it again any time from Settings, under Help.');
+    click(line!.querySelector('button')!);
+    await settle();
+    expect(card()?.querySelector('h2')?.textContent).toBe('First A');
+  });
+
+  it('remembers the stop until finished, and resumes there', async () => {
+    const { host } = mount();
+    click(host.querySelector('#start')!);
+    await settle();
+    click(btn('tour-next')!);
+    await settle();
+    expect(tourProgress('test')).toBe(1);
+    click(btn('tour-skip')!);
+    await settle();
+    click(host.querySelector('#resume')!);
+    await settle();
+    expect(card()?.querySelector('h2')?.textContent).toBe('Second A');
+    click(btn('tour-next')!);
+    await settle();
+    click(btn('tour-next')!);
+    await settle();
+    expect(card()).toBeNull();
+    expect(tourProgress('test')).toBeNull();
+  });
+
+  it('the first-trade tour runs on its example stage, with no title, counted "n of 17", ending on Done', async () => {
+    const { host } = mount(FIRST_TRADE_TOUR);
+    click(host.querySelector('#start')!);
+    await settle();
+    expect(document.querySelector('[data-part="tour-stage"] [data-tour="seg"]')).not.toBeNull();
+    expect(card()?.querySelector('h2')).toBeNull();
+    expect(card()?.getAttribute('aria-label')).toBe('First trade tour');
+    expect(card()?.querySelector('[data-part="tour-count"]')?.textContent).toBe('1 of 17');
+    expect(card()?.querySelector('[data-part="tour-body"]')?.textContent).toBe(FIRST_TRADE_TEXT[0]);
+    for (let i = 1; i < 17; i++) {
+      click(btn('tour-next')!);
+      await settle();
+      expect(card()?.querySelector('[data-part="tour-count"]')?.textContent).toBe(`${i + 1} of 17`);
+    }
+    expect(document.querySelector('[data-part="tour-stage"] [data-part="example"]')).not.toBeNull();
+    expect(btn('tour-next')?.textContent).toBe('Done');
+    click(btn('tour-next')!);
+    await settle();
+    expect(card()).toBeNull();
+    expect(where).toBe('/sell');
   });
 
   it('runs the calm version under prefers-reduced-motion', async () => {
@@ -256,13 +334,10 @@ describe('the tour shell', () => {
     }
   });
 
-  it('hosts an illustration only where a step names a scene and a renderer is given', async () => {
-    const { host } = mount((scene) => <span data-scene={scene}>art</span>);
+  it('has no illustration or 3D layer (owner, 12 Nov: the isometric style is rejected)', async () => {
+    const { host } = mount(FIRST_TRADE_TOUR);
     click(host.querySelector('#start')!);
     await settle();
-    expect(document.querySelector('[data-part="tour-illustration"]')).toBeNull();
-    click(btn('Next')!);
-    await settle();
-    expect(document.querySelector('[data-part="tour-illustration"] [data-scene="scene-a2"]')).not.toBeNull();
+    expect(document.querySelector('[data-part="tour-illustration"], canvas')).toBeNull();
   });
 });
