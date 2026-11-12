@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { keyCheckCode } from '@x2f/staff';
+import { GRANTABLE_PERMS, keyCheckCode } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { codeOf, decrypt, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
@@ -184,12 +184,40 @@ describe('owner lockout', () => {
     expect(rows).toEqual([]);
   });
 
-  it('no staff route takes an email address or a reset', () => {
-    for (const r of t.app.staffRoutes) expect(r.url, r.url).not.toMatch(/reset|recover|email|password/i);
+  // D-032 (owner G60, 7 Nov, after Task 7 was written): the one reset there is: the owner's own,
+  // tapped reset of another staff member's security (staff.manage; owner-protected, so never the
+  // owner's; securityReset.test.ts). Nothing else may reset, recover or take an email or a password.
+  const OWNER_RESET = '/staff/v1/members/:id/reset-security';
+  it('no staff route takes an email address or a reset, but the owner\'s tapped reset of another staff member (D-032)', async () => {
+    for (const r of t.app.staffRoutes) {
+      if (r.url === OWNER_RESET) expect([r.method, r.perm]).toEqual(['POST', 'staff.manage']);
+      else expect(r.url, r.url).not.toMatch(/reset|recover|email|password/i);
+    }
     const dir = fileURLToPath(new URL('../../src/staff/', import.meta.url));
     for (const f of readdirSync(dir)) {
-      const src = readFileSync(dir + f, 'utf8');
+      const src = readFileSync(dir + f, 'utf8').replaceAll(`'${OWNER_RESET}'`, "''");
       expect(src, f).not.toMatch(/['"`]\/staff\/v1\/[^'"`]*(reset|recover|email)/i);
+    }
+    // And it never resets the owner, whoever asks (the owner included).
+    const res = await owner.browser.post(`/staff/v1/members/${owner.id}/reset-security`, {
+      inviteId: '00000000-0000-4000-8000-000000000000', token: 'A'.repeat(43), expiresAt: new Date(MON_NOON.getTime() + 60 * MIN).toISOString(), tapId: 'x',
+    });
+    expect([res.statusCode, errorOf(res)]).toEqual([409, 'owner-protected']);
+  });
+
+  // Review MF1: the reset is the owner role's own, so a grant can never hand it to anyone else.
+  it('the reset refuses every non-owner, a senior holding every grantable perm included, and so does its tap', async () => {
+    const target = await staffWithKeys(t, { role: 'mod' });
+    const body = { inviteId: '00000000-0000-4000-8000-000000000000', token: 'A'.repeat(43), expiresAt: new Date(MON_NOON.getTime() + 60 * MIN).toISOString(), tapId: 'x' };
+    for (const role of ['senior', 'mod', 'helper'] as const) {
+      const p = await staffWithKeys(t, { role });
+      await t.deps.db.query('update staff_members set grants = $2::text[] where account_id = $1', [p.id, [...GRANTABLE_PERMS]]);
+      const res = await p.browser.post(`/staff/v1/members/${target.id}/reset-security`, body);
+      expect([res.statusCode, errorOf(res)], role).toEqual([403, 'forbidden']);
+      const start = await p.browser.post('/staff/v1/taps/start', {
+        kind: 'reset-staff-security', accountId: target.id, inviteId: body.inviteId, tokenHash: 'a'.repeat(64), expiresAt: body.expiresAt,
+      });
+      expect([start.statusCode, errorOf(start)], role).toEqual([403, 'forbidden']);
     }
   });
 

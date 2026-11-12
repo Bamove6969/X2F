@@ -221,17 +221,23 @@ describe('invites', () => {
     expect(before.rows[0]!.n).toBe(0);
   });
 
-  it('a moderator invitee with only PGP gets security-key-required; a helper with two PGP keys joins', async () => {
+  it('D-070 (owner p11-19): a moderator invitee needs a PGP key and a passkey; the security key is optional; a helper with two PGP keys joins', async () => {
     const mod = await createInvite('mod');
     const m = await signUp(mod.token, { noKey: true, twoPgp: true });
-    expect(m.finish.statusCode).toBe(409);
-    expect(errorOf(m.finish)).toBe('security-key-required');
-    // Still open: with a key, a moderator still needs all three (owner G3); adding a passkey finishes.
-    expect((await addInviteKey(m.b, mod.token, t.newKey())).statusCode).toBe(201);
-    const noPasskey = await m.b.post(acceptUrl(mod.token, '/finish'), {});
-    expect([noPasskey.statusCode, errorOf(noPasskey)]).toEqual([409, 'all-three-methods-required']);
+    expect([m.finish.statusCode, errorOf(m.finish)]).toEqual([409, 'moderator-methods-required']);
+    // A passkey, and no security key at all, finishes (synced passkeys allowed: no hardware-only rule).
     expect((await addInviteKey(m.b, mod.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
-    expect((await m.b.post(acceptUrl(mod.token, '/finish'), {})).statusCode).toBe(201);
+    const done = await m.b.post(acceptUrl(mod.token, '/finish'), {});
+    expect([done.statusCode, done.json()]).toEqual([201, { keyCheckCode: null }]);
+    const id = await accountOf(m.loginName);
+    expect((await t.deps.db.query('select role, has_security_key from staff_members where account_id = $1', [id])).rows).toEqual([{ role: 'mod', has_security_key: false }]);
+
+    // A security key and a PGP key without a passkey is still not enough (the passkey is not optional).
+    const senior = await createInvite('senior');
+    const s = await signUp(senior.token);
+    expect([s.finish.statusCode, errorOf(s.finish)]).toEqual([409, 'moderator-methods-required']);
+    expect((await addInviteKey(s.b, senior.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
+    expect((await s.b.post(acceptUrl(senior.token, '/finish'), {})).statusCode).toBe(201);
 
     const helper = await createInvite('helper');
     const h = await signUp(helper.token, { noKey: true, twoPgp: true });
@@ -437,7 +443,7 @@ describe('members', () => {
     // switched on, and the tap stays unused.
     const early = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' });
     const refused = await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId: early });
-    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'all-three-methods-required']);
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'moderator-methods-required']);
     expect((await t.deps.db.query('select used_at from key_taps where id = $1', [early])).rows).toEqual([{ used_at: null }]);
     await addPgpKey(t.deps, mod.id);
     await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
@@ -462,16 +468,22 @@ describe('members', () => {
     expect(errorOf(await mod.browser.get('/staff/v1/me'))).toBe('outside-login-hours');
   });
 
-  it('sets a role with a tap; a moderator role needs a security key, a senior all three methods (owner G3)', async () => {
+  it('sets a role with a tap; a moderator or senior role needs a PGP key and a passkey, a security key optional (owner G3, D-070)', async () => {
     const helperOnlyPgp = await seedStaff(t.deps, { role: 'helper' });
     await t.deps.db.query('update staff_members set has_security_key = false where account_id = $1', [helperOnlyPgp.id]);
     const up = await tap(owner, { kind: 'set-role', accountId: helperOnlyPgp.id, role: 'mod' });
-    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${helperOnlyPgp.id}/role`, { role: 'mod', tapId: up }))).toBe('security-key-required');
+    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${helperOnlyPgp.id}/role`, { role: 'mod', tapId: up }))).toBe('moderator-methods-required');
+    // D-070: with a passkey added, the keyless helper becomes a moderator (no security key).
+    await addPgpKey(t.deps, helperOnlyPgp.id);
+    await registerKey(t.app, helperOnlyPgp.id, t.newKey({ passkey: true }), { passkey: true });
+    const res1 = await owner.browser.send('PUT', `/staff/v1/members/${helperOnlyPgp.id}/role`, { role: 'mod', tapId: up });
+    expect(res1.statusCode, res1.body).toBe(200);
+    expect((await t.deps.db.query('select has_security_key from staff_members where account_id = $1', [helperOnlyPgp.id])).rows).toEqual([{ has_security_key: false }]);
 
     const mod = await staffWithKeys(t, { role: 'mod' });
     // Owner G3: a senior holds all three methods; this moderator has only a security key so far.
     const early = await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'senior' });
-    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior', tapId: early }))).toBe('all-three-methods-required');
+    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior', tapId: early }))).toBe('moderator-methods-required');
     await addPgpKey(t.deps, mod.id);
     await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior' }))).toBe('tap-invalid');

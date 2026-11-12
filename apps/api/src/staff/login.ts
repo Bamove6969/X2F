@@ -25,7 +25,27 @@ export function staffLoginCheck(deps: { db: Queryable; clock: () => Date }): (ac
   };
 }
 
-/** The methods a moderator must hold (owner G3, 7 Nov): an attested security key, a PGP key and a passkey. */
+/**
+ * The methods a moderator must hold (D-070, owner p11-19, 9 Nov, changing G3's "all three"): a PGP
+ * key and a passkey; the security key is optional ("it's okay if he doesn't have a security key"),
+ * and a synced passkey counts (no hardware-only rule). Staff passwords are not built: whether
+ * p11-19's "username, password" is literal is Q-B3, still open with the owner.
+ */
+export async function holdsModeratorMethods(db: Queryable, accountId: string): Promise<boolean> {
+  const { rows } = await db.query<{ passkeys: number; pgp: number }>(
+    `select (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'passkey') as passkeys,
+            (select count(*)::int from pgp_keys where account_id = $1) as pgp`,
+    [accountId],
+  );
+  const r = rows[0]!;
+  return r.passkeys > 0 && r.pgp > 0;
+}
+
+/**
+ * All three of owner G3 (an attested security key, a PGP key and a passkey). Since D-070 only the
+ * known-device rule below reads it: a moderator without a security key always logs in with two
+ * methods (lead to confirm the one-method rule when the key is absent, register D-070).
+ */
 export async function holdsAllThree(db: Queryable, accountId: string): Promise<boolean> {
   const { rows } = await db.query<{ keys: number; passkeys: number; pgp: number }>(
     `select (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'security-key' and attested) as keys,

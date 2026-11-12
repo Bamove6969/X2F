@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { endHoldByModerator, extendHoldByModerator, lockAccount, withTx } from '../auth/hold.js';
+import { endHoldByModerator, extendHoldByModerator, lockAccount, withTx, type Hold } from '../auth/hold.js';
+import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import type { StaffDeps } from './app.js';
@@ -15,7 +16,13 @@ export const MAX_HOLD_EXTEND_MS = 30 * 86_400_000;
  * the activity log with the account and, for an extension, the new end.
  * - `POST /staff/v1/accounts/:id/hold/extend { until }` (an ISO time after now, at most 30 days
  *   ahead; never earlier than the hold's end) → 200 `{ holdUntil }`; 404 when no hold runs.
- * - `POST /staff/v1/accounts/:id/hold/end` → 204; 404 when no hold runs. The held trades resume.
+ * - `POST /staff/v1/accounts/:id/hold/end { via? }` → 204; 404 when no hold runs. The held trades resume.
+ *   D-064 (owner 30 Oct N50-N51: "we will also try to contact you via the secure Jabber account you
+ *   had the option of setting up"; staff who reach the person there may end the hold): `via:
+ *   'secure-jabber'` says staff reached the account holder on the account's own secure Jabber
+ *   address. It needs an address proven before the hold began (Jabber set-up waits out a hold, so a
+ *   later one would be whoever used the recovery code): else 409 `no-secure-jabber` and the hold
+ *   stays. The log entry carries `via`. Without `via` the route works as before (lead hold v3).
  */
 export function staffHoldRoutes(app: FastifyInstance): void {
   const perm = 'accounts.freeze' as const;
@@ -50,11 +57,24 @@ export function staffHoldRoutes(app: FastifyInstance): void {
 
   app.post('/staff/v1/accounts/:id/hold/end', opts, async (req, reply) => {
     const accountId = accountOf(req.params);
+    const b = req.body ?? {};
+    const raw = b !== null && typeof b === 'object' && !Array.isArray(b) ? (b as Record<string, unknown>) : null;
+    if (raw === null || Object.keys(raw).some((k) => k !== 'via') || (Object.hasOwn(raw, 'via') && raw.via !== 'secure-jabber')) {
+      throw new ApiError(400, 'bad-request');
+    }
+    const via = raw.via === 'secure-jabber' ? 'secure-jabber' : null;
     const deps = req.server.deps;
+    const precheck = via === null ? undefined : async (c: Queryable, hold: Hold) => {
+      const { rows } = await c.query(
+        'select 1 from jabber_contacts where account_id = $1 and jid_sealed is not null and verified_at <= $2',
+        [accountId, hold.startedAt],
+      );
+      if (rows.length === 0) throw new ApiError(409, 'no-secure-jabber');
+    };
     // The log entry is written in the hold's own transaction (lead review 8 Nov minor 6, owner G35),
     // and the resumed trades are published to the trader app's live views.
     const ended = await endHoldByModerator(deps, accountId, { staffId: req.staff.accountId }, req.server.events, (deps as Partial<StaffDeps>).tradePublish, (c, now) =>
-      appendLog(c, { at: now, actor: actor(req), tradeCode: null, action: 'hold.ended', detail: { accountId } }));
+      appendLog(c, { at: now, actor: actor(req), tradeCode: null, action: 'hold.ended', detail: via === null ? { accountId } : { accountId, via } }), precheck);
     if (!ended) throw new ApiError(404, 'not-found');
     return reply.code(204).send();
   });

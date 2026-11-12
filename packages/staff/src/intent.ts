@@ -52,6 +52,9 @@ export type KeyTapIntent =
   | { kind: 'set-role'; accountId: string; role: Invitable }
   // Owner G4 (7 Nov): permanently removing a staff member is tapped.
   | { kind: 'remove-staff'; accountId: string }
+  // D-032 (owner G60): the owner's reset of a staff member's security, bound to the person and to the
+  // re-enrolment link (its id, the token's hash and the expiry), as `create-invite` binds an invite.
+  | { kind: 'reset-staff-security'; accountId: string; inviteId: string; tokenHash: string; expiresAt: string }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number }
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
@@ -83,6 +86,7 @@ export const KEY_TAP_KINDS = [
   'switch-on',
   'set-role',
   'remove-staff',
+  'reset-staff-security',
   'add-owner-key',
   'settings',
   'add-pgp-key',

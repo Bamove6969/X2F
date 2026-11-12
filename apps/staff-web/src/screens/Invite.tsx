@@ -34,12 +34,12 @@ interface Added {
 }
 
 /**
- * What the API's `finish` needs: owner G3 (owner-page3, review 8 Nov I-4), a moderator or senior
- * moderator holds all three methods (an attested security key, a passkey and a PGP key; two PGP keys
- * are not a pair for them); anyone else two factors (Task 7: PGP + a key, or two PGP keys).
+ * What the API's `finish` needs: D-070 (owner p11-19, changing G3's all three), a moderator or
+ * senior moderator holds a passkey and a PGP key, a security key optional (two PGP keys are not a
+ * pair for them); anyone else two factors (Task 7: PGP + a key, or two PGP keys).
  */
 export function canFinish(role: InviteView['role'], a: Added): boolean {
-  if (role === 'mod' || role === 'senior') return a.keys >= 1 && a.passkeys >= 1 && a.pgp >= 1;
+  if (role === 'mod' || role === 'senior') return a.passkeys >= 1 && a.pgp >= 1;
   return (a.pgp >= 1 && a.keys + a.passkeys >= 1) || a.pgp >= 2;
 }
 
@@ -51,8 +51,8 @@ export function canFinish(role: InviteView['role'], a: Added): boolean {
  * `termsSignature`); a 400 `terms-not-accepted` there (the Terms changed meanwhile) shows the Terms
  * again, empty, with the names kept. A return visit (the account is made, so the Terms are signed)
  * carries on at the keys. Moderators
- * and senior moderators hold all three methods (owner G3): an attested hardware security key, a
- * passkey on another device and a PGP key. Everyone else logs in with two factors (R1): a PGP key
+ * and senior moderators hold a passkey and a PGP key (D-070, owner p11-19); a hardware security key
+ * is optional (design redraws this card, register D-070). Everyone else logs in with two factors (R1): a PGP key
  * and a key, or two PGP keys. The passkey row is shown for every role. The result shows the first security key's check code
  * to read to the owner (A8).
  */
@@ -241,7 +241,8 @@ export function Invite() {
           </h2>
           <p className="x2f-staff-step__text">
             {moderator
-              ? 'Moderators log in with three keys: a hardware security key, such as a YubiKey, a passkey on another device, and a PGP key.'
+              ? // COPY-UNSIGNED (D-070; design redraws the staff invite card)
+                'Moderators log in with a passkey and a PGP key. A hardware security key, such as a YubiKey, is optional.'
               : 'Staff log in with two keys: a security key or passkey and a PGP key, or two PGP keys.'}
           </p>
           <KeyRow name="Security key" done={added.keys} onAdd={() => void addKey('security-key')} busy={busy} />

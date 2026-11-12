@@ -741,12 +741,15 @@ export async function endHoldByModerator(
   events?: SettleDeps['events'],
   publish?: TradePublisher,
   audit?: (db: pg.PoolClient, now: Date) => Promise<unknown>,
+  /** Runs first, under the account lock, with the running hold; a throw ends nothing (D-064's channel check). */
+  precheck?: (db: pg.PoolClient, hold: Hold) => Promise<void>,
 ): Promise<boolean> {
   const now = deps.clock();
   const ended = await withTx(deps.db, async (db) => {
     await lockAccount(db, accountId);
     const hold = await holdInTx(db, { config: deps.config, events }, accountId, now);
     if (hold === null) return false;
+    if (precheck) await precheck(db, hold);
     await db.query('delete from account_holds where account_id = $1', [accountId]);
     await releaseHeldTrades(db, accountId, now);
     await db.query(

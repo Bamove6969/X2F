@@ -66,6 +66,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'PUT', url: '/staff/v1/members/:id/grants', perm: 'staff.manage', allowed: OWNER, body: { grants: [] } },
   { method: 'PUT', url: '/staff/v1/members/:id/role', perm: 'staff.manage', allowed: OWNER, body: { role: 'mod' } },
   { method: 'DELETE', url: '/staff/v1/members/:id', perm: 'staff.manage', allowed: OWNER },
+  // D-032 (owner G60): the owner's tapped reset of a staff member's security.
+  { method: 'POST', url: '/staff/v1/members/:id/reset-security', perm: 'staff.manage', allowed: OWNER, body: {} },
   { method: 'GET', url: '/staff/v1/terms', perm: 'public-invite', allowed: 'public' },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { displayName: 'Matrix1', loginName: 'matrix1' } },
