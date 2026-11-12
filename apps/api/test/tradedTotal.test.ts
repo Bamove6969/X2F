@@ -82,7 +82,7 @@ async function closeWindow(code: string) {
   await withDispute(deps, { code }, async (d, _c, at) => applyDispute(d, { type: 'window-closed' }, { kind: 'system' }, at, DISPUTE_DEFAULTS));
   setNow(back);
 }
-/** The XMR total, '0' with no row (a dispute's lock step may create an empty row: review M1). */
+/** The XMR total, '0' with no row (the totals lock step creates an empty row for a party with none: reviews M1, m3). */
 const xmrOf = async (id: string) => (await totals(id))?.own_xmr_atomic ?? '0';
 const setting = (who: Who) => who.browser.get('/v1/account/profile/traded-total');
 const optIn = (who: Who, show: unknown) => who.browser.put('/v1/account/profile/traded-total', { show });
@@ -127,7 +127,7 @@ describe('the running totals', () => {
     const buyer = await trader();
     const plain = await trade(seller, buyer, xmr(20), { state: 'secured' });
     await applyEvent(deps, plain, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
-    expect(await totals(seller.id)).toBeNull();
+    expect(await xmrOf(seller.id)).toBe('0');
     // Refunded while the dispute is open: pending, so not counted yet.
     const disputed = await trade(seller, buyer, xmr(30), { state: 'secured' });
     expect((await seller.browser.post(`/v1/trades/${disputed}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);

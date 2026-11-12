@@ -32,6 +32,10 @@ import { disputeOutcomeSql, isFinalSaleSql } from './finalOutcome.js';
  * claim stops showing at once.
  */
 export async function countTradeTotals(q: Queryable, code: string): Promise<void> {
+  // Review m3: both parties' rows first, in account-id order, on every path (a trade event as well
+  // as a dispute's save), so two transactions on trades between the same two accounts never take
+  // them in opposite orders (the upserts below go buyer, then seller).
+  await lockPartyTotals(q, code);
   // A final sale: add the value to both sides, once.
   await q.query(
     `with t as (

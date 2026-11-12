@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { withDispute } from '../src/disputes/store.js';
 import { runDisputeTimers } from '../src/disputes/timers.js';
 import { applyEvent } from '../src/trades/store.js';
 import { publishRuling } from './helpers/disputes.js';
@@ -103,5 +104,34 @@ describe('a ruling finalised by the timer and a trade event never deadlock (M1)'
     expect(r1.status, r1.status === 'rejected' ? String(r1.reason) : '').toBe('fulfilled');
     expect(r2.status, r2.status === 'rejected' ? String((r2.reason as AggregateError).errors ?? r2.reason) : '').toBe('fulfilled');
     expect((await deps.db.query<{ status: string }>('select status from disputes where code = $1', [c])).rows[0]!.status).toBe('final');
+  });
+
+  it('two trades between the same two accounts: one settles while the other takes a dispute action (totals rows in account-id order, m3)', async () => {
+    setNow(START);
+    const p = await trader();
+    const q = await trader();
+    const [lo, hi] = [p, q].sort((x, y) => (x.id < y.id ? -1 : 1)) as [typeof p, typeof p];
+    // X: disputed by its seller (the lower id), so the dispute action locks lo then hi.
+    const { trade: x } = await seedTrade(deps, { sellerId: lo.id, buyerId: hi.id, poster: 'seller' });
+    await driveTo(deps, x, 'secured');
+    expect((await lo.browser.post(`/v1/trades/${x.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
+    // Y: the buyer is the higher id, so counting it by VALUES (buyer, seller) would take hi then lo.
+    const failures: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      const { trade: y } = await seedTrade(deps, { sellerId: lo.id, buyerId: hi.id, poster: 'seller' });
+      await driveTo(deps, y, 'settling');
+      const out = await Promise.allSettled([
+        applyEvent(deps, y.code, { type: 'settled', kind: 'release', txHash: tx() }, 'system'),
+        withDispute(deps, { code: x.code }, async (d) => d),
+        withDispute(deps, { code: x.code }, async (d) => d),
+      ]);
+      for (const r of out) if (r.status === 'rejected') failures.push(String(r.reason));
+    }
+    expect(failures).toEqual([]);
+    const { rows } = await deps.db.query<{ n: string }>(
+      `select count(*) as n from trade_totals_counted c join trades t on t.code = c.trade_code where c.kind = 'completed' and t.buyer_account_id = $1`,
+      [hi.id],
+    );
+    expect(rows[0]!.n).toBe('25');
   });
 });
