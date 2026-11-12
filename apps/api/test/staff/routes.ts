@@ -133,7 +133,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // every member's unpaid net.
   { method: 'GET', url: '/staff/v1/pay', perm: 'self', allowed: EVERY_ROLE },
   { method: 'GET', url: '/staff/v1/pay/clock-out', perm: 'self', allowed: EVERY_ROLE },
-  { method: 'POST', url: '/staff/v1/pay/clock-out', perm: 'self', allowed: EVERY_ROLE, body: { addressId: 'not-a-uuid' } },
+  { method: 'POST', url: '/staff/v1/pay/clock-out', perm: 'self', allowed: EVERY_ROLE, body: { quote: 'x', addressId: 'not-a-uuid' } },
   { method: 'POST', url: '/staff/v1/pay/addresses', perm: 'self', allowed: EVERY_ROLE, body: {} },
   { method: 'DELETE', url: '/staff/v1/pay/addresses/:id', perm: 'self', allowed: EVERY_ROLE },
   { method: 'GET', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER },

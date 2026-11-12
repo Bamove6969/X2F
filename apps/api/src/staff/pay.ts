@@ -1,8 +1,10 @@
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { withTx } from '../auth/hold.js';
 import { COOKIE_ATTRS } from '../auth/device.js';
 import { realmOf } from '../auth/sessions.js';
+import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
@@ -52,6 +54,11 @@ export class PayrollWalletNotWiredError extends Error {
  * `amountAtomic` to the payout's stored address only, record the tx hash (`sent`) or `failed` in a
  * second transaction (the fee sweep's pending/settled pattern), and delete this tripwire with its
  * test (test/staff/pay.test.ts).
+ *
+ * Security review 12 Nov M2: before sending, the send must also re-check that the payout's address
+ * is still the one its tap approved (`staff_payout_addresses.tap_id` -> `key_taps.intent`, whose
+ * `address` must equal the stored address exactly) and that the address is still live
+ * (`removed_at is null`); otherwise it marks the payout `failed` and sends nothing.
  */
 export async function sendStaffPayout(_a: { address: string; amountAtomic: bigint }): Promise<{ txHash: string }> {
   throw new PayrollWalletNotWiredError();
@@ -173,10 +180,16 @@ interface ItemRow {
   earned_at: Date;
 }
 
+/**
+ * The member's unpaid items. `lock` takes them `for no key update` (security review S1): the
+ * clock-out is already serialised by the `staff_members` row lock, and a stronger `for update` would
+ * conflict with the `for key share` a clawback's `source_item` foreign key takes, deadlocking a
+ * clock-out against an appeal's save that holds the activity log's lock.
+ */
 async function unpaidItems(q: Queryable, staffId: string, lock = false): Promise<ItemRow[]> {
   const { rows } = await q.query<ItemRow>(
     `select id::text, kind, trade_code, seq, usd_cents::text, atomic::text, earned_at
-       from staff_pay_items where staff_id = $1 and payout_id is null order by earned_at, id${lock ? ' for update' : ''}`,
+       from staff_pay_items where staff_id = $1 and payout_id is null order by earned_at, id${lock ? ' for no key update' : ''}`,
     [staffId],
   );
   return rows;
@@ -262,11 +275,66 @@ async function myPayView(q: Queryable, staffId: string, now: Date) {
 
 const str = (v: bigint | null): string | null => (v === null ? null : v.toString());
 
-/** The clock-out sheet: the total, how it is made up and the addresses to choose from. */
-async function clockOutPreview(q: Queryable, staffId: string, prices: MarketPrices) {
+// ---------------------------------------------------------------------------------------------
+// The clock-out quote (security review S2, lead call): the POST pays exactly what the sheet showed
+
+/** Lead default: a clock-out sheet's figures hold for 5 minutes. */
+export const QUOTE_TTL_MS = 5 * 60_000;
+
+interface QuoteBody {
+  v: 1;
+  staffId: string;
+  sessionId: string;
+  /** SHA-256 (hex) of the sorted ids of the unpaid items the sheet was made from. */
+  items: string;
+  /** The USD price used (US cents per XMR), or null when there was none. */
+  price: string | null;
+  expiresAt: string;
+}
+
+const itemsHash = (rows: ItemRow[]): string => createHash('sha256').update(rows.map((r) => r.id).sort().join(',')).digest('hex');
+const b64 = (b: Buffer | string) => Buffer.from(b).toString('base64url');
+const quoteMac = (config: Config, body: string) => createHmac('sha256', subkey(config, 'pay-quote')).update(`pay-quote/${body}`).digest();
+
+/** A signed quote: base64url(JSON) "." base64url(HMAC-SHA-256 under the server's `pay-quote` key). */
+export function signQuote(config: Config, q: QuoteBody): string {
+  const body = b64(JSON.stringify(q));
+  return `${body}.${b64(quoteMac(config, body))}`;
+}
+
+/**
+ * The quote's body when it is genuine and this member's for this session (else 400
+ * `quote-invalid`), and not expired (409 `quote-expired`).
+ */
+export function openQuote(config: Config, quote: string, staffId: string, sessionId: string, now: Date): QuoteBody {
+  const invalid = () => new ApiError(400, 'quote-invalid');
+  const [body, mac, extra] = quote.split('.');
+  if (body === undefined || mac === undefined || extra !== undefined) throw invalid();
+  const want = quoteMac(config, body);
+  const got = Buffer.from(mac, 'base64url');
+  if (got.length !== want.length || !timingSafeEqual(got, want)) throw invalid();
+  let q: QuoteBody;
+  try {
+    q = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as QuoteBody;
+  } catch {
+    throw invalid();
+  }
+  if (q.v !== 1 || q.staffId !== staffId.toLowerCase() || q.sessionId !== sessionId.toLowerCase()) throw invalid();
+  const ends = Date.parse(q.expiresAt);
+  if (!Number.isFinite(ends)) throw invalid();
+  if (now.getTime() >= ends) throw new ApiError(409, 'quote-expired');
+  return q;
+}
+
+/** The clock-out sheet: the total, how it is made up, the addresses to choose from and its quote. */
+async function clockOutPreview(q: Queryable, config: Config, staffId: string, sessionId: string, prices: MarketPrices, now: Date) {
   const items = await unpaidItems(q, staffId);
-  const t = clockOutTotals(items, usdPrice(prices));
+  const price = usdPrice(prices);
+  const t = clockOutTotals(items, price);
+  const expiresAt = new Date(now.getTime() + QUOTE_TTL_MS).toISOString();
   return {
+    quote: signQuote(config, { v: 1, staffId: staffId.toLowerCase(), sessionId: sessionId.toLowerCase(), items: itemsHash(items), price: str(price), expiresAt }),
+    expiresAt,
     due: t.due,
     disputes: items.filter((i) => i.kind === 'dispute').length,
     largeTrades: items.filter((i) => i.kind === 'large-trade').length,
@@ -281,15 +349,14 @@ async function clockOutPreview(q: Queryable, staffId: string, prices: MarketPric
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function parseClockOut(body: unknown): { addressId: string | null } {
-  if (body === undefined || body === null) return { addressId: null };
-  if (typeof body !== 'object' || Array.isArray(body)) throw badRequest();
+function parseClockOut(body: unknown): { quote: string; addressId: string | null } {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) throw badRequest();
   const r = body as Record<string, unknown>;
-  const keys = Object.keys(r);
-  if (keys.some((k) => k !== 'addressId')) throw badRequest();
-  if (r.addressId === undefined || r.addressId === null) return { addressId: null };
+  if (Object.keys(r).some((k) => k !== 'addressId' && k !== 'quote')) throw badRequest();
+  if (typeof r.quote !== 'string' || r.quote.length === 0 || r.quote.length > 2048) throw badRequest('quote');
+  if (r.addressId === undefined || r.addressId === null) return { quote: r.quote, addressId: null };
   if (typeof r.addressId !== 'string' || !UUID.test(r.addressId)) throw badRequest('addressId');
-  return { addressId: r.addressId.toLowerCase() };
+  return { quote: r.quote, addressId: r.addressId.toLowerCase() };
 }
 
 export interface ClockOutResult {
@@ -299,7 +366,8 @@ export interface ClockOutResult {
 
 /**
  * A correct clock-out in `client`'s transaction (D-041, D-045): locks the member's row and unpaid
- * items, works out the net at the price, and when it is positive records one payout to the chosen
+ * items, checks they are exactly the ones the quote was made from (409 `quote-changed` otherwise:
+ * the member sees the sheet again), works out the net at the quote's price, and when it is positive records one payout to the chosen
  * pre-approved address (400 `address-required` without one; 404 `address-unknown` for one that is
  * not theirs or was removed) and settles every unpaid item into it. Then the shift ends as
  * `clock-out` and the session is revoked. With nothing due, a debt or no price, nothing is paid and
@@ -310,12 +378,13 @@ export async function clockOut(
   staff: Pick<StaffContext, 'accountId' | 'role'>,
   sessionId: string,
   addressId: string | null,
-  usdCentsPerXmr: bigint | null,
+  quote: Pick<QuoteBody, 'items' | 'price'>,
   now: Date,
 ): Promise<ClockOutResult> {
   await client.query('select 1 from staff_members where account_id = $1 for update', [staff.accountId]);
   const items = await unpaidItems(client, staff.accountId, true);
-  const t = clockOutTotals(items, usdCentsPerXmr);
+  if (itemsHash(items) !== quote.items) throw new ApiError(409, 'quote-changed');
+  const t = clockOutTotals(items, quote.price === null ? null : BigInt(quote.price));
   let payout: ClockOutResult['payout'] = null;
   const shift = (await client.query<{ id: string; clocked_in_at: Date }>(
     "select id::text, clocked_in_at from staff_shifts where session_id = $1 and staff_id = $2 and ended is null for update",
@@ -389,11 +458,15 @@ export function staffPayRoutes(app: FastifyInstance): void {
   const earnings = { config: { perm: 'earnings.read' as const }, preHandler: requireStaff('earnings.read') };
 
   app.get('/staff/v1/pay', self, async (req) => myPayView(req.server.deps.db, req.staff.accountId, req.server.deps.clock()));
-  app.get('/staff/v1/pay/clock-out', self, async (req) => clockOutPreview(req.server.deps.db, req.staff.accountId, req.server.deps.prices));
+  app.get('/staff/v1/pay/clock-out', self, async (req) => {
+    const { db, config, prices, clock } = req.server.deps;
+    return clockOutPreview(db, config, req.staff.accountId, req.auth.sessionId, prices, clock());
+  });
   app.post('/staff/v1/pay/clock-out', self, async (req: FastifyRequest, reply: FastifyReply) => {
-    const { addressId } = parseClockOut(req.body);
-    const { db, clock, prices } = req.server.deps;
-    const result = await withTx(db, (c) => clockOut(c, req.staff, req.auth.sessionId, addressId, usdPrice(prices), clock()));
+    const body = parseClockOut(req.body);
+    const { db, clock, config } = req.server.deps;
+    const quote = openQuote(config, body.quote, req.staff.accountId, req.auth.sessionId, clock());
+    const result = await withTx(db, (c) => clockOut(c, req.staff, req.auth.sessionId, body.addressId, quote, clock()));
     req.server.events.closeSession(req.staff.accountId, req.auth.sessionId);
     void reply.clearCookie(realmOf(req).cookie, COOKIE_ATTRS);
     return result;
@@ -426,6 +499,9 @@ export function staffPayRoutes(app: FastifyInstance): void {
     const { db, clock } = req.server.deps;
     const now = clock();
     return withTx(db, async (c) => {
+      // Security review S3: the same member lock as adding and clocking out, so a removal never
+      // interleaves with a clock-out choosing that address.
+      await c.query('select 1 from staff_members where account_id = $1 for update', [req.staff.accountId]);
       const r = await c.query(
         'update staff_payout_addresses set removed_at = $3 where id = $1 and staff_id = $2 and removed_at is null',
         [id.toLowerCase(), req.staff.accountId, now],

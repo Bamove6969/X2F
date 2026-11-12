@@ -172,8 +172,11 @@ create function staff_pay_items_settle_only() returns trigger
   set search_path = pg_catalog
 as $$
 begin
-  if tg_op = 'UPDATE'
-     and new.id = old.id and new.staff_id = old.staff_id and new.kind = old.kind
+  -- DELETE and TRUNCATE (the statement trigger has no row) are refused before any row is read.
+  if tg_op <> 'UPDATE' then
+    raise exception 'staff_pay_items: an item is only ever settled, never changed or deleted' using errcode = 'insufficient_privilege';
+  end if;
+  if new.id = old.id and new.staff_id = old.staff_id and new.kind = old.kind
      and new.seq is not distinct from old.seq
      and new.usd_cents is not distinct from old.usd_cents and new.atomic is not distinct from old.atomic
      and new.earned_at = old.earned_at and new.source_item is not distinct from old.source_item
@@ -188,3 +191,65 @@ $$;
 create trigger staff_pay_items_settle_only
   before update or delete on staff_pay_items
   for each row execute function staff_pay_items_settle_only();
+
+-- Security review 12 Nov M1: TRUNCATE skips row triggers, so it is refused by a statement trigger,
+-- as for trade_events (104), team_audit (015) and activity_log (201).
+create trigger staff_pay_items_no_truncate
+  before truncate on staff_pay_items
+  for each statement execute function staff_pay_items_settle_only();
+
+-- Security review 12 Nov M2: the rows that say where pay goes cannot be rewritten. A payout changes
+-- only when it settles: from `waiting-send` to `sent` (with its tx hash) or `failed`, its
+-- settled time with it; everything else stays as recorded. Never deleted or truncated.
+create function staff_payouts_settle_only() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if tg_op <> 'UPDATE' then
+    raise exception 'staff_payouts: a payout only ever settles once, never changes otherwise or goes' using errcode = 'insufficient_privilege';
+  end if;
+  if old.status = 'waiting-send' and new.status <> 'waiting-send'
+     and new.id = old.id and new.staff_id = old.staff_id and new.at = old.at
+     and new.shift_id is not distinct from old.shift_id and new.address_id = old.address_id
+     and new.usd_cents = old.usd_cents and new.usd_cents_per_xmr is not distinct from old.usd_cents_per_xmr
+     and new.atomic = old.atomic and new.amount_atomic = old.amount_atomic then
+    return new;
+  end if;
+  raise exception 'staff_payouts: a payout only ever settles once, never changes otherwise or goes' using errcode = 'insufficient_privilege';
+end
+$$;
+
+create trigger staff_payouts_settle_only
+  before update or delete on staff_payouts
+  for each row execute function staff_payouts_settle_only();
+
+create trigger staff_payouts_no_truncate
+  before truncate on staff_payouts
+  for each statement execute function staff_payouts_settle_only();
+
+-- An address is only ever removed, once; its address, owner and tap never change.
+create function staff_payout_addresses_remove_only() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if tg_op <> 'UPDATE' then
+    raise exception 'staff_payout_addresses: an address is only ever removed, once' using errcode = 'insufficient_privilege';
+  end if;
+  if old.removed_at is null and new.removed_at is not null
+     and new.id = old.id and new.staff_id = old.staff_id and new.address = old.address
+     and new.added_at = old.added_at and new.tap_id = old.tap_id then
+    return new;
+  end if;
+  raise exception 'staff_payout_addresses: an address is only ever removed, once' using errcode = 'insufficient_privilege';
+end
+$$;
+
+create trigger staff_payout_addresses_remove_only
+  before update or delete on staff_payout_addresses
+  for each row execute function staff_payout_addresses_remove_only();
+
+create trigger staff_payout_addresses_no_truncate
+  before truncate on staff_payout_addresses
+  for each statement execute function staff_payout_addresses_remove_only();

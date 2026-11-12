@@ -248,6 +248,9 @@ export interface PayoutAddress {
 /** What is due at a correct clock-out: `pay`, `nothing-due`, `owed` (a clawback debt) or `no-price`. */
 export type ClockOutDue = 'pay' | 'nothing-due' | 'owed' | 'no-price';
 export interface ClockOutSheet {
+  /** The signed quote the POST must carry: it pays exactly these figures (security review S2). */
+  quote: string;
+  expiresAt: string;
   due: ClockOutDue;
   disputes: number;
   largeTrades: number;
@@ -265,9 +268,12 @@ export interface ClockOutResult {
 }
 
 export const clockOutSheet = () => staffApi<ClockOutSheet>('/staff/v1/pay/clock-out');
-/** The correct clock-out: pays what is due to `addressId` and ends the session. */
-export const clockOut = (addressId: string | null) =>
-  staffApi<ClockOutResult>('/staff/v1/pay/clock-out', { method: 'POST', body: addressId === null ? {} : { addressId } });
+/**
+ * The correct clock-out: pays exactly the sheet's `quote` to `addressId` and ends the session. 409
+ * `quote-changed` or `quote-expired`: the pay moved since the sheet was shown; show it again.
+ */
+export const clockOut = (quote: string, addressId: string | null) =>
+  staffApi<ClockOutResult>('/staff/v1/pay/clock-out', { method: 'POST', body: addressId === null ? { quote } : { quote, addressId } });
 /** Adds a payout address; `tapId` is a tap of intent `payout-address` for exactly this address. */
 export const addPayoutAddress = (address: string, tapId: string) =>
   staffApi<PayoutAddress>('/staff/v1/pay/addresses', { method: 'POST', body: { address, tapId } });

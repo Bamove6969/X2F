@@ -17,6 +17,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { withTx } from '../../src/auth/hold.js';
+import { appendLog } from '../../src/log/append.js';
 import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
 import { startDispute, withDispute } from '../../src/disputes/store.js';
 import type { MarketPrices } from '../../src/price/market.js';
@@ -43,10 +44,12 @@ let close: () => Promise<void>;
 let owner: StaffBrowser;
 let ownerId: string;
 let priceOn = true;
+/** The USD price the stub answers (US cents per XMR). */
+let usdPerXmr = USD_PER_XMR;
 
 const prices = {
   current: () => null,
-  quote: (c: string) => (priceOn && c === 'USD' ? { price: { currency: 'USD', centsPerXmr: USD_PER_XMR }, usdCentsPerXmr: USD_PER_XMR, fx: null } : null),
+  quote: (c: string) => (priceOn && c === 'USD' ? { price: { currency: 'USD', centsPerXmr: usdPerXmr }, usdCentsPerXmr: usdPerXmr, fx: null } : null),
   health: () => ({ xmr: [], fx: [] }),
   poll: async () => undefined,
   start: () => undefined,
@@ -169,7 +172,17 @@ const myPay = async (m: Member): Promise<PayView> => {
   return res.json() as PayView;
 };
 
-const clockOut = (m: Member, addressId?: string) => m.b.post('/staff/v1/pay/clock-out', addressId === undefined ? {} : { addressId });
+/** The clock-out sheet's quote (review S2: the POST pays exactly what the sheet showed). */
+const quoteOf = async (m: Member): Promise<string> => {
+  const res = await m.b.get('/staff/v1/pay/clock-out');
+  expect(res.statusCode, res.body).toBe(200);
+  return (res.json() as { quote: string }).quote;
+};
+/** The POST alone, with a quote the caller holds. */
+const postClockOut = (m: Member, quote: string, addressId?: string) =>
+  m.b.post('/staff/v1/pay/clock-out', addressId === undefined ? { quote } : { quote, addressId });
+/** Preview, then clock out on its quote. */
+const clockOut = async (m: Member, addressId?: string) => postClockOut(m, await quoteOf(m), addressId);
 
 describe('the owner pay settings (D-042, D-043: owner numbers, no default)', () => {
   it('ship unset; only the owner reads or changes them; a change needs a tap bound to the exact values and is logged', async () => {
@@ -468,6 +481,167 @@ describe('clawback option A (D-044)', () => {
     // Only the owner reads it.
     expect((await reviewer.b.get('/staff/v1/pay/staff')).statusCode).toBe(403);
     await setPay(UNSET);
+  });
+});
+
+describe('review S2: the clock-out pays exactly the quote it showed', () => {
+  it('refuses a missing, forged, someone else\'s or expired quote, and a quote whose items changed; pays the quoted amount at the quoted price', async () => {
+    await setPay({ modDisputeUsdCents: 3300, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null });
+    const mod = await member('mod');
+    const other = await member('mod');
+    const addr = await addAddress(mod);
+    await rule(await disputed(), mod);
+
+    expect(errorOf(await mod.b.post('/staff/v1/pay/clock-out', { addressId: addr }))).toBe('bad-request');
+    const q = await quoteOf(mod);
+    const [body, sig] = q.split('.');
+    expect(errorOf(await postClockOut(mod, `${body}.${sig!.slice(0, -2)}AA`, addr))).toBe('quote-invalid');
+    expect(errorOf(await postClockOut(mod, 'garbage', addr))).toBe('quote-invalid');
+    // Another member's quote (of their own session) is not this member's.
+    expect(errorOf(await postClockOut(mod, await quoteOf(other), addr))).toBe('quote-invalid');
+
+    // Expired after 5 minutes.
+    const old = await quoteOf(mod);
+    later(5 * 60_000 + 1000);
+    expect(errorOf(await postClockOut(mod, old, addr))).toBe('quote-expired');
+
+    // A dispute completed after the sheet was shown: the items changed.
+    const before = await quoteOf(mod);
+    await rule(await disputed(), mod);
+    expect(errorOf(await postClockOut(mod, before, addr))).toBe('quote-changed');
+    expect((await deps.db.query('select 1 from staff_payouts where staff_id = $1', [mod.id])).rows).toHaveLength(0);
+
+    // The price moves between the sheet and the tap: the quoted amount is paid.
+    const shown = await mod.b.get('/staff/v1/pay/clock-out');
+    const { quote, amountAtomic } = shown.json() as { quote: string; amountAtomic: string };
+    expect(amountAtomic).toBe(((6600n * XMR) / USD_PER_XMR).toString());
+    usdPerXmr = 66_000n;
+    try {
+      const res = await postClockOut(mod, quote, addr);
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toMatchObject({ due: 'pay', payout: { amountAtomic } });
+      const row = (await deps.db.query<{ usd_cents_per_xmr: string }>('select usd_cents_per_xmr::text from staff_payouts where staff_id = $1', [mod.id])).rows[0];
+      expect(row?.usd_cents_per_xmr).toBe(USD_PER_XMR.toString());
+    } finally {
+      usdPerXmr = USD_PER_XMR;
+    }
+    await setPay(UNSET);
+  });
+
+  it('two clock-outs at once (two sessions) pay once: the other is refused as changed', async () => {
+    await setPay({ modDisputeUsdCents: 3300, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null });
+    const mod = await member('mod');
+    const addr = await addAddress(mod);
+    await rule(await disputed(), mod);
+    const second = new StaffBrowser(app).withSession((await insertSession(deps, mod.id, 'staff')).token);
+    const q1 = await quoteOf(mod);
+    const r2 = await second.get('/staff/v1/pay/clock-out');
+    const q2 = (r2.json() as { quote: string }).quote;
+    const [a, b] = await Promise.all([postClockOut(mod, q1, addr), second.post('/staff/v1/pay/clock-out', { quote: q2, addressId: addr })]);
+    const codes = [a, b].map((r) => (r.statusCode === 200 ? 'paid' : errorOf(r))).sort();
+    expect(codes).toEqual(['paid', 'quote-changed']);
+    expect((await deps.db.query('select 1 from staff_payouts where staff_id = $1', [mod.id])).rows).toHaveLength(1);
+    await setPay(UNSET);
+  });
+});
+
+describe('review S1: a clock-out racing an overruled appeal does not deadlock', () => {
+  it('the clawback insert (holding the log lock) and the clock-out (locking the items) both commit', async () => {
+    await setPay({ modDisputeUsdCents: 3300, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null });
+    const mod = await member('mod');
+    const addr = await addAddress(mod);
+    const code = await disputed();
+    await rule(code, mod);
+    await setPay(UNSET);
+    const item = (await deps.db.query<{ id: string }>("select id::text from staff_pay_items where trade_code = $1 and kind = 'dispute'", [code])).rows[0]!.id;
+    const quote = await quoteOf(mod);
+
+    // The appeal's save as withDispute runs it: the route's log entry first (the log lock), then the clawback.
+    const b = await deps.db.connect();
+    try {
+      await b.query('begin');
+      await appendLog(b, { at: deps.clock(), actor: { kind: 'system' }, tradeCode: null, action: 'pay.clawback', detail: {} });
+      const clock = postClockOut(mod, quote, addr);
+      // Wait until the clock-out waits for the log lock (it holds its item locks by then).
+      for (let i = 0; i < 200; i++) {
+        const w = await deps.db.query("select 1 from pg_locks where locktype = 'advisory' and not granted");
+        if (w.rows.length > 0) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      await b.query(
+        `insert into staff_pay_items (staff_id, kind, trade_code, seq, usd_cents, earned_at, source_item)
+         values ($1, 'clawback', $2, 1, -3300, $3, $4)`,
+        [mod.id, code, deps.clock(), item],
+      );
+      await b.query('commit');
+      const res = await clock;
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toMatchObject({ due: 'pay' });
+    } finally {
+      b.release();
+    }
+    await mod.login();
+    expect((await myPay(mod)).unpaid.items.map((i) => [i.kind, i.usdCents])).toEqual([['clawback', '-3300']]);
+  });
+});
+
+describe('reviews M1 and M2: the pay tables cannot be emptied or rewritten', () => {
+  it('TRUNCATE is refused on the ledger, the payouts and the addresses', async () => {
+    for (const t of ['staff_pay_items', 'staff_payouts', 'staff_payout_addresses']) {
+      await expect(deps.db.query(`truncate ${t} cascade`), t).rejects.toThrow();
+    }
+    await expect(deps.db.query('truncate staff_pay_items')).rejects.toThrow(/settled/);
+  });
+
+  it('a payout changes only by settling (status, tx hash, time), never back, never its address or amount, never deleted', async () => {
+    await setPay({ modDisputeUsdCents: 3300, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null });
+    const mod = await member('mod');
+    const addr = await addAddress(mod);
+    const spare = await addAddress(mod);
+    await rule(await disputed(), mod);
+    await setPay(UNSET);
+    const id = ((await clockOut(mod, addr)).json() as { payout: { id: string } }).payout.id;
+    for (const sql of [
+      'update staff_payouts set address_id = $2 where id = $1',
+      'update staff_payouts set amount_atomic = amount_atomic + 1 where id = $1',
+      'update staff_payouts set usd_cents_per_xmr = 1 where id = $1',
+    ]) {
+      await expect(deps.db.query(sql, sql.includes('$2') ? [id, spare] : [id]), sql).rejects.toThrow(/payouts/);
+    }
+    await expect(deps.db.query('delete from staff_payouts where id = $1', [id])).rejects.toThrow(/payouts/);
+    const tx = 'a'.repeat(64);
+    await deps.db.query("update staff_payouts set status = 'sent', tx_hash = $2, settled_at = $3 where id = $1", [id, tx, deps.clock()]);
+    await expect(deps.db.query("update staff_payouts set status = 'waiting-send', tx_hash = null, settled_at = null where id = $1", [id])).rejects.toThrow(/payouts/);
+    await expect(deps.db.query("update staff_payouts set status = 'failed', tx_hash = null where id = $1", [id])).rejects.toThrow(/payouts/);
+  });
+
+  it('an address changes only by being removed once, never its address, never deleted', async () => {
+    const mod = await member('mod');
+    const id = await addAddress(mod);
+    await expect(deps.db.query('update staff_payout_addresses set address = $2 where id = $1', [id, fakeAddress()])).rejects.toThrow(/addresses/);
+    await expect(deps.db.query('update staff_payout_addresses set staff_id = $2 where id = $1', [id, ownerId])).rejects.toThrow(/addresses/);
+    await expect(deps.db.query('delete from staff_payout_addresses where id = $1', [id])).rejects.toThrow(/addresses/);
+    await deps.db.query('update staff_payout_addresses set removed_at = $2 where id = $1', [id, deps.clock()]);
+    await expect(deps.db.query('update staff_payout_addresses set removed_at = null where id = $1', [id])).rejects.toThrow(/addresses/);
+    await expect(deps.db.query('update staff_payout_addresses set removed_at = $2 where id = $1', [id, new Date(deps.clock().getTime() + 1000)])).rejects.toThrow(/addresses/);
+  });
+});
+
+describe('review m1: purging a trade keeps its pay items without the trade', () => {
+  it('a deleted trade nulls trade_code on its items; the amounts stay', async () => {
+    const mod = await member('mod');
+    const seller = await seedAccount(deps, { loginName: uniqueName('s') });
+    const buyer = await seedAccount(deps, { loginName: uniqueName('b') });
+    const { code } = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
+    await deps.db.query("insert into staff_pay_items (staff_id, kind, trade_code, seq, usd_cents, earned_at) values ($1, 'dispute', $2, 1, 700, $3)", [mod.id, code, deps.clock()]);
+    await withTx(deps.db, async (c) => {
+      await c.query('set local role x2f_purge');
+      await c.query('delete from trade_events where code = $1', [code]);
+      await c.query('reset role');
+      await c.query('delete from trades where code = $1', [code]);
+    });
+    const { rows } = await deps.db.query<{ trade_code: string | null; usd_cents: string }>('select trade_code, usd_cents::text from staff_pay_items where staff_id = $1', [mod.id]);
+    expect(rows).toEqual([{ trade_code: null, usd_cents: '700' }]);
   });
 });
 

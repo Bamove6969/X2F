@@ -62,9 +62,15 @@ export function ClockOut({ onDone, onCancel }: { onDone: (r: ClockOutResult) => 
     setBusy(true);
     setFault(null);
     try {
-      onDone(await clockOut(sheet?.due === 'pay' ? chosen : null));
+      onDone(await clockOut(sheet!.quote, sheet!.due === 'pay' ? chosen : null));
     } catch (e) {
       const c = codeOf(e);
+      // not-a-refusal: the figures moved since the sheet was shown (a wait, not a rule); show them again.
+      if (c === 'quote-changed' || c === 'quote-expired') {
+        await load();
+        setFault('Your pay changed while this was open. Check the new total, then clock out.');
+        return;
+      }
       // not-a-refusal: an input check on the chosen address, shown as a fault.
       if (c === 'address-required' || c === 'address-unknown') setFault('Choose one of your payout addresses.');
       else setFault(faultText(e, 'The clock-out did not go through. Try again.'));

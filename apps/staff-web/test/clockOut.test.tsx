@@ -22,6 +22,7 @@ const A1 = `5${'a'.repeat(94)}`;
 const A2 = `5${'b'.repeat(94)}`;
 const A3 = `5${'c'.repeat(94)}`;
 const sheet = (o: Record<string, unknown> = {}) => ({
+  quote: 'q.sig', expiresAt: '2026-11-12T10:05:00.000Z',
   due: 'pay', disputes: 2, largeTrades: 0, clawbacks: 0, usdCents: '6600', atomic: '0', usdCentsPerXmr: '33000',
   amountAtomic: '200000000000',
   addresses: [{ id: 'a1', address: A1, addedAt: '2026-11-01T00:00:00.000Z' }, { id: 'a2', address: A2, addedAt: '2026-11-02T00:00:00.000Z' }],
@@ -70,7 +71,7 @@ describe('the clock-out sheet', () => {
     await click(radios[0]);
     await click(button('Send my pay and clock out'));
     const post = api.calls.find((c) => c.method === 'POST' && c.path === '/staff/v1/pay/clock-out');
-    expect(post?.body).toEqual({ addressId: 'a1' });
+    expect(post?.body).toEqual({ quote: 'q.sig', addressId: 'a1' });
     expect(document.querySelector('[data-screen="login"]')).not.toBeNull();
   });
 
@@ -110,7 +111,22 @@ describe('the clock-out sheet', () => {
     expect(document.querySelector('[data-part="clock-out-text"]')?.textContent).toContain('0.100000 XMR, comes off your next pay');
     expect(document.querySelector('input[name="payout-address"]')).toBeNull();
     await click(button('Clock out', document.querySelector('[data-part="clock-out"]')!));
-    expect(api.calls.find((c) => c.method === 'POST' && c.path === '/staff/v1/pay/clock-out')?.body).toEqual({});
+    expect(api.calls.find((c) => c.method === 'POST' && c.path === '/staff/v1/pay/clock-out')?.body).toEqual({ quote: 'q.sig' });
+  });
+
+  it('pay that changed while the sheet was open: the sheet is read again and says so; nothing is paid', async () => {
+    let n = 0;
+    fakeApi({
+      'GET /staff/v1/me': { body: me('mod') },
+      'GET /staff/v1/pay/clock-out': () => ({ body: sheet(++n > 1 ? { disputes: 3, amountAtomic: '300000000000', usdCents: '9900' } : {}) }),
+      'POST /staff/v1/pay/clock-out': { status: 409, body: { error: 'quote-changed' } },
+    });
+    await open();
+    await click(button('Clock out'));
+    await click(button('Send my pay and clock out'));
+    expect(document.querySelector('[data-part="clock-out-fault"]')?.textContent).toContain('Your pay changed while this was open');
+    expect(document.querySelector('[data-part="clock-out-text"]')?.textContent).toContain('0.300000 XMR');
+    expect(document.querySelector('[data-screen="login"]')).toBeNull();
   });
 
   it('formats XMR truncated to 6 places and dollars with their sign', () => {

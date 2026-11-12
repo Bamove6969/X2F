@@ -184,7 +184,11 @@ export type ApiErrorCode =
   | 'address-required'
   | 'address-unknown'
   | 'address-exists'
-  | 'too-many-addresses';
+  | 'too-many-addresses'
+  // Security review S2: the clock-out pays exactly the sheet's signed quote.
+  | 'quote-invalid'
+  | 'quote-expired'
+  | 'quote-changed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {
