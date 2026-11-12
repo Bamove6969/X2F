@@ -95,6 +95,11 @@ export interface ChatLine {
   missing?: true;
   /** The payee's packaged payment details (J-08): the panel shows a card; `text` is its plain rendering. */
   pay?: PayDetailsPayload;
+  /**
+   * Review payee-fields-2 m-4: the other side's package this device could not show (refused for its
+   * contents, e.g. a newer table's box): `text` is empty and the panel says to ask them to send again.
+   */
+  unreadablePay?: true;
 }
 
 export interface ChatSnapshot {
@@ -197,13 +202,15 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
 
   const snapshot = (rec: ChatRecord | null, view: ChatApiView, phase: ChatPhase, problem: ChatSnapshot['problem'] = null, more = false): ChatSnapshot => {
     const session = rec ? sessions.get(rec.chat) : undefined;
+    /** Review payee-fields-2 m-4: the other side's package this device refused for its contents. */
+    const unshowable = (m: StoredChatReceipt): boolean => m.refused === true && m.refusedPay === true && m.from !== view.role && m.from !== 'mod';
     /** A receipt the reads went past without showing it again: a placeholder (review I2). */
     const judged = (id: string): boolean => session !== undefined && (session.reached === 'all' || BigInt(id) <= session.reached);
     /**
      * A package held until the escrow is secured (owner Q12) is not a line yet, not even a
      * placeholder; an envelope refused for good (pay-details review M1) never is.
      */
-    const withheld = (m: StoredChatReceipt): boolean => m.refused === true || (m.heldPay === true && session?.texts.has(m.id) !== true);
+    const withheld = (m: StoredChatReceipt): boolean => (m.refused === true && !unshowable(m)) || (m.heldPay === true && session?.texts.has(m.id) !== true);
     return {
       phase,
       more,
@@ -218,6 +225,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         .sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1))
         .map((m): ChatLine => {
           const line = { id: m.id, from: m.from, at: m.at, mine: m.from === view.role, gapBefore: m.gapBefore };
+          if (unshowable(m)) return { ...line, text: '', unreadablePay: true };
           const shown = session?.texts.get(m.id);
           if (shown === undefined) return { ...line, text: '', missing: true };
           return shown.pay === undefined ? { ...line, text: shown.text } : { ...line, text: shown.text, pay: shown.pay };
@@ -386,7 +394,18 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
             // opens it again, and the cursor passes it. The guard did not move: the sender may reuse the seq.
             const h = headerOf(e.envelope, channel);
             if (h !== null) {
-              const m: StoredChatReceipt = { id: e.id, from: h.from, seq: h.seq, sig: sigOf(e.envelope), at: typeof e.at === 'string' ? e.at : null, gapBefore: false, refused: true };
+              const pkgFrom = err.refusedPackageFrom;
+              const m: StoredChatReceipt = {
+                id: e.id,
+                from: pkgFrom ?? h.from,
+                seq: h.seq,
+                sig: sigOf(e.envelope),
+                at: typeof e.at === 'string' ? e.at : null,
+                gapBefore: false,
+                refused: true,
+                // Review payee-fields-2 m-4: a package refused for its contents is told to the payer.
+                ...(pkgFrom !== undefined ? { refusedPay: true as const } : {}),
+              };
               receipts.push(m);
               known.set(m.id, m);
             }
