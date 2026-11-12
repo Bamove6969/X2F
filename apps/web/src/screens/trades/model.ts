@@ -13,8 +13,14 @@ export const TRADES_TITLE = 'My trades'; // COPY-UNSIGNED
 /** The two tabs, in order. COPY-UNSIGNED */
 export const TAB_LABEL: Readonly<Record<TradeListStatus, string>> = { open: 'Open', completed: 'Completed' };
 
+/**
+ * The tones a row may take: never the moderator's (spec 6.6: that look stays on the dispute screens;
+ * re-verify trades-list B2), so the row draws each with a literal (Trades.tsx `StateChip`).
+ */
+export type RowTone = Extract<Tone, 'caution' | 'escrow' | 'neutral'>;
+
 /** A state as a chip: a word, a tone and an icon (StatusChip: never colour alone). COPY-UNSIGNED, DESIGNER-REVIEW (tones). */
-export const STATE_LABEL: Readonly<Record<TradeState, { text: string; tone: Tone; icon: IconName }>> = {
+export const STATE_LABEL: Readonly<Record<TradeState, { text: string; tone: RowTone; icon: IconName }>> = {
   setup: { text: 'Setting up', tone: 'caution', icon: 'clock' },
   funding: { text: 'Waiting for escrow', tone: 'caution', icon: 'clock' },
   securing: { text: 'Escrow confirming', tone: 'caution', icon: 'clock' },
@@ -25,7 +31,7 @@ export const STATE_LABEL: Readonly<Record<TradeState, { text: string; tone: Tone
   refunded: { text: 'Refunded', tone: 'neutral', icon: 'undo' },
   lapsed: { text: 'Expired', tone: 'neutral', icon: 'clock' },
   cancelled: { text: 'Cancelled', tone: 'neutral', icon: 'close' },
-  disputed: { text: 'In dispute', tone: 'mod', icon: 'alert' },
+  disputed: { text: 'In dispute', tone: 'caution', icon: 'alert' },
 };
 
 /** "Buying 1.250000 XMR" / "Selling 1.250000 XMR": the caller's side and the amount. COPY-UNSIGNED */
