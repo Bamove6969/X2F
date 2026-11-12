@@ -948,18 +948,27 @@ describe('g62: maintenance holds the freeze clock', () => {
 describe('Task 11 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
-  it('NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is read through the proof pipeline once its storage lands', async () => {
-    // @x2f/proof (sealProofEnvelope, `proof.unblurred` sealed to the mod only, decryptProof) is on
-    // main, but no API table stores a proof's ciphertext yet (Plan 5 Tasks 13-15). When one lands:
-    // the moderator's unblurred view follows the key-membership design (the proof key re-wrapped to
-    // the staff device key, decrypted in staff-web; NEVER bytes relayed through this API, review
-    // 8 Nov I-1), and the proof-request route asks the trader who uploaded the proof instead of the
-    // side the moderator names.
+  it('NEEDS_P4_CHAT_MEMBERSHIP (was NEEDS_P5_PROOF_ENVELOPE): proof storage has landed, and still no route relays a proof to staff', async () => {
+    // Plan 5 Task 14 (wip/lead-proof-store, 12 Nov) stores proof ciphertexts (migration 580,
+    // apps/api/src/proofs). The moderator's unblurred view still follows the key-membership design
+    // (the proof key re-wrapped to the staff device key, decrypted in staff-web; NEVER bytes relayed
+    // through this API, review 8 Nov I-1): until it lands there is no staff proof route and no
+    // internal proof read, and a trader's GET of an `unblurred` proof is 404 (proofs.test.ts).
+    // OPEN (lead): the proof-request route still asks the side the moderator names; whether it
+    // should instead ask only a side that has uploaded a proof is a decision, not made here.
     const { readdirSync, readFileSync } = await import('node:fs');
     const dir = `${ROOT}apps/api/migrations/`;
     const sql = readdirSync(dir).map((f) => readFileSync(dir + f, 'utf8')).join('\n');
-    expect(/create table\s+\w*proof/i.test(sql), 'a proof table landed: wire the ProofSource (see this test)').toBe(false);
+    expect(/create table\s+trade_proofs\b/i.test(sql)).toBe(true);
+    const staff = readFileSync(`${ROOT}apps/api/src/disputes/staffRoutes.ts`, 'utf8');
+    expect(staff).not.toMatch(/['`]\/staff\/v1\/disputes\/:code\/proof['`]/);
+    expect(staff).not.toMatch(/trade_proofs|readableProof/);
+    const internal = readdirSync(`${ROOT}apps/api/src/internal`).map((f) => readFileSync(`${ROOT}apps/api/src/internal/${f}`, 'utf8')).join('\n');
+    expect(internal).not.toMatch(/trade_proofs|proofs\/:id/);
+    const routes = readFileSync(`${ROOT}apps/api/src/proofs/routes.ts`, 'utf8');
+    expect(routes).toMatch(/kind in \('proof', 'evidence'\)|readableProof/);
     expect(existsSync(`${ROOT}packages/proof`)).toBe(true);
   });
+
 
 });

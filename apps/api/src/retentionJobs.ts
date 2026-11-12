@@ -1,5 +1,6 @@
 import { purgeExpired } from './auth/challenges.js';
 import { purgeChatsJob } from './chat/retention.js';
+import { purgeProofsJob } from './proofs/store.js';
 import { purgeFeedbackForm } from './feedback/form.js';
 import { purgeFeedback } from './feedback/mood.js';
 import { purgeJabberPreKeys } from './jabber/prekeys.js';
@@ -23,4 +24,4 @@ import { purgeRemovedWalletAddresses } from './wallets/routes.js';
  * Plan 4's purgeStaffInviteLeftovers (Task 7/16, security review 2026-11-09) runs after purgeTeamLeftovers: it erases
  * the Terms signature of a half-made staff account whose invite was cancelled or expired (owner p11-13).
  */
-export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts];
+export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeProofsJob, purgeFeedbackForm, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts];
