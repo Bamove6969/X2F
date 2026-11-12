@@ -72,7 +72,7 @@ export {
   usableWallets, walletRoutes, walletRule, type Wallet, type WalletApp, type WalletRule,
 } from './wallets/routes.js';
 export {
-  GIFT_CARD_GROUP, LAUNCH_PROFILE_IDS, PROFILES, catalog, getMethod, getProfile, isAvailable, isGiftCard, loadCatalog, loadProfiles,
+  BANNED_METHOD_IDS, GIFT_CARD_GROUP, LAUNCH_PROFILE_IDS, PROFILES, catalog, getMethod, getProfile, isAvailable, isGiftCard, loadCatalog, loadProfiles,
   type CatalogMethod, type FieldKind, type MethodProfile,
 } from './methods/profiles.js';
 export { liveOfferStats, offerRoutes, TERMS_MAX, type MyOffer, type OfferCard, type OfferDetail, type OfferStatus, type OfferSwitchRefusal, type OfferSwitchResult } from './offers/routes.js';
@@ -82,7 +82,7 @@ export {
 } from './traders/stage.js';
 export { traderSummaries } from './traders/summary.js';
 export { methodListRoutes, type LiveOfferQuery, type LiveOfferStat, type LiveOfferStats, type MethodRow } from './methods/routes.js';
-export { CURRENCY_EXPONENTS, currencyExponent, decimalToMinor } from './price/currencies.js';
+export { BANNED_CURRENCIES, CURRENCY_EXPONENTS, currencyExponent, decimalToMinor } from './price/currencies.js';
 export {
   PRICE_FEED_DEFAULTS, createPriceFeed, median, type FeedQuote, type PriceFeed, type PriceFeedOptions, type PriceQuote, type PriceSource,
 } from './price/feed.js';
