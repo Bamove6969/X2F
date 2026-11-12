@@ -1,8 +1,12 @@
-# Review: `wip/lead-bans` 2d6c7cc0 (Plan 4 Task 27, bans), security
+# Review: `wip/lead-bans` 53f9dd47 (Plan 4 Task 27, bans), security
 
-Reviewer: independent reviewer (cloud helper), 12 Nov 2026. I made no code edits. I reviewed in a detached worktree `rv-bans` at 2d6c7cc0 (removed afterwards). Scope: `git diff 5c19ddbe..2d6c7cc0`, which is the bans commits on top of `wip/lead-mod-rules`. That is 29 files, +891/-13.
+Reviewer: independent reviewer (cloud helper), 12 Nov 2026. I made no code edits. I reviewed in a detached worktree `rv-bans` (removed afterwards).
 
-Note: the author's `bans` worktree has already moved on to 854222d7 (lead call Q4, RED tests) and has uncommitted edits (`tradeBanRefusal`, popup texts). Those are **not** reviewed here. Everything below is about 2d6c7cc0 only.
+Scope:
+- `git diff 5c19ddbe..2d6c7cc0`: the bans commits on top of `wip/lead-mod-rules`, 29 files, +891/-13.
+- `2d6c7cc0..53f9dd47`: the two lead-call Q4 commits (854222d7 RED, 53f9dd47 feat), 10 files, +101/-24. The lead asked mid-review for these to be included. They have their own section below.
+
+Every finding below holds at 53f9dd47. The Q4 commits change none of them.
 
 ## Verdict: CHANGES REQUIRED (2 must-fix)
 
@@ -19,9 +23,54 @@ The two must-fixes are both about the site ban reaching too far in one direction
 
 ## Tests run (serialised runner, single files, at 2d6c7cc0)
 
-TEST_RESULTS_PLACEHOLDER
+At 2d6c7cc0, all passed:
 
-Semgrep (p/typescript, p/javascript, p/security-audit; `--metrics=off`) ran on the 28 changed .ts/.tsx files: **0 findings**. There was one engine timeout: rule `express-ssrf` on `apps/api/test/take.test.ts`, a test file. Nothing else was skipped.
+| File | Tests |
+|---|---|
+| api `staff/bans.test.ts` | 13/13 |
+| api `offers.test.ts` | 40/40 |
+| api `take.test.ts` | 57/57 |
+| api `sessions.test.ts` | 28/28 |
+| api `team.test.ts` | 70/70 |
+| api `holdV3.test.ts` | 45/45 |
+| api `schema.test.ts` | 77/77 |
+| api `staff/keyTap.test.ts` | 28/28 |
+| api `staff/matrix.test.ts` | 105/105 |
+| web `accountBanned.test.tsx` + `client.test.ts` + `cantDoThat-lint.test.ts` | 90/90 (3 files) |
+
+At 53f9dd47 I reran the files the Q4 commits touch. All passed:
+
+| File | Tests |
+|---|---|
+| api `offers.test.ts` | 40/40 |
+| api `take.test.ts` | 57/57 |
+| api `staff/bans.test.ts` | 13/13 |
+| web `tradeBanText.test.ts` + `accountBanned.test.tsx` + `client.test.ts` + `cantDoThat-lint.test.ts` | 92/92 (4 files) |
+
+`tsc --noEmit` is clean for `apps/api` and `apps/web` at 53f9dd47.
+
+Semgrep (p/typescript, p/javascript, p/security-audit; `--metrics=off`) found **0 findings** on the 28 changed .ts/.tsx files of 2d6c7cc0 and on the 10 files of the Q4 commits. The only errors were engine timeouts on `apps/api/test/take.test.ts`, a test file (rules `express-ssrf`, `direct-response-write`, `raw-html-format`). Nothing else was skipped.
+
+## The Q4 commits (854222d7, 53f9dd47): 409 `trade-ban` with `{ reasonCode, until }`
+
+**Does `reasonCode` expose the rule or the note? No.**
+- `tradeBanRefusal` (banState.ts) builds the body from `activeBans`. That function selects only `id, kind, reason_code, until`. `rule_id` and `note` are never read on this path.
+- `reason_code` is constrained by migration 560 to the four general codes (`terms`, `trade-problems`, `abuse`, `account-security`). The staff rule decides which code is stored, but a rule id such as `scamming` can never come out. `scamming` maps to `trade-problems`.
+- The body is `{ error, reasonCode, until }`, the same fields the trader already gets from `GET /v1/account/ban`.
+- On the web, `tradeBanOf` accepts only a known reason code and an ISO-ms or null `until`. Anything else falls back to the general words (tested).
+
+**Was the take-test assertion tightened? Yes.**
+- `take.test.ts` still uses an exact `toEqual`. It now also pins `reasonCode: 'abuse'` and `until: banEnds.toISOString()`, so this is strictly stronger.
+- `offers.test.ts` also stays exact (`{ error: 'trade-ban', reasonCode: 'abuse', until: null }`). It switched its ban from the 7-day default to a lifetime one (`insertBan(..., null)`). Between the two files, both the timed shape (take) and the lifetime shape (post) are pinned, so nothing was lost.
+- No assertion was removed.
+
+**Coverage of relist and the status switch.**
+- Post and relist (`PATCH /v1/offers/:id`) both go through `assertMayPost`, so both carry the fields.
+- The bulk on/off switch (`POST /v1/account/offers/status`, `accountRefusal`, offers/routes.ts:1208) still reports a per-offer `refused: 'trade-ban'` with no reason or end. This is consistent with the other per-offer codes there. If the lead wants the popup there too, it is one more field (Info, not a defect).
+- If the ban ends between `accountRefusal` and `tradeBanRefusal`, post falls back to a bare 409 `trade-ban`, and the web then shows the general words. That is acceptable.
+- A site-banned person never sees a 409 `trade-ban`, because the gate answers 403 `banned` first. So the "site first" choice in `tradeBanRefusal` only matters if the gate is ever bypassed. That is harmless.
+
+**Web:** `BAN_REASON_TEXT` moved into `ui/cantDoCodes.ts` and is re-exported from AccountBanned. The popup strings are under a `COPY-UNSIGNED` doc comment. The copy lint (`cantDoThat-lint`) passes without changing its limit again.
 
 ## Must-fix
 
