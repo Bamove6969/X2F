@@ -593,6 +593,50 @@ describe('per-person grants (owner Q60)', () => {
     expect((await senior.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
     expect((await senior.browser.get('/staff/v1/me')).json().nav).toEqual(['disputes', 'training', 'log', 'feedback']);
   });
+
+  // J-21 review F5 (lead, 12 Nov): a box the role holds anyway is never a stored per-person grant,
+  // so it is never shown as one and never comes back on its own after a role change.
+  it('a role-held grant is not stored or shown: not on save, not in the list, and a promotion clears it (F5)', async () => {
+    t.setNow(new Date(MON_NOON.getTime() + 22 * 60_000));
+    const grantsOf = async (id: string) =>
+      (await t.deps.db.query<{ grants: string[] }>('select grants from staff_members where account_id = $1', [id])).rows[0]!.grants;
+    const listed = async (id: string) =>
+      ((await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string; grants: string[] }>).find((r) => r.accountId === id)!.grants;
+
+    // A senior's stored Feedback (left from before) is not listed as a ticked per-person box.
+    const senior = await staffWithKeys(t, { role: 'senior' });
+    await t.deps.db.query("update staff_members set grants = '{feedback.read,tickets.handle}' where account_id = $1", [senior.id]);
+    expect(await listed(senior.id)).toEqual(['tickets.handle']);
+    // Saving the page with the role's box still in the list stores only the per-person part.
+    const list = ['feedback.read', 'tickets.handle'];
+    const res = await owner.browser.send('PUT', `/staff/v1/members/${senior.id}/grants`, {
+      grants: list, tapId: await tap(owner, { kind: 'set-grants', accountId: senior.id, grants: list }),
+    });
+    expect([res.statusCode, res.json()]).toEqual([200, { grants: ['tickets.handle'] }]);
+    expect(await grantsOf(senior.id)).toEqual(['tickets.handle']);
+
+    // A moderator ticked for Feedback and then promoted: the senior role holds it, so the stored box goes;
+    // demoted again, they do not get it back on their own.
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
+    const one = ['feedback.read'];
+    expect((await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/grants`, {
+      grants: one, tapId: await tap(owner, { kind: 'set-grants', accountId: mod.id, grants: one }),
+    })).statusCode).toBe(200);
+    expect(await grantsOf(mod.id)).toEqual(['feedback.read']);
+    const up = await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, {
+      role: 'senior', tapId: await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'senior' }),
+    });
+    expect(up.statusCode, up.body).toBe(200);
+    expect(await grantsOf(mod.id)).toEqual([]);
+    const down = await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, {
+      role: 'mod', tapId: await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'mod' }),
+    });
+    expect(down.statusCode, down.body).toBe(200);
+    expect(await listed(mod.id)).toEqual([]);
+    expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
+  });
 });
 
 describe('Task 7 tripwires (local tree only)', () => {
