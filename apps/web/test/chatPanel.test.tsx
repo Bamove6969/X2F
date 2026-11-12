@@ -527,6 +527,20 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     expect(host.querySelector('[data-pay-nothing]')).not.toBeNull();
   });
 
+  it("the 12 Nov recheck: a method's note for the payee shows with its boxes (Monese), and ATM cash now has an optional phone box", async () => {
+    current = snap({ role: 'seller' });
+    const monese = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'MONESE' }} />);
+    await flush();
+    expect(boxes(monese.host)!.querySelector('[data-pay-note]')?.textContent).toMatch(/Monese ID/);
+    const interac = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    expect(interac.host.querySelector('[data-pay-note]')).toBeNull();
+    const atm = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'CASH_AT_ATM' }} />);
+    await flush();
+    expect(atm.host.querySelector('[data-pay-nothing]')).toBeNull();
+    expect([...boxes(atm.host)!.querySelectorAll('[data-pay-field]')].map((e) => e.getAttribute('data-pay-field'))).toEqual(['phone']);
+  });
+
   it('a mailing address is a multi-line box', async () => {
     current = snap({ role: 'seller' });
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'PAY_BY_MAIL' }} />);

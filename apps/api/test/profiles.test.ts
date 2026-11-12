@@ -162,7 +162,7 @@ describe('method profiles', () => {
       'Walmart gift card', 'Best Buy gift card', 'Home Depot gift card', 'Steam gift card', 'PlayStation gift card', 'Xbox gift card',
       'IKEA gift card', 'Sephora gift card', 'Starbucks gift card', 'Airbnb gift card', 'Roblox gift card', 'Nintendo eShop gift card',
       'Visa prepaid gift card', 'Mastercard prepaid gift card', 'Instacart gift card', 'Air Canada gift card', 'Petro-Canada gift card',
-      'Esso gift card', 'SkipTheDishes gift card', 'Sobeys gift card', 'Winners gift card', 'Lululemon gift card', 'Tim Hortons gift card',
+      'Esso and Mobil gift card', 'SkipTheDishes gift card', 'Sobeys gift card', 'Winners gift card', 'Lululemon gift card', 'Tim Hortons gift card',
       'Target gift card', 'Home Hardware gift card', 'Canadian Tire gift card', 'Other gift card',
     ]);
     // 32 brands + Other; nothing else in the group (PaysafeCard is not on the owner's list).
