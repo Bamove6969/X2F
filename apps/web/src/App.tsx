@@ -35,6 +35,8 @@ import { IdleReminderScreen } from './screens/settings/IdleReminderSettings.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { JabberSetup } from './screens/settings/JabberSetup.js';
+import { JabberEventsScreen } from './screens/settings/JabberEvents.js';
+import { AlarmListener } from './alerts/alarm.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
 import { AccountChangesScreen, ChangesBanner, ChangesCapPopup } from './screens/settings/HoldChanges.js';
 import { Security } from './screens/settings/Security.js';
@@ -218,6 +220,8 @@ export function App() {
       <SessionPrompt />
       <IdleReminder />
       {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
+      {/* W-006: the loud alarm rings in an open tab when a push arrives (off until turned on). */}
+      {isTrader(session) ? <AlarmListener /> : null}
       <Routes>
         {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
         <Route element={<BehindTheDoor />}>
@@ -242,6 +246,8 @@ export function App() {
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
             <Route path="/settings/jabber" element={<JabberSetup />} />
+            {/* W-021: which events send a Jabber notice. */}
+            <Route path="/settings/jabber/events" element={<JabberEventsScreen />} />
             <Route path="/settings/team" element={<Team />} />
             <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
             <Route path="/settings/account-type" element={<AccountType />} />

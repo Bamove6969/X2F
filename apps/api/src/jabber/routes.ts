@@ -16,6 +16,13 @@
  * for the whole site (429 `slow-down` `{ retryAfterSeconds }`); a code lives `CODE_TTL_MS` and
  * `CODE_TRIES` wrong entries end it (409 `challenge-expired`).
  *
+ * W-021 (owner p11-27): the Jabber notifications settings page. `GET /v1/account/jabber/events`
+ * lists every notice kind (`NOTICE_KINDS`) with whether it is on; `PUT /v1/account/jabber/events`
+ * `{ kind, on }` turns one on or off (404 `not-found` until an address is proven). Each is on until
+ * turned off, except the security notices in `ALWAYS_ON_KINDS` (review F1: 409
+ * `jabber-event-always-on`; listed with `canTurnOff: false`). The write has the same gate as the others, and a change of the picks is told to the
+ * address that is on (migration 336's `jabber_contact_changed`).
+ *
  * The address is never logged (buildApi redacts request bodies; nothing here logs it) and never
  * answered in full. The test message is sent after commit and never awaited by the request.
  */
@@ -27,6 +34,7 @@ import { dailyCap } from '../auth/throttle.js';
 import { ApiError } from '../errors.js';
 import { codeHash, codeMatches, maskJid, newTestCode, normalizeJid, openJid, sealJid } from './address.js';
 import { SEND_TIMEOUT_MS, withTimeout } from './outbox.js';
+import { ALWAYS_ON_KINDS, NOTICE_KINDS, type NoticeKind } from './sender.js';
 
 export const RESEND_WAIT_S = 60;
 export const TESTS_PER_DAY = 5;
@@ -117,6 +125,23 @@ async function writeGate(c: pg.PoolClient, req: FastifyRequest): Promise<void> {
   if (weakOf(live, now)) throw weakRefusal();
 }
 
+export interface JabberEvents {
+  /** Every notice kind, in `NOTICE_KINDS` order. */
+  events: Array<{ kind: NoticeKind; on: boolean; canTurnOff: boolean }>;
+}
+
+const eventsOf = (muted: readonly string[]): JabberEvents => ({
+  events: NOTICE_KINDS.map((kind) => {
+    const canTurnOff = !ALWAYS_ON_KINDS.includes(kind);
+    return { kind, on: !canTurnOff || !muted.includes(kind), canTurnOff };
+  }),
+});
+
+async function mutedOf(db: pg.PoolClient | pg.Pool, accountId: string): Promise<string[]> {
+  const { rows } = await db.query<{ muted_kinds: string[] }>('select muted_kinds from jabber_contacts where account_id = $1', [accountId]);
+  return rows[0]?.muted_kinds ?? [];
+}
+
 export function jabberRoutes(app: FastifyInstance): void {
   const owner = requireSession({ kinds: ['trader'] });
   const writes = { preHandler: [owner, requireNotHeld] };
@@ -202,6 +227,33 @@ export function jabberRoutes(app: FastifyInstance): void {
       if ((r.rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
     });
     return statusOf(app, accountId, await contactOf(db, accountId, false));
+  });
+
+  app.get('/v1/account/jabber/events', { preHandler: owner }, async (req) => eventsOf(await mutedOf(app.deps.db, req.auth.accountId)));
+
+  app.put('/v1/account/jabber/events', writes, async (req) => {
+    const b = body(req, ['kind', 'on']);
+    const { kind, on } = b;
+    if (typeof kind !== 'string' || typeof on !== 'boolean') throw new ApiError(400, 'bad-request');
+    // Review F1: a security notice stays on, also one this build does not send yet (J-20's first
+    // login). Asking for it on is a no-op, below.
+    if (!on && ALWAYS_ON_KINDS.includes(kind)) throw new ApiError(409, 'jabber-event-always-on');
+    if (!(NOTICE_KINDS as readonly string[]).includes(kind)) throw new ApiError(400, 'bad-request');
+    const accountId = req.auth.accountId;
+    const muted = await withTx(app.deps.db, async (c) => {
+      await writeGate(c, req);
+      // Sorted and without duplicates, so setting a pick to what it is writes nothing (and tells nobody).
+      const { rows } = await c.query<{ muted_kinds: string[] }>(
+        `update jabber_contacts set muted_kinds = array(
+             select distinct k from unnest(case when $3::boolean then array_remove(muted_kinds, $2::text) else array_append(muted_kinds, $2::text) end) k order by k)
+          where account_id = $1 and jid_sealed is not null
+          returning muted_kinds`,
+        [accountId, kind, on],
+      );
+      if (rows.length === 0) throw new ApiError(404, 'not-found');
+      return rows[0]!.muted_kinds;
+    });
+    return eventsOf(muted);
   });
 
   app.delete('/v1/account/jabber', writes, async (req, reply) => {

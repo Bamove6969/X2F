@@ -179,7 +179,9 @@ export type ApiErrorCode =
   | 'moderation-unavailable'
   // Owner rule p5-7: secure Jabber account-change alerts.
   | 'jabber-unavailable'
-  | 'jabber-address-invalid';
+  | 'jabber-address-invalid'
+  // W-021 review F1: a security notice can't be turned off (owner to rule).
+  | 'jabber-event-always-on';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

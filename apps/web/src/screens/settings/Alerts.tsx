@@ -9,6 +9,7 @@ import type { AlertEntry, JabberStatus } from '@x2f/auth-client';
 import { authApi } from '../auth/authApi.js';
 import { formatDateTime } from '../../ui/dates.js';
 import { JABBER_COPY as J } from './jabberCopy.js';
+import { AlarmSettingsCard } from '../../alerts/alarm.js';
 
 /**
  * Plain words for every alert kind the server records (`AlertKind` in apps/api/src/alerts.ts).
@@ -116,6 +117,7 @@ export function Alerts() {
 
   return (
     <>
+    <AlarmSettingsCard />
     <JabberAlerts />
     <section className="x2f-card" data-part="alerts" aria-labelledby="alerts-h">
       <h2 className="x2f-card__title" id="alerts-h">
@@ -213,6 +215,11 @@ export function JabberAlerts() {
         <span className="x2f-list__label">{J.addressLabel}</span>
         <span>{s.state === 'broken' ? J.needsSetUpAgain : (s.address ?? J.notSetUp)}</span>
       </Link>
+      {setUp ? (
+        <Link className="x2f-list__row" to="/settings/jabber/events" data-part="jabber-events-row">
+          <span className="x2f-list__label">{J.eventsRow}</span>
+        </Link>
+      ) : null}
       {setUp && s.lastSentAt !== null ? (
         <p className="x2f-note" data-part="jabber-last">
           {J.lastMessage} <time dateTime={s.lastSentAt}>{formatDateTime(s.lastSentAt)}</time>

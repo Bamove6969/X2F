@@ -155,6 +155,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Owner rule p5-7: the Jabber set-up.
   'jabber-unavailable': 'the deployment has no Jabber sending account yet (a missing feature, not a rule)',
   'jabber-address-invalid': 'an input check on a typed Jabber address',
+  // W-021 review F1: the page shows these boxes disabled and never sends the request.
+  'jabber-event-always-on': 'a security Jabber notice that stays on; its box is disabled, so the page never asks',
   // J-08 pay-details (ChatPanel's payErrorText, PayDetailsError and ChatFailed codes): the boxes' own input checks and a wait.
   'not-ready': 'the escrow is not secured yet, so the payment details wait (ChatFailed; a wait, not a rule)',
   'missing': 'an input check on a payment-details box (PayDetailsError)',
