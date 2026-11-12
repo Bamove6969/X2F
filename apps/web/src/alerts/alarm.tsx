@@ -18,6 +18,9 @@
  * (Plan 7 Task 8's Notifications board is not drawn).
  */
 import { useEffect, useMemo, useState } from 'react';
+import { CheckRow } from '../ui/CheckRow.js';
+import { Switch } from '../ui/Switch.js';
+import './alarm.css';
 
 export const ALARM_MAX_BYTES = 1024 * 1024;
 export const ALARM_EVENTS = ['trade', 'cancel-confirm', 'alert', 'nudge'] as const;
@@ -222,9 +225,6 @@ export function AlarmListener({ storage, store, out }: { storage?: Store | null;
 export const ALARM_COPY = {
   title: 'Loud alarm',
   note: 'Rings on this device when a trade needs you, while X2F is open. Your sound stays on this device.',
-  switchLabel: 'Loud alarm',
-  on: 'On',
-  off: 'Off',
   volume: 'Volume',
   eventsTitle: 'Ring for',
   events: {
@@ -293,38 +293,36 @@ export function AlarmSettingsCard({ storage, store, out }: { storage?: Store | n
       <p className="x2f-note" id="alarm-n">
         {C.note}
       </p>
-      <button
-        type="button" role="switch" aria-checked={s.on} aria-label={C.switchLabel} aria-describedby="alarm-n" data-part="alarm-switch"
+      <Switch
+        checked={s.on} aria-labelledby="alarm-h" aria-describedby="alarm-n" data-part="alarm-switch"
         onClick={() => update({ ...s, on: !s.on })}
-      >
-        {s.on ? C.on : C.off}
-      </button>
+      />
       <label className="x2f-label" htmlFor="alarm-volume">
         {C.volume} {Math.round(s.volume * 100)}%
       </label>
       <input
-        id="alarm-volume" type="range" min={0} max={100} step={5} value={Math.round(s.volume * 100)} data-part="alarm-volume"
+        id="alarm-volume" className="x2f-alarm__volume" type="range" min={0} max={100} step={5} value={Math.round(s.volume * 100)} data-part="alarm-volume"
         onChange={(e) => update({ ...s, volume: Math.min(1, Math.max(0, Number(e.target.value) / 100)) })}
       />
-      <fieldset className="x2f-fieldset">
+      <fieldset className="x2f-fieldset x2f-alarm__fieldset">
         <legend className="x2f-label">{C.eventsTitle}</legend>
         {ALARM_EVENTS.map((ev) => (
-          <label key={ev} className="x2f-list__row">
-            <input
-              type="checkbox" data-event={ev} checked={s.events.includes(ev)}
-              onChange={(e) => update({ ...s, events: ALARM_EVENTS.filter((x) => (x === ev ? e.target.checked : s.events.includes(x))) })}
-            />{' '}
-            {C.events[ev]}
-          </label>
+          <CheckRow
+            key={ev} part={`alarm-event-${ev}`} title={C.events[ev]} checked={s.events.includes(ev)}
+            onChange={(on) => update({ ...s, events: ALARM_EVENTS.filter((x) => (x === ev ? on : s.events.includes(x))) })}
+          />
         ))}
       </fieldset>
       <p className="x2f-note" data-part="alarm-sound">
         {s.customSound ? C.soundCustom : C.soundDefault}
       </p>
-      <label className="x2f-label" htmlFor="alarm-file">
+      <label className="x2f-button x2f-button--secondary x2f-alarm__file" htmlFor="alarm-file">
         {C.chooseSound}
+        <input
+          id="alarm-file" className="x2f-alarm__file-input" type="file" accept="audio/*" data-part="alarm-file"
+          onChange={(e) => void choose(e.target.files?.[0])}
+        />
       </label>
-      <input id="alarm-file" type="file" accept="audio/*" data-part="alarm-file" onChange={(e) => void choose(e.target.files?.[0])} />
       {s.customSound ? (
         <button type="button" className="x2f-button x2f-button--quiet" data-part="alarm-default-sound" onClick={() => void useDefault()}>
           {C.useDefault}

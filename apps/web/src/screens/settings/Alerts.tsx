@@ -10,6 +10,7 @@ import { authApi } from '../auth/authApi.js';
 import { formatDateTime } from '../../ui/dates.js';
 import { JABBER_COPY as J } from './jabberCopy.js';
 import { AlarmSettingsCard } from '../../alerts/alarm.js';
+import { Switch } from '../../ui/Switch.js';
 
 /**
  * Plain words for every alert kind the server records (`AlertKind` in apps/api/src/alerts.ts).
@@ -202,9 +203,7 @@ export function JabberAlerts() {
       </p>
       <p className="x2f-note">{J.rowNote}</p>
       {setUp ? (
-        <button type="button" role="switch" aria-checked={on} aria-labelledby="al-xmpp-l" aria-disabled={busy} onClick={() => void toggle()} data-part="jabber-switch">
-          {on ? 'On' : 'Off'}
-        </button>
+        <Switch checked={on} aria-labelledby="al-xmpp-l" aria-disabled={busy} onClick={() => void toggle()} data-part="jabber-switch" />
       ) : null}
       {error !== null ? (
         <p className="x2f-error" role="alert">
