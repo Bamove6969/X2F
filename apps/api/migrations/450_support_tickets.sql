@@ -45,8 +45,18 @@ create table ticket_messages (
   author text not null check (author in ('trader', 'staff')),
   staff_id uuid references accounts (id) on delete set null,
   member_id uuid references team_members (id) on delete set null,
-  body text not null check (char_length(body) between 1 and 4000),
+  -- J-14 review J6 (lead 10 Nov), folded in from 451 before landing (review S2, 12 Nov): the text
+  -- is stored sealed only, never in clear. The key store's format 1 (apps/api/src/auth/keystore.ts):
+  -- AES-256-GCM under the current X2F_TICKET_KEYS key, bound to `x2f/ticket-message/<ticket id>/
+  -- <message id>` (apps/api/src/tickets/seal.ts), so a blob moved to another message or ticket does
+  -- not open. That covers every message of a support ticket, staff replies, and the "My account has
+  -- been compromised" report's comment (where the sender types any credentials). There is no
+  -- plaintext column, so no code path can store ticket text in clear.
+  -- Format 1: 3-byte header, 12-byte nonce, 16-byte tag, then 1..4000 code points of UTF-8 (at most
+  -- 16,000 bytes; the app checks the length in code points before sealing).
+  body_sealed bytea not null,
   at timestamptz not null,
+  constraint ticket_messages_sealed_size check (octet_length(body_sealed) between 32 and 16031 and get_byte(body_sealed, 0) = 1),
   check (author = 'staff' or staff_id is null),
   check (author = 'trader' or member_id is null)
 );

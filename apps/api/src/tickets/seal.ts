@@ -13,9 +13,8 @@
  * that does not open (its key left the ring, it was moved, it was tampered with) fails the read
  * closed (500 `internal`, the key store's message names a key id at most).
  *
- * Rotation: `npm run rewrap-tickets -w @x2f/api` (`rewrapTicketSecrets`). Rows from before
- * migration 451: `npm run seal-tickets -w @x2f/api` (`sealPlaintextTickets`); the API refuses to
- * start while one is left (`assertTicketsSealed`, main.ts).
+ * Rotation: `npm run rewrap-tickets -w @x2f/api` (`rewrapTicketSecrets`). There is no plaintext
+ * column to seal from (migration 450 stores `body_sealed` only; review S2 folded 451 into it).
  */
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
@@ -120,32 +119,4 @@ export async function rewrapTicketSecrets(deps: { db: pg.Pool; config: Pick<Conf
     rewrapped += r.rowCount ?? 0;
   }
   return { rewrapped, failed };
-}
-
-/**
- * The one-time step after migration 451 (`npm run seal-tickets -w @x2f/api`, with the API stopped):
- * seals every row still holding plaintext `body` and nulls `body` in the same update. Returns
- * counts only, never text.
- */
-export async function sealPlaintextTickets(deps: { db: pg.Pool; config: Pick<Config, 'ticketKeys'> }): Promise<{ sealed: number }> {
-  const { rows } = await deps.db.query<{ id: string; ticket_id: string; body: string }>(
-    'select id, ticket_id, body from ticket_messages where body is not null',
-  );
-  let sealed = 0;
-  for (const row of rows) {
-    const r = await deps.db.query('update ticket_messages set body_sealed = $3, body = null where id = $1 and body = $2', [
-      row.id, row.body, sealBody(deps.config, row.ticket_id, row.id, row.body),
-    ]);
-    sealed += r.rowCount ?? 0;
-  }
-  return { sealed };
-}
-
-/** Startup check (main.ts): no start while a ticket message is still stored in plaintext (migration 451 without its tool). */
-export async function assertTicketsSealed(db: Queryable): Promise<void> {
-  const { rows } = await db.query<{ n: number }>('select count(*)::int as n from ticket_messages where body is not null');
-  const n = rows[0]?.n ?? 0;
-  if (n > 0) {
-    throw new Error(`tickets: ${n} ticket message(s) still stored in plaintext; stop the API and run npm run seal-tickets -w @x2f/api (migration 451)`);
-  }
 }
