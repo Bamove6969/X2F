@@ -287,11 +287,11 @@ describe('the appeal round', () => {
     return { ...x, mod };
   }
 
-  it('the ruling routes add no reviewer list: GET …/appeal-reviewers is wip/lead-appeals\' owner-only route (lead Q3)', async () => {
+  it('the ruling routes add no reviewer list: GET …/appeal-reviewers is the appeals\' owner-only route (lead Q3)', async () => {
     const { code } = await appealed();
     const senior = await staff('senior');
     const res = await senior.b.get(url(code, '/appeal-reviewers'));
-    expect(res.statusCode, res.body).toBe(404);
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 403, error: 'forbidden' });
   });
 
   it('an uninvolved senior overturns: final, overturned, round 2 published, the receiver of the coins liened (D-006)', async () => {

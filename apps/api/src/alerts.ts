@@ -46,7 +46,10 @@ export type AlertKind =
   | 'dispute-refund-after-ruling'
   // Owner only: the fee wallet's sweep to the cold wallet (B-006, Plan 4 Task 9).
   | 'fee-sweep-due'
-  | 'fee-sweep-failed';
+  | 'fee-sweep-failed'
+  // Owner only: an appeal nobody may review (every senior moderator and the owner was involved in
+  // round 1, or none is switched on); it waits in the queue until one is added (D-011, Plan 4 Task 24).
+  | 'appeal-no-reviewer';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

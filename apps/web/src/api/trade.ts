@@ -99,6 +99,12 @@ export interface TradeView {
   cancelProposedBy: Party | null;
   settling: 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-refund' | 'lapse-refund' | null;
   dispute: { by: 'buyer' | 'seller' | 'system'; at: string } | null;
+  /**
+   * D-005 (Plan 4 Task 24): until when this viewer may still file an appeal against the dispute's
+   * ruling; null otherwise (and for a team member without the File an appeal box). Missing from an
+   * older API or a live-event view: read as null.
+   */
+  appealUntil?: string | null;
   txHash: string | null;
   takenAt: string;
   setupBy: string | null;
