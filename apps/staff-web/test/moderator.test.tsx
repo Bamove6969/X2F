@@ -281,6 +281,27 @@ describe('ModCase (board ModCase)', () => {
     expect(text('ruling-waiting')).toContain('waiting for approval');
   });
 
+  it('a ruling refused while maintenance pauses the dispute or trading is stopped says so (lead call Q1)', async () => {
+    for (const [code, words] of [['dispute-paused', 'Rulings wait while maintenance pauses this dispute.'], ['trading-paused', 'Rulings wait while trading is stopped.']] as const) {
+      document.body.innerHTML = '';
+      fakeApi({
+        'GET /staff/v1/me': { body: MOD },
+        'GET /staff/v1/disputes/:code': { body: kase() },
+        'POST /staff/v1/taps/start': { body: { tapId: 'tap-1', options: { challenge: 'c' } } },
+        'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-1' } },
+        'POST /staff/v1/disputes/:code/rulings': refused(409, code),
+      });
+      await open(`/disputes/${CODE}`);
+      const panel = [...document.querySelectorAll('[data-part="ruling"]')].at(-1)!;
+      await click(panel.querySelector('input[value="refund-to-seller"]'));
+      typeInto(field('Reason (required, both traders see it)', panel), REASON);
+      await settle();
+      await click(button('Send ruling for approval', panel));
+      await click(button('Tap security key'));
+      expect(panel.textContent, code).toContain(words);
+    }
+  });
+
   it('a sent-back proposal shows its note above the ruling form', async () => {
     const at = new Date().toISOString();
     fakeApi({
