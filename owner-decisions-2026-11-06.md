@@ -202,4 +202,4 @@ Owner's words: owner-answers-page11-2026-11-08.md (second half). Where a line sa
 - 10 Nov: wording questions go to design, not the owner; design escalates only what truly needs him. (owner, chat)
 
 ## 12 Nov 2026 (owner, in chat)
-- "Russian anything is banned": remove RUB, SBP, MIR, YooMoney and every other Russia-specific currency/method before launch (answers the sanctions question). Pending clarification: whether Cyrillic text support (proof blur for Ukrainian/Kazakh/Serbian/Bulgarian names) stays.
+- "Russian anything is banned": remove RUB, SBP, MIR, YooMoney and every other Russia-specific currency/method before launch (answers the sanctions question). Clarified: "When I say Russian I mean Russian not Ukrainian." The ban is Russia-specific only; Cyrillic text support (proof blur) stays, Ukrainian currency and methods stay.
