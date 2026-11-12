@@ -14,7 +14,7 @@ second instance overwrites gate.bin) is a regression this diff introduces, and t
 M2 to M4 are about the checkpoints: they detect less than the code comment claims, and the alarm can be
 silenced.
 
-Tests (results below): moderation and logchain 202/202, moderation-regtest SEE-BELOW, API SEE-BELOW.
+Tests: moderation and logchain 202/202, moderation-regtest 1/1, API 2578 passed (1 todo); no failures.
 
 ## What holds (the attacks I tried)
 
@@ -220,5 +220,5 @@ blocked.
 ## Tests run (worktree at 544cf81c, fresh npm ci, under ~/x2f-comms/check.lock, timeout inside flock)
 
 - `npx vitest run --project @x2f/moderation --project @x2f/logchain`: 15 files, **202 passed, 0 failed**.
-- `npx vitest run --project @x2f/moderation-regtest`: SEE-BELOW
-- `npx vitest run --project @x2f/api`: SEE-BELOW
+- `npx vitest run --project @x2f/moderation-regtest`: 1 file, **1 passed** (monerod fetched to the worktree's .regtest).
+- `npx vitest run --project @x2f/api`: 106 files, **2578 passed, 1 todo, 0 failed**.
