@@ -137,8 +137,7 @@ async function main(): Promise<void> {
 
   // ── the web build ───────────────────────────────────────────────────────────
   step('building apps/web for this demo (regtest, demo moderation key)');
-  // `--mode demo` with VITE_X2F_DEMO=1: the demo lab routes (/lab/intro), never in a product build.
-  execFileSync('npx', ['vite', 'build', '--mode', 'demo', '--outDir', WEB_DIST, '--emptyOutDir'], {
+  execFileSync('npx', ['vite', 'build', '--outDir', WEB_DIST, '--emptyOutDir'], {
     cwd: join(ROOT, 'apps/web'),
     stdio: ['ignore', 'ignore', 'inherit'],
     env: {
@@ -148,7 +147,6 @@ async function main(): Promise<void> {
       VITE_FEE_WALLET: s.feeWallet,
       VITE_RELAY_URL: `${SELF_WS}/relay`,
       VITE_NODE_PROXY_URL: SELF_HTTP,
-      VITE_X2F_DEMO: '1',
     },
   });
 
