@@ -38,13 +38,15 @@ const LABEL = 'Browser on Linux';
  * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
  * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
  * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
- * apps/web/src/screens/account/AccountFrozen.tsx). Any other new route still needs a client method.
+ * apps/web/src/screens/account/AccountFrozen.tsx; sign-up v2, 12 Nov 2026: X2F's signing key as a
+ * file to import, a plain download link on the PGP code step). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
   'DELETE /v1/account/notes/:displayName|:id',
   'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
+  'GET /.well-known/x2f-signing-key.asc',
   'GET /v1/account/blocks',
   'GET /v1/account/freeze',
   'GET /v1/account/notes/:displayName|:id',
