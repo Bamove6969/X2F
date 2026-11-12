@@ -76,7 +76,7 @@ claims and what the code does.
 `methodOk`. `parseTradeView` maps any non-string value to null: a number, an object, `false`, or a
 missing key. So once the escrow is secured, a lying API can serve `paymentInstructions: 42` or drop
 the field. The device then shows no mismatch (`refusal` null, `instructionsMismatch` false). It
-settles normally and accepts "I've paid". Probe result: PROBE_RESULT_PLACEHOLDER.
+settles normally and accepts "I've paid". Probe (a temporary test in attestation-flow, since deleted) PASSED and confirms this. With a secured view carrying `paymentInstructions: 42`, the buyer status is `refusal: null, paymentInstructions: null, instructionsMismatch: false`. `act(paid)` resolves with `paidSeen: true`. A later view with the key dropped also shows no refusal.
 
 Scenario: the API strips `paymentInstructions` from the buyer's view after `secured`. A future
 screen that renders `escrow.paymentInstructions` sees null. If it reads that as "the seller gave no
@@ -157,4 +157,9 @@ design. The defence there is the seller seeing their own locked text, which also
 
 ## Tests run (detached worktree at 069c0d23, fresh npm ci, each under flock ~/x2f-comms/check.lock)
 
-TESTS_PLACEHOLDER
+- packages/trade/test/attestation.test.ts: 32/32 passed.
+- apps/api/test/identity.test.ts (Postgres via Docker): 19/19 passed. Covers 409 for a changed method or hash, 400 for a missing or uppercase hash, and that the work item carries only the hash.
+- apps/web/test/attestation-flow.test.ts: 108/108 passed (run after the probe was removed and the file restored to 069c0d23).
+- Probe for M1 (temporary, deleted): 1 passed, which confirms the fail-open.
+- Typecheck: `tsc --noEmit` exit 0 for packages/trade, apps/web and apps/api.
+- Not run: moderation tests (only fixture lines changed), buyerPay, useEscrow and tradeRoomEscrow (also fixture-only changes).
