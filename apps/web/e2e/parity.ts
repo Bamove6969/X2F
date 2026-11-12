@@ -281,6 +281,16 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
   ],
   SetupWelcome: [
+    ...[
+      'Your account is ready. Trade Monero for cash, bank transfers and payment apps, with every trade protected by escrow.',
+      'You log in with',
+      'Backup login',
+      'You get paid to',
+      'You can change any of these later in Settings.',
+    ].map((text) => ({
+      text,
+      why: 'Owner demo notes 12 Nov 2026 (his own words): the lead line and the rows became his checklist ("Configured your secure methods of logging into X2F", "Emergency login method: recovery code documented", "Connected your wallet", one green tick each) and "Any information provided above can be changed later in Settings." (owner-copy.spec.ts). COPY-UNSIGNED, DESIGNER-REVIEW: the board is to be redrawn.',
+    })),
     {
       text: 'Authenticator app',
       why: 'The board\'s example backup login. An authenticator app is no backup login any more (design build gaps Job 1, 5fee431d), and the recovery codes are required at sign-up (owner S-017), so after the backup step the summary reads "Recovery codes" (asserted in setup.spec). The board predates both.',

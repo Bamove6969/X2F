@@ -14,10 +14,13 @@ export const SESSION_COPY = {
   label: 'Stay logged in for',
   placeholder: 'Choose a time',
   option: (h: number) => `${h} hours`,
-  sleepHint: "Longer sessions so you don't miss a trade while you sleep. Turn on alert sounds so a new trade wakes you.",
-  askHint: "When this time is up, we'll ask you to confirm it's you to stay logged in. If you don't, you're logged out.",
-  changeBefore: 'You can change this any time in ',
-  changeLink: 'Devices and sessions',
+  // Owner demo notes 12 Nov 2026 (his words, typos fixed): the next three. COPY-UNSIGNED,
+  // DESIGNER-REVIEW (design restyles the screen; the owner also asked for bigger type and less space).
+  sleepHint: "Longer sessions so you don't miss a trade while you sleep. Turn on alert sounds (\"Nudges\") so a new trade wakes you.",
+  // not-a-refusal: a hint shown before anything happens, not a refusal.
+  askHint: "When this time is up, we'll ask you to confirm it's you to stay logged in. If you are unable to confirm your identity at that time, your account will be logged out for your security.",
+  changeBefore: 'You can change this any time in Settings under ',
+  changeLink: 'Devices and Sessions',
   changeAfter: '.',
   pickFirst: 'Pick a time to continue.',
   continue: 'Continue',

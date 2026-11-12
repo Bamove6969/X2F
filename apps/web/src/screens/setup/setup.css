@@ -921,6 +921,76 @@
   color: var(--x2f-ink-muted);
 }
 
+/* The owner's checklist (demo notes 12 Nov 2026). DESIGNER-REVIEW: plain until design restyles it.
+   The owner asked for green ticks and the design tokens have no green yet: these two greens are
+   local stand-ins (night, day) for design to replace with a token (contrast checked on the surface). */
+.x2f-welcome {
+  --x2f-welcome-done: #3ccf7a;
+}
+
+:root[data-theme=day] .x2f-welcome {
+  --x2f-welcome-done: #1a7f45;
+}
+
+.x2f-welcome__checks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-welcome__check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--x2f-surface-raised);
+  font-size: 16px;
+}
+
+.x2f-welcome__what {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.x2f-welcome__title {
+  font-weight: 600;
+}
+
+.x2f-welcome__methods {
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-welcome__tick {
+  display: flex;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-welcome-done);
+  color: var(--x2f-surface);
+}
+
+.x2f-welcome__tick--open {
+  border: 2px solid var(--x2f-surface-raised);
+  background: transparent;
+}
+
+/* The line under the checklist, in a bigger font (owner). */
+.x2f-welcome__next {
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
+}
+
 @media (max-width: 370px) {
   .x2f-welcome__main {
     padding: 48px var(--x2f-space-4) var(--x2f-space-4);
