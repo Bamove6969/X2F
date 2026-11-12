@@ -20,7 +20,22 @@ Counts: 2 Must-fix, 5 Should-fix (S1-S5), 7 Info.
 
 ## Tests run (serialised runner, single files, at c73a1e69)
 
-TEST_RESULTS_PLACEHOLDER
+All passed:
+
+| File | Tests |
+|---|---|
+| api `deviceBound.test.ts` | 9/9 |
+| api `team.test.ts` | 70/70 |
+| api `frontDoor.test.ts` | 21/21 |
+| api `coolingOff.test.ts` | 95/95 |
+| api `schema.test.ts` | 77/77 |
+| web `deviceKey.test.ts` | 13/13 |
+
+`tsc --noEmit` is clean for `apps/api` and `apps/web`.
+
+Semgrep (p/typescript, p/javascript, p/security-audit; `--metrics=off`) ran on the 16 added or modified .ts files: **0 findings**. There were two engine errors, both on the test file `apps/api/test/team.test.ts`: a timeout of rule `raw-html-format`, and a partial parse at line 43. Nothing else was skipped.
+
+What the tests do not cover: concurrent renewals (MF1), network failures during renewal (MF2), and real login paths (S4).
 
 ## Must-fix (before either flag is on)
 
