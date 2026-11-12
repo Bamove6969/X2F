@@ -54,6 +54,8 @@ type ReleasePhase = 'waiting-funds' | 'export' | 'built' | 'cosigning' | 'signed
 interface ReleaseState {
   /** Digest of the outcome being settled; its first 16 hex chars tag every release message. */
   outcome: string;
+  /** A later release (late-funds step 1): the `after` of its outcome. Absent for a first release. */
+  after?: string;
   part: 'builder' | 'cosigner';
   counterpart: Role;
   /** Per outcome: each failed build or check starts a new attempt with a fresh export. */
@@ -115,6 +117,19 @@ function isShownTx(x: unknown): x is ShownTx {
     && typeof t.spentAtomic === 'string' && /^(0|[1-9][0-9]*)$/.test(t.spentAtomic);
 }
 
+const PHASES: readonly string[] = ['waiting-funds', 'export', 'built', 'cosigning', 'signed', 'done', 'exhausted', 'superseded'];
+
+/** Review I2: a saved earlier release as this code writes it (the history moves only done releases). */
+function isSavedRelease(x: unknown): boolean {
+  if (typeof x !== 'object' || x === null || Array.isArray(x)) return false;
+  const r = x as Record<string, unknown>;
+  return typeof r.outcome === 'string' && /^[0-9a-f]{64}$/.test(r.outcome)
+    && (r.part === 'builder' || r.part === 'cosigner') && typeof r.counterpart === 'string' && (ROLES as readonly string[]).includes(r.counterpart)
+    && typeof r.phase === 'string' && PHASES.includes(r.phase)
+    && (r.after === undefined || (typeof r.after === 'string' && /^[0-9a-f]{64}$/.test(r.after)))
+    && (r.txHash === undefined || (typeof r.txHash === 'string' && /^[0-9a-f]{64}$/.test(r.txHash)));
+}
+
 /** An in-block tx the moderator's wallet once showed spending the escrow (PartyState.shown): JSON-safe. */
 export interface ShownTx {
   txHash: string;
@@ -143,6 +158,12 @@ export interface PartyHandle {
    * moderation watcher names its own tx's settlement kind from it (watcher revival re-verify R2).
    */
   committedBuilder?(): Role | null;
+  /**
+   * Review I3: who built the release whose tx this is, among every release of this escrow this
+   * party signed or saw done (the history too), or null. The watcher names an older tx by it, never
+   * by the current release's builder.
+   */
+  builderOf?(txHash: string): Role | null;
   /**
    * The escrow's balance and incoming payments, read inside the party's own work queue so
    * wallet calls never interleave. Watchers and apps read the escrow only through this. Still
@@ -617,41 +638,70 @@ export function runParty(a: PartyArgs): PartyHandle {
     return balance > 0n && balance === unlocked && sumPayouts(o.to) === balance;
   };
 
+  /** The earlier releases (late-funds step 1), the history only. */
+  const history = (): ReleaseState[] => state.releases ?? [];
+  /** Every release of this escrow this party has, earlier and current. */
+  const allReleases = (): ReleaseState[] => [...history(), ...(state.release ? [state.release] : [])];
+  /** The tx of this party's latest done release in the history (the one a current later release follows), or null. */
+  const priorDoneTx = (): string | null => history().filter((r) => r.phase === 'done' && r.txHash).at(-1)?.txHash ?? null;
+  /** Later releases this party has started (review I1: counted the same way for every party). */
+  const laterCount = (): number => allReleases().filter((r) => r.after !== undefined).length;
+
   /**
-   * Before this party exports for an attempt. The co-signer of a later release (late-funds step 1,
-   * lead decision 2) may not have seen the earlier spend (it took no part in it), so its wallet can
-   * still count those outputs: it exports once the balance is all unlocked, and the exact match is
-   * checked after importing the builder's export (`afterImport`), before anything is signed.
+   * Before this party exports for an attempt. Review M2 / lead call: the full check (the escrow
+   * holds exactly what the outcome pays, by this wallet's own view) for every first release, every
+   * builder, and a co-signer whose own latest done release is the one this later release follows
+   * (it knows the true balance). A co-signer that took no part in the release `after` names (none of
+   * its own, or an older one: review M3, alternating co-signers) cannot see that spend, so it exports
+   * once the balance is all unlocked; the exact match and the proof of `after` run after importing
+   * the builder's export (`afterImport`), before anything is signed.
    */
   const readyToExport = async (o: Outcome, rel: ReleaseState): Promise<boolean> => {
-    if (o.after === undefined || rel.part !== 'cosigner') return fundsReady(o);
+    if (o.after === undefined || rel.part !== 'cosigner' || priorDoneTx() === o.after) return fundsReady(o);
     const { balance, unlocked } = await daemon.sync();
     return balance > 0n && balance === unlocked;
   };
 
   /**
-   * Why a later outcome (`o.after` set) may not be started now, or null (spec 2026-11-12, rules 1, 2
-   * and the cap). Read only: nothing is saved or sent for a refused one.
+   * Why `o` may not be settled now, or null (spec 2026-11-12, rules 1 and 2, the cap; review B1, M1,
+   * M3). Read only: nothing is saved or sent for a refused one.
    */
-  const laterRefusal = (o: Outcome): string | null => {
-    if (o.builder !== 'mod') return 'a later release is moderator-built';
-    if (typeof o.after !== 'string' || !TX_HASH.test(o.after)) return 'after is not a tx hash';
+  const outcomeRefusal = async (o: Outcome): Promise<string | null> => {
+    const digest = outcomeDigest(o);
     const rel = state.release;
-    const history = state.releases ?? [];
-    if (rel && rel.outcome === outcomeDigest(o)) return null; // already this one (a resumed later release)
-    let base: ReleaseState | null = rel;
-    if (rel && rel.phase !== 'done') {
-      // An uncommitted later release may be replaced by another naming the same earlier one.
-      if (rel.committed) return 'a release is under way';
-      base = history.at(-1) ?? null;
-      if (base !== null && (base.phase !== 'done' || base.txHash !== o.after)) return 'after is not the earlier release';
+    // B1: an outcome already settled in an earlier release never comes back (its messages are stored).
+    if (history().some((r) => r.outcome === digest)) return 'that outcome was an earlier release';
+    if (o.after === undefined) {
+      // B1: past the first release, every outcome is a later one (it names the tx it follows).
+      if (history().length > 0 || rel?.after !== undefined) return 'a later release names the tx it follows';
       return null;
     }
-    // A party with no release of its own takes it as its first (it took no part in the earlier one).
-    if (base === null) return null;
-    if (base.txHash !== o.after) return 'after is not this party\'s done release';
-    // Releases after the first if this one starts: the history, the done one, the new one, less the first.
-    if (history.length + 1 > MAX_LATER_RELEASES) return 'the later-release cap is reached';
+    if (o.builder !== 'mod') return 'a later release is moderator-built';
+    if (typeof o.after !== 'string' || !TX_HASH.test(o.after)) return 'after is not a tx hash';
+    if (rel && rel.outcome === digest) return null; // already this one (a resumed later release)
+    if (rel && rel.phase !== 'done') {
+      // M1: a first release in progress, exhausted or superseded refuses; an uncommitted later
+      // release may be replaced by another naming the same earlier tx.
+      if (rel.after === undefined) return 'a first release is under way';
+      if (rel.committed || rel.phase === 'superseded') return 'a release is under way';
+      if (rel.after !== o.after) return 'after is not the earlier release';
+      return null;
+    }
+    if (laterCount() >= MAX_LATER_RELEASES) return 'the later-release cap is reached';
+    // No release of its own: this party took no part so far; this is its first.
+    if (rel === null && history().length === 0) return null;
+    const own = allReleases().filter((r) => r.phase === 'done' && r.txHash).map((r) => r.txHash!);
+    const latest = own.at(-1)!;
+    if (o.after === latest) return null;
+    // An older tx of its own is never the latest emptying tx.
+    if (own.includes(o.after)) return 'after is not the latest release';
+    // M3: a newer tx it took no part in (another trader co-signed it): only as a co-signer, proven
+    // before signing (spentBy and txSeen after importing the builder's export). The builder (the
+    // moderator, who builds every later release) always names its own latest.
+    if (a.role === o.builder) return 'after is not this party\'s latest release';
+    // Evidence now, before anything is saved or sent: the daemon has `after` in a block. That it
+    // spent this escrow is proven after importing the builder's export, before signing.
+    if (!(await daemon.txSeen(o.after))) return 'after is not a tx in a block';
     return null;
   };
 
@@ -685,6 +735,8 @@ export function runParty(a: PartyArgs): PartyHandle {
     }
 
     if (rel.phase === 'waiting-funds') {
+      // M4: an earlier release's spend.info is exported and sent before this release's first export.
+      if (spendInfoRelease() !== null) return;
       if (!(await readyToExport(o, rel))) return;
       state.sent[exportKey(rel)] = { hex: await session.exportState() };
       rel.phase = 'export';
@@ -725,7 +777,11 @@ export function runParty(a: PartyArgs): PartyHandle {
         // and it waits here indefinitely. Task 9's watcher owns that: it reports `settled` (escrow
         // emptied by an in-block tx) or `late-funds`, which resolves the trade outside this loop.
         const txHash = String(done.payload.txHash);
-        if ((await daemon.sync()).balance === 0n && (await daemon.spentBy(txHash)) && (await daemon.txSeen(txHash))) {
+        // Review B2 (lead): whatever the balance later (late coins may land before this party saw
+        // the escrow empty), done once this wallet shows its outputs spent by the reported tx in a
+        // block and the daemon has it too. The sync stays: `spentBy` reads the wallet's own view.
+        await daemon.sync();
+        if ((await daemon.spentBy(txHash)) && (await daemon.txSeen(txHash))) {
           rel.phase = 'done';
           rel.txHash = txHash;
           await saveState();
@@ -741,8 +797,14 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (rel.phase === 'export' && exp && tx) {
       try {
         await importPeer(exp);
-        // A later release's exact match, now that the builder's export is imported (readyToExport).
-        if (o.after !== undefined && !(await fundsReady(o))) throw new EscrowError('payout-mismatch', 'the escrow does not hold exactly what the outcome pays');
+        // A later release's exact match, now that the builder's export is imported (readyToExport),
+        // and, for a release this party took no part in, the proof that `after` emptied the escrow.
+        if (o.after !== undefined) {
+          if (!(await fundsReady(o))) throw new EscrowError('payout-mismatch', 'the escrow does not hold exactly what the outcome pays');
+          if (priorDoneTx() !== o.after && history().length > 0 && !((await daemon.spentBy(o.after)) && (await daemon.txSeen(o.after)))) {
+            throw new EscrowError('payout-mismatch', 'the release this one follows is not proven');
+          }
+        }
         await daemon.sync();
         // Check before committing to this set, so a garbage set cannot lock the outcome.
         await session.checkRelease(String(tx.payload.txSet), o.to);
@@ -805,11 +867,21 @@ export function runParty(a: PartyArgs): PartyHandle {
    * the moderator co-signed: its own wallet shows that one. Never before done: the export
    * replaces the nonces a release in progress signs with.
    */
+  /**
+   * The done release whose spend.info this party still owes the moderator (one the moderator did
+   * not sign; review M4: also once it moved to the history), or null. At most one per trade: every
+   * later release is moderator-signed.
+   */
+  const spendInfoRelease = (): ReleaseState | null => {
+    if (a.role === 'mod' || state.sent[SPEND_INFO]) return null;
+    return allReleases().filter((r) => r.phase === 'done' && r.counterpart !== 'mod').at(-1) ?? null;
+  };
+
   const offerSpendInfo = async (): Promise<void> => {
-    const rel = state.release;
-    if (a.role === 'mod' || !rel || rel.phase !== 'done' || rel.counterpart === 'mod' || state.sent[SPEND_INFO]) return;
+    const rel = spendInfoRelease();
+    if (!rel) return;
     try {
-      await exportSpendInfo();
+      await exportSpendInfo(rel);
     } catch {
       // Never fatal after a release that is done: nothing was sent, tried again on the next tick.
       return ignored('spend-info-export-failed');
@@ -831,8 +903,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     return typeof hex === 'string' && hex.length <= SPEND_INFO_MAX_HEX;
   };
 
-  const exportSpendInfo = async (): Promise<string> => {
-    const rel = state.release!;
+  const exportSpendInfo = async (rel: ReleaseState): Promise<string> => {
     // The co-signer submitted the tx, so its wallet stores the key; the builder kept it from the build.
     const txKey = rel.txKey ?? (rel.txHash && session.txKey ? await session.txKey(rel.txHash) : null) ?? '';
     const hex = await session.exportState();
@@ -949,7 +1020,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     const rel = state.release;
     if (rel && rel.outcome === digest) return;
     if (o.after !== undefined && rel && rel.phase === 'done') {
-      // A later release (checked by `laterRefusal` before it was accepted): the done one is kept in the history.
+      // A later release (checked by `outcomeRefusal` before it was accepted): the done one is kept in the history.
       state.releases = [...(state.releases ?? []), rel];
       state.release = null;
     } else if (rel && rel.committed) {
@@ -960,6 +1031,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     const part = a.role === o.builder ? 'builder' : 'cosigner';
     state.release = {
       outcome: digest,
+      ...(o.after !== undefined ? { after: o.after } : {}),
       part,
       counterpart: part === 'builder' ? o.cosigner : o.builder,
       attempt: 1, // attempts are counted per outcome
@@ -1030,11 +1102,11 @@ export function runParty(a: PartyArgs): PartyHandle {
     try {
       if (!state.address) await advanceSetup();
       else await checkAddresses();
+      await offerSpendInfo(); // M4: before a later release can export
       if (settleOutcome && state.address !== null && checked()) {
         await beginRelease(settleOutcome);
         await advanceRelease();
       }
-      await offerSpendInfo();
     } catch (e) {
       // A slow or unreachable daemon is retried on the next tick. Nothing is saved or sent
       // between a daemon call and the step it guards, so the step simply runs again.
@@ -1066,6 +1138,9 @@ export function runParty(a: PartyArgs): PartyHandle {
       if (saved.v !== 1) throw new PartyError('bad-state', 'unknown saved state version');
       if (saved.shown !== undefined && !(Array.isArray(saved.shown) && saved.shown.every(isShownTx))) {
         throw new PartyError('bad-state', 'saved shown sweeps are malformed');
+      }
+      if (saved.releases !== undefined && !(Array.isArray(saved.releases) && saved.releases.every(isSavedRelease))) {
+        throw new PartyError('bad-state', 'saved earlier releases are malformed');
       }
       state = saved;
       session = await a.engine.resume(saved.session, { daemonUri: a.daemonUri, password: a.password });
@@ -1129,12 +1204,16 @@ export function runParty(a: PartyArgs): PartyHandle {
       });
       void run(async () => {
         const rel = state.release;
-        if (o.after !== undefined) {
-          const why = laterRefusal(o);
-          if (why !== null) {
-            mine.reject(new PartyError('bad-outcome', why)); // the earlier settle() keeps going
-            return;
-          }
+        let why: string | null;
+        try {
+          why = await outcomeRefusal(o);
+        } catch (e) {
+          mine.reject(e); // a daemon that cannot answer now: nothing saved or sent, the caller retries
+          return;
+        }
+        if (why !== null) {
+          mine.reject(new PartyError('bad-outcome', why)); // the earlier settle() keeps going
+          return;
         }
         const switching = rel !== null && rel.outcome !== outcomeDigest(o) && o.after === undefined;
         if (switching && rel.committed) {
@@ -1147,6 +1226,11 @@ export function runParty(a: PartyArgs): PartyHandle {
         await advance();
       });
       return p;
+    },
+    builderOf(txHash) {
+      const r = allReleases().find((x) => x.txHash === txHash && (x.phase === 'signed' || x.phase === 'done' || x.phase === 'superseded'));
+      if (!r) return null;
+      return r.part === 'builder' ? a.role : r.counterpart;
     },
     committedBuilder() {
       const rel = state.release;
@@ -1200,9 +1284,10 @@ export function runParty(a: PartyArgs): PartyHandle {
           if (failure && (failure instanceof PartyError || !session)) return reject(failure); // as funds(): no peer needed
           const sent = state.sent[SPEND_INFO];
           if (sent) return resolve(String(sent.hex));
-          if (state.release?.phase !== 'done') return reject(new PartyError('bad-state', 'no release of this party is done'));
+          const owed = spendInfoRelease();
+          if (owed === null) return reject(new PartyError('bad-state', 'no release of this party is done'));
           try {
-            resolve(await exportSpendInfo());
+            resolve(await exportSpendInfo(owed));
           } catch (e) {
             reject(e);
           }

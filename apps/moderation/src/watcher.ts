@@ -454,7 +454,9 @@ export function createWatcher(o: WatcherOptions): Watcher {
     // names it; the armed kind can differ, R4-M2), else this desk's armed refund, else the API's
     // kind as just read. The API refuses it (409 settle-kind-changed) when the trade no longer names that kind.
     const own = spend !== null && (f.ownTxs ?? []).includes(spend.txHash);
-    const builder = own ? (handle.committedBuilder?.() ?? null) : null;
+    // Review I3 (late-funds step 1): the tx's own release's builder (an older release of this escrow
+    // may be named while a later one is committed), else the committed one (a party without builderOf).
+    const builder = own ? (handle.builderOf ? handle.builderOf(spend.txHash) : (handle.committedBuilder?.() ?? null)) : null;
     // Plan 4 Task 14 (R-M2): a mod-built sweep is a ruling's payout, named by the executor's own record.
     const signedKind = ownSweepKind(builder, builder === 'mod' ? (o.rulingKind?.(row.trade) ?? null) : null);
     const settledKind = own ? (signedKind ?? deskNow?.record().armed?.kind ?? item.settleKind) : settleKind;
