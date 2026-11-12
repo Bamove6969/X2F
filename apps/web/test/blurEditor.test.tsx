@@ -348,3 +348,24 @@ describe('BuyerPay proof slot wiring', () => {
     setProofSource(null);
   });
 });
+
+describe('re-verify Z2: the preview canvas is wiped when the editor goes', () => {
+  it('on unmount the preview is cleared and shrunk to nothing', () => {
+    const calls: string[] = [];
+    const ctx = {
+      putImageData: () => void calls.push('put'),
+      clearRect: () => void calls.push('clear'),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+      return { ...ctx, canvas: this } as unknown as CanvasRenderingContext2D;
+    });
+    if (typeof ImageData === 'undefined') vi.stubGlobal('ImageData', class { constructor(public data: Uint8ClampedArray, public width: number, public height: number) {} });
+    const r = render(<BlurEditor prepared={prepared()} expected={EXPECTED} onSend={() => undefined} onChooseAnother={() => undefined} />);
+    const canvas = r.host.querySelector('canvas')!;
+    expect(calls).toContain('put');
+    r.unmount();
+    expect(calls.at(-1)).toBe('clear');
+    expect([canvas.width, canvas.height]).toEqual([0, 0]);
+    vi.unstubAllGlobals();
+  });
+});
