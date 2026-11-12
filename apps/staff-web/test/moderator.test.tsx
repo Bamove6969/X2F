@@ -145,6 +145,17 @@ describe('ModQueue (board ModQueue)', () => {
     expect(text('queue-fault')).toContain('No case is free to take right now.');
   });
 
+  it('the Disputes page uses the role the shell read: a second /me answer that fails never leaves it loading (review I3)', async () => {
+    let n = 0;
+    const api = fakeApi({
+      'GET /staff/v1/me': () => (++n === 1 ? { body: MOD } : { status: 500, body: { error: 'internal' } }),
+      'GET /staff/v1/disputes': { body: QUEUE },
+    });
+    await open('/disputes');
+    expect(screen()).toBe('mod-queue');
+    expect(api.calls.filter((c) => c.path === '/staff/v1/me')).toHaveLength(1);
+  });
+
   it('a helper has no Disputes page', async () => {
     const api = fakeApi({ 'GET /staff/v1/me': { body: HELPER } });
     await open('/disputes');
@@ -211,6 +222,8 @@ describe('ModCase (board ModCase)', () => {
     expect(start.body).toEqual({
       kind: 'ruling', step: 'propose', rulingId: (post.body as { rulingId: string }).rulingId, code: CODE, round: 1, outcome: 'release-to-buyer',
       accountAction: { kind: 'none' }, amountAtomic: '4000000000000', reasonSha256: sha(REASON),
+      // Review mod-screens M1: the evidence lines as posted, bound by the tap.
+      evidenceSha256: sha(JSON.stringify(['Bank statement line 08:51', 'Zelle confirmation'])),
     });
     expect(post.body).toEqual({
       rulingId: (start.body as { rulingId: string }).rulingId, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, reason: REASON,
@@ -263,7 +276,7 @@ describe('ModCase (board ModCase)', () => {
     await click(button('Tap security key'));
     expect(api.calls.find((c) => c.path === '/staff/v1/taps/start')!.body).toEqual({
       kind: 'ruling', step: 'approve', rulingId: 'r1', code: CODE, round: 1, outcome: 'refund-to-seller', accountAction: { kind: 'none' },
-      amountAtomic: '4000000000000', reasonSha256: sha(REASON),
+      amountAtomic: '4000000000000', reasonSha256: sha(REASON), evidenceSha256: sha(JSON.stringify(['Bank statement'])),
     });
     expect(api.calls.find((c) => c.path === `/staff/v1/disputes/${CODE}/rulings/r1/approve`)!.body).toEqual({ tapId: 'tap-2' });
 
@@ -304,6 +317,49 @@ describe('ModCase (board ModCase)', () => {
       await click(button('Tap security key'));
       expect(panel.textContent, code).toContain(words);
     }
+  });
+
+  it('a senior or the owner who proposed the ruling never sees its approval panel (review M3)', async () => {
+    for (const who of [SENIOR, OWNER]) {
+      document.body.innerHTML = '';
+      fakeApi({
+        'GET /staff/v1/me': { body: who },
+        'GET /staff/v1/disputes/:code': {
+          body: kase(
+            { status: 'awaiting-approval', proposedByYou: true },
+            { proposal: { rulingId: 'r1', reason: REASON, evidence: [], proposer: 'me', proposedAt: new Date().toISOString() }, draft: { id: 'r1', outcome: 'refund-to-seller' } },
+          ),
+        },
+      });
+      await open(`/disputes/${CODE}`);
+      expect(part('approve'), who.role).toBeNull();
+      expect(text('ruling-waiting'), who.role).toContain('Waiting for approval from a senior moderator or the owner.');
+    }
+  });
+
+  it('in an appeal, a senior who took part in round 1 (mayWork false) is offered neither the approval nor Take (review M2)', async () => {
+    const waiting = kase(
+      { round: 2, status: 'awaiting-approval', assignedToYou: false, assignee: 'sarah.v', mayWork: false },
+      { proposal: { rulingId: 'r2', reason: REASON, evidence: [], proposer: 'p', proposedAt: new Date().toISOString() }, draft: { id: 'r2', outcome: 'refund-to-seller' } },
+    );
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: waiting } });
+    await open(`/disputes/${CODE}`);
+    expect(part('approve')).toBeNull();
+
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: kase({ round: 2, status: 'appealed', assignedToYou: false, assignee: null, mayWork: false }) } });
+    await open(`/disputes/${CODE}`);
+    expect(button('Take this case')).toBeUndefined();
+
+    // An uninvolved senior (mayWork true) is offered both.
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: kase({ round: 2, status: 'appealed', assignedToYou: false, assignee: null, mayWork: true }) } });
+    await open(`/disputes/${CODE}`);
+    expect(button('Take this case')).toBeDefined();
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: { ...waiting, mayWork: true } } });
+    await open(`/disputes/${CODE}`);
+    expect(part('approve')).not.toBeNull();
   });
 
   it('a sent-back proposal shows its note above the ruling form', async () => {
