@@ -2,6 +2,7 @@
 // country, the check window, who ticks which terms and what evidence each side keeps.
 import { describe, expect, it } from 'vitest';
 import {
+  BANNED_GIFT_CARD_COUNTRIES,
   GIFT_CARD_CHECK_MIN,
   GIFT_CARD_CURRENCIES,
   GIFT_CARD_EVIDENCE,
@@ -9,6 +10,7 @@ import {
   GIFT_CARD_TERMS,
   GIFT_CARD_TERMS_VERSION,
   giftCardCurrencies,
+  giftCardCountryAllowed,
   giftCardCurrencyOk,
   giftCardEvidence,
   giftCardRole,
@@ -58,6 +60,18 @@ describe("the card's currency follows its country (T-081)", () => {
     expect(giftCardCurrencyOk('US', 'CAD')).toBe(false);
     expect(giftCardCurrencyOk('CA', 'USD')).toBe(false);
     expect(giftCardCurrencyOk('PA', 'USD')).toBe(true);
+  });
+
+  it('owner 12 Nov (Russia, Iran; US sanction laws): no gift card from RU, IR, KP or CU, though the ISO table keeps their currencies', () => {
+    expect([...BANNED_GIFT_CARD_COUNTRIES].sort()).toEqual(['CU', 'IR', 'KP', 'RU']);
+    for (const [country, currency] of [['RU', 'RUB'], ['IR', 'IRR'], ['KP', 'KPW'], ['CU', 'CUP']] as const) {
+      expect(giftCardCurrencies(country), country).toEqual([currency]);
+      expect(giftCardCountryAllowed(country), country).toBe(false);
+      for (const c of [currency, 'USD', 'EUR']) expect(giftCardCurrencyOk(country, c), `${country} ${c}`).toBe(false);
+    }
+    expect(giftCardCountryAllowed('UA')).toBe(true);
+    expect(giftCardCurrencyOk('UA', 'UAH')).toBe(true);
+    expect(giftCardCountryAllowed('ZZ')).toBe(false);
   });
 
   it('no currency for a place ISO 4217 gives none, nor for an unknown code', () => {

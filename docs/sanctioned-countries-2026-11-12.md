@@ -50,6 +50,6 @@ OFAC FAQ 10 (updated 26 Oct 2026) lists these jurisdictions as under broad (comp
 ## Left alone on purpose
 
 - **OCR and text:** `packages/proof` keeps the `₽` symbol, RUB, IRR, KPW and CUP in its ISO 4217 detection tables. Owner: Cyrillic OCR stays. Reading a figure on a proof is not offering a currency.
-- **Gift-card country table** (`packages/trade/src/giftCards.ts`, all 249 ISO countries): RU, IR, KP and CU still map to their ISO currencies, so the table stays a true ISO record. A gift-card offer must be in a priced currency, so a card from those countries cannot be posted. Whether the country picker should hide them is a copy and UX question for the owner.
+- **Gift-card countries** (lead, 12 Nov, following the owner's rule): no gift card from RU, IR, KP or CU. `BANNED_GIFT_CARD_COUNTRIES` in `packages/trade/src/giftCards.ts` makes `giftCardCurrencyOk` false for them, so the API refuses such an offer with 400. The web picker (`apps/web/src/screens/post/countries.ts`) lists 245 countries instead of 249. The ISO table itself still maps those four to their currencies, as an ISO record.
 - **Research and history** (`research/`, past plans and reviews): left as written records.
 - **Trades, reviews and the revenue ledger:** past rows keep their method and currency. Nothing is live there.

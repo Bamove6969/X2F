@@ -203,6 +203,8 @@ export {
   GIFT_CARD_MAX_AGE_DAYS,
   GIFT_CARD_TERMS,
   GIFT_CARD_TERMS_VERSION,
+  BANNED_GIFT_CARD_COUNTRIES,
+  giftCardCountryAllowed,
   giftCardCurrencies,
   giftCardCurrencyOk,
   giftCardEvidence,
