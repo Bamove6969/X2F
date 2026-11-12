@@ -541,6 +541,36 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     expect([...boxes(atm.host)!.querySelectorAll('[data-pay-field]')].map((e) => e.getAttribute('data-pay-field'))).toEqual(['phone']);
   });
 
+  it('review payee-fields-2 m-3: every box optional and none filled (ATM cash, Amazon) shows the nothing-to-send line and no Send; typing brings Send back', async () => {
+    current = snap({ role: 'seller' });
+    for (const methodId of ['CASH_AT_ATM', 'AMAZON_GIFT_CARD']) {
+      const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId }} />);
+      await flush();
+      const form = boxes(host)!;
+      expect(form.querySelector('[data-pay-nothing]')?.textContent, methodId).toBe('Nothing to send: the buyer sends the card or cash details here in the chat.');
+      expect(form.querySelector('button[type="submit"]'), methodId).toBeNull();
+      const box = form.querySelector<HTMLInputElement>('[data-pay-field]')!;
+      fill(box, methodId === 'CASH_AT_ATM' ? '+525512345678' : 'me@example.com');
+      expect(form.querySelector('[data-pay-nothing]'), methodId).toBeNull();
+      expect(form.querySelector('button[type="submit"]'), methodId).not.toBeNull();
+      fill(box, '   ');
+      expect(form.querySelector('button[type="submit"]'), methodId).toBeNull();
+    }
+    // A method with a required box keeps its Send from the start.
+    const interac = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    expect(boxes(interac.host)!.querySelector('button[type="submit"]')).not.toBeNull();
+  });
+
+  it("review payee-fields-2 m-4: the payer sees a neutral line for the other side's package that could not be shown", async () => {
+    current = snap({ role: 'buyer', lines: [{ id: '7', from: 'seller', text: '', at: null, mine: false, gapBefore: false, unreadablePay: true }] });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    const line = host.querySelector('[data-pay-unreadable]');
+    expect(line?.textContent).toBe("Their payment details couldn't be shown. Ask them to send again.");
+    expect(host.querySelector('[data-missing]')).toBeNull();
+  });
+
   it('a mailing address is a multi-line box', async () => {
     current = snap({ role: 'seller' });
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'PAY_BY_MAIL' }} />);

@@ -57,6 +57,11 @@ describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)
         if (id !== 'PIX') expect(CPF.test(f.label), `${id}.${f.key} label "${f.label}"`).toBe(false);
         expect(words(f.key).filter((w) => BAD_WORDS.has(w)), `${id}.${f.key}`).toEqual([]);
       }
+      // Review payee-fields-2 m-2: a row's note for the payee is held to the same terms as its labels.
+      if (row.note !== undefined) {
+        expect(BAD_LABEL.test(row.note), `${id} note "${row.note}"`).toBe(false);
+        if (id !== 'PIX') expect(CPF.test(row.note), `${id} note "${row.note}"`).toBe(false);
+      }
     }
   });
 
@@ -94,5 +99,11 @@ describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)
       expect(new Set(keys).size, id).toBe(keys.length);
       for (const f of row.fields) expect(/^[a-z][a-zA-Z0-9]*$/.test(f.key), `${id}.${f.key}`).toBe(true);
     }
+  });
+
+  it('review payee-fields-2 m-2: the note check would catch a note that invites a secret or a tax ID', () => {
+    for (const n of ['Ask the buyer for the PIN sent by your bank', 'Give your CPF so the transfer clears', 'Send your online banking login']) expect(BAD_LABEL.test(n) || CPF.test(n), n).toBe(true);
+    const noted = Object.entries(PAY_FIELDS).filter(([, r]) => r.note !== undefined).map(([id]) => id).sort();
+    expect(noted).toEqual(['CASH_AT_ATM', 'CASH_DEPOSIT', 'MONESE']);
   });
 });
