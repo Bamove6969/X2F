@@ -49,6 +49,14 @@ function AppealSection({
           <Icon name="clock" size={16} stroke={2} />
           {appealSentText(dispute, me, other)}
         </span>
+        {dispute.appealWaiting === true ? (
+          // D-011 (lead default, Plan 4 Task 24): nobody uninvolved can review it yet; the owner was alerted.
+          <p className="dispute-muted" data-part="appeal-waiting">
+            {dispute.appeal.by === me
+              ? 'Your appeal is waiting for an independent reviewer.' /* COPY-UNSIGNED */
+              : 'The appeal is waiting for an independent reviewer.' /* COPY-UNSIGNED */}
+          </p>
+        ) : null}
       </section>
     );
   }

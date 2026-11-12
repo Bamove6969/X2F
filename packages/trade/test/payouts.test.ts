@@ -198,7 +198,7 @@ describe('payoutsFor: dispute rulings (moderator-built)', () => {
 
 describe('sweepMinimums: what a sweep shown only through an import must provably pay (review I1)', () => {
   const terms = (poster: 'seller' | 'buyer', take = AMOUNT): AttestedTerms => ({
-    deal: { poster, takeAmountAtomic: take.toString(), currency: 'EUR', centsPerXmr: '15000', maxFiatCents: '100000' },
+    deal: { poster, takeAmountAtomic: take.toString(), currency: 'EUR', centsPerXmr: '15000', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
     payWindowMin: 90,
     buyerPayout: BUYER,
     sellerRefund: SELLER,

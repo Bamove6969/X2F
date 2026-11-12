@@ -53,6 +53,10 @@ function termsOf(t: SeededTrade): AttestedTerms {
       currency: RATE.currency,
       centsPerXmr: RATE.centsPerXmr.toString(),
       maxFiatCents: t.trade.maxFiatCents.toString(),
+      // Task 34 review I1, restored for flex offers: the method chosen at take and the SHA-256 of
+      // its instructions for the trade's currency, as locked in trades.method_instructions.
+      methodId: t.trade.methodId,
+      instructionsSha256: createHash('sha256').update(t.sides.methodInstructions ?? '', 'utf8').digest('hex'),
     },
     payWindowMin: t.trade.payWindowMin,
     buyerPayout: t.sides.buyerPayout!,
@@ -445,13 +449,19 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
       { ...real, deal: { ...real.deal, centsPerXmr: '1' } },
       { ...real, deal: { ...real.deal, maxFiatCents: '1' } },
       { ...real, payWindowMin: real.payWindowMin === 90 ? 1440 : 90 },
+      { ...real, deal: { ...real.deal, methodId: 'PAYPAL' } },
+      { ...real, deal: { ...real.deal, instructionsSha256: sha256Hex('Zelle to thief@example.test') } },
     ]) {
       const res = await post(terms);
       expect(res.statusCode).toBe(409);
       expect(res.json()).toMatchObject({ error: 'terms-mismatch' });
     }
     const { payWindowMin: _p, ...noPayWindow } = real;
-    for (const terms of [undefined, { ...real, extra: 1 }, { ...real, deal: { ...real.deal, centsPerXmr: '01' } }, noPayWindow, { ...real, payWindowMin: 0 }]) {
+    const { instructionsSha256: _h, ...noHash } = real.deal;
+    for (const terms of [
+      undefined, { ...real, extra: 1 }, { ...real, deal: { ...real.deal, centsPerXmr: '01' } }, noPayWindow, { ...real, payWindowMin: 0 },
+      { ...real, deal: noHash }, { ...real, deal: { ...real.deal, instructionsSha256: real.deal.instructionsSha256.toUpperCase() } },
+    ]) {
       const res = await post(terms);
       expect(res.statusCode).toBe(400);
       expect(res.json()).toMatchObject({ error: 'bad-attestation' });
@@ -489,6 +499,43 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     const res = await signedInject('POST', '/internal/v1/reports', { kind: 'attestation', attestation, sig });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toMatchObject({ error: 'terms-mismatch' });
+    expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(202);
+    await attestAndPost(code, buyerId.id, sellerId.id, item.terms);
+    expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(200);
+  });
+
+  it("serves the SHA-256 of the trade's locked payment instructions and its method in the work item's terms, and stores only an attestation that signs them", async () => {
+    const instructions = 'Zelle to seller@example.test\nMemo: the trade code only.';
+    const { code, buyer, seller } = await freshTrade({ methodInstructions: instructions });
+    const buyerId = identityFor(code, 'buyer');
+    const sellerId = identityFor(code, 'seller');
+    await buyer.b.post(`/v1/trades/${code}/identity`, buyerId.body);
+    await seller.b.post(`/v1/trades/${code}/identity`, sellerId.body);
+    const work = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string; terms: AttestedTerms }> };
+    const item = work.work.find((w) => w.trade === code)!;
+    expect(item.terms.deal.instructionsSha256).toBe(sha256Hex(instructions));
+    expect(item.terms.deal.methodId).toBe('zelle');
+    expect(item.terms).toEqual(termsByCode.get(code));
+    // The instructions are never in the work item itself, only their hash.
+    expect(JSON.stringify(item)).not.toContain('seller@example.test');
+    // An attestation of the hash of other instructions (a swapped payee) is refused.
+    const swapped = { ...item.terms, deal: { ...item.terms.deal, instructionsSha256: sha256Hex('Zelle to thief@example.test\nMemo: the trade code only.') } };
+    const mod = stubModKeys();
+    const attestation: Attestation = {
+      v: 1,
+      trade: code,
+      channels: { escrow: await channelFor(code, 'escrow'), signals: await channelFor(code, 'signals') },
+      participants: {
+        buyer: { signPublic: buyerId.id.signPublic, boxPublic: buyerId.id.boxPublic },
+        seller: { signPublic: sellerId.id.signPublic, boxPublic: sellerId.id.boxPublic },
+        mod: { signPublic: mod.signPublic, boxPublic: mod.boxPublic },
+      },
+      issuedAt: now.toISOString(),
+      terms: swapped,
+    };
+    const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), modSign.secret));
+    const res = await signedInject('POST', '/internal/v1/reports', { kind: 'attestation', attestation, sig });
+    expect([res.statusCode, (res.json() as { error: string }).error]).toEqual([409, 'terms-mismatch']);
     expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(202);
     await attestAndPost(code, buyerId.id, sellerId.id, item.terms);
     expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(200);

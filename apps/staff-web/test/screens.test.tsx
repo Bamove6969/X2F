@@ -352,14 +352,21 @@ describe('OwnerSetup', () => {
 });
 
 describe('Feedback (owner)', () => {
-  it('lists both feedback kinds with the 30-day Great / OK / Needs work counts, never an account id', async () => {
+  it('lists both feedback kinds with the 30-day Great / OK / Needs work counts; a named message shows its account (D-058), never the raw id', async () => {
     fakeApi({
       'GET /staff/v1/me': { body: { ...ME, displayName: 'lumen.k', role: 'owner', nav: NAV.owner } },
       'GET /staff/v1/feedback': {
         body: { items: [{ id: 'm1', mood: 'needs-work', note: 'Slow payouts', createdOn: '2026-11-05' }], counts: { great: 4, ok: 2, needsWork: 1 }, next: null },
       },
       'GET /staff/v1/feedback/form': {
-        body: { items: [{ id: 'f1', kind: 'complaint', text: 'Limits too low', accountId: 'acc-123', from: 'starter-limit', createdOn: '2026-11-04' }], next: null },
+        body: {
+          items: [
+            // Review m1 (lead 12 Nov): the API sends no raw account id, only the display name.
+            { id: 'f1', kind: 'complaint', text: 'Limits too low', accountName: 'Quiet.Fox', from: 'starter-limit', createdOn: '2026-11-04' },
+            { id: 'f2', kind: 'feedback', text: 'Nice app', accountName: null, from: null, createdOn: '2026-11-03' },
+          ],
+          next: null,
+        },
       },
     });
     await open('/feedback');
@@ -370,6 +377,10 @@ describe('Feedback (owner)', () => {
     expect(document.body.textContent).toContain('Limits too low');
     expect(document.body.textContent).toContain('starter-limit');
     expect(document.body.textContent).not.toContain('acc-123');
+    const rows = [...document.querySelectorAll('table[aria-label="Messages"] tbody tr')].map((r) => r.textContent ?? '');
+    expect(rows[0]).toContain('Quiet.Fox');
+    expect(rows[1]).toContain('Anonymous');
+    expect(document.body.textContent).not.toContain('Nothing here says who sent it.');
   });
 });
 

@@ -958,7 +958,9 @@ describe('Task 11 tripwires (local tree only)', () => {
     const { readdirSync, readFileSync } = await import('node:fs');
     const dir = `${ROOT}apps/api/migrations/`;
     const sql = readdirSync(dir).map((f) => readFileSync(dir + f, 'utf8')).join('\n');
-    expect(/create table\s+\w*proof/i.test(sql), 'a proof table landed: wire the ProofSource (see this test)').toBe(false);
+    // The blur check's bookkeeping (migration 367, P-012/P-013: `blur_check_proofs` holds only a
+    // trade code, a proof id and whether to ask) stores no proof, so it is not the storage meant here.
+    expect(/create table\s+(?!blur_check_)\w*proof/i.test(sql), 'a proof table landed: wire the ProofSource (see this test)').toBe(false);
     expect(existsSync(`${ROOT}packages/proof`)).toBe(true);
   });
 

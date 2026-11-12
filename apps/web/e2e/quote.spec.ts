@@ -6,7 +6,7 @@ import { fiatCents } from '@x2f/trade';
 import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
-import { INSIDE } from './session.js';
+import { INSIDE, screenStatus } from './session.js';
 
 /**
  * The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate
@@ -200,7 +200,7 @@ test.describe('BuyQuote', () => {
     await page.getByLabel('Name', { exact: true }).fill('Cake Wallet');
     await page.getByLabel(/Receive address/).fill(B.wallets[0].address);
     await page.getByRole('button', { name: 'Save wallet' }).click();
-    await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
+    await expect(screenStatus(page)).toHaveText("You're back. Check the total, then tap Trade.");
     expect(seen.walletPosts).toEqual([{ wallets: [{ app: 'cake', label: 'Cake Wallet', address: B.wallets[0].address }] }]);
     await expect(page.getByRole('radio', { name: /Cake Wallet/ })).toBeChecked();
     await expect(page).not.toHaveURL(/resume=/);

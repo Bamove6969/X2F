@@ -92,6 +92,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { memberOf } from '../../session/member.js';
+import { useResumeSync } from '../../session/syncFirst.js';
 import { displayNameOf, useSession } from '../../session/useSession.js';
 import { setConfirmUser } from './confirmSkip.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
@@ -99,6 +100,7 @@ import { CourtesySheet } from '../quote/CourtesySheet.js';
 import { courtesyDue, markCourtesyShown } from '../quote/courtesy.js';
 import { tradeFromView } from '../dispute/api.js';
 import { DisputeEntry } from '../dispute/DisputeEntry.js';
+import { FileAppeal } from '../dispute/FileAppeal.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
 import { hasPanes, useFoldLayout, type FoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
@@ -196,18 +198,29 @@ type Load = { kind: 'loading' } | { kind: 'missing' } | { kind: 'failed' } | { k
 function useTradeView(code: string): { load: Load; refresh: () => Promise<void> } {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const seq = useRef(0);
-  const refresh = useCallback(async () => {
+  /** One read; whether it got the trade (a 404 is an answer: the trade is gone). */
+  const pull = useCallback(async (): Promise<boolean> => {
     const mine = ++seq.current;
     try {
       const view = await getTrade(code);
       if (mine === seq.current) setLoad({ kind: 'ready', view });
+      return true;
     } catch (e) {
-      if (mine !== seq.current) return;
-      if (e instanceof ApiCallError && e.status === 404) setLoad({ kind: 'missing' });
+      const gone = e instanceof ApiCallError && e.status === 404;
+      if (mine !== seq.current) return gone;
+      if (gone) setLoad({ kind: 'missing' });
       // A failed re-read keeps the last good view on screen.
       else setLoad((prev) => (prev.kind === 'ready' ? prev : { kind: 'failed' }));
+      return gone;
     }
   }, [code]);
+  const refresh = useCallback(async () => {
+    await pull();
+  }, [pull]);
+  // C-021: on resume the room's trade is read again before its actions work (session/syncFirst.ts).
+  useResumeSync(async () => {
+    if (!(await pull())) throw new Error('trade not read');
+  });
   useEffect(() => {
     setLoad({ kind: 'loading' });
     void refresh();
@@ -313,13 +326,14 @@ function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; re
       )}
       <div className="x2f-stack" data-part="member-dispute">
         <DisputeEntry trade={tradeFromView(view)} now={clock()} />
+        {view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
       </div>
     </main>
   );
 }
 
 /** The room once the trade has loaded: owns the trade's one escrow handle and picks the screen. */
-function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: string; ownCode: string; view: TradeView; refresh: () => Promise<void>; navState: unknown; hash: string }) {
+function ReadyRoom({ code, ownCode, view: apiView, refresh, navState, hash }: { code: string; ownCode: string; view: TradeView; refresh: () => Promise<void>; navState: unknown; hash: string }) {
   // What the user confirmed on the take or accept screen: the navigation's history state, else the
   // copy the quote or the accept sheet stored in this tab before navigating (history state is gone
   // in a new tab or when the trade is opened from a push notification). Task 12 needs it only for
@@ -328,6 +342,10 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   const stored = useMemo(() => (fromState ? null : readConfirmed(code)), [fromState, code]);
   const confirmed = fromState ?? stored ?? undefined;
   const escrow = useTradeEscrow(code, confirmed);
+  // Review M2 (instr-hash, lead's call): every screen, the glance and the chat get the method the
+  // moderator attested once the escrow has verified it, never the API view's own; a profile that
+  // came with another method is dropped (its explainer and fields would be that method's).
+  const view = useMemo(() => attestedMethodView(apiView, escrow.methodId ?? null), [apiView, escrow.methodId]);
   // "Trading with more than one person?" (j31a section 2, T-039; design final call 10 Nov 2026) over the
   // room the first time the taker's new trade opens: arriving from the take (the history state), as the
   // taker (posters never see it, T-038), unless ticked off on this device or shown for this trade already
@@ -369,14 +387,19 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
         glance={broken ? null : <TradeGlance view={view} escrow={escrow} serverClock={clock} layout={layout === 'cover' ? 'cover' : 'tabletop'} />}
         glanceLabel="Trade at a glance"
         main={
-          Screen ? (
-            <Screen {...props} />
-          ) : broken ? (
-            // Fails closed even if no screen module registered the danger state.
-            <p role="alert">Security check failed. Don't fund this trade.</p>
-          ) : (
-            <StatusCard view={view} serverClock={clock} />
-          )
+          <>
+            {Screen ? (
+              <Screen {...props} />
+            ) : broken ? (
+              // Fails closed even if no screen module registered the danger state.
+              <p role="alert">Security check failed. Don't fund this trade.</p>
+            ) : (
+              <StatusCard view={view} serverClock={clock} />
+            )}
+            {/* D-005: File appeal on the trade's page while the ruling can still be appealed; inside a
+                disputed trade the ruling card has the appeal form itself. DESIGNER-REVIEW: placement. */}
+            {!broken && view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
+          </>
         }
         side={
           chatPane ? (
@@ -392,6 +415,15 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
       <CourtesySheet open={courtesy} onDone={() => setCourtesy(false)} />
     </main>
   );
+}
+
+/**
+ * The view with the attested method (review M2): unchanged before the attestation or when the API's
+ * method is the attested one; otherwise the attested id and no profile.
+ */
+export function attestedMethodView(view: TradeView, attested: string | null): TradeView {
+  if (attested === null || view.methodId === attested) return view;
+  return { ...view, methodId: attested, profile: null };
 }
 
 /** Whether the room shows the chat in a pane of its own (so a screen's Chat sheet is not needed). */

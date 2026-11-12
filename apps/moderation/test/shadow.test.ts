@@ -8,7 +8,7 @@ const CODE = 'K7Q2-M9XA-3PRT-W8DN';
 const MIN = 60_000;
 const TAKEN = new Date('2026-11-09T10:00:00.000Z');
 const TERMS: AttestedTerms = {
-  deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+  deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
   payWindowMin: 90,
   buyerPayout: '4'.padEnd(95, 'B'),
   sellerRefund: '8'.padEnd(95, 'S'),

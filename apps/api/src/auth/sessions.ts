@@ -7,6 +7,7 @@ import type { Queryable } from '../db/pool.js';
 import type { EventBus } from '../events/bus.js';
 import { ApiError } from '../errors.js';
 import { hasAbility } from '../team/abilities.js';
+import { insideHours } from '../team/limits.js';
 import type { MemberAccess } from '../team/perms.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
 import type { LoginStrength } from './strength.js';
@@ -220,8 +221,8 @@ export async function openSession(
       const held = await db.query<{ hold_until: Date }>('select hold_until from account_holds where account_id = $1 and hold_until > $2', [team.rows[0].account_id, now]);
       if (held.rows[0]) throw new ApiError(403, 'recovery-hold', { holdUntil: held.rows[0].hold_until.toISOString() });
     }
-    const tm = await db.query<{ id: string; account_id: string; display_name: string; kind: AccountKind; disabled_at: Date | null }>(
-      `select tm.id, tm.account_id, tm.display_name, t.kind, t.disabled_at
+    const tm = await db.query<{ id: string; account_id: string; display_name: string; kind: AccountKind; disabled_at: Date | null; hours: unknown }>(
+      `select tm.id, tm.account_id, tm.display_name, t.kind, t.disabled_at, tm.hours
          from team_members tm join accounts t on t.id = tm.account_id
         where tm.member_account_id = $1 and tm.removed_at is null and tm.joined_at is not null
         for share of tm`,
@@ -230,6 +231,8 @@ export async function openSession(
     const m = tm.rows[0];
     if (!m || m.kind !== 'trader') throw new ApiError(403, 'account-disabled');
     if (m.disabled_at !== null) throw new ApiError(403, 'account-disabled');
+    // J-20 (owner p7-11): outside the working hours the lead set, a member cannot log in.
+    if (!insideHours(m.hours, now)) throw new ApiError(403, 'outside-login-hours');
     member = { id: m.id, teamId: m.account_id, name: m.display_name };
     row = { kind: m.kind };
   }
@@ -266,9 +269,31 @@ export async function openSession(
   await db.query('update accounts set last_login_at = $2 where id = $1', [member ? member.teamId : a.accountId, now]);
   // A member's device is trusted for the member's own login only, never for the account owner's.
   if (device) await trustDevice({ db, clock: deps.clock }, a.accountId, device);
+  /** J-20 (owner p11-27, S-107): set when this is the member's first login ever. */
+  let firstMemberLogin = false;
   if (member) {
-    // The account owner is told about every member login (in the team account's alert list).
-    await addAlert(db, member.teamId, 'team-member-login', { member: member.name, method: a.method, deviceLabel: label }, now);
+    // Owner p11-27 (S-107, replacing p7-10's first-login approval): no approval; the lead is told,
+    // in the alert list, by a push and by the secure Jabber notice (when they set Jabber alerts up),
+    // when a member logs in for the first time.
+    const first = await db.query('update team_members set first_login_at = $2 where id = $1 and first_login_at is null returning id', [member.id, now]);
+    if ((first.rowCount ?? 0) > 0) {
+      firstMemberLogin = true;
+      // Review F4: through jabber-notices' outbox, in this transaction (a rollback queues nothing).
+      await db.query(
+        "select jabber_queue(c.account_id, c.jid_sealed, 'team-member-first-login') from jabber_contacts c where c.account_id = $1 and c.enabled and c.jid_sealed is not null",
+        [member.teamId],
+      );
+    }
+    // Review F5 (Q3): a member's only first session is the join's (`firstSession`, team join
+    // routes), which is their first login; finishMember's `team-member-joined` already tells the
+    // lead, so the join adds no second or third alert. Every other member login is told: a first
+    // login that is not the join (the join's session never opened, e.g. the process stopped between
+    // the join's commit and its session) and each later one.
+    if (!a.firstSession) {
+      if (firstMemberLogin) await addAlert(db, member.teamId, 'team-member-first-login', { member: member.name, method: a.method, deviceLabel: label }, now);
+      // The account owner is told about every member login (in the team account's alert list).
+      await addAlert(db, member.teamId, 'team-member-login', { member: member.name, method: a.method, deviceLabel: label }, now);
+    }
   } else if (!a.firstSession) {
     if (a.level === 'recovery') {
       const detail: Record<string, string> = { method: a.method, deviceLabel: label };
@@ -283,6 +308,8 @@ export async function openSession(
     // Task 17 (owner, 2026-10-29): every new login is pushed to the account's other devices. A
     // member's login is an alert to the account owner instead (Task 18).
     if (!a.firstSession && !member) void req.server.push.send(a.accountId, 'new-login', { exceptSession: sessionId }).catch(() => undefined);
+    // J-20 (p11-27): a member's first login is pushed to the lead's devices.
+    if (member && firstMemberLogin) void req.server.push.send(member.teamId, 'new-login').catch(() => undefined);
     void reply.setCookie(realm.cookie, token, { ...COOKIE_ATTRS, maxAge: Math.floor((policy ? policy.absoluteMs : TRADER_COOKIE_MS) / 1000) });
   };
   return { sessionId, after };
@@ -332,6 +359,8 @@ interface SessionRow {
   member_name: string | null;
   member_disabled: boolean | null;
   member_terms_version: string | null;
+  /** J-20: the member's working hours as stored (null for the account owner's sessions). */
+  member_hours: unknown;
   app: SessionRealm['app'];
   /** Set when the request carried the token before the last extend (review S-m1): its own end. */
   prev_until: Date | null;
@@ -389,7 +418,7 @@ export function requireSession(
               s.hold_until, a.kind, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
               tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
-              ma.terms_version as member_terms_version, s.app,
+              ma.terms_version as member_terms_version, tm.hours as member_hours, s.app,
               case when s.token_hash = $1 then null else s.prev_token_until end as prev_until
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
@@ -420,6 +449,12 @@ export function requireSession(
     // A removed member's session ends at once, whatever the route (Task 18).
     if (row.member_id !== null && row.member_live !== true) throw new ApiError(401, 'not-authenticated');
     if (row.disabled_at !== null || row.member_disabled === true) throw new ApiError(403, 'account-disabled');
+    // J-20 (owner p7-11): outside the member's working hours the session ends, whatever the route.
+    if (row.member_id !== null && !insideHours(row.member_hours, now)) {
+      await deps.db.query('update sessions set revoked_at = $2 where id = $1 and revoked_at is null', [row.id, now]);
+      req.server.events.closeSession(row.account_id, row.id);
+      throw new ApiError(401, 'outside-login-hours');
+    }
     if (row.member_id !== null) {
       if (opts.member === undefined) throw new ApiError(403, 'owner-only');
       if (!hasAbility(row.member_abilities ?? [], opts.member)) throw new ApiError(403, 'forbidden');

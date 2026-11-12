@@ -8,6 +8,7 @@ import { appendLog } from '../log/append.js';
 import { eraseReversedReviews } from '../reviews/store.js';
 import { DECIDED_STATUSES } from '../traders/finalOutcome.js';
 import { countTradeTotals, lockPartyTotals } from '../traders/tradedTotal.js';
+import { accrueDisputePay } from '../staff/payAccrual.js';
 import type { MarketPrices } from '../price/market.js';
 import { usdCentsOf } from '../traders/stage.js';
 import { disputeSettings } from './settings.js';
@@ -145,6 +146,9 @@ export async function saveDispute(client: pg.PoolClient, d: Dispute, now: Date):
     await eraseReversedReviews(client, d.code);
     await countTradeTotals(client, d.code);
   }
+  // Plan 4 Task 33 (D-041..D-044): a published round 1 earns its decider's pay; an overruled one is
+  // clawed back from future pay. Idempotent, in this same transaction.
+  await accrueDisputePay(client, d, now);
   if (d.appealEndsAt !== null) {
     await client.query(
       'update dispute_rulings set appeal_until = $3 where code = $1 and seq = $2 and round = 1 and appeal_until is distinct from $3',

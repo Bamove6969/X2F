@@ -15,6 +15,7 @@ import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
 import { staffInviteRoutes } from './invites.js';
 import { staffMemberRoutes } from './members.js';
 import { ownerKeyRoutes } from './ownerKeys.js';
+import { staffOwnerAlertRoutes } from './ownerAlerts.js';
 import { keyTapRoutes } from './keyTap.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
@@ -24,6 +25,7 @@ import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffHoldRoutes } from './holds.js';
 import { staffPastRepRoutes } from './pastrep.js';
+import { staffPayRoutes } from './pay.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
 import { ownerSetupRoutes } from './ownerSetup.js';
 import { serveStaffWeb } from './web.js';
@@ -155,6 +157,8 @@ export async function buildStaffApi(
   staffMemberRoutes(app);
   staffInviteRoutes(app);
   ownerKeyRoutes(app);
+  // O-040 (owner Q35): the owner's notifications list (owner only).
+  staffOwnerAlertRoutes(app);
   // Plan 4 Task 6: owner first-run setup (public-setup; locked for good once it finishes).
   ownerSetupRoutes(app);
   // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
@@ -179,6 +183,8 @@ export async function buildStaffApi(
   staffRevenueRoutes(app);
   // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
   staffFeeSweepRoutes(app);
+  // Plan 4 Task 33 (D-041..D-045): clock-out pay, payout addresses and the owner's pay settings.
+  staffPayRoutes(app);
   // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.
   if (deps.staffWebRoot !== undefined) await serveStaffWeb(app, deps.staffWebRoot);
 

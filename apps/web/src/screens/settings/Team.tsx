@@ -15,12 +15,15 @@ import {
   AuthApiError,
   isStaged,
   teamInviteAction,
+  teamLimitsAction,
   teamRemoveAction,
   teamRolesAction,
   withConfirm,
   type TeamAuditEntry,
   type TeamMember,
   type TeamRole,
+  type TradeBand,
+  type WorkingHours,
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat, isCantDoCode, type CantDoCode } from '../../ui/CantDoThat.js';
@@ -29,7 +32,7 @@ import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/Confirm
 import { authApi } from '../auth/authApi.js';
 import { holdSentence } from '../auth/refusals.js';
 import { StagedNote } from './HoldChanges.js';
-import { JOIN_PATH, ROLE_WORDS, TEAM_COPY as C, TEAM_PATH } from './teamCopy.js';
+import { JOIN_PATH, ROLE_WORDS, TEAM_COPY as C, TEAM_PATH, atomicOf, xmrOf } from './teamCopy.js';
 import '../screens.css';
 
 const ROLES: readonly TeamRole[] = ['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'];
@@ -59,6 +62,118 @@ function RolePicker({ value, onChange, idPrefix }: { value: readonly TeamRole[];
   );
 }
 
+type Day = Exclude<WorkingHours, 'any'>['days'][number];
+const DAYS: readonly Day[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** J-20: the limits form's state (the band as typed, in XMR). */
+interface LimitsDraft {
+  id: string;
+  anySize: boolean;
+  min: string;
+  max: string;
+  anyTime: boolean;
+  days: Day[];
+  start: string;
+  end: string;
+  tz: string;
+}
+
+function draftOf(m: TeamMember): LimitsDraft {
+  const b = m.band ?? null;
+  const h = m.hours ?? 'any';
+  return {
+    id: m.id,
+    anySize: b === null,
+    min: b === null ? '' : xmrOf(b.minAtomic),
+    max: b === null ? '' : xmrOf(b.maxAtomic),
+    anyTime: h === 'any' || h === null,
+    days: h !== 'any' && h !== null ? [...h.days] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    start: h !== 'any' && h !== null ? h.start : '08:00',
+    end: h !== 'any' && h !== null ? h.end : '18:00',
+    tz: h !== 'any' && h !== null ? h.tz : 'UTC',
+  };
+}
+
+/** The band and hours a draft asks for, or the copy key of what is wrong with it. */
+function limitsOf(d: LimitsDraft): { band: TradeBand | null; hours: WorkingHours } | 'badBand' | 'badHours' {
+  let band: TradeBand | null = null;
+  if (!d.anySize) {
+    const min = atomicOf(d.min);
+    const max = atomicOf(d.max);
+    if (min === null || max === null || BigInt(max) === 0n || BigInt(max) < BigInt(min)) return 'badBand';
+    band = { minAtomic: min, maxAtomic: max };
+  }
+  if (d.anyTime) return { band, hours: 'any' };
+  if (d.days.length === 0 || d.start === d.end || !/^\d\d:\d\d$/.test(d.start) || !/^\d\d:\d\d$/.test(d.end) || d.tz.trim() === '') return 'badHours';
+  return { band, hours: { days: DAYS.filter((x) => d.days.includes(x)), start: d.start, end: d.end, tz: d.tz.trim() } };
+}
+
+/** J-20 (owner p7-4, p7-11): a member's trade-size band and working hours. Kit parts only (no board yet). */
+function LimitsEditor({ value, onChange }: { value: LimitsDraft; onChange: (d: LimitsDraft) => void }) {
+  const p = `limits-${value.id}`;
+  const set = (x: Partial<LimitsDraft>) => onChange({ ...value, ...x });
+  return (
+    <div className="x2f-stack" data-part="limits">
+      <fieldset className="x2f-field" data-part="band">
+        <legend className="x2f-label">{C.bandTitle}</legend>
+        <label className="x2f-row x2f-team__role" htmlFor={`${p}-any-size`}>
+          <input id={`${p}-any-size`} type="checkbox" checked={value.anySize} onChange={(e) => set({ anySize: e.target.checked })} data-part="band-none" />
+          {C.bandNone}
+        </label>
+        {!value.anySize ? (
+          <>
+            <label className="x2f-label" htmlFor={`${p}-min`}>
+              {C.bandMin}
+            </label>
+            <input className="x2f-input" id={`${p}-min`} inputMode="decimal" value={value.min} onChange={(e) => set({ min: e.target.value })} data-part="band-min" />
+            <label className="x2f-label" htmlFor={`${p}-max`}>
+              {C.bandMax}
+            </label>
+            <input className="x2f-input" id={`${p}-max`} inputMode="decimal" value={value.max} onChange={(e) => set({ max: e.target.value })} data-part="band-max" />
+          </>
+        ) : null}
+        <p className="x2f-note">{C.bandHint}</p>
+      </fieldset>
+      <fieldset className="x2f-field" data-part="hours">
+        <legend className="x2f-label">{C.hoursTitle}</legend>
+        <label className="x2f-row x2f-team__role" htmlFor={`${p}-any-time`}>
+          <input id={`${p}-any-time`} type="checkbox" checked={value.anyTime} onChange={(e) => set({ anyTime: e.target.checked })} data-part="hours-any" />
+          {C.hoursAny}
+        </label>
+        {!value.anyTime ? (
+          <>
+            {DAYS.map((d) => (
+              <label className="x2f-row x2f-team__role" key={d} htmlFor={`${p}-${d}`}>
+                <input
+                  id={`${p}-${d}`}
+                  type="checkbox"
+                  checked={value.days.includes(d)}
+                  onChange={(e) => set({ days: DAYS.filter((x) => (x === d ? e.target.checked : value.days.includes(x))) })}
+                  data-day={d}
+                />
+                {d}
+              </label>
+            ))}
+            <label className="x2f-label" htmlFor={`${p}-start`}>
+              {C.hoursStart}
+            </label>
+            <input className="x2f-input" id={`${p}-start`} type="time" value={value.start} onChange={(e) => set({ start: e.target.value })} data-part="hours-start" />
+            <label className="x2f-label" htmlFor={`${p}-end`}>
+              {C.hoursEnd}
+            </label>
+            <input className="x2f-input" id={`${p}-end`} type="time" value={value.end} onChange={(e) => set({ end: e.target.value })} data-part="hours-end" />
+            <label className="x2f-label" htmlFor={`${p}-tz`}>
+              {C.hoursZone}
+            </label>
+            <input className="x2f-input" id={`${p}-tz`} autoComplete="off" value={value.tz} onChange={(e) => set({ tz: e.target.value })} data-part="hours-tz" />
+          </>
+        ) : null}
+        <p className="x2f-note">{C.hoursHint}</p>
+      </fieldset>
+    </div>
+  );
+}
+
 type CantDo = { code: CantDoCode; max?: number; holdUntil?: string };
 
 function cantDoOf(e: unknown): CantDo | null {
@@ -85,9 +200,12 @@ export function Team() {
   const [link, setLink] = useState<{ name: string; url: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState<{ id: string; roles: TeamRole[] } | null>(null);
+  const [limits, setLimits] = useState<LimitsDraft | null>(null);
   // The activity log's member filter ('' = every member; review e2e area 8).
   const [logMember, setLogMember] = useState('');
   const [logWho, setLogWho] = useState<{ id: string; name: string }[]>([]);
+  // J-20 review F8: a member's own band and hours (null: not a member, or the API sends none).
+  const [mine, setMine] = useState<{ band: TradeBand | null; hours: WorkingHours } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -107,6 +225,8 @@ export function Team() {
       if (c !== null) {
         setCantDo(c);
         setState('ready');
+        // J-20 review F8: a team member (refused here) is shown their own limits when the API sends them.
+        authApi.me().then((me) => setMine(me.member?.limits ?? null), () => undefined);
       } else setState(e instanceof AuthApiError && e.status === 401 ? 'signed-out' : 'load-failed');
     }
   }, []);
@@ -168,6 +288,20 @@ export function Team() {
       await load();
     });
 
+  const saveLimits = (m: TeamMember, d: LimitsDraft) =>
+    run(async () => {
+      const l = limitsOf(d);
+      if (l === 'badBand' || l === 'badHours') {
+        setError(C[l]);
+        return;
+      }
+      const r = await withConfirm(teamLimitsAction(m.id, l.band, l.hours), (confirmToken) => authApi.setMemberLimits(m.id, { ...l, confirmToken }), prove);
+      setLimits(null);
+      if (isStaged(r)) setStaged(true);
+      else setSaid(C.limitsSaved(m.displayName));
+      await load();
+    });
+
   const remove = (m: TeamMember) =>
     run(async () => {
       const r = await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
@@ -226,7 +360,18 @@ export function Team() {
           <p className="x2f-note">{C.twoFactors}</p>
           <p className="x2f-note">{C.releaseNote}</p>
           <p className="x2f-note">{C.oneReputation}</p>
+          <p className="x2f-note">{C.firstLoginNote}</p>
         </section>
+
+        {mine !== null ? (
+          <section className="x2f-card" data-part="my-limits" aria-labelledby="team-my-limits-h">
+            <h2 className="x2f-card__title" id="team-my-limits-h">
+              {C.myLimitsTitle}
+            </h2>
+            <p className="x2f-note">{C.myLimitsNote}</p>
+            <p className="x2f-note">{C.limits(mine.band, mine.hours)}</p>
+          </section>
+        ) : null}
 
         {error !== null ? (
           <p className="x2f-error" role="alert">
@@ -265,6 +410,10 @@ export function Team() {
                         </span>
                       </>
                     ) : null}
+                    <br />
+                    <span className="x2f-list__time" data-part="member-limits">
+                      {C.limits(m.band, m.hours)}
+                    </span>
                   </span>
                   {editing?.id === m.id ? (
                     <div className="x2f-stack">
@@ -276,6 +425,18 @@ export function Team() {
                   ) : (
                     <Button variant="quiet" aria-label={C.changeRoles(m.displayName)} onClick={() => setEditing({ id: m.id, roles: [...m.roles] })} data-part="edit-roles">
                       Roles
+                    </Button>
+                  )}
+                  {limits?.id === m.id ? (
+                    <div className="x2f-stack">
+                      <LimitsEditor value={limits} onChange={setLimits} />
+                      <Button variant="secondary" aria-disabled={busy} onClick={() => void saveLimits(m, limits)} data-part="save-limits">
+                        {C.saveLimits}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button variant="quiet" aria-label={C.changeLimits(m.displayName)} onClick={() => setLimits(draftOf(m))} data-part="edit-limits">
+                      {C.limitsButton}
                     </Button>
                   )}
                   <Button variant="danger" aria-disabled={busy} aria-label={C.removeLabel(m.displayName)} onClick={() => void remove(m)} data-part="remove-member">

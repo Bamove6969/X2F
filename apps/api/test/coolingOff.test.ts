@@ -1547,6 +1547,13 @@ describe('review round 2', () => {
           const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-remove', memberId: mid });
           return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/team/members/${mid}`, { confirmToken }) };
         },
+        // J-20: a member's trade-size band and working hours.
+        'PUT /v1/team/members/:id/limits': async () => {
+          const o = await passkeyWithPassword();
+          const mid = await teamInvite(o);
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-limits', memberId: mid, band: '0-1000000000000', hours: 'any' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.put(`/v1/team/members/${mid}/limits`, { band: { minAtomic: '0', maxAtomic: '1000000000000' }, hours: 'any', confirmToken }) };
+        },
         // Hold model v3: submitting and cancelling the waiting changes, and showing the renewed recovery code.
         'POST /v1/account/hold/changes/submit': async () => {
           const t = await weakStaged();
@@ -1694,10 +1701,11 @@ describe('the route lists', () => {
     // (`gateChange` for the new member); only one inside its sign-up window is refused before the
     // confirm token is spent (`requireStageableSession`).
     expect(src('routes/team.ts').split(', requireNotHeld, requireStageableSession, requireConfirm(').length - 1).toBe(1);
-    expect(src('routes/team.ts').split(', requireNotHeld, requireConfirm(').length - 1).toBe(2);
-    expect(src('routes/team.ts').split('await gateChange(').length - 1).toBe(1);
+    // J-20: the limits route checks the hold like a boxes change, and stages a password-only session's change too.
+    expect(src('routes/team.ts').split(', requireNotHeld, requireConfirm(').length - 1).toBe(3);
+    expect(src('routes/team.ts').split('await gateChange(').length - 1).toBe(2);
     expect(src('routes/team.ts').split("=> gateChange(c, req, { kind: 'team-abilities', memberId, abilities })").length - 1).toBe(1);
-    expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: true });').length - 1).toBe(1);
+    expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: true });').length - 1).toBe(2);
     expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, stage ? { strong: false, vendor: true } : { strong: true });').length - 1).toBe(1);
     expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: false });').length - 1).toBe(1);
     // Plan 5 Task 10 (owner 1 Nov): past-rep start and finish check the hold; list and delete do not.

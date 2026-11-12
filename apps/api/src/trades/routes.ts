@@ -13,6 +13,8 @@ import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
 import { actorOfBy, appendLog } from '../log/append.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
+import { appealOpenUntil } from '../disputes/appeals.js';
+import { hasAbility } from '../team/abilities.js';
 
 /** Task 3's `getProfile`; the default (until Task 3 is wired in) knows no profiles. */
 export type ProfileLookup = (methodId: string) => unknown;
@@ -109,6 +111,13 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       counterpartyProblem: await counterpartyProblem(deps.db, t.code, other),
       cancelWaiting: await cancelWaiting(deps.db, t.code),
       paymentInstructions: row.method_instructions,
+      // D-005: the File appeal button's deadline, only for the account owner or a member who can
+      // both appeal and open the dispute page the button leads to (review S1, lead call 12 Nov:
+      // File an appeal AND Answer the moderator).
+      appealUntil: t.dispute !== null
+        && (req.auth.memberId === null || (hasAbility(req.auth.memberAbilities, 'disputes-appeal') && hasAbility(req.auth.memberAbilities, 'disputes-answer')))
+        ? await appealOpenUntil(deps.db, t.code, now)
+        : null,
     });
   };
 
@@ -149,7 +158,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       // The first full count also starts the 48 hours, if the watcher has not yet (cancelReturn.ts).
       // A member's request records it only while still a live Trades member: the check runs in the
       // record's transaction, as auditMember's does for the event (Task 18 review round 2, n2).
-      await recordReturnConfirmed({ db: deps.db, clock: deps.clock, publish }, row, n, (client) => assertLiveMember(client, req.auth, EVENT_ABILITY['confirm-cancel']));
+      await recordReturnConfirmed({ db: deps.db, clock: deps.clock, publish }, row, n, (client) =>
+        assertLiveMember(client, req.auth, EVENT_ABILITY['confirm-cancel'], deps.clock(), { tradeCode: row.code }));
     }
     let next: Trade;
     try {
@@ -232,7 +242,8 @@ export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations
     // A buyer's cancel: the first full count makes the seller's Confirm cancel available (owner 2026-10-29).
     // A member's read records it only while still a live member who may read the trade (Task 18 review round 2, n2).
     await recordReturnConfirmed({ db: req.server.deps.db, clock: req.server.deps.clock, publish }, row, confirmations, (client) =>
-      assertLiveMember(client, req.auth, TRADE_READ),
+      // A read: the band does not limit it (team/limits.ts), the working hours do.
+      assertLiveMember(client, req.auth, TRADE_READ, req.server.deps.clock()),
     );
     const out: ConfirmationsView = { confirmations, target: UNLOCK_CONFIRMATIONS };
     if (role === 'buyer' && t.state === 'released' && row.buyer_payout !== null) out.payoutEnd = addressEnd(row.buyer_payout);

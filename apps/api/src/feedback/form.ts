@@ -52,6 +52,11 @@ export interface FeedbackFormItem {
   text: string;
   /** null for an anonymous row (or a named row whose account was deleted). */
   accountId: string | null;
+  /**
+   * D-058 (owner G20): the sender's public display name, so staff can follow up; null when
+   * `accountId` is. Never the login name.
+   */
+  accountName: string | null;
   from: string | null;
   createdOn: string;
 }
@@ -70,15 +75,32 @@ export interface FeedbackFormCursor {
  */
 export async function listFeedbackForm(db: pg.Pool, o: { before?: FeedbackFormCursor; limit?: number } = {}): Promise<FeedbackFormItem[]> {
   const limit = Math.min(Math.max(o.limit ?? 50, 1), 50);
-  const { rows } = await db.query<{ id: string; kind: FeedbackKind; body: string; account_id: string | null; from_code: string | null; created_on: string }>(
-    `select id, kind, body, account_id, from_code, to_char(created_on, 'YYYY-MM-DD') as created_on
-       from feedback_form
-      where ($1::date is null or (created_on, id) < ($1::date, $2::uuid))
-      order by created_on desc, id desc
+  const { rows } = await db.query<{
+    id: string;
+    kind: FeedbackKind;
+    body: string;
+    account_id: string | null;
+    display_name: string | null;
+    from_code: string | null;
+    created_on: string;
+  }>(
+    `select f.id, f.kind, f.body, a.id as account_id, a.display_name, f.from_code, to_char(f.created_on, 'YYYY-MM-DD') as created_on
+       from feedback_form f
+       left join accounts a on a.id = f.account_id
+      where ($1::date is null or (f.created_on, f.id) < ($1::date, $2::uuid))
+      order by f.created_on desc, f.id desc
       limit $3`,
     [o.before?.createdOn ?? null, o.before?.id ?? null, limit],
   );
-  return rows.map((r) => ({ id: r.id, kind: r.kind, text: r.body, accountId: r.account_id, from: r.from_code, createdOn: r.created_on }));
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    text: r.body,
+    accountId: r.account_id,
+    accountName: r.account_id === null ? null : r.display_name,
+    from: r.from_code,
+    createdOn: r.created_on,
+  }));
 }
 
 export const purgeFeedbackForm: RetentionJob = {

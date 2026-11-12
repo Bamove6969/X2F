@@ -70,6 +70,9 @@ export interface ChangeSummary {
   abilityLabels?: string[];
   /** A wallet removed (owner p5-7): its label. */
   label?: string;
+  /** J-20: a member's new trade-size band (null: no band) and working hours. */
+  band?: { minAtomic: string; maxAtomic: string } | null;
+  hours?: unknown;
 }
 
 export function describeChange(c: PendingChange): ChangeSummary {
@@ -90,19 +93,21 @@ export function describeChange(c: PendingChange): ChangeSummary {
       return { kind: c.kind, label: c.label, addressEnds: [c.addressEnd] };
     case 'team-remove':
       return { kind: c.kind, memberId: c.memberId };
+    case 'team-limits':
+      return { kind: c.kind, memberId: c.memberId, band: c.band, hours: c.hours };
     default:
       return { kind: c.kind };
   }
 }
 
 /** SQL: the `hold_changes` row's change names team member `$5` (their removal, roles or boxes). */
-const NAMES_MEMBER = "change->>'kind' in ('team-remove', 'team-roles', 'team-abilities') and change->>'memberId' = $5";
+const NAMES_MEMBER = "change->>'kind' in ('team-remove', 'team-roles', 'team-abilities', 'team-limits') and change->>'memberId' = $5";
 
 /** 403 `forbidden` when one of `ids` is a change of the account that names team member `memberId` (lead review 8 Nov I3). */
 async function refuseNamingMember(db: Queryable, accountId: string, ids: string[], memberId: string): Promise<void> {
   const { rows } = await db.query(
     `select 1 from hold_changes where account_id = $1 and id = any($2::uuid[])
-        and change->>'kind' in ('team-remove', 'team-roles', 'team-abilities') and change->>'memberId' = $3 limit 1`,
+        and change->>'kind' in ('team-remove', 'team-roles', 'team-abilities', 'team-limits') and change->>'memberId' = $3 limit 1`,
     [accountId, ids, memberId],
   );
   if (rows.length > 0) throw new ApiError(403, 'forbidden');

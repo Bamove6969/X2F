@@ -62,6 +62,20 @@ describe('cosignPolicy: the shapes each side may settle', () => {
     expect(cosignPolicy(c, out(expected('buyer-cancel', c), 'buyer', 'mod'))).toBe(false);
   });
 
+  it("owner g67: the buyer's cancel ends at I've paid, in a later state too (only a dispute after it)", () => {
+    const settling = ctx('buyer', { state: 'settling', paidAt: '2026-10-30T10:00:00.000Z' });
+    expect(cosignPolicy(settling, out(expected('buyer-cancel', settling), 'buyer', 'mod'))).toBe(false);
+    // A trade record that still reads secured but carries the tap is refused too (the tap decides, not the state).
+    const tapped = ctx('buyer', { state: 'secured', paidAt: '2026-10-30T10:00:00.000Z' });
+    expect(cosignPolicy(tapped, out(expected('buyer-cancel', tapped), 'buyer', 'mod'))).toBe(false);
+    // Before the tap it stays: after escrow, in every open state the buyer may cancel from
+    // (main's BUYER_CANCEL_STATES; refund_requested no longer exists since owner 8 Nov, adf1dbe4).
+    for (const state of ['funding', 'securing', 'secured', 'settling'] as const) {
+      const c = ctx('buyer', { state });
+      expect(cosignPolicy(c, out(expected('buyer-cancel', c), 'buyer', 'mod')), state).toBe(true);
+    }
+  });
+
   it('buyer builds a mutual cancel for the seller to co-sign', () => {
     const c = ctx('buyer');
     expect(cosignPolicy(c, out(expected('mutual-cancel', c), 'buyer', 'seller'))).toBe(true);

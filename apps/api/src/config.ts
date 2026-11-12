@@ -319,10 +319,11 @@ function parseXmpp(env: Env): XmppConfig | null {
  * opens format-0 (pre-FU-C) sealed TOTP secrets until `rewrapTotpSecrets` has moved them.
  * `login-seal` seals the login name of a sign-up waiting in its challenge (FU-D, `sealNames`).
  * `terms-signature` seals the signature kept with an account (`sealTermsSignature`).
+ * `pay-quote` signs a staff clock-out sheet's quote (Plan 4 Task 33, security review S2).
  */
 export function subkey(
   config: Config,
-  label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name' | 'login-seal' | 'owner-setup' | 'terms-signature',
+  label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name' | 'login-seal' | 'owner-setup' | 'terms-signature' | 'pay-quote',
 ): Uint8Array {
   return new Uint8Array(hkdfSync('sha256', config.serverKey, new Uint8Array(0), `x2f/${label}`, 32));
 }
