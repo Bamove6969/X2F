@@ -98,6 +98,21 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
     return reply.code(201).send({ ok: true, role });
   });
 
+  /**
+   * Haveno review 2026-11-12, finding 2: the moderation service's signed ruling statement for this
+   * trade (internal `ruling-statement`), 204 while there is none. The device verifies it itself
+   * against the pinned moderation key, its own trade, escrow and payouts before it co-signs.
+   */
+  app.get('/v1/trades/:code/ruling-statement', { preHandler: requireTradesRead }, async (req, reply) => {
+    const deps = req.server.deps;
+    const { code } = req.params as { code: string };
+    const { code: normalized } = await roleInTrade(deps.db, code, req.auth.accountId);
+    const { rows } = await deps.db.query<{ statement: unknown; sig: string }>('select statement, sig from ruling_statements where code = $1', [normalized]);
+    const row = rows[0];
+    if (!row) return reply.code(204).send();
+    return reply.send({ statement: row.statement, sig: row.sig });
+  });
+
   app.get('/v1/trades/:code/attestation', { preHandler: requireTradesRead }, async (req, reply) => {
     const deps = req.server.deps;
     const { code } = req.params as { code: string };

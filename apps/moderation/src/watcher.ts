@@ -61,7 +61,7 @@ export interface WatcherOptions {
    * this service's own args, the desk's shadow trade and its armed refund (review M5). Absent: no
    * rulings are executed.
    */
-  executeRuling?: (s: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null; deskArmed: DeskArmed }) => Promise<unknown>;
+  executeRuling?: (s: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null; deskArmed: DeskArmed; escrowAddress: string | null }) => Promise<unknown>;
 }
 
 export interface Watcher {
@@ -495,6 +495,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
           args,
           shadow: desks.get(row.trade)?.record().shadow ?? null,
           deskArmed: desks.get(row.trade)?.record().armed ?? null,
+          escrowAddress: row.escrow_address,
         })
         .catch(() => o.log({ reason: 'ruling-step-failed' }));
     }

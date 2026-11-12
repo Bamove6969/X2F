@@ -13,7 +13,11 @@
  * Seller: builds the release, the lapse refund and the refund of its own cancel after the time to
  * pay (`auto-refund`, mod co-signs, only while the trade settles it and the buyer never marked paid:
  * owner 8 Nov); co-signs a buyer-built mutual cancel; never touches a buyer-cancel.
- * Mod-built (Plan 4 rulings, only while disputed): co-signed only when it is exactly the ruling's
+ * Mod-built (Plan 4 rulings, only while disputed): co-signed only against the moderation service's
+ * signed ruling statement (RetoSwap/Haveno review 2026-11-12, finding 2, lead call: the API's
+ * unsigned "disputed" is never enough): signed by the pinned moderation key, for this trade and the
+ * escrow address this device's own party derived, round 1, this side the winner, and paying exactly
+ * the set this device works out itself (`ruling` below, `@x2f/trade` rulingStatementValid); and only when it is exactly the ruling's
  * set for this side at its own address (Plan 4 Task 15; owner g63, 7 Nov: the poster pays the 1%
  * only when the trade completes): `payoutsFor('dispute-buyer')` for the buyer (its payout first,
  * then the exact fee) and `payoutsFor('dispute-seller')` for the seller (a full reversal: the whole
@@ -28,7 +32,7 @@
  * a TradeView whose amount or poster disagrees with `deal` refuses every outcome.
  */
 import type { Outcome, Payout } from '@x2f/escrow';
-import { amountForFunds, escrowPlan, fiatCents, payoutsFor, type RulingKind, type SettleKind, type TradeState } from '@x2f/trade';
+import { amountForFunds, escrowPlan, fiatCents, payoutsFor, rulingStatementValid, type RulingKind, type SettleKind, type TradeState } from '@x2f/trade';
 
 /** What the API's TradeView says (untrusted: only cross-checked), plus the fee wallet from config. */
 export interface PolicyTrade {
@@ -87,6 +91,13 @@ export interface PolicyContext {
   deal: PolicyDeal;
   /** The addresses each side signed in its trade.terms signal. */
   signedTerms: { payout: string; refund: string };
+  /**
+   * Haveno review finding 2: the moderation service's ruling statement as the API served it
+   * (`statement`, `sig`: untrusted, verified here), with what this device knows itself: the trade
+   * code, the escrow address its own party derived, and the pinned moderation key (build config).
+   * Without it no mod-built ruling set is co-signed.
+   */
+  ruling?: { code: string; escrowAddress: string; modSigningPublic: string; statement: unknown; sig: unknown } | null;
 }
 
 type Party = Outcome['builder'];
@@ -166,13 +177,20 @@ function check(c: PolicyContext, o: Outcome): boolean {
     if (route('buyer-cancel')) return BUYER_CANCEL_STATES.includes(state);
     // No cancel of any kind after "I've paid" (option B, Task 39 review I2 and round 2 N4).
     if (route('mutual-cancel')) return state !== 'paid' && c.trade.paidAt === null;
-    return state === 'disputed' && is('dispute-buyer', 'mod', 'buyer');
+    return state === 'disputed' && is('dispute-buyer', 'mod', 'buyer') && ruled(c, o);
   }
   if (route('release')) return RELEASE_STATES.includes(state);
   if (route('lapse-refund')) return state === 'lapsed';
   if (route('auto-refund')) return state === 'settling' && c.trade.settling === 'auto-refund' && c.trade.paidAt === null;
   if (route('mutual-cancel')) return true;
-  return state === 'disputed' && is('dispute-seller', 'mod', 'seller');
+  return state === 'disputed' && is('dispute-seller', 'mod', 'seller') && ruled(c, o);
+}
+
+/** Haveno finding 2: the outcome is the verified statement's own payout set, for this trade, escrow, round 1 and this side. */
+function ruled(c: PolicyContext, o: Outcome): boolean {
+  const r = c.ruling;
+  if (r === null || r === undefined) return false;
+  return rulingStatementValid(r.statement, r.sig, r.modSigningPublic, { trade: r.code, escrowAddress: r.escrowAddress, winner: c.role, payouts: o.to }).ok;
 }
 
 /** True only for an outcome this side may settle (see the module comment). Never throws. */

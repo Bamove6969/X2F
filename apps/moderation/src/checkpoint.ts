@@ -99,16 +99,17 @@ export function startCheckpoints(o: CheckpointOptions): Checkpoints {
 
   const verify = async (): Promise<boolean> => {
     const cps = o.store.state.checkpoints;
-    let ok = true;
-    if (cps.length > 0) {
-      // Review M2: from the log's first row, so the oldest checkpoint anchors everything before it.
-      const r = await verifyChain(chain);
-      ok = r.ok;
-      for (const cp of cps) {
-        if (!ok) break;
-        const row = await chain.row(cp.id);
-        ok = row !== null && row.hash.toString('hex') === cp.hash;
-      }
+    // Review M2: from the log's first row, so the oldest checkpoint anchors everything before it.
+    // Review of ruling-payout a42dad1b, N1: always, checkpoints or not, and an empty log is never
+    // verified (a live site always holds owner.setup-completed): a reader view that is empty from
+    // the first start (hidden rows, another table) raises the alarm instead of passing on nothing.
+    const r = await verifyChain(chain);
+    const empty = r.ok && r.head === null;
+    let ok = r.ok && !empty;
+    for (const cp of cps) {
+      if (!ok) break;
+      const row = await chain.row(cp.id);
+      ok = row !== null && row.hash.toString('hex') === cp.hash;
     }
     lastVerify = o.now().getTime();
     if (ok) {
@@ -119,7 +120,7 @@ export function startCheckpoints(o: CheckpointOptions): Checkpoints {
       o.log({ reason: 'log-verified' });
       return true;
     }
-    await raise('a checkpoint no longer matches the log');
+    await raise(empty ? 'the log is empty to this reader (an empty log is never verified)' : 'a checkpoint no longer matches the log');
     return false;
   };
 

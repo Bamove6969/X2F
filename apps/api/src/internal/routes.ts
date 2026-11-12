@@ -8,6 +8,8 @@ import {
   internalSignedBytes,
   isAttestedTerms,
   isRulingKind,
+  isRulingStatement,
+  rulingStatementBytes,
   SETTLE_KINDS,
   settleKindFor,
   TradeRuleError,
@@ -19,12 +21,14 @@ import {
   type TradeState,
 } from '@x2f/trade';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import { canonicalJson } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { recordRulingExecution } from '../disputes/execution.js';
+import { loadDisputeRecord } from '../disputes/store.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
 /**
@@ -555,6 +559,49 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.code(201).send({ ok: true });
   };
 
+  /**
+   * RetoSwap/Haveno review 2026-11-12, finding 2 (lead call): `{ kind: 'ruling-statement', trade,
+   * statement, sig }`, the moderation process's signed statement of the payout it worked out for a
+   * round-1 escrow ruling its gate authorised. The traders' devices verify it themselves before they
+   * co-sign (the API's word is never enough); the API keeps it for them only when it is signed by
+   * MOD_SIGNING_PUBLIC (`bad-statement`), for this trade (`wrong-trade`), round 1, a trade still
+   * disputed (`wrong-state`) whose escrow address it names (`wrong-escrow`), and the trade's
+   * published round-1 escrow ruling with that outcome (`stale-ruling`). The first statement stays:
+   * the same one again is 201, any other (an altered payout) 409 `statement-conflict`.
+   */
+  const rulingStatement = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'trade', 'statement', 'sig'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const s = body.statement;
+    const sig = body.sig;
+    if (!isRulingStatement(s) || typeof sig !== 'string' || !/^[0-9a-f]{128}$/.test(sig)) throw new Refused(400, 'bad-statement');
+    let sigOk = false;
+    try {
+      sigOk = sodium.crypto_sign_verify_detached(sodium.from_hex(sig), rulingStatementBytes(s), modKey);
+    } catch {
+      sigOk = false;
+    }
+    if (!sigOk || s.round !== 1) throw new Refused(400, 'bad-statement');
+    if (normalizeTradeCode(s.trade) !== code) throw new Refused(400, 'wrong-trade');
+    const t = await loadTrade(o.db, code);
+    if (t === null) throw new Refused(404, 'not-found');
+    if (t.state !== 'disputed') throw new Refused(409, 'wrong-state');
+    if (t.escrowAddress === null || t.escrowAddress !== s.escrowAddress) throw new Refused(409, 'wrong-escrow');
+    const rec = await loadDisputeRecord(o.db, code);
+    const d = rec?.dispute ?? null;
+    const paid = d === null ? null : d.round === 1 ? d.ruling : d.round1;
+    if (d === null || paid === null || d.afterRefund || d.publishedAt === null || paid.id !== s.rulingId || paid.outcome !== s.outcome) {
+      throw new Refused(409, 'stale-ruling');
+    }
+    await o.db.query('insert into ruling_statements (code, statement, sig, created_at) values ($1, $2, $3, now()) on conflict (code) do nothing', [code, s, sig]);
+    const { rows } = await o.db.query<{ statement: unknown; sig: string }>('select statement, sig from ruling_statements where code = $1', [code]);
+    const kept = rows[0];
+    if (kept === undefined || kept.sig !== sig || canonicalJson(kept.statement) !== canonicalJson(s)) throw new Refused(409, 'statement-conflict');
+    log({ reason: 'internal-ruling-statement' });
+    return reply.code(201).send({ ok: true });
+  };
+
   /** Plan 4 Task 14: the moderation process's daily verification failed: `site_flags.log_alarm` (the first time stays). */
   const logAlarm = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind'])) throw new Refused(400, 'bad-body');
@@ -667,6 +714,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
     if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
     if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
+    if (isPlainObject(body) && body.kind === 'ruling-statement') return rulingStatement(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;

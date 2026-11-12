@@ -17,7 +17,8 @@ import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@
 import type { MoneroWalletFull } from 'monero-ts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyDispute, newDispute } from '@x2f/staff';
-import { apply, fiatCents, newTrade } from '@x2f/trade';
+import { apply, fiatCents, newTrade, verifyRulingStatement, type RulingStatement } from '@x2f/trade';
+import sodium from 'libsodium-wrappers';
 import { rulingExecutor } from '../../src/execute.js';
 import { ownSweepKind } from '../../src/watcher.js';
 import { memoryRelay } from '../chain.js';
@@ -146,10 +147,17 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     const terms = { ...recorded(200_000n), buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress(), feeWallet: await feeW.getPrimaryAddress() };
 
     // The executor's pass, on the funds the moderator's own party reads, until it hands the payout.
-    const exec = rulingExecutor({ store, source: w.api, ctx: ctx(), log: () => {} });
+    // Haveno review finding 2: the moderation signing key signs the statement the winner's app verifies.
+    await sodium.ready;
+    const modKey = sodium.crypto_sign_keypair();
+    const statements: Array<{ statement: RulingStatement; sig: string }> = [];
+    const exec = rulingExecutor({ store, source: w.api, ctx: ctx(), log: () => {}, signingSecret: modKey.privateKey });
     const pass = async () => {
       const f = await parties.mod.funds();
-      return exec.step({ code, handle: parties.mod, api: { state: 'disputed', paused: false }, funds: { balance: f.balance, unlocked: f.unlocked }, recorded: terms });
+      return exec.step({
+        code, handle: parties.mod, api: { state: 'disputed', paused: false }, funds: { balance: f.balance, unlocked: f.unlocked }, recorded: terms,
+        escrowAddress: addresses[0]!, announce: async (r) => (statements.push(r), true),
+      });
     };
     await expect.poll(pass, { timeout: 120_000, interval: 2000 }).toBe('handed');
     const ex = store.state.executions[code]!;
@@ -158,6 +166,9 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     if (buyerWins) expect(to.map((p) => p.address)).toEqual([terms.buyerPayout, terms.feeWallet]);
     else expect(to).toEqual([{ address: terms.sellerRefund, amountAtomic: BALANCE }]);
 
+    // The winner's app checks the signed statement against its own trade, escrow and payouts first.
+    const st = statements.at(-1)!;
+    expect((await verifyRulingStatement(st.statement, st.sig, sodium.to_hex(modKey.publicKey), { trade: code, escrowAddress: addresses[0]!, winner, payouts: to })).ok).toBe(true);
     // The winner's app co-signs exactly that mod-built set (Task 15's cosignPolicy); the tx lands.
     const tx = await mining(parties[winner].settle({ kind: 'release', to, builder: 'mod', cosigner: winner }));
     expect(tx).toMatch(/^[0-9a-f]{64}$/);
@@ -213,9 +224,9 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     // Once: this executor and a restarted one (the gate reopened from disk) settle nothing more.
     expect(await pass()).toBe('settled');
     const reopened = await openGateStore(dir, key);
-    const restarted = rulingExecutor({ store: reopened, source: w.api, ctx: ctx(), log: () => {} });
+    const restarted = rulingExecutor({ store: reopened, source: w.api, ctx: ctx(), log: () => {}, signingSecret: modKey.privateKey });
     const asked: unknown[] = [];
-    expect(await restarted.step({ code, handle: { settle: async (o) => (asked.push(o), null) }, api: { state: 'disputed', paused: false }, funds: { balance: BALANCE, unlocked: BALANCE }, recorded: terms })).toBe('settled');
+    expect(await restarted.step({ code, handle: { settle: async (o) => (asked.push(o), null) }, api: { state: 'disputed', paused: false }, funds: { balance: BALANCE, unlocked: BALANCE }, recorded: terms, escrowAddress: addresses[0]!, announce: async () => true })).toBe('settled');
     expect(asked).toEqual([]);
   }
 });

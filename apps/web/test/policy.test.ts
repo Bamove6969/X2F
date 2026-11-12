@@ -169,7 +169,8 @@ describe('cosignPolicy: the shapes each side may settle', () => {
     const base = ctx(role, { state: 'disputed', ruling: null });
     const o = out(expected(kind, base), 'mod', role);
     expect(cosignPolicy(base, o)).toBe(false);
-    expect(cosignPolicy({ ...base, ruling: undefined }, o)).toBe(false);
+    const { ruling: _none, ...noField } = base;
+    expect(cosignPolicy(noField, o)).toBe(false);
     expect(cosignPolicy({ ...base, ruling: statementFor(base) }, o)).toBe(true);
   });
 

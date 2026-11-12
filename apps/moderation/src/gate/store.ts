@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { access, link, mkdir, open as openFile, readFile, rename, rm, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { modSubkey, open, seal } from '../keystore.js';
 
 /**
@@ -175,16 +175,64 @@ function alive(pid: number): boolean {
   }
 }
 
+/** Linux: this boot's id (`/proc/sys/kernel/random/boot_id`), else null. */
+async function bootId(): Promise<string | null> {
+  const id = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8').catch(() => '')).trim();
+  return id === '' ? null : id;
+}
+
+/** Linux: a process's start time in clock ticks since boot (field 22 of `/proc/<pid>/stat`), else null. */
+async function startTime(pid: number): Promise<string | null> {
+  const st = await readFile(`/proc/${pid}/stat`, 'utf8').catch(() => null);
+  if (st === null) return null;
+  const v = st.slice(st.lastIndexOf(')') + 2).split(' ')[19];
+  return v !== undefined && /^[0-9]+$/.test(v) ? v : null;
+}
+
+/** The lock files this process holds (resolved paths): only these name a live holder with our own pid. */
+const heldHere = new Set<string>();
+
 /**
- * Security review 2026-11-12, M1 residual: `dir/gate.lock`, made exclusively (`wx`) with this
- * process's pid, for the store's life. Another live holder (this process included) refuses the
- * open; a lock left by a process that no longer runs is taken over. Node has no flock(2), so the
- * file and the holder's liveness are the lock: it fences a successor started on the same host
- * while this process still stops (a lost instance lock), the case the database lock cannot.
+ * Whether the lock file's holder still holds it. Review of ruling-payout a42dad1b, N2: in a
+ * container the service often runs as pid 1, so after an unclean exit the stale lock names our own
+ * pid: our own pid holds it only if this process took it (`heldHere`). Another pid holds it while
+ * it runs, and, when the lock records the boot id and the holder's start time and this host can
+ * read them, only while both still match (another boot, or a reused pid, is stale). A bare pid (the
+ * older format) is held while it runs.
+ */
+async function holderLive(text: string): Promise<{ pid: number } | null> {
+  let rec: { pid?: unknown; boot?: unknown; start?: unknown };
+  try {
+    rec = JSON.parse(text) as typeof rec;
+    if (typeof rec !== 'object' || rec === null) rec = {};
+  } catch {
+    rec = { pid: Number.parseInt(text.trim(), 10) };
+  }
+  const pid = rec.pid;
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return null;
+  if (pid === process.pid || !alive(pid)) return null;
+  if (typeof rec.boot === 'string' && typeof rec.start === 'string') {
+    const boot = await bootId();
+    if (boot !== null && boot !== rec.boot) return null;
+    const start = await startTime(pid);
+    if (boot !== null && start !== null && start !== rec.start) return null;
+  }
+  return { pid };
+}
+
+/**
+ * Security review 2026-11-12, M1 residual: `dir/gate.lock`, made exclusively (`wx`) for the
+ * store's life, naming this process: its pid, the boot id and its start time (N2). A live holder
+ * (this process included) refuses the open; a lock left by a process that no longer runs, by an
+ * earlier boot, or naming a pid now reused (our own included) is taken over. Node has no flock(2),
+ * so the file and the holder's liveness are the lock: it fences a successor started on the same
+ * host while this process still stops (a lost instance lock), the case the database lock cannot.
  */
 async function lockDir(dir: string): Promise<() => Promise<void>> {
   const path = join(dir, GATE_LOCK_FILE);
-  const mine = `${process.pid}\n`;
+  const here = resolve(path);
+  if (heldHere.has(here)) throw new Error(`gate: ${GATE_LOCK_FILE} is locked by process ${process.pid} (another moderation process uses this state directory)`);
+  const mine = `${JSON.stringify({ pid: process.pid, boot: await bootId(), start: await startTime(process.pid) })}\n`;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const f = await openFile(path, 'wx', 0o600);
@@ -194,14 +242,16 @@ async function lockDir(dir: string): Promise<() => Promise<void>> {
       } finally {
         await f.close();
       }
+      heldHere.add(here);
       return async () => {
+        heldHere.delete(here);
         const now = await readFile(path, 'utf8').catch(() => null);
         if (now === mine) await unlink(path).catch(() => undefined);
       };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-      const held = Number.parseInt((await readFile(path, 'utf8').catch(() => '')).trim(), 10);
-      if (Number.isInteger(held) && held > 0 && alive(held)) throw new Error(`gate: ${GATE_LOCK_FILE} is locked by process ${held} (another moderation process uses this state directory)`);
+      const held = await holderLive(await readFile(path, 'utf8').catch(() => ''));
+      if (held !== null) throw new Error(`gate: ${GATE_LOCK_FILE} is locked by process ${held.pid} (another moderation process uses this state directory)`);
       await unlink(path).catch(() => undefined);
     }
   }

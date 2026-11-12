@@ -78,6 +78,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/trades/:code/attestation': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/confirmations': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/ruling-statement': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
   'GET /v1/wallets': 'my own payout wallets',
   'GET /v1/wallets/rule': 'my own wallet rule',

@@ -1,6 +1,6 @@
 import type { Outcome, PartyHandle, Payout } from '@x2f/escrow';
 import { ESCROW_OUTCOMES } from '@x2f/staff';
-import type { RulingKind } from '@x2f/trade';
+import { signRulingStatement, type RulingKind, type RulingStatement } from '@x2f/trade';
 import { gateCheck, type GateContext, type GateRuling, type GateSource, type GateStore, type RecordedTerms, type RulingExecution, type StoredRulings } from './gate/index.js';
 
 /**
@@ -25,7 +25,14 @@ import { gateCheck, type GateContext, type GateRuling, type GateSource, type Gat
  *   hands nothing once a payout is recorded here);
  * - a payout is recorded for this trade but it is not this ruling or not these payouts (a later
  *   surplus, a different ruling): `mismatch`, logged; nothing else is ever settled for the trade;
- * - else the payout is recorded in the sealed gate store (saved) BEFORE the party is asked, then
+ * - no escrow address recorded for the trade by this process (`mod_party_links`): `no-escrow`;
+ * - else the payout is recorded in the sealed gate store (saved) BEFORE the party is asked; then
+ *   (Haveno review 2026-11-12, finding 2, lead call) this process signs the ruling statement with
+ *   its long-term key (`@x2f/trade` RulingStatement: the trade, the escrow address, round 1, the
+ *   ruling, the winner and the payouts the gate worked out, issued at the record's time, so it is
+ *   the same statement after a restart) and announces it to the API (`ruling-statement`), whose
+ *   copy the traders' devices verify before they co-sign; until the API took it nothing is handed
+ *   (`announce-failed`); then the payout is
  *   handed to the party once per process (`handed`, then `in-flight`); when settle() finishes the
  *   record says so (`settledAt`). After a restart an unfinished payout is handed again, identical,
  *   only after the gate authorised it again; the party resumes it (same outcome, Plan 1).
@@ -61,9 +68,16 @@ export interface RulingStepInput {
    * shows the trade disputed (the desk's `apiAllows`), so only an unblocked auto-refund waits.
    */
   deskArmed?: DeskArmed;
+  /** The escrow address this process's party derived and reported at setup (the watcher's own row), or null. */
+  escrowAddress: string | null;
+  /**
+   * Haveno finding 2: posts the signed statement to the API (`ruling-statement` over this service's
+   * signed link); true once the API accepted it.
+   */
+  announce(r: { statement: RulingStatement; sig: string }): Promise<boolean>;
 }
 
-export type RulingStepResult = 'none' | 'settled' | 'paused' | 'no-terms' | 'waiting-funds' | 'desk-armed' | `refused-${string}` | 'mismatch' | 'handed' | 'in-flight';
+export type RulingStepResult = 'none' | 'settled' | 'paused' | 'no-terms' | 'waiting-funds' | 'desk-armed' | 'no-escrow' | 'announce-failed' | `refused-${string}` | 'mismatch' | 'handed' | 'in-flight';
 
 export interface RulingExecutor {
   step(s: RulingStepInput): Promise<RulingStepResult>;
@@ -81,6 +95,8 @@ export interface RulingExecutorOptions {
   ctx: GateContext;
   /** Reasons only, never codes, keys or addresses. */
   log: (e: { reason: string }) => void;
+  /** MOD_SIGNING_SECRET (64-byte Ed25519): signs the ruling statements (Haveno finding 2). */
+  signingSecret: Uint8Array;
 }
 
 const isEscrow = (r: GateRuling): boolean => r.round === 1 && (ESCROW_OUTCOMES as readonly string[]).includes(r.outcome);
@@ -90,6 +106,8 @@ const keyOf = (rulingId: string, winner: string, p: RulingExecution['payouts']):
 export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
   /** The payout handed to the party in this process, per trade code (its key). */
   const inFlight = new Map<string, string>();
+  /** The statement the API accepted in this process, per trade code (its payout key). */
+  const announced = new Map<string, string>();
 
   const step = async (s: RulingStepInput): Promise<RulingStepResult> => {
     const done = o.store.state.executions[s.code];
@@ -114,6 +132,10 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
       o.log({ reason: 'ruling-waits-desk-armed' });
       return 'desk-armed';
     }
+    if (typeof s.escrowAddress !== 'string' || s.escrowAddress === '') {
+      o.log({ reason: 'ruling-no-escrow' });
+      return 'no-escrow';
+    }
     const { winner } = auth.settle;
     const payouts = asRecord(auth.settle.payouts);
     const key = keyOf(r1.id, winner, payouts);
@@ -128,6 +150,27 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     if (!recordedOk) {
       o.log({ reason: 'ruling-execution-mismatch' });
       return 'mismatch';
+    }
+    if (announced.get(s.code) !== key) {
+      const ex = o.store.state.executions[s.code]!;
+      const statement: RulingStatement = {
+        v: 1,
+        trade: s.code,
+        escrowAddress: s.escrowAddress,
+        round: 1,
+        rulingId: ex.rulingId,
+        outcome: ex.winner === 'buyer' ? 'release-to-buyer' : 'refund-to-seller',
+        winner: ex.winner,
+        payouts: ex.payouts.map((p) => ({ address: p.address, amountAtomic: p.amountAtomic })),
+        issuedAt: ex.recordedAt,
+      };
+      const sig = await signRulingStatement(statement, o.signingSecret);
+      const took = await s.announce({ statement, sig }).catch(() => false);
+      if (took !== true) {
+        o.log({ reason: 'ruling-statement-refused' });
+        return 'announce-failed';
+      }
+      announced.set(s.code, key);
     }
     if (inFlight.get(s.code) === key) return 'in-flight';
     inFlight.set(s.code, key);

@@ -326,8 +326,22 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     ...(rulingsDep
       ? {
           rulingKind: (code: string) => rulingsDep.kindFor(code),
-          executeRuling: (x: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null; deskArmed: DeskArmed }) =>
-            rulingsDep.step({ code: x.code, handle: x.handle, api: x.api, funds: x.funds, recorded: recordedFor(x.args, x.shadow, log), deskArmed: x.deskArmed }),
+          executeRuling: (x: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null; deskArmed: DeskArmed; escrowAddress: string | null }) =>
+            rulingsDep.step({
+              code: x.code,
+              handle: x.handle,
+              api: x.api,
+              funds: x.funds,
+              recorded: recordedFor(x.args, x.shadow, log),
+              deskArmed: x.deskArmed,
+              escrowAddress: x.escrowAddress,
+              // Haveno finding 2: the signed ruling statement goes to the API over this service's signed link.
+              announce: async (r) => {
+                const res = await link.report({ kind: 'ruling-statement', trade: x.code, statement: r.statement, sig: r.sig });
+                if (res.status !== 201 && res.status !== 200) log({ reason: `ruling-statement-refused-${res.status}` });
+                return res.status === 201 || res.status === 200;
+              },
+            }),
         }
       : {}),
   });
@@ -882,6 +896,8 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   // Security review 2026-11-12 M1: the gate is a factory startModeration runs only once it holds the
   // instance lock; a refused second process never opens, syncs or saves gate.bin.
   let gateReader: pg.Pool | null = null;
+  // Both the attestations and the gate's ruling statements (Haveno finding 2) are signed with it.
+  const signingSecret = envBytes(env, 'MOD_SIGNING_SECRET', 64);
   let handle: ModerationHandle;
   try {
     handle = await startModeration(
@@ -891,7 +907,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       daemonUri: envString(env, 'MONERO_DAEMON_URI'),
       db,
       keystoreKey: envBytes(env, 'MOD_KEYSTORE_KEY', 32),
-      signingSecret: envBytes(env, 'MOD_SIGNING_SECRET', 64),
+      signingSecret,
       feeWallet: envString(env, 'X2F_FEE_WALLET'),
       relayUrl: envString(env, 'RELAY_URL'),
       network: envNetwork(env),
@@ -920,7 +936,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
               };
               const source = pgGateSource(reader);
               const sync = startGateSync(store, source, gateCtx);
-              const rulings = rulingExecutor({ store, source, ctx: gateCtx, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
+              const rulings = rulingExecutor({ store, source, ctx: gateCtx, signingSecret, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
               return {
                 rulings,
                 checkpoints: { store, reader },
