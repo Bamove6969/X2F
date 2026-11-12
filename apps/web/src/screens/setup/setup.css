@@ -803,16 +803,9 @@
 }
 
 /* The owner's checklist (demo notes 12 Nov 2026). DESIGNER-REVIEW: plain until design restyles it.
-   The owner asked for green ticks and the design tokens have no green yet: these two greens are
-   local stand-ins (night, day) for design to replace with a token (contrast checked on the surface). */
-.x2f-welcome {
-  --x2f-welcome-done: #3ccf7a;
-}
-
-:root[data-theme=day] .x2f-welcome {
-  --x2f-welcome-done: #1a7f45;
-}
-
+   The owner asked for green ticks and the design tokens have no green yet: the ticks use the kit's
+   escrow colour (its "secured, done" tone, as the release hold's done state) until design adds a
+   good/green token (review 12 Nov, C2: no hard-coded colours outside the token set). */
 .x2f-welcome__checks {
   display: flex;
   flex-direction: column;
@@ -856,7 +849,7 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-welcome-done);
+  background: var(--x2f-escrow);
   color: var(--x2f-surface);
 }
 

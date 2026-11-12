@@ -22,9 +22,6 @@ import { authApi } from '../auth/authApi.js';
 import { SetupFrame, useSetup, type SetupState } from './kit.js';
 import { APP_LABELS } from '../wallets-model.js';
 
-/** OD-7 (P3-M4), pending the owner's sign-off. */
-export const FEE_SENTENCE = 'You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.';
-
 /**
  * The Welcome screen's words (owner demo notes 12 Nov 2026, his own words with the typos fixed).
  * COPY-UNSIGNED; DESIGNER-REVIEW: design restyles the screen (the owner also asked for better
@@ -42,6 +39,8 @@ export const WELCOME_COPY = {
   fee: 'Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.',
   none: 'None yet',
   done: 'Done',
+  /** Review 12 Nov, C1: what a screen reader hears for an item not done yet. */
+  notDone: 'Not done yet',
 } as const;
 
 /**
@@ -86,9 +85,12 @@ export function checklist(me: Pick<Me, 'methods'>, wallets: readonly WalletEntry
   };
 }
 
-/** One big green tick (owner: one per item, the login methods together under one). */
-function Tick({ done }: { done: boolean }) {
-  if (!done) return <span className="x2f-welcome__tick x2f-welcome__tick--open" aria-hidden="true" />;
+/**
+ * One big tick (owner: one per item, the login methods together under one). An item not done yet is
+ * the open circle, named for a screen reader as the done tick is (review 12 Nov, C1).
+ */
+export function Tick({ done }: { done: boolean }) {
+  if (!done) return <span className="x2f-welcome__tick x2f-welcome__tick--open" data-part="tick-open" role="img" aria-label={WELCOME_COPY.notDone} />;
   return (
     <span className="x2f-welcome__tick" data-part="tick" role="img" aria-label={WELCOME_COPY.done}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
