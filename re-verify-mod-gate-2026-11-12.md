@@ -90,3 +90,80 @@ All runs used the single lock with the timeout inside it (`flock ~/x2f-comms/che
 - **Staff** (`packages/staff/test/intent.test.ts`): **19/19 passed**.
 - **Tests weakened:** none. I checked the branch's test changes (gate, buyerCancel, keyTap, members, rulings, intent): each one adds checks or tightens existing ones (for example the M3 tripwire).
 - `npx tsc -p apps/moderation --noEmit`: clean.
+
+---
+
+# Round 3: re-verify at 595c0137 (red tests 6957e33e), 2026-11-12
+
+- **Re-verified:** `origin/wip/lead-mod-gate` = **595c0137** ("READY: mod-gate - re-verify 2026-11-12 fixes"), parent 6957e33e (RED). These are two commits on top of round 2's 23e36785.
+- **Changed since round 2:**
+  - `gate/registry.ts`: a new step 0, the add-owner-key pairing, and the reason hashed in JS.
+  - `gate/store.ts`: a missing gate.bin is an error, and `initGate` is added.
+  - The new `cli/init-gate.ts`.
+  - `main.ts`: the process exits when gate.bin does not open.
+  - `staff/keyTap.ts`: `taps/start` now returns `nonce` and `issuedAt`.
+  - staff-web `KeyTapDialog.tsx`: `checkTapChallenge`, and the intent is shown.
+  - Tests, and the docs (`coordination.md`, `dev-setup.md`).
+
+## Verdict
+
+**Not ready: 1 blocking.**
+- Every fix asked for this round holds in the gate. N1, N2, N3, N3b, N4, N6, N7, P6, M-R1 and M3 are closed, and my flipped PoCs pass.
+- X1 is fixed for the tap dialog, but the staff site's **login** still lets a compromised API get any owner tap signed (X2, blocking).
+- B1 residual and M-R2 stay owner questions. N5 is accepted as designed (lead call).
+
+## Item by item
+
+| Item | Status | How checked |
+|---|---|---|
+| X1 tap dialog | **Fixed for `KeyTapDialog`; tests adequate for the dialog, not for its use (see X2, X3)** | `taps/start` returns `nonce` and `issuedAt`. `checkTapChallenge` rebuilds `tapChallenge(intent + issuedAt, nonce)` and refuses a mismatch, an issuedAt more than ±2 min from the device clock, an issuedAt on a kind without one, or a malformed nonce; it refuses before `startAuthentication`. The whole intent is shown. The shell tests cover a lying server (other intent), skew both ways, a missing issuedAt, an issuedAt on a ruling, and "not asked on failure". A server-side normaliser that differs from the client's (for example an upper-case `round1Id` lower-cased by `parseKeyTapIntent`) only fails closed. |
+| N1–N3b future issuedAt | **Fixed** | Step 0 spends any tap issued after gate-now + 2 min (`issued-in-future`). Flipped N1, N2, N3 and N3b pass. The client's ±2 min check means an honest staff site never signs such a stamp. |
+| N4 stale | **Fixed** | `MAX_TAP_AGE_MS` = 24 h, spent as `issued-too-long-ago`. N4 passes. A tap the database holds back for less than 24 h is still covered by per-subject ordering and `offSeenAt`. |
+| N7 cross-step counter | **Fixed** | Step 0 checks every fresh owner tap once, in (key, counter) order, before any step acts; create-invite is spent at once. N7 passes: settings and then create-invite in one sync both apply. Fail-closed leftover (info): a tap that passes step 0 but is not applied (a set-role for someone the gate does not yet know, or an unpaired add-owner-key) is refused as out-of-order on a later sync once the same key has made a newer accepted tap. The owner taps again. |
+| N6 add-owner-key pairing | **Fixed** | Pairs only taps by two different keys issued within 10 min. N6 passes; the 60-day-old half is also stale under N4. But see X2: a login by each key within 10 min is enough. |
+| M-R1 reason hash | **Fixed** | `dispute_rulings.reason` is read and hashed in JS, as evidence is. |
+| P6 missing gate.bin | **Fixed** | `openGateStore` throws on a missing file unless `init: true`, which only `initGate` passes, after `yes` and only where no file exists. `main.ts` exits 1. `pin-owner` opens without `init`. My flipped P6 passes: it checks declined, created, `exists` (never overwrites a pinned gate), and wrong key throws. Tiny check-then-create race (info): `initGate`'s check and create are not atomic, so a gate.bin appearing between them would be replaced. It needs the operator running init-gate at that same moment. |
+| M3 dynamic import | **Fixed** | The tripwire now also catches `import('@x2f/escrow…')`. |
+| N5 skew | Accepted (lead) | The PoC still fails by design. |
+| B1 residual, M-R2 | Owner questions | The B1 residual PoC still fails (attack works). `remove-owner-key` still does not exist. |
+
+## X2 (blocking, new): the staff login signs a server-chosen challenge, so a compromised API turns any owner login into any owner tap
+
+`apps/staff-web/src/screens/Login.tsx` `tapKey` passes the server's login `options` straight to `startAuthentication`. The server makes them with `generateAuthenticationOptions` (`apps/api/src/auth/webauthn.ts`, about line 650). A login assertion and a tap assertion are the same WebAuthn `get` on the same RP id and origin. The gate checks only `type`, origin, RP id and `challenge == tapChallenge(intent, nonce)`.
+
+Scenario:
+1. The compromised API picks an intent and a nonce, and sends `tapChallenge({...evil, issuedAt: now}, nonce)` as the owner's **login** challenge. Possible intents: `settings {largeTradeLimitUsd: 1000000}`, `create-invite` for its own account, `switch-on`, `resume-trading`.
+2. The owner logs in as usual. Nothing on screen differs: a login challenge is random by nature, so the client cannot check it.
+3. The API writes a `key_taps` row with that intent, nonce and assertion, and the gate accepts it as a genuine owner tap.
+4. The owner's login can be two-step (a second key after the first). And `add-owner-key` needs both keys within 10 min. So a login with key 1 followed by one with key 2 within 10 min can also pin an **attacker owner key**, which is the root of trust.
+
+`checkTapChallenge` closes the tap dialog, not this path. The same holds for any other staff-site `get` on that origin that a future change adds.
+
+Fix (lead call):
+- Domain-separate login from taps. The server sends a login nonce; the staff site itself sets `challenge = sha256("x2f-staff-login-v1\n" + nonce)` (any prefix other than `x2f-keytap-v1`); the server verifies that derivation. A login assertion can then never be a valid tap.
+- Add a tripwire test that every `startAuthentication` call in `apps/staff-web/src` is either `KeyTapDialog` (checked) or the login with the derived challenge.
+
+Another layout also fixes it: taps on a separate RP id and origin that the gate alone accepts, but that is heavier.
+
+## X3 (minor, for the wiring): the dialog's check is only as good as the intent its caller passes
+
+The lead notes that nothing in staff-web opens `KeyTapDialog` yet. So the X1 check has no caller in effect, and no owner registry tap can come from the staff site today.
+
+Once callers are wired:
+- Each must build its intent from values the person typed or can see, not values copied from the API. Hashes (`tokenHash`, `reasonSha256`, `evidenceSha256`, `publicKeySha256`) the client should compute itself: from the invite token it shows, the reason and evidence text it shows, the key's public key.
+- An `accountId` UUID means nothing to the owner, and the name-to-id mapping comes from the API. That is an inherent limit; show the name and the id.
+
+Suggest that every new `KeyTapDialog` caller gets a test asserting its intent's hashes are computed client-side. Add a source tripwire too: `tapStart` called only from `KeyTapDialog`, and no `startAuthentication` outside it and login. The current tests are enough for the dialog itself and say nothing about future callers.
+
+## Tests run (round 3)
+
+All runs used `flock ~/x2f-comms/check.lock timeout 900 npx vitest run …`, in a detached worktree on 595c0137 after a fresh `npm ci`. The worktree and node_modules were removed afterwards.
+- **Moderation** (`gate.test.ts`, `buyerCancel.test.ts` and the PoC file, all PoCs expecting refusal; saved at `/tmp/claude-0/-home-user-X2F/992ece86-f5cc-5ebc-82cc-7f9bc9dec1c0/scratchpad/mod-gate-reverify-poc.test.ts`): **86 passed, 2 failed of 88**.
+  - All 73 branch tests pass.
+  - 13 of 15 PoCs pass: P1–P6, N1, N2, N3, N3b, N4, N6 and N7.
+  - The 2 failures are the expected open items: the B1 residual (an owner question) and N5 (accepted by design).
+- **API** `staff/keyTap.test.ts`: **30/30 passed**.
+- **staff-web** `shell.test.tsx`: **16/16 passed**.
+- `tsc` for `apps/moderation` and `apps/staff-web`: clean.
+- **Tests weakened:** none. The branch's test changes add cases or swap a fake challenge for a real one.
+- X2 has no PoC test: it is a client-side flow I traced by reading `Login.tsx` and `webauthn.ts`. At the gate, a login assertion over a tap challenge is indistinguishable from a tap, so a gate PoC would just repeat `tapBy`.
