@@ -153,17 +153,24 @@ export async function prepareProof(file: Blob, keep: Keep, deps: ProofImageDeps)
     bytes.fill(0);
   }
   const { rgba, width, height } = img;
-  if (!(width >= 1 && height >= 1 && width <= PROOF_MAX_SIDE && height <= PROOF_MAX_SIDE) || rgba.length !== width * height * 4) throw new ProofInputError('undecodable');
-  let words: OcrWord[] | null;
+  // Re-verify Z1: from here on the decoded (unblurred) pixels are ours; any failure zeroes them
+  // before it is passed on, so a refused picture leaves nothing readable behind.
   try {
-    words = await deps.ocr(rgba, width, height);
-  } catch {
-    words = null;
+    if (!(width >= 1 && height >= 1 && width <= PROOF_MAX_SIDE && height <= PROOF_MAX_SIDE) || rgba.length !== width * height * 4) throw new ProofInputError('undecodable');
+    let words: OcrWord[] | null;
+    try {
+      words = await deps.ocr(rgba, width, height);
+    } catch {
+      words = null;
+    }
+    if (words === null) return { rgba, width, height, words: [], ocrOk: false, auto: [], amount: [], memo: [], photoTakenAt: takenAt };
+    const amount = amountBoxes(words, keep);
+    const auto = padAndMerge(detectSensitive(words, keep), width, height, amount).map((r, i): EditorRegion => ({ ...r, id: `a${i}`, source: 'auto' }));
+    return { rgba, width, height, words, ocrOk: true, auto, amount, memo: codeBoxes(words, keep.tradeCode), photoTakenAt: takenAt };
+  } catch (e) {
+    rgba.fill(0);
+    throw e;
   }
-  if (words === null) return { rgba, width, height, words: [], ocrOk: false, auto: [], amount: [], memo: [], photoTakenAt: takenAt };
-  const amount = amountBoxes(words, keep);
-  const auto = padAndMerge(detectSensitive(words, keep), width, height, amount).map((r, i): EditorRegion => ({ ...r, id: `a${i}`, source: 'auto' }));
-  return { rgba, width, height, words, ocrOk: true, auto, amount, memo: codeBoxes(words, keep.tradeCode), photoTakenAt: takenAt };
 }
 
 let manualIds = 0;
