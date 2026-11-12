@@ -359,8 +359,9 @@ describe('Feedback (owner)', () => {
       'GET /staff/v1/feedback/form': {
         body: {
           items: [
-            { id: 'f1', kind: 'complaint', text: 'Limits too low', accountId: 'acc-123', accountName: 'Quiet.Fox', from: 'starter-limit', createdOn: '2026-11-04' },
-            { id: 'f2', kind: 'feedback', text: 'Nice app', accountId: null, accountName: null, from: null, createdOn: '2026-11-03' },
+            // Review m1 (lead 12 Nov): the API sends no raw account id, only the display name.
+            { id: 'f1', kind: 'complaint', text: 'Limits too low', accountName: 'Quiet.Fox', from: 'starter-limit', createdOn: '2026-11-04' },
+            { id: 'f2', kind: 'feedback', text: 'Nice app', accountName: null, from: null, createdOn: '2026-11-03' },
           ],
           next: null,
         },
