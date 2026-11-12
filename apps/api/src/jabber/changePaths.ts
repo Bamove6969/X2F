@@ -164,6 +164,11 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'staff_invites.created_by': 'staff records',
   'staff_invites.account_id': 'staff records',
   'key_taps.account_id': 'a staff security-key tap',
+  // Plan 4 Task 33 (staff pay, migration 420), classified at the batch 9 merge.
+  'staff_shifts.staff_id': 'staff records: a staff session\'s shift (staff accounts have no Jabber set-up)',
+  'staff_pay_items.staff_id': 'staff records: the staff pay ledger',
+  'staff_payouts.staff_id': 'staff records: a staff payout',
+  'staff_payout_addresses.staff_id': 'staff records: a staff member\'s payout address (added with a security-key tap)',
   // Batch 4 (lead default, owner p11-119): silent.
   // Hold model v3 and team abilities (team-perms-port; lead default pending the owner, p11-119 extension): silent.
   'hold_changes.account_id': 'a draft or waiting change (hold v3); the change notifies when it applies, through the table it writes',

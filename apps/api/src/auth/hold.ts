@@ -667,6 +667,9 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // the session under the account lock and a member's boxes live, in its transaction).
   'POST /v1/account/notes': 'social: a private note row on another trader only; no account, session, approval or security state, no obligation',
   'DELETE /v1/account/notes/:id': "social: removes one of the account's own note rows (the account owner only); no account, session or security state",
+  // P-012/P-013 (proof-check, classified at the batch 9 merge): the blur check. Anonymous by design.
+  'POST /v1/trades/:code/proofs/:proofId/blur-check': "counts a participant's proof for the blur-check sample (blur_check_proofs/asks rows only); no account, session, approval or security state, no obligation",
+  'POST /v1/trades/:code/blur-checks/:proofId': "a participant's anonymous blur-check answer (an answers row naming no one); no account, session, approval or security state, no obligation",
 };
 
 /**
