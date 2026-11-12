@@ -46,7 +46,10 @@ export type AlertKind =
   | 'dispute-refund-after-ruling'
   // Owner only: the fee wallet's sweep to the cold wallet (B-006, Plan 4 Task 9).
   | 'fee-sweep-due'
-  | 'fee-sweep-failed';
+  | 'fee-sweep-failed'
+  // Owner only (D-032 review S2): a staff member's security was reset, and the reset link was used.
+  | 'staff-security-reset'
+  | 'staff-security-reset-finished';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

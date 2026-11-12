@@ -18,6 +18,8 @@ import { THREE_METHOD_ROLES, holdsModeratorMethods } from './login.js';
 import { consumeKeyTap } from './keyTap.js';
 import { attestedKeyCount, body, hoursOf, idParam, lockTarget, log, roleOf, tapIdOf, unassignOpenCases, type InvitableRole } from './members.js';
 import { endAllSessions } from '../auth/sessions.js';
+import { addOwnerAlert } from '../alerts.js';
+import { pushOwnerAlert } from '../push/ownerAlert.js';
 
 // Plan 4 Task 7: staff invites (migration 205_staff_invites.sql).
 //
@@ -224,6 +226,8 @@ export function staffInviteRoutes(app: FastifyInstance): void {
   // for what an invite's does and re-enables the account. Lead reading, owner question: a link,
   // not "a username and a password" (staff have no passwords; Q-B3).
   app.post('/staff/v1/members/:id/reset-security', opts, async (req, reply) => {
+    // Review MF1: the owner role's own power, whatever perms a grant may ever add (the tap needs the owner too).
+    if (req.staff.role !== 'owner') throw new ApiError(403, 'forbidden');
     const id = idParam(req);
     const { db, clock } = req.server.deps;
     const now = clock();
@@ -247,12 +251,20 @@ export function staffInviteRoutes(app: FastifyInstance): void {
       await c.query('delete from webauthn_credentials where account_id = $1', [id]);
       await c.query('delete from pgp_keys where account_id = $1', [id]);
       await c.query('delete from trusted_devices where account_id = $1', [id]);
+      // Review S1: nothing half-done of theirs survives either: unused taps, open login challenges,
+      // pending login approvals. TRIPWIRE: when staff recovery codes land (D-032's "recovery code,
+      // else"), delete recovery_codes here too.
+      await c.query('delete from key_taps where account_id = $1 and used_at is null', [id]);
+      await c.query('delete from challenges where account_id = $1 and used_at is null', [id]);
+      await c.query('delete from login_approvals where account_id = $1 and used_at is null', [id]);
       await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
       await c.query('update staff_members set has_security_key = false where account_id = $1', [id]);
       if (!target.switchedOff) await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.security-reset', { staffId: id, inviteId: n.inviteId });
+      await addOwnerAlert(c, 'staff-security-reset', { staffId: id }, now);
     });
     await endAllSessions({ db, clock, events: req.server.events }, id);
+    await pushOwnerAlert({ db, push: req.server.push }, 'staff-security-reset').catch(() => undefined);
     const origin = (req.server.deps as StaffDeps).staffOrigin;
     return reply.code(201).send({ inviteId: n.inviteId, link: `${origin}/invite/${n.token}`, expiresAt: n.at.toISOString() });
   });
@@ -416,8 +428,10 @@ export function staffInviteRoutes(app: FastifyInstance): void {
           ? { action: 'staff.security-reset-finished' as const, detail: { staffId: accountId } }
           : { action: 'staff.joined' as const, detail: { staffId: accountId, role: i.role } }),
       });
+      if (i.kind === 'reset') await addOwnerAlert(c, 'staff-security-reset-finished', { staffId: accountId }, now);
       return k[0] ? keyCheckCode(new Uint8Array(k[0].public_key)) : null;
     });
+    if (first.kind === 'reset') await pushOwnerAlert({ db: deps.db, push: req.server.push }, 'staff-security-reset-finished').catch(() => undefined);
     return reply.code(201).send({ keyCheckCode: code });
   });
 }
