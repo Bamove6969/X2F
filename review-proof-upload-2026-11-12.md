@@ -160,7 +160,7 @@ known residual).
 
 ## Tests run (worktree at bde8310f, fresh npm ci, under flock ~/x2f-comms/check.lock)
 
-All 9 passed, 263 tests in all:
+All 9 passed, 253 tests in all:
 - apps/web/test/proofUpload.test.ts: 12/12
 - apps/web/test/blurEditor.test.tsx: 12/12
 - apps/web/test/chatEngine.test.ts: 42/42
