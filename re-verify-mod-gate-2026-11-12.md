@@ -167,3 +167,95 @@ All runs used `flock ~/x2f-comms/check.lock timeout 900 npx vitest run …`, in 
 - `tsc` for `apps/moderation` and `apps/staff-web`: clean.
 - **Tests weakened:** none. The branch's test changes add cases or swap a fake challenge for a real one.
 - X2 has no PoC test: it is a client-side flow I traced by reading `Login.tsx` and `webauthn.ts`. At the gate, a login assertion over a tap challenge is indistinguishable from a tap, so a gate PoC would just repeat `tapBy`.
+
+---
+
+# Round 4: re-verify at db2ba92f (red tests 85d0eabf), 2026-11-12
+
+- **Re-verified:** `origin/wip/lead-mod-gate` = **db2ba92f** ("re-verify round 3: X2 domain-separated staff ceremonies, X3 tripwire, init-gate O_EXCL"), parent 85d0eabf (RED). These are two commits on top of round 3's 595c0137.
+- **Changed since round 3:**
+  - `@x2f/staff`: new `staffLoginChallenge`, `ownerSetupChallenge` and `inviteTokenHash`.
+  - API `auth/webauthn.ts` (the staff login) and `staff/ownerSetup.ts`.
+  - The new staff-web `challenges.ts`, used by `Login.tsx`, `OwnerSetup.tsx` and `Invite.tsx`.
+  - The new staff-web `test/webauthnTripwire.test.ts`.
+  - The gate's `initGate` (O_EXCL).
+  - Tests, and `docs/coordination.md`.
+
+## X2: domain-separated staff ceremonies: fixed
+
+- **The derivation:**
+  - Every WebAuthn ceremony on the staff site now signs a challenge the staff site computes itself from a server nonce:
+    - login: `sha256("x2f-staff-login-v1\n" + nonce)`;
+    - owner setup: `sha256("x2f-owner-setup-v1\n" + nonce)`;
+    - invite: `sha256("x2f-invite-v1\n" + sha256(token from the link))`.
+  - `challenges.ts` replaces the server's `options.challenge` with that value before `startAuthentication` or `startRegistration`.
+  - A tap's challenge is `sha256("x2f-keytap-v1\n" + intent + "\n" + nonce)`, and `KeyTapDialog` checks it.
+  - So a login assertion can be a tap only through a SHA-256 collision.
+  - Registrations are `webauthn.create`, and the gate requires `webauthn.get`.
+- **API refusal:** on finish, the API refuses a stored challenge that is not the derivation of its stored nonce (`challenge-expired`), for both the staff login and owner setup. `login.test` and `ownerSetup.test` swap the row and get 400. Under the threat model this check is consistency only: the protection is the client's derivation, since a compromised API skips its own check.
+- **The other options fields stay the server's** (`rpId`, `allowCredentials`, `userVerification`, extensions). None of them can turn a login into a tap:
+  - The gate binds the challenge, `type`, origin and rpIdHash.
+  - A different `rpId` gives a different rpIdHash and is refused.
+- **My attempts (all refused):**
+  - X2a: owner login assertions from **both** keys, each stored as a tap for settings US$1M, `add-owner-key` (attacker key), `switch-on` (a switched-off mod) and `resume-trading`, with the login nonce and a shortened nonce. All are refused: the limit stays US$1,000, no owner key is added, and the mod stays revoked.
+  - X2b: a registration response (`webauthn.create`) stored as a tap is refused.
+  - The branch's own X2 test (login assertion as a settings tap, and as a ruling approval: `bad-signature`) passes.
+- **Other paths:**
+  - The staff realm's discoverable-login branch still uses a server challenge, but the staff site never calls it.
+  - The trader site is another origin, which the gate refuses (`expectedOrigin` is the staff origin only).
+- **Holds only while** the staff site's code is the one built and deployed apart from the API host (`docs/dev-setup.md`).
+
+## The tripwire (`webauthnTripwire.test.ts`): adequate, with small gaps (info)
+
+- **What it pins:**
+  - `startAuthentication` only in `screens/Login.tsx` (through `loginOptions(`) and `ui/KeyTapDialog.tsx`.
+  - `startRegistration` only in `Invite.tsx` (`inviteOptions(`) and `OwnerSetup.tsx` (`setupOptions(`).
+  - `tapStart(` only from `KeyTapDialog`.
+  - `<KeyTapDialog` opened only by the files in `KEY_TAP_CALLERS`, which is empty today.
+- **Gaps** (regex on source, so a deliberate dodge passes; under the trust model the staff-site code is honest, so this only matters for mistakes):
+  - An aliased import (`import { startAuthentication as sa }`).
+  - Direct `navigator.credentials.get/create`.
+  - `tapStart` passed by reference rather than called.
+  - `React.createElement(KeyTapDialog…)`.
+- **Suggested additions:**
+  - Forbid `navigator.credentials` in `src/`.
+  - Require that `@simplewebauthn/browser` is imported only by those five files, and only by name.
+
+## init-gate O_EXCL: fixed (one info)
+
+- **Fix:** `initGate` now writes `gate.bin` with `open(path, 'wx', 0600)` and syncs the file and the directory. `EEXIST` gives `exists`. The branch's race test (another gate written while it waits for `yes`) passes, and my P6 still passes.
+- **Info:** it writes to the final path directly, not through a temp file and rename. A crash halfway leaves a partial `gate.bin` that fails to open (fail-closed; the operator deletes it and runs init-gate again).
+- **Info:** `openGateStore(…, { init: true })` still exists, and only tests use it now. Consider removing it so no future caller can make an empty gate without the `yes`.
+
+## X3 deferred as a merge requirement: acceptable
+
+- **No caller yet:** nothing opens `KeyTapDialog` on this branch. So no owner registry tap or staff ruling tap can be made from the staff site at all; there is nothing for X3 to protect yet.
+- **Enforced by the tripwire:** the first branch that adds `<KeyTapDialog` fails it until the file is added to `KEY_TAP_CALLERS`. The list's comment and `coordination.md` record what each caller must do: build its intent from what the person typed or sees, compute its hashes client-side, show names next to ids, and carry a test of its own.
+- **Condition:** each branch that adds a caller gets a security review of that caller. The list edit itself is a one-liner, so the tripwire forces a touchpoint, not the review.
+- **Note for the lead's plan:** until callers exist, the gate stays at its defaults (no staff, US$1,000 limit) after pinning, so it authorises no ruling in production. That fails safe.
+
+## Tests run (round 4)
+
+All runs used `flock ~/x2f-comms/check.lock timeout N npx vitest run …`, in a detached worktree on db2ba92f after a fresh `npm ci`. The worktree and node_modules were removed afterwards.
+- **Moderation** (`gate.test.ts`, `buyerCancel.test.ts` and the PoC file, all PoCs expecting refusal; saved at `/tmp/claude-0/-home-user-X2F/992ece86-f5cc-5ebc-82cc-7f9bc9dec1c0/scratchpad/mod-gate-reverify-poc.test.ts`): **90 passed, 2 failed of 92**.
+  - All 75 branch tests pass.
+  - 15 of 17 PoCs pass: P1–P6, N1, N2, N3, N3b, N4, N6, N7, and the new X2a and X2b.
+  - The 2 failures are the expected open items: the B1 residual (an owner question) and N5 (accepted by design).
+- **NOT RUN:** the API (`staff/login.test.ts`, `staff/ownerSetup.test.ts`, `staff/keyTap.test.ts`), staff-web (`webauthnTripwire.test.ts`, `screens.test.tsx`, `shell.test.tsx`) and staff (`intent.test.ts`) files.
+  - The runner sat about 2 h in the `check.lock` queue behind another helper's full `@x2f/escrow` run, and was stopped at the background time limit just after the moderation run finished. Per the instructions I did not restart it.
+  - My verdict on those parts rests on reading the code and the tests. **The lead should run these seven files before merging.**
+- `tsc` for `apps/moderation` and `apps/staff-web`: clean.
+
+## Final verdict
+
+**Ready to merge from the security-review side, on these conditions:**
+1. The seven API, staff-web and staff test files above pass.
+2. X3: every branch that adds a `KeyTapDialog` caller gets its own security review.
+3. The owner answers B1 residual (confirm each staff key with an `add-staff-key` tap) and M-R2 (`remove-owner-key`) before the gate goes live with staff. Until then it fails safe: no caller, so no staff.
+
+Everything blocking from rounds 1–3 is closed: B1 as far as the code can go without the owner, B2, X1, X2, and N1–N3b. Open info items:
+- N5, the designed 2-minute skew window.
+- The tripwire gaps: aliased imports, `navigator.credentials`.
+- `openGateStore`'s leftover `init` option.
+- init-gate writes in place, not through a temp file and rename.
+- The I2 differences, which all fail closed.
