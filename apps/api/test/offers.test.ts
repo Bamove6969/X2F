@@ -280,9 +280,10 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     // Plan 4 Task 27: a trade ban or a site ban refuses posting (409 trade-ban), and hides the poster's offers.
     const banned = await poster();
     const listedId = await post(banned);
-    const banId = await insertBan(deps, banned.id, 'trade');
+    const banId = await insertBan(deps, banned.id, 'trade', null);
     const refused = await banned.browser.post('/v1/offers', flexBody(BODY));
-    expect([refused.statusCode, refused.json()]).toEqual([409, { error: 'trade-ban' }]);
+    // Lead call (Q4): with the general reason and the end (null: lifetime), for the popup.
+    expect([refused.statusCode, refused.json()]).toEqual([409, { error: 'trade-ban', reasonCode: 'abuse', until: null }]);
     expect((await viewer.get(`/v1/offers/${listedId}`)).statusCode).toBe(404);
     await deps.db.query('update account_bans set lifted_at = $2 where id = $1', [banId, deps.clock()]);
     expect((await banned.browser.post('/v1/offers', flexBody(BODY))).statusCode).toBe(201);

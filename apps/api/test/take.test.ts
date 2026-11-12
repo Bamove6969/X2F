@@ -363,8 +363,11 @@ describe('POST /v1/offers/:id/take', () => {
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'trading-hold' });
     // Plan 4 Task 27: a trade-banned taker is refused; past its end (by the clock) the take goes on.
     const bannedTaker = await person();
-    await insertBan(deps, bannedTaker.id, 'trade', new Date(deps.clock().getTime() + 3_600_000));
+    const banEnds = new Date(deps.clock().getTime() + 3_600_000);
+    await insertBan(deps, bannedTaker.id, 'trade', banEnds);
     expect(refusal(await take(bannedTaker, offer, body(bannedTaker, tenth)))).toEqual({ status: 409, error: 'trade-ban' });
+    // Lead call (Q4): the refusal carries the general reason and the end, for the popup.
+    expect((await take(bannedTaker, offer, body(bannedTaker, tenth))).json()).toEqual({ error: 'trade-ban', reasonCode: 'abuse', until: banEnds.toISOString() });
 
     const other = await person();
     await renameOfferMethod(deps.db, offer, 'SBP');
