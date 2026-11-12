@@ -493,3 +493,17 @@ describe('the prepared proof is the only copy', () => {
     expect(Object.values(p)).not.toContain(file);
   });
 });
+
+describe('re-verify Z1: a failure after the decode zeroes the decoded pixels', () => {
+  it('a decode with the wrong size, and a throw while finding regions, both zero the pixels and refuse', async () => {
+    // The decoder answers pixels that do not fit its own size: refused, and those pixels zeroed.
+    const short = original().subarray(0, W * H * 4 - 4);
+    const shortCopy = new Uint8ClampedArray(short);
+    await expect(prepareProof(pickedFile(), KEEP, deps({ decode: async () => ({ rgba: shortCopy, width: W, height: H }) }))).rejects.toMatchObject({ code: 'undecodable' });
+    expect(shortCopy.every((b) => b === 0)).toBe(true);
+    // OCR words the detectors cannot read: whatever throws there, the pixels are zeroed and it rethrows.
+    const px = original();
+    await expect(prepareProof(pickedFile(), KEEP, deps({ decode: async () => ({ rgba: px, width: W, height: H }), ocr: async () => [null as unknown as OcrWord] }))).rejects.toThrow();
+    expect(px.every((b) => b === 0)).toBe(true);
+  });
+});

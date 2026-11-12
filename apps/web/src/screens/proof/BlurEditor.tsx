@@ -50,6 +50,18 @@ export function BlurEditor({
   const ownHidden = hiddenByUploader(manual, prepared.amount, prepared.memo);
   const dateLine = posterDateLine(prompts.date);
 
+  // Re-verify Z2: the preview holds the picture (unblurred wherever the buyer took the blur off);
+  // when the editor goes it is cleared and shrunk to nothing rather than left to GC.
+  useEffect(() => {
+    const el = canvas.current;
+    return () => {
+      if (el === null) return;
+      el.getContext('2d')?.clearRect(0, 0, el.width, el.height);
+      el.width = 0;
+      el.height = 0;
+    };
+  }, []);
+
   // The preview: the pixels with the current regions burned in, on this device only.
   useEffect(() => {
     const ctx = canvas.current?.getContext('2d') ?? null;
