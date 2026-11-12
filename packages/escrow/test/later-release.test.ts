@@ -28,7 +28,8 @@ describe('the release tag (pure)', () => {
     expect(releaseTag(first)).toBe(pinned);
     const later: Outcome = { ...first, builder: 'mod', cosigner: 'seller', after: 'a'.repeat(64) };
     const again: Outcome = { ...later, after: 'b'.repeat(64) };
-    expect(releaseTag(later)).not.toBe(releaseTag({ ...later, after: undefined } as Outcome));
+    const { after: _after, ...noAfter } = later;
+    expect(releaseTag(later)).not.toBe(releaseTag(noAfter));
     expect(releaseTag(later)).not.toBe(releaseTag(again)); // identical payouts, another earlier release
     expect(MAX_LATER_RELEASES).toBe(10);
   });

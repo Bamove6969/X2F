@@ -20,5 +20,5 @@ export {
   type BuyerCancelFacts,
   type BuyerCancelRefusal,
 } from './autoRefund.js';
-export { PartyError, SPEND_IMPORT_RETRY_MS, SPEND_INFO_MAX_HEX, runParty, type Funds, type Outcome, type PartyArgs, type PartyErrorCode, type PartyHandle, type PartyState, type PartyStore } from './party.js';
+export { MAX_LATER_RELEASES, PartyError, SPEND_IMPORT_RETRY_MS, releaseTag, SPEND_INFO_MAX_HEX, runParty, type Funds, type Outcome, type PartyArgs, type PartyErrorCode, type PartyHandle, type PartyState, type PartyStore } from './party.js';
 export { TransportClosedError, wsTransport, type Transport } from './transport.js';
