@@ -436,7 +436,8 @@ export function takeRoutes(app: FastifyInstance): void {
     setImmediate(() => {
       void (async () => {
         const ev = await acceptedEvent(deps.db, trade.code, takerId);
-        if (app.events.publish(posterId, ev) === 0) await app.push.send(posterId, 'trade');
+        // A just-taken trade is open (review trades-list I1: members' streams by part).
+        if (app.events.publish(posterId, ev, { closed: false }) === 0) await app.push.send(posterId, 'trade');
       })().catch((err: unknown) => app.log.error({ err }, 'accepted publish failed'));
     });
     return {

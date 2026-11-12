@@ -453,7 +453,7 @@ describe('POST /v1/offers/:id/take', () => {
     const publish = vi.spyOn(app.events, 'publish');
     try {
       const code = await taken(buyer, offer, body(buyer, tenth));
-      await vi.waitFor(() => expect(publish).toHaveBeenCalledWith(seller.id, { type: 'accepted', code, by: buyer.displayName }));
+      await vi.waitFor(() => expect(publish).toHaveBeenCalledWith(seller.id, { type: 'accepted', code, by: buyer.displayName }, { closed: false }));
       // Nothing to the taker.
       expect(publish.mock.calls.filter(([id]) => id === buyer.id)).toEqual([]);
     } finally {

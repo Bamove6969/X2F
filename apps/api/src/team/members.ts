@@ -30,7 +30,7 @@ import type { RetentionJob } from '../retention.js';
 import { assertVendor } from '../routes/accountType.js';
 import { hasAbility, isCustomSet, legacyRoles, parseAbilities, presetOf, sortAbilities, type PresetId, type TeamRole } from './abilities.js';
 import { assistantLabel } from './label.js';
-import { MAX_TEAM_MEMBERS, STREAM_ABILITY } from './perms.js';
+import { MAX_TEAM_MEMBERS, STREAM_ABILITY, TRADE_PART_ABILITY } from './perms.js';
 
 /** An invite lives this long (as Plan 4's staff invites). */
 export const INVITE_TTL_MS = 24 * 3_600_000;
@@ -334,9 +334,11 @@ export async function setAbilities(
 /**
  * The boxes write (the route's, or a waiting one applied 24 h after a username-and-password session
  * submitted it). Null for a member who is not live. Returns the member's sessions whose live
- * streams must close (the new set no longer sees active trades, review M2).
+ * streams must close (the new set reads no trades part, review M2, or other parts than before, review
+ * trades-list I1).
  */
 async function updateAbilities(c: Queryable, accountId: string, memberId: string, abilities: string[], now: Date): Promise<{ row: MemberRow; sessions: string[] } | null> {
+  const before = await c.query<{ abilities: string[] }>('select abilities from team_members where id = $1 and account_id = $2', [memberId, accountId]);
   const { rows } = await c.query<MemberRow>(
     `update team_members set abilities = $3
       where id = $1 and account_id = $4 and ${LIVE_MEMBER}
@@ -345,7 +347,11 @@ async function updateAbilities(c: Queryable, accountId: string, memberId: string
   );
   const r = rows[0];
   if (!r) return null;
-  const s = hasAbility(abilities, STREAM_ABILITY) ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
+  // A stream carries the parts the boxes allowed when it opened (review trades-list I1): any change
+  // to the trades boxes ends it, and the reconnect takes the new ones (or is refused without either).
+  const parts = (set: readonly string[]) => Object.values(TRADE_PART_ABILITY).map((a) => hasAbility(set, a)).join();
+  const changed = before.rows[0] === undefined || parts(before.rows[0].abilities) !== parts(abilities);
+  const s = !changed && hasAbility(abilities, STREAM_ABILITY) ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
   return { row: r, sessions: s };
 }
 

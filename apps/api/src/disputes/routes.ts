@@ -7,6 +7,7 @@ import { FINISH_OPEN_TRADES } from '../trades/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
+import { assertMemberMay, tradePartAbility } from '../team/perms.js';
 import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow } from '../trades/store.js';
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
@@ -285,6 +286,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
 
   app.get('/v1/trades/:code/dispute', { preHandler: answer }, async (req) => {
     const { row, side } = await participant(req);
+    // Review trades-list I1: besides the disputes box, the part's (open: See active trades; decided and closed: See trade history).
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     const view = await loadView(req.server.deps.db, row, side, req.auth.accountId, req.server.deps.clock());
     if (view === null) throw new ApiError(404, 'not-found');
     return view;
@@ -335,6 +338,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     if (!isText(b.why, APPEAL_MAX) || b.why.trim().length < APPEAL_MIN) throw new ApiError(400, 'bad-request');
     const why = b.why;
     const { row, side } = await participant(req);
+    // Re-verify trades-list m3: besides the appeal box, the box for the trade's part.
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     const deps = req.server.deps;
     try {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {
