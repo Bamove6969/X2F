@@ -218,6 +218,33 @@ describe('the watcher hands each disputed trade to the executor', () => {
       }),
     );
   });
+  it('review M4: a mod-built sweep with no executor record is named by nothing (null), never by the desk or the API', async () => {
+    const { net, fetch } = fakeNetwork(c);
+    const m = await moderation(c, fetch, { rulings: { step: async () => 'none', kindFor: () => null } });
+    const l = await inFunding(c, m, net);
+    await secured(c, l);
+    net.states.set(l.code, 'disputed');
+    // The API (or a stale desk) would call it the seller's cancel refund.
+    net.settleKinds.set(l.code, 'auto-refund');
+    l.party.committed = true;
+    l.party.settles.push({ kind: 'release', to: [{ address: TERMS.buyerPayout, amountAtomic: FUNDS }], builder: 'mod', cosigner: 'buyer' });
+    const tx = '8'.repeat(64);
+    l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic: FUNDS }], ownTxs: [tx] };
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: tx, settleKind: null }]);
+  });
+
+  it("review M5: the executor hands nothing while the desk's armed refund is not blocked; once it is blocked, it pays", async () => {
+    const s = await setup();
+    const p = recordingParty();
+    const exec = executor(s);
+    expect(await exec.step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: null } }))).toBe('desk-armed');
+    expect(p.settles).toEqual([]);
+    expect(s.store.state.executions[s.c.ruling.code]).toBeUndefined();
+    expect(await exec.step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: 'auto-refund-api-disputed' } }))).toBe('handed');
+    expect(p.settles).toHaveLength(1);
+  });
+
   it("reports the ruling's own sweep with the ruling's kind (R-M2): the payout the executor recorded names it, never the API", async () => {
     const { net, fetch } = fakeNetwork(c);
     const m = await moderation(c, fetch, { rulings: { step: async () => 'none', kindFor: () => 'dispute-buyer' } });

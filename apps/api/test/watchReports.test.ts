@@ -508,6 +508,25 @@ describe('a ruling\'s payout reported by the watcher (Plan 4 Task 14, R-M2)', ()
     expect(await loadTrade(deps.db, settling.code)).toMatchObject({ state: 'settling', txHash: null });
   });
 
+  it('review I7: a payout reported for a dispute already closed is refused as dispute-closed and raised to the owner once, not a silent stall', async () => {
+    const owner = (await deps.db.query<{ id: string }>("select id from accounts where kind = 'owner' and disabled_at is null")).rows[0]?.id
+      ?? (await seedAccount(deps, { loginName: 'wrowner7', kind: 'owner' }));
+    const { t, d } = await ruled('release-to-buyer');
+    // A senior closed the case meanwhile (the coins moved anyway).
+    await deps.db.query("update disputes set status = 'closed', closed_at = $2 where code = $1 and seq = $3", [t.code, NOW, d.seq]);
+    const txHash = randomBytes(32).toString('hex');
+    for (let i = 0; i < 2; i++) {
+      const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-buyer' });
+      expect([res.statusCode, res.json()]).toEqual([409, { error: 'dispute-closed' }]);
+    }
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', txHash: null });
+    const alerts = await deps.db.query<{ detail: Record<string, unknown> }>(
+      `select detail from alerts where account_id = $1 and kind = 'ruling-payout-dispute-closed'`,
+      [owner],
+    );
+    expect(alerts.rows.map((r) => r.detail)).toEqual([{ trade: t.code, seq: d.seq, txHash }]);
+  });
+
   it('after an appeal, round 1\'s payout is still recorded against round 1 (Note 2026-10-30 M3); the appeal goes on', async () => {
     const { t, d } = await ruled('release-to-buyer');
     await appealDirect(deps, t.code, 'seller');
