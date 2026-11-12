@@ -128,8 +128,24 @@ describe('startKeyTap', () => {
     );
     expect(rows[0]!.account_id).toBe(id);
     expect(rows[0]!.nonce.length).toBe(16);
-    expect(rows[0]!.intent).toBe(canonicalJson(STOP));
-    expect(options.challenge).toBe(Buffer.from(tapChallenge(STOP, rows[0]!.nonce)).toString('base64url'));
+    // Lead P4 call: an owner registry tap carries the server's start time, signed (issuedAt).
+    const stamped = { ...STOP, issuedAt: T0.toISOString() } as KeyTapIntent;
+    expect(rows[0]!.intent).toBe(canonicalJson(stamped));
+    expect(options.challenge).toBe(Buffer.from(tapChallenge(stamped, rows[0]!.nonce)).toString('base64url'));
+  });
+
+  it('stamps issuedAt only on the registry kinds the moderation gate orders; a client cannot send one (lead P4 call)', async () => {
+    const { id } = await staffWith();
+    const read = async (i: KeyTapIntent) => {
+      const { tapId } = await startKeyTap(deps, id, i);
+      return JSON.parse((await deps.db.query<{ intent: string }>('select intent from key_taps where id = $1', [tapId])).rows[0]!.intent) as Record<string, unknown>;
+    };
+    const acct = '7d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
+    for (const i of [STOP, RESUME, { kind: 'switch-on', accountId: acct, role: 'mod' }, { kind: 'set-role', accountId: acct, role: 'senior' }, { kind: 'remove-staff', accountId: acct }, { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 }] as KeyTapIntent[]) {
+      expect((await read(i)).issuedAt, i.kind).toBe(T0.toISOString());
+    }
+    expect((await read(RULING)).issuedAt).toBeUndefined();
+    expect(() => parseKeyTapIntent({ ...STOP, issuedAt: T0.toISOString() })).toThrow(ApiError);
   });
 
   it('uses a new nonce for every tap, and the database refuses a repeated one', async () => {
@@ -189,7 +205,7 @@ describe('finishKeyTap and consumeKeyTap', () => {
     const { id, key } = await staffWith();
     const tapId = await tapped(id, key, STOP);
     const stored = await consume(tapId, id, STOP);
-    expect(stored).toMatchObject({ id: tapId, accountId: id, credentialId: key.credentialId, intent: canonicalJson(STOP) });
+    expect(stored).toMatchObject({ id: tapId, accountId: id, credentialId: key.credentialId, intent: canonicalJson({ ...STOP, issuedAt: T0.toISOString() } as KeyTapIntent) });
     expect(stored.nonceHex).toMatch(/^[0-9a-f]{32}$/);
     // Exactly what the moderation process re-verifies: the stored response answers the stored challenge.
     const challenge = Buffer.from(tapChallenge(JSON.parse(stored.intent) as KeyTapIntent, Buffer.from(stored.nonceHex, 'hex')));

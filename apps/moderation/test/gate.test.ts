@@ -95,10 +95,12 @@ class FakeApi implements GateSource {
 }
 
 /** A tap as the API stores it: the person's key answered `tapChallenge(intent, nonce)` on the staff origin. */
-function tapBy(p: Person, intent: KeyTapIntent, o: { key?: SoftAuthenticator } = {}): StoredTap {
+/** The registry kinds the API stamps with its start time (lead P4 call); tests stamp them too, at NOW unless told. */
+const STAMPED: readonly string[] = ['create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading'];
+function tapBy(p: Person, intent: KeyTapIntent, o: { key?: SoftAuthenticator; issuedAt?: Date | null } = {}): StoredTap {
   const key = o.key ?? p.key;
   const nonce = randomBytes(16);
-  const norm = intent.kind === 'ruling' ? intent : intent;
+  const norm = (STAMPED.includes(intent.kind) && o.issuedAt !== null && !('issuedAt' in intent) ? { ...intent, issuedAt: (o.issuedAt ?? NOW).toISOString() } : intent) as KeyTapIntent;
   const response = key.authenticate({ challenge: b64url(tapChallenge(norm, nonce)), rpId: RP_ID, allowCredentials: [] }, ORIGIN);
   return { id: randomUUID(), accountId: p.id, credentialId: key.credentialId, intent: canonicalJson(norm), nonceHex: nonce.toString('hex'), response };
 }
@@ -744,6 +746,58 @@ describe('security review 2026-11-12', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// Lead call on review P4 (12 Nov): owner registry taps carry a signed issuedAt (the API's start
+// time); the gate notes when it first saw each switch-off by its own clock, and a switch-on counts
+// only when issued after that, less a 2-minute skew. Taps without issuedAt are refused.
+describe('signed issuedAt (review P4, lead call)', () => {
+  const at = (min: number) => new Date(NOW.getTime() + min * 60_000);
+  const ctxAt = (d: Date): GateContext => ({ ...ctx(), now: () => d });
+
+  it('P4: a switch-on held back past a switch-off the gate saw restores nobody; a later one does', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const old = tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }, { issuedAt: at(0) }); // held back
+    await syncRegistry(w.api, w.gate, ctxAt(at(1)));
+    w.api.staffRows.get(mod.id)!.switchedOff = true;
+    await syncRegistry(w.api, w.gate, ctxAt(at(10)));
+    expect(w.gate.staff[mod.id]!.offSeenAt).toBe(at(10).toISOString());
+    w.api.staffRows.get(mod.id)!.switchedOff = false;
+    w.api.taps.push(old);
+    await syncRegistry(w.api, w.gate, ctxAt(at(11)));
+    const c = ruling(mod);
+    const t = tapBy(mod, c.intent('propose'));
+    expect(await authorizeRuling(w.gate, { ruling: c.ruling, taps: [t], recorded: recorded(1n), balanceAtomic: BALANCE }, ctxAt(at(11)))).toEqual({ ok: false, reason: 'revoked' });
+    // Issued 3 minutes before the switch-off was seen: still too old (2 minutes of skew only).
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }, { issuedAt: at(7) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(12)));
+    expect(await authorizeRuling(w.gate, { ruling: c.ruling, taps: [t], recorded: recorded(1n), balanceAtomic: BALANCE }, ctxAt(at(12)))).toEqual({ ok: false, reason: 'revoked' });
+    // Within the skew, or after: restored.
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }, { issuedAt: at(9) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(13)));
+    expect((await authorizeRuling(w.gate, { ruling: c.ruling, taps: [t], recorded: recorded(1n), balanceAtomic: BALANCE }, ctxAt(at(13)))).ok).toBe(true);
+  });
+
+  it('every owner registry tap without a signed issuedAt is refused', async () => {
+    const w = await world();
+    const inviteId = randomUUID();
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 5000, firstResponseH: 4, appealWindowH: 48 }, { issuedAt: null }));
+    w.api.taps.push(tapBy(w.owner, { kind: 'emergency-stop' }, { issuedAt: null }));
+    w.api.taps.push(tapBy(w.owner, { kind: 'create-invite', inviteId, role: 'mod', tokenHash: 'a'.repeat(64), expiresAt: '2026-11-13T12:00:00.000Z' }, { issuedAt: null }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect({ limit: w.gate.limitUsdCents, stopped: w.gate.stopped, invites: Object.keys(w.gate.invites) }).toEqual({ limit: 100_000n, stopped: false, invites: [] });
+  });
+
+  it('settings and roles: a tap issued before the last applied one for its subject is ignored, whichever owner key made it', async () => {
+    const w = await world();
+    const older = tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 1_000_000, firstResponseH: 4, appealWindowH: 48 }, { key: w.ownerKey2, issuedAt: at(0) });
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 100, firstResponseH: 4, appealWindowH: 48 }, { issuedAt: at(5) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(6)));
+    w.api.taps.push(older);
+    await syncRegistry(w.api, w.gate, ctxAt(at(7)));
+    expect(w.gate.limitUsdCents).toBe(10_000n);
   });
 });
 
