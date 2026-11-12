@@ -74,7 +74,7 @@ test('at 1440x900 the page sits beside a 240 px rail with logo D and is at most 
   const box = (await rail.boundingBox())!;
   expect([box.x, box.width]).toEqual([0, 240]);
   await expect(rail.getByRole('link', { name: 'X2F home' }).locator('svg.x2f-logo')).toBeVisible();
-  await expect(rail.locator('a.x2f-rail__link')).toHaveText(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+  await expect(rail.locator('a.x2f-rail__link')).toHaveText(['Trade', 'My trades', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
   await expect(rail.locator('a[aria-current="page"]')).toHaveText('Trade');
   // The browse header does not repeat the logo beside the rail.
   await expect(page.locator('.x2f-browse__logo')).toBeHidden();

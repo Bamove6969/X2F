@@ -52,7 +52,7 @@ describe('Logo (logo D, docs/brand/svg on wip/design-brief)', () => {
 });
 
 describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards)', () => {
-  it('has the logo as the home link, the page name under it, then the six pages in board order', () => {
+  it('has the logo as the home link, the page name under it, then the pages in board order, with My trades after Trade (not on the boards yet)', () => {
     const host = rail('/sell');
     const nav = host.querySelector('nav[aria-label="Main"].x2f-rail')!;
     // The rail head carries the logo link and the Site news bell beside it (lead default 9 Nov; HEAD's
@@ -62,8 +62,8 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     expect(home.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     expect(nav.querySelector('.x2f-rail__page')!.textContent).toBe('Find a trade');
     const links = [...nav.querySelectorAll('a.x2f-rail__link')];
-    expect(links.map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
-    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/sell', '/post', '/wallets', '/profile', '/settings/security', '/feedback']);
+    expect(links.map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/sell', '/trades', '/post', '/wallets', '/profile', '/settings/security', '/feedback']);
     for (const a of links) expect(a.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     // The words "X2F" never stand in for the mark.
     expect(nav.textContent).not.toContain('X2F');
