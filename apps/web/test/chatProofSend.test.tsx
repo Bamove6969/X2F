@@ -5,7 +5,7 @@
 import { newProofId, type ProofAttachedPayload } from '@x2f/proof';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSnapshot } from '../src/chat/engine.js';
-import { ChatFailed, setChatClient } from '../src/chat/client.js';
+import { ChatFailed, setChatClient, type ChatFailure } from '../src/chat/client.js';
 import { publishPaySnapshot } from '../src/chat/payDetailsFeed.js';
 import { chatProofState, proofCheckOf } from '../src/proof/chatProof.js';
 import { forgetLocalSession } from '../src/push/usePush.js';
@@ -23,14 +23,15 @@ afterEach(() => {
 });
 
 describe('a send that does not go through leaves the state at none (V-I3)', () => {
-  for (const code of ['uncertain', 'refused', 'not-ready', 'bad-proof', 'slow-down', 'too-large', 'unavailable']) {
+  const FAILED: readonly ChatFailure[] = ['uncertain', 'refused', 'not-ready', 'bad-proof', 'slow-down', 'too-large', 'unavailable'];
+  for (const code of FAILED) {
     it(`a ${code} send never marks the trade attached`, async () => {
       vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
       const c = `PR${code.length}A-BBBB-CCCC-${code.slice(0, 4).toUpperCase().padEnd(4, 'X')}`;
       publishPaySnapshot(c, ready([]));
       const p = payload();
       client(async () => {
-        throw new ChatFailed(code as ConstructorParameters<typeof ChatFailed>[0]);
+        throw new ChatFailed(code);
       });
       await expect(postProofToChat(c, p, async () => 'CHATX')).rejects.toThrow();
       expect(proofCheckOf(p.proofId)).toBeUndefined();
@@ -77,6 +78,7 @@ describe('a log-out forgets what this tab sent (V-I1)', () => {
     expect(proofCheckOf(p.proofId)).toBe('ready');
     forgetLocalSession();
     expect(proofCheckOf(p.proofId)).toBeUndefined();
-    expect(chatProofState(c)).toBe('none');
+    // The chat snapshot goes with it (T-I3), so the state waits for the next read: never 'attached'.
+    expect(chatProofState(c)).toBe('unavailable');
   });
 });

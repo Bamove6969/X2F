@@ -24,17 +24,17 @@ const norm = (c: string): string => c.replace(/-/g, '').toUpperCase();
 /** The payment proofs this page sent, by trade (ids only): the chat-receive re-verify, R1 and R2. */
 const sent = new Map<string, Set<string>>();
 
-/**
- * A payment proof this page sent and the chat took (AddProof postProofToChat): checked, since its
- * bytes are this device's own cleaned copy (R1), and counted for its trade even before a snapshot
- * with its line arrives (R2).
- */
 /** A log-out (push/usePush.ts forgetLocalSession): this tab forgets the ids it sent and checked (re-verify V-I1). */
 export function forgetSentProofs(): void {
   sent.clear();
   checks.clear();
 }
 
+/**
+ * A payment proof this page sent and the chat took (AddProof postProofToChat): checked, since its
+ * bytes are this device's own cleaned copy (R1), and counted for its trade even before a snapshot
+ * with its line arrives (R2).
+ */
 export function noteProofSent(code: string, proofId: string): void {
   noteProofChecked(proofId, true);
   const key = norm(code);

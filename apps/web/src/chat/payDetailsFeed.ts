@@ -46,6 +46,11 @@ const latest = new Map<string, PaymentDetail[] | null>();
  */
 const snapshots = new Map<string, ChatSnapshot>();
 
+/** A log-out or an ended session (push/usePush.ts forgetLocalSession): every snapshot goes (T-I3). */
+export function forgetChatSnapshots(): void {
+  snapshots.clear();
+}
+
 /** The newest snapshot of this trade's chat that the feed or an open panel saw, or null. */
 export function latestChatSnapshot(tradeCode: string): ChatSnapshot | null {
   return snapshots.get(norm(tradeCode)) ?? null;
@@ -65,8 +70,14 @@ export function panelPublishing(tradeCode: string): () => void {
     if (released) return;
     released = true;
     const n = (panels.get(key) ?? 1) - 1;
-    if (n <= 0) panels.delete(key);
-    else panels.set(key, n);
+    if (n > 0) {
+      panels.set(key, n);
+      return;
+    }
+    panels.delete(key);
+    // T-I3: the last panel gone and no pay card listening: nothing keeps this snapshot current, and its
+    // proof lines carry their keys, so it goes (a listening card's feed clears it when the card goes).
+    if (!listeners.has(key)) snapshots.delete(key);
   };
 }
 

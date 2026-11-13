@@ -178,8 +178,9 @@ const OUT_RULES: readonly [string, RegExp][] = [
   ['a request body (`body:`)', /\bbody\s*:/],
   ['a shorthand body (`{ body }`)', /[{,]\s*body\s*[,}]/],
   // V-M2: a body set after the object is built (`init.body = …`), never a comparison (`res.body === null`).
-  ['a body assigned (`.body =`)', /\.body\s*=(?!=)/],
-  ['a quoted body (`[\'body\']`, `\'body\':`)', /\[\s*['"`]body['"`]\s*\]|['"`]body['"`]\s*:/],
+  ['a body assigned (`.body =`, `. body =`)', /\.\s*body\s*=(?!=)/],
+  // T-M2: also a quoted body as an argument or an entry (Reflect.set, Object.defineProperty, Object.fromEntries).
+  ['a quoted body (`[\'body\']`, `\'body\':`, `\'body\',`)', /\[\s*['"`]body['"`]\s*\]|['"`]body['"`]\s*[:,\]]/],
   ['a computed key (`{ [k]: … }`)', /[{,]\s*\[[^\]\n]+\]\s*:/],
   ['XMLHttpRequest', /\bXMLHttpRequest\b/],
   ['storage (local/session storage, IndexedDB, caches, cookieStore, document.cookie or document[…])', /\b(localStorage|sessionStorage|indexedDB|caches|cookieStore)\b|\bdocument\s*(\.\s*cookie\b|\[)/],
@@ -188,6 +189,52 @@ const OUT_RULES: readonly [string, RegExp][] = [
 function sendsOut(c: string): string[] {
   return OUT_RULES.filter(([, re]) => re.test(c)).map(([name]) => name);
 }
+
+/**
+ * T-M1 (lead): ChatProof's imports, pinned. The plaintext can only reach what ChatProof imports, so a
+ * new import (a helper that could receive the bytes) fails here and has to be reviewed first.
+ */
+const CHATPROOF_IMPORTS: Readonly<Record<string, readonly string[]>> = {
+  '@x2f/proof': ['PROOF_MAX_CIPHERTEXT', 'ProofAttachedPayload', 'ReceiveDeps', 'decryptProof', 'proofKeyFromBase64'],
+  '../../proof/chatProof.js': ['noteProofChecked'],
+  react: ['useEffect', 'useRef', 'useState'],
+  '../../ui/Notice.js': ['Notice'],
+  './ProofThumb.js': ['PROOF_CHECKING', 'PROOF_REFUSED_BODY', 'PROOF_REFUSED_TITLE', 'ProofThumb'],
+};
+
+/** A file's static imports as { specifier: sorted names }; a side-effect, namespace or default import is named by its form. */
+function importsOf(c: string): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const m of c.matchAll(/^\s*import\s+(?:type\s+)?([^'";]+?)\s+from\s+['"]([^'"]+)['"]|^\s*import\s+['"]([^'"]+)['"]/gm)) {
+    if (m[3] !== undefined) {
+      (out[m[3]] ??= []).push('(side effect)');
+      continue;
+    }
+    const what = m[1]!.trim();
+    const names = what.startsWith('{')
+      ? what.slice(1, -1).split(',').map((n) => n.trim().replace(/^type\s+/, '')).filter(Boolean)
+      : [what.startsWith('*') ? `(namespace ${what})` : `(default ${what})`];
+    (out[m[2]!] ??= []).push(...names);
+  }
+  for (const k of Object.keys(out)) out[k]!.sort();
+  return out;
+}
+
+describe('T-M1: what ChatProof (the one decrypting file) imports is pinned', () => {
+  it('exactly this list: any new import needs review first', () => {
+    const c = code('apps/web/src/screens/proof/ChatProof.tsx');
+    const want = Object.fromEntries(Object.entries(CHATPROOF_IMPORTS).map(([k, v]) => [k, [...v].sort()]));
+    expect(importsOf(c)).toEqual(want);
+    expect(c, 'no dynamic import in ChatProof').not.toMatch(/\bimport\s*\(/);
+    expect(c, 'no require in ChatProof').not.toMatch(/\brequire\s*\(/);
+  });
+
+  it('the pin reads every import form (a new helper, a namespace, a side effect)', () => {
+    expect(importsOf("import { send } from './helper.js';\nimport * as h from './h.js';\nimport './side.js';\nimport d from './d.js';")).toEqual({
+      './helper.js': ['send'], './h.js': ['(namespace * as h)'], './side.js': ['(side effect)'], './d.js': ['(default d)'],
+    });
+  });
+});
 
 describe('the decrypt rules themselves (re-verify V-M1, V-M2)', () => {
   it('V-M1: an aliased import, a .call and a re-export of decryptProof are all gated', () => {
@@ -210,6 +257,16 @@ describe('the decrypt rules themselves (re-verify V-M1, V-M2)', () => {
       "document['cookie'] = text;",
       'document .cookie = text;',
       "await fetch(u, { method: 'POST', body });",
+    ]) expect(sendsOut(snippet), snippet).not.toEqual([]);
+  });
+
+  it('T-M2: Reflect.set, Object.defineProperty and Object.fromEntries with a body, and `. body =`, are caught', () => {
+    for (const snippet of [
+      "Reflect.set(init, 'body', plain);",
+      "Object.defineProperty(init, 'body', { value: plain });",
+      "const init = Object.fromEntries([['method', 'POST'], ['body', plain]]);",
+      'init. body = plain;',
+      'init .body= plain;',
     ]) expect(sendsOut(snippet), snippet).not.toEqual([]);
   });
 

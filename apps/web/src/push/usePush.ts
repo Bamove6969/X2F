@@ -3,6 +3,7 @@ import { api, type ApiInit } from '../api/client.js';
 import { clearFeedbackDraft } from '../screens/feedbackDraft.js';
 import { forgetKeptText } from '../ui/fold.js';
 import { forgetSentProofs } from '../proof/chatProof.js';
+import { forgetChatSnapshots } from '../chat/payDetailsFeed.js';
 
 export type PushStatus = 'unsupported' | 'denied' | 'off' | 'on';
 
@@ -97,12 +98,16 @@ export async function disablePush(env: PushEnv): Promise<PushStatus> {
  */
 export async function logOut(env: PushEnv): Promise<void> {
   try {
-    await disablePush(env);
-  } catch {
-    // best-effort: POST /v1/logout drops this session's subscriptions on the server anyway
+    try {
+      await disablePush(env);
+    } catch {
+      // best-effort: POST /v1/logout drops this session's subscriptions on the server anyway
+    }
+    await env.api('/v1/logout', { method: 'POST' });
+  } finally {
+    // T-I2 (lead): the person asked to log out, so this tab forgets even when the request fails.
+    forgetLocalSession();
   }
-  await env.api('/v1/logout', { method: 'POST' });
-  forgetLocalSession();
 }
 
 /**
@@ -115,8 +120,10 @@ export function forgetLocalSession(): void {
   clearFeedbackDraft();
   // Nor a trade chat draft kept across a fold (Task 40 review M5).
   forgetKeptText();
-  // Nor the proof ids this tab sent or checked (proof-stack re-verify V-I1).
+  // Nor the proof ids this tab sent or checked (proof-stack re-verify V-I1), nor the chat snapshots
+  // whose proof lines carry their keys (T-I3).
   forgetSentProofs();
+  forgetChatSnapshots();
 }
 
 /** Phone alerts on or off for this browser (Security settings and onboarding use it). */
