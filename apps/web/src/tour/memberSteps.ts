@@ -7,9 +7,12 @@
  * A stop shows only when the member's ticked boxes hold its ability ("Shows when"), read from
  * `GET /v1/account/me`.`member.abilities` (`memberTour(abilities)`); `always` stops show to every
  * member. Titles and card texts are design's, word for word (COPY-UNSIGNED, as there).
- * `placement` is where the card sits on the phone: design's arrow side "top" (card below) is
- * `bottom`, "bottom" (card above) is `top`; on wide the engine puts the card to the right, as
- * design's "/ left" says.
+ * The steps are the engine's own types (engine.ts; review 12 Nov, S2), grouped into its pages:
+ * design's arrow side "top" (card below) is `below`, "bottom" (card above) is `above`; on wide the
+ * engine puts the card beside the element, as design's "/ left" says.
+ *
+ * A member gets this tour once per device, the first time they open /sell, instead of the welcome
+ * screen and the trader's first-trade tour (lead, 12 Nov 2026; WelcomeGate.tsx).
  *
  * Design's stops whose screen does not work for a member on main are PENDING_MEMBER_STOPS, each
  * saying what it waits for, and are in no tour until it does: Wallets and Settings → Security are
@@ -17,25 +20,17 @@
  * room needs the Example dispute design ruled for, the extend button and the replay row are not
  * built, and Post an offer's stops are "as V1", which the rebuilt brief no longer has.
  *
- * Routes with `:code` need a trade the member can open: the engine fills it in or skips the step.
- * Every live target renders on its route as a member with that ability (test/memberTourSteps.test.tsx).
+ * The Trade room page needs a trade the member can open: `memberTour` takes its code, and leaves the
+ * page out without one. Every live target renders on its page as a member with that ability
+ * (test/memberTourSteps.test.tsx).
  */
 
-/** One step, as the tour engine takes it (wip/lead-landing-tour). */
-export interface TourStep {
-  /** The path the step is shown on; `:code` is a trade code the engine fills in. */
-  route: string;
-  /** A CSS selector for the element the step points at. */
-  target: string;
-  title: string;
-  explanation: string;
-  /** Where the card sits relative to the element on the phone. */
-  placement: 'top' | 'bottom' | 'left' | 'right' | 'center';
-}
+import type { TourDef, TourPage, TourStep } from './engine.js';
 
-/** A live stop and the ability that shows it (`always`: every member). */
+/** A live stop, the ability that shows it (`always`: every member), and its page. */
 export interface MemberStop {
   shows: string;
+  page: MemberPageId;
   step: TourStep;
 }
 
@@ -48,33 +43,45 @@ export interface PendingMemberStop {
   waitsFor: string;
 }
 
-const stop = (shows: string, route: string, target: string, title: string, explanation: string, placement: TourStep['placement']): MemberStop => ({
+type MemberPageId = 'find' | 'offers' | 'trade' | 'changes' | 'feedback';
+
+/** The pages, in design's order, with their screens; the Trade room's path takes the trade's code. COPY-UNSIGNED: the names. */
+const PAGES: readonly { id: MemberPageId; name: string; path: (code: string | null) => string | null }[] = [
+  { id: 'find', name: 'Find a trade', path: () => '/buy' },
+  { id: 'offers', name: 'My offers', path: () => '/profile/offers' },
+  { id: 'trade', name: 'Trade room', path: (code) => (code === null ? null : `/trade/${code}`) },
+  { id: 'changes', name: 'Account changes', path: () => '/settings/changes' },
+  { id: 'feedback', name: 'Feedback', path: () => '/feedback' },
+];
+
+const stop = (shows: string, page: MemberPageId, id: string, target: string, title: string, body: string, placement: TourStep['placement']): MemberStop => ({
   shows,
-  step: { route, target, title, explanation, placement },
+  page,
+  step: { id, target, title, body, placement },
 });
 
 /** Design §4, in page order: Find a trade, My offers, Trade room, Account changes, Feedback. */
 export const MEMBER_STOPS: readonly MemberStop[] = [
-  stop('always', '/buy', '.x2f-browse__brand', 'Whose account this is', "You're working in this vendor's account under your own login. Everything you do goes in the team log.", 'bottom'),
-  stop('always', '/buy', '.x2f-segment', 'Browse offers', 'See offers to buy or sell, just like any trader.', 'bottom'),
-  stop('always', '/buy', 'nav[aria-label="Main"]', 'Your tabs', 'You only see the tabs your access covers. Ask the account owner if you need more.', 'top'),
+  stop('always', 'find', 'whose', '.x2f-browse__brand', 'Whose account this is', "You're working in this vendor's account under your own login. Everything you do goes in the team log.", 'below'),
+  stop('always', 'find', 'browse', '.x2f-segment', 'Browse offers', 'See offers to buy or sell, just like any trader.', 'below'),
+  stop('always', 'find', 'tabs', 'nav[aria-label="Main"]', 'Your tabs', 'You only see the tabs your access covers. Ask the account owner if you need more.', 'above'),
 
-  stop('offers-see', '/profile/offers', '[data-part="offer"]', "The account's offers", 'Every offer on this account, and whether each is on or off.', 'bottom'),
-  stop('offers-pause', '/profile/offers', '[data-part="switch"]', 'On or off', 'Turn offers off and back on when the team needs to.', 'bottom'),
-  stop('offers-delete', '/profile/offers', '[data-part="select"]', 'Tidy up', 'Select an offer to remove it for good.', 'bottom'),
-  stop('offers-post', '/profile/offers', '[data-part="post"]', 'Post an offer', 'Start a new offer for the account, within its 3 buy and 3 sell.', 'top'),
+  stop('offers-see', 'offers', 'offers-see', '[data-part="offer"]', "The account's offers", 'Every offer on this account, and whether each is on or off.', 'below'),
+  stop('offers-pause', 'offers', 'offers-pause', '[data-part="switch"]', 'On or off', 'Turn offers off and back on when the team needs to.', 'below'),
+  stop('offers-delete', 'offers', 'offers-delete', '[data-part="select"]', 'Tidy up', 'Select an offer to remove it for good.', 'below'),
+  stop('offers-post', 'offers', 'offers-post', '[data-part="post"]', 'Post an offer', 'Start a new offer for the account, within its 3 buy and 3 sell.', 'above'),
 
-  stop('trades-see-active', '/trade/:code', '[data-part="member-waiting"]', 'Following a trade', "Watch each step here. Anything that moves the XMR is done on the owner's device.", 'bottom'),
-  stop('disputes-answer', '/trade/:code', '[data-part="member-dispute"]', 'If it goes wrong', 'If a trade party opens a dispute, you can follow it and answer the moderator.', 'top'),
+  stop('trades-see-active', 'trade', 'trades-see-active', '[data-part="member-waiting"]', 'Following a trade', "Watch each step here. Anything that moves the XMR is done on the owner's device.", 'below'),
+  stop('disputes-answer', 'trade', 'disputes-answer', '[data-part="member-dispute"]', 'If it goes wrong', 'If a trade party opens a dispute, you can follow it and answer the moderator.', 'above'),
 
   // Design names `[data-part="account-changes"]`; while a hold is on, the list a member sees is `changes-waiting`.
-  stop('hold-see', '/settings/changes', '[data-part="changes-waiting"]', 'Waiting changes', 'Changes to the account wait 24 hours before they apply, for safety.', 'bottom'),
+  stop('hold-see', 'changes', 'hold-see', '[data-part="changes-waiting"]', 'Waiting changes', 'Changes to the account wait 24 hours before they apply, for safety.', 'below'),
   // Design: "Cancel a change"; the member's cancel is Cancel all changes (and unticking one).
-  stop('hold-cancel', '/settings/changes', '[data-part="waiting-cancel-all"]', 'Stop a change', 'If a change looks wrong, cancel it before it applies.', 'top'),
-  stop('hold-end', '/settings/changes', '[data-part="waiting-approve"]', 'Apply it now', "Skip the wait when you're sure the change is right.", 'top'),
+  stop('hold-cancel', 'changes', 'hold-cancel', '[data-part="waiting-cancel-all"]', 'Stop a change', 'If a change looks wrong, cancel it before it applies.', 'above'),
+  stop('hold-end', 'changes', 'hold-end', '[data-part="waiting-approve"]', 'Apply it now', "Skip the wait when you're sure the change is right.", 'above'),
 
   // Design: the message field and `feedback-sent-as`; the sent-as line shows only after sending.
-  stop('feedback-send', '/feedback', 'textarea.x2f-input--message', "Tell us how it's going", "Send X2F your thoughts. It goes with your own name, not the account's.", 'bottom'),
+  stop('feedback-send', 'feedback', 'feedback-send', 'textarea.x2f-input--message', "Tell us how it's going", "Send X2F your thoughts. It goes with your own name, not the account's.", 'below'),
 ];
 
 /**
@@ -88,10 +95,24 @@ function effective(abilities: readonly string[]): Set<string> {
   return has;
 }
 
-/** The tour for one member's ticked boxes (`me.member.abilities`). */
-export function memberTour(abilities: readonly string[]): TourStep[] {
+/** COPY-UNSIGNED: the tour's name for screen readers, and the line after Skip (members have no Settings › Help to replay it from yet). */
+export const MEMBER_TOUR_LABEL = 'Team member tour';
+export const MEMBER_TOUR_CLOSED = 'Tour closed.';
+
+/**
+ * The tour for one member's ticked boxes (`me.member.abilities`), as the engine runs it. `code` is a
+ * trade the member can open, for the Trade room page; without one that page is left out.
+ */
+export function memberTour(abilities: readonly string[], code: string | null = null): TourDef {
   const has = effective(abilities);
-  return MEMBER_STOPS.filter((s) => s.shows === 'always' || has.has(s.shows)).map((s) => s.step);
+  const shown = MEMBER_STOPS.filter((s) => s.shows === 'always' || has.has(s.shows));
+  const pages: TourPage[] = [];
+  for (const p of PAGES) {
+    const path = p.path(code);
+    const steps = shown.filter((s) => s.page === p.id).map((s) => s.step);
+    if (path !== null && steps.length > 0) pages.push({ id: p.id, name: p.name, path, steps });
+  }
+  return { id: 'member', flow: 'screens', label: MEMBER_TOUR_LABEL, pages, closed: MEMBER_TOUR_CLOSED };
 }
 
 export const PENDING_MEMBER_STOPS: readonly PendingMemberStop[] = [

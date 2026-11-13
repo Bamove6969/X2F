@@ -41,3 +41,13 @@ export function accountTypeOf(session: Session): 'trader' | 'vendor' | null {
   const t = (session.me as { accountType?: unknown }).accountType;
   return t === 'trader' || t === 'vendor' ? t : null;
 }
+
+/**
+ * The boxes the account owner ticked for this member (`GET /v1/account/me`.`member.abilities`),
+ * for the member tour (tour/memberSteps.ts); [] for anyone else or an older API.
+ */
+export function memberAbilities(session: Session): string[] {
+  if (memberOf(session) === null || session.status !== 'signed-in') return [];
+  const a = ((session.me as { member?: { abilities?: unknown } }).member ?? {}).abilities;
+  return Array.isArray(a) ? a.filter((x): x is string => typeof x === 'string') : [];
+}

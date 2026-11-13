@@ -132,13 +132,13 @@ export function TourProvider({ children }: { children: ReactNode }) {
       {children}
       {/* While a Sheet is open the tour draws nothing and takes no keys: the Sheet is the person's (T1). */}
       {run !== null && !sheetOpen ? createPortal(<TourOverlay run={run} onNext={next} onBack={back} onSkip={skip} />, document.body) : null}
-      {closed !== null && run === null ? createPortal(<ClosedLine onRestart={() => start(closed)} onGone={() => setClosed(null)} />, document.body) : null}
+      {closed !== null && run === null ? createPortal(<ClosedLine text={closed.closed ?? TOUR_LABELS.closed} onRestart={() => start(closed)} onGone={() => setClosed(null)} />, document.body) : null}
     </TourContext.Provider>
   );
 }
 
 /** "Tour closed" with Restart, for 6 s or until the next tap elsewhere (tour-stops.md §1). */
-function ClosedLine({ onRestart, onGone }: { onRestart: () => void; onGone: () => void }) {
+function ClosedLine({ text, onRestart, onGone }: { text: string; onRestart: () => void; onGone: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const id = setTimeout(onGone, 6000);
@@ -153,7 +153,7 @@ function ClosedLine({ onRestart, onGone }: { onRestart: () => void; onGone: () =
   }, [onGone]);
   return (
     <div ref={ref} className="x2f-tour-closed" role="status" data-part="tour-closed">
-      <span>{TOUR_LABELS.closed}</span>
+      <span>{text}</span>
       <button type="button" className="x2f-tour-closed__restart" onClick={onRestart}>
         {TOUR_LABELS.restart}
       </button>

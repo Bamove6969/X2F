@@ -77,6 +77,8 @@ export interface TourDef {
   readonly pages: readonly TourPage[];
   /** Where Done / Finish leaves the person (story: Find a trade). */
   readonly endPath?: string;
+  /** The line after Skip tour, when this tour's differs from TOUR_LABELS.closed (the member tour has no Settings › Help to replay from yet). */
+  readonly closed?: string;
 }
 
 export interface TourPos {
