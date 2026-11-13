@@ -15,12 +15,13 @@
  * (WelcomeGate); either choice marks it seen on this device (tour/welcomeSeen.ts). Settings keeps a
  * way back. DESIGNER-REVIEW: design to check against the FirstScreen board.
  */
-import { Link, useNavigate } from 'react-router';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router';
+import { memberOf } from '../../session/member.js';
+import { useSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { FIRST_TRADE_TOUR } from '../../tour/firstTradeTour.js';
 import { useTour } from '../../tour/TourProvider.js';
 import { markWelcomeSeen } from '../../tour/welcomeSeen.js';
-import { HELP_PATH } from './Help.js';
 import { X2FMark } from './X2FMark.js';
 import './welcome.css';
 
@@ -33,12 +34,14 @@ export const WELCOME_COPY = {
   line: 'Swap Monero for cash, bank transfers or gift cards, person to person.',
   tour: 'Take the tour',
   skip: 'Skip and get started',
+  // The one help page, /help/:topic, as /login's help links (review 12 Nov, L3; the pages are on
+  // wip/lead-owner-layout-1): each says the way on for someone signed in (Support to Feedback,
+  // Settings to Security).
   links: [
-    { label: 'FAQ', to: `${HELP_PATH}#faq` },
-    { label: 'Getting started', to: `${HELP_PATH}#getting-started` },
-    // No Support screen yet: Feedback is the one way to reach staff (as the wide rail's Help).
-    { label: 'Support', to: '/feedback' },
-    { label: 'Settings', to: '/settings/security' },
+    { label: 'FAQ', to: '/help/faq' },
+    { label: 'Getting started', to: '/help/getting-started' },
+    { label: 'Support', to: '/help/support' },
+    { label: 'Settings', to: '/help/settings' },
   ],
   linksLabel: 'Help and settings',
 } as const;
@@ -46,6 +49,9 @@ export const WELCOME_COPY = {
 export function WelcomeScreen() {
   const navigate = useNavigate();
   const tour = useTour();
+  const { search } = useLocation();
+  // Lead, 12 Nov 2026: a team member's way in is the member tour, never this screen.
+  if (memberOf(useSession()) !== null) return <Navigate to="/sell" replace />;
   return (
     <main className="x2f-hello" data-screen="welcome">
       <div className="x2f-hello__col">
@@ -72,7 +78,8 @@ export function WelcomeScreen() {
             className="x2f-hello__skip"
             onClick={() => {
               markWelcomeSeen();
-              void navigate('/sell');
+              // The query /sell came with, through the gate (review 12 Nov, T3).
+              void navigate(`/sell${search}`);
             }}
           >
             {WELCOME_COPY.skip}

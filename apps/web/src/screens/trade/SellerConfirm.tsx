@@ -16,6 +16,7 @@ import { GiftCardEvidence } from '../giftcard/GiftCardRules.js';
 import { formatDate as utcDate, formatDateTime as utcDateTime } from '../../ui/dates.js';
 import { ESCROW_STOPPED, amounts, publicName, firstPerson, profileCopy, refusalCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
+import { RELEASE_IS_FINAL } from './escrowCopy.js';
 
 /**
  * SellerConfirm (board SellerConfirm.dc.html; spec 2.2 steps 8-9): the buyer has marked paid; the
@@ -245,8 +246,7 @@ export function SellerConfirm({
             ? null
             : notReleasable
               ? 'The XMR in escrow needs more confirmations before it can be released.'
-              // not-a-refusal: explains that a release is final
-              : 'Press and hold for 1.5 seconds. Once released, the XMR can’t be taken back.';
+              : RELEASE_IS_FINAL;
   const fiat = sums?.fiat ?? 'the payment';
 
   return (

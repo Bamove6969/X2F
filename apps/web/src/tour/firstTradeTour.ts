@@ -7,8 +7,14 @@
  * COPY-UNSIGNED: the 17 card texts are design's, used exactly as written (tour-stops.md §2, "must be
  * used exactly as written"). Do not edit them here; change them on the design branch first.
  */
+import { lazy } from 'react';
 import type { TourDef, TourStep } from './engine.js';
-import { FirstTradeStage } from './FirstTradeStage.js';
+
+/**
+ * The example screens load on their own chunk, the first time a tour shows them (review 12 Nov, B1):
+ * the app's first load carries none of the pretend trade. TourProvider waits for it (Suspense).
+ */
+const FirstTradeStage = lazy(() => import('./FirstTradeStage.js').then((m) => ({ default: m.FirstTradeStage })));
 
 const t = (sel: string) => `[data-part="tour-stage"] [data-tour="${sel}"]`;
 

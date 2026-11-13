@@ -1,7 +1,7 @@
 /**
  * The first-trade tour's example screens (design, wip/design-brief b3b8315b: tour-stops.md §2 and
  * tour-motion.md §4-5, after tour-art/x2f-intro-prototype.html): Find a trade, Offers, Quote, Fund,
- * Check and release, Released, all on the one pretend trade (market $329.90; satoshi_ghost pays 2%
+ * Check and release, Released, all on the one pretend trade (market $329.90; example_seller pays 2%
  * above it, $336.50, and takes $50 to $1,000; 0.594354 XMR for $200.00 by Cash App, trade
  * K7M2-9QXA-4FTR-8WPN). Every screen after Find a trade carries the Example chip (head designer's
  * ruling, 12 Nov); Find a trade says its counts and rates are examples.
@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react';
 import { Icon } from '../ui/icons.js';
 import { Logo } from '../ui/Logo.js';
+import { ONE_KEY_ALONE, RELEASE_IS_FINAL } from '../screens/trade/escrowCopy.js';
 import type { TourStageProps } from './engine.js';
 import './stage.css';
 
@@ -51,11 +52,11 @@ function Who({ sub }: { sub: string }) {
   return (
     <div className="x2f-ex__who">
       <span className="x2f-ex__avatar" data-online="true" aria-hidden="true">
-        SG
+        ES
       </span>
       <span className="x2f-ex__name">
         <span>
-          satoshi_ghost <span className="x2f-ex__vendor">Vendor</span>
+          example_seller <span className="x2f-ex__vendor">Vendor</span>
         </span>
         <small>{sub}</small>
       </span>
@@ -245,7 +246,7 @@ function Quote({ stop, acted, reduced }: TourStageProps) {
         <span className="x2f-ex__meta">
           Cash App · USD · $336.50 / XMR · <Example />
         </span>
-        <h1 className="x2f-ex__h1">Selling to satoshi_ghost</h1>
+        <h1 className="x2f-ex__h1">Selling to example_seller</h1>
       </header>
       <section className="x2f-ex__card">
         <Who sub="1,284 trades · 99.4% positive" />
@@ -256,14 +257,14 @@ function Quote({ stop, acted, reduced }: TourStageProps) {
           <span className="x2f-ex__mono">{typed === '' ? <span className="x2f-ex__ph">0.000000</span> : typed}</span>
           <span>XMR</span>
         </span>
-        <span className="x2f-ex__muted">satoshi_ghost buys $50 to $1,000 per trade.</span>
+        <span className="x2f-ex__muted">example_seller buys $50 to $1,000 per trade.</span>
       </section>
       <section className="x2f-ex__wash" data-tour="receive">
         <span className="x2f-ex__cap">You receive</span>
         <span className="x2f-ex__big">
           {usd(typed)} <small>USD</small>
         </span>
-        <span className="x2f-ex__muted">Paid by satoshi_ghost via Cash App</span>
+        <span className="x2f-ex__muted">Paid by example_seller via Cash App</span>
         <dl className="x2f-ex__dl">
           <div>
             <dt>Rate</dt>
@@ -280,10 +281,10 @@ function Quote({ stop, acted, reduced }: TourStageProps) {
         </dl>
       </section>
       <footer className="x2f-ex__foot" data-tour="request">
-        <span className="x2f-ex__button" data-tour="request-button" data-state={started ? 'ok' : requested ? 'sent' : 'idle'}>
+        <span className="x2f-button x2f-button--primary x2f-ex__button" data-tour="request-button" data-state={started ? 'ok' : requested ? 'sent' : 'idle'}>
           {started ? 'Trade started' : requested ? 'Request sent' : 'Request to sell XMR'}
         </span>
-        <span className="x2f-ex__muted">{started ? 'satoshi_ghost accepted. The trade has started.' : 'Next, you lock the XMR in escrow.'}</span>
+        <span className="x2f-ex__muted">{started ? 'example_seller accepted. The trade has started.' : 'Next, you lock the XMR in escrow.'}</span>
       </footer>
     </>
   );
@@ -307,7 +308,7 @@ function TradeHead() {
       <span className="x2f-ex__meta">
         Trade K7M2-9QXA-4FTR-8WPN · Cash App · <Example />
       </span>
-      <h1 className="x2f-ex__h1">Selling to satoshi_ghost</h1>
+      <h1 className="x2f-ex__h1">Selling to example_seller</h1>
     </header>
   );
 }
@@ -329,9 +330,9 @@ function Fund({ stop, acted }: TourStageProps) {
             <span className="x2f-ex__big">
               0.594354 <small>XMR</small>
             </span>
-            {/* not-a-refusal: an escrow fact on an example screen */}
-            <span className="x2f-ex__muted">3 keys, any 2 release it. One key alone can't move anything.</span>
-            <h2 className="x2f-ex__h2">satoshi_ghost has been told to pay you.</h2>
+            {/* The Fund screen's own line (escrowCopy.ts). */}
+            <span className="x2f-ex__muted">3 keys, any 2 release it. {ONE_KEY_ALONE}</span>
+            <h2 className="x2f-ex__h2">example_seller has been told to pay you.</h2>
             <p className="x2f-ex__muted">$200.00 by Cash App, within 30 min.</p>
           </div>
         ) : (
@@ -341,7 +342,7 @@ function Fund({ stop, acted }: TourStageProps) {
               29 <small>min</small> 42 <small>s</small>
             </span>
             <span className="x2f-ex__muted">You have 30 min to fund. If it runs out, the trade is cancelled.</span>
-            <h2 className="x2f-ex__h2">Trade started with satoshi_ghost. Fund the escrow to lock the trade.</h2>
+            <h2 className="x2f-ex__h2">Trade started with example_seller. Fund the escrow to lock the trade.</h2>
             <p className="x2f-ex__muted">Once funded, neither of you can take the XMR alone.</p>
           </div>
         )}
@@ -387,13 +388,13 @@ function Check({ stop, acted, reduced }: TourStageProps) {
         {paid ? (
           <div className="x2f-ex__swap" key="paid">
             <span className="x2f-ex__status">Payment sent</span>
-            <h2 className="x2f-ex__h2">satoshi_ghost marked this trade paid.</h2>
-            <p className="x2f-ex__muted">Check your Cash App for $200.00 from satoshi_ghost.</p>
+            <h2 className="x2f-ex__h2">example_seller marked this trade paid.</h2>
+            <p className="x2f-ex__muted">Check your Cash App for $200.00 from example_seller.</p>
           </div>
         ) : (
           <div className="x2f-ex__swap" key="waiting">
             <span className="x2f-ex__status">Locked in escrow</span>
-            <h2 className="x2f-ex__h2">Waiting for satoshi_ghost to pay</h2>
+            <h2 className="x2f-ex__h2">Waiting for example_seller to pay</h2>
             <p className="x2f-ex__muted">$200.00 by Cash App. You'll get an alert when they tap I've paid.</p>
           </div>
         )}
@@ -409,12 +410,12 @@ function Check({ stop, acted, reduced }: TourStageProps) {
         </span>
       </section>
       <footer className="x2f-ex__foot" data-tour="release">
-        <span className="x2f-ex__hold" data-ready={paid ? 'true' : 'false'} data-holding={holding && !released ? 'true' : 'false'} data-done={released ? 'true' : 'false'}>
+        <span className="x2f-hold x2f-ex__hold" data-ready={paid ? 'true' : 'false'} data-holding={holding && !released ? 'true' : 'false'} data-done={released ? 'true' : 'false'}>
           <i className="x2f-ex__fill" aria-hidden="true" />
-          <span>{released ? 'Released 0.594354 XMR to satoshi_ghost' : holding ? 'Keep holding…' : 'Hold to release 0.594354 XMR'}</span>
+          <span>{released ? 'Released 0.594354 XMR to example_seller' : holding ? 'Keep holding…' : 'Hold to release 0.594354 XMR'}</span>
         </span>
-        {/* not-a-refusal: the release note on an example screen */}
-        <span className="x2f-ex__muted">Press and hold for 1.5 s. Once released, the XMR can't be taken back.</span>
+        {/* Check and release's own line (escrowCopy.ts). */}
+        <span className="x2f-ex__muted">{RELEASE_IS_FINAL}</span>
       </footer>
     </>
   );
@@ -429,15 +430,15 @@ function Released() {
         <span className="x2f-ex__big">
           $200.00 <small>USD</small>
         </span>
-        <span className="x2f-ex__muted">received by Cash App. 0.594354 XMR released to satoshi_ghost.</span>
+        <span className="x2f-ex__muted">received by Cash App. 0.594354 XMR released to example_seller.</span>
       </section>
       <section className="x2f-ex__card">
         <Who sub="Buyer · 1,284 trades" />
-        <h2 className="x2f-ex__h2">How was trading with satoshi_ghost?</h2>
+        <h2 className="x2f-ex__h2">How was trading with example_seller?</h2>
         <span className="x2f-ex__stars" aria-hidden="true">
           ☆☆☆☆☆
         </span>
-        <span className="x2f-ex__muted">Your review shows on satoshi_ghost's profile straight away.</span>
+        <span className="x2f-ex__muted">Your review shows on example_seller's profile straight away.</span>
       </section>
     </>
   );

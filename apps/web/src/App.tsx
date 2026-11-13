@@ -55,7 +55,6 @@ import { DesktopRail, WideTop, wideFrameOf } from './ui/DesktopShell.js';
 import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
 import './styles/fold.css';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
-import { Help, HELP_PATH } from './screens/welcome/Help.js';
 import { WelcomeGate } from './screens/welcome/WelcomeGate.js';
 import { WelcomeScreen } from './screens/welcome/WelcomeScreen.js';
 import { TourProvider } from './tour/TourProvider.js';
@@ -237,7 +236,6 @@ export function App() {
             {/* Owner, 12 Nov 2026 (demo note #47): a device's first visit sees the welcome screen before /sell. */}
             <Route path="/sell" element={<WelcomeGate><MethodList side="sell" copy={SELL_COPY} /></WelcomeGate>} />
             <Route path={WELCOME_PATH} element={<WelcomeScreen />} />
-            <Route path={HELP_PATH} element={<Help />} />
             <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
             <Route path="/profile/offers" element={<MyOffers />} />
           </Route>

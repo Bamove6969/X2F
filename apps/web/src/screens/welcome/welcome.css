@@ -1,4 +1,4 @@
-/* The welcome screen (WelcomeScreen.tsx, X2FMark.tsx) and /help, after design's FirstScreen board and
+/* The welcome screen (WelcomeScreen.tsx, X2FMark.tsx), after design's FirstScreen board and
    tour-motion.md §2 (wip/design-brief b3b8315b). DESIGNER-REVIEW. */
 .x2f-hello {
   box-sizing: border-box;
@@ -64,7 +64,8 @@
   width: 10.4%;
   aspect-ratio: 1;
   border-radius: 50%;
-  border: 2px solid var(--x2f-monero);
+  /* Ink: orange is the dot's alone (x2f-logo__dot), the kit's rule. DESIGNER-REVIEW. */
+  border: 2px solid var(--x2f-ink);
   opacity: 0;
   pointer-events: none;
 }
@@ -168,12 +169,4 @@
   to {
     opacity: 1;
   }
-}
-.x2f-help__section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.x2f-help__section p {
-  margin: 0;
 }

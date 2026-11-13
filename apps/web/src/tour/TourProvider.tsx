@@ -6,7 +6,7 @@
  * `TourProvider` sits inside the router around the whole app. `useTour().start(tour)` draws, over
  * the app (which is inert while the tour runs):
  * - an example stage when the page has one (the first-trade tour's pretend screens);
- * - the scrim (`tour-overlay`): an SVG mask with a hole cut 6 px round the target, radius 14, and
+ * - the scrim (`tour-overlay`): an even-odd SVG path with a hole cut 6 px round the target, radius 14, and
  *   its ring (`tour-ring`), 2 px ink. The hole fades out (90 ms) and back in (120 ms) between stops,
  *   tweens when it moves within a stop, and on stop 1 alternates between targets with a breathing ring;
  * - the arrow (`tour-arrow`): one curved stroke, 2.5 px ink, its end aimed straight at the target,
@@ -17,13 +17,14 @@
  * Keys: → and Enter Next, ← Back, Esc Skip tour; focus stays in the card. Skip shows "Tour closed"
  * with Restart for 6 s. The stop reached is kept on this device until the tour is finished, so the
  * Settings row can read "Carry on the tour". prefers-reduced-motion: parts swap with fades only.
+ * While a Sheet is open (a session prompt), the tour waits out of the way (review 12 Nov, T1).
  *
  * CSS, SVG and the Web Animations API only; no runtime dependency. No 3D or illustration layer (the
  * owner rejected the isometric style on 12 Nov).
  *
  * DESIGNER-REVIEW: built from design's spec and prototype; design to check it against the boards.
  */
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, createContext, useId, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { TOUR_LABELS, backPos, indexOf, nextLabel, nextPos, posOf, progressOf, resolvePath, stepAt, type TourDef, type TourPos, type TourStep } from './engine.js';
@@ -45,10 +46,31 @@ export function useTour(): TourApi {
 
 type Run = { tour: TourDef; pos: TourPos; visited: Record<number, string> };
 
+/** A Sheet (ui/Sheet.tsx) open on the page: it portals its layer straight into <body>. */
+const SHEET_LAYER = 'body > .x2f-sheet-layer';
+
+/**
+ * Whether a Sheet is open. Review 12 Nov, T1: "Stay logged in?" (SessionPrompt), the idle reminder
+ * and any other Sheet that opens while a tour runs must not sit under the scrim or lose the keyboard
+ * to the card, so the tour waits while one is open and carries on at the same stop when it closes.
+ */
+function useSheetOpen(): boolean {
+  const [open, setOpen] = useState(() => document.querySelector(SHEET_LAYER) !== null);
+  useEffect(() => {
+    const check = () => setOpen(document.querySelector(SHEET_LAYER) !== null);
+    check();
+    const watch = new MutationObserver(check);
+    watch.observe(document.body, { childList: true });
+    return () => watch.disconnect();
+  }, []);
+  return open;
+}
+
 export function TourProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [run, setRun] = useState<Run | null>(null);
   const [closed, setClosed] = useState<TourDef | null>(null);
+  const sheetOpen = useSheetOpen();
 
   /** Moves to `to`, going to its page's screen first when the page changes. */
   const go = useCallback(
@@ -108,7 +130,8 @@ export function TourProvider({ children }: { children: ReactNode }) {
   return (
     <TourContext.Provider value={api}>
       {children}
-      {run !== null ? createPortal(<TourOverlay run={run} onNext={next} onBack={back} onSkip={skip} />, document.body) : null}
+      {/* While a Sheet is open the tour draws nothing and takes no keys: the Sheet is the person's (T1). */}
+      {run !== null && !sheetOpen ? createPortal(<TourOverlay run={run} onNext={next} onBack={back} onSkip={skip} />, document.body) : null}
       {closed !== null && run === null ? createPortal(<ClosedLine onRestart={() => start(closed)} onGone={() => setClosed(null)} />, document.body) : null}
     </TourContext.Provider>
   );
@@ -235,7 +258,6 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
   const cardRef = useRef<HTMLElement | null>(null);
   const nextRef = useRef<HTMLButtonElement | null>(null);
   const keyboard = useRef(false);
-  const maskId = useId();
   const bodyId = useId();
   const titleId = useId();
 
@@ -390,7 +412,9 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
       <div className="x2f-tour" data-part="tour" data-tour={tour.id} data-motion={motion}>
         {Stage ? (
           <div className="x2f-ex" data-part="tour-stage">
-            <Stage stop={stop} acted={false} reduced={reduced} />
+            <Suspense fallback={null}>
+              <Stage stop={stop} acted={false} reduced={reduced} />
+            </Suspense>
           </div>
         ) : null}
         <div className="x2f-tour__catch" aria-hidden="true" />
@@ -446,21 +470,21 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
     <div className="x2f-tour" data-part="tour" data-tour={tour.id} data-motion={motion} data-phase={phase}>
       {Stage ? (
         <div className="x2f-ex" data-part="tour-stage" data-side={side ? 'true' : 'false'}>
-          <Stage stop={stop} acted={stageActed} reduced={reduced} />
+          <Suspense fallback={null}>
+            <Stage stop={stop} acted={stageActed} reduced={reduced} />
+          </Suspense>
         </div>
       ) : null}
       {/* Taps behind the scrim do nothing (the app is inert too). */}
       <div className="x2f-tour__catch" aria-hidden="true" />
       <svg className="x2f-tour__scrim" data-part="tour-overlay" aria-hidden="true" width={vw} height={vh} viewBox={`0 0 ${vw} ${vh}`}>
-        <defs>
-          <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width={vw} height={vh}>
-            <rect x="0" y="0" width={vw} height={vh} fill="white" />
-            {hole !== null ? (
-              <rect key={`hole-${shownKey}-${alt}`} className="x2f-tour__hole" data-phase={phase} rx="14" fill="black" style={{ x: hole.x, y: hole.y, width: hole.w, height: hole.h }} />
-            ) : null}
-          </mask>
-        </defs>
-        <rect className="x2f-tour__dim" x="0" y="0" width={vw} height={vh} mask={`url(#${maskId})`} />
+        {/* The dim with the hole cut out: one even-odd path (the screen, then the rounded hole), so no
+            SVG mask and no url() reference (review 12 Nov, B2: the proof tripwire allows none). */}
+        <path className="x2f-tour__dim" data-part="tour-dim" fillRule="evenodd" d={`M0 0H${vw}V${vh}H0Z${hole !== null ? roundedRect(hole, 14) : ''}`} />
+        {/* The hole fades out and back in between stops: a dim patch over it, the inverse fade. */}
+        {hole !== null ? (
+          <rect key={`hole-${shownKey}-${alt}`} className="x2f-tour__hole" data-phase={phase} rx="14" style={{ x: hole.x, y: hole.y, width: hole.w, height: hole.h }} />
+        ) : null}
         {hole !== null ? (
           <rect
             key={`ring-${shownKey}-${alt}`}
@@ -532,6 +556,18 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
         </div>
       </section>
     </div>
+  );
+}
+
+/** A closed rounded rectangle as path commands (clockwise), the radius cut to fit. */
+function roundedRect(r: Rect, radius: number): string {
+  const k = Math.max(0, Math.min(radius, r.w / 2, r.h / 2));
+  const f = (n: number) => n.toFixed(1);
+  const { x, y, w, h } = r;
+  return (
+    `M${f(x + k)} ${f(y)}H${f(x + w - k)}A${f(k)} ${f(k)} 0 0 1 ${f(x + w)} ${f(y + k)}V${f(y + h - k)}` +
+    `A${f(k)} ${f(k)} 0 0 1 ${f(x + w - k)} ${f(y + h)}H${f(x + k)}A${f(k)} ${f(k)} 0 0 1 ${f(x)} ${f(y + h - k)}` +
+    `V${f(y + k)}A${f(k)} ${f(k)} 0 0 1 ${f(x + k)} ${f(y)}Z`
   );
 }
 
