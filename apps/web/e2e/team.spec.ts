@@ -277,8 +277,10 @@ for (const [second, viewport] of [['security-key', '390x844'], ['passkey', '360x
         await authenticator(page, second === 'passkey' ? 'internal' : 'usb');
         await page.locator(second === 'passkey' ? '[data-part="second-passkey"]' : '[data-part="second-security-key"]').click();
       }
-      // Signed in as the member: the app's home.
+      // Signed in as the member: the app's home. This context is a new device, and a member still
+      // lands on /sell, never the welcome screen or the trader's tour (lead, 12 Nov 2026).
       await expect(page).toHaveURL(/\/sell$/);
+      await expect(page.locator('[data-screen="welcome"]')).toHaveCount(0);
       expect(seen.bodies['/v1/team/invite']).toEqual([{ invite: CODE }]);
       expect(seen.bodies['/v1/team/join/start']).toEqual([{ invite: CODE, loginName: 'aurora_login', publicKey: FAKE_KEY.trim(), acceptedTerms: TERMS_TEXT_VERSION }]);
       expect(seen.bodies['/v1/team/join/finish']).toEqual([{ challengeId: 'c1', code: '12345678', termsSignature: { kind: 'typed', name: 'AK' } }]);

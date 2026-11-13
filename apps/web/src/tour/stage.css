@@ -1,0 +1,535 @@
+/* The first-trade tour's example screens (FirstTradeStage.tsx). DESIGNER-REVIEW: a compact build of
+   design's prototype (tour-art/x2f-intro-prototype.html), on our tokens. */
+.x2f-ex {
+  position: fixed;
+  inset: 0;
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+  overflow: hidden;
+}
+.x2f-ex__screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+.x2f-ex__scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.x2f-ex__col {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 480px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 16px 16px 24px;
+  transition: margin 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Unfolded landscape (tour-motion.md §3 rule 3): the column slides left, the card sits beside it. */
+.x2f-ex[data-side='true'] .x2f-ex__col {
+  margin-left: 24px;
+}
+.x2f-ex__head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.x2f-ex__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.x2f-ex__title-sm {
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__h1 {
+  margin: 0;
+  font-family: var(--x2f-font-display);
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 700;
+}
+.x2f-ex__h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+}
+.x2f-ex__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--x2f-ink-muted);
+  font-size: 14px;
+}
+.x2f-ex__chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--x2f-radius-pill);
+  border: 1px solid var(--x2f-line);
+  color: var(--x2f-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.x2f-ex__seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+.x2f-ex__pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border-radius: 9px;
+  border: 2px solid transparent;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+  transition: background-color 150ms, border-color 150ms, color 150ms;
+}
+.x2f-ex__pill[aria-selected='true'] {
+  background: var(--x2f-surface-raised);
+  border-color: var(--x2f-ink);
+  color: var(--x2f-ink);
+}
+.x2f-ex__wash,
+.x2f-ex__card,
+.x2f-ex__danger,
+.x2f-ex__offer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+  border: 1px solid var(--x2f-surface-raised);
+}
+.x2f-ex__wash {
+  background: color-mix(in srgb, var(--x2f-escrow) 10%, var(--x2f-surface));
+  transition: background-color 400ms;
+}
+.x2f-ex__wash[data-tint='caution'] {
+  background: color-mix(in srgb, var(--x2f-caution) 12%, var(--x2f-surface));
+}
+.x2f-ex__danger {
+  border-color: color-mix(in srgb, var(--x2f-danger) 50%, transparent);
+}
+.x2f-ex__danger p {
+  margin: 0;
+}
+.x2f-ex__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.x2f-ex__cap {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__curbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-line);
+  font-weight: 600;
+}
+.x2f-ex__menu {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.x2f-ex__opt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  border: 2px solid transparent;
+}
+.x2f-ex__opt[aria-selected='true'] {
+  border-color: var(--x2f-ink);
+}
+.x2f-ex__big {
+  font-family: var(--x2f-font-mono);
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 600;
+}
+.x2f-ex__big small,
+.x2f-ex__price small,
+.x2f-ex__pct small {
+  font-family: var(--x2f-font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__muted {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__mono {
+  font-family: var(--x2f-font-mono);
+}
+.x2f-ex__sech {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.x2f-ex__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.x2f-ex__mrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 0 14px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  border: 2px solid transparent;
+  transition: background-color 150ms, border-color 150ms;
+}
+.x2f-ex__mrow[data-on='true'] {
+  background: var(--x2f-surface-raised);
+  border-color: var(--x2f-ink);
+}
+.x2f-ex__mname,
+.x2f-ex__name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-weight: 600;
+}
+.x2f-ex__mname small,
+.x2f-ex__name small {
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__mktrow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.x2f-ex__offer {
+  transition: transform 120ms, background-color 150ms;
+}
+.x2f-ex__offer[data-pressed='true'] {
+  background: var(--x2f-surface-raised);
+}
+.x2f-ex__who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.x2f-ex__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--x2f-surface-raised);
+  font-weight: 700;
+  font-size: 14px;
+}
+.x2f-ex__vendor {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--x2f-team);
+}
+.x2f-ex__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: flex-start;
+}
+.x2f-ex__badge {
+  padding: 2px 8px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+  font-size: 13px;
+}
+.x2f-ex__terms {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 16px;
+}
+.x2f-ex__price {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--x2f-font-mono);
+  font-size: 20px;
+  font-weight: 600;
+}
+.x2f-ex__pct {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--x2f-font-mono);
+  font-weight: 600;
+}
+.x2f-ex__limits {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+.x2f-ex__amount {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.x2f-ex__field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  padding: 0 14px;
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-line);
+  font-size: 20px;
+}
+.x2f-ex__field[data-focus='true'] {
+  border: 2px solid var(--x2f-ink);
+}
+.x2f-ex__ph {
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__dl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+.x2f-ex__dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.x2f-ex__dl dt {
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__dl dd {
+  margin: 0;
+  text-align: right;
+}
+.x2f-ex__addr {
+  overflow-wrap: anywhere;
+}
+.x2f-ex__foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+  padding: 12px 0 4px;
+  background: var(--x2f-ground);
+}
+/* The example's primary action and release hold wear the kit's own classes (x2f-button--primary,
+   x2f-hold, ui.css), the one orange each screen has (kit rules: selection-ink.test.ts); this only
+   sizes them for the example screen. */
+.x2f-ex__button,
+.x2f-ex__hold {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  border-radius: var(--x2f-radius-md);
+  font-weight: 600;
+  transition: background-color 300ms;
+}
+.x2f-ex__button[data-state='ok'],
+.x2f-ex__hold[data-done='true'] {
+  background: var(--x2f-escrow);
+}
+.x2f-ex__hold[data-ready='false'] {
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__hold span {
+  position: relative;
+}
+.x2f-ex__fill {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--x2f-on-monero) 22%, transparent);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+.x2f-ex__hold[data-holding='true'] .x2f-ex__fill {
+  transform: scaleX(1);
+  transition: transform 1500ms linear;
+}
+.x2f-ex__steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__steps li {
+  padding-top: 8px;
+  border-top: 4px solid var(--x2f-surface-raised);
+  transition: border-color 600ms;
+}
+.x2f-ex__steps li[data-state='done'] {
+  border-color: var(--x2f-escrow);
+}
+.x2f-ex__steps li[data-state='current'] {
+  border-color: var(--x2f-ink);
+  color: var(--x2f-ink);
+}
+.x2f-ex__deal {
+  font-size: 14px;
+}
+.x2f-ex__status {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+  font-size: 13px;
+  font-weight: 600;
+}
+.x2f-ex__swap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.x2f-ex__qrwrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.x2f-ex__qr {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  border-radius: var(--x2f-radius-md);
+  background:
+    repeating-linear-gradient(90deg, #12161c 0 6px, #ffffff 6px 12px),
+    #ffffff;
+  background-blend-mode: difference;
+  overflow: hidden;
+}
+.x2f-ex__scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  /* Ink, with no glow: orange is for the primary action, and the kit has no shadows but the nav lines. */
+  background: var(--x2f-ink);
+}
+.x2f-ex__tick {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.x2f-ex__box {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 2px solid var(--x2f-line);
+  transition: background-color 150ms, border-color 150ms;
+}
+.x2f-ex__tick[data-on='true'] .x2f-ex__box {
+  background: var(--x2f-ink);
+  border-color: var(--x2f-ink);
+  color: var(--x2f-ground);
+}
+.x2f-ex__stars {
+  font-size: 28px;
+  letter-spacing: 6px;
+  color: var(--x2f-ink-muted);
+}
+@media (max-height: 720px) {
+  .x2f-ex__qr {
+    width: 160px;
+    height: 160px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .x2f-ex__screen {
+    animation: x2f-ex-push 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .x2f-ex__swap {
+    animation: x2f-ex-swap 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .x2f-ex__scan {
+    animation: x2f-ex-scan 1500ms cubic-bezier(0.65, 0, 0.35, 1) both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .x2f-ex__screen {
+    animation: x2f-ex-fade 200ms ease-out both;
+  }
+}
+@keyframes x2f-ex-push {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes x2f-ex-swap {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes x2f-ex-scan {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(198px);
+  }
+}
+@keyframes x2f-ex-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
