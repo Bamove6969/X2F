@@ -53,6 +53,8 @@ type Invitable = Exclude<StaffRole, 'owner'>;
  */
 export const ISSUED_AT_KINDS = [
   'create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading',
+  // Lead call on the D-032 reset gap: the gate orders the owner's tapped reset like the others.
+  'reset-staff-security',
 ] as const;
 const ISSUED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 

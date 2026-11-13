@@ -20,6 +20,9 @@ import { credOf, noteCounter, verifyTap, type GateContext, type GateRuling, type
  * - **settings** (the large-trade limit, the appeal window) only from owner `settings` taps;
  * - **a new owner key** only with `add-owner-key` taps by two different pinned owner keys, for a
  *   credential whose public key hashes to the tapped `publicKeySha256`.
+ * - **the owner's tapped `reset-staff-security`** (D-032, lead call) drops the person's keys and
+ *   binds the reset link; keys come back only as registrations made through that link, verified as
+ *   an invite's, while it is open. A reset the owner did not tap changes nothing in the gate;
  * - **the owner's tapped `remove-staff`** removes for good, and **`emergency-stop`** stops every
  *   ruling until a newer tapped `resume-trading` (review I1);
  * - registry taps carry a signed `issuedAt` (the API's start time; a tap without one has no valid
@@ -53,6 +56,7 @@ export interface GateSource {
 
 const REGISTRY_KINDS = [
   'create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading',
+  'reset-staff-security',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 const INVITABLE: readonly string[] = ['senior', 'mod', 'helper'];
 const ALGORITHMS = [-8, -7, -257];
@@ -162,6 +166,10 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       if (t.intent.kind === 'create-invite') {
         spend(t.tap, `invite:${t.intent.inviteId}`);
         noteCounter(g, ownerId, credentialId, t.counter);
+      } else if (t.intent.kind === 'reset-staff-security') {
+        // As an invite: spent at once as this link's, re-read each sync while the link is open.
+        spend(t.tap, `reset:${t.intent.inviteId}`);
+        noteCounter(g, ownerId, credentialId, t.counter);
       }
     }
   }
@@ -198,6 +206,11 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
     if (intent.kind !== 'create-invite') continue;
     // Only a tap step 0 let through (now or in an earlier sync): spent as this invite's.
     if (g.usedNonces[tap.nonceHex] !== `invite:${intent.inviteId}`) continue;
+    // A reset link's id is never an invite (lead call on the D-032 reset gap).
+    if (Object.hasOwn(g.resets, intent.inviteId)) {
+      refused(ctx, 'invite-is-reset');
+      continue;
+    }
     const binding = Object.hasOwn(g.invites, intent.inviteId) ? g.invites[intent.inviteId] : undefined;
     if (binding?.closed) continue;
     const expires = Date.parse(intent.expiresAt);
@@ -239,6 +252,67 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
     g.staff[accountId] = have
       ? { ...have, creds }
       : { role: intent.role, creds, revoked: false, removed: false, joined: false, inviteId: intent.inviteId, inviteClosed: false };
+  }
+
+  // 1b. Lead call on the D-032 reset gap: the owner's tapped `reset-staff-security`. The first time
+  //     the gate acts on it (a person it knows, not removed, not the owner, in issuedAt order for
+  //     that person, a link id no invite or earlier reset holds), the person's keys are dropped,
+  //     any earlier reset link of theirs closes, and the link is bound to them. While the link is
+  //     open (before its signed expiry, until the API says it finished), registrations made through
+  //     it (`inviteRegistrationChallenge(tokenHash)`, attested, allowlisted) are their only keys.
+  //     A reset without the owner's tap is the API's word only: nothing changes here.
+  for (const t of owner) {
+    const { tap, intent } = t;
+    if (intent.kind !== 'reset-staff-security') continue;
+    if (g.usedNonces[tap.nonceHex] !== `reset:${intent.inviteId}`) continue;
+    let binding = Object.hasOwn(g.resets, intent.inviteId) ? g.resets[intent.inviteId] : undefined;
+    if (binding === undefined) {
+      const s = Object.hasOwn(g.staff, intent.accountId) ? g.staff[intent.accountId] : undefined;
+      if (s === undefined || s.removed || intent.accountId === ownerId || g.removedIds.includes(intent.accountId) || Object.hasOwn(g.invites, intent.inviteId)) {
+        spend(tap, 'reset-refused');
+        refused(ctx, 'reset-refused');
+        continue;
+      }
+      if (!inOrder(t, `security:${intent.accountId}`)) continue;
+      accept(t, `reset:${intent.inviteId}`, `security:${intent.accountId}`);
+      for (const b of Object.values(g.resets)) if (b.accountId === intent.accountId) b.closed = true;
+      s.creds = [];
+      binding = { accountId: intent.accountId, closed: false };
+      g.resets[intent.inviteId] = binding;
+    } else if (binding.accountId !== intent.accountId) {
+      // The same link named again for someone else: never re-pointed.
+      spend(tap, 'reset-rebound');
+      refused(ctx, 'reset-rebound');
+      continue;
+    }
+    if (binding.closed) continue;
+    const expires = Date.parse(intent.expiresAt);
+    if (!Number.isFinite(expires) || now >= expires) {
+      binding.closed = true;
+      continue;
+    }
+    const s = Object.hasOwn(g.staff, binding.accountId) ? g.staff[binding.accountId] : undefined;
+    if (s === undefined || s.removed) {
+      binding.closed = true;
+      continue;
+    }
+    const inv = await source.invite(intent.inviteId);
+    if (!inv || inv.tokenHash !== intent.tokenHash || inv.accountId !== binding.accountId) {
+      refused(ctx, 'reset-link');
+      continue;
+    }
+    const creds: PinnedCred[] = [...s.creds];
+    for (const reg of inv.registrations) {
+      const cred = await verifiedRegistration(reg.response, intent.tokenHash, ctx);
+      if (cred === null || !staffKeyAccepted(g, binding.accountId, cred)) {
+        refused(ctx, 'registration');
+        continue;
+      }
+      if (!creds.some((c) => c.credentialId === cred.credentialId)) creds.push(cred);
+    }
+    s.creds = creds;
+    // The link finished (the API's word, which only takes power away): no key is taken from it again.
+    if (inv.used === true) binding.closed = true;
   }
 
   // 2. Role changes, switch-on, removal, settings and the stop, in counter order per key; each tap counts once.

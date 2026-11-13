@@ -83,6 +83,12 @@ export interface GateState {
    * a closed invite adds no key.
    */
   invites: Record<string, { accountId: string; closed: boolean }>;
+  /**
+   * Lead call on the D-032 reset gap: each owner-tapped `reset-staff-security` link the gate acted
+   * on, bound to the person the tap names; closed once it finished (`used`), expired, or a newer
+   * reset of the same person was applied. A closed link adds no key. Its id is never an invite's.
+   */
+  resets: Record<string, { accountId: string; closed: boolean }>;
   /** Accounts the owner removed with a tapped `remove-staff` (review I1): never staff again. */
   removedIds: string[];
   /** The owner's tapped emergency stop (review I1): while set, no ruling is authorised. */
@@ -130,6 +136,7 @@ export function emptyGate(): GateState {
     logVerifiedAt: null,
     logOverdueAlarmAt: null,
     invites: {},
+    resets: {},
     removedIds: [],
     stopped: false,
     applied: {},
