@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The team member's tour (src/tour/memberSteps.ts, design's tour-stops.md §4): each stop shows only
-// with its ability, and every live target renders on its route in the real app, signed in as a
-// member with those boxes ticked.
+// with its ability, and every live target renders on its page in the real app, signed in as a
+// member with those boxes ticked. Review 12 Nov, S2: the tour is the engine's own TourDef.
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,7 +9,8 @@ import { App } from '../src/App.js';
 import type { TradeView } from '../src/api/trade.js';
 import { setEscrowClient, type EscrowClient } from '../src/escrow/useEscrow.js';
 import { refreshSession } from '../src/session/useSession.js';
-import { MEMBER_STOPS, PENDING_MEMBER_STOPS, memberTour, type TourStep } from '../src/tour/memberSteps.js';
+import type { TourDef } from '../src/tour/engine.js';
+import { MEMBER_STOPS, PENDING_MEMBER_STOPS, memberTour } from '../src/tour/memberSteps.js';
 import { SERVER_NOW, sellerView } from '../e2e/refundViews.js';
 import { render } from './render.js';
 
@@ -78,19 +79,25 @@ const flush = () =>
     for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
   });
 
-async function missingTargets(steps: readonly TourStep[], as: string[]): Promise<string[]> {
+/** A tour's steps with the page each is on, flat. */
+type Flat = { route: string; target: string | null; title?: string; body: string; placement: string; id: string };
+const flat = (t: TourDef): Flat[] => t.pages.flatMap((p) => p.steps.map((s) => ({ ...s, route: p.path as string })));
+/** The member's tour for these boxes, with a trade to open (the Trade room page needs one). */
+const tourFor = (set: readonly string[]) => flat(memberTour(set, TRADE.code));
+
+async function missingTargets(steps: readonly Flat[], as: string[]): Promise<string[]> {
   abilities = as;
   const missing: string[] = [];
   for (const s of steps) {
     document.body.innerHTML = '';
     refreshSession();
     const r = render(
-      <MemoryRouter initialEntries={[s.route.replace(':code', TRADE.code)]}>
+      <MemoryRouter initialEntries={[s.route]}>
         <App />
       </MemoryRouter>,
     );
     await flush();
-    if (document.querySelector(s.target) === null) missing.push(`${s.route} ${s.target}`);
+    if (s.target !== null && document.querySelector(s.target) === null) missing.push(`${s.route} ${s.target}`);
     r.unmount();
   }
   return missing;
@@ -100,25 +107,38 @@ const ALL = ['offers-see', 'offers-pause', 'offers-delete', 'offers-post', 'trad
 
 describe("the team member's tour (design tour-stops.md §4)", () => {
   it('every member gets the three Find a trade stops, and nothing else without boxes', () => {
-    expect(memberTour([]).map((s) => s.title)).toEqual(['Whose account this is', 'Browse offers', 'Your tabs']);
+    expect(tourFor([]).map((s) => s.title)).toEqual(['Whose account this is', 'Browse offers', 'Your tabs']);
   });
 
   it('each stop shows only with its box', () => {
-    expect(memberTour(['offers-see']).map((s) => s.title)).toEqual(['Whose account this is', 'Browse offers', 'Your tabs', "The account's offers"]);
-    expect(memberTour(['trades-see-active']).some((s) => s.title === 'If it goes wrong')).toBe(false);
-    expect(memberTour(['trades-see-active', 'disputes-answer']).slice(-2).map((s) => s.title)).toEqual(['Following a trade', 'If it goes wrong']);
-    expect(memberTour(['offers-pause']).some((s) => s.route === '/trade/:code')).toBe(false);
-    expect(memberTour(ALL)).toHaveLength(MEMBER_STOPS.length);
+    expect(tourFor(['offers-see']).map((s) => s.title)).toEqual(['Whose account this is', 'Browse offers', 'Your tabs', "The account's offers"]);
+    expect(tourFor(['trades-see-active']).some((s) => s.title === 'If it goes wrong')).toBe(false);
+    expect(tourFor(['trades-see-active', 'disputes-answer']).slice(-2).map((s) => s.title)).toEqual(['Following a trade', 'If it goes wrong']);
+    expect(tourFor(['offers-pause']).some((s) => s.route.startsWith('/trade/'))).toBe(false);
+    expect(tourFor(ALL)).toHaveLength(MEMBER_STOPS.length);
+  });
+
+  it("is the engine's TourDef: page by page, in design's page order, unique ids, the engine's placements", () => {
+    const t = memberTour(ALL, TRADE.code);
+    expect(t.flow).toBe('screens');
+    expect(t.pages.map((p) => p.name)).toEqual(['Find a trade', 'My offers', 'Trade room', 'Account changes', 'Feedback']);
+    expect(t.pages.map((p) => p.path)).toEqual(['/buy', '/profile/offers', `/trade/${TRADE.code}`, '/settings/changes', '/feedback']);
+    const steps = flat(t);
+    expect(new Set(steps.map((s) => s.id)).size).toBe(steps.length);
+    for (const s of steps) expect(['auto', 'above', 'below', 'center'], s.id).toContain(s.placement);
+    // A page with no stop for these boxes is left out; so is the Trade room with no trade to open.
+    expect(memberTour([]).pages.map((p) => p.id)).toEqual(['find']);
+    expect(memberTour(['trades-see-active']).pages.map((p) => p.id)).toEqual(['find']);
   });
 
   it('the hold rights build on each other, as the API grants them', () => {
-    expect(memberTour(['hold-see']).slice(3).map((s) => s.title)).toEqual(['Waiting changes']);
-    expect(memberTour(['hold-cancel']).slice(3).map((s) => s.title)).toEqual(['Waiting changes', 'Stop a change']);
-    expect(memberTour(['hold-end']).slice(3).map((s) => s.title)).toEqual(['Waiting changes', 'Stop a change', 'Apply it now']);
+    expect(tourFor(['hold-see']).slice(3).map((s) => s.title)).toEqual(['Waiting changes']);
+    expect(tourFor(['hold-cancel']).slice(3).map((s) => s.title)).toEqual(['Waiting changes', 'Stop a change']);
+    expect(tourFor(['hold-end']).slice(3).map((s) => s.title)).toEqual(['Waiting changes', 'Stop a change', 'Apply it now']);
   });
 
   it("design's stops whose screen does not work for members yet are in no tour, each saying what it waits for", () => {
-    const live = new Set(memberTour(ALL).map((s) => s.title));
+    const live = new Set(tourFor(ALL).map((s) => s.title));
     for (const p of PENDING_MEMBER_STOPS) {
       if (p.title !== '') expect(live.has(p.title), p.title).toBe(false);
       expect(p.waitsFor.length, p.page).toBeGreaterThan(3);
@@ -131,7 +151,7 @@ describe("the team member's tour (design tour-stops.md §4)", () => {
 
   for (const set of [[], ['offers-see', 'offers-pause', 'offers-delete', 'offers-post'], ['trades-see-active', 'disputes-answer'], ['hold-see'], ['hold-cancel'], ['hold-end'], ['feedback-send'], ALL]) {
     it(`boxes [${set.join(', ')}]: every target renders on its route`, async () => {
-      expect(await missingTargets(memberTour(set), set)).toEqual([]);
+      expect(await missingTargets(tourFor(set), set)).toEqual([]);
     });
   }
 });

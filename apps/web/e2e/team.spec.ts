@@ -243,11 +243,42 @@ async function proveFirstKey(page: Page): Promise<void> {
   await page.locator('[data-part="prove"]').click();
 }
 
-async function freshPhone(browser: Browser, viewport: string) {
+/**
+ * A new phone context. A member's first /sell on a device starts the member tour (lead, 12 Nov 2026),
+ * which these flows are not about, so the context has had it, as playwright.config marks every
+ * spec's own device; `newDevice` leaves storage empty (the member tour's own test).
+ */
+async function freshPhone(browser: Browser, viewport: string, o: { newDevice?: boolean } = {}) {
   const [width, height] = viewport.split('x').map(Number) as [number, number];
-  const context = await browser.newContext({ viewport: { width, height }, colorScheme: 'dark', serviceWorkers: 'block' });
+  const storageState = o.newDevice === true ? undefined : { cookies: [], origins: [{ origin: LOCAL, localStorage: [{ name: 'x2f.welcome.seen', value: '1' }] }] };
+  const context = await browser.newContext({ viewport: { width, height }, colorScheme: 'dark', serviceWorkers: 'block', ...(storageState ? { storageState } : {}) });
   return { context, page: await context.newPage() };
 }
+
+// Lead, 12 Nov 2026: a member never sees the welcome screen or the trader's first-trade tour; on a
+// new device their first /sell starts the member tour, once.
+test('a member on a new device gets the member tour, never the welcome screen; once only', async ({ browser }) => {
+  const { context, page } = await freshPhone(browser, '390x844', { newDevice: true });
+  try {
+    await postApi(page, ['trades'], { status: 403, body: { error: 'forbidden' } });
+    await page.goto(`${LOCAL}/sell`);
+    const card = page.locator('[data-part="tour-card"]');
+    await expect(card.locator('h2')).toHaveText('Whose account this is');
+    await expect(page.locator('[data-part="tour"]')).toHaveAttribute('data-tour', 'member');
+    await expect(page).toHaveURL(/\/buy$/);
+    await expect(page.locator('[data-screen="welcome"]')).toHaveCount(0);
+    await card.locator('[data-part="tour-skip"]').click();
+    await expect(page.locator('[data-part="tour-closed"]')).toContainText('Tour closed.');
+    await expect(page.locator('[data-part="tour-closed"]')).not.toContainText('Settings');
+    await page.goto(`${LOCAL}/sell`);
+    await expect(page.locator('.x2f-browse')).toBeVisible();
+    await expect(card).toHaveCount(0);
+    await page.goto(`${LOCAL}/welcome`);
+    await expect(page).toHaveURL(/\/sell$/);
+  } finally {
+    await context.close();
+  }
+});
 
 for (const [second, viewport] of [['security-key', '390x844'], ['passkey', '360x800'], ['pgp', '390x844']] as const) {
   test(`joining with a PGP key then a ${second} (${viewport}): the code never leaves the fragment, which is cleared`, async ({ browser }) => {
@@ -277,8 +308,7 @@ for (const [second, viewport] of [['security-key', '390x844'], ['passkey', '360x
         await authenticator(page, second === 'passkey' ? 'internal' : 'usb');
         await page.locator(second === 'passkey' ? '[data-part="second-passkey"]' : '[data-part="second-security-key"]').click();
       }
-      // Signed in as the member: the app's home. This context is a new device, and a member still
-      // lands on /sell, never the welcome screen or the trader's tour (lead, 12 Nov 2026).
+      // Signed in as the member: the app's home, never the welcome screen (lead, 12 Nov 2026).
       await expect(page).toHaveURL(/\/sell$/);
       await expect(page.locator('[data-screen="welcome"]')).toHaveCount(0);
       expect(seen.bodies['/v1/team/invite']).toEqual([{ invite: CODE }]);

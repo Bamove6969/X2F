@@ -284,6 +284,16 @@ describe('the tour shell', () => {
     expect(card()?.querySelector('h2')?.textContent).toBe('First A');
   });
 
+  // The member tour has no Settings › Help to replay from yet: its closed line says only that.
+  it('a tour may name its own closed line', async () => {
+    const { host } = mount({ ...TWO_PAGES, closed: 'Tour closed.' });
+    click(host.querySelector('#start')!);
+    await settle();
+    click(btn('tour-skip')!);
+    await settle();
+    expect(document.querySelector('[data-part="tour-closed"] span')?.textContent).toBe('Tour closed.');
+  });
+
   it('remembers the stop until finished, and resumes there', async () => {
     const { host } = mount();
     click(host.querySelector('#start')!);
