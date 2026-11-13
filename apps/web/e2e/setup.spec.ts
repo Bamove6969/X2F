@@ -655,6 +655,7 @@ test.describe('on a new device', () => {
     await page.fill('#login-password', 'Quiet-harbour-58');
     await page.click('[data-part="password-login"]');
     await expect(page.locator('[data-screen="session-length"]')).toBeVisible();
+    await page.selectOption('[data-part="session-length-select"]', '4');
     await page.click('[data-part="session-length-continue"]');
     await expect(page).toHaveURL(/\/welcome$/);
     await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
