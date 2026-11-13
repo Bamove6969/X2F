@@ -503,6 +503,20 @@ export function runParty(a: PartyArgs): PartyHandle {
     Object.fromEntries(peers.map((p) => [p, state.received[prevKey]?.[p]?.digest ?? '']));
   const peerHex = (key: string): string[] => peers.map((p) => String(state.received[key]![p]!.payload.hex));
 
+  /**
+   * Review multisig-vs-RetoSwap F3: a session that refuses to make the multisig (peers' signer keys
+   * not distinct) or to give an address (the finished wallet is not a 2-of-3) stops this party with
+   * PartyError('bad-state'), before it sends msig.addr or msig.ready: nobody is shown that address.
+   */
+  const shaped = async <T>(step: () => Promise<T>): Promise<T> => {
+    try {
+      return await step();
+    } catch (e) {
+      if (e instanceof EscrowError && e.code !== 'daemon-unavailable') throw new PartyError('bad-state', `multisig refused: ${e.message.slice(0, 120)}`);
+      throw e;
+    }
+  };
+
   const advanceSetup = async (): Promise<void> => {
     while (!state.address) {
       const key = state.step;
@@ -514,11 +528,11 @@ export function runParty(a: PartyArgs): PartyHandle {
       let out: Record<string, string | Record<string, string>>;
       if (key === PREPARE) {
         next = MAKE;
-        out = { hex: await session.make(peerHex(PREPARE)), echo };
+        out = { hex: await shaped(() => session.make(peerHex(PREPARE))), echo };
       } else {
         const r = await session.exchange(peerHex(key));
         if (r.ready) {
-          state.address = await session.address();
+          state.address = await shaped(() => session.address());
           next = ADDR;
           out = { address: state.address, prev: key, echo };
         } else {

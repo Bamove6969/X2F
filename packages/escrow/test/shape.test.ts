@@ -48,7 +48,7 @@ interface Shape {
 function fakeWallet(shape: Shape, ownSpend = key()) {
   const calls = { make: [] as string[][] };
   const wallet = {
-    getPublicSpendKey: async () => ownSpend,
+    prepareMultisig: async () => round1(ownSpend),
     makeMultisig: async (peers: string[]) => {
       calls.make.push(peers);
       return 'MultisigxV2Rn-next';
@@ -142,14 +142,18 @@ describe('MoneroMultisigSession.make(): three distinct signers', () => {
 describe('with real monero-ts wallets (offline)', () => {
   const create = () => MoneroWalletFull.createWallet(new MoneroWalletConfig({ networkType: MoneroNetworkType.MAINNET, password: 'pw', proxyToWorker: false }));
 
-  it("a prepare message names its wallet's spend key, and an honest setup ends in an address", async () => {
+  it('each wallet names one signer key of its own in every prepare message, and an honest setup ends in an address', async () => {
     const wallets = await Promise.all([0, 1, 2].map(create));
     try {
       // Imported here, so the other tests in this file still run (and fail) before the decoder exists.
       const { kexSignerKey } = await import('../src/monero.js');
       const sessions = wallets.map((w) => new MoneroMultisigSession(w, 'http://node.test', 'pw'));
       const prepared = await Promise.all(sessions.map((s) => s.prepare()));
-      for (let i = 0; i < 3; i++) expect(kexSignerKey(prepared[i]!)).toBe(await wallets[i]!.getPublicSpendKey());
+      const signers = prepared.map(kexSignerKey);
+      for (const k of signers) expect(k).toMatch(/^[0-9a-f]{64}$/);
+      expect(new Set(signers).size).toBe(3);
+      // Asking a wallet again (as make() does for its own key) names the same signer.
+      for (let i = 0; i < 3; i++) expect(kexSignerKey(await wallets[i]!.prepareMultisig())).toBe(signers[i]);
       let hex = await Promise.all(sessions.map((s, i) => s.make(prepared.filter((_, j) => j !== i))));
       let ready = false;
       for (let round = 0; !ready && round < 4; round++) {
@@ -172,7 +176,8 @@ describe('with real monero-ts wallets (offline)', () => {
       const sb = new MoneroMultisigSession(b!, 'http://node.test', 'pw');
       const [pa, pb] = await Promise.all([sa.prepare(), sb.prepare()]);
       expect((await refusal(sa.make([pb, pa]))).code).toBe('bad-multisig');
-      expect(await a!.isMultisig()).toBe(false);
+      // monero-ts 0.11.16 has no isMultisig in its WebAssembly; the multisig info says the same.
+      expect((await a!.getMultisigInfo()).getIsMultisig()).toBe(false);
     } finally {
       await a!.close();
       await b!.close();

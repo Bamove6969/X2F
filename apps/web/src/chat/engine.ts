@@ -51,7 +51,7 @@
  */
 import type { Role } from '@x2f/core';
 import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { AttestationError, PayDetailsError, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
+import { AttestationError, PayDetailsError, attestationKeys, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatNoticeId } from './notices.js';
 import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
@@ -276,7 +276,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
 
   async function participantsOf(rec: ChatRecord): Promise<Participants> {
     const a = rec.attestation!;
-    await verifyAttestation(a.attestation as Attestation, a.sig, d.modSigningPublic, {
+    await verifyAttestation(a.attestation as Attestation, a.sig, attestationKeys(d.modSigningPublic), {
       trade: rec.chat,
       role: rec.role,
       signPublic: rec.identity.signPublic,

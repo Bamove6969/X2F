@@ -238,6 +238,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Escrow device codes (apps/web/src/escrow), compared on `.code` too.
   'address-mismatch': 'an escrow safety check on this device',
   'bad-outcome': 'an escrow safety check on this device',
+  // AttestationError('bad-time'): issuedAt in this device's future or before the take (review F5).
+  'bad-time': 'an escrow safety check on this device',
   'daemon-unavailable': 'the Monero node is unreachable (a fault)',
   equivocation: 'an escrow safety check on this device',
   'settled-elsewhere': 'the escrow already settled',

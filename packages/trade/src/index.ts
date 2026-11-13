@@ -1,7 +1,9 @@
 export { CHANNEL_KINDS, channelFor, type ChannelKind } from './channels.js';
 export {
+  ATTESTATION_CLOCK_SKEW_MS,
   AttestationError,
   attestationBytes,
+  attestationKeys,
   identityProofBytes,
   identityProofValid,
   instructionsMatch,
@@ -10,6 +12,7 @@ export {
   verifyAttestation,
   type Attestation,
   type AttestationErrorCode,
+  type AttestationKey,
   type AttestationSelf,
   type AttestedTerms,
   type ConfirmedDeal,
