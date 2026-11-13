@@ -207,7 +207,7 @@ for (const size of PHONES) {
       await goTo(page, 15);
       await expect(stage(page).locator('[data-tour="tick"]')).toHaveAttribute('data-on', 'true');
       await goTo(page, 16);
-      await expect(stage(page).locator('[data-tour="release"]')).toContainText('Released 0.594354 XMR to satoshi_ghost');
+      await expect(stage(page).locator('[data-tour="release"]')).toContainText('Released 0.594354 XMR to example_seller');
       await goTo(page, 17);
       await expect(next(page)).toHaveText('Done');
       await expect(card(page).locator('[data-icon="tick"]')).toBeVisible();
