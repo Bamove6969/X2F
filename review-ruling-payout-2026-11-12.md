@@ -348,3 +348,85 @@ API's `auto-refund` is ignored).
   - the fee wallet and the buyer get 0, and the seller gets the balance less the network fee;
   - the watcher's kind is `dispute-seller`, and the trade ends `refunded`;
   - it passed on regtest.
+
+---
+
+## Final M3 re-verify at a42dad1b (red 6d6f331e on top of 3617efee), 2026-11-12
+
+**Final verdict: APPROVE. Bypasses A, B and C are closed. M3 is closed apart from one gap at the
+start, plus the declared residual (a database that serves this role one consistently forged chain).
+The gap at the start (N1) and the gate.lock caveat (N2) are minors that do not block; fix them before
+mainnet.**
+
+Tests (detached worktree at a42dad1b, fresh `npm ci`, under ~/x2f-comms/check.lock with the timeout
+inside the flock; worktree and node_modules removed afterwards):
+- moderation + logchain: 17 files, **218 passed**. This includes the committed `checkpointBypass.test.ts`
+  (my A, B and C, now asserting the alarm) and `gateLock.test.ts`.
+- moderation-regtest: **2 passed**.
+- API: not re-run; this delta touches only apps/moderation.
+- New reviewer proof D (a scratch file run alone in the moderation project, not committed; a copy is
+  `m3-empty-view-poc.test.ts` in the lead scratchpad): **passes**, so the alarm stays silent (N1).
+
+### The fixes, checked
+- **A: the idle skip is bounded at 3 h (`CHECKPOINT_IDLE_MAX_MS`).** Once an idle log's newest
+  checkpoint is 3 h old, the head (the API's own `log.checkpoint` row) is checkpointed and reported.
+  The API appends again, so a reader view frozen at that row trips the stuck-head check on the next
+  pass. A frozen view therefore hides at most 3 h 10 min before the alarm.
+  - I tried to defeat it by moving the freeze forward one row at a time to show only the API's new
+    `log.checkpoint` rows (`using (id <= N or action = 'log.checkpoint')`). Those rows link to the
+    hidden rows (`prev_hash`), so the daily verify from the first row breaks: the alarm is raised.
+  - Defeating that needs rows the API writes itself, chained onto the visible head, under a policy
+    that picks visible ids from a side table. That is the declared residual of a consistent forged
+    view.
+- **B: 3 refused or failed reports in a row raise the alarm (`CHECKPOINT_REFUSALS_MAX`).** Every
+  status counts, including 0 (network error). A 409 `checkpoint-mismatch` still alarms at once. A
+  refused checkpoint is sent again on every pass that has no new head.
+  - Alternating two refusals with one acceptance resets the count. But each acceptance makes the API
+    append and arms the stuck-head check, so nothing can be hidden that way.
+- **C: the overdue clock is sealed in gate.bin (`logVerifiedAt`, `logOverdueAlarmAt`).** It is
+  stamped at the first start and re-stamped only by a successful verify, which clears the alarm
+  marker. Restarting no longer resets it: the committed test C runs 5 × 20 h restarts and the alarm
+  fires once.
+- **gate.lock (M1 residual): a pid file, made exclusively, taken before gate.bin is read, released
+  by `close()`.** `close()` waits for any queued save and then refuses later ones, so a pass still
+  running after stop cannot write. `stop` closes the store after the sync stops. A lock left by a
+  dead pid is taken over. A successor on the same host is now refused while the old process still
+  stops after a lost instance lock. Accepted for a single host, as the lead says (a pid means
+  nothing across hosts).
+
+### What can still silence it
+**N1 (minor): an empty reader view from the first start.**
+- If the database hides every row from `x2f_mod_reader` before the first checkpoint, the head stays
+  null: `create policy ... as restrictive for select to x2f_mod_reader using (false)`.
+- Then no checkpoint is ever taken, `accepted` never arms, no report is ever refused, and `verify()`
+  returns ok without reading anything (`cps.length === 0`).
+- That ok stamps `logVerifiedAt` every day, so the overdue clock never fires.
+- Proof D: 3 days, 3 restarts, more than 50 real rows, 0 checkpoints, 0 alarms.
+- It needs the database compromised before the moderation gate's first checkpoint, for example at
+  deployment, or a gate.bin started afresh.
+- Fix (small):
+  - Run `verifyChain(chain)` even with no checkpoints.
+  - Do not count a verify as successful while `checkpoints` is empty and the head is null. A live
+    site's log is never empty: `owner.setup-completed` is written at owner setup, before the gate is
+    pinned. So an empty view should alarm, for example once `logVerifiedAt` is overdue, the same as
+    a reader that cannot read.
+
+**N2 (minor, availability, fail-closed): a gate.lock left behind can block restarts when the pid is
+reused.**
+- `alive(pid)` treats any running process with that pid as the holder, the current process included.
+- In a container the service usually has the same pid on every start (1, or the same number under
+  an init). After an unclean exit (SIGKILL, OOM, crash) the lock file stays. On the next start it
+  names the process's own pid, `alive()` is true, the open is refused with "locked by process 1", and
+  the supervisor restart loop never gets the gate up. Rulings are then never paid and checkpoints
+  stop until someone deletes the file.
+- On a plain host, pid reuse after a reboot can do the same.
+- Fix: treat a lock that names this process's own pid as stale, since a real holder in this process
+  would be an open store, which the in-process path can track. Better, also record the boot id
+  (`/proc/sys/kernel/random/boot_id`) and the holder's start time (`/proc/<pid>/stat`) in the lock and
+  compare them.
+- There is no deploy config in the repo yet, so this belongs on the deploy checklist if it is not
+  fixed now.
+
+The residual stays as stated in the module comment: a consistently forged chain served to this role,
+and rewrites after the newest checkpoint (now up to 10 minutes, or 3 h 10 min against a frozen view,
+before the alarm). The gate.bin checkpoints remain the evidence for an offline audit.
