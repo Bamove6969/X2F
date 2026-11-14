@@ -405,7 +405,8 @@ describe('schema', () => {
          values ($1, $2, $3, $4, 'trader', $5, now())`,
         [display, displayKey, login, loginKey, randomBytes(32)],
       );
-    await expect(ins('Gina1234', 'Gina1234', 'gina.login', 'gina.login')).rejects.toMatchObject({ code: '23514', constraint: 'accounts_display_key_lower' });
+    // The display key's check moved into the app with Unicode display names (migration 610,
+    // signup round 3: `checkDisplayName` makes every key); signupRules.test pins that it is gone.
     await expect(ins('Gina1234', 'gina1234', 'GINA.login', 'GINA.login')).rejects.toMatchObject({ code: '23514', constraint: 'accounts_login_key_lower' });
     await ins('Gina1234', 'gina1234', 'GINA.login', 'gina.login');
   });

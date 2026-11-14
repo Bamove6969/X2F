@@ -2021,7 +2021,9 @@ describe('a member reads each part of the trades only with its box (review trade
     expect(err(await wrong.browser.post(`/v1/trades/${d.code}/appeal`, why))).toEqual({ status: 403, error: 'forbidden' });
     expect((await deps.db.query('select 1 from dispute_appeals where code = $1', [d.code])).rowCount).toBe(0);
     const appealed = await right.browser.post(`/v1/trades/${d.code}/appeal`, why);
-    expect(appealed.statusCode, appealed.body).toBe(200);
+    // Allowed. Main's appeals (D-011) answer a member without the disputes-answer box with 204 and
+    // no dispute view, so the merged tree answers 204 here, where the demo alone answered 200.
+    expect(appealed.statusCode, appealed.body).toBe(204);
   });
 
   it("a trade's review stays the account owner's: a member is refused whatever their boxes", async () => {

@@ -141,6 +141,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'DELETE /v1/account/hold/changes': "cancels my own account's waiting changes; no data back",
   'DELETE /v1/account/hold/changes/:id': "cancels one of my own account's waiting changes; no data back",
   'POST /v1/account/recovery-code/reveal': "shows my own account's new recovery code once, to the session allowed to read it",
+  'POST /v1/account/onboarding/end': "closes my own session's sign-up window (review M1(a)); no data back",
   // Settings and social rows (my own account).
   'PUT /v1/account/nudges': 'my own nudge setting',
   'POST /v1/account/blocks': 'a block row of mine; no data back (404 for a name that is not a trader)',
@@ -197,6 +198,7 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   'POST /v1/logout': 'ends whatever session the cookie names; no data back',
   'GET /v1/terms': 'the Terms and Privacy text and version, read before agreeing at sign-up',
   'GET /v1/pgp/signing-key': "X2F's own public signing key, to check the signed sign-up and login challenges",
+  'GET /.well-known/x2f-signing-key.asc': "the same public signing key as a file to import (sign-up v2); public armor only",
   'POST /v1/register/name-check': 'create an account: the live "is available" tick for the login name (rate limited per device and site wide, auth/nameCheck.ts); answers { available } only',
   'POST /v1/register/password': 'create an account (password)',
   'POST /v1/register/pgp/start': 'create an account (PGP)',
