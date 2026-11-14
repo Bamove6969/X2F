@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MetadataService, type MetadataStatement } from '@simplewebauthn/server';
-import { decodeAttestationObject } from '@simplewebauthn/server/helpers';
+import { decodeAttestationObject, isoBase64URL, isoCBOR } from '@simplewebauthn/server/helpers';
 import type { AttestationPolicy } from '../app.js';
 
 export type { AttestationPolicy } from '../app.js';
@@ -105,6 +105,24 @@ export function fileAttestationPolicy(
       return allowed !== null && fmt !== 'none' && allowed[kind].has(aaguid.toLowerCase());
     },
   };
+}
+
+/**
+ * The registration response with its attestation statement dropped (fmt `none`, empty `attStmt`,
+ * authenticator data unchanged), or null when it cannot be decoded. For traders only: their
+ * security key is a login method whatever its model, so a key the browser sent with an attestation
+ * outside the snapshot (`none` was asked for, but some browsers pass it on) is checked like any
+ * unattested key: origin, RP ID, challenge, user presence and the public key still are.
+ */
+export function withoutAttestation<T extends { response: { attestationObject: string } }>(response: T): T | null {
+  try {
+    const decoded = decodeAttestationObject(isoBase64URL.toBuffer(response.response.attestationObject));
+    const stripped = new Map<string, unknown>([['fmt', 'none'], ['attStmt', new Map()], ['authData', decoded.get('authData')]]);
+    const attestationObject = isoBase64URL.fromBuffer(isoCBOR.encode(stripped as Parameters<typeof isoCBOR.encode>[0]));
+    return { ...response, response: { ...response.response, attestationObject } };
+  } catch {
+    return null;
+  }
 }
 
 /**
