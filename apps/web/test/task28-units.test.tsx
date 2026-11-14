@@ -12,7 +12,7 @@ import { groupFingerprint } from '../src/screens/setup/PgpKey.js';
 import { KEY_UNAVAILABLE } from '../src/screens/auth/refusals.js';
 import { KEY_IN_USE, nameError, setupError, termsChanged } from '../src/screens/setup/register.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
-import { KEY_POINTS, TERMS } from '../src/screens/setup/termsText.js';
+import { KEY_POINTS, paragraphText, TERMS } from '../src/screens/setup/termsText.js';
 import { FEE_SENTENCE, startTradingPath } from '../src/screens/setup/Welcome.js';
 
 const wallet = (over: Partial<Wallet> = {}): Wallet => ({
@@ -100,14 +100,14 @@ describe('copy', () => {
     expect(FEE_SENTENCE).toBe('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.');
   });
 
-  // 2026-11-12: the Terms' fee paragraph is the owner's own wording (his /setup comment 10475770,
-  // comms terms-draft-2026-11-12.md item 7) in place of FEE_SENTENCE; it states the same rule (OD-7,
-  // p10-1): the ad's poster pays 1%, taking an ad is free.
-  it('the Terms draft states the fee rule (poster pays 1%, taking is free) and has no exclamation marks', () => {
-    const all = TERMS.flatMap((s) => [s.heading, ...s.paragraphs]).join('\n');
-    const fees = TERMS.find((s) => s.heading === '4. Fees')!.paragraphs.join('\n');
-    expect(fees).toContain('X2F collects a fee of 1% of the total amount traded, paid in XMR when the trade completes. Whoever posts the ad pays it.');
-    expect(fees).toContain('Taking someone else’s ad is free.');
+  // 2026-11-12: the Terms' fee paragraph is the owner's own wording (his /setup comment 10475770);
+  // 2026-11-14: reworded again by his demo notes of 13 Nov (setup-terms). It states the same rule
+  // (OD-7, p10-1): the ad's poster pays 1%, responding to an ad is free.
+  it('the Terms draft states the fee rule (poster pays 1%, responding is free) and has no exclamation marks', () => {
+    const all = TERMS.flatMap((s) => [s.heading, ...s.paragraphs.flatMap((p) => (typeof p === 'string' ? [p] : [p.text, ...p.bullets]))]).join('\n');
+    const fees = TERMS.find((s) => s.heading === '4. Fees')!.paragraphs.map(paragraphText).join('\n');
+    expect(fees).toContain('X2F collects a fee of 1% of the total amount traded, paid in XMR when the trade completes. Whoever posts the ad is responsible for the bill');
+    expect(fees).toContain('Responding to someone else’s ad is always free');
     expect(all).not.toContain('!');
   });
 });
