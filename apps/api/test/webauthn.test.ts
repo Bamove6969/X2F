@@ -588,6 +588,8 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     for (const [i, key] of keys.entries()) {
       const r = await staffAdd(b, key, 'security-key');
       expect(r.options.attestation).toBe('none');
+      expect(r.options.hints).toEqual(['security-key']);
+      expect(r.options.pubKeyCredParams.map((p: { alg: number }) => p.alg)).toEqual([-8, -7, -257]);
       expect(r.options.authenticatorSelection).toMatchObject({ authenticatorAttachment: 'cross-platform', residentKey: 'discouraged', userVerification: 'preferred' });
       expect(r.res.statusCode, `key ${i}`).toBe(201);
     }

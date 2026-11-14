@@ -106,7 +106,7 @@ export function assertCredentialAllowed(accountKind: AccountKind, info: { kind: 
 /**
  * The registration settings for a credential kind and account kind. Passkey: resident key and user
  * verification required. Security key: no resident key, user verification preferred, roaming
- * authenticators only. Attestation `direct` for staff and owner security keys, `none` otherwise
+ * authenticators only, hinted as a security key. Attestation `direct` for staff and owner security keys, `none` otherwise
  * (a staff passkey cannot be attested). An owner passkey → 403 `method-not-allowed`.
  */
 export function registrationOptionsFor(kind: CredentialKind, accountKind: AccountKind) {
@@ -123,6 +123,8 @@ export function registrationOptionsFor(kind: CredentialKind, accountKind: Accoun
           },
     supportedAlgorithmIDs: ALGORITHMS,
     timeout: WEBAUTHN_TTL_MS,
+    // hints ['security-key']: the browser goes straight to "insert or tap your key" (USB, NFC, BLE).
+    ...(kind === 'security-key' ? { preferredAuthenticatorType: 'securityKey' as const } : {}),
   };
 }
 
