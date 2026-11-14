@@ -66,6 +66,8 @@ const ORANGE_ALLOWED = [
   'screens/browse/browse.css .x2f-text-button:hover',
   'screens/setup/setup.css .x2f-start__textbutton',
   'screens/setup/setup.css .x2f-start__textbutton:hover',
+  // Sign-up v2: the PGP code step's "X2F's signing key" download is a link.
+  'screens/setup/setup.css .x2f-start__signing-link',
   'screens/quote/quote.css .x2f-quote__switch, .x2f-quote__max',
   'screens/quote/quote.css .x2f-quote__add',
   'screens/dispute/dispute.css .dispute-retry',

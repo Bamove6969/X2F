@@ -108,7 +108,9 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
       const c = code(f);
       expect(c, f).not.toMatch(/createObjectURL|revokeObjectURL/);
       expect(c, f).not.toMatch(/readAsDataURL|readAsBinaryString/);
-      expect(c, f).not.toMatch(/\bdownload(=|:)/);
+      // Sign-up v2's one download link is X2F's public signing key, a static file the API serves
+      // (`/.well-known/x2f-signing-key.asc`): no proof bytes. Any other download link still fails.
+      expect(c.replace('download="x2f-signing-key.asc"', ''), f).not.toMatch(/\bdownload(=|:)/);
       if (RECEIVE_PATH.includes(f)) continue;
       expect(c, `${f}: a data: image URL outside the receive path`).not.toMatch(/data:image\//);
       // Any string or template literal that starts "data:", so "data:" + "image/png" is caught too.
