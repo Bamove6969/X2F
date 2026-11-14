@@ -11,6 +11,7 @@ import type pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { emptyDb } from './helpers/db.js';
+import { insertOffer } from './helpers/offers.js';
 
 /** A database migrated up to (not including) `before`; `run` gets it, then the rest is applied by the test. */
 async function migratedBefore(before: string, run: (db: pg.Pool) => Promise<void>): Promise<void> {
@@ -159,6 +160,46 @@ describe('migration 490: flexible offers (J-16)', () => {
       // Trades gained the locked instructions, empty for the trades from before.
       const tcols = await db.query<{ column_default: string }>(`select column_default from information_schema.columns where table_name = 'trades' and column_name = 'method_instructions'`);
       expect(tcols.rows[0]?.column_default).toBe("''::text");
+    });
+  });
+});
+
+describe('migration 590: owner 12 Nov: Russian anything is banned (RUB, SBP, MIR, YOOMONEY)', () => {
+  it('removes every offer in RUB or with a Russian method and blanks its payment details; every other offer is untouched', async () => {
+    await migratedBefore('590', async (db) => {
+      const a = await account(db);
+      const at = new Date('2026-11-01T00:00:00Z');
+      const base = { accountId: a, side: 'sell' as const, min: 5000, max: 200000, instructions: 'pay me here', at };
+      const rub = await insertOffer(db, { ...base, methodId: 'ZELLE', currency: 'RUB' });
+      const sbp = await insertOffer(db, { ...base, methodId: 'SBP', currency: 'USD', status: 'paused' });
+      const mir = await insertOffer(db, { ...base, methodId: 'MIR', currency: 'USD' });
+      const yoo = await insertOffer(db, { ...base, methodId: 'YOOMONEY', currency: 'EUR' });
+      // A two-method offer with one Russian method goes too: an offer's methods are written once (J-16).
+      const mixed = await insertOffer(db, { ...base, methodId: 'REVOLUT', currency: 'EUR' });
+      await db.query(`insert into offer_methods (offer_id, position, method_id, instructions, adjust_bps) values ($1, 1, 'MIR', 'card 2200', 0)`, [mixed]);
+      await db.query(`insert into offer_method_currencies (offer_id, method_id, currency, instructions) values ($1, 'MIR', 'EUR', 'eur card')`, [mixed]);
+      const keep = await insertOffer(db, { ...base, methodId: 'ZELLE', currency: 'USD' });
+      // Pair instructions are written at posting only: lift the written-once trigger for this one row.
+      await db.query('alter table offer_method_currencies disable trigger offer_method_currencies_written_once');
+      await db.query(`update offer_method_currencies set instructions = 'usd only' where offer_id = $1`, [keep]);
+      await db.query('alter table offer_method_currencies enable trigger offer_method_currencies_written_once');
+      const gone = [rub, sbp, mir, yoo, mixed];
+
+      await migrate(db);
+
+      const offers = await db.query<{ id: string; status: string; updated_at: Date }>('select id, status, updated_at from offers');
+      for (const o of offers.rows) {
+        if (gone.includes(o.id)) {
+          expect(o.status, o.id).toBe('removed');
+          expect(o.updated_at.getTime(), o.id).toBeGreaterThan(at.getTime());
+        } else {
+          expect(o).toEqual({ id: keep, status: 'live', updated_at: at });
+        }
+      }
+      const methods = await db.query<{ offer_id: string; instructions: string }>('select offer_id, instructions from offer_methods');
+      for (const m of methods.rows) expect(m.instructions, m.offer_id).toBe(gone.includes(m.offer_id) ? '' : 'pay me here');
+      const pairs = await db.query<{ offer_id: string; instructions: string | null }>('select offer_id, instructions from offer_method_currencies');
+      for (const r of pairs.rows) expect(r.instructions, r.offer_id).toBe(r.offer_id === keep ? 'usd only' : null);
     });
   });
 });

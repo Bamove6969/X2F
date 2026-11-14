@@ -4,6 +4,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import { Icon, type IconName } from './icons.js';
 import { Logo } from './Logo.js';
 import { NewsBell } from './NewsBell.js';
+import { ScreenHeaderView } from './ScreenHeader.js';
 import './ui.css';
 
 /*
@@ -18,6 +19,9 @@ import './ui.css';
 const LINKS: { to: string; label: string; icon: IconName; match: (path: string) => boolean }[] = [
   // Trade covers both browse sides, a quote, a trade and its dispute, and site news (News-Wide).
   { to: '/sell', label: 'Trade', icon: 'trade', match: (p) => /^\/(sell|buy|trade|news)(\/|$)/.test(p) },
+  // My trades (register D-005): not on the *-Wide boards yet (the Desktop board left its "My trades"
+  // card out until the list existed). DESIGNER-REVIEW, COPY-UNSIGNED
+  { to: '/trades', label: 'My trades', icon: 'list-check', match: (p) => /^\/trades(\/|$)/.test(p) },
   // MyOffers-Wide: My offers sits under Post offer.
   { to: '/post', label: 'Post offer', icon: 'plus-circle', match: (p) => /^\/(post|profile\/offers)(\/|$)/.test(p) },
   { to: '/wallets', label: 'Wallets', icon: 'wallet', match: (p) => /^\/wallets(\/|$)/.test(p) },
@@ -29,7 +33,7 @@ const LINKS: { to: string; label: string; icon: IconName; match: (path: string) 
 ];
 
 /** The routes before login: the wide layout shows the centred logo there, never the rail. */
-const PRE_LOGIN = /^\/(login|setup|terms|team\/join)(\/|$)/;
+const PRE_LOGIN = /^\/(login|setup|terms|team\/join|help)(\/|$)/;
 
 export type WideFrame = 'rail' | 'centred';
 
@@ -46,6 +50,7 @@ const NAMES: [RegExp, string][] = [
   [/^\/(sell|buy)\/[^/]+\/?$/, 'Offers'],
   [/^\/post(\/|$)/, 'Post an offer'],
   [/^\/profile\/offers(\/|$)/, 'My offers'],
+  [/^\/trades(\/|$)/, 'My trades'],
   [/^\/wallets(\/|$)/, 'Wallets'],
   [/^\/settings\/security(\/|$)/, 'Security'],
   [/^\/settings\/devices(\/|$)/, 'Devices'],
@@ -86,10 +91,13 @@ function PageName({ name }: { name: RailPageName }) {
   );
 }
 
-/** The left rail. `postOffers` false leaves out Post offer, as the phone tab bar does for a member without the Offers role. */
-export function DesktopRail({ postOffers = true }: { postOffers?: boolean }) {
+/**
+ * The left rail. `postOffers` false leaves out Post offer, as the phone tab bar does for a member
+ * without the Offers role; `trades` false leaves out My trades (review trades-list m1).
+ */
+export function DesktopRail({ postOffers = true, trades = true }: { postOffers?: boolean; trades?: boolean }) {
   const { pathname } = useLocation();
-  const links = postOffers ? LINKS : LINKS.filter((l) => l.to !== '/post');
+  const links = LINKS.filter((l) => (postOffers || l.to !== '/post') && (trades || l.to !== '/trades'));
   // Without the Offers role Post offer is not listed, so /profile/offers sits under Profile.
   const isCurrent = (l: (typeof LINKS)[number]) =>
     l.match(pathname) || (!postOffers && l.to === '/profile' && /^\/profile\/offers(\/|$)/.test(pathname));
@@ -123,22 +131,21 @@ export function DesktopRail({ postOffers = true }: { postOffers?: boolean }) {
   );
 }
 
-/** Before login (Login-Wide, SignupSecurity-Wide): the 32 px logo, centred, and nothing to click. */
-export function WideTop() {
-  return (
-    <header className="x2f-wide-top">
-      <Logo size={32} />
-    </header>
-  );
+/**
+ * Before login (Login-Wide, SignupSecurity-Wide): the 32 px logo and nothing to click. Owner demo
+ * notes 12 Nov 2026 #37 (DESIGNER-REVIEW): top left with the screen name beside it, the shared header.
+ */
+export function WideTop({ name = '' }: { name?: RailPageName }) {
+  return <ScreenHeaderView name={name} size={32} className="x2f-wide-top" />;
 }
 
 /** The frame on its own around a page (the app shell, App.tsx, draws the same parts in one tree for every layout). */
-export function DesktopShell({ children, postOffers = true }: { children: ReactNode; postOffers?: boolean }) {
+export function DesktopShell({ children, postOffers = true, trades = true }: { children: ReactNode; postOffers?: boolean; trades?: boolean }) {
   const { pathname } = useLocation();
   const frame = wideFrameOf(pathname);
   return (
     <div data-shell="desktop" data-wide-frame={frame} className="x2f-desktop">
-      {frame === 'rail' ? <DesktopRail postOffers={postOffers} /> : <WideTop />}
+      {frame === 'rail' ? <DesktopRail postOffers={postOffers} trades={trades} /> : <WideTop />}
       <div className="x2f-desktop__body">{children}</div>
     </div>
   );

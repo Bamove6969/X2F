@@ -16,6 +16,7 @@ import { App } from '../src/App.js';
 import { api } from '../src/api/client.js';
 import { BehindTheDoor, RECOVERY_HOME, doorVerdict, isFrontDoor, isInside } from '../src/session/frontDoor.js';
 import { refreshSession, type Session } from '../src/session/useSession.js';
+import { WELCOME_SEEN_KEY } from '../src/tour/welcomeSeen.js';
 import { render } from './render.js';
 
 const APP = join(dirname(fileURLToPath(import.meta.url)), '../src/App.tsx');
@@ -23,9 +24,10 @@ const APP = join(dirname(fileURLToPath(import.meta.url)), '../src/App.tsx');
 const PATHS = [...readFileSync(APP, 'utf8').matchAll(/<Route\s+path="([^"]+)"/g)]
   .map((m) => m[1]!)
   .filter((p) => p !== '*')
-  .map((p) => p.replace(':methodId', 'ZELLE').replace(':offerId', '00000000-0000-4000-8000-000000000000').replace(':code', 'ABCD-EFGH').replace('/*', ''));
+  .map((p) => p.replace(':methodId', 'ZELLE').replace(':offerId', '00000000-0000-4000-8000-000000000000').replace(':code', 'ABCD-EFGH').replace(':topic', 'faq').replace('/*', ''));
 
-const DOOR = ['/', '/setup', '/terms', '/login', '/login/backup', '/team/join'];
+// The help placeholders (owner demo notes 12 Nov #42) are on the front door too.
+const DOOR = ['/', '/setup', '/terms', '/login', '/login/backup', '/team/join', '/help/faq'];
 const BEHIND = PATHS.filter((p) => !DOOR.includes(p));
 
 const FULL = { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
@@ -188,6 +190,9 @@ describe('a recovery (backup) session', () => {
 });
 
 describe('logged in and set up', () => {
+  // This device has seen the welcome screen (the first visit is the next describe).
+  beforeEach(() => window.localStorage.setItem(WELCOME_SEEN_KEY, '1'));
+
   it('"/" goes on to the app (the Landing board is for outsiders)', async () => {
     me = { status: 200, body: FULL };
     const host = await open('/');
@@ -326,5 +331,38 @@ describe('a session re-check while inside', () => {
     await release();
     expect(host.querySelector('[data-screen="other"]')).not.toBeNull();
     expect(host.querySelector('[data-screen="counter"]')).toBeNull();
+  });
+});
+
+// Owner, 12 Nov 2026 (demo note #47): the first screen after getting in is the welcome screen, once
+// per device; after it, /sell as before. It stays reachable from Settings.
+describe('logged in, first visit on this device', () => {
+  it('/sell shows the welcome screen first', async () => {
+    me = { status: 200, body: FULL };
+    const host = await open('/sell');
+    expect(where).toBe('/welcome');
+    expect(host.querySelector('[data-screen="welcome"]')).not.toBeNull();
+  });
+
+  it('"/" goes on to the welcome screen too', async () => {
+    me = { status: 200, body: FULL };
+    await open('/');
+    expect(where).toBe('/welcome');
+  });
+
+  it('a deep link is not interrupted', async () => {
+    me = { status: 200, body: FULL };
+    await open('/wallets');
+    expect(where.split('?')[0]).toBe('/wallets');
+  });
+
+  it('once seen, /sell opens and /welcome still opens (from Settings)', async () => {
+    window.localStorage.setItem(WELCOME_SEEN_KEY, '1');
+    me = { status: 200, body: FULL };
+    await open('/sell');
+    expect(where.split('?')[0]).toBe('/sell');
+    const host = await open('/welcome');
+    expect(where).toBe('/welcome');
+    expect(host.querySelector('[data-screen="welcome"]')).not.toBeNull();
   });
 });

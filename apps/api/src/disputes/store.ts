@@ -246,7 +246,7 @@ export async function withDispute(
 ): Promise<Dispute> {
   const client = await deps.db.connect();
   let next: Dispute;
-  let parties: { seller: string; buyer: string; state: string } | undefined;
+  let parties: { seller: string; buyer: string; state: string; closed: boolean } | undefined;
   try {
     await client.query('begin');
     try {
@@ -266,8 +266,8 @@ export async function withDispute(
         return next;
       }
       await saveDispute(client, next, now);
-      const t = await client.query<{ seller: string; buyer: string; state: string }>(
-        'select seller_account_id::text as seller, buyer_account_id::text as buyer, state from trades where code = $1',
+      const t = await client.query<{ seller: string; buyer: string; state: string; closed: boolean }>(
+        'select seller_account_id::text as seller, buyer_account_id::text as buyer, state, closed_at is not null as closed from trades where code = $1',
         [target.code],
       );
       parties = t.rows[0];
@@ -283,7 +283,7 @@ export async function withDispute(
     const ev = { type: 'trade' as const, code: target.code, state: parties.state };
     for (const id of [parties.seller, parties.buyer]) {
       try {
-        deps.events.publish(id, ev);
+        deps.events.publish(id, ev, { closed: parties.closed });
       } catch {
         // Best effort: the change is committed and apps re-read the trade.
       }

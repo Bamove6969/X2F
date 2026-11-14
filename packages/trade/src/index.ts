@@ -112,6 +112,7 @@ export {
   parsePayDetails,
   payFieldsFor,
   payeeGivesNothing,
+  payNoteFor,
   payTextMatches,
   renderPayDetailsText,
   type PayDetailField,

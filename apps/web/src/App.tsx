@@ -13,6 +13,7 @@ import { SyncGate } from './ui/SyncGate.js';
 import { useResumeSync, watchResume } from './session/syncFirst.js';
 import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
+import { Trades } from './screens/Trades.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
 import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
@@ -49,15 +50,22 @@ import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { backupRedirect } from './screens/setup/signupPending.js';
 import { Terms } from './screens/setup/Terms.js';
 import { BehindTheDoor, isInside } from './session/frontDoor.js';
-import { mayPostOffers, memberOf } from './session/member.js';
+import { mayOpenLiveEvents, mayPostOffers, mayReadTrades, memberOf } from './session/member.js';
 import { useSession, type Session } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
+import { ScreenHeader, screenName } from './ui/ScreenHeader.js';
+import { HelpTopic } from './screens/HelpTopic.js';
 import { PlannedMaintenanceBanner } from './ui/PlannedMaintenanceBanner.js';
 import { SiteBanner } from './ui/SiteBanner.js';
 import { DesktopRail, WideTop, wideFrameOf } from './ui/DesktopShell.js';
 import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
 import './styles/fold.css';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
+import { Help, HELP_PATH } from './screens/welcome/Help.js';
+import { WelcomeGate } from './screens/welcome/WelcomeGate.js';
+import { WelcomeScreen } from './screens/welcome/WelcomeScreen.js';
+import { TourProvider } from './tour/TourProvider.js';
+import { WELCOME_PATH } from './tour/welcomeSeen.js';
 import { setPaymentDetailsSource, setTradeChat } from './screens/trade/paySeams.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
@@ -88,14 +96,18 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
   const outside = door && !isInside(session);
   const frame = outside ? 'centred' : wideFrameOf(pathname);
   let top: ReactNode = null;
-  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} />;
-  else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop />;
+  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} trades={mayReadTrades(session)} />;
+  else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop name={screenName(pathname)} />;
   return (
     <div data-shell={wide ? 'desktop' : 'phone'} data-wide-frame={wide ? frame : undefined} className={wide ? 'x2f-desktop' : undefined}>
       {top}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
         {/* Plan 4 Task 8: the owner's banner at the top of every trader screen. */}
         {/* J-04 (owner G19): a planned maintenance announced ahead, in the big bright banner, on every layout, the front door's too (lead default, owner p11-120). */}
+        {/* Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): logo D and the screen name on every phone screen;
+            the Landing board has its own large logo, and Buy/Sell draw this header in their own bar. The
+            foldable layouts (cover, panes, tabletop) keep their hinge-placed frames without it for now. */}
+        {layout === 'phone' && pathname !== '/' && !BROWSE.test(pathname) && !TRADE_ROOM.test(pathname) ? <ScreenHeader /> : null}
         <PlannedMaintenanceBanner plan={planned} />
         <SiteBanner banner={banner} />
         {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}
@@ -105,10 +117,19 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
         <Outlet />
       </div>
       <ChangesCapPopup />
-      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} /> : null}
+      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} trades={mayReadTrades(session)} /> : null}
     </div>
   );
 }
+
+/** Buy and Sell's own bar carries the shared header (MethodList). */
+const BROWSE = /^\/(buy|sell)\/?$/;
+/**
+ * The trade room and its dispute draw the shared header inside TradeHeader (logo D, "Trade · K7M2"),
+ * in the room's own tree: the room keeps one tree and its scroll across folding, which a header
+ * appearing above it in the shell would move. DESIGNER-REVIEW.
+ */
+const TRADE_ROOM = /^\/trade\//;
 
 /** Each screen's task replaces its placeholder (Tasks 16-30). */
 function Screen({ name }: { name: string }) {
@@ -181,17 +202,6 @@ function LiveAccepted({ member }: { member: boolean }) {
   );
 }
 
-/** Only full trader sessions have live events (`GET /v1/events` is `requireTrader`). */
-function isTrader(session: ReturnType<typeof useSession>): boolean {
-  if (session.status !== 'signed-in') return false;
-  const me = session.me;
-  if (me === null || typeof me !== 'object') return false;
-  const m = me as { kind?: unknown; level?: unknown; termsCurrent?: unknown; member?: { roles?: unknown } | null };
-  // Plan 2 Task 18: a team member without Trades gets no trade stream (the API answers 403 forbidden).
-  const member = m.member;
-  if (member !== undefined && member !== null && !(Array.isArray(member.roles) && member.roles.includes('trades'))) return false;
-  return m.kind === 'trader' && m.level === 'full' && m.termsCurrent !== false;
-}
 
 /**
  * Session length (owner, 2 Nov 2026): on page load the signed-in session's length and end are
@@ -235,21 +245,26 @@ export function App() {
   }, [inside, refresh]);
   if (site.maintenance !== null) return <Maintenance maintenance={site.maintenance} onRetry={refresh} />;
   return (
-    <>
+    // The guided tour (owner, 12 Nov 2026) draws over whichever screen it is on.
+    <TourProvider>
       <RouterBridge />
       <SignupBackupGate session={session} />
       <SessionPrompt />
       <IdleReminder />
-      {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
+      {/* Live events: full trader sessions; a member's with either trades box (session/member.ts). */}
+      {mayOpenLiveEvents(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       {/* W-006: the loud alarm rings in an open tab when a push arrives (off until turned on). */}
-      {isTrader(session) ? <AlarmListener /> : null}
+      {mayOpenLiveEvents(session) ? <AlarmListener /> : null}
       {/* D-016: a frozen account owner gets the notice once per freeze after a login (GET /v1/account/freeze is the owner's alone). */}
-      <FrozenWatch enabled={isTrader(session) && memberOf(session) === null} />
+      <FrozenWatch enabled={mayOpenLiveEvents(session) && memberOf(session) === null} />
       <Routes>
         {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
         <Route element={<BehindTheDoor />}>
           <Route element={<Layout nav banner={site.banner} planned={site.plannedMaintenance} />}>
-            <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
+            {/* Owner, 12 Nov 2026 (demo note #47): a device's first visit sees the welcome screen before /sell. */}
+            <Route path="/sell" element={<WelcomeGate><MethodList side="sell" copy={SELL_COPY} /></WelcomeGate>} />
+            <Route path={WELCOME_PATH} element={<WelcomeScreen />} />
+            <Route path={HELP_PATH} element={<Help />} />
             <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
             <Route path="/profile/offers" element={<MyOffers />} />
           </Route>
@@ -260,6 +275,7 @@ export function App() {
             <Route path="/buy/:methodId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
             <Route path="/sell/:methodId/:offerId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
             <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+            <Route path="/trades" element={<Trades />} />
             <Route path="/trade/:code" element={<TradeRoom />} />
             {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
             <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
@@ -290,10 +306,12 @@ export function App() {
           <Route path={SESSION_LENGTH_PATH} element={<SessionLengthScreen />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/team/join" element={<MemberInvite />} />
+          {/* Owner demo notes 12 Nov #42: the help placeholders linked from /login and /session-length. */}
+          <Route path="/help/:topic" element={<HelpTopic />} />
         </Route>
         {/* Anything else: the front door, which sends a set-up trader on to /sell. */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </>
+    </TourProvider>
   );
 }

@@ -7,7 +7,7 @@ import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { assertLiveMember, auditLead, auditMember, type AuditAction } from '../team/audit.js';
-import { assertMemberMay, assertMemberMaySend, EVENT_ABILITY, eventAbility, MEMBER_EVENT_ABILITIES, TRADE_READ } from '../team/perms.js';
+import { assertMemberMay, assertMemberMaySend, EVENT_ABILITY, eventAbility, MEMBER_EVENT_ABILITIES, TRADE_READ, tradePartAbility } from '../team/perms.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
@@ -125,6 +125,9 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const row = await tradeFor(req);
     const t = rowToTrade(row);
     if (roleOf(t, req.auth.accountId) === null) throw new ApiError(404, 'not-found');
+    // Review trades-list I1: a member reads an open trade with See active trades and a completed
+    // one with See trade history, as the trades list does (the guard let in either box).
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     return view(req, t, row);
   });
 
@@ -143,6 +146,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     // `by` is the session's side in this trade (P3-C2); the two sides never change after take.
     const by = roleOf(rowToTrade(row), req.auth.accountId);
     if (by === null) throw new ApiError(404, 'not-found');
+    // Re-verify trades-list m3: no acting on a part one cannot see (open: See active trades; completed: See trade history).
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     const deps = req.server.deps;
     // Once the server recorded the full count (cancel_confirmable_at) the node is not asked again (review M1).
     if (e.type === 'confirm-cancel' && row.tx_hash !== null && row.cancel_confirmable_at === null) {
@@ -231,6 +236,8 @@ export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations
     const t = rowToTrade(row);
     const role = roleOf(t, req.auth.accountId);
     if (role === null) throw new ApiError(404, 'not-found');
+    // Review trades-list I1: the part's box (a settled trade has closed: See trade history).
+    assertMemberMay(req.auth, tradePartAbility(row.closed_at));
     if (t.txHash === null || (t.state !== 'released' && t.state !== 'refunded')) throw new ApiError(409, 'wrong-state');
     let confirmations: number | null = null;
     try {

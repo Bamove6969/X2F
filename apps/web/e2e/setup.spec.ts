@@ -37,7 +37,7 @@ async function chooseOnly(page: Page, id: 'password' | 'passkey'): Promise<void>
   await page.check(`[data-method="${id}"] input[type="checkbox"]`);
 }
 
-const TERMS_VERSION = '2026-11-09';
+const TERMS_VERSION = '2026-11-12';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
 const BOARD_MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 /** A 95-character standard address ending like the board's example ("…k3Fz"). */
@@ -299,7 +299,7 @@ for (const v of PHONES) {
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
     await expect(page.locator('h1')).toHaveText('Welcome to X2F, lumen.k');
     // Owner S-017: the backup login is the recovery codes saved on the backup step (parity.ts SetupWelcome).
-    await expect(page.locator('[data-part="summary-backup"]')).toHaveText('Recovery codes');
+    await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
     await expectParity(page, 'SetupWelcome', { viewport: v });
     await page.click('[data-part="start-trading"]');
     // Owner G25: the sign-up session ends and Log in comes next, carrying the take on.
@@ -465,8 +465,9 @@ test('Mira.K_ shows exactly as typed after setup (password path)', async ({ page
   const name = page.locator('[data-username]');
   await expect(name).toHaveText('Mira.K_');
   expect(await name.evaluate((el) => getComputedStyle(el).textTransform)).toBe('none');
-  await expect(page.locator('[data-part="summary-backup"]')).toHaveText('Recovery codes');
-  await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.')).toBeVisible();
+  await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
+  // Owner demo notes 12 Nov 2026: Welcome's fee line is now his own (owner-copy.spec.ts).
+  await expect(page.getByText('Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.')).toBeVisible();
   expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.K_', loginName: 'mira-signin-01' });
 
   await page.click('[data-part="start-trading"]');

@@ -74,6 +74,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/team': "my own team's members (account owner only)",
   'GET /v1/team/audit': "my own team's audit log (account owner only)",
   'GET /v1/team/permissions': 'the static abilities catalogue (groups, boxes, presets, hard rules): no account data; read on stale Terms too, so a member sees what their boxes mean before agreeing',
+  'GET /v1/trades': "my own account's trades (buyer or seller), newest first; members by the trades boxes per part; the other side by public name only",
   'GET /v1/trades/:code': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/attestation': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/confirmations': 'one of my own trades (participants only)',

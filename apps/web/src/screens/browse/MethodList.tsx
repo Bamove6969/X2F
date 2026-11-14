@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { Icon } from '../../ui/icons.js';
-import { Logo } from '../../ui/Logo.js';
+import { ScreenHeader } from '../../ui/ScreenHeader.js';
 import { ApiShapeError, CURRENCIES, adSide, currencyFrom, fetchMethods, formatMinor, type MethodLists, type MethodRow, type MethodSort, type Side } from './api.js';
 import { MethodPicker, methodShown } from './MethodPicker.js';
 import { methodUpToLine } from './methodTime.js';
@@ -109,7 +109,8 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
         <div className="x2f-browse__bar">
           <span className="x2f-brand x2f-browse__brand">
             <span className="x2f-browse__logo">
-              <Logo size={24} />
+              {/* Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): the shared header, logo D with the screen name. */}
+              <ScreenHeader />
             </span>
             <NewsBell />
           </span>

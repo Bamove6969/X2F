@@ -17,6 +17,7 @@ import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
 import { startCancelReturnWatch } from './trades/cancelReturn.js';
 import { confirmationsRoute, tradeRoutes } from './trades/routes.js';
+import { tradeListRoute } from './trades/list.js';
 import { disputeRoutes } from './disputes/routes.js';
 import { takeRoutes } from './trades/take.js';
 import type { TradePublisher } from './trades/store.js';
@@ -324,6 +325,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
   tradeRoutes(app, { publish: tradePublish, ...(options.txConfirmations ? { txConfirmations: options.txConfirmations } : {}) });
+  // GET /v1/trades: the account's own trades list (register D-005).
+  tradeListRoute(app);
   // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
   disputeRoutes(app, { publish: tradePublish });
   // Plan 3, Task 5: taking an offer, and the poster's wallet for the new trade.

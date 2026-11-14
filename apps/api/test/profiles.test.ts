@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import {
-  catalog, getMethod, getProfile, isAvailable, isGiftCard, LAUNCH_PROFILE_IDS, loadProfiles, PROFILES, tradeProfile, type MethodProfile,
+  BANNED_METHOD_IDS, catalog, getMethod, getProfile, isAvailable, isGiftCard, LAUNCH_PROFILE_IDS, loadCatalog, loadProfiles, PROFILES, tradeProfile, type MethodProfile,
 } from '../src/methods/profiles.js';
 import { MAX_PAY_WINDOW_MIN, TIMERS } from '@x2f/trade';
 import type { LiveOfferQuery, LiveOfferStat } from '../src/methods/routes.js';
@@ -137,7 +137,18 @@ describe('method profiles', () => {
   });
 
   it('marks legal-review methods unavailable (P3-I20)', () => {
-    for (const id of ['SBP', 'MIR', 'YOOMONEY']) expect(isAvailable(id), id).toBe(false);
+    // owner 12 Nov: Russian anything is banned (and the US sanction laws: Iran, Cuba, North Korea).
+    // SBP, MIR and YOOMONEY are out of the catalog, not merely under review: unknown, so never available.
+    for (const id of ['SBP', 'MIR', 'YOOMONEY']) {
+      expect(getMethod(id), id).toBeNull();
+      expect(isAvailable(id), id).toBe(false);
+    }
+    expect(raw.methods.filter((m) => /russia|\bmir\b|yoomoney|yandex|sber|tinkoff|qiwi|iran|shetab|cuba|north korea/i.test(`${m.id} ${m.name}`)).map((m) => m.id)).toEqual([]);
+    // The catalog refuses a banned id at load, so a re-added Russian method fails at startup.
+    for (const id of BANNED_METHOD_IDS) {
+      expect(() => loadCatalog({ methods: [{ id, name: 'X', group: 'Payment apps' }] }), id).toThrow(/banned/);
+    }
+    expect([...BANNED_METHOD_IDS].sort()).toEqual(['MIR', 'SBP', 'YOOMONEY']);
     expect(isAvailable('ZELLE')).toBe(true);
     expect(isAvailable('NOPE')).toBe(false);
     for (const m of raw.methods) expect(isAvailable(m.id), m.id).toBe(m.legalReview === undefined);
@@ -162,7 +173,7 @@ describe('method profiles', () => {
       'Walmart gift card', 'Best Buy gift card', 'Home Depot gift card', 'Steam gift card', 'PlayStation gift card', 'Xbox gift card',
       'IKEA gift card', 'Sephora gift card', 'Starbucks gift card', 'Airbnb gift card', 'Roblox gift card', 'Nintendo eShop gift card',
       'Visa prepaid gift card', 'Mastercard prepaid gift card', 'Instacart gift card', 'Air Canada gift card', 'Petro-Canada gift card',
-      'Esso gift card', 'SkipTheDishes gift card', 'Sobeys gift card', 'Winners gift card', 'Lululemon gift card', 'Tim Hortons gift card',
+      'Esso and Mobil gift card', 'SkipTheDishes gift card', 'Sobeys gift card', 'Winners gift card', 'Lululemon gift card', 'Tim Hortons gift card',
       'Target gift card', 'Home Hardware gift card', 'Canadian Tire gift card', 'Other gift card',
     ]);
     // 32 brands + Other; nothing else in the group (PaysafeCard is not on the owner's list).
@@ -210,7 +221,7 @@ describe('GET /v1/methods', () => {
   it('lists a method with one live Zelle USD offer in live; SBP, Mir and YooMoney in neither list', async () => {
     stats = [
       { methodId: 'ZELLE', offers: 1, bestCentsPerXmr: 33000n },
-      // Even if offers somehow exist for them, unavailable methods never show.
+      // Even if offers somehow exist for them, removed methods (owner 12 Nov: Russian anything is banned) never show.
       { methodId: 'SBP', offers: 4, bestCentsPerXmr: 30000n },
     ];
     const res = await get('?side=buy&currency=USD');

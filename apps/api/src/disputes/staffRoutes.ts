@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
 import { ApiError, type ApiErrorCode } from '../errors.js';
-import type { EventBus, LiveEvent } from '../events/bus.js';
+import type { EventBus, LiveEvent, PublishOptions } from '../events/bus.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { appendLog } from '../log/append.js';
 import { requireStaff } from '../staff/guard.js';
@@ -84,6 +84,8 @@ interface CaseTrade {
   fiat_cents: string;
   confirmations: number;
   taken_at: Date;
+  /** Review trades-list I1: which part of the traders' trades it is, for members' streams. */
+  closed: boolean;
 }
 
 function body(req: FastifyRequest, keys: readonly string[], required: readonly string[] = keys): Record<string, unknown> {
@@ -113,7 +115,8 @@ async function codeOf(q: Queryable, req: FastifyRequest): Promise<string> {
 async function caseTrade(q: Queryable, code: string): Promise<CaseTrade> {
   const { rows } = await q.query<CaseTrade>(
     `select code, seller_account_id::text as seller, buyer_account_id::text as buyer, state, method_id, amount_atomic::text as amount_atomic,
-            locked_currency, locked_cents_per_xmr::text as locked_cents_per_xmr, fiat_cents::text as fiat_cents, confirmations, taken_at
+            locked_currency, locked_cents_per_xmr::text as locked_cents_per_xmr, fiat_cents::text as fiat_cents, confirmations, taken_at,
+            closed_at is not null as closed
        from trades where code = $1`,
     [code],
   );
@@ -162,11 +165,11 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   const log = o.appendLog ?? appendLog;
   const cfg = { perm: 'disputes.handle' as const };
 
-  const publish = (accountIds: readonly string[], ev: LiveEvent) => {
+  const publish = (accountIds: readonly string[], ev: LiveEvent, part: PublishOptions = {}) => {
     if (!o.traderEvents) return;
     for (const id of accountIds) {
       try {
-        o.traderEvents.publish(id, ev);
+        o.traderEvents.publish(id, ev, part);
       } catch {
         // Best effort: the change is committed and the apps re-read.
       }
@@ -473,8 +476,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       [code, name, deps.clock()],
     );
     if (rowCount === 1) {
-      publish([t.buyer, t.seller], { type: 'moderator-joined', code, username: name });
-      publish([t.buyer, t.seller], { type: 'trade', code, state: t.state });
+      publish([t.buyer, t.seller], { type: 'moderator-joined', code, username: name }, { closed: t.closed });
+      publish([t.buyer, t.seller], { type: 'trade', code, state: t.state }, { closed: t.closed });
     }
   }
 
@@ -519,7 +522,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       ruleError(err);
     }
     await announce(req, code, t);
-    publish([t.buyer, t.seller], { type: 'chat', chat });
+    publish([t.buyer, t.seller], { type: 'chat', chat }, { closed: t.closed });
     return reply.code(201).send({ id });
   });
 
@@ -539,7 +542,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         where code = $1 and seq = (select max(seq) from disputes where code = $1)`,
       [code, side, deps.clock(), req.staff.displayName],
     );
-    publish([side === 'buyer' ? t.buyer : t.seller], { type: 'proof-requested', code, username: req.staff.displayName });
+    publish([side === 'buyer' ? t.buyer : t.seller], { type: 'proof-requested', code, username: req.staff.displayName }, { closed: t.closed });
     return reply.code(204).send();
   });
 

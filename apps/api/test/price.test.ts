@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config.js';
-import { CURRENCY_EXPONENTS, currencyExponent, decimalToMinor } from '../src/price/currencies.js';
+import { BANNED_CURRENCIES, CURRENCY_EXPONENTS, currencyExponent, decimalToMinor } from '../src/price/currencies.js';
 import { PRICE_FEED_DEFAULTS, createPriceFeed, median, type PriceQuote, type PriceSource } from '../src/price/feed.js';
 import { createFxRates } from '../src/price/fx.js';
 import { createMarketPrices } from '../src/price/market.js';
@@ -384,6 +384,13 @@ describe('currencies', () => {
     for (const c of ['KWD', 'BHD']) expect(currencyExponent(c), c).toBe(3);
     expect(currencyExponent('XXX')).toBeNull();
     expect(currencyExponent('usd')).toBeNull();
+    // owner 12 Nov: Russian anything is banned; and "I'm sticking to the US sanction laws" (the
+    // jurisdictions under comprehensive OFAC sanctions: Cuba, Iran, North Korea). RUB is off the list
+    // (45 to 44); IRR, KPW, CUP and CUC were never on it. No price, so no offer. BANNED_CURRENCIES
+    // keeps them off: the module refuses to load with one of them on the list.
+    for (const c of ['RUB', 'IRR', 'KPW', 'CUP', 'CUC']) expect(currencyExponent(c), c).toBeNull();
+    expect([...BANNED_CURRENCIES].sort()).toEqual(['CUC', 'CUP', 'IRR', 'KPW', 'RUB']);
+    expect(Object.keys(CURRENCY_EXPONENTS)).toHaveLength(44);
     for (const [code, e] of Object.entries(CURRENCY_EXPONENTS)) {
       expect(code).toMatch(/^[A-Z]{3}$/);
       expect([0, 2, 3]).toContain(e);

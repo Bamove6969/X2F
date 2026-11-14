@@ -38,7 +38,8 @@ const RETRY_MS = 3000;
 export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamOptions = {}): void {
   const heartbeatMs = o.heartbeatMs ?? HEARTBEAT_MS;
   const maxStreamMs = o.maxStreamMs ?? MAX_STREAM_MS;
-  // The account owner, or a team member with Trades (Plan 2 Task 18): the stream carries the account's trade events.
+  // The account owner, or a team member with either trades box (Plan 2 Task 18; review trades-list I1):
+  // the stream carries the account's trade events, a member's only those of the parts their boxes allow.
   const requireTrader = requireSession({ kinds: ['trader'], touch: false, member: STREAM_ABILITY });
 
   app.get('/v1/events', { preHandler: requireTrader }, async (req: FastifyRequest, reply: FastifyReply) => {
@@ -73,7 +74,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
         else pending.push(data);
       },
       close: end,
-    }, req.auth.sessionId, { member: req.auth.memberId !== null });
+    }, req.auth.sessionId, { member: req.auth.memberId !== null, abilities: req.auth.memberAbilities });
     if (!detach) throw new ApiError(429, 'busy');
 
     // Check the session again now that the stream is attached (security review, TOCTOU): a

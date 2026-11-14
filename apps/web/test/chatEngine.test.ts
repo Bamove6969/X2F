@@ -674,23 +674,40 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     await fromSeller('after', parts, 'seller', 1);
     const e = engine();
     const first = await e.sync(chat);
-    expect(first.lines.map((l) => [l.text, l.missing ?? false, l.gapBefore])).toEqual([
-      ['before', false, false],
-      ['after', false, false],
+    // Review payee-fields-2 m-4: the seller's package that could not be shown is a neutral line for the
+    // buyer (no text of it); the malformed payload and the mod-signed package are still no line at all.
+    expect(first.lines.map((l) => [l.id, l.text, l.missing ?? false, l.unreadablePay ?? false, l.gapBefore])).toEqual([
+      ['1', 'before', false, false, false],
+      ['2', '', false, true, false],
+      ['5', 'after', false, false, false],
     ]);
     // The next sync asks only past the last envelope: the refused ones are not fetched again.
     api.afters = [];
-    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['before', 'after']);
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['before', '', 'after']);
     expect(api.afters).toEqual(['5']);
     // Each refused envelope has a receipt marked refused and nothing else of it; the cursor is past them.
     const rec = (await store.load(chat))!;
     expect(rec.cursor).toBe('5');
-    expect(rec.receipts.map((r) => [r.id, r.refused === true])).toEqual([['1', false], ['2', true], ['3', true], ['4', true], ['5', false]]);
+    expect(rec.receipts.map((r) => [r.id, r.refused === true, r.refusedPay === true])).toEqual([['1', false, false], ['2', true, true], ['3', true, false], ['4', true, false], ['5', false, false]]);
     for (const s of ['Jane Doe', 'other@example.ca', 'INTERAC_E_TRANSFER']) expect(JSON.stringify(store.records.get(chat)), s).not.toContain(s);
-    // A reopened app (a new engine) re-reads the chat: the refused ones are neither lines nor placeholders.
+    // A reopened app (a new engine) re-reads the chat: the refused ones are not placeholders; the package stays its neutral line.
     api.afters = [];
-    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.missing ?? false])).toEqual([['before', false], ['after', false]]);
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.missing ?? false, l.unreadablePay ?? false])).toEqual([['before', false, false], ['', false, true], ['after', false, false]]);
     expect(api.afters[0]).toBe('0');
+  });
+
+  it('review payee-fields-2 m-4: a package this reader cannot open (a box its table does not know) is a neutral line for the payer, never its contents', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    const newer = { v: 2, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }, { key: 'futureBox', value: 'X1' }] };
+    api.add('seller', await sellerRaw({ text: `${TEXT}\nFuture box: X1`, pay: newer }, 0, parts));
+    await fromSeller('did you get them?', parts, 'seller', 1);
+    const s = await engine().sync(chat);
+    expect(s.lines.map((l) => [l.from, l.text, l.unreadablePay ?? false, l.pay ?? null])).toEqual([
+      ['seller', '', true, null],
+      ['seller', 'did you get them?', false, null],
+    ]);
+    for (const v of ['Jane Doe', 'jane@example.ca', 'X1']) expect(JSON.stringify(store.records.get(chat)), v).not.toContain(v);
   });
 
   it('review M1 (pay details): only what may become valid later is tried again: a moderator line outside a dispute, a package before the escrow is secured', async () => {

@@ -13,7 +13,7 @@ import { KEY_UNAVAILABLE } from '../src/screens/auth/refusals.js';
 import { KEY_IN_USE, nameError, setupError, termsChanged } from '../src/screens/setup/register.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { KEY_POINTS, TERMS } from '../src/screens/setup/termsText.js';
-import { FEE_SENTENCE, startTradingPath, summarize } from '../src/screens/setup/Welcome.js';
+import { FEE_SENTENCE, startTradingPath } from '../src/screens/setup/Welcome.js';
 
 const wallet = (over: Partial<Wallet> = {}): Wallet => ({
   id: 'w1',
@@ -44,39 +44,14 @@ describe('Start trading (owner G25: after sign-up, log in again)', () => {
   });
 });
 
-describe('summarize (Welcome rows)', () => {
-  it('reads the flow first: the method just set up and the backup just added', () => {
-    expect(summarize({ methods: ['password', 'recovery-codes'] }, [wallet()], { registered: true, method: 'password', backup: 'recovery-codes' })).toEqual({
-      loginWith: 'Password',
-      backup: 'Recovery codes',
-      paidTo: { app: 'Cake Wallet', end: 'k3Fz' },
-    });
-    // A second PGP key is not visible in the methods list; the flow knows.
-    expect(summarize({ methods: ['pgp'] }, [], { registered: true, method: 'pgp', backup: 'pgp' }).backup).toBe('Second PGP key');
-  });
-
-  it('without the flow (a reload), reads the account: PGP first, then the other methods as the backup', () => {
-    expect(summarize({ methods: ['pgp', 'security-key'] }, [], fresh)).toMatchObject({ loginWith: 'PGP key', backup: 'Security key', paidTo: null });
-    expect(summarize({ methods: ['security-key'] }, [], fresh)).toMatchObject({ loginWith: 'Security key', backup: 'None yet' });
-    expect(summarize({ methods: ['password', 'recovery-codes'] }, [], fresh)).toMatchObject({ loginWith: 'Password', backup: 'Recovery codes' });
-    expect(summarize({ methods: [] }, [], fresh)).toMatchObject({ loginWith: 'None yet', backup: 'None yet' });
-    // Design build gaps Job 1: an authenticator app is no backup login (it is a password's second step).
-    expect(summarize({ methods: ['password', 'totp'] }, [], fresh)).toMatchObject({ loginWith: 'Password', backup: 'None yet' });
-  });
-
+describe('setup backups', () => {
   it('setup offers no authenticator app as a backup; lead call (12 Nov 2026): it offers no backup but the recovery code', () => {
     // The list of optional backups is gone with its step (signupV2.test.tsx renders the step and finds no other backup).
     expect('BACKUPS' in BackupStep).toBe(false);
   });
-
-  it('"You get paid to" shows only a usable wallet, never one still waiting', () => {
-    expect(summarize({ methods: ['pgp'] }, [wallet({ usable: false })], fresh).paidTo).toBeNull();
-    expect(summarize({ methods: ['pgp'] }, [wallet({ usable: false }), wallet({ app: 'edge', addressEnd: 'Q9x2', usable: true })], fresh).paidTo).toEqual({
-      app: 'Edge',
-      end: 'Q9x2',
-    });
-  });
 });
+
+// The Welcome rows became the owner's checklist (12 Nov 2026): ownerCopy1.test.tsx.
 
 describe('passwordRules', () => {
   it('ticks each board line as it is met; ok only with every rule and a match', () => {
@@ -126,9 +101,14 @@ describe('copy', () => {
     expect(FEE_SENTENCE).toBe('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.');
   });
 
-  it('the Terms draft carries the fee sentence and has no exclamation marks', () => {
+  // 2026-11-12: the Terms' fee paragraph is the owner's own wording (his /setup comment 10475770,
+  // comms terms-draft-2026-11-12.md item 7) in place of FEE_SENTENCE; it states the same rule (OD-7,
+  // p10-1): the ad's poster pays 1%, taking an ad is free.
+  it('the Terms draft states the fee rule (poster pays 1%, taking is free) and has no exclamation marks', () => {
     const all = TERMS.flatMap((s) => [s.heading, ...s.paragraphs]).join('\n');
-    expect(all).toContain(FEE_SENTENCE);
+    const fees = TERMS.find((s) => s.heading === '4. Fees')!.paragraphs.join('\n');
+    expect(fees).toContain('X2F collects a fee of 1% of the total amount traded, paid in XMR when the trade completes. Whoever posts the ad pays it.');
+    expect(fees).toContain('Taking someone else’s ad is free.');
     expect(all).not.toContain('!');
   });
 });

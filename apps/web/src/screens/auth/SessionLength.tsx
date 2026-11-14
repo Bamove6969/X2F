@@ -22,6 +22,7 @@ import { DEVICES_PATH } from '../settings/devicesCopy.js';
 import { authApi } from './authApi.js';
 import { IDLE_COPY, IDLE_REMINDER_PATH, SESSION_COPY as C, SESSION_LENGTH_PATH } from './sessionCopy.js';
 import '../screens.css';
+import { HelpLinks } from '../../ui/HelpLinks.js';
 
 export { SESSION_LENGTH_PATH };
 
@@ -137,7 +138,8 @@ export function SessionLengthScreen() {
 
   if (me === null || me.session == null) return <main className="x2f-screen" data-screen="session-length" aria-busy="true" />;
   return (
-    <main className="x2f-screen" data-screen="session-length">
+    // Owner demo notes 12 Nov #42 (DESIGNER-REVIEW): the content sits lower (x2f-screen--roomy) and ends with the help links.
+    <main className="x2f-screen x2f-screen--roomy" data-screen="session-length">
       <p className="x2f-sheet__body">{C.loggedInAs(me.displayName)}</p>
       <h1 className="x2f-screen__title">{C.question}</h1>
       <SessionLengthField choices={me.session.choices} value={pick} onChange={setPick} disabled={busy} />
@@ -172,6 +174,7 @@ export function SessionLengthScreen() {
       >
         {C.continue}
       </Button>
+      <HelpLinks />
     </main>
   );
 }

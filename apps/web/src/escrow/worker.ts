@@ -10,6 +10,7 @@
 import { MoneroMultisigEngine, runParty, wsTransport, type EscrowNetwork } from '@x2f/escrow';
 import { generateBoxKeyPair, generateIdentity } from '@x2f/protocol';
 import { httpEscrowApi } from './adapters.js';
+import { installMoneroWorker } from './moneroWorker.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowAction, type EscrowRuntime, type EscrowStatus, type RuntimeDeps } from './runtime.js';
 import { openEscrowStore } from './store.js';
 import { createAckKeeper } from '../chat/ack.js';
@@ -151,6 +152,8 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
       ...chatConfig({ VITE_MOD_SIGNING_PUBLIC: import.meta.env.VITE_MOD_SIGNING_PUBLIC as string | undefined }),
     }),
   );
+  // Before any wallet exists: monero-ts's own worker, bundled with the app (moneroWorker.ts).
+  installMoneroWorker();
   // J-23 groundwork: the account chat key keeper (chat/ack.ts); keys never leave this worker.
   serveChatKeys(globalThis as unknown as ChatKeysPort, async () => createAckKeeper({ store: await sharedChatStore(), newBoxKeyPair: generateBoxKeyPair }));
   serveEscrow(globalThis as unknown as Port, async (onStatus) => {
