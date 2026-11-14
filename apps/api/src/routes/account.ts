@@ -13,6 +13,7 @@ import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { abilitiesView } from '../team/members.js';
 import { assistantLabel } from '../team/label.js';
+import { assertSessionEndInHours, endWithinHours, ownLimitsView, type MemberLimitsView } from '../team/limits.js';
 import type { PresetId, TeamRole } from '../team/abilities.js';
 import { endOnboarding, requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
@@ -110,6 +111,14 @@ export async function sessionAccountType(db: Queryable, accountId: string): Prom
   return rows[0]?.account_type === 'vendor' ? 'vendor' : 'trader';
 }
 
+/** `sessionInfo` for the calling session; a team member's end is capped at their working window's end (J-20 review F6). */
+async function callerSessionInfo(
+  db: Queryable, auth: { accountId: string; memberId: string | null }, row: { length_hours: number | null; expires_at: Date }, now: Date,
+): Promise<SessionInfo> {
+  const expires_at = await endWithinHours(db, auth.memberId, now, row.expires_at);
+  return sessionInfo(await sessionAccountType(db, auth.accountId), { length_hours: row.length_hours, expires_at }, now);
+}
+
 function sessionInfo(type: SessionAccountType, row: { length_hours: number | null; expires_at: Date }, now: Date): SessionInfo {
   return {
     lengthHours: row.length_hours,
@@ -130,6 +139,11 @@ export interface MemberOverview {
   preset: PresetId | null;
   /** The old roles the boxes read as (the web's Post offer tab and room still read these). */
   roles: TeamRole[];
+  /**
+   * J-20 review F8: the member's own trade-size band (XMR atomic, null: none) and working hours, as
+   * the lead set them. Absent while MEMBER_SEES_OWN_LIMITS is off (owner question p11-136).
+   */
+  limits?: MemberLimitsView;
 }
 
 /** How many of each login method an account holds (read straight from the method tables). */
@@ -270,6 +284,9 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
       chatLabel: assistantLabel(row.display_name, no),
       ...abilitiesView(req.auth.memberAbilities),
     };
+    // J-20 review F8 (owner question p11-136; MEMBER_SEES_OWN_LIMITS): the member's own band and hours.
+    const limits = await ownLimitsView(deps.db, req.auth.memberId);
+    if (limits !== undefined) member.limits = limits;
   }
   const held = row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime();
   return {
@@ -297,7 +314,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     member,
     // The end this request's token has (review S-m1: the token before an extend keeps the old end).
     session: row.kind === 'trader' && row.level === 'full'
-      ? sessionInfo(await sessionAccountType(deps.db, accountId), { ...row, expires_at: new Date(Math.min(row.expires_at.getTime(), req.auth.expiresAt.getTime())) }, now)
+      ? await callerSessionInfo(deps.db, req.auth, { ...row, expires_at: new Date(Math.min(row.expires_at.getTime(), req.auth.expiresAt.getTime())) }, now)
       : null,
     idleReminderMinutes: row.kind === 'trader' ? await idleReminderOf(deps.db, methodsOf) : null,
   };
@@ -495,15 +512,15 @@ export function accountRoutes(app: FastifyInstance): void {
         // extend sets the length, so an unchosen session's period is still its login.
         const firstChoice = old.length_hours === null && now.getTime() < old.period_started_at.getTime() + SESSION_CHOICE_WINDOW_MS;
         if (end.getTime() > old.expires_at.getTime() && !firstChoice) throw new ApiError(403, 'confirm-required', { action: 'extend-session' });
-        // TODO(team working hours, p7-11; review S-m4, owner G9): when a team lead sets working
-        // hours, a member's session must not get a later end outside them ("they won't be able to
-        // extend the session anyway"). Refuse a later end here, for req.auth.memberId !== null, before any write.
+        // J-20 (team working hours, p7-11; review S-m4, owner G9): a member's session never gets a
+        // later end past their working window ("they won't be able to extend the session anyway").
+        await assertSessionEndInHours(db, req.auth.memberId, now, end, old.expires_at);
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
           `update sessions set period_started_at = $3, expires_at = $4, length_hours = $2 where id = $1
         returning length_hours, expires_at`,
           [req.auth.sessionId, hours, now, end],
         );
-        return { info: sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now), shortened: end.getTime() < old.expires_at.getTime() };
+        return { info: await callerSessionInfo(db, req.auth, rows[0]!, now), shortened: end.getTime() < old.expires_at.getTime() };
       });
       // Review M1: a stream opened before keeps the old end as its lifetime; end it now.
       if (shortened) req.server.events.closeSession(req.auth.accountId, req.auth.sessionId);
@@ -540,10 +557,11 @@ export function accountRoutes(app: FastifyInstance): void {
       const hours = (req.body as { hours?: number }).hours ?? null;
       const { info, setCookie } = await withTx(d.db, async (db) => {
         await requireLiveSessionInTx(db, req.auth, now);
-        // TODO(team working hours, p7-11; review S-m4, owner G9): when a team lead sets working
-        // hours, a member's session must not get a later end outside them ("they won't be able to
-        // extend the session anyway"). Refuse here, for req.auth.memberId !== null, before any write.
-        const cur = await db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1 for update', [req.auth.sessionId]);
+        const cur = await db.query<{ expires_at: Date; length_hours: number | null }>('select expires_at, length_hours from sessions where id = $1 for update', [req.auth.sessionId]);
+        // J-20 (team working hours, p7-11; review S-m4, owner G9): a member's session never gets a
+        // later end past their working window, refused before any write (the token is not rotated).
+        const wanted = new Date(now.getTime() + (hours ?? cur.rows[0]!.length_hours ?? UNCHOSEN_SESSION_HOURS) * 3_600_000);
+        await assertSessionEndInHours(db, req.auth.memberId, now, wanted, cur.rows[0]!.expires_at);
         // Review S-m1: a new token, the one before it valid only to this old end.
         const setCookie = await rotateSessionToken(db, req, reply, req.auth.sessionId, cur.rows[0]!.expires_at);
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
@@ -555,7 +573,7 @@ export function accountRoutes(app: FastifyInstance): void {
         returning length_hours, expires_at`,
           [req.auth.sessionId, now, UNCHOSEN_SESSION_HOURS, hours],
         );
-        return { info: sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now), setCookie };
+        return { info: await callerSessionInfo(db, req.auth, rows[0]!, now), setCookie };
       });
       setCookie();
       return info;

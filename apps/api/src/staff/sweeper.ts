@@ -23,9 +23,22 @@ export interface SweepDeps {
 export async function endSessionForHours(deps: SweepDeps, sessionId: string, staffId: string): Promise<boolean> {
   const now = deps.clock();
   const ended = await withTx(deps.db, async (c) => {
+    // Task 33 (D-045): the end of the login hours is an automatic logout, recorded as information
+    // only (no pay is calculated). The shift is marked first, so the session trigger leaves it.
+    const shift = await c.query<{ id: string }>(
+      `update staff_shifts sh set ended = 'auto-logout', ended_at = $2
+         from sessions s
+        where sh.session_id = $1 and sh.ended is null and s.id = sh.session_id and s.app = 'staff' and s.revoked_at is null
+        returning sh.id`,
+      [sessionId, now],
+    );
     const r = await c.query("update sessions set revoked_at = $2 where id = $1 and app = 'staff' and revoked_at is null", [sessionId, now]);
     if ((r.rowCount ?? 0) === 0) return false;
     await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: null, action: 'staff.session-ended-hours', detail: { staffId: staffId.toLowerCase() } });
+    const shiftId = shift.rows[0]?.id;
+    if (shiftId !== undefined) {
+      await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: null, action: 'shift.abandoned', detail: { shiftId, ended: 'auto-logout' } });
+    }
     return true;
   });
   if (ended) deps.events.closeSession(staffId, sessionId);

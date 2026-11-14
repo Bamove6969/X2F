@@ -2,9 +2,10 @@
 // missing field fails loudly instead of showing something wrong. Shapes:
 // - GET /v1/trades/:code: Task 22's getTrade/parseTradeView (api/trade.ts), mapped by tradeFromView;
 // - GET|POST /v1/trades/:code/dispute, POST /v1/trades/:code/appeal: apps/api/src/disputes/routes.ts;
-// - GET /v1/methods?side&currency: Task 3 (wip/second-p3-t3), only to name the method.
+// The method is named from the bundled catalog by id (disputeMethodName), never from the API.
 import { api, ApiCallError } from '../../api/client.js';
 import { getTrade, methodOf, publicName, type TradeView } from '../../api/trade.js';
+import { catalogMethodName } from '../../methods/catalogNames.js';
 
 export type Party = 'buyer' | 'seller';
 export type Reason = 'paid' | 'silent' | 'terms' | 'other';
@@ -89,6 +90,11 @@ export interface DisputeView {
   moderator: { name: string; joinedAt: string } | null;
   ruling: RulingView | null;
   appeal: { by: Party; at: string } | null;
+  /**
+   * D-011 (Plan 4 Task 24): the appeal waits for an independent reviewer (every senior moderator
+   * and the owner was involved in round 1). Absent from an older API: false.
+   */
+  appealWaiting?: boolean;
   /** The appeal window's length in hours, from the owner's settings (absent from an older API: 48). */
   appealWindowH?: number | null;
   serverNow: string;
@@ -220,6 +226,10 @@ export function parseDispute(v: unknown): DisputeView {
     moderator,
     ruling,
     appeal,
+    appealWaiting: d.appealWaiting === undefined ? false : (() => {
+      if (typeof d.appealWaiting !== 'boolean') throw new ShapeError('appealWaiting');
+      return d.appealWaiting;
+    })(),
     appealWindowH: later(d.appealWindowH, (v) => {
       if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) throw new ShapeError('appealWindowH');
       return v;
@@ -252,19 +262,12 @@ export async function sendAppeal(code: string, why: string): Promise<DisputeView
   return parseDispute(await api(`${path(code)}/appeal`, { method: 'POST', body: { why } }));
 }
 
-/** The method's name from Task 3's list (falls back to its id when the list is unavailable). */
-export async function fetchMethodName(methodId: string, currency: string, signal?: AbortSignal): Promise<string> {
-  try {
-    const q = new URLSearchParams({ side: 'sell', currency });
-    const body = rec(await api(`/v1/methods?${q.toString()}`, signal ? { signal } : {}), 'methods');
-    const all = Array.isArray(body.all) ? body.all : [];
-    for (const row of all) {
-      if (row !== null && typeof row === 'object' && (row as Rec).id === methodId && typeof (row as Rec).name === 'string') return (row as Rec).name as string;
-    }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err;
-  }
-  return methodId;
+/**
+ * The method's name for the dispute screens: the bundled catalog's for the id (re-verify R3, as the
+ * trade room's `methodOf`), never the API's method list; the id itself when the catalog has none.
+ */
+export function disputeMethodName(methodId: string): string {
+  return catalogMethodName(methodId);
 }
 
 /** The user-facing line for a refused open or appeal (codes from the API). */

@@ -1,6 +1,7 @@
 import type { ConfirmAction, MethodType } from '@x2f/accounts';
 import { ApiError } from '../errors.js';
 import { parseAbilities, TEAM_ROLES as ROLE_ORDER } from '../team/abilities.js';
+import { bandFromKey, hoursFromKey } from '../team/limits.js';
 
 const METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password', 'totp', 'recovery-codes'];
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -45,6 +46,8 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'team-invite-abilities': { name: (v) => TEAM_NAME.test(v), abilities: teamAbilities },
   'team-abilities': { memberId: (v) => UUID.test(v), abilities: teamAbilities },
   'team-remove': { memberId: (v) => UUID.test(v) },
+  // J-20: exactly the keys the limits route binds (team/limits.ts `bandKey`, `hoursKey`).
+  'team-limits': { memberId: (v) => UUID.test(v), band: (v) => bandFromKey(v) !== undefined, hours: (v) => hoursFromKey(v) !== undefined },
   'extend-session': {},
   'become-vendor': {},
 };

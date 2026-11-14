@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { expectParity } from './parity.js';
 import { takeableWallets, type WalletRule, type WalletView } from '../src/screens/wallets-model.js';
-import { INSIDE } from './session.js';
+import { INSIDE, screenStatus } from './session.js';
 import { DB_NAME as ESCROW_DB, KEYS, SECRETS, TRADES } from '../src/escrow/store.js';
 
 /** A 95-character standard address ending in `end` (the API's `addressEnd` is its last 6 characters). */
@@ -338,7 +338,7 @@ test('a batch that waits shows one shared wait for all of its wallets', async ({
   await fillWallet(page, address('D', 'BBBBB2'), 'Wallet 3');
   await page.getByRole('button', { name: 'Save 2 wallets' }).click();
   await confirmWithPassword(page);
-  const status = page.getByRole('status');
+  const status = screenStatus(page);
   await expect(status).toContainText('Your 2 new wallets can be paid from');
   await expect(status).toContainText('one wait for all of them');
   for (const name of ['Wallet 2', 'Wallet 3']) {

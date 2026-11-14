@@ -675,3 +675,16 @@ describe('the buyer dispute wait, said two ways (owner F9)', () => {
     }
   });
 });
+
+// Re-verify R3 (instr-hash): the dispute screen names the method from the bundled catalog by id,
+// never from the API's method list.
+describe('the dispute screen names the method from the catalog (re-verify R3)', () => {
+  it('disputeMethodName is the catalog name for the id, or the id itself', async () => {
+    const api = (await import('../src/screens/dispute/api.js')) as Record<string, unknown>;
+    expect(typeof api.disputeMethodName).toBe('function');
+    const name = api.disputeMethodName as (id: string) => string;
+    expect(name('ZELLE')).toBe('Zelle');
+    expect(name('NOT_A_METHOD')).toBe('NOT_A_METHOD');
+    expect(api.fetchMethodName).toBeUndefined();
+  });
+});

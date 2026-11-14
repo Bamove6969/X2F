@@ -40,6 +40,42 @@ export interface EscrowTradeView {
    * the attested `payWindowMin` must equal it (runtime.ts, `wrong-terms`).
    */
   payWindowMin: number | null;
+  /** The payment method chosen at take, as the view shows it, or null when it has none; the attested `deal.methodId` must equal it (runtime.ts). */
+  methodId: string | null;
+  /**
+   * The payment instructions locked at take, as the (unsigned) view shows them: null before the
+   * escrow is secured, '' when the offer gave none. Never shown as such: runtime.ts passes them on
+   * (`EscrowStatus.paymentInstructions`) only when they hash to the attested
+   * `terms.deal.instructionsSha256` (Task 34 review I1, restored after J-16).
+   */
+  paymentInstructions: string | null;
+  /**
+   * Review M1: the view carried a `paymentInstructions` that is neither text nor null (a number, an
+   * object, ...): malformed, never read as "none". The runtime counts it as a mismatch.
+   */
+  instructionsMalformed: boolean;
+  /** Review M1: the escrow has been secured per the view (`securedAt` set); from then on the view must carry the instructions. */
+  securedSeen: boolean;
+}
+
+/**
+ * The most payment instructions a trade can lock (migration 490: `char_length(method_instructions) <= 1000`).
+ * Postgres counts characters (code points), so the limit here is in code points, not UTF-16 units.
+ */
+export const MAX_INSTRUCTIONS_CHARS = 1000;
+
+/**
+ * The view's payment instructions as text, or null when they are not text or are longer than any
+ * trade can lock (re-verify R2: a longer value is malformed, so a lying API cannot hand the
+ * runtime megabytes to hash and keep).
+ */
+function instructionsText(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  if (v.length <= MAX_INSTRUCTIONS_CHARS) return v;
+  if (v.length > 2 * MAX_INSTRUCTIONS_CHARS) return null;
+  let n = 0;
+  for (const _ of v) if (++n > MAX_INSTRUCTIONS_CHARS) return null;
+  return v;
 }
 
 const big = (v: unknown): bigint | null => (typeof v === 'string' && /^(?:0|[1-9]\d{0,30})$/.test(v) ? BigInt(v) : null);
@@ -70,6 +106,10 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
     paidAt: typeof v.paidAt === 'string' ? v.paidAt : null,
     payWindowMin:
       typeof v.payWindowMin === 'number' && Number.isSafeInteger(v.payWindowMin) && v.payWindowMin >= 1 && v.payWindowMin <= MAX_PAY_WINDOW_MIN ? v.payWindowMin : null,
+    methodId: typeof v.methodId === 'string' && v.methodId.length > 0 ? v.methodId : null,
+    paymentInstructions: instructionsText(v.paymentInstructions),
+    instructionsMalformed: v.paymentInstructions !== undefined && v.paymentInstructions !== null && instructionsText(v.paymentInstructions) === null,
+    securedSeen: typeof v.securedAt === 'string',
   };
 }
 

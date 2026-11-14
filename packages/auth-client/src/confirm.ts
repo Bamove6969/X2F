@@ -1,5 +1,5 @@
 import { addressEnd, addressEnds, addressHash, addressesHash, type ConfirmAction } from '@x2f/accounts';
-import { AuthApiError } from './api.js';
+import { AuthApiError, type TradeBand, type WorkingHours } from './api.js';
 
 /**
  * Runs a change that may need confirm-it's-you (P2-C2): calls `run()`; when the API answers
@@ -50,6 +50,19 @@ export function teamInviteAction(name: string, roles: readonly Role[]): Extract<
 /** The action a roles change is confirmed for: the member and exactly the new roles. */
 export function teamRolesAction(memberId: string, roles: readonly Role[]): Extract<ConfirmAction, { kind: 'team-roles' }> {
   return { kind: 'team-roles', memberId, roles: rolesText(roles) };
+}
+
+/**
+ * J-20: the action a member's limits are confirmed for, keyed exactly as the API binds it
+ * (apps/api/src/team/limits.ts `bandKey`, `hoursKey`).
+ */
+export function teamLimitsAction(memberId: string, band: TradeBand | null, hours: WorkingHours): Extract<ConfirmAction, { kind: 'team-limits' }> {
+  return {
+    kind: 'team-limits',
+    memberId,
+    band: band === null ? 'none' : `${band.minAtomic}-${band.maxAtomic}`,
+    hours: hours === 'any' ? 'any' : `${hours.days.join(',')} ${hours.start}-${hours.end} ${hours.tz}`,
+  };
 }
 
 /** Owner 2 Nov 2026: the action switching to a vendor account is confirmed for. */

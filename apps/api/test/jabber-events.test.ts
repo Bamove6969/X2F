@@ -54,7 +54,14 @@ const queued = async (accountId: string) =>
   (await deps.db.query<{ kind: string }>('select kind from jabber_outbox where account_id = $1 order by id', [accountId])).rows.map((r) => r.kind);
 const clearOutbox = (accountId: string) => deps.db.query('delete from jabber_outbox where account_id = $1', [accountId]);
 const sendAll = () => sendDueNotices({ db: deps.db, clock: deps.clock, config: deps.config, sender: fake });
-const ALL_ON = { events: [{ kind: 'account-change', on: true, canTurnOff: false }, { kind: 'trade-attention', on: true, canTurnOff: true }] };
+// J-20 (batch 9): the lead's notice of a member's first login is a security notice too, always on.
+const ALL_ON = {
+  events: [
+    { kind: 'account-change', on: true, canTurnOff: false },
+    { kind: 'trade-attention', on: true, canTurnOff: true },
+    { kind: 'team-member-first-login', on: true, canTurnOff: false },
+  ],
+};
 const nudgeChange = (b: Browser) => b.put('/v1/account/nudges', { enabled: false, quietFrom: null, quietTo: null, tz: null });
 
 async function withJabber(jid = address()) {
@@ -75,7 +82,7 @@ async function dispute(buyerId: string, sellerId: string) {
 
 describe('the event list', () => {
   it("lists main's notice kinds in order, every one on until the user turns it off", async () => {
-    expect(NOTICE_KINDS).toEqual(['account-change', 'trade-attention']);
+    expect(NOTICE_KINDS).toEqual(['account-change', 'trade-attention', 'team-member-first-login']);
     const t = await trader();
     expect((await t.browser.get('/v1/account/jabber/events')).json()).toEqual(ALL_ON);
     // Nothing to pick before an address is proven.

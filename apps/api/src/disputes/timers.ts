@@ -1,6 +1,8 @@
 import { applyDispute, DisputeRuleError, shiftDeadlines } from '@x2f/staff';
 import type { Deps } from '../app.js';
 import { appendLog } from '../log/append.js';
+import { pushOwnerAlert, type OwnerAlertDeps } from '../push/ownerAlert.js';
+import { syncNoReviewerAlert } from './appeals.js';
 import { startRetention, type RetentionJob } from '../retention.js';
 import { disputeSettings } from './settings.js';
 import { withDispute, type DisputeDeps } from './store.js';
@@ -20,11 +22,16 @@ export const DISPUTE_TIMER_MS = 30_000;
  *    becomes final (`window-closed`, by the system), logged as `ruling.final`. Coins already
  *    moved at the ruling (A1 dropped): this only ends the one chance to appeal.
  *
+ * 3. **No reviewer (D-011, lead call 12 Nov).** An appeal whose last eligible reviewer dropped away
+ *    after filing (switched off, removed, disabled) alerts the owner, in-app and by push, once per
+ *    transition into that state (`syncNoReviewerAlert`); one that has a reviewer again is unmarked.
+ *    Not counted as a change.
+ *
  * Each dispute is its own transaction (`withDispute`); one that fails is skipped and retried on the
  * next pass, and the others still run (lead review 7 Nov). The failures are thrown together once the
  * pass is over, so the scheduler still reports them. Returns the number of disputes changed.
  */
-export async function runDisputeTimers(deps: DisputeDeps): Promise<number> {
+export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDeps['push'] }): Promise<number> {
   const now = deps.clock();
   const flags = await deps.db.query<{ since: Date | null }>('select maintenance_since as since from site_flags');
   const since = flags.rows[0]?.since ?? null;
@@ -66,6 +73,17 @@ export async function runDisputeTimers(deps: DisputeDeps): Promise<number> {
       return next;
     }))) n++;
   }
+  const appealed = await deps.db.query<{ code: string; seq: number }>(
+    `select code, seq from disputes where status = 'appealed' and round = 2 and paused_since is null`,
+  );
+  let alerts = 0;
+  for (const p of appealed.rows) {
+    await step(() => withDispute(deps, p, async (d, client, at) => {
+      if (await syncNoReviewerAlert(client, d, at)) alerts++;
+      return d;
+    }));
+  }
+  if (alerts > 0 && deps.push) await pushOwnerAlert({ db: deps.db, push: deps.push }, 'appeal-no-reviewer').catch(() => undefined);
   if (failures.length > 0) throw new AggregateError(failures, `dispute timers: ${failures.length} dispute(s) failed`);
   return n;
 }
@@ -85,14 +103,14 @@ async function stepOne(run: () => Promise<unknown>, failures: unknown[]): Promis
 }
 
 /** The timers as a scheduler job (the scheduler logs only its name and a count, never data). */
-export function disputeTimerJob(events?: DisputeDeps['events']): RetentionJob {
+export function disputeTimerJob(events?: DisputeDeps['events'], push?: OwnerAlertDeps['push']): RetentionJob {
   return {
     name: 'disputeTimers',
-    run: (db, now) => runDisputeTimers({ db, clock: () => now, ...(events ? { events } : {}) }),
+    run: (db, now) => runDisputeTimers({ db, clock: () => now, ...(events ? { events } : {}), ...(push ? { push } : {}) }),
   };
 }
 
 /** Starts the dispute timers every 30 seconds. Returns `stop`. */
-export function startDisputeTimers(deps: Pick<Deps, 'db' | 'clock'>, events?: DisputeDeps['events']): () => Promise<void> {
-  return startRetention(deps, [disputeTimerJob(events)], DISPUTE_TIMER_MS);
+export function startDisputeTimers(deps: Pick<Deps, 'db' | 'clock'>, events?: DisputeDeps['events'], push?: OwnerAlertDeps['push']): () => Promise<void> {
+  return startRetention(deps, [disputeTimerJob(events, push)], DISPUTE_TIMER_MS);
 }

@@ -67,6 +67,20 @@ export type KeyTapIntent =
   // cold address, as it will be after the change (amounts in atomic units as decimal strings; a
   // null threshold turns the sweep off). It names where X2F's money goes, so it is tapped.
   | { kind: 'fee-sweep'; thresholdAtomic: string | null; floatAtomic: string | null; coldAddress: string | null }
+  // Plan 4 Task 33 / D-041 (owner 2026-10-29 lead calls q5): a staff member pre-approves one of
+  // their own payout addresses; adding one needs the strong login, so it is tapped and bound to
+  // exactly that address.
+  | { kind: 'payout-address'; address: string }
+  // Plan 4 Task 33 / D-042, D-043: the owner's pay settings as they will be after the change (US
+  // cents per completed dispute for each role, the senior large-trade share in basis points of the
+  // fee and the large-trade threshold in whole US dollars; null = not set). They set what X2F pays.
+  | {
+      kind: 'pay-settings';
+      modDisputeUsdCents: number | null;
+      seniorDisputeUsdCents: number | null;
+      seniorLargeTradeBp: number | null;
+      largeTradeThresholdUsd: number | null;
+    }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -93,6 +107,8 @@ export const KEY_TAP_KINDS = [
   'remove-method',
   'set-grants',
   'fee-sweep',
+  'payout-address',
+  'pay-settings',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

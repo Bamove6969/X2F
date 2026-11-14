@@ -54,6 +54,14 @@ export interface TradeView {
   cancelProposedBy: Party | null;
   settling: Trade['settling'];
   dispute: { by: 'buyer' | 'seller' | 'system'; at: string } | null;
+  /**
+   * D-005 (Plan 4 Task 24): until when this viewer may still file an appeal against the trade's
+   * dispute ruling (a published round-1 ruling, no appeal yet, before its `appealEndsAt`), so the
+   * trade page and the completed-trades list can show "File appeal" and drop it at the deadline.
+   * Null otherwise, and for a team member without the File an appeal box. Null when the view is
+   * built without it (live events).
+   */
+  appealUntil: string | null;
   txHash: string | null;
   takenAt: string;
   setupBy: string | null;
@@ -121,6 +129,8 @@ export interface ViewContext {
   cancelWaiting?: boolean;
   /** `trades.method_instructions` (J-16, 490); absent → ''. */
   paymentInstructions?: string;
+  /** See `TradeView.appealUntil`. */
+  appealUntil?: Date | null;
 }
 
 /**
@@ -164,6 +174,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     cancelProposedBy: t.cancelProposedBy,
     settling: t.settling,
     dispute: t.dispute ? { by: t.dispute.by, at: t.dispute.at.toISOString() } : null,
+    appealUntil: ctx.appealUntil ? ctx.appealUntil.toISOString() : null,
     txHash: t.txHash,
     takenAt: t.takenAt.toISOString(),
     setupBy: iso(t.setupBy),

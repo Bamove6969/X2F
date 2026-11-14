@@ -565,6 +565,41 @@ for (const viewport of PHONE_VIEWPORTS) {
 
 // ---- 7. The owner manages the team -------------------------------------------------------------------
 
+// J-20 (owner p7-4, p7-11): the owner sets a member's trade-size band and working hours; the
+// confirm names both exactly (WYSIWYS) and the row shows them after.
+for (const viewport of PHONE_VIEWPORTS) {
+  test(`the owner sets a member's trade size and working hours (${viewport})`, async ({ page }) => {
+    const s = { members: [member('m1', 'Aurora', ['trades'])] };
+    await ownerApi(page, s);
+    const puts: Record<string, unknown>[] = [];
+    await page.route('**/v1/team/members/m1/limits', (r) => {
+      const body = r.request().postDataJSON() as Record<string, unknown>;
+      if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: 'team-limits' }, 403)(r);
+      puts.push(body);
+      s.members = s.members.map((m) => (m.id === 'm1' ? { ...m, band: body.band, hours: body.hours } : m));
+      return json(s.members[0])(r);
+    });
+    await page.goto('/settings/team');
+    await setPhone(page, viewport);
+    await expect(page.locator('[data-member="Aurora"] [data-part="member-limits"]')).toHaveText('Any trade size · Any time');
+    await page.getByRole('button', { name: 'Change limits for Aurora' }).click();
+    await page.locator('[data-part="band-none"]').uncheck();
+    await page.locator('[data-part="band-min"]').fill('0.1');
+    await page.locator('[data-part="band-max"]').fill('2');
+    await page.locator('[data-part="hours-any"]').uncheck();
+    await expectPhoneLayout(page);
+    await page.locator('[data-part="save-limits"]').click();
+    await confirmWithPassword(page, "set a team member's trade size to 0.1 to 2 XMR and working hours to Mon, Tue, Wed, Thu, Fri 08:00 to 18:00 (UTC)");
+    await expect(page.locator('[data-part="team-said"]')).toHaveText('Limits saved for Aurora.');
+    expect(puts).toEqual([{
+      band: { minAtomic: '100000000000', maxAtomic: '2000000000000' },
+      hours: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], start: '08:00', end: '18:00', tz: 'UTC' },
+      confirmToken: 'tok-1',
+    }]);
+    await expect(page.locator('[data-member="Aurora"] [data-part="member-limits"]')).toHaveText('Trades of 0.1 to 2 XMR · Mon, Tue, Wed, Thu, Fri 08:00 to 18:00 (UTC)');
+  });
+}
+
 test('the owner changes roles and removes a member; the member is then signed out; Devices names member sessions', async ({ page, browser }) => {
   const s = { members: [member('m1', 'Aurora', ['offers', 'trades'])] };
   const seen = await ownerApi(page, s);

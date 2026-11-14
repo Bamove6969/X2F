@@ -78,6 +78,8 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
   team_members: {
     insert: `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mate', 'mate', '{offers-see}', now(), now())`,
     change: `update team_members set abilities = '{offers-see,offers-pause}' where account_id = $1`,
+    // J-20: the first login has its own notice (kind team-member-first-login, queued by the login).
+    bookkeeping: `update team_members set first_login_at = now() where account_id = $1`,
     where: 'account_id = $1',
   },
   account_holds: {
@@ -246,6 +248,19 @@ describe('each change path queues exactly one notice per transaction', () => {
     await withJabber(team);
     await db.query(`insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, '${hex40()}', '\\x01', now())`, [member]);
     expect(await notices(team)).toBe(1);
+  });
+
+  it("J-20: a member's trade-size band and working hours are team changes", async () => {
+    const team = await account();
+    await db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mate', 'mate', '{offers-see}', now(), now())`,
+      [team],
+    );
+    await withJabber(team);
+    await db.query(`update team_members set band_min_atomic = 1, band_max_atomic = 2 where account_id = $1`, [team]);
+    expect(await notices(team)).toBe(1);
+    await db.query(`update team_members set hours = '{"days":["Mon"],"start":"08:00","end":"18:00","tz":"UTC"}' where account_id = $1`, [team]);
+    expect(await notices(team)).toBe(2);
   });
 });
 

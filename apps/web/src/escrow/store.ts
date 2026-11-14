@@ -92,6 +92,12 @@ export interface EscrowRecord {
    */
   fundedSeen?: boolean;
   /**
+   * This device has seen the escrow secured (a view with `securedAt`, or in secured, paid or
+   * settling; re-verify R1). From then on every view must carry the payment instructions, whatever a
+   * later view says about the state. Absent: not seen yet.
+   */
+  securedSeen?: boolean;
+  /**
    * The trade amount of the FIRST release this device handed to its party (saved before the
    * hand-over) and never cleared, whatever the intents do afterwards. From then on a release for
    * any other amount, and an "I've paid" tap for another amount, is refused. Refunds ignore it.

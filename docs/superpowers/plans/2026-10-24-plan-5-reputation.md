@@ -78,7 +78,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - **P5-A6 Note.** One line, at most `REVIEW_NOTE_MAX = 120` characters, no line breaks. A note that `detectSensitiveText` flags (email, phone, card, IBAN, account number, Monero address) is refused with "Remove personal details from the note." `// COPY-UNSIGNED`. Reviews are final once submitted (no edit, no delete).
 - **P5-A7 Phrase wording.** Spec 5.1 says "Fast payment"; the Review board says "Fast release". Default: the phrase follows the reviewer's counterparty role: "Fast payment" when rating a buyer, "Fast release" when rating a seller. The other seven phrases are as in spec 5.1.
 - **P5-A8 Typical time (spec 5.4 "typical release time"; boards "typical payment time", "Pays in ~6 min").** `typicalMinutes` = the median of the trader's own action times over their last `TYPICAL_WINDOW = 20` completed trades: as buyer, `paidAt − securedAt` (0 when paid before secured); as seller, the `release-started` event time `− paidAt`. `null` below `TYPICAL_MIN_SAMPLES = 3`. Profile label follows the board ("typical payment time") for now; the owner picks the final words.
-- **P5-A9 Cancel rate.** Trades this trader ended alone (buyer cancel) or by proposing an accepted mutual cancel, divided by their trades that reached `funding`. `null` below 5 such trades. Shown neutrally, never as a warning (spec 2.3).
+- **P5-A9 Cancel figure (owner T-017, replacing the public cancel rate).** Every kind of cancel is recorded as ONE cancel figure per trader, seen only by moderators (the moderator case view, J-21). There is no public cancel rate: no profile, offer card or stats line shows one, and `@x2f/reputation` has no helper for it.
 - **P5-A10 Profile review list.** Latest `PROFILE_REVIEWS = 20` revealed reviews: stars or Neutral, phrases, note, method name and a coarse age (~~"2 days ago", "3 weeks ago", "Mar 2026"~~ *2026-10-29b lead default: month and year only, "Mar 2026"*), never the reviewer, amount or exact time.
 
 **Badges**
@@ -212,7 +212,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - `REVEAL_AFTER_DAYS = 7`; `revealAt(a: { reviewableSince: Date; submitted: { buyer: Date | null; seller: Date | null } }): Date` = the later submission when both exist, else `reviewableSince + 7 d`; `isRevealed(a, now) = now >= revealAt(a)`.
   - `classify(r): 'positive'|'negative'|'neutral'` (P5-A1); `reviewWeight(usdCents: bigint): bigint` (P5-A2).
   - `positivePct(rs: { kind; usdCents }[]): number | null` (null with no positive or negative review).
-  - `median(xs: number[]): number | null`; `typicalMinutes(samples: number[]): number | null` (last 20, null below 3, P5-A8); `cancelRatePct(a: { cancelledByMe: number; reachedFunding: number }): number | null` (P5-A9).
+  - `median(xs: number[]): number | null`; `typicalMinutes(samples: number[]): number | null` (last 20, null below 3, P5-A8). (No cancel-rate helper: P5-A9, owner T-017.)
   - `shouldAskFeedback(completedTrades: number): boolean` (P5-A19).
 
 - [ ] **Step 1: Write the failing tests.**
@@ -328,9 +328,9 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - Consumes: Tasks 1–3 and 10 (`past_reputation`); Plan 3 `tradeCap`, `trade_events`; Plan 2 `pgp_keys`, `webauthn_credentials`; Plan 4 `lostDisputeCount`.
 - Produces:
   - Table `badge_prefs(account_id uuid pk references accounts, chosen boolean not null default false, levels jsonb not null default '{}', featured_order text[] not null default '{}', portable_public boolean not null default false, updated_at)`.
-  - `badgeFactsMany(db, accountIds: string[], now): Promise<Map<string, BadgeFacts & { reviewCount: number; cancelRatePct: number | null }>>`: one batched query set for a whole offer list (no per-card queries). Only **revealed** reviews count.
+  - `badgeFactsMany(db, accountIds: string[], now): Promise<Map<string, BadgeFacts & { reviewCount: number }>>`: one batched query set for a whole offer list (no per-card queries). Only **revealed** reviews count.
   - `TraderSummary` (Plan 3) now carries `positivePct`, `typicalMinutes` and `badges: { featured: BadgeView[]; more: BadgeView[] }`, `BadgeView = { id: BadgeId; label; meaning; icon; tone; href?: string /* past-rep evidence link */ }`.
-  - `GET /v1/traders/:name` (no session) → `TraderProfile = { displayName; memberSince: 'YYYY-MM'; online; lastSeenAt; stats: { completedTrades; positivePct; reviewCount; typicalMinutes; cancelRatePct }; badges; pgpProtected: boolean /* P5-A17 */; recordPublic: boolean; reviews: PublicReview[]; offers: number }`. Unknown name → 404 with the same body shape for every unknown name. `:name` is matched on `display_key`; a login name never matches.
+  - `GET /v1/traders/:name` (no session) → `TraderProfile = { displayName; memberSince: 'YYYY-MM'; online; lastSeenAt; stats: { completedTrades; positivePct; reviewCount; typicalMinutes }; badges; pgpProtected: boolean /* P5-A17 */; recordPublic: boolean; reviews: PublicReview[]; offers: number }`. Unknown name → 404 with the same body shape for every unknown name. `:name` is matched on `display_key`; a login name never matches.
   - `GET /v1/account/badges` (`requireTrader`) → `{ earned: (BadgeView & { level: Visibility })[]; featured: BadgeId[]; nextMilestones }`; `PUT /v1/account/badges { id: BadgeId; level: Visibility }` → the resolved lists plus `notice`; refusals 400 `new-is-fixed`, `not-earned`.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -529,7 +529,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - Consumes: Tasks 2, 5, 10; Plan 2 `PgpSigner`, `GET /v1/pgp/signing-key`; openpgp 6.3.2 in the browser (already pinned in the repo by `@x2f/accounts` and `apps/api`; added to `apps/web` at the same exact version, so no new package enters the tree; loaded lazily only on `/verify`).
 - Produces:
   - Routes `/u/:name` (Profile), `/settings/badges` (BadgeSettings), `/settings/past-reputation` (PastRepClaim), `/settings/record` (RecordExport), `/verify` (VerifyRecord, no session).
-  - **Profile**: the board's stats ("completed trades", "positive (N reviews)", "typical payment time", "trades cancelled", "member since Mon YYYY"), featured and On-hover badges, recent reviews, "Account protected with PGP" (P5-A17), "Signed trade history available · Verify" only when `recordPublic`, Offers (n), Message. Fixture reviews are masked; the board's "Reviews are examples." is not rendered.
+  - **Profile**: the board's stats ("completed trades", "positive (N reviews)", "typical payment time", "member since Mon YYYY" (no cancel figure: moderators only, T-017)), featured and On-hover badges, recent reviews, "Account protected with PGP" (P5-A17), "Signed trade history available · Verify" only when `recordPublic`, Offers (n), Message. Fixture reviews are masked; the board's "Reviews are examples." is not rendered.
   - **BadgeSettings**: the board's preview ("On your offers"), "Featured N of 2", the notice, the Earned list with Featured / On hover / Hidden for each, "Next milestones", and "The New badge always shows while you have it and can't be hidden." New's row has no controls.
   - **BadgeMore** (`+N`): the popover lists On-hover badges, each with its one-line meaning (SellOffers board).
   - **PastRepClaim** (`// COPY-UNSIGNED`): pick the site, paste the archive link, claimed trade count and the old public key; copy the challenge text; paste the signed message; status list (signed / approved / rejected with reason / removed). The screen says "Screenshots don't count. Sign with the key shown on your old profile."
