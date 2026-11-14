@@ -40,6 +40,11 @@ export interface GatewayConfig {
    * browser gets that answer (door.ts: the seeded accounts' way in from a fresh browser).
    */
   passwordStep?: (pendingId: string) => Promise<void>;
+  /**
+   * Awaited before a request goes to the API, with the request's own https origin when it is not
+   * one of `origins` (else null) and whether it is a page load (rp-adopt.ts).
+   */
+  beforeApi?: (selfOrigin: string | null, page: boolean) => Promise<void>;
 }
 
 const PASSWORD_STEP = '/v1/login/password';
@@ -232,32 +237,37 @@ export function createGateway(cfg: GatewayConfig): {
       delete headers['if-range'];
       headers['accept-encoding'] = 'identity';
     }
-    const up = http.request({ host: '127.0.0.1', port: t.port, path: t.path, method: req.method, headers }, (r) => {
-      const out = { ...r.headers };
-      if (known && out['access-control-allow-origin'] === cfg.primary) out['access-control-allow-origin'] = from;
-      const status = r.statusCode ?? 502;
-      // The CSP names the placeholders for the relay and the node proxy: this request's own origin.
-      const csp = out['content-security-policy'];
-      if (self !== null && typeof csp === 'string') out['content-security-policy'] = fillSelf(csp, self);
-      if (fill && status === 200) return fillInto(r, res, out, self);
-      if (t.api && cfg.passwordStep && req.method === 'POST' && t.path.split('?')[0] === PASSWORD_STEP && status === 200) {
-        return holdPasswordStep(r, res, out, cfg.passwordStep, pendingIdOf);
-      }
-      if (t.api && isHtml(out) && status !== 204 && status !== 304) {
-        if (req.method === 'GET') return injectInto(r, res, out);
-        if (req.method === 'HEAD') {
-          stripValidators(out);
-          delete out['content-length'];
+    const unplanned = self !== null && self.http.startsWith('https://') && !cfg.origins.has(self.http) ? self.http : null;
+    const go = (): void => {
+      const up = http.request({ host: '127.0.0.1', port: t.port, path: t.path, method: req.method, headers }, (r) => {
+        const out = { ...r.headers };
+        if (known && out['access-control-allow-origin'] === cfg.primary) out['access-control-allow-origin'] = from;
+        const status = r.statusCode ?? 502;
+        // The CSP names the placeholders for the relay and the node proxy: this request's own origin.
+        const csp = out['content-security-policy'];
+        if (self !== null && typeof csp === 'string') out['content-security-policy'] = fillSelf(csp, self);
+        if (fill && status === 200) return fillInto(r, res, out, self);
+        if (t.api && cfg.passwordStep && req.method === 'POST' && t.path.split('?')[0] === PASSWORD_STEP && status === 200) {
+          return holdPasswordStep(r, res, out, cfg.passwordStep, pendingIdOf);
         }
-      }
-      res.writeHead(status, out);
-      r.pipe(res);
-    });
-    up.on('error', () => {
-      if (!res.headersSent) res.writeHead(502, { 'content-type': 'application/json' });
-      res.end('{"error":"demo-gateway-upstream"}');
-    });
-    req.pipe(up);
+        if (t.api && isHtml(out) && status !== 204 && status !== 304) {
+          if (req.method === 'GET') return injectInto(r, res, out);
+          if (req.method === 'HEAD') {
+            stripValidators(out);
+            delete out['content-length'];
+          }
+        }
+        res.writeHead(status, out);
+        r.pipe(res);
+      });
+      up.on('error', () => {
+        if (!res.headersSent) res.writeHead(502, { 'content-type': 'application/json' });
+        res.end('{"error":"demo-gateway-upstream"}');
+      });
+      req.pipe(up);
+    };
+    if (t.api && cfg.beforeApi) void cfg.beforeApi(unplanned, page).then(go, go);
+    else go();
   };
 
   const upgrade = (route: Route) => (req: IncomingMessage, socket: Duplex, head: Buffer): void => {

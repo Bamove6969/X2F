@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { migrate } from '../../apps/api/src/db/migrate.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
-import { DEMO_DIR, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_IMAGE, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
+import { DEMO_DIR, ENV_FILE, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_IMAGE, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
 import { assertDemoFlag, assertRegtestDaemon } from './guard.js';
 import { demoOrigins, quickTunnelUrl } from './origins.js';
 import { phoneIp } from './phone.js';
@@ -197,6 +197,8 @@ async function main(): Promise<void> {
     ...(process.env.PRICE_SOURCES ? { PRICE_SOURCES: process.env.PRICE_SOURCES } : {}),
     ...(process.env.FX_SOURCES ? { FX_SOURCES: process.env.FX_SOURCES } : {}),
   };
+  // Kept (0600) for the gateway, which restarts the API with a preview pane's host as RP ID (rp-adopt.ts).
+  writeFileSync(ENV_FILE, JSON.stringify(apiEnv), { mode: 0o600 });
   startTs('api', 'apps/api/src/main.ts', apiEnv);
   await waitFor('the API', httpUp(`http://${HOST}:${PORTS.api}/v1/site`));
 
@@ -218,6 +220,8 @@ async function main(): Promise<void> {
     DEMO_API_PORT: String(PORTS.api), DEMO_RELAY_PORT: String(PORTS.relay), DEMO_NODE_PROXY_PORT: String(PORTS.nodeProxy),
     DEMO_GATEWAY_PORT: String(PORTS.gateway), DEMO_GATEWAY_TLS_PORT: String(PORTS.gatewayTls), DEMO_GATEWAY_NODE_PORT: String(PORTS.gatewayNode), DEMO_GATEWAY_NODE_TLS_PORT: String(PORTS.gatewayNodeTls), DEMO_PRIMARY_ORIGIN: PRIMARY, DEMO_ORIGINS: origins.join(','), DEMO_MONEROD_RPC: MONEROD_RPC,
     DATABASE_URL: pgUrl('x2f'),
+    // No adopting under a public tunnel: its host is the RP ID already.
+    DEMO_ADOPT_SELF: PUBLIC_ORIGIN || process.env.DEMO_ADOPT_SELF === '0' ? '0' : '1', DEMO_API_ENV: ENV_FILE, DEMO_STATE_DIR: STATE_DIR,
     ...(tsIp ? { DEMO_TAILSCALE_IP: tsIp, DEMO_TLS_KEY: tlsKey, DEMO_TLS_CERT: tlsCert } : {}),
     ...(phone ? { DEMO_PHONE_IP: phone } : {}),
   });

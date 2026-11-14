@@ -195,6 +195,19 @@ send in the browser (regtest only); keep each trader's page open from take to se
   demo's primary origin in its place. An http Origin is never taken this way: the gateway is clear
   text on 127.0.0.1, so an https Origin can only come through a TLS front, never from a page that
   rebinds a name to 127.0.0.1. Nothing in `apps/*` changed.
+- **Security keys and passkeys under a preview pane.** WebAuthn needs the RP ID to be the page's
+  own host name, and the API starts with `localhost` (or the tunnel's host). Opened from any other
+  https host, the browser refused every key before asking it (owner, 13 Nov: "Unable to add
+  security key", USB and NFC). So the first time a page is loaded from such a host (not an IP
+  address), the gateway restarts the API with that host as `X2F_RP_ID` and its origin added to
+  `X2F_ORIGINS`, holding API requests for the few seconds that takes (`tools/demo/rp-adopt.ts`,
+  `tools/test/demo-rp-adopt.test.ts`; the API's environment is kept for it in `.demo/secrets/env.json`,
+  0600; the adopted host is in `.demo/state/rp-origin.json`). The first host stays; keys and
+  passkeys then work under it only (localhost still opens the app, and passwords work everywhere).
+  Not with a public tunnel (its host is the RP ID already); `DEMO_ADOPT_SELF=0` turns it off. The
+  tailnet address is an IP, which can never be an RP ID: use localhost, a tunnel or the preview there.
+  If the preview pane shows the app inside a frame, the browser may still refuse keys there: open
+  the same address in its own tab.
 - **Codes on a page.** `GET /__demo/codes` on the gateway shows the seeded accounts' current
   authenticator codes (what `npm run demo:code` prints), for a phone. Only the seeded accounts'
   throwaway secrets are in it; it never reaches the API (`tools/demo/codes-page.ts`).

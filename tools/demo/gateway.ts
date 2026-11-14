@@ -6,7 +6,8 @@
  * binds 0.0.0.0; an optional public tunnel (DEMO_TUNNEL=cloudflared, docs/demo.md) connects out
  * and reaches it on 127.0.0.1 like any local client.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
 import { createCodesHandler } from './codes-page.js';
@@ -15,6 +16,8 @@ import { createGateway, type Route } from './gateway-core.js';
 import { assertDemo } from './guard.js';
 import { createNotesHandler, notesFiles } from './notes-server.js';
 import { isPrivateIpv4 } from './phone.js';
+import { restartTs } from './procs.js';
+import { adoptedApiEnv, createAdopter } from './rp-adopt.js';
 import { readTotpSecrets } from './totp.js';
 
 // X2F_DEMO=1 and a regtest daemon on 127.0.0.1, before anything listens.
@@ -58,7 +61,30 @@ const demo = (req: http.IncomingMessage, res: http.ServerResponse): void => {
 };
 // The seeded accounts' way in from a fresh browser (door.ts).
 const passwordStep = createDoor(env('DATABASE_URL'));
-const { web, node, handle, upgrade } = createGateway({ api: API, relay: RELAY, node: NODE, primary: PRIMARY, origins: ORIGINS, demo, passwordStep });
+// Security keys and passkeys under a preview pane's https host (rp-adopt.ts): the API is restarted
+// once with that host as its RP ID. DEMO_API_ENV is the API's environment file (0600, .demo/secrets).
+const API_ENV = process.env.DEMO_API_ENV ?? '';
+const adopter = createAdopter({
+  enabled: process.env.DEMO_ADOPT_SELF === '1' && API_ENV !== '',
+  restart: async (origin) => {
+    const apiEnv = adoptedApiEnv(JSON.parse(readFileSync(API_ENV, 'utf8')) as Record<string, string>, origin);
+    writeFileSync(API_ENV, JSON.stringify(apiEnv), { mode: 0o600 });
+    if (process.env.DEMO_STATE_DIR) writeFileSync(join(process.env.DEMO_STATE_DIR, 'rp-origin.json'), JSON.stringify({ origin, rpId: apiEnv.X2F_RP_ID }));
+    await restartTs('api', 'apps/api/src/main.ts', apiEnv);
+    for (let i = 0; i < 240; i++) {
+      try {
+        if ((await fetch(`http://127.0.0.1:${API}/v1/site`)).status < 500) return;
+      } catch {
+        // not up yet
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error('the API did not come back');
+  },
+});
+const { web, node, handle, upgrade } = createGateway({
+  api: API, relay: RELAY, node: NODE, primary: PRIMARY, origins: ORIGINS, demo, passwordStep, beforeApi: adopter.beforeApi,
+});
 
 function serve(route: Route, port: number, host: string, tls: { key: Buffer; cert: Buffer } | null): void {
   const srv = tls ? https.createServer(tls, handle(route)) : http.createServer(handle(route));

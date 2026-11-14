@@ -89,3 +89,28 @@ export async function stopAll(log: (s: string) => void = console.log): Promise<v
     // not running
   }
 }
+
+/** Stops the recorded process `name` (its whole group) and starts `file` under that name again. */
+export async function restartTs(name: string, file: string, env: Record<string, string>): Promise<number> {
+  const pid = readPids()[name];
+  if (pid !== undefined && alive(pid)) {
+    try {
+      process.kill(-pid, 'SIGTERM');
+    } catch {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch {
+        // already gone
+      }
+    }
+    for (let i = 0; i < 50 && alive(pid); i++) await sleep(200);
+    if (alive(pid)) {
+      try {
+        process.kill(-pid, 'SIGKILL');
+      } catch {
+        // gone
+      }
+    }
+  }
+  return startTs(name, file, env);
+}
