@@ -20,7 +20,7 @@
 import type { TermsSignature } from '@x2f/auth-client';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { staffTerms } from '../api.js';
-import { Button, KEY_POINTS, PRIVACY_HEADING, SignaturePad, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './kit.js';
+import { Button, KEY_POINTS, PRIVACY_HEADING, SignaturePad, TERMS, TermsParagraphs, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './kit.js';
 import './staff.css';
 
 /** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens (as the trader's). */
@@ -99,7 +99,7 @@ export function TermsStep({
       </h2>
       <p className="x2f-staff-step__text">
         {/* After the trader's SetupTerms intro (design 9 Nov, p11-15); staff go on with Continue. COPY-UNSIGNED */}
-        Staff sign the Terms too. Read them to the end. If you agree to X2F's rules and terms, tick the box, sign your name and continue.
+        Staff sign the Terms too. Read them to the end. If you agree to X2F's rules and Terms, tick the box, sign your name and continue.
       </p>
       <ul className="x2f-terms__points" aria-label="Key points">
         {KEY_POINTS.map((k) => (
@@ -113,11 +113,7 @@ export function TermsStep({
             <h3 className="x2f-terms__heading" data-heading={s.heading}>
               {s.heading}
             </h3>
-            {s.paragraphs.map((p) => (
-              <p key={p} className="x2f-terms__p">
-                {p}
-              </p>
-            ))}
+            <TermsParagraphs paragraphs={s.paragraphs} />
           </section>
         ))}
         <p className="x2f-terms__end">{version !== null ? `End of Terms. Version ${version}.` : 'End of Terms.'}</p>

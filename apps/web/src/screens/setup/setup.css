@@ -753,6 +753,16 @@
   color: var(--x2f-ink-muted);
 }
 
+.x2f-terms__bullets {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-terms__bullets li {
+  margin-bottom: 4px;
+}
+
 .x2f-terms__end {
   margin: 0;
   color: var(--x2f-ink-muted);

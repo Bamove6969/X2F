@@ -37,7 +37,7 @@ async function chooseOnly(page: Page, id: 'password' | 'passkey'): Promise<void>
   await page.check(`[data-method="${id}"] input[type="checkbox"]`);
 }
 
-const TERMS_VERSION = '2026-11-12';
+const TERMS_VERSION = '2026-11-14';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
 const BOARD_MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 /** A 95-character standard address ending like the board's example ("…k3Fz"). */
@@ -760,7 +760,7 @@ for (const v of PHONES) {
     await expect(page.locator('.x2f-sign__here')).toHaveText('Sign your name here with your finger or mouse. A scribble or an X is fine.');
     // Design 9 Nov (p11-15): the intro and the button's words.
     await expect(page.locator('[data-screen="setup-terms"]')).toContainText(
-      "Read to the end. If you agree to X2F's rules and terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade.",
+      "Read to the end. If you agree to X2F's rules and Terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade.",
     );
     await expect(page.locator('[data-part="terms-accept"]')).toHaveText('Start creating my account');
     await expect(page.locator('#terms-sign-help')).toContainText('Start creating my account needs both the tick and your signature.');

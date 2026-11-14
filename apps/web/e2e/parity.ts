@@ -210,6 +210,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
     },
     {
+      text: "If police or a government sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
+      why: 'Owner demo notes 13 Nov 2026 (setup-terms, section 7): "a government agency"; the page says "If police or a government agency sends us …", the rest word for word (Terms version 2026-11-14).',
+    },
+    {
       text: '[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow goes to the ad poster.]',
       why: 'Placeholder for the lawyer\'s text, and its last clause is superseded (extra XMR, owner 2026-10-20, spec 11.1); the page\'s draft Fees section says the 1% and the network fees only (Task 28).',
     },

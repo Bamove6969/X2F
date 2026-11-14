@@ -193,11 +193,29 @@ describe('SignaturePad', () => {
 // server's X2F_TERMS_VERSION) moves too; then put the new version and hash in this pin.
 describe('the Terms text is pinned to its version', () => {
   // 2026-11-12: the owner's 16 /setup comments applied (comms terms-draft-2026-11-12.md): new version.
-  const PIN = { version: '2026-11-12', sha256: 'fb7a7e5e77215f6aeaf6dcf0e10786de5661484e6514d0e9fd17dd587ed437e3' };
+  // 2026-11-14: the owner's demo notes of 13 Nov (setup-terms) applied: new version.
+  const PIN = { version: '2026-11-14', sha256: '6efe83e54f27b5bf18905da9b5e9cc5f0b4caf6cfddd6fb1c7b7c3c80eb3e5af' };
 
   it('has not changed without a new version', () => {
     const text = JSON.stringify({ TERMS_DRAFT_NOTE, KEY_POINTS, PRIVACY_HEADING, TERMS });
     expect({ version: TERMS_TEXT_VERSION, sha256: createHash('sha256').update(text, 'utf8').digest('hex') }).toEqual(PIN);
+  });
+});
+
+// Owner demo notes 13 Nov (setup-terms): the timer paragraph's advice is a bulleted list after it.
+describe('the Terms text: bullets', () => {
+  it('shows a paragraph’s bullets as a list right after it', async () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    const lists = host.querySelectorAll('[data-part="terms-text"] ul.x2f-terms__bullets');
+    expect(lists).toHaveLength(1);
+    expect(lists[0]!.previousElementSibling?.textContent).toMatch(/^Each trade has timers,.*always make sure to:$/);
+    expect([...lists[0]!.querySelectorAll('li')].map((li) => li.textContent)).toHaveLength(4);
+    expect(lists[0]!.lastElementChild?.textContent).toBe('If you paid late and the seller cancels, open a dispute and we will help you get your money back. The trade screen always shows the time left.');
   });
 });
 
