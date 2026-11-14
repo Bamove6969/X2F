@@ -168,7 +168,8 @@ for (const v of VIEWPORTS) {
     await expect(page.locator('[data-method="totp"]')).toContainText('6-digit code');
     await expect(page.locator('[data-method="password"] [data-part="strength"]')).toHaveText('Weak');
     await expect(page.locator('[data-method="password"]')).toContainText('It is strongly recommended you do not choose this as the only security method you use.');
-    await expect(tick(page, 'totp')).toBeDisabled();
+    // Signup round 3 lead call: PGP (ticked by default) is enough for the authenticator app.
+    await expect(tick(page, 'totp')).toBeEnabled();
     await page.click('[data-part="pgp-explain"]');
     await expect(page.locator('[data-part="pgp-explainer"]')).toContainText('On an Android phone we recommend PGP too');
     await page.click('[data-method="password"]');
@@ -203,6 +204,17 @@ for (const v of VIEWPORTS) {
     // Then the password, added to the account the PGP key made (no second sign-up).
     await expect(page).toHaveURL(/\/setup\/password\?/);
     await expect(page.locator('[data-screen="setup-password"]')).toBeVisible();
+    // Signup round 3: each password field has a 44 px show/hide button; hidden by default.
+    await expect(page.locator('#pw')).toHaveAttribute('type', 'password');
+    const eye = page.locator('[data-part="password-field"]:has(#pw) [data-part="password-eye"]');
+    await expect(eye).toHaveAttribute('aria-label', 'Show password');
+    const eyeBox = (await eye.boundingBox())!;
+    expect(Math.round(eyeBox.width)).toBeGreaterThanOrEqual(44);
+    expect(Math.round(eyeBox.height)).toBeGreaterThanOrEqual(44);
+    await eye.click();
+    await expect(page.locator('#pw')).toHaveAttribute('type', 'text');
+    await eye.click();
+    await expect(page.locator('#pw')).toHaveAttribute('type', 'password');
     await page.fill('#pw', 'Quiet-harbour-58');
     await page.fill('#pw2', 'Quiet-harbour-58');
     await page.click('[data-part="password-set"]');
@@ -211,8 +223,13 @@ for (const v of VIEWPORTS) {
     await expect(page).toHaveURL(/\/setup\/authenticator\?/);
     await page.click('[data-part="totp-start"]');
     await expect(page.locator('[data-part="totp-secret"]')).toHaveText('JBSWY3DPEHPK3PXP');
+    // Signup round 3: the otpauth link for a password manager on the same phone.
+    await expect(page.locator('[data-part="totp-link"]')).toHaveAttribute('href', /^otpauth:\/\/totp\//);
     await page.fill('#totp-code', '123456');
     await page.click('[data-part="totp-finish"]');
+    // Signup round 3: the green success state, until Continue.
+    await expect(page.locator('[data-part="totp-success"]')).toHaveText('You have successfully set up your one-time password.');
+    await page.click('[data-part="totp-continue"]');
 
     // The recovery code comes after all of them. Screen A: the code, the tick, Next.
     await expect(page).toHaveURL(/\/setup\/backup\?/);

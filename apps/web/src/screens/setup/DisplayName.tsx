@@ -9,12 +9,14 @@ import { useState } from 'react';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { checkDisplayName, checkNames, namesProblem } from './names.js';
+import { DISPLAY_SYMBOLS, checkDisplayName, checkNames, namesProblem } from './names.js';
 
 export function DisplayName() {
   const { state, update, go, path } = useSetup();
   const [displayName, setDisplayName] = useState(state.displayName);
   const [error, setError] = useState<string | null>(null);
+  const check = checkDisplayName(displayName);
+  const shown = check.ok ? check.name : null;
 
   const next = () => {
     const r = checkNames(displayName, state.loginName);
@@ -58,16 +60,17 @@ export function DisplayName() {
             setError(null);
           }}
         />
-        {checkDisplayName(displayName).ok ? (
+        {shown !== null ? (
           <span className="x2f-start__status x2f-start__preview" data-tone="escrow" data-part="name-preview">
             <Icon name="check" size={18} stroke={2} />
             <span>
-              Traders will see <span data-username="">{displayName}</span>
+              Traders will see <span data-username="">{shown}</span>
             </span>
           </span>
         ) : null}
         <p className="x2f-start__help" id="display-name-help">
-          5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it.
+          {/* COPY-UNSIGNED (signup round 3: the display name's wider set) */}
+          5 to 20 characters: letters, numbers, spaces and {DISPLAY_SYMBOLS} Extra spaces are removed.
         </p>
       </div>
       {error !== null ? (

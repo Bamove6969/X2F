@@ -22,6 +22,7 @@ import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { RegisterError, SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
 import { errorCode, registerPassword, setupError, termsChanged, type SetupError } from './register.js';
+import { PasswordInput } from '../../ui/PasswordInput.js';
 
 type Met = 'true' | 'false' | 'unknown';
 
@@ -180,10 +181,7 @@ export function Password() {
         <SetupIntro title="Choose a password">At least 10 characters, with upper and lower case letters, a number and a symbol.</SetupIntro>
         <label className="x2f-field x2f-label" htmlFor="pw">
           Password
-          <input
-            className="x2f-input"
-            id="pw"
-            type="password"
+          <PasswordInput id="pw"
             autoComplete="new-password"
             value={pw}
             onChange={(e) => {
@@ -195,7 +193,7 @@ export function Password() {
         <StrengthMeter level={strength} />
         <label className="x2f-field x2f-label" htmlFor="pw2">
           Type it again
-          <input className="x2f-input" id="pw2" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
+          <PasswordInput id="pw2" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
         </label>
         <ul className="x2f-start__rules" aria-label="Password rules">
           <Rule id="length" met={yes(rules.length)}>

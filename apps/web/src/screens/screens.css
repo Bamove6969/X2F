@@ -74,6 +74,39 @@
   font-size: 16px;
 }
 
+/* Signup round 3: a password field with its 44 px show/hide button inside the field's right edge. */
+.x2f-password {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.x2f-password__input.x2f-input {
+  padding-right: 52px;
+}
+
+.x2f-password__eye {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--x2f-radius-sm);
+  background: transparent;
+  color: var(--x2f-ink-muted);
+  cursor: pointer;
+}
+
+.x2f-password__eye:hover {
+  color: var(--x2f-ink);
+}
+
 /* The system's focus ring is ink, never orange (design review X3). */
 .x2f-input:focus-visible {
   outline: 2px solid var(--x2f-ink);
@@ -164,6 +197,27 @@ textarea.x2f-textarea--tall {
   font-size: 16px;
   letter-spacing: 0.08em;
   word-break: break-all;
+}
+
+/* Signup round 3: the authenticator secret in groups of four (the gap is visual only). */
+.x2f-secret__group {
+  display: inline-block;
+  margin-inline-end: 0.6em;
+}
+
+.x2f-totp-link {
+  text-decoration: none;
+}
+
+/* Signup round 3: the authenticator app's success state (owner: "it should turn green"). */
+.x2f-success {
+  margin: 0;
+  padding: var(--x2f-space-3);
+  border: 1px solid var(--x2f-good);
+  border-radius: var(--x2f-radius-sm);
+  color: var(--x2f-good);
+  font-size: 18px;
+  font-weight: 600;
 }
 
 /* Cards group the sections of the Security screen. */

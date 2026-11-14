@@ -121,15 +121,34 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     expect(byPart(host, 'pgp-explainer')!.textContent).toMatch(/recommend PGP/i);
   });
 
-  it('the authenticator app goes with a password: it can be ticked only with Password, and unticks with it', () => {
+  // Signup round 3, lead call (13 Nov 2026): the authenticator app may be the only extra method
+  // when PGP, a passkey or a security key is ticked; with none of those it still needs a password.
+  it('the authenticator app goes with any way to log in: PGP alone is enough, and it unticks with the last one', () => {
     const host = show(<Login />, setup());
-    expect(box(host, 'totp').disabled).toBe(true);
-    click(box(host, 'password'));
+    // PGP is ticked by default.
     expect(box(host, 'totp').disabled).toBe(false);
     click(box(host, 'totp'));
     expect(box(host, 'totp').checked).toBe(true);
-    click(box(host, 'password'));
+    click(box(host, 'pgp'));
     expect(box(host, 'totp').checked).toBe(false);
+    expect(box(host, 'totp').disabled).toBe(true);
+    expect(host.querySelector('[data-method="totp"]')!.textContent).toMatch(/tick one/i);
+    for (const partner of ['security-key', 'passkey', 'password']) {
+      click(box(host, partner));
+      expect(box(host, 'totp').disabled).toBe(false);
+      click(box(host, 'totp'));
+      expect(box(host, 'totp').checked).toBe(true);
+      click(box(host, partner));
+      expect(box(host, 'totp').checked).toBe(false);
+    }
+  });
+
+  it('PGP and the authenticator app, no password: both are stored in setup order', () => {
+    const api = setup();
+    const host = show(<Login />, api);
+    click(box(host, 'totp'));
+    click(byPart(host, 'method-continue'));
+    expect(api.update).toHaveBeenCalledWith({ methods: ['pgp', 'totp'], done: [], method: 'pgp' });
   });
 
   it('Continue needs at least one way to log in, and stores every ticked one in setup order', () => {
