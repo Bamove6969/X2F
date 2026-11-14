@@ -21,7 +21,7 @@ import { subkey } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
-import { hasCertificateChain, isUnknownAuthenticator } from './attestation.js';
+import { hasCertificateChain, isUnknownAuthenticator, withoutAttestation } from './attestation.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
 import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
@@ -271,10 +271,9 @@ async function verifyRegistration(
   deps: Deps,
   a: { accountKind: AccountKind; kind: CredentialKind | null; response: unknown; expectedChallenge: string },
 ): Promise<NewCredential> {
-  let result;
-  try {
-    result = await verifyRegistrationResponse({
-      response: a.response as RegistrationResponseJSON,
+  const verify = (response: RegistrationResponseJSON) =>
+    verifyRegistrationResponse({
+      response,
       expectedChallenge: a.expectedChallenge,
       expectedOrigin: deps.config.origins,
       expectedRPID: deps.config.rpId,
@@ -283,10 +282,20 @@ async function verifyRegistration(
       requireUserVerification: a.kind === 'passkey',
       supportedAlgorithmIDs: ALGORITHMS,
     });
+  let result;
+  try {
+    result = await verify(a.response as RegistrationResponseJSON);
   } catch (e) {
     // Strict metadata: an attested authenticator outside the snapshot is not allowed for staff or the owner.
     if (a.accountKind !== 'trader' && isUnknownAuthenticator(e)) throw new ApiError(403, 'method-not-allowed');
-    throw failed();
+    // A trader's key of any model is a login method (owner demo 13 Nov): checked as unattested.
+    const plain = a.accountKind === 'trader' && isUnknownAuthenticator(e) ? withoutAttestation(a.response as RegistrationResponseJSON) : null;
+    if (plain === null) throw failed();
+    try {
+      result = await verify(plain);
+    } catch {
+      throw failed();
+    }
   }
   if (!result.verified) throw failed();
   const info = result.registrationInfo;

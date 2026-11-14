@@ -575,6 +575,26 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     ]);
   });
 
+  it("takes a trader's security key of any model, attested or not, even one outside the snapshot (owner demo 13 Nov)", async () => {
+    const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
+    const b = await loggedIn(traderId, true);
+    // A browser may pass the key's own attestation on although 'none' was asked for.
+    const keys = [
+      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: 'none' }),
+      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: UNLISTED, ca } }),
+      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: NO_STATEMENT, ca } }),
+      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: NO_STATEMENT, self: true } }),
+    ];
+    for (const [i, key] of keys.entries()) {
+      const r = await staffAdd(b, key, 'security-key');
+      expect(r.options.attestation).toBe('none');
+      expect(r.options.authenticatorSelection).toMatchObject({ authenticatorAttachment: 'cross-platform', residentKey: 'discouraged', userVerification: 'preferred' });
+      expect(r.res.statusCode, `key ${i}`).toBe(201);
+    }
+    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
+    expect(rows).toEqual(keys.map(() => ({ kind: 'security-key', attested: false })));
+  });
+
   it('refuses an owner passkey before any confirm token is spent', async () => {
     const ownerId = await seedOwner();
     const b = await loggedIn(ownerId, true);
