@@ -22,7 +22,7 @@ import { ApiError } from '../errors.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen } from './challenges.js';
 import { keyringBox, type SecretBox } from './keystore.js';
 import { methodAllowed } from './methods.js';
-import { onlyIfNew, requireConfirm } from './confirm.js';
+import { onlyIfNew, passedOnWindow, recheckWindowInTx, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { traderLogin } from './approval.js';
 import { gateChange, stagedReply, requireNotHeld } from './hold.js';
@@ -214,12 +214,12 @@ async function enrolStart(req: FastifyRequest) {
     // `n` numbers this session's enrolments in order (the server clock may not move between starts).
     `insert into challenges (account_id, session_id, purpose, method, payload, created_at, expires_at)
      select $1, $2, 'add-totp', 'totp',
-            jsonb_build_object('secretEnc', $3::text, 'n', coalesce(max((c.payload->>'n')::bigint), 0) + 1), $4, $5
+            jsonb_build_object('secretEnc', $3::text, 'n', coalesce(max((c.payload->>'n')::bigint), 0) + 1, 'window', $6::boolean), $4, $5
        from challenges c where c.session_id = $2 and c.purpose = 'add-totp'
      returning id`,
     [
       req.auth.accountId, req.auth.sessionId, sealSecret(deps, req.auth.accountId, bytes).toString('base64'),
-      now, new Date(now.getTime() + TOTP_ENROL_TTL_MS),
+      now, new Date(now.getTime() + TOTP_ENROL_TTL_MS), passedOnWindow(req),
     ],
   );
   // At most 3 open enrolments per session: older ones beyond that are marked used.
@@ -258,6 +258,7 @@ async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
     [challengeId, req.auth.accountId, req.auth.sessionId, now],
   );
   const sealed = rows[0]?.payload.secretEnc;
+  const onWindow = rows[0]?.payload.window === true;
   if (typeof sealed !== 'string') throw expired();
   const bytes = openSecret(deps, req.auth.accountId, Buffer.from(sealed, 'base64'));
   const key = await throttleKey(deps, req, 'totp', { id: req.auth.accountId });
@@ -282,6 +283,8 @@ async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
     try {
       // Hold model v3: a waiting login's enrolment is staged; it applies 24 h after it is submitted.
       held = await gateChange(client, req, { kind: 'totp', secretEnc: sealedNow.toString('base64'), step });
+      // Re-verify R1: a start let through on the window may add the first app only, never replace one.
+      if (onWindow) await recheckWindowInTx(client, req, 'totp', 'add-method');
       if (held === null) await applyTotp(client, req.auth.accountId, sealedNow, step, now);
       await client.query('commit');
     } catch (e) {

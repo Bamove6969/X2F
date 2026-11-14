@@ -305,3 +305,34 @@ for (const v of VIEWPORTS) {
     await expectPhoneLayout(page);
   });
 }
+
+// The m-2 blocking fix (owner's demo notes, 13 Nov 2026): swiping Back from the recovery-code step
+// reached the app without the code saved. Leaving /setup (Back, a typed address, a reload) now
+// leads back to the recovery-code step until the code is saved.
+test('leaving sign-up before the recovery code is saved leads back to it (m-2)', async ({ page }) => {
+  await setPhone(page, VIEWPORTS[1]);
+  const s = await stubApi(page);
+  await page.goto('/setup?returnTo=%2Fpost');
+  await acceptTerms(page);
+  await pickNames(page);
+  await page.click('[data-part="method-continue"]');
+  await page.fill('#pub', realKey);
+  await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
+  await page.click('[data-part="key-continue"]');
+  await page.fill('#phrase', 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR');
+  await page.click('[data-part="pgp-verify"]');
+  await page.click('[data-part="pgp-continue"]');
+  await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
+  // Back, again and again: never out of sign-up past the owed step.
+  for (let i = 0; i < 4; i++) {
+    await page.goBack();
+    await expect(page).toHaveURL(/\/setup\/backup/);
+  }
+  // A typed address outside sign-up (the front door, a trading page), even after a reload.
+  for (const to of ['/', '/sell', '/setup/welcome']) {
+    await page.goto(to);
+    await expect(page).toHaveURL(/\/setup\/backup/);
+    await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
+  }
+  expect(s.calls).not.toContain('wallets');
+});

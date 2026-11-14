@@ -44,10 +44,11 @@ import { Team } from './screens/settings/Team.js';
 import { AccountType } from './screens/settings/AccountType.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
+import { backupRedirect } from './screens/setup/signupPending.js';
 import { Terms } from './screens/setup/Terms.js';
 import { BehindTheDoor, isInside } from './session/frontDoor.js';
 import { mayPostOffers, memberOf } from './session/member.js';
-import { useSession } from './session/useSession.js';
+import { useSession, type Session } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { PlannedMaintenanceBanner } from './ui/PlannedMaintenanceBanner.js';
 import { SiteBanner } from './ui/SiteBanner.js';
@@ -203,6 +204,17 @@ function useWatchSession(session: ReturnType<typeof useSession>): void {
   }, [session]);
 }
 
+/**
+ * The m-2 blocking fix (owner's demo notes, 13 Nov 2026): while this tab's own sign-up still owes
+ * its recovery code, any page outside `/setup` (reached by Back, a link or a typed address) goes
+ * back to the recovery-code step.
+ */
+function SignupBackupGate({ session }: { session: Session }) {
+  const { pathname } = useLocation();
+  const to = session.status === 'signed-in' ? backupRedirect(pathname, session.me) : null;
+  return to === null ? null : <Navigate to={to} replace />;
+}
+
 export function App() {
   const session = useSession();
   useWatchSession(session);
@@ -217,6 +229,7 @@ export function App() {
   return (
     <>
       <RouterBridge />
+      <SignupBackupGate session={session} />
       <SessionPrompt />
       <IdleReminder />
       {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}

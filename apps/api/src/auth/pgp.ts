@@ -28,7 +28,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { confirmerOf, issueConfirmToken, onlyIfNew, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
+import { confirmerOf, issueConfirmToken, onlyIfNew, passedOnWindow, recheckWindowInTx, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
@@ -875,7 +875,7 @@ async function addKeyStart(req: FastifyRequest) {
   const { storable, pending } = await pendingKey(deps.config, key.armored, key.fingerprint, deps.clock());
   return issuePgpChallenge(deps, req, {
     accountId: req.auth.accountId, sessionId: req.auth.sessionId, purpose: 'add-key', purposeText: PGP_PURPOSE['add-key'],
-    armoredKeys: [storable], payload: { key: pending },
+    armoredKeys: [storable], payload: { key: pending, window: passedOnWindow(req) },
   });
 }
 
@@ -897,6 +897,8 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
     try {
       // Hold model v3: a waiting login's new key is staged; it applies 24 h after it is submitted.
       held = await gateChange(client, req, { kind: 'pgp', fingerprint: pending.fingerprint, keyEnc: pending.keyEnc, recipient: pending.recipient ?? null });
+      // Re-verify R1: a start let through on the window may add the first key only, never a second.
+      if (row.payload.window === true) await recheckWindowInTx(client, req, 'pgp', 'add-method');
       if (held === null) await applyPgpKey(client, deps.config, req.auth.accountId, pending.fingerprint, sealed, now, pending.recipient);
       await client.query('commit');
     } catch (e) {

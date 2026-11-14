@@ -34,6 +34,7 @@ import { AuthenticatorStep, KeyStep } from './MoreMethods.js';
 import { Password } from './Password.js';
 import { PgpChallenge } from './PgpChallenge.js';
 import { PgpKey } from './PgpKey.js';
+import { clearPendingSignup, readPendingSignup, writePendingSignup } from './signupPending.js';
 import { SetupTerms } from './Terms.js';
 import { Username } from './Username.js';
 import { Wallet } from './Wallet.js';
@@ -48,11 +49,26 @@ export function needsBackup(state: Pick<SetupState, 'registered' | 'backup'>): b
   return state.registered && state.backup === null;
 }
 
+/**
+ * The m-2 blocking fix: a sign-up in this tab whose recovery code is still owed (it left `/setup`,
+ * by Back or a reload) starts again from what the marker kept, so it goes straight to that step.
+ */
+export function restoredState(): SetupState {
+  const p = readPendingSignup();
+  return p === null ? INITIAL : { ...INITIAL, registered: true, displayName: p.displayName, method: p.method, methods: p.methods, done: p.done };
+}
+
 export function SetupFlow() {
   const location = useLocation();
   const navigate = useNavigate();
   const returnTo = returnToFrom(location.search);
-  const [state, setState] = useState<SetupState>(INITIAL);
+  const [state, setState] = useState<SetupState>(restoredState);
+  // The marker lives from the account's making until the recovery code is saved (m-2).
+  const { registered, backup, displayName, method, methods, done } = state;
+  useEffect(() => {
+    if (registered && backup === null) writePendingSignup({ displayName, method, methods, done });
+    else if (backup !== null) clearPendingSignup();
+  }, [registered, backup, displayName, method, methods, done]);
   const update = useCallback((patch: Partial<SetupState>) => setState((s) => ({ ...s, ...patch })), []);
   const path = useCallback((step: Step) => stepPath(step, returnTo), [returnTo]);
   const go = useCallback((step: Step, o?: { replace?: boolean }) => void navigate(stepPath(step, returnTo), { replace: o?.replace === true }), [navigate, returnTo]);
@@ -110,7 +126,7 @@ function EndSignup({ registered, children }: { registered: boolean; children: Re
  */
 function SetupStart() {
   const session = useSession();
-  const { returnTo, path } = useSetup();
+  const { returnTo, path, state, update } = useSetup();
   const [hasWallet, setHasWallet] = useState<boolean | null>(null);
   const signedIn = session.status === 'signed-in';
 
@@ -126,8 +142,16 @@ function SetupStart() {
     };
   }, [signedIn]);
 
+  // Signed out: an owed recovery code from an earlier sign-up in this tab is no longer this person's.
+  const stale = session.status === 'signed-out' && state.registered;
+  useEffect(() => {
+    if (!stale) return;
+    clearPendingSignup();
+    update(INITIAL);
+  }, [stale, update]);
+
   if (session.status === 'loading') return null;
-  if (!signedIn) return <SetupTerms />;
+  if (!signedIn) return stale ? null : <SetupTerms />;
   if (hasWallet === null) return null;
   return <Navigate to={hasWallet ? returnTo : path('wallet')} replace />;
 }

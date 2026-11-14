@@ -13,7 +13,7 @@ import {
 import { ApiError } from '../errors.js';
 import { ARGON2_SLOTS } from '../limits.js';
 import { parseConfirmAction } from './actionInput.js';
-import { issueConfirmToken, onlyIfNew, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
+import { issueConfirmToken, onlyIfNew, passedOnWindow, recheckWindowInTx, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { methodAllowed, passwordAllowed } from './methods.js';
 import { traderLogin } from './approval.js';
@@ -406,6 +406,7 @@ async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
         await requireLiveSessionInTx(client, req.auth, now);
         const running = await holdInTx(client, settleOf(req), accountId, now);
         if (running !== null) throw holdRefusal(running.holdUntil);
+        if (passedOnWindow(req)) await recheckWindowInTx(client, req, 'password', 'set-password');
         const spent = await client.query('update recovery_codes set used_at = $2 where id = $1 and account_id = $3 and used_at is null', [code.codeId, now, accountId]);
         if ((spent.rowCount ?? 0) === 0) throw new ApiError(401, 'credentials-invalid');
         ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
@@ -414,6 +415,8 @@ async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
       } else {
         // Hold model v3: a waiting login's change is staged (in this transaction); it applies 24 h after it is submitted.
         held = await gateChange(client, req, { kind: 'password', hash, pepperId });
+        // Re-verify R1: "none yet" again under the account lock, so a parallel twin loses.
+        if (passedOnWindow(req)) await recheckWindowInTx(client, req, 'password', 'set-password');
         if (held === null) ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
       }
       await client.query('commit');
