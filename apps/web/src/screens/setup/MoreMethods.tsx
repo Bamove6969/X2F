@@ -15,6 +15,7 @@ import { authApi } from '../auth/authApi.js';
 import { HOLD_COPY } from '../settings/holdCopy.js';
 import { Totp } from '../settings/Totp.js';
 import { SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
+import { SecurityKeyArt } from './SecurityKeyArt.js';
 
 /** A staged addition (hold model v3) says so before going on; nothing staged goes straight on. */
 function useFinish(m: 'security-key' | 'passkey' | 'totp') {
@@ -96,6 +97,7 @@ export function KeyStep({ kind }: { kind: 'security-key' | 'passkey' }) {
         }
       >
         <SetupIntro title={words.title}>{words.lead}</SetupIntro>
+        {kind === 'security-key' ? <SecurityKeyArt /> : null}
         {error !== null ? (
           <p className="x2f-error" role="alert">
             {error}

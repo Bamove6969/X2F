@@ -119,6 +119,10 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     click(byPart(host, 'pgp-explain'));
     expect(byPart(host, 'pgp-explainer')!.textContent).toMatch(/Android/);
     expect(byPart(host, 'pgp-explainer')!.textContent).toMatch(/recommend PGP/i);
+    // Signup round 3 (owner, 13 Nov 2026): PGPony first, OpenKeychain second.
+    const t = byPart(host, 'pgp-explainer')!.textContent!;
+    expect(t).toContain('com.pgpony.android');
+    expect(t.lastIndexOf('PGPony')).toBeLessThan(t.lastIndexOf('OpenKeychain'));
   });
 
   // Signup round 3, lead call (13 Nov 2026): the authenticator app may be the only extra method

@@ -70,7 +70,7 @@ export function DisplayName() {
         ) : null}
         <p className="x2f-start__help" id="display-name-help">
           {/* COPY-UNSIGNED (signup round 3: the display name's wider set) */}
-          5 to 20 characters: letters, numbers, spaces and {DISPLAY_SYMBOLS} Extra spaces are removed.
+          5 to 20 characters: letters, numbers, spaces and common symbols such as {DISPLAY_SYMBOLS}. Extra spaces are removed.
         </p>
       </div>
       {error !== null ? (

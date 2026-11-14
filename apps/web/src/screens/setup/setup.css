@@ -1001,3 +1001,72 @@
 .x2f-terms__num {
   font-family: var(--x2f-font-mono);
 }
+
+/*
+ * Signup round 3 (owner's demo notes, 13 Nov 2026: "the fonts are much too small", "Bigger fonts
+ * needed here", "Bigger font"): body text on the setup screens one step bigger again; he accepts
+ * more scrolling. The Terms screen is left as it is (its notes are handled on their own branch).
+ */
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__lead {
+  font-size: 17px;
+  line-height: 25px;
+}
+
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__help,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__panel,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__choice-desc,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__choice-later,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__facts,
+.x2f-start:not([data-screen='setup-terms']) .x2f-label {
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__mono,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__warn {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.x2f-start:not([data-screen='setup-terms']) .x2f-textarea--key {
+  font-size: 13px;
+}
+
+/* Signup round 3: the recovery-code reveal button's label fills the button (owner: "bigger wider font"). */
+.x2f-start .x2f-button.x2f-start__reveal {
+  width: 100%;
+  min-height: 60px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* Signup round 3: the security-key step's placeholder illustration (design draws the real one). */
+.x2f-keyart {
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.x2f-keyart__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-keyart__key {
+  width: 60px;
+  height: 96px;
+}
+
+.x2f-keyart__caption {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--x2f-ink-muted);
+  text-align: center;
+}

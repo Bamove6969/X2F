@@ -47,10 +47,10 @@ export function Backup() {
   return (
     <ConfirmOpenProvider value={open}>
       <SetupFrame screen="setup-backup" step={4} footer={null}>
-        {/* COPY-UNSIGNED (singular: owner, 12 Nov 2026) */}
+        {/* COPY-UNSIGNED (singular: owner, 12 Nov 2026; signup round 3 wording, 13 Nov 2026) */}
         <SetupIntro title="Save your recovery code">
-          X2F has no email address or phone number for you, so if you lose your key or forget your password, a recovery code is your emergency
-          way back in.
+          X2F has no email address or phone number for you, so if you ever lose access to your login methods, your emergency recovery code is the
+          only way back into your account to set up new security.
         </SetupIntro>
         <p className="x2f-start__panel">
           Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.
@@ -121,7 +121,7 @@ export function RecoveryCodeStep({
       <div className="x2f-field" data-part="recovery-codes">
         <ErrorLine error={error} />
         {/* COPY-UNSIGNED */}
-        <Button variant={primary} disabled={busy} onClick={() => void make()} data-part="recovery-make">
+        <Button variant={primary} className="x2f-start__reveal" disabled={busy} onClick={() => void make()} data-part="recovery-make">
           Show my recovery code
         </Button>
       </div>

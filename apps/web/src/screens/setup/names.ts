@@ -21,12 +21,15 @@ export type NamesCheck = ReturnType<typeof checkNames>;
 export function nameShapeProblem(which: string, reason: 'length' | 'characters'): string {
   if (reason === 'length') return `${which} needs 5 to 20 characters.`;
   // COPY-UNSIGNED (signup round 3: the display name's wider set)
-  if (which === 'Your display name') return `${which} can use letters, numbers, spaces and these symbols: ${DISPLAY_SYMBOLS}`;
+  if (which === 'Your display name') return `${which} can use letters, numbers, spaces and common symbols such as ${DISPLAY_SYMBOLS}.`;
   return `${which} can use only letters, numbers, dots, dashes and underscores.`;
 }
 
-/** The symbols a display name may hold, as the help and the refusal list them. */
-export const DISPLAY_SYMBOLS = "$ & ! ? . , ' - _ @ # % * + ( ) :";
+/**
+ * Some of the symbols a display name may hold, as the help and the refusal name them ("such as":
+ * the full list is in @x2f/accounts; "!" is left out of the copy by the design rule on "!").
+ */
+export const DISPLAY_SYMBOLS = '$ & ? @ # % + ( )';
 
 /** The sentence for a refused pair of names. */
 export function namesProblem(r: Extract<NamesCheck, { ok: false }>): string {

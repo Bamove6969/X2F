@@ -33,6 +33,35 @@ describe('limits', () => {
   });
 });
 
+// Signup round 3 (owner's demo notes, 13 Nov 2026): the key's facts for the person themself: the
+// user ID's name (never its email address), the creation date and the expiry. Nothing is stored.
+describe('inspectPublicKey: the user ID name and the creation date', () => {
+  const make = async (userIDs: openpgp.UserID[], keyExpirationTime = 0) =>
+    (await openpgp.generateKey({ type: 'ecc', curve: 'ed25519Legacy', userIDs, keyExpirationTime, format: 'armored', date: new Date('2026-03-04T05:06:07Z') })).publicKey;
+
+  test('the name without the email address', async () => {
+    const r = await inspectPublicKey(await make([{ name: 'Alice Example', email: 'alice@example.com' }], 86_400 * 365), now);
+    expect(r).toMatchObject({ ok: true, name: 'Alice Example', createdAt: new Date('2026-03-04T05:06:07Z'), expiresAt: new Date('2027-03-04T05:06:07Z') });
+    expect(JSON.stringify(r)).not.toContain('example.com');
+  });
+
+  test('an email address only: no name', async () => {
+    const r = await inspectPublicKey(await make([{ email: 'alice@example.com' }]), now);
+    expect(r).toMatchObject({ ok: true, name: null });
+    expect(JSON.stringify(r)).not.toContain('example.com');
+  });
+
+  test('an address written into the name part is dropped too', async () => {
+    const r = await inspectPublicKey(await make([{ name: 'Bob bob@example.org' }]), now);
+    expect(r).toMatchObject({ ok: true, name: 'Bob' });
+  });
+
+  test('control and format characters are dropped and a long name is cut', async () => {
+    const r = await inspectPublicKey(await make([{ name: `Eve\u202e${'x'.repeat(100)}` }]), now);
+    expect(r.ok && r.name).toBe(`Eve${'x'.repeat(61)}`);
+  });
+});
+
 describe('inspectPublicKey accepts', () => {
   test('Ed25519 (legacy)', async () => {
     const k = await keys.ed25519Legacy();

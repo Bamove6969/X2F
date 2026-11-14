@@ -48,8 +48,9 @@ export const METHODS: MethodDef[] = [
     strength: 'strong',
     cta: 'Continue with PGP key',
     desc: 'Log in with a PGP key instead of a password. X2F stores only your public key, so there is no password for anyone to steal from us.',
+    // COPY-UNSIGNED (signup round 3, from the owner's words, 13 Nov 2026)
     later:
-      'Each time you log in, X2F shows a message locked with your public key. Only your private key can unlock it, so you decrypt it in your PGP app and paste in the login code inside. Without your private key, nobody can get that code, and each one works only once.',
+      'Only you can unlock it. Decrypt the enclosed message with your preferred PGP app to reveal a one-time login code, which proves you hold the matching private key. Only the holder of that key can see the code, and each code works only once.',
   },
   {
     id: 'security-key',
@@ -58,7 +59,8 @@ export const METHODS: MethodDef[] = [
     rec: true,
     strength: 'strong',
     cta: 'Continue with security key',
-    desc: 'Log in by tapping a YubiKey or similar key plugged into your phone or computer.',
+    // COPY-UNSIGNED (signup round 3, from the owner's words, 13 Nov 2026; brands named in text only)
+    desc: 'Log in by tapping or inserting your YubiKey, Google Titan, Nitrokey, Feitian or any FIDO2-certified security key into your phone or computer.',
   },
   {
     id: 'passkey',
@@ -162,10 +164,9 @@ export function Login() {
         </Button>
       }
     >
-      {/* COPY-UNSIGNED (owner, 12 Nov 2026: tick every method wanted, set up one after another) */}
+      {/* COPY-UNSIGNED (signup round 3, the owner's words, 13 Nov 2026) */}
       <SetupIntro title="How do you want to log in?">
-        Tick every way you want to use. We'll set them up one after another, then show you your recovery code. You can add others later in
-        Settings.
+        Anything you don't set up now can be added later. The more options you choose, the more secure your account becomes.
       </SetupIntro>
       <div className="x2f-start__choices" role="group" aria-label="Login methods">
         {METHODS.map((m) => {
@@ -216,10 +217,10 @@ export function Login() {
       {explain ? (
         <p className="x2f-start__help" data-part="pgp-explainer">
           PGP is free software that locks and unlocks messages with a pair of keys: a public key you can share and a private key only you keep. You
-          need a PGP app each time you log in, such as Kleopatra on Windows, GPG Suite on a Mac or OpenKeychain on Android. X2F never makes keys for
+          need a PGP app each time you log in, such as Kleopatra on Windows, GPG Suite on a Mac or PGPony on Android. X2F never makes keys for
           you, so your private key never leaves your app.{' '}
-          {/* COPY-UNSIGNED (owner, 12 Nov 2026: "Recommend PGP only as well for Android") */}
-          On an Android phone we recommend PGP too: OpenKeychain is free.
+          {/* COPY-UNSIGNED (owner, 12-13 Nov 2026: PGP on Android too, PGPony first, OpenKeychain second) */}
+          On an Android phone we recommend PGP too, with PGPony (on F-Droid: com.pgpony.android). OpenKeychain works as well.
         </p>
       ) : null}
     </SetupFrame>
