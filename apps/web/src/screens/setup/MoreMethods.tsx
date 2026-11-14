@@ -12,6 +12,7 @@ import { addWebAuthnKey, isStaged, withConfirm, type Staged } from '@x2f/auth-cl
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { keyErrorText } from '../auth/keyErrors.js';
 import { HOLD_COPY } from '../settings/holdCopy.js';
 import { Totp } from '../settings/Totp.js';
 import { SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
@@ -72,8 +73,8 @@ export function KeyStep({ kind }: { kind: 'security-key' | 'passkey' }) {
     try {
       finish.done(await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove));
     } catch (e) {
-      // COPY-UNSIGNED
-      if (!isConfirmAbort(e)) setError(kind === 'passkey' ? 'That passkey was not added. Try again.' : 'That security key was not added. Try again.');
+      // Why it failed, when the browser or the server says (owner demo 13 Nov).
+      if (!isConfirmAbort(e)) setError(keyErrorText(e, kind));
     } finally {
       setBusy(false);
     }

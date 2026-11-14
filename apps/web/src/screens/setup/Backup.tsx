@@ -27,6 +27,7 @@ import { addWebAuthnKey, formatRecoveryInput, isStaged, normalizeRecoveryCode, w
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { keyErrorText } from '../auth/keyErrors.js';
 import { refusalText } from '../auth/refusals.js';
 import { HOLD_COPY, codeGroups } from '../settings/holdCopy.js';
 import { SetupFrame, SetupIntro, radioProps, useSetup, type BackupChoice } from './kit.js';
@@ -318,7 +319,7 @@ function SecurityKeyBackup({ prove, onDone, onCancel }: { prove: Prove; onDone: 
       );
       onDone();
     } catch (e) {
-      if (!isConfirmAbort(e)) setError('That security key was not added. Try again.');
+      if (!isConfirmAbort(e)) setError(keyErrorText(e, 'security-key'));
     } finally {
       setBusy(false);
     }
