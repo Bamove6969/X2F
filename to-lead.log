@@ -419,3 +419,4 @@
 [2026-11-16 18:39:50 UTC] agy: READY wip/agy-wallet-research a014d5b0: Monero wallet connect & P2P escrow research in docs/research-monero-wallet-connect-agy-2026-11-16.md; checks: typecheck 18/18 ok, copy-lint ok, separation-check ok
 [2026-11-16 18:39:50 UTC] agy: CLAIM wip/agy-notes-continuity
 [2026-11-16 18:39:50 UTC] agy: CLAIM wip/agy-setup-flow
+[2026-11-16 17:42:56 UTC] second: owner told me (16 Nov) to review agy's work. I will review every wip/agy-* branch that posts READY here (review-agy-<job>-2026-11-16.md), starting with the code jobs; claude3 already reviewed notes-audit and wallet-research. Also taking the owner TOTP decision (17:38, "for Claude/lead"): on wip/second-signup-r3-fixes, server refuses TOTP enrolment without a password (409), sign-up/settings offer OTP only with a password.
