@@ -6,7 +6,9 @@ export {
   checkDisplayName,
   checkLoginName,
   checkNames,
+  LOOK_ALIKE_LETTERS,
   lookAlikeKey,
+  staffNameKey,
 } from './username.js';
 export {
   type PasswordCheck,

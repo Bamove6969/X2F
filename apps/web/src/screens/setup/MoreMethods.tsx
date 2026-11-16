@@ -15,6 +15,7 @@ import { authApi } from '../auth/authApi.js';
 import { HOLD_COPY } from '../settings/holdCopy.js';
 import { Totp } from '../settings/Totp.js';
 import { SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
+import { TOTP_NO_PASSWORD } from './Login.js';
 import { SecurityKeyArt } from './SecurityKeyArt.js';
 
 /** A staged addition (hold model v3) says so before going on; nothing staged goes straight on. */
@@ -113,6 +114,8 @@ export function KeyStep({ kind }: { kind: 'security-key' | 'passkey' }) {
 export function AuthenticatorStep() {
   const { prove, confirmUi, open } = useConfirm();
   const finish = useFinish('totp');
+  const { state } = useSetup();
+  const noPassword = !state.methods.includes('password');
 
   return (
     <ConfirmOpenProvider value={open}>
@@ -120,6 +123,8 @@ export function AuthenticatorStep() {
         {/* COPY-UNSIGNED */}
         <SetupIntro title="Add your authenticator app">
           Each time you log in with your password, you then type the 6-digit code your authenticator app shows.
+          {/* COPY-UNSIGNED (review of third-signup-r3, M3; owner question Q1) */}
+          {noPassword ? <span data-part="totp-no-password"> {TOTP_NO_PASSWORD}</span> : null}
         </SetupIntro>
         {finish.held ? <Held onNext={finish.next} /> : <Totp prove={prove} onDone={finish.done} onCancel={finish.next} />}
         {confirmUi}

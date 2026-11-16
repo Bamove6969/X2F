@@ -34,7 +34,17 @@ interface MethodDef {
   /** A method that goes with another one: it can be ticked while any of these is ticked. */
   needs?: readonly LoginMethod[];
   needsText?: string;
+  /** Shown while the method can be ticked but Password is not ticked. */
+  noPasswordText?: string;
 }
+
+/**
+ * Review of third-signup-r3 (16 Nov 2026), M3: the authenticator code is asked for only after a
+ * password (auth/password.ts); PGP, passkey and security-key logins never ask for it. Until the
+ * owner answers Q1 the copy says so rather than promising a second step.
+ */
+// COPY-UNSIGNED
+export const TOTP_NO_PASSWORD = 'X2F asks for this code only when you log in with a password. A PGP key, passkey or security key logs you in without it.';
 
 // COPY-UNSIGNED: the strength words are the owner's (12 Nov 2026), their colours are for design.
 const STRENGTH_WORDS: Record<Strength, string> = { strong: 'Strong', medium: 'Medium', weak: 'Weak' };
@@ -81,6 +91,9 @@ export const METHODS: MethodDef[] = [
     needs: ['pgp', 'security-key', 'passkey', 'password'],
     // COPY-UNSIGNED
     needsText: 'Goes with another way to log in: tick one above, or Password, to add it.',
+    // COPY-UNSIGNED (review of third-signup-r3, M3; owner question Q1): the server asks for the
+    // code only after a password, so without one ticked the card says so.
+    noPasswordText: TOTP_NO_PASSWORD,
   },
   {
     id: 'password',
@@ -198,6 +211,12 @@ export function Login() {
                 {m.desc}
                 {m.warn !== undefined ? <span className="x2f-start__choice-warn"> {m.warn}</span> : null}
                 {off && m.needsText !== undefined ? <span className="x2f-start__choice-needs"> {m.needsText}</span> : null}
+                {!off && m.noPasswordText !== undefined && !picks.has('password') ? (
+                  <span className="x2f-start__choice-needs" data-part="totp-no-password">
+                    {' '}
+                    {m.noPasswordText}
+                  </span>
+                ) : null}
               </span>
               {on && m.later !== undefined ? <span className="x2f-start__choice-later">{m.later}</span> : null}
             </label>

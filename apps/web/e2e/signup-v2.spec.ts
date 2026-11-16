@@ -8,9 +8,11 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import * as openpgp from 'openpgp';
 import { expectPhoneLayout, setPhone } from './phone.js';
 import type { ParityViewport } from './parity.js';
+import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 
 const VIEWPORTS = ['443x794', '390x844'] as const satisfies readonly ParityViewport[];
-const TERMS_VERSION = '2026-11-09';
+// Review of third-signup-r3 (16 Nov 2026), M5a: the mock serves the version the app's Terms text is.
+const TERMS_VERSION = TERMS_TEXT_VERSION;
 /** A 64-symbol code as the server makes them (16 groups of four). */
 const CODE = 'K7M2-9QXA-4FTR-8WPN-ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR';
 const MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
