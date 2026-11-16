@@ -2,7 +2,10 @@
 // every cause. Each cause now says why.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
+import { readFileSync } from 'node:fs';
+import { lintSource } from '../../../tools/copy-lint.js';
 import { KEY_ERROR, keyErrorText } from '../src/screens/auth/keyErrors.js';
+import { KEY_MODEL_REFUSED_TEXT } from '../src/ui/cantDoCodes.js';
 
 /** What @simplewebauthn/browser throws: the DOMException's name, an ERROR_* code. */
 const browserError = (name: string, code = 'ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY', message = 'x') => Object.assign(new Error(message), { name, code });
@@ -37,5 +40,11 @@ describe('why a security key or passkey was not added', () => {
     expect(keyErrorText(refusal(409, 'security-key-limit'), 'security-key')).toMatch(/5 security keys/);
     expect(keyErrorText(new TypeError('Failed to fetch'), 'security-key')).toBe('That security key was not added. Try again.');
     expect(keyErrorText(new TypeError('Failed to fetch'), 'passkey', 'That did not finish.')).toBe('That did not finish.');
+  });
+
+  it('review B1: passes copy-lint; the refused-model sentence comes from the refusal text map', () => {
+    const file = 'apps/web/src/screens/auth/keyErrors.ts';
+    expect(lintSource(readFileSync(new URL('../src/screens/auth/keyErrors.ts', import.meta.url), 'utf8'), file)).toEqual([]);
+    expect(KEY_ERROR.notAccepted).toBe(KEY_MODEL_REFUSED_TEXT);
   });
 });
