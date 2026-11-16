@@ -85,3 +85,12 @@ export {
   type LienStatus,
   type LienStep,
 } from './lien.js';
+export {
+  DEFAULT_RECOVERY_RATE_BPS,
+  RATE_REASON_MAX,
+  canDecideRateRequest,
+  lienRemaining,
+  rateRequestRefusal,
+  recoveryFor,
+  type RateRequestRefusal,
+} from './lienRecovery.js';
