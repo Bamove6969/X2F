@@ -1,4 +1,4 @@
-import { createCipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
 import type { FastifyInstance } from 'fastify';
 import { Secret } from 'otpauth';
@@ -7,7 +7,7 @@ import type { Deps } from '../src/app.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { hashPassword } from '../src/auth/password.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
-import { openSecret, rewrapTotpSecrets, sealSecret, verifyTotp } from '../src/auth/totp.js';
+import { applyTotp, openSecret, rewrapTotpSecrets, sealSecret, verifyTotp } from '../src/auth/totp.js';
 import { subkey } from '../src/config.js';
 import { confirmTokenFor, confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { approvedLogin } from './helpers/approval.js';
@@ -229,6 +229,91 @@ describe('TOTP enrolment', () => {
     expect(res.json()).toEqual({ error: 'method-not-allowed' });
   });
 });
+
+/**
+ * Owner decision, 16 Nov 2026 (to-lead.log 17:38): the authenticator app is the password login's
+ * second factor, so an account uses it only together with a password. It reverses signup round 3
+ * behaviour 1 (TOTP with a PGP key, passkey or security key and no password).
+ */
+describe('TOTP goes with a password (owner, 16 Nov 2026)', () => {
+  const tokenUsed = async (token: string) => {
+    const { rows } = await deps.db.query<{ used_at: Date | null }>('select used_at from confirm_tokens where token_hash = $1', [
+      createHash('sha256').update(token).digest(),
+    ]);
+    return rows[0]!.used_at !== null;
+  };
+  /** A trader whose only login method is a PGP key (no password). */
+  async function pgpTrader(firstSession = true) {
+    const id = await seedAccount(deps, { loginName: name() });
+    const key = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
+    const b = new Browser(app);
+    expect((await b.post('/t/login', { accountId: id, firstSession })).statusCode).toBe(200);
+    return { id, b };
+  }
+  const removePassword = (b: Browser, confirmToken: string) =>
+    app.inject({ method: 'DELETE', url: '/v1/account/methods/password/password', headers: { origin: ORIGIN }, cookies: b.cookies, payload: { confirmToken } });
+
+  it('start is refused with 409 totp-needs-password on an account with no password, in the sign-up window', async () => {
+    const { id, b } = await pgpTrader();
+    const res = await b.post('/v1/account/totp/start', {});
+    expect([res.statusCode, res.json()]).toEqual([409, { error: 'totp-needs-password' }]);
+    const { rows } = await deps.db.query("select 1 from challenges where account_id = $1 and purpose = 'add-totp'", [id]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('start outside the sign-up window is refused before the confirm token is spent', async () => {
+    const { id, b } = await pgpTrader(false);
+    const confirmToken = await confirmTokenFor(deps, b.cookies, { kind: 'add-method', method: 'totp' });
+    const res = await b.post('/v1/account/totp/start', { confirmToken });
+    expect([res.statusCode, res.json()]).toEqual([409, { error: 'totp-needs-password' }]);
+    expect(await tokenUsed(confirmToken)).toBe(false);
+    // With a password the same token now starts the enrolment.
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [id, goodHash.hash, goodHash.pepperId, now]);
+    expect((await b.post('/v1/account/totp/start', { confirmToken })).statusCode).toBe(200);
+  });
+
+  it('finish is refused with 409 totp-needs-password when the password went after the start; nothing is enrolled', async () => {
+    const { id, b } = await trader();
+    const s = await enrolStart(b);
+    await deps.db.query('delete from passwords where account_id = $1', [id]);
+    const res = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
+    expect([res.statusCode, res.json()]).toEqual([409, { error: 'totp-needs-password' }]);
+    expect(await hasTotpRow(id)).toBe(false);
+  });
+
+  it('removing the password while TOTP is enrolled is refused with 409 password-has-totp, before the confirm token is spent', async () => {
+    const { id, b } = await trader();
+    const key = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
+    await enrol(b);
+    const token = await confirmTokenFor(deps, b.cookies, { kind: 'remove-method', method: 'password', id: 'password' });
+    const res = await removePassword(b, token);
+    expect([res.statusCode, res.json()]).toEqual([409, { error: 'password-has-totp' }]);
+    expect(await tokenUsed(token)).toBe(false);
+    const { rows } = await deps.db.query('select 1 from passwords where account_id = $1', [id]);
+    expect(rows).toHaveLength(1);
+    // Without the authenticator app, the password can go (the PGP key still logs in).
+    await deps.db.query('delete from totp where account_id = $1', [id]);
+    expect((await removePassword(b, token)).statusCode).toBe(200);
+  });
+
+  it('applyTotp (also the write of a staged enrolment when the hold ends) refuses an account with no password', async () => {
+    const { id } = await pgpTrader();
+    const sealed = sealSecret(deps, id, randomBytes(20));
+    await expect(applyTotp(deps.db, id, sealed, 0, now)).rejects.toMatchObject({ status: 409, code: 'totp-needs-password' });
+    expect(await hasTotpRow(id)).toBe(false);
+  });
+
+  it('a TOTP login still asks a password login for the code (TOTP stays the password\'s second factor)', async () => {
+    const { username, b } = await trader();
+    await enrol(b);
+    const res = await passwordLogin(new Browser(app), username);
+    expect(res.json()).toMatchObject({ status: 'second-factor' });
+  });
+});
+
+const hasTotpRow = async (id: string) => (await deps.db.query('select 1 from totp where account_id = $1', [id])).rows.length > 0;
 
 describe('verifyTotp replay order (P2-I2)', () => {
   it('accepts each step once, never one at or below the last accepted step', async () => {
