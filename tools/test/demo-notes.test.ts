@@ -11,13 +11,14 @@ import {
   createNotesHandler,
   gatewayNotesEnv,
   loadSeed,
+  notesFileName,
   notesFiles,
   notesStartupLine,
   parseNote,
   ReplyError,
   type GitRun,
   type NotesFiles,
-  type NotesSeed,
+  type NotesRecord,
 } from '../demo/notes-server.js';
 
 const PAGE = '<!doctype html><html><head><title>X</title></head><body></body></html>';
@@ -26,7 +27,7 @@ const CSP = "default-src 'none'; script-src 'self'; style-src 'self'";
 let dir: string;
 let files: NotesFiles;
 /** The earlier notes the handler numbers after; none (no git) unless a test says otherwise. */
-let seed: NotesSeed;
+let seed: NotesRecord;
 let servers: Server[];
 let apiHits: { method: string; url: string; headers: http.IncomingHttpHeaders }[];
 let apiAnswer: (req: IncomingMessage, res: ServerResponse) => void;
@@ -310,7 +311,7 @@ describe('the JSON line', () => {
     await post({ ...NOTE, text: 'line one\nline two' });
     const all = await lines(files.notes);
     expect(all).toHaveLength(2);
-    expect(Object.keys(all[0]!).sort()).toEqual(['dataScreen', 'element', 'hash', 'id', 'number', 'pathname', 'screenName', 'text', 'time', 'viewport', 'x', 'xPercent', 'y', 'yPercent']);
+    expect(Object.keys(all[0]!).sort()).toEqual(['dataScreen', 'element', 'hash', 'id', 'pathname', 'screenName', 'text', 'time', 'viewport', 'x', 'xPercent', 'y', 'yPercent']);
     expect(all[0]).toMatchObject({ text: NOTE.text, pathname: '/trade/AB12', hash: '#chat', dataScreen: 'trade', viewport: { width: 390, height: 844 }, x: 100, y: 200, xPercent: 25.64, yPercent: 23.7, screenName: 'demo_ana', element: { css: 'main > button', text: 'Pay now' } });
     expect(all[0]!.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(new Date(all[0]!.time as string).toISOString()).toBe(all[0]!.time);
@@ -355,7 +356,7 @@ describe('threads', () => {
     expect((await post({ text: 'also this', parentId: id })).status).toBe(201);
     const all = await lines(files.notes);
     expect(all[1]).toMatchObject({ text: 'also this', parentId: id });
-    expect(Object.keys(all[1]!).sort()).toEqual(['id', 'kind', 'parentId', 'text', 'time']);
+    expect(Object.keys(all[1]!).sort()).toEqual(['id', 'parentId', 'text', 'time']);
     const notes = await screen();
     expect(notes).toHaveLength(1);
     expect(notes[0]!.thread).toMatchObject([{ text: 'also this', from: 'you' }]);
@@ -446,15 +447,21 @@ describe('demo gateway: the door for the seeded accounts (door.ts)', () => {
 });
 
 
-describe('one running comment number, continued from the earlier notes (Job 14)', () => {
+describe('builds on where the earlier demos left off (Job 14)', () => {
   const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-  /** A note line the way the 12 and 13 Nov files on comms hold them (no number, no kind). */
-  const oldNote = (n: number, extra: Record<string, unknown> = {}) =>
-    JSON.stringify({ id: uuid(n), time: `2026-11-12T09:${String(n % 60).padStart(2, '0')}:00.000Z`, text: `old ${n}`, pathname: '/setup', dataScreen: 'setup', element: { css: 'main' }, ...extra });
-  /** 12 Nov: 48 comments. 13 Nov: 42 comments and one follow-up. 91 lines, as the team counts them. */
-  const nov12 = Array.from({ length: 48 }, (_, i) => oldNote(i + 1)).join('\n') + '\n';
-  const nov13 = [...Array.from({ length: 20 }, (_, i) => oldNote(49 + i)), JSON.stringify({ id: uuid(69), time: '2026-11-13T10:00:00.000Z', text: 'also', parentId: uuid(50) }), ...Array.from({ length: 22 }, (_, i) => oldNote(70 + i))].join('\n') + '\n';
-  const comms: Record<string, string> = { 'owner-demo-notes-2026-11-12.jsonl': nov12, 'owner-demo-notes-2026-11-13.jsonl': nov13 };
+  const at = (n: number) => new Date(Date.UTC(2026, 10, 12, 9, 0, n)).toISOString();
+  /** A comment the way the 12 and 13 Nov files on comms hold them (no number, no kind). */
+  const old = (n: number, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ id: uuid(n), time: at(n), text: `old ${n}`, pathname: n % 2 ? '/setup' : '/sell', hash: '', dataScreen: 'x', element: { css: 'main' }, ...extra });
+  /** 12 Nov: 48 comments. 13 Nov: 42 comments and one follow-up (to comment 50). 16 Nov: both again (as on comms). */
+  const nov12 = Array.from({ length: 48 }, (_, i) => old(i + 1)).join('\n') + '\n';
+  const nov13 =
+    [...Array.from({ length: 20 }, (_, i) => old(49 + i)), JSON.stringify({ id: uuid(69), time: at(69), text: 'also', parentId: uuid(50) }), ...Array.from({ length: 22 }, (_, i) => old(70 + i))].join('\n') + '\n';
+  const comms: Record<string, string> = {
+    'owner-demo-notes-2026-11-12.jsonl': nov12,
+    'owner-demo-notes-2026-11-13.jsonl': nov13,
+    'owner-demo-notes-2026-11-16.jsonl': nov13 + nov12, // the same notes again, in another order
+  };
   /** A stand-in for `git ls-tree` / `git show` on a checkout whose comms branch holds `tree`. */
   const fakeGit = (tree: Record<string, string>, ref = 'origin/comms'): GitRun => (args) => {
     if (args[0] === 'ls-tree' && args.at(-1) === ref) return `AGY-ORDERS.md\n${Object.keys(tree).join('\n')}\nto-agy.log\n`;
@@ -464,123 +471,161 @@ describe('one running comment number, continued from the earlier notes (Job 14)'
     }
     throw new Error(`fatal: not a valid object name ${args.at(-1)}`);
   };
-  const noGit: GitRun = () => {
-    throw new Error('git: not found');
+  const offline: GitRun = () => {
+    throw new Error('git: offline');
   };
+  type Pin = { id: string; number: number; text: string; resolved: boolean; thread: { text: string; from: string }[] };
+  const screen = async (path: string) => ((await (await fetch(`${base}/__demo/notes?path=${encodeURIComponent(path)}`)).json()) as { notes: Pin[] }).notes;
   const number = async (r: Response) => ((await r.json()) as { number?: number }).number;
-  const screen = async (path: string) =>
-    ((await (await fetch(`${base}/__demo/notes?path=${encodeURIComponent(path)}`)).json()) as { notes: { id: string; number: number; text: string }[] }).notes;
+  const restart = async (s: NotesRecord) => {
+    for (const x of servers) {
+      x.closeAllConnections();
+      x.close();
+    }
+    servers = [];
+    seed = s;
+    await start();
+  };
+  /** The owner's PC file today: the 12/13 Nov notes again (duplicates), then two comments and a follow-up only it has. */
+  const pcFile = () =>
+    nov12 +
+    nov13 +
+    [
+      JSON.stringify({ id: uuid(200), time: '2026-11-16T09:00:00.000Z', text: 'pc one', pathname: '/setup', hash: '' }),
+      JSON.stringify({ id: uuid(201), time: '2026-11-16T09:05:00.000Z', text: 'pc follow-up', parentId: uuid(3) }),
+      JSON.stringify({ id: uuid(202), time: '2026-11-16T09:10:00.000Z', text: 'pc two', pathname: '/buy', hash: '' }),
+    ].join('\n') +
+    '\n';
 
-  it('reads every owner-demo-notes-*.jsonl on origin/comms, read-only: 91 earlier lines, so the next comment is 92', () => {
+  it('loads every owner-demo-notes-*.jsonl on origin/comms, each note once', () => {
     const s = loadSeed({ git: fakeGit(comms) });
     expect(s.ok).toBe(true);
-    expect(s.max).toBe(91);
-    expect(s.files).toEqual(['origin/comms:owner-demo-notes-2026-11-12.jsonl', 'origin/comms:owner-demo-notes-2026-11-13.jsonl']);
-    expect(s.numbers.get(uuid(1))).toBe(1);
-    expect(s.numbers.get(uuid(91))).toBe(91);
+    expect(s.files).toHaveLength(3);
+    expect(s.notes).toHaveLength(91);
+    expect(s.notes.filter((n) => n.parentId === undefined)).toHaveLength(90);
   });
 
-  it('uses the local comms branch when there is no origin/comms, and counts a note in two files once', () => {
-    const s = loadSeed({ git: fakeGit({ ...comms, 'owner-demo-notes-2026-11-16.jsonl': nov12 + nov13 }, 'comms') });
-    expect(s.ok).toBe(true);
-    expect(s.max).toBe(91);
+  it('falls back to a local comms branch', () => {
+    expect(loadSeed({ git: fakeGit(comms, 'comms') }).sources).toEqual(['comms']);
   });
 
-  it('numbers one running count across screens, and a follow-up takes no number', async () => {
+  it('shows each earlier comment as its pin on its own screen, with its number in time order across all files', async () => {
     seed = loadSeed({ git: fakeGit(comms) });
     await start();
-    const first = await post(NOTE);
-    expect(first.status).toBe(201);
-    const { id } = (await first.clone().json()) as { id: string };
-    expect(await number(first)).toBe(92);
-    expect(await number(await post({ text: 'follow-up', parentId: id }))).toBeUndefined();
-    expect(await number(await post({ ...NOTE, pathname: '/sell', hash: '', text: 'second screen' }))).toBe(93);
-    expect(await number(await post({ ...NOTE, text: 'same screen again' }))).toBe(94);
-    expect((await screen('/trade/AB12#chat')).map((n) => n.number)).toEqual([92, 94]);
-    expect((await screen('/sell')).map((n) => n.number)).toEqual([93]);
+    const setup = await screen('/setup');
+    expect(setup.every((n) => Number(n.text.slice(4)) % 2 === 1)).toBe(true);
+    // Odd comments are on /setup, even on /sell; numbers run 1..90 by time over both screens.
+    const all = [...setup, ...(await screen('/sell'))].sort((a, b) => a.number - b.number);
+    expect(all.map((n) => n.number)).toEqual(Array.from({ length: 90 }, (_, i) => i + 1));
+    expect(all[0]!.text).toBe('old 1');
+    expect(all.find((n) => n.text === 'old 70')!.number).toBe(69); // after the follow-up, which takes no number
+    expect(all.find((n) => n.text === 'old 50')!.thread).toMatchObject([{ text: 'also', from: 'you' }]);
   });
 
-  it('writes the number into the note at once, so it never changes later', async () => {
+  it('numbers ties in time by id, and the same on every start', async () => {
+    const tie = [JSON.stringify({ id: uuid(902), time: at(1), text: 'b', pathname: '/t' }), JSON.stringify({ id: uuid(901), time: at(1), text: 'a', pathname: '/t' })].join('\n');
+    seed = loadSeed({ git: fakeGit({ 'owner-demo-notes-x.jsonl': tie }) });
+    await start();
+    const first = (await screen('/t')).map((n) => [n.text, n.number]);
+    expect(first).toEqual([['a', 1], ['b', 2]]);
+    await restart(loadSeed({ git: fakeGit({ 'owner-demo-notes-x.jsonl': tie }) }));
+    expect((await screen('/t')).map((n) => [n.text, n.number])).toEqual(first);
+  });
+
+  it('continues the sequence: a new comment is the highest + 1, on any screen, written at once', async () => {
     seed = loadSeed({ git: fakeGit(comms) });
     await start();
-    await post(NOTE);
-    await post({ text: 'more', parentId: ((await lines(files.notes))[0]!.id as string) });
-    const saved = await lines(files.notes);
-    expect(saved[0]).toMatchObject({ number: 92, text: NOTE.text });
-    expect(saved[1]).toMatchObject({ kind: 'follow-up', text: 'more' });
-    expect(saved[1]!.number).toBeUndefined();
-    // Restarted without comms: the saved note keeps 92 and the next one is 93.
-    for (const s of servers) s.close();
-    servers = [];
-    seed = loadSeed({ git: noGit });
+    const r = await post(NOTE);
+    expect(r.status).toBe(201);
+    expect(await number(r)).toBe(91);
+    expect((await lines(files.notes)).map((l) => l.text)).toEqual([NOTE.text]);
+    expect(await number(await post({ ...NOTE, pathname: '/sell', hash: '', text: 'next' }))).toBe(92);
+    expect((await screen('/trade/AB12#chat')).map((n) => n.number)).toEqual([91]);
+  });
+
+  it('adds the local file (the owner\'s PC notes, not on comms yet), dropping its copies of comms notes', async () => {
+    await mkdir(join(dir, 'sub'), { recursive: true });
+    await writeFile(files.notes, pcFile());
+    seed = loadSeed({ git: fakeGit(comms) });
     await start();
-    expect((await screen('/trade/AB12#chat')).map((n) => n.number)).toEqual([92]);
+    expect((await screen('/setup')).find((n) => n.text === 'pc one')!.number).toBe(91);
+    expect((await screen('/buy')).map((n) => [n.text, n.number])).toEqual([['pc two', 92]]);
+    expect((await screen('/setup')).find((n) => n.text === 'old 3')!.thread).toMatchObject([{ text: 'pc follow-up' }]);
     expect(await number(await post(NOTE))).toBe(93);
+  });
+
+  it('brings earlier replies and resolved threads along; resolved ones stay hidden', async () => {
+    const extra = [JSON.stringify({ kind: 'reply', id: uuid(300), time: at(95), noteId: uuid(1), text: 'Changed it' }), JSON.stringify({ kind: 'resolved', noteId: uuid(3), time: at(96) })].join('\n');
+    seed = loadSeed({ git: fakeGit({ ...comms, 'owner-demo-notes-2026-11-14.jsonl': extra }) });
+    await start();
+    const setup = await screen('/setup');
+    expect(setup.find((n) => n.text === 'old 1')!.thread).toMatchObject([{ text: 'Changed it', from: 'team' }]);
+    expect(setup.find((n) => n.text === 'old 3')!.resolved).toBe(true);
+    expect(setup.find((n) => n.text === 'old 5')!.resolved).toBe(false);
+  });
+
+  it('lets an earlier comment be added to, answered and resolved, in the local files only', async () => {
+    seed = loadSeed({ git: fakeGit(comms) });
+    await start();
+    expect((await post({ text: 'still wrong', parentId: uuid(5) })).status).toBe(201);
+    await appendReply(files, uuid(5), 'Looking at it', Date.now, seed);
+    expect((await post({ id: uuid(5) }, {}, '/__demo/notes/resolve')).status).toBe(200);
+    expect(await lines(files.notes)).toMatchObject([{ text: 'still wrong', parentId: uuid(5) }]);
+    expect(await lines(files.replies)).toMatchObject([{ noteId: uuid(5), text: 'Looking at it' }]);
+    expect(await lines(files.resolved)).toMatchObject([{ noteId: uuid(5) }]);
+    expect((await screen('/setup')).find((n) => n.text === 'old 5')).toMatchObject({ resolved: true, thread: [{ text: 'still wrong' }, { text: 'Looking at it' }] });
+    // A follow-up takes no number: the next comment is still 91.
+    expect(await number(await post(NOTE))).toBe(91);
   });
 
   it('gives comments sent at the same moment different numbers', async () => {
     seed = loadSeed({ git: fakeGit(comms) });
     await start();
     const got = await Promise.all(Array.from({ length: 6 }, (_, i) => post({ ...NOTE, text: `n${i}` }).then(number)));
-    expect([...got].sort((a, b) => a! - b!)).toEqual([92, 93, 94, 95, 96, 97]);
-    expect((await lines(files.notes)).map((l) => l.number).sort()).toEqual([92, 93, 94, 95, 96, 97]);
+    expect([...got].sort((a, b) => a! - b!)).toEqual([91, 92, 93, 94, 95, 96]);
   });
 
-  it('fails soft with no origin/comms: says so, and continues after the highest number in the local file', async () => {
-    const s = loadSeed({ git: noGit });
-    expect(s.ok).toBe(false);
-    expect(s.max).toBe(0);
-    // The owner's own file: the 91 old lines (unnumbered), then a comment this version numbered 120.
-    await writeFile(join(dir, 'local.jsonl'), '');
-    files = notesFiles({ DEMO_NOTES_FILE: join(dir, 'sub', 'demo-notes.jsonl') });
+  it('keeps a new comment last even when this computer\'s clock is behind the earlier notes', async () => {
+    seed = loadSeed({ git: fakeGit({ 'owner-demo-notes-x.jsonl': JSON.stringify({ id: uuid(1), time: '2099-01-01T00:00:00.000Z', text: 'future', pathname: '/x' }) }) });
+    await start();
+    expect(await number(await post(NOTE))).toBe(2);
+  });
+
+  it('offline (no origin/comms): uses the local file only, and says so at start', async () => {
     await mkdir(join(dir, 'sub'), { recursive: true });
-    await writeFile(files.notes, nov12 + nov13);
-    expect(await notesStartupLine(files, s)).toMatch(/^Comments: could not read the earlier notes on origin\/comms.*continue after 91 \(the highest in .*demo-notes\.jsonl\)/);
+    await writeFile(files.notes, pcFile());
+    const s = loadSeed({ git: offline });
+    expect(s.ok).toBe(false);
+    expect(await notesStartupLine(files, s)).toMatch(/^Comments: could not read the earlier notes on origin\/comms .*using .*demo-notes\.jsonl only: 92 loaded; new ones start at 93$/);
     seed = s;
     await start();
-    expect(await number(await post(NOTE))).toBe(92);
-    await writeFile(files.notes, `${await readFile(files.notes, 'utf8')}${JSON.stringify({ id: uuid(500), time: '2026-11-16T10:00:00.000Z', text: 'x', pathname: '/x', number: 120 })}\n`);
-    expect(await number(await post(NOTE))).toBe(121);
+    // The PC file holds the comms notes too, so the numbers are the same as online.
+    expect((await screen('/buy')).map((n) => n.number)).toEqual([92]);
+    expect(await number(await post(NOTE))).toBe(93);
   });
 
-  it('numbers the same old notes the same, with or without comms, when the local file holds them too', async () => {
-    await mkdir(join(dir, 'sub'), { recursive: true });
-    await writeFile(files.notes, nov12 + nov13 + oldNote(92) + '\n');
-    seed = loadSeed({ git: fakeGit(comms) });
-    await start();
-    const withComms = (await screen('/setup')).map((n) => n.number);
-    for (const s of servers) s.close();
-    servers = [];
-    seed = loadSeed({ git: noGit });
-    await start();
-    expect((await screen('/setup')).map((n) => n.number)).toEqual(withComms);
-    expect(withComms.at(-1)).toBe(92);
-  });
-
-  it('says where the numbers come from at start', async () => {
-    const line = await notesStartupLine(files, loadSeed({ git: fakeGit(comms) }));
-    expect(line).toMatch(/^Comments: new ones start at 92, after the 91 earlier notes on origin\/comms \(2 files\); saved to .*demo-notes\.jsonl$/);
+  it('says what it loaded at start', async () => {
+    expect(await notesStartupLine(files, loadSeed({ git: fakeGit(comms) }))).toMatch(/^Comments: 90 loaded \(90 from 3 earlier files on origin\/comms, the rest from .*demo-notes\.jsonl\); new ones start at 91$/);
   });
 
   describe('DEMO_NOTES_SEED', () => {
-    it('reads the listed .jsonl files instead of comms, never writes to them, and skips anything else', async () => {
+    it('adds the listed .jsonl files to comms, never writes to them, and skips anything else', async () => {
       const a = join(dir, 'owner-demo-notes-a.jsonl');
-      const b = join(dir, 'b.jsonl');
-      await writeFile(a, nov12);
-      await writeFile(b, nov12 + nov13);
-      await writeFile(join(dir, 'secret.txt'), oldNote(900) + '\n');
-      const s = loadSeed({ seedPath: `${a},${b},${join(dir, 'secret.txt')},${join(dir, 'missing.jsonl')},${join(dir, '*.jsonl')}`, git: () => { throw new Error('git must not run when DEMO_NOTES_SEED is set'); } });
-      expect(s.ok).toBe(true);
-      expect(s.max).toBe(91);
-      expect(s.files).toEqual([a, b]);
-      expect(s.problems.join('\n')).toMatch(/secret\.txt.*not a \.jsonl/);
-      expect(s.problems.join('\n')).toMatch(/missing\.jsonl/);
-      expect(s.problems.join('\n')).toMatch(/\*\.jsonl/);
+      await writeFile(a, JSON.stringify({ id: uuid(400), time: '2026-11-15T00:00:00.000Z', text: 'from seed', pathname: '/z' }) + '\n' + nov12);
+      await writeFile(join(dir, 'secret.txt'), old(900) + '\n');
+      const s = loadSeed({ seedPath: `${a},${join(dir, 'secret.txt')},${join(dir, 'missing.jsonl')},${join(dir, '*.jsonl')}`, git: fakeGit(comms) });
+      expect(s.sources).toEqual(['origin/comms', 'DEMO_NOTES_SEED']);
+      expect(s.files.at(-1)).toBe(a);
+      expect(s.notes.filter((n) => n.parentId === undefined)).toHaveLength(91);
+      expect(s.problems.join('\n')).toMatch(/secret\.txt: not a \.jsonl/);
+      expect(s.problems.join('\n')).toMatch(/missing\.jsonl: not found/);
+      expect(s.problems.join('\n')).toMatch(/\*\.jsonl: not found/);
+      expect(s.notes.some((n) => n.id === uuid(900))).toBe(false);
       seed = s;
       await start();
+      expect((await screen('/z')).map((n) => n.number)).toEqual([91]);
       expect(await number(await post(NOTE))).toBe(92);
-      expect(await readFile(a, 'utf8')).toBe(nov12);
-      expect(await readFile(b, 'utf8')).toBe(nov12 + nov13);
+      expect(await readFile(a, 'utf8')).toContain('from seed');
     });
 
     it('reads only owner-demo-notes-*.jsonl from a folder, not its subfolders', async () => {
@@ -589,13 +634,15 @@ describe('one running comment number, continued from the earlier notes (Job 14)'
       await writeFile(join(d, 'owner-demo-notes-2026-11-12.jsonl'), nov12);
       await writeFile(join(d, 'demo-notes.jsonl'), nov13);
       await writeFile(join(d, 'deeper', 'owner-demo-notes-2026-11-13.jsonl'), nov13);
-      const s = loadSeed({ seedPath: d, git: noGit });
-      expect(s.max).toBe(48);
+      const s = loadSeed({ seedPath: d, git: offline });
+      expect(s.notes).toHaveLength(48);
       expect(s.files).toEqual([join(d, 'owner-demo-notes-2026-11-12.jsonl')]);
     });
 
-    it('gets to the gateway, which starts with a clean environment', () => {
-      expect(gatewayNotesEnv({ DEMO_NOTES_FILE: '/n/demo-notes.jsonl', DEMO_NOTES_SEED: '/c/x.jsonl', HOME: '/h', SECRET: 's' })).toEqual({ DEMO_NOTES_FILE: '/n/demo-notes.jsonl', DEMO_NOTES_SEED: '/c/x.jsonl' });
+    it('gets to the gateway, with what git needs for the owner\'s credentials, and nothing else', () => {
+      expect(
+        gatewayNotesEnv({ DEMO_NOTES_FILE: '/n/d.jsonl', DEMO_NOTES_SEED: '/c/x.jsonl', DEMO_NOTES_PUSH: '0', SSH_AUTH_SOCK: '/s', WSL_INTEROP: '/w', WSL_DISTRO_NAME: 'U', HOME: '/h', SECRET: 's' }),
+      ).toEqual({ DEMO_NOTES_FILE: '/n/d.jsonl', DEMO_NOTES_SEED: '/c/x.jsonl', DEMO_NOTES_PUSH: '0', SSH_AUTH_SOCK: '/s', WSL_INTEROP: '/w', WSL_DISTRO_NAME: 'U' });
       expect(gatewayNotesEnv({ HOME: '/h' })).toEqual({});
     });
   });
@@ -603,48 +650,52 @@ describe('one running comment number, continued from the earlier notes (Job 14)'
   describe('Download my notes', () => {
     const download = (headers: Record<string, string> = {}, path = '/__demo/notes/download') => fetch(`${base}${path}`, { headers });
 
-    it('is one file with every comment (with its number), follow-up, reply and resolved thread', async () => {
+    it('is one file with everything: earlier and new comments with their numbers, follow-ups, replies, resolved threads', async () => {
       seed = loadSeed({ git: fakeGit(comms) });
       await start();
       await post(NOTE);
       const id = (await lines(files.notes))[0]!.id as string;
       await post({ text: 'more', parentId: id });
-      await post({ ...NOTE, pathname: '/sell', hash: '', text: 'second' });
-      const reply = await appendReply(files, id, 'Changing it');
+      const reply = await appendReply(files, id, 'Changing it', Date.now, seed);
       await post({ id }, {}, '/__demo/notes/resolve');
       const r = await download({ 'sec-fetch-site': 'same-origin' });
       expect(r.status).toBe(200);
-      expect(r.headers.get('content-disposition')).toBe(`attachment; filename="owner-demo-notes-${new Date().toISOString().slice(0, 10)}.jsonl"`);
+      expect(r.headers.get('content-disposition')).toBe(`attachment; filename="${notesFileName(Date.now())}"`);
+      expect(notesFileName(Date.UTC(2026, 10, 16, 12))).toMatch(/^owner-demo-notes-2026-11-1[67]\.jsonl$/);
       expect(r.headers.get('x-content-type-options')).toBe('nosniff');
       expect(r.headers.get('cache-control')).toBe('no-store');
       const got = (await r.text()).trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
-      expect(got.map((l) => [l.kind ?? 'comment', l.number ?? null, l.text ?? null])).toEqual([
-        ['comment', 92, NOTE.text],
+      expect(got).toHaveLength(91 + 2 + 1 + 1);
+      expect(got.filter((l) => typeof l.number === 'number').map((l) => l.number)).toEqual(Array.from({ length: 91 }, (_, i) => i + 1));
+      expect(got.slice(-4).map((l) => [l.kind ?? (l.parentId ? 'follow-up' : 'comment'), l.number ?? null, l.text ?? null])).toEqual([
+        ['comment', 91, NOTE.text],
         ['follow-up', null, 'more'],
-        ['comment', 93, 'second'],
         ['reply', null, 'Changing it'],
         ['resolved', null, null],
       ]);
-      expect(got[3]).toMatchObject({ id: reply.id, noteId: id });
-      expect(got[4]).toMatchObject({ noteId: id });
+      expect(got.at(-2)).toMatchObject({ id: reply.id, noteId: id });
+      expect(got.at(-1)).toMatchObject({ noteId: id });
     });
 
-    it('puts the number on old unnumbered comments too, so the file seeds the same numbers again', async () => {
-      await mkdir(join(dir, 'sub'), { recursive: true });
-      await writeFile(files.notes, nov12 + nov13);
-      seed = loadSeed({ git: noGit });
+    it('reads back as an earlier file with the same numbers, replies and resolved state', async () => {
+      seed = loadSeed({ git: fakeGit(comms) });
       await start();
       await post(NOTE);
+      await appendReply(files, uuid(1), 'ok', Date.now, seed);
+      await post({ id: uuid(7) }, {}, '/__demo/notes/resolve');
       const text = await (await download()).text();
-      const dl = join(dir, 'owner-demo-notes-2026-11-16.jsonl');
+      // Another computer, offline, with only the downloaded file: the same record.
+      await rm(files.notes);
+      await rm(files.replies);
+      await rm(files.resolved);
+      const dl = join(dir, notesFileName(Date.now()));
       await writeFile(dl, text);
-      const again = loadSeed({ seedPath: dl, git: noGit });
-      expect(again.max).toBe(92);
-      expect(again.numbers.get(uuid(91))).toBe(91);
-      // The reply and resolved lines in a downloaded file are not comments.
-      await appendReply(files, uuid(1), 'ok');
-      await writeFile(dl, await (await download()).text());
-      expect(loadSeed({ seedPath: dl, git: noGit }).max).toBe(92);
+      await restart(loadSeed({ seedPath: dl, git: offline }));
+      expect((await screen('/trade/AB12#chat')).map((n) => n.number)).toEqual([91]);
+      const setup = await screen('/setup');
+      expect(setup.find((n) => n.text === 'old 1')!.thread).toMatchObject([{ text: 'ok', from: 'team' }]);
+      expect(setup.find((n) => n.text === 'old 7')!.resolved).toBe(true);
+      expect(await (await download()).text()).toBe(text);
     });
 
     it('is an empty file before the first comment', async () => {
@@ -680,11 +731,38 @@ describe('one running comment number, continued from the earlier notes (Job 14)'
       expect(apiHits).toEqual([]);
     });
 
-    it('is a button in notes.js that fetches that route, and the pins show the server number', async () => {
+    it('is a button in notes.js that fetches that route; the pins show the server number and the GitHub status', async () => {
       const js = await readFile(new URL('../demo/notes.js', import.meta.url), 'utf8');
       expect(js).toContain("'Download my notes'");
       expect(js).toContain("API + '/download'");
       expect(js).toMatch(/var number = n\.number;/);
+      expect(js).toContain('showPush(data.push)');
+    });
+  });
+
+  describe('the GitHub status in GET', () => {
+    it('is off unless the gateway publishes, and tracks the pusher after each change', async () => {
+      await start();
+      expect(((await (await fetch(`${base}/__demo/notes?path=/x`)).json()) as { push: string }).push).toBe('off');
+      for (const x of servers) x.close();
+      servers = [];
+      let state: 'pending' | 'pushed' = 'pushed';
+      let changes = 0;
+      const origins = new Set([base]);
+      const h = createNotesHandler({ files, origins, clientJs: Buffer.from(''), seed, onChange: () => { changes += 1; state = 'pending'; }, pushState: () => state });
+      const srv = http.createServer(h);
+      servers.push(srv);
+      await new Promise<void>((r) => srv.listen(Number(host.split(':')[1]), '127.0.0.1', () => r()));
+      const get = async () => ((await (await fetch(`${base}/__demo/notes?path=/x`)).json()) as { push: string }).push;
+      expect(await get()).toBe('pushed');
+      await post(NOTE);
+      await post({ text: 'f', parentId: (await lines(files.notes))[0]!.id as string });
+      await post({ id: (await lines(files.notes))[0]!.id as string }, {}, '/__demo/notes/resolve');
+      expect(changes).toBe(3);
+      expect(await get()).toBe('pending');
+      // A refused write is no change.
+      await post(NOTE, { origin: 'https://evil.example' });
+      expect(changes).toBe(3);
     });
   });
 });

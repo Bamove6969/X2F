@@ -35,8 +35,12 @@ export interface NotesConfig {
   rateMax?: number;
   rateWindowMs?: number;
   now?: () => number;
-  /** The earlier notes to number after (loadSeed); read from DEMO_NOTES_SEED or origin/comms when left out. */
-  seed?: NotesSeed;
+  /** The earlier notes (loadSeed); read from origin/comms and DEMO_NOTES_SEED when left out. */
+  seed?: NotesRecord;
+  /** Called after each comment, follow-up or resolve is on disk (notes-push.ts publishes them). */
+  onChange?: () => void;
+  /** Where the notes are: 'off' (not published), 'pending' (on this computer only), 'pushed' (on GitHub). */
+  pushState?: () => 'off' | 'pending' | 'pushed';
 }
 
 /** A top-level comment, or (with parentId) a follow-up in its thread. */
@@ -55,10 +59,6 @@ export interface NoteLine {
   yPercent?: number;
   element?: { css: string; text: string; offsetXPercent: number; offsetYPercent: number };
   screenName?: string | null;
-  /** The comment's number, one running count across screens and sessions; saved when it is written. */
-  number?: number;
-  /** 'follow-up' on a follow-up this version wrote, so it never takes a number. */
-  kind?: 'follow-up';
 }
 
 export interface ReplyLine {
@@ -181,21 +181,33 @@ async function appendLine(file: string, value: unknown): Promise<void> {
   }
 }
 
-// ── one running comment number ────────────────────────────────────────────────────────────────
-// The team counts the owner's notes by line: 12 Nov is 1-48, 13 Nov is 49-91 (its one follow-up
-// included), so the next comment is 92. A line that already carries a number keeps it; an old
-// line with none takes the next one, in file order; a line with a `kind` (a follow-up this
-// version wrote, or a reply or resolved line in a downloaded file) or a `noteId` takes none.
+// ── every earlier note, and one running comment number ─────────────────────────────────────────
+// The demo builds on where the earlier demos left off (owner, 16 Nov): on start it reads every
+// owner-demo-notes-*.jsonl on origin/comms (or a local comms branch), and DEMO_NOTES_SEED when set,
+// read only; with the local files, read on every request, that is one record: each note, reply
+// and resolved thread once, by id. Comments are numbered by their place in time order (ties by
+// id), across every screen and session, so a comment keeps its number on every start and a new one
+// is the highest + 1. Follow-ups take no number. Lines in a file are told apart by shape: a `kind`
+// of 'reply' or 'resolved' (a downloaded file), or a `noteId` (with text, a reply; without, a
+// resolved thread); anything else with an id and text is a note.
 
-export interface NotesSeed {
-  /** Note id to number, for every earlier note. */
-  numbers: ReadonlyMap<string, number>;
-  /** The highest number taken (0 for none). */
-  max: number;
-  /** False when the earlier notes could not be read (no comms branch, no git): numbering then starts from the local file. */
+export interface ResolvedLine {
+  noteId: string;
+  time: string;
+}
+
+/** Notes, replies and resolved threads, each once by id (resolved: by noteId). */
+export interface NotesRecord {
+  notes: NoteLine[];
+  replies: ReplyLine[];
+  resolved: ResolvedLine[];
+}
+
+export interface NotesSeed extends NotesRecord {
+  /** False when origin/comms could not be read (offline, no comms branch): only the local files count. */
   ok: boolean;
-  /** Where they came from: 'origin/comms', 'comms', 'DEMO_NOTES_SEED' or 'none'. */
-  source: string;
+  /** Where the earlier notes came from: 'origin/comms', 'comms' or 'none', plus 'DEMO_NOTES_SEED' when it was read. */
+  sources: string[];
   /** Each file read, in order. */
   files: string[];
   /** What was skipped and why, for the start-up output. */
@@ -211,23 +223,6 @@ const realGit: GitRun = (args) =>
 const SEED_NAME = /^owner-demo-notes-[A-Za-z0-9._-]+\.jsonl$/;
 const MAX_SEED_BYTES = 16 * 1024 * 1024;
 
-/** Numbers the lines of one file into `map`, after `max`; returns the new max. */
-function numberLines(lines: unknown[], map: Map<string, number>, max: number, prefix: string): number {
-  let i = 0;
-  for (const raw of lines) {
-    i += 1;
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue;
-    const l = raw as { id?: unknown; kind?: unknown; noteId?: unknown; number?: unknown };
-    if (l.kind !== undefined || l.noteId !== undefined) continue;
-    const id = typeof l.id === 'string' && l.id !== '' ? l.id : `${prefix}#${i}`;
-    if (map.has(id)) continue;
-    const n = typeof l.number === 'number' && Number.isInteger(l.number) && l.number > 0 ? l.number : max + 1;
-    map.set(id, n);
-    if (n > max) max = n;
-  }
-  return max;
-}
-
 function parseLines(text: string): unknown[] {
   const out: unknown[] = [];
   for (const l of text.split('\n')) {
@@ -241,10 +236,37 @@ function parseLines(text: string): unknown[] {
   return out;
 }
 
+const isStr = (v: unknown): v is string => typeof v === 'string' && v !== '';
+
+/** Sorts one file's lines into the record, keeping the first copy of each id. */
+function addLines(into: NotesRecord, lines: unknown[]): void {
+  const noteIds = new Set(into.notes.map((n) => n.id));
+  const replyIds = new Set(into.replies.map((r) => r.id));
+  const done = new Set(into.resolved.map((r) => r.noteId));
+  for (const raw of lines) {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue;
+    const { kind, number: _number, ...l } = raw as Record<string, unknown>;
+    if (kind === 'resolved' || (kind === undefined && isStr(l.noteId) && l.text === undefined)) {
+      if (isStr(l.noteId) && !done.has(l.noteId)) {
+        done.add(l.noteId);
+        into.resolved.push({ noteId: l.noteId, time: typeof l.time === 'string' ? l.time : '' });
+      }
+    } else if (kind === 'reply' || (kind === undefined && isStr(l.noteId))) {
+      if (isStr(l.id) && isStr(l.noteId) && typeof l.text === 'string' && !replyIds.has(l.id)) {
+        replyIds.add(l.id);
+        into.replies.push({ id: l.id, time: typeof l.time === 'string' ? l.time : '', noteId: l.noteId, text: l.text });
+      }
+    } else if (isStr(l.id) && typeof l.text === 'string' && !noteIds.has(l.id)) {
+      noteIds.add(l.id);
+      into.notes.push({ ...(l as unknown as NoteLine), time: typeof l.time === 'string' ? l.time : '' });
+    }
+  }
+}
+
 /** DEMO_NOTES_SEED entries: .jsonl files, or folders whose owner-demo-notes-*.jsonl are read (not their subfolders). No globs. */
 function seedFiles(seedPath: string, problems: string[]): string[] {
   const out: string[] = [];
-  for (const entry of seedPath.split(new RegExp(`[,${delimiter === ':' ? ':' : ';'}]`)).map((x) => x.trim()).filter((x) => x !== '')) {
+  for (const entry of seedPath.split(delimiter === ':' ? /[,:]/ : /[,;]/).map((x) => x.trim()).filter((x) => x !== '')) {
     const p = resolve(entry);
     let st;
     try {
@@ -268,87 +290,119 @@ function seedFiles(seedPath: string, problems: string[]): string[] {
 }
 
 /**
- * The owner's earlier notes, to number after (read only: nothing here writes). From the files
- * DEMO_NOTES_SEED names when it is set; otherwise every owner-demo-notes-*.jsonl on origin/comms
- * (or a local comms branch), read with `git show` from this checkout with no network. Never throws:
- * when neither can be read, `ok` is false and numbering continues after the local file's highest.
+ * The owner's earlier notes (read only: nothing here writes): every owner-demo-notes-*.jsonl on
+ * origin/comms (or a local comms branch), read with `git show` from this checkout with no network,
+ * then the files DEMO_NOTES_SEED names. Never throws.
  */
 export function loadSeed(opts: { seedPath?: string | undefined; git?: GitRun } = {}): NotesSeed {
-  const map = new Map<string, number>();
-  const problems: string[] = [];
-  let max = 0;
-  if (opts.seedPath !== undefined && opts.seedPath.trim() !== '') {
-    const files: string[] = [];
-    for (const f of seedFiles(opts.seedPath, problems)) {
-      try {
-        max = numberLines(parseLines(readFileSync(f, 'utf8')), map, max, f);
-        files.push(f);
-      } catch (e) {
-        problems.push(`${f}: ${(e as Error).message}`);
-      }
-    }
-    return { numbers: map, max, ok: files.length > 0, source: 'DEMO_NOTES_SEED', files, problems };
-  }
+  const seed: NotesSeed = { notes: [], replies: [], resolved: [], ok: false, sources: [], files: [], problems: [] };
   const git = opts.git ?? realGit;
   for (const ref of ['origin/comms', 'comms']) {
     let names: string[];
     try {
       names = git(['ls-tree', '--name-only', ref]).split('\n').map((x) => x.trim()).filter((x) => SEED_NAME.test(x)).sort();
     } catch {
-      problems.push(`${ref}: not in this checkout`);
+      seed.problems.push(`${ref}: not in this checkout`);
       continue;
     }
-    if (names.length === 0) {
-      problems.push(`${ref}: no owner-demo-notes-*.jsonl`);
-      continue;
-    }
-    const files: string[] = [];
     try {
-      for (const name of names) {
-        max = numberLines(parseLines(git(['show', `${ref}:${name}`])), map, max, `${ref}:${name}`);
-        files.push(`${ref}:${name}`);
-      }
+      const texts = names.map((name) => git(['show', `${ref}:${name}`]));
+      texts.forEach((t) => addLines(seed, parseLines(t)));
+      seed.files.push(...names.map((n) => `${ref}:${n}`));
+      seed.sources.push(ref);
+      seed.ok = true;
+      break;
     } catch (e) {
-      problems.push(`${ref}: ${(e as Error).message}`);
-      map.clear();
-      max = 0;
-      continue;
+      seed.problems.push(`${ref}: ${(e as Error).message}`);
     }
-    return { numbers: map, max, ok: true, source: ref, files, problems };
   }
-  return { numbers: map, max: 0, ok: false, source: 'none', files: [], problems };
+  if (!seed.ok) seed.sources.push('none');
+  if (opts.seedPath !== undefined && opts.seedPath.trim() !== '') {
+    seed.sources.push('DEMO_NOTES_SEED');
+    for (const f of seedFiles(opts.seedPath, seed.problems)) {
+      try {
+        addLines(seed, parseLines(readFileSync(f, 'utf8')));
+        seed.files.push(f);
+      } catch (e) {
+        seed.problems.push(`${f}: ${(e as Error).message}`);
+      }
+    }
+  }
+  return seed;
 }
 
-/** The earlier notes and the local file, numbered together: every comment's number, and the highest. */
-function numberAll(notes: NoteLine[], seed: NotesSeed): { numbers: Map<string, number>; max: number } {
-  const numbers = new Map(seed.numbers);
-  const max = numberLines(notes, numbers, seed.max, 'local');
-  return { numbers, max };
+/** The earlier notes and the local files as one record (local copies of a note already seen are dropped). */
+export async function readRecord(files: NotesFiles, seed: NotesRecord): Promise<NotesRecord> {
+  const [notes, replies, resolved] = await Promise.all([readLines<unknown>(files.notes), readLines<unknown>(files.replies), readLines<unknown>(files.resolved)]);
+  const rec: NotesRecord = { notes: [...seed.notes], replies: [...seed.replies], resolved: [...seed.resolved] };
+  addLines(rec, [...notes, ...replies, ...resolved]);
+  return rec;
+}
+
+const byTime = (a: { time: string; id: string }, b: { time: string; id: string }): number =>
+  a.time < b.time ? -1 : a.time > b.time ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+
+/** Every comment's number: its place in time order (ties by id) among the comments. */
+export function numberComments(notes: NoteLine[]): Map<string, number> {
+  const out = new Map<string, number>();
+  notes.filter((n) => n.parentId === undefined).sort(byTime).forEach((n, i) => out.set(n.id, i + 1));
+  return out;
+}
+
+/**
+ * The whole record as one JSON-lines file, in time order, in the shape of comms'
+ * owner-demo-notes-*.jsonl: each note as written (comments with their `number`; follow-ups with
+ * their parentId), then the replies (kind 'reply') and resolved threads (kind 'resolved').
+ */
+export function renderRecord(rec: NotesRecord): string {
+  const numbers = numberComments(rec.notes);
+  const lines = [
+    ...[...rec.notes].sort(byTime).map((n) => (numbers.has(n.id) ? { ...n, number: numbers.get(n.id) } : n)),
+    ...[...rec.replies].sort(byTime).map((r) => ({ kind: 'reply', ...r })),
+    ...[...rec.resolved].sort((a, b) => byTime({ time: a.time, id: a.noteId }, { time: b.time, id: b.noteId })).map((r) => ({ kind: 'resolved', ...r })),
+  ];
+  return lines.map((l) => `${JSON.stringify(l)}\n`).join('');
+}
+
+/** Merges another copy of a notes file (comms' copy of today's file, say) into a record. */
+export function mergeText(rec: NotesRecord, text: string): NotesRecord {
+  const out: NotesRecord = { notes: [...rec.notes], replies: [...rec.replies], resolved: [...rec.resolved] };
+  addLines(out, parseLines(text));
+  return out;
 }
 
 /** One line for the demo's start-up output: where the numbers continue from. */
 export async function notesStartupLine(files: NotesFiles, seed: NotesSeed): Promise<string> {
-  const { max } = numberAll(await readLines<NoteLine>(files.notes), seed);
-  const skipped = seed.problems.length > 0 && seed.source === 'DEMO_NOTES_SEED' ? ` (skipped: ${seed.problems.join('; ')})` : '';
+  const rec = await readRecord(files, seed);
+  const comments = numberComments(rec.notes).size;
+  const earlier = numberComments(seed.notes).size;
+  const skipped = seed.problems.filter((p) => !/^(origin\/)?comms:/.test(p));
+  const skip = skipped.length > 0 ? ` (DEMO_NOTES_SEED skipped: ${skipped.join('; ')})` : '';
   // DESIGN: wording (the demo's terminal output; the owner reads it)
   if (seed.ok) {
     const n = seed.files.length;
-    return `Comments: new ones start at ${max + 1}, after the ${seed.max} earlier notes ${seed.source === 'DEMO_NOTES_SEED' ? 'in DEMO_NOTES_SEED' : `on ${seed.source}`} (${n} file${n === 1 ? '' : 's'})${skipped}; saved to ${files.notes}`;
+    return `Comments: ${comments} loaded (${earlier} from ${n} earlier file${n === 1 ? '' : 's'} on ${seed.sources[0]}, the rest from ${files.notes})${skip}; new ones start at ${comments + 1}`;
   }
-  if (seed.source === 'DEMO_NOTES_SEED') {
-    return `Comments: could not read DEMO_NOTES_SEED${skipped}; new ones continue after ${max} (the highest in ${files.notes})`;
-  }
-  return `Comments: could not read the earlier notes on origin/comms (no comms branch here; "git fetch origin comms" adds it); new ones continue after ${max} (the highest in ${files.notes})`;
+  return `Comments: could not read the earlier notes on origin/comms (offline, or no comms branch here: "git fetch origin comms" adds it); using ${files.notes} only: ${comments} loaded${skip}; new ones start at ${comments + 1}`;
 }
 
-/** What the gateway needs from the shell to find the notes: it starts with a clean environment (procs.ts). */
+/** What the gateway needs from the shell for the notes: it starts with a clean environment (procs.ts). */
 export function gatewayNotesEnv(env: Record<string, string | undefined>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const k of ['DEMO_NOTES_FILE', 'DEMO_NOTES_SEED'] as const) {
+  // The notes' files and publishing, and what git needs to reach GitHub with the owner's own
+  // credentials: his ssh agent, and WSL's bridge to a Windows credential manager.
+  for (const k of ['DEMO_NOTES_FILE', 'DEMO_NOTES_SEED', 'DEMO_NOTES_PUSH', 'SSH_AUTH_SOCK', 'WSL_INTEROP', 'WSL_DISTRO_NAME'] as const) {
     const v = env[k];
     if (v !== undefined && v !== '') out[k] = v;
   }
   return out;
+}
+
+/** owner-demo-notes-<YYYY-MM-DD>.jsonl, by this computer's local date. */
+export function notesFileName(t: number): string {
+  const d = new Date(t);
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `owner-demo-notes-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.jsonl`;
 }
 
 const newId = (): string => randomUUID();
@@ -364,11 +418,17 @@ function rootOf(notes: NoteLine[], id: string): NoteLine | null {
 
 export class ReplyError extends Error {}
 
-/** The lead's reply: called by the local CLI only (reply.ts). No HTTP route reaches this. */
-export async function appendReply(files: NotesFiles, noteId: string, rawText: string, now: () => number = Date.now): Promise<ReplyLine> {
+/** The lead's reply: called by the local CLI only (reply.ts). No HTTP route reaches this. Earlier notes can be answered too. */
+export async function appendReply(
+  files: NotesFiles,
+  noteId: string,
+  rawText: string,
+  now: () => number = Date.now,
+  seed: NotesRecord = loadSeed({ seedPath: files.seed }),
+): Promise<ReplyLine> {
   const text = validText(rawText);
   if (text === null) throw new ReplyError(`a reply must be 1 to ${MAX_TEXT_CHARS} characters`);
-  const root = rootOf(await readLines<NoteLine>(files.notes), noteId);
+  const root = rootOf((await readRecord(files, seed)).notes, noteId);
   if (root === null) throw new ReplyError(`no comment with id ${noteId}`);
   const line: ReplyLine = { id: newId(), time: stamp(now), noteId: root.id, text };
   await appendLine(files.replies, line);
@@ -396,21 +456,14 @@ export interface ThreadView {
   thread: ThreadEntry[];
 }
 
-/** The threads of one screen (pathname + hash), oldest first. */
-export async function threadsFor(
-  files: NotesFiles,
-  path: string,
-  seed: NotesSeed = loadSeed({ seedPath: files.seed }),
-): Promise<ThreadView[]> {
-  const [notes, replies, resolved] = await Promise.all([
-    readLines<NoteLine>(files.notes),
-    readLines<ReplyLine>(files.replies),
-    readLines<{ noteId: string }>(files.resolved),
-  ]);
-  const { numbers } = numberAll(notes, seed);
+/** The threads of one screen (pathname + hash), oldest first, earlier demos' included. */
+export async function threadsFor(files: NotesFiles, path: string, seed: NotesRecord = loadSeed({ seedPath: files.seed })): Promise<ThreadView[]> {
+  const { notes, replies, resolved } = await readRecord(files, seed);
+  const numbers = numberComments(notes);
   const done = new Set(resolved.map((r) => r.noteId));
   return notes
     .filter((n) => n.parentId === undefined && `${n.pathname ?? ''}${n.hash ?? ''}` === path)
+    .sort(byTime)
     .slice(-200)
     .map((n) => {
       const thread: ThreadEntry[] = [
@@ -509,6 +562,14 @@ export function createNotesHandler(cfg: NotesConfig): (req: IncomingMessage, res
     }
   }
 
+  /** A time after every note already in the record, so a new comment is always the highest number (a clock set back cannot reorder them). */
+  const after = (notes: NoteLine[]): string => {
+    const latest = notes.reduce((m, n) => (n.time > m ? n.time : m), '');
+    const t = now();
+    const last = Date.parse(latest);
+    return stamp(() => (Number.isFinite(last) && last >= t ? last + 1 : t));
+  };
+
   async function postNote(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const body = await writeBody(req, res);
     if (body === null) return;
@@ -516,19 +577,20 @@ export function createNotesHandler(cfg: NotesConfig): (req: IncomingMessage, res
     if (!parsed.ok) return send(res, 400, { error: `demo-notes-${parsed.reason}` });
     const line = parsed.line;
     const result = await serial(async () => {
-      const existing = await readLines<NoteLine>(cfg.files.notes);
+      const { notes } = await readRecord(cfg.files, seed);
       if (line.parentId !== undefined) {
-        const parent = rootOf(existing, line.parentId);
+        const parent = rootOf(notes, line.parentId);
         if (parent === null) return null;
-        const followUp: NoteLine = { id: newId(), time: stamp(now), kind: 'follow-up', text: line.text, parentId: parent.id };
+        const followUp: NoteLine = { id: newId(), time: after(notes), text: line.text, parentId: parent.id };
         await appendLine(cfg.files.notes, followUp);
         return { id: followUp.id };
       }
-      const comment: NoteLine = { id: newId(), time: stamp(now), ...line, number: numberAll(existing, seed).max + 1 };
+      const comment: NoteLine = { id: newId(), time: after(notes), ...line };
       await appendLine(cfg.files.notes, comment);
-      return { id: comment.id, number: comment.number };
+      return { id: comment.id, number: numberComments([...notes, comment]).get(comment.id) };
     });
     if (result === null) return send(res, 404, { error: 'demo-notes-no-such-thread' });
+    cfg.onChange?.();
     send(res, 201, { ok: true, ...result });
   }
 
@@ -537,9 +599,10 @@ export function createNotesHandler(cfg: NotesConfig): (req: IncomingMessage, res
     if (body === null) return;
     const id = (body as { id?: unknown } | null)?.id;
     if (typeof id !== 'string' || !UUID.test(id)) return send(res, 400, { error: 'demo-notes-bad-id' });
-    const root = rootOf(await readLines<NoteLine>(cfg.files.notes), id);
+    const root = rootOf((await readRecord(cfg.files, seed)).notes, id);
     if (root === null) return send(res, 404, { error: 'demo-notes-no-such-thread' });
     await appendLine(cfg.files.resolved, { noteId: root.id, time: stamp(now) });
+    cfg.onChange?.();
     send(res, 200, { ok: true });
   }
 
@@ -548,37 +611,22 @@ export function createNotesHandler(cfg: NotesConfig): (req: IncomingMessage, res
     if (req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, { error: 'demo-notes-origin' });
     const path = url.searchParams.get('path');
     if (path === null || path.length > 600) return send(res, 400, { error: 'demo-notes-bad-path' });
-    send(res, 200, { notes: await threadsFor(cfg.files, path, seed) });
+    send(res, 200, { notes: await threadsFor(cfg.files, path, seed), push: cfg.pushState?.() ?? 'off' });
   }
 
   /**
-   * Download my notes: the whole record in one JSON-lines file, in the shape of comms'
-   * owner-demo-notes-*.jsonl. Every comment as saved, with its number (old ones too); follow-ups
-   * with kind 'follow-up'; then the replies (kind 'reply') and resolved threads (kind 'resolved').
+   * Download my notes: the whole record (earlier demos' and this one's) in one file, renderRecord.
    * Same-origin only: a page on another port of this machine is same-site, and is refused too.
    */
   async function downloadNotes(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (req.headers.origin !== undefined && !originAllowed(req)) return send(res, 403, { error: 'demo-notes-origin' });
     const site = req.headers['sec-fetch-site'];
     if (site !== undefined && site !== 'same-origin' && site !== 'none') return send(res, 403, { error: 'demo-notes-origin' });
-    const [notes, replies, resolved] = await Promise.all([
-      readLines<NoteLine>(cfg.files.notes),
-      readLines<ReplyLine>(cfg.files.replies),
-      readLines<Record<string, unknown>>(cfg.files.resolved),
-    ]);
-    const { numbers } = numberAll(notes, seed);
-    const out = [
-      ...notes.map((n) =>
-        n.parentId !== undefined ? { ...n, kind: 'follow-up' } : n.kind === undefined && numbers.has(n.id) ? { ...n, number: numbers.get(n.id) } : n,
-      ),
-      ...replies.map((r) => ({ kind: 'reply', ...r })),
-      ...resolved.map((r) => ({ kind: 'resolved', ...r })),
-    ];
-    const body = Buffer.from(out.map((l) => `${JSON.stringify(l)}\n`).join(''), 'utf8');
+    const body = Buffer.from(renderRecord(await readRecord(cfg.files, seed)), 'utf8');
     res.writeHead(200, {
       'content-type': 'application/x-ndjson; charset=utf-8',
       'content-length': body.length,
-      'content-disposition': `attachment; filename="owner-demo-notes-${stamp(now).slice(0, 10)}.jsonl"`,
+      'content-disposition': `attachment; filename="${notesFileName(now())}"`,
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
       'cross-origin-resource-policy': 'same-origin',

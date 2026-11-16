@@ -181,6 +181,26 @@
   downloadBtn.addEventListener('click', function (e) { e.stopPropagation(); downloadNotes(); });
   root.appendChild(downloadBtn);
 
+  // Whether the comments are on GitHub yet (notes-push.ts), under the buttons; hidden when publishing is off.
+  var PUSH_TEXT = {
+    // COPY-UNSIGNED
+    pending: 'Saved on this computer \u2014 not on GitHub yet',
+    // COPY-UNSIGNED
+    pushed: 'On GitHub',
+  };
+  var pushTag = make('div', {
+    position: 'fixed', pointerEvents: 'none', right: '8px', top: 'calc(54px + env(safe-area-inset-top, 0px))', display: 'none',
+    background: PANEL, color: MUTED, border: '1px solid ' + LINE, borderRadius: '8px', padding: '2px 8px', font: '500 11px ' + FONT, whiteSpace: 'nowrap',
+  });
+  pushTag.setAttribute('role', 'status');
+  root.appendChild(pushTag);
+  var pushState = 'off';
+  function showPush(state) {
+    pushState = PUSH_TEXT[state] ? state : 'off';
+    pushTag.textContent = pushState === 'off' ? '' : PUSH_TEXT[pushState];
+    pushTag.style.display = pushState === 'off' || commentBtn.style.display === 'none' ? 'none' : 'block';
+  }
+
   var moved = null;
   try { moved = JSON.parse(store.get('x2f-demo-comment-pos2') || 'null'); } catch (e) { moved = null; }
   if (!moved || typeof moved.left !== 'number' || typeof moved.top !== 'number') moved = null;
@@ -219,6 +239,7 @@
       var p = clampPos(moved);
       css(commentBtn, { left: p.left + 'px', top: p.top + 'px', right: 'auto' });
       placeDownload(p.left, p.top, w);
+      css(pushTag, { left: p.left + 'px', right: 'auto', top: (p.top + ht + 2) + 'px' });
       return;
     }
     var left = Math.max(0, window.innerWidth - 8 - w);
@@ -228,6 +249,7 @@
     var topCss = 'calc(' + top + 'px + env(safe-area-inset-top, 0px))';
     css(commentBtn, { right: '8px', left: 'auto', top: topCss });
     placeDownload(left, top, w, topCss);
+    css(pushTag, { right: '8px', left: 'auto', top: 'calc(' + (top + ht + 2) + 'px + env(safe-area-inset-top, 0px))' });
   }
 
   var drag = null;
@@ -283,11 +305,13 @@
     picking = null;
     commentBtn.style.display = '';
     downloadBtn.style.display = '';
+    showPush(pushState);
   }
   function startPicking() {
     closeBox();
     commentBtn.style.display = 'none';
     downloadBtn.style.display = 'none';
+    pushTag.style.display = 'none';
     var overlay = make('div', { position: 'fixed', inset: '0', pointerEvents: 'auto', background: 'rgba(0,0,0,.28)', cursor: 'crosshair', touchAction: 'manipulation' });
     var banner = make('div', {
       position: 'fixed', top: 'calc(10px + env(safe-area-inset-top, 0px))', left: '12px', right: '12px', maxWidth: '420px', margin: '0 auto',
@@ -322,6 +346,7 @@
     box = null;
     commentBtn.style.display = '';
     downloadBtn.style.display = '';
+    showPush(pushState);
     if (window.visualViewport) window.visualViewport.removeEventListener('resize', placeBox);
   }
   function placeBox() {
@@ -344,6 +369,7 @@
     closeBox();
     commentBtn.style.display = 'none';
     downloadBtn.style.display = 'none';
+    pushTag.style.display = 'none';
     var node = make('div', {
       position: 'fixed', pointerEvents: 'auto', boxSizing: 'border-box', background: PANEL, color: INK, border: '1px solid ' + LINE,
       borderRadius: '14px', padding: '12px', boxShadow: '0 8px 28px rgba(0,0,0,.55)', font: '400 15px/1.4 ' + FONT,
@@ -563,6 +589,7 @@
       .then(function (data) {
         if (!data || ticket !== fetching || key !== screenKey()) return;
         notes = data.notes;
+        showPush(data.push);
         if (box && box.threadId) {
           var open = notes.filter(function (n) { return n.id === box.threadId; })[0];
           if (open && !open.resolved) { fillThread(open); markSeen(open); } else closeBox();
