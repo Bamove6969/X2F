@@ -443,6 +443,10 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         largeTradeThresholdUsd: opt('largeTradeThresholdUsd'),
       };
     }
+    case 'lien-rate':
+      exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
+      if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > 10_000) throw badRequest();
+      return { kind: 'lien-rate', lienId: match(r, 'lienId', UUID).toLowerCase(), requestId: match(r, 'requestId', UUID).toLowerCase(), rateBps: r.rateBps };
     case 'ruling': {
       exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256', 'round1Id']);
       const code = typeof r.code === 'string' ? normalizeTradeCode(r.code) : null;
@@ -485,6 +489,8 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
   switch (i.kind) {
     case 'ruling':
       return i.step === 'approve' ? 'rulings.approve' : 'disputes.handle';
+    case 'lien-rate':
+      return 'rulings.approve';
     case 'emergency-stop':
     case 'resume-trading':
       return 'site.control';

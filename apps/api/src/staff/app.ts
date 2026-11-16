@@ -1,4 +1,5 @@
 import type { TradePublisher } from '../trades/store.js';
+import { lienRoutes } from '../disputes/lienRoutes.js';
 import fastifyCookie from '@fastify/cookie';
 import { can } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
@@ -186,6 +187,7 @@ export async function buildStaffApi(
   staffRevenueRoutes(app);
   // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
   staffFeeSweepRoutes(app);
+  lienRoutes(app);
   // Plan 4 Task 33 (D-041..D-045): clock-out pay, payout addresses and the owner's pay settings.
   staffPayRoutes(app);
   // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.

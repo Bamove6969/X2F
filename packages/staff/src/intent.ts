@@ -103,6 +103,10 @@ export type KeyTapIntent =
       seniorLargeTradeBp: number | null;
       largeTradeThresholdUsd: number | null;
     }
+  // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): a senior moderator (or the owner)
+  // approves a moderator's request to change how much of a debtor's proceeds each trade recovers
+  // (basis points). It changes who gets money, so it is tapped and bound to exactly that request.
+  | { kind: 'lien-rate'; lienId: string; requestId: string; rateBps: number }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -142,6 +146,7 @@ export const KEY_TAP_KINDS = [
   'fee-sweep',
   'payout-address',
   'pay-settings',
+  'lien-rate',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 
