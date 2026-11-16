@@ -221,7 +221,7 @@ async function main(): Promise<void> {
     DEMO_GATEWAY_PORT: String(PORTS.gateway), DEMO_GATEWAY_TLS_PORT: String(PORTS.gatewayTls), DEMO_GATEWAY_NODE_PORT: String(PORTS.gatewayNode), DEMO_GATEWAY_NODE_TLS_PORT: String(PORTS.gatewayNodeTls), DEMO_PRIMARY_ORIGIN: PRIMARY, DEMO_ORIGINS: origins.join(','), DEMO_MONEROD_RPC: MONEROD_RPC,
     DATABASE_URL: pgUrl('x2f'),
     // No adopting under a public tunnel: its host is the RP ID already.
-    DEMO_ADOPT_SELF: PUBLIC_ORIGIN || process.env.DEMO_ADOPT_SELF === '0' ? '0' : '1', DEMO_API_ENV: ENV_FILE, DEMO_STATE_DIR: STATE_DIR,
+    DEMO_ADOPT_SELF: PUBLIC_ORIGIN || process.env.DEMO_ADOPT_SELF === '0' ? '0' : '1', ...(process.env.DEMO_ADOPT_HOST ? { DEMO_ADOPT_HOST: process.env.DEMO_ADOPT_HOST } : {}), DEMO_API_ENV: ENV_FILE, DEMO_STATE_DIR: STATE_DIR,
     ...(tsIp ? { DEMO_TAILSCALE_IP: tsIp, DEMO_TLS_KEY: tlsKey, DEMO_TLS_CERT: tlsCert } : {}),
     ...(phone ? { DEMO_PHONE_IP: phone } : {}),
   });

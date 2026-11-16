@@ -204,6 +204,10 @@ send in the browser (regtest only); keep each trader's page open from take to se
   `tools/test/demo-rp-adopt.test.ts`; the API's environment is kept for it in `.demo/secrets/env.json`,
   0600; the adopted host is in `.demo/state/rp-origin.json`). The first host stays; keys and
   passkeys then work under it only (localhost still opens the app, and passwords work everywhere).
+  Only a request from a loopback peer (the preview pane's forwarder) can be adopted, and
+  `X-Forwarded-Host`/`-Proto` count only from one: a client on the phone's LAN address or the
+  tailnet cannot choose the host. `DEMO_ADOPT_HOST=<host name>` pins the one host that may be
+  adopted (set it when you know the preview's host).
   Not with a public tunnel (its host is the RP ID already); `DEMO_ADOPT_SELF=0` turns it off. The
   tailnet address is an IP, which can never be an RP ID: use localhost, a tunnel or the preview there.
   If the preview pane shows the app inside a frame, the browser may still refuse keys there: open

@@ -9,7 +9,7 @@ import net from 'node:net';
 import type { Duplex } from 'node:stream';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { pendingIdOf } from './door-parse.js';
-import { fillSelf, isSelfOrigin, selfOriginOf } from './self-origin.js';
+import { fillSelf, isLoopbackPeer, isSelfOrigin, selfOriginOf, trustedHeaders } from './self-origin.js';
 
 export const NOTES_TAG = '<script src="/__demo/notes.js" defer></script>';
 /** Larger HTML than this is passed on untouched rather than held in memory. */
@@ -201,6 +201,11 @@ export function createGateway(cfg: GatewayConfig): {
   const node: Route = (url) => ({ port: cfg.node, path: url, node: true, api: false });
 
   const handle = (route: Route) => (req: IncomingMessage, res: ServerResponse): void => {
+    // X-Forwarded-* only from a loopback peer, for the demo pages too; and only a loopback peer may
+    // have its host adopted as the RP ID (review M4).
+    const local = isLoopbackPeer(req.socket.remoteAddress);
+    req.headers = trustedHeaders(req.headers, req.socket.remoteAddress);
+    const reqHeaders = req.headers;
     if (isDemoUrl(req.url ?? '/')) {
       if (route === web) cfg.demo(req, res);
       else {
@@ -210,14 +215,14 @@ export function createGateway(cfg: GatewayConfig): {
       return;
     }
     const t = route(req.url ?? '/');
-    const headers = { ...req.headers };
-    const self = selfOriginOf(req.headers);
-    logSelf(self, req.headers);
+    const headers = { ...reqHeaders };
+    const self = selfOriginOf(reqHeaders);
+    logSelf(self, reqHeaders);
     // The node proxy accepts one exact origin (the web build's): a request from another demo origin
     // is passed on as the primary one, and its CORS answer is given back to the origin that asked.
     // The request's own https origin (self-origin.ts) is one of the demo's, for the API too.
     const from = typeof headers.origin === 'string' ? headers.origin : null;
-    const own = from !== null && !cfg.origins.has(from) && isSelfOrigin(from, req.headers);
+    const own = from !== null && !cfg.origins.has(from) && isSelfOrigin(from, reqHeaders);
     const known = from !== null && ((t.node && cfg.origins.has(from)) || own);
     if (known) headers.origin = cfg.primary;
     const fill = t.api && req.method === 'GET' && self !== null && isAssetJs(t.path.split('?')[0] ?? '');
@@ -237,7 +242,7 @@ export function createGateway(cfg: GatewayConfig): {
       delete headers['if-range'];
       headers['accept-encoding'] = 'identity';
     }
-    const unplanned = self !== null && self.http.startsWith('https://') && !cfg.origins.has(self.http) ? self.http : null;
+    const unplanned = local && self !== null && self.http.startsWith('https://') && !cfg.origins.has(self.http) ? self.http : null;
     const go = (): void => {
       const up = http.request({ host: '127.0.0.1', port: t.port, path: t.path, method: req.method, headers }, (r) => {
         const out = { ...r.headers };

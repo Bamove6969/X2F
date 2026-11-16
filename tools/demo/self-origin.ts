@@ -72,5 +72,20 @@ export function fillSelf(text: string, self: { http: string; ws: string }): stri
   return text.split(SELF_WS).join(self.ws).split(SELF_HTTP).join(self.http);
 }
 
+/** A loopback peer address (the preview pane's forwarder or a tunnel connect from this machine). */
+export function isLoopbackPeer(addr: string | undefined): boolean {
+  return addr !== undefined && /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/.test(addr);
+}
+
+/**
+ * The headers to trust from a peer: X-Forwarded-Host and X-Forwarded-Proto only from a loopback one.
+ * Any other peer (the phone's LAN address, the tailnet) speaks for itself, never for a TLS front.
+ */
+export function trustedHeaders(h: IncomingHttpHeaders, peer: string | undefined): IncomingHttpHeaders {
+  if (isLoopbackPeer(peer)) return h;
+  const { 'x-forwarded-host': _host, 'x-forwarded-proto': _proto, ...rest } = h;
+  return rest;
+}
+
 /** The request came through an https front (X-Forwarded-Proto: https). */
 export const forwardedHttps = (h: IncomingHttpHeaders): boolean => first(h['x-forwarded-proto']).toLowerCase() === 'https';
