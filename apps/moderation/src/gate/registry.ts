@@ -276,6 +276,10 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       if (!inOrder(t, `security:${intent.accountId}`)) continue;
       accept(t, `reset:${intent.inviteId}`, `security:${intent.accountId}`);
       for (const b of Object.values(g.resets)) if (b.accountId === intent.accountId) b.closed = true;
+      // Review D-3: their own invite closes too, joined or not, so step 1 never puts a key
+      // registered through it back after the reset.
+      for (const b of Object.values(g.invites)) if (b.accountId === intent.accountId) b.closed = true;
+      s.inviteClosed = true;
       s.creds = [];
       binding = { accountId: intent.accountId, closed: false };
       g.resets[intent.inviteId] = binding;
