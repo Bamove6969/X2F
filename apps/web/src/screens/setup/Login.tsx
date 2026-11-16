@@ -217,7 +217,7 @@ export function Login() {
       ) : null}
       {alone ? (
         // COPY-UNSIGNED (owner decision, 16 Nov 2026: a password does not stand alone)
-        <p className="x2f-start__help" role="status" data-part="password-alone">
+        <p className="x2f-start__help" role="status" data-part="password-partner">
           A password needs the authenticator app or another way to log in. Tick one of them too.
         </p>
       ) : null}

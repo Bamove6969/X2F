@@ -170,14 +170,14 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     click(box(host, 'pgp'));
     click(box(host, 'password'));
     expect(disabled(byPart(host, 'method-continue'))).toBe(true);
-    expect(byPart(host, 'password-alone')).not.toBeNull();
+    expect(byPart(host, 'password-partner')).not.toBeNull();
     click(box(host, 'totp'));
     expect(disabled(byPart(host, 'method-continue'))).toBe(false);
-    expect(byPart(host, 'password-alone')).toBeNull();
+    expect(byPart(host, 'password-partner')).toBeNull();
     click(box(host, 'totp'));
     click(box(host, 'passkey'));
     expect(disabled(byPart(host, 'method-continue'))).toBe(false);
-    expect(byPart(host, 'password-alone')).toBeNull();
+    expect(byPart(host, 'password-partner')).toBeNull();
   });
 
   it('Continue needs at least one way to log in, and stores every ticked one in setup order', () => {

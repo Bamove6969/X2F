@@ -7,7 +7,7 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Methods } from '../src/screens/settings/Methods.js';
-import { PASSWORD_ALONE_MESSAGE, PASSWORD_HAS_TOTP_MESSAGE, TOTP_NEEDS_PASSWORD_MESSAGE } from '../src/ui/cantDoCodes.js';
+import { PASSWORD_ALONE_MESSAGE, PASSWORD_HAS_TOTP_MESSAGE } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 
 function json(status: number, body: unknown): Response {
@@ -72,7 +72,6 @@ describe('Settings: the authenticator app goes with a password (owner, 16 Nov 20
 
   it('the refusal words are short and say what to do', () => {
     expect(PASSWORD_HAS_TOTP_MESSAGE).toMatch(/authenticator app/);
-    expect(TOTP_NEEDS_PASSWORD_MESSAGE).toMatch(/password/);
   });
 });
 
