@@ -83,6 +83,8 @@ describe('M1(b): inside the sign-up window a method may be added, never replaced
 
   it('a first authenticator app is added freely; another one would replace it and needs confirmation', async () => {
     const { id, b } = await signedUp();
+    // Owner, 16 Nov 2026: TOTP only with a password.
+    await withPassword(id);
     expect((await b.post('/v1/account/totp/start', {})).statusCode).toBe(200);
     await deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3)', [id, Buffer.from('x'), now]);
     confirmNeeded(await b.post('/v1/account/totp/start', {}));
@@ -136,6 +138,8 @@ describe('re-verify R1: the window is checked again where the change writes', ()
 
   it('P4: two app enrolments opened in the window; once one finishes, the other cannot replace it', async () => {
     const { id, b } = await signedUp();
+    // Owner, 16 Nov 2026: TOTP only with a password.
+    await withPassword(id);
     const a = await totpStart(b);
     const second = await totpStart(b);
     expect((await totpFinish(b, second)).statusCode).toBe(200);
@@ -147,6 +151,11 @@ describe('re-verify R1: the window is checked again where the change writes', ()
 
   it('P5: an app enrolment opened in the window cannot finish after onboarding/end', async () => {
     const { id, b } = await signedUp();
+    // Owner, 16 Nov 2026: TOTP only with a password, and a password never alone, so sign-up can end
+    // here only with another way to log in too (a PGP key).
+    await withPassword(id);
+    const key = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
     const s = await totpStart(b);
     expect((await b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
     const res = await totpFinish(b, s);
@@ -156,6 +165,8 @@ describe('re-verify R1: the window is checked again where the change writes', ()
 
   it('P5 (window run out): a start in the window, a finish after the 30 minutes, gets 403', async () => {
     const { id, b } = await signedUp();
+    // Owner, 16 Nov 2026: TOTP only with a password.
+    await withPassword(id);
     const s = await totpStart(b);
     // Still inside the 5-minute enrolment, but past the window: moved by a direct update of the session.
     await deps.db.query("update sessions set onboarding_until = $2 where account_id = $1", [id, new Date(now.getTime() - 1000)]);
