@@ -403,8 +403,6 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
   const first = backPos(tour, shown.pos) === null;
   const vw = size.w;
   const vh = size.h;
-  /** The dim's stroke width around a hole: enough to cover the screen from any hole. */
-  const spread = 2 * (vw + vh);
 
   // Where the card goes, and the arrow from it to the target.
   const side = where === 'side';
@@ -455,21 +453,9 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
       <svg className="x2f-tour__scrim" data-part="tour-overlay" aria-hidden="true" width={vw} height={vh} viewBox={`0 0 ${vw} ${vh}`}>
         {/*
           The dim with its hole, without an SVG mask (a mask needs url(), which the proof-image
-          tripwire bans from code): one rounded rect whose stroke is wider than the screen. A stroke
-          is centred on the outline, so the rect is the hole grown by half the stroke on each side,
-          with its corner radius grown the same: the stroke's inner edge is then the hole, rx 14.
+          tripwire bans from code): one even-odd path, the screen with the hole's rounded rect cut out.
         */}
-        {hole !== null ? (
-          <rect
-            key={`hole-${shownKey}-${alt}`}
-            className="x2f-tour__dim x2f-tour__hole"
-            rx={14 + spread / 2}
-            strokeWidth={spread}
-            style={{ x: hole.x - spread / 2, y: hole.y - spread / 2, width: hole.w + spread, height: hole.h + spread }}
-          />
-        ) : (
-          <rect className="x2f-tour__dim x2f-tour__dim--full" x="0" y="0" width={vw} height={vh} />
-        )}
+        <path className="x2f-tour__dim" fillRule="evenodd" d={dimPath(vw, vh, hole)} />
         {hole !== null ? (
           <rect
             key={`ring-${shownKey}-${alt}`}
@@ -560,4 +546,17 @@ function curve(sx: number, sy: number, cx: number, cy: number, ex: number, ey: n
     d: `M${f(sx)} ${f(sy)} Q${f(cx)} ${f(cy)} ${f(ex)} ${f(ey)}`,
     head: `M${f(bx + px)} ${f(by + py)} L${f(ex)} ${f(ey)} L${f(bx - px)} ${f(by - py)}`,
   };
+}
+
+/** The scrim's outline: the whole screen, less the hole (a rect with 14 px corners) when there is one. */
+function dimPath(vw: number, vh: number, hole: { x: number; y: number; w: number; h: number } | null): string {
+  const screen = `M0 0H${vw}V${vh}H0Z`;
+  if (hole === null) return screen;
+  const { x, y, w, h } = hole;
+  const r = Math.max(0, Math.min(14, w / 2, h / 2));
+  const arc = (ex: number, ey: number) => `A${r} ${r} 0 0 1 ${ex} ${ey}`;
+  return (
+    `${screen}M${x + r} ${y}H${x + w - r}${arc(x + w, y + r)}V${y + h - r}${arc(x + w - r, y + h)}` +
+    `H${x + r}${arc(x, y + h - r)}V${y + r}${arc(x + r, y)}Z`
+  );
 }

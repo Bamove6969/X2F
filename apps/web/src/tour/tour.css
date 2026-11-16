@@ -21,13 +21,8 @@
   pointer-events: none;
   overflow: visible;
 }
-.x2f-tour__dim--full {
+.x2f-tour__dim {
   fill: var(--x2f-scrim);
-}
-/* The dim around a hole is the stroke of one rounded rect (TourProvider.tsx). */
-.x2f-tour__hole {
-  fill: none;
-  stroke: var(--x2f-scrim);
 }
 .x2f-tour__ring {
   fill: none;
@@ -206,7 +201,6 @@
   .x2f-tour__card {
     transition: transform 340ms var(--x2f-tour-ease-out);
   }
-  .x2f-tour__hole,
   .x2f-tour__ring {
     transition:
       x 250ms var(--x2f-tour-ease-out),
