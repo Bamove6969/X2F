@@ -78,6 +78,7 @@ export async function seedTrade(
     buyerPayout: a.buyerPayout !== undefined ? a.buyerPayout : fakeAddress(),
     sellerRefund: a.sellerRefund !== undefined ? a.sellerRefund : fakeAddress(),
     sellerWalletApp: a.sellerWalletApp !== undefined ? a.sellerWalletApp : 'cake',
+    ...(a.methodInstructions !== undefined ? { methodInstructions: a.methodInstructions } : {}),
   };
   await insertTrade(deps.db, trade, sides, a.usdCents ?? null);
   return { code: trade.code, trade, sides };

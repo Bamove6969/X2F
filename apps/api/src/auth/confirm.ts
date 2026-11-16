@@ -121,6 +121,72 @@ export const staleTermsOnlyToExtend: preHandlerAsyncHookHandler = async function
   if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
 };
 
+/**
+ * Security review of sign-up v2, M1(b) (12 Nov 2026): inside the creating session's sign-up window
+ * a method may be ADDED without a confirm token, never REPLACED. Each kind the window covers, and
+ * how to tell the account already holds one.
+ */
+const HOLDS = {
+  password: 'select 1 from passwords where account_id = $1',
+  totp: 'select 1 from totp where account_id = $1',
+  'recovery-codes': 'select 1 from recovery_codes where account_id = $1 limit 1',
+  pgp: 'select 1 from pgp_keys where account_id = $1 limit 1',
+  passkey: "select 1 from webauthn_credentials where account_id = $1 and kind = 'passkey' limit 1",
+  'security-key': "select 1 from webauthn_credentials where account_id = $1 and kind = 'security-key' limit 1",
+} as const;
+export type NewMethodKind = keyof typeof HOLDS;
+
+/**
+ * The `onboarding` predicate for `requireConfirm`: true only while the account holds no `kind`
+ * yet (a function reads the kind from the request, as the WebAuthn add does).
+ */
+export function onlyIfNew(kind: NewMethodKind | ((req: FastifyRequest) => NewMethodKind)): (req: FastifyRequest) => Promise<boolean> {
+  return async (req) => {
+    const k = typeof kind === 'function' ? kind(req) : kind;
+    const { rows } = await req.server.deps.db.query(HOLDS[k], [req.auth.accountId]);
+    return rows.length === 0;
+  };
+}
+
+/** Requests that `requireConfirm` let through on the sign-up window alone (no token, not a recovery session). */
+const byWindow = new WeakSet<FastifyRequest>();
+
+/** True when this request's change was let through on the sign-up window, with no confirm token. */
+export const passedOnWindow = (req: FastifyRequest): boolean => byWindow.has(req);
+
+/**
+ * Re-verify R1 (12 Nov 2026): a change let through on the window (at a ceremony's start, or by a
+ * one-request route) is checked again where it writes, inside the transaction and after the
+ * account row is locked: the window must still be open and the account must still hold no `kind`.
+ * Otherwise 403 `confirm-required` `{ action }`, so a second ceremony opened in the window, or one
+ * that outlived `onboarding/end`, can neither replace nor double a method; a parallel twin loses.
+ */
+export async function recheckWindowInTx(db: Queryable, req: FastifyRequest, kind: NewMethodKind, action: ConfirmAction['kind']): Promise<void> {
+  const now = req.server.deps.clock();
+  const { rows } = await db.query<{ onboarding_until: Date | null }>('select onboarding_until from sessions where id = $1', [req.auth.sessionId]);
+  const until = rows[0]?.onboarding_until ?? null;
+  const open = until !== null && until.getTime() > now.getTime();
+  const held = open ? (await db.query(HOLDS[kind], [req.auth.accountId])).rows.length > 0 : true;
+  if (!open || held) throw new ApiError(403, 'confirm-required', { action });
+}
+
+/**
+ * Review M1(a): `POST /v1/account/onboarding/end` closes the caller's own sign-up window (the
+ * web app sends it on reaching Welcome). Idempotent; any full session may call it for itself.
+ * Re-verify R1: it also uses up this session's open add ceremonies that were started on the
+ * window (`payload.window`), so none of them can finish after the window is closed.
+ */
+export async function endOnboarding(req: FastifyRequest): Promise<{ ok: true }> {
+  const deps = req.server.deps;
+  await deps.db.query('update sessions set onboarding_until = null where id = $1 and onboarding_until is not null', [req.auth.sessionId]);
+  await deps.db.query(
+    `update challenges set used_at = $2
+      where session_id = $1 and purpose in ('add-totp', 'add-key') and used_at is null and (payload->>'window')::boolean is true`,
+    [req.auth.sessionId, deps.clock()],
+  );
+  return { ok: true };
+}
+
 type ActionOf = ConfirmAction | ((req: FastifyRequest) => ConfirmAction | Promise<ConfirmAction>);
 
 /**
@@ -153,6 +219,7 @@ export function requireConfirm(
       const inWindow = until !== null && until.getTime() > deps.clock().getTime();
       if (inWindow && (opts.onboarding === true || (await opts.onboarding(req)))) {
         req.confirmedAction = resolved;
+        byWindow.add(req);
         return;
       }
     }

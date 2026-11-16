@@ -168,6 +168,14 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   // now"; the board itself is not updated yet (its copy here is COPY-UNSIGNED, for design).
   SetupBackup: [
     {
+      text: 'Add {{choice}}',
+      why: 'Lead call (12 Nov 2026): the optional extra backups left this step (the ticked login methods replace them), so there is no "Add …" button; the board is checked on the recovery-code view.',
+    },
+    {
+      text: 'Skip for now',
+      why: 'Lead call (12 Nov 2026): with the optional extras gone there is nothing to skip; the saved recovery code goes straight on to the wallet.',
+    },
+    {
       text: 'Add a backup way to log in',
       why: 'S-017: by the time the optional backups show, a recovery code is already saved, so the heading reads "Add another backup (optional)" (COPY-UNSIGNED); the board predates S-017.',
     },

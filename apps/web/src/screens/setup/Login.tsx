@@ -10,8 +10,8 @@
  * Owner's labels (12 Nov 2026): "Recommended" and, in green, "Strong" on PGP and the security key;
  * the authenticator app (OTP) with its explanation, "Medium" (the owner's "Medium" note sat on the
  * passkey's card, so the passkey reads Medium too); the password "Weak", with his sentence. An
- * authenticator code is a password's second step (TOTP alone never logs in, recovery.ts), so it
- * can be ticked only with Password.
+ * authenticator code never logs in alone (recovery.ts), so it can be ticked only with another way
+ * to log in (signup round 3, lead call, 13 Nov 2026: PGP, a security key, a passkey or a password).
  */
 import { useId, useState } from 'react';
 import { refreshSession } from '../../session/useSession.js';
@@ -32,8 +32,8 @@ interface MethodDef {
   /** A sentence of warning under the description. */
   warn?: string;
   later?: string;
-  /** A method that is a second step of another one. */
-  needs?: LoginMethod;
+  /** A method that goes with another one: it can be ticked while any of these is ticked. */
+  needs?: readonly LoginMethod[];
   needsText?: string;
 }
 
@@ -49,8 +49,9 @@ export const METHODS: MethodDef[] = [
     strength: 'strong',
     cta: 'Continue with PGP key',
     desc: 'Log in with a PGP key instead of a password. X2F stores only your public key, so there is no password for anyone to steal from us.',
+    // COPY-UNSIGNED (signup round 3, from the owner's words, 13 Nov 2026)
     later:
-      'Each time you log in, X2F shows a message locked with your public key. Only your private key can unlock it, so you decrypt it in your PGP app and paste in the login code inside. Without your private key, nobody can get that code, and each one works only once.',
+      'Only you can unlock it. Decrypt the enclosed message with your preferred PGP app to reveal a one-time login code, which proves you hold the matching private key. Only the holder of that key can see the code, and each code works only once.',
   },
   {
     id: 'security-key',
@@ -59,7 +60,8 @@ export const METHODS: MethodDef[] = [
     rec: true,
     strength: 'strong',
     cta: 'Continue with security key',
-    desc: 'Log in by tapping a YubiKey or similar key plugged into your phone or computer.',
+    // COPY-UNSIGNED (signup round 3, from the owner's words, 13 Nov 2026; brands named in text only)
+    desc: 'Log in by tapping or inserting your YubiKey, Google Titan, Nitrokey, Feitian or any FIDO2-certified security key into your phone or computer.',
   },
   {
     id: 'passkey',
@@ -75,9 +77,11 @@ export const METHODS: MethodDef[] = [
     strength: 'medium',
     cta: 'Continue',
     desc: 'After your password, type the 6-digit code from an authenticator app on your phone, such as Aegis or Google Authenticator. The code changes every 30 seconds, so your password alone is not enough to get in.',
-    needs: 'password',
+    // Signup round 3, lead call (13 Nov 2026): with PGP, a security key or a passkey it may be the
+    // only extra method; with none of those it still goes with a password.
+    needs: ['pgp', 'security-key', 'passkey', 'password'],
     // COPY-UNSIGNED
-    needsText: 'Goes with a password: tick Password to add it.',
+    needsText: 'Goes with another way to log in: tick one above, or Password, to add it.',
   },
   {
     id: 'password',
@@ -96,7 +100,7 @@ function ordered(picks: ReadonlySet<SignupMethod>): SignupMethod[] {
   return SIGNUP_ORDER.filter((m) => {
     if (!picks.has(m)) return false;
     const needs = METHODS.find((d) => d.id === m)!.needs;
-    return needs === undefined || picks.has(needs);
+    return needs === undefined || needs.some((n) => picks.has(n));
   });
 }
 
@@ -117,8 +121,8 @@ export function Login() {
       if (on) n.add(m.id);
       else {
         n.delete(m.id);
-        // A second step goes with the method it belongs to.
-        for (const d of METHODS) if (d.needs === m.id) n.delete(d.id);
+        // A method that goes with others unticks with the last of them.
+        for (const d of METHODS) if (d.needs !== undefined && !d.needs.some((x) => n.has(x))) n.delete(d.id);
       }
       return n;
     });
@@ -162,15 +166,14 @@ export function Login() {
         </Button>
       }
     >
-      {/* COPY-UNSIGNED (owner, 12 Nov 2026: tick every method wanted, set up one after another) */}
+      {/* COPY-UNSIGNED (signup round 3, the owner's words, 13 Nov 2026) */}
       <SetupIntro title="How do you want to log in?">
-        Tick every way you want to use. We'll set them up one after another, then show you your recovery code. You can add others later in
-        Settings.
+        Anything you don't set up now can be added later. The more options you choose, the more secure your account becomes.
       </SetupIntro>
       <div className="x2f-start__choices" role="group" aria-label="Login methods">
         {METHODS.map((m) => {
           const on = picks.has(m.id);
-          const off = m.needs !== undefined && !picks.has(m.needs);
+          const off = m.needs !== undefined && !m.needs.some((x) => picks.has(x));
           return (
             <label key={m.id} className="x2f-start__choice x2f-start__choice--check" data-method={m.id} data-checked={on && !off ? 'true' : 'false'} data-disabled={off ? 'true' : 'false'}>
               <span className="x2f-start__choice-head">
@@ -210,16 +213,16 @@ export function Login() {
         </p>
       ) : null}
       <RegisterError error={error} />
-      <button type="button" className="x2f-start__textbutton" aria-expanded={explain} onClick={() => setExplain((x) => !x)} data-part="pgp-explain">
+      <button type="button" className="x2f-start__textbutton x2f-start__textbutton--tap" aria-expanded={explain} onClick={() => setExplain((x) => !x)} data-part="pgp-explain">
         New to PGP?
       </button>
       {explain ? (
         <p className="x2f-start__help" data-part="pgp-explainer">
           PGP is free software that locks and unlocks messages with a pair of keys: a public key you can share and a private key only you keep. You
-          need a PGP app each time you log in, such as Kleopatra on Windows, GPG Suite on a Mac or OpenKeychain on Android. X2F never makes keys for
+          need a PGP app each time you log in, such as Kleopatra on Windows, GPG Suite on a Mac or PGPony on Android. X2F never makes keys for
           you, so your private key never leaves your app.{' '}
-          {/* COPY-UNSIGNED (owner, 12 Nov 2026: "Recommend PGP only as well for Android") */}
-          On an Android phone we recommend PGP too: OpenKeychain is free.
+          {/* COPY-UNSIGNED (owner, 12-13 Nov 2026: PGP on Android too, PGPony first, OpenKeychain second) */}
+          On an Android phone we recommend PGP too, with PGPony (on F-Droid: com.pgpony.android). OpenKeychain works as well.
         </p>
       ) : null}
     </SetupFrame>

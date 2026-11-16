@@ -174,3 +174,46 @@ describe('S-014: only a strong password is accepted', () => {
     expect(rows).toEqual([]);
   });
 });
+
+// Signup round 3, lead call (13 Nov 2026): a display name may hold most printable characters.
+describe('signup round 3: display names with Unicode letters, spaces and common symbols', () => {
+  it('signs up as "Cash$ Ölaf  " (stored as normalised), and the name is found again by any case', async () => {
+    const b = new Browser(app);
+    const shown = `Cash$ Ölaf${n++}`;
+    const res = await b.post('/v1/register/password', {
+      displayName: `  ${shown.replace(' ', '   ')} `, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await deps.db.query<{ display_name: string; display_key: string }>('select display_name, display_key from accounts where display_name = $1', [shown]);
+    expect(rows).toEqual([{ display_name: shown, display_key: shown.toLowerCase() }]);
+    // Someone else with the same name in another case is refused as taken.
+    const twin = await new Browser(app).post('/v1/register/password', {
+      displayName: shown.toUpperCase(), loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(twin.statusCode).toBe(409);
+  });
+
+  it.each(['bob‮smith', 'שלום עולם', 'аlice.k', 'X2F Support'])('refuses %j at sign-up', async (displayName) => {
+    const res = await new Browser(app).post('/v1/register/password', {
+      displayName, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('a look-alike of a staff name with an accent or a Cyrillic letter is reserved', async () => {
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Mira${n++}` });
+    const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff]);
+    const res = await new Browser(app).post('/v1/register/password', {
+      displayName: rows[0]!.display_name.replace('i', 'í'), loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'display-name-reserved' });
+  });
+});
+
+it('migration 610: no database check compares display_key with lower(display_name) any more', async () => {
+  const { rows } = await deps.db.query(
+    `select conname from pg_constraint where conrelid in ('accounts'::regclass, 'team_members'::regclass) and pg_get_constraintdef(oid) like '%lower(display_name)%'`,
+  );
+  expect(rows).toEqual([]);
+});

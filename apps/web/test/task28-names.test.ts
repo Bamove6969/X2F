@@ -14,14 +14,20 @@ describe('setup takes the name rules from the typed client', () => {
 });
 
 describe("setup's name rules are FU-A's (@x2f/auth-client)", () => {
-  it('both names: 5-20 letters, digits, dots, dashes, underscores, kept exactly as typed', () => {
+  it('both names: 5-20 characters; the username ASCII letters, digits, dots, dashes, underscores', () => {
     expect(checkDisplayName('Mira.K_')).toEqual({ ok: true, name: 'Mira.K_', key: 'mira.k_' });
     expect(checkDisplayName('abcd')).toEqual({ ok: false, reason: 'length' });
     expect(checkDisplayName('a'.repeat(21))).toEqual({ ok: false, reason: 'length' });
     expect(checkDisplayName('a'.repeat(20)).ok).toBe(true);
-    expect(checkDisplayName('Mira K')).toEqual({ ok: false, reason: 'characters' });
-    expect(checkDisplayName('miraék')).toEqual({ ok: false, reason: 'characters' });
+    expect(checkLoginName('Mira K')).toEqual({ ok: false, reason: 'characters' });
+    expect(checkLoginName('miraék')).toEqual({ ok: false, reason: 'characters' });
     expect(checkLoginName('x'.repeat(65))).toEqual({ ok: false, reason: 'length' });
+  });
+
+  it('signup round 3: the display name takes spaces, accents and common symbols, normalised', () => {
+    expect(checkDisplayName('Mira  K$ ')).toEqual({ ok: true, name: 'Mira K$', key: 'mira k$' });
+    expect(checkDisplayName('miraék')).toMatchObject({ ok: true });
+    expect(checkDisplayName('mira\u200bk')).toEqual({ ok: false, reason: 'characters' });
   });
 
   it('reserved words and their look-alikes are refused for the display name only', () => {

@@ -13,11 +13,62 @@ describe('checkDisplayName', () => {
     expect(checkDisplayName('abcde')).toMatchObject({ ok: true });
   });
 
-  test('characters: spaces, accents, look-alike Cyrillic', () => {
-    expect(checkDisplayName('bob smith')).toEqual({ ok: false, reason: 'characters' });
-    expect(checkDisplayName('bób12')).toEqual({ ok: false, reason: 'characters' });
-    expect(checkDisplayName('аlice')).toEqual({ ok: false, reason: 'characters' });
+  // Signup round 3, lead call (13 Nov 2026): printable Unicode letters, digits, spaces and common
+  // punctuation and symbols; NFC, trimmed, runs of spaces collapsed; the same 5-20 length.
+  test.each(['bob smith', 'bób12', 'Cash$King', 'R&B Trader', 'Hi! Is it?', "O'Brien, J.", 'name@home', '#1 fan', '100% Legit', 'a*b+c (x): y', 'Ölaf_Ünal', 'Привет мир', 'Ἀθηνᾶ', '東京の取引者', 'Zoë-Ann'])(
+    'allowed: %s',
+    (name) => {
+      expect(checkDisplayName(name)).toEqual({ ok: true, name: name.normalize('NFC'), key: name.normalize('NFC').toLowerCase() });
+    },
+  );
+
+  test('normalised: NFC, trimmed, runs of spaces collapsed; the length is counted after that', () => {
+    expect(checkDisplayName('  Bob   Smith  ')).toEqual({ ok: true, name: 'Bob Smith', key: 'bob smith' });
+    // "o" + combining diaeresis becomes one precomposed letter.
+    expect(checkDisplayName('Zoe\u0308.k')).toEqual({ ok: true, name: 'Zo\u00eb.k', key: 'zo\u00eb.k' });
+    expect(checkDisplayName('   abcd   ')).toEqual({ ok: false, reason: 'length' });
   });
+
+  test.each([
+    ['a control character', 'bob\u0007smith'],
+    ['a tab', 'bob\tsmith'],
+    ['a newline', 'bob\nsmith'],
+    ['a zero-width space', 'bob\u200bsmith'],
+    ['a zero-width joiner', 'bob\u200dsmith'],
+    ['a byte-order mark', '\ufeffbobsmith'],
+    ['a right-to-left override', 'bob\u202esmith'],
+    ['a right-to-left isolate', 'bob\u2067smith'],
+    ['a right-to-left mark', 'bob\u200fsmith'],
+    ['Hebrew letters (they change the text direction)', 'שלום עולם'],
+    ['Arabic letters (they change the text direction)', 'مرحبا بكم'],
+    ['a symbol outside the list', 'bob<smith>'],
+    ['a backslash', 'bob\\smith'],
+    ['a slash', 'bob/smith'],
+    ['a quote mark', 'bob"smith'],
+    ['an emoji', 'bob\u{1F600}smith'],
+    ['a non-breaking space', 'bob\u00a0smith'],
+    ['a private-use character', 'bob\ue000smith'],
+    ['a lone combining mark first', '\u0301bobsmith'],
+    ['stacked combining marks', 'bo\u0301\u0302\u0303\u0304b'],
+    ['symbols only', '$$$$$'],
+  ])('refused, %s', (_what, name) => {
+    expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'characters' });
+  });
+
+  test('look-alike scripts mixed in one name are refused (Cyrillic or Greek with Latin)', () => {
+    expect(checkDisplayName('аlice')).toEqual({ ok: false, reason: 'characters' });
+    expect(checkDisplayName('Alicе Bob')).toEqual({ ok: false, reason: 'characters' });
+    expect(checkDisplayName('bοb.smith')).toEqual({ ok: false, reason: 'characters' });
+    // Latin with a script that does not look like it is fine.
+    expect(checkDisplayName('Tokyo東京')).toMatchObject({ ok: true });
+  });
+
+  test.each(['X2F Support', 'the admin', '@admin', 'Admin$', 'Ａｄｍｉｎ.bob', 'ádmin', 'support!', 'Staff #1', 'x2f (official)'])(
+    'reserved, with the new characters and look-alikes: %s',
+    (name) => {
+      expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'reserved' });
+    },
+  );
 
   test('very long raw input is refused as length before any other work', () => {
     expect(checkDisplayName('a'.repeat(65))).toEqual({ ok: false, reason: 'length' });
@@ -58,6 +109,11 @@ describe('checkDisplayName', () => {
 });
 
 describe('checkLoginName', () => {
+  // Signup round 3: the username keeps the strict set (ASCII letters, digits, ".", "-", "_").
+  test.each(['bob smith', 'cash$king', 'bób12', 'name@home', 'Привет.мир', 'bob\u200bsmith'])('the strict set refuses %s', (name) => {
+    expect(checkLoginName(name)).toEqual({ ok: false, reason: 'characters' });
+  });
+
   test('the same character and length rules', () => {
     expect(checkLoginName('Quiet.Fox_7')).toEqual({ ok: true, name: 'Quiet.Fox_7', key: 'quiet.fox_7' });
     expect(checkLoginName('abcd')).toEqual({ ok: false, reason: 'length' });
@@ -102,5 +158,12 @@ describe('lookAlikeKey', () => {
     expect(lookAlikeKey('Kim.Lorn')).toBe('klm.lom');
     expect(lookAlikeKey('kim.l0m')).toBe('klm.lom');
     expect(lookAlikeKey('x2f')).toBe('x2f');
+  });
+
+  test('signup round 3: also folds accents, full-width forms and Cyrillic or Greek look-alikes', () => {
+    expect(lookAlikeKey('Ålice')).toBe(lookAlikeKey('alice'));
+    expect(lookAlikeKey('Ａｌｉｃｅ')).toBe(lookAlikeKey('alice'));
+    expect(lookAlikeKey('аlicе')).toBe(lookAlikeKey('alice'));
+    expect(lookAlikeKey('ροκο')).toBe(lookAlikeKey('poko'));
   });
 });

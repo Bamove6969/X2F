@@ -7,7 +7,12 @@ import { api } from '../../api/client.js';
 export interface BlockedEntry {
   displayName: string;
   blockedAt: string;
+  /** S-093 (owner p7-6): my own private note on them; null for none (and from an older API). */
+  note: string | null;
 }
+
+/** S-093: a note's most characters, as the API allows (apps/api nudge/routes.ts BLOCK_NOTE_MAX). */
+export const BLOCK_NOTE_MAX = 500;
 
 export function parseBlocked(raw: unknown): BlockedEntry[] {
   if (!Array.isArray(raw)) throw new Error('blocks: not a list');
@@ -16,7 +21,9 @@ export function parseBlocked(raw: unknown): BlockedEntry[] {
     if (r === null || typeof r !== 'object' || typeof r.displayName !== 'string' || typeof r.blockedAt !== 'string') {
       throw new Error('blocks: bad entry');
     }
-    return { displayName: r.displayName, blockedAt: r.blockedAt };
+    const note = r.note ?? null;
+    if (note !== null && typeof note !== 'string') throw new Error('blocks: bad note');
+    return { displayName: r.displayName, blockedAt: r.blockedAt, note };
   });
 }
 
@@ -30,4 +37,11 @@ export async function blockTrader(displayName: string): Promise<void> {
 
 export async function unblockTrader(displayName: string): Promise<void> {
   await api(`/v1/account/blocks/${encodeURIComponent(displayName)}`, { method: 'DELETE' });
+}
+
+/** S-093: sets or clears (blank text is sent as null) my private note on someone I blocked; answers the stored note. */
+export async function setBlockNote(displayName: string, text: string): Promise<string | null> {
+  const note = text.trim() === '' ? null : text;
+  const r = await api<{ note: string | null }>(`/v1/account/blocks/${encodeURIComponent(displayName)}/note`, { method: 'PUT', body: { note } });
+  return r.note ?? null;
 }

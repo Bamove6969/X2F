@@ -82,6 +82,8 @@ interface RegisteredRow {
   locked_cents_per_xmr: string;
   max_fiat_cents: string;
   pay_window_min: number;
+  method_id: string;
+  method_instructions: string;
   buyer_payout: string | null;
   seller_refund: string | null;
 }
@@ -89,11 +91,13 @@ interface RegisteredRow {
 /**
  * The trade record's columns behind the attested terms (lead answer 4): the deal fixed at take
  * (the amount at take is the pre-growth amount if the trade grew), the time to pay fixed at take
- * (owner p9-6; the moderation shadow runs on it) and both addresses.
+ * (owner p9-6; the moderation shadow runs on it), the method chosen at take and its payment
+ * instructions locked at take (J-16, migration 490; never changed after, by the deal trigger) and
+ * both addresses.
  */
 const TERMS_COLUMNS = `t.poster, coalesce(t.grown_from_atomic, t.amount_atomic)::text as take_amount, t.locked_currency,
                 t.locked_cents_per_xmr::text as locked_cents_per_xmr, t.max_fiat_cents::text as max_fiat_cents,
-                t.pay_window_min, t.buyer_payout, t.seller_refund`;
+                t.pay_window_min, t.method_id, t.method_instructions, t.buyer_payout, t.seller_refund`;
 
 /** The terms the moderation service must sign for this trade, from the trade record. */
 function termsOf(r: RegisteredRow): AttestedTerms {
@@ -104,6 +108,11 @@ function termsOf(r: RegisteredRow): AttestedTerms {
       currency: r.locked_currency,
       centsPerXmr: r.locked_cents_per_xmr,
       maxFiatCents: r.max_fiat_cents,
+      // Task 34 review I1, restored for flex offers: the method and the SHA-256 of its locked
+      // instructions, so a device can tell whether the text the (unsigned) TradeView shows is the
+      // one locked at take. Only the hash leaves for moderation, never the text.
+      methodId: r.method_id,
+      instructionsSha256: createHash('sha256').update(r.method_instructions, 'utf8').digest('hex'),
     },
     payWindowMin: r.pay_window_min,
     buyerPayout: r.buyer_payout ?? '',
@@ -115,7 +124,8 @@ function sameTerms(a: AttestedTerms, b: AttestedTerms): boolean {
   return (
     a.buyerPayout === b.buyerPayout && a.sellerRefund === b.sellerRefund && a.payWindowMin === b.payWindowMin &&
     a.deal.poster === b.deal.poster && a.deal.takeAmountAtomic === b.deal.takeAmountAtomic &&
-    a.deal.currency === b.deal.currency && a.deal.centsPerXmr === b.deal.centsPerXmr && a.deal.maxFiatCents === b.deal.maxFiatCents
+    a.deal.currency === b.deal.currency && a.deal.centsPerXmr === b.deal.centsPerXmr && a.deal.maxFiatCents === b.deal.maxFiatCents &&
+    a.deal.methodId === b.deal.methodId && a.deal.instructionsSha256 === b.deal.instructionsSha256
   );
 }
 

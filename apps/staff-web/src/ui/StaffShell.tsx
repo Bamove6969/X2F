@@ -1,7 +1,9 @@
 import type { NavItem } from '@x2f/staff';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
-import { codeOf, logout, me as fetchMe, serverNow, setSessionEndListener, type Me } from '../api.js';
+import { codeOf, logout, me as fetchMe, ownerAlerts, serverNow, setSessionEndListener, type Me } from '../api.js';
+import { AlertsCountContext } from './alertsCount.js';
+import { ClockOut } from './ClockOut.js';
 import { Button, Countdown, EmptyState } from './kit.js';
 import { RoleChip } from './RoleChip.js';
 import './staff.css';
@@ -53,10 +55,28 @@ export type LoginState = { ended?: 'hours' | 'expired' } | null;
  * (401 `outside-login-hours` from any call, or 401 `not-authenticated`: the session ran out) the
  * shell returns to Login, which says "Your login hours have ended." for the first.
  */
-export function StaffShell({ pages }: { pages: Partial<Record<NavItem, ReactNode>> }) {
-  const [who, setWho] = useState<Me | null>(null);
+export function StaffShell({ pages, notifications }: { pages: Partial<Record<NavItem, ReactNode>>; notifications?: ReactNode }) {
+  const [clockingOut, setClockingOut] = useState(false);
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const [who, setWho] = useState<Me | null>(null);
+  // O-040: the owner's unread notifications, read again on every page change and after the page acts.
+  const [unread, setUnread] = useState(0);
+  const [alertsTick, setAlertsTick] = useState(0);
+  const isOwner = who?.role === 'owner';
+  useEffect(() => {
+    if (!isOwner) return;
+    let live = true;
+    ownerAlerts().then(
+      (r) => {
+        if (live) setUnread(r.unread);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [isOwner, pathname, alertsTick]);
 
   useEffect(() => {
     setSessionEndListener((why) => {
@@ -109,18 +129,60 @@ export function StaffShell({ pages }: { pages: Partial<Record<NavItem, ReactNode
         </nav>
         <div className="x2f-staff__foot">
           <SessionCountdown endsAt={who.sessionEndsAt} />
+          {who.role === 'owner' ? (
+            // O-040: no board places it (NOT DRAWN). DESIGNER-REVIEW COPY-UNSIGNED
+            <Link to="/notifications" className="x2f-link" aria-current={pathname === '/notifications' ? 'page' : undefined}>
+              Notifications
+              {unread > 0 ? (
+                <span className="x2f-staff__badge" data-part="alerts-badge" aria-label={`${unread} unread`}>
+                  {unread}
+                </span>
+              ) : null}
+            </Link>
+          ) : null}
           <RoleChip username={who.displayName} role={who.role} />
+          {who.role !== 'owner' ? (
+            <>
+              {/* Task 33 (D-045): the reminder that only a clock-out pays. COPY-UNSIGNED DESIGNER-REVIEW */}
+              <p className="x2f-staff__countdown" data-part="clock-out-reminder">
+                Clock out at the end of your shift to be paid. Logging out or closing the app does not pay.
+              </p>
+              <Button variant="primary" onClick={() => setClockingOut(true)}>
+                Clock out
+              </Button>
+            </>
+          ) : null}
           <Button variant="quiet" onClick={() => void onLogout()}>
             Log out
           </Button>
         </div>
       </aside>
+      {clockingOut ? (
+        <ClockOut
+          onCancel={() => setClockingOut(false)}
+          onDone={() => {
+            // The clock-out ended the session on the server.
+            setSessionEndListener(null);
+            void navigate('/login', { replace: true });
+          }}
+        />
+      ) : null}
       <main className="x2f-staff__main">
         <Routes>
           <Route index element={first ? <Navigate to={NAV_PATHS[first]} replace /> : <NothingForRole />} />
           {who.nav.map((item) => (
             <Route key={item} path={`${NAV_PATHS[item]}/*`} element={pages[item] ?? <PageTitle title={NAV_LABELS[item]} />} />
           ))}
+          <Route
+            path="/notifications"
+            element={
+              who.role === 'owner' && notifications !== undefined ? (
+                <AlertsCountContext.Provider value={{ unread, refresh: () => setAlertsTick((n) => n + 1) }}>{notifications}</AlertsCountContext.Provider>
+              ) : (
+                <NothingForRole />
+              )
+            }
+          />
           <Route path="*" element={<NothingForRole />} />
         </Routes>
       </main>

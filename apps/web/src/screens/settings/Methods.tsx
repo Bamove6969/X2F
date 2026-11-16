@@ -29,6 +29,7 @@ import { StagedNote, reportChangesCap } from './HoldChanges.js';
 import { BURNED_CODE_COPY as BURNED } from './holdCopy.js';
 import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
+import { PasswordInput } from '../../ui/PasswordInput.js';
 
 const LABELS: Record<MethodType, string> = {
   pgp: 'PGP key',
@@ -228,7 +229,7 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
       <label className="x2f-label" htmlFor="new-password">
         New password
       </label>
-      <input className="x2f-input" id="new-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <PasswordInput id="new-password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
       <label className="x2f-label" htmlFor="password-recovery-code">
         {BURNED.passwordCodeLabel}
       </label>

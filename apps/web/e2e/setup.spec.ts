@@ -277,18 +277,17 @@ for (const v of PHONES) {
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     // The URL changes before the router commits the new screen: wait for the screen itself.
     await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
-    // Owner S-017: the recovery codes come first and are required; then the extras are optional.
-    // The first view keeps the board's panel ("Your coins stay…"); the board is checked on the
-    // optional view after it, which is the board's own choice (parity.ts SetupBackup exceptions).
+    // Owner S-017: the recovery code is required. Lead call (12 Nov 2026): the optional "Add another
+    // backup" view is gone (the ticked login methods replace it), so the board is checked on the
+    // recovery-code view, which keeps the board's panel ("Your coins stay…"; parity.ts SetupBackup
+    // exceptions), and the code goes straight on to the wallet.
     await expect(page.locator('[data-part="recovery-make"]')).toBeVisible();
     await expect(page.getByText("Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.")).toBeVisible();
-    await saveRecoveryCodes(page);
-    await expect(page.locator('[data-part="backup-skip"]')).toBeVisible();
     await expectParity(page, 'SetupBackup', { viewport: v });
-    // Design build gaps Job 1: no authenticator app as a backup.
-    await expect(page.locator('[data-backup="totp"]')).toHaveCount(0);
-    await expect(page.locator('[data-backup="security-key"]')).toHaveAttribute('aria-checked', 'true');
-    await page.click('[data-part="backup-skip"]');
+    await saveRecoveryCodes(page);
+    // Design build gaps Job 1: no authenticator app as a backup; lead call: no other backup offered here at all.
+    await expect(page.locator('[data-backup]')).toHaveCount(0);
+    await expect(page.locator('[data-part="backup-skip"]')).toHaveCount(0);
 
     await expect(page).toHaveURL(/\/setup\/wallet\?/);
     // The URL changes before the router commits the new screen: wait for the screen itself.
@@ -443,7 +442,7 @@ test('the signature pad: drawn by touch, or a typed name by keyboard only; the s
   expect(s.bodies.password).toEqual([expect.objectContaining({ acceptedTerms: TERMS_VERSION, termsSignature: { kind: 'typed', name: 'Lumen K' } })]);
 });
 
-test('Mira.K_ shows exactly as typed after setup (password path, extra backup skipped)', async ({ page }) => {
+test('Mira.K_ shows exactly as typed after setup (password path)', async ({ page }) => {
   const s = await stubApi(page);
   const urls: string[] = [];
   page.on('framenavigated', (f) => urls.push(f.url()));
@@ -459,7 +458,6 @@ test('Mira.K_ shows exactly as typed after setup (password path, extra backup sk
 
   await expect(page).toHaveURL(/\/setup\/backup\?/);
   await saveRecoveryCodes(page);
-  await page.click('[data-part="backup-skip"]');
   await page.fill('#addr', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
 
@@ -597,11 +595,10 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await page.click('[data-part="pgp-verify"]');
   await page.click('[data-part="pgp-continue"]');
   await at('setup-backup');
-  // Owner S-017 (recovery codes required) knowingly overrides this test's "one tap per board" rule
-  // for this step: it needs a tap to show the codes, a tick and one code typed back before
-  // "Skip for now" appears (review S2b; confirmation asked of the owner).
+  // Owner S-017 (recovery code required) knowingly overrides this test's "one tap per board" rule
+  // for this step: it needs a tap to show the code, a tick, Next, and the code typed back (review
+  // S2b; owner demo notes 12 Nov 2026); then it goes straight on to the wallet (lead call).
   await saveRecoveryCodes(page);
-  await page.click('[data-part="backup-skip"]');
   await at('setup-wallet');
   await page.fill('#addr', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
@@ -805,23 +802,10 @@ test.describe('review fix round', () => {
     await expect(page).toHaveURL(/\/setup\/pgp-key\?/);
   });
 
-  test('I1: a second PGP key already on another account gets its own sentence on the backup step', async ({ page }) => {
-    await stubApi(page, { signedIn: true, methods: ['pgp'] });
-    await page.route('**/v1/account/pgp/start', json({ challengeId: 'b1', encryptedMessage: BOARD_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' }));
-    await page.route('**/v1/account/pgp/finish', json({ error: 'key-in-use' }, 409));
-    await page.goto(`/setup/backup?returnTo=${encodeURIComponent('/post')}`);
-    // Owner S-017: the extra backups are offered once the recovery codes are saved.
-    await saveRecoveryCodes(page);
-    await page.click('[data-backup="pgp"]');
-    await page.click('[data-part="backup-add"]');
-    await page.fill('#backup-pub', realKey);
-    await page.click('[data-part="backup-pgp-start"]');
-    await page.fill('#backup-code', '1234-5678-9ABC');
-    await page.click('[data-part="backup-pgp-finish"]');
-    await expect(page.locator('[data-part="backup-pgp"] [role="alert"]')).toHaveText(
-      'That key is already used by another X2F account. Use a different second key.',
-    );
-  });
+  // Lead call (12 Nov 2026): the optional extra backups (a second PGP key, a security key) left the
+  // backup step, so its I1 test of a second key already on another account went with them; a second
+  // PGP key is added in Settings, and that refusal stays covered by pgp.test.ts (adding a key already
+  // on another account → key-in-use at finish).
 
   test('I2: after a password sign-up, Back never reopens the sign-up steps or registers again', async ({ page }) => {
     const s = await stubApi(page);

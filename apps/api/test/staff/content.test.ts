@@ -13,9 +13,9 @@ let deps: Deps;
 let close: () => Promise<void>;
 let owner: StaffBrowser;
 let ownerId: string;
+let setNow: (d: Date) => void;
 
 beforeAll(async () => {
-  let setNow: (d: Date) => void;
   ({ app, trader, deps, setNow, close } = await staffApps());
   setNow(new Date('2026-11-02T12:00:00Z'));
   ownerId = (await seedStaff(deps, { role: 'owner' })).id;
@@ -70,7 +70,8 @@ describe('News on the staff API (site.control)', () => {
 
 describe('feedback on the staff API (feedback.read)', () => {
   it('lists platform feedback with the 30-day counts, and the feedback form rows, newest first with a cursor', async () => {
-    const traderId = await seedAccount(deps, { loginName: uniqueName('trader'), kind: 'trader' });
+    const loginName = uniqueName('trader');
+    const traderId = await seedAccount(deps, { loginName, displayName: uniqueName('Shown'), kind: 'trader' });
     await deps.db.query(
       `insert into platform_feedback (mood, note, created_on) values ('great', 'Smooth', '2026-11-02'), ('needs-work', null, '2026-11-01'), ('ok', null, '2026-09-01')`,
     );
@@ -90,11 +91,57 @@ describe('feedback on the staff API (feedback.read)', () => {
     const page2 = (await owner.get(`/staff/v1/feedback?before=${first.createdOn}_${first.id}`)).json();
     expect(page2.items).toHaveLength(2);
 
+    const opened = (await logEntries(deps, 'feedback.form-opened')).length;
     const form = (await owner.get('/staff/v1/feedback/form')).json();
-    expect(form.items.map((i: { kind: string; text: string; accountId: string | null; from: string | null }) => [i.kind, i.text, i.accountId, i.from])).toEqual([
-      ['complaint', 'Too slow', traderId, 'take-offer'], ['feedback', 'Nice', null, null],
+    expect(form.items.map((i: { kind: string; text: string; from: string | null }) => [i.kind, i.text, i.from])).toEqual([
+      ['complaint', 'Too slow', 'take-offer'], ['feedback', 'Nice', null],
     ]);
+    // S-026/D-058 review m1 (lead 12 Nov): the list never carries the raw account id, named or not.
+    for (const i of form.items as object[]) expect(Object.keys(i).sort()).toEqual(['accountName', 'createdOn', 'from', 'id', 'kind', 'text']);
+    expect(JSON.stringify(form)).not.toContain(traderId);
+    // D-058 (owner G20): a named row shows the sender's account (its public display name, never the
+    // login name), so staff can follow up; an anonymous row shows nothing.
+    const shown = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [traderId])).rows[0]!.display_name;
+    expect(form.items.map((i: { accountName: string | null }) => i.accountName)).toEqual([shown, null]);
+    expect(shown).not.toBe(loginName);
+    expect(JSON.stringify(form)).not.toContain(loginName);
     expect(form.next).toBeNull();
+    // D-058 (lead 12 Nov): each opening of the list is logged, with how many named rows it showed.
+    const log = await logEntries(deps, 'feedback.form-opened');
+    expect(log).toHaveLength(opened + 1);
+    expect(log.at(-1)).toEqual({ actor_kind: 'staff', detail: JSON.stringify({ namedRows: 1 }) });
+  });
+
+  it('review m2: the list opening is logged at most once per staff session per 5 minutes (the first read of the window)', async () => {
+    const t0 = new Date('2026-11-02T12:00:00Z');
+    setNow(t0);
+    const named = await seedAccount(deps, { loginName: uniqueName('m2trader'), displayName: uniqueName('M2Shown'), kind: 'trader' });
+    await deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'm2 named', $1, null, '2026-11-02')", [named]);
+    const a = new StaffBrowser(app).withSession((await insertSession(deps, ownerId, 'staff')).token);
+    const b = new StaffBrowser(app).withSession((await insertSession(deps, ownerId, 'staff')).token);
+    const count = async () => (await logEntries(deps, 'feedback.form-opened')).length;
+    const n0 = await count();
+    // The first read of a session logs; reads again (any page, at once or in parallel) in the window do not.
+    const first = await a.get('/staff/v1/feedback/form');
+    expect(first.statusCode).toBe(200);
+    expect(await count()).toBe(n0 + 1);
+    const items = first.json().items as Array<{ id: string; createdOn: string; accountName: string | null }>;
+    expect((await logEntries(deps, 'feedback.form-opened')).at(-1)).toEqual({ actor_kind: 'staff', detail: JSON.stringify({ namedRows: items.filter((i) => i.accountName !== null).length }) });
+    const last = items.at(-1)!;
+    const again = await Promise.all([a.get('/staff/v1/feedback/form'), a.get('/staff/v1/feedback/form'), a.get(`/staff/v1/feedback/form?before=${last.createdOn}_${last.id}`)]);
+    for (const r of again) expect(r.statusCode).toBe(200);
+    expect(await count()).toBe(n0 + 1);
+    // Another session of the same person is its own window.
+    expect((await b.get('/staff/v1/feedback/form')).statusCode).toBe(200);
+    expect(await count()).toBe(n0 + 2);
+    // Just under 5 minutes later: still the same window; at 5 minutes: logged again.
+    setNow(new Date(t0.getTime() + 5 * 60_000 - 1));
+    expect((await a.get('/staff/v1/feedback/form')).statusCode).toBe(200);
+    expect(await count()).toBe(n0 + 2);
+    setNow(new Date(t0.getTime() + 5 * 60_000));
+    expect((await a.get('/staff/v1/feedback/form')).statusCode).toBe(200);
+    expect(await count()).toBe(n0 + 3);
+    setNow(t0);
   });
 
   it('refuses a malformed cursor', async () => {

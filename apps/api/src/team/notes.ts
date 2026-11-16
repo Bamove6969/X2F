@@ -54,10 +54,14 @@ async function traderNamed(q: Queryable, raw: unknown, self: string): Promise<{ 
   return { id: who.id, name: who.name };
 }
 
+/**
+ * A note's text, trimmed: 1..NOTE_MAX characters, no control or format characters and no line or
+ * paragraph separator (U+2028/2029), a new line excepted. The same rule as S-093's block notes.
+ */
 function noteText(raw: unknown): string {
   if (typeof raw !== 'string') throw new ApiError(400, 'bad-request');
   const text = raw.trim();
-  if (text.length === 0 || Array.from(text).length > NOTE_MAX || /[\p{Cc}\p{Cf}]/u.test(text.replace(/\n/g, ''))) throw new ApiError(400, 'bad-request');
+  if (text.length === 0 || Array.from(text).length > NOTE_MAX || /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(text.replace(/\n/g, ''))) throw new ApiError(400, 'bad-request');
   return text;
 }
 

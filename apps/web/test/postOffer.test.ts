@@ -383,21 +383,23 @@ describe('refusalText', () => {
     expect(refusalText('trading-hold')).toMatch(/trading hold/);
     expect(refusalText('trading-paused')).toMatch(/paused/);
     expect(refusalText('method-unavailable')).toMatch(/payment method/);
-    // The cap the API enforces (owner 2026-11-01: 3 buying and 3 selling offers per account), in the cap's own line.
-    expect(refusalText('too-many-offers')).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
+    // The cap the API enforces (owner 2026-11-01: 3 buying and 3 selling offers per account), in the
+    // owner's limit pop-up words (O-028, 28 Oct Q14: "Sorry, you're limited to N offers per side ...").
+    expect(refusalText('too-many-offers')).toBe("Sorry, you're limited to 3 offers per side: 3 buying and 3 selling. Remove one you no longer need, then post this one.");
     expect(refusalText('something-new')).toMatch(/wasn't posted/);
     for (const code of ['trading-hold', 'trading-paused', 'method-unavailable', 'too-many-offers', 'x']) expect(refusalText(code)).not.toContain('!');
   });
 });
 describe('refusalText: the cap from the 409 (cap-dispute review M2)', () => {
   it("too-many-offers says the caps the API sent ({ buy, sell }, owner settings, Q31), else the default 3 + 3", () => {
-    expect(refusalText('too-many-offers', { buy: 3, sell: 3 })).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
-    expect(refusalText('too-many-offers', { buy: 5, sell: 5 })).toBe('You can have 5 buying and 5 selling offers. Remove one you no longer need, then post this one.');
-    expect(refusalText('too-many-offers', { buy: 2, sell: 4 })).toBe('You can have 2 buying and 4 selling offers. Remove one you no longer need, then post this one.');
-    expect(refusalText('too-many-offers', { buy: 1, sell: 1 })).toMatch(/^You can have 1 buying and 1 selling offer\. /);
+    expect(refusalText('too-many-offers', { buy: 3, sell: 3 })).toBe("Sorry, you're limited to 3 offers per side: 3 buying and 3 selling. Remove one you no longer need, then post this one.");
+    expect(refusalText('too-many-offers', { buy: 5, sell: 5 })).toBe("Sorry, you're limited to 5 offers per side: 5 buying and 5 selling. Remove one you no longer need, then post this one.");
+    // O-028: caps that differ per side (owner settings) are each named.
+    expect(refusalText('too-many-offers', { buy: 2, sell: 4 })).toBe("Sorry, you're limited to 2 buying and 4 selling offers. Remove one you no longer need, then post this one.");
+    expect(refusalText('too-many-offers', { buy: 1, sell: 1 })).toMatch(/^Sorry, you're limited to 1 offer per side: 1 buying and 1 selling\. /);
     // No caps, half of them, or nonsense: the default line.
     for (const extra of [undefined, {}, { buy: 5 }, { sell: 5 }, { buy: 0, sell: 3 }, { buy: 1001, sell: 3 }, { buy: 2.5, sell: 3 }, { buy: '2', sell: 3 }, { perSide: 2 }, { perMarket: 2, total: 20 }]) {
-      expect(refusalText('too-many-offers', extra)).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
+      expect(refusalText('too-many-offers', extra)).toBe("Sorry, you're limited to 3 offers per side: 3 buying and 3 selling. Remove one you no longer need, then post this one.");
     }
     // Other codes ignore it.
     expect(refusalText('trading-hold', { buy: 5, sell: 5 })).toBe(refusalText('trading-hold'));

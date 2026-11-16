@@ -50,7 +50,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/alerts': 'my own security alerts',
   'GET /v1/account/approvals': 'my own pending new-device login approvals',
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
-  'GET /v1/account/blocks': 'the traders I blocked',
+  'GET /v1/account/blocks': 'the traders I blocked, when, and my own private note on each (S-093)',
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",
   'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
@@ -78,6 +78,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/trades/:code': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/attestation': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/confirmations': 'one of my own trades (participants only)',
+  // P-012/P-013 (proof-check, classified at the batch 9 merge): my own side's blur-check asks.
+  'GET /v1/trades/:code/blur-checks': 'one of my own trades (participants only): my side\'s blur-check asks',
   'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
   'GET /v1/wallets': 'my own payout wallets',
@@ -139,10 +141,12 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'DELETE /v1/account/hold/changes': "cancels my own account's waiting changes; no data back",
   'DELETE /v1/account/hold/changes/:id': "cancels one of my own account's waiting changes; no data back",
   'POST /v1/account/recovery-code/reveal': "shows my own account's new recovery code once, to the session allowed to read it",
+  'POST /v1/account/onboarding/end': "closes my own session's sign-up window (review M1(a)); no data back",
   // Settings and social rows (my own account).
   'PUT /v1/account/nudges': 'my own nudge setting',
   'POST /v1/account/blocks': 'a block row of mine; no data back (404 for a name that is not a trader)',
   'DELETE /v1/account/blocks/:displayName': 'removes a block row of mine; no data back',
+  'PUT /v1/account/blocks/:displayName/note': "my own private note on a block row of mine (S-093); answers that note",
   'POST /v1/account/notes': "a private note row of my own account on a trader (the account owner, or a member with the notes-add box); answers that note",
   'DELETE /v1/account/notes/:id': "removes one of my own account's note rows (account owner only); no data back",
   'PUT /v1/account/profile/traded-total': 'my own traded-total display setting',
@@ -165,6 +169,9 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/identity': 'my identity for one of my own trades (participants only)',
   'POST /v1/trades/:code/chat': 'the chat of one of my own trades (participants only)',
   'POST /v1/trades/:code/dispute': 'opens a dispute on one of my own trades (participants only)',
+  // P-012/P-013 (proof-check, classified at the batch 9 merge): the blur check on my own trades.
+  'POST /v1/trades/:code/proofs/:proofId/blur-check': 'counts my own proof on one of my own trades for the blur-check sample (participants only); answers only whether to ask',
+  'POST /v1/trades/:code/blur-checks/:proofId': 'my anonymous blur-check answer on one of my own trades (participants only); no data back',
   'POST /v1/trades/:code/appeal': 'appeals a ruling on one of my own trades (participants only)',
   'POST /v1/trades/:code/review': 'my review of one of my own finished trades',
   'POST /v1/trades/:code/review/skip': 'skips my review of one of my own finished trades',
@@ -176,6 +183,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/team/invites': 'an invite to my own team; answers its id, code and deadline',
   'PATCH /v1/team/members/:id': "changes a member's boxes (abilities) in my own team",
   'DELETE /v1/team/members/:id': 'removes a member from my own team',
+  'PUT /v1/team/members/:id/limits': "sets a member's trade-size band and working hours in my own team (J-20)",
 };
 
 /**
@@ -190,6 +198,7 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   'POST /v1/logout': 'ends whatever session the cookie names; no data back',
   'GET /v1/terms': 'the Terms and Privacy text and version, read before agreeing at sign-up',
   'GET /v1/pgp/signing-key': "X2F's own public signing key, to check the signed sign-up and login challenges",
+  'GET /.well-known/x2f-signing-key.asc': "the same public signing key as a file to import (sign-up v2); public armor only",
   'POST /v1/register/name-check': 'create an account: the live "is available" tick for the login name (rate limited per device and site wide, auth/nameCheck.ts); answers { available } only',
   'POST /v1/register/password': 'create an account (password)',
   'POST /v1/register/pgp/start': 'create an account (PGP)',

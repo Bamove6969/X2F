@@ -32,6 +32,8 @@ export type AlertKind =
   // Plan 2 Task 18: to the account owner, about the team.
   | 'team-member-joined'
   | 'team-member-login'
+  // J-20 (owner p11-27, S-107): a member logged in for the first time (no approval; the lead is told).
+  | 'team-member-first-login'
   // Owner 2 Nov 2026: the account switched to a vendor account (detail: the confirm method).
   | 'became-vendor'
   // Owner only: price health (spec 11.6, Plan 3 Task 3).
@@ -49,7 +51,10 @@ export type AlertKind =
   | 'fee-sweep-failed'
   // Owner only (D-032 review S2): a staff member's security was reset, and the reset link was used.
   | 'staff-security-reset'
-  | 'staff-security-reset-finished';
+  | 'staff-security-reset-finished'
+  // Owner only: an appeal nobody may review (every senior moderator and the owner was involved in
+  // round 1, or none is switched on); it waits in the queue until one is added (D-011, Plan 4 Task 24).
+  | 'appeal-no-reviewer';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

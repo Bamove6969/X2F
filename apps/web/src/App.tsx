@@ -9,6 +9,8 @@ import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { Button } from './ui/Button.js';
 import { Sheet } from './ui/Sheet.js';
+import { SyncGate } from './ui/SyncGate.js';
+import { useResumeSync, watchResume } from './session/syncFirst.js';
 import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { Trades } from './screens/Trades.js';
@@ -45,10 +47,11 @@ import { Team } from './screens/settings/Team.js';
 import { AccountType } from './screens/settings/AccountType.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
+import { backupRedirect } from './screens/setup/signupPending.js';
 import { Terms } from './screens/setup/Terms.js';
 import { BehindTheDoor, isInside } from './session/frontDoor.js';
 import { mayOpenLiveEvents, mayPostOffers, mayReadTrades, memberOf } from './session/member.js';
-import { useSession } from './session/useSession.js';
+import { useSession, type Session } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { ScreenHeader, screenName } from './ui/ScreenHeader.js';
 import { HelpTopic } from './screens/HelpTopic.js';
@@ -109,6 +112,8 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
         <SiteBanner banner={banner} />
         {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}
         <ChangesBanner />
+        {/* C-021: on the screens whose actions change a trade or an offer, "Updating…" while the tab syncs after becoming active again. */}
+        <SyncGate />
         <Outlet />
       </div>
       <ChangesCapPopup />
@@ -213,11 +218,26 @@ function useWatchSession(session: ReturnType<typeof useSession>): void {
   }, [session]);
 }
 
+/**
+ * The m-2 blocking fix (owner's demo notes, 13 Nov 2026): while this tab's own sign-up still owes
+ * its recovery code, any page outside `/setup` (reached by Back, a link or a typed address) goes
+ * back to the recovery-code step.
+ */
+function SignupBackupGate({ session }: { session: Session }) {
+  const { pathname } = useLocation();
+  const to = session.status === 'signed-in' ? backupRedirect(pathname, session.me) : null;
+  return to === null ? null : <Navigate to={to} replace />;
+}
+
 export function App() {
   const session = useSession();
   useWatchSession(session);
   // Plan 4 Task 8: the banner, and maintenance, which replaces the whole app with the owner's message.
-  const { site, refresh } = useSite();
+  const { site, refresh, sync } = useSite();
+  // C-021 (owner p11-33): when this tab becomes active again it syncs first (session/syncFirst.ts);
+  // the site's maintenance and trading-paused state is one of the pulls.
+  useEffect(() => watchResume(), []);
+  useResumeSync(sync);
   // GET /v1/site answers the banner only inside the door: read it again when someone logs in or out.
   const inside = isInside(session);
   useEffect(() => {
@@ -228,6 +248,7 @@ export function App() {
     // The guided tour (owner, 12 Nov 2026) draws over whichever screen it is on.
     <TourProvider>
       <RouterBridge />
+      <SignupBackupGate session={session} />
       <SessionPrompt />
       <IdleReminder />
       {/* Live events: full trader sessions; a member's with either trades box (session/member.ts). */}

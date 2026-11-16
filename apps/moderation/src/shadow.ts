@@ -20,10 +20,12 @@ import { apply, isAttestedTerms, MAX_CONFIRM_WINDOW_MIN, newTrade, TradeRuleErro
  * window. The API fills it from the trade record and refuses an attestation whose value differs
  * (409 terms-mismatch); the trader apps check it against the trade view they were shown.
  *
- * Deploy note: an attestation signed before `payWindowMin` joined the terms has no such key, so
- * isAttestedTerms refuses it everywhere (the work item is skipped as BadTerms, the API answers 400
- * bad-attestation, the moderator party refuses its stored terms, newShadow below builds no shadow
- * (so no refund is co-signed), and a trader app holding one stops the trade). This is pre-launch
+ * Deploy note: an attestation signed before `payWindowMin` joined the terms, or before the deal's
+ * `methodId` and `instructionsSha256` came back (instr-hash, Task 34 review I1 restored for flex
+ * offers), lacks those keys, so isAttestedTerms refuses it everywhere: the work item is skipped as
+ * BadTerms, the API answers 400 bad-attestation, the moderator party refuses its stored terms,
+ * newShadow below builds no shadow (so no refund is co-signed), and a trader app holding one stops
+ * the trade (participants-mismatch, kept). This is pre-launch
  * with no real trades, so there is nothing to migrate.
  */
 export function newShadow(code: string, terms: AttestedTerms, takenAt: Date): Trade {

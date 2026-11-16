@@ -5,7 +5,8 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { assertNotBlocked, blockedEitherWay, blocksBetween, hasBlocked } from '../src/traders/blocks.js';
 import { applyEvent } from '../src/trades/store.js';
-import { makeVendor } from './helpers/accounts.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
+import { rolesToAbilities } from '../src/team/abilities.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
@@ -107,7 +108,7 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     await block(a, c);
     const list = (await a.browser.get('/v1/account/blocks')).json() as { displayName: string; blockedAt: string }[];
     expect(list.map((e) => e.displayName)).toEqual([c.displayName, b.displayName]);
-    expect(Object.keys(list[0]!).sort()).toEqual(['blockedAt', 'displayName']);
+    expect(Object.keys(list[0]!).sort()).toEqual(['blockedAt', 'displayName', 'note']);
     // Who blocked me is never answered: c blocked a, and a's list only has a's own blocks.
     expect(((await b.browser.get('/v1/account/blocks')).json() as unknown[]).length).toBe(0);
     // The private login name is never sent. The database holds only its tag (FU-D), so the test
@@ -142,6 +143,120 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     expect((await a.browser.delete(`/v1/account/blocks/${'x'.repeat(65)}`)).statusCode).toBe(400);
     expect((await anon.get('/v1/account/blocks')).statusCode).toBe(401);
     expect((await anon.delete(`/v1/account/blocks/${a.displayName}`)).statusCode).toBe(401);
+  });
+});
+
+// S-093 (owner p7-6, 8 Nov 2026): "a blocked list with optional notes and the date/time blocked". The
+// note is the blocker's own private text on the person they blocked; only the blocker ever reads it.
+describe('S-093: a private note per blocked person, and when they were blocked', () => {
+  const noteOf = async (a: Who, b: Who) =>
+    ((await a.browser.get('/v1/account/blocks')).json() as { displayName: string; note: string | null; blockedAt: string }[]).find((e) => e.displayName === b.displayName);
+  const putNote = (a: Who, name: string, note: unknown) => a.browser.put(`/v1/account/blocks/${encodeURIComponent(name)}/note`, { note });
+
+  it('a block starts with no note and its exact time; the blocker sets, changes and clears the note', async () => {
+    const a = await trader();
+    const b = await trader();
+    await block(a, b);
+    const first = await noteOf(a, b);
+    expect(first).toEqual({ displayName: b.displayName, blockedAt: deps.clock().toISOString(), note: null });
+    const set = await putNote(a, b.displayName, '  Asked for my phone number in chat.  ');
+    expect([set.statusCode, set.json()]).toEqual([200, { note: 'Asked for my phone number in chat.' }]);
+    expect((await noteOf(a, b))!.note).toBe('Asked for my phone number in chat.');
+    // By the name case-insensitively, as unblock.
+    expect((await putNote(a, b.displayName.toUpperCase(), 'Second try.')).json()).toEqual({ note: 'Second try.' });
+    // A note keeps the block's time.
+    expect((await noteOf(a, b))!.blockedAt).toBe(first!.blockedAt);
+    // Null or blank text clears it.
+    expect((await putNote(a, b.displayName, null)).json()).toEqual({ note: null });
+    await putNote(a, b.displayName, 'Again.');
+    expect((await putNote(a, b.displayName, '   ')).json()).toEqual({ note: null });
+    expect((await noteOf(a, b))!.note).toBeNull();
+  });
+
+  it('only the blocker ever sees the note: not the blocked person, not a moderator\'s blocksBetween, and unblocking deletes it', async () => {
+    const a = await trader();
+    const b = await trader();
+    await block(a, b);
+    await putNote(a, b.displayName, 'Private words 7Q2.');
+    await block(b, a);
+    // The blocked person's own list has their own block of a, with no note of a's.
+    expect(await noteOf(b, a)).toMatchObject({ note: null });
+    expect((await b.browser.get('/v1/account/blocks')).body).not.toContain('7Q2');
+    // Staff see a block only in a dispute between the two (blocksBetween): never its note.
+    const between = await blocksBetween(deps.db, a.id, b.id);
+    expect(JSON.stringify(between)).not.toContain('7Q2');
+    for (const e of between) expect(Object.keys(e).sort()).toEqual(['blockedId', 'blockerId', 'since']);
+    // Unblocking removes the row and its note; blocking again starts with none.
+    await unblock(a, b);
+    await block(a, b);
+    expect((await noteOf(a, b))!.note).toBeNull();
+  });
+
+  it('a note needs a block of mine: someone I did not block, or an unknown name, is 404; bad notes are 400; signed-in traders only', async () => {
+    const a = await trader();
+    const b = await trader();
+    const c = await trader();
+    // c blocked b; a did not block b: a cannot write a note on c's row or on a block that does not exist.
+    await block(c, b);
+    expect((await putNote(a, b.displayName, 'x')).json()).toEqual({ error: 'not-found' });
+    expect((await putNote(a, 'Dnobody1234567x', 'x')).json()).toEqual({ error: 'not-found' });
+    expect((await noteOf(c, b))!.note).toBeNull();
+    await block(a, b);
+    for (const bad of [12, ['x'], { t: 'x' }, 'x'.repeat(501), 'tab\u0000nul', undefined]) {
+      const res = await putNote(a, b.displayName, bad);
+      expect(res.statusCode, String(bad)).toBe(400);
+    }
+    // 500 characters (not bytes) is the limit, and a new line is allowed.
+    expect((await putNote(a, b.displayName, '\u00e9'.repeat(500))).statusCode).toBe(200);
+    expect((await putNote(a, b.displayName, 'line one\nline two')).json()).toEqual({ note: 'line one\nline two' });
+    expect((await a.browser.put(`/v1/account/blocks/${'x'.repeat(65)}/note`, { note: 'x' })).statusCode).toBe(400);
+    expect((await anon.put(`/v1/account/blocks/${encodeURIComponent(b.displayName)}/note`, { note: 'x' })).statusCode).toBe(401);
+  });
+});
+
+describe('S-093 review: the note check, team members and the Jabber notice', () => {
+  const putNote = (a: Who, name: string, note: unknown) => a.browser.put(`/v1/account/blocks/${encodeURIComponent(name)}/note`, { note });
+  const block = async (a: Who, b: Who) => expect((await a.browser.post('/v1/account/blocks', { displayName: b.displayName })).statusCode).toBe(204);
+
+  it('m1: the same character rule as S-094 trader notes: C1 controls, format characters and tab are refused; a new line is allowed', async () => {
+    const a = await trader();
+    const b = await trader();
+    await block(a, b);
+    for (const bad of ['a\u0085b', 'a\u009fb', 'a\u202eb', 'a\u2066b', 'a\u200bb', 'a\u200db', 'a\u2028b', 'a\u2029b', 'a\ufeffb', 'a\tb', 'a\rb']) {
+      expect((await putNote(a, b.displayName, bad)).statusCode, JSON.stringify(bad)).toBe(400);
+    }
+    expect((await putNote(a, b.displayName, 'one\ntwo')).json()).toEqual({ note: 'one\ntwo' });
+  });
+
+  it('m4: a team member cannot read or write the lead\'s block notes (403 owner-only)', async () => {
+    const lead = await trader();
+    const b = await trader();
+    await block(lead, b);
+    const loginId = await seedAccount(deps, { loginName: 'blocknotemember1x', displayName: 'bn-m-1', kind: 'member' });
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'BnMember1', 'bnmember1', $2, $3, $4, $3, $3)`,
+      [lead.id, rolesToAbilities(['offers', 'trades']), deps.clock(), loginId],
+    );
+    const mb = new Browser(app);
+    expect((await mb.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+    const res = await mb.put(`/v1/account/blocks/${encodeURIComponent(b.displayName)}/note`, { note: 'x' });
+    expect([res.statusCode, res.json()]).toEqual([403, { error: 'owner-only' }]);
+    expect((await mb.get('/v1/account/blocks')).json()).toEqual({ error: 'owner-only' });
+  });
+
+  it('m4: a note-only change queues one Jabber notice for the blocker; the same note again queues none', async () => {
+    const a = await trader();
+    const b = await trader();
+    await deps.db.query('insert into jabber_contacts (account_id, jid_sealed, verified_at, enabled) values ($1, $2, now(), true)', [a.id, Buffer.from('01aa', 'hex')]);
+    const notices = async () => (await deps.db.query<{ n: number }>('select count(*)::int as n from jabber_outbox where account_id = $1', [a.id])).rows[0]!.n;
+    await block(a, b);
+    await deps.db.query('delete from jabber_outbox where account_id = $1', [a.id]);
+    expect((await putNote(a, b.displayName, 'Pushy in chat.')).statusCode).toBe(200);
+    expect(await notices()).toBe(1);
+    expect((await putNote(a, b.displayName, 'Pushy in chat.')).statusCode).toBe(200);
+    expect(await notices()).toBe(1);
+    expect((await deps.db.query<{ n: number }>('select count(*)::int as n from jabber_outbox where account_id = $1', [b.id])).rows[0]!.n).toBe(0);
   });
 });
 

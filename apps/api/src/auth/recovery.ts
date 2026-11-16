@@ -39,7 +39,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { addAlert } from '../alerts.js';
 import type { Config } from '../config.js';
 import { ApiError } from '../errors.js';
-import { requireConfirm } from './confirm.js';
+import { onlyIfNew, passedOnWindow, recheckWindowInTx, requireConfirm } from './confirm.js';
 import { ensureDeviceCookie } from './device.js';
 import { allowedMethods, methodAllowed } from './methods.js';
 import { loginNameLookup, loginTagMatch, retagLoginName } from '../accounts.js';
@@ -117,6 +117,8 @@ async function newCodes(req: FastifyRequest, reply: FastifyReply) {
     await client.query('begin');
     try {
       held = await gateChange(client, req, { kind: 'recovery-codes', keyId, hashes: hashes.map((h) => h.toString('base64')) });
+      // Re-verify R1: "none yet" again under the account lock, so a parallel twin loses.
+      if (passedOnWindow(req)) await recheckWindowInTx(client, req, 'recovery-codes', 'new-recovery-codes');
       if (held === null) await applyRecoveryCodes(client, req.auth.accountId, keyId, hashes, now);
       await client.query('commit');
     } catch (e) {
@@ -379,7 +381,7 @@ async function cancelRecovery(req: FastifyRequest) {
 export function recoveryRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/recovery-codes',
-    { preHandler: [requireSession(), methodAllowed('recovery-codes'), requireNotHeld, requireConfirm({ kind: 'new-recovery-codes' }, { onboarding: true })] },
+    { preHandler: [requireSession(), methodAllowed('recovery-codes'), requireNotHeld, requireConfirm({ kind: 'new-recovery-codes' }, { onboarding: onlyIfNew('recovery-codes') })] },
     newCodes,
   );
   app.post('/v1/login/backup', backupLogin);

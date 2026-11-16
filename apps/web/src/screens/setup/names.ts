@@ -5,9 +5,11 @@
  *
  * Every account has a private **username** (owner Q54: the login name, never shown, "as
  * confidential as your password"; the API calls it `loginName`) and a public **display name**
- * (offers, profiles, chat; `displayName`). Both are 5-20 ASCII letters, digits, dots, dashes and
- * underscores, kept exactly as typed, and they must differ, ignoring case. Reserved words and their
- * look-alikes are refused for the display name only.
+ * (offers, profiles, chat; `displayName`). Both are 5-20 characters and must differ, ignoring case.
+ * The username is ASCII letters, digits, dots, dashes and underscores, kept exactly as typed; the
+ * display name (signup round 3) takes letters of most scripts, digits, spaces and common symbols,
+ * with extra spaces removed. Reserved words and their look-alikes are refused for the display name
+ * only.
  */
 import { checkNames } from '@x2f/auth-client';
 
@@ -17,8 +19,17 @@ export type NamesCheck = ReturnType<typeof checkNames>;
 
 /** The sentence for a name of the wrong shape: `which` is "Your username" or "Your display name". */
 export function nameShapeProblem(which: string, reason: 'length' | 'characters'): string {
-  return reason === 'length' ? `${which} needs 5 to 20 characters.` : `${which} can use only letters, numbers, dots, dashes and underscores.`;
+  if (reason === 'length') return `${which} needs 5 to 20 characters.`;
+  // COPY-UNSIGNED (signup round 3: the display name's wider set)
+  if (which === 'Your display name') return `${which} can use letters, numbers, spaces and common symbols such as ${DISPLAY_SYMBOLS}.`;
+  return `${which} can use only letters, numbers, dots, dashes and underscores.`;
 }
+
+/**
+ * Some of the symbols a display name may hold, as the help and the refusal name them ("such as":
+ * the full list is in @x2f/accounts; "!" is left out of the copy by the design rule on "!").
+ */
+export const DISPLAY_SYMBOLS = '$ & ? @ # % + ( )';
 
 /** The sentence for a refused pair of names. */
 export function namesProblem(r: Extract<NamesCheck, { ok: false }>): string {

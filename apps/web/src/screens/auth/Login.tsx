@@ -19,6 +19,7 @@ import { isExpired, loginCantDo, refusalText } from './refusals.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import '../screens.css';
+import { PasswordInput } from '../../ui/PasswordInput.js';
 import { HelpLinks } from '../../ui/HelpLinks.js';
 
 /**
@@ -476,10 +477,7 @@ function PasswordLogin({ onLoggedIn, onWait, onCantDo }: Go) {
         <label className="x2f-label" htmlFor="login-password">
           Password
         </label>
-        <input
-          className="x2f-input"
-          id="login-password"
-          type="password"
+        <PasswordInput id="login-password"
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
