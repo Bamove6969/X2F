@@ -25,6 +25,7 @@ import {
   EVIDENCE_MAX,
   OUTCOME_LABELS,
   REASON_MIN,
+  caseMatchesAddress,
   codeText,
   evidenceLines,
   fiatText,
@@ -64,7 +65,9 @@ function rulingLabels(c: DisputeCase, outcome: RulingOutcome): Record<string, st
   const r1 = c.ruling.round1 ?? null;
   return {
     rulingId: 'this ruling',
-    code: `incident ${c.incidentId}`,
+    // Review X3-1 (b): from the signed code itself, never the API's separate incident id.
+    // DESIGN: wording
+    code: `the trade on this page, ${codeText(c.code)}`,
     outcome: OUTCOME_LABELS[outcome],
     amountAtomic: `${xmrShort(c.escrow.amountAtomic)} XMR`,
     reasonSha256: 'the reason above',
@@ -128,6 +131,11 @@ export function ModCase({ role }: { role: StaffRole }) {
   const proposing = c.assignedToYou && ((c.round === 1 && c.status === 'open') || (c.round === 2 && c.status === 'appealed'));
   // Review M2: in an appeal, someone involved in round 1 (mayWork false) never decides it (R37).
   const approving = c.status === 'awaiting-approval' && isApprover(role) && !c.proposedByYou && c.ruling.proposal !== null && (c.round === 1 || c.mayWork);
+  // Review X3-1 (a): no ruling tap opens for a case that is not the one in the address.
+  const matches = caseMatchesAddress(code, c);
+  const openTap = (t: Tap) => {
+    if (matches) setTap(t);
+  };
 
   return (
     <section data-screen="mod-case">
@@ -146,6 +154,12 @@ export function ModCase({ role }: { role: StaffRole }) {
         <CaseChips c={c} role={role} onTaken={load} />
       </PageTitle>
       {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
+      {!matches ? (
+        <Notice tone="danger" data-part="case-mismatch">
+          {/* DESIGN: wording */}
+          This case is not the one you opened: its trade code differs from the address. Nothing can be signed here.
+        </Notice>
+      ) : null}
 
       <div className="x2f-staff-case">
         <div className="x2f-stack">
@@ -157,7 +171,7 @@ export function ModCase({ role }: { role: StaffRole }) {
           <ProofCard c={c} buyer={buyer} seller={seller} work={work} />
           <EscrowCard c={c} buyer={buyer} seller={seller} />
           {c.mayWork ? <FreezeCard c={c} buyer={buyer} seller={seller} onChange={(freezes) => setC({ ...c, freezes })} /> : null}
-          <RulingCard c={c} proposing={proposing} approving={approving} buyer={buyer} seller={seller} setTap={setTap} reload={load} />
+          <RulingCard c={c} proposing={proposing} approving={approving} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
         </div>
       </div>
 
