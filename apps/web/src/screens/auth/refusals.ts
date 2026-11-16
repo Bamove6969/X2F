@@ -17,7 +17,7 @@ import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
 import { formatDateTime } from '../../ui/dates.js';
 import {
-  HOLD_CODE, PASSWORD_HAS_TOTP_MESSAGE, TOO_MANY_APPROVALS, TOO_MANY_APPROVALS_CODE, TOTP_NEEDS_PASSWORD_MESSAGE,
+  HOLD_CODE, PASSWORD_ALONE_MESSAGE, PASSWORD_HAS_TOTP_MESSAGE, TOO_MANY_APPROVALS, TOO_MANY_APPROVALS_CODE, TOTP_NEEDS_PASSWORD_MESSAGE,
   WEAK_SESSION_CODE, WEAK_SESSION_TEXT, holdApproveText, holdLoginText, holdText, type CantDoCode,
 } from '../../ui/cantDoCodes.js';
 
@@ -130,6 +130,7 @@ export function refusalText(e: unknown, fallback: string, o: { expired?: string;
   // Owner, 16 Nov 2026: the authenticator app goes only with a password (words in cantDoCodes.ts).
   if (r.code === 'totp-needs-password') return TOTP_NEEDS_PASSWORD_MESSAGE;
   if (r.code === 'password-has-totp') return PASSWORD_HAS_TOTP_MESSAGE;
+  if (r.code === 'password-alone') return PASSWORD_ALONE_MESSAGE;
   if (typeof r.detail === 'string' && r.detail.trim() !== '') return r.detail;
   return fallback;
 }

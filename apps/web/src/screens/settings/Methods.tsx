@@ -16,6 +16,7 @@ import {
   isStaged,
   partnerMissing,
   partnerNeededBy,
+  passwordAlone,
   withConfirm,
   type ConfirmAction,
   type Staged,
@@ -26,7 +27,9 @@ import {
 import { Button } from '../../ui/Button.js';
 import { Notice } from '../../ui/Notice.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE, PASSWORD_HAS_TOTP_CODE, PASSWORD_HAS_TOTP_MESSAGE } from '../../ui/cantDoCodes.js';
+import {
+  CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE, PASSWORD_ALONE_CODE, PASSWORD_ALONE_MESSAGE, PASSWORD_HAS_TOTP_CODE, PASSWORD_HAS_TOTP_MESSAGE,
+} from '../../ui/cantDoCodes.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { keyErrorText } from '../auth/keyErrors.js';
@@ -57,6 +60,15 @@ export function isOnlyLogin(m: MethodEntry, all: readonly MethodEntry[]): boolea
   return LOGIN_METHODS.includes(m.type) && all.filter((x) => LOGIN_METHODS.includes(x.type)).length === 1;
 }
 
+/**
+ * True when removing `m` would leave a password with neither the authenticator app nor a PGP key,
+ * passkey or security key (owner, 16 Nov 2026). The server decides the rest.
+ */
+export function leavesPasswordAlone(m: MethodEntry, all: readonly MethodEntry[]): boolean {
+  const i = all.indexOf(m);
+  return passwordAlone(all.filter((_, j) => j !== i).map((x) => x.type));
+}
+
 type Adding = 'none' | 'password' | 'pgp' | 'totp' | 'recovery-codes';
 
 export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<string> }) {
@@ -66,6 +78,8 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   const [lastMethod, setLastMethod] = useState(false);
   // 409 `password-has-totp` (or the same check here first): the password stays while TOTP is on.
   const [keepsPassword, setKeepsPassword] = useState(false);
+  // 409 `password-alone` (or the same check here first): a password does not stand alone.
+  const [leavesAlone, setLeavesAlone] = useState(false);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<Adding>('none');
   // Hold model v3: a change made from a username-and-password login is staged as a draft (202).
@@ -109,6 +123,10 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       setKeepsPassword(true);
       return;
     }
+    if (methods !== null && leavesPasswordAlone(m, methods)) {
+      setLeavesAlone(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -121,6 +139,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
     } catch (e) {
       if (e instanceof AuthApiError && e.code === LAST_METHOD_CODE) setLastMethod(true);
       else if (e instanceof AuthApiError && e.code === PASSWORD_HAS_TOTP_CODE) setKeepsPassword(true);
+      else if (e instanceof AuthApiError && e.code === PASSWORD_ALONE_CODE) setLeavesAlone(true);
       else if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not remove that method. Try again.'));
     } finally {
       setBusy(false);
@@ -139,6 +158,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       ) : null}
       {staged > 0 ? <StagedNote key={staged} /> : null}
       {lastMethod ? <CantDoThat title={CANT_DO_TITLE.methods} body={LAST_METHOD_MESSAGE} from={LAST_METHOD_CODE} onClose={() => setLastMethod(false)} /> : null}
+      {leavesAlone ? <CantDoThat title={CANT_DO_TITLE.methods} body={PASSWORD_ALONE_MESSAGE} from={PASSWORD_ALONE_CODE} onClose={() => setLeavesAlone(false)} /> : null}
       {keepsPassword ? (
         <CantDoThat title={CANT_DO_TITLE.methods} body={PASSWORD_HAS_TOTP_MESSAGE} from={PASSWORD_HAS_TOTP_CODE} onClose={() => setKeepsPassword(false)} />
       ) : null}

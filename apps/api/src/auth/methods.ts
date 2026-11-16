@@ -12,7 +12,7 @@
  *   for the owner two attested security keys and a PGP key, for staff a valid pair (`removeMethod`);
  *   for staff and the owner only PGP keys usable now count (a revoked or expired key logs in no one).
  */
-import { inspectPublicKey, partnerNeededBy, type AccountKind, type MethodType } from '@x2f/accounts';
+import { inspectPublicKey, partnerNeededBy, passwordAlone, type AccountKind, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
@@ -347,7 +347,8 @@ async function deleteMethod(db: Queryable, accountId: string, type: MethodType, 
  * only), in one transaction with the account row locked, so two parallel removals cannot both pass
  * the minimum. In order: 404 `not-found` (unknown type or id, another account's method); 409
  * `last-login-method` when what is left would not log in (`leavesLogin`); 409 `password-has-totp`
- * for the password while TOTP is enrolled (owner, 16 Nov 2026); then the body's
+ * for the password while TOTP is enrolled, and 409 `password-alone` when a password would be left
+ * alone (owner, 16 Nov 2026); then the body's
  * `confirmToken` is redeemed for exactly `{ kind: 'remove-method', method: type, id }` (403
  * `confirm-required` / `confirm-invalid`). A refusal before that point leaves the token unused.
  * Then the method is deleted, alert `login-method-removed` `{ method, label }`, every other session
@@ -394,7 +395,8 @@ export async function removeMethod(
 /**
  * With the account row locked: the method, or 404 `not-found` (unknown type or id, another
  * account's method); 409 `last-login-method` when what is left would not log in (`leavesLogin`);
- * 409 `password-has-totp` for the password while TOTP is enrolled (owner, 16 Nov 2026).
+ * 409 `password-has-totp` for the password while TOTP is enrolled, and 409 `password-alone` when
+ * what is left is a password with neither TOTP nor a method that stands alone (owner, 16 Nov 2026).
  */
 async function removable(db: Queryable, config: Config, accountId: string, type: string, id: string, now: Date) {
   const acct = await db.query<{ kind: AccountKind; account_type: string }>('select kind, account_type from accounts where id = $1 for update', [accountId]);
@@ -419,6 +421,15 @@ async function removable(db: Queryable, config: Config, accountId: string, type:
   // enrolment's write (totp.ts `assertPasswordForTotp`).
   const { rows: totp } = await db.query(EXISTS.totp, [accountId]);
   if (partnerNeededBy(found.type, totp.length > 0 ? ['totp'] : []) !== null) throw new ApiError(409, 'password-has-totp');
+  // Owner, 16 Nov 2026: a password does not stand alone. What is left may not be a password with
+  // neither TOTP nor a PGP key, passkey or security key (409 `password-alone`).
+  const left: MethodType[] = [];
+  if (after.pgp > 0) left.push('pgp');
+  if (after.passkeys > 0) left.push('passkey');
+  if (after.keys > 0) left.push('security-key');
+  if (after.password > 0) left.push('password');
+  if (totp.length > 0 && found.type !== 'totp') left.push('totp');
+  if (passwordAlone(left)) throw new ApiError(409, 'password-alone');
   return found;
 }
 

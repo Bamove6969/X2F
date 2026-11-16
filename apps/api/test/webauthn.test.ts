@@ -864,7 +864,7 @@ describe('confirm and adding a credential', () => {
     expect(start.statusCode).toBe(200);
     const { challengeId, options } = start.json();
     expect(options.excludeCredentials.map((c: { id: string }) => c.id)).toEqual([t.auth.credentialId]);
-    const second = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    const second = createSoftAuthenticator({ backedUp: false, userVerified: true }); // owner 16 Nov 2026: a security key verifies its user (PIN)
     const fin = await t.b.post('/v1/account/webauthn/finish', { challengeId, response: second.register(options, ORIGIN), label: 'Spare' });
     expect(fin.statusCode).toBe(201);
     const { rows } = await deps.db.query('select label from webauthn_credentials where account_id = $1 order by created_at', [t.accountId]);
@@ -1056,7 +1056,7 @@ describe('review fixes', () => {
     const { challengeId, options } = start.json();
     // Another key reaches the table before this ceremony finishes: the finish is refused too.
     await insertCredential(t.accountId, withIdLength(64), 'security-key', false);
-    const fifth = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    const fifth = createSoftAuthenticator({ backedUp: false, userVerified: true }); // owner 16 Nov 2026: a security key verifies its user (PIN)
     const fin = await t.b.post('/v1/account/webauthn/finish', { challengeId, response: fifth.register(options, ORIGIN), label: 'Sixth' });
     expect(fin.statusCode).toBe(409);
     expect(errorOf(fin)).toBe('security-key-limit');
