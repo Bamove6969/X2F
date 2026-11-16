@@ -40,7 +40,7 @@ const LABEL = 'Browser on Linux';
  * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
  * apps/web/src/screens/account/AccountFrozen.tsx; S-093: a block row's note, apps/web/src/screens/settings/blockApi.ts;
  * P-012/P-013: the blur check, apps/web/src/api/blurCheck.ts; sign-up v2, 12 Nov 2026: X2F's signing key as a
- * file to import, a plain download link on the PGP code step). Any other new route still needs a client method.
+ * file to import, a plain download link on the PGP code step; D-005: My trades, apps/web/src/screens/trades/api.ts). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
@@ -70,6 +70,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/reviews/pending',
   'GET /v1/site',
   'GET /v1/team/permissions',
+  'GET /v1/trades',
   'GET /v1/trades/:code',
   'GET /v1/trades/:code/attestation',
   'GET /v1/trades/:code/blur-checks',
