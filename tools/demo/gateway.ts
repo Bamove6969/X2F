@@ -14,7 +14,7 @@ import { createCodesHandler } from './codes-page.js';
 import { createDoor } from './door.js';
 import { createGateway, type Route } from './gateway-core.js';
 import { assertDemo } from './guard.js';
-import { createNotesHandler, notesFiles } from './notes-server.js';
+import { createNotesHandler, loadSeed, notesFiles } from './notes-server.js';
 import { isPrivateIpv4 } from './phone.js';
 import { restartTs } from './procs.js';
 import { adoptedApiEnv, createAdopter } from './rp-adopt.js';
@@ -48,10 +48,14 @@ function isTailscaleIp(ip: string): boolean {
   return m !== null && Number(m[1]) >= 64 && Number(m[1]) <= 127 && Number(m[2]) <= 255 && Number(m[3]) <= 255;
 }
 
+const notesAt = notesFiles(process.env);
+const notesSeed = loadSeed({ seedPath: notesAt.seed });
+console.log(JSON.stringify({ reason: 'notes-numbering', ok: notesSeed.ok, source: notesSeed.source, after: notesSeed.max, files: notesSeed.files, problems: notesSeed.problems }));
 const notes = createNotesHandler({
-  files: notesFiles(process.env),
+  files: notesAt,
   origins: ORIGINS,
   clientJs: readFileSync(new URL('./notes.js', import.meta.url)),
+  seed: notesSeed,
 });
 // The seeded accounts' authenticator codes as a page (codes-page.ts), for a phone.
 const codes = createCodesHandler({ origins: ORIGINS, secrets: readTotpSecrets });

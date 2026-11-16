@@ -132,7 +132,7 @@ Everything is kept next to each other, outside `.demo/`, so a demo restart does 
 
 | File in `~/x2f-comms/` | What |
 | --- | --- |
-| `demo-notes.jsonl` | Comments, and follow-ups (those have `parentId`) |
+| `demo-notes.jsonl` | Comments (with their `number`), and follow-ups (those have `parentId`) |
 | `demo-replies.jsonl` | Replies, by `noteId` |
 | `demo-resolved.jsonl` | Resolved threads, by `noteId` |
 
@@ -143,6 +143,22 @@ npm run demo:reply <comment id> "Thanks, changing it"
 ```
 
 The page picks it up within 15 seconds. `DEMO_NOTES_FILE` moves the three files.
+
+**One running number.** Comments are numbered in one count across every screen and every demo
+session, continuing after the owner's earlier notes: on start the gateway reads every
+`owner-demo-notes-*.jsonl` on `origin/comms` (or a local `comms` branch) with `git show`, read only
+and with no network, counting them the way the team does (12 Nov is 1-48, 13 Nov is 49-91), so the
+next comment is 92. `DEMO_NOTES_SEED` (comma-separated `.jsonl` files, or folders whose
+`owner-demo-notes-*.jsonl` are read) is used instead of comms when set. If neither can be read,
+numbering continues after the highest number in `demo-notes.jsonl`, and the start-up output says so
+(the `Comments:` line; run `git fetch origin comms` and restart to fix it). Each comment's number is
+saved in its line the moment it is written, so it never changes; follow-ups carry
+`"kind":"follow-up"` and take no number.
+
+**Download my notes** (next to **Comment**) saves one file, `owner-demo-notes-<date>.jsonl`:
+every comment with its number, every follow-up, then the replies (`"kind":"reply"`) and resolved
+threads (`"kind":"resolved"`). Put it on `comms` as it is; it seeds the same numbers again.
+`GET /__demo/notes/download` is same-origin only (another port on this machine is refused too).
 
 A comment records the text, the screen (path, short hash, `data-screen`), the viewport, the tap as
 pixels and percent, a CSS-style path of the tapped element and up to 120 characters of its visible

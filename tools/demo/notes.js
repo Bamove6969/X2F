@@ -147,12 +147,6 @@
     a.click();
     root.removeChild(a);
   }
-  function makeDownloadBtn() {
-    // COPY-UNSIGNED
-    var b = button('Download my notes');
-    b.addEventListener('click', function (e) { e.stopPropagation(); downloadNotes(); });
-    return b;
-  }
 
   // ── the Comment and Download buttons ──────────────────────────────────────────────────────────
   // A 44 px touch area (the button) around a 36 px pill (its label), top-right, clear of the header actions.
@@ -204,27 +198,36 @@
     var n = underPoint(x, y);
     return !!(n && n.closest && n.closest(TAPPABLE));
   }
-  /** Sits at the top-right, moved down past any header action it would cover (never past a quarter of the screen). */
+  /** The Download button beside the Comment button: to its left, or to its right when there is no room. */
+  function placeDownload(left, top, w, topCss) {
+    var dw = downloadBtn.offsetWidth || 148;
+    var x = left - 6 - dw >= 0 ? left - 6 - dw : Math.min(window.innerWidth - dw, left + w + 6);
+    css(downloadBtn, { left: x + 'px', right: 'auto', top: topCss || top + 'px' });
+  }
+  function rowCovers(x0, x1, top, ht) {
+    var y0 = top + 4;
+    var y1 = top + ht - 4;
+    for (var x = x0 + 4; x < x1; x += 24) if (tappableAt(x, y0) || tappableAt(x, y1) || tappableAt(x, top + ht / 2)) return true;
+    return tappableAt(x1 - 4, y0) || tappableAt(x1 - 4, y1);
+  }
+  /** Both sit at the top-right, moved down past any header action they would cover (never past a quarter of the screen). */
   function placeButton() {
     var w = commentBtn.offsetWidth || 96;
     var ht = commentBtn.offsetHeight || 44;
+    var dw = downloadBtn.offsetWidth || 148;
     if (moved) {
       var p = clampPos(moved);
       css(commentBtn, { left: p.left + 'px', top: p.top + 'px', right: 'auto' });
-      css(downloadBtn, { left: Math.max(8, p.left - (downloadBtn.offsetWidth || 148) - 6) + 'px', top: p.top + 'px', right: 'auto' });
+      placeDownload(p.left, p.top, w);
       return;
     }
     var left = Math.max(0, window.innerWidth - 8 - w);
     var top = 8;
     var limit = Math.max(8, Math.min(window.innerHeight * 0.25, window.innerHeight - ht - 8));
-    for (; top < limit; top += 8) {
-      var y0 = top + 4;
-      var y1 = top + ht - 4;
-      if (!(tappableAt(left + 4, y0) || tappableAt(left + w - 4, y0) || tappableAt(left + 4, y1) || tappableAt(left + w - 4, y1) || tappableAt(left + w / 2, top + ht / 2))) break;
-    }
+    for (; top < limit; top += 8) if (!rowCovers(Math.max(0, left - 6 - dw), left + w, top, ht)) break;
     var topCss = 'calc(' + top + 'px + env(safe-area-inset-top, 0px))';
     css(commentBtn, { right: '8px', left: 'auto', top: topCss });
-    css(downloadBtn, { right: (w + 14) + 'px', left: 'auto', top: topCss });
+    placeDownload(left, top, w, topCss);
   }
 
   var drag = null;
@@ -242,6 +245,7 @@
     dragged = true;
     moved = clampPos({ left: e.clientX - drag.dx, top: e.clientY - drag.dy });
     css(commentBtn, { left: moved.left + 'px', top: moved.top + 'px', right: 'auto' });
+    placeDownload(moved.left, moved.top, commentBtn.offsetWidth || 96);
   });
   function endDrag() {
     if (drag && drag.on && moved) store.set('x2f-demo-comment-pos2', JSON.stringify(moved));
@@ -286,16 +290,13 @@
     downloadBtn.style.display = 'none';
     var overlay = make('div', { position: 'fixed', inset: '0', pointerEvents: 'auto', background: 'rgba(0,0,0,.28)', cursor: 'crosshair', touchAction: 'manipulation' });
     var banner = make('div', {
-      position: 'fixed', top: 'calc(10px + env(safe-area-inset-top, 0px))', left: '12px', right: '12px', maxWidth: '480px', margin: '0 auto',
-      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '8px', pointerEvents: 'auto',
+      position: 'fixed', top: 'calc(10px + env(safe-area-inset-top, 0px))', left: '12px', right: '12px', maxWidth: '420px', margin: '0 auto',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', pointerEvents: 'auto',
       background: PANEL, color: INK, border: '1px solid ' + LINE, borderRadius: '12px', padding: '8px 8px 8px 14px', font: '600 16px ' + FONT,
     });
     banner.appendChild(make('span', {}, 'Tap the spot you mean'));
-    var actions = make('div', { display: 'flex', gap: '8px', alignItems: 'center' });
-    actions.appendChild(makeDownloadBtn());
     var cancel = button('Cancel');
-    actions.appendChild(cancel);
-    banner.appendChild(actions);
+    banner.appendChild(cancel);
     cancel.addEventListener('click', function (e) { e.stopPropagation(); stopPicking(); });
     overlay.addEventListener('click', function (e) {
       e.preventDefault();
@@ -518,10 +519,11 @@
   function drawPins() {
     pinsLayer.textContent = '';
     pins = [];
-    notes.forEach(function (n, i) {
+    notes.forEach(function (n) {
       if (n.resolved) return;
       var p = pinPoint(n);
-      var number = typeof n.number === 'number' ? n.number : i + 1;
+      // One running number across screens and sessions, given by the gateway (notes-server.ts).
+      var number = n.number;
       var pin = dot(String(number), p.x, p.y);
       pin.style.pointerEvents = 'auto';
       pin.style.cursor = 'pointer';
