@@ -92,15 +92,15 @@ Escrow setup and signals (`trade.terms`, `trade.paid`, `trade.cancel`, and so on
 ### 3.3 How a payout is built and checked
 
 1. Each party reads the escrow's balance itself and acts only when the whole balance is unlocked (balance = unlocked).
-2. Every party computes the payout list with the same pure function (`payoutsFor`), from the attested deal, the addresses signed in `trade.terms`, the fee wallet built into the app, and that balance. The list always sweeps the whole balance. Output 0 bears the network fee. On a release, the fee output is exactly 1% of the trade. Cancels and refunds have no fee output: every refund sweeps the whole balance to the seller. Of the planned dispute payouts, the one a seller wins on a buyer's ad has no fee output either. Any surplus goes to the seller.
-3. A trader app settles only an outcome whose payout list is exactly one of the shapes its role may settle (`cosignPolicy`): same order, same addresses, same amounts.
+2. Every party computes the payout list with the same pure function (`payoutsFor`), from the attested deal, the addresses signed in `trade.terms`, the fee wallet built into the app, and that balance. The list always sweeps the whole balance. On a release (and a ruling that completes the trade), the buyer's output and the fee output are marked as bearing the network fee: the payout's network fee is shared by its receiving outputs, one equal share per output (owner, 16 Nov 2026), and any surplus output to the seller pays none of it. Every other list has one output, which bears the whole fee. On a release, the fee output is 1% of the trade before its share of the network fee. Cancels and refunds have no fee output: every refund sweeps the whole balance to the seller. Of the planned dispute payouts, the one a seller wins on a buyer's ad has no fee output either. Any surplus goes to the seller.
+3. A trader app settles only an outcome whose payout list is exactly one of the shapes its role may settle (`cosignPolicy`): same order, same addresses, same amounts, same outputs bearing the network fee.
 4. The builder makes the multisig transaction set. Before signing, the co-signer decodes it and checks it with `checkTxSet`. It fails closed unless all of these hold:
    - the set holds exactly one transaction;
    - there is **no change output**, because change could hide a payment to the builder;
    - the unlock time is zero;
    - the network fee is above 0 and at most 0.01 XMR;
    - the inputs equal the escrow balance;
-   - the outputs are exactly the expected addresses with exactly the expected amounts, output 0 short by exactly the fee;
+   - the outputs are exactly the expected addresses with exactly the expected amounts, each fee-bearing output short by exactly its share of the fee and every other output exact. The shares are Monero wallet2's split for `subtract_fee_from_outputs` (`networkFeeShares`): each bearer pays floor(fee / n) and the first `fee mod n` bearers in wallet2's pay order one atomic unit more; the builder hands wallet2 the outputs in an order (`feeSplitLayout`) in which that first bearer is the buyer's output, so on a release the buyer takes an odd unit (the fee is quantized, so in practice it is even);
    - inputs = outputs + fee.
 
    Nothing is signed if any check fails.
