@@ -201,6 +201,10 @@
   .x2f-tour__card {
     transition: transform 340ms var(--x2f-tour-ease-out);
   }
+  /* The hole (the dim path's CSS d, TourProvider.tsx) moves with the ring; Safari snaps it (review M1). */
+  .x2f-tour__dim {
+    transition: d 250ms var(--x2f-tour-ease-out);
+  }
   .x2f-tour__ring {
     transition:
       x 250ms var(--x2f-tour-ease-out),

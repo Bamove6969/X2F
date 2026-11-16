@@ -23,7 +23,7 @@
  *
  * DESIGNER-REVIEW: built from design's spec and prototype; design to check it against the boards.
  */
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { TOUR_LABELS, backPos, indexOf, nextLabel, nextPos, posOf, progressOf, resolvePath, stepAt, type TourDef, type TourPos, type TourStep } from './engine.js';
@@ -413,6 +413,7 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
   let arrow: { d: string; head: string } | null = null;
   const ar = anchorRect;
   const hole = where === 'center' ? null : rect;
+  const dim = dimPath(vw, vh, hole);
   if (ar !== null && where !== 'center') {
     if (side) {
       cardX = Math.round(Math.min(vw - cardWidth - 12, ar.x + ar.w + SIDE_GAP));
@@ -454,8 +455,17 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
         {/*
           The dim with its hole, without an SVG mask (a mask needs url(), which the proof-image
           tripwire bans from code): one even-odd path, the screen with the hole's rounded rect cut out.
+          Its shape is also set as CSS `d`, which tour.css transitions like the ring's x, y, width and
+          height, and it is keyed like the ring, so the hole and the ring glide together (review M1).
         */}
-        <path className="x2f-tour__dim" fillRule="evenodd" d={dimPath(vw, vh, hole)} />
+        <path
+          key={hole === null ? 'dim' : `dim-${shownKey}-${alt}`}
+          className="x2f-tour__dim"
+          data-part="tour-dim"
+          fillRule="evenodd"
+          d={dim}
+          style={{ d: `path("${dim}")` } as CSSProperties}
+        />
         {hole !== null ? (
           <rect
             key={`ring-${shownKey}-${alt}`}
