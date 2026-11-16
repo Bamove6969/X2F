@@ -5,17 +5,24 @@
  * demo-notes.jsonl (comments and follow-ups), demo-replies.jsonl (the lead's replies, written only
  * by the local `npm run demo:reply`, never over HTTP) and demo-resolved.jsonl (resolved threads).
  */
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { forwardedHttps, isSelfOrigin } from './self-origin.js';
+
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 export interface NotesFiles {
   notes: string;
   replies: string;
   resolved: string;
+  /** Optional read-only seed path(s) (DEMO_NOTES_SEED) for continuous comment numbering. */
+  seed?: string;
 }
 
 export interface NotesConfig {
@@ -62,7 +69,12 @@ const SHORT_HASH = /^#[A-Za-z0-9_-]{1,31}$/;
 
 export function notesFiles(env: Record<string, string | undefined>): NotesFiles {
   const notes = env.DEMO_NOTES_FILE || join(homedir(), 'x2f-comms', 'demo-notes.jsonl');
-  return { notes, replies: join(dirname(notes), 'demo-replies.jsonl'), resolved: join(dirname(notes), 'demo-resolved.jsonl') };
+  return {
+    notes,
+    replies: join(dirname(notes), 'demo-replies.jsonl'),
+    resolved: join(dirname(notes), 'demo-resolved.jsonl'),
+    ...(env.DEMO_NOTES_SEED !== undefined ? { seed: env.DEMO_NOTES_SEED } : {}),
+  };
 }
 
 /** Anything that looks like an address, key or code does not belong in a description of a tap. */
@@ -149,8 +161,110 @@ async function readLines<T>(file: string): Promise<T[]> {
 }
 
 async function appendLine(file: string, value: unknown): Promise<void> {
-  await mkdir(dirname(file), { recursive: true });
-  await appendFile(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  mkdirSync(dirname(file), { recursive: true });
+  const fd = openSync(file, 'a', 0o600);
+  try {
+    writeFileSync(fd, `${JSON.stringify(value)}\n`, 'utf8');
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function addSeedText(text: string, map: Map<string, number>): void {
+  let anon = 0;
+  for (const raw of text.split('\n')) {
+    const l = raw.trim();
+    if (l === '') continue;
+    try {
+      const parsed = JSON.parse(l) as { id?: unknown };
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
+      const id = typeof parsed.id === 'string' && parsed.id.length > 0 ? parsed.id : `__seed_${map.size}_${++anon}`;
+      if (!map.has(id)) {
+        map.set(id, map.size + 1);
+      }
+    } catch {
+      // A line somebody edited badly must not take the whole list down.
+    }
+  }
+}
+
+let cachedCommsSeed: ReadonlyMap<string, number> | null = null;
+
+/**
+ * Loads earlier owner demo notes into the numbering (read-only), either from DEMO_NOTES_SEED
+ * (comma- or colon-separated file/directory/glob paths) or from git `origin/comms:owner-demo-notes-*.jsonl`.
+ */
+export function loadSeedNumbers(seedPath?: string): ReadonlyMap<string, number> {
+  if (seedPath !== undefined) {
+    const map = new Map<string, number>();
+    const entries = seedPath
+      .split(/[,:]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    for (const entry of entries) {
+      try {
+        if (entry.includes('*')) {
+          const dir = dirname(entry);
+          const pattern = new RegExp(`^${basename(entry).replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
+          const names = readdirSync(dir).filter((n) => pattern.test(n)).sort();
+          for (const name of names) addSeedText(readFileSync(join(dir, name), 'utf8'), map);
+        } else {
+          const st = statSync(entry);
+          if (st.isDirectory()) {
+            const names = readdirSync(entry).filter((n) => n.endsWith('.jsonl')).sort();
+            for (const name of names) addSeedText(readFileSync(join(entry, name), 'utf8'), map);
+          } else if (st.isFile()) {
+            addSeedText(readFileSync(entry, 'utf8'), map);
+          }
+        }
+      } catch {
+        // Missing or unreadable seed path does not crash the server.
+      }
+    }
+    return map;
+  }
+  if (cachedCommsSeed !== null) return cachedCommsSeed;
+  const map = new Map<string, number>();
+  for (const ref of ['origin/comms', 'comms']) {
+    try {
+      const tree = execFileSync('git', ['-C', REPO_ROOT, 'ls-tree', '--name-only', ref], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const files = tree
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => /^owner-demo-notes-.*\.jsonl$/.test(s))
+        .sort();
+      if (files.length === 0) continue;
+      for (const file of files) {
+        const text = execFileSync('git', ['-C', REPO_ROOT, 'show', `${ref}:${file}`], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        addSeedText(text, map);
+      }
+      break;
+    } catch {
+      // Ref not available in this checkout.
+    }
+  }
+  cachedCommsSeed = map;
+  return map;
+}
+
+function numberNotes(notes: NoteLine[], seed: ReadonlyMap<string, number>): Map<string, number> {
+  const out = new Map<string, number>(seed);
+  let next = out.size;
+  for (const n of notes) {
+    if (out.has(n.id)) continue;
+    if (n.parentId === undefined) {
+      next += 1;
+      out.set(n.id, next);
+    }
+  }
+  return out;
 }
 
 const newId = (): string => randomUUID();
@@ -186,6 +300,7 @@ export interface ThreadEntry {
 
 export interface ThreadView {
   id: string;
+  number: number;
   time: string;
   text: string;
   xPercent: number;
@@ -198,12 +313,17 @@ export interface ThreadView {
 }
 
 /** The threads of one screen (pathname + hash), oldest first. */
-export async function threadsFor(files: NotesFiles, path: string): Promise<ThreadView[]> {
+export async function threadsFor(
+  files: NotesFiles,
+  path: string,
+  seed: ReadonlyMap<string, number> = loadSeedNumbers(files.seed),
+): Promise<ThreadView[]> {
   const [notes, replies, resolved] = await Promise.all([
     readLines<NoteLine>(files.notes),
     readLines<ReplyLine>(files.replies),
     readLines<{ noteId: string }>(files.resolved),
   ]);
+  const numbers = numberNotes(notes, seed);
   const done = new Set(resolved.map((r) => r.noteId));
   return notes
     .filter((n) => n.parentId === undefined && `${n.pathname ?? ''}${n.hash ?? ''}` === path)
@@ -215,6 +335,7 @@ export async function threadsFor(files: NotesFiles, path: string): Promise<Threa
       ].sort((a, b) => a.time.localeCompare(b.time));
       return {
         id: n.id,
+        number: numbers.get(n.id) ?? 1,
         time: n.time,
         text: n.text,
         xPercent: n.xPercent ?? 50,
@@ -259,6 +380,7 @@ export function createNotesHandler(cfg: NotesConfig): (req: IncomingMessage, res
   const hosts = new Set([...cfg.origins].map((o) => new URL(o).host));
   const rateMax = cfg.rateMax ?? 30;
   const rateWindow = cfg.rateWindowMs ?? 60_000;
+  const seed = loadSeedNumbers(cfg.files.seed ?? process.env.DEMO_NOTES_SEED);
   let writes: number[] = [];
 
   /** One of the demo's hosts, or a request through an https front (self-origin.ts: a preview pane, a tunnel). */
@@ -301,14 +423,20 @@ export function createNotesHandler(cfg: NotesConfig): (req: IncomingMessage, res
     if (body === null) return;
     const parsed = parseNote(body);
     if (!parsed.ok) return send(res, 400, { error: `demo-notes-${parsed.reason}` });
+    const existing = await readLines<NoteLine>(cfg.files.notes);
     if (parsed.line.parentId !== undefined) {
-      const parent = rootOf(await readLines<NoteLine>(cfg.files.notes), parsed.line.parentId);
+      const parent = rootOf(existing, parsed.line.parentId);
       if (parent === null) return send(res, 404, { error: 'demo-notes-no-such-thread' });
       parsed.line.parentId = parent.id;
     }
     const line: NoteLine = { id: newId(), time: stamp(now), ...parsed.line };
     await appendLine(cfg.files.notes, line);
-    send(res, 201, { ok: true, id: line.id });
+    const numbers = numberNotes([...existing, line], seed);
+    send(res, 201, {
+      ok: true,
+      id: line.id,
+      ...(line.parentId === undefined ? { number: numbers.get(line.id) } : {}),
+    });
   }
 
   async function postResolve(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -327,7 +455,29 @@ export function createNotesHandler(cfg: NotesConfig): (req: IncomingMessage, res
     if (req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, { error: 'demo-notes-origin' });
     const path = url.searchParams.get('path');
     if (path === null || path.length > 600) return send(res, 400, { error: 'demo-notes-bad-path' });
-    send(res, 200, { notes: await threadsFor(cfg.files, path) });
+    send(res, 200, { notes: await threadsFor(cfg.files, path, seed) });
+  }
+
+  async function downloadNotes(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.headers.origin !== undefined && !originAllowed(req)) return send(res, 403, { error: 'demo-notes-origin' });
+    if (req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, { error: 'demo-notes-origin' });
+    let raw = '';
+    try {
+      raw = await readFile(cfg.files.notes, 'utf8');
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    }
+    const body = Buffer.from(raw, 'utf8');
+    const date = stamp(now).slice(0, 10);
+    res.writeHead(200, {
+      'content-type': 'application/x-ndjson; charset=utf-8',
+      'content-length': body.length,
+      'content-disposition': `attachment; filename="owner-demo-notes-${date}.jsonl"`,
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      'cross-origin-resource-policy': 'same-origin',
+    });
+    res.end(req.method === 'HEAD' ? undefined : body);
   }
 
   return (req, res) => {
@@ -351,8 +501,15 @@ export function createNotesHandler(cfg: NotesConfig): (req: IncomingMessage, res
       res.end(req.method === 'HEAD' ? undefined : cfg.clientJs);
       return;
     }
+    if (url.pathname === '/__demo/notes/download') {
+      if (req.method === 'GET' || req.method === 'HEAD') return done(downloadNotes(req, res));
+      return send(res, 405, { error: 'demo-notes-method' });
+    }
     if (url.pathname === '/__demo/notes') {
-      if (req.method === 'GET') return done(getNotes(req, res, url));
+      if (req.method === 'GET') {
+        if (url.searchParams.get('download') === '1') return done(downloadNotes(req, res));
+        return done(getNotes(req, res, url));
+      }
       if (req.method === 'POST') return done(postNote(req, res));
       return send(res, 405, { error: 'demo-notes-method' });
     }

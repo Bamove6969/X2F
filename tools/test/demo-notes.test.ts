@@ -425,3 +425,97 @@ describe('demo gateway: the door for the seeded accounts (door.ts)', () => {
     expect(passwordSteps).toEqual([]);
   });
 });
+
+describe('comment numbering continuity and note download', () => {
+  it('loads origin/comms owner-demo-notes-*.jsonl on start (read-only) so fresh demo notes start at 92+ across screens', async () => {
+    await start();
+    const r1 = await post(NOTE);
+    expect(r1.status).toBe(201);
+    const body1 = (await r1.json()) as { ok: boolean; id: string; number: number };
+    expect(body1.number).toBeGreaterThanOrEqual(92);
+
+    // Follow-up in the same thread does not consume a pin number.
+    expect((await post({ text: 'follow-up', parentId: body1.id })).status).toBe(201);
+
+    // Second note on another screen continues the sequence instead of restarting at 1.
+    const r2 = await post({ ...NOTE, pathname: '/sell', hash: '', text: 'second screen note' });
+    expect(r2.status).toBe(201);
+    const body2 = (await r2.json()) as { ok: boolean; id: string; number: number };
+    expect(body2.number).toBe(body1.number + 1);
+
+    const screen1 = (await (await fetch(`${base}/__demo/notes?path=${encodeURIComponent('/trade/AB12#chat')}`)).json()) as {
+      notes: { id: string; number: number; text: string }[];
+    };
+    expect(screen1.notes).toHaveLength(1);
+    expect(screen1.notes[0]!.number).toBe(body1.number);
+
+    const screen2 = (await (await fetch(`${base}/__demo/notes?path=${encodeURIComponent('/sell')}`)).json()) as {
+      notes: { id: string; number: number; text: string }[];
+    };
+    expect(screen2.notes).toHaveLength(1);
+    expect(screen2.notes[0]!.number).toBe(body2.number);
+
+    // Seed notes stay read-only and are not written to files.notes.
+    const saved = await lines(files.notes);
+    expect(saved).toHaveLength(3);
+  });
+
+  it('loads DEMO_NOTES_SEED paths (read-only, deduplicated by id) into the numbering', async () => {
+    const seedA = join(dir, 'seed-a.jsonl');
+    const seedB = join(dir, 'seed-b.jsonl');
+    const sharedId = '11111111-1111-4111-8111-111111111111';
+    await writeFile(
+      seedA,
+      [
+        JSON.stringify({ id: sharedId, time: '2026-11-12T00:00:00.000Z', text: 'n1', pathname: '/setup' }),
+        JSON.stringify({ id: '22222222-2222-4222-8222-222222222222', time: '2026-11-12T00:01:00.000Z', text: 'n2', pathname: '/setup' }),
+      ].join('\n') + '\n',
+    );
+    await writeFile(
+      seedB,
+      [
+        // Duplicate of sharedId from seedA must not be double-counted.
+        JSON.stringify({ id: sharedId, time: '2026-11-12T00:00:00.000Z', text: 'n1', pathname: '/setup' }),
+        JSON.stringify({ id: '33333333-3333-4333-8333-333333333333', time: '2026-11-13T00:00:00.000Z', text: 'n3', pathname: '/setup' }),
+      ].join('\n') + '\n',
+    );
+    files = notesFiles({
+      DEMO_NOTES_FILE: join(dir, 'sub', 'demo-notes.jsonl'),
+      DEMO_NOTES_SEED: `${seedA},${seedB}`,
+    });
+    await start();
+
+    const r1 = await post(NOTE);
+    const b1 = (await r1.json()) as { id: string; number: number };
+    expect(b1.number).toBe(4);
+
+    // Resolving note 4 keeps subsequent note numbering at 5.
+    expect((await post({ id: b1.id }, {}, '/__demo/notes/resolve')).status).toBe(200);
+    const r2 = await post({ ...NOTE, text: 'after resolve' });
+    const b2 = (await r2.json()) as { id: string; number: number };
+    expect(b2.number).toBe(5);
+  });
+
+  it('serves GET /__demo/notes/download as a same-origin JSONL attachment and exposes Download my notes in notes.js', async () => {
+    await start();
+    await post(NOTE);
+    await post({ ...NOTE, text: 'second comment' });
+
+    // Cross-site and foreign-origin downloads are refused.
+    expect((await fetch(`${base}/__demo/notes/download`, { headers: { origin: 'https://evil.example' } })).status).toBe(403);
+    expect((await fetch(`${base}/__demo/notes/download`, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403);
+
+    const dl = await fetch(`${base}/__demo/notes/download`, { headers: { origin: base } });
+    expect(dl.status).toBe(200);
+    expect(dl.headers.get('content-disposition')).toMatch(/^attachment; filename="owner-demo-notes-\d{4}-\d{2}-\d{2}\.jsonl"$/);
+    expect(dl.headers.get('x-content-type-options')).toBe('nosniff');
+    const downloadedLines = (await dl.text()).trim().split('\n').map((l) => JSON.parse(l) as { text: string });
+    expect(downloadedLines.map((l) => l.text)).toEqual([NOTE.text, 'second comment']);
+
+    const clientScript = await readFile(new URL('../demo/notes.js', import.meta.url), 'utf8');
+    expect(clientScript).toContain('Download my notes');
+    expect(clientScript).toContain("API + '/download'");
+    expect(clientScript).toContain('n.number');
+  });
+});
+

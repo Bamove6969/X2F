@@ -139,8 +139,22 @@
     return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), credentials: 'omit' })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); });
   }
+  function downloadNotes() {
+    var a = make('a', { display: 'none' });
+    a.href = API + '/download';
+    a.download = 'owner-demo-notes-' + new Date().toISOString().slice(0, 10) + '.jsonl';
+    root.appendChild(a);
+    a.click();
+    root.removeChild(a);
+  }
+  function makeDownloadBtn() {
+    // COPY-UNSIGNED
+    var b = button('Download my notes');
+    b.addEventListener('click', function (e) { e.stopPropagation(); downloadNotes(); });
+    return b;
+  }
 
-  // ── the Comment button ────────────────────────────────────────────────────────────────────────
+  // ── the Comment and Download buttons ──────────────────────────────────────────────────────────
   // A 44 px touch area (the button) around a 36 px pill (its label), top-right, clear of the header actions.
   var commentBtn = make('button', {
     position: 'fixed', pointerEvents: 'auto', touchAction: 'none', cursor: 'pointer', boxSizing: 'border-box',
@@ -155,6 +169,23 @@
   commentBtn.appendChild(pill);
   commentBtn.setAttribute('aria-label', 'Leave a comment on this screen');
   root.appendChild(commentBtn);
+
+  var downloadBtn = make('button', {
+    position: 'fixed', pointerEvents: 'auto', touchAction: 'manipulation', cursor: 'pointer', boxSizing: 'border-box',
+    height: '44px', minWidth: '44px', padding: '4px 0', margin: '0', border: '0', background: 'transparent',
+    right: '96px', top: 'calc(8px + env(safe-area-inset-top, 0px))',
+  });
+  downloadBtn.type = 'button';
+  // COPY-UNSIGNED
+  var downloadPill = make('span', {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', height: '36px', padding: '0 12px', borderRadius: '18px',
+    background: PANEL, color: INK, border: '1px solid ' + LINE, font: '600 13px ' + FONT, boxShadow: '0 2px 8px rgba(0,0,0,.45)', pointerEvents: 'none',
+  }, 'Download my notes');
+  downloadBtn.appendChild(downloadPill);
+  // COPY-UNSIGNED
+  downloadBtn.setAttribute('aria-label', 'Download my notes');
+  downloadBtn.addEventListener('click', function (e) { e.stopPropagation(); downloadNotes(); });
+  root.appendChild(downloadBtn);
 
   var moved = null;
   try { moved = JSON.parse(store.get('x2f-demo-comment-pos2') || 'null'); } catch (e) { moved = null; }
@@ -175,13 +206,14 @@
   }
   /** Sits at the top-right, moved down past any header action it would cover (never past a quarter of the screen). */
   function placeButton() {
+    var w = commentBtn.offsetWidth || 96;
+    var ht = commentBtn.offsetHeight || 44;
     if (moved) {
       var p = clampPos(moved);
       css(commentBtn, { left: p.left + 'px', top: p.top + 'px', right: 'auto' });
+      css(downloadBtn, { left: Math.max(8, p.left - (downloadBtn.offsetWidth || 148) - 6) + 'px', top: p.top + 'px', right: 'auto' });
       return;
     }
-    var w = commentBtn.offsetWidth || 96;
-    var ht = commentBtn.offsetHeight || 44;
     var left = Math.max(0, window.innerWidth - 8 - w);
     var top = 8;
     var limit = Math.max(8, Math.min(window.innerHeight * 0.25, window.innerHeight - ht - 8));
@@ -190,7 +222,9 @@
       var y1 = top + ht - 4;
       if (!(tappableAt(left + 4, y0) || tappableAt(left + w - 4, y0) || tappableAt(left + 4, y1) || tappableAt(left + w - 4, y1) || tappableAt(left + w / 2, top + ht / 2))) break;
     }
-    css(commentBtn, { right: '8px', left: 'auto', top: 'calc(' + top + 'px + env(safe-area-inset-top, 0px))' });
+    var topCss = 'calc(' + top + 'px + env(safe-area-inset-top, 0px))';
+    css(commentBtn, { right: '8px', left: 'auto', top: topCss });
+    css(downloadBtn, { right: (w + 14) + 'px', left: 'auto', top: topCss });
   }
 
   var drag = null;
@@ -244,19 +278,24 @@
     document.removeEventListener('keydown', picking.onKey, true);
     picking = null;
     commentBtn.style.display = '';
+    downloadBtn.style.display = '';
   }
   function startPicking() {
     closeBox();
     commentBtn.style.display = 'none';
+    downloadBtn.style.display = 'none';
     var overlay = make('div', { position: 'fixed', inset: '0', pointerEvents: 'auto', background: 'rgba(0,0,0,.28)', cursor: 'crosshair', touchAction: 'manipulation' });
     var banner = make('div', {
-      position: 'fixed', top: 'calc(10px + env(safe-area-inset-top, 0px))', left: '12px', right: '12px', maxWidth: '420px', margin: '0 auto',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', pointerEvents: 'auto',
+      position: 'fixed', top: 'calc(10px + env(safe-area-inset-top, 0px))', left: '12px', right: '12px', maxWidth: '480px', margin: '0 auto',
+      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '8px', pointerEvents: 'auto',
       background: PANEL, color: INK, border: '1px solid ' + LINE, borderRadius: '12px', padding: '8px 8px 8px 14px', font: '600 16px ' + FONT,
     });
     banner.appendChild(make('span', {}, 'Tap the spot you mean'));
+    var actions = make('div', { display: 'flex', gap: '8px', alignItems: 'center' });
+    actions.appendChild(makeDownloadBtn());
     var cancel = button('Cancel');
-    banner.appendChild(cancel);
+    actions.appendChild(cancel);
+    banner.appendChild(actions);
     cancel.addEventListener('click', function (e) { e.stopPropagation(); stopPicking(); });
     overlay.addEventListener('click', function (e) {
       e.preventDefault();
@@ -281,6 +320,7 @@
     if (box.marker) root.removeChild(box.marker);
     box = null;
     commentBtn.style.display = '';
+    downloadBtn.style.display = '';
     if (window.visualViewport) window.visualViewport.removeEventListener('resize', placeBox);
   }
   function placeBox() {
@@ -302,6 +342,7 @@
   function frame(x, y, threadId) {
     closeBox();
     commentBtn.style.display = 'none';
+    downloadBtn.style.display = 'none';
     var node = make('div', {
       position: 'fixed', pointerEvents: 'auto', boxSizing: 'border-box', background: PANEL, color: INK, border: '1px solid ' + LINE,
       borderRadius: '14px', padding: '12px', boxShadow: '0 8px 28px rgba(0,0,0,.55)', font: '400 15px/1.4 ' + FONT,
@@ -455,7 +496,7 @@
 
   function dot(label, x, y) {
     var d = make('div', {
-      position: 'fixed', width: '26px', height: '26px', marginLeft: '-13px', marginTop: '-13px', borderRadius: '50%',
+      position: 'fixed', minWidth: '26px', height: '26px', padding: '0 4px', boxSizing: 'border-box', marginLeft: '-13px', marginTop: '-13px', borderRadius: '13px',
       background: ACCENT, color: ACCENT_INK, font: '700 13px/26px ' + FONT, textAlign: 'center', boxShadow: '0 1px 6px rgba(0,0,0,.6)',
       left: x + 'px', top: y + 'px',
     }, label);
@@ -480,7 +521,7 @@
     notes.forEach(function (n, i) {
       if (n.resolved) return;
       var p = pinPoint(n);
-      var number = i + 1;
+      var number = typeof n.number === 'number' ? n.number : i + 1;
       var pin = dot(String(number), p.x, p.y);
       pin.style.pointerEvents = 'auto';
       pin.style.cursor = 'pointer';
