@@ -74,3 +74,10 @@ export function fillSelf(text: string, self: { http: string; ws: string }): stri
 
 /** The request came through an https front (X-Forwarded-Proto: https). */
 export const forwardedHttps = (h: IncomingHttpHeaders): boolean => first(h['x-forwarded-proto']).toLowerCase() === 'https';
+
+/** True for a TCP peer on this machine (127.0.0.0/8, ::1, or either mapped into IPv6). */
+export function isLoopbackPeer(address: string | undefined): boolean {
+  if (typeof address !== 'string') return false;
+  const a = address.toLowerCase().replace(/^::ffff:/, '');
+  return a === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a);
+}

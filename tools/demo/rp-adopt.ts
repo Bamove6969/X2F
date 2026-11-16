@@ -9,6 +9,9 @@
  *
  * So the gateway adopts the first such host it is opened from: it restarts the API with that host
  * as the RP ID and its origin added to X2F_ORIGINS, and holds API requests until the API is back.
+ * Only a local https front offers a host (gateway-core.ts: a loopback peer with X-Forwarded-Proto:
+ * https; review M2), so a LAN or tailnet client cannot claim the RP ID with a made-up Host. If the
+ * restart fails, nothing is adopted and the next page load tries again.
  * The first host is kept (a later one does not move it again, so keys made under it keep working);
  * localhost still opens the app, but keys and passkeys then work under the adopted host only.
  * Off when the demo runs with a public origin (a tunnel: its host is the RP ID already) or with
@@ -62,6 +65,8 @@ export function createAdopter(o: { enabled: boolean; restart: (selfOrigin: strin
         origin = selfOrigin;
         log(JSON.stringify({ reason: 'rp-adopt', origin: selfOrigin }));
         ready = o.restart(selfOrigin).catch((e: unknown) => {
+          // Not adopted: the next page load tries again (review M2).
+          if (origin === selfOrigin) origin = null;
           log(JSON.stringify({ reason: 'rp-adopt-failed', origin: selfOrigin, error: (e as Error).message }));
         });
       }
