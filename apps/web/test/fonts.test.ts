@@ -95,15 +95,23 @@ function uses(props: Map<string, string>): Use[] {
   // A rule that sets a weight but no family gets the family that another rule gives the same
   // class (`.x2f-num { font-family: mono }` + `.x2f-facts dd.x2f-num { font-weight: 500 }`), else
   // the body face, the one most text inherits.
+  // Also by the selector without the subject's states (`.post-unit button[aria-checked='true']`
+  // inherits the family of `.post-unit button`).
+  const bare = (s: string): string => s.replace(/(\[[^\]]*\]|::?[\w-]+(\([^)]*\))?)+$/, '');
   const familyOf = new Map<string, Set<string>>();
+  const add = (k: string, fam: string): void => void familyOf.set(k, (familyOf.get(k) ?? new Set()).add(fam));
   for (const r of rules) {
     if (r.family === null) continue;
-    for (const s of r.selectors) for (const c of subjectClasses(s)) familyOf.set(c, (familyOf.get(c) ?? new Set()).add(r.family));
+    for (const s of r.selectors) {
+      for (const c of subjectClasses(s)) add(c, r.family);
+      add(`sel:${bare(s)}`, r.family);
+    }
   }
   const out: Use[] = [];
   for (const r of rules) {
     for (const selector of r.selectors) {
-      const families = r.family !== null ? [r.family] : [...new Set(subjectClasses(selector).flatMap((c) => [...(familyOf.get(c) ?? [])]))];
+      const keys = [...subjectClasses(selector), `sel:${bare(selector)}`];
+      const families = r.family !== null ? [r.family] : [...new Set(keys.flatMap((k) => [...(familyOf.get(k) ?? [])]))];
       for (const family of families.length > 0 ? families : [body]) {
         out.push({ file: r.file, selector, family, weight: r.weight ?? '400', style: r.style ?? 'normal' });
       }

@@ -59,7 +59,7 @@
   background: var(--x2f-surface);
   color: var(--x2f-ink);
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -135,7 +135,7 @@
   background: transparent;
   color: var(--x2f-monero-ink);
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   cursor: pointer;
 }
 
@@ -194,14 +194,14 @@
 }
 
 .x2f-quote__unit {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--x2f-ink-muted);
 }
 
 .x2f-quote__help {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
@@ -290,7 +290,7 @@
 }
 
 .x2f-quote__wallet-name {
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -301,7 +301,7 @@
   align-items: center;
   align-self: flex-start;
   height: 44px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--x2f-monero-ink);
 }
@@ -317,7 +317,7 @@
 }
 
 .x2f-quote__figure > .x2f-quote__muted-sm {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
 }
 
@@ -432,7 +432,7 @@
 }
 
 .x2f-quote__band-label {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -456,20 +456,20 @@
 }
 
 .x2f-quote__band-rate {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
   white-space: nowrap;
 }
 
 .x2f-quote__band-rate .x2f-quote__mono {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--x2f-ink);
 }
 
 .x2f-quote__band-range {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 20px;
   white-space: nowrap;
 }
@@ -479,13 +479,13 @@
 }
 
 .x2f-quote__band-unit {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--x2f-ink-muted);
 }
 
 .x2f-quote__band-markup {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
   color: var(--x2f-ink-muted);
   white-space: nowrap;
@@ -505,7 +505,7 @@
   gap: var(--x2f-space-2);
   align-items: flex-start;
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink);
 }
@@ -520,7 +520,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
@@ -550,7 +550,7 @@
   flex-direction: column;
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface-raised);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
 }
 
@@ -578,7 +578,7 @@
 
 .x2f-quote__row--total {
   min-height: 52px;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
   font-weight: 600;
 }
@@ -597,7 +597,7 @@
 }
 
 .x2f-quote__muted-sm {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--x2f-ink-muted);
   overflow-wrap: anywhere;
 }
@@ -608,7 +608,7 @@
 
 .x2f-quote__fine {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
@@ -618,7 +618,7 @@
   align-items: center;
   justify-content: center;
   min-height: 32px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
   text-align: center;
 }
@@ -736,7 +736,7 @@
 }
 
 .x2f-wa__sub {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
@@ -768,7 +768,7 @@
 
 .x2f-wa__group-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -778,7 +778,7 @@
 
 .x2f-wa__count {
   font-family: var(--x2f-font-mono);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
   font-weight: 500;
   color: var(--x2f-ink-muted);
@@ -797,7 +797,7 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink);
 }
@@ -828,7 +828,7 @@
   background: transparent;
   color: var(--x2f-monero-ink);
   font: inherit;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   cursor: pointer;
 }

@@ -7,7 +7,7 @@
 
 .x2f-giftcard-rules__hint {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
 }
@@ -27,7 +27,7 @@
 }
 
 .x2f-giftcard-rules__list--evidence > li {
-  font-size: 16px;
+  font-size: 17px;
   line-height: 24px;
 }
 
