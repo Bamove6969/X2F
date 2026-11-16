@@ -245,7 +245,14 @@ async function proveFirstKey(page: Page): Promise<void> {
 
 async function freshPhone(browser: Browser, viewport: string) {
   const [width, height] = viewport.split('x').map(Number) as [number, number];
-  const context = await browser.newContext({ viewport: { width, height }, colorScheme: 'dark', serviceWorkers: 'block' });
+  // A new device, but one that has seen the welcome screen (it shows once per device, owner note #47,
+  // and would stand between the join and the app's home; tour.spec covers it).
+  const context = await browser.newContext({
+    viewport: { width, height },
+    colorScheme: 'dark',
+    serviceWorkers: 'block',
+    storageState: { cookies: [], origins: [{ origin: LOCAL, localStorage: [{ name: 'x2f.welcome.seen', value: '1' }] }] },
+  });
   return { context, page: await context.newPage() };
 }
 
