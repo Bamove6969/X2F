@@ -15,6 +15,6 @@
   },
   "devDependencies": {
     "@x2f/regtest": "0.0.0",
-    "monero-ts": "0.11.16"
+    "monero-ts": "0.11.21"
   }
 }
