@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Backup } from '../src/screens/setup/Backup.js';
 import { INITIAL, SetupContext, type SetupApi, type SetupState } from '../src/screens/setup/kit.js';
 import { needsBackup } from '../src/screens/setup/SetupFlow.js';
+import { Methods } from '../src/screens/settings/Methods.js';
+import { RecoveryCodes } from '../src/screens/settings/RecoveryCodes.js';
 import { fire, render } from './render.js';
 
 /** The server's one code (64 symbols), and a second, different one. */
@@ -129,5 +131,26 @@ describe('S-017: the recovery code is required at sign-up', () => {
     expect(needsBackup({ ...INITIAL, registered: true, backup: 'recovery-codes' })).toBe(false);
     // Someone already signed in who comes to link a wallet did not sign up in this flow.
     expect(needsBackup({ ...INITIAL, registered: false, backup: null })).toBe(false);
+  });
+
+  it('Security settings speaks of the recovery code in the singular (owner, 12 Nov 2026 note #28)', async () => {
+    route = async (url) => {
+      if (url === '/v1/account/methods') {
+        return json(200, [{ type: 'recovery-codes', id: 'recovery-codes', label: '', createdAt: null, lastUsedAt: null }]);
+      }
+      if (url === '/v1/account/recovery-codes') return json(200, { codes: [CODES[0]] });
+      return json(500, { error: 'internal' });
+    };
+    const { host } = render(<Methods prove={async () => 'tok'} />);
+    await flush();
+    expect(host.querySelector('[data-method="recovery-codes"] .x2f-list__label')?.textContent).toBe('Recovery code');
+    expect(host.querySelector('[data-add="recovery-codes"]')?.textContent).toBe('Create recovery code');
+
+    const { host: rcHost } = render(<RecoveryCodes prove={async () => 'tok'} onDone={() => undefined} />);
+    expect(byPart(rcHost, 'recovery-make')?.textContent).toBe('Show my recovery code');
+    click(byPart(rcHost, 'recovery-make'));
+    await flush();
+    expect(rcHost.querySelector('.x2f-note')?.textContent).toBe('Save this now. It works once, and you will not see it again.');
+    expect(byPart(rcHost, 'recovery-done')?.textContent).toBe('I have saved it');
   });
 });
