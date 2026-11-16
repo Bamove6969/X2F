@@ -209,7 +209,7 @@
 
 .x2f-ident[data-size='40'] .x2f-ident__name,
 .x2f-ident__name[data-size='40'] {
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .x2f-ident__name[data-mod='true'] {
@@ -223,7 +223,7 @@
 .x2f-ident__meta {
   position: relative;
   color: var(--x2f-ink-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
 }
 
@@ -259,7 +259,7 @@
   margin: 0;
   color: var(--x2f-ink);
   font-family: var(--x2f-font-mono);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 20px;
   font-weight: 500;
   overflow-wrap: anywhere;
@@ -267,7 +267,7 @@
 
 .x2f-stat__l {
   color: var(--x2f-ink-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
 }
 
@@ -326,20 +326,20 @@
 }
 
 .x2f-recipient__xmr .x2f-digits {
-  font-size: 16px;
+  font-size: 17px;
   line-height: 20px;
   font-weight: 500;
 }
 
 .x2f-recipient__unit {
   color: var(--x2f-monero-ink);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
 }
 
 .x2f-recipient__fiat {
   color: var(--x2f-ink-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
 }
 
@@ -377,7 +377,7 @@
 
 .x2f-seal__num {
   font-family: var(--x2f-font-mono);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
   font-weight: 500;
   letter-spacing: -0.02em;
@@ -449,7 +449,7 @@
   border-radius: var(--x2f-radius-pill);
   background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
   font-weight: 600;
   white-space: nowrap;
@@ -477,7 +477,7 @@
   border-radius: var(--x2f-radius-pill);
   background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
   font-weight: 600;
 }
@@ -516,7 +516,7 @@
 
 .x2f-badge-row__name {
   color: var(--x2f-ink);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 20px;
   font-weight: 600;
 }
@@ -524,12 +524,12 @@
 .x2f-badge-row__meaning,
 .x2f-badge-row__earned {
   color: var(--x2f-ink-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
 }
 
 .x2f-badge-row__earned {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
 }
 

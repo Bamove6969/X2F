@@ -40,7 +40,7 @@
 
 .x2f-wallets__intro {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
   color: var(--x2f-ink-muted);
 }
@@ -52,7 +52,7 @@
 
 .x2f-wallets__section-label {
   margin: 0 0 var(--x2f-space-1);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: var(--x2f-label-tracking);
   text-transform: uppercase;
@@ -95,12 +95,12 @@
 }
 
 .x2f-wallet-row__name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 
 .x2f-wallet-row__addr {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--x2f-ink-muted);
 }
 
@@ -117,7 +117,7 @@
 }
 
 .x2f-wallet-row__word {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -130,7 +130,7 @@
 }
 
 .x2f-wallet-row__note {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--x2f-ink-muted);
 }
 
@@ -157,7 +157,7 @@
 }
 
 .x2f-wallets__add-hint {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
@@ -176,7 +176,7 @@
   background: transparent;
   color: var(--x2f-ink);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 15px;
   cursor: pointer;
 }
 
@@ -191,7 +191,7 @@
   padding: 10px 12px;
   border-radius: var(--x2f-radius-sm);
   border: 1px solid var(--x2f-caution);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink);
 }
@@ -200,7 +200,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--x2f-ink-muted);
 }
 
@@ -219,18 +219,18 @@
   background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
   font-family: var(--x2f-font-mono);
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .x2f-wallets__confirm-note {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
   color: var(--x2f-ink-muted);
 }
 
 .x2f-wallets__error {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-danger);
 }
@@ -249,7 +249,7 @@
 }
 
 .x2f-wallets__escrow-text {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
@@ -273,7 +273,7 @@
   padding: 10px 12px;
   border-radius: var(--x2f-radius-sm);
   border: 1px solid var(--x2f-caution);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink);
 }
@@ -295,7 +295,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--x2f-space-2);
-  font-size: 14px;
+  font-size: 15px;
   border-bottom: 1px solid var(--x2f-surface-raised);
 }
 

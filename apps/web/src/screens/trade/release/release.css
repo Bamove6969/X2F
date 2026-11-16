@@ -35,7 +35,7 @@
   height: 44px;
   padding: 0 var(--x2f-space-2);
   color: var(--x2f-ink);
-  font-size: 15px;
+  font-size: 16px;
   text-decoration: none;
 }
 
@@ -71,7 +71,7 @@
   background: transparent;
   color: var(--x2f-ink-muted);
   font-family: inherit;
-  font-size: 16px;
+  font-size: 17px;
   cursor: help;
 }
 
@@ -90,7 +90,7 @@
   background: var(--x2f-surface-raised);
   border: 1px solid var(--x2f-line);
   color: var(--x2f-ink);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
 }
 
@@ -110,7 +110,7 @@
 
 .x2f-release__prompt {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 24px;
   color: var(--x2f-ink-muted);
 }
@@ -129,7 +129,7 @@
   display: flex;
   gap: var(--x2f-space-2);
   align-items: center;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--x2f-danger);
 }
@@ -139,7 +139,7 @@
   gap: 12px;
   align-items: flex-start;
   min-height: 44px;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
   cursor: pointer;
 }
@@ -171,7 +171,7 @@
 
 .x2f-release__hint,
 .x2f-release__error {
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
   text-align: center;
   color: var(--x2f-ink-muted);
@@ -204,7 +204,7 @@
 }
 
 .x2f-released__label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -223,7 +223,7 @@
 
 .x2f-released__where {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 24px;
   color: var(--x2f-ink-muted);
   overflow-wrap: anywhere;
@@ -241,7 +241,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .x2f-released__sums > div {
@@ -285,7 +285,7 @@
 .x2f-released__confirm-row {
   display: flex;
   justify-content: space-between;
-  font-size: 16px;
+  font-size: 17px;
   color: var(--x2f-ink-muted);
 }
 
@@ -309,11 +309,11 @@
   align-items: center;
   min-height: 44px;
   gap: 6px;
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .x2f-released__note {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
 }

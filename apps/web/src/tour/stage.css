@@ -171,7 +171,7 @@
   font-family: var(--x2f-font-mono);
   font-size: 28px;
   line-height: 34px;
-  font-weight: 600;
+  font-weight: 500; /* DM Mono's heaviest face (owner 16 Nov fonts D) */
 }
 .x2f-ex__big small,
 .x2f-ex__price small,
@@ -283,13 +283,13 @@
   flex-direction: column;
   font-family: var(--x2f-font-mono);
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 500; /* DM Mono's heaviest face (owner 16 Nov fonts D) */
 }
 .x2f-ex__pct {
   display: flex;
   flex-direction: column;
   font-family: var(--x2f-font-mono);
-  font-weight: 600;
+  font-weight: 500; /* DM Mono's heaviest face (owner 16 Nov fonts D) */
 }
 .x2f-ex__limits {
   display: flex;

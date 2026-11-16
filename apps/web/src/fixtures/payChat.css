@@ -12,13 +12,13 @@
   gap: 12px;
   padding: var(--x2f-space-4);
   flex-grow: 1;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
 }
 
 .x2f-board-chat__notice {
   align-self: center;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--x2f-ink-muted);
 }
 
@@ -52,7 +52,7 @@
   background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .x2f-board-chat__nudge,
@@ -65,7 +65,7 @@
   border-radius: var(--x2f-radius-sm);
   background: transparent;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   cursor: pointer;
 }
 

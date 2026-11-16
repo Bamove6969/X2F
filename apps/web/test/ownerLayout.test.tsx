@@ -19,17 +19,18 @@ const SRC = join(import.meta.dirname, '..', 'src');
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
 
 describe('the type scale, one step up (owner #43: bigger, noticeably, not much)', () => {
-  it('body 17/26, label 14/17, heading 19/26, screen title 30/34, the rest in proportion', () => {
+  // Owner 16 Nov fonts D + sizing: one more step up with DM Sans.
+  it('body 18/28, label 15/19, heading 21/28, screen title 34/40, the rest in proportion', () => {
     const css = read('theme/tokens.css');
     for (const d of [
-      '--x2f-body-size: 17px;', '--x2f-body-line: 26px;',
-      '--x2f-label-size: 14px;', '--x2f-label-line: 17px;',
-      '--x2f-heading-size: 19px;', '--x2f-heading-line: 26px;',
-      '--x2f-screen-title-size: 30px;', '--x2f-screen-title-line: 34px;',
-      '--x2f-sheet-title-size: 26px;', '--x2f-sheet-title-line: 32px;',
-      '--x2f-display-size: 42px;', '--x2f-display-line: 47px;',
+      '--x2f-body-size: 18px;', '--x2f-body-line: 28px;',
+      '--x2f-label-size: 15px;', '--x2f-label-line: 19px;',
+      '--x2f-heading-size: 21px;', '--x2f-heading-line: 28px;',
+      '--x2f-screen-title-size: 34px;', '--x2f-screen-title-line: 40px;',
+      '--x2f-sheet-title-size: 28px;', '--x2f-sheet-title-line: 34px;',
+      '--x2f-display-size: 46px;', '--x2f-display-line: 52px;',
       '--x2f-amount-size: 30px;', '--x2f-amount-line: 34px;',
-      '--x2f-address-size: 15px;', '--x2f-address-line: 21px;',
+      '--x2f-address-size: 16px;', '--x2f-address-line: 22px;',
     ]) expect(css, d).toContain(d);
   });
 });

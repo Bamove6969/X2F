@@ -5,6 +5,15 @@
   box-sizing: border-box;
 }
 
+/* Smooth type on every desktop, and never a faked bold or italic: every face the CSS uses is loaded
+   (theme/fonts.css), so a missing one shows as the nearest real face, not a smeared one (owner, 16 Nov 2026). */
+html {
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
 html,
 body {
   margin: 0;

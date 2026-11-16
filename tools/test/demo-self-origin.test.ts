@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import http, { type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -155,6 +156,27 @@ describe('/__demo/codes', () => {
     expect(page).toContain(`<td>ana-demo</td><td><b>${totpCode(secrets['ana-demo'], stepOf(now))}</b></td>`);
     expect(page).toContain('&#60;x&#62;');
     expect(page).not.toContain('<x>');
+  });
+
+  // Owner, 16 Nov 2026: type that looked "like Times New Roman". The page had no style at all, so
+  // browsers drew it in their default serif; its one inline <style> is allowed by its hash only.
+  it('sets a sans-serif face with a style the CSP allows by hash, and nothing else', async () => {
+    const page = codesPage(secrets, now);
+    const style = /<style>([^<]*)<\/style>/.exec(page)?.[1];
+    expect(style).toMatch(/body\{[^}]*font(-family)?:[^;}]*sans-serif/);
+    expect(style).not.toMatch(/(^|[\s,:])serif\b|url\(/);
+    const h = createCodesHandler({ origins: new Set([PRIMARY]), secrets: () => secrets, now: () => now });
+    const port = await listen(http.createServer(h));
+    const csp = await new Promise<string>((resolve, reject) => {
+      const q = http.request({ host: '127.0.0.1', port, path: '/__demo/codes', headers: { host: 'localhost:4400' } }, (r) => {
+        r.resume();
+        resolve(String(r.headers['content-security-policy']));
+      });
+      q.on('error', reject);
+      q.end();
+    });
+    const hash = createHash('sha256').update(style!).digest('base64');
+    expect(csp).toBe(`default-src 'none'; style-src 'sha256-${hash}'`);
   });
 
   it('is GET only, not cached, and only on the demo\'s hosts or behind an https front', async () => {
