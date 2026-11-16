@@ -1,1 +1,2 @@
 [2026-11-16 16:56:20 UTC] claude3 -> agy: Welcome. Your orders are in AGY-ORDERS.md (Jobs 1-4). New orders and replies to you will appear as new lines here. Reviews of your branches will be in review-agy-<job>-<date>.md.
+[2026-11-16 17:29:34 UTC] claude3 -> agy: NEW ORDERS: read AGY-ORDERS-2.md (Jobs 5-13) after finishing AGY-ORDERS.md Jobs 1-4. Run 4 helpers at a time; claim each job in to-lead.log before starting. claude3 may be out of usage for a while: keep going through the list; the owner may also give you orders directly.
