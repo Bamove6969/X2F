@@ -148,6 +148,72 @@ describe('checkTxSet', () => {
   });
 });
 
+describe('networkFeeShares: what wallet2 subtracts from each subtract-fee-from output', () => {
+  it('splits evenly; the odd atomic unit comes off the lowest-indexed bearer', async () => {
+    const { networkFeeShares } = await import('../src/index.js');
+    expect(networkFeeShares(10n, 2, [0, 1])).toEqual([5n, 5n]);
+    expect(networkFeeShares(11n, 2, [0, 1])).toEqual([6n, 5n]);
+    expect(networkFeeShares(1n, 2, [0, 1])).toEqual([1n, 0n]);
+    expect(networkFeeShares(11n, 1, [0])).toEqual([11n]);
+    // three bearers, remainder 2: the first two each take one more
+    expect(networkFeeShares(11n, 3, [0, 1, 2])).toEqual([4n, 4n, 3n]);
+    // a non-bearer between them takes nothing; order is by output index, not by the list
+    expect(networkFeeShares(11n, 3, [0, 2])).toEqual([6n, 0n, 5n]);
+    expect(networkFeeShares(11n, 3, [2, 0])).toEqual([6n, 0n, 5n]);
+  });
+});
+
+describe('checkTxSet: the network fee split between the buyer and the X2F fee output (owner 16 Nov)', () => {
+  const NET = 1_795_200_001n; // odd: the buyer's output takes the extra unit
+  const BUYER_SHARE = 897_600_001n;
+  const FEE_SHARE = 897_600_000n;
+  const SELLER = 'seller-address';
+  const split: Payout[] = [
+    { address: BUYER, amountAtomic: 1_237_400_000_000n, bearsNetworkFee: true },
+    { address: FEE_WALLET, amountAtomic: 12_500_000_000n, bearsNetworkFee: true },
+    { address: SELLER, amountAtomic: 100_000_000n },
+  ];
+  function splitTx(buyerOff = BUYER_SHARE, feeOff = FEE_SHARE, sellerOff = 0n): DescribedTx {
+    return {
+      fee: NET,
+      unlockTime: 0n,
+      changeAmount: 0n,
+      inputSum: BALANCE,
+      outputSum: BALANCE - NET,
+      destinations: [
+        { address: SELLER, amountAtomic: 100_000_000n - sellerOff },
+        { address: FEE_WALLET, amountAtomic: 12_500_000_000n - feeOff },
+        { address: BUYER, amountAtomic: 1_237_400_000_000n - buyerOff },
+      ],
+    };
+  }
+
+  it('accepts each bearer short by exactly its wallet2 share, the surplus untouched', () => {
+    expect(BUYER_SHARE + FEE_SHARE).toBe(NET);
+    expect(() => checkTxSet([splitTx()], split, BALANCE)).not.toThrow();
+  });
+
+  it('refuses the whole network fee off the buyer when both bear it', () => {
+    refused([splitTx(NET, 0n)], split);
+  });
+
+  it('refuses the odd unit off the X2F fee output (the fee output short by more than its share)', () => {
+    refused([splitTx(FEE_SHARE, BUYER_SHARE)], split);
+  });
+
+  it('refuses the whole network fee off the X2F fee output', () => {
+    refused([splitTx(0n, NET)], split);
+  });
+
+  it('refuses the surplus to the seller paying any part of it', () => {
+    refused([splitTx(BUYER_SHARE - 1n, FEE_SHARE, 1n)], split);
+  });
+
+  it('an unmarked set keeps the old rule: payout 0 bears the whole fee', () => {
+    expect(() => checkTxSet([goodTx()], expected, BALANCE)).not.toThrow();
+  });
+});
+
 describe('isScalar (review I1: a tx key from a party must be a reduced scalar before monero-ts sees it)', () => {
   it('accepts a reduced non-zero scalar, refuses the rest', async () => {
     const { isScalar } = await import('../src/index.js');

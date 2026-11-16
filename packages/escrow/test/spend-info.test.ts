@@ -196,7 +196,8 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       const sub = (await buyerWallet.createSubaddress(0)).getAddress();
       expect(sub.startsWith('8')).toBe(true);
       const fee = XMR / 100n;
-      const to = [{ address: sub, amountAtomic: XMR - fee }, { address: await feeWallet.getPrimaryAddress(), amountAtomic: fee }];
+      // Owner 16 Nov: the buyer and the fee output share the network fee.
+      const to = [{ address: sub, amountAtomic: XMR - fee, bearsNetworkFee: true }, { address: await feeWallet.getPrimaryAddress(), amountAtomic: fee, bearsNetworkFee: true }];
       const o: Outcome = { kind: 'release', to, builder: 'seller', cosigner: 'buyer' };
       const [hash] = await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.buyer.settle(o), t.parties.seller.settle(o)]));
       await mine(node.rpcUri, 2, funderAddress);
@@ -216,6 +217,12 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       // The main key alone does not prove a subaddress payout; nor does one unit more.
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!.slice(0, 64), to)).toBe(false);
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!, [to[0]!, { ...to[1]!, amountAtomic: fee + 1n }])).toBe(false);
+      // The fee output paid its half of the network fee, so it is short of the whole 1%: a minimum
+      // that does not let it bear the fee is not met (the allowance never moves to another output).
+      expect(await t.parties.mod.proveSweep!(hash!, keys[0]!, [to[0]!, { address: to[1]!.address, amountAtomic: fee }])).toBe(false);
+      await feeWallet.setDaemonConnection({ uri: node.rpcUri });
+      await feeWallet.sync();
+      expect(await feeWallet.getBalance()).toBeLessThan(fee);
       // A chunk that is not a reduced scalar is refused before monero-ts sees it (its WebAssembly aborts on one).
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!.slice(0, 64) + '1'.repeat(64), to)).toBe(false);
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!, to)).toBe(true); // the wallet still answers

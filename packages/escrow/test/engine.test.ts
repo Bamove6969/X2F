@@ -51,12 +51,12 @@ async function pair(a: MoneroMultisigSession, b: MoneroMultisigSession): Promise
   await b.importState([ha]);
 }
 
-/** A hostile builder: any destinations, network fee off output 0, never relayed. */
-async function rawSet(builder: MoneroMultisigSession, outs: Payout[]): Promise<string> {
+/** A hostile builder: any destinations, network fee off output 0 (or `from`), never relayed. */
+async function rawSet(builder: MoneroMultisigSession, outs: Payout[], from: number[] = [0]): Promise<string> {
   const txs = await builder.wallet.createTxs(new MoneroTxConfig({
     accountIndex: 0,
     destinations: outs.map((o) => new MoneroDestination(o.address, o.amountAtomic)),
-    subtractFeeFrom: [0],
+    subtractFeeFrom: from,
     relay: false,
   }));
   return txs[0]!.getTxSet().getMultisigTxHex();
@@ -80,6 +80,8 @@ describe('MoneroMultisigEngine on regtest', () => {
   let buyerWallet: MoneroWalletFull;
   let feeWallet: MoneroWalletFull;
   let attacker: MoneroWalletFull;
+  let sellerWallet: MoneroWalletFull;
+  let sellerAddress: string;
   let e: Escrow;
   const amount = 1_250_000_000_000n; // 1.25 XMR, seller posted the ad and funds amount + fee
   let payouts: Payout[];
@@ -87,7 +89,8 @@ describe('MoneroMultisigEngine on regtest', () => {
   beforeAll(async () => {
     node = await startRegtest();
     funder = await fundedWallet(node.rpcUri);
-    [buyerWallet, feeWallet, attacker] = await Promise.all([0, 1, 2].map(() => newTestWallet(node.rpcUri))) as [MoneroWalletFull, MoneroWalletFull, MoneroWalletFull];
+    [buyerWallet, feeWallet, attacker, sellerWallet] = await Promise.all([0, 1, 2, 3].map(() => newTestWallet(node.rpcUri))) as [MoneroWalletFull, MoneroWalletFull, MoneroWalletFull, MoneroWalletFull];
+    sellerAddress = await sellerWallet.getPrimaryAddress();
     e = await setupEscrow(node.rpcUri);
     await fund(node.rpcUri, funder, e, amount);
     const fee = feeFor(amount);
@@ -99,7 +102,7 @@ describe('MoneroMultisigEngine on regtest', () => {
   });
 
   afterAll(async () => {
-    for (const w of [funder, buyerWallet, feeWallet, attacker]) await w?.close();
+    for (const w of [funder, buyerWallet, feeWallet, attacker, sellerWallet]) await w?.close();
     for (const p of [e?.buyer, e?.seller, e?.mod]) await p?.close();
     await node?.stop();
   });
@@ -169,16 +172,40 @@ describe('MoneroMultisigEngine on regtest', () => {
     await pair(e.seller, e.buyer);
   });
 
-  it('releases with the 1% fee as a second output; the network fee comes off the buyer', async () => {
-    const { txSet, payouts: decoded } = await e.seller.buildRelease(payouts);
-    expect(decoded).toHaveLength(2);
-    const hash = await e.buyer.cosign(txSet, payouts);
+  // Owner 16 Nov: the receivers pay the network fee, split evenly between the buyer's output and
+  // X2F's fee output (wallet2: the odd unit off the lower index, the buyer's); a surplus back to
+  // the seller pays none of it.
+  const SURPLUS = XMR / 1000n;
+  const split = (): Payout[] => [
+    { address: payouts[0]!.address, amountAtomic: payouts[0]!.amountAtomic - SURPLUS, bearsNetworkFee: true },
+    { address: payouts[1]!.address, amountAtomic: payouts[1]!.amountAtomic, bearsNetworkFee: true },
+    { address: sellerAddress, amountAtomic: SURPLUS },
+  ];
+
+  it('refuses a release whose whole network fee comes off the buyer once the fee output shares it', async () => {
+    await pair(e.seller, e.buyer);
+    const want = split();
+    await expectMismatch(e.buyer.cosign(await rawSet(e.seller, want, [0]), want));
+    await expectMismatch(e.buyer.cosign(await rawSet(e.seller, want, [1]), want));
+    await expectMismatch(e.buyer.cosign(await rawSet(e.seller, want, [0, 1, 2]), want));
+    await pair(e.seller, e.buyer);
+  });
+
+  it('releases with the 1% fee as a second output; the network fee is split between the buyer and the fee output', async () => {
+    const want = split();
+    const { txSet, payouts: decoded } = await e.seller.buildRelease(want);
+    expect(decoded).toHaveLength(3);
+    const net = amount - decoded.reduce((s, p) => s + p.amountAtomic, 0n);
+    expect(net).toBeGreaterThan(0n);
+    expect(net).toBeLessThan(MAX_NET_FEE);
+    const buyerShare = net - net / 2n; // the odd unit, if any
+    const feeShare = net / 2n;
+    const hash = await e.buyer.cosign(txSet, want);
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
     await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
-    expect(await received(node.rpcUri, feeWallet)).toBe(feeFor(amount));
-    const got = await received(node.rpcUri, buyerWallet);
-    expect(got).toBeLessThan(payouts[0]!.amountAtomic);
-    expect(got).toBeGreaterThan(payouts[0]!.amountAtomic - MAX_NET_FEE);
+    expect(await received(node.rpcUri, buyerWallet)).toBe(want[0]!.amountAtomic - buyerShare);
+    expect(await received(node.rpcUri, feeWallet)).toBe(feeFor(amount) - feeShare);
+    expect(await received(node.rpcUri, sellerWallet)).toBe(SURPLUS);
     expect(await received(node.rpcUri, attacker)).toBe(0n);
   });
 
