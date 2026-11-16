@@ -68,6 +68,10 @@ export const CANT_DO_CODES = [
   'forbidden',
   'too-many-members',
   'member-cannot-sign',
+  // J-20 (owner p7-4, p7-11; review S-m4): a member outside their trade-size band, and a session
+  // end past their working hours.
+  'outside-trade-band',
+  'past-working-hours',
   // Owner 2 Nov 2026: only vendor accounts post offers or have team members; switching to vendor
   // needs a passkey, security key or PGP key on the account.
   'not-vendor',
@@ -109,6 +113,14 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'owner-protected': "the owner's own account in staff management (staff app only)",
   'owner-needs-two-keys': 'the owner keeps at least two security keys (staff app only)',
   'all-three-methods-required': 'a moderator keeps a security key, a PGP key and a passkey (staff app only)',
+  // Plan 4 Task 33 (D-041): the staff clock-out and payout addresses (staff app only).
+  'address-required': 'the staff clock-out sheet asks for a payout address (staff app only)',
+  'address-unknown': 'a payout address that is not the staff member\'s or was removed (staff app only)',
+  'address-exists': 'a payout address the staff member already added (staff app only)',
+  'too-many-addresses': 'the cap on a staff member\'s payout addresses (staff app only)',
+  'quote-invalid': 'a staff clock-out sheet that is not this session\'s (staff app only)',
+  'quote-expired': 'a staff clock-out sheet shown too long ago: it is shown again (staff app only)',
+  'quote-changed': 'a staff clock-out sheet whose pay changed meanwhile: it is shown again (staff app only)',
   'both-owner-keys-required': "a change to the owner's keys is tapped with both owner keys (staff app only)",
   'passkey-is-security-key': 'a staff passkey must be another device than the security key (staff app only)',
   'bad-request': 'a malformed request (a fault)',
@@ -161,6 +173,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Owner rule p5-7: the Jabber set-up.
   'jabber-unavailable': 'the deployment has no Jabber sending account yet (a missing feature, not a rule)',
   'jabber-address-invalid': 'an input check on a typed Jabber address',
+  // W-021 review F1: the page shows these boxes disabled and never sends the request.
+  'jabber-event-always-on': 'a security Jabber notice that stays on; its box is disabled, so the page never asks',
   // J-08 pay-details (ChatPanel's payErrorText, PayDetailsError and ChatFailed codes): the boxes' own input checks and a wait.
   'not-ready': 'the escrow is not secured yet, so the payment details wait (ChatFailed; a wait, not a rule)',
   'missing': 'an input check on a payment-details box (PayDetailsError)',
@@ -319,10 +333,10 @@ export function chatCantDoText(code: CantDoCode): string {
 
 /**
  * The offer cap the API enforces (owner 6 Nov 2026, Q31: 3 buying and 3 selling offers per
- * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said wherever the cap is explained:
- * PostOffer's and My offers' CantDoThat for `too-many-offers` and the My offers footnote.
- * PostOffer says the 409's own number (`offerCapLine`, review M2); the My offers footnote and its
- * bulk turn-on refusal (whose per-offer result carries no cap) say this default. COPY-UNSIGNED
+ * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said in the My offers footnote. The
+ * refusals themselves (PostOffer's and My offers' CantDoThat for `too-many-offers`) open with the
+ * owner's limit words (`offerLimitLine`, O-028): PostOffer with the 409's own numbers (review M2),
+ * My offers' bulk turn-on (whose per-offer result carries no cap) with this default. COPY-UNSIGNED
  */
 export const OFFER_CAP_LINE = 'You can have 3 buying and 3 selling offers.'; // COPY-UNSIGNED
 
@@ -342,11 +356,16 @@ export function offerCapsOf(extra: Record<string, unknown> | undefined): OfferCa
   return extra && ok(extra.buy) && ok(extra.sell) ? { buy: extra.buy, sell: extra.sell } : null;
 }
 
-/** The cap line with the numbers the API sent (the owner settings), else the default line. COPY-UNSIGNED */
-export function offerCapLine(caps: OfferCaps | null): string {
-  if (caps === null || (caps.buy === 3 && caps.sell === 3)) return OFFER_CAP_LINE;
-  const { buy, sell } = caps;
-  return `You can have ${buy} buying and ${sell} selling ${sell === 1 ? 'offer' : 'offers'}.`;
+/**
+ * O-028 (owner 28 Oct 2026, Q14): the limit pop-up opens in the owner's words, "Sorry, you're
+ * limited to N offers per side ..." (his number then was 2; the cap is 3 + 3 since Q31, and owner
+ * settings may set each side apart). CantDoThat adds his feedback line and link, and the feedback
+ * form's thank-you is his too (screens/Feedback.tsx FEEDBACK_THANKS). COPY-UNSIGNED
+ */
+export function offerLimitLine(caps: OfferCaps | null): string {
+  const { buy, sell } = caps ?? { buy: 3, sell: 3 };
+  if (buy === sell) return `Sorry, you're limited to ${buy} ${buy === 1 ? 'offer' : 'offers'} per side: ${buy} buying and ${sell} selling.`;
+  return `Sorry, you're limited to ${buy} buying and ${sell} selling ${sell === 1 ? 'offer' : 'offers'}.`;
 }
 
 /** What a refused Post offer says; `caps` from the API's refusal (offerCapsOf). */
@@ -357,13 +376,14 @@ export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null):
     case 'lien':
       return "Your account has a lien from a dispute, so you can't post offers until you pay back what the ruling says you owe."; // COPY-UNSIGNED (J-06)
     case 'too-many-offers':
-      return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
+      return `${offerLimitLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED (O-028)
     case 'launch-cap':
       // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
       return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Lower your offer's maximum to ${LAUNCH_CAP_TEXT} or less.`;
-    // Plan 2 Task 18: a team member without the Offers role.
+    // Plan 2 Task 18: a team member without the Offers role; J-20: an offer outside their band.
     case 'forbidden':
     case 'owner-only':
+    case 'outside-trade-band':
       return teamCantDoText(code);
     case 'not-vendor':
       return NOT_VENDOR_POST_TEXT;
@@ -420,10 +440,16 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
     case 'lien':
       return 'Your account has a lien from a dispute, so your offers stay off until you pay back what the ruling says you owe.'; // COPY-UNSIGNED (J-06)
     case 'too-many-offers':
-      // C2-A1: the cap is per side now (owner 2026-11-01), not per market. COPY-UNSIGNED
+      // C2-A1: the cap is per side now (owner 2026-11-01), not per market; O-028: the owner's
+      // limit pop-up words (the bulk result carries no cap, so the default 3 + 3). COPY-UNSIGNED
       return n === 1
-        ? `${OFFER_CAP_LINE} Remove one you no longer need, then turn this one on.`
-        : `${OFFER_CAP_LINE} Remove ones you no longer need, then turn these on.`;
+        ? `${offerLimitLine(null)} Remove one you no longer need, then turn this one on.`
+        : `${offerLimitLine(null)} Remove ones you no longer need, then turn these on.`;
+    // J-20 review F2: a team member turning on an offer outside their band. COPY-UNSIGNED // DESIGN: wording
+    case 'outside-trade-band':
+      return n === 1
+        ? 'This offer is outside the trade sizes the account owner set for you, so it stays off. Ask the account owner to turn it on.'
+        : 'These offers are outside the trade sizes the account owner set for you, so they stay off. Ask the account owner to turn them on.';
     default:
       return "Your account can't turn these offers on right now.";
   }
@@ -440,6 +466,8 @@ export function myOffersCantDoRow(code: CantDoCode): string {
       return 'Stayed off: your account has a lien.'; // COPY-UNSIGNED (J-06)
     case 'too-many-offers':
       return 'Stayed off: over the offer limit.'; // C2-A1: per side, not per market. COPY-UNSIGNED
+    case 'outside-trade-band':
+      return 'Stayed off: outside the trade sizes set for you.'; // J-20 review F2. COPY-UNSIGNED // DESIGN: wording
     default:
       return 'Stayed off.';
   }
@@ -504,6 +532,15 @@ export const TOO_MANY_APPROVALS_CODE = 'too-many-approvals' satisfies CantDoCode
 export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
 
 /**
+ * S-026 (owner 30 Oct; lead window N50, N55): during a recovery hold X2F reaches the person only on
+ * Matrix, Telegram or a secure Jabber account set up before the hold (D-064: staff end a hold by
+ * Jabber only on an address proven before it began). Every hold message carries it, so a message
+ * that arrives any other way during the hold can be recognised as not from X2F. COPY-UNSIGNED
+ */
+export const HOLD_CONTACT_TEXT =
+  'While the hold is on, X2F will contact you only on Matrix, Telegram or the secure Jabber account you set up before the hold.';
+
+/**
  * 403 `recovery-hold`: the account's 24-hour hold (hold model v3: only a recovery-code login starts
  * one; a passkey, security key or PGP key the account held before it ends it, an authenticator
  * code does not; owner 2 Nov and 6 Nov 2026, Q81). `when` is "until Tue 3:05 PM" or "for a day".
@@ -511,7 +548,7 @@ export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
 export function holdText(when: string): string {
   // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: held trades
   // are paused for the account's own sessions too, owner G7; the old "can still be finished" was wrong).
-  return `Your account is on a 24-hour hold after a login with a recovery code, so new trades, wallet changes and login changes wait ${when}. Your open trades are paused until the hold ends or a moderator decides. Logging in with a passkey, a security key or a PGP key you had before the hold ends it.`;
+  return `Your account is on a 24-hour hold after a login with a recovery code, so new trades, wallet changes and login changes wait ${when}. Your open trades are paused until the hold ends or a moderator decides. Logging in with a passkey, a security key or a PGP key you had before the hold ends it. ${HOLD_CONTACT_TEXT}`;
 }
 
 /**
@@ -524,7 +561,7 @@ export function holdText(when: string): string {
 export function holdLoginText(when: string): string {
   // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: no backup
   // login meanwhile, as the used code is spent and its replacement sealed; held trades are paused).
-  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with a recovery code, and a login like this one waits until the hold ends. If you had a passkey, a security key or a PGP key set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. Your open trades are paused until the hold ends or a moderator decides.`;
+  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with a recovery code, and a login like this one waits until the hold ends. If you had a passkey, a security key or a PGP key set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. Your open trades are paused until the hold ends or a moderator decides. ${HOLD_CONTACT_TEXT}`;
 }
 
 /** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
@@ -578,6 +615,12 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
     case 'member-cannot-sign':
       return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
+    // J-20 (owner p7-4). COPY-UNSIGNED // DESIGN: wording
+    case 'outside-trade-band':
+      return 'This is outside the trade sizes the account owner set for you. Ask the account owner to do this step.';
+    // J-20 (owner p7-11, review S-m4). COPY-UNSIGNED // DESIGN: wording
+    case 'past-working-hours':
+      return 'Your working hours end before then, so your session cannot run that long.';
     // Owner 1 Nov 2026: inviting a member needs a strong login (API 403 weak-session). Owner p5-7:
     // role changes and removals from such a device are not refused; they wait 24 hours.
     case 'weak-session':

@@ -344,9 +344,10 @@ function amount(r: Record<string, unknown>, key: string, o: { integer?: boolean 
 
 function accountAction(v: unknown): AccountAction {
   const r = rec(v);
-  if (r.kind === 'none' || r.kind === 'freeze') {
+  // D-015 (owner 2026-11-02 08:12): a freeze is never a ruling's account action.
+  if (r.kind === 'none') {
     exactKeys(r, ['kind']);
-    return { kind: r.kind };
+    return { kind: 'none' };
   }
   exactKeys(r, ['kind', 'until', 'reasonCode']);
   const kind = oneOf(r, 'kind', ['trade-ban', 'site-ban'] as const);
@@ -383,6 +384,15 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'remove-staff':
       exactKeys(r, ['kind', 'accountId']);
       return { kind: 'remove-staff', accountId: match(r, 'accountId', UUID).toLowerCase() };
+    case 'reset-staff-security':
+      exactKeys(r, ['kind', 'accountId', 'inviteId', 'tokenHash', 'expiresAt']);
+      return {
+        kind: 'reset-staff-security',
+        accountId: match(r, 'accountId', UUID).toLowerCase(),
+        inviteId: match(r, 'inviteId', UUID).toLowerCase(),
+        tokenHash: match(r, 'tokenHash', TOKEN_HASH),
+        expiresAt: match(r, 'expiresAt', ISO_UTC),
+      };
     case 'add-pgp-key':
       exactKeys(r, ['kind', 'fingerprint']);
       return { kind: 'add-pgp-key', fingerprint: match(r, 'fingerprint', FINGERPRINT).toLowerCase() };
@@ -416,6 +426,20 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       exactKeys(r, ['kind', 'thresholdAtomic', 'floatAtomic', 'coldAddress']);
       const opt = (key: string, re: RegExp): string | null => (r[key] === null ? null : match(r, key, re));
       return { kind: 'fee-sweep', thresholdAtomic: opt('thresholdAtomic', ATOMIC), floatAtomic: opt('floatAtomic', ATOMIC), coldAddress: opt('coldAddress', COLD_ADDRESS) };
+    }
+    case 'payout-address':
+      exactKeys(r, ['kind', 'address']);
+      return { kind: 'payout-address', address: match(r, 'address', COLD_ADDRESS) };
+    case 'pay-settings': {
+      exactKeys(r, ['kind', 'modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd']);
+      const opt = (key: string): number | null => (r[key] === null ? null : amount(r, key, { integer: true }));
+      return {
+        kind: 'pay-settings',
+        modDisputeUsdCents: opt('modDisputeUsdCents'),
+        seniorDisputeUsdCents: opt('seniorDisputeUsdCents'),
+        seniorLargeTradeBp: opt('seniorLargeTradeBp'),
+        largeTradeThresholdUsd: opt('largeTradeThresholdUsd'),
+      };
     }
     case 'ruling': {
       exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256', 'round1Id']);
@@ -470,11 +494,16 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return 'staff.manage';
     case 'settings':
     case 'fee-sweep':
+    case 'pay-settings':
       return 'settings.write';
+    // Review MF1 (mod-rules 12 Nov): the reset is the owner role's own, never a perm a grant could hand out.
+    case 'reset-staff-security':
     case 'add-owner-key':
       return 'owner';
     case 'add-pgp-key':
     case 'remove-method':
+    // Task 33: one's own payout address (the action route binds it to the signed-in account).
+    case 'payout-address':
       // One's own login methods: any staff member or the owner, for their own account only (the
       // action route binds the tap to the signed-in account).
       return 'self';

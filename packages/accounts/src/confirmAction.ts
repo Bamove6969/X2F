@@ -21,7 +21,7 @@ export type ConfirmAction =
   | { kind: 'set-one-device'; on: 'on' | 'off' }
   | { kind: 'add-device-key'; signPublicHash: string }
   /**
-   * Plan 2 Task 18: the account owner invites a team member: `name`, their name in trade chats,
+   * Plan 2 Task 18: the account owner invites a team member: `name`, their name on the team (chats show "<lead> Assistant N", S-105),
    * exactly as typed (review M9(a): one confirm invites one named member), and `roles`, the roles
    * comma-separated in a fixed order.
    */
@@ -37,6 +37,12 @@ export type ConfirmAction =
   | { kind: 'team-abilities'; memberId: string; abilities: string }
   /** Removes one member (or cancels an invite). */
   | { kind: 'team-remove'; memberId: string }
+  /**
+   * J-20 (owner p7-4, p7-11): sets one member's trade-size band and working hours to exactly these.
+   * `band`: `none` or `<min>-<max>` in XMR atomic units; `hours`: `any` or
+   * `<days comma-separated> <HH:MM>-<HH:MM> <IANA zone>` (apps/api/src/team/limits.ts).
+   */
+  | { kind: 'team-limits'; memberId: string; band: string; hours: string }
   /** "Stay logged in?" (owner, 2 Nov 2026): extend this session by its length. Bound to the session by the token. */
   | { kind: 'extend-session' }
   /**
@@ -108,6 +114,9 @@ export function describeAction(a: ConfirmAction): string {
       return `change a team member's abilities (${boxCount(a.abilities)})`;
     case 'team-remove':
       return 'remove a team member';
+    case 'team-limits':
+      // COPY-UNSIGNED: names the exact band and hours (WYSIWYS).
+      return `set a team member's trade size to ${bandWords(a.band)} and working hours to ${hoursWords(a.hours)}`;
     case 'extend-session':
       return 'stay logged in';
     case 'become-vendor':
@@ -123,6 +132,30 @@ const ROLE_WORDS: Readonly<Record<string, string>> = {
   'hold-cancel': 'Untick or cancel waiting changes',
   'hold-end': 'End a hold',
 };
+
+const ATOMIC_PER_XMR = 1_000_000_000_000n;
+
+/** Atomic units as XMR, exact, trailing zeros trimmed ("0.5", "2"). */
+function xmrWords(atomic: string): string {
+  const v = BigInt(atomic);
+  const whole = v / ATOMIC_PER_XMR;
+  const frac = (v % ATOMIC_PER_XMR).toString().padStart(12, '0').replace(/0+$/, '');
+  return frac === '' ? whole.toString() : `${whole}.${frac}`;
+}
+
+/** COPY-UNSIGNED: "no limit" or "0.1 to 2 XMR" from a `team-limits` band. */
+function bandWords(band: string): string {
+  const m = /^(\d+)-(\d+)$/.exec(band);
+  if (!m) return 'no limit';
+  return `${xmrWords(m[1]!)} to ${xmrWords(m[2]!)} XMR`;
+}
+
+/** COPY-UNSIGNED: "any time" or "Mon, Tue 08:00 to 18:00 (UTC)" from a `team-limits` hours value. */
+function hoursWords(hours: string): string {
+  const m = /^(\S+) (\d\d:\d\d)-(\d\d:\d\d) (\S+)$/.exec(hours);
+  if (!m) return 'any time';
+  return `${m[1]!.split(',').join(', ')} ${m[2]} to ${m[3]} (${m[4]})`;
+}
 
 /** "1 ability" or "N abilities" from a comma-separated abilities list. COPY-UNSIGNED */
 function boxCount(abilities: string): string {

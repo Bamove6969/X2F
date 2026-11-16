@@ -77,8 +77,8 @@ export function typicalMinutes(samples: readonly number[]): number | null {
 }
 
 /**
- * Fast ("usually pays or releases within 10 min") and the role-less typical time, over both of a
- * trader's lists (review 2, I2): the median of the last 20 payment times and the last 20 release
+ * The role-less typical time, over both of a trader's lists (review 2, I2; it was Fast's measure
+ * too until R-042 made Fast a count of quick payments, badges.ts `isFastPayment`): the median of the last 20 payment times and the last 20 release
  * times together, so one quick side can't hide a slow one. `samples` is exactly what the median saw.
  */
 export function bothRolesTypical(pay: readonly number[], release: readonly number[]): { minutes: number | null; samples: number } {
@@ -100,18 +100,9 @@ export function pushActionMinutes(recent: readonly number[], minutes: number): n
   return [...recent, minutes].slice(-TYPICAL_WINDOW);
 }
 
-// ---- Cancel rate (P5-A9) ----
-
-export const CANCEL_RATE_MIN_TRADES = 5;
-
-/** Trades this trader ended alone or by a mutual cancel they proposed, over trades that reached funding. */
-export function cancelRatePct(a: { cancelledByMe: number; reachedFunding: number }): number | null {
-  for (const n of [a.cancelledByMe, a.reachedFunding]) {
-    if (!Number.isInteger(n) || n < 0) throw new RangeError('cancel-rate counts must be whole numbers >= 0');
-  }
-  if (a.reachedFunding < CANCEL_RATE_MIN_TRADES) return null;
-  return Math.min(100, Math.floor((a.cancelledByMe * 100) / a.reachedFunding));
-}
+// ---- Cancel rate (P5-A9): superseded ----
+// Owner T-017: every kind of cancel is recorded as ONE cancel figure, seen only by moderators (the
+// moderator case view, J-21); there is no public cancel rate, so this package has no helper for one.
 
 // ---- Completed trades (R38, P5-A13 as revised 2026-10-29) ----
 

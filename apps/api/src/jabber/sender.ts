@@ -15,12 +15,30 @@ export const ACCOUNT_CHANGE_TEXT = 'An account change was made on your X2F accou
  */
 export const TRADE_ATTENTION_TEXT = 'A trade on your X2F account needs your attention.';
 
-/** The notice kinds the outbox carries (`jabber_outbox.kind`, migration 331); one fixed sentence each. */
-export const NOTICE_KINDS = ['account-change', 'trade-attention'] as const;
+/**
+ * J-20 (owner p11-27, S-107: "a notification and even a Jabber notification"), same opt-in: to the
+ * team account when one of its members logs in for the first time (their join). Names no member.
+ * COPY-UNSIGNED // DESIGN: wording (no board draws it).
+ */
+export const TEAM_FIRST_LOGIN_TEXT = 'A team member logged in to your X2F account for the first time.';
+
+/** The notice kinds the outbox carries (`jabber_outbox.kind`, migrations 331 and 380); one fixed sentence each. */
+export const NOTICE_KINDS = ['account-change', 'trade-attention', 'team-member-first-login'] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
+
+/**
+ * Review F1 of wip/lead-jabber-settings (safe default until the owner rules on W-021's reach): the
+ * security notices a user cannot turn off on the Jabber notifications page. `account-change` covers
+ * payout wallets, login methods and recovery holds; J-20's `team-member-first-login` replaces the
+ * lead's approval of a member's first login (p11-27), so it is listed ahead of J-20's landing.
+ * The owner's ruling is a flip here, plus the matching `muted_kinds` check (migration 336 or a
+ * later one), which refuses these kinds in the database too.
+ */
+export const ALWAYS_ON_KINDS: readonly string[] = ['account-change', 'team-member-first-login'];
 export const NOTICE_TEXT: Readonly<Record<NoticeKind, string>> = Object.freeze({
   'account-change': ACCOUNT_CHANGE_TEXT,
   'trade-attention': TRADE_ATTENTION_TEXT,
+  'team-member-first-login': TEAM_FIRST_LOGIN_TEXT,
 });
 
 /** Who the message says it is from (XEP-0172 nickname; board: "X2F alerts"). */

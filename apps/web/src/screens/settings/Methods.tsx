@@ -18,12 +18,14 @@ import {
   type WebAuthnKind,
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { Notice } from '../../ui/Notice.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE } from '../../ui/cantDoCodes.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { refusalText } from '../auth/refusals.js';
 import { StagedNote, reportChangesCap } from './HoldChanges.js';
+import { BURNED_CODE_COPY as BURNED } from './holdCopy.js';
 import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
 
@@ -168,25 +170,52 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   );
 }
 
-function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (staged?: Staged) => void; onCancel: () => void }) {
+export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (staged?: Staged) => void; onCancel: () => void }) {
   const primary = usePrimaryVariant();
   const [password, setPassword] = useState('');
+  // Owner S-110 (p11-35): the recovery code, optional, makes the change apply at once.
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [burned, setBurned] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
     setBusy(true);
     setError(null);
+    const code = recoveryCode.trim();
     try {
-      onDone(await withConfirm({ kind: 'set-password' }, (t) => authApi.setPassword({ password, ...(t !== undefined ? { confirmToken: t } : {}) }), prove));
+      const staged = await withConfirm(
+        { kind: 'set-password' },
+        (t) => authApi.setPassword({ password, ...(code !== '' ? { recoveryCode: code } : {}), ...(t !== undefined ? { confirmToken: t } : {}) }),
+        prove,
+      );
+      // Owner S-111 (p11-36): a code that was used is burned; say so before closing the form.
+      if (code !== '' && staged === undefined) setBurned(true);
+      else onDone(staged);
     } catch (e) {
       if (e instanceof AuthApiError && e.code === 'password-weak') setError('That password is too weak: use at least 10 characters with upper and lower case, a number and a symbol.');
       else if (e instanceof AuthApiError && e.code === 'password-leaked') setError('That password has been seen in a breach. Pick another.');
+      else if (code !== '' && e instanceof AuthApiError && e.code === 'credentials-invalid') setError(BURNED.passwordCodeWrong);
       else if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not set a password. Try again.'));
     } finally {
       setBusy(false);
     }
   };
+
+  if (burned) {
+    return (
+      <div className="x2f-field" data-part="add-password">
+        <Notice tone="caution" title={BURNED.title} data-part="code-burned">
+          {BURNED.body}
+        </Notice>
+        <div className="x2f-row">
+          <Button variant={primary} onClick={() => onDone()} data-part="code-burned-done">
+            {BURNED.done}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="x2f-field" data-part="add-password">
@@ -199,6 +228,19 @@ function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
         New password
       </label>
       <input className="x2f-input" id="new-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <label className="x2f-label" htmlFor="password-recovery-code">
+        {BURNED.passwordCodeLabel}
+      </label>
+      <input
+        className="x2f-input"
+        id="password-recovery-code"
+        inputMode="text"
+        autoComplete="off"
+        value={recoveryCode}
+        onChange={(e) => setRecoveryCode(e.target.value)}
+        data-part="password-recovery-code"
+      />
+      <p className="x2f-note">{BURNED.passwordCodeHint}</p>
       <div className="x2f-row">
         <Button variant={primary} disabled={busy || password === ''} onClick={() => void save()}>
           Save

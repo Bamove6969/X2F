@@ -147,3 +147,17 @@ describe('sw.js notificationclick', () => {
     expect(h.opened).toEqual([]);
   });
 });
+
+describe('sw.js tells open X2F windows which push arrived (W-006: the loud alarm rings in an open tab)', () => {
+  it.each([
+    [TRADE, 'trade'], [NUDGE, 'nudge'], [ALERT, 'alert'], [CANCEL, 'cancel-confirm'], ['Trade X2F-7KQ4-M9TD: 1.25 XMR', 'trade'],
+  ])('%s posts only its kind (%s) to same-origin windows', async (text, kind) => {
+    const posted: Array<{ url: string; msg: unknown }> = [];
+    h.clientsList = ['https://x2f.test/trade/X', 'https://elsewhere.test/'].map((url) => ({
+      url, focus: async () => undefined, postMessage: (msg: unknown) => void posted.push({ url, msg }),
+    }));
+    await h.dispatch('push', pushWith(text));
+    expect(posted).toEqual([{ url: 'https://x2f.test/trade/X', msg: { type: 'x2f-push', kind } }]);
+    expect(h.shown).toHaveLength(1);
+  });
+});

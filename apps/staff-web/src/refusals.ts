@@ -22,6 +22,8 @@ export const STAFF_REFUSALS = {
   // Owner G3 (owner-page3, review 8 Nov I-4): a moderator holds all three methods; a staff passkey
   // is another device than the security key; a change to the owner's keys takes both owner keys.
   'all-three-methods-required': 'Moderators keep three keys: a hardware security key, a passkey and a PGP key. Add the missing one to finish.',
+  // D-070 (owner p11-19): the security key became optional for a moderator; a PGP key and a passkey are not.
+  'moderator-methods-required': 'Moderators need a passkey and a PGP key. A hardware security key is optional. Add the missing one to finish.',
   'passkey-is-security-key': 'That passkey is on your security key. Register the passkey on another device, such as your phone or computer.',
   'both-owner-keys-required': 'This change needs a tap from both owner security keys. Tap the second key to finish.',
   // Task 6: setup cannot finish without both keys and the PGP key (the button stays disabled until

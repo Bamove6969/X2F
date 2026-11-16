@@ -7,17 +7,27 @@
  * - `POST /v1/team/invites { displayName, abilities, confirmToken }` (confirm `team-invite-abilities`,
  *   bound to the name and the boxes) → 201 `{ id, invite, expiresAt }`: `invite` is the one-time
  *   code, shown once. The old body `{ displayName, roles }` (confirm `team-invite`) still works: each
- *   role ticks the boxes it allowed (`ROLE_ABILITIES`).
+ *   role ticks the boxes it allowed (`ROLE_ABILITIES`). Owner p11-21 (S-104, 9 Nov 2026): from a
+ *   username-and-password session the invite still goes out (201 with the code), with no boxes;
+ *   the boxes are staged as that session's draft and the answer also carries `{ status: 'staged',
+ *   changeId }`: they apply 24 h after they are submitted (hold v3), or at once if a strong login
+ *   approves them. Each member's list entry carries `chatLabel` (S-105, team/label.ts).
  * - `PATCH /v1/team/members/:id { abilities, confirmToken }` (confirm `team-abilities`) → the member;
  *   the old `{ roles }` (confirm `team-roles`) still works. A box the owner's hard rules keep
  *   owner-only, an always-on one or an unknown id is 400 `bad-request` (team/abilities.ts). From a
  *   username-and-password session either shape is staged as the same boxes (`team-abilities`).
  * - `DELETE /v1/team/members/:id { confirmToken }` (confirm `team-remove`) → 204; the member's
  *   sessions end at once.
+ * - `PUT /v1/team/members/:id/limits { band, hours, confirmToken }` (confirm `team-limits`, J-20) →
+ *   the member: `band` null (no band) or `{ minAtomic, maxAtomic }` (XMR atomic units), `hours`
+ *   "any" or `{ days, start, end, tz }` (team/limits.ts). Staged (202) from a username-and-password
+ *   session, as a boxes change.
  * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
  *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent). Owner
- *   1 Nov 2026 (landing review I1): an invite needs a strong session, at any time (403
- *   `weak-session`, before the confirm token is spent); a removal does not. Hold model v3 (owner
+ *   1 Nov 2026 (landing review I1): no box reaches a member at once from a session that is not
+ *   strong; S-104 (above) replaced the refusal of a weak invite with staging its boxes, except
+ *   inside the sign-up window (403 `weak-session`, before the confirm token is spent, as a role
+ *   change); a removal needs no strong session. Hold model v3 (owner
  *   2 Nov 2026): a role change by a username-and-password session is staged like the other changes of
  *   such a session (202 `{ status: 'staged', changeId }`, applied 24 h after it is submitted;
  *   hold.ts); inside the sign-up window it is still refused (403 `weak-session`). Owner 2 Nov 2026:
@@ -72,10 +82,12 @@ import {
   openInvite,
   removeMember,
   setAbilities,
+  setLimits,
   startMember,
 } from '../team/members.js';
 import { catalogueView, parseAbilities, parseRoles, rolesToAbilities, type TeamRole } from '../team/abilities.js';
 import { MAX_TEAM_MEMBERS } from '../team/perms.js';
+import { bandKey, bandView, hoursKey, insideHours, parseBand, parseHours, type MemberLimits } from '../team/limits.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -148,6 +160,22 @@ const checkRoles: preHandlerAsyncHookHandler = async function (req) {
   checked.set(req, boxes(body(req)));
 };
 
+/** J-20: the limits of `PUT /v1/team/members/:id/limits`, checked before `requireConfirm` (a refusal never spends a token). */
+const checkedLimits = new WeakMap<FastifyRequest, MemberLimits>();
+
+const checkLimits: preHandlerAsyncHookHandler = async function (req) {
+  idParam(req);
+  const b = body(req);
+  if (!Object.hasOwn(b, 'band') || !Object.hasOwn(b, 'hours')) throw new ApiError(400, 'bad-request');
+  checkedLimits.set(req, { band: parseBand(b.band), hours: parseHours(b.hours) });
+};
+
+function limitsInput(req: FastifyRequest): MemberLimits {
+  const v = checkedLimits.get(req);
+  if (!v) throw new ApiError(400, 'bad-request');
+  return v;
+}
+
 const checkId: preHandlerAsyncHookHandler = async function (req) {
   idParam(req);
 };
@@ -173,6 +201,17 @@ async function openSetup(req: FastifyRequest, setupId: unknown): Promise<{ id: s
   return { id: setupId, memberAccountId: row.account_id };
 }
 
+/**
+ * J-20 (owner p7-11): joining ends in the member's first session, so outside the working hours the
+ * lead set on the invite the last step is refused (403 `outside-login-hours`) before it uses the
+ * setup: the member finishes inside their hours.
+ */
+async function assertJoinInsideHours(req: FastifyRequest, memberAccountId: string): Promise<void> {
+  const deps = req.server.deps;
+  const { rows } = await deps.db.query<{ hours: unknown }>('select hours from team_members where member_account_id = $1', [memberAccountId]);
+  if (rows[0] && !insideHours(rows[0].hours, deps.clock())) throw new ApiError(403, 'outside-login-hours');
+}
+
 /** Uses up the setup (inside the joining transaction); 400 `challenge-expired` when a parallel finish took it first. */
 async function useSetup(c: pg.PoolClient, setupId: string, now: Date): Promise<void> {
   const r = await c.query(`update challenges set used_at = $2 where id = $1 and purpose = 'team-setup' and used_at is null and expires_at > $2`, [setupId, now]);
@@ -183,14 +222,20 @@ async function useSetup(c: pg.PoolClient, setupId: string, now: Date): Promise<v
 const caller = (req: FastifyRequest): Caller => ({ accountId: req.auth.accountId, sessionId: req.auth.sessionId, settle: settleOf(req) });
 
 /**
- * preHandler after `requireSession` and before `requireConfirm` (owner 1 Nov 2026, landing review
- * I1): 403 `weak-session` unless the calling session is strong (strength.ts), so a weak session is
- * refused before it spends a confirm token. Re-checked under the account lock in the write's
- * transaction (`ownerWriteGate`).
+ * preHandler after `requireSession` and before `requireConfirm` for an invite (owner 1 Nov 2026,
+ * landing review I1; owner p11-21, S-104): 403 `weak-session` for a session whose login waits but
+ * whose change would not be staged (inside its sign-up window, as `gateChange` decides), so it is
+ * refused before it spends a confirm token. A weak session outside that window passes: its
+ * invite's boxes are staged. Re-checked under the account lock in the write's transaction
+ * (`createInvite`: `ownerWriteGate`, then `gateChange`).
  */
-const requireStrongSession: preHandlerAsyncHookHandler = async function (req) {
-  const { rows } = await req.server.deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
-  if (waits(rows[0]?.strength)) throw weakRefusal();
+const requireStageableSession: preHandlerAsyncHookHandler = async function (req) {
+  const { rows } = await req.server.deps.db.query<{ strength: LoginStrength | null; onboarding_until: Date | null }>(
+    'select strength, onboarding_until from sessions where id = $1',
+    [req.auth.sessionId],
+  );
+  const r = rows[0];
+  if (waits(r?.strength) && r?.onboarding_until != null && r.onboarding_until.getTime() > req.server.deps.clock().getTime()) throw weakRefusal();
 };
 
 export function teamRoutes(app: FastifyInstance): void {
@@ -205,7 +250,7 @@ export function teamRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/team/invites',
     {
-      preHandler: [owner, checkInvite, requireVendor, requireNotHeld, requireStrongSession, requireConfirm((req) => {
+      preHandler: [owner, checkInvite, requireVendor, requireNotHeld, requireStageableSession, requireConfirm((req) => {
         const i = input(req);
         return i.roles
           ? { kind: 'team-invite', name: i.name!.name, roles: i.roles.join(',') }
@@ -215,8 +260,14 @@ export function teamRoutes(app: FastifyInstance): void {
     async (req, reply) => {
       const deps = req.server.deps;
       const { name, abilities } = input(req);
-      const r = await createInvite(deps, caller(req), { name: name!, abilities });
-      return reply.code(201).send({ id: r.id, invite: r.code, expiresAt: r.expiresAt });
+      // Owner p11-21 (S-104): a username-and-password session's invite goes out with no boxes and
+      // its boxes wait as a `team-abilities` change of the new member (both body shapes alike).
+      const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
+      const stage = waits(rows[0]?.strength)
+        ? (c: Parameters<typeof gateChange>[0], memberId: string) => gateChange(c, req, { kind: 'team-abilities', memberId, abilities })
+        : undefined;
+      const r = await createInvite(deps, caller(req), { name: name!, abilities }, stage);
+      return reply.code(201).send({ id: r.id, invite: r.code, expiresAt: r.expiresAt, ...(r.staged ? stagedReply(r.staged) : {}) });
     },
   );
 
@@ -242,6 +293,33 @@ export function teamRoutes(app: FastifyInstance): void {
       // checked again when it applies (`applyAbilities`).
       const staged = await inTransaction(deps.db, async (c) => {
         const g = await gateChange(c, req, { kind: 'team-abilities', memberId: idParam(req), abilities });
+        if (g === null) throw weakRefusal();
+        await assertVendor(c, req.auth.accountId);
+        if (!(await liveMember(c, req.auth.accountId, idParam(req), deps.clock()))) throw new ApiError(404, 'not-found');
+        return g;
+      });
+      return reply.code(202).send(stagedReply(staged));
+    },
+  );
+
+  // J-20 (owner p7-4, p7-11): a member's trade-size band and working hours, bound by the confirm to
+  // exactly these. A strong session applies them at once; a username-and-password session's are
+  // staged and wait 24 h (S-106), as a boxes change.
+  app.put(
+    '/v1/team/members/:id/limits',
+    {
+      preHandler: [owner, checkLimits, requireVendor, requireNotHeld, requireConfirm((req) => {
+        const l = limitsInput(req);
+        return { kind: 'team-limits', memberId: idParam(req), band: bandKey(l.band), hours: hoursKey(l.hours) };
+      })],
+    },
+    async (req, reply) => {
+      const deps = req.server.deps;
+      const limits = limitsInput(req);
+      const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
+      if (!waits(rows[0]?.strength)) return setLimits({ ...deps, events: req.server.events }, caller(req), idParam(req), limits);
+      const staged = await inTransaction(deps.db, async (c) => {
+        const g = await gateChange(c, req, { kind: 'team-limits', memberId: idParam(req), band: bandView(limits.band), hours: limits.hours });
         if (g === null) throw weakRefusal();
         await assertVendor(c, req.auth.accountId);
         if (!(await liveMember(c, req.auth.accountId, idParam(req), deps.clock()))) throw new ApiError(404, 'not-found');
@@ -369,6 +447,7 @@ export function teamRoutes(app: FastifyInstance): void {
     const deviceLabel = str(b, 'deviceLabel');
     const label = b.label === undefined ? undefined : str(b, 'label');
     const setup = await openSetup(req, b.setupId);
+    await assertJoinInsideHours(req, setup.memberAccountId);
     const ch = await consumeChallenge(deps.db, str(b, 'challengeId'), deps.clock());
     const device = deviceHash(req);
     if (
@@ -412,6 +491,7 @@ export function teamRoutes(app: FastifyInstance): void {
     const b = body(req);
     const deviceLabel = str(b, 'deviceLabel');
     const setup = await openSetup(req, b.setupId);
+    await assertJoinInsideHours(req, setup.memberAccountId);
     const proved = await checkTeamJoinCode(deps, req, str(b, 'challengeId'), str(b, 'code'), setup.memberAccountId);
     if (proved.payload.step !== 'second' || proved.payload.setupId !== setup.id) throw new ApiError(400, 'challenge-expired');
     const now = deps.clock();

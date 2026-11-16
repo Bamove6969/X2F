@@ -9,6 +9,8 @@ import type { AlertEntry, JabberStatus } from '@x2f/auth-client';
 import { authApi } from '../auth/authApi.js';
 import { formatDateTime } from '../../ui/dates.js';
 import { JABBER_COPY as J } from './jabberCopy.js';
+import { AlarmSettingsCard } from '../../alerts/alarm.js';
+import { Switch } from '../../ui/Switch.js';
 
 /**
  * Plain words for every alert kind the server records (`AlertKind` in apps/api/src/alerts.ts).
@@ -47,6 +49,8 @@ const KIND_WORDS: Record<string, string> = {
   // Plan 2 Task 18.
   'team-member-joined': 'A team member joined',
   'team-member-login': 'A team member logged in',
+  // J-20 (owner p11-27). COPY-UNSIGNED // DESIGN: wording
+  'team-member-first-login': 'A team member logged in for the first time',
 };
 
 const count = (n: unknown, one: string, many: string): string | null =>
@@ -116,6 +120,7 @@ export function Alerts() {
 
   return (
     <>
+    <AlarmSettingsCard />
     <JabberAlerts />
     <section className="x2f-card" data-part="alerts" aria-labelledby="alerts-h">
       <h2 className="x2f-card__title" id="alerts-h">
@@ -200,9 +205,7 @@ export function JabberAlerts() {
       </p>
       <p className="x2f-note">{J.rowNote}</p>
       {setUp ? (
-        <button type="button" role="switch" aria-checked={on} aria-labelledby="al-xmpp-l" aria-disabled={busy} onClick={() => void toggle()} data-part="jabber-switch">
-          {on ? 'On' : 'Off'}
-        </button>
+        <Switch checked={on} aria-labelledby="al-xmpp-l" aria-disabled={busy} onClick={() => void toggle()} data-part="jabber-switch" />
       ) : null}
       {error !== null ? (
         <p className="x2f-error" role="alert">
@@ -213,6 +216,11 @@ export function JabberAlerts() {
         <span className="x2f-list__label">{J.addressLabel}</span>
         <span>{s.state === 'broken' ? J.needsSetUpAgain : (s.address ?? J.notSetUp)}</span>
       </Link>
+      {setUp ? (
+        <Link className="x2f-list__row" to="/settings/jabber/events" data-part="jabber-events-row">
+          <span className="x2f-list__label">{J.eventsRow}</span>
+        </Link>
+      ) : null}
       {setUp && s.lastSentAt !== null ? (
         <p className="x2f-note" data-part="jabber-last">
           {J.lastMessage} <time dateTime={s.lastSentAt}>{formatDateTime(s.lastSentAt)}</time>

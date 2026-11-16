@@ -7,8 +7,9 @@ import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { bookTradeRevenue } from '../staff/revenue.js';
-import { countActionTimes } from '../traders/actionTimes.js';
-import { countTradeTotals } from '../traders/tradedTotal.js';
+import { eraseReversedReviews } from '../reviews/store.js';
+import { countActionTimes, countFastPayment } from '../traders/actionTimes.js';
+import { countCancel, countTradeTotals } from '../traders/tradedTotal.js';
 
 /**
  * Called after an event is committed (the app passes Task 19's `tradeEventPublisher`: SSE, Web
@@ -398,17 +399,26 @@ export async function applyEvent(
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
       if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, next, now);
-      // C12b: a completed trade adds its take-time USD value to both sides' running totals, a settled
-      // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
+      // C12b: a completed trade adds its take-time USD value to both sides' running totals; J-21: a
+      // cancel of any kind adds one to the cancel figure of the side that ended it (idempotent per
+      // trade; traders/tradedTotal.ts). A trade closed as `cancelled` pays nothing, so only the figure.
+      if (next.state !== prev.state && next.state === 'cancelled') await countCancel(client, code);
       if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) {
         await countTradeTotals(client, code);
+        // R-011: a disputed trade that ends reversed (a decided dispute with no ruling follows the
+        // trade's own end) loses its reviews here; disputes/store.ts saveDispute covers the rulings.
+        await eraseReversedReviews(client, code);
         // Plan 4 Task 32: the 1% the settlement paid to the fee wallet goes into the aggregate
         // revenue ledger, once per trade; a cancel or a refund pays none (staff/revenue.ts).
         // A ruling's payout (Plan 4 Task 14, R-M2) names no settlement on the row: its own kind decides the fee.
         await bookTradeRevenue(client, code, e.type === 'settled' && isRulingKind(e.kind) ? e.kind : undefined);
       }
       // P5-A8: a release by the seller adds both sides' action times to their running lists (once; traders/actionTimes.ts).
-      if (next.state !== prev.state && next.state === 'released') await countActionTimes(client, code);
+      if (next.state !== prev.state && next.state === 'released') {
+        await countActionTimes(client, code);
+        // R-042: a payment sent in under half the time to pay counts toward the buyer's Fast badge (once).
+        await countFastPayment(client, code);
+      }
       if (within) await within(client, prev, next, now);
       // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction. It is the
       // last statement before the commit (M2): the log lock serialises every append on the site,

@@ -1,0 +1,38 @@
+/* C-021: the sync-first gate (SyncGate.tsx). NEEDS_DESIGN: no board draws it yet. */
+:root[data-sync-held] main :is(button, [role='button'], input, select, textarea) {
+  cursor: progress;
+}
+
+.x2f-sync {
+  margin: var(--x2f-space-2) var(--x2f-space-4);
+  padding: var(--x2f-space-2) var(--x2f-space-3);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  overflow-wrap: anywhere;
+}
+
+.x2f-sync[data-part='sync-stale'] {
+  border-color: var(--x2f-caution);
+  color: var(--x2f-ink);
+}
+
+.x2f-sync p {
+  margin: 0;
+}
+
+.x2f-sync__retry {
+  flex: none;
+  min-block-size: 44px;
+  padding: 0 var(--x2f-space-3);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
+  font: inherit;
+}

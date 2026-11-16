@@ -2,6 +2,7 @@ import { reviewMonth, type ReviewInput, type Side } from '@x2f/reputation';
 import type { Queryable } from '../db/pool.js';
 import { PURGE_ROLE } from '../trades/purge.js';
 import { getMethod } from '../methods/profiles.js';
+import { disputeOutcomeSql, reviewHeldSql } from '../traders/finalOutcome.js';
 
 /**
  * Plan 5 Task 3: the reviews table (301_reviews.sql), Skip review (review_skips) and when a trade
@@ -14,38 +15,24 @@ import { getMethod } from '../methods/profiles.js';
  */
 
 /**
- * SQL (boolean): the trade (alias `t`) was OVERTURNED (owner 2026-11-02: "if the trade is
- * OVERTURNED like it never happened, then the feedback is ERASED. If all ends well and finishes like
- * a normal trade after the dispute, the feedback remains"). In today's code "overturned" is Plan 4's
- * `Dispute.overturned` (packages/staff/src/dispute.ts `resolveFinal`): an appeal's round-2 ruling
- * whose outcome differs from round 1's ("Decision overruled"), on any of the trade's disputes. It
- * is read from Plan 4's `disputes.overturned` (207, set when the appeal round is final), and from
- * the trader-facing `dispute_rulings` rows (108) as well. A dispute without an appeal,
- * or an appeal that keeps round 1's outcome ("Decision stands"), is a normal finish: not overturned.
- */
-export const overturnedSql = (t: string): string => `(exists (
-    select 1 from disputes d where d.code = ${t}.code and d.overturned is true)
-  or exists (
-    select 1 from dispute_rulings r2
-      join dispute_rulings r1 on r1.code = r2.code and r1.seq = r2.seq and r1.round = 1
-     where r2.code = ${t}.code and r2.round = 2 and r2.outcome <> r1.outcome))`;
-
-/**
  * When the trade (alias `t`) became reviewable, as SQL (timestamptz, null while it is not), P5-A3 and
  * P5-A5:
  * - a trade that never had a dispute: only `released`, from its close;
  * - a trade that has EVER had a dispute (trades.dispute_by, or any row in `disputes`, including a
  *   dispute after a refund): only once the trade has ended again and every dispute on it is done
- *   (`final` or `closed`), whatever the outcome; from the later of the trade's close and the last
- *   dispute's end (`disputes.closed_at`, else its latest ruling's time).
+ *   (`final` or `closed`) AS A SALE; from the later of the trade's close and the last dispute's end
+ *   (`disputes.closed_at`, else its latest ruling's time).
  * A dispute still `ruled` inside or after its appeal window is not done: Plan 4 moves it to `final`
  * (fail-safe: not reviewable, so it blocks nothing, until then).
- * An OVERTURNED trade (`overturnedSql`) is never reviewable again: its reviews are erased
- * (`eraseOverturnedReviews`) and the gate no longer counts it (owner 2026-11-02).
+ * A REVERSED trade (R-011, owner Q40: "if the trade is reversed, there is no feedback"; traders/
+ * finalOutcome.ts `disputeOutcomeSql`) is never reviewable: its reviews are erased
+ * (`eraseReversedReviews`) and the gate does not count it. A dispute that ends as a sale, even an
+ * appeal that overturned round 1's reversal, is reviewable ("if they let it settle like a trade
+ * happened, then the feedback stays").
  */
 export const reviewableSinceSql = (t: string): string => `(case
   when ${t}.closed_at is null or ${t}.state = 'disputed' then null
-  when ${overturnedSql(t)} then null
+  when ${disputeOutcomeSql(t)} = 'reversed' then null
   when ${t}.dispute_by is null and not exists (select 1 from disputes d where d.code = ${t}.code)
     then case when ${t}.state = 'released' then ${t}.closed_at end
   when exists (select 1 from disputes d where d.code = ${t}.code)
@@ -111,6 +98,16 @@ export async function reviewsOfTrade(db: Queryable, code: string): Promise<{ buy
   return { buyer: rows.find((r) => r.reviewer_role === 'buyer') ?? null, seller: rows.find((r) => r.reviewer_role === 'seller') ?? null };
 }
 
+/**
+ * Whether the trade's feedback is on hold (R-011: an appeal is pending, traders/finalOutcome.ts
+ * `reviewHeldSql`): its reviews are shown to nobody but their writer and count in no figure until the
+ * appeal's result decides.
+ */
+export async function reviewsHeld(db: Queryable, code: string): Promise<boolean> {
+  const { rows } = await db.query<{ held: boolean }>(`select ${reviewHeldSql('r')} as held from (select $1::text as trade_code) r`, [code]);
+  return rows[0]?.held === true;
+}
+
 /** Whether `side` skipped reviewing the trade (review_skips, owner 2026-11-01 item 28). */
 export async function hasSkipped(db: Queryable, code: string, side: Side): Promise<boolean> {
   const { rowCount } = await db.query('select 1 from review_skips where trade_code = $1 and side = $2', [code, side]);
@@ -172,12 +169,12 @@ export async function detachReviews(q: Queryable, code: string): Promise<number>
 }
 
 /**
- * C12 (owner 2026-11-02, review I2): ERASE every review and Skip review row of one trade, so nothing
- * of them shows anywhere. The SEAM Plan 4 calls when a ruling OVERTURNS the trade
- * (NEEDS_P4_OVERTURN_ERASES_REVIEWS, apps/api/test/reviews-tripwire.test.ts): with the transaction's
- * client, in the SAME transaction that records the overturning ruling, after that write. It must run
- * in a transaction. It does not decide whether the trade was overturned: `eraseOverturnedReviews`
- * below does, from today's `dispute_rulings` rows.
+ * R-011 (owner Q40; was C12, owner 2026-11-02, review I2): ERASE every review and Skip review row of
+ * one trade, so nothing of them shows anywhere. The SEAM a ruling's transaction calls when the trade
+ * ends REVERSED (NEEDS_P4_OVERTURN_ERASES_REVIEWS, apps/api/test/reviews-tripwire.test.ts): with the
+ * transaction's client, in the SAME transaction that records the deciding ruling, after that write.
+ * It must run in a transaction. It does not decide whether the trade was reversed:
+ * `eraseReversedReviews` below does.
  *
  * - Lock order: the trade row first (FOR UPDATE), like the review and skip routes
  *   (routes.ts `reviewableSide`), so a review submitted meanwhile either commits first and is
@@ -203,14 +200,18 @@ export async function eraseReviewsOfTrade(q: Queryable, code: string): Promise<{
 }
 
 /**
- * `eraseReviewsOfTrade`, only if the trade is OVERTURNED (`overturnedSql`): an overturned trade's
- * reviews and skips are erased and it is no longer reviewable (`reviewableSinceSql`), so the gate
- * and the pending list leave it out. Any other trade (a normal finish after a dispute keeps its
- * reviews) is left alone. Locks the trade row first, then decides; same transaction rules as
- * `eraseReviewsOfTrade`.
+ * `eraseReviewsOfTrade`, only if the trade's final binding outcome is a REVERSAL (R-011,
+ * traders/finalOutcome.ts `disputeOutcomeSql`): its reviews and skips are erased and it is no longer
+ * reviewable (`reviewableSinceSql`), so the gate and the pending list leave it out. Any other trade is
+ * left alone: one that settled as a sale keeps its reviews, and one whose dispute or appeal is still
+ * pending keeps them on hold (`reviewHeldSql`) for the result to decide. Locks the trade row first,
+ * then decides; same transaction rules as `eraseReviewsOfTrade`.
  */
-export async function eraseOverturnedReviews(q: Queryable, code: string): Promise<{ reviews: number; skips: number }> {
-  const { rows } = await q.query<{ overturned: boolean }>(`select ${overturnedSql('t')} as overturned from trades t where t.code = $1 for update`, [code]);
-  if (rows[0]?.overturned !== true) return { reviews: 0, skips: 0 };
+export async function eraseReversedReviews(q: Queryable, code: string): Promise<{ reviews: number; skips: number }> {
+  const { rows } = await q.query<{ reversed: boolean }>(
+    `select coalesce(${disputeOutcomeSql('t')} = 'reversed', false) as reversed from trades t where t.code = $1 for update`,
+    [code],
+  );
+  if (rows[0]?.reversed !== true) return { reviews: 0, skips: 0 };
   return eraseReviewsOfTrade(q, code);
 }

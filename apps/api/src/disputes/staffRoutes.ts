@@ -10,6 +10,7 @@ import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { appendLog } from '../log/append.js';
 import { requireStaff } from '../staff/guard.js';
 import { traderSummaries } from '../traders/summary.js';
+import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
 import { rulingExtras } from './rulingDrafts.js';
 import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
@@ -342,7 +343,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     return { code: d.code };
   });
 
-  // The case: header, both traders, the escrow, the ruling state and the freezes. Never the chat.
+  // The case: header, both traders (and each one's cancel figure, J-21), the escrow, the ruling
+  // state and the freezes. Never the chat.
   // The first opening per person is logged (G37: when the moderator opened the trade) and adds them to `seen`.
   app.get('/staff/v1/disputes/:code', { preHandler: guard, config: cfg }, async (req) => {
     const deps = req.server.deps;
@@ -369,6 +371,9 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const t = await caseTrade(deps.db, code);
     const now = deps.clock();
     const summaries = await traderSummaries(deps.db, [t.buyer, t.seller], now, null);
+    // J-21 (owner T-017): each trader's ONE cancel figure, every kind together: moderators only,
+    // so never inside the public summaries.
+    const cancels = await cancelFigures(deps.db, [t.buyer, t.seller]);
     const extra = await deps.db.query<{ incident_id: string; note: string; assignee_name: string | null }>(
       `select d.incident_id, d.note, a.${PUBLIC_NAME_COLUMN} as assignee_name
          from disputes d left join accounts a on a.id = d.assignee where d.code = $1 and d.seq = $2`,
@@ -407,6 +412,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       mayWork: mayWork(d, req),
       moderator: r.moderatorName !== null && r.moderatorJoinedAt !== null ? { name: r.moderatorName, joinedAt: r.moderatorJoinedAt.toISOString() } : null,
       traders: { buyer: summaries.get(t.buyer) ?? null, seller: summaries.get(t.seller) ?? null },
+      cancels: { buyer: cancels.get(t.buyer) ?? 0, seller: cancels.get(t.seller) ?? 0 },
       escrow: {
         state: t.state,
         amountAtomic: t.amount_atomic,
@@ -589,6 +595,72 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       ruleError(err);
     }
     return { freezes: await freezesOf(deps.db, t, code) };
+  });
+
+  staffFreezeLiftRoute(app, o);
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * F1 (freeze review 12 Nov; D-014 "mods lift it"): `POST /staff/v1/freezes/:id/lift` lifts one
+ * freeze by its id, so a freeze that outlived its trade (R36 whole-record delete) still has a
+ * lift. The case route's own rules: `disputes.handle`; while the case exists, `mayWork` on it (the
+ * assignee, a senior or the owner; R37 on an appeal), the log entry on the case and the person
+ * added to `seen`; once the case is gone there is no assignee, so only a senior or the owner, and
+ * the log entry carries no trade. Like the case route's lift, no maintenance gate (lifting only
+ * gives trading back). 204; 404 `not-found` for an unknown id; 409 `wrong-state` once lifted.
+ * Nothing new is shown to traders.
+ */
+function staffFreezeLiftRoute(app: FastifyInstance, o: StaffDisputeDeps): void {
+  const guard = requireStaff('disputes.handle');
+  const cfg = { perm: 'disputes.handle' as const };
+  const log = o.appendLog ?? appendLog;
+  app.post('/staff/v1/freezes/:id/lift', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
+    const id = (req.params as { id?: unknown }).id;
+    if (typeof id !== 'string' || !UUID.test(id)) throw new ApiError(404, 'not-found');
+    const deps = req.server.deps;
+    const { rows } = await deps.db.query<{ account_id: string; dispute_code: string | null; side: Side | null; has_case: boolean }>(
+      `select h.account_id::text as account_id, h.dispute_code, h.side,
+              exists (select 1 from disputes d where d.code = h.dispute_code) as has_case
+         from trading_holds h where h.id = $1 and h.kind = 'freeze'`,
+      [id.toLowerCase()],
+    );
+    const f = rows[0];
+    if (!f || f.dispute_code === null || f.side === null) throw new ApiError(404, 'not-found');
+    const me = actorOf(req);
+    const liftIn = async (client: pg.PoolClient, now: Date, tradeCode: string | null) => {
+      const active = await client.query('select 1 from trading_holds where id = $1 and lifted_at is null for update', [id]);
+      if ((active.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
+      await client.query('update trading_holds set lifted_at = $2, lifted_by = $3 where id = $1', [id, now, me.id]);
+      await log(client, { at: now, actor: me, tradeCode, action: 'account.freeze-lifted', detail: { accountId: f.account_id, side: f.side } });
+    };
+    if (f.has_case) {
+      const code = f.dispute_code;
+      try {
+        await withDispute({ db: deps.db, clock: deps.clock, ...(o.traderEvents ? { events: o.traderEvents } : {}) }, { code }, async (d, client, now) => {
+          if (!mayWork(d, req)) throw new ApiError(403, 'forbidden-case');
+          await liftIn(client, now, code);
+          return markSeen(d, me.id);
+        });
+      } catch (err) {
+        ruleError(err);
+      }
+    } else {
+      if (!isSeniorOrOwner(req.staff.role)) throw new ApiError(403, 'forbidden-case');
+      const client = await deps.db.connect();
+      try {
+        await client.query('begin');
+        await liftIn(client, deps.clock(), null);
+        await client.query('commit');
+      } catch (err) {
+        await client.query('rollback');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+    return reply.code(204).send();
   });
 }
 

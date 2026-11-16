@@ -79,6 +79,7 @@ import { JABBER_WRITE_ROUTES } from '../jabber/routeList.js';
 import { applyCredential, type StoredCredential } from './webauthn.js';
 import { applyAbilities, applyMemberRemoval } from '../team/members.js';
 import { rolesToAbilities, type TeamRole } from '../team/abilities.js';
+import { applyLimits, parseBand, parseHours, type LoginHours, type TradeBandView } from '../team/limits.js';
 import { releaseHeldTrades, syncHeldTrades } from '../trades/held.js';
 import type { TradePublisher } from '../trades/store.js';
 import { HOLD_CHANGE_ACTIONS_PER_DAY, holdActionsKey, stageChange } from './holdChanges.js';
@@ -128,7 +129,13 @@ export type PendingChange =
    */
   | { kind: 'remove-wallet'; walletId: string; label: string; addressEnd: string }
   /** Owner p5-7: a team member removed by a username-and-password session; they keep their access until it applies. */
-  | { kind: 'team-remove'; memberId: string };
+  | { kind: 'team-remove'; memberId: string }
+  /**
+   * J-20 (owner p7-4, p7-11): a member's trade-size band and working hours set by a
+   * username-and-password session (S-106: the change waits, nothing else does). Checked again
+   * when it applies (`parseBand`, `parseHours`).
+   */
+  | { kind: 'team-limits'; memberId: string; band: TradeBandView | null; hours: LoginHours };
 
 export interface Hold {
   startedAt: Date;
@@ -288,6 +295,11 @@ export async function applyChange(db: Queryable, s: SettleDeps, accountId: strin
       return false;
     case 'team-remove': {
       const ended = await applyMemberRemoval(db, accountId, c.memberId, now);
+      for (const id of ended) s.events?.closeSession(accountId, id);
+      return false;
+    }
+    case 'team-limits': {
+      const ended = await applyLimits(db, accountId, c.memberId, { band: parseBand(c.band), hours: parseHours(c.hours) }, now);
       for (const id of ended) s.events?.closeSession(accountId, id);
       return false;
     }
@@ -583,6 +595,8 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
   'DELETE /v1/team/members/:id',
+  // J-20: a member's trade-size band and working hours (team/limits.ts; the lock is the account's).
+  'PUT /v1/team/members/:id/limits',
   // Owner 2 Nov 2026: switching to a vendor account (routes/accountType.ts; the lock is the account's).
   'PUT /v1/account/type',
   // Hold model v3: submitting and cancelling the changes waiting their 24 h (holdRoutes.ts), and
@@ -622,6 +636,7 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/confirm/webauthn/finish': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',
   'POST /v1/account/blocks': 'social: a block row only; no account, session, approval or security state, no obligation',
   'DELETE /v1/account/blocks/:displayName': 'social: removes a block row only; no account, session, approval or security state',
+  'PUT /v1/account/blocks/:displayName/note': "social: the note on a block row of mine only (S-093); no account, session, approval or security state",
   'PUT /v1/account/nudges': "the caller's own nudge preferences; no session, approval or security state",
   'POST /v1/nudges': 'a nudge to a trade counterparty; no account, session, approval or security state',
   'POST /v1/method-suggestions': 'a method suggestion row only',
@@ -652,6 +667,9 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // the session under the account lock and a member's boxes live, in its transaction).
   'POST /v1/account/notes': 'social: a private note row on another trader only; no account, session, approval or security state, no obligation',
   'DELETE /v1/account/notes/:id': "social: removes one of the account's own note rows (the account owner only); no account, session or security state",
+  // P-012/P-013 (proof-check, classified at the batch 9 merge): the blur check. Anonymous by design.
+  'POST /v1/trades/:code/proofs/:proofId/blur-check': "counts a participant's proof for the blur-check sample (blur_check_proofs/asks rows only); no account, session, approval or security state, no obligation",
+  'POST /v1/trades/:code/blur-checks/:proofId': "a participant's anonymous blur-check answer (an answers row naming no one); no account, session, approval or security state, no obligation",
 };
 
 /**
@@ -690,6 +708,7 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // under the account lock (team/members.ts `ownerWriteGate`).
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
+  'PUT /v1/team/members/:id/limits',
   // Hold model v3: during a recovery-code hold every session of the account is logged out, so only
   // the held recovery session could ask; refused (see team/members.ts `ownerWriteGate`).
   'DELETE /v1/team/members/:id',
@@ -741,12 +760,15 @@ export async function endHoldByModerator(
   events?: SettleDeps['events'],
   publish?: TradePublisher,
   audit?: (db: pg.PoolClient, now: Date) => Promise<unknown>,
+  /** Runs first, under the account lock, with the running hold; a throw ends nothing (D-064's channel check). */
+  precheck?: (db: pg.PoolClient, hold: Hold) => Promise<void>,
 ): Promise<boolean> {
   const now = deps.clock();
   const ended = await withTx(deps.db, async (db) => {
     await lockAccount(db, accountId);
     const hold = await holdInTx(db, { config: deps.config, events }, accountId, now);
     if (hold === null) return false;
+    if (precheck) await precheck(db, hold);
     await db.query('delete from account_holds where account_id = $1', [accountId]);
     await releaseHeldTrades(db, accountId, now);
     await db.query(

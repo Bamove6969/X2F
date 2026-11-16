@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { GIFT_CARD_TERMS_VERSION, formatXmr, giftCardRole, giftCardTermsComplete, posterRole, type Price } from '@x2f/trade';
+import { useResumeSync } from '../../session/syncFirst.js';
 import { useSession } from '../../session/useSession.js';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { BlockAction } from '../settings/BlockAction.js';
@@ -61,14 +62,21 @@ export interface QuoteCopy {
 
 type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'failed' };
 
+/**
+ * One read, again whenever `deps` change; and again on resume (C-021, session/syncFirst.ts): that
+ * read must answer before Trade works again. A failed resume read keeps what is shown (the gate
+ * says it may be out of date) and an answer for older `deps` is dropped.
+ */
 function useLoad<T>(run: ((signal: AbortSignal) => Promise<T>) | null, deps: unknown[]): Load<T> {
   const [load, setLoad] = useState<Load<T>>({ kind: 'loading' });
+  const gen = useRef(0);
   useEffect(() => {
+    const mine = ++gen.current;
     if (run === null) return;
     const abort = new AbortController();
     run(abort.signal).then(
       (value) => {
-        if (!abort.signal.aborted) setLoad({ kind: 'ready', value });
+        if (!abort.signal.aborted && mine === gen.current) setLoad({ kind: 'ready', value });
       },
       () => {
         if (!abort.signal.aborted) setLoad({ kind: 'failed' });
@@ -77,6 +85,12 @@ function useLoad<T>(run: ((signal: AbortSignal) => Promise<T>) | null, deps: unk
     return () => abort.abort();
     // The caller lists in `deps` what `run` reads.
   }, deps);
+  useResumeSync(async () => {
+    if (run === null) return;
+    const mine = gen.current;
+    const value = await run(new AbortController().signal);
+    if (mine === gen.current) setLoad({ kind: 'ready', value });
+  });
   return load;
 }
 

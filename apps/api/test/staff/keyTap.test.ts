@@ -195,6 +195,8 @@ describe('startKeyTap', () => {
     expect(parseKeyTapIntent({ ...RULING, round: 2, round1Id: R1.toUpperCase() })).toMatchObject({ round: 2, round1Id: R1 });
     expect(() => parseKeyTapIntent({ ...RULING, code: 'not a code' })).toThrow(ApiError);
     expect(() => parseKeyTapIntent({ ...RULING, accountAction: { kind: 'site-ban', until: null } })).toThrow(ApiError);
+    // D-015 (owner 2026-11-02 08:12): a freeze is a separate later act, never on the ruling card.
+    expect(() => parseKeyTapIntent({ ...RULING, accountAction: { kind: 'freeze' } })).toThrow(ApiError);
     expect(() => parseKeyTapIntent({ kind: 'set-role', accountId: RULING.rulingId, role: 'owner' })).toThrow(ApiError);
     expect(parseKeyTapIntent(RULING)).toEqual(RULING);
     expect(parseKeyTapIntent({ ...RULING, code: 'abcdefghjkmnpqrs' })).toEqual(RULING);

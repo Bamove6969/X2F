@@ -14,9 +14,12 @@ import type { RetentionJob } from '../retention.js';
 import { SIGNED_BODY_LIMIT, eraseTermsSignature } from '../termsSignature.js';
 import type { StaffDeps } from './app.js';
 import { requireStaff } from './guard.js';
-import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
+import { THREE_METHOD_ROLES, holdsModeratorMethods } from './login.js';
 import { consumeKeyTap } from './keyTap.js';
-import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type InvitableRole } from './members.js';
+import { attestedKeyCount, body, hoursOf, idParam, lockTarget, log, roleOf, tapIdOf, unassignOpenCases, type InvitableRole } from './members.js';
+import { endAllSessions } from '../auth/sessions.js';
+import { addOwnerAlert } from '../alerts.js';
+import { pushOwnerAlert } from '../push/ownerAlert.js';
 
 // Plan 4 Task 7: staff invites (migration 205_staff_invites.sql).
 //
@@ -50,9 +53,9 @@ import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type In
 // - `POST …/:token/pgp/start { publicKey }` and `…/pgp/finish { challengeId, code }` → 201, from the
 //   same browser (device cookie);
 // - `POST …/:token/finish` → 201 `{ keyCheckCode }` (the first attested security key's, or null):
-//   409 `security-key-required` for a senior or mod without an attested security key, 409
-//   `two-factors-required` unless the account holds a staff login pair (PGP and a key or passkey,
-//   or two PGP keys; spec 6.6); then the invite is used, the account enabled, the staff row
+//   409 `two-factors-required` unless the account holds a staff login pair (PGP and a key or passkey,
+//   or two PGP keys; spec 6.6), 409 `moderator-methods-required` for a senior or mod without a PGP
+//   key and a passkey (D-070: the security key is optional); then the invite is used, the account enabled, the staff row
 //   inserted and `staff.joined` logged, in one transaction.
 
 /** An invite link works for 24 hours (spec 6.6). */
@@ -71,6 +74,8 @@ const invalid = (): ApiError => new ApiError(404, 'invite-invalid');
 
 interface OpenInvite {
   id: string;
+  /** `reset`: D-032's re-enrolment link for an existing staff member (account_id set from the start). */
+  kind: 'invite' | 'reset';
   token_hash: string;
   role: InvitableRole;
   hours: unknown;
@@ -82,7 +87,7 @@ interface OpenInvite {
 async function openInvite(q: Queryable, token: unknown, now: Date, lock = false): Promise<OpenInvite> {
   if (typeof token !== 'string' || !TOKEN.test(token)) throw invalid();
   const { rows } = await q.query<OpenInvite>(
-    `select id, token_hash, role, hours, expires_at, account_id from staff_invites
+    `select id, kind, token_hash, role, hours, expires_at, account_id from staff_invites
       where token_hash = $1 and used_at is null and cancelled_at is null and expires_at > $2
       ${lock ? 'for update' : ''}`,
     [inviteTokenHash(token), now],
@@ -138,13 +143,18 @@ function credentialKind(v: unknown): CredentialKind {
 function newInviteOf(b: Record<string, unknown>, now: Date) {
   const role = roleOf(b.role);
   const hours = hoursOf(b.hours);
+  return { role, hours, ...linkOf(b, now) };
+}
+
+/** The link fields the owner's browser makes (an invite's, or a security reset's); 400 `bad-request` otherwise. */
+function linkOf(b: Record<string, unknown>, now: Date) {
   const inviteId = typeof b.inviteId === 'string' && UUID.test(b.inviteId) ? b.inviteId.toLowerCase() : null;
   const token = typeof b.token === 'string' && TOKEN.test(b.token) && Buffer.from(b.token, 'base64url').length === 32 ? b.token : null;
   const expiresAt = typeof b.expiresAt === 'string' && ISO_UTC.test(b.expiresAt) ? b.expiresAt : null;
   const at = expiresAt === null ? NaN : Date.parse(expiresAt);
   if (inviteId === null || token === null || !Number.isFinite(at)) throw new ApiError(400, 'bad-request');
   if (at <= now.getTime() || at > now.getTime() + INVITE_TTL_MS + INVITE_CLOCK_SKEW_MS) throw new ApiError(400, 'bad-request');
-  return { role, hours, inviteId, token, expiresAt: expiresAt!, at: new Date(at), tapId: tapIdOf(b) };
+  return { inviteId, token, expiresAt: expiresAt!, at: new Date(at), tapId: tapIdOf(b) };
 }
 
 /** How long past an invite's expiry the sweep waits before it treats the half-made account as closed. */
@@ -166,7 +176,7 @@ export const purgeStaffInviteLeftovers: RetentionJob = {
   async run(db: pg.Pool, now: Date): Promise<number> {
     const r = await db.query(
       `update accounts a set terms_signature = null from staff_invites i
-        where i.account_id = a.id and a.terms_signature is not null and i.used_at is null
+        where i.account_id = a.id and i.kind = 'invite' and a.terms_signature is not null and i.used_at is null
           and (i.cancelled_at is not null or i.expires_at <= $1)`,
       [new Date(now.getTime() - INVITE_LEFTOVER_GRACE_MS)],
     );
@@ -202,18 +212,76 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const id = idParam(req);
     const { db, clock } = req.server.deps;
     await withTx(db, async (c) => {
-      const r = await c.query<{ account_id: string | null }>(
-        'update staff_invites set cancelled_at = $2 where id = $1 and used_at is null and cancelled_at is null returning account_id',
+      const r = await c.query<{ account_id: string | null; kind: 'invite' | 'reset' }>(
+        'update staff_invites set cancelled_at = $2 where id = $1 and used_at is null and cancelled_at is null returning account_id, kind',
         [id, clock()],
       );
       const cancelled = r.rows[0];
       if (!cancelled) throw new ApiError(404, 'not-found');
       // The invitee's half-made account, if the names were picked: disabled, and now it never
       // finishes, so this is its close (owner p11-13). The Terms version and time stay, as at removal.
-      if (cancelled.account_id !== null) await eraseTermsSignature(c, cancelled.account_id);
+      // A security-reset link (D-032) belongs to a staff member, whose account is not closed by it.
+      if (cancelled.account_id !== null && cancelled.kind === 'invite') await eraseTermsSignature(c, cancelled.account_id);
       await log(c, req, 'staff.invite-cancelled', { inviteId: id });
     });
     return reply.code(204).send();
+  });
+
+  // D-032 (owner G60, 7 Nov): "If they don't have their recovery code, they have to reach out to the
+  // owner. The owner will have to vet them, and ... he will be able to help them log back in by
+  // resetting their security parameters ... and then they can set up the additional security
+  // methods." `POST /staff/v1/members/:id/reset-security { inviteId, token, expiresAt, tapId }` →
+  // 201 `{ inviteId, link, expiresAt }`: the owner's browser makes the link as for an invite, and
+  // his tap `reset-staff-security` binds the person, the link's id, the token's hash and the expiry.
+  // In one transaction: the person's security keys, passkeys, PGP keys and known devices are
+  // deleted (a found or stolen key must not work again), the account is disabled until the link is
+  // used, their open cases go back to the queue, an earlier open reset link of theirs ends, and
+  // `staff.security-reset` is logged; then every session of theirs ends. The link opens the invite
+  // pages at the key step (names, role, hours and the signed Terms stay theirs); its finish asks
+  // for what an invite's does and re-enables the account. Lead reading, owner question: a link,
+  // not "a username and a password" (staff have no passwords; Q-B3).
+  app.post('/staff/v1/members/:id/reset-security', opts, async (req, reply) => {
+    // Review MF1: the owner role's own power, whatever perms a grant may ever add (the tap needs the owner too).
+    if (req.staff.role !== 'owner') throw new ApiError(403, 'forbidden');
+    const id = idParam(req);
+    const { db, clock } = req.server.deps;
+    const now = clock();
+    const n = linkOf(body(req), now);
+    const tokenHash = inviteTokenHash(n.token);
+    await withTx(db, async (c) => {
+      const target = await lockTarget(c, id);
+      const tap = await consumeKeyTap(
+        c, n.tapId, req.staff.accountId,
+        { kind: 'reset-staff-security', accountId: id, inviteId: n.inviteId, tokenHash, expiresAt: n.expiresAt },
+        now, { sessionId: req.auth.sessionId },
+      );
+      await c.query("update staff_invites set cancelled_at = $2 where account_id = $1 and kind = 'reset' and used_at is null and cancelled_at is null", [id, now]);
+      const r = await c.query(
+        `insert into staff_invites (id, kind, token_hash, role, hours, created_by, created_at, expires_at, tap_id, account_id)
+         select $1, 'reset', $2, m.role, m.hours, $3, $4, $5, $6, m.account_id from staff_members m where m.account_id = $7
+         on conflict do nothing`,
+        [n.inviteId, tokenHash, req.staff.accountId, now, n.at, tap.id, id],
+      );
+      if ((r.rowCount ?? 0) === 0) throw new ApiError(400, 'bad-request'); // the id or the token is taken
+      await c.query('delete from webauthn_credentials where account_id = $1', [id]);
+      await c.query('delete from pgp_keys where account_id = $1', [id]);
+      await c.query('delete from trusted_devices where account_id = $1', [id]);
+      // Review S1: nothing half-done of theirs survives either: unused taps, open login challenges,
+      // pending login approvals. TRIPWIRE: when staff recovery codes land (D-032's "recovery code,
+      // else"), delete recovery_codes here too.
+      await c.query('delete from key_taps where account_id = $1 and used_at is null', [id]);
+      await c.query('delete from challenges where account_id = $1 and used_at is null', [id]);
+      await c.query('delete from login_approvals where account_id = $1 and used_at is null', [id]);
+      await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
+      await c.query('update staff_members set has_security_key = false where account_id = $1', [id]);
+      if (!target.switchedOff) await unassignOpenCases(c, id, req);
+      await log(c, req, 'staff.security-reset', { staffId: id, inviteId: n.inviteId });
+      await addOwnerAlert(c, 'staff-security-reset', { staffId: id }, now);
+    });
+    await endAllSessions({ db, clock, events: req.server.events }, id);
+    await pushOwnerAlert({ db, push: req.server.push }, 'staff-security-reset').catch(() => undefined);
+    const origin = (req.server.deps as StaffDeps).staffOrigin;
+    return reply.code(201).send({ inviteId: n.inviteId, link: `${origin}/invite/${n.token}`, expiresAt: n.at.toISOString() });
   });
 
   // ------------------------------------------------------------------------------------------
@@ -237,7 +305,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
       const r = rows[0]!;
       resume = { keys: await attestedKeyCount(db, i.account_id), passkeys: r.passkeys, pgp: r.pgp, keyCheckCode: r.first ? keyCheckCode(new Uint8Array(r.first)) : null };
     }
-    return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString(), resume };
+    return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString(), resume, ...(i.kind === 'reset' ? { reset: true } : {}) };
   });
 
   // The Terms version an invitee must accept (owner 9 Nov 2026, p11-14: everyone who gets a login
@@ -353,26 +421,41 @@ export function staffInviteRoutes(app: FastifyInstance): void {
         [accountId],
       );
       const { webauthn, pgp } = rows[0]!;
-      if ((i.role === 'mod' || i.role === 'senior') && keys === 0) throw new ApiError(409, 'security-key-required');
       if (!((pgp >= 1 && webauthn >= 1) || pgp >= 2)) throw new ApiError(409, 'two-factors-required');
-      // Owner G3 (7 Nov): a moderator holds all three: a security key, a PGP key and a passkey.
-      if (THREE_METHOD_ROLES.includes(i.role) && !(await holdsAllThree(c, accountId))) throw new ApiError(409, 'all-three-methods-required');
+      // D-070 (owner p11-19, changing G3): a moderator holds a PGP key and a passkey; a security key is optional.
+      if (THREE_METHOD_ROLES.includes(i.role) && !(await holdsModeratorMethods(c, accountId))) throw new ApiError(409, 'moderator-methods-required');
       await c.query('update staff_invites set used_at = $2 where id = $1', [i.id, now]);
-      await c.query('update accounts set disabled_at = null where id = $1', [accountId]);
-      await c.query(
-        `insert into staff_members (account_id, role, hours, grants, has_security_key, switched_off_at, joined_at)
-         values ($1, $2, $3, '{}', $4, null, $5)`,
-        [accountId, i.role, JSON.stringify(i.hours), keys > 0, now],
-      );
+      if (i.kind === 'reset') {
+        // D-032: the same staff member, set up again. A member switched off meanwhile stays off;
+        // one removed meanwhile cannot get here (removal cancels the link).
+        await c.query(
+          `update accounts a set disabled_at = null from staff_members m
+            where a.id = $1 and m.account_id = a.id and m.switched_off_at is null and m.removed_at is null`,
+          [accountId],
+        );
+        await c.query('update staff_members set has_security_key = $2 where account_id = $1', [accountId, keys > 0]);
+      } else {
+        await c.query('update accounts set disabled_at = null where id = $1', [accountId]);
+        await c.query(
+          `insert into staff_members (account_id, role, hours, grants, has_security_key, switched_off_at, joined_at)
+           values ($1, $2, $3, '{}', $4, null, $5)`,
+          [accountId, i.role, JSON.stringify(i.hours), keys > 0, now],
+        );
+      }
       const { rows: k } = await c.query<{ public_key: Buffer }>(
         `select public_key from webauthn_credentials where account_id = $1 and kind = 'security-key' and attested order by created_at, id limit 1`,
         [accountId],
       );
       await appendLog(c, {
-        at: now, actor: { kind: 'staff', id: accountId, role: i.role }, tradeCode: null, action: 'staff.joined', detail: { staffId: accountId, role: i.role },
+        at: now, actor: { kind: 'staff', id: accountId, role: i.role }, tradeCode: null,
+        ...(i.kind === 'reset'
+          ? { action: 'staff.security-reset-finished' as const, detail: { staffId: accountId } }
+          : { action: 'staff.joined' as const, detail: { staffId: accountId, role: i.role } }),
       });
+      if (i.kind === 'reset') await addOwnerAlert(c, 'staff-security-reset-finished', { staffId: accountId }, now);
       return k[0] ? keyCheckCode(new Uint8Array(k[0].public_key)) : null;
     });
+    if (first.kind === 'reset') await pushOwnerAlert({ db: deps.db, push: req.server.push }, 'staff-security-reset-finished').catch(() => undefined);
     return reply.code(201).send({ keyCheckCode: code });
   });
 }

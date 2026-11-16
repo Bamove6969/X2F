@@ -337,7 +337,7 @@ test('the offer cap refusal says the number the API sent (cap-dispute review M2,
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
   await f(page).post.click();
-  await expect(page.getByRole('dialog')).toHaveAccessibleDescription(/^You can have 5 buying and 5 selling offers\. /);
+  await expect(page.getByRole('dialog')).toHaveAccessibleDescription(/^Sorry, you're limited to 5 offers per side: 5 buying and 5 selling\. /);
   await expect(page).toHaveURL(/\/post/);
 });
 

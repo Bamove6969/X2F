@@ -54,8 +54,8 @@ const TRADE: Record<`trade.${TradeEvent['type']}`, Schema> = {
 };
 
 /**
- * A ruling's account action is flattened (M6): `accountAction` is its kind (`none`, `freeze`,
- * `trade-ban`, `site-ban`), and a ban's `until` (null = permanent) and `reasonCode` are their own keys.
+ * A ruling's account action is flattened (M6): `accountAction` is its kind (`none`, `trade-ban`,
+ * `site-ban`; D-015: never `freeze`), and a ban's `until` (null = permanent) and `reasonCode` are their own keys.
  */
 const RULING: Schema = {
   rulingId: 'id',
@@ -110,7 +110,8 @@ export const LOG_ACTIONS = {
   'account.freeze-lifted': { accountId: 'uuid', side: 'id' },
   // A recovery-code hold extended or ended by staff (lead hold v3 review; owner G35).
   'hold.extended': { accountId: 'uuid', holdUntil: 'iso' },
-  'hold.ended': { accountId: 'uuid' },
+  // D-064: `via` 'secure-jabber' when staff reached the account holder on their proven Jabber address.
+  'hold.ended': { accountId: 'uuid', via: 'id' },
   'account.trade-banned': BAN,
   'account.site-banned': BAN,
   'account.ban-lifted': { accountId: 'uuid', kind: 'id' },
@@ -133,6 +134,9 @@ export const LOG_ACTIONS = {
   'staff.switched-off': { staffId: 'uuid' },
   'staff.switched-on': { staffId: 'uuid', role: 'id' },
   'staff.removed': { staffId: 'uuid' },
+  // D-032 (owner G60): the owner reset a staff member's security; the link was used.
+  'staff.security-reset': { staffId: 'uuid', inviteId: 'id' },
+  'staff.security-reset-finished': { staffId: 'uuid' },
   'staff.role-set': { staffId: 'uuid', from: 'id', to: 'id' },
   'staff.hours-set': { staffId: 'uuid' },
   'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool', feedbackRead: 'bool' },
@@ -143,7 +147,8 @@ export const LOG_ACTIONS = {
   'staff.method-removed': { method: 'id' },
   'staff.session-ended': {},
   // Lead review 7 Nov M1: silencing actions on the staff site.
-  'staff.alert-seen': {},
+  // Owner-alerts review OA2: which kind of alert was hidden (one), or how many (all at once); never its detail.
+  'staff.alert-seen': { kind: 'id', count: 'number' },
   'staff.push-removed': {},
   // Shifts and pay (Task 33).
   'staff.welcome-acknowledged': {},
@@ -152,6 +157,9 @@ export const LOG_ACTIONS = {
   'shift.abandoned': { shiftId: 'id', ended: 'id' },
   'pay.paid': { staffId: 'uuid', kind: 'id', usdCents: 'amount', atomic: 'amount', ref: 'id' },
   'pay.clawback': { staffId: 'uuid', usdCents: 'amount', rulingId: 'id' },
+  // D-041: a staff member's own pre-approved payout addresses (the id only, never the address).
+  'pay.address-added': { addressId: 'id' },
+  'pay.address-removed': { addressId: 'id' },
   // Past reputation (Plan 5 Task 10, owner 2026-11-02): a senior moderator or the owner sets or
   // clears a claim's verified dollar figure. The figure itself is never logged.
   'pastrep.verified-usd-set': { claimId: 'uuid', cleared: 'bool' },
@@ -182,6 +190,9 @@ export const LOG_ACTIONS = {
   'ticket.replied': { ticketId: 'id' },
   'ticket.closed': { ticketId: 'id' },
   'training.copy-saved': {},
+  // D-058 (lead 12 Nov): a staff member opened a page of the feedback form list, which names the
+  // sender of a named row; how many rows on that page were named (never who).
+  'feedback.form-opened': { namedRows: 'number' },
   'log.checkpoint': { id: 'id', hash: 'hex64' },
 } as const satisfies Record<string, Schema>;
 

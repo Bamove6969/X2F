@@ -65,12 +65,30 @@ export function can(role: StaffRole, perm: Perm, grants: readonly Perm[] = []): 
   return (GRANTABLE_PERMS as readonly Perm[]).includes(perm) && grants.includes(perm);
 }
 
-export type NavItem = 'overview' | 'disputes' | 'staff' | 'performance' | 'training' | 'log' | 'feedback' | 'settings';
+export type NavItem = 'overview' | 'disputes' | 'staff' | 'performance' | 'prices' | 'training' | 'log' | 'feedback' | 'settings';
+
+/**
+ * The perm each menu item's page reads with (the API refuses the page's data without it, whatever
+ * the menu shows). `prices`: the price-health data (`GET /staff/v1/price-health`, owner Q13).
+ */
+export const NAV_PERM: Readonly<Record<NavItem, Perm>> = {
+  overview: 'site.control',
+  disputes: 'disputes.handle',
+  staff: 'staff.manage',
+  performance: 'perf.read',
+  prices: 'stats.read',
+  training: 'training.read',
+  log: 'log.read.cases',
+  feedback: 'feedback.read',
+  settings: 'settings.write',
+};
 
 /** The staff app's side menu per role, in the boards' order (StaffOverview). */
 export const NAV: Readonly<Record<StaffRole, readonly NavItem[]>> = {
   // 'feedback' (Plan 5 Task 4): no board places it yet; before settings is a landing default.
-  owner: ['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'feedback', 'settings'],
+  // 'prices' (owner Q13, 6 Nov: the price-health page moves to the staff site; J-21): no board
+  // draws it yet (DESIGN: not drawn); after Performance, the other figures page, is a lead default.
+  owner: ['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'],
   senior: ['disputes', 'training', 'log', 'feedback'],
   mod: ['disputes', 'training', 'log'],
   helper: [],

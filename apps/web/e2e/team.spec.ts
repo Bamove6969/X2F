@@ -114,7 +114,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await page.goto('/settings/team');
     await setPhone(page, viewport);
     await expect(page.locator('[data-part="team-count"]')).toHaveText('0 of 3 members');
-    await page.getByLabel('Their name in trade chats').fill('Aurora.K');
+    await page.getByLabel('Their name on your team').fill('Aurora.K');
     await page.locator('input[data-role="offers"]').uncheck();
     await page.locator('input[data-role="trades"]').check();
     await expectPhoneLayout(page);
@@ -141,7 +141,7 @@ test('a 4th member is refused through CantDoThat (too-many-members), from the se
     inviteAnswer: () => ({ status: 409, body: { error: 'too-many-members', max: 3 } }),
   });
   await page.goto('/settings/team');
-  await page.getByLabel('Their name in trade chats').fill('Cedric');
+  await page.getByLabel('Their name on your team').fill('Cedric');
   await page.locator('[data-part="invite"]').click();
   await confirmWithPassword(page, 'invite Cedric as a team member (Offers)');
   const popup = page.locator('[data-part="cant-do-that"]');
@@ -161,7 +161,7 @@ test('a full team: the invite control is disabled with the board note, and tappi
   await expect(page.locator('[data-part="team-full"]')).toHaveText('You have 3 members, the most allowed. Remove one to add another.');
   const invite = page.locator('[data-part="invite"]');
   await expect(invite).toHaveAttribute('aria-disabled', 'true');
-  await page.getByLabel('Their name in trade chats').fill('Dora');
+  await page.getByLabel('Their name on your team').fill('Dora');
   // aria-disabled keeps it focusable; Playwright's click waits for an enabled control, so dispatch the tap.
   await invite.dispatchEvent('click');
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
@@ -564,6 +564,41 @@ for (const viewport of PHONE_VIEWPORTS) {
 }
 
 // ---- 7. The owner manages the team -------------------------------------------------------------------
+
+// J-20 (owner p7-4, p7-11): the owner sets a member's trade-size band and working hours; the
+// confirm names both exactly (WYSIWYS) and the row shows them after.
+for (const viewport of PHONE_VIEWPORTS) {
+  test(`the owner sets a member's trade size and working hours (${viewport})`, async ({ page }) => {
+    const s = { members: [member('m1', 'Aurora', ['trades'])] };
+    await ownerApi(page, s);
+    const puts: Record<string, unknown>[] = [];
+    await page.route('**/v1/team/members/m1/limits', (r) => {
+      const body = r.request().postDataJSON() as Record<string, unknown>;
+      if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: 'team-limits' }, 403)(r);
+      puts.push(body);
+      s.members = s.members.map((m) => (m.id === 'm1' ? { ...m, band: body.band, hours: body.hours } : m));
+      return json(s.members[0])(r);
+    });
+    await page.goto('/settings/team');
+    await setPhone(page, viewport);
+    await expect(page.locator('[data-member="Aurora"] [data-part="member-limits"]')).toHaveText('Any trade size · Any time');
+    await page.getByRole('button', { name: 'Change limits for Aurora' }).click();
+    await page.locator('[data-part="band-none"]').uncheck();
+    await page.locator('[data-part="band-min"]').fill('0.1');
+    await page.locator('[data-part="band-max"]').fill('2');
+    await page.locator('[data-part="hours-any"]').uncheck();
+    await expectPhoneLayout(page);
+    await page.locator('[data-part="save-limits"]').click();
+    await confirmWithPassword(page, "set a team member's trade size to 0.1 to 2 XMR and working hours to Mon, Tue, Wed, Thu, Fri 08:00 to 18:00 (UTC)");
+    await expect(page.locator('[data-part="team-said"]')).toHaveText('Limits saved for Aurora.');
+    expect(puts).toEqual([{
+      band: { minAtomic: '100000000000', maxAtomic: '2000000000000' },
+      hours: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], start: '08:00', end: '18:00', tz: 'UTC' },
+      confirmToken: 'tok-1',
+    }]);
+    await expect(page.locator('[data-member="Aurora"] [data-part="member-limits"]')).toHaveText('Trades of 0.1 to 2 XMR · Mon, Tue, Wed, Thu, Fri 08:00 to 18:00 (UTC)');
+  });
+}
 
 test('the owner changes roles and removes a member; the member is then signed out; Devices names member sessions', async ({ page, browser }) => {
   const s = { members: [member('m1', 'Aurora', ['offers', 'trades'])] };

@@ -71,10 +71,14 @@ export async function fetchSite(signal?: AbortSignal): Promise<SiteInfo> {
  * The site state for the app shell: read at start, every `SITE_POLL_MS`, and at once when any API
  * call answers 503 `maintenance`. A failed read keeps the last state (a network fault is not maintenance).
  */
-export function useSite(): { site: SiteInfo; refresh: () => void } {
+export function useSite(): { site: SiteInfo; refresh: () => void; sync: () => Promise<void> } {
   const [site, setSite] = useState<SiteInfo>(SITE_OFF);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((n) => n + 1), []);
+  /** C-021: one read now that resolves once the state is in (rejects when the read fails). */
+  const sync = useCallback(async () => {
+    setSite(await fetchSite());
+  }, []);
   useEffect(() => {
     const ctl = new AbortController();
     fetchSite(ctl.signal).then(setSite, () => undefined);
@@ -88,5 +92,5 @@ export function useSite(): { site: SiteInfo; refresh: () => void } {
       setMaintenanceListener(null);
     };
   }, [refresh]);
-  return { site, refresh };
+  return { site, refresh, sync };
 }

@@ -5,7 +5,7 @@
 // Refusals (too-many-changes) are worded in ui/cantDoCodes.ts.
 import type { HoldChangeSummary } from '@x2f/auth-client';
 import { formatDateTime as utcDateTime } from '../../ui/dates.js';
-import { rolesText } from './teamCopy.js';
+import { TEAM_COPY, rolesText } from './teamCopy.js';
 import type { TeamRole } from '@x2f/auth-client';
 
 export const CHANGES_PATH = '/settings/changes';
@@ -81,6 +81,11 @@ export function changeWords(c: HoldChangeSummary, names: ReadonlyMap<string, str
       const who = c.memberId !== undefined ? names.get(c.memberId) : undefined;
       const boxes = (c.abilityLabels ?? []).join(', ');
       return { title: who !== undefined ? `${who}'s abilities` : "A team member's abilities", before: 'Their current abilities', after: boxes !== '' ? boxes : 'New abilities' };
+    }
+    // J-20: a member's trade-size band and working hours. COPY-UNSIGNED // DESIGN: wording
+    case 'team-limits': {
+      const who = c.memberId !== undefined ? names.get(c.memberId) : undefined;
+      return { title: who !== undefined ? `${who}'s limits` : "A team member's limits", before: 'Their current limits', after: TEAM_COPY.limits(c.band ?? null, c.hours ?? 'any') };
     }
     default:
       return { title: 'Account setting', before: 'Your current setting', after: 'A new setting' };
@@ -168,6 +173,22 @@ export const MEMBER_HOLD_COPY = {
   cancelled: (n: number) => `Changes cancelled. None of the ${n === 1 ? '1 change' : `${n} changes`} will apply. Nothing is waiting any more.`,
   banner: 'A hold is on.',
   bannerLink: 'See the hold',
+} as const;
+
+/**
+ * A used recovery code is burned (owner S-111, p11-36, 9 Nov 2026: "tell them that this recovery
+ * code is now burned and in the security settings, they should go and generate a new recovery
+ * code"), and the password change that takes the code (owner S-110, p11-35). COPY-UNSIGNED: design
+ * words the notice; DESIGN: the password form's code field is not drawn yet.
+ */
+export const BURNED_CODE_COPY = {
+  title: 'Your recovery code is now burned',
+  body: 'The recovery code you just used will never work again. Go to Security settings for a new recovery code.',
+  link: 'Go to Security',
+  done: 'Done',
+  passwordCodeLabel: 'Recovery code (optional)',
+  passwordCodeHint: 'Add your recovery code and the new password takes effect at once, with no 24-hour wait. The code is then used up.',
+  passwordCodeWrong: "That recovery code doesn't match.",
 } as const;
 
 /** The new recovery code (RecoveryCode board, reminder and show steps; owner G32). COPY-UNSIGNED */

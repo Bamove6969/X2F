@@ -5,7 +5,10 @@ import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import type { EventBus } from '../events/bus.js';
 import { appendLog } from '../log/append.js';
-import { eraseReviewsOfTrade } from '../reviews/store.js';
+import { eraseReversedReviews } from '../reviews/store.js';
+import { DECIDED_STATUSES } from '../traders/finalOutcome.js';
+import { countTradeTotals, lockPartyTotals } from '../traders/tradedTotal.js';
+import { accrueDisputePay } from '../staff/payAccrual.js';
 import type { MarketPrices } from '../price/market.js';
 import { usdCentsOf } from '../traders/stage.js';
 import { applyLienRules } from './lien.js';
@@ -134,10 +137,19 @@ export async function saveDispute(client: pg.PoolClient, d: Dispute, now: Date):
       d.ruling === null ? null : JSON.stringify(d.ruling), round1Json(d.round1), d.publishedAt, d.appealEndsAt, d.complyBy,
       d.executedAt, d.compliedAt, d.overturned, d.seen, now],
   );
-  // C12 / owner 2026-11-02 (NEEDS_P4_OVERTURN_ERASES_REVIEWS): an appeal that overturns the ruling
-  // makes the trade as if it never happened, so its reviews and skips go in this same transaction.
-  // Idempotent (a later save of the same final dispute deletes nothing). A decision that stands keeps them.
-  if (d.overturned === true) await eraseReviewsOfTrade(client, d.code);
+  // R-011 / R-012 (owner Q40, Q41; NEEDS_P4_OVERTURN_ERASES_REVIEWS): feedback and totals follow the
+  // final binding outcome, in this same transaction. A trade that ends REVERSED loses its reviews and
+  // skips; one that ends as a sale keeps them (and counts); while an appeal is pending they are held
+  // (traders/finalOutcome.ts reviewHeldSql). Both are idempotent and decide from the rows just saved;
+  // only a decided dispute can change them. Their locks (the trade row, the parties' totals rows)
+  // are already held: `withDispute` takes them before `fn` appends to the log (review M1).
+  if ((DECIDED_STATUSES as readonly string[]).includes(d.status)) {
+    await eraseReversedReviews(client, d.code);
+    await countTradeTotals(client, d.code);
+  }
+  // Plan 4 Task 33 (D-041..D-044): a published round 1 earns its decider's pay; an overruled one is
+  // clawed back from future pay. Idempotent, in this same transaction.
+  await accrueDisputePay(client, d, now);
   if (d.appealEndsAt !== null) {
     await client.query(
       'update dispute_rulings set appeal_until = $3 where code = $1 and seq = $2 and round = 1 and appeal_until is distinct from $3',
@@ -240,8 +252,15 @@ export async function withDispute(
   try {
     await client.query('begin');
     try {
+      // Review M1 (12 Nov): the trade row first, then the dispute row, the same order as a trade
+      // event (applyEvent) and the settle path (internal/routes.ts); then the parties' running
+      // totals rows. A decided save (saveDispute) erases a reversed trade's reviews and moves those
+      // totals, and `fn` appends to the log before it: every lock that work needs is taken here,
+      // before the site-wide log lock, so nothing after the append waits on a contended lock (N3).
+      await client.query('select 1 from trades where code = $1 for update', [target.code]);
       const rec = await loadDisputeRecord(client, target.code, { ...(target.seq === undefined ? {} : { seq: target.seq }), lock: true });
       if (rec === null) throw new DisputeRuleError('wrong-state');
+      await lockPartyTotals(client, target.code);
       // J-06 review L5: everything the lien rules write waits on nothing once `fn` has appended to
       // the activity log (appendLog's rule N3). So, before `fn`: both parties' account rows (the
       // liens' and owed fees' foreign keys take FOR KEY SHARE on them), in id order, then this

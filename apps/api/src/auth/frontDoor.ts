@@ -50,10 +50,12 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/alerts': 'my own security alerts',
   'GET /v1/account/approvals': 'my own pending new-device login approvals',
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
-  'GET /v1/account/blocks': 'the traders I blocked',
+  'GET /v1/account/blocks': 'the traders I blocked, when, and my own private note on each (S-093)',
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
+  'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",
   'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
   'GET /v1/account/jabber': 'my own Jabber alert set-up (the masked address, its state); never another account',
+  'GET /v1/account/jabber/events': 'which events send my own Jabber notices (W-021); never another account',
   'GET /v1/account/methods': 'my own login methods',
   'GET /v1/account/notes/:displayName': "my own account's private notes on a trader (the account owner, or a member with the notes-view box); the notes themselves, never the trader's data",
   'GET /v1/account/nudges': 'my own nudge setting',
@@ -75,6 +77,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/trades/:code': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/attestation': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/confirmations': 'one of my own trades (participants only)',
+  // P-012/P-013 (proof-check, classified at the batch 9 merge): my own side's blur-check asks.
+  'GET /v1/trades/:code/blur-checks': 'one of my own trades (participants only): my side\'s blur-check asks',
   'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
   'GET /v1/wallets': 'my own payout wallets',
@@ -125,6 +129,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/account/jabber/test': 'sends a test code to a Jabber address I typed, for my own account; answers the masked address',
   'POST /v1/account/jabber/verify': 'proves my own typed Jabber address with its test code; answers my set-up state',
   'PUT /v1/account/jabber/enabled': 'switches my own Jabber alerts on or off; answers my set-up state',
+  'PUT /v1/account/jabber/events': 'turns one event of my own Jabber notices on or off (W-021); answers my event list',
   'DELETE /v1/account/jabber': 'removes my own Jabber set-up; no data back',
   // J-23 groundwork: the chat-key courier between my own devices (a strong session of the account owner only).
   'POST /v1/account/chat-keys': "stores a sealed chat-key envelope for one of my own devices; answers its id and expiry",
@@ -139,6 +144,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PUT /v1/account/nudges': 'my own nudge setting',
   'POST /v1/account/blocks': 'a block row of mine; no data back (404 for a name that is not a trader)',
   'DELETE /v1/account/blocks/:displayName': 'removes a block row of mine; no data back',
+  'PUT /v1/account/blocks/:displayName/note': "my own private note on a block row of mine (S-093); answers that note",
   'POST /v1/account/notes': "a private note row of my own account on a trader (the account owner, or a member with the notes-add box); answers that note",
   'DELETE /v1/account/notes/:id': "removes one of my own account's note rows (account owner only); no data back",
   'PUT /v1/account/profile/traded-total': 'my own traded-total display setting',
@@ -161,6 +167,9 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/identity': 'my identity for one of my own trades (participants only)',
   'POST /v1/trades/:code/chat': 'the chat of one of my own trades (participants only)',
   'POST /v1/trades/:code/dispute': 'opens a dispute on one of my own trades (participants only)',
+  // P-012/P-013 (proof-check, classified at the batch 9 merge): the blur check on my own trades.
+  'POST /v1/trades/:code/proofs/:proofId/blur-check': 'counts my own proof on one of my own trades for the blur-check sample (participants only); answers only whether to ask',
+  'POST /v1/trades/:code/blur-checks/:proofId': 'my anonymous blur-check answer on one of my own trades (participants only); no data back',
   'POST /v1/trades/:code/appeal': 'appeals a ruling on one of my own trades (participants only)',
   'POST /v1/trades/:code/review': 'my review of one of my own finished trades',
   'POST /v1/trades/:code/review/skip': 'skips my review of one of my own finished trades',
@@ -172,6 +181,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/team/invites': 'an invite to my own team; answers its id, code and deadline',
   'PATCH /v1/team/members/:id': "changes a member's boxes (abilities) in my own team",
   'DELETE /v1/team/members/:id': 'removes a member from my own team',
+  'PUT /v1/team/members/:id/limits': "sets a member's trade-size band and working hours in my own team (J-20)",
 };
 
 /**

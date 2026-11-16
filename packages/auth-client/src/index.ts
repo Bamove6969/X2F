@@ -11,6 +11,8 @@ export {
   type AlertEntry,
   type ChatKeyEnvelope,
   type JabberStatus,
+  type JabberEventKind,
+  type JabberEvents,
   type ApiErrorCode,
   type ApprovalDecision,
   type ApprovalPoll,
@@ -34,6 +36,8 @@ export {
   type TeamAuditEntry,
   type TeamInviteView,
   type TeamMember,
+  type TradeBand,
+  type WorkingHours,
   type TeamRole,
   type Suggestion,
   type Wallet,
@@ -51,7 +55,7 @@ export {
   type AuthenticationCeremony,
   type RegistrationCeremony,
 } from './webauthn.js';
-export { becomeVendorAction, defaultDeviceLabel, teamInviteAction, teamRemoveAction, teamRolesAction, walletAction, walletsAction, withConfirm } from './confirm.js';
+export { becomeVendorAction, defaultDeviceLabel, teamInviteAction, teamLimitsAction, teamRemoveAction, teamRolesAction, walletAction, walletsAction, withConfirm } from './confirm.js';
 export { checkDisplayName, checkLoginName, checkNames, checkPassword, describeAction, inspectPublicKey, needsStrongConfirm, normalizeLoginCode, normalizeRecoveryCode } from '@x2f/accounts';
 export type { ConfirmAction, MethodType, SessionAccountType } from '@x2f/accounts';
 export {

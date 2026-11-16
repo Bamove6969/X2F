@@ -3,7 +3,7 @@
 // off with the board. Refusals (owner-only, a role a member lacks, the member limit, escrow
 // signing) are CantDoThat's, worded in ui/cantDoCodes.ts (teamCantDoText).
 import { formatDateTime } from '../../ui/dates.js';
-import type { TeamRole } from '@x2f/auth-client';
+import type { TeamRole, TradeBand, WorkingHours } from '@x2f/auth-client';
 
 export const TEAM_PATH = '/settings/team';
 export const JOIN_PATH = '/team/join';
@@ -51,6 +51,32 @@ const AUDIT_WORDS: Record<string, string> = {
   'hold-changes-approved': 'applied waiting changes now',
 };
 
+const ATOMIC_PER_XMR = 1_000_000_000_000n;
+
+/** Atomic units as XMR, exact, trailing zeros trimmed ("0.5", "2"). */
+export function xmrOf(atomic: string): string {
+  const v = BigInt(atomic);
+  const frac = (v % ATOMIC_PER_XMR).toString().padStart(12, '0').replace(/0+$/, '');
+  return frac === '' ? (v / ATOMIC_PER_XMR).toString() : `${v / ATOMIC_PER_XMR}.${frac}`;
+}
+
+/** An XMR amount as typed ("0.5", "2", up to 12 decimals) in atomic units, or null when it is not one. */
+export function atomicOf(xmr: string): string | null {
+  const m = /^(\d{1,18})(?:\.(\d{1,12}))?$/.exec(xmr.trim());
+  if (!m) return null;
+  return (BigInt(m[1]!) * ATOMIC_PER_XMR + BigInt((m[2] ?? '').padEnd(12, '0'))).toString();
+}
+
+// J-20 (owner p7-4, p7-11). COPY-UNSIGNED // DESIGN: wording (no board yet: NOT DRAWN).
+function bandText(b: TradeBand | null | undefined): string {
+  return b === null || b === undefined ? 'Any trade size' : `Trades of ${xmrOf(b.minAtomic)} to ${xmrOf(b.maxAtomic)} XMR`;
+}
+function hoursText(h: WorkingHours | null | undefined): string {
+  if (h === undefined || h === 'any') return 'Any time';
+  if (h === null) return 'Working hours unreadable: no logins until you set them again';
+  return `${h.days.join(', ')} ${h.start} to ${h.end} (${h.tz})`;
+}
+
 export const TEAM_COPY = {
   title: 'Team',
   whatTitle: 'What team members can do',
@@ -75,6 +101,11 @@ export const TEAM_COPY = {
   status: { invited: 'Invited', joining: 'Setting up their login', active: 'Active' } as const,
   inviteUntil: (iso: string) => `Invite works until ${when(iso)}`,
   roles: (roles: readonly TeamRole[]) => rolesText(roles),
+  // Owner p11-21 (S-104): a member invited from a username-and-password login holds no box until
+  // the waiting boxes apply. COPY-UNSIGNED
+  noBoxes: 'No roles yet',
+  // Owner p11-25 (S-105): how chats show the member (the owner's words for the label itself). COPY-UNSIGNED
+  chatLabel: (label: string) => `In chats: ${label}`,
   // Job 1c (review 2026-11-09 m3): a member whose boxes no role describes. COPY-UNSIGNED.
   custom: 'Custom',
   changeRoles: (name: string) => `Change roles for ${name}`,
@@ -85,11 +116,11 @@ export const TEAM_COPY = {
   rolesSaved: (name: string) => `Roles saved for ${name}.`,
   pickRole: 'Pick at least one role.',
   inviteTitle: 'Invite a member',
-  nameLabel: 'Their name in trade chats',
-  // Owner 2026-10-28 (R44): chat labels name the member, "Team Calcium member: Aurora", which the
-  // owner chose over design's "never which member". Design build gaps Job 1 (and board TeamChat)
-  // still ask for "never which member": left as the owner ruled, raised with the lead 2026-11-08.
-  nameHint: 'Chat shows it as "Team <your name> member: <their name>".',
+  // Owner p11-25 (S-105, 9 Nov 2026, replacing R44's "Team <name> member: <member>"): chats show a
+  // member as "<your display name> Assistant 1", "Assistant 2"; the member's name stays inside the
+  // team (this list and the activity log). COPY-UNSIGNED
+  nameLabel: 'Their name on your team',
+  nameHint: 'Only you and your team see it. Chats show them as "<your name> Assistant 1", "Assistant 2" and so on.',
   inviteButton: 'Make an invite link',
   // Team board (wip/design-brief), the full state, with the 1 Nov limit as a number.
   full: (max: number) => `You have ${max} members, the most allowed. Remove one to add another.`,
@@ -107,6 +138,29 @@ export const TEAM_COPY = {
   nameInvalid: 'Use 5 to 20 letters, digits, dots, dashes or underscores.',
   nameTaken: 'Someone on your team already has that name.',
   signedOut: 'Log in to manage your team.',
+  // J-20 (owner p7-4, p7-11; p11-27). COPY-UNSIGNED // DESIGN: wording (no board yet: NOT DRAWN).
+  limits: (band: TradeBand | null | undefined, hours: WorkingHours | null | undefined) => `${bandText(band)} · ${hoursText(hours)}`,
+  limitsButton: 'Limits',
+  changeLimits: (name: string) => `Change limits for ${name}`,
+  bandTitle: 'Trade size',
+  bandNone: 'Any trade size',
+  bandMin: 'Smallest trade (XMR)',
+  bandMax: 'Largest trade (XMR)',
+  bandHint: 'Everything this member does on a trade, and every offer they post or turn on, must fall inside these sizes. They can always pause or remove an offer. Offers priced in fiat are outside any limit.', // J-20 review F2. DESIGN: wording
+  hoursTitle: 'Working hours',
+  hoursAny: 'Any time',
+  hoursStart: 'From',
+  hoursEnd: 'Until',
+  hoursZone: 'Time zone',
+  hoursHint: 'The member logs in and works only inside these hours. When they end, the member is logged out.',
+  saveLimits: 'Save limits',
+  limitsSaved: (name: string) => `Limits saved for ${name}.`,
+  badBand: 'Enter the smallest and largest trade in XMR, the largest above zero and not below the smallest.',
+  badHours: 'Pick at least one day, and a start and end that differ.',
+  firstLoginNote: 'A new member needs no approval to log in. You are told when they log in for the first time.',
+  // J-20 review F8 (owner question p11-136, lead default: a member sees their own limits). COPY-UNSIGNED // DESIGN: wording
+  myLimitsTitle: 'Your limits',
+  myLimitsNote: 'The account owner set these for you.',
 } as const;
 
 export const JOIN_COPY = {
@@ -114,7 +168,9 @@ export const JOIN_COPY = {
   loading: 'Checking your invite…',
   gone: 'This invite link has been used, has run out or is not complete. Ask for a new one.',
   // Never the team's name before joining (review 2026-11-08 F3). COPY-UNSIGNED.
-  invited: (name: string, roles: readonly TeamRole[]) => `You are invited to a team as ${name}, for ${rolesText(roles)}.`,
+  // S-104 (owner p11-21): an invite from a username-and-password login carries no boxes yet. COPY-UNSIGNED
+  invited: (name: string, roles: readonly TeamRole[]) =>
+    roles.length === 0 ? `You are invited to a team as ${name}. The team lead sets what you may do; it starts later.` : `You are invited to a team as ${name}, for ${rolesText(roles)}.`,
   // The member's Terms step before joining (review 2026-11-08 F1). COPY-UNSIGNED.
   termsIntro: 'Before you join, read the Terms of Service to the end and accept them. The key points first:',
   // What the join enforces today; owner p7-9 (any login method) is not built yet (see TEAM_COPY.twoFactors).

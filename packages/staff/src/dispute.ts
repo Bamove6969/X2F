@@ -208,7 +208,7 @@ export function newDispute(a: {
   };
 }
 
-/** Two-person rule: at or above the large-trade limit, or any freeze or ban. */
+/** Two-person rule: at or above the large-trade limit, or any ban. */
 export function needsSecond(d: Dispute, _outcome: RulingOutcome, action: AccountAction): boolean {
   return d.usdCents >= d.limitUsdCents || action.kind !== 'none';
 }
@@ -240,15 +240,16 @@ export function shiftDeadlines(d: Dispute, since: Date, ms: number): Dispute {
 const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 /**
- * M7: an account action as the machine accepts it. `none` and `freeze` carry nothing else; a trade
- * or site ban carries `until` (null = permanent, else an exact ISO instant after `now`) and one of
+ * M7: an account action as the machine accepts it. `none` carries nothing else (D-015: a freeze is
+ * never a ruling's action, so `freeze` is refused here); a trade or site ban carries `until`
+ * (null = permanent, else an exact ISO instant after `now`) and one of
  * `BAN_REASON_CODES`. Any other shape or key is refused.
  */
 function validAction(a: unknown, now: Date): a is AccountAction {
   if (a === null || typeof a !== 'object' || Array.isArray(a)) return false;
   const o = a as Record<string, unknown>;
   const keys = Object.keys(o).sort().join(',');
-  if (o.kind === 'none' || o.kind === 'freeze') return keys === 'kind';
+  if (o.kind === 'none') return keys === 'kind';
   if (o.kind !== 'trade-ban' && o.kind !== 'site-ban') return false;
   if (keys !== 'kind,reasonCode,until') return false;
   if (!(BAN_REASON_CODES as readonly unknown[]).includes(o.reasonCode)) return false;
@@ -259,8 +260,7 @@ function validAction(a: unknown, now: Date): a is AccountAction {
 }
 
 /** The perm an approver needs for the action on top of `rulings.approve` (M7: tied to `can()`). */
-const actionPerm = (a: AccountAction) =>
-  a.kind === 'freeze' ? 'accounts.freeze' : a.kind === 'none' ? null : 'accounts.ban';
+const actionPerm = (a: AccountAction) => (a.kind === 'none' ? null : 'accounts.ban');
 
 const SYSTEM_EVENTS: readonly DisputeEvent['type'][] = ['window-closed', 'executed', 'complied', 'close'];
 
@@ -484,6 +484,10 @@ export function applyDispute(
     case 'approve':
     case 'send-back': {
       if (d.status !== 'awaiting-approval' || d.ruling === null) return fail('wrong-state');
+      // L1 (freeze review 12 Nov): the stored draft's action is checked again, so a draft stored
+      // before a rule changed (D-015: no freeze) or a ban whose end has passed is never approved.
+      // Sending it back stays possible.
+      if (e.type === 'approve' && !validAction(d.ruling.accountAction, now)) return fail('invalid-action');
       if (!canApprove(by.role, d.ruling.accountAction)) return fail('wrong-party');
       if (d.ruling.proposer === by.id) return fail('same-person');
       if (d.round === 2 && !eligibleForAppeal(d, by.id, by.role)) return fail('not-eligible');

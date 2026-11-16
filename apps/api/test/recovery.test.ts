@@ -326,16 +326,19 @@ describe('backup login with a recovery code', () => {
     expect(results.map((r) => r.statusCode).sort()).toEqual([200, 401, 401]);
   });
 
-  it('wrong codes are throttled on the recovery-code key', async () => {
+  it('wrong codes are throttled on the recovery-code key; a correct code still gets in (owner S-109, recoveryRulings.test.ts)', async () => {
     const { id, username } = await account();
     const codes = await newCodes(await loggedIn(id));
     const b = new Browser(app);
     for (let i = 0; i < 4; i++) {
       expect((await backup(b, username, 'recovery-code', 'ABCD-EFGH-JKMN-PQRT')).statusCode).toBe(401);
     }
+    const wrong = await backup(b, username, 'recovery-code', 'ABCD-EFGH-JKMN-PQRS');
+    expect(wrong.statusCode).toBe(429);
+    expect(wrong.json()).toMatchObject({ error: 'slow-down' });
+    // Owner S-109 (p11-34, 9 Nov 2026): "a correct recovery code always gets in".
     const res = await backup(b, username, 'recovery-code', codes[0]!);
-    expect(res.statusCode).toBe(429);
-    expect(res.json()).toMatchObject({ error: 'slow-down' });
+    expect(res.statusCode).toBe(200);
   });
 });
 

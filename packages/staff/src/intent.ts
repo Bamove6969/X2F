@@ -32,12 +32,14 @@ export type BanReasonCode = (typeof BAN_REASON_CODES)[number];
  * The account action a ruling carries. Revisions: the `hold` action is gone (2026-10-29c: replaced
  * by the lien of Task 25, which follows from the outcome and is not chosen); the single `ban` is
  * replaced by the owner's ban stages (Task 27): a trade ban or a site ban, each until an exact
- * ISO time or, with `until: null`, permanent. Any ban or freeze needs a second approver (Task 2),
- * who is a senior moderator or the owner, so a moderator alone can never ban.
+ * ISO time or, with `until: null`, permanent. Any ban needs a second approver (Task 2), who is a
+ * senior moderator or the owner, so a moderator alone can never ban.
+ * D-015 (owner 2026-11-02 08:12): the freeze is NOT an account action of a ruling. It is only a
+ * separate, later act on a party who ignored the dispute or the ruling (`POST
+ * /staff/v1/disputes/:code/freeze`), never an option on the ruling card.
  */
 export type AccountAction =
   | { kind: 'none' }
-  | { kind: 'freeze' }
   | { kind: 'trade-ban' | 'site-ban'; until: string | null; reasonCode: BanReasonCode };
 
 type Invitable = Exclude<StaffRole, 'owner'>;
@@ -70,6 +72,9 @@ export type KeyTapIntent =
   | { kind: 'set-role'; accountId: string; role: Invitable; issuedAt?: string }
   // Owner G4 (7 Nov): permanently removing a staff member is tapped.
   | { kind: 'remove-staff'; accountId: string; issuedAt?: string }
+  // D-032 (owner G60): the owner's reset of a staff member's security, bound to the person and to the
+  // re-enrolment link (its id, the token's hash and the expiry), as `create-invite` binds an invite.
+  | { kind: 'reset-staff-security'; accountId: string; inviteId: string; tokenHash: string; expiresAt: string }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string; issuedAt?: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number; issuedAt?: string }
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
@@ -82,6 +87,20 @@ export type KeyTapIntent =
   // cold address, as it will be after the change (amounts in atomic units as decimal strings; a
   // null threshold turns the sweep off). It names where X2F's money goes, so it is tapped.
   | { kind: 'fee-sweep'; thresholdAtomic: string | null; floatAtomic: string | null; coldAddress: string | null }
+  // Plan 4 Task 33 / D-041 (owner 2026-10-29 lead calls q5): a staff member pre-approves one of
+  // their own payout addresses; adding one needs the strong login, so it is tapped and bound to
+  // exactly that address.
+  | { kind: 'payout-address'; address: string }
+  // Plan 4 Task 33 / D-042, D-043: the owner's pay settings as they will be after the change (US
+  // cents per completed dispute for each role, the senior large-trade share in basis points of the
+  // fee and the large-trade threshold in whole US dollars; null = not set). They set what X2F pays.
+  | {
+      kind: 'pay-settings';
+      modDisputeUsdCents: number | null;
+      seniorDisputeUsdCents: number | null;
+      seniorLargeTradeBp: number | null;
+      largeTradeThresholdUsd: number | null;
+    }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -112,12 +131,15 @@ export const KEY_TAP_KINDS = [
   'switch-on',
   'set-role',
   'remove-staff',
+  'reset-staff-security',
   'add-owner-key',
   'settings',
   'add-pgp-key',
   'remove-method',
   'set-grants',
   'fee-sweep',
+  'payout-address',
+  'pay-settings',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

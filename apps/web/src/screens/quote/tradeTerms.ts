@@ -7,10 +7,9 @@
 // Every line below is the board's, word for word. COPY-UNSIGNED (the owner signs it on the wording
 // pages).
 //
-// Left out on purpose: the board's "[lead writes the wording]" line (the first-month privacy-tool
-// check, p9-8 / Q47) is a placeholder for the lead, not design copy. It goes into the "What affects
-// you" lists after the "privacy tool hides..." line once it is written; until then the group counts
-// are one lower than the board's.
+// The board's "[lead writes the wording]" line (the first-weeks privacy-tool check, p9-8 / Q47,
+// P-012/P-013) is BLUR_CHECK_LINE: page 11's recommended wording, not answered yet (COPY-UNSIGNED),
+// after the "privacy tool hides..." line in the four lists.
 
 /** Who is reading: a taker on a sell ad is `buyer-taker`, on a buy ad `seller-taker`; posters look at a trade on their own ad. */
 export type TermsRole = 'seller-taker' | 'buyer-taker' | 'poster-selling' | 'poster-buying';
@@ -47,6 +46,8 @@ const MAINTENANCE = 'Maintenance pauses the trade timers.';
 const ON_HOLD = 'On hold, you can both still enter, chat and reach a moderator; no coins move until a moderator decides.';
 const RULING = 'A ruling moves the coins at once; a lien covers a reversal.';
 const FEEDBACK = 'Feedback and your totals follow the final outcome.';
+/** COPY-UNSIGNED: page 11's first option for the blur-check line (P-012/P-013); the owner has not answered yet. */
+export const BLUR_CHECK_LINE = 'For the first weeks we ask after every proof whether our privacy tool hid the right details. It takes one tap.';
 const TAIL = [MAINTENANCE, ON_HOLD, MODERATOR_TIME, RULING, FEEDBACK] as const;
 
 /** What the seller (either role) is told about the buyer's side. */
@@ -58,6 +59,7 @@ const SELLER_AFFECTS = [
   'After the time to pay, the buyer can still pay until you cancel. If they paid and you cancel, they can dispute at once.',
   'Before the XMR is released, a pop-up asks you to confirm the payment arrived. You can turn it off.',
   'Proofs show the trade code, amount and time; our privacy tool hides names and account numbers.',
+  BLUR_CHECK_LINE,
   "You're warned if a proof has no readable date.",
   ...TAIL,
 ] as const;
@@ -65,6 +67,7 @@ const SELLER_AFFECTS = [
 /** What the buyer (either role) is told, after the lines only a taker gets. */
 const BUYER_AFFECTS = [
   'Our privacy tool hides names and account numbers in your proof; the trade code, amount and time stay visible.',
+  BLUR_CHECK_LINE,
   "If our privacy tool hides the trade code, or there's no readable date, you're warned and can still post.",
   'Once you tap "I\'ve paid", neither of you can cancel.',
   'After the time to pay, the trade stays open until the seller cancels: you can still message and pay. If you paid and they cancel, you can dispute at once.',

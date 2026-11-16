@@ -9,11 +9,13 @@ import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { Button } from './ui/Button.js';
 import { Sheet } from './ui/Sheet.js';
+import { SyncGate } from './ui/SyncGate.js';
+import { useResumeSync, watchResume } from './session/syncFirst.js';
 import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
-import { AccountFrozenRoute, FROZEN_PATH } from './screens/account/AccountFrozen.js';
+import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -35,6 +37,8 @@ import { IdleReminderScreen } from './screens/settings/IdleReminderSettings.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { JabberSetup } from './screens/settings/JabberSetup.js';
+import { JabberEventsScreen } from './screens/settings/JabberEvents.js';
+import { AlarmListener } from './alerts/alarm.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
 import { AccountChangesScreen, ChangesBanner, ChangesCapPopup } from './screens/settings/HoldChanges.js';
 import { Security } from './screens/settings/Security.js';
@@ -95,6 +99,8 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
         <SiteBanner banner={banner} />
         {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}
         <ChangesBanner />
+        {/* C-021: on the screens whose actions change a trade or an offer, "Updating…" while the tab syncs after becoming active again. */}
+        <SyncGate />
         <Outlet />
       </div>
       <ChangesCapPopup />
@@ -205,7 +211,11 @@ export function App() {
   const session = useSession();
   useWatchSession(session);
   // Plan 4 Task 8: the banner, and maintenance, which replaces the whole app with the owner's message.
-  const { site, refresh } = useSite();
+  const { site, refresh, sync } = useSite();
+  // C-021 (owner p11-33): when this tab becomes active again it syncs first (session/syncFirst.ts);
+  // the site's maintenance and trading-paused state is one of the pulls.
+  useEffect(() => watchResume(), []);
+  useResumeSync(sync);
   // GET /v1/site answers the banner only inside the door: read it again when someone logs in or out.
   const inside = isInside(session);
   useEffect(() => {
@@ -218,6 +228,10 @@ export function App() {
       <SessionPrompt />
       <IdleReminder />
       {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
+      {/* W-006: the loud alarm rings in an open tab when a push arrives (off until turned on). */}
+      {isTrader(session) ? <AlarmListener /> : null}
+      {/* D-016: a frozen account owner gets the notice once per freeze after a login (GET /v1/account/freeze is the owner's alone). */}
+      <FrozenWatch enabled={isTrader(session) && memberOf(session) === null} />
       <Routes>
         {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
         <Route element={<BehindTheDoor />}>
@@ -242,12 +256,14 @@ export function App() {
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
             <Route path="/settings/jabber" element={<JabberSetup />} />
+            {/* W-021: which events send a Jabber notice. */}
+            <Route path="/settings/jabber/events" element={<JabberEventsScreen />} />
             <Route path="/settings/team" element={<Team />} />
             <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
             <Route path="/settings/account-type" element={<AccountType />} />
             <Route path="/news" element={<News />} />
             <Route path="/feedback" element={<Feedback />} />
-            {/* D-016: the frozen-account notice, until the API says an account is frozen (NEEDS_API_FROZEN_STATE). */}
+            {/* D-016: the frozen-account notice, from GET /v1/account/freeze (home while not frozen). */}
             <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
           </Route>
         </Route>

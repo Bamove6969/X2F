@@ -49,6 +49,9 @@ export interface HoldChangeSummary {
   abilityLabels?: string[];
   /** A wallet removed (owner p5-7): its label (and `addressEnds` its address's last 6). */
   label?: string;
+  /** J-20 (`team-limits`): a member's new trade-size band (null: none) and working hours. */
+  band?: TradeBand | null;
+  hours?: WorkingHours;
 }
 
 /** Hold model v3: `GET /v1/account/hold`. */
@@ -238,7 +241,13 @@ export interface AccountOverview {
    * Plan 2 Task 18: set when the caller is a team member (the overview is of the account they work
    * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
    */
-  member?: { name: string; roles: TeamRole[] } | null;
+  member?: {
+    name: string;
+    roles: TeamRole[];
+    chatLabel?: string;
+    /** J-20 review F8 (owner question p11-136): the member's own limits; absent while the API's MEMBER_SEES_OWN_LIMITS is off, or on older builds. */
+    limits?: { band: TradeBand | null; hours: WorkingHours };
+  } | null;
   /**
    * The calling session's length (owner, 2 Nov 2026): set for a full trader session, null for staff,
    * owner and backup sessions. Optional: older API builds do not send it.
@@ -269,6 +278,15 @@ export function isVendor(me: Pick<AccountOverview, 'accountType'> | null | undef
 /** Plan 2 Task 18: a team member's roles (spec 6.7); owner p4-8 adds the hold rights (each includes the ones before it). */
 export type TeamRole = 'offers' | 'trades' | 'hold-see' | 'hold-cancel' | 'hold-end';
 
+/** J-20 (owner p7-4): a member's trade-size band, XMR atomic units as decimal strings, both ends included. */
+export interface TradeBand {
+  minAtomic: string;
+  maxAtomic: string;
+}
+
+/** J-20 (owner p7-11): a member's working hours: any time, or days and a daily window in an IANA time zone. */
+export type WorkingHours = 'any' | { days: ('Sun' | 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat')[]; start: string; end: string; tz: string };
+
 /** Plan 2 Task 18: one member or open invite, as the account owner sees it (`GET /v1/team`). */
 export interface TeamMember {
   id: string;
@@ -281,6 +299,11 @@ export interface TeamMember {
   /** True when the roles above do not describe the boxes exactly (a custom set): show "Custom", not the roles. */
   custom?: boolean;
   status: 'invited' | 'joining' | 'active';
+  /** Owner p11-25 (S-105): how trade chats show the member, "<lead's display name> Assistant N". Optional: older API builds do not send it. */
+  chatLabel?: string;
+  /** J-20: the trade-size band (null: none) and working hours (null: stored value invalid, never inside). Optional: older API builds do not send them. */
+  band?: TradeBand | null;
+  hours?: WorkingHours | null;
   inviteExpiresAt: string | null;
   joinedAt: string | null;
   createdAt: string;
@@ -391,6 +414,15 @@ export interface JabberStatus {
   lastSentAt: string | null;
 }
 
+/** W-021: the Jabber notice kinds a user can turn on or off (`NOTICE_KINDS` in apps/api jabber/sender.ts; J-20 adds the first login). The page lists whatever the API answers. */
+export type JabberEventKind = 'account-change' | 'trade-attention' | 'team-member-first-login';
+
+/** W-021 (owner p11-27): which events send a Jabber notice (`GET /v1/account/jabber/events`), every kind in the server's order. */
+export interface JabberEvents {
+  /** `canTurnOff: false`: a security notice that stays on (review F1; 409 `jabber-event-always-on`). */
+  events: Array<{ kind: JabberEventKind; on: boolean; canTurnOff: boolean }>;
+}
+
 /**
  * J-23 chat-key courier (`apps/api` auth/chatKeys.ts): a box sealed by one of the person's devices
  * to another device's X25519 key. The API stores and serves it exactly as posted and opens nothing.
@@ -489,8 +521,11 @@ export interface AuthApi {
    * Hold model v3: each change below answers `Staged` (202) instead when made from a login with just
    * a username and password: nothing changed yet; it is a draft to review and submit (`isStaged`).
    */
-  /** `PUT /v1/account/password` (Task 10). */
-  setPassword(b: { password: string } & Token): Promise<Staged | undefined>;
+  /**
+   * `PUT /v1/account/password` (Task 10). With `recoveryCode` (owner S-110) the change applies at
+   * once, never staged, and the code is burned (the server answers `recoveryCodeBurned: true`).
+   */
+  setPassword(b: { password: string; recoveryCode?: string } & Token): Promise<Staged | undefined>;
   addPgpKeyStart(b: { publicKey: string } & Token): Promise<PgpChallenge>;
   addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string } & Partial<Staged>>;
   addWebAuthnStart(b: { kind: WebAuthnKind } & Token): Promise<RegistrationChallenge>;
@@ -537,6 +572,10 @@ export interface AuthApi {
   verifyJabber(b: { code: string }): Promise<JabberStatus>;
   setJabberEnabled(b: { on: boolean }): Promise<JabberStatus>;
   turnOffJabber(): Promise<void>;
+  /** W-021: which events send a Jabber notice. */
+  getJabberEvents(): Promise<JabberEvents>;
+  /** W-021: turns one event on or off; 404 `not-found` until an address is proven. */
+  setJabberEvent(b: { kind: JabberEventKind; on: boolean }): Promise<JabberEvents>;
 
   // J-23 chat-key courier (dormant groundwork): full trader sessions of the owner, strong strictly
   // (403 `weak-session`), never during a hold (403 `recovery-hold`).
@@ -596,13 +635,19 @@ export interface AuthApi {
 
   // Team members (Plan 2 Task 18). The account owner's side: a member gets 403 `owner-only`.
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
-  /** Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once. */
-  inviteMember(b: { displayName: string; roles: TeamRole[] } & Token): Promise<{ id: string; invite: string; expiresAt: string }>;
+  /**
+   * Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once.
+   * Owner p11-21 (S-104): from a login that waits (a username and password) the invite still goes out, and the answer is also
+   * `Staged` (`isStaged`): the member's boxes are a draft that applies 24 h after it is submitted.
+   */
+  inviteMember(b: { displayName: string; roles: TeamRole[] } & Token): Promise<{ id: string; invite: string; expiresAt: string } & Partial<Staged>>;
   /** Confirm `team-roles` (`teamRolesAction`). From a login that waits (a username and password), 202 `Staged`. */
   setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember | Staged>;
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
   /** Owner p5-7: `Staged` (202) from a login with just a username and password: the member keeps access until it applies. */
   removeMember(id: string, b: Token): Promise<Staged | undefined>;
+  /** J-20: confirm `team-limits` (`teamLimitsAction`). From a login that waits (a username and password), 202 `Staged`. */
+  setMemberLimits(id: string, b: { band: TradeBand | null; hours: WorkingHours } & Token): Promise<TeamMember | Staged>;
   /** Newest first, at most 200 rows. */
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
   // The invited person's side (no session yet).
@@ -749,6 +794,8 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     verifyJabber: (b) => post('/v1/account/jabber/verify', b),
     setJabberEnabled: (b) => call('PUT', '/v1/account/jabber/enabled', b),
     turnOffJabber: () => done(call('DELETE', '/v1/account/jabber')),
+    getJabberEvents: () => get('/v1/account/jabber/events'),
+    setJabberEvent: (b) => call('PUT', '/v1/account/jabber/events', b),
     listChatKeys: () => get('/v1/account/chat-keys'),
     postChatKey: (b) => post('/v1/account/chat-keys', b),
     collectChatKey: (id) => done(call('DELETE', `/v1/account/chat-keys/${seg(id)}`)),
@@ -773,6 +820,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     inviteMember: (b) => post('/v1/team/invites', b),
     setMemberRoles: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
     removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
+    setMemberLimits: (id, b) => call('PUT', `/v1/team/members/${seg(id)}/limits`, b),
     teamAudit: (q = {}) => {
       const p = new URLSearchParams();
       if (q.from !== undefined) p.set('from', q.from);

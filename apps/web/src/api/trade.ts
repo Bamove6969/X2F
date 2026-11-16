@@ -1,3 +1,4 @@
+import { catalogMethodName } from '../methods/catalogNames.js';
 import { api } from './client.js';
 
 /** The trade's state (packages/trade `TradeState`; listed here so the web build needs no server code). */
@@ -49,6 +50,8 @@ export interface TraderSummary {
   tradedOverXmr?: number | null;
   /** Owner Q64, p4-1: verified imported volume per site, in whole US dollars. */
   imported?: { site: string; overUsd: number }[];
+  /** D-049 (J-21): disputes won and lost, by each one's latest ruling (the profile's "Disputes: N won, M lost"). */
+  disputes?: { won: number; lost: number };
 }
 
 /** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */
@@ -78,11 +81,10 @@ export interface TradeView {
   /** Owner G7 (lead review 8 Nov I5): the buyer's cancel is recorded and waits for the other account's problem to end. Not shown on screen yet. */
   cancelWaiting?: boolean;
   methodId: string;
-  /**
-   * The chosen method's instructions from the offer, locked at take (J-16): null until the escrow is
-   * secured, '' when the offer gave none. Not shown by the web yet; missing from an older API.
-   */
-  paymentInstructions?: string | null;
+  // No `paymentInstructions` here on purpose (instr-hash review I1): the API sends the locked text,
+  // but it is unsigned. Only the escrow runtime reads it (from `unknown`, escrow/adapters.ts), and a
+  // screen shows payment instructions only from `EscrowStatus.paymentInstructions`, which passes them
+  // on only when they hash to the moderator-attested ones (Task 34 review I1).
   profile: unknown;
   amountAtomic: string;
   fiatCents: string;
@@ -190,14 +192,16 @@ export async function getTrade(code: string, signal?: AbortSignal): Promise<Trad
 }
 
 /**
- * The trade's payment method for the header and warnings. The view carries Task 3's profile as
- * `profile` (null until Task 3 wires `getProfile`) and no display name; until a name is in the
- * view, `profile.name` is read if present, else the method id (test/tradeRoom-tripwires.test.ts).
+ * The trade's payment method for the header and warnings. The name is the bundled catalog's for the
+ * view's method id (review M2: the trade room hands its screens the moderator-attested id), never
+ * the profile's; the id itself when the catalog has none. The explainer and the gift-card flag come
+ * from Task 3's profile (`profile`, null until Task 3 wires `getProfile`; the room drops it when the
+ * view's method is not the attested one).
  */
 export function methodOf(view: Pick<TradeView, 'methodId' | 'profile'>): { name: string; whatItIs: string; giftCard: boolean } {
   const p = (view.profile !== null && typeof view.profile === 'object' ? view.profile : {}) as Record<string, unknown>;
   return {
-    name: typeof p.name === 'string' && p.name !== '' ? p.name : view.methodId,
+    name: catalogMethodName(view.methodId),
     whatItIs: typeof p.whatItIs === 'string' ? p.whatItIs : '',
     giftCard: p.giftCard === true,
   };

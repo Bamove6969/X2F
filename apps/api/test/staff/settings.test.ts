@@ -116,6 +116,46 @@ describe('PUT /staff/v1/settings', () => {
     expect((await put({ moderatorContactUrl: null })).json()).toMatchObject({ moderatorContactUrl: null });
   });
 
+  it('D-067: the moderator contact link takes a Matrix (matrix.to) or Telegram (t.me) link and nothing else', async () => {
+    for (const ok of ['https://matrix.to/#/#x2f-mods:matrix.org', 'https://matrix.to/#/@mod:example.org', 'https://t.me/x2f_mods']) {
+      const res = await put({ moderatorContactUrl: ok });
+      expect(res.statusCode, `${ok} ${res.body}`).toBe(200);
+      expect(res.json()).toMatchObject({ moderatorContactUrl: ok });
+    }
+    for (const bad of [
+      'https://example.org/mods', 'https://matrix.to.evil.example/#/#x', 'https://evil.example/https://t.me/x', 'https://t.me.evil.example/x',
+      'https://user@matrix.to/#/#x', 'https://matrix.to:8443/#/#x', 'https://matrix.to/', 'https://matrix.to/#/', 'https://t.me/', 'https://wa.me/15551234567',
+    ]) {
+      const res = await put({ moderatorContactUrl: bad });
+      expect({ status: res.statusCode, error: errorOf(res) }, bad).toEqual({ status: 400, error: 'bad-request' });
+    }
+    expect((await put({ moderatorContactUrl: null })).json()).toMatchObject({ moderatorContactUrl: null });
+  });
+
+  it('review F2: the link is stored in its normalised form; a query or fragment on t.me and anything but a Matrix identifier on matrix.to are refused', async () => {
+    for (const [typed, stored] of [
+      ['https://MATRIX.TO/#/@mod:example.org', 'https://matrix.to/#/@mod:example.org'],
+      ['https://matrix.to:443/#/#x2f-mods:matrix.org', 'https://matrix.to/#/#x2f-mods:matrix.org'],
+      ['https://matrix.to/%2e%2e/#/!room123:example.org', 'https://matrix.to/#/!room123:example.org'],
+      ['https://matrix.to/#/+group:example.org:8448', 'https://matrix.to/#/+group:example.org:8448'],
+      ['https://T.ME/%2e%2e/x2f_mods', 'https://t.me/x2f_mods'],
+    ]) {
+      const res = await put({ moderatorContactUrl: typed });
+      expect(res.statusCode, `${typed} ${res.body}`).toBe(200);
+      expect(res.json(), typed).toMatchObject({ moderatorContactUrl: stored });
+      expect((await getSettings(deps.db)).moderatorContactUrl, typed).toBe(stored);
+    }
+    for (const bad of [
+      'https://t.me/x?start=1', 'https://t.me/x#frag', 'https://t.me/x?', 'https://matrix.to/#/@a:b"><script>', 'https://matrix.to/#/@mod',
+      'https://matrix.to/#/x2f-mods:matrix.org', 'https://matrix.to/#/@mod:example.org/extra', 'https://matrix.to/?via=a#/@mod:example.org',
+      'https://matrix.to/#/@mod:exa_mple.org',
+    ]) {
+      const res = await put({ moderatorContactUrl: bad });
+      expect({ status: res.statusCode, error: errorOf(res) }, bad).toEqual({ status: 400, error: 'bad-request' });
+    }
+    expect((await put({ moderatorContactUrl: null })).json()).toMatchObject({ moderatorContactUrl: null });
+  });
+
   it('a value equal to the current one changes nothing, needs no tap and logs nothing', async () => {
     const before = (await changes()).length;
     const res = await put({ largeTradeLimitUsd: 1000, appealWindowH: 48 });

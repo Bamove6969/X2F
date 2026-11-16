@@ -6,6 +6,7 @@ export { sha256 } from './sha256.js';
 export {
   GRANTABLE_PERMS,
   NAV,
+  NAV_PERM,
   navFor,
   PERMS,
   STAFF_ROLES,
@@ -60,6 +61,16 @@ export {
   type TraderDisputeStatus,
 } from './dispute.js';
 export { appealReviewers, involvedIn, type InvolvementEntry } from './appealReviewers.js';
+export {
+  BAN_RULES,
+  LIFETIME_AT_OFFENCE,
+  banRule,
+  banTermFor,
+  checkBanTerm,
+  type BanRule,
+  type BanTermChoice,
+  type BanTermError,
+} from './banRules.js';
 export { INCIDENT_ALPHABET, INCIDENT_ID_LENGTH, incidentCheckChar, isIncidentId, normalizeIncidentId } from './incident.js';
 export {
   lienCreditor,

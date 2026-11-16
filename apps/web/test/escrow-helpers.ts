@@ -2,7 +2,7 @@
 import type { Role } from '@x2f/core';
 import { TransportClosedError, type EscrowEngine, type Incoming, type Outcome, type PartyArgs, type PartyHandle, type Transport } from '@x2f/escrow';
 import { canonicalJson, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { attestationBytes, channelFor, escrowPlan, type Attestation } from '@x2f/trade';
+import { attestationBytes, channelFor, escrowPlan, instructionsSha256, type Attestation } from '@x2f/trade';
 import { IDBFactory } from 'fake-indexeddb';
 import sodium from 'libsodium-wrappers';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowRuntime, type EscrowStatus } from '../src/escrow/runtime.js';
@@ -13,6 +13,10 @@ export const AMOUNT = 1_250_000_000_000n;
 export const FEE_WALLET = '4FeeWalletAddress';
 export const ADDR = { buyer: '4BuyerPayout', seller: '4SellerRefund' } as const;
 export const ESCROW_ADDRESS = '5EscrowMultisigAddress';
+/** The payment instructions locked at take; the attestation carries their SHA-256 (Task 34 review I1, restored after J-16). */
+export const INSTRUCTIONS = 'Zelle to pay@example.test, memo: the trade code';
+/** The method chosen at take, in the view and the attestation. */
+export const METHOD_ID = 'ZELLE';
 
 /**
  * A fresh trade identity for the stubs, made here with libsodium. apps/web may name the
@@ -207,6 +211,9 @@ export function tradeView(over: Record<string, unknown> = {}): Record<string, un
     paidAt: null,
     // The time to pay the API sends with every trade (owner p9-6); the attestation below signs the same.
     payWindowMin: 90,
+    methodId: METHOD_ID,
+    // The locked text the attestation signs (review M1: once secured, a view must carry it).
+    paymentInstructions: INSTRUCTIONS,
     ...over,
   };
 }
@@ -230,7 +237,10 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
       participants,
       issuedAt: '2026-10-23T12:00:00.000Z',
       terms: {
-        deal: { poster: d.poster, takeAmountAtomic: d.takeAmountAtomic.toString(), currency: d.currency, centsPerXmr: d.centsPerXmr.toString(), maxFiatCents: d.maxFiatCents.toString() },
+        deal: {
+          poster: d.poster, takeAmountAtomic: d.takeAmountAtomic.toString(), currency: d.currency, centsPerXmr: d.centsPerXmr.toString(), maxFiatCents: d.maxFiatCents.toString(),
+          methodId: METHOD_ID, instructionsSha256: await instructionsSha256(INSTRUCTIONS),
+        },
         payWindowMin: 90,
         buyerPayout: ADDR.buyer,
         sellerRefund: ADDR.seller,

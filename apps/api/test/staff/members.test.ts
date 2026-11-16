@@ -240,17 +240,23 @@ describe('invites', () => {
     expect(before.rows[0]!.n).toBe(0);
   });
 
-  it('a moderator invitee with only PGP gets security-key-required; a helper with two PGP keys joins', async () => {
+  it('D-070 (owner p11-19): a moderator invitee needs a PGP key and a passkey; the security key is optional; a helper with two PGP keys joins', async () => {
     const mod = await createInvite('mod');
     const m = await signUp(mod.token, { noKey: true, twoPgp: true });
-    expect(m.finish.statusCode).toBe(409);
-    expect(errorOf(m.finish)).toBe('security-key-required');
-    // Still open: with a key, a moderator still needs all three (owner G3); adding a passkey finishes.
-    expect((await addInviteKey(m.b, mod.token, t.newKey())).statusCode).toBe(201);
-    const noPasskey = await m.b.post(acceptUrl(mod.token, '/finish'), {});
-    expect([noPasskey.statusCode, errorOf(noPasskey)]).toEqual([409, 'all-three-methods-required']);
+    expect([m.finish.statusCode, errorOf(m.finish)]).toEqual([409, 'moderator-methods-required']);
+    // A passkey, and no security key at all, finishes (synced passkeys allowed: no hardware-only rule).
     expect((await addInviteKey(m.b, mod.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
-    expect((await m.b.post(acceptUrl(mod.token, '/finish'), {})).statusCode).toBe(201);
+    const done = await m.b.post(acceptUrl(mod.token, '/finish'), {});
+    expect([done.statusCode, done.json()]).toEqual([201, { keyCheckCode: null }]);
+    const id = await accountOf(m.loginName);
+    expect((await t.deps.db.query('select role, has_security_key from staff_members where account_id = $1', [id])).rows).toEqual([{ role: 'mod', has_security_key: false }]);
+
+    // A security key and a PGP key without a passkey is still not enough (the passkey is not optional).
+    const senior = await createInvite('senior');
+    const s = await signUp(senior.token);
+    expect([s.finish.statusCode, errorOf(s.finish)]).toEqual([409, 'moderator-methods-required']);
+    expect((await addInviteKey(s.b, senior.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
+    expect((await s.b.post(acceptUrl(senior.token, '/finish'), {})).statusCode).toBe(201);
 
     const helper = await createInvite('helper');
     const h = await signUp(helper.token, { noKey: true, twoPgp: true });
@@ -404,10 +410,12 @@ describe('members', () => {
       joinedAt: MON_NOON.toISOString(), lastActiveAt: MON_NOON.toISOString(), openCases: 0, expiresAt: null,
       // Owner G3 (review P-m2): this moderator holds only a security key so far.
       missingMethods: ['pgp', 'passkey'],
+      // J-21 (owner Q60): the per-person checkboxes as stored.
+      grants: [],
     });
     expect(rows).toContainEqual({
       accountId: null, inviteId: inv.inviteId, displayName: null, role: 'helper', status: 'waiting', hours: OFFICE,
-      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt, missingMethods: [],
+      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt, missingMethods: [], grants: [],
     });
     expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any', missingMethods: [] });
     await addPgpKey(t.deps, mod.id);
@@ -454,7 +462,7 @@ describe('members', () => {
     // switched on, and the tap stays unused.
     const early = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' });
     const refused = await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId: early });
-    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'all-three-methods-required']);
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'moderator-methods-required']);
     expect((await t.deps.db.query('select used_at from key_taps where id = $1', [early])).rows).toEqual([{ used_at: null }]);
     await addPgpKey(t.deps, mod.id);
     await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
@@ -479,16 +487,22 @@ describe('members', () => {
     expect(errorOf(await mod.browser.get('/staff/v1/me'))).toBe('outside-login-hours');
   });
 
-  it('sets a role with a tap; a moderator role needs a security key, a senior all three methods (owner G3)', async () => {
+  it('sets a role with a tap; a moderator or senior role needs a PGP key and a passkey, a security key optional (owner G3, D-070)', async () => {
     const helperOnlyPgp = await seedStaff(t.deps, { role: 'helper' });
     await t.deps.db.query('update staff_members set has_security_key = false where account_id = $1', [helperOnlyPgp.id]);
     const up = await tap(owner, { kind: 'set-role', accountId: helperOnlyPgp.id, role: 'mod' });
-    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${helperOnlyPgp.id}/role`, { role: 'mod', tapId: up }))).toBe('security-key-required');
+    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${helperOnlyPgp.id}/role`, { role: 'mod', tapId: up }))).toBe('moderator-methods-required');
+    // D-070: with a passkey added, the keyless helper becomes a moderator (no security key).
+    await addPgpKey(t.deps, helperOnlyPgp.id);
+    await registerKey(t.app, helperOnlyPgp.id, t.newKey({ passkey: true }), { passkey: true });
+    const res1 = await owner.browser.send('PUT', `/staff/v1/members/${helperOnlyPgp.id}/role`, { role: 'mod', tapId: up });
+    expect(res1.statusCode, res1.body).toBe(200);
+    expect((await t.deps.db.query('select has_security_key from staff_members where account_id = $1', [helperOnlyPgp.id])).rows).toEqual([{ has_security_key: false }]);
 
     const mod = await staffWithKeys(t, { role: 'mod' });
     // Owner G3: a senior holds all three methods; this moderator has only a security key so far.
     const early = await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'senior' });
-    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior', tapId: early }))).toBe('all-three-methods-required');
+    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior', tapId: early }))).toBe('moderator-methods-required');
     await addPgpKey(t.deps, mod.id);
     await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior' }))).toBe('tap-invalid');
@@ -588,12 +602,19 @@ describe('per-person grants (owner Q60)', () => {
     expect([res.statusCode, res.json()]).toEqual([200, { grants: ['feedback.read'] }]);
     expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
     expect((await mod.browser.get('/staff/v1/me')).json().nav).toContain('feedback');
-    // Lead review 7 Nov M5: a named row's sender is the owner's and seniors' to see, not a grant holder's.
+    // J-21: the Staff page's checkboxes read the stored grants from the member list.
+    expect(((await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string; grants: string[] }>).find((r) => r.accountId === mod.id)!.grants).toEqual(['feedback.read']);
+    // D-058 (owner G20; lead 12 Nov, replacing lead review 7 Nov M5): a named row shows the sender's
+    // account to everyone who reads feedback, a grant holder included, so staff can follow up.
     await t.deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'named', $1, null, '2026-11-02')", [mod.id]);
-    const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
-    expect(asMod.find((i) => i.text === 'named')!.accountId).toBeNull();
-    const asOwner = (await owner.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
-    expect(asOwner.find((i) => i.text === 'named')!.accountId).toBe(mod.id);
+    const name = (await t.deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [mod.id])).rows[0]!.display_name;
+    // Review m1 (lead 12 Nov): the sender's display name only, never the raw account id, for anyone.
+    const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountName: string | null }>;
+    expect(asMod.find((i) => i.text === 'named')).toMatchObject({ accountName: name });
+    expect(asMod.find((i) => i.text === 'named')).not.toHaveProperty('accountId');
+    const asOwner = (await owner.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountName: string | null }>;
+    expect(asOwner.find((i) => i.text === 'named')).toMatchObject({ accountName: name });
+    expect(asOwner.find((i) => i.text === 'named')).not.toHaveProperty('accountId');
     expect(await logEntries(t.deps, 'staff.grants-set')).toContainEqual({
       actor_kind: 'staff', detail: JSON.stringify({ feedbackRead: true, staffId: mod.id, ticketsHandle: false }),
     });
@@ -607,6 +628,67 @@ describe('per-person grants (owner Q60)', () => {
     const senior = await staffWithKeys(t, { role: 'senior' });
     expect((await senior.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
     expect((await senior.browser.get('/staff/v1/me')).json().nav).toEqual(['disputes', 'training', 'log', 'feedback']);
+  });
+
+  // J-21 review F5 (lead, 12 Nov): a box the role holds anyway is never a stored per-person grant,
+  // so it is never shown as one and never comes back on its own after a role change.
+  it('a role-held grant is not stored or shown: not on save, not in the list, and a promotion clears it (F5)', async () => {
+    t.setNow(new Date(MON_NOON.getTime() + 22 * 60_000));
+    const grantsOf = async (id: string) =>
+      (await t.deps.db.query<{ grants: string[] }>('select grants from staff_members where account_id = $1', [id])).rows[0]!.grants;
+    const listed = async (id: string) =>
+      ((await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string; grants: string[] }>).find((r) => r.accountId === id)!.grants;
+
+    // A senior's stored Feedback (left from before) is not listed as a ticked per-person box.
+    const senior = await staffWithKeys(t, { role: 'senior' });
+    await t.deps.db.query("update staff_members set grants = '{feedback.read,tickets.handle}' where account_id = $1", [senior.id]);
+    expect(await listed(senior.id)).toEqual(['tickets.handle']);
+    // Saving the page with the role's box still in the list stores only the per-person part.
+    const list = ['feedback.read', 'tickets.handle'];
+    const res = await owner.browser.send('PUT', `/staff/v1/members/${senior.id}/grants`, {
+      grants: list, tapId: await tap(owner, { kind: 'set-grants', accountId: senior.id, grants: list }),
+    });
+    expect([res.statusCode, res.json()]).toEqual([200, { grants: ['tickets.handle'] }]);
+    expect(await grantsOf(senior.id)).toEqual(['tickets.handle']);
+
+    // A moderator ticked for Feedback and then promoted: the senior role holds it, so the stored box goes;
+    // demoted again, they do not get it back on their own.
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
+    const one = ['feedback.read'];
+    expect((await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/grants`, {
+      grants: one, tapId: await tap(owner, { kind: 'set-grants', accountId: mod.id, grants: one }),
+    })).statusCode).toBe(200);
+    expect(await grantsOf(mod.id)).toEqual(['feedback.read']);
+    const up = await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, {
+      role: 'senior', tapId: await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'senior' }),
+    });
+    expect(up.statusCode, up.body).toBe(200);
+    expect(await grantsOf(mod.id)).toEqual([]);
+    const down = await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, {
+      role: 'mod', tapId: await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'mod' }),
+    });
+    expect(down.statusCode, down.body).toBe(200);
+    expect(await listed(mod.id)).toEqual([]);
+    expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
+  });
+
+  // J-21 re-verify R1 (12 Nov): a role-held box stored before the F5 fix is dropped on any role
+  // change, including a demotion, so it never comes back on its own.
+  it('a senior with a stored Feedback left from before, demoted to moderator, does not get it back (R1)', async () => {
+    t.setNow(new Date(MON_NOON.getTime() + 40 * 60_000));
+    const senior = await staffWithKeys(t, { role: 'senior' });
+    await addPgpKey(t.deps, senior.id);
+    await registerKey(t.app, senior.id, t.newKey({ passkey: true }), { passkey: true });
+    await t.deps.db.query("update staff_members set grants = '{feedback.read}' where account_id = $1", [senior.id]);
+    const down = await owner.browser.send('PUT', `/staff/v1/members/${senior.id}/role`, {
+      role: 'mod', tapId: await tap(owner, { kind: 'set-role', accountId: senior.id, role: 'mod' }),
+    });
+    expect(down.statusCode, down.body).toBe(200);
+    const { rows } = await t.deps.db.query<{ grants: string[] }>('select grants from staff_members where account_id = $1', [senior.id]);
+    expect(rows[0]!.grants).toEqual([]);
+    expect((await senior.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
   });
 });
 

@@ -7,7 +7,7 @@ import { ApiError, type ApiErrorCode } from '../errors.js';
 import { loadTradeRow, type TradeRow } from '../trades/store.js';
 import { pendingReviews } from './gate.js';
 import { hasPersonalDetails } from './sensitive.js';
-import { hasSkipped, insertReview, insertSkip, reviewableSince, reviewsOfTrade, toPublicReview, type PublicReview } from './store.js';
+import { hasSkipped, insertReview, insertSkip, reviewableSince, reviewsHeld, reviewsOfTrade, toPublicReview, type PublicReview } from './store.js';
 
 /**
  * Plan 5 Task 3: reviews (spec 5.1) and Skip review (owner 2026-11-01, item 28).
@@ -15,9 +15,11 @@ import { hasSkipped, insertReview, insertSkip, reviewableSince, reviewsOfTrade, 
  * - `GET /v1/reviews/pending` (trader) → `{ trades: { code, counterparty, reviewableSince }[] }`: the
  *   trades this trader must rate or skip before their next trade (the gate, gate.ts).
  *   `counterparty` is the other trader's public display name.
- * - `GET /v1/trades/:code/review` (participant) → `{ reviewable, mine, theirs, skipped }`: `theirs`
+ * - `GET /v1/trades/:code/review` (participant) → `{ reviewable, mine, theirs, skipped, held }`: `theirs`
  *   as soon as the other side has submitted it (owner 2026-11-02: no blind reveal); `skipped` is
  *   true when the CALLER skipped (the other side's skip is never shown: it shows nothing to anyone).
+ *   `held` (R-011): an appeal on the trade is pending, so its feedback is on hold: `theirs` is null
+ *   (shown to nobody but its writer) until the appeal's result decides; `mine` stays the writer's.
  * - `POST /v1/trades/:code/review` (participant) body `ReviewInput` → 201 with no body.
  * - `POST /v1/trades/:code/review/skip` (participant) → 204 with no body: this side is done with
  *   the trade (gate, pending list) and leaves no review.
@@ -72,6 +74,8 @@ export interface TradeReviewView {
   theirs: PublicReview | null;
   /** The caller skipped reviewing this trade. */
   skipped: boolean;
+  /** R-011: the trade's feedback is on hold while an appeal is pending (`theirs` is withheld). */
+  held: boolean;
 }
 
 /**
@@ -103,13 +107,15 @@ export function reviewRoutes(app: FastifyInstance): void {
     const since = await reviewableSince(deps.db, code);
     const reviews = await reviewsOfTrade(deps.db, code);
     const skipped = await hasSkipped(deps.db, code, side);
+    const held = await reviewsHeld(deps.db, code);
     const mine = reviews[side];
-    const theirs = reviews[other(side)];
+    const theirs = held ? null : reviews[other(side)];
     return {
       reviewable: since !== null && mine === null && !skipped,
       mine: mine === null ? null : toPublicReview(mine),
       theirs: theirs === null ? null : toPublicReview(theirs),
       skipped,
+      held,
     };
   });
 

@@ -171,9 +171,9 @@ describe('Invite', () => {
     expect(api.calls.find((c) => c.path.endsWith('/account'))?.body).toEqual({
       displayName: 'dmitri_k', loginName: 'dk-login', acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: 'Dmitri K' },
     });
-    // Owner G3 (review 8 Nov I-4): a moderator holds all three methods, so the passkey row is shown
-    // and finish waits for every one of them.
-    expect(document.body.textContent).toContain('Moderators log in with three keys: a hardware security key, such as a YubiKey, a passkey on another device, and a PGP key.');
+    // D-070 (owner p11-19, changing G3): a moderator holds a passkey and a PGP key; the security key
+    // is optional, so the passkey row is shown and finish waits for the passkey and the PGP key.
+    expect(document.body.textContent).toContain('Moderators log in with a passkey and a PGP key. A hardware security key, such as a YubiKey, is optional.');
     expect(row('Passkey')).toBeDefined();
     const finish = () => button('Finish')!;
     expect(finish().disabled).toBe(true);
@@ -187,7 +187,7 @@ describe('Invite', () => {
     expect(api.calls.find((c) => c.path.endsWith('/pgp/start'))?.body).toEqual({ publicKey: PGP_KEY });
     typeInto(field('Code from the message'), '9999');
     await click(button('Check code'));
-    // A security key and a PGP key are two factors, but not all three.
+    // A security key and a PGP key are two factors, but a moderator also needs the passkey (D-070).
     expect(finish().disabled).toBe(true);
     await click(button('Tap key to register', row('Passkey')));
     expect(api.calls.filter((c) => c.path.endsWith('/key/start')).map((c) => c.body)).toEqual([{ kind: 'security-key' }, { kind: 'passkey' }]);
@@ -233,14 +233,16 @@ describe('Invite', () => {
     await click(button('Tap key to register', row('Passkey'))!);
     expect(cantDo()).toBe('passkey-is-security-key');
     expect(api.calls.some((c) => c.path.endsWith('/key/finish'))).toBe(true);
-    for (const code of ['all-three-methods-required', 'passkey-is-security-key', 'both-owner-keys-required'] as const) {
+    for (const code of ['all-three-methods-required', 'moderator-methods-required', 'passkey-is-security-key', 'both-owner-keys-required'] as const) {
       expect(refusalOf(new StaffApiError(409, code)), code).toEqual({ code, text: STAFF_REFUSALS[code] });
     }
   });
 
-  it('finish follows the API: a moderator or senior needs all three methods (owner G3); everyone needs two factors', () => {
+  it('finish follows the API: a moderator or senior needs a passkey and a PGP key, a security key optional (D-070); everyone needs two factors', () => {
     expect(canFinish('mod', { keys: 0, passkeys: 0, pgp: 2 })).toBe(false);
-    expect(canFinish('mod', { keys: 0, passkeys: 1, pgp: 2 })).toBe(false);
+    expect(canFinish('mod', { keys: 0, passkeys: 1, pgp: 2 })).toBe(true);
+    expect(canFinish('senior', { keys: 0, passkeys: 1, pgp: 1 })).toBe(true);
+    expect(canFinish('mod', { keys: 0, passkeys: 1, pgp: 0 })).toBe(false);
     expect(canFinish('senior', { keys: 1, passkeys: 0, pgp: 0 })).toBe(false);
     expect(canFinish('senior', { keys: 1, passkeys: 0, pgp: 1 })).toBe(false);
     expect(canFinish('senior', { keys: 1, passkeys: 0, pgp: 2 })).toBe(false);
@@ -350,14 +352,21 @@ describe('OwnerSetup', () => {
 });
 
 describe('Feedback (owner)', () => {
-  it('lists both feedback kinds with the 30-day Great / OK / Needs work counts, never an account id', async () => {
+  it('lists both feedback kinds with the 30-day Great / OK / Needs work counts; a named message shows its account (D-058), never the raw id', async () => {
     fakeApi({
       'GET /staff/v1/me': { body: { ...ME, displayName: 'lumen.k', role: 'owner', nav: NAV.owner } },
       'GET /staff/v1/feedback': {
         body: { items: [{ id: 'm1', mood: 'needs-work', note: 'Slow payouts', createdOn: '2026-11-05' }], counts: { great: 4, ok: 2, needsWork: 1 }, next: null },
       },
       'GET /staff/v1/feedback/form': {
-        body: { items: [{ id: 'f1', kind: 'complaint', text: 'Limits too low', accountId: 'acc-123', from: 'starter-limit', createdOn: '2026-11-04' }], next: null },
+        body: {
+          items: [
+            // Review m1 (lead 12 Nov): the API sends no raw account id, only the display name.
+            { id: 'f1', kind: 'complaint', text: 'Limits too low', accountName: 'Quiet.Fox', from: 'starter-limit', createdOn: '2026-11-04' },
+            { id: 'f2', kind: 'feedback', text: 'Nice app', accountName: null, from: null, createdOn: '2026-11-03' },
+          ],
+          next: null,
+        },
       },
     });
     await open('/feedback');
@@ -368,6 +377,10 @@ describe('Feedback (owner)', () => {
     expect(document.body.textContent).toContain('Limits too low');
     expect(document.body.textContent).toContain('starter-limit');
     expect(document.body.textContent).not.toContain('acc-123');
+    const rows = [...document.querySelectorAll('table[aria-label="Messages"] tbody tr')].map((r) => r.textContent ?? '');
+    expect(rows[0]).toContain('Quiet.Fox');
+    expect(rows[1]).toContain('Anonymous');
+    expect(document.body.textContent).not.toContain('Nothing here says who sent it.');
   });
 });
 

@@ -37,7 +37,9 @@ const LABEL = 'Browser on Linux';
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
  * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
  * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
- * Post an offer in apps/web/src/screens/post/api.ts). Any other new route still needs a client method.
+ * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
+ * apps/web/src/screens/account/AccountFrozen.tsx; S-093: a block row's note, apps/web/src/screens/settings/blockApi.ts;
+ * P-012/P-013: the blur check, apps/web/src/api/blurCheck.ts). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
@@ -45,6 +47,7 @@ const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
   'GET /v1/account/blocks',
+  'GET /v1/account/freeze',
   'GET /v1/account/notes/:displayName|:id',
   'GET /v1/account/nudges',
   'GET /v1/account/offers',
@@ -67,6 +70,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/team/permissions',
   'GET /v1/trades/:code',
   'GET /v1/trades/:code/attestation',
+  'GET /v1/trades/:code/blur-checks',
   'GET /v1/trades/:code/confirmations',
   'GET /v1/trades/:code/dispute',
   'GET /v1/trades/:code/review',
@@ -87,13 +91,16 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/offers',
   'POST /v1/offers/:id/take',
   'POST /v1/trades/:code/appeal',
+  'POST /v1/trades/:code/blur-checks/:proofId',
   'POST /v1/trades/:code/chat',
   'POST /v1/trades/:code/dispute',
   'POST /v1/trades/:code/events',
   'POST /v1/trades/:code/identity',
+  'POST /v1/trades/:code/proofs/:proofId/blur-check',
   'POST /v1/trades/:code/review',
   'POST /v1/trades/:code/review/skip',
   'POST /v1/trades/:code/wallet',
+  'PUT /v1/account/blocks/:displayName/note',
   'PUT /v1/account/nudges',
   'PUT /v1/account/profile/traded-total',
   // POST /v1/trades/:code/final-alert-seen is gone with the final alert (owner 8 Nov, p6-1; design-results).

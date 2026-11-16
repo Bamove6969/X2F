@@ -113,7 +113,6 @@ describe('tapChallenge', () => {
       { ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' },
       { ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e50' },
       { ...ruling, outcome: 'refund-to-seller' },
-      { ...ruling, accountAction: { kind: 'freeze' } },
       { ...ruling, accountAction: { kind: 'site-ban', until: '2027-01-01T00:00:00.000Z', reasonCode: 'terms' } },
       { ...ruling, accountAction: { kind: 'site-ban', until: null, reasonCode: 'terms' } },
       { ...ruling, accountAction: { kind: 'trade-ban', until: null, reasonCode: 'terms' } },
@@ -149,6 +148,8 @@ describe('tapChallenge', () => {
       { kind: 'switch-on', accountId: 'a1', role: 'senior' },
       { kind: 'set-role', accountId: 'a1', role: 'helper' },
       { kind: 'remove-staff', accountId: 'a1' },
+      // D-032 (owner G60): the owner's reset of a staff member's security, bound to the person and the link.
+      { kind: 'reset-staff-security', accountId: 'a1', inviteId: 'i2', tokenHash: 'e'.repeat(64), expiresAt: '2027-01-01T00:00:00.000Z' },
       { kind: 'add-owner-key', credentialId: 'cred', publicKeySha256: 'd'.repeat(64) },
       { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 },
       ruling,

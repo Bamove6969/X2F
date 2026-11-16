@@ -107,9 +107,8 @@ describe('needsSecond', () => {
     expect(needsSecond(base({ usdCents: 100_000n }), 'release-to-buyer', { kind: 'none' })).toBe(true);
     expect(needsSecond(base({ usdCents: 99_999n }), 'release-to-buyer', { kind: 'none' })).toBe(false);
   });
-  test('a freeze or any ban needs a second approver', () => {
+  test('any ban needs a second approver', () => {
     const d = base({ usdCents: 1_000n });
-    expect(needsSecond(d, 'release-to-buyer', { kind: 'freeze' })).toBe(true);
     expect(needsSecond(d, 'release-to-buyer', { kind: 'trade-ban', until: null, reasonCode: 'terms' })).toBe(true);
     expect(needsSecond(d, 'release-to-buyer', { kind: 'site-ban', until: '2027-03-01T00:00:00.000Z', reasonCode: 'abuse' })).toBe(true);
   });
@@ -215,6 +214,15 @@ describe('approve and send back', () => {
   });
   test('only in awaiting-approval', () => {
     rule('wrong-state', () => applyDispute(published(), { type: 'approve' }, owner, at(3), S));
+  });
+  test('L1: the stored draft\'s account action is checked again at approve (a pre-D-015 freeze draft, a ban whose end has passed)', () => {
+    const p = pending();
+    const freezeDraft = { ...p, ruling: { ...p.ruling!, accountAction: { kind: 'freeze' } as never } };
+    rule('invalid-action', () => applyDispute(freezeDraft, { type: 'approve' }, owner, at(5), S));
+    const lapsed = { ...p, ruling: { ...p.ruling!, accountAction: { kind: 'trade-ban' as const, until: at(4).toISOString(), reasonCode: 'terms' as const } } };
+    rule('invalid-action', () => applyDispute(lapsed, { type: 'approve' }, owner, at(5), S));
+    // Sending such a draft back stays possible (it clears the ruling).
+    expect(applyDispute(freezeDraft, { type: 'send-back' }, senior, at(5), S).status).toBe('open');
   });
   test('send-back returns the case to open and clears the ruling', () => {
     const d = applyDispute(pending(), { type: 'send-back' }, senior, at(5), S);
@@ -569,9 +577,11 @@ describe('M7: the account action is checked at propose', () => {
     rule('invalid-action', propose({ kind: 'freeze', until: null }));
     rule('invalid-action', propose(null));
   });
+  test('D-015 (owner 2026-11-02 08:12): a freeze is never an option on the ruling card', () => {
+    rule('invalid-action', propose({ kind: 'freeze' }));
+  });
   test('accepts the valid shapes', () => {
     expect(propose({ kind: 'none' })().status).toBe('published');
-    expect(propose({ kind: 'freeze' })().status).toBe('awaiting-approval');
     expect(propose({ kind: 'site-ban', until: at(100).toISOString(), reasonCode: 'abuse' })().status).toBe('awaiting-approval');
     expect(propose({ kind: 'trade-ban', until: null, reasonCode: 'terms' })().status).toBe('awaiting-approval');
   });
