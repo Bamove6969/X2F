@@ -57,6 +57,8 @@ export async function makeSecrets(): Promise<DemoSecrets> {
     type: 'ecc',
     curve: 'ed25519Legacy',
     userIDs: [{ name: 'X2F demo signing key (not real)' }],
+    // Signing only: the API refuses a signing key that can also encrypt (sign-up v2).
+    subkeys: [],
     format: 'armored',
   });
   const pgpKey = await openpgp.readPrivateKey({ armoredKey: privateKey });
