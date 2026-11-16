@@ -270,6 +270,14 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
   ],
   SetupPgpChallenge: [
+    // Review of third-signup-r3 (16 Nov 2026), M5b, found once SetupPgpKey passed: f1068c58 names
+    // PGPony in the app list, from the owner's demo note e6d8122c (13 Nov 2026: "recommend PGPony as
+    // the recommended Android app") and signup-r3 spec item 7. The board predates it; remove this
+    // when design redraws the board and recaptures refs/SetupPgpChallenge.png.
+    {
+      text: 'Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.',
+      why: 'Owner demo note e6d8122c (13 Nov 2026), signup-r3 spec item 7: the page reads "Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it."; board redraw and reference recapture owed (design).',
+    },
     {
       text: '4:12',
       why: 'The inner value of "Expires in 4:12": the page\'s masked Countdown already stands for it in that sentence, and one masked element covers one board text (Task 28).',
