@@ -278,15 +278,17 @@ test.describe('board texts', () => {
     expect(review).not.toContain("Rating saved. satoshi_ghost sees it once they've rated you too.");
   });
 
-  test('a {{…}} board text is kept as a pattern: SetupBackup "Add {{choice}}"', async ({ page }) => {
-    const texts = await boardTexts(page, 'SetupBackup');
-    expect(texts).toContain('Add \u0000');
+  // Was SetupBackup "Add {{choice}}" until that text became a known exception (lead call, 12 Nov 2026:
+  // sign-up v2 has no optional extra backups, so no "Add …" button).
+  test('a {{…}} board text is kept as a pattern: BadgeSettings "Featured {{featuredCount}} of 2"', async ({ page }) => {
+    const texts = await boardTexts(page, 'BadgeSettings');
+    expect(texts).toContain('Featured \u0000 of 2');
     const page1 = (last: string) =>
-      `<body style="margin:0">${texts.filter((t) => !t.includes('\u0000')).map((t) => `<p>${escape(t)}</p>`).join('')}<a data-primary>${last}</a></body>`;
-    await page.setContent(page1('Add'));
-    await expect(expectParity(page, 'SetupBackup')).rejects.toThrow(/board copy missing: "Add …"/);
-    await page.setContent(page1('Add authenticator app'));
-    expect(await missingTexts(page, ['Add \u0000'])).toEqual([]);
+      `<body style="margin:0">${texts.filter((t) => !t.includes('\u0000')).map((t) => `<p>${escape(t)}</p>`).join('')}<p>${last}</p></body>`;
+    await page.setContent(page1('Featured of 2'));
+    await expect(expectParity(page, 'BadgeSettings')).rejects.toThrow(/board copy missing: "Featured … of 2"/);
+    await page.setContent(page1('Featured 1 of 2'));
+    expect(await missingTexts(page, ['Featured \u0000 of 2'])).toEqual([]);
   });
 
   test('real copy that mentions "example" is kept', () => {
