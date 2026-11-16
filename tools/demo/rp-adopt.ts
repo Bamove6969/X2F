@@ -13,6 +13,11 @@
  * localhost still opens the app, but keys and passkeys then work under the adopted host only.
  * Off when the demo runs with a public origin (a tunnel: its host is the RP ID already) or with
  * DEMO_ADOPT_SELF=0.
+ *
+ * Who may choose it (review M4): only a request from a loopback peer (the preview pane's forwarder),
+ * and X-Forwarded-Host/-Proto count only from one (gateway-core.ts), so a client on the phone's LAN
+ * address or the tailnet cannot claim it. DEMO_ADOPT_HOST=<host name> pins the one host that may be
+ * adopted, which also shuts out a local page that rebinds its own name to 127.0.0.1.
  */
 
 /** The RP ID for a self origin (`https://host[:port]`): its host name, or null when WebAuthn cannot use it. */
@@ -50,15 +55,20 @@ export interface Adopter {
   adopted(): string | null;
 }
 
-/** `restart(origin)` restarts the API with the origin adopted and resolves once it answers. */
-export function createAdopter(o: { enabled: boolean; restart: (selfOrigin: string) => Promise<void>; log?: (line: string) => void }): Adopter {
+/**
+ * `restart(origin)` restarts the API with the origin adopted and resolves once it answers. `pin`
+ * (DEMO_ADOPT_HOST), when set, is the only host name that may be adopted.
+ */
+export function createAdopter(o: { enabled: boolean; pin?: string | undefined; restart: (selfOrigin: string) => Promise<void>; log?: (line: string) => void }): Adopter {
   const log = o.log ?? ((line: string) => console.log(line));
+  const pin = o.pin?.trim().toLowerCase() || null;
   let origin: string | null = null;
   let ready: Promise<void> = Promise.resolve();
   return {
     beforeApi(selfOrigin, page) {
       if (!o.enabled || selfOrigin === null) return ready;
-      if (origin === null && page && rpIdOf(selfOrigin) !== null) {
+      const rpId = rpIdOf(selfOrigin);
+      if (origin === null && page && rpId !== null && (pin === null || rpId === pin)) {
         origin = selfOrigin;
         log(JSON.stringify({ reason: 'rp-adopt', origin: selfOrigin }));
         ready = o.restart(selfOrigin).catch((e: unknown) => {

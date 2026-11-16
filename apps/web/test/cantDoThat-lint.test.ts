@@ -151,9 +151,13 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 66 -> 67 (owner demo notes 12 Nov 2026): sessionCopy.ts's askHint, the owner's own words ("If you
     // are unable to confirm your identity at that time, your account will be logged out ..."), a hint
     // shown before the session ends; nothing was refused.
-    // 67 -> 74 (demo r3, 16 Nov): auth/keyErrors.ts's five lines saying why a key step failed (shown in
-    // the key step's own error line), and two from the sign-up round-3 and Terms merges.
-    expect(notARefusal).toBeLessThanOrEqual(74);
+    // 67 -> 70 (lead demo r2, counted 16 Nov): the welcome tour's two example-screen notes in
+    // tour/FirstTradeStage.tsx (9456548f: "One key alone can't move anything", "the XMR can't be
+    // taken back") and ChatPanel's UNREADABLE_PAY_LINE (ec53ea9b, review payee-fields-2 m-4), a note in
+    // place of a chat line. 70 -> 69 (sign-up round 3): setup/Backup.tsx's one goes. keyErrors.ts
+    // carries none: its server refusal (method-not-allowed) goes through refusalText and CantDoThat
+    // (second-seckey-fixes), and the Terms merge changes no pragma.
+    expect(notARefusal).toBeLessThanOrEqual(69);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

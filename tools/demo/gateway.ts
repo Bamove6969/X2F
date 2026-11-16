@@ -66,6 +66,7 @@ const passwordStep = createDoor(env('DATABASE_URL'));
 const API_ENV = process.env.DEMO_API_ENV ?? '';
 const adopter = createAdopter({
   enabled: process.env.DEMO_ADOPT_SELF === '1' && API_ENV !== '',
+  pin: process.env.DEMO_ADOPT_HOST,
   restart: async (origin) => {
     const apiEnv = adoptedApiEnv(JSON.parse(readFileSync(API_ENV, 'utf8')) as Record<string, string>, origin);
     writeFileSync(API_ENV, JSON.stringify(apiEnv), { mode: 0o600 });
