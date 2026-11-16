@@ -209,6 +209,11 @@ describe('POST /internal/v1/reports: watcher reports', () => {
       // Security review 7 Nov, finding 3: the watcher names the kind it counted the sweep for.
       { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64) },
       { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'nope' },
+      // The sweep's network fee (owner 16 Nov books) is a strict decimal string when sent.
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'release', networkFeeAtomic: 30720000 },
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'release', networkFeeAtomic: '030720000' },
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'release', networkFeeAtomic: '-1' },
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'release', networkFeeAtomic: null },
       { kind: 'setup-done', trade: t.code, escrowAddress: '' },
       { kind: 'late-funds', trade: t.code, kindOf: 'x' },
       { kind: 'spend-unshown', trade: t.code, txHash: 'a'.repeat(64) },
@@ -229,6 +234,17 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'release' });
     expect(res.statusCode).toBe(201);
     expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+  });
+
+  it('settled with the sweep\'s network fee books X2F\'s share of it with the trade\'s 1% (owner 16 Nov)', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    const txHash = randomBytes(32).toString('hex');
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'release', networkFeeAtomic: '30720001' });
+    expect(res.statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+    const { rows } = await deps.db.query<{ network_fee_atomic: string | null }>("select network_fee_atomic::text from revenue_booked where trade_code = $1 and kind = 'fee'", [t.code]);
+    expect(rows).toEqual([{ network_fee_atomic: '15360000' }]);
   });
 
   it('settled naming another kind than the trade\'s is refused 409 settle-kind-changed (security review 7 Nov, finding 3)', async () => {
