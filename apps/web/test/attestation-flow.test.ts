@@ -128,13 +128,17 @@ describe('attestation check before any escrow work (P3-C1)', () => {
 
   // Review multisig-vs-RetoSwap F5 (12 Nov): issuedAt is checked against the device clock and the
   // view's take time. A time refusal may be this device's clock, so it is retryable and never kept.
+  // Review lead-escrow-harden M1 (16 Nov): the lower bound is the time this device made its
+  // identity (kept in its record), not the API's unsigned takenAt, which a lying API leaves out.
   it.each([
-    ['issued after the trade was taken: accepted', { takenAt: '2026-10-23T11:00:00.000Z' }, Date.parse('2026-10-24T12:00:00Z'), null],
-    ['issued before the trade was taken (older than the trade)', { takenAt: '2026-10-24T09:00:00.000Z' }, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
-    ['issued a day in this device’s future', {}, Date.parse('2026-10-22T12:00:00Z'), 'escrow-failed'],
-    ['a take time the view cannot read', { takenAt: 'yesterday' }, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
-  ] as const)('issuedAt %s', async (_n, viewOver, clock, error) => {
-    const t = await setup({ view: tradeView(viewOver) });
+    ['issued after the trade was taken: accepted', { takenAt: '2026-10-23T11:00:00.000Z' }, {}, Date.parse('2026-10-24T12:00:00Z'), null],
+    ['issued before the trade was taken (older than the trade)', { takenAt: '2026-10-24T12:30:00.000Z' }, {}, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+    ['issued a day in this device’s future', {}, { issuedAt: '2026-10-23T12:00:00.000Z' }, Date.parse('2026-10-22T12:00:00Z'), 'escrow-failed'],
+    ['a take time the view cannot read', { takenAt: 'yesterday' }, {}, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+    ['issued before this device made its identity (backdated), the view without takenAt', {}, { issuedAt: '2026-10-23T12:00:00.000Z' }, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+    ['issued before this device made its identity (backdated), takenAt backdated too', { takenAt: '2026-10-23T11:00:00.000Z' }, { issuedAt: '2026-10-23T12:00:00.000Z' }, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+  ] as const)('issuedAt %s', async (_n, viewOver, apiOver, clock, error) => {
+    const t = await setup({ view: tradeView(viewOver), ...apiOver });
     const buyer = await t.mk('buyer', { now: () => clock });
     const seller = await t.mk('seller', { now: () => clock });
     await seller.runtime.start(CODE);
@@ -148,6 +152,44 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     expect(t.parties.calls).toEqual([]);
     expect((await buyer.store.load(CODE))?.failed ?? null).toBeNull();
     expect((await buyer.store.load(CODE))?.attestation ?? null).toBeNull();
+  });
+
+  it('the record keeps the device time its identity was made, and the attestation is checked against it on every start', async () => {
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
+    const t = await setup();
+    const buyer = await t.mk('buyer', { now: () => clock });
+    const seller = await t.mk('seller', { now: () => clock });
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(() => t.parties.calls.some((c) => c.role === 'buyer'));
+    expect((await buyer.store.load(CODE))?.identityCreatedAt).toBe(Date.parse('2026-10-24T12:00:00.000Z'));
+    await buyer.runtime.stop(CODE);
+    // A later start, a month on: the stored attestation still verifies against the stored time.
+    clock += 30 * 24 * 60 * 60_000;
+    const again = await t.mk('buyer', { idb: buyer.idb, now: () => clock });
+    const before = t.parties.calls.filter((c) => c.role === 'buyer').length;
+    await again.runtime.start(CODE);
+    await until(() => t.parties.calls.filter((c) => c.role === 'buyer').length > before);
+    expect(again.last()?.error ?? null).toBeNull();
+  });
+
+  it('a record written before the identity time was kept still verifies with today\'s unbounded key', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(() => t.parties.calls.some((c) => c.role === 'buyer'));
+    await buyer.runtime.stop(CODE);
+    const rec = (await buyer.store.load(CODE))!;
+    const { identityCreatedAt: _made, ...old } = rec as typeof rec & { identityCreatedAt?: number };
+    await buyer.store.save(old as typeof rec);
+    expect((await buyer.store.load(CODE)) as Record<string, unknown>).not.toHaveProperty('identityCreatedAt');
+    const again = await t.mk('buyer', { idb: buyer.idb });
+    const before = t.parties.calls.filter((c) => c.role === 'buyer').length;
+    await again.runtime.start(CODE);
+    await until(() => t.parties.calls.filter((c) => c.role === 'buyer').length > before);
+    expect(again.last()?.error ?? null).toBeNull();
   });
 
   it.each([

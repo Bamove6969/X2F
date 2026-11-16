@@ -107,7 +107,8 @@ function engine(): ChatEngine {
 function attest(key = modKey.privateKey, extra: Partial<Attestation> = {}): Participants {
   const buyer = api.identities.buyer!;
   const participants: Participants = { buyer: { signPublic: buyer.signPublic, boxPublic: buyer.boxPublic }, seller: pub(seller), mod: pub(mod) };
-  const a: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: '2026-10-28T12:00:00.000Z', ...extra };
+  // Issued now: moderation attests after both registered, so never before this device's identity (review M1).
+  const a: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: new Date().toISOString(), ...extra };
   api.attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), key)) };
   return participants;
 }
@@ -169,6 +170,22 @@ describe('chat engine: device binding and the attestation', () => {
     await engine().sync(chat);
     attest(modKey.privateKey, { channels: { escrow: await channelFor(chat, 'escrow'), signals: await channelFor(chat, 'signals') } });
     expect(await engine().sync(chat)).toMatchObject({ phase: 'failed', problem: 'security' });
+  });
+
+  // Review lead-escrow-harden M1 (16 Nov): the chat record keeps when this device made its chat
+  // identity, and an attestation issued before that (a backdated one) is refused.
+  it('the record keeps the time its identity was made; an attestation issued before it fails closed', async () => {
+    const before = Date.now();
+    await engine().sync(chat);
+    const made = (await store.load(chat))?.identityCreatedAt;
+    expect(made).toBeGreaterThanOrEqual(before);
+    expect(made).toBeLessThanOrEqual(Date.now());
+    attest(modKey.privateKey, { issuedAt: '2026-10-28T12:00:00.000Z' });
+    const e = engine();
+    expect(await e.sync(chat)).toMatchObject({ phase: 'failed', problem: 'security' });
+    await expect(e.send(chat, 'hi')).rejects.toBeInstanceOf(ChatSendFailed);
+    expect(api.posted).toHaveLength(0);
+    expect((await store.load(chat))?.attestation).toBeNull();
   });
 
   it("moderation's refusal is shown as refused", async () => {
