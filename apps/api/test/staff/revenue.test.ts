@@ -203,7 +203,7 @@ describe('retention: the ledger keeps amounts, not codes', () => {
     const cols = (await deps.db.query<{ column_name: string }>(
       `select column_name from information_schema.columns where table_name = 'revenue_ledger' order by ordinal_position`,
     )).rows.map((r) => r.column_name);
-    expect(cols).toEqual(['day', 'currency', 'kind', 'trades', 'fee_atomic', 'usd_estimate_cents']);
+    expect(cols).toEqual(['day', 'currency', 'kind', 'trades', 'fee_atomic', 'usd_estimate_cents', 'network_fee_atomic']);
     const fk = await deps.db.query<{ confdeltype: string }>(
       `select confdeltype from pg_constraint where conrelid = 'revenue_booked'::regclass and contype = 'f'`,
     );
