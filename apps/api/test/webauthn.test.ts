@@ -597,6 +597,47 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     expect(rows).toEqual(keys.map(() => ({ kind: 'security-key', attested: false })));
   });
 
+  it("review M1: takes a trader's key whatever fails in its attestation statement; staff, owner and member stay refused", async () => {
+    // The model's statement is in the snapshot, but the chain leads to another root (a root the
+    // snapshot has not caught up with), or the leaf has expired: a trader's key still registers.
+    const otherRoot = createTestCa();
+    const expired = createTestCa({ expiredLeaves: true });
+    const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
+    const trader = await loggedIn(traderId, true);
+    for (const [name, att] of [['another root', { aaguid: UNLISTED, ca: otherRoot }], ['another root, allowlisted model', { aaguid: ALLOWED, ca: otherRoot }], ['expired leaf', { aaguid: ALLOWED, ca: expired }]] as const) {
+      const r = await staffAdd(trader, createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: att }), 'security-key');
+      expect(r.res.statusCode, name).toBe(201);
+    }
+    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
+    expect(rows).toEqual([1, 2, 3].map(() => ({ kind: 'security-key', attested: false })));
+
+    // The retry without the statement still checks the rest: a wrong origin is still 401.
+    const start = await trader.post('/v1/account/webauthn/start', { kind: 'security-key' });
+    const { challengeId, options } = start.json();
+    const wrongOrigin = createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: UNLISTED, ca: otherRoot } }).register(options, 'https://evil.example');
+    const bad = await trader.post('/v1/account/webauthn/finish', { challengeId, response: wrongOrigin, label: 'Key' });
+    expect(bad.statusCode).toBe(401);
+    expect(errorOf(bad)).toBe('webauthn-failed');
+
+    // Staff, the owner and a team member: the same keys are not taken, and an unlisted model is still refused.
+    const staffId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
+    const memberId = await seedAccount(deps, { loginName: uniqueName('mbr'), kind: 'member' });
+    for (const [who, id] of [['staff', staffId], ['owner', await seedOwner()], ['member', memberId]] as const) {
+      const b = await loggedIn(id, true);
+      for (const att of [{ aaguid: ALLOWED, ca: otherRoot }, { aaguid: ALLOWED, ca: expired }]) {
+        const r = await staffAdd(b, createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: att }), 'security-key');
+        expect(r.res.statusCode, who).toBe(401);
+      }
+      for (const att of [{ aaguid: UNLISTED, ca }, { aaguid: NO_STATEMENT, ca }]) {
+        const r = await staffAdd(b, createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: att }), 'security-key');
+        expect(r.res.statusCode, who).toBe(403);
+        expect(errorOf(r.res), who).toBe('method-not-allowed');
+      }
+    }
+    const { rows: others } = await deps.db.query('select count(*)::int as n from webauthn_credentials where account_id = any($1)', [[staffId, memberId]]);
+    expect(others).toEqual([{ n: 0 }]);
+  });
+
   it('refuses an owner passkey before any confirm token is spent', async () => {
     const ownerId = await seedOwner();
     const b = await loggedIn(ownerId, true);

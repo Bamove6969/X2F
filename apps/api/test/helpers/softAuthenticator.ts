@@ -26,13 +26,13 @@ function p256(): { privateKey: KeyObject; publicKey: KeyObject } {
 export interface TestCa {
   /** DER of the root certificate. */
   cert: Buffer;
-  /** A leaf for `aaguid` certifying `publicKey`, valid now (the library checks against the real clock). */
+  /** A leaf for `aaguid` certifying `publicKey`, valid now (the library checks against the real clock), or expired a day ago with `expiredLeaves`. */
   issue(aaguid: Uint8Array, publicKey: KeyObject): Buffer;
 }
 
 const YEAR = 365 * 24 * 3600_000;
 
-export function createTestCa(): TestCa {
+export function createTestCa(o: { expiredLeaves?: boolean } = {}): TestCa {
   const { privateKey, publicKey } = p256();
   const root = { C: 'XX', O: 'X2F Test', CN: 'X2F Test Attestation Root' };
   const now = Date.now();
@@ -49,7 +49,7 @@ export function createTestCa(): TestCa {
         issuer: root,
         subject: { C: 'XX', O: 'X2F Test', OU: 'Authenticator Attestation', CN: 'X2F Test Key' },
         publicKey: leafKey, signingKey: privateKey, ca: false, aaguid,
-        notBefore: new Date(now - YEAR), notAfter: new Date(now + 5 * YEAR),
+        notBefore: new Date(now - YEAR), notAfter: new Date(o.expiredLeaves ? now - 24 * 3600_000 : now + 5 * YEAR),
       }),
   };
 }
