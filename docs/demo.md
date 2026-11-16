@@ -132,7 +132,7 @@ Everything is kept next to each other, outside `.demo/`, so a demo restart does 
 
 | File in `~/x2f-comms/` | What |
 | --- | --- |
-| `demo-notes.jsonl` | Comments (with their `number`), and follow-ups (those have `parentId`) |
+| `demo-notes.jsonl` | Comments, and follow-ups (those have `parentId`) |
 | `demo-replies.jsonl` | Replies, by `noteId` |
 | `demo-resolved.jsonl` | Resolved threads, by `noteId` |
 
@@ -142,23 +142,41 @@ To answer a comment, on this machine only (there is no HTTP route for replies):
 npm run demo:reply <comment id> "Thanks, changing it"
 ```
 
-The page picks it up within 15 seconds. `DEMO_NOTES_FILE` moves the three files.
+The page picks it up within 15 seconds; earlier demos' comments can be answered too (their ids are
+in the downloaded file). `DEMO_NOTES_FILE` moves the three files.
 
-**One running number.** Comments are numbered in one count across every screen and every demo
-session, continuing after the owner's earlier notes: on start the gateway reads every
-`owner-demo-notes-*.jsonl` on `origin/comms` (or a local `comms` branch) with `git show`, read only
-and with no network, counting them the way the team does (12 Nov is 1-48, 13 Nov is 49-91), so the
-next comment is 92. `DEMO_NOTES_SEED` (comma-separated `.jsonl` files, or folders whose
-`owner-demo-notes-*.jsonl` are read) is used instead of comms when set. If neither can be read,
-numbering continues after the highest number in `demo-notes.jsonl`, and the start-up output says so
-(the `Comments:` line; run `git fetch origin comms` and restart to fix it). Each comment's number is
-saved in its line the moment it is written, so it never changes; follow-ups carry
-`"kind":"follow-up"` and take no number.
+**It builds on the earlier demos.** On start the gateway reads every `owner-demo-notes-*.jsonl`
+on `origin/comms` (or a local `comms` branch) with `git show`, read only and with no network, and
+adds `DEMO_NOTES_SEED` when set (comma-separated `.jsonl` files, or folders whose
+`owner-demo-notes-*.jsonl` are read). With the three local files, read on every request, that is one
+record: each comment, follow-up, reply and resolved thread once, by id (the 16 Nov file on comms
+repeats the 12 and 13 Nov notes; they count once). Every earlier comment shows as its pin on its
+screen, opens its thread, and can be added to, answered and resolved; resolved ones stay hidden.
+Those writes go to the local files only; comms is never written from here (but see GitHub below).
 
-**Download my notes** (next to **Comment**) saves one file, `owner-demo-notes-<date>.jsonl`:
-every comment with its number, every follow-up, then the replies (`"kind":"reply"`) and resolved
-threads (`"kind":"resolved"`). Put it on `comms` as it is; it seeds the same numbers again.
-`GET /__demo/notes/download` is same-origin only (another port on this machine is refused too).
+**One running number.** A comment's number is its place in time order among all comments (ties by
+id), across every screen and every session: the same on every start and on every computer with the
+same notes. Follow-ups take no number. A new comment is the highest + 1 (with the notes on comms on
+16 Nov, the first new one is 91). If origin/comms cannot be read (offline, or no comms branch in
+this checkout: `git fetch origin comms` adds it), only the local files count, and the start-up
+`Comments:` line says so.
+
+**Download my notes** (next to **Comment**) saves `owner-demo-notes-<date>.jsonl`: the whole record
+in time order, each comment with its number, each follow-up, then the replies (`"kind":"reply"`) and
+resolved threads (`"kind":"resolved"`). It reads back as an earlier file with the same numbers and
+state. `GET /__demo/notes/download` is same-origin only (another port on this machine is refused too).
+
+**GitHub.** The gateway also puts that file on the `comms` branch for you (`tools/demo/notes-push.ts`),
+30 s after the last new comment, follow-up or resolve, once at start, and once at `npm run demo:stop`,
+as `owner-demo-notes-<today's date>.jsonl` (the same file, updated through the day), committed
+"owner demo notes <date> (auto)". It works in its own git worktree, `~/x2f-comms/.comms-push`, so your
+checkout, its branch and any work in it are never touched. It only adds that one file to comms, with
+`git push origin HEAD:comms`; if comms moved meanwhile it starts again on top of the new comms and
+keeps the other copy's lines, and it never force-pushes. git uses your own login and never asks for
+anything; your git name is used if you set one, else `owner`. If it cannot push (offline, not logged
+in), your notes are safe on this computer and it tries again every 2 minutes; under the **Comment**
+button the page shows "Saved on this computer — not on GitHub yet" or "On GitHub", and the gateway's
+log (`.demo/logs/gateway.log`) says why. `DEMO_NOTES_PUSH=0 npm run demo` turns it off.
 
 A comment records the text, the screen (path, short hash, `data-screen`), the viewport, the tap as
 pixels and percent, a CSS-style path of the tapped element and up to 120 characters of its visible
