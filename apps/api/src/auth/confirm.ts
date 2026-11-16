@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { actionHash, type ConfirmAction } from '@x2f/accounts';
+import { actionHash, passwordAlone, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
@@ -170,14 +170,26 @@ export async function recheckWindowInTx(db: Queryable, req: FastifyRequest, kind
   if (!open || held) throw new ApiError(403, 'confirm-required', { action });
 }
 
+/** The kinds of login method the account holds (the keys of HOLDS it has one of). */
+async function methodKindsOf(db: Queryable, accountId: string): Promise<NewMethodKind[]> {
+  const out: NewMethodKind[] = [];
+  for (const k of Object.keys(HOLDS) as NewMethodKind[]) if ((await db.query(HOLDS[k], [accountId])).rows.length > 0) out.push(k);
+  return out;
+}
+
 /**
  * Review M1(a): `POST /v1/account/onboarding/end` closes the caller's own sign-up window (the
  * web app sends it on reaching Welcome). Idempotent; any full session may call it for itself.
  * Re-verify R1: it also uses up this session's open add ceremonies that were started on the
- * window (`payload.window`), so none of them can finish after the window is closed.
+ * window (`payload.window`), so none of them can finish after the window is closed. 409
+ * `password-alone` for an account whose only login is a password without TOTP (owner, 16 Nov 2026).
  */
 export async function endOnboarding(req: FastifyRequest): Promise<{ ok: true }> {
   const deps = req.server.deps;
+  // Owner, 16 Nov 2026: a password does not stand alone, so sign-up does not finish with only a
+  // password (409 `password-alone`, the window stays open for the authenticator app or another way
+  // to log in).
+  if (passwordAlone(await methodKindsOf(deps.db, req.auth.accountId))) throw new ApiError(409, 'password-alone');
   await deps.db.query('update sessions set onboarding_until = null where id = $1 and onboarding_until is not null', [req.auth.sessionId]);
   await deps.db.query(
     `update challenges set used_at = $2

@@ -8,7 +8,7 @@
  * asked to confirm rather than refused. "Set up later" goes on without it (Settings can add it).
  */
 import { useEffect, useState } from 'react';
-import { addWebAuthnKey, isStaged, withConfirm, type Staged } from '@x2f/auth-client';
+import { STANDS_ALONE, addWebAuthnKey, isStaged, withConfirm, type Staged } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
@@ -123,10 +123,13 @@ export function AuthenticatorStep() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on arrival
   }, [noPassword]);
   if (noPassword) return null;
+  // Owner decision, 16 Nov 2026: a password does not stand alone, so with no PGP key, security key
+  // or passkey ticked the authenticator app is not left for later (sign-up cannot finish without it).
+  const required = !state.methods.some((m) => STANDS_ALONE.has(m));
 
   return (
     <ConfirmOpenProvider value={open}>
-      <SetupFrame screen="setup-authenticator" step={3} footer={finish.held ? null : <Later onClick={finish.next} />}>
+      <SetupFrame screen="setup-authenticator" step={3} footer={finish.held || required ? null : <Later onClick={finish.next} />}>
         {/* COPY-UNSIGNED */}
         <SetupIntro title="Add your authenticator app">
           Each time you log in with your password, you then type the 6-digit code your authenticator app shows.

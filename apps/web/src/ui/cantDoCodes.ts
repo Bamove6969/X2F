@@ -39,6 +39,7 @@ export const CANT_DO_CODES = [
   // password removal while TOTP is on).
   'totp-needs-password',
   'password-has-totp',
+  'password-alone',
   'method-not-allowed',
   'account-disabled',
   // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key
@@ -406,6 +407,12 @@ export const PASSWORD_HAS_TOTP_CODE = 'password-has-totp' satisfies CantDoCode;
 
 /** 409 `password-has-totp` (and the client's own check before asking). COPY-UNSIGNED */
 export const PASSWORD_HAS_TOTP_MESSAGE = 'Your authenticator app works with your password. Remove the authenticator app first.';
+
+/** The code for a change that would leave a password alone (owner, 16 Nov 2026). */
+export const PASSWORD_ALONE_CODE = 'password-alone' satisfies CantDoCode;
+
+/** 409 `password-alone` (and the client's own check before asking). COPY-UNSIGNED */
+export const PASSWORD_ALONE_MESSAGE = 'A password needs the authenticator app or another way to log in. Add one before removing this.';
 
 /** 409 `totp-needs-password`: an authenticator app needs a password on the account. COPY-UNSIGNED */
 export const TOTP_NEEDS_PASSWORD_MESSAGE = 'Set a password before adding an authenticator app.';

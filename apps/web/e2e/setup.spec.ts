@@ -31,10 +31,25 @@ async function saveRecoveryCodes(page: Page): Promise<void> {
   await page.click('[data-part="recovery-continue"]');
 }
 
-/** Owner demo notes (12 Nov 2026): the login methods are checkboxes, PGP ticked first; tick only `id`. */
+/**
+ * Owner demo notes (12 Nov 2026): the login methods are checkboxes, PGP ticked first; tick only `id`.
+ * Owner decision, 16 Nov 2026: a password does not stand alone, so the password path ticks the
+ * authenticator app with it (its step follows the password: `addAuthenticator`).
+ */
 async function chooseOnly(page: Page, id: 'password' | 'passkey'): Promise<void> {
   await page.uncheck('[data-method="pgp"] input[type="checkbox"]');
   await page.check(`[data-method="${id}"] input[type="checkbox"]`);
+  if (id === 'password') await page.check('[data-method="totp"] input[type="checkbox"]');
+}
+
+/** The authenticator step after the password (owner, 16 Nov 2026): no "Set up later" when the password is the only login. */
+async function addAuthenticator(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/setup\/authenticator\?/);
+  await expect(page.locator('[data-part="method-later"]')).toHaveCount(0);
+  await page.click('[data-part="totp-start"]');
+  await page.fill('#totp-code', '123456');
+  await page.click('[data-part="totp-finish"]');
+  await page.click('[data-part="totp-continue"]');
 }
 
 const TERMS_VERSION = '2026-11-12';
@@ -354,6 +369,7 @@ for (const v of PHONES) {
     await page.fill('#pw', 'Quiet-harbour-58');
     await page.fill('#pw2', 'Quiet-harbour-58');
     await setBtn.click();
+    await addAuthenticator(page);
     await expect(page).toHaveURL(/\/setup\/backup\?/);
 
     expect(s.bodies.password?.at(-1)).toMatchObject({
@@ -438,6 +454,7 @@ test('the signature pad: drawn by touch, or a typed name by keyboard only; the s
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
+  await addAuthenticator(page);
   await expect(page).toHaveURL(/\/setup\/backup\?/);
   expect(s.bodies.password).toEqual([expect.objectContaining({ acceptedTerms: TERMS_VERSION, termsSignature: { kind: 'typed', name: 'Lumen K' } })]);
 });
@@ -456,6 +473,7 @@ test('Mira.K_ shows exactly as typed after setup (password path)', async ({ page
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
 
+  await addAuthenticator(page);
   await expect(page).toHaveURL(/\/setup\/backup\?/);
   await saveRecoveryCodes(page);
   await page.fill('#addr', ADDRESS);
@@ -811,6 +829,7 @@ test.describe('review fix round', () => {
     const s = await stubApi(page);
     await toPassword(page);
     await page.click('[data-part="password-set"]');
+    await addAuthenticator(page);
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     await page.goBack();
     await expect(page).toHaveURL(/\/setup\/backup\?/);
@@ -919,6 +938,7 @@ test.describe('review fix round', () => {
     await page.fill('#pw', 'Quiet-harbour-58');
     await page.fill('#pw2', 'Quiet-harbour-58');
     await page.click('[data-part="password-set"]');
+    await addAuthenticator(page);
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     expect(s.bodies.password).toHaveLength(2);
     expect(s.bodies.password?.[1]).toMatchObject({ acceptedTerms: TERMS_VERSION, termsSignature: DRAWN });

@@ -13,9 +13,12 @@
  * authenticator code is a password's second step (TOTP alone never logs in, recovery.ts), so it
  * can be ticked only with Password (owner decision, 16 Nov 2026, which reverses signup round 3
  * behaviour 1, TOTP with PGP, a security key or a passkey and no password; the server refuses it,
- * 409 `totp-needs-password`).
+ * 409 `totp-needs-password`). A password does not stand alone either (owner decision, 16 Nov 2026,
+ * login methods): Continue needs the authenticator app or a PGP key, security key or passkey with it
+ * (the server refuses finishing sign-up otherwise, 409 `password-alone`).
  */
 import { useId, useState } from 'react';
+import { passwordAlone } from '@x2f/auth-client';
 import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { RegisterError, SIGNUP_ORDER, SetupFrame, SetupIntro, nextStep, useSetup, type LoginMethod, type SignupMethod } from './kit.js';
@@ -114,6 +117,7 @@ export function Login() {
   const chosen = ordered(picks);
   const first = chosen[0] as LoginMethod | undefined;
   const current = first !== undefined ? METHODS.find((m) => m.id === first)! : null;
+  const alone = passwordAlone(chosen);
 
   const toggle = (m: MethodDef, on: boolean) => {
     setPicks((p) => {
@@ -129,7 +133,7 @@ export function Login() {
   };
 
   const next = async () => {
-    if (first === undefined) return;
+    if (first === undefined || alone) return;
     update({ methods: chosen, done: [], method: first });
     if (first === 'pgp') return go('pgp-key');
     if (first === 'password') return go('password');
@@ -160,7 +164,7 @@ export function Login() {
       // Review F8: the screen before this one is the display name.
       back={path('display-name')}
       footer={
-        <Button variant="primary" disabled={busy || current === null} onClick={() => void next()} data-part="method-continue">
+        <Button variant="primary" disabled={busy || current === null || alone} onClick={() => void next()} data-part="method-continue">
           {current?.cta ?? 'Continue'}
         </Button>
       }
@@ -209,6 +213,12 @@ export function Login() {
         // COPY-UNSIGNED
         <p className="x2f-start__help" role="status" data-part="method-none">
           Tick at least one way to log in.
+        </p>
+      ) : null}
+      {alone ? (
+        // COPY-UNSIGNED (owner decision, 16 Nov 2026: a password does not stand alone)
+        <p className="x2f-start__help" role="status" data-part="password-alone">
+          A password needs the authenticator app or another way to log in. Tick one of them too.
         </p>
       ) : null}
       <RegisterError error={error} />

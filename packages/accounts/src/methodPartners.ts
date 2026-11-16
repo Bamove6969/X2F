@@ -27,3 +27,18 @@ export function partnerNeededBy(m: MethodType, has: Iterable<MethodType>): Metho
   }
   return null;
 }
+
+/**
+ * Owner decision, 16 Nov 2026 (login methods): a PGP key, a passkey and a security key each stand
+ * alone (the passkey and the security key with user verification required, webauthn.ts). A password
+ * does not: it needs TOTP, its second factor, or one of these.
+ */
+export const STANDS_ALONE: ReadonlySet<MethodType> = new Set<MethodType>(['pgp', 'passkey', 'security-key']);
+
+/** True when `has` holds a password with neither TOTP nor a method that stands alone. */
+export function passwordAlone(has: Iterable<MethodType>): boolean {
+  const set = new Set(has);
+  if (!set.has('password') || set.has('totp')) return false;
+  for (const m of STANDS_ALONE) if (set.has(m)) return false;
+  return true;
+}

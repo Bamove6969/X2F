@@ -105,8 +105,8 @@ export function assertCredentialAllowed(accountKind: AccountKind, info: { kind: 
 
 /**
  * The registration settings for a credential kind and account kind. Passkey: resident key and user
- * verification required. Security key: no resident key, user verification preferred, roaming
- * authenticators only. Attestation `direct` for staff and owner security keys, `none` otherwise
+ * verification required. Security key: no resident key, user verification required (its PIN; owner,
+ * 16 Nov 2026, for every account kind), roaming authenticators only. Attestation `direct` for staff and owner security keys, `none` otherwise
  * (a staff passkey cannot be attested). An owner passkey → 403 `method-not-allowed`.
  */
 export function registrationOptionsFor(kind: CredentialKind, accountKind: AccountKind) {
@@ -118,7 +118,7 @@ export function registrationOptionsFor(kind: CredentialKind, accountKind: Accoun
         ? { residentKey: 'required' as const, userVerification: 'required' as const }
         : {
             residentKey: 'discouraged' as const,
-            userVerification: 'preferred' as const,
+            userVerification: 'required' as const,
             authenticatorAttachment: 'cross-platform' as const,
           },
     supportedAlgorithmIDs: ALGORITHMS,
@@ -262,7 +262,7 @@ async function buildRegistrationOptions(
 
 /**
  * Checks a registration response: origin, RP ID, type `webauthn.create`, user presence, the
- * challenge, and user verification for a passkey; then decides `attested` (a `packed` statement
+ * challenge, and user verification (every credential, owner 16 Nov 2026); then decides `attested` (a `packed` statement
  * with a certificate chain that `MetadataService` verified against the snapshot, and an AAGUID on
  * the owner's allowlist for the owner, staff's otherwise) and applies `assertCredentialAllowed`. `kind` null (Plan 4's helper) means: attested →
  * security key, otherwise passkey. Any verification error → 401 `webauthn-failed`.
@@ -280,7 +280,8 @@ async function verifyRegistration(
       expectedRPID: deps.config.rpId,
       expectedType: 'webauthn.create',
       requireUserPresence: true,
-      requireUserVerification: a.kind === 'passkey',
+      // Owner, 16 Nov 2026: user verification on every registration, passkey and security key alike.
+      requireUserVerification: true,
       supportedAlgorithmIDs: ALGORITHMS,
     });
   } catch (e) {
@@ -295,7 +296,7 @@ async function verifyRegistration(
   const attested =
     info.fmt === 'packed' && hasCertificateChain(info.attestationObject) && deps.attestation.isAllowed(info.aaguid, info.fmt, list);
   const kind = a.kind ?? (attested ? 'security-key' : 'passkey');
-  if (kind === 'passkey' && !info.userVerified) throw failed();
+  if (!info.userVerified) throw failed();
   assertCredentialAllowed(a.accountKind, { kind, attested });
   // Owner G3 (review P-m1): a moderator's passkey must be another device than their security key,
   // or the key-plus-passkey pair is one key and its PIN. A staff passkey is registered without
@@ -327,7 +328,7 @@ async function buildAssertionOptions(
   return generateAuthenticationOptions({
     rpID: deps.config.rpId,
     allowCredentials: creds.map((c) => ({ id: b64url(c.credential_id) })),
-    userVerification: creds.some((c) => c.kind === 'passkey') ? 'required' : 'preferred',
+    userVerification: 'required',
     timeout: WEBAUTHN_TTL_MS,
     ...(challenge ? { challenge: new Uint8Array(challenge) } : {}),
   });
@@ -335,7 +336,8 @@ async function buildAssertionOptions(
 
 /**
  * Checks an assertion against the stored credential it names: origin, RP ID, type `webauthn.get`,
- * user presence, the challenge, the signature, user verification for a passkey, and the counter (a
+ * user presence, the challenge, the signature, user verification (every credential, owner 16 Nov
+ * 2026), and the counter (a
  * non-zero counter that does not increase is refused). `accountId` null accepts any account's
  * credential (discoverable login); otherwise the credential must belong to that account. Stores
  * the new counter and `last_used_at`. Any failure → 401 `webauthn-failed`.
@@ -363,7 +365,8 @@ async function verifyAssertion(
         counter: Number(row.counter),
         ...(row.transports ? { transports: row.transports } : {}),
       },
-      requireUserVerification: row.kind === 'passkey',
+      // Owner, 16 Nov 2026: user verification on every login, passkey and security key alike.
+      requireUserVerification: true,
     });
   } catch {
     throw failed();
