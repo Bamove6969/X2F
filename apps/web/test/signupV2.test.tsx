@@ -161,6 +161,25 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     expect(api.update).toHaveBeenCalledWith({ methods: ['pgp'], done: [], method: 'pgp' });
   });
 
+  // Owner decision, 16 Nov 2026 (comms to-lead.log 17:50:46): a password does not stand alone; it
+  // needs the authenticator app or another way to log in (the server refuses finishing sign-up
+  // otherwise, 409 password-alone).
+  it('Password alone cannot continue: it needs the authenticator app or another way to log in', () => {
+    const api = setup();
+    const host = show(<Login />, api);
+    click(box(host, 'pgp'));
+    click(box(host, 'password'));
+    expect(disabled(byPart(host, 'method-continue'))).toBe(true);
+    expect(byPart(host, 'password-alone')).not.toBeNull();
+    click(box(host, 'totp'));
+    expect(disabled(byPart(host, 'method-continue'))).toBe(false);
+    expect(byPart(host, 'password-alone')).toBeNull();
+    click(box(host, 'totp'));
+    click(box(host, 'passkey'));
+    expect(disabled(byPart(host, 'method-continue'))).toBe(false);
+    expect(byPart(host, 'password-alone')).toBeNull();
+  });
+
   it('Continue needs at least one way to log in, and stores every ticked one in setup order', () => {
     const api = setup();
     const host = show(<Login />, api);
@@ -326,6 +345,19 @@ describe('/setup/authenticator goes with a password (owner, 16 Nov 2026)', () =>
     expect(byPart(host, 'totp-no-password')).toBeNull();
     expect(api.update).toHaveBeenCalledWith({ done: ['pgp', 'totp'] });
     expect(api.go).toHaveBeenCalledWith('backup', { replace: true });
+  });
+
+  it('with a password as the only way to log in, the authenticator app cannot be left for later', async () => {
+    const host = show(<AuthenticatorStep />, setup({ registered: true, methods: ['password', 'totp'], done: ['password'] }));
+    await flush();
+    expect(byPart(host, 'totp-start')).not.toBeNull();
+    expect(byPart(host, 'method-later')).toBeNull();
+  });
+
+  it('with a password and another way to log in, it can be left for later', async () => {
+    const host = show(<AuthenticatorStep />, setup({ registered: true, methods: ['pgp', 'password', 'totp'], done: ['pgp', 'password'] }));
+    await flush();
+    expect(byPart(host, 'method-later')).not.toBeNull();
   });
 
   it('with a password, it keeps the plain lead', async () => {
