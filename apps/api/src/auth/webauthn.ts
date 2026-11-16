@@ -267,7 +267,9 @@ async function buildRegistrationOptions(
  * challenge, and user verification for a passkey; then decides `attested` (a `packed` statement
  * with a certificate chain that `MetadataService` verified against the snapshot, and an AAGUID on
  * the owner's allowlist for the owner, staff's otherwise) and applies `assertCredentialAllowed`. `kind` null (Plan 4's helper) means: attested →
- * security key, otherwise passkey. Any verification error → 401 `webauthn-failed`.
+ * security key, otherwise passkey. Any verification error → 401 `webauthn-failed`, except: staff,
+ * owner or member with a model outside the snapshot → 403 `method-not-allowed`; a trader's response
+ * whose attestation statement fails is checked again without it.
  */
 async function verifyRegistration(
   deps: Deps,
@@ -291,7 +293,10 @@ async function verifyRegistration(
     // Strict metadata: an attested authenticator outside the snapshot is not allowed for staff or the owner.
     if (a.accountKind !== 'trader' && isUnknownAuthenticator(e)) throw new ApiError(403, 'method-not-allowed');
     // A trader's key of any model is a login method (owner demo 13 Nov): checked as unattested.
-    const plain = a.accountKind === 'trader' && isUnknownAuthenticator(e) ? withoutAttestation(a.response as RegistrationResponseJSON) : null;
+    // Any failure of the statement counts (review M1: a model outside the snapshot, a chain from
+    // another root, an expired leaf, an alg the statement does not list): a trader's `attested`
+    // carries no weight, and the retry still checks challenge, origin, RP ID, type, flags and key.
+    const plain = a.accountKind === 'trader' ? withoutAttestation(a.response as RegistrationResponseJSON) : null;
     if (plain === null) throw failed();
     try {
       result = await verify(plain);

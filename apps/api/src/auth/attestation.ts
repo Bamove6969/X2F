@@ -111,8 +111,9 @@ export function fileAttestationPolicy(
  * The registration response with its attestation statement dropped (fmt `none`, empty `attStmt`,
  * authenticator data unchanged), or null when it cannot be decoded. For traders only: their
  * security key is a login method whatever its model, so a key the browser sent with an attestation
- * outside the snapshot (`none` was asked for, but some browsers pass it on) is checked like any
- * unattested key: origin, RP ID, challenge, user presence and the public key still are.
+ * that does not verify (`none` was asked for, but some browsers pass it on: a model outside the
+ * snapshot, a chain from another root, an expired leaf; review M1) is checked like any unattested
+ * key: origin, RP ID, challenge, user presence and the public key still are.
  */
 export function withoutAttestation<T extends { response: { attestationObject: string } }>(response: T): T | null {
   try {
