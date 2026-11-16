@@ -8,6 +8,12 @@
 /** X2F platform fee in basis points (1% = 100 bps). */
 export const X2F_FEE_BPS = 100n;
 
+/**
+ * The highest network fee a co-signer accepts on a payout: 0.01 XMR (@x2f/escrow checkTxSet).
+ * Here so the API books X2F's share of at most this fee without importing the escrow engine.
+ */
+export const MAX_NETWORK_FEE = 10_000_000_000n;
+
 /** Basis points per whole (10,000 bps = 100%). */
 const BPS_DENOMINATOR = 10_000n;
 

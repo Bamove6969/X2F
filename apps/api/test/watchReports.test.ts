@@ -247,6 +247,17 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     expect(rows).toEqual([{ network_fee_atomic: '15360000' }]);
   });
 
+  it('settled with a network fee over the 0.01 XMR bound books X2F\'s share of the bound only (review M2, 16 Nov)', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    const txHash = randomBytes(32).toString('hex');
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'release', networkFeeAtomic: '500000000000' });
+    expect(res.statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+    const { rows } = await deps.db.query<{ network_fee_atomic: string | null }>("select network_fee_atomic::text from revenue_booked where trade_code = $1 and kind = 'fee'", [t.code]);
+    expect(rows).toEqual([{ network_fee_atomic: '5000000000' }]);
+  });
+
   it('settled naming another kind than the trade\'s is refused 409 settle-kind-changed (security review 7 Nov, finding 3)', async () => {
     const t = await trade();
     await driveTo(deps, t, 'settling');

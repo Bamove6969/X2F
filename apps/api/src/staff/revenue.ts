@@ -1,3 +1,4 @@
+import { MAX_NETWORK_FEE } from '@x2f/core';
 import { feeWalletNetworkFee, type RulingKind, type SettleKind } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import type { Queryable } from '../db/pool.js';
@@ -20,7 +21,7 @@ import { requireStaff } from './guard.js';
  * (`feeOutputAtomic`, the same rule as @x2f/trade's `payoutsFor`), so it can be checked against the
  * fee wallet (Task 9) and never counts a fee that was not paid.
  *
- * Owner 16 Nov 2026 (migration 550): the payout's network fee is shared by its receiving outputs,
+ * Owner 16 Nov 2026 (migration 600): the payout's network fee is shared by its receiving outputs,
  * one equal share per output, so X2F's fee output arrives short by its share. `fee_atomic` stays
  * the gross 1% (what the payout set names); `network_fee_atomic` is what the fee outputs paid of the
  * network fee (`bookSettlementNetworkFee`, from the settled tx's fee), so net = gross − network fees.
@@ -165,6 +166,11 @@ export async function bookOwedFeeCollected(q: Queryable, a: { code: string; debt
  * `feeWalletNetworkFee`, wallet2's split). Only on a trade whose own 1% is booked (released, a fee
  * output paid); once per trade (a replayed report, or another fee, books nothing); added to that
  * booking's ledger row (the trade's close day and market). Returns whether it booked.
+ *
+ * Review M2 (16 Nov): the fee is capped at MAX_NETWORK_FEE (0.01 XMR) before the share is taken.
+ * No co-signer accepts more, and a sweep the watcher counts lets the fee output be short by at most
+ * its share of the capped fee (proveSweep), so a higher report (a modified app, two old app
+ * versions) can never book more than X2F's output could have lost. The route logs such a report.
  */
 export async function bookSettlementNetworkFee(q: Queryable, code: string, txFeeAtomic: bigint): Promise<boolean> {
   if (typeof txFeeAtomic !== 'bigint' || txFeeAtomic < 0n) throw new RangeError('network fee must not be negative');
@@ -172,7 +178,7 @@ export async function bookSettlementNetworkFee(q: Queryable, code: string, txFee
   if (!t || t.closed_at === null || t.state !== 'released') return false;
   const kind = (t.settling ?? 'release') as FeeOutputKind;
   if (feeOutputAtomic(kind, t.poster, BigInt(t.fee_atomic)) <= 0n) return false;
-  const share = feeWalletNetworkFee(kind, txFeeAtomic);
+  const share = feeWalletNetworkFee(kind, txFeeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : txFeeAtomic);
   if (share <= 0n) return false;
   const { rows } = await q.query<{ booked: boolean }>(
     `with mark as (

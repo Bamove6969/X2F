@@ -1,10 +1,8 @@
-import { feeSplitLayout, networkFeeShares } from '@x2f/core';
+import { MAX_NETWORK_FEE, feeSplitLayout, networkFeeShares } from '@x2f/core';
 import { EscrowError, type Payout } from './engine.js';
 
-export { feeSplitLayout, networkFeeShares };
-
-/** The highest network fee a co-signer accepts: 0.01 XMR. */
-export const MAX_NETWORK_FEE = 10_000_000_000n;
+/** The highest network fee a co-signer accepts: 0.01 XMR (defined in @x2f/core, one value for every check). */
+export { MAX_NETWORK_FEE, feeSplitLayout, networkFeeShares };
 
 /** What the co-signer learns from decoding a tx set; mirrors monero-ts describeMultisigTxSet. */
 export interface DescribedTx {

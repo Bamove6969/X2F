@@ -33,6 +33,8 @@ export interface StoredIdentity {
 export interface StoredPayout {
   address: string;
   amountAtomic: bigint;
+  /** Owner 16 Nov: this output pays its share of the network fee (the engine builds and checks by it). */
+  bearsNetworkFee?: boolean;
 }
 
 /** What this side asked to settle, kept so a reload settles the same outcome again (Review Focus 1). */

@@ -260,8 +260,10 @@ const toHex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).pad
 const apiCode = (e: unknown): string | null =>
   typeof e === 'object' && e !== null && typeof (e as { code?: unknown }).code === 'string' ? (e as { code: string }).code : null;
 const sumOf = (to: readonly Payout[]): bigint => to.reduce((s, p) => s + p.amountAtomic, 0n);
+// The fee marks are part of what the tx pays (policy.ts samePayouts), so a marked set and an
+// unmarked one are never the same key in the refused / exhausted / in-flight sets (review B3).
 const key = (o: { to: readonly Payout[]; builder: string; cosigner: string } | null): string =>
-  o === null ? '' : JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString()])]);
+  o === null ? '' : JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString(), p.bearsNetworkFee === true])]);
 
 function validConfirmed(c: ConfirmedTrade): boolean {
   const d = c.deal;
@@ -719,7 +721,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     private fromStored(o: NonNullable<StoredIntent['outcome']>): Outcome {
-      return { kind: 'release', to: o.to.map((p) => ({ address: p.address, amountAtomic: p.amountAtomic })), builder: o.builder, cosigner: o.cosigner };
+      // The fee marks come back too (review B3, 16 Nov): cosignPolicy compares them, so an unmarked
+      // copy of a marked release was refused and a party resumed after the tx left the unlocked
+      // balance never got its outcome again.
+      return {
+        kind: 'release',
+        to: o.to.map((p) => ({ address: p.address, amountAtomic: p.amountAtomic, ...(p.bearsNetworkFee === true ? { bearsNetworkFee: true } : {}) })),
+        builder: o.builder,
+        cosigner: o.cosigner,
+      };
     }
 
     tickOnce(): Promise<void> {

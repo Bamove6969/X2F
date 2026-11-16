@@ -623,8 +623,9 @@ describe('Released', () => {
     await flush();
     expect(r.host.querySelector('h1')!.textContent).toBe('1.250000 XMR is yours');
     expect(r.host.querySelector('dl')).toBeNull();
-    // Only the poster sees the X2F fee; the network-fee note (Minor 4) is every buyer's.
-    expect(r.text()).not.toMatch(/X2F fee|1%/i);
+    // Only the poster sees the X2F fee; the network-fee note (Minor 4) is every buyer's, but the
+    // sentence about X2F's own 1% is the poster buyer's only (review B1, 16 Nov).
+    expect(r.text()).not.toMatch(/X2F fee|1%|X2F pays/i);
     expect(r.text()).toContain('Before the network fee for your payout.');
     expect(r.text()).toContain('0 of 10');
   });
