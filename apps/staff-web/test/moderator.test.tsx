@@ -307,7 +307,9 @@ describe('ModCase (board ModCase)', () => {
     expect(dd('reasonSha256')).toContain('the reason above');
     expect(dd('evidenceSha256')).toContain(sha(JSON.stringify(['One line', 'Two line'])));
     expect(dd('evidenceSha256')).toContain('the evidence lines above');
-    expect(dd('code')).toContain('incident D-7RWD');
+    // X3-1 (disputes-stack review 2026-11-16): the code is labelled from the signed code itself, never the API's incident id.
+    expect(dd('code')).toContain(`the trade on this page, ${CODE.replace(/(.{4})(?=.)/g, '$1-')}`);
+    expect(dd('code')).not.toContain('D-7RWD');
     expect(dd('outcome')).toContain('Refund to seller');
     expect(dd('amountAtomic')).toContain('4.00 XMR');
     expect(dialogText()).toContain('this ruling');
@@ -333,6 +335,46 @@ describe('ModCase (board ModCase)', () => {
     expect(dd('round1Id')).toContain('round 1 ruling (Release to buyer)');
     await click(button('Tap security key'));
     expect(api.calls.find((c) => c.path === '/staff/v1/taps/start')!.body).toMatchObject({ round: 2, round1Id: 'r1-round-one' });
+  });
+
+  // X3-1 (a): the page signs the code the API returned only when it is the code in the page's address.
+  it('X3-1: a case whose code is not the one in the address is never tapped (propose or approve); a typed form of the same code is', async () => {
+    const OTHER = 'K7M29QXA4FTR8WPN';
+    const mismatch = 'This case is not the one you opened: its trade code differs from the address. Nothing can be signed here.';
+    // Propose: the API answers /disputes/CODE with another trade's case.
+    let api = fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes/:code': { body: kase({ code: OTHER, overLimit: false }) }, 'POST /staff/v1/taps/start': honestTapStart('tap-1') });
+    await open(`/disputes/${CODE}`);
+    expect(document.body.textContent).toContain(mismatch);
+    const panel = part('ruling')!;
+    await click(panel.querySelector('input[value="refund-to-seller"]'));
+    typeInto(field('Reason (required, both traders see it)'), REASON);
+    await settle();
+    await click(button('Send ruling', panel));
+    expect(document.querySelector('[data-part="key-tap-intent"]')).toBeNull();
+    expect(api.calls.some((c) => c.path === '/staff/v1/taps/start')).toBe(false);
+    // Approve: the same for a waiting proposal.
+    document.body.innerHTML = '';
+    const waiting = kase(
+      { code: OTHER, status: 'awaiting-approval', assignedToYou: false, assignee: 'dmitri_k' },
+      { proposal: { rulingId: 'r1', reason: REASON, evidence: [], proposer: 'p', proposedAt: new Date().toISOString() }, draft: { id: 'r1', outcome: 'refund-to-seller' } },
+    );
+    api = fakeApi({ 'GET /staff/v1/me': { body: OWNER }, 'GET /staff/v1/disputes/:code': { body: waiting }, 'POST /staff/v1/taps/start': honestTapStart('tap-2') });
+    await open(`/disputes/${CODE}`);
+    expect(document.body.textContent).toContain(mismatch);
+    await click(button('Approve ruling', part('approve')!));
+    expect(document.querySelector('[data-part="key-tap-intent"]')).toBeNull();
+    expect(api.calls.some((c) => c.path === '/staff/v1/taps/start')).toBe(false);
+    // The same code typed in lower case with dashes is the same case: the tap opens.
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes/:code': { body: kase({ overLimit: false }) } });
+    await open(`/disputes/${CODE.toLowerCase().replace(/(.{4})(?=.)/g, '$1-')}`);
+    expect(document.body.textContent).not.toContain(mismatch);
+    const again = part('ruling')!;
+    await click(again.querySelector('input[value="refund-to-seller"]'));
+    typeInto(field('Reason (required, both traders see it)'), REASON);
+    await settle();
+    await click(button('Send ruling', again));
+    expect(document.querySelector('[data-part="key-tap-intent"]')).not.toBeNull();
   });
 
   it('a moderator never sees the approval panel of a waiting ruling (rulings.approve is owner and senior only)', async () => {
