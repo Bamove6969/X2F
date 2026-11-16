@@ -150,6 +150,14 @@ export const SWITCH_ON_SKEW_MS = 2 * 60_000;
 export const MAX_TAP_AGE_MS = 24 * 3_600_000;
 /** Re-verify N6 (lead call): the two `add-owner-key` taps are issued within this long of each other. */
 export const ADD_OWNER_KEY_PAIR_MS = 10 * 60_000;
+/**
+ * Disputes-stack review D-2 (technical call): the longest an invite or security-reset link may be
+ * signed to stay open, from its tap's signed issuedAt to its signed expiresAt. An invite link works
+ * for 24 hours (spec 6.6, the API's INVITE_TTL_MS), plus what the API itself lets through: the owner's
+ * browser clock up to 5 minutes ahead (INVITE_CLOCK_SKEW_MS) and the link posted up to 2 minutes after
+ * the tap started (KEY_TAP_TTL_MS). The gate enforces it itself, since the API may be the one lying.
+ */
+export const LINK_MAX_LIFETIME_MS = 24 * 3_600_000 + 5 * 60_000 + 2 * 60_000;
 
 export const GATE_FILE = 'gate.bin';
 /** The gate store's lock file in MOD_STATE_DIR (`openGateStore(…, { lock: true })`): the holder's pid. */

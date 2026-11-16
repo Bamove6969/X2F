@@ -145,7 +145,7 @@ export interface World {
   owner: Person;
   ownerKey2: SoftAuthenticator;
   /** Invites a staff member the proper way: an owner `create-invite` tap and an attested registration. */
-  hire(role: 'senior' | 'mod' | 'helper', o?: { attest?: 'x5c' | 'self' | 'none'; aaguid?: string; noTap?: boolean; wrongToken?: boolean }): Person;
+  hire(role: 'senior' | 'mod' | 'helper', o?: { attest?: 'x5c' | 'self' | 'none'; aaguid?: string; noTap?: boolean; wrongToken?: boolean; expiresAt?: string }): Person;
 }
 
 export async function world(): Promise<World> {
@@ -164,7 +164,7 @@ export async function world(): Promise<World> {
     const inviteId = randomUUID();
     const token = randomBytes(32).toString('base64url');
     const tokenHash = sha256Hex(token);
-    const intent: KeyTapIntent = { kind: 'create-invite', inviteId, role, tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' };
+    const intent: KeyTapIntent = { kind: 'create-invite', inviteId, role, tokenHash, expiresAt: o.expiresAt ?? '2026-11-13T12:00:00.000Z' };
     if (!o.noTap) api.taps.push(tapBy(owner, intent));
     const challengeHash = o.wrongToken ? sha256Hex('another token') : tokenHash;
     const response = p.key.register(

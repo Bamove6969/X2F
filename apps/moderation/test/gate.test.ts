@@ -31,6 +31,7 @@ import {
 } from '../src/gate/index.js';
 import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity } from './gateWorld.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
+import { LINK_MAX_LIFETIME_MS } from '../src/gate/store.js';
 
 /** A new gate the way an operator makes one: init-gate with "yes", then open it. */
 async function freshGate(dir: string, key: Uint8Array) {
@@ -938,6 +939,90 @@ describe('D-032 the owner\'s tapped security reset (lead call)', () => {
     await syncRegistry(w2.api, w2.gate, ctx());
     expect(await canRule(w2, { ...m2, key: onFirst })).toEqual({ ok: false, reason: 'unknown-key' });
     expect((await canRule(w2, second.again)).ok).toBe(true);
+  });
+
+  // Disputes-stack review 2026-11-16, D-3 (the reviewer's PoC as a test): the API hides the staff
+  // row, so the person never "joins" in the gate and their invite stays open; the owner's tapped
+  // reset must still close it, or step 1 puts the invite's key back on every sync.
+  it('D-3: a reset closes the person\'s own still-open invite: the invite\'s key never comes back', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    w.api.staffRows.delete(mod.id); // a compromised API: the person never joins, the invite stays open
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    await syncRegistry(w.api, w.gate, ctx());
+    const s = w.gate.staff[mod.id]!;
+    expect(s.creds.map((c) => c.credentialId)).not.toContain(mod.key.credentialId);
+    expect(s.creds.map((c) => c.credentialId)).toContain(r.key.credentialId);
+    expect(w.gate.invites[s.inviteId]!.closed).toBe(true);
+    expect(s.inviteClosed).toBe(true);
+    // A key the API registers on the old invite afterwards is not taken either.
+    const old = w.api.invites.get(s.inviteId)!;
+    const late = newKey();
+    old.registrations.push(registration(late, old.tokenHash));
+    w.api.staffRows.set(mod.id, { accountId: mod.id, role: 'mod', switchedOff: false, removed: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, mod)).toEqual({ ok: false, reason: 'unknown-key' });
+    expect(await canRule(w, { ...mod, key: late })).toEqual({ ok: false, reason: 'unknown-key' });
+    expect((await canRule(w, r.again)).ok).toBe(true);
+  });
+
+  // D-2: the gate bounds a link's signed lifetime itself (spec 6.6: an invite link works for 24
+  // hours), so a lying API cannot keep an invite or a reset link open by never reporting it used.
+  it('D-2: an invite or reset link signed to stay open longer than LINK_MAX_LIFETIME_MS is refused', async () => {
+    const at = (ms: number) => new Date(NOW.getTime() + ms).toISOString();
+    // An invite: 2099, and one millisecond over the bound, bring nobody in; exactly the bound does.
+    for (const expiresAt of ['2099-01-01T00:00:00.000Z', at(LINK_MAX_LIFETIME_MS + 1)]) {
+      const w = await world();
+      const mod = w.hire('mod', { expiresAt });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect(w.gate.staff[mod.id], expiresAt).toBeUndefined();
+      expect(await canRule(w, mod), expiresAt).toEqual({ ok: false, reason: 'unknown-key' });
+    }
+    {
+      const w = await world();
+      const mod = w.hire('mod', { expiresAt: at(LINK_MAX_LIFETIME_MS) });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect((await canRule(w, mod)).ok).toBe(true);
+    }
+    // A reset link: refused, so no key is ever taken through it (review PoC R6).
+    for (const expiresAt of ['2099-01-01T00:00:00.000Z', at(LINK_MAX_LIFETIME_MS + 1)]) {
+      const w = await world();
+      const mod = w.hire('mod');
+      await syncRegistry(w.api, w.gate, ctx());
+      const r = resetSecurity(w, mod, { expiresAt });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect(await canRule(w, r.again), expiresAt).toEqual({ ok: false, reason: 'unknown-key' });
+      expect(Object.hasOwn(w.gate.resets, r.inviteId), expiresAt).toBe(false);
+    }
+    {
+      const w = await world();
+      const mod = w.hire('mod');
+      await syncRegistry(w.api, w.gate, ctx());
+      const r = resetSecurity(w, mod, { expiresAt: at(LINK_MAX_LIFETIME_MS) });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect((await canRule(w, r.again)).ok).toBe(true);
+    }
+  });
+
+  it('D-2: a link the gate bound earlier closes LINK_MAX_LIFETIME_MS after its issuedAt, whatever its signed expiry', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod, { register: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    // As a gate.bin from before the bound holds it: the link bound, its tap spent, a 2099 expiry signed.
+    w.api.taps = w.api.taps.filter((t) => (JSON.parse(t.intent) as { inviteId?: string }).inviteId !== r.inviteId);
+    const long = tapBy(w.owner, { kind: 'reset-staff-security', accountId: mod.id, inviteId: r.inviteId, tokenHash: r.tokenHash, expiresAt: '2099-01-01T00:00:00.000Z' });
+    w.api.taps.push(long);
+    w.gate.usedNonces[long.nonceHex] = `reset:${r.inviteId}`;
+    const later: GateContext = { ...ctx(), now: () => new Date(NOW.getTime() + LINK_MAX_LIFETIME_MS) };
+    const key = newKey();
+    w.api.invites.get(r.inviteId)!.registrations.push(registration(key, r.tokenHash));
+    await syncRegistry(w.api, w.gate, later);
+    expect(w.gate.resets[r.inviteId]!.closed).toBe(true);
+    expect(w.gate.staff[mod.id]!.creds.map((c) => c.credentialId)).not.toContain(key.credentialId);
   });
 });
 
