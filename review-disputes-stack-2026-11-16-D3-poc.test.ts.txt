@@ -1,0 +1,27 @@
+import { describe, expect, it } from 'vitest';
+import { syncRegistry } from '../src/gate/index.js';
+import { ctx, tapBy, world, ruling, authorize, resetSecurity, type Person } from './gateWorld.js';
+
+const canRule = async (w: Awaited<ReturnType<typeof world>>, p: Person) => {
+  const c = ruling(p);
+  return authorize(w, c, [tapBy(p, c.intent('propose'))]);
+};
+
+describe('reviewer PoC 2026-11-16: reset while the person\'s own invite is still open', () => {
+  it('the old invite key survives the owner\'s tapped reset (API hides the staff row)', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    w.api.staffRows.delete(mod.id); // compromised API: the person never "joined", the invite stays open
+    await syncRegistry(w.api, w.gate, ctx());
+    const before = await canRule(w, mod);
+    const r = resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    await syncRegistry(w.api, w.gate, ctx());
+    const creds = w.gate.staff[mod.id]?.creds.map((c) => c.credentialId) ?? [];
+    console.log('before', JSON.stringify(before), 'oldKeyKept', creds.includes(mod.key.credentialId), 'newKey', creds.includes(r.key.credentialId), 'after', JSON.stringify(await canRule(w, mod)));
+    w.api.staffRows.set(mod.id, { accountId: mod.id, role: 'mod', switchedOff: false, removed: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    { const a = await canRule(w, mod); const b = await canRule(w, r.again); console.log('row back: old key ok', a.ok, (a as {reason?: string}).reason, 'new key ok', b.ok); }
+    expect((await canRule(w, mod)).ok).toBe(false);
+  });
+});
