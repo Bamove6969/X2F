@@ -576,24 +576,27 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
   });
 
   it("takes a trader's security key of any model, attested or not, even one outside the snapshot (owner demo 13 Nov)", async () => {
-    const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
-    const b = await loggedIn(traderId, true);
     // A browser may pass the key's own attestation on although 'none' was asked for.
+    // One new trader per key: since sign-up v2 (review M1(b)) the sign-up window adds a first key
+    // only; a second one needs a confirm token, which this test is not about.
     const keys = [
       createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: 'none' }),
       createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: UNLISTED, ca } }),
       createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: NO_STATEMENT, ca } }),
       createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: NO_STATEMENT, self: true } }),
     ];
+    const traders: string[] = [];
     for (const [i, key] of keys.entries()) {
-      const r = await staffAdd(b, key, 'security-key');
+      const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
+      traders.push(traderId);
+      const r = await staffAdd(await loggedIn(traderId, true), key, 'security-key');
       expect(r.options.attestation).toBe('none');
       expect(r.options.hints).toEqual(['security-key']);
       expect(r.options.pubKeyCredParams.map((p: { alg: number }) => p.alg)).toEqual([-8, -7, -257]);
       expect(r.options.authenticatorSelection).toMatchObject({ authenticatorAttachment: 'cross-platform', residentKey: 'discouraged', userVerification: 'preferred' });
       expect(r.res.statusCode, `key ${i}`).toBe(201);
     }
-    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
+    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = any($1::uuid[])', [traders]);
     expect(rows).toEqual(keys.map(() => ({ kind: 'security-key', attested: false })));
   });
 
