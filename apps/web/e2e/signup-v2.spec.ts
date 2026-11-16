@@ -170,8 +170,11 @@ for (const v of VIEWPORTS) {
     await expect(page.locator('[data-method="totp"]')).toContainText('6-digit code');
     await expect(page.locator('[data-method="password"] [data-part="strength"]')).toHaveText('Weak');
     await expect(page.locator('[data-method="password"]')).toContainText('It is strongly recommended you do not choose this as the only security method you use.');
-    // Signup round 3 lead call: PGP (ticked by default) is enough for the authenticator app.
-    await expect(tick(page, 'totp')).toBeEnabled();
+    // Owner decision 16 Nov 2026 (reverses signup round 3 behaviour 1): PGP alone is not enough for
+    // the authenticator app; it goes only with a password, and the M3 sentence is gone.
+    await expect(tick(page, 'totp')).toBeDisabled();
+    await expect(page.locator('[data-method="totp"]')).toContainText('Goes with a password: tick Password to add it.');
+    await expect(page.locator('[data-part="totp-no-password"]')).toHaveCount(0);
     await page.click('[data-part="pgp-explain"]');
     await expect(page.locator('[data-part="pgp-explainer"]')).toContainText('On an Android phone we recommend PGP too, with PGPony (on F-Droid: com.pgpony.android). OpenKeychain works as well.');
     await page.click('[data-method="password"]');

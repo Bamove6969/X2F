@@ -7,7 +7,7 @@
  * the confirm sheet is wired in anyway, as on the backup step, so someone who comes back later is
  * asked to confirm rather than refused. "Set up later" goes on without it (Settings can add it).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { addWebAuthnKey, isStaged, withConfirm, type Staged } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
@@ -15,7 +15,6 @@ import { authApi } from '../auth/authApi.js';
 import { HOLD_COPY } from '../settings/holdCopy.js';
 import { Totp } from '../settings/Totp.js';
 import { SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
-import { TOTP_NO_PASSWORD } from './Login.js';
 import { SecurityKeyArt } from './SecurityKeyArt.js';
 
 /** A staged addition (hold model v3) says so before going on; nothing staged goes straight on. */
@@ -115,7 +114,15 @@ export function AuthenticatorStep() {
   const { prove, confirmUi, open } = useConfirm();
   const finish = useFinish('totp');
   const { state } = useSetup();
+  // Owner decision, 16 Nov 2026: the authenticator app goes only with a password (the server refuses
+  // it otherwise, 409 `totp-needs-password`). The sign-up screen never ticks it alone; a flow saved
+  // before that (signup round 3) goes straight on, as "Set up later" would.
   const noPassword = !state.methods.includes('password');
+  useEffect(() => {
+    if (noPassword) finish.next();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on arrival
+  }, [noPassword]);
+  if (noPassword) return null;
 
   return (
     <ConfirmOpenProvider value={open}>
@@ -123,8 +130,6 @@ export function AuthenticatorStep() {
         {/* COPY-UNSIGNED */}
         <SetupIntro title="Add your authenticator app">
           Each time you log in with your password, you then type the 6-digit code your authenticator app shows.
-          {/* COPY-UNSIGNED (review of third-signup-r3, M3; owner question Q1) */}
-          {noPassword ? <span data-part="totp-no-password"> {TOTP_NO_PASSWORD}</span> : null}
         </SetupIntro>
         {finish.held ? <Held onNext={finish.next} /> : <Totp prove={prove} onDone={finish.done} onCancel={finish.next} />}
         {confirmUi}

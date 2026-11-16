@@ -50,3 +50,4 @@ export {
 export {
   IDLE_REMINDER_MINUTES, SESSION_CHOICE_WINDOW_MS, SESSION_PROMPT_MS, type SessionAccountType, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
 } from './sessionLength.js';
+export { METHOD_PARTNERS, partnerMissing, partnerNeededBy } from './methodPartners.js';

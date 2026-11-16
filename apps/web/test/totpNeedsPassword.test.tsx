@@ -4,6 +4,7 @@
 // password cannot be removed while the authenticator app is on (the API answers 409
 // `totp-needs-password` and `password-has-totp`). It reverses signup round 3 behaviour 1.
 import { act } from 'react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Methods } from '../src/screens/settings/Methods.js';
 import { PASSWORD_HAS_TOTP_MESSAGE, TOTP_NEEDS_PASSWORD_MESSAGE } from '../src/ui/cantDoCodes.js';
@@ -39,7 +40,11 @@ const click = (el: Element | null) => fire(el!, new MouseEvent('click', { bubble
 
 async function shown(types: string[]) {
   methods = types.map(entry);
-  const { host } = render(<Methods prove={async () => 'tok'} />);
+  const { host } = render(
+    <MemoryRouter>
+      <Methods prove={async () => 'tok'} />
+    </MemoryRouter>,
+  );
   await flush();
   return host;
 }
@@ -60,7 +65,8 @@ describe('Settings: the authenticator app goes with a password (owner, 16 Nov 20
     const host = await shown(['pgp', 'password', 'totp']);
     click(host.querySelector('[data-method="password"] [data-part="remove"]'));
     await flush();
-    expect(host.textContent).toContain(PASSWORD_HAS_TOTP_MESSAGE);
+    // CantDoThat opens as a sheet (a portal on the body).
+    expect(document.body.textContent).toContain(PASSWORD_HAS_TOTP_MESSAGE);
     expect(seen.filter((s) => s.startsWith('DELETE'))).toEqual([]);
   });
 

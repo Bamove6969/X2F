@@ -10,10 +10,15 @@
  *   `subkey('totp')`) still open until `rewrapTotpSecrets` moves them.
  * - SHA-1, 6 digits, 30-second period, window ±1 step; a code is accepted only for a step later than
  *   the last accepted one, set in the same statement (no replay, even in parallel).
+ * - Owner, 16 Nov 2026: TOTP is the password login's second factor, so an account has it only with
+ *   a password (`@x2f/accounts` METHOD_PARTNERS). Enrolment start, finish and every write of an
+ *   enrolment (a staged one too) answer 409 `totp-needs-password` without one; removing the
+ *   password while TOTP is on is 409 `password-has-totp` (methods.ts `removable`).
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { partnerMissing } from '@x2f/accounts';
 import { Secret, TOTP } from 'otpauth';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import { subkey, type Config } from '../config.js';
@@ -160,6 +165,22 @@ export async function verifyTotp(deps: Pick<Deps, 'db' | 'clock' | 'config'>, ac
   return (r.rowCount ?? 0) > 0;
 }
 
+/**
+ * 409 `totp-needs-password` unless the account has a password (owner, 16 Nov 2026). With `lock`
+ * the account row is taken for update first, so a parallel password removal (methods.ts
+ * `removable` takes the same lock) waits for this transaction and then sees the TOTP.
+ */
+export async function assertPasswordForTotp(db: Queryable, accountId: string, o: { lock?: boolean } = {}): Promise<void> {
+  if (o.lock === true) await db.query('select 1 from accounts where id = $1 for update', [accountId]);
+  const { rows } = await db.query('select 1 from passwords where account_id = $1', [accountId]);
+  if (partnerMissing('totp', rows.length > 0 ? ['password'] : []) !== null) throw new ApiError(409, 'totp-needs-password');
+}
+
+/** The start's check, as a preHandler before the confirm token is redeemed (a refusal leaves it unused). */
+const passwordForTotp: preHandlerAsyncHookHandler = async (req) => {
+  await assertPasswordForTotp(req.server.deps.db, req.auth.accountId);
+};
+
 export async function hasTotp(db: Queryable, accountId: string): Promise<boolean> {
   const { rows } = await db.query('select 1 from totp where account_id = $1', [accountId]);
   return rows.length > 0;
@@ -281,6 +302,8 @@ async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
+      // Owner, 16 Nov 2026: only with a password, checked again here (it may have gone since the start).
+      await assertPasswordForTotp(client, req.auth.accountId, { lock: true });
       // Hold model v3: a waiting login's enrolment is staged; it applies 24 h after it is submitted.
       held = await gateChange(client, req, { kind: 'totp', secretEnc: sealedNow.toString('base64'), step });
       // Re-verify R1: a start let through on the window may add the first app only, never replace one.
@@ -300,8 +323,13 @@ async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
   return { ok: true };
 }
 
-/** The write of a TOTP enrolment (the route's, or a pending one when the hold ends by time); replaces an earlier one. */
+/**
+ * The write of a TOTP enrolment (the route's, or a pending one when the hold ends by time); replaces
+ * an earlier one. 409 `totp-needs-password` when the account has no password by then (a staged
+ * enrolment is then dropped, hold.ts).
+ */
 export async function applyTotp(db: Queryable, accountId: string, secretEnc: Buffer, step: number, now: Date): Promise<void> {
+  await assertPasswordForTotp(db, accountId, { lock: true });
   await db.query(
     `insert into totp (account_id, secret_enc, last_step, created_at) values ($1, $2, $3, $4)
      on conflict (account_id) do update set secret_enc = excluded.secret_enc, last_step = excluded.last_step,
@@ -358,12 +386,12 @@ async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
 /**
  * `POST /v1/account/totp/start|finish` (full session; a confirm token for `add-method:totp`
  * outside onboarding; `assertMethodAllowed` first, so staff and the owner are refused before any
- * token is spent, R2) and `POST /v1/login/second-factor`.
+ * token is spent, R2, and then the password check, owner 16 Nov 2026) and `POST /v1/login/second-factor`.
  */
 export function totpRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/totp/start',
-    { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld, requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: onlyIfNew('totp') })] },
+    { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld, passwordForTotp, requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: onlyIfNew('totp') })] },
     enrolStart,
   );
   app.post('/v1/account/totp/finish', { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld] }, enrolFinish);
