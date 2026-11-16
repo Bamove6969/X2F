@@ -4,12 +4,18 @@
  * shared `ConfirmSheet` (passed in as `prove`). The server refuses removing the last way to log in
  * with `last-login-method`; the screen shows that plainly rather than letting someone lock
  * themselves out. TOTP enrolment and recovery codes are their own screens.
+ *
+ * Owner, 16 Nov 2026: the authenticator app goes only with a password (`@x2f/accounts`
+ * METHOD_PARTNERS), so it is offered only on an account with a password, and the password is not
+ * removed while it is on (the API refuses both: 409 `totp-needs-password`, `password-has-totp`).
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
   AuthApiError,
   addWebAuthnKey,
   isStaged,
+  partnerMissing,
+  partnerNeededBy,
   withConfirm,
   type ConfirmAction,
   type Staged,
@@ -20,7 +26,7 @@ import {
 import { Button } from '../../ui/Button.js';
 import { Notice } from '../../ui/Notice.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE, PASSWORD_HAS_TOTP_CODE, PASSWORD_HAS_TOTP_MESSAGE } from '../../ui/cantDoCodes.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { keyErrorText } from '../auth/keyErrors.js';
@@ -58,6 +64,8 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   const [error, setError] = useState<string | null>(null);
   // 409 `last-login-method` (or the same check here first): CantDoThat until closed (Plan 5 Task 21).
   const [lastMethod, setLastMethod] = useState(false);
+  // 409 `password-has-totp` (or the same check here first): the password stays while TOTP is on.
+  const [keepsPassword, setKeepsPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<Adding>('none');
   // Hold model v3: a change made from a username-and-password login is staged as a draft (202).
@@ -97,6 +105,10 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       setLastMethod(true);
       return;
     }
+    if (methods !== null && partnerNeededBy(m.type, methods.map((x) => x.type)) !== null) {
+      setKeepsPassword(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -108,6 +120,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       await refresh();
     } catch (e) {
       if (e instanceof AuthApiError && e.code === LAST_METHOD_CODE) setLastMethod(true);
+      else if (e instanceof AuthApiError && e.code === PASSWORD_HAS_TOTP_CODE) setKeepsPassword(true);
       else if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not remove that method. Try again.'));
     } finally {
       setBusy(false);
@@ -126,6 +139,9 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       ) : null}
       {staged > 0 ? <StagedNote key={staged} /> : null}
       {lastMethod ? <CantDoThat title={CANT_DO_TITLE.methods} body={LAST_METHOD_MESSAGE} from={LAST_METHOD_CODE} onClose={() => setLastMethod(false)} /> : null}
+      {keepsPassword ? (
+        <CantDoThat title={CANT_DO_TITLE.methods} body={PASSWORD_HAS_TOTP_MESSAGE} from={PASSWORD_HAS_TOTP_CODE} onClose={() => setKeepsPassword(false)} />
+      ) : null}
 
       <ul className="x2f-list" data-part="method-list">
         {(methods ?? []).map((m) => (
@@ -151,9 +167,11 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
         <Button variant="secondary" disabled={busy} onClick={() => setAdding('password')} data-add="password">
           Set a password
         </Button>
-        <Button variant="secondary" disabled={busy} onClick={() => setAdding('totp')} data-add="totp">
-          Add an authenticator app
-        </Button>
+        {methods !== null && partnerMissing('totp', methods.map((x) => x.type)) === null ? (
+          <Button variant="secondary" disabled={busy} onClick={() => setAdding('totp')} data-add="totp">
+            Add an authenticator app
+          </Button>
+        ) : null}
         <Button variant="secondary" disabled={busy} onClick={() => setAdding('recovery-codes')} data-add="recovery-codes">
           Create recovery codes
         </Button>

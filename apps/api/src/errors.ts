@@ -42,6 +42,10 @@ export type ApiErrorCode =
   | 'counterparty-unavailable'
   | 'method-not-allowed'
   | 'last-login-method'
+  // Owner, 16 Nov 2026: the authenticator app goes only with a password (@x2f/accounts
+  // METHOD_PARTNERS): no TOTP enrolment without a password, no password removal while TOTP is on.
+  | 'totp-needs-password'
+  | 'password-has-totp'
   | 'webauthn-failed'
   | 'security-key-limit'
   | 'origin-refused'

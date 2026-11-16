@@ -35,6 +35,10 @@ export const CANT_DO_CODES = [
   'security-key-limit',
   'login-name-set',
   'last-login-method',
+  // Owner, 16 Nov 2026: the authenticator app goes only with a password (no TOTP without one, no
+  // password removal while TOTP is on).
+  'totp-needs-password',
+  'password-has-totp',
   'method-not-allowed',
   'account-disabled',
   // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key
@@ -408,6 +412,15 @@ export const LAST_METHOD_CODE = 'last-login-method' satisfies CantDoCode;
 
 /** 409 `last-login-method` (and the client's own check before asking): the account's only way to log in. */
 export const LAST_METHOD_MESSAGE = 'That is your only way to log in. Add another login method before removing this one.';
+
+/** The code for removing the password while the authenticator app is on (owner, 16 Nov 2026). */
+export const PASSWORD_HAS_TOTP_CODE = 'password-has-totp' satisfies CantDoCode;
+
+/** 409 `password-has-totp` (and the client's own check before asking). COPY-UNSIGNED */
+export const PASSWORD_HAS_TOTP_MESSAGE = 'Your authenticator app works with your password. Remove the authenticator app first.';
+
+/** 409 `totp-needs-password`: an authenticator app needs a password on the account. COPY-UNSIGNED */
+export const TOTP_NEEDS_PASSWORD_MESSAGE = 'Set a password before adding an authenticator app.';
 
 /** 409 `no-extensions-left` (Plan 3 Task 6): the payment time was already extended as often as allowed. */
 export const NO_EXTENSIONS_LEFT = 'This trade has had all the extra time it can get. Cancel and get your refund, or keep waiting for the payment.';

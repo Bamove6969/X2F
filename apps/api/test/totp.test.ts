@@ -508,13 +508,18 @@ describe('no patterns in TOTP secrets (R9)', () => {
 
   it('the same login name at different times never gets the same secret', async () => {
     const username = name('same');
+    // Owner, 16 Nov 2026: TOTP only with a password, so each account gets one first.
+    const withPassword = (id: string) =>
+      deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [id, goodHash.hash, goodHash.pepperId, now]);
     const first = await seedAccount(deps, { loginName: username });
+    await withPassword(first);
     const b1 = new Browser(app);
     await b1.post('/t/login', { accountId: first, firstSession: true });
     const s1 = await enrol(b1);
     await deps.db.query('delete from accounts where id = $1', [first]);
     setNow(at(HOUR / 2));
     const second = await seedAccount(deps, { loginName: username });
+    await withPassword(second);
     const b2 = new Browser(app);
     await b2.post('/t/login', { accountId: second, firstSession: true });
     const s2 = await enrol(b2);
