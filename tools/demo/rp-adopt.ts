@@ -59,7 +59,7 @@ export interface Adopter {
  * `restart(origin)` restarts the API with the origin adopted and resolves once it answers. `pin`
  * (DEMO_ADOPT_HOST), when set, is the only host name that may be adopted.
  */
-export function createAdopter(o: { enabled: boolean; pin?: string; restart: (selfOrigin: string) => Promise<void>; log?: (line: string) => void }): Adopter {
+export function createAdopter(o: { enabled: boolean; pin?: string | undefined; restart: (selfOrigin: string) => Promise<void>; log?: (line: string) => void }): Adopter {
   const log = o.log ?? ((line: string) => console.log(line));
   const pin = o.pin?.trim().toLowerCase() || null;
   let origin: string | null = null;
