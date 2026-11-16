@@ -25,7 +25,11 @@ describe("a preview pane's host as the RP ID (owner demo 13 Nov: no security key
   it('adopts the first host from a page load only, once, and holds requests until the API is back', async () => {
     const restarts: string[] = [];
     let done!: () => void;
-    const a = createAdopter({ enabled: true, restart: async (o) => void restarts.push(o) ?? new Promise<void>((r) => (done = r)), log: () => {} });
+    const restart = (o: string): Promise<void> => {
+      restarts.push(o);
+      return new Promise<void>((r) => (done = r));
+    };
+    const a = createAdopter({ enabled: true, restart, log: () => {} });
     await a.beforeApi(null, true);
     await a.beforeApi('https://p.example', false);
     expect(restarts).toEqual([]);
