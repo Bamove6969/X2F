@@ -32,7 +32,7 @@ import { PASSWORD_ALONE_CODE, SECOND_METHOD_SIGNUP, SECOND_METHOD_TITLE } from '
 import { authApi } from '../auth/authApi.js';
 import { Backup } from './Backup.js';
 import { DisplayName } from './DisplayName.js';
-import { INITIAL, SetupContext, nextStep, stepPath, useSetup, type SetupState, type SignupMethod, type Step } from './kit.js';
+import { INITIAL, SetupContext, nextStep, stepOf, stepPath, useSetup, type SetupState, type SignupMethod, type Step } from './kit.js';
 import { Login } from './Login.js';
 import { errorCode } from './register.js';
 import { AuthenticatorStep, FirstKeySaved, KeyStep } from './MoreMethods.js';
@@ -82,12 +82,12 @@ export function SetupFlow() {
   const named = state.terms !== null && state.displayName !== '' && state.loginName !== '';
   const need = (ok: boolean, el: ReactNode) => (ok ? el : <Navigate to={path('')} replace />);
   // Once the account exists, the steps that create it are closed (review I2): Back, or a stale tab,
-  // lands on the backup step instead of a second sign-up that would read "That username is taken".
-  const before = (ok: boolean, el: ReactNode) => (state.registered ? <Navigate to={path(nextStep(state))} replace /> : need(ok, el));
-  // A ticked method's own step, once the account exists: open while that method is still to do.
-  const todo = (m: SignupMethod) => state.methods.includes(m) && !state.done.includes(m);
-  const more = (m: SignupMethod, el: ReactNode) => (state.registered ? (todo(m) ? el : <Navigate to={path(nextStep(state))} replace />) : need(false, el));
-  const after = (el: ReactNode) => (needsBackup(state) ? <Navigate to={path('backup')} replace /> : el);
+  // lands on the next step still to do instead of a second sign-up that would read "That username is taken".
+  const next = nextStep(state);
+  const before = (ok: boolean, el: ReactNode) => (state.registered ? <Navigate to={path(next)} replace /> : need(ok, el));
+  // A ticked method's own step, once the account exists: open in SIGNUP_ORDER when that method is next.
+  const more = (m: SignupMethod, el: ReactNode) => (state.registered ? (next === stepOf(m) ? el : <Navigate to={path(next)} replace />) : need(false, el));
+  const after = (el: ReactNode) => (needsBackup(state) ? <Navigate to={path(next)} replace /> : el);
 
   return (
     <SetupContext.Provider value={api}>
@@ -104,7 +104,7 @@ export function SetupFlow() {
         <Route path="security-key" element={more('security-key', <KeyStep key="security-key" kind="security-key" />)} />
         <Route path="passkey" element={more('passkey', <KeyStep key="passkey" kind="passkey" />)} />
         <Route path="authenticator" element={more('totp', <AuthenticatorStep />)} />
-        <Route path="backup" element={<Backup />} />
+        <Route path="backup" element={state.registered && next !== 'backup' ? <Navigate to={path(next)} replace /> : <Backup />} />
         <Route path="wallet" element={after(<Wallet />)} />
         <Route path="welcome" element={after(<EndSignup registered={state.registered}><Welcome /></EndSignup>)} />
         <Route path="*" element={<Navigate to={path('')} replace />} />
@@ -188,6 +188,7 @@ function SetupStart() {
 
   if (session.status === 'loading') return null;
   if (!signedIn) return stale ? null : <SetupTerms />;
+  if (needsBackup(state)) return <Navigate to={path(nextStep(state))} replace />;
   if (hasWallet === null) return null;
   return <Navigate to={hasWallet ? returnTo : path('wallet')} replace />;
 }

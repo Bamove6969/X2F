@@ -80,7 +80,7 @@ export function PgpChallenge() {
     setError(null);
     try {
       await registerPgpFinish(challenge.challengeId, code.trim(), state.terms!);
-      update({ registered: true });
+      update({ registered: true, done: state.done.includes('pgp') ? state.done : [...state.done, 'pgp'] });
       refreshSession();
     } catch (e) {
       if (termsChanged(e)) {
