@@ -405,3 +405,34 @@ describe('instructionsSha256 and instructionsMatch', () => {
     expect(await instructionsMatch(undefined as unknown as string, TERMS)).toBe(false);
   });
 });
+
+// Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): an optional `lienRecovery` in the terms.
+describe('attested lien recovery', () => {
+  const CREDITOR = '4'.padEnd(95, 'C');
+  const REC = { address: CREDITOR, amountAtomic: '1000' };
+
+  it('isAttestedTerms accepts terms with or without a well-formed lienRecovery, nothing else', () => {
+    expect(isAttestedTerms(TERMS)).toBe(true);
+    expect(isAttestedTerms({ ...TERMS, lienRecovery: REC })).toBe(true);
+    for (const bad of [{}, { address: CREDITOR }, { ...REC, amountAtomic: '0' }, { ...REC, amountAtomic: '01' }, { ...REC, address: '' }, { ...REC, extra: 1 }, null]) {
+      expect(isAttestedTerms({ ...TERMS, lienRecovery: bad })).toBe(false);
+    }
+  });
+
+  it('the buyer (the debtor) accepts only the recovery it confirmed; none confirmed means none attested', async () => {
+    const t = await buildTrade();
+    const a: Attestation = { ...t.attestation, terms: { ...TERMS, lienRecovery: REC } };
+    const sig = resign(t, a);
+    await expect(verifyAttestation(a, sig, t.modSign.public, meOf(t, 'buyer'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(a, sig, t.modSign.public, meOf(t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 999n } }))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(a, sig, t.modSign.public, meOf(t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 1000n } }))).resolves.toBeUndefined();
+    // A confirmed recovery the terms do not carry is also refused.
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 1000n } }))).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('the seller is not asked to confirm the buyer’s recovery (it costs the seller nothing)', async () => {
+    const t = await buildTrade();
+    const a: Attestation = { ...t.attestation, terms: { ...TERMS, lienRecovery: REC } };
+    await expect(verifyAttestation(a, resign(t, a), t.modSign.public, meOf(t, 'seller'))).resolves.toBeUndefined();
+  });
+});

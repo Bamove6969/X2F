@@ -241,3 +241,58 @@ describe('sweepMinimums: what a sweep shown only through an import must provably
     expect(() => sweepMinimums({ kind: 'nope' as SettleKind, terms: terms('seller'), feeWallet: FEE, sweptAtomic: 1n })).toThrow(RangeError);
   });
 });
+
+// Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): when the buyer owes a lien, the signed
+// terms carry the recovery and a completed trade pays it to the creditor out of the buyer's proceeds.
+describe('payoutsFor: lien recovery', () => {
+  const CREDITOR = 'creditor-payout-address';
+  const R = 100_000_000_000n; // 0.1 XMR
+  const withRec = (kind: SettleKind | RulingKind, poster: 'seller' | 'buyer', balance: bigint, amountAtomic = R) => ({
+    ...args(kind, poster, balance),
+    lienRecovery: { address: CREDITOR, amountAtomic },
+  });
+
+  test.each(['release', 'dispute-buyer'] as const)('%s: buyer gets proceeds − recovery, fee exact, creditor gets the recovery, surplus to the seller', (kind) => {
+    const p = payoutsFor(withRec(kind, 'seller', AMOUNT + FEE_AMOUNT + 7n));
+    expect(p).toEqual([
+      { address: BUYER, amountAtomic: AMOUNT - R },
+      { address: FEE, amountAtomic: FEE_AMOUNT },
+      { address: CREDITOR, amountAtomic: R },
+      { address: SELLER, amountAtomic: 7n },
+    ]);
+    expect(sum(p)).toBe(AMOUNT + FEE_AMOUNT + 7n);
+  });
+
+  test('on a buyer ad the proceeds are amount − fee', () => {
+    const p = payoutsFor(withRec('release', 'buyer', AMOUNT));
+    expect(p[0]).toEqual({ address: BUYER, amountAtomic: AMOUNT - FEE_AMOUNT - R });
+    expect(p[2]).toEqual({ address: CREDITOR, amountAtomic: R });
+  });
+
+  test.each([...REFUNDS, 'dispute-seller'] as const)('%s pays no recovery (nothing was completed)', (kind) => {
+    expect(payoutsFor(withRec(kind, 'seller', AMOUNT + FEE_AMOUNT))).toEqual([{ address: SELLER, amountAtomic: AMOUNT + FEE_AMOUNT }]);
+  });
+
+  test('refuses a recovery that is not below the proceeds, not positive, or to a party address', () => {
+    expect(() => payoutsFor(withRec('release', 'seller', AMOUNT + FEE_AMOUNT, AMOUNT))).toThrow(RangeError);
+    expect(() => payoutsFor(withRec('release', 'seller', AMOUNT + FEE_AMOUNT, 0n))).toThrow(RangeError);
+    for (const address of [BUYER, SELLER, FEE, '']) {
+      expect(() => payoutsFor({ ...args('release', 'seller', AMOUNT + FEE_AMOUNT), lienRecovery: { address, amountAtomic: R } })).toThrow(RangeError);
+    }
+  });
+
+  test('sweepMinimums: a release with a recovery in the terms checks the buyer short of it and the creditor', () => {
+    const terms: AttestedTerms = {
+      deal: { poster: 'seller', takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'a'.repeat(64) },
+      payWindowMin: 90,
+      buyerPayout: BUYER,
+      sellerRefund: SELLER,
+      lienRecovery: { address: CREDITOR, amountAtomic: R.toString() },
+    };
+    expect(sweepMinimums({ kind: 'release', terms, feeWallet: FEE, sweptAtomic: AMOUNT + FEE_AMOUNT })).toEqual([
+      { address: BUYER, amountAtomic: AMOUNT - R },
+      { address: FEE, amountAtomic: FEE_AMOUNT },
+      { address: CREDITOR, amountAtomic: R },
+    ]);
+  });
+});
