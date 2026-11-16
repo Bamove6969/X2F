@@ -10,7 +10,7 @@ import { buildRelay, type Relay } from '@x2f/relay';
 import sodium from 'libsodium-wrappers';
 import type { MoneroWalletFull } from 'monero-ts';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { MAX_LATER_RELEASES, MoneroMultisigEngine, PartyError, releaseTag, type Outcome, type PartyState } from '../src/index.js';
+import { MAX_LATER_RELEASES, MoneroMultisigEngine, PartyError, releaseTag, runParty, wsTransport, type Outcome, type PartyState, type Transport } from '../src/index.js';
 import { minedWhile, partyKit, type Trade } from './harness.js';
 
 const engine = new MoneroMultisigEngine({ network: 'regtest' });
@@ -75,18 +75,20 @@ describe('a later release from a paid-out escrow, on regtest', () => {
     await w.sync();
     return w.getBalance();
   }
-  async function pay(address: string, amount: bigint): Promise<void> {
+  /** Pays `address` and mines it in; resolves with the deposit's tx hash (a real tx in a block that spent nothing of the escrow). */
+  async function pay(address: string, amount: bigint): Promise<string> {
     await funder.setDaemonConnection({ uri: node.rpcUri });
     await funder.sync();
-    await funder.createTx({ accountIndex: 0, address, amount, relay: true });
+    const tx = await funder.createTx({ accountIndex: 0, address, amount, relay: true });
     await mine(node.rpcUri, 12, funderAddress);
+    return tx.getHash();
   }
-  async function funded(amount: bigint): Promise<{ t: Trade; escrow: string }> {
+  async function funded(amount: bigint): Promise<{ t: Trade; escrow: string; deposit: string }> {
     const t = await kit.newTrade();
     const addresses = await Promise.all(ROLES.map((r) => t.parties[r].ready()));
     expect(new Set(addresses).size).toBe(1);
-    await pay(addresses[0]!, amount);
-    return { t, escrow: addresses[0]! };
+    const deposit = await pay(addresses[0]!, amount);
+    return { t, escrow: addresses[0]!, deposit };
   }
   /** The first release, by `builder` co-signed by `cosigner`, paying `to`; resolves with the tx hash. */
   async function firstRelease(t: Trade, o: Outcome): Promise<string> {
@@ -96,14 +98,15 @@ describe('a later release from a paid-out escrow, on regtest', () => {
     return tx;
   }
   /** Late coins reach the escrow and unlock; resolves once `role`'s party reads them all (it imported what it needs). */
-  async function late(t: Trade, escrow: string, amount: bigint, roles: readonly Role[]): Promise<void> {
-    await pay(escrow, amount);
+  async function late(t: Trade, escrow: string, amount: bigint, roles: readonly Role[]): Promise<string> {
+    const deposit = await pay(escrow, amount);
     for (const r of roles) {
       await expect.poll(async () => {
         const f = await t.parties[r].funds();
         return f.unlocked > 0n && f.balance === f.unlocked ? 'unlocked' : `${f.balance}/${f.unlocked}`;
       }, { timeout: 120_000, interval: 1000 }).toBe('unlocked');
     }
+    return deposit;
   }
   const laterRelease = (to: { address: string; amountAtomic: bigint }[], after: string, cosigner: Role = 'seller'): Outcome => ({ kind: 'release', to, builder: 'mod', cosigner, after });
 
@@ -408,5 +411,110 @@ describe('a later release from a paid-out escrow, on regtest', () => {
     t.stores.seller.set({ ...t.stores.seller.current()!, releases: { not: 'a list' } } as unknown as PartyState);
     t.parties.seller = kit.startParty(t, 'seller').party;
     await expect(t.parties.seller.ready()).rejects.toMatchObject({ code: 'bad-state' });
+  });
+
+  it('re-verify N1: a party with no release refuses a made-up `after` at once (the moderator and a trader alike); nothing is started', async () => {
+    const amount = XMR;
+    const { t } = await funded(amount);
+    const a = (await wallet()).address;
+    const forged = laterRelease([{ address: a, amountAtomic: amount }], 'd'.repeat(64));
+    for (const r of ['mod', 'seller'] as const) {
+      await expect(t.parties[r].settle(forged), r).rejects.toMatchObject({ code: 'bad-outcome' });
+      expect(t.stores[r].current()!.release, r).toBeNull();
+      expect(Object.keys(t.stores[r].current()!.sent).filter((k) => k.includes(releaseTag(forged))), r).toEqual([]);
+    }
+  });
+
+  it('re-verify N1: the first-ever release cannot run as a "later" one: naming the escrow\'s own deposit (in a block, it spent nothing) never gets the moderator to export or build', async () => {
+    const amount = XMR;
+    const { t, deposit } = await funded(amount);
+    const seller = await wallet();
+    const L = laterRelease([{ address: seller.address, amountAtomic: amount }], deposit);
+    const tag = releaseTag(L);
+    t.parties.mod.settle(L).catch(() => undefined);
+    t.parties.seller.settle(L).catch(() => undefined);
+    await mining(new Promise((r) => setTimeout(r, 15_000)));
+    expect(t.stores.mod.current()!.release).toMatchObject({ phase: 'waiting-funds', attempt: 1 });
+    expect(Object.keys(t.stores.mod.current()!.sent).filter((k) => k.includes(tag))).toEqual([]); // no export, no set
+    expect(t.stores.seller.current()?.release?.signedHex).toBeUndefined();
+    expect((await t.parties.seller.funds()).balance).toBe(amount); // nothing left the escrow
+  });
+
+  it("re-verify N2: a wrong but in-block `after` (the late coins' deposit) is corrected while nothing is committed; the corrected release settles", async () => {
+    const amount = XMR;
+    const { t, escrow } = await funded(amount);
+    const buyer = await wallet();
+    const seller = await wallet();
+    const t0 = await firstRelease(t, { kind: 'release', to: [{ address: buyer.address, amountAtomic: amount }], builder: 'seller', cosigner: 'buyer' });
+    const lateAmount = 300_000_000_000n;
+    const d = await late(t, escrow, lateAmount, ['mod', 'seller']);
+    const to = [{ address: seller.address, amountAtomic: lateAmount }];
+    const wrong = laterRelease(to, d);
+    const wrongSeller = t.parties.seller.settle(wrong);
+    const wrongMod = t.parties.mod.settle(wrong);
+    wrongSeller.catch(() => undefined);
+    wrongMod.catch(() => undefined);
+    await expect.poll(() => t.stores.seller.current()!.release?.after, { timeout: 60_000 }).toBe(d);
+    await expect.poll(() => t.stores.mod.current()!.release?.after, { timeout: 60_000 }).toBe(d);
+    // The moderator never builds on it: d spent nothing of the escrow (N1).
+    await mining(new Promise((r) => setTimeout(r, 8000)));
+    expect(t.stores.mod.current()!.sent[`release.txset:${releaseTag(wrong)}.1`]).toBeUndefined();
+    const before = await balanceOf(seller.w);
+    const right = laterRelease(to, t0);
+    const [, s] = await mining(Promise.all([t.parties.mod.settle(right), t.parties.seller.settle(right)]));
+    expect(s).toMatch(/^[0-9a-f]{64}$/);
+    await expect(wrongSeller).rejects.toMatchObject({ code: 'bad-outcome' });
+    await expect(wrongMod).rejects.toMatchObject({ code: 'bad-outcome' });
+    await mine(node.rpcUri, 12, funderAddress);
+    expect(await balanceOf(seller.w)).toBeGreaterThan(before + lateAmount - MAX_NET_FEE);
+    // The wrong one was dropped, never kept as an earlier release.
+    expect(t.stores.seller.current()!.releases?.map((r) => r.txHash)).toEqual([t0]);
+    expect(t.stores.mod.current()!.releases ?? []).toEqual([]);
+  });
+
+  it("re-verify gap (b): a moderator that never imported a spend.info builds the later release after importing the co-signer's export", async () => {
+    const amount = XMR;
+    const { t, escrow } = await funded(amount);
+    const buyer = await wallet();
+    const seller = await wallet();
+    // The moderator's party drops every spend.info (as if too large to send, or never delivered).
+    await t.parties.mod.stop();
+    const inner = wsTransport({ url: relayUrl, code: t.code, role: 'mod', me: t.ids.mod });
+    const dropped: string[] = [];
+    const transport: Transport = {
+      send: (e) => inner.send(e),
+      onReconnect: (cb) => inner.onReconnect(cb),
+      close: () => inner.close(),
+      next: async () => {
+        for (;;) {
+          const f = await inner.next();
+          const x = await open(f, { me: t.ids.mod, myRole: 'mod', participants: t.participants, trade: t.code, guard: new ReplayGuard(t.code) }).catch(() => null);
+          const key = (x?.payload as { key?: unknown } | undefined)?.key;
+          if (typeof key === 'string' && key.startsWith('spend.info')) {
+            dropped.push(key);
+            continue;
+          }
+          return f;
+        }
+      },
+    };
+    const mod = runParty({ role: 'mod', trade: t.code, me: t.ids.mod, participants: t.participants, transport, engine, daemonUri: node.rpcUri, password: 'pw-mod', store: t.stores.mod, resendMs: 500, resendMaxMs: 2000 });
+    try {
+      await mod.ready();
+      const t0 = await firstRelease(t, { kind: 'release', to: [{ address: buyer.address, amountAtomic: amount }], builder: 'seller', cosigner: 'buyer' });
+      const lateAmount = 250_000_000_000n;
+      await late(t, escrow, lateAmount, ['seller']);
+      await expect.poll(() => dropped.length, { timeout: 60_000 }).toBeGreaterThan(0);
+      expect((await mod.funds()).balance).toBeGreaterThan(lateAmount); // its view still counts R0's outputs
+      const before = await balanceOf(seller.w);
+      const L1 = laterRelease([{ address: seller.address, amountAtomic: lateAmount }], t0);
+      const [m, s] = await mining(Promise.all([mod.settle(L1), t.parties.seller.settle(L1)]));
+      expect(m).toBeNull();
+      expect(s).toMatch(/^[0-9a-f]{64}$/);
+      await mine(node.rpcUri, 12, funderAddress);
+      expect(await balanceOf(seller.w)).toBeGreaterThan(before + lateAmount - MAX_NET_FEE);
+    } finally {
+      await mod.stop();
+    }
   });
 });
