@@ -171,7 +171,7 @@ for (const v of VIEWPORTS) {
     // Signup round 3 lead call: PGP (ticked by default) is enough for the authenticator app.
     await expect(tick(page, 'totp')).toBeEnabled();
     await page.click('[data-part="pgp-explain"]');
-    await expect(page.locator('[data-part="pgp-explainer"]')).toContainText('On an Android phone we recommend PGP too, with PGPony (on F-Droid: com.pgpony.android). OpenKeychain works as well.');
+    await expect(page.locator('[data-part="pgp-explainer"]')).toContainText('on Android PGPony (we recommend it; on F-Droid: com.pgpony.android) or OpenKeychain');
     await page.click('[data-method="password"]');
     await expect(tick(page, 'password')).toBeChecked();
     await expect(tick(page, 'totp')).toBeEnabled();

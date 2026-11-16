@@ -114,15 +114,14 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     expect(METHODS.find((m) => m.id === 'totp')!.strength).toBe('medium');
   });
 
-  it('recommends PGP on Android too', () => {
+  it('recommends PGPony for PGP on Android', () => {
     const host = show(<Login />, setup());
     click(byPart(host, 'pgp-explain'));
     expect(byPart(host, 'pgp-explainer')!.textContent).toMatch(/Android/);
-    expect(byPart(host, 'pgp-explainer')!.textContent).toMatch(/recommend PGP/i);
-    // Signup round 3 (owner, 13 Nov 2026): PGPony first, OpenKeychain second.
+    // Owner 16 Nov 2026: PGPony is the recommendation for Android (it need not come first overall).
     const t = byPart(host, 'pgp-explainer')!.textContent!;
     expect(t).toContain('com.pgpony.android');
-    expect(t.lastIndexOf('PGPony')).toBeLessThan(t.lastIndexOf('OpenKeychain'));
+    expect(t).toContain('on Android PGPony (we recommend it');
   });
 
   // Signup round 3, lead call (13 Nov 2026): the authenticator app may be the only extra method
