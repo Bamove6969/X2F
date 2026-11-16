@@ -256,10 +256,20 @@ describe('cosignPolicy refuses', () => {
     expect(cosignPolicy(c, { ...rel, kind: 'other' as never })).toBe(false);
   });
 
-  it('outputs in another order (index 0 bears the network fee)', () => {
+  it('outputs in another order (the order sets which outputs bear the network fee)', () => {
     const c = ctx('buyer');
     const rel = expected('release', c);
     expect(cosignPolicy(c, out([...rel].reverse(), 'seller', 'buyer'))).toBe(false);
+  });
+
+  it('a release whose network fee bearers differ from the buyer and fee outputs (owner 16 Nov)', () => {
+    const c = ctx('buyer');
+    const rel = expected('release', c);
+    expect(rel.map((p) => p.bearsNetworkFee === true)).toEqual([true, true]);
+    expect(cosignPolicy(c, out(rel, 'seller', 'buyer'))).toBe(true);
+    // The whole fee back on the buyer, or the fee output alone, is another set.
+    expect(cosignPolicy(c, out(rel.map(({ address, amountAtomic }) => ({ address, amountAtomic })), 'seller', 'buyer'))).toBe(false);
+    expect(cosignPolicy(c, out([{ address: rel[0]!.address, amountAtomic: rel[0]!.amountAtomic }, rel[1]!], 'seller', 'buyer'))).toBe(false);
   });
 });
 

@@ -98,14 +98,16 @@ export interface EscrowFunds {
  * A tx hash seen in a block (or reported by a party or the API) is never enough.
  *
  * `height` is the block it is in (null while in the pool). `sweptAtomic` is everything the sweep
- * spent: the sum of the outcome's payouts PLUS the network fee (the fee comes off payout 0, so the
- * payouts alone are short by it). A sweep whose amount matches no exact prefix of the escrow's
+ * spent: the sum of the outcome's payouts PLUS the network fee (the fee comes off the outputs that
+ * bear it, so the payouts alone are short by it). A sweep whose amount matches no exact prefix of the escrow's
  * coins counts as sweeping nothing.
  */
 export interface SpendEvidence {
   txHash: string;
   height: number | null;
   sweptAtomic: bigint;
+  /** The tx's whole network fee as the mod wallet records it, when it does (owner 16 Nov books). */
+  networkFeeAtomic?: bigint;
 }
 
 export interface ChainFacts {
@@ -114,7 +116,7 @@ export interface ChainFacts {
   confirmations: number;
 }
 
-export type WatchReport = ({ kind: 'chain' } & ChainFacts) | { kind: 'settled'; txHash: string } | { kind: 'late-funds' } | { kind: 'spend-unshown' } | { kind: 'release-claimed' };
+export type WatchReport = ({ kind: 'chain' } & ChainFacts) | { kind: 'settled'; txHash: string; networkFeeAtomic?: bigint } | { kind: 'late-funds' } | { kind: 'spend-unshown' } | { kind: 'release-claimed' };
 
 /** Persisted per escrow by the watcher (moderation database). */
 export interface WatchState {
@@ -199,6 +201,7 @@ function checkSpend(sp: SpendEvidence | null, chainHeight: number): void {
   if (sp === null) return;
   if (typeof sp.sweptAtomic !== 'bigint' || sp.sweptAtomic <= 0n) throw new RangeError('bad spend facts');
   if (sp.height !== null && !isHeight(sp.height, chainHeight)) throw new RangeError('bad spend facts');
+  if (sp.networkFeeAtomic !== undefined && (typeof sp.networkFeeAtomic !== 'bigint' || sp.networkFeeAtomic < 0n)) throw new RangeError('bad spend facts');
 }
 
 type InBlock<T> = T & { height: number };
@@ -273,7 +276,7 @@ export function watchStep(a: {
   let settledNow = false;
   if (s.closedAt === null) {
     if (sweep !== null) {
-      reports.push({ kind: 'settled', txHash: sweep.txHash });
+      reports.push({ kind: 'settled', txHash: sweep.txHash, ...(sweep.networkFeeAtomic !== undefined ? { networkFeeAtomic: sweep.networkFeeAtomic } : {}) });
       settledNow = true;
       s = { ...s, closedAt: a.now, settledTx: sweep.txHash, sweepTxs: [sweep.txHash], swept: sweptBy(funds.incoming, sweep) };
     } else if (apiClosed) {

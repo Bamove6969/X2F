@@ -116,7 +116,10 @@ function samePayouts(a: readonly Payout[], b: readonly Payout[]): boolean {
     a.length === b.length &&
     a.every((p, i) => {
       const q = b[i]!;
-      return typeof p === 'object' && p !== null && p.address === q.address && typeof p.amountAtomic === 'bigint' && p.amountAtomic === q.amountAtomic;
+      // Owner 16 Nov: who bears the network fee is part of what the tx pays (the engine builds and
+      // checks by it), so a set that moves it to another output is not the same set.
+      return typeof p === 'object' && p !== null && p.address === q.address && typeof p.amountAtomic === 'bigint' && p.amountAtomic === q.amountAtomic
+        && (p.bearsNetworkFee === true) === (q.bearsNetworkFee === true);
     })
   );
 }

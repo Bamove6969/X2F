@@ -222,7 +222,11 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!, [to[0]!, { address: to[1]!.address, amountAtomic: fee }])).toBe(false);
       await feeWallet.setDaemonConnection({ uri: node.rpcUri });
       await feeWallet.sync();
-      expect(await feeWallet.getBalance()).toBeLessThan(fee);
+      // The mod's wallet records the tx's network fee (the watcher's `settled` report carries it to
+      // the books); the fee output paid exactly its wallet2 share of it.
+      const net = f.outgoing![0]!.feeAtomic!;
+      expect(net).toBeGreaterThan(0n);
+      expect(await feeWallet.getBalance()).toBe(fee - net / 2n);
       // A chunk that is not a reduced scalar is refused before monero-ts sees it (its WebAssembly aborts on one).
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!.slice(0, 64) + '1'.repeat(64), to)).toBe(false);
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!, to)).toBe(true); // the wallet still answers

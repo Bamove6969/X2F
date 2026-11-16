@@ -1,4 +1,7 @@
+import { feeSplitLayout, networkFeeShares } from '@x2f/core';
 import { EscrowError, type Payout } from './engine.js';
+
+export { feeSplitLayout, networkFeeShares };
 
 /** The highest network fee a co-signer accepts: 0.01 XMR. */
 export const MAX_NETWORK_FEE = 10_000_000_000n;
@@ -29,14 +32,24 @@ export function checkPayouts(payouts: readonly Payout[]): void {
   }
 }
 
+/**
+ * Which outputs a release's network fee comes off: every payout marked `bearsNetworkFee`, or payout
+ * 0 alone when none is (the original rule, kept for refunds).
+ */
+export function feeBearers(payouts: readonly Payout[]): boolean[] {
+  const marked = payouts.map((p) => p.bearsNetworkFee === true);
+  return marked.some((m) => m) ? marked : payouts.map((_, i) => i === 0);
+}
+
 export function sumPayouts(payouts: readonly Payout[]): bigint {
   return payouts.reduce((s, p) => s + p.amountAtomic, 0n);
 }
 
 /**
  * Fail closed unless the decoded set is exactly one transaction that sweeps the whole
- * escrow to `expected`: same addresses, every amount exact except payouts[0], which is
- * short by exactly the network fee; no change output at all; no unlock time; fee within
+ * escrow to `expected`: same addresses, every amount exact except the fee bearers
+ * (`feeBearers`: the marked payouts, else payouts[0]), each short by exactly its wallet2 share of
+ * the network fee (`networkFeeShares`); no change output at all; no unlock time; fee within
  * MAX_NETWORK_FEE.
  * A change output is refused because a builder can hide a payment to itself as "change".
  */
@@ -56,11 +69,12 @@ export function checkTxSet(txs: readonly DescribedTx[], expected: readonly Payou
 
   const byAddress = new Map(tx.destinations.map((d) => [d.address, d.amountAtomic]));
   if (byAddress.size !== tx.destinations.length) fail('duplicate output address');
+  const shares = networkFeeShares(fee, feeBearers(expected));
   let total = 0n;
   expected.forEach((p, i) => {
     const got = byAddress.get(p.address);
     if (got === undefined) fail('missing payout address');
-    const want = i === 0 ? p.amountAtomic - fee : p.amountAtomic;
+    const want = p.amountAtomic - shares[i]!;
     if (got !== want) fail('payout amount differs');
     total += got;
   });

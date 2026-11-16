@@ -1,7 +1,7 @@
 // A fake Monero chain and an in-memory relay for three REAL escrow parties (`runParty`), so the
 // moderation watcher's proof can be tested over the real party protocol without regtest.
 import type { Role } from '@x2f/core';
-import { EscrowError, type EscrowEngine, type Incoming, type Outgoing, type Payout, type Transport } from '@x2f/escrow';
+import { EscrowError, feeBearers, networkFeeShares, type EscrowEngine, type Incoming, type Outgoing, type Payout, type Transport } from '@x2f/escrow';
 import type { Envelope } from '@x2f/protocol';
 
 /** The tx on the fake chain that spends the escrow. */
@@ -84,7 +84,9 @@ export function fakeChain(): FakeChain {
         proveTx: async (h: string, key: string, addresses: string[]) => {
           const tx = c.sweep;
           if (!tx || tx.hash !== h || tx.key !== key) return null;
-          const received = addresses.map((a, i) => tx.payouts.filter((p) => p.address === a).reduce((s, p) => s + p.amountAtomic, 0n) - (i === 0 ? tx.feeAtomic : 0n));
+          // As a real tx: each fee-bearing output arrives short by its wallet2 share (owner 16 Nov).
+          const shares = networkFeeShares(tx.feeAtomic, feeBearers(tx.payouts));
+          const received = addresses.map((a) => tx.payouts.reduce((s, p, j) => (p.address === a ? s + p.amountAtomic - shares[j]! : s), 0n));
           return { inBlock: tx.height !== null, feeAtomic: tx.feeAtomic, received, spendsEscrow: c.shows[role] };
         },
         exportState: async () => {
@@ -94,13 +96,14 @@ export function fakeChain(): FakeChain {
         importState: async () => {
           if (role === 'mod' && c.sweep !== null) c.shows.mod = true;
         },
-        buildRelease: async (payouts: Payout[]) => ({ txSet: `set:${payouts.map((p) => `${p.address}=${p.amountAtomic}`).join(',')}`, payouts, txKey: SWEEP_KEY }),
+        buildRelease: async (payouts: Payout[]) => ({ txSet: `set:${payouts.map((p) => `${p.address}=${p.amountAtomic}${p.bearsNetworkFee === true ? '*' : ''}`).join(',')}`, payouts, txKey: SWEEP_KEY }),
         checkRelease: async () => undefined,
         signRelease: async (txSet: string) => ({ signedHex: `signed:${txSet}`, txHash: SWEEP_HASH }),
         submit: async (signedHex: string) => {
           const payouts = signedHex.replace(/^signed:set:/, '').split(',').map((s) => {
             const [address, amount] = s.split('=');
-            return { address: address!, amountAtomic: BigInt(amount!) };
+            const bears = amount!.endsWith('*');
+            return { address: address!, amountAtomic: BigInt(bears ? amount!.slice(0, -1) : amount!), ...(bears ? { bearsNetworkFee: true } : {}) };
           });
           c.sweep ??= { hash: SWEEP_HASH, height: null, key: SWEEP_KEY, payouts, feeAtomic: NET_FEE };
           c.shows.buyer = c.shows.seller = true;

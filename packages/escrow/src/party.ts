@@ -12,7 +12,7 @@ import {
 import sodium from 'libsodium-wrappers';
 import { DAEMON_TIMEOUT_MS, EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Outgoing, type Payout, type SavedSession } from './engine.js';
 import type { Transport } from './transport.js';
-import { MAX_NETWORK_FEE, sumPayouts } from './verify.js';
+import { MAX_NETWORK_FEE, feeBearers, networkFeeShares, sumPayouts } from './verify.js';
 
 /** How a trade's escrow is paid out: `builder` builds, `cosigner` checks and signs. */
 export interface Outcome {
@@ -95,7 +95,8 @@ function isShownTx(x: unknown): x is ShownTx {
   const t = x as Record<string, unknown>;
   return typeof t.txHash === 'string' && /^[0-9a-f]{64}$/.test(t.txHash)
     && typeof t.height === 'number' && Number.isSafeInteger(t.height) && t.height >= 0
-    && typeof t.spentAtomic === 'string' && /^(0|[1-9][0-9]*)$/.test(t.spentAtomic);
+    && typeof t.spentAtomic === 'string' && /^(0|[1-9][0-9]*)$/.test(t.spentAtomic)
+    && (t.feeAtomic === undefined || (typeof t.feeAtomic === 'string' && /^(0|[1-9][0-9]*)$/.test(t.feeAtomic)));
 }
 
 /** An in-block tx the moderator's wallet once showed spending the escrow (PartyState.shown): JSON-safe. */
@@ -104,6 +105,8 @@ export interface ShownTx {
   height: number | null;
   /** Outgoing.spentAtomic, in decimal. */
   spentAtomic: string;
+  /** Outgoing.feeAtomic, in decimal, when the wallet recorded it. Absent in states saved before. */
+  feeAtomic?: string;
 }
 
 export interface PartyStore {
@@ -162,7 +165,8 @@ export interface PartyHandle {
    * Review I1: true only when the tx is in a block, spends one of this escrow's outputs (round 2,
    * R2-I1: an input with this wallet's key image for that output, the output in its ring; see the
    * Monero engine's proveTx), and its secret key (additional keys included, R2-I2) proves it pays at least
-   * `minimums` (payout 0 may be short by exactly the tx's network fee, which comes off it). Read in
+   * `minimums` (each fee bearer, `feeBearers`, may be short by exactly its `networkFeeShares` share of
+   * the tx's network fee, which comes off it). Read in
    * the party's work queue. Optional so that test doubles may leave it out (then nothing is proven).
    */
   proveSweep?(txHash: string, txKey: string, minimums: Payout[]): Promise<boolean>;
@@ -265,7 +269,9 @@ function outcomeDigest(o: Outcome): string {
   return digestOf('outcome', {
     builder: o.builder,
     cosigner: o.cosigner,
-    to: o.to.map((p) => ({ address: p.address, amount: p.amountAtomic.toString() })),
+    // Who bears the network fee is part of what the tx pays, so of the outcome; an unmarked list
+    // keeps its earlier digest.
+    to: o.to.map((p) => ({ address: p.address, amount: p.amountAtomic.toString(), ...(p.bearsNetworkFee === true ? { bearsFee: '1' } : {}) })),
   });
 }
 
@@ -827,12 +833,12 @@ export function runParty(a: PartyArgs): PartyHandle {
     const shown = state.shown ?? [];
     const fresh = now.filter((o) => o.height !== null && !shown.some((x) => x.txHash === o.txHash));
     if (fresh.length > 0) {
-      state.shown = [...shown, ...fresh.map((o) => ({ txHash: o.txHash, height: o.height, spentAtomic: o.spentAtomic.toString() }))];
+      state.shown = [...shown, ...fresh.map((o) => ({ txHash: o.txHash, height: o.height, spentAtomic: o.spentAtomic.toString(), ...(o.feeAtomic !== undefined ? { feeAtomic: o.feeAtomic.toString() } : {}) }))];
       await saveState();
     }
     const out = [...now];
     for (const o of state.shown ?? []) {
-      if (!out.some((x) => x.txHash === o.txHash)) out.push({ txHash: o.txHash, height: o.height, spentAtomic: BigInt(o.spentAtomic) });
+      if (!out.some((x) => x.txHash === o.txHash)) out.push({ txHash: o.txHash, height: o.height, spentAtomic: BigInt(o.spentAtomic), ...(o.feeAtomic !== undefined ? { feeAtomic: BigInt(o.feeAtomic) } : {}) });
     }
     return out;
   };
@@ -1156,10 +1162,13 @@ export function runParty(a: PartyArgs): PartyHandle {
             // Review round 2 (R2-I1): the tx must spend one of THIS escrow's outputs (spendsEscrow), so
             // another trade's release, or an old tx, can never be counted for this escrow.
             if (r === null || !r.inBlock || r.spendsEscrow !== true || r.received.length !== minimums.length) return resolve(false);
-            // Payout 0 bears the network fee (buildRelease subtracts it from output 0), up to the
-            // largest fee a release may carry: a tx cannot "pay" payout 0 by burning a huge fee.
+            // The fee bearers (the marked minimums, else payout 0: buildRelease subtracts the network
+            // fee from exactly those) may each be short by their wallet2 share of the tx's fee, up to
+            // the largest fee a release may carry: a tx cannot "pay" a bearer by burning a huge fee,
+            // and no output's allowance ever moves to another (owner 16 Nov split).
             const fee = r.feeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : r.feeAtomic;
-            resolve(minimums.every((m, i) => r.received[i]! + (i === 0 ? fee : 0n) >= m.amountAtomic));
+            const shares = networkFeeShares(fee < 0n ? 0n : fee, feeBearers(minimums));
+            resolve(minimums.every((m, i) => r.received[i]! + shares[i]! >= m.amountAtomic));
           } catch (e) {
             reject(e);
           }

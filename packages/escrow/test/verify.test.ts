@@ -149,17 +149,37 @@ describe('checkTxSet', () => {
 });
 
 describe('networkFeeShares: what wallet2 subtracts from each subtract-fee-from output', () => {
-  it('splits evenly; the odd atomic unit comes off the lowest-indexed bearer', async () => {
+  it('wallet2 pays destinations 0, n-1, n-2, ..., 1 (pop_index; seen on regtest: 4 outputs built as 0,3,2,1)', async () => {
+    const { wallet2PayOrder } = await import('@x2f/core');
+    expect(wallet2PayOrder(1)).toEqual([0]);
+    expect(wallet2PayOrder(2)).toEqual([0, 1]);
+    expect(wallet2PayOrder(3)).toEqual([0, 2, 1]);
+    expect(wallet2PayOrder(4)).toEqual([0, 3, 2, 1]);
+  });
+
+  it('lays a release out so wallet2 and monero-ts name the same bearers, the buyer paid first', async () => {
+    const { feeSplitLayout } = await import('../src/index.js');
+    expect(feeSplitLayout([true])).toEqual({ order: [0], subtractFrom: [0] });
+    expect(feeSplitLayout([true, false])).toEqual({ order: [0, 1], subtractFrom: [0] });
+    expect(feeSplitLayout([true, true])).toEqual({ order: [0, 1], subtractFrom: [0, 1] });
+    expect(feeSplitLayout([true, false, false])).toEqual({ order: [0, 1, 2], subtractFrom: [0] });
+    // buyer, fee, surplus: passed as surplus, fee, buyer with positions 1 and 2 (wallet2 pays the
+    // buyer second and the fee third, so the buyer is the first bearer it pays).
+    expect(feeSplitLayout([true, true, false])).toEqual({ order: [2, 1, 0], subtractFrom: [1, 2] });
+    expect(() => feeSplitLayout([false, false])).toThrow(RangeError);
+  });
+
+  it('splits evenly; the odd atomic unit comes off the first bearer wallet2 pays (the lowest-indexed one)', async () => {
     const { networkFeeShares } = await import('../src/index.js');
-    expect(networkFeeShares(10n, 2, [0, 1])).toEqual([5n, 5n]);
-    expect(networkFeeShares(11n, 2, [0, 1])).toEqual([6n, 5n]);
-    expect(networkFeeShares(1n, 2, [0, 1])).toEqual([1n, 0n]);
-    expect(networkFeeShares(11n, 1, [0])).toEqual([11n]);
-    // three bearers, remainder 2: the first two each take one more
-    expect(networkFeeShares(11n, 3, [0, 1, 2])).toEqual([4n, 4n, 3n]);
-    // a non-bearer between them takes nothing; order is by output index, not by the list
-    expect(networkFeeShares(11n, 3, [0, 2])).toEqual([6n, 0n, 5n]);
-    expect(networkFeeShares(11n, 3, [2, 0])).toEqual([6n, 0n, 5n]);
+    expect(networkFeeShares(10n, [true, true])).toEqual([5n, 5n]);
+    expect(networkFeeShares(11n, [true, true])).toEqual([6n, 5n]);
+    expect(networkFeeShares(1n, [true, true])).toEqual([1n, 0n]);
+    expect(networkFeeShares(11n, [true])).toEqual([11n]);
+    expect(networkFeeShares(11n, [true, true, false])).toEqual([6n, 5n, 0n]);
+    expect(networkFeeShares(11n, [true, false, true])).toEqual([6n, 0n, 5n]);
+    // three bearers, remainder 2: wallet2 pays 0, 2, 1, so 0 and 2 take one more
+    expect(networkFeeShares(11n, [true, true, true])).toEqual([4n, 3n, 4n]);
+    expect(() => networkFeeShares(-1n, [true])).toThrow(RangeError);
   });
 });
 

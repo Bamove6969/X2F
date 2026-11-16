@@ -182,12 +182,14 @@ describe('MoneroMultisigEngine on regtest', () => {
     { address: sellerAddress, amountAtomic: SURPLUS },
   ];
 
-  it('refuses a release whose whole network fee comes off the buyer once the fee output shares it', async () => {
+  it('refuses a release whose network fee comes off any other outputs than the buyer and the fee output', async () => {
     await pair(e.seller, e.buyer);
     const want = split();
-    await expectMismatch(e.buyer.cosign(await rawSet(e.seller, want, [0]), want));
-    await expectMismatch(e.buyer.cosign(await rawSet(e.seller, want, [1]), want));
-    await expectMismatch(e.buyer.cosign(await rawSet(e.seller, want, [0, 1, 2]), want));
+    const [buyer, fee, surplus] = want as [Payout, Payout, Payout];
+    // (monero-ts accepts only subtract-from sets that wallet2's pay order maps onto themselves)
+    await expectMismatch(e.buyer.cosign(await rawSet(e.seller, want, [0]), want)); // all off the buyer
+    await expectMismatch(e.buyer.cosign(await rawSet(e.seller, [fee, buyer, surplus], [0]), want)); // all off the fee output
+    await expectMismatch(e.buyer.cosign(await rawSet(e.seller, [surplus, fee, buyer], [0, 1, 2]), want)); // the surplus pays too
     await pair(e.seller, e.buyer);
   });
 

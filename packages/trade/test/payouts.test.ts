@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { feeFor } from '@x2f/core';
-import { escrowPlan, payoutsFor, sweepMinimums, type AttestedTerms, type RulingKind, type SettleKind } from '../src/index.js';
+import { feeFor, networkFeeShares } from '@x2f/core';
+import { escrowPlan, feeWalletNetworkFee, payoutsFor, sweepMinimums, type AttestedTerms, type RulingKind, type SettleKind } from '../src/index.js';
 
 const BUYER = 'buyer-payout-address';
 const SELLER = 'seller-refund-address';
@@ -243,5 +243,37 @@ describe('sweepMinimums: what a sweep shown only through an import must provably
     expect(() => sweepMinimums({ kind: 'release', terms: { ...terms('seller'), buyerPayout: FEE }, feeWallet: FEE, sweptAtomic: 1n })).toThrow(RangeError);
     expect(() => sweepMinimums({ kind: 'mutual-cancel', terms: terms('seller'), feeWallet: FEE, sweptAtomic: 0n })).toThrow(RangeError);
     expect(() => sweepMinimums({ kind: 'nope' as SettleKind, terms: terms('seller'), feeWallet: FEE, sweptAtomic: 1n })).toThrow(RangeError);
+  });
+});
+
+describe('feeWalletNetworkFee: X2F\'s part of a settlement\'s network fee (owner 16 Nov)', () => {
+  test('a completed trade: the fee output\'s wallet2 share, floor(fee / 2) (the odd unit is the buyer\'s)', () => {
+    for (const kind of ['release', 'dispute-buyer'] as const) {
+      expect(feeWalletNetworkFee(kind, 30_720_000n)).toBe(15_360_000n);
+      expect(feeWalletNetworkFee(kind, 30_720_001n)).toBe(15_360_000n);
+      expect(feeWalletNetworkFee(kind, 1n)).toBe(0n);
+    }
+  });
+
+  test('matches the payout set: the share of the fee wallet\'s output among the marked bearers, surplus or not', () => {
+    for (const poster of ['seller', 'buyer'] as const) {
+      const funds = escrowPlan({ amountAtomic: AMOUNT, poster }).sellerFundsAtomic;
+      for (const extra of [0n, 5n]) {
+        const set = payoutsFor(args('release', poster, funds + extra));
+        const bearers = set.map((p) => p.bearsNetworkFee === true);
+        for (const fee of [30_720_000n, 30_720_001n, 7n]) {
+          const shares = networkFeeShares(fee, bearers);
+          expect(feeWalletNetworkFee('release', fee)).toBe(shares[set.findIndex((p) => p.address === FEE)]);
+        }
+      }
+    }
+  });
+
+  test('a refund or a full reversal pays X2F nothing, so none of the fee', () => {
+    for (const kind of [...REFUNDS, 'dispute-seller'] as const) expect(feeWalletNetworkFee(kind, 30_720_000n)).toBe(0n);
+  });
+
+  test('a negative fee is refused', () => {
+    expect(() => feeWalletNetworkFee('release', -1n)).toThrow(RangeError);
   });
 });

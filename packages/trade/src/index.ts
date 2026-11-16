@@ -43,7 +43,7 @@ export {
   type Pricing,
   type Side,
 } from './money.js';
-export { SETTLE_KINDS, payoutsFor, sweepMinimums, type PayoutFacts, type RulingKind, type SettleKind } from './payouts.js';
+export { SETTLE_KINDS, feeWalletNetworkFee, payoutsFor, sweepMinimums, type PayoutFacts, type RulingKind, type SettleKind } from './payouts.js';
 export { moneroUri } from './moneroUri.js';
 export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export { LAUNCH_TRADE_CAP_USD_CENTS } from './limits.js';

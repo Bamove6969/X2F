@@ -10,7 +10,7 @@ export {
   type SavedSession,
   type TxStatus,
 } from './engine.js';
-export { MAX_NETWORK_FEE, checkPayouts, checkTxSet, type DescribedTx } from './verify.js';
+export { MAX_NETWORK_FEE, checkPayouts, checkTxSet, feeBearers, feeSplitLayout, networkFeeShares, type DescribedTx } from './verify.js';
 export { MoneroMultisigEngine, MoneroMultisigSession, TX_KEY, isScalar, isTxKey, type EscrowNetwork } from './monero.js';
 export {
   autoRefundDecision,
