@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { normalizeTradeCode } from '@x2f/core';
+import { MAX_NETWORK_FEE, normalizeTradeCode } from '@x2f/core';
 import {
   attestationBytes,
   channelFor,
@@ -270,6 +270,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         if ('networkFeeAtomic' in body) {
           if (typeof body.networkFeeAtomic !== 'string' || !ATOMIC.test(body.networkFeeAtomic)) break;
           networkFee = BigInt(body.networkFeeAtomic);
+          // Review M2: over the co-signer bound, so not what X2F's output paid; booked capped (staff/revenue.ts).
+          if (networkFee > MAX_NETWORK_FEE) log({ reason: 'internal-settled-network-fee-over-cap' });
         }
         if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind)) break;
         claimedKind = body.settleKind as SettleKind | null;

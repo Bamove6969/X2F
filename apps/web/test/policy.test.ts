@@ -106,7 +106,9 @@ describe('cosignPolicy: the shapes each side may settle', () => {
     const b = ctx('buyer', { state: 'disputed', poster });
     const to = expected('dispute-buyer', b);
     expect(to[0]!.address).toBe(BUYER);
-    expect(to[1]).toEqual({ address: FEE, amountAtomic: escrowPlan({ amountAtomic: AMOUNT, poster }).feeAtomic });
+    // Owner 16 Nov: a buyer win is marked like a release: the buyer's output and the fee output share the network fee.
+    expect(to[0]!.bearsNetworkFee).toBe(true);
+    expect(to[1]).toEqual({ address: FEE, amountAtomic: escrowPlan({ amountAtomic: AMOUNT, poster }).feeAtomic, bearsNetworkFee: true });
     expect(cosignPolicy(b, out(to, 'mod', 'buyer'))).toBe(true);
   });
 

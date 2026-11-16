@@ -203,7 +203,8 @@ describe('retention: the ledger keeps amounts, not codes', () => {
     const cols = (await deps.db.query<{ column_name: string }>(
       `select column_name from information_schema.columns where table_name = 'revenue_ledger' order by ordinal_position`,
     )).rows.map((r) => r.column_name);
-    expect(cols).toEqual(['day', 'currency', 'kind', 'trades', 'fee_atomic', 'usd_estimate_cents']);
+    // network_fee_atomic (migration 600) is an amount too, so the retention property holds.
+    expect(cols).toEqual(['day', 'currency', 'kind', 'trades', 'fee_atomic', 'usd_estimate_cents', 'network_fee_atomic']);
     const fk = await deps.db.query<{ confdeltype: string }>(
       `select confdeltype from pg_constraint where conrelid = 'revenue_booked'::regclass and contype = 'f'`,
     );
@@ -319,7 +320,7 @@ describe('owed fees collected (the Task 12 seam, review F5)', () => {
 
 // Owner 16 Nov: the receivers pay the payout's network fee; X2F's fee output pays its wallet2 half.
 // The books show the network fees X2F paid and the total after them.
-describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migration 550)', () => {
+describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migration 600)', () => {
   const netDay = async (day: string) =>
     (await deps.db.query<{ kind: string; fee_atomic: string; network_fee_atomic: string }>(
       'select kind, fee_atomic::text, network_fee_atomic::text from revenue_ledger where day = $1 order by kind, currency', [day],
