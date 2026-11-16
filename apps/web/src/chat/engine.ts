@@ -154,6 +154,8 @@ export interface ChatEngineDeps {
   store: ChatStore;
   newIdentity: () => Promise<Identity>;
   modSigningPublic: string;
+  /** The device clock (ms); default Date.now(). */
+  now?: () => number;
 }
 
 const hex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
@@ -247,6 +249,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         chat,
         role: view.role,
         identity: { signPublic: me.signPublic, boxPublic: me.boxPublic, signSecret: hex(me.signSecret), boxSecret: hex(me.boxSecret) },
+        identityCreatedAt: (d.now ?? Date.now)(),
         registered: false,
         attestation: null,
         state: null,
@@ -282,6 +285,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       signPublic: rec.identity.signPublic,
       boxPublic: rec.identity.boxPublic,
       context: 'chat',
+      now: (d.now ?? Date.now)(),
+      // Review M1: not older than the identity this device made for the chat (none in old records).
+      identityCreatedAt: rec.identityCreatedAt ?? null,
     });
     return (a.attestation as Attestation).participants;
   }

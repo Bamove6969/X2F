@@ -181,10 +181,10 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     await buyer.runtime.start(CODE);
     await until(() => t.parties.calls.some((c) => c.role === 'buyer'));
     await buyer.runtime.stop(CODE);
-    const rec = (await buyer.store.load(CODE))!;
-    const { identityCreatedAt: _made, ...old } = rec as typeof rec & { identityCreatedAt?: number };
-    await buyer.store.save(old as typeof rec);
-    expect((await buyer.store.load(CODE)) as Record<string, unknown>).not.toHaveProperty('identityCreatedAt');
+    const rec = (await buyer.store.load(CODE))! as unknown as Record<string, unknown>;
+    delete rec.identityCreatedAt;
+    await buyer.store.save(rec as never);
+    expect(await buyer.store.load(CODE)).not.toHaveProperty('identityCreatedAt');
     const again = await t.mk('buyer', { idb: buyer.idb });
     const before = t.parties.calls.filter((c) => c.role === 'buyer').length;
     await again.runtime.start(CODE);

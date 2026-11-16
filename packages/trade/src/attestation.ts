@@ -173,22 +173,29 @@ export function attestationBytes(a: Attestation): Uint8Array {
 /**
  * `wrong-terms`: the attested deal or this app's own address is not what its user confirmed (lead answer 4).
  * `bad-time`: a validly signed attestation whose `issuedAt` is in this device's future (beyond
- * ATTESTATION_CLOCK_SKEW_MS) or before the trade was taken (review multisig-vs-RetoSwap F5).
+ * ATTESTATION_CLOCK_SKEW_MS), before this device made the identity it names, or before the trade
+ * was taken (review multisig-vs-RetoSwap F5, review lead-escrow-harden M1).
  */
 export type AttestationErrorCode = 'bad-signature' | 'not-me' | 'wrong-trade' | 'wrong-channel' | 'wrong-terms' | 'bad-time';
 
 /**
  * How far apart the moderation service's clock (which sets `issuedAt`) and this device's or the
  * API's may be. An attestation issued more than this in the device's future, or more than this
- * before the trade's take time, is refused (`bad-time`).
+ * before this device made its identity or before the trade's take time, is refused (`bad-time`).
  */
 export const ATTESTATION_CLOCK_SKEW_MS = 10 * 60_000;
 
 /**
  * One moderation attestation key this app trusts, with the `issuedAt` range it signs for (ISO
  * times, inclusive; null = no bound). A key that is rotated out gets a `notAfter`, and its
- * successor a `notBefore`, so an attestation the old key signs later (e.g. after a compromise) is
- * refused, while those it signed before stay valid.
+ * successor a `notBefore`. The range alone does NOT stop a holder of a rotated-out key: `issuedAt`
+ * is whatever the signer writes, so a thief simply backdates it into the old window (review
+ * lead-escrow-harden M1). What refuses that is the lower bound this device knows itself:
+ * `issuedAt` may not be older than the per-trade identity the attestation names
+ * (`AttestationSelf.identityCreatedAt`), and a new trade's identity is always new. So the old key
+ * can no longer attest a trade or chat whose identity was made after its `notAfter` (plus the
+ * skew), while what it signed before stays valid. Not a revocation: an attestation it signed for
+ * an identity made inside its window is still accepted.
  */
 export interface AttestationKey {
   signPublic: string;
@@ -294,9 +301,21 @@ export interface AttestationSelf {
   /** This device's clock (ms) for the `issuedAt` check; default Date.now(). */
   now?: number;
   /**
-   * Trade context, optional: the trade's take time this app was shown (the API's trade view, an
-   * ISO time). When given, an `issuedAt` more than ATTESTATION_CLOCK_SKEW_MS before it is refused
-   * (`bad-time`): an attestation cannot be older than its trade. Given but unreadable: `bad-time`.
+   * Required (review lead-escrow-harden M1): when this device made the per-trade (or per-chat)
+   * identity named in its slot, on its own clock (ms), as kept in its record since before the API
+   * saw the identity. An `issuedAt` more than ATTESTATION_CLOCK_SKEW_MS before it is refused
+   * (`bad-time`): the attestation names that identity, so it cannot be older. Left out, or not a
+   * finite time of at least 0: `bad-time`. `null` only for a record written before the time was
+   * kept: then there is no lower bound, which is accepted only when the key that verified has no
+   * validity bounds (today's single key); with a bounded key it is `bad-time`.
+   */
+  identityCreatedAt: number | null;
+  /**
+   * Trade context, optional, an extra check only: the trade's take time this app was shown (the
+   * API's unsigned trade view, an ISO time). When given, an `issuedAt` more than
+   * ATTESTATION_CLOCK_SKEW_MS before it is refused (`bad-time`): an attestation cannot be older
+   * than its trade. Given but unreadable: `bad-time`. A lying API can leave it out or choose it,
+   * so it is never the lower bound that matters: `identityCreatedAt` is.
    */
   takenAt?: string;
 }
@@ -312,9 +331,9 @@ export interface AttestationSelf {
  * `channelFor(trade, kind)` (`wrong-channel`); and, for a trade, that `terms` are present and their
  * deal and this app's own address equal `me.deal` and `me.ownAddress`, both required, and their
  * `payWindowMin` equals `me.payWindowMin` when that is given (`wrong-terms`).
- * A chat attestation must carry no terms (`wrong-terms`). Last, `issuedAt` (review F5): no more
- * than ATTESTATION_CLOCK_SKEW_MS in the future of `me.now`, nor before `me.takenAt` by more than
- * that (`bad-time`). There is no maximum age: a stored attestation is verified again on every
+ * A chat attestation must carry no terms (`wrong-terms`). Last, `issuedAt` (review F5, M1): no more
+ * than ATTESTATION_CLOCK_SKEW_MS in the future of `me.now`, nor before `me.identityCreatedAt` (required;
+ * null: see there) or `me.takenAt` by more than that (`bad-time`). There is no maximum age: a stored attestation is verified again on every
  * start, however long its trade lasts (a dispute may run for months).
  *
  * Deviation from the plan's signature (review of Task 8): `me` also carries `trade`, `boxPublic`
@@ -332,6 +351,8 @@ export async function verifyAttestation(
   if (!wellFormed(a) || typeof sig !== 'string') throw new AttestationError('bad-signature');
   const issuedMs = isoMs(a.issuedAt);
   let ok = false;
+  /** The key list entry that verified the signature (its bounds decide what a missing identity time allows). */
+  let signedBy: AttestationKey | null = null;
   try {
     const sigBytes = sodium.from_hex(sig);
     if (sigBytes.length === sodium.crypto_sign_BYTES) {
@@ -339,6 +360,7 @@ export async function verifyAttestation(
       for (const k of pinned) {
         if (keyCovers(k, issuedMs) && sodium.crypto_sign_verify_detached(sigBytes, bytes, sodium.from_hex(k.signPublic))) {
           ok = true;
+          signedBy = k;
           break;
         }
       }
@@ -383,6 +405,14 @@ export async function verifyAttestation(
 
   const now = me.now ?? Date.now();
   if (!Number.isFinite(now) || issuedMs > now + ATTESTATION_CLOCK_SKEW_MS) throw new AttestationError('bad-time');
+  // Review M1: the lower bound this device knows itself. Required; null only for an old record,
+  // and then only with a key that has no bounds (where a lower bound would change nothing).
+  const made: unknown = me.identityCreatedAt;
+  if (made === null) {
+    if (signedBy === null || signedBy.notBefore !== null || signedBy.notAfter !== null) throw new AttestationError('bad-time');
+  } else if (typeof made !== 'number' || !Number.isFinite(made) || made < 0 || issuedMs < made - ATTESTATION_CLOCK_SKEW_MS) {
+    throw new AttestationError('bad-time');
+  }
   if (me.takenAt !== undefined) {
     const taken = isoMs(me.takenAt);
     if (Number.isNaN(taken) || issuedMs < taken - ATTESTATION_CLOCK_SKEW_MS) throw new AttestationError('bad-time');

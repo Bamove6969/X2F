@@ -522,6 +522,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           code: this.code,
           role: c.role,
           identity: { signPublic: id.signPublic, boxPublic: id.boxPublic, signSecret: id.signSecret, boxSecret: id.boxSecret },
+          identityCreatedAt: now(),
           registered: false,
           attestation: null,
           partyState: null,
@@ -605,7 +606,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (pinned !== null && pinned !== shown) return this.fail('deal-mismatch');
       try {
         // The built-in key list (review F5: one key today). `issuedAt` must not be in this device's
-        // future, nor older than the trade's take time when the view shows one.
+        // future, nor older than the identity this device made for the trade (review M1: a time
+        // only this device knows; a record from before it was kept has none), nor older than the
+        // trade's take time when the (unsigned) view shows one, an extra check only.
         await verifyAttestation(
           att.attestation as Attestation,
           att.sig,
@@ -615,6 +618,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
             payWindowMin: shown,
             methodId: view0.methodId,
             now: now(),
+            identityCreatedAt: this.rec.identityCreatedAt ?? null,
             ...(view0.takenAt !== null ? { takenAt: view0.takenAt } : {}),
           },
         );

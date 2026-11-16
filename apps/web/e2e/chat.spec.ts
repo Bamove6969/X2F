@@ -91,7 +91,7 @@ async function stubChat(page: Page): Promise<FakeChat> {
       if (registered.length > 0) return json({ error: 'identity-exists' }, 409)(r);
       registered.push(body);
       // The moderation service attests the chat, and the buyer writes first.
-      const a: Attestation = { v: 1, trade: CHAT, channels: { chat: channel }, participants: participants()!, issuedAt: at };
+      const a: Attestation = { v: 1, trade: CHAT, channels: { chat: channel }, participants: participants()!, issuedAt: new Date().toISOString() };
       attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), modKey.privateKey)) };
       const hello = await seal({ trade: channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'Hello from the buyer' }, to: ['buyer', 'seller', 'mod'], me: buyer, participants: participants()! });
       envelopes.push({ id: '1', senderRole: 'buyer', envelope: hello, at });
