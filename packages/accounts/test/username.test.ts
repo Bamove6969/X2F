@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { checkDisplayName, checkLoginName, checkNames, lookAlikeKey } from '@x2f/accounts';
+import { LOOK_ALIKE_LETTERS, checkDisplayName, checkLoginName, checkNames, lookAlikeKey, staffNameKey } from '@x2f/accounts';
 
 describe('checkDisplayName', () => {
   test('accepts a valid name, keeps it as typed, lower-cases the key', () => {
@@ -55,6 +55,26 @@ describe('checkDisplayName', () => {
     expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'characters' });
   });
 
+  // Review of third-signup-r3 (16 Nov 2026), B1: invisible characters (Unicode
+  // Default_Ignorable_Code_Point) are refused, whatever their category: the Hangul fillers are
+  // letters (Lo), the variation selectors and joiners are combining marks (Mn).
+  test.each([
+    ['Hangul fillers only (renders blank)', '\u3164\u3164\u3164\u3164\u3164'],
+    ['a Hangul filler standing in for a space', 'Bob\u3164Smith'],
+    ['a half-width Hangul filler', 'Bob\uffa0Smith'],
+    ['a Hangul choseong filler', 'Bob\u115fSmith'],
+    ['a Hangul jungseong filler', 'Bob\u1160Smith'],
+    ['choseong and jungseong fillers only (renders blank)', '\u115f\u1160\u115f\u1160\u115f'],
+    ['a variation selector after a letter (looks exactly like "alice")', 'alice\ufe0f'],
+    ['a variation selector supplement', 'alice\u{e0100}'],
+    ['a combining grapheme joiner', 'alic\u034fe.k'],
+    ['a Mongolian free variation selector', 'alice\u180b'],
+    ['a word joiner', 'bob\u2060smith'],
+    ['a soft hyphen', 'bob\u00adsmith'],
+  ])('refused, invisible: %s', (_what, name) => {
+    expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'characters' });
+  });
+
   test('look-alike scripts mixed in one name are refused (Cyrillic or Greek with Latin)', () => {
     expect(checkDisplayName('аlice')).toEqual({ ok: false, reason: 'characters' });
     expect(checkDisplayName('Alicе Bob')).toEqual({ ok: false, reason: 'characters' });
@@ -65,6 +85,15 @@ describe('checkDisplayName', () => {
 
   test.each(['X2F Support', 'the admin', '@admin', 'Admin$', 'Ａｄｍｉｎ.bob', 'ádmin', 'support!', 'Staff #1', 'x2f (official)'])(
     'reserved, with the new characters and look-alikes: %s',
+    (name) => {
+      expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'reserved' });
+    },
+  );
+
+  // Review of third-signup-r3, M1: Latin look-alikes that NFKD leaves alone (dotless i, small
+  // capitals, Latin alpha) are folded too, so a reserved word written with them is still reserved.
+  test.each(['admın.bob', 'ᴀᴅᴍɪɴ bob', 'ɑdmin bob', 'Admın Desk', 'ꜱᴜᴘᴘᴏʀᴛ', 'ꜱᴛᴀꜰꜰ #1', 'x2ꜰ team', 'ʀᴏᴏᴛ.user', 'ɢuest ʜelp'])(
+    'reserved, with a Latin look-alike NFKD does not fold: %s',
     (name) => {
       expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'reserved' });
     },
@@ -165,5 +194,57 @@ describe('lookAlikeKey', () => {
     expect(lookAlikeKey('Ａｌｉｃｅ')).toBe(lookAlikeKey('alice'));
     expect(lookAlikeKey('аlicе')).toBe(lookAlikeKey('alice'));
     expect(lookAlikeKey('ροκο')).toBe(lookAlikeKey('poko'));
+  });
+});
+
+// Review of third-signup-r3, M1: the extra fold table. Every entry is one lower-case Latin letter
+// that NFKD leaves alone, mapped to the plain a-z letter it is drawn like.
+describe('LOOK_ALIKE_LETTERS (the reviewed fold table)', () => {
+  const entries = Object.entries(LOOK_ALIKE_LETTERS);
+
+  test('every entry maps one lower-case letter to one of a-z, and NFKD does not already fold it', () => {
+    expect(entries.length).toBeGreaterThan(40);
+    for (const [from, to] of entries) {
+      expect([...from], from).toHaveLength(1);
+      expect(to, from).toMatch(/^[a-z]$/);
+      expect(from.toLowerCase(), from).toBe(from);
+      expect(from.normalize('NFKD').replace(/\p{M}/gu, ''), from).toBe(from);
+    }
+  });
+
+  test.each([
+    ['ı', 'i'], ['ȷ', 'j'], ['ɑ', 'a'], ['ɡ', 'g'], ['ɩ', 'i'], ['ɪ', 'i'], ['ʟ', 'l'], ['ɴ', 'n'], ['ʀ', 'r'], ['ʏ', 'y'],
+    ['ᴀ', 'a'], ['ʙ', 'b'], ['ᴄ', 'c'], ['ᴅ', 'd'], ['ᴇ', 'e'], ['ꜰ', 'f'], ['ɢ', 'g'], ['ʜ', 'h'], ['ᴊ', 'j'], ['ᴋ', 'k'],
+    ['ᴍ', 'm'], ['ᴏ', 'o'], ['ᴘ', 'p'], ['ꞯ', 'q'], ['ꜱ', 's'], ['ᴛ', 't'], ['ᴜ', 'u'], ['ᴠ', 'v'], ['ᴡ', 'w'], ['ᴢ', 'z'],
+    ['ꞵ', 'b'], ['ł', 'l'], ['đ', 'd'], ['ø', 'o'], ['ħ', 'h'], ['ŧ', 't'], ['ƀ', 'b'], ['ɨ', 'i'], ['ɛ', 'e'],
+  ])('%s folds like %s', (from, to) => {
+    expect(lookAlikeKey(`x${from}x`)).toBe(lookAlikeKey(`x${to}x`));
+  });
+
+  test('capitals fold through their lower case (Ɑ, Ɡ, Ɪ, Ł)', () => {
+    expect(lookAlikeKey('Ɑdmin')).toBe(lookAlikeKey('admin'));
+    expect(lookAlikeKey('Ɡuest')).toBe(lookAlikeKey('guest'));
+    expect(lookAlikeKey('Ɪlya')).toBe(lookAlikeKey('ilya'));
+    expect(lookAlikeKey('Łuke')).toBe(lookAlikeKey('luke'));
+  });
+
+  test('invisible characters are dropped from the fold (defence in depth for B1)', () => {
+    expect(lookAlikeKey('ali\u034fce\ufe0f')).toBe(lookAlikeKey('alice'));
+  });
+});
+
+// Review of third-signup-r3, M2: the staff and owner comparison ignores punctuation and spaces,
+// like the reserved-word check does.
+describe('staffNameKey', () => {
+  test.each(['Mira,K', 'Mira K', 'Mira_K', 'Mira-K', 'Mira:K', "Mira'K", 'MiraK', 'Mıra.K', 'M1ra (K)', 'ᴍɪʀᴀ.ᴋ'])(
+    '%s compares equal to the staff name Mira.K',
+    (name) => {
+      expect(staffNameKey(name)).toBe(staffNameKey('Mira.K'));
+    },
+  );
+
+  test('different letters still differ', () => {
+    expect(staffNameKey('Mira.Kay')).not.toBe(staffNameKey('Mira.K'));
+    expect(staffNameKey('Myra.K')).not.toBe(staffNameKey('Mira.K'));
   });
 });
