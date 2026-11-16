@@ -268,8 +268,24 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: '3F2A 9C41 7B0E D5A2 61C8 0E4B 92D7 1F6A C3B8 0D15',
       why: "The example key's fingerprint; the page shows the pasted key's own fingerprint in the same grouping (Task 28).",
     },
+    // Review of third-signup-r3 (16 Nov 2026), M5b. The header change is the owner's (demo note
+    // 2708e47a, 13 Nov 2026, on /setup/pgp-key: "Instead of create account - Adding your public PGP
+    // key"). The board keeps its old title until design redraws it and recaptures refs/SetupPgpKey.png
+    // (tools/parity/capture-refs.ts needs the canvas runtime support.js); remove this then.
+    {
+      text: 'Set up your account',
+      why: 'Owner demo note 2708e47a (13 Nov 2026): the /setup/pgp-key header reads "Adding your public PGP key" instead; board redraw and reference recapture owed (design).',
+    },
   ],
   SetupPgpChallenge: [
+    // Review of third-signup-r3 (16 Nov 2026), M5b, found once SetupPgpKey passed: f1068c58 names
+    // PGPony in the app list, from the owner's demo note e6d8122c (13 Nov 2026: "recommend PGPony as
+    // the recommended Android app") and signup-r3 spec item 7. The board predates it; remove this
+    // when design redraws the board and recaptures refs/SetupPgpChallenge.png.
+    {
+      text: 'Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.',
+      why: 'Owner demo note e6d8122c (13 Nov 2026), signup-r3 spec item 7: the page reads "Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it."; board redraw and reference recapture owed (design).',
+    },
     {
       text: 'Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.',
       why: 'Sign-up round 3 (owner 13-16 Nov 2026): PGPony is the PGP app recommended on Android, so the step reads "Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it."',

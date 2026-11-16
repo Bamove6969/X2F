@@ -12,7 +12,17 @@ export function PasswordInput(props: Omit<InputHTMLAttributes<HTMLInputElement>,
   const { className, ...rest } = props;
   return (
     <span className="x2f-password" data-part="password-field">
-      <input {...rest} className={['x2f-input', 'x2f-password__input', className].filter(Boolean).join(' ')} type={shown ? 'text' : 'password'} />
+      {/* Review of third-signup-r3 (16 Nov 2026), M4: shown, this is a text field, so spell-check
+          services and mobile keyboards would read and learn the password. Off in both states, after
+          the props so no caller can turn them back on; autoComplete passes through unchanged. */}
+      <input
+        {...rest}
+        className={['x2f-input', 'x2f-password__input', className].filter(Boolean).join(' ')}
+        type={shown ? 'text' : 'password'}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="none"
+      />
       <button
         type="button"
         className="x2f-password__eye"

@@ -11,6 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { sealSecret } from '../src/auth/totp.js';
+import { checkMemberName } from '../src/team/members.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { SIG } from './helpers/signature.js';
@@ -208,6 +209,50 @@ describe('signup round 3: display names with Unicode letters, spaces and common 
     });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ error: 'display-name-reserved' });
+  });
+});
+
+// Review of third-signup-r3 (16 Nov 2026): the review's attack names, at the API.
+describe('signup round 3 review: invisible characters and staff look-alikes', () => {
+  const reg = (displayName: string) => new Browser(app).post('/v1/register/password', {
+    displayName, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+  });
+
+  it('B1: a pixel-identical copy of a trader name with a variation selector, and a blank name, are refused', async () => {
+    const base = `Alice${n++}x`;
+    expect((await reg(base)).statusCode).toBe(201);
+    for (const attack of [`${base}\ufe0f`, `${base}\u{e0100}`, `${base.slice(0, 3)}\u034f${base.slice(3)}`, `${base}\u180b`]) {
+      const copy = await reg(attack);
+      expect(copy.statusCode, JSON.stringify(attack)).toBe(400);
+      expect(copy.json()).toEqual({ error: 'display-name-invalid' });
+    }
+    for (const blank of ['\u3164\u3164\u3164\u3164\u3164', 'Bob\u3164Smith', 'Bob\uffa0Smith', 'Bob\u115fSmith', 'Bob\u1160Smith', '\u115f\u1160\u115f\u1160\u115f']) {
+      const res = await reg(blank);
+      expect(res.statusCode, JSON.stringify(blank)).toBe(400);
+      expect(res.json()).toEqual({ error: 'display-name-invalid' });
+    }
+  });
+
+  it('M1/M2: a staff name with a dotless i, a comma or a space for its dot, and "Admın Desk", are reserved', async () => {
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Mira.K${n++}` });
+    const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
+    for (const attack of [s.replace('i', 'ı'), s.replace('.', ','), s.replace('.', ' '), s.replace('.', '_'), s.replace('.', '-'), s.replace('M', 'ᴍ')]) {
+      const res = await reg(attack);
+      expect(res.statusCode, attack).toBe(400);
+      expect(res.json()).toEqual({ error: 'display-name-reserved' });
+    }
+    const adm = await reg('Admın Desk');
+    expect(adm.statusCode, adm.body).toBe(400);
+    expect(adm.json()).toEqual({ error: 'display-name-reserved' });
+  });
+
+  it('M2: a team member name is held to the same staff comparison', async () => {
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Kim.L${n++}` });
+    const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
+    for (const attack of [s.replace('.', ','), s.replace('.', ' '), s.replace('i', 'ı')]) {
+      await expect(checkMemberName(deps.db, attack), attack).rejects.toMatchObject({ status: 400, code: 'display-name-reserved' });
+    }
+    await expect(checkMemberName(deps.db, `${s}\ufe0f`)).rejects.toMatchObject({ status: 400, code: 'display-name-invalid' });
   });
 });
 

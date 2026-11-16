@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Backup } from '../src/screens/setup/Backup.js';
 import { INITIAL, SIGNUP_ORDER, SetupContext, nextStep, type SetupApi, type SetupState } from '../src/screens/setup/kit.js';
 import { Login, METHODS } from '../src/screens/setup/Login.js';
+import { AuthenticatorStep } from '../src/screens/setup/MoreMethods.js';
 import { PgpChallenge } from '../src/screens/setup/PgpChallenge.js';
 import { Username } from '../src/screens/setup/Username.js';
 import { fire, render } from './render.js';
@@ -144,6 +145,16 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
       click(box(host, partner));
       expect(box(host, 'totp').checked).toBe(false);
     }
+  });
+
+  // Review of third-signup-r3 (16 Nov 2026), M3: the server asks for the code only after a
+  // password. Without a password ticked, the card must not let the user believe otherwise.
+  it('without a password ticked, the authenticator card says the code is asked for only with a password', () => {
+    const host = show(<Login />, setup());
+    const card = () => host.querySelector('[data-method="totp"]')!;
+    expect(byPart(card(), 'totp-no-password')!.textContent).toMatch(/only when you log in with a password/i);
+    click(box(host, 'password'));
+    expect(byPart(card(), 'totp-no-password')).toBeNull();
   });
 
   it('PGP and the authenticator app, no password: both are stored in setup order', () => {
@@ -305,5 +316,21 @@ describe('lead calls, 12 Nov 2026', () => {
     expect(part.querySelector('a')!.getAttribute('href')).toBe('/.well-known/x2f-signing-key.asc');
     expect(part.querySelector('a')!.hasAttribute('download')).toBe(true);
     expect(host.querySelector('[data-part="signing-key"] [data-primary]')).toBeNull();
+  });
+});
+
+// Review of third-signup-r3, M3: the authenticator step's lead is true with and without a password.
+describe('/setup/authenticator lead (review M3)', () => {
+  it('with no password among the methods, it says the code is asked for only with a password', async () => {
+    const host = show(<AuthenticatorStep />, setup({ methods: ['pgp', 'totp'], done: ['pgp'] }));
+    await flush();
+    expect(byPart(host, 'totp-no-password')!.textContent).toMatch(/only when you log in with a password/i);
+  });
+
+  it('with a password, it keeps the plain lead', async () => {
+    const host = show(<AuthenticatorStep />, setup({ methods: ['pgp', 'password', 'totp'], done: ['pgp', 'password'] }));
+    await flush();
+    expect(byPart(host, 'totp-no-password')).toBeNull();
+    expect(host.querySelector('h1')!.parentElement!.textContent).toMatch(/Each time you log in with your password/);
   });
 });
