@@ -359,6 +359,20 @@ describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migr
     expect(await netDay('2026-05-03')).toEqual([{ kind: 'fee', fee_atomic: escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic.toString(), network_fee_atomic: '0' }]);
   });
 
+  it('a reported fee over the co-signer bound (0.01 XMR) is booked as the share of the bound, never more (review M2, 16 Nov)', async () => {
+    setNow(new Date('2026-05-04T10:00:00Z'));
+    const t = await trade({ to: 'released' });
+    const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
+    // 0.5 XMR reported: X2F's fee output lost at most half of 0.01 XMR, so 0.005 XMR is booked.
+    expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 500_000_000_000n))).toBe(true);
+    expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: '5000000000' }]);
+    expect(await netDay('2026-05-04')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '5000000000' }]);
+    // Exactly the bound books its half; one unit over books the same.
+    const atBound = await trade({ to: 'released' });
+    expect(await withClient((c) => bookSettlementNetworkFee(c, atBound.code, 10_000_000_001n))).toBe(true);
+    expect(await bookedNet(atBound.code)).toEqual([{ network_fee_atomic: '5000000000' }]);
+  });
+
   it('the ledger\'s network fees are add-only too', async () => {
     await expect(deps.db.query("update revenue_ledger set network_fee_atomic = 0 where day = '2026-05-02'")).rejects.toMatchObject({ code: '42501' });
   });

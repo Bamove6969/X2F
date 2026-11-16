@@ -1470,6 +1470,25 @@ describe('guards in front of settle', () => {
     expect([after.theirDeal, after.theirAddress, after.failed ?? null]).toEqual([null, null, null]);
   });
 
+  it('on resume with the release tx in the pool (balance no longer unlocked), the stored release still reaches the party, fee marks kept (review B3, 16 Nov)', async () => {
+    const t = await settlingSeller();
+    const rec = (await t.seller.store.load(CODE))!;
+    expect(rec.intent?.done).toBe(false);
+    const stored = rec.intent!.outcome!;
+    // The co-signer submitted the sweep: it sits in the pool, so the tick cannot re-derive the outcome.
+    t.parties.funds = { ...t.parties.funds!, unlocked: 0n };
+    const sellers = () => t.parties.settles.filter((s) => s.role === 'seller');
+    const count = sellers().length;
+    const again = await t.mk('seller', { idb: t.seller.idb });
+    await again.runtime.resumeAll();
+    await t.parties.ticks('seller', 3);
+    expect(sellers().length).toBeGreaterThan(count);
+    const resumed = sellers().at(-1)!.o;
+    expect(resumed).toEqual({ kind: 'release', ...stored });
+    expect(resumed.to.map((p) => p.bearsNetworkFee === true)).toEqual(stored.to.map((p) => p.bearsNetworkFee === true));
+    expect(resumed.to.some((p) => p.bearsNetworkFee === true)).toBe(true);
+  });
+
   it('on resume, a stored outcome is gated by cosignPolicy again: a tampered one is never settled', async () => {
     const t = await settlingSeller();
     const rec = (await t.seller.store.load(CODE))!;
