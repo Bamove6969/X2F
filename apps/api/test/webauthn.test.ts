@@ -619,10 +619,11 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     expect(bad.statusCode).toBe(401);
     expect(errorOf(bad)).toBe('webauthn-failed');
 
-    // Staff, the owner and a team member: the same keys are not taken, and an unlisted model is still refused.
+    // Staff and the owner (their add-key route) and a team member's login (the Plan 4 helpers that
+    // the team screens use): the same keys are not taken, and an unlisted model is still refused.
     const staffId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
-    const memberId = await seedAccount(deps, { loginName: uniqueName('mbr'), kind: 'member' });
-    for (const [who, id] of [['staff', staffId], ['owner', await seedOwner()], ['member', memberId]] as const) {
+    const ownerId = await seedOwner();
+    for (const [who, id] of [['staff', staffId], ['owner', ownerId]] as const) {
       const b = await loggedIn(id, true);
       for (const att of [{ aaguid: ALLOWED, ca: otherRoot }, { aaguid: ALLOWED, ca: expired }]) {
         const r = await staffAdd(b, createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: att }), 'security-key');
@@ -634,7 +635,19 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
         expect(errorOf(r.res), who).toBe('method-not-allowed');
       }
     }
-    const { rows: others } = await deps.db.query('select count(*)::int as n from webauthn_credentials where account_id = any($1)', [[staffId, memberId]]);
+    const memberId = await seedAccount(deps, { loginName: uniqueName('mbr'), kind: 'member' });
+    const challenge = new Uint8Array(32).fill(5);
+    const memberOptions = await webauthnRegistrationOptions(deps, memberId, { kind: 'security-key', challenge });
+    expect(memberOptions.attestation).toBe('direct');
+    const verify = (att: { aaguid: string; ca: TestCa }) =>
+      verifyWebAuthnRegistration(deps, memberId, createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: att }).register(memberOptions, ORIGIN), challenge, { kind: 'security-key' });
+    for (const att of [{ aaguid: ALLOWED, ca: otherRoot }, { aaguid: ALLOWED, ca: expired }]) {
+      await expect(verify(att)).rejects.toMatchObject({ status: 401, code: 'webauthn-failed' });
+    }
+    for (const att of [{ aaguid: UNLISTED, ca }, { aaguid: NO_STATEMENT, ca }]) {
+      await expect(verify(att)).rejects.toMatchObject({ status: 403, code: 'method-not-allowed' });
+    }
+    const { rows: others } = await deps.db.query('select count(*)::int as n from webauthn_credentials where account_id = any($1)', [[staffId, ownerId, memberId]]);
     expect(others).toEqual([{ n: 0 }]);
   });
 
