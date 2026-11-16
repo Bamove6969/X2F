@@ -644,8 +644,8 @@ export function runParty(a: PartyArgs): PartyHandle {
   const allReleases = (): ReleaseState[] => [...history(), ...(state.release ? [state.release] : [])];
   /** The tx of this party's latest done release in the history (the one a current later release follows), or null. */
   const priorDoneTx = (): string | null => history().filter((r) => r.phase === 'done' && r.txHash).at(-1)?.txHash ?? null;
-  /** Later releases this party has started (review I1: counted the same way for every party). */
-  const laterCount = (): number => allReleases().filter((r) => r.after !== undefined).length;
+  /** The co-signer's export this process already imported before building (re-verify gap (b)), by message key. */
+  let importedEarly: string | null = null;
 
   /**
    * Before this party exports for an attempt. Review M2 / lead call: the full check (the escrow
@@ -655,8 +655,31 @@ export function runParty(a: PartyArgs): PartyHandle {
    * its own, or an older one: review M3, alternating co-signers) cannot see that spend, so it exports
    * once the balance is all unlocked; the exact match and the proof of `after` run after importing
    * the builder's export (`afterImport`), before anything is signed.
+   *
+   * The builder of a later release (the moderator):
+   * - re-verify gap (b): when the co-signer's export for this attempt is already here, it is
+   *   imported first (after a sync, as the co-signer does with the builder's), so a moderator that
+   *   never imported a spend.info still sees the earlier release's spend. An import never touches
+   *   this wallet's own nonces, and the builder imports that export again before building anyway.
+   * - re-verify N1: one that has no release of its own waits until its wallet shows `after` as a
+   *   confirmed tx that spent this escrow (`spentBy`). A builder with a release names its own
+   *   latest done tx (outcomeRefusal), which it has already seen spend the escrow.
    */
   const readyToExport = async (o: Outcome, rel: ReleaseState): Promise<boolean> => {
+    if (o.after !== undefined && rel.part === 'builder') {
+      const key = exportKey(rel);
+      const exp = state.received[key]?.[rel.counterpart];
+      if (exp && importedEarly !== `${key}/${exp.digest}`) {
+        await daemon.sync();
+        await importPeer(exp);
+        importedEarly = `${key}/${exp.digest}`;
+      }
+      if (priorDoneTx() !== o.after) {
+        await daemon.sync();
+        if (!(await daemon.spentBy(o.after))) return false;
+      }
+      return fundsReady(o);
+    }
     if (o.after === undefined || rel.part !== 'cosigner' || priorDoneTx() === o.after) return fundsReady(o);
     const { balance, unlocked } = await daemon.sync();
     return balance > 0n && balance === unlocked;
@@ -679,18 +702,29 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (o.builder !== 'mod') return 'a later release is moderator-built';
     if (typeof o.after !== 'string' || !TX_HASH.test(o.after)) return 'after is not a tx hash';
     if (rel && rel.outcome === digest) return null; // already this one (a resumed later release)
+    let cur = rel;
     if (rel && rel.phase !== 'done') {
-      // M1: a first release in progress, exhausted or superseded refuses; an uncommitted later
-      // release may be replaced by another naming the same earlier tx.
+      // M1: a first release in progress, exhausted or superseded refuses.
       if (rel.after === undefined) return 'a first release is under way';
       if (rel.committed || rel.phase === 'superseded') return 'a release is under way';
-      if (rel.after !== o.after) return 'after is not the earlier release';
+      // Re-verify N2: an uncommitted later release (nothing signed, nothing committed in this
+      // attempt) may be replaced, also by one naming another `after`, so one wrong `after` never
+      // locks the party to it. The new outcome passes every check a fresh one does, as if the
+      // current release were not there: it is dropped (beginRelease), never kept in the history.
+      cur = null;
+    }
+    // Review I1: every later release counts, for every party alike.
+    const mine = [...history(), ...(cur ? [cur] : [])];
+    if (mine.filter((r) => r.after !== undefined).length >= MAX_LATER_RELEASES) return 'the later-release cap is reached';
+    if (mine.length === 0) {
+      // No release of its own: this party took no part so far; this is its first. Re-verify N1:
+      // `after` must still be a tx in a block, so a made-up hash is refused here and then. A
+      // builder also waits, before it exports, until its own wallet shows that `after` spent this
+      // escrow (readyToExport), so the first-ever release can never run as a "later" one.
+      if (!(await daemon.txSeen(o.after))) return 'after is not a tx in a block';
       return null;
     }
-    if (laterCount() >= MAX_LATER_RELEASES) return 'the later-release cap is reached';
-    // No release of its own: this party took no part so far; this is its first.
-    if (rel === null && history().length === 0) return null;
-    const own = allReleases().filter((r) => r.phase === 'done' && r.txHash).map((r) => r.txHash!);
+    const own = mine.filter((r) => r.phase === 'done' && r.txHash).map((r) => r.txHash!);
     const latest = own.at(-1)!;
     if (o.after === latest) return null;
     // An older tx of its own is never the latest emptying tx.
@@ -737,7 +771,17 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (rel.phase === 'waiting-funds') {
       // M4: an earlier release's spend.info is exported and sent before this release's first export.
       if (spendInfoRelease() !== null) return;
-      if (!(await readyToExport(o, rel))) return;
+      let ready: boolean;
+      try {
+        ready = await readyToExport(o, rel);
+      } catch (e) {
+        // Re-verify gap (b): a co-signer's export the builder's wallet refuses counts as a refused attempt, not a crash.
+        if (!(e instanceof EscrowError) || e.code !== 'payout-mismatch') throw e;
+        ignored('build-payout-mismatch');
+        await nextAttempt(rel);
+        return;
+      }
+      if (!ready) return;
       state.sent[exportKey(rel)] = { hex: await session.exportState() };
       rel.phase = 'export';
       await persist(); // the export's nonces are saved with the wallet before they are sent

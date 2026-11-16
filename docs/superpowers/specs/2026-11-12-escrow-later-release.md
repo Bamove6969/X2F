@@ -192,3 +192,34 @@ Regtest (a real chain, three parties, an in-process relay):
 - **Not changed (not in the lead's calls):** the review's M2 suggestion of a way out for a signed
   later release whose tx is `none`, and the moderator-builder importing the co-signer's export
   before its own balance check (M4, second part). Both stay liveness gaps.
+
+## Re-verify (re-verify-late-funds-2026-11-12, NOT READY → fixes, wip/second-late-funds-fixes)
+
+- **N1, fixed:** a party with no release of its own no longer takes any `after`.
+  - At settle time it requires `txSeen(after)`, like the others: a made-up hash is refused there
+    and then, with nothing saved or sent.
+  - The moderator-builder with no release of its own also waits, before it exports, until its own
+    wallet shows `after` as a confirmed tx that spent this escrow (`spentBy`, after a sync). This is
+    checked before the export rather than at settle time, because the moderator receives the
+    co-signer's export for this release (gap (b) below) only once it has accepted the outcome.
+    Nothing is exported, built or signed until then, so the first-ever release can never run as a
+    "later" one: naming the escrow's own deposit (in a block, it spent nothing) never builds.
+  - A trader co-signer with no release keeps the relaxed pre-export check (it cannot see the
+    spend); every later release is moderator-built, so the builder's check closes the path for every
+    co-signer while the moderator is honest (as the re-verify says).
+- **N2, fixed:** an uncommitted later release (nothing signed, nothing committed in this attempt;
+  never `signed` or `superseded`) may be replaced by an outcome naming a different `after`. The new
+  outcome passes every check a fresh outcome does, as if the current release were not there (the
+  cap, rule 1, `txSeen`, the builder's own latest). The replaced release is dropped, not kept in the
+  history: it paid nothing. A wrong `after` (for example the late coins' deposit) can then be
+  corrected and the corrected release settles.
+- **Gap (b), fixed:** the builder of a later release, in `waiting-funds`, imports the co-signer's
+  export for this attempt when it has already arrived (after a sync), before its own balance check.
+  A moderator that never imported a spend.info (too large, or never delivered) can now build. An
+  import does not touch its own nonces; it imports that export again before building, as before. A
+  refused import counts as a refused attempt (`build-payout-mismatch`), not a crash.
+- **Gap (a), not changed:** a `signed` later release whose tx is `none` with coins left still has
+  no way out. The safe fix needs a new engine primitive: the key images of the signed set, and the
+  depth of another tx that spent one of them (daemon `is_key_image_spent` plus a lookup of the
+  spending tx's height). Freeing on `none` alone could double-pay. Liveness only; to be done before
+  the late-funds integration (steps 2 to 6).
