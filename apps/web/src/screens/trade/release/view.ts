@@ -67,7 +67,7 @@ export function amounts(t: Pick<ReleaseTrade, 'role' | 'lockedRate' | 'fee'>, de
     fiat: formatFiat(device.fiatCents, t.lockedRate.currency),
     /** Poster only: the fee row (Review board "X2F fee (1%, your ad) −0.012500 XMR"). */
     fee: fee === null ? null : xmr(fee),
-    /** A poster buyer receives the amount less the fee; a taker buyer the whole amount (both before the network fee). */
+    /** A poster buyer receives the amount less the fee; a taker buyer the whole amount (both before the network fee for the buyer's own payout, owner 16 Nov). */
     buyerReceives: xmr(fee !== null && t.role === 'buyer' ? amount - fee : amount),
     /** The same, unformatted, for the kit's Xmr (the paid room, lead review 2026-11-08 R-I1). */
     buyerReceivesAtomic: fee !== null && t.role === 'buyer' ? amount - fee : amount,

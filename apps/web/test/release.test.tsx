@@ -763,7 +763,7 @@ describe('Released, more', () => {
     answer = () => ({ status: 200, body: { confirmations: 1, target: 10 } });
     const r = released(trade({ ...RELEASED, role: 'buyer', poster: 'buyer', counterparty: who('satoshi_ghost') }));
     await flush();
-    expect(r.text()).toContain('Before the Monero network fee, which comes off your payout.');
+    expect(r.text()).toContain('Before the network fee for your payout. X2F pays the network fee for its own 1%.');
   });
 
   it('links the explorer only for a well-formed tx hash (Minor 6)', async () => {

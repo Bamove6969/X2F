@@ -257,7 +257,7 @@ describe('BuyQuote', () => {
     expect(rows).not.toContain('X2F');
     expect(host.textContent).not.toContain('1%');
     expect(host.textContent).not.toMatch(/deposit/i);
-    expect(rows).toContain('Network feeabout 0.0001 XMR, taken from the payout');
+    expect(rows).toContain('Network feeabout 0.00005 XMR for your payout, taken from it');
     // The only fee words on the page are the board's footer reassurance.
     expect((host.textContent ?? '').match(/X2F fee/g)).toEqual(['X2F fee']);
     expect(host.textContent).toContain('Taking an offer is free. No X2F fee is added.');

@@ -105,7 +105,7 @@ export const TRADE_TERMS: Record<TermsRole, readonly TermsGroup[]> = {
   ],
   'poster-buying': [
     { title: 'Your responsibilities', lines: [ANSWER_60, PAY_NOW, TAP_PAID, OWN_NAME, POST_PROOF, GIFT_SEND] },
-    { title: 'What affects you', lines: ['You receive the XMR less 1% (the X2F fee).', NO_FEE_REVERSAL, ...BUYER_AFFECTS] },
+    { title: 'What affects you', lines: ['You receive the XMR less 1% (the X2F fee) and the network fee for your payout.', NO_FEE_REVERSAL, ...BUYER_AFFECTS] },
     { title: 'Your options', lines: [nudge('Seller'), ...BUYER_OPTIONS] },
   ],
 };
