@@ -16,6 +16,8 @@ import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.j
 import { DEMO_DIR, ENV_FILE, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_IMAGE, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
 import { assertDemoFlag, assertRegtestDaemon } from './guard.js';
 import { demoOrigins, quickTunnelUrl } from './origins.js';
+import { pushEnabled } from './notes-push.js';
+import { gatewayNotesEnv, loadSeed, notesFiles, notesStartupLine } from './notes-server.js';
 import { phoneIp } from './phone.js';
 import { readPids, startDetached, startTs, stopAll } from './procs.js';
 import { SELF_HTTP, SELF_WS } from './self-origin.js';
@@ -224,6 +226,8 @@ async function main(): Promise<void> {
     DEMO_ADOPT_SELF: PUBLIC_ORIGIN || process.env.DEMO_ADOPT_SELF === '0' ? '0' : '1', ...(process.env.DEMO_ADOPT_HOST ? { DEMO_ADOPT_HOST: process.env.DEMO_ADOPT_HOST } : {}), DEMO_API_ENV: ENV_FILE, DEMO_STATE_DIR: STATE_DIR,
     ...(tsIp ? { DEMO_TAILSCALE_IP: tsIp, DEMO_TLS_KEY: tlsKey, DEMO_TLS_CERT: tlsCert } : {}),
     ...(phone ? { DEMO_PHONE_IP: phone } : {}),
+    // DEMO_NOTES_FILE / DEMO_NOTES_SEED from the shell: the gateway's environment is otherwise clean.
+    ...gatewayNotesEnv(process.env),
   });
   await waitFor('the gateway', httpUp(`${LOCAL_ORIGIN}/`));
   await waitFor('the node proxy', httpUp(`http://${HOST}:${PORTS.nodeProxy}/get_info`));
@@ -253,6 +257,15 @@ async function main(): Promise<void> {
     console.log(`            tap "Allow" on its port notification, or turn on ${PORTS.gateway} in the Terminal app's settings (Port control).`);
   }
   console.log('  Logins:   see docs/demo.md (or .demo/logins.txt)');
+  // The same numbering the gateway uses (it reads the same files); a failure here is said, never fatal.
+  const notesAt = notesFiles(process.env);
+  console.log(`  ${await notesStartupLine(notesAt, loadSeed({ seedPath: notesAt.seed })).catch((e: unknown) => `Comments: could not read ${notesAt.notes} (${(e as Error).message})`)}`);
+  // DESIGN: wording (the demo's terminal output)
+  console.log(
+    pushEnabled(process.env)
+      ? '  GitHub:   comments go to the comms branch 30 s after each change, and at demo:stop (the Comment button says whether they are there yet; DEMO_NOTES_PUSH=0 turns this off)'
+      : '  GitHub:   off (DEMO_NOTES_PUSH=0); comments stay on this computer',
+  );
   console.log(`  Codes:    ${LOCAL_ORIGIN}/__demo/codes (the authenticator codes; or npm run demo:code <login name>)`);
   console.log(`  Logs:     ${LOG_DIR}`);
 }

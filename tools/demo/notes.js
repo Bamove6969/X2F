@@ -139,8 +139,16 @@
     return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), credentials: 'omit' })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); });
   }
+  function downloadNotes() {
+    var a = make('a', { display: 'none' });
+    a.href = API + '/download';
+    a.download = 'owner-demo-notes-' + new Date().toISOString().slice(0, 10) + '.jsonl';
+    root.appendChild(a);
+    a.click();
+    root.removeChild(a);
+  }
 
-  // ── the Comment button ────────────────────────────────────────────────────────────────────────
+  // ── the Comment and Download buttons ──────────────────────────────────────────────────────────
   // A 44 px touch area (the button) around a 36 px pill (its label), top-right, clear of the header actions.
   var commentBtn = make('button', {
     position: 'fixed', pointerEvents: 'auto', touchAction: 'none', cursor: 'pointer', boxSizing: 'border-box',
@@ -155,6 +163,43 @@
   commentBtn.appendChild(pill);
   commentBtn.setAttribute('aria-label', 'Leave a comment on this screen');
   root.appendChild(commentBtn);
+
+  var downloadBtn = make('button', {
+    position: 'fixed', pointerEvents: 'auto', touchAction: 'manipulation', cursor: 'pointer', boxSizing: 'border-box',
+    height: '44px', minWidth: '44px', padding: '4px 0', margin: '0', border: '0', background: 'transparent',
+    right: '96px', top: 'calc(8px + env(safe-area-inset-top, 0px))',
+  });
+  downloadBtn.type = 'button';
+  // COPY-UNSIGNED
+  var downloadPill = make('span', {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', height: '36px', padding: '0 12px', borderRadius: '18px',
+    background: PANEL, color: INK, border: '1px solid ' + LINE, font: '600 13px ' + FONT, boxShadow: '0 2px 8px rgba(0,0,0,.45)', pointerEvents: 'none',
+  }, 'Download my notes');
+  downloadBtn.appendChild(downloadPill);
+  // COPY-UNSIGNED
+  downloadBtn.setAttribute('aria-label', 'Download my notes');
+  downloadBtn.addEventListener('click', function (e) { e.stopPropagation(); downloadNotes(); });
+  root.appendChild(downloadBtn);
+
+  // Whether the comments are on GitHub yet (notes-push.ts), under the buttons; hidden when publishing is off.
+  var PUSH_TEXT = {
+    // COPY-UNSIGNED
+    pending: 'Saved on this computer \u2014 not on GitHub yet',
+    // COPY-UNSIGNED
+    pushed: 'On GitHub',
+  };
+  var pushTag = make('div', {
+    position: 'fixed', pointerEvents: 'none', right: '8px', top: 'calc(54px + env(safe-area-inset-top, 0px))', display: 'none',
+    background: PANEL, color: MUTED, border: '1px solid ' + LINE, borderRadius: '8px', padding: '2px 8px', font: '500 11px ' + FONT, whiteSpace: 'nowrap',
+  });
+  pushTag.setAttribute('role', 'status');
+  root.appendChild(pushTag);
+  var pushState = 'off';
+  function showPush(state) {
+    pushState = PUSH_TEXT[state] ? state : 'off';
+    pushTag.textContent = pushState === 'off' ? '' : PUSH_TEXT[pushState];
+    pushTag.style.display = pushState === 'off' || commentBtn.style.display === 'none' ? 'none' : 'block';
+  }
 
   var moved = null;
   try { moved = JSON.parse(store.get('x2f-demo-comment-pos2') || 'null'); } catch (e) { moved = null; }
@@ -173,24 +218,38 @@
     var n = underPoint(x, y);
     return !!(n && n.closest && n.closest(TAPPABLE));
   }
-  /** Sits at the top-right, moved down past any header action it would cover (never past a quarter of the screen). */
+  /** The Download button beside the Comment button: to its left, or to its right when there is no room. */
+  function placeDownload(left, top, w, topCss) {
+    var dw = downloadBtn.offsetWidth || 148;
+    var x = left - 6 - dw >= 0 ? left - 6 - dw : Math.min(window.innerWidth - dw, left + w + 6);
+    css(downloadBtn, { left: x + 'px', right: 'auto', top: topCss || top + 'px' });
+  }
+  function rowCovers(x0, x1, top, ht) {
+    var y0 = top + 4;
+    var y1 = top + ht - 4;
+    for (var x = x0 + 4; x < x1; x += 24) if (tappableAt(x, y0) || tappableAt(x, y1) || tappableAt(x, top + ht / 2)) return true;
+    return tappableAt(x1 - 4, y0) || tappableAt(x1 - 4, y1);
+  }
+  /** Both sit at the top-right, moved down past any header action they would cover (never past a quarter of the screen). */
   function placeButton() {
+    var w = commentBtn.offsetWidth || 96;
+    var ht = commentBtn.offsetHeight || 44;
+    var dw = downloadBtn.offsetWidth || 148;
     if (moved) {
       var p = clampPos(moved);
       css(commentBtn, { left: p.left + 'px', top: p.top + 'px', right: 'auto' });
+      placeDownload(p.left, p.top, w);
+      css(pushTag, { left: p.left + 'px', right: 'auto', top: (p.top + ht + 2) + 'px' });
       return;
     }
-    var w = commentBtn.offsetWidth || 96;
-    var ht = commentBtn.offsetHeight || 44;
     var left = Math.max(0, window.innerWidth - 8 - w);
     var top = 8;
     var limit = Math.max(8, Math.min(window.innerHeight * 0.25, window.innerHeight - ht - 8));
-    for (; top < limit; top += 8) {
-      var y0 = top + 4;
-      var y1 = top + ht - 4;
-      if (!(tappableAt(left + 4, y0) || tappableAt(left + w - 4, y0) || tappableAt(left + 4, y1) || tappableAt(left + w - 4, y1) || tappableAt(left + w / 2, top + ht / 2))) break;
-    }
-    css(commentBtn, { right: '8px', left: 'auto', top: 'calc(' + top + 'px + env(safe-area-inset-top, 0px))' });
+    for (; top < limit; top += 8) if (!rowCovers(Math.max(0, left - 6 - dw), left + w, top, ht)) break;
+    var topCss = 'calc(' + top + 'px + env(safe-area-inset-top, 0px))';
+    css(commentBtn, { right: '8px', left: 'auto', top: topCss });
+    placeDownload(left, top, w, topCss);
+    css(pushTag, { right: '8px', left: 'auto', top: 'calc(' + (top + ht + 2) + 'px + env(safe-area-inset-top, 0px))' });
   }
 
   var drag = null;
@@ -208,6 +267,7 @@
     dragged = true;
     moved = clampPos({ left: e.clientX - drag.dx, top: e.clientY - drag.dy });
     css(commentBtn, { left: moved.left + 'px', top: moved.top + 'px', right: 'auto' });
+    placeDownload(moved.left, moved.top, commentBtn.offsetWidth || 96);
   });
   function endDrag() {
     if (drag && drag.on && moved) store.set('x2f-demo-comment-pos2', JSON.stringify(moved));
@@ -244,10 +304,14 @@
     document.removeEventListener('keydown', picking.onKey, true);
     picking = null;
     commentBtn.style.display = '';
+    downloadBtn.style.display = '';
+    showPush(pushState);
   }
   function startPicking() {
     closeBox();
     commentBtn.style.display = 'none';
+    downloadBtn.style.display = 'none';
+    pushTag.style.display = 'none';
     var overlay = make('div', { position: 'fixed', inset: '0', pointerEvents: 'auto', background: 'rgba(0,0,0,.28)', cursor: 'crosshair', touchAction: 'manipulation' });
     var banner = make('div', {
       position: 'fixed', top: 'calc(10px + env(safe-area-inset-top, 0px))', left: '12px', right: '12px', maxWidth: '420px', margin: '0 auto',
@@ -281,6 +345,8 @@
     if (box.marker) root.removeChild(box.marker);
     box = null;
     commentBtn.style.display = '';
+    downloadBtn.style.display = '';
+    showPush(pushState);
     if (window.visualViewport) window.visualViewport.removeEventListener('resize', placeBox);
   }
   function placeBox() {
@@ -302,6 +368,8 @@
   function frame(x, y, threadId) {
     closeBox();
     commentBtn.style.display = 'none';
+    downloadBtn.style.display = 'none';
+    pushTag.style.display = 'none';
     var node = make('div', {
       position: 'fixed', pointerEvents: 'auto', boxSizing: 'border-box', background: PANEL, color: INK, border: '1px solid ' + LINE,
       borderRadius: '14px', padding: '12px', boxShadow: '0 8px 28px rgba(0,0,0,.55)', font: '400 15px/1.4 ' + FONT,
@@ -455,7 +523,7 @@
 
   function dot(label, x, y) {
     var d = make('div', {
-      position: 'fixed', width: '26px', height: '26px', marginLeft: '-13px', marginTop: '-13px', borderRadius: '50%',
+      position: 'fixed', minWidth: '26px', height: '26px', padding: '0 4px', boxSizing: 'border-box', marginLeft: '-13px', marginTop: '-13px', borderRadius: '13px',
       background: ACCENT, color: ACCENT_INK, font: '700 13px/26px ' + FONT, textAlign: 'center', boxShadow: '0 1px 6px rgba(0,0,0,.6)',
       left: x + 'px', top: y + 'px',
     }, label);
@@ -477,10 +545,11 @@
   function drawPins() {
     pinsLayer.textContent = '';
     pins = [];
-    notes.forEach(function (n, i) {
+    notes.forEach(function (n) {
       if (n.resolved) return;
       var p = pinPoint(n);
-      var number = i + 1;
+      // One running number across screens and sessions, given by the gateway (notes-server.ts).
+      var number = n.number;
       var pin = dot(String(number), p.x, p.y);
       pin.style.pointerEvents = 'auto';
       pin.style.cursor = 'pointer';
@@ -520,6 +589,7 @@
       .then(function (data) {
         if (!data || ticket !== fetching || key !== screenKey()) return;
         notes = data.notes;
+        showPush(data.push);
         if (box && box.threadId) {
           var open = notes.filter(function (n) { return n.id === box.threadId; })[0];
           if (open && !open.resolved) { fillThread(open); markSeen(open); } else closeBox();

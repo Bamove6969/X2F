@@ -7,14 +7,16 @@
  * and reaches it on 127.0.0.1 like any local client.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
 import { createCodesHandler } from './codes-page.js';
 import { createDoor } from './door.js';
 import { createGateway, type Route } from './gateway-core.js';
 import { assertDemo } from './guard.js';
-import { createNotesHandler, notesFiles } from './notes-server.js';
+import { ROOT } from './config.js';
+import { createNotesPusher, pushEnabled } from './notes-push.js';
+import { createNotesHandler, loadSeed, mergeText, notesFileName, notesFiles, readRecord, renderRecord } from './notes-server.js';
 import { isPrivateIpv4 } from './phone.js';
 import { restartTs } from './procs.js';
 import { adoptedApiEnv, createAdopter } from './rp-adopt.js';
@@ -48,11 +50,37 @@ function isTailscaleIp(ip: string): boolean {
   return m !== null && Number(m[1]) >= 64 && Number(m[1]) <= 127 && Number(m[2]) <= 255 && Number(m[3]) <= 255;
 }
 
+// The comments: every earlier demo's notes from origin/comms (read only), and publishing them back
+// to comms on GitHub (notes-push.ts) unless DEMO_NOTES_PUSH=0.
+const notesAt = notesFiles(process.env);
+const notesSeed = loadSeed({ seedPath: notesAt.seed });
+console.log(JSON.stringify({ reason: 'notes-loaded', ok: notesSeed.ok, sources: notesSeed.sources, files: notesSeed.files, comments: notesSeed.notes.length, problems: notesSeed.problems }));
+const pusher = pushEnabled(process.env)
+  ? createNotesPusher({
+      repo: ROOT,
+      dir: join(dirname(notesAt.notes), '.comms-push'),
+      fileName: notesFileName(Date.now()),
+      render: async (current) => renderRecord(mergeText(await readRecord(notesAt, notesSeed), current ?? '')),
+    })
+  : null;
 const notes = createNotesHandler({
-  files: notesFiles(process.env),
+  files: notesAt,
   origins: ORIGINS,
   clientJs: readFileSync(new URL('./notes.js', import.meta.url)),
+  seed: notesSeed,
+  ...(pusher ? { onChange: pusher.changed, pushState: pusher.state } : {}),
 });
+if (pusher) {
+  void pusher.flush();
+  // npm run demo:stop sends SIGTERM and waits 10 s: one last round, then go.
+  process.once('SIGTERM', () => {
+    const quit = setTimeout(() => process.exit(0), 9_000);
+    void pusher.final().finally(() => {
+      clearTimeout(quit);
+      process.exit(0);
+    });
+  });
+}
 // The seeded accounts' authenticator codes as a page (codes-page.ts), for a phone.
 const codes = createCodesHandler({ origins: ORIGINS, secrets: readTotpSecrets });
 const demo = (req: http.IncomingMessage, res: http.ServerResponse): void => {
