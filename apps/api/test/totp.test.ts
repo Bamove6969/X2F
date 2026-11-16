@@ -9,7 +9,7 @@ import { hashPassword } from '../src/auth/password.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
 import { applyTotp, openSecret, rewrapTotpSecrets, sealSecret, verifyTotp } from '../src/auth/totp.js';
 import { subkey } from '../src/config.js';
-import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { confirmTokenFor, confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { approvedLogin } from './helpers/approval.js';
 import { testApp } from './helpers/app.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
@@ -308,6 +308,46 @@ describe('TOTP goes with a password (owner, 16 Nov 2026)', () => {
     await enrol(b);
     const res = await passwordLogin(new Browser(app), username);
     expect(res.json()).toMatchObject({ status: 'second-factor' });
+  });
+});
+
+/**
+ * Owner decision, 16 Nov 2026 (comms to-lead.log 17:50:46): a password does not stand alone; it
+ * needs TOTP or another login method (a PGP key, passkey or security key, each of which stands
+ * alone). 409 `password-alone` when a removal would leave a password with neither. (The sign-up
+ * half, 409 on `POST /v1/account/onboarding/end`, comes with sign-up v2: main has no such route.)
+ */
+describe('a password does not stand alone (owner, 16 Nov 2026)', () => {
+  const del = (b: Browser, type: string, id: string, confirmToken: string) =>
+    app.inject({ method: 'DELETE', url: `/v1/account/methods/${type}/${id}`, headers: { origin: ORIGIN }, cookies: b.cookies, payload: { confirmToken } });
+  const pgpKey = async (id: string) => {
+    const key = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
+    const { rows } = await deps.db.query<{ id: string }>('select id from pgp_keys where account_id = $1', [id]);
+    return rows[0]!.id;
+  };
+
+  it('removing the authenticator app from a password-only login is refused, 409 password-alone, token unspent', async () => {
+    const { id, b } = await trader();
+    await enrol(b);
+    const token = await confirmTokenFor(deps, b.cookies, { kind: 'remove-method', method: 'totp', id: 'totp' });
+    const res = await del(b, 'totp', 'totp', token);
+    expect([res.statusCode, res.json()]).toEqual([409, { error: 'password-alone' }]);
+    expect(await hasTotpRow(id)).toBe(true);
+    // With a PGP key too, the authenticator app can go (the key stands alone).
+    await pgpKey(id);
+    expect((await del(b, 'totp', 'totp', token)).statusCode).toBe(200);
+  });
+
+  it('removing the last other login method from a password without TOTP is refused, 409 password-alone', async () => {
+    const { id, b } = await trader();
+    const keyId = await pgpKey(id);
+    const token = await confirmTokenFor(deps, b.cookies, { kind: 'remove-method', method: 'pgp', id: keyId });
+    const res = await del(b, 'pgp', keyId, token);
+    expect([res.statusCode, res.json()]).toEqual([409, { error: 'password-alone' }]);
+    // With the authenticator app, the password has its second factor and the key can go.
+    await enrol(b);
+    expect((await del(b, 'pgp', keyId, token)).statusCode).toBe(200);
   });
 });
 

@@ -7,7 +7,7 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Methods } from '../src/screens/settings/Methods.js';
-import { PASSWORD_HAS_TOTP_MESSAGE, TOTP_NEEDS_PASSWORD_MESSAGE } from '../src/ui/cantDoCodes.js';
+import { PASSWORD_ALONE_MESSAGE, PASSWORD_HAS_TOTP_MESSAGE, TOTP_NEEDS_PASSWORD_MESSAGE } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 
 function json(status: number, body: unknown): Response {
@@ -73,5 +73,25 @@ describe('Settings: the authenticator app goes with a password (owner, 16 Nov 20
   it('the refusal words are short and say what to do', () => {
     expect(PASSWORD_HAS_TOTP_MESSAGE).toMatch(/authenticator app/);
     expect(TOTP_NEEDS_PASSWORD_MESSAGE).toMatch(/password/);
+  });
+});
+
+// Owner decision, 16 Nov 2026 (comms to-lead.log 17:50:46): a password does not stand alone (409
+// `password-alone` from the API); the client refuses the obvious case before any confirm.
+describe('Settings: a password does not stand alone (owner, 16 Nov 2026)', () => {
+  it('removing the authenticator app when the password is the only way to log in is refused here', async () => {
+    const host = await shown(['password', 'totp']);
+    click(host.querySelector('[data-method="totp"] [data-part="remove"]'));
+    await flush();
+    expect(document.body.textContent).toContain(PASSWORD_ALONE_MESSAGE);
+    expect(seen.filter((s) => s.startsWith('DELETE'))).toEqual([]);
+  });
+
+  it('removing the last PGP key next to a password without the authenticator app is refused here', async () => {
+    const host = await shown(['pgp', 'password']);
+    click(host.querySelector('[data-method="pgp"] [data-part="remove"]'));
+    await flush();
+    expect(document.body.textContent).toContain(PASSWORD_ALONE_MESSAGE);
+    expect(seen.filter((s) => s.startsWith('DELETE'))).toEqual([]);
   });
 });

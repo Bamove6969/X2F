@@ -330,6 +330,37 @@ describe('WebAuthn security checks (P2-I4)', () => {
     expect(errorOf(reg)).toBe('webauthn-failed');
   });
 
+  // Owner decision, 16 Nov 2026 (comms to-lead.log 17:50:46): a security key stands alone, with the
+  // key PIN (user verification) REQUIRED on registration and every login; the server checks the UV
+  // flag itself (the options alone are only a request to the browser).
+  it('a security key needs user verification (its PIN) on registration and every login', async () => {
+    const b = new Browser();
+    const start = (await b.post('/v1/register/webauthn/start', { ...names(uniqueName('skuv')), kind: 'security-key' })).json();
+    const noPin = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    const reg = await b.post('/v1/register/webauthn/finish', {
+      challengeId: start.challengeId, response: noPin.register(start.options, ORIGIN), deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(errorOf(reg)).toBe('webauthn-failed');
+
+    const { auth, username } = await signUp('security-key');
+    const ok = await usernameLogin(auth, username);
+    expect(ok.res.statusCode).toBe(200);
+    auth.flags.userVerified = false;
+    expect(errorOf((await usernameLogin(auth, username)).res)).toBe('webauthn-failed');
+    // And the options ask the browser for it.
+    expect(start.options.authenticatorSelection.userVerification).toBe('required');
+    expect(ok.options.userVerification).toBe('required');
+  });
+
+  it('every kind and account kind asks for user verification at registration (staff and owner at least as strict)', () => {
+    for (const accountKind of ['trader', 'staff', 'member', 'owner'] as const) {
+      for (const kind of ['passkey', 'security-key'] as const) {
+        if (accountKind === 'owner' && kind === 'passkey') continue;
+        expect(registrationOptionsFor(kind, accountKind).authenticatorSelection.userVerification, `${accountKind} ${kind}`).toBe('required');
+      }
+    }
+  });
+
   it('refuses clientDataJSON.type webauthn.create on a login', async () => {
     const { auth } = await signUp('passkey');
     expect(errorOf((await discoverableLogin(auth, { type: 'webauthn.create' })).res)).toBe('webauthn-failed');
