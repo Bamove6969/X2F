@@ -445,8 +445,8 @@
   right: 0;
   top: 0;
   height: 2px;
+  /* The prototype's glow is left out: kit 1.5 has no shadow but the nav-current lines. */
   background: var(--x2f-monero);
-  box-shadow: 0 0 8px var(--x2f-monero);
 }
 .x2f-ex__tick {
   display: flex;

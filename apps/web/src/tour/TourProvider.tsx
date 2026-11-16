@@ -235,7 +235,6 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
   const cardRef = useRef<HTMLElement | null>(null);
   const nextRef = useRef<HTMLButtonElement | null>(null);
   const keyboard = useRef(false);
-  const maskId = useId();
   const bodyId = useId();
   const titleId = useId();
 
@@ -404,6 +403,8 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
   const first = backPos(tour, shown.pos) === null;
   const vw = size.w;
   const vh = size.h;
+  /** The dim's stroke width around a hole: enough to cover the screen from any hole. */
+  const spread = 2 * (vw + vh);
 
   // Where the card goes, and the arrow from it to the target.
   const side = where === 'side';
@@ -452,15 +453,23 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
       {/* Taps behind the scrim do nothing (the app is inert too). */}
       <div className="x2f-tour__catch" aria-hidden="true" />
       <svg className="x2f-tour__scrim" data-part="tour-overlay" aria-hidden="true" width={vw} height={vh} viewBox={`0 0 ${vw} ${vh}`}>
-        <defs>
-          <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width={vw} height={vh}>
-            <rect x="0" y="0" width={vw} height={vh} fill="white" />
-            {hole !== null ? (
-              <rect key={`hole-${shownKey}-${alt}`} className="x2f-tour__hole" data-phase={phase} rx="14" fill="black" style={{ x: hole.x, y: hole.y, width: hole.w, height: hole.h }} />
-            ) : null}
-          </mask>
-        </defs>
-        <rect className="x2f-tour__dim" x="0" y="0" width={vw} height={vh} mask={`url(#${maskId})`} />
+        {/*
+          The dim with its hole, without an SVG mask (a mask needs url(), which the proof-image
+          tripwire bans from code): one rounded rect whose stroke is wider than the screen. A stroke
+          is centred on the outline, so the rect is the hole grown by half the stroke on each side,
+          with its corner radius grown the same: the stroke's inner edge is then the hole, rx 14.
+        */}
+        {hole !== null ? (
+          <rect
+            key={`hole-${shownKey}-${alt}`}
+            className="x2f-tour__dim x2f-tour__hole"
+            rx={14 + spread / 2}
+            strokeWidth={spread}
+            style={{ x: hole.x - spread / 2, y: hole.y - spread / 2, width: hole.w + spread, height: hole.h + spread }}
+          />
+        ) : (
+          <rect className="x2f-tour__dim x2f-tour__dim--full" x="0" y="0" width={vw} height={vh} />
+        )}
         {hole !== null ? (
           <rect
             key={`ring-${shownKey}-${alt}`}

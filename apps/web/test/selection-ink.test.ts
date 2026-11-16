@@ -84,6 +84,12 @@ const ORANGE_ALLOWED = [
   // The ad card's range rows (BuyOffers / SellOffers boards v142).
   "screens/browse/browse.css .x2f-offer__unit[data-unit='xmr']",
   'screens/quote/quote.css .x2f-quote__band-xmr-unit',
+  // The welcome letter intro's ring round Logo D's dot (design 12 Nov, tour-motion.md).
+  'screens/welcome/welcome.css .x2f-mark__ring',
+  // The first-trade tour's pretend screens (design 12 Nov, tour-stops.md): each screen's one primary
+  // action and the release hold, as on the real screens, and the QR scan line of the intro prototype.
+  'tour/stage.css .x2f-ex__button, .x2f-ex__hold',
+  'tour/stage.css .x2f-ex__scan',
 ];
 
 describe('selection is ink, never orange', () => {
