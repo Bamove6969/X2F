@@ -199,10 +199,14 @@ send in the browser (regtest only); keep each trader's page open from take to se
   own host name, and the API starts with `localhost` (or the tunnel's host). Opened from any other
   https host, the browser refused every key before asking it (owner, 13 Nov: "Unable to add
   security key", USB and NFC). So the first time a page is loaded from such a host (not an IP
-  address), the gateway restarts the API with that host as `X2F_RP_ID` and its origin added to
+  address) through a local https front (a loopback peer sending `X-Forwarded-Proto: https`, as the
+  preview pane's proxy and tunnel clients do; a LAN or tailnet client's Host is never taken), the
+  gateway restarts the API with that host as `X2F_RP_ID` and its origin added to
   `X2F_ORIGINS`, holding API requests for the few seconds that takes (`tools/demo/rp-adopt.ts`,
   `tools/test/demo-rp-adopt.test.ts`; the API's environment is kept for it in `.demo/secrets/env.json`,
-  0600; the adopted host is in `.demo/state/rp-origin.json`). The first host stays; keys and
+  0600; the adopted host is in `.demo/state/rp-origin.json`). A failed restart adopts nothing and
+  the next page load tries again (`rp-adopt-failed` in the gateway log; each `self-origin` line
+  shows the peer and X-Forwarded-Proto). The first host stays; keys and
   passkeys then work under it only (localhost still opens the app, and passwords work everywhere).
   Only a request from a loopback peer (the preview pane's forwarder) can be adopted, and
   `X-Forwarded-Host`/`-Proto` count only from one: a client on the phone's LAN address or the

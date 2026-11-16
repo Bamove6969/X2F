@@ -640,6 +640,23 @@
   color: var(--x2f-escrow);
 }
 
+/* A security key just added (owner 16 Nov 2026): the step turns green until Continue. */
+.x2f-start__keydone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-3);
+  border: 1px solid color-mix(in srgb, var(--x2f-escrow) 35%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--x2f-escrow) 14%, transparent);
+}
+
+.x2f-start__keyname {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* The username's live check (SetupUsername): taken, or not checked right now. */
 .x2f-start__status[data-tone='danger'] {
   color: var(--x2f-danger);

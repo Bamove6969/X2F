@@ -4,6 +4,7 @@ import { networkInterfaces } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createGateway } from '../demo/gateway-core.js';
 import { adoptedApiEnv, createAdopter, rpIdOf } from '../demo/rp-adopt.js';
+import { isLoopbackPeer } from '../demo/self-origin.js';
 
 describe("a preview pane's host as the RP ID (owner demo 13 Nov: no security key under the preview)", () => {
   it('takes the host name of an https origin, never an IP address or http', () => {
@@ -26,11 +27,7 @@ describe("a preview pane's host as the RP ID (owner demo 13 Nov: no security key
   it('adopts the first host from a page load only, once, and holds requests until the API is back', async () => {
     const restarts: string[] = [];
     let done!: () => void;
-    const restart = (o: string): Promise<void> => {
-      restarts.push(o);
-      return new Promise<void>((r) => (done = r));
-    };
-    const a = createAdopter({ enabled: true, restart, log: () => {} });
+    const a = createAdopter({ enabled: true, restart: async (o) => void restarts.push(o) ?? new Promise<void>((r) => (done = r)), log: () => {} });
     await a.beforeApi(null, true);
     await a.beforeApi('https://p.example', false);
     expect(restarts).toEqual([]);
@@ -46,17 +43,6 @@ describe("a preview pane's host as the RP ID (owner demo 13 Nov: no security key
 
     const off = createAdopter({ enabled: false, restart: async (o) => void restarts.push(o), log: () => {} });
     await off.beforeApi('https://r.example', true);
-    expect(restarts).toEqual(['https://p.example']);
-  });
-
-  it('adopts only the pinned host when the operator pins one (DEMO_ADOPT_HOST, review M4)', async () => {
-    const restarts: string[] = [];
-    const a = createAdopter({ enabled: true, pin: 'P.example', restart: async (o) => void restarts.push(o), log: () => {} });
-    await a.beforeApi('https://mybox.local', true);
-    await a.beforeApi('https://p.example.evil', true);
-    expect(restarts).toEqual([]);
-    expect(a.adopted()).toBeNull();
-    await a.beforeApi('https://p.example', true);
     expect(restarts).toEqual(['https://p.example']);
   });
 
@@ -86,28 +72,70 @@ describe("a preview pane's host as the RP ID (owner demo 13 Nov: no security key
     expect(seen).toEqual([['https://p.example', true], [null, false]]);
   });
 
-  // The phone's LAN address (DEMO_PHONE_IP) and the tailnet one are the gateway's only non-loopback
-  // listeners; a client there must not choose the RP ID nor speak for a TLS front (review M4).
-  const lanIp = Object.values(networkInterfaces()).flat().find((i) => i?.family === 'IPv4' && !i.internal)?.address;
-  it.skipIf(lanIp === undefined)('a non-loopback client adopts nothing and its X-Forwarded-* headers are dropped', async () => {
-    const upstream: (string | undefined)[] = [];
-    const api = await listen((req, res) => {
-      upstream.push(req.headers['x-forwarded-host'] as string | undefined);
-      res.end('ok');
+  it('review M2: a failed restart is retried on the next page load, and a later host still cannot move a working one', async () => {
+    const restarts: string[] = [];
+    const logs: string[] = [];
+    let fail = true;
+    const a = createAdopter({
+      enabled: true,
+      restart: async (o) => {
+        restarts.push(o);
+        if (fail) throw new Error('the API did not come back');
+      },
+      log: (l) => void logs.push(l),
     });
+    await a.beforeApi('https://p.example', true);
+    expect(a.adopted()).toBeNull();
+    expect(logs.some((l) => l.includes('rp-adopt-failed'))).toBe(true);
+    fail = false;
+    await a.beforeApi('https://p.example', false);
+    expect(restarts).toEqual(['https://p.example']);
+    await a.beforeApi('https://p.example', true);
+    expect(restarts).toEqual(['https://p.example', 'https://p.example']);
+    expect(a.adopted()).toBe('https://p.example');
+    await a.beforeApi('https://q.example', true);
+    expect(a.adopted()).toBe('https://p.example');
+  });
+
+  it('review M2: loopback peers are 127.0.0.0/8 and ::1 only', () => {
+    for (const p of ['127.0.0.1', '127.1.2.3', '::1', '::ffff:127.0.0.1']) expect(isLoopbackPeer(p), p).toBe(true);
+    for (const p of ['10.0.0.2', '100.101.102.103', '192.168.1.5', '::ffff:10.0.0.2', '', undefined]) expect(isLoopbackPeer(p), String(p)).toBe(false);
+  });
+
+  it('review M2: the gateway offers a host for adoption only from a loopback peer that says X-Forwarded-Proto: https', async () => {
+    const api = await listen((_req, res) => res.end('ok'));
     const seen: [string | null, boolean][] = [];
     const { web, handle } = createGateway({
       api, relay: 1, node: 1, primary: 'http://localhost:4400', origins: new Set(['http://localhost:4400']),
       demo: (_q, s) => s.end(), beforeApi: async (o, page) => void seen.push([o, page]),
     });
-    const s = http.createServer(handle(web));
-    servers.push(s);
-    await new Promise<void>((r) => s.listen(0, lanIp, r));
-    const gw = (s.address() as AddressInfo).port;
-    const get = (headers: Record<string, string>) => fetch(`http://${lanIp}:${gw}/`, { headers }).then((r) => r.text());
-    expect(await get({ 'x-forwarded-host': 'p.example', 'x-forwarded-proto': 'https', accept: 'text/html' })).toBe('ok');
-    expect(await get({ host: 'mybox.local', accept: 'text/html' })).toBe('ok');
-    expect(seen).toEqual([[null, true], [null, true]]);
-    expect(upstream).toEqual([undefined, undefined]);
+    const gw = await listen(handle(web));
+    // A LAN or tailnet client (or a rebinding page) with any Host and no front: selfOriginOf calls it
+    // https, but it is never offered for adoption.
+    const get = (port: number, headers: Record<string, string>) => fetch(`http://127.0.0.1:${port}/`, { headers }).then((r) => r.text());
+    expect(await get(gw, { 'x-forwarded-host': 'x.attacker.example', accept: 'text/html' })).toBe('ok');
+    expect(await get(gw, { 'x-forwarded-host': 'x.attacker.example', 'x-forwarded-proto': 'http', accept: 'text/html' })).toBe('ok');
+    expect(await get(gw, { 'x-forwarded-host': 'p.example', 'x-forwarded-proto': 'https', accept: 'text/html' })).toBe('ok');
+    expect(seen).toEqual([[null, true], [null, true], ['https://p.example', true]]);
+
+    // The same request from a peer that is not loopback (the phone VM's or tailnet listener) is not offered.
+    const lan = Object.values(networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
+    if (lan !== undefined) {
+      const s = http.createServer(handle(web));
+      servers.push(s);
+      await new Promise<void>((r) => s.listen(0, lan, r));
+      const port = (s.address() as AddressInfo).port;
+      const body = await new Promise<string>((resolve, reject) => {
+        const r = http.request({ host: lan, port, path: '/', localAddress: lan, headers: { 'x-forwarded-host': 'p.example', 'x-forwarded-proto': 'https', accept: 'text/html' } }, (res) => {
+          let b = '';
+          res.on('data', (c) => (b += c));
+          res.on('end', () => resolve(b));
+        });
+        r.on('error', reject);
+        r.end();
+      });
+      expect(body).toBe('ok');
+      expect(seen.at(-1)).toEqual([null, true]);
+    }
   });
 });

@@ -9,7 +9,7 @@ import net from 'node:net';
 import type { Duplex } from 'node:stream';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { pendingIdOf } from './door-parse.js';
-import { fillSelf, isLoopbackPeer, isSelfOrigin, selfOriginOf, trustedHeaders } from './self-origin.js';
+import { fillSelf, forwardedHttps, isLoopbackPeer, isSelfOrigin, selfOriginOf } from './self-origin.js';
 
 export const NOTES_TAG = '<script src="/__demo/notes.js" defer></script>';
 /** Larger HTML than this is passed on untouched rather than held in memory. */
@@ -178,11 +178,11 @@ function fillInto(r: IncomingMessage, res: ServerResponse, out: IncomingHttpHead
 
 /** Hosts already logged as a request's own https origin (one line each, to see what a front sends). */
 const loggedSelf = new Set<string>();
-function logSelf(self: { http: string } | null, h: IncomingHttpHeaders): void {
+function logSelf(self: { http: string } | null, h: IncomingHttpHeaders, peer: string | undefined): void {
   if (self === null || !self.http.startsWith('https://') || loggedSelf.has(self.http) || loggedSelf.size > 50) return;
   loggedSelf.add(self.http);
   const pick = (k: string): string => String(h[k] ?? '');
-  console.log(JSON.stringify({ reason: 'self-origin', origin: self.http, host: pick('host'), xForwardedHost: pick('x-forwarded-host'), xForwardedProto: pick('x-forwarded-proto'), secFetchDest: pick('sec-fetch-dest'), secFetchSite: pick('sec-fetch-site') }));
+  console.log(JSON.stringify({ reason: 'self-origin', origin: self.http, peer: peer ?? '', host: pick('host'), xForwardedHost: pick('x-forwarded-host'), xForwardedProto: pick('x-forwarded-proto'), secFetchDest: pick('sec-fetch-dest'), secFetchSite: pick('sec-fetch-site') }));
 }
 
 export function createGateway(cfg: GatewayConfig): {
@@ -201,11 +201,6 @@ export function createGateway(cfg: GatewayConfig): {
   const node: Route = (url) => ({ port: cfg.node, path: url, node: true, api: false });
 
   const handle = (route: Route) => (req: IncomingMessage, res: ServerResponse): void => {
-    // X-Forwarded-* only from a loopback peer, for the demo pages too; and only a loopback peer may
-    // have its host adopted as the RP ID (review M4).
-    const local = isLoopbackPeer(req.socket.remoteAddress);
-    req.headers = trustedHeaders(req.headers, req.socket.remoteAddress);
-    const reqHeaders = req.headers;
     if (isDemoUrl(req.url ?? '/')) {
       if (route === web) cfg.demo(req, res);
       else {
@@ -215,14 +210,14 @@ export function createGateway(cfg: GatewayConfig): {
       return;
     }
     const t = route(req.url ?? '/');
-    const headers = { ...reqHeaders };
-    const self = selfOriginOf(reqHeaders);
-    logSelf(self, reqHeaders);
+    const headers = { ...req.headers };
+    const self = selfOriginOf(req.headers);
+    logSelf(self, req.headers, req.socket.remoteAddress);
     // The node proxy accepts one exact origin (the web build's): a request from another demo origin
     // is passed on as the primary one, and its CORS answer is given back to the origin that asked.
     // The request's own https origin (self-origin.ts) is one of the demo's, for the API too.
     const from = typeof headers.origin === 'string' ? headers.origin : null;
-    const own = from !== null && !cfg.origins.has(from) && isSelfOrigin(from, reqHeaders);
+    const own = from !== null && !cfg.origins.has(from) && isSelfOrigin(from, req.headers);
     const known = from !== null && ((t.node && cfg.origins.has(from)) || own);
     if (known) headers.origin = cfg.primary;
     const fill = t.api && req.method === 'GET' && self !== null && isAssetJs(t.path.split('?')[0] ?? '');
@@ -242,7 +237,11 @@ export function createGateway(cfg: GatewayConfig): {
       delete headers['if-range'];
       headers['accept-encoding'] = 'identity';
     }
-    const unplanned = local && self !== null && self.http.startsWith('https://') && !cfg.origins.has(self.http) ? self.http : null;
+    // Only a local TLS front (the preview pane's proxy, a tunnel client: a loopback peer that says
+    // X-Forwarded-Proto: https) may offer its host for the RP ID (review M2). A LAN or tailnet client,
+    // or a page that rebinds a name to the phone VM, can send any Host but is never adopted.
+    const viaLocalFront = isLoopbackPeer(req.socket.remoteAddress) && forwardedHttps(req.headers);
+    const unplanned = viaLocalFront && self !== null && self.http.startsWith('https://') && !cfg.origins.has(self.http) ? self.http : null;
     const go = (): void => {
       const up = http.request({ host: '127.0.0.1', port: t.port, path: t.path, method: req.method, headers }, (r) => {
         const out = { ...r.headers };
