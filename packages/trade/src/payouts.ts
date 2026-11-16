@@ -50,12 +50,38 @@ export interface PayoutFacts {
   buyerPayout: string;
   sellerRefund: string;
   feeWallet: string;
+  /**
+   * Lien recovery from the attested terms (`AttestedTerms.lienRecovery`; docs/lien-recovery.md):
+   * paid to the creditor out of the buyer's proceeds on a completed trade only. Absent: none.
+   * Network fee (owner 16 Nov, `wip/third-netfee-split`): if each receiving output pays an equal
+   * share, the creditor's output is a receiving output and pays one share too.
+   */
+  lienRecovery?: { address: string; amountAtomic: bigint };
 }
 
 function out(list: Payout[]): Payout[] {
   const kept = list.filter((p) => p.amountAtomic !== 0n);
   if (kept.length === 0) throw new RangeError('nothing-to-pay');
   return kept;
+}
+
+/**
+ * A lien recovery checked against the buyer's proceeds: positive, below the proceeds (the buyer
+ * always keeps something), to an address that is none of the trade's own. None: amount 0.
+ */
+function recoveryOf(r: { address: string; amountAtomic: bigint } | undefined, proceeds: bigint, own: readonly string[]): Payout {
+  if (r === undefined) return { address: '', amountAtomic: 0n };
+  if (typeof r !== 'object' || r === null || typeof r.address !== 'string' || r.address === '' || own.includes(r.address)) {
+    throw new RangeError('bad recovery address');
+  }
+  if (typeof r.amountAtomic !== 'bigint' || r.amountAtomic <= 0n || r.amountAtomic >= proceeds) throw new RangeError('bad recovery amount');
+  return { address: r.address, amountAtomic: r.amountAtomic };
+}
+
+/** The attested recovery as `payoutsFor` takes it (bigint), or undefined. */
+export function attestedRecovery(terms: Pick<AttestedTerms, 'lienRecovery'>): { address: string; amountAtomic: bigint } | undefined {
+  const r = terms.lienRecovery;
+  return r === undefined ? undefined : { address: r.address, amountAtomic: BigInt(r.amountAtomic) };
 }
 
 export function payoutsFor(f: PayoutFacts): Payout[] {
@@ -76,9 +102,11 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
       if (balance < f.sellerFundsAtomic) throw new RangeError('underfunded');
       const surplus = balance - f.sellerFundsAtomic;
       const toBuyer = f.poster === 'seller' ? f.amountAtomic : f.amountAtomic - f.feeAtomic;
+      const rec = recoveryOf(f.lienRecovery, toBuyer, addresses);
       return out([
-        { address: f.buyerPayout, amountAtomic: toBuyer },
+        { address: f.buyerPayout, amountAtomic: toBuyer - rec.amountAtomic },
         { address: f.feeWallet, amountAtomic: f.feeAtomic },
+        ...(rec.amountAtomic > 0n ? [rec] : []),
         { address: f.sellerRefund, amountAtomic: surplus },
       ]);
     }
@@ -124,9 +152,11 @@ export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWa
       const take = BigInt(terms.deal.takeAmountAtomic);
       const plan = escrowPlan({ amountAtomic: take, poster: terms.deal.poster });
       const toBuyer = terms.deal.poster === 'seller' ? take : take - plan.feeAtomic;
+      const rec = recoveryOf(attestedRecovery(terms), toBuyer, addresses);
       return out([
-        { address: terms.buyerPayout, amountAtomic: toBuyer },
+        { address: terms.buyerPayout, amountAtomic: toBuyer - rec.amountAtomic },
         { address: feeWallet, amountAtomic: plan.feeAtomic },
+        ...(rec.amountAtomic > 0n ? [rec] : []),
       ]);
     }
     case 'lapse-refund':
