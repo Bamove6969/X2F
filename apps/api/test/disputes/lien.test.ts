@@ -347,7 +347,13 @@ describe('review L2: liens stay dark until switched on (site_flags.liens_enabled
 
 describe('the records (migration 400)', () => {
   it('review L3: neither table can be truncated', async () => {
-    await expect(deps.db.query('truncate liens')).rejects.toMatchObject({ code: '42501' });
+    // Since 560 the recovery tables reference liens: a plain truncate is refused by the foreign
+    // keys (0A000), and a cascading one by the guards (42501).
+    await expect(deps.db.query('truncate liens')).rejects.toMatchObject({ code: expect.stringMatching(/^(42501|0A000)$/) });
+    await expect(deps.db.query('truncate liens cascade')).rejects.toMatchObject({ code: '42501' });
+    for (const t of ['lien_recoveries', 'lien_recovery_holds', 'lien_rate_requests']) {
+      await expect(deps.db.query(`truncate ${t}`), t).rejects.toMatchObject({ code: '42501' });
+    }
     await expect(deps.db.query('truncate fees_owed')).rejects.toMatchObject({ code: '42501' });
   });
 
@@ -424,8 +430,8 @@ describe('the records (migration 400)', () => {
   });
 });
 
-describe('a lien blocks trading while active (Task 25)', () => {
-  it('the debtor cannot take an offer: 409 lien; once suspended by their appeal, the lien no longer refuses', async () => {
+describe('owner option b (16 Nov 2026): a lien no longer blocks trading', () => {
+  it('the debtor may take an offer while the lien is active; the lien stays active', async () => {
     const { seller, code } = await disputed({ afterRefund: true, poster: 'buyer' });
     await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
     const poster = await trader();
@@ -433,12 +439,7 @@ describe('a lien blocks trading while active (Task 25)', () => {
     const body = { amountAtomic: '1000000000000', walletId: '00000000-0000-4000-8000-000000000000', centsPerXmr: '33000', fiatCents: '33000', methodId: 'ZELLE', currency: 'USD' };
     await relogin(seller);
     const take = await seller.browser.post(`/v1/offers/${offerId}/take`, body);
-    expect({ status: take.statusCode, error: errorOf(take) }).toEqual({ status: 409, error: 'lien' });
-    setNow(at(2 * H));
-    await appealDirect(deps, code, 'seller');
-    await relogin(seller);
-    const again = await seller.browser.post(`/v1/offers/${offerId}/take`, body);
-    expect(errorOf(again)).not.toBe('lien');
+    expect(errorOf(take)).not.toBe('lien');
+    expect(await hasActiveLien(deps.db, seller.id)).toBe(true);
   });
 });
-

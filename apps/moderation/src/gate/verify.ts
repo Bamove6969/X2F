@@ -2,7 +2,7 @@ import { verifyAuthenticationResponse, type AuthenticationResponseJSON } from '@
 import { normalizeTradeCode } from '@x2f/core';
 import type { Payout } from '@x2f/escrow';
 import { ESCROW_OUTCOMES, canonicalJson, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
-import { payoutsFor, type AttestedTerms } from '@x2f/trade';
+import { attestedRecovery, payoutsFor, type AttestedTerms } from '@x2f/trade';
 import type { GateState, PinnedCred } from './store.js';
 
 /**
@@ -160,6 +160,8 @@ export interface RecordedTerms {
    * that trade needs a second person (fails toward the two-person rule; lead default, see the report).
    */
   usdCents: bigint | null;
+  /** Lien recovery from this process's own attested terms (docs/lien-recovery.md); absent: none. */
+  lienRecovery?: { address: string; amountAtomic: bigint };
 }
 
 const ATOMIC_PER_XMR = 1_000_000_000_000n;
@@ -184,6 +186,7 @@ export function recordedTerms(a: {
     sellerRefund: a.terms.sellerRefund,
     feeWallet: a.feeWallet,
     usdCents,
+    ...(a.terms.lienRecovery !== undefined ? { lienRecovery: attestedRecovery(a.terms)! } : {}),
   };
 }
 
@@ -333,6 +336,8 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
         buyerPayout: r.recorded.buyerPayout,
         sellerRefund: r.recorded.sellerRefund,
         feeWallet: r.recorded.feeWallet,
+        // A release to the buyer completes the trade: the signed lien recovery is paid (payoutsFor).
+        ...(r.recorded.lienRecovery !== undefined ? { lienRecovery: r.recorded.lienRecovery } : {}),
       });
       settle = { payouts, winner };
     } catch {

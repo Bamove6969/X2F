@@ -194,7 +194,7 @@ describe('POST /v1/account/offers/status', () => {
     expect(await setStatus(q, [c], 'live')).toEqual([{ id: c, status: 'paused', refused: 'trading-hold' }]);
   });
 
-  it('turning all on with an active lien: every offer stays off, refused lien; turning off still works (J-06, review L6)', async () => {
+  it('owner option b (16 Nov 2026): turning all on with an active lien works (J-06 block lifted)', async () => {
     const p = await poster();
     const creditor = await trader();
     const a = await post(p);
@@ -204,8 +204,8 @@ describe('POST /v1/account/offers/status', () => {
      values ($1, $2, 1000, gen_random_uuid()::text, 1, 1, 'restitution', $3, $3)`,
       [p.id, creditor.id, deps.clock()],
     );
-    expect(await setStatus(p, 'all', 'live')).toEqual([{ id: a, status: 'paused', refused: 'lien' }]);
-    expect(await statuses(p.id)).toEqual({ [a]: 'paused' });
+    expect(await setStatus(p, 'all', 'live')).toEqual([{ id: a, status: 'live' }]);
+    expect(await statuses(p.id)).toEqual({ [a]: 'live' });
   });
 
   it('during an emergency stop turning off always succeeds and turning on is refused trading-paused', async () => {

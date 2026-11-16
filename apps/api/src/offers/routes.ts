@@ -29,7 +29,7 @@ import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
-import { ACTIVE_LIEN_SQL, hasActiveLien } from '../disputes/lien.js';
+import { LIEN_BLOCKS_SQL, lienBlocksTrading } from '../disputes/lien.js';
 import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -297,7 +297,7 @@ export const MARKET_PRICED = `o.price_mode = 'market'`;
  */
 const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
-  and not ${ACTIVE_LIEN_SQL('o.account_id')}
+  and not ${LIEN_BLOCKS_SQL('o.account_id')}
   and not ${recoveryHoldHidesSql('o.account_id')}
   and not coalesce((select f.trading_paused from site_flags f), true)`;
 
@@ -740,7 +740,7 @@ async function accountRefusal(client: Queryable, accountId: string, now: Date): 
   const held = await client.query('select 1 from trading_holds where account_id = $1 and lifted_at is null limit 1', [accountId]);
   if ((held.rowCount ?? 0) > 0) return 'trading-hold';
   // Task 25 (J-06): an active lien takes away every trading privilege until it is repaid.
-  if (await hasActiveLien(client, accountId)) return 'lien';
+  if (await lienBlocksTrading(client, accountId)) return 'lien';
   if ((await usableWallets(client, accountId, now)).length === 0) return 'no-wallet';
   return null;
 }
@@ -1106,7 +1106,7 @@ export function offerRoutes(app: FastifyInstance): void {
     const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean; lien: boolean; recovery: boolean }>(
       `select not coalesce((select f.trading_paused = false from site_flags f), false) as paused,
               exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held,
-              ${ACTIVE_LIEN_SQL('$1::uuid')} as lien,
+              ${LIEN_BLOCKS_SQL('$1::uuid')} as lien,
               ${recoveryHoldHidesSql('$1::uuid')} as recovery`,
       [accountId],
     );

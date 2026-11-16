@@ -1,4 +1,5 @@
 import { addressEnd } from '@x2f/accounts';
+import { reservedAtomic } from '../disputes/recovery.js';
 import { normalizeTradeCode } from '@x2f/core';
 import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -111,6 +112,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       counterpartyProblem: await counterpartyProblem(deps.db, t.code, other),
       cancelWaiting: await cancelWaiting(deps.db, t.code),
       paymentInstructions: row.method_instructions,
+      lienRecoveryAtomic: t.buyerId === me ? await reservedAtomic(deps.db, t.code) : null,
       // D-005: the File appeal button's deadline, only for the account owner or a member who can
       // both appeal and open the dispute page the button leads to (review S1, lead call 12 Nov:
       // File an appeal AND Answer the moderator).

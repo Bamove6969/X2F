@@ -93,6 +93,9 @@ interface RegisteredRow {
   method_instructions: string;
   buyer_payout: string | null;
   seller_refund: string | null;
+  /** Lien recovery reserved at take (docs/lien-recovery.md), while the trade's hold is open. */
+  recovery_address: string | null;
+  recovery_atomic: string | null;
 }
 
 /**
@@ -104,7 +107,9 @@ interface RegisteredRow {
  */
 const TERMS_COLUMNS = `t.poster, coalesce(t.grown_from_atomic, t.amount_atomic)::text as take_amount, t.locked_currency,
                 t.locked_cents_per_xmr::text as locked_cents_per_xmr, t.max_fiat_cents::text as max_fiat_cents,
-                t.pay_window_min, t.method_id, t.method_instructions, t.buyer_payout, t.seller_refund`;
+                t.pay_window_min, t.method_id, t.method_instructions, t.buyer_payout, t.seller_refund,
+                (select h.address from lien_recovery_holds h where h.trade_code = t.code and h.status = 'open') as recovery_address,
+                (select h.amount_atomic::text from lien_recovery_holds h where h.trade_code = t.code and h.status = 'open') as recovery_atomic`;
 
 /** The terms the moderation service must sign for this trade, from the trade record. */
 function termsOf(r: RegisteredRow): AttestedTerms {
@@ -124,6 +129,11 @@ function termsOf(r: RegisteredRow): AttestedTerms {
     payWindowMin: r.pay_window_min,
     buyerPayout: r.buyer_payout ?? '',
     sellerRefund: r.seller_refund ?? '',
+    // Lien recovery (owner 16 Nov 2026): signed only when the trade reserved one, so terms without
+    // it keep their exact shape and bytes.
+    ...(r.recovery_address !== null && r.recovery_atomic !== null
+      ? { lienRecovery: { address: r.recovery_address, amountAtomic: r.recovery_atomic } }
+      : {}),
   };
 }
 
@@ -132,7 +142,8 @@ function sameTerms(a: AttestedTerms, b: AttestedTerms): boolean {
     a.buyerPayout === b.buyerPayout && a.sellerRefund === b.sellerRefund && a.payWindowMin === b.payWindowMin &&
     a.deal.poster === b.deal.poster && a.deal.takeAmountAtomic === b.deal.takeAmountAtomic &&
     a.deal.currency === b.deal.currency && a.deal.centsPerXmr === b.deal.centsPerXmr && a.deal.maxFiatCents === b.deal.maxFiatCents &&
-    a.deal.methodId === b.deal.methodId && a.deal.instructionsSha256 === b.deal.instructionsSha256
+    a.deal.methodId === b.deal.methodId && a.deal.instructionsSha256 === b.deal.instructionsSha256 &&
+    a.lienRecovery?.address === b.lienRecovery?.address && a.lienRecovery?.amountAtomic === b.lienRecovery?.amountAtomic
   );
 }
 

@@ -2,6 +2,7 @@ import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import {
   GIFT_CARD_TERMS_VERSION,
   LAUNCH_TRADE_CAP_USD_CENTS,
+  escrowPlan,
   fiatCents,
   newTrade,
   pickTier,
@@ -19,7 +20,9 @@ import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
-import { ACTIVE_LIEN_SQL, hasActiveLien } from '../disputes/lien.js';
+import { LIEN_BLOCKS_SQL, lienBlocksTrading } from '../disputes/lien.js';
+import { reserveRecovery } from '../disputes/recovery.js';
+import { appendLog } from '../log/append.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -146,7 +149,7 @@ interface OfferRow {
 const OFFER_SQL = `select o.account_id, o.side, o.amount_unit, o.status,
     (a.kind = 'trader' and a.disabled_at is null
       and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
-      and not ${ACTIVE_LIEN_SQL('o.account_id')}
+      and not ${LIEN_BLOCKS_SQL('o.account_id')}
       and not ${recoveryHoldHidesSql('o.account_id')}) as poster_ok
   from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`;
 
@@ -334,7 +337,7 @@ export function takeRoutes(app: FastifyInstance): void {
         await c.query<{ paused: boolean | null; held: boolean; lien: boolean }>(
           `select (select trading_paused from site_flags for share) as paused,
                   exists (select 1 from trading_holds where account_id = $1 and lifted_at is null) as held,
-                  ${ACTIVE_LIEN_SQL('$1::uuid')} as lien`,
+                  ${LIEN_BLOCKS_SQL('$1::uuid')} as lien`,
           [takerId],
         )
       ).rows[0]!;
@@ -433,7 +436,22 @@ export function takeRoutes(app: FastifyInstance): void {
       // Task 18: a team member's take is in the account owner's audit log, in this transaction
       // (unreachable until Task 42 lifts `ownerDeviceOnly`; kept so the log is complete then).
       await auditMember(c, req.auth, { action: 'trade-taken', tradeCode: t.code, detail: { offerId: id } }, now);
-      return t;
+      // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): a buyer who owes a lien has part
+      // of this trade's proceeds reserved for the creditor; the signed terms will carry it. The
+      // buyer's proceeds are what a release pays them (amount, or amount − fee on a buyer's ad).
+      const plan = escrowPlan({ amountAtomic: t.amountAtomic, poster });
+      const recovery = await reserveRecovery(c, {
+        code: t.code, buyerId: t.buyerId, sellerId: t.sellerId, now,
+        proceedsAtomic: poster === 'seller' ? t.amountAtomic : t.amountAtomic - plan.feeAtomic,
+      });
+      if (recovery !== null) {
+        // Last (append.ts M2): nothing is awaited after the log lock but the commit.
+        await appendLog(c, {
+          at: now, actor: { kind: 'system' }, tradeCode: t.code, action: 'lien.recovery-reserved',
+          detail: { lienId: recovery.lienId, amountAtomic: recovery.amountAtomic.toString() },
+        });
+      }
+      return { ...t, recovery };
     });
 
     // "<display name> accepted your offer" to the poster, after the commit and outside the
@@ -447,6 +465,8 @@ export function takeRoutes(app: FastifyInstance): void {
     return {
       code: trade.code, centsPerXmr: trade.lockedRate.centsPerXmr.toString(), fiatCents: trade.fiatCents.toString(),
       maxFiatCents: trade.maxFiatCents.toString(),
+      // Only to a taker who is the buyer (it is their proceeds); their device confirms it (ConfirmedDeal).
+      ...(trade.recovery !== null && trade.buyerId === takerId ? { lienRecoveryAtomic: trade.recovery.amountAtomic.toString() } : {}),
     };
   });
 
@@ -477,7 +497,7 @@ export function takeRoutes(app: FastifyInstance): void {
       await c.query('select id from accounts where id = $1 for update', [me]);
       const held = await c.query('select 1 from trading_holds where account_id = $1 and lifted_at is null', [me]);
       if ((held.rowCount ?? 0) > 0) throw new ApiError(409, 'trading-hold');
-      if (await hasActiveLien(c, me)) throw new ApiError(409, 'lien');
+      if (await lienBlocksTrading(c, me)) throw new ApiError(409, 'lien');
       // Plan 5 Task 3: the poster rates their last trade before setting up a new one (P5-A4).
       await assertNoPendingReview(c, me, now);
       await c.query('select id from wallets where id = $1 and account_id = $2 for share', [walletId, me]);

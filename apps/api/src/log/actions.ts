@@ -124,6 +124,14 @@ export const LOG_ACTIONS = {
   'lien.voided': { lienId: 'id' },
   'lien.repaid': { lienId: 'id', repaymentCode: 'id' },
   'fee.owed': { accountId: 'uuid', amountAtomic: 'amount' },
+  // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md). No reason text: it stays in
+  // lien_rate_requests (Task 3: details never carry staff notes).
+  'lien.recovery-reserved': { lienId: 'id', amountAtomic: 'amount' },
+  'lien.recovered': { lienId: 'id', amountAtomic: 'amount', remainingAtomic: 'amount' },
+  'lien.recovery-released': { lienId: 'id', amountAtomic: 'amount' },
+  'lien.rate-proposed': { lienId: 'id', requestId: 'id', rateBps: 'number' },
+  'lien.rate-approved': { lienId: 'id', requestId: 'id', rateBps: 'number' },
+  'lien.rate-rejected': { lienId: 'id', requestId: 'id' },
   // Recommended account limits (Task 26).
   'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id' },
   'limits.decided': { recId: 'id', approved: 'bool' },

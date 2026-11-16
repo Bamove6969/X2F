@@ -13,15 +13,16 @@ import { appendLog } from '../log/append.js';
  * the appeal route) cannot skip it, and a change that throws writes no lien either. What changes
  * comes from @x2f/staff `lienSteps`; this file only stores it and logs each step.
  *
- * A lien's effect (Task 25): while `active` its debtor cannot trade: no offer goes live, the
- * debtor's live offers are hidden from every list (they come back by themselves when it lifts), no
- * take, no new trade set up (409 `lien`, `ACTIVE_LIEN_SQL`). Trades already funded still finish,
- * as under a freeze. A `suspended` lien (the debtor's appeal is pending) has no effect.
+ * A lien's effect (owner 16 Nov 2026, option b; docs/lien-recovery.md): an active lien no longer
+ * blocks trading. The debtor keeps trading and each trade in which they receive XMR pays part of
+ * their proceeds to the creditor (disputes/recovery.ts) until the lien is repaid. A moderator's
+ * freeze or ban (`trading_holds`, bans) is separate and unchanged. `LIEN_BLOCKS_SQL` and
+ * `lienBlocksTrading` stay the one choke point the trading guards read (409 `lien`), now false, so
+ * an owner answer to NEEDS_OWNER_SELLER_DEBTOR (e.g. block selling only) has one place to change.
  *
- * NEEDS_REPAYMENT_TRADE: Task 25's repayment trade (an escrow trade, seller = debtor, buyer =
- * creditor, the lien's amount, no fiat leg, no fee of its own per D-063) is not built; nothing sets
- * a lien `repaid` through one yet. The seller's accepted tx proof of `seller-sends-xmr` repays a
- * lien for the XMR alone (`complied`; its route is NEEDS_TASK_12_TX_PROOF).
+ * Task 25's repayment trade (NEEDS_REPAYMENT_TRADE) is replaced by recovery from the debtor's
+ * trades. The seller's accepted tx proof of `seller-sends-xmr` repays a lien for the XMR alone
+ * (`complied`; its route is NEEDS_TASK_12_TX_PROOF).
  * NEEDS_FEE_OWED_COLLECTION: `fees_owed` rows are written; collecting them from the debtor's next
  * settled trades (Revision 2026-10-29c: `feeOwedAtomic` in the signed terms, checked by the gate and
  * every app) is not built.
@@ -37,7 +38,18 @@ export const LIENS_ON_SQL = `coalesce((select f.liens_enabled from site_flags f)
 export const ACTIVE_LIEN_SQL = (p: string) =>
   `(${LIENS_ON_SQL} and exists (select 1 from liens l where l.debtor_account_id = ${p} and l.status = 'active'))`;
 
-/** Whether the account has an active lien (the trading guard's 409 `lien`). */
+/**
+ * SQL: whether account `p`'s liens block its trading (the guards' 409 `lien` and the LISTED
+ * filters). Owner option b (16 Nov 2026): never. `p` is unused while that holds.
+ */
+export const LIEN_BLOCKS_SQL = (_p: string) => `false`;
+
+/** Whether the account's liens block its trading (owner option b: never; see LIEN_BLOCKS_SQL). */
+export async function lienBlocksTrading(_q: Queryable, _accountId: string): Promise<boolean> {
+  return false;
+}
+
+/** Whether the account has an active lien that binds (liens switched on): recovery applies. */
 export async function hasActiveLien(q: Queryable, accountId: string): Promise<boolean> {
   const { rows } = await q.query<{ x: boolean }>(`select ${ACTIVE_LIEN_SQL('$1::uuid')} as x`, [accountId]);
   return rows[0]?.x === true;
