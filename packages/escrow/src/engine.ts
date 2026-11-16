@@ -122,10 +122,16 @@ export interface EscrowSession {
   /**
    * Decode and check a tx set without signing. Any failure is EscrowError('payout-mismatch'), except
    * a daemon that gives no fee estimate to bound the network fee by: EscrowError('daemon-unavailable').
+   * Resolves with the network fee bound it checked against (MAX_NETWORK_FEE at most); with `maxFee`,
+   * that bound is used and the daemon is not asked.
    */
-  checkRelease(txSet: string, expected: Payout[]): Promise<void>;
-  /** cosign's first half: check, then sign. Nothing is signed if the check fails. */
-  signRelease(txSet: string, expected: Payout[]): Promise<{ signedHex: string; txHash: string }>;
+  checkRelease(txSet: string, expected: Payout[], maxFee?: bigint): Promise<bigint>;
+  /**
+   * cosign's first half: check, then sign. Nothing is signed if the check fails. `maxFee` is the
+   * bound the earlier checkRelease of this set resolved with (review M3): the re-check then asks
+   * the daemon nothing. Without it, the bound is read again (a state saved before it was kept).
+   */
+  signRelease(txSet: string, expected: Payout[], maxFee?: bigint): Promise<{ signedHex: string; txHash: string }>;
   /** cosign's second half: broadcast a signed set; returns its tx hash. */
   submit(signedHex: string): Promise<string>;
   /** Where the daemon has this tx. Throws EscrowError('daemon-unavailable') on a timeout. */

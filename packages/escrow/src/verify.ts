@@ -20,6 +20,22 @@ export const MAX_NETWORK_FEE = 10_000_000_000n;
  */
 export const FEE_ESTIMATE_MULTIPLIER = 4n;
 
+/**
+ * The least the fee bound ever is, whatever the daemon says: 0.0002 XMR (review lead-escrow-harden
+ * M2). A node that reports a near-zero fee would otherwise push the bound under any real fee and
+ * make every honest release refused. An honest mainnet sweep at priority 2 is about 0.00013 XMR, so
+ * the floor never refuses one; it is the most a builder can make the payout-0 party pay when the
+ * co-signer's node lies low.
+ */
+// OWNER: value
+export const FEE_BOUND_FLOOR = 200_000_000n;
+
+/**
+ * The largest quantization mask taken from the daemon (review M2): monerod's is 10^4. A larger one
+ * is capped here, so a lying mask cannot round the bound up to the 0.01 XMR backstop.
+ */
+export const MAX_QUANTIZATION_MASK = 100_000_000n;
+
 /** Ring size, fixed by consensus since v0.18 (HF 15). */
 const RING_SIZE = 16;
 
@@ -80,18 +96,23 @@ export function parseFeeEstimate(body: unknown): FeeEstimate {
   const low = positive(r.fee);
   const normal = Array.isArray(r.fees) && r.fees.length >= 2 ? positive(r.fees[1]) : low === null ? null : 4n * low;
   if (low === null || normal === null) throw new EscrowError('daemon-unavailable', 'fee estimate: malformed answer');
-  return { perByteNormal: normal, quantizationMask: positive(r.quantization_mask) ?? 1n };
+  const mask = positive(r.quantization_mask) ?? 1n;
+  return { perByteNormal: normal, quantizationMask: mask < MAX_QUANTIZATION_MASK ? mask : MAX_QUANTIZATION_MASK };
 }
 
 /**
  * The highest network fee a co-signer accepts for a sweep of `inputs` escrow outputs to `outputs`
  * outputs: FEE_ESTIMATE_MULTIPLIER x the normal-priority fee for its estimated weight (rounded up
- * as the daemon rounds), never above MAX_NETWORK_FEE.
+ * as the daemon rounds, with the mask capped at MAX_QUANTIZATION_MASK), never below
+ * FEE_BOUND_FLOOR and never above MAX_NETWORK_FEE (review M2). A daemon that lies high can still
+ * lift it up to MAX_NETWORK_FEE through the per-byte fee: a cap relative to the payout is an open
+ * owner question.
  */
 export function feeCeiling(estimate: FeeEstimate, inputs: number, outputs: number): bigint {
-  const mask = estimate.quantizationMask;
+  const mask = estimate.quantizationMask < MAX_QUANTIZATION_MASK ? estimate.quantizationMask : MAX_QUANTIZATION_MASK;
   const normal = ((estimateTxWeight(inputs, outputs) * estimate.perByteNormal + mask - 1n) / mask) * mask;
-  const bound = FEE_ESTIMATE_MULTIPLIER * normal;
+  const est = FEE_ESTIMATE_MULTIPLIER * normal;
+  const bound = est > FEE_BOUND_FLOOR ? est : FEE_BOUND_FLOOR;
   return bound < MAX_NETWORK_FEE ? bound : MAX_NETWORK_FEE;
 }
 

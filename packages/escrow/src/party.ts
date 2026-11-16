@@ -50,6 +50,12 @@ interface ReleaseState {
   committed?: boolean;
   phase: ReleasePhase;
   txSet?: string;
+  /**
+   * Co-signer: the network fee bound its check of `txSet` resolved with, as a decimal string (the
+   * state is sealed as JSON), kept with the commitment so the re-check before signing is offline
+   * and the same (review lead-escrow-harden M3). Absent in states saved before it: read again.
+   */
+  feeCeiling?: string;
   /** Builder: the secret key of the tx in `txSet` (its wallet stores none), sent with spend.info (review I1). */
   txKey?: string;
   signedHex?: string;
@@ -591,6 +597,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     rel.committed = false;
     delete rel.txSet;
     delete rel.txKey;
+    delete rel.feeCeiling;
     if (rel.attempt > MAX_ATTEMPT) {
       // Give up on this outcome only; the party stays alive and can settle another.
       rel.phase = 'exhausted';
@@ -692,11 +699,12 @@ export function runParty(a: PartyArgs): PartyHandle {
     const exp = theirs(exportKey(rel));
     const tx = theirs(txSetKey(rel));
     if (rel.phase === 'export' && exp && tx) {
+      let bound: bigint;
       try {
         await importPeer(exp);
         await daemon.sync();
         // Check before committing to this set, so a garbage set cannot lock the outcome.
-        await session.checkRelease(String(tx.payload.txSet), o.to);
+        bound = await session.checkRelease(String(tx.payload.txSet), o.to);
       } catch (e) {
         if (!(e instanceof EscrowError) || !RETRYABLE.has(e.code)) throw e;
         ignored(`cosign-${e.code}`);
@@ -706,11 +714,13 @@ export function runParty(a: PartyArgs): PartyHandle {
       rel.phase = 'cosigning';
       rel.committed = true;
       rel.txSet = String(tx.payload.txSet);
+      rel.feeCeiling = bound.toString();
       await persist(); // from here on, never sign any other set for this trade
     }
     if (rel.phase === 'cosigning' && rel.txSet) {
       try {
-        const { signedHex, txHash } = await session.signRelease(rel.txSet, o.to);
+        const stored = rel.feeCeiling !== undefined && /^[1-9][0-9]*$/.test(rel.feeCeiling) ? BigInt(rel.feeCeiling) : undefined;
+        const { signedHex, txHash } = await session.signRelease(rel.txSet, o.to, stored);
         rel.phase = 'signed';
         rel.signedHex = signedHex;
         rel.txHash = txHash;

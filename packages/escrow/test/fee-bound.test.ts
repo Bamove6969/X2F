@@ -99,7 +99,7 @@ describe('checkRelease: network fee bound by the daemon estimate', () => {
       for (const perByte of [20_000n, 80_000n]) {
         const r = release(amount, quantized(perByte));
         const calls = stubDaemon({ jsonrpc: '2.0', id: '0', result: MAINNET });
-        await expect(walletFor(r.tx, r.balance).checkRelease('set', r.expected)).resolves.toBeUndefined();
+        await expect(walletFor(r.tx, r.balance).checkRelease('set', r.expected)).resolves.toBeTypeOf('bigint');
         expect(calls).toEqual([{ url: 'http://node.test/json_rpc', body: expect.objectContaining({ method: 'get_fee_estimate' }) }]);
       }
     }
@@ -108,7 +108,7 @@ describe('checkRelease: network fee bound by the daemon estimate', () => {
   it('accepts an honest release at the elevated priority (3) too', async () => {
     const r = release(XMR / 20n, quantized(320_000n));
     stubDaemon({ jsonrpc: '2.0', id: '0', result: MAINNET });
-    await expect(walletFor(r.tx, r.balance).checkRelease('set', r.expected)).resolves.toBeUndefined();
+    await expect(walletFor(r.tx, r.balance).checkRelease('set', r.expected)).resolves.toBeTypeOf('bigint');
   });
 
   it('refuses a fee far above the network rate even under the absolute 0.01 XMR cap', async () => {
@@ -132,7 +132,7 @@ describe('checkRelease: network fee bound by the daemon estimate', () => {
     const fee = ((3_800n * 80_000n + 9_999n) / 10_000n) * 10_000n;
     const r = release(XMR / 20n, fee);
     stubDaemon({ jsonrpc: '2.0', id: '0', result: MAINNET });
-    await expect(walletFor(r.tx, r.balance, 3).checkRelease('set', r.expected)).resolves.toBeUndefined();
+    await expect(walletFor(r.tx, r.balance, 3).checkRelease('set', r.expected)).resolves.toBeTypeOf('bigint');
   });
 
   it('keeps 0.01 XMR as the backstop when the estimate is high', async () => {
@@ -159,7 +159,7 @@ describe('checkRelease: network fee bound by the daemon estimate', () => {
   it('without fees per priority, uses 4 x the base fee as the normal rate', async () => {
     const r = release(XMR / 20n, quantized(80_000n));
     stubDaemon({ result: { status: 'OK', fee: 20_000, quantization_mask: 10_000 } });
-    await expect(walletFor(r.tx, r.balance).checkRelease('set', r.expected)).resolves.toBeUndefined();
+    await expect(walletFor(r.tx, r.balance).checkRelease('set', r.expected)).resolves.toBeTypeOf('bigint');
     const over = release(XMR / 20n, 9_000_000_000n);
     stubDaemon({ result: { status: 'OK', fee: 20_000, quantization_mask: 10_000 } });
     expect((await refusal(walletFor(over.tx, over.balance).checkRelease('set', over.expected))).code).toBe('payout-mismatch');

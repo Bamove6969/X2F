@@ -404,8 +404,10 @@ export class MoneroMultisigSession implements EscrowSession {
    * spends every output the escrow holds (inputs = the balance), and nothing else ever spends them,
    * so the count of the escrow's outputs is the input count (an upper bound at worst, which only
    * raises the bound); outputs are the payouts, at least 2 (wallet2 adds a dummy to a 1-output tx).
+   * Resolves with the bound it checked against. With `maxFee` (the bound of an earlier check of
+   * the same set, review M3) the daemon is not asked: that bound is used, under MAX_NETWORK_FEE.
    */
-  async checkRelease(txSet: string, expected: Payout[]): Promise<void> {
+  async checkRelease(txSet: string, expected: Payout[], maxFee?: bigint): Promise<bigint> {
     let txs: DescribedTx[];
     try {
       txs = (await this.wallet.describeMultisigTxSet(txSet)).getTxs().map(describe);
@@ -413,9 +415,14 @@ export class MoneroMultisigSession implements EscrowSession {
       throw new EscrowError('payout-mismatch', 'tx set could not be decoded');
     }
     const balance = await this.sweepableBalance();
-    const inputs = Math.max(1, (await this.wallet.getOutputs({ accountIndex: 0 })).length);
-    const outputs = Math.max(2, txs[0]?.destinations.length ?? 0);
-    checkTxSet(txs, expected, balance, feeCeiling(await this.feeEstimate(), inputs, outputs));
+    let bound = maxFee;
+    if (bound === undefined) {
+      const inputs = Math.max(1, (await this.wallet.getOutputs({ accountIndex: 0 })).length);
+      const outputs = Math.max(2, txs[0]?.destinations.length ?? 0);
+      bound = feeCeiling(await this.feeEstimate(), inputs, outputs);
+    }
+    checkTxSet(txs, expected, balance, bound);
+    return bound;
   }
 
   /**
@@ -446,8 +453,9 @@ export class MoneroMultisigSession implements EscrowSession {
     return parseFeeEstimate(body);
   }
 
-  async signRelease(txSet: string, expected: Payout[]): Promise<{ signedHex: string; txHash: string }> {
-    await this.checkRelease(txSet, expected);
+  async signRelease(txSet: string, expected: Payout[], maxFee?: bigint): Promise<{ signedHex: string; txHash: string }> {
+    // Review M3: the co-signer passes the bound of its first check, so this re-check is offline.
+    await this.checkRelease(txSet, expected, maxFee);
     // Sign the exact hex that was checked; never re-fetch or rebuild it. In monero v0.18,
     // signing rebuilds the tx from the same construction data that describe decoded and
     // compares it with the stored tx, so what was checked is what gets signed.
