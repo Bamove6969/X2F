@@ -90,7 +90,7 @@ export interface PolicyContext {
   trade: PolicyTrade;
   deal: PolicyDeal;
   /** The addresses each side signed in its trade.terms signal. */
-  signedTerms: { payout: string; refund: string };
+  signedTerms: { payout: string; refund: string; lienRecovery?: { address: string; amountAtomic: bigint } };
   /**
    * Haveno review finding 2: the moderation service's ruling statement as the API served it
    * (`statement`, `sig`: untrusted, verified here), with what this device knows itself: the trade
@@ -144,6 +144,8 @@ function expected(kind: SettleKind | RulingKind, c: PolicyContext): Payout[] {
     buyerPayout: c.signedTerms.payout,
     sellerRefund: c.signedTerms.refund,
     feeWallet: c.trade.feeWallet,
+    // Lien recovery (docs/lien-recovery.md): a completed trade pays it from the buyer's proceeds.
+    ...(c.signedTerms.lienRecovery !== undefined ? { lienRecovery: c.signedTerms.lienRecovery } : {}),
   });
 }
 

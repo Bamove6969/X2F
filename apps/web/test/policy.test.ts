@@ -405,3 +405,36 @@ describe('outcomeFor', () => {
     expect(outcomeFor('release', { ...b, balance: 1n })).toBeNull();
   });
 });
+
+// Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): the moderator-signed terms carry the
+// buyer's recovery; a release pays it to the creditor, and only exactly that set is co-signed.
+describe('lien recovery in the signed terms', () => {
+  const CREDITOR = '4CreditorPayoutAddress';
+  const REC = { address: CREDITOR, amountAtomic: 100_000_000_000n };
+  const withRec = (role: 'buyer' | 'seller'): PolicyContext => {
+    const c = ctx(role, { state: 'paid', paidAt: '2026-11-16T12:00:00.000Z' });
+    return { ...c, signedTerms: { ...c.signedTerms, lienRecovery: REC } };
+  };
+  const recSet = (c: PolicyContext): Payout[] =>
+    payoutsFor({ ...(() => { const p = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }); return { feeAtomic: p.feeAtomic, sellerFundsAtomic: p.sellerFundsAtomic }; })(),
+      kind: 'release', amountAtomic: AMOUNT, poster: 'seller', balanceAtomic: c.balance, buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, lienRecovery: REC });
+
+  it('the buyer co-signs the release that pays the signed recovery, and nothing else', () => {
+    const c = withRec('buyer');
+    const to = recSet(c);
+    expect(to[2]).toEqual({ address: CREDITOR, amountAtomic: REC.amountAtomic });
+    expect(cosignPolicy(c, out(to, 'seller', 'buyer'))).toBe(true);
+    // The plain release (no recovery) does not match the signed terms.
+    expect(cosignPolicy(c, out(expected('release', c), 'seller', 'buyer'))).toBe(false);
+    // One atomic unit more to the creditor, or another address: refused.
+    const more = to.map((p, i) => (i === 2 ? { ...p, amountAtomic: p.amountAtomic + 1n } : i === 0 ? { ...p, amountAtomic: p.amountAtomic - 1n } : p));
+    expect(cosignPolicy(c, out(more, 'seller', 'buyer'))).toBe(false);
+    const elsewhere = to.map((p, i) => (i === 2 ? { ...p, address: ATTACKER } : p));
+    expect(cosignPolicy(c, out(elsewhere, 'seller', 'buyer'))).toBe(false);
+  });
+
+  it('no recovery in the signed terms: a set with a recovery output is refused', () => {
+    const c = ctx('buyer', { state: 'paid', paidAt: '2026-11-16T12:00:00.000Z' });
+    expect(cosignPolicy(c, out(recSet(c), 'seller', 'buyer'))).toBe(false);
+  });
+});

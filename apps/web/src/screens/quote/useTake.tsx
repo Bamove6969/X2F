@@ -120,7 +120,12 @@ export function useTake(
           const at = { currency: confirmed.deal.currency, centsPerXmr: taken.centsPerXmr };
           const seenMax = tradeFiatLimits(a.range, at).maxFiatCents;
           const maxFiatCents = taken.maxFiatCents < seenMax ? taken.maxFiatCents : seenMax;
-          const locked: ConfirmedTrade = { ...confirmed, deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr, maxFiatCents } };
+          const locked: ConfirmedTrade = {
+            ...confirmed,
+            deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr, maxFiatCents },
+            // Lien recovery: the buyer's device accepts only the signed terms that carry this amount.
+            ...(confirmed.role === 'buyer' && taken.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: taken.lienRecoveryAtomic } : {}),
+          };
           storeConfirmed(taken.code, locked);
           void navigate(`/trade/${encodeURIComponent(taken.code)}`, { state: { confirmed: locked } });
         },

@@ -179,6 +179,8 @@ export interface Taken {
    * trade past the launch cap (launch-rules review F1). It is the deal's `maxFiatCents`.
    */
   maxFiatCents: bigint;
+  /** Lien recovery (owner 16 Nov 2026): what this buyer's proceeds pay to the person they owe; absent = none. */
+  lienRecoveryAtomic?: bigint;
 }
 
 /** `POST /v1/offers/:id/take` (Task 5) → the new trade's code, the rate and total that locked, and its growth ceiling. */
@@ -187,5 +189,6 @@ export async function takeOffer(offerId: string, body: TakeRequest): Promise<Tak
   return {
     code: str(o, 'code', 'take'), centsPerXmr: big(o, 'centsPerXmr', 'take'), fiatCents: big(o, 'fiatCents', 'take'),
     maxFiatCents: big(o, 'maxFiatCents', 'take'),
+    ...(o.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: big(o, 'lienRecoveryAtomic', 'take') } : {}),
   };
 }

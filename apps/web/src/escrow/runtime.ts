@@ -56,6 +56,12 @@ export interface ConfirmedTrade {
   role: 'buyer' | 'seller';
   ownAddress: string;
   deal: Deal;
+  /**
+   * Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): the part of the buyer's proceeds this
+   * trade pays to the person they owe, as the take (or the poster's own trade view) told the buyer.
+   * Buyer only; absent = none. Kept out of `deal`, which both sides sign and compare.
+   */
+  lienRecoveryAtomic?: bigint;
 }
 
 /**
@@ -529,6 +535,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           ownAddress: c.ownAddress,
           theirAddress: null,
           deal: { ...c.deal },
+          ...(c.role === 'buyer' && typeof c.lienRecoveryAtomic === 'bigint' ? { lienRecoveryAtomic: c.lienRecoveryAtomic } : {}),
           theirDeal: null,
           sizeAtomic: c.deal.takeAmountAtomic,
           paidSeen: false,
@@ -608,7 +615,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           att.sig,
           deps.config.modSigningPublic,
           {
-            trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress,
+            trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic,
+            // The buyer accepts only the lien recovery it confirmed (none: none), @x2f/trade verifyAttestation.
+            deal: this.rec.lienRecoveryAtomic !== undefined ? { ...this.rec.deal, lienRecoveryAtomic: this.rec.lienRecoveryAtomic } : this.rec.deal,
+            ownAddress: this.rec.ownAddress,
             payWindowMin: shown,
             methodId: view0.methodId,
           },
@@ -753,7 +763,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         balance,
         trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt, settling: v.settling },
         deal: { poster: r.deal.poster, amountAtomic: size },
-        signedTerms: { payout, refund },
+        signedTerms: {
+          payout,
+          refund,
+          // The lien recovery the moderation service signed (verified attestation only; never the API's view).
+          ...(this.attested?.lienRecovery !== undefined ? { lienRecovery: { address: this.attested.lienRecovery.address, amountAtomic: BigInt(this.attested.lienRecovery.amountAtomic) } } : {}),
+        },
       };
     }
 
