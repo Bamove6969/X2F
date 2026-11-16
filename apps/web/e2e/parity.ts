@@ -253,6 +253,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   ],
   SetupPgpKey: [
     {
+      text: 'Set up your account',
+      why: 'Sign-up round 3 (signup-r3-spec-2026-11-13.md, owner 13 Nov 2026): the /setup/pgp-key header reads "Adding your public PGP key".',
+    },
+    {
       text: 'Public key -----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
       why: 'The board\'s example key, shortened with "…", is not a key: the key check (type, expiry, fingerprint) needs a real pasted key, so the page shows the key the test pastes (Task 28).',
     },
@@ -266,6 +270,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
   ],
   SetupPgpChallenge: [
+    {
+      text: 'Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.',
+      why: 'Sign-up round 3 (owner 13-16 Nov 2026): PGPony is the PGP app recommended on Android, so the step reads "Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it."',
+    },
     {
       text: '4:12',
       why: 'The inner value of "Expires in 4:12": the page\'s masked Countdown already stands for it in that sentence, and one masked element covers one board text (Task 28).',
