@@ -1,7 +1,12 @@
 # Lien recovery (owner rules, 16 Nov 2026)
 
-Status: design for `wip/third-lien-recovery` (on the lead's dispute stack). Lead security review
-needed before liens are switched on (`site_flags.liens_enabled`).
+Status: built on `wip/third-lien-recovery` (on the lead's dispute stack), except where marked
+NEEDS_*. Lead security review needed before liens are switched on (`site_flags.liens_enabled`).
+
+Built: `@x2f/staff` lienRecovery.ts (arithmetic, rate request rules); `@x2f/trade` optional
+`lienRecovery` in the attested terms and `payoutsFor`/`sweepMinimums`; migration 560; the API's
+reserve at take, record on settle, staff rate routes (`lien-rate` key tap), `GET /v1/account/liens`;
+the moderation service signs and pays it; the web devices verify it and Settings → What you owe.
 
 ## The owner's rules
 
@@ -60,7 +65,9 @@ also checks the attested recovery equals the one the buyer confirmed at take (`C
 
 **Recorded only on evidence (rule 4).** The ledger row is written when the trade reaches `released`
 through the chain-observed `settled` event, never on "I've paid" or a claim. A cancel or refund
-releases the hold.
+releases the hold. The same rule for the lien code: `complied` (which repays a restitution lien) is
+a system event only (tested), and its future route (NEEDS_TASK_12_TX_PROOF) must emit it only after
+the tx proof is checked on chain: the seller's "sent" claim and uploaded evidence are not receipt.
 
 **Network fee (compatibility with `wip/third-netfee-split`).** Here the network fee stays on payout 0
 (the buyer). If the equal-share rule lands, the creditor's output should be marked
@@ -86,13 +93,18 @@ As built: (c), with tripwire `NEEDS_OWNER_SELLER_DEBTOR` (API test).
   needs a reason; creates a pending request (logged `lien.rate-proposed`).
 - `POST /v1/staff/liens/:id/rate/:req/approve|reject` (`rulings.approve`, a senior or the owner, never
   the proposer): logged `lien.rate-approved` / `lien.rate-rejected`. Changing a money rate is a
-  money-affecting staff action; the key tap belongs on approve (NEEDS_LIEN_RATE_TAP: the gate does not
-  know this tap kind yet, and the rate is enforced by the API at take, not by the gate).
+  money-affecting staff action, so approve takes a `lien-rate` key tap bound to the lien, the
+  request and the rate (an API-only tap kind, like `set-grants`: the rate is applied by the API at
+  take, not by the moderation gate). NEEDS_STAFF_WEB_LIEN_RATE: the staff site's screen and its
+  KeyTapDialog caller are not built.
 
 ## Trader view
 
 `GET /v1/account/liens`: as debtor, each active lien's owed, recovered, remaining and current rate;
-as creditor, the recoveries received. The web shows a notice (COPY-UNSIGNED) on the account screen.
+as creditor, the recoveries received (no account ids or addresses). The web shows it at
+`/settings/liens` (COPY-UNSIGNED, DESIGN: not drawn). NEEDS_DESIGN_LIEN_NOTICE: a line on the quote
+and the trade room ("this purchase pays X to the person you owe"), and a link to the screen from
+Settings; the buyer's trade view already carries `lienRecoveryAtomic`.
 
 ## Owner questions
 

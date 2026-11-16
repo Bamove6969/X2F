@@ -22,7 +22,10 @@ import { appendLog } from '../log/append.js';
  *
  * Task 25's repayment trade (NEEDS_REPAYMENT_TRADE) is replaced by recovery from the debtor's
  * trades. The seller's accepted tx proof of `seller-sends-xmr` repays a lien for the XMR alone
- * (`complied`; its route is NEEDS_TASK_12_TX_PROOF).
+ * (`complied`; its route is NEEDS_TASK_12_TX_PROOF). Owner rule 4 ("evidence before
+ * enforcement", 16 Nov 2026): `complied` is a system event only, and that route must emit it only
+ * once the tx proof is checked on chain (the money arrived), never on the seller's "sent" claim or
+ * on uploaded evidence alone; recoveries likewise are recorded only on the settled payout.
  * NEEDS_FEE_OWED_COLLECTION: `fees_owed` rows are written; collecting them from the debtor's next
  * settled trades (Revision 2026-10-29c: `feeOwedAtomic` in the signed terms, checked by the gate and
  * every app) is not built.

@@ -358,3 +358,18 @@ describe('input checks', () => {
     expect(() => lienSteps(d, p, { ...sellerPosted, feeAtomic: A }, [])).toThrow(RangeError);
   });
 });
+
+// Owner rule 4 (16 Nov 2026, "evidence before enforcement"; docs/lien-recovery.md): a payment
+// marked as sent is not proof that money arrived. `complied` (which repays a restitution lien) is
+// a system event only: no moderator or trader can record it, so its future route
+// (NEEDS_TASK_12_TX_PROOF) must emit it only after the tx proof was checked on chain (receipt),
+// never on the seller's claim or on uploaded evidence alone.
+describe('rule 4: payment claim, evidence and receipt stay distinct', () => {
+  it('only the system records complied; a moderator or a trader cannot', () => {
+    const d = publish(opened(true), 'seller-sends-xmr');
+    for (const actor of [mod, senior, { kind: 'trader' as const, side: 'seller' as const }]) {
+      expect(() => applyDispute(d, { type: 'complied' }, actor as Actor, at(2), S)).toThrow();
+    }
+    expect(applyDispute(d, { type: 'complied' }, { kind: 'system' }, at(2), S).compliedAt).toEqual(at(2));
+  });
+});
