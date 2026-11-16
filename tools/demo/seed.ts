@@ -138,6 +138,13 @@ async function makeVendor(db: pg.Client, displayName: string): Promise<void> {
   if (r.rowCount !== 1) throw new Error(`demo seed: could not make ${displayName} a vendor`);
 }
 
+/** An offer as the log names it: its payment types and currencies (J-16 flex offers carry lists). */
+function offerLabel(o: Record<string, unknown>): string {
+  const methods = (o.methods as Array<{ methodId?: string }> | undefined)?.map((m) => m.methodId).join('+') ?? String(o.methodId);
+  const currencies = (o.currencies as Array<{ currency?: string }> | undefined)?.map((x) => x.currency).join('+') ?? String(o.currency);
+  return `${methods} ${currencies}`;
+}
+
 const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await db.connect();
 
@@ -146,8 +153,14 @@ for (const p of [...CAST, ...OWNER]) {
   const c = await signUp(p);
   if (p.vendor) await makeVendor(db, p.displayName);
   for (const o of p.offers) {
-    const r = await c.call('POST', '/v1/offers', o);
-    if (r.status >= 300) failures.push(`${p.displayName} ${String(o.methodId)} ${String(o.currency)}: ${r.status} ${JSON.stringify(r.body)}`);
+    // The API's exchange rates (CAD and the rest) arrive with its first rate poll, a little after it
+    // starts: an offer refused for a missing price is tried again for up to 3 minutes.
+    let r = await c.call('POST', '/v1/offers', o);
+    for (let waited = 0; r.status === 409 && (r.body as { error?: string } | null)?.error === 'price-unavailable' && waited < 180_000; waited += 5_000) {
+      await new Promise((done) => setTimeout(done, 5_000));
+      r = await c.call('POST', '/v1/offers', o);
+    }
+    if (r.status >= 300) failures.push(`${p.displayName} ${offerLabel(o)}: ${r.status} ${JSON.stringify(r.body)}`);
   }
   // Logged out again: a login while the account has an open session elsewhere waits for that
   // device's approval (Plan 2 Task 16), and nobody holds the seed's session.
