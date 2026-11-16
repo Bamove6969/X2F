@@ -19,16 +19,20 @@ export const KEY_ERROR = {
       ? "Your device didn't make the passkey: the request was cancelled or timed out. Try again."
       : "The key didn't respond: the request was cancelled or timed out. Plug it in or hold it to the back of your phone, tap it when it lights up, and try again.",
   /** NotAllowedError inside a frame: the page that holds this one did not let it use keys. */
+  // not-a-refusal: why a key step failed, shown in the key step's own error line
   framed: "Security keys and passkeys can't be used inside this window. Open this page in its own browser tab and try again.",
   /** SecurityError: the page's address is not one the site's keys are made for. */
+  // not-a-refusal: why a key step failed, shown in the key step's own error line
   wrongAddress: "Security keys and passkeys can't be used at this page's address. Open X2F at its usual address and try again.",
   /** InvalidStateError: this authenticator already holds a credential for this account. */
   already: (k: KeyKind) => (k === 'passkey' ? 'That passkey is already on your account.' : 'That security key is already on your account. Use a different one.'),
   /** NotSupportedError: none of Ed25519, ES256, RS256. */
+  // not-a-refusal: why a key step failed, shown in the key step's own error line
   noAlgorithm: "This key can't make the kind of key X2F needs. Use a different security key.",
   /** ConstraintError: a passkey needs a PIN, fingerprint or face check the device can't do yet. */
   needsPin: 'Your device needs a screen lock, PIN or fingerprint set up first. Set one up, then try again.',
   /** No WebAuthn at all. */
+  // not-a-refusal: why a key step failed, shown in the key step's own error line
   unsupported: "This browser can't use security keys or passkeys. Try an up-to-date Chrome, Firefox, Safari or Edge.",
   /** 401 webauthn-failed: the key answered, but its answer did not check out. */
   checkFailed: (k: KeyKind) => (k === 'passkey' ? "Your passkey's answer couldn't be checked. Try again." : "The key's answer couldn't be checked. Try again, or use a different key."),
@@ -54,6 +58,7 @@ function blockedByFrame(e: Error): boolean {
 export function keyErrorText(e: unknown, kind: KeyKind, fallback: string = KEY_ERROR.fallback(kind)): string {
   const name = e instanceof Error ? e.name : '';
   const code = typeof (e as { code?: unknown })?.code === 'string' ? (e as { code: string }).code : '';
+  // not-a-refusal: why a key step failed, shown in the key step's own error line
   if (code === 'method-not-allowed') return KEY_ERROR.notAccepted;
   if (code === 'webauthn-failed') return KEY_ERROR.checkFailed(kind);
   if (name === 'SecurityError' || code === 'ERROR_INVALID_RP_ID' || code === 'ERROR_INVALID_DOMAIN') return KEY_ERROR.wrongAddress;

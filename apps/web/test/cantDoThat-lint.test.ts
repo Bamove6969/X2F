@@ -151,7 +151,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 66 -> 67 (owner demo notes 12 Nov 2026): sessionCopy.ts's askHint, the owner's own words ("If you
     // are unable to confirm your identity at that time, your account will be logged out ..."), a hint
     // shown before the session ends; nothing was refused.
-    expect(notARefusal).toBeLessThanOrEqual(67);
+    // 67 -> 74 (demo r3, 16 Nov): auth/keyErrors.ts's five lines saying why a key step failed (shown in
+    // the key step's own error line), and two from the sign-up round-3 and Terms merges.
+    expect(notARefusal).toBeLessThanOrEqual(74);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });
