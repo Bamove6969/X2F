@@ -227,6 +227,29 @@ with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
     trade cancelled before any XMR is sent gives the address back (COPY-UNSIGNED).
 19. Stale OD-11 comment in `WalletPicker.tsx` updated; `AcceptedSheet.tsx` import order.
 
+### Round 5 (17 Nov, on wip/lead-trade-wallet): review `review-lead-trade-wallet-2026-11-17.md` M1-M4
+
+20. **A waiting wallet cannot be made the default** (review M1, security tightening). `PUT
+    /v1/wallets/:id/default` answers 409 `wallet-not-ready` for a wallet still in its wait (the take's
+    own `usable_from <= now` rule), so a stolen session cannot silently pre-arm an address before the
+    wait meant to let the user notice it is over. Removed, used-up and staged (no wallet yet) answer 404
+    as before; one-time stays 409 `wallet-one-time`. Your wallets offers Make default only on a wallet
+    that works now. No alert added: that is Q12, still open. Tests: `apps/api/test/wallets.test.ts`
+    "the default payout wallet" (waiting refused until its wait is over; staged, removed, used up).
+21. **Behavioural tests for the default route** (review M2): refused during an account hold (403
+    `recovery-hold`, nothing written; `wallets.test.ts`) and for a team member, even one with
+    See wallet names (403 `owner-only`; `team.test.ts`).
+22. **One-time copy matches the restore as built** (review M3; extending the restore is OQ2, still
+    open): Settings' and the quote sheet's notes now say the address comes back only if the trade is
+    cancelled while it is still being set up (COPY-UNSIGNED). Supersedes item 18's wording.
+23. **The round-4 check holds across leaving the quote** (review M4). This device keeps the address
+    the user typed for each wallet id they added here (`screens/walletRecord.ts`, localStorage like the
+    other device-held marks, memory when the store throws; never sent to the API). The quote (also from
+    `?wallet=` after a trip away or a reload), the accepted sheet and the add in Settings → Your wallets
+    refuse a listed address that differs from the recorded one for that id. Supersedes item 17's
+    "within the visit". A wallet with no record here (added on another device, or before this) is judged
+    as before (O1 stays open for the threat-model list).
+
 Review minors, final state: M1 built as Q10 (restore) plus copy (item 18); M2-M5 fixed (items 10-13);
 M6 kept as is on the owner's answer (Q11).
 
