@@ -159,7 +159,8 @@
   padding: 0 4px;
   border: 0;
   background: none;
-  font-family: var(--x2f-font-mono);
+  /* The unit words in DM Sans, so the chosen one can be truly bold: DM Mono stops at 500 (owner 16 Nov fonts D). */
+  font-family: var(--x2f-font-sans);
   font-size: 13px;
   font-weight: 400;
   color: var(--x2f-ink-muted);
@@ -170,8 +171,7 @@
    other smaller and muted. The one ruled exception to "selection is ink" (selection-ink.test.ts). */
 .post-unit button[aria-checked='true'] {
   font-size: 16px;
-  /* DM Mono's heaviest face (owner 16 Nov fonts D): no faked bold. */
-  font-weight: 500;
+  font-weight: 700;
   color: var(--x2f-monero-ink);
 }
 
