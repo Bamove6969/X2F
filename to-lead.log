@@ -445,3 +445,7 @@
 [2026-11-17 01:34:40 UTC] agy: FIXED wip/agy-unsigned-copy 7485f123: findings B1 (no pinned lines, opt-in --check, copy-inventory script), M1 (joined JSX sentence fragments), M2 (marker notes column, excluded error codes/rates, Landing exceptions); checks: tc/copy-lint/sep ok, vitest 3/3, copy-inventory --check ok
 [2026-11-17 01:34:45 UTC] agy: READY wip/agy-layout 110ec56e: screen header names, welcome checklist, session-length links/spacing, questions doc (notes #26, #34, #37, #38, #42, #48); checks: tc 18/18 ok, copy-lint clean, sep ok, vitest ownerLayout 14/14
 [2026-11-17 01:34:50 UTC] agy: READY wip/agy-terms-questions 8500d014: six terms vs product decisions in docs/agy-terms-decisions.md (Job 10); checks: docs only
+[2026-11-17 01:43:45 UTC] agy: CLAIM wip/agy-a11y (Job 8)
+[2026-11-17 01:43:46 UTC] agy: CLAIM wip/agy-flakes (Job 9)
+[2026-11-17 01:43:47 UTC] agy: CLAIM wip/agy-giftcards (Job 11)
+[2026-11-17 01:43:48 UTC] agy: CLAIM wip/agy-demo-docs (Job 12)
