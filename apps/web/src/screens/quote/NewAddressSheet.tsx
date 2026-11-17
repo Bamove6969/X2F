@@ -9,6 +9,7 @@ import { isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { StagedNote } from '../settings/HoldChanges.js';
 import { addError } from '../Wallets.js';
 import { ruleNote } from '../wallets-model.js';
+import { recordTypedAddress } from '../walletRecord.js';
 import { DEFAULT_NEW_NAME, NEW_ADDRESS as C } from './addressCopy.js';
 
 // Owner demo note #6 (16 Nov 2026; docs/trade-wallet-note6.md): a highly secure account (owner 17 Nov) adds a payout address
@@ -62,6 +63,9 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
         onDone({ kind: 'staged' });
         return;
       }
+      // Review 17 Nov M4: this device keeps the address typed here for the id the API gave it, so the
+      // quote, the accepted sheet and Your wallets refuse any later list naming another (walletRecord.ts).
+      recordTypedAddress(result.id, trimmed);
       // The address must be the one typed on this device: an API answer naming another address is
       // never picked for the trade or shown as saved (the take would pay whatever the wallet row holds,
       // and the device would record that as its own address).

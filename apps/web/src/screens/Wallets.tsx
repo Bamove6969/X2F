@@ -29,7 +29,8 @@ import {
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
 import { ChoiceGroup } from '../ui/Choice.js';
-import { DEFAULT_TAG, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, ONE_TIME_TAG } from './walletsCopy.js';
+import { ADD_SWAPPED, DEFAULT_TAG, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, ONE_TIME_TAG } from './walletsCopy.js';
+import { recordTypedAddress } from './walletRecord.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -387,6 +388,17 @@ function WalletsScreen() {
         return;
       }
       const saved = result;
+      // Review 17 Nov M4: this device keeps the address typed for each id the API gave (walletRecord.ts),
+      // so the quote and the accepted sheet refuse any later list naming another. The answer itself
+      // must carry exactly the addresses typed, in order: one naming another is not shown as saved.
+      saved.forEach((w, i) => {
+        const typed = drafts[i]?.address;
+        if (typed !== undefined) recordTypedAddress(w.id, typed);
+      });
+      if (saved.length !== drafts.length || saved.some((w, i) => w.address !== drafts[i]!.address)) {
+        setError(ADD_SWAPPED);
+        return;
+      }
       // Sent here by a 409 no-wallet: go back only when every new wallet can be paid now. A wallet
       // that waits would send the take straight back here (no-wallet again), so the screen stays,
       // shows the wait, and Back returns to returnTo.

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { formatFiat, formatXmr } from '@x2f/trade';
 import { api } from '../api/client.js';
 import { DEFAULT_TAG } from './walletsCopy.js';
+import { matchesRecord } from './walletRecord.js';
+import { NEW_ADDRESS } from './quote/addressCopy.js';
 import type { LiveEvent } from '../api/events.js';
 import { addressEnd, confirmableAddress } from '../ui/addressEnd.js';
 import { storeConfirmed, type ConfirmedTrade } from './quote/confirmed.js';
@@ -112,6 +114,7 @@ export function AcceptedSheet({
   const [role, setRole] = useState<ConfirmedTrade['role'] | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [swapped, setSwapped] = useState(false);
   // Loaded once per sheet (a caller's inline loader must not reload, and reset the pick, on every render).
   const load = useRef({ loadWallets, loadTrade });
 
@@ -125,7 +128,10 @@ export function AcceptedSheet({
         // is picked and the button stays disabled until the poster picks one.
         // A wallet whose address cannot be confirmed (empty, or over 256 characters, the rule
         // readConfirmed applies) is never offered: it could not become `ownAddress` (gap 3).
-        const offered = all.filter((w) => w.usable && confirmableAddress(w.address));
+        // Review 17 Nov M4: nor is a wallet listed with another address than this device recorded
+        // for it when the person typed it here (walletRecord.ts); the sheet says so.
+        const offered = all.filter((w) => w.usable && confirmableAddress(w.address) && matchesRecord(w));
+        setSwapped(all.some((w) => !matchesRecord(w)));
         setWallets(offered);
         setPicked((p) => p ?? offered.find((w) => w.isDefault === true)?.id ?? null);
         const d = posterDeal(view);
@@ -168,6 +174,11 @@ export function AcceptedSheet({
 
   return (
     <Sheet open title={`${event.by} accepted your offer`} onClose={onClose}>
+      {swapped && phase !== 'done' && phase !== 'loading' ? (
+        <p role="alert" className="x2f-sheet__body" data-part="accepted-address-swapped">
+          {NEW_ADDRESS.mismatch}
+        </p>
+      ) : null}
       {phase === 'done' ? (
         <StatusChip tone="escrow" icon="shield" label="Setting up escrow" />
       ) : phase === 'loading' ? null : wallets.length === 0 && !failed ? (

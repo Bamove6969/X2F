@@ -21,6 +21,7 @@ import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
 import { NewAddressSheet, type NewAddressResult } from './NewAddressSheet.js';
 import { NEW_ADDRESS, PAYOUT_QUESTION } from './addressCopy.js';
+import { matchesRecord } from '../walletRecord.js';
 import { WhatApplies } from './WhatApplies.js';
 import './quote.css';
 
@@ -172,10 +173,6 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const rating = session.status === 'signed-in' ? (session.me.securityRating ?? null) : null;
   const [addingAddress, setAddingAddress] = useState(false);
   const [walletsTick, setWalletsTick] = useState(0);
-  // The address typed on this device for a wallet the new-address sheet added (the sheet checked the
-  // API's answer). The list is read again after an add; if it then names another address for that
-  // wallet, the wallet is not picked: the API never swaps an address the device did not show.
-  const [typedAddress, setTypedAddress] = useState<{ id: string; address: string } | null>(null);
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
   const { blockedPoster, closedError } = kept;
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
@@ -185,7 +182,6 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const onNewAddress = (r: NewAddressResult) => {
     setWalletsTick((t) => t + 1);
     if (r.kind === 'usable') {
-      setTypedAddress({ id: r.wallet.id, address: r.wallet.address });
       touched();
       setPicked(r.wallet.id);
       setAddingAddress(false);
@@ -202,7 +198,11 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const giftTermsOk = !giftCard || giftCardTermsComplete(giftRole, giftTicked);
   const marketNow = market.kind === 'ready' ? market.value : null;
   const q: Quote | null = o && market.kind === 'ready' ? quote({ offer: o, market: marketNow, text, unit }) : null;
-  const swapped = (w: PickWallet) => typedAddress !== null && w.id === typedAddress.id && w.address !== typedAddress.address;
+  // The address typed on this device for each wallet added here (the new-address sheet or Settings →
+  // Your wallets recorded it, walletRecord.ts; review 17 Nov M4: kept across a trip away and a reload).
+  // A list naming another address for such a wallet is not offered or picked, even from `?wallet=`:
+  // the API never swaps an address the device did not show.
+  const swapped = (w: PickWallet) => !matchesRecord(w);
   const listed = wallets.kind === 'ready' ? wallets.value.filter((w) => !swapped(w)) : [];
   const addressSwapped = wallets.kind === 'ready' && wallets.value.some(swapped);
   const usable = listed.filter((w) => w.usable);
