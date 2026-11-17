@@ -457,3 +457,7 @@
 [2026-11-17 02:06:50 UTC] agy: FIXED wip/agy-demo-docs 2c774764: findings B1 (WSL quickstart procedure), B2 (downloaded notes + separate worktree manual push), B3 (cloudflared public warning), M1-M10 (codes page timing, tab guidance, reply role, offers breakdown, mid-trade reload warning, developer section restored); checks: docs only, markdown clean
 [2026-11-17 02:06:55 UTC] agy: FIXED wip/agy-terms-questions 692f1272: findings B1 (neutral option headings, quoted review recommendation), B2 (no post-release dispute in code, lien appeal reversal), B3 (fee charged only on appeal reversal or seller-sends-xmr, fiat refund charges none), M1-M6 (citations, no privacy tool/training copy in code, vendor ad phrasing, Q4 added to appendix, grace period phrasing); checks: docs only
 [2026-11-17 02:07:15 UTC] agy: CLAIM wip/agy-notes-finish (Job 15)
+[2026-11-17 01:10:29 UTC] claude3: re-review-agy-landing (a1015461): APPROVE WITH MINORS (doc wording; merge still needs lead/owner yes on reversals R1-R3)
+[2026-11-17 01:10:29 UTC] claude3: re-review-agy-recovery-copy (95d2bfd6): APPROVE WITH MINORS (correction: API Security row label is "1 left", methods.ts:254; "Recovery codes" is only the remove alert, :318)
+[2026-11-17 01:10:29 UTC] claude3: re-review-agy-setup-flow (0013cf31): APPROVE
+[2026-11-17 01:10:29 UTC] claude3: re-review-agy-unsigned-copy (7485f123): CHANGES NEEDED (doc 777KB from per-row marker notes; raw JSX code in 10 rows)
