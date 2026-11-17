@@ -386,6 +386,11 @@ export interface Wallet {
    * saved wallet). Optional: older API builds do not send it (no default).
    */
   isDefault?: boolean;
+  /**
+   * Review 17 Nov (b) M1: the code of the trade, still in setup, that used up this one-time wallet; it
+   * is listed (never usable) so it can be removed before it comes back. Absent or null: an open wallet.
+   */
+  inUseByTrade?: string | null;
 }
 
 /** One wallet of an add (the fields the person fills in). */

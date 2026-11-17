@@ -270,3 +270,28 @@ describe('the new-address sheet (owner demo note #6)', () => {
     expect(done).toEqual([]);
   });
 });
+
+// Review of wip/third-trade-wallet 17 Nov (b), M1: a one-time wallet a trade in setup is using is
+// listed by the API for Settings; the quote neither offers it nor counts it as waiting.
+describe('the quote wallet list leaves out a one-time wallet another trade is using', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('drops entries with inUseByTrade, keeps the rest as before', async () => {
+    const { fetchWallets } = await import('../src/screens/quote/api.js');
+    const wire = (id: string, over: Record<string, unknown> = {}) => ({
+      id, app: 'cake', label: id, address: `4${'R'.repeat(88)}AAAAA${id}`, addressEnd: `AAAAA${id}`, usableFrom: '2026-10-20T00:00:00.000Z', usable: true, oneTime: false, isDefault: false, inUseByTrade: null, ...over,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify([wire('1', { isDefault: true }), wire('2', { usable: false, oneTime: true, inUseByTrade: 'ABCD-EFGH-JKLM-NPQR' }), wire('3', { usable: false })]), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        })),
+    );
+    const got = await fetchWallets();
+    expect(got.map((w) => [w.id, w.usable])).toEqual([['1', true], ['3', false]]);
+    expect(Object.keys(got[0]!).sort()).toEqual(['address', 'addressEnd', 'app', 'id', 'isDefault', 'label', 'oneTime', 'usable']);
+  });
+});

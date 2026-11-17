@@ -40,6 +40,12 @@ export interface Wallet {
    * preselection: the take still names a wallet.
    */
   isDefault: boolean;
+  /**
+   * Review of wip/third-trade-wallet 17 Nov (b), M1: the code of the trade, still in setup, that used
+   * up this one-time wallet (it comes back if that trade ends in setup). Such a wallet is listed so its
+   * owner can see and remove it, but it is not usable. Null for every open wallet.
+   */
+  inUseByTrade: string | null;
 }
 
 interface WalletRow {
@@ -56,6 +62,7 @@ function toWallet(r: WalletRow, now: Date): Wallet {
   return {
     id: r.id, app: r.app, label: r.label, address: r.address, addressEnd: addressEnd(r.address),
     usableFrom: r.usable_from, usable: r.usable_from.getTime() <= now.getTime(), oneTime: r.one_time, isDefault: false,
+    inUseByTrade: null,
   };
 }
 
@@ -76,14 +83,28 @@ export function effectiveDefault(rows: readonly WalletRow[], now: Date): string 
   return saved.length === 1 ? saved[0]!.id : null;
 }
 
-/** The account's open (not removed) wallets, oldest first, the default marked. */
+/**
+ * The account's open (not removed) wallets, oldest first, the default marked. Review 17 Nov (b), M1:
+ * with them, each one-time wallet a trade still in `setup` used up, as in use by that trade (not
+ * usable, never the default), so its owner sees it and can remove it before it can come back.
+ */
 async function openWallets(db: Queryable, accountId: string, now: Date): Promise<Wallet[]> {
-  const { rows } = await db.query<WalletRow>(
-    `select ${WALLET_COLUMNS} from wallets where account_id = $1 and removed_at is null order by created_at, id`,
+  const { rows } = await db.query<WalletRow & { in_use_by: string | null }>(
+    `select ${WALLET_COLUMNS.split(', ').map((c) => `w.${c}`).join(', ')},
+            case when w.removed_at is not null then w.used_by_trade end as in_use_by
+       from wallets w
+      where w.account_id = $1
+        and (w.removed_at is null
+             or (w.used_by_trade is not null and exists (select 1 from trades t where t.code = w.used_by_trade and t.state = 'setup')))
+      order by w.created_at, w.id`,
     [accountId],
   );
-  const def = effectiveDefault(rows, now);
-  return rows.map((r) => ({ ...toWallet(r, now), isDefault: r.id === def }));
+  const def = effectiveDefault(rows.filter((r) => r.in_use_by === null), now);
+  return rows.map((r) =>
+    r.in_use_by === null
+      ? { ...toWallet(r, now), isDefault: r.id === def }
+      : { ...toWallet(r, now), usable: false, inUseByTrade: r.in_use_by },
+  );
 }
 
 /** The wallets that may receive a payout now (open and past any wait). Plan 3 calls this when a buyer picks one. */
@@ -418,7 +439,7 @@ export async function useUpOneTimeWallet(db: Queryable, accountId: string, walle
  * cleared `used_by_trade`, `applyWalletRemoval`), nor one whose address is open again on the account
  * (re-added meanwhile) or was purged.
  */
-export async function restoreOneTimeWallets(db: Queryable, tradeCode: string, accountIds: readonly string[]): Promise<number> {
+export async function restoreOneTimeWallets(db: Queryable, tradeCode: string, accountIds: readonly string[], now: Date): Promise<number> {
   // Review 17 Nov (b), B2: `applyEvent` already locked both parties in id order right after the trade
   // row (before the cancel route's own account lock), so this lock is re-entrant there and cannot
   // close a cycle with a take; it stays for any other caller.
@@ -428,13 +449,19 @@ export async function restoreOneTimeWallets(db: Queryable, tradeCode: string, ac
   );
   if (owners.rows.length === 0) return 0;
   await db.query('select id from accounts where id = any($1) order by id for update', [owners.rows.map((r) => r.account_id)]);
-  const { rowCount } = await db.query(
+  const { rows } = await db.query<{ account_id: string; app: WalletApp; label: string; address: string }>(
     `update wallets w set removed_at = null, used_by_trade = null
       where w.used_by_trade = $1 and w.account_id = any($2) and w.one_time and w.removed_at is not null and w.address is not null
-        and not exists (select 1 from wallets o where o.account_id = w.account_id and o.address = w.address and o.removed_at is null)`,
+        and not exists (select 1 from wallets o where o.account_id = w.account_id and o.address = w.address and o.removed_at is null)
+      returning w.account_id, w.app, w.label, w.address`,
     [tradeCode, [...accountIds]],
   );
-  return rowCount ?? 0;
+  // Review 17 Nov (b), M1: the return is told in the app too (the Jabber notice already goes out from
+  // the wallets trigger), with display details only, never the whole address.
+  for (const r of rows) {
+    await addAlert(db, r.account_id, 'wallet-restored', { app: r.app, label: r.label, addressEnd: addressEnd(r.address) }, now);
+  }
+  return rows.length;
 }
 
 /**
@@ -481,8 +508,10 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
   const held = await withTx(deps.db, async (client) => {
     // Review round 4: the removing session must still be live where it writes.
     await requireLiveSessionInTx(client, req.auth, now);
+    // Review 17 Nov (b), M1: a one-time wallet a trade used up (`used_by_trade` set) can be removed
+    // too, so it never comes back (`applyWalletRemoval` clears `used_by_trade`, with its alert).
     const { rows } = await client.query<{ label: string; address: string }>(
-      'select label, address from wallets where id = $1 and account_id = $2 and removed_at is null',
+      'select label, address from wallets where id = $1 and account_id = $2 and (removed_at is null or (used_by_trade is not null and address is not null))',
       [id, req.auth.accountId],
     );
     const w = rows[0];

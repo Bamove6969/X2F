@@ -25,3 +25,11 @@ export const ADD_SWAPPED = 'X2F answered with a different address from the one y
 
 /** Review 17 Nov M4: a listed wallet whose address differs from the one typed on this device for it. COPY-UNSIGNED */
 export const NOT_MATCHING = 'This address does not match the one you typed on this device.';
+
+
+/**
+ * Review 17 Nov (b) M1: a one-time wallet a trade still being set up is using. It comes back if that
+ * trade ends before it is funded; removing it now means it never comes back. COPY-UNSIGNED
+ */
+export const IN_USE_WORD = 'In use';
+export const IN_USE_NOTE = (code: string) => `By trade ${code}. It comes back if that trade is cancelled before it is funded, unless you remove it.`;

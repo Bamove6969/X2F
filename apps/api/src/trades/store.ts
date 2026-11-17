@@ -419,7 +419,7 @@ export async function applyEvent(
       // back the one-time wallets it used up (wallet bookkeeping only; wallets/routes.ts). Never once
       // the trade got past setup or any XMR was seen. Before countCancel, which writes an account row.
       if (prev.state === 'setup' && next.state === 'cancelled' && next.receivedAtomic === 0n && next.fundingSeenAt === null) {
-        await restoreOneTimeWallets(client, code, [next.sellerId, next.buyerId]);
+        await restoreOneTimeWallets(client, code, [next.sellerId, next.buyerId], now);
       }
       if (next.state !== prev.state && next.state === 'cancelled') await countCancel(client, code);
       if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) {

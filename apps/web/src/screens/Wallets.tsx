@@ -29,7 +29,7 @@ import {
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
 import { ChoiceGroup } from '../ui/Choice.js';
-import { ADD_SWAPPED, DEFAULT_TAG, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG } from './walletsCopy.js';
+import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG } from './walletsCopy.js';
 import { matchesRecord, recordStagedAddress, recordTypedAddress } from './walletRecord.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
@@ -176,7 +176,9 @@ function useOpenEscrowKeys(): string[] {
 }
 
 function WalletRow({ w, onRemove, onMakeDefault }: { w: WalletView; onRemove: (w: WalletView) => void; onMakeDefault: (w: WalletView) => void }) {
-  const status = walletStatus(w);
+  // Review 17 Nov (b) M1: a one-time wallet a trade in setup is using; it can still be removed.
+  const inUse = typeof w.inUseByTrade === 'string' ? w.inUseByTrade : null;
+  const status = inUse !== null ? { label: IN_USE_WORD, tone: 'waiting' as const } : walletStatus(w);
   // Review 17 Nov M4: a row naming another address than the one typed on this device for that id
   // (walletRecord.ts) is marked, and is never offered as the default the trade screen picks first.
   const matches = matchesRecord(w);
@@ -209,7 +211,11 @@ function WalletRow({ w, onRemove, onMakeDefault }: { w: WalletView; onRemove: (w
         <span className="x2f-wallet-row__word" data-tone={status.tone}>
           {status.label}
         </span>
-        {w.usable ? null : <span className="x2f-wallet-row__note">Until {when(w.usableFrom)}</span>}
+        {inUse !== null ? (
+          <span className="x2f-wallet-row__note" data-part="in-use">{IN_USE_NOTE(inUse)}</span>
+        ) : w.usable ? null : (
+          <span className="x2f-wallet-row__note">Until {when(w.usableFrom)}</span>
+        )}
       </span>
       <button type="button" className="x2f-icon-button" aria-label={`Remove ${w.label}`} onClick={() => onRemove(w)}>
         <Icon name="close" size={20} />
@@ -320,9 +326,10 @@ function WalletsScreen() {
   useEffect(() => {
     if (!addMode || wallets === null || arrived.current) return;
     arrived.current = true;
-    if (wallets.length > 0 && wallets.every((w) => !w.usable)) {
-      const first = wallets.map((w) => w.usableFrom).sort()[0] as string;
-      setNotice(`Your ${wallets.length === 1 ? 'wallet' : 'wallets'} can be paid from ${when(first)}.`);
+    const open = wallets.filter((w) => typeof w.inUseByTrade !== 'string');
+    if (open.length > 0 && open.every((w) => !w.usable)) {
+      const first = open.map((w) => w.usableFrom).sort()[0] as string;
+      setNotice(`Your ${open.length === 1 ? 'wallet' : 'wallets'} can be paid from ${when(first)}.`);
     } else {
       setPopup(true);
     }

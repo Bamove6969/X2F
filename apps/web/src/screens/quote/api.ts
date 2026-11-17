@@ -146,17 +146,22 @@ export interface PickWallet {
 export async function fetchWallets(signal?: AbortSignal): Promise<PickWallet[]> {
   const raw = await api('/v1/wallets', signal ? { signal } : {});
   if (!Array.isArray(raw)) throw new ApiShapeError('wallets');
-  return raw.map((v, i) => {
+  const list = raw.map((v, i) => {
     const at = `wallets[${i}]`;
     const o = obj(v, at);
     if (typeof o.usable !== 'boolean') throw new ApiShapeError(`${at}.usable`);
+    if (o.inUseByTrade !== undefined && o.inUseByTrade !== null && typeof o.inUseByTrade !== 'string') throw new ApiShapeError(`${at}.inUseByTrade`);
     if (o.oneTime !== undefined && typeof o.oneTime !== 'boolean') throw new ApiShapeError(`${at}.oneTime`);
     if (o.isDefault !== undefined && typeof o.isDefault !== 'boolean') throw new ApiShapeError(`${at}.isDefault`);
     return {
       id: str(o, 'id', at), app: str(o, 'app', at), label: str(o, 'label', at), address: str(o, 'address', at), addressEnd: str(o, 'addressEnd', at),
       usable: o.usable, oneTime: o.oneTime === true, isDefault: o.isDefault === true,
+      inUse: typeof o.inUseByTrade === 'string',
     };
   });
+  // Review 17 Nov (b) M1: a one-time wallet another trade is using is listed for Settings only; the
+  // quote neither offers it nor counts it as waiting.
+  return list.filter((w) => !w.inUse).map(({ inUse: _inUse, ...w }) => w);
 }
 
 /** What the take sends: the amount, the wallet, and the rate and total the person saw (Task 5 Revision 2026-10-27). */

@@ -1121,7 +1121,10 @@ describe('one-time wallets and the per-trade address (owner demo note #6)', () =
     await deps.db.query('update wallets set one_time = true where id = $1', [w.id]);
     return w;
   }
-  const listed = async (who: Who) => ((await who.browser.get('/v1/wallets')).json() as Array<{ id: string }>).map((w) => w.id);
+  // The open wallets: a used-up one-time wallet whose trade is still in setup is listed too, as in
+  // use by that trade (review 17 Nov (b) M1), and is left out here.
+  const listed = async (who: Who) =>
+    ((await who.browser.get('/v1/wallets')).json() as Array<{ id: string; inUseByTrade: string | null }>).filter((w) => w.inUseByTrade === null).map((w) => w.id);
 
   it("a take with a one-time wallet pays to it, then the wallet is no longer listed or usable", async () => {
     const seller = await person();
@@ -1385,6 +1388,49 @@ describe('a one-time wallet comes back when its trade ends in setup (owner, Q10)
     expect(await isOpen(once.id)).toBe(false);
     const { rows } = await deps.db.query('select 1 from wallets where account_id = $1 and address = $2 and removed_at is null', [buyer.id, once.address]);
     expect(rows).toHaveLength(1);
+  });
+
+  // Review of wip/third-trade-wallet 17 Nov (b), M1: a used-up one-time wallet is visible while its
+  // trade is in setup, can be removed then (for good: it does not come back), and its return is told.
+  type Listed = { id: string; usable: boolean; inUseByTrade: string | null };
+  const listAll = async (who: Who) => (await who.browser.get('/v1/wallets')).json() as Listed[];
+  const alertsOf = async (id: string, kind: string) =>
+    (await deps.db.query<{ detail: unknown }>('select detail from alerts where account_id = $1 and kind = $2 order by created_at', [id, kind])).rows.map((r) => r.detail);
+
+  it('M1: while its trade is in setup the used-up wallet is listed as in use by that trade, not usable', async () => {
+    const { buyer, once, code } = await takenWithOnce();
+    const entry = (await listAll(buyer)).find((w) => w.id === once.id);
+    expect(entry).toMatchObject({ usable: false, inUseByTrade: code, isDefault: false });
+    // Still not usable for a take.
+    const seller2 = await person();
+    expect(refusal(await take(buyer, await postOffer(seller2), body(buyer, tenth, undefined, { walletId: once.id })))).toEqual({ status: 409, error: 'wallet-not-ready' });
+    // Once the trade is past setup it leaves the list.
+    await deps.db.query('update trades set seller_refund = $2, seller_wallet_app = $3 where code = $1', [code, fakeAddress(), 'cake']);
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    expect((await listAll(buyer)).map((w) => w.id)).not.toContain(once.id);
+  });
+
+  it('M1: the owner can remove it while its trade is in setup; it then never comes back, and the removal is told', async () => {
+    const { seller, buyer, once, code } = await takenWithOnce();
+    const res = await buyer.browser.delete(`/v1/wallets/${once.id}`);
+    expect(res.statusCode, res.body).toBe(204);
+    expect((await listAll(buyer)).map((w) => w.id)).not.toContain(once.id);
+    expect(await alertsOf(buyer.id, 'wallet-removed')).toEqual([{ app: 'feather', label: 'Main', addressEnd: addressEnd(once.address) }]);
+    expect((await event(seller, code, 'walk-away')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(false);
+    expect(await alertsOf(buyer.id, 'wallet-restored')).toEqual([]);
+    // Removed already: a second removal is 404.
+    expect((await buyer.browser.delete(`/v1/wallets/${once.id}`)).statusCode).toBe(404);
+  });
+
+  it('M1: a wallet given back writes one wallet-restored alert with the end of the address only', async () => {
+    const { seller, buyer, once, code } = await takenWithOnce();
+    expect((await event(seller, code, 'walk-away')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(true);
+    const alerts = await alertsOf(buyer.id, 'wallet-restored');
+    expect(alerts).toEqual([{ app: 'feather', label: 'Main', addressEnd: addressEnd(once.address) }]);
+    expect(JSON.stringify(alerts)).not.toContain(once.address);
+    expect(await alertsOf(seller.id, 'wallet-restored')).toEqual([]);
   });
 
   // Review of wip/third-trade-wallet 17 Nov (b), B2: the poster's cancel gives back the taker's

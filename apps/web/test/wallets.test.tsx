@@ -351,6 +351,19 @@ describe('one trade only or future trades (owner demo note #6)', () => {
     expect((second.body!.wallets as Array<Record<string, unknown>>)[0]).toMatchObject({ oneTime: true });
   });
 
+  // Review 17 Nov (b) M1: a one-time wallet a trade in setup is using is shown, and can be removed.
+  it('shows a one-time wallet in use by a trade, with its trade code, and lets the person remove it', async () => {
+    const used: WalletView = { ...READY, id: 'w-used', label: 'Trade cash', oneTime: true, usable: false, inUseByTrade: 'ABCD-EFGH-JKLM-NPQR' };
+    stub.wallets = [READY, used];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows[1]!.querySelector('[data-part="in-use"]')!.textContent).toContain('ABCD-EFGH-JKLM-NPQR');
+    expect(rows[1]!.textContent).toContain('In use');
+    expect(rows[1]!.querySelector('[data-part="make-default"]')).toBeNull();
+    await click('Remove Trade cash');
+    expect(stub.calls.some((c) => c.method === 'DELETE' && c.url === '/v1/wallets/w-used')).toBe(true);
+  });
+
   it('marks a one-time wallet in the list', async () => {
     stub.wallets = [READY, { ...READY, id: 'w-once', label: 'Trade cash', oneTime: true }];
     await mount();

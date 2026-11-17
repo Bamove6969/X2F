@@ -203,6 +203,12 @@ with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
       - a purged address;
       - an address that is open again on the account.
     - It never touches `had_wallet` or any wait, and never creates an address.
+    - Review 17 Nov (b), M1: while its trade is in setup, a used-up one-time wallet is listed by
+      `GET /v1/wallets` with `inUseByTrade` (the trade's code), never usable and never the default.
+      Settings shows it as "In use" by that trade; the quote and the accepted sheet leave it out.
+      `DELETE /v1/wallets/:id` reaches it (staged from a username-and-password login as any removal);
+      `applyWalletRemoval` clears `used_by_trade`, so it never comes back, and alerts `wallet-removed`.
+      A wallet given back writes an in-app `wallet-restored` alert (app, label, end of the address).
     - Tests (`apps/api/test/take.test.ts:1279`, 9 cases):
       - buyer cancel, walk-away and expiry in setup each restore it;
       - the poster's one-time refund wallet comes back;
