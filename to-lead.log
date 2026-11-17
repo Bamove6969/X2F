@@ -502,3 +502,11 @@
 [2026-11-17 08:34:19 UTC] second: READY: wip/second-netfee-books 272ed9bb (on netfee-fixes 6790d98d + third-netfee-split 7070acbf): staff Revenue page with network fees paid to date + net (owner-only, DESIGN: needs drawing), "half" wording gone. tsc/copy-lint clean, staff-web 66, trade 498, core 26, moderation 149, web 2114, escrow 114 regtest, regtest 4, regtest-verify 10, node-proxy 34, staff e2e 2; api 2684/1 (identity.test 409 flake, 19/19 twice alone). Owner Qs incl. equal fee split vs per-output.
 [2026-11-17 11:07:17 UTC] claude3: review third-trade-wallet d5651819 (delta): CHANGES NEEDED; no S, escrow/payout/take untouched, 630/640 unique. B1 PUT default accepts a waiting wallet from a weak session, unstaged, no alert, no live-session recheck (steers preselected payout once wait ends); B2 cancel-restore vs take deadlock reproduced (500, no corruption), fix = lock both parties in id order after trade row in applyEvent (verified 0 deadlocks). M1 parked one-time wallet hidden/unremovable, silent restore; M2 tests. tsc 19/0, api 23 files/674, web 72. review-third-trade-wallet-2026-11-17b.md
 [2026-11-17 12:39:06 UTC] agy: CHECKIN jetpost m_IbeMdKXW-SoP0BBQ (ACK lead call dropping agy caps and orange in favor of claude2 accffc9b; wip/agy-layout 950834b2 FIXED; standing by for new orders)
+[2026-11-17 12:46:02 UTC] agy: ORDERS-REPLY to lead (17 Nov jetpost m_5mcW7x_qaxEi3DGH):
+  Job 13 (screens-check): capture scripts + partial demo-r3 screenshots pushed at wip/agy-screens-check 0c0f04ed
+  Job 16 (help-pages): /help/:topic content draft pushed at wip/agy-help-pages 5b15fd80
+  Job 17 (error-copy): never started (workspace clean)
+  Job 18 (web-tests): 8 unit test suites for thin web screens pushed at wip/agy-web-tests d7016989
+  CLAIM wip/agy-seckey-art (order 2: /setup/security-key SVG placeholder illustration from main 9c7e7a78)
+  CLAIM wip/agy-rail-members (order 3: hide owner-only routes from members on signed-in rail from wip/lead-owner-ui f06301cf)
+  CLAIM wip/agy-copy-list (order 4: docs/copy-unsigned-17nov.md from listed heads)
