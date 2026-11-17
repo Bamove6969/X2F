@@ -29,6 +29,11 @@ export interface Wallet {
   usableFrom: Date;
   /** `usableFrom <= now`: false while the 24-hour wait of a password-confirmed wallet runs. */
   usable: boolean;
+  /**
+   * Owner demo note #6 (migration 620): for one trade only. Listed until a trade uses it, then
+   * removed by `useUpOneTimeWallet` in that trade's transaction; false: saved for future trades.
+   */
+  oneTime: boolean;
 }
 
 interface WalletRow {
@@ -37,18 +42,19 @@ interface WalletRow {
   label: string;
   address: string;
   usable_from: Date;
+  one_time: boolean;
 }
 
 function toWallet(r: WalletRow, now: Date): Wallet {
   return {
     id: r.id, app: r.app, label: r.label, address: r.address, addressEnd: addressEnd(r.address),
-    usableFrom: r.usable_from, usable: r.usable_from.getTime() <= now.getTime(),
+    usableFrom: r.usable_from, usable: r.usable_from.getTime() <= now.getTime(), oneTime: r.one_time,
   };
 }
 
 const toJson = (w: Wallet) => ({ ...w, usableFrom: w.usableFrom.toISOString() });
 
-const WALLET_COLUMNS = 'id, app, label, address, usable_from';
+const WALLET_COLUMNS = 'id, app, label, address, usable_from, one_time';
 
 /** The account's open (not removed) wallets, oldest first. */
 async function openWallets(db: Queryable, accountId: string, now: Date): Promise<Wallet[]> {
@@ -88,6 +94,11 @@ export interface WalletItem {
   label: string;
   /** Trimmed: exactly the address that is confirmed and stored. */
   address: string;
+  /**
+   * Owner demo note #6: for one trade only (`Wallet.oneTime`). Absent in a change staged before
+   * migration 620, which then applies as saved for future trades.
+   */
+  oneTime?: boolean;
 }
 
 /**
@@ -113,16 +124,20 @@ function bodyOf(req: FastifyRequest): Record<string, unknown> {
 // characters): never part of a label shown back in lists and alerts.
 const CONTROL = /[\p{Cc}\p{Cf}]/u;
 
-/** `app` from the list, `label` 1-40 characters once trimmed, `address` a string (checked later). */
-function checkItemShape(raw: unknown): { app: WalletApp; label: string; address: string } {
+/**
+ * `app` from the list, `label` 1-40 characters once trimmed, `address` a string (checked later),
+ * `oneTime` absent or a boolean (owner demo note #6; absent is saved for future trades).
+ */
+function checkItemShape(raw: unknown): WalletItem & { oneTime: boolean } {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new ApiError(400, 'bad-request');
-  const { app, label, address } = raw as Record<string, unknown>;
+  const { app, label, address, oneTime } = raw as Record<string, unknown>;
   if (typeof app !== 'string' || !(WALLET_APPS as readonly string[]).includes(app)) throw new ApiError(400, 'bad-request');
   if (typeof label !== 'string' || typeof address !== 'string') throw new ApiError(400, 'bad-request');
+  if (oneTime !== undefined && typeof oneTime !== 'boolean') throw new ApiError(400, 'bad-request');
   const cleanLabel = label.trim();
   const labelLength = [...cleanLabel].length;
   if (labelLength < 1 || labelLength > LABEL_MAX || CONTROL.test(cleanLabel)) throw new ApiError(400, 'bad-request');
-  return { app: app as WalletApp, label: cleanLabel, address: address.trim() };
+  return { app: app as WalletApp, label: cleanLabel, address: address.trim(), oneTime: oneTime === true };
 }
 
 /**
@@ -138,10 +153,10 @@ const checkWalletInput: preHandlerAsyncHookHandler = async function (req) {
   const deps = req.server.deps;
   const body = bodyOf(req);
   const batch = Object.hasOwn(body, 'wallets');
-  let shapes: Array<{ app: WalletApp; label: string; address: string }>;
+  let shapes: Array<WalletItem & { oneTime: boolean }>;
   if (batch) {
     const list = body.wallets;
-    if (['app', 'label', 'address'].some((k) => Object.hasOwn(body, k))) throw new ApiError(400, 'bad-request');
+    if (['app', 'label', 'address', 'oneTime'].some((k) => Object.hasOwn(body, k))) throw new ApiError(400, 'bad-request');
     if (!Array.isArray(list) || list.length < 1 || list.length > MAX_WALLET_BATCH) throw new ApiError(400, 'bad-request');
     shapes = list.map(checkItemShape);
     if (new Set(shapes.map((s) => s.address)).size !== shapes.length) throw new ApiError(400, 'bad-request');
@@ -217,9 +232,9 @@ async function insertWallets(
     let inserted: WalletRow;
     try {
       const res = await db.query<WalletRow>(
-        `insert into wallets (account_id, app, label, address, created_at, usable_from)
-         values ($1, $2, $3, $4, $5, $6) returning ${WALLET_COLUMNS}`,
-        [accountId, item.app, item.label, item.address, now, usableFrom],
+        `insert into wallets (account_id, app, label, address, created_at, usable_from, one_time)
+         values ($1, $2, $3, $4, $5, $6, $7) returning ${WALLET_COLUMNS}`,
+        [accountId, item.app, item.label, item.address, now, usableFrom, item.oneTime === true],
       );
       inserted = res.rows[0]!;
     } catch (e) {
@@ -353,6 +368,20 @@ export async function walletRule(db: Queryable, accountId: string): Promise<Wall
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Owner demo note #6: a one-time wallet is used up by the trade that uses it. Called in the take's
+ * (or the poster's wallet route's) transaction, after the trade's address is written and under the
+ * account lock those routes hold, so a second trade can never pick it: it is marked removed (no alert:
+ * the person chose this when adding it) and is never listed or usable again. A saved wallet is left as
+ * it is. The trade keeps its own copy of the address; nothing here touches the trade.
+ */
+export async function useUpOneTimeWallet(db: Queryable, accountId: string, walletId: string, now: Date): Promise<void> {
+  await db.query(
+    'update wallets set removed_at = $3 where id = $1 and account_id = $2 and one_time and removed_at is null',
+    [walletId, accountId, now],
+  );
+}
 
 /**
  * The removal write (the route's, or a waiting one applied 24 h after a username-and-password

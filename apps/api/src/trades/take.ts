@@ -30,7 +30,7 @@ import { assertNoPendingReview, hasPendingReview } from '../reviews/gate.js';
 import type { MarketPrices, MarketQuote } from '../price/market.js';
 import { assertNotBlocked } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type TradeCap } from '../traders/stage.js';
-import { usableWallets, type Wallet } from '../wallets/routes.js';
+import { usableWallets, useUpOneTimeWallet, type Wallet } from '../wallets/routes.js';
 import { assertWithinLaunchCap } from './launchCap.js';
 import { insertTrade, loadTradeRow, rowToTrade, type TradeSides } from './store.js';
 import { roleOf } from './view.js';
@@ -423,6 +423,8 @@ export function takeRoutes(app: FastifyInstance): void {
         if (refusal) throw refusal;
         throw e;
       }
+      // Owner demo note #6: a one-time wallet is for this trade only (under the taker's account lock above).
+      await useUpOneTimeWallet(c, takerId, wallet.id, now);
       // "A take reuses the chat" (Task 20): the pair's open pre-trade chat on this offer becomes the trade's.
       await linkChatToTrade(c, { offerId: id, buyerAccountId: t.buyerId, sellerAccountId: t.sellerId, tradeCode: t.code });
       // Task 18: a team member's take is in the account owner's audit log, in this transaction
@@ -490,6 +492,8 @@ export function takeRoutes(app: FastifyInstance): void {
               [code, me, w.address],
             );
       if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
+      // Owner demo note #6: a one-time wallet is for this trade only (under the poster's account lock above).
+      await useUpOneTimeWallet(c, me, w.id, now);
       await auditMember(c, req.auth, { action: 'trade-wallet-set', tradeCode: code, detail: { walletId } }, now);
     });
     return reply.code(204).send();

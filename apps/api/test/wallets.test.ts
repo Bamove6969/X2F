@@ -852,7 +852,7 @@ describe('listing and removing', () => {
     await addConfirmed(c.b);
     const got = await list(a.b);
     expect(got.map((w) => w.id)).toEqual([w1.id, w2.id]);
-    for (const w of got) expect(Object.keys(w).sort()).toEqual(['address', 'addressEnd', 'app', 'id', 'label', 'usable', 'usableFrom']);
+    for (const w of got) expect(Object.keys(w).sort()).toEqual(['address', 'addressEnd', 'app', 'id', 'label', 'oneTime', 'usable', 'usableFrom']);
   });
 
   it('answers 404 for another account’s wallet or a malformed id', async () => {
