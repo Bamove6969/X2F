@@ -235,3 +235,9 @@ agy is out of tokens (LEAD-START-HERE-17NOV).
 - OQ-1: move `POST /v1/account/session/proof` and `/challenge` to the ban gate's always-allowed list (they renew only the caller's own cookie), with a test. Do it as a follow-up on batch 10a before bound sessions are turned on. It isn't needed for this landing, because the flag is off.
 - M-1: accepted. While banned, the freeze read may still show the account's own finished dispute.
 - Batch 10a lands when: the cloud full check is green apart from serve-boards (whose refs need design's board export), the probe file has run green, and the serve-boards refs are updated.
+
+## Lead calls, 17 Nov (owner-UI integration f06301cf)
+- The selection-ink ORANGE_ALLOWED additions (+3) are accepted.
+- H1: the signed-in rail must not show members links they can't open (Settings, Wallets). Fix as a follow-up; it was already on main.
+- After this lands: revert third-demo-r3's 884a5548 satoshi_ghost exemption, and deploy with X2F_TERMS_VERSION=2026-11-12.
+- Lands when cloud runner F's full check and Playwright are green.
