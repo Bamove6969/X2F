@@ -196,7 +196,7 @@ describe('authorizeRuling', () => {
     const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
     expect(r).toEqual({
       ok: true,
-      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT }, { address: FEE, amountAtomic: plan.feeAtomic }] },
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic, bearsNetworkFee: true }] },
     });
     const s = ruling(mod, { outcome: 'refund-to-seller' });
     expect(await authorize(w, s, [tapBy(mod, s.intent('propose'))])).toEqual({
