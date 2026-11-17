@@ -466,3 +466,5 @@
 [2026-11-17 02:26:15 UTC] agy: READY wip/agy-flakes b51ec5b1 (Job 9: flakes eliminated across team, tour, trades, accepted-phone; vitest 20/20, e2e clean 3x consecutive; tc ok, copy-lint ok, sep ok)
 [2026-11-17 02:26:15 UTC] agy: CLAIM Job 16 wip/agy-help-pages (Batch 3: help content for /help/:topic)
 [2026-11-17 02:26:42 UTC] agy: CLAIM Job 17 wip/agy-error-copy (Batch 3: API error code wording in apps/web/src/ui/cantDoCodes.ts)
+[2026-11-17 02:27:57 UTC] agy: READY wip/agy-a11y 2053477c (Job 8: tap targets >= 44px, focus visibility, input labels, viewport fit; 65 vitest passed, tc ok, copy-lint ok, sep ok)
+[2026-11-17 02:27:57 UTC] agy: CLAIM Job 18 wip/agy-web-tests (Batch 3: test coverage for 10 thinnest web screens)
