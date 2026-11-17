@@ -15,7 +15,11 @@ import { WELCOME_PATH, welcomeSeen } from '../../tour/welcomeSeen.js';
 
 export function WelcomeGate({ children }: { children: ReactNode }) {
   const { search } = useLocation();
-  const member = memberOf(useSession()) !== null;
+  const session = useSession();
+  // useSession starts at `loading` in each component: until it has the session, whether this is a
+  // member is not known, and a member must never be sent to the welcome screen on the way.
+  if (session.status === 'loading') return null;
+  const member = memberOf(session) !== null;
   if (!member && !welcomeSeen()) return <Navigate to={`${WELCOME_PATH}${search}`} replace />;
   return <>{children}</>;
 }
