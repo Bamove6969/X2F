@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { hashPassword } from '../src/auth/password.js';
-import { PAYOUT_WAIT_MS, purgeRemovedWalletAddresses, usableWallets, WALLET_APPS } from '../src/wallets/routes.js';
+import { PAYOUT_WAIT_MS, applyWallets, purgeRemovedWalletAddresses, usableWallets, WALLET_APPS } from '../src/wallets/routes.js';
 import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
@@ -126,7 +126,7 @@ async function addConfirmed(b: Browser, address = fakeAddress(), extra: Record<s
   return { address, wallet: res.json() as WalletOut };
 }
 
-type WalletOut = { id: string; app: string; label: string; address: string; addressEnd: string; usableFrom: string; usable: boolean };
+type WalletOut = { id: string; app: string; label: string; address: string; addressEnd: string; usableFrom: string; usable: boolean; oneTime: boolean };
 
 async function list(b: Browser): Promise<WalletOut[]> {
   const res = await b.get('/v1/wallets');
@@ -886,5 +886,72 @@ describe('purgeRemovedWalletAddresses', () => {
     expect(by.get(recent.id)).toBe(recent.address);
     expect(by.get(open.id)).toBe(open.address);
     expect(await purgeRemovedWalletAddresses.run(deps.db, now)).toBe(0);
+  });
+});
+
+describe('one-time wallets (owner demo note #6)', () => {
+  it('stores oneTime: true when asked and lists it; every other wallet is saved for future trades', async () => {
+    const { b } = await trader();
+    const saved = await addConfirmed(b);
+    expect(saved.wallet.oneTime).toBe(false);
+    const once = await addConfirmed(b, fakeAddress(), { oneTime: true });
+    expect(once.wallet.oneTime).toBe(true);
+    const listed = await list(b);
+    expect(listed.map((w) => [w.address, w.oneTime])).toEqual([[saved.address, false], [once.address, true]]);
+    const kept = await addConfirmed(b, fakeAddress(), { oneTime: false });
+    expect(kept.wallet.oneTime).toBe(false);
+  });
+
+  it('refuses a oneTime that is not a boolean with 400 before the token is used', async () => {
+    const { b } = await trader();
+    const address = fakeAddress();
+    const token = await confirmToken(b, walletAction(address));
+    for (const oneTime of ['true', 1, null, {}]) {
+      const res = await addWallet(b, { address, confirmToken: token, oneTime });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: 'bad-request' });
+    }
+    expect(await tokenUsed(token)).toBe(false);
+    expect((await addWallet(b, { address, confirmToken: token, oneTime: true })).statusCode).toBe(201);
+  });
+
+  it('takes oneTime per wallet in a batch', async () => {
+    const { b } = await trader();
+    const addresses = [fakeAddress(), fakeAddress()];
+    const token = await confirmToken(b, walletsActionOf(addresses));
+    const res = await b.post('/v1/wallets', {
+      wallets: [{ app: 'cake', label: 'Once', address: addresses[0], oneTime: true }, { app: 'cake', label: 'Kept', address: addresses[1] }],
+      confirmToken: token,
+    });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as WalletOut[]).map((w) => w.oneTime)).toEqual([true, false]);
+  });
+
+  it("keeps oneTime through a weak login's 24-hour hold, and applies it when the change applies", async () => {
+    const { id, b, sessionId } = await trader();
+    await addConfirmed(b);
+    // A username-and-password login: the add is staged (hold model v3), nothing is listed yet.
+    await deps.db.query(`update sessions set strength = 'weak-single' where id = $1`, [sessionId]);
+    const address = fakeAddress();
+    const token = await confirmToken(b, walletAction(address));
+    const res = await addWallet(b, { address, confirmToken: token, oneTime: true });
+    expect(res.statusCode).toBe(202);
+    expect((await list(b)).map((w) => w.address)).not.toContain(address);
+    const { rows } = await deps.db.query<{ change: { kind: string; items: Array<{ address: string; oneTime?: boolean }> } }>(
+      'select change from hold_changes where account_id = $1',
+      [id],
+    );
+    expect(rows.map((r) => r.change.items.map((i) => [i.address, i.oneTime]))).toEqual([[[address, true]]]);
+    // What the hold applies once the 24 hours are over.
+    await applyWallets(deps.db, id, rows[0]!.change.items as never, 'password', now);
+    const applied = (await list(b)).find((w) => w.address === address)!;
+    expect(applied).toMatchObject({ oneTime: true, usable: true });
+  });
+
+  it('applies a change staged before one-time wallets existed as saved for future trades', async () => {
+    const { id, b } = await trader();
+    const address = fakeAddress();
+    await applyWallets(deps.db, id, [{ app: 'cake', label: 'Old', address } as never], 'password', now);
+    expect((await list(b)).find((w) => w.address === address)!.oneTime).toBe(false);
   });
 });

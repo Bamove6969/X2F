@@ -1096,3 +1096,79 @@ describe('a session revoked while its trading request waits (review round 5 M2)'
 
   for (const route of Object.keys(ROWS)) it(`${route}: 401, nothing written`, ROWS[route]!);
 });
+
+/**
+ * Owner demo note #6 (16 Nov 2026): a one-time payout wallet is used for the trade being started
+ * only, and the server never lets a trade use an address that is not one of the account's own
+ * usable wallets (a weak account's new address waits 24 hours, staged by hold model v3).
+ */
+describe('one-time wallets and the per-trade address (owner demo note #6)', () => {
+  async function oneTimeWallet(accountId: string): Promise<{ id: string; address: string }> {
+    const w = await addWallet(accountId);
+    await deps.db.query('update wallets set one_time = true where id = $1', [w.id]);
+    return w;
+  }
+  const listed = async (who: Who) => ((await who.browser.get('/v1/wallets')).json() as Array<{ id: string }>).map((w) => w.id);
+
+  it("a take with a one-time wallet pays to it, then the wallet is no longer listed or usable", async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    expect(await listed(buyer)).toContain(once.id);
+    const code = await taken(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+    expect((await loadTradeRow(deps.db, code))!.buyer_payout).toBe(once.address);
+    expect(await listed(buyer)).not.toContain(once.id);
+    expect(await listed(buyer)).toContain(buyer.wallet);
+    // The trade keeps its own copy: the address written at take is unchanged.
+    const second = await postOffer(seller);
+    expect(refusal(await take(buyer, second, body(buyer, tenth, undefined, { walletId: once.id })))).toEqual({ status: 409, error: 'wallet-not-ready' });
+    expect((await loadTradeRow(deps.db, code))!.buyer_payout).toBe(once.address);
+  });
+
+  it('a refused take leaves the one-time wallet listed', async () => {
+    const seller = await person();
+    const offer = await postOffer(seller, { minFiatCents: '3000', maxFiatCents: '6000' });
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    expect(refusal(await take(buyer, offer, body(buyer, XMR / 5n, undefined, { walletId: once.id })))).toEqual({ status: 409, error: 'out-of-range' });
+    expect(await listed(buyer)).toContain(once.id);
+  });
+
+  it("the poster's one-time wallet is used up by the poster's wallet route", async () => {
+    const poster = await person();
+    const taker = await person();
+    const offer = await postOffer(poster, { side: 'sell' });
+    const code = await taken(taker, offer, body(taker, tenth));
+    const once = await oneTimeWallet(poster.id);
+    const res = await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: once.id });
+    expect(res.statusCode, res.body).toBe(204);
+    expect((await loadTradeRow(deps.db, code))!.seller_refund).toBe(once.address);
+    expect(await listed(poster)).not.toContain(once.id);
+  });
+
+  it('a saved wallet stays listed after a take', async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const buyer = await person();
+    await taken(buyer, offer, body(buyer, tenth));
+    expect(await listed(buyer)).toContain(buyer.wallet);
+  });
+
+  it("a weak account's new address cannot reach a trade: staged, waiting or sent as an address, the take is refused", async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const weak = await person();
+    // A username-and-password login (weak account): an add from it is staged, so there is no wallet row to use.
+    await deps.db.query(`update sessions set strength = 'weak-single' where account_id = $1`, [weak.id]);
+    const waiting = await addWallet(weak.id, false);
+    expect(refusal(await take(weak, offer, body(weak, tenth, undefined, { walletId: waiting.id })))).toEqual({ status: 409, error: 'wallet-not-ready' });
+    // The take names a wallet, never an address: an address in the body is refused.
+    expect(refusal(await take(weak, offer, { ...body(weak, tenth), address: fakeAddress() }))).toEqual({ status: 400, error: 'bad-request' });
+    expect(refusal(await take(weak, offer, { ...body(weak, tenth), walletId: undefined, address: fakeAddress() }))).toEqual({ status: 400, error: 'bad-request' });
+    // A wallet of another account is not this account's to use.
+    expect(refusal(await take(weak, offer, body(weak, tenth, undefined, { walletId: seller.wallet })))).toEqual({ status: 409, error: 'wallet-not-ready' });
+    // Its own usable wallet works as before.
+    await taken(weak, offer, body(weak, tenth));
+  });
+});
