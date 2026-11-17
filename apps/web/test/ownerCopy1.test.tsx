@@ -3,6 +3,8 @@
 // typos fixed: the session-length hints and the setup Welcome screen's lead line and checklist.
 // COPY-UNSIGNED and DESIGNER-REVIEW: design restyles both screens.
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Wallet } from '@x2f/auth-client';
 import { SESSION_COPY } from '../src/screens/auth/sessionCopy.js';
@@ -113,7 +115,7 @@ describe('/setup/welcome: the review minors', () => {
   });
 
   it('C2: the ticks use a kit token, not hard-coded greens (the tokens have no green yet)', () => {
-    const css = readFileSync(new URL('../src/screens/setup/setup.css', import.meta.url), 'utf8');
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/setup/setup.css'), 'utf8');
     expect(css).not.toMatch(/#3ccf7a|#1a7f45|--x2f-welcome-done/i);
     const tick = /\.x2f-welcome__tick\s*\{([^}]*)\}/.exec(css)![1]!;
     expect(tick).toContain('background: var(--x2f-escrow);');
