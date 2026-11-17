@@ -1,0 +1,171 @@
+/* The welcome screen (WelcomeScreen.tsx, X2FMark.tsx), after design's FirstScreen board and
+   tour-motion.md §2 (wip/design-brief b3b8315b). DESIGNER-REVIEW. */
+.x2f-hello {
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  padding: 16px 16px 20px;
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+}
+.x2f-hello__col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 480px;
+}
+.x2f-hello__hero {
+  flex: 1 1 auto;
+  min-height: 132px;
+  max-height: 340px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  border: 1px solid var(--x2f-surface-raised);
+  background: radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--x2f-escrow) 10%, var(--x2f-surface)), var(--x2f-ground));
+  container-type: size;
+  overflow: hidden;
+}
+/* min(280, 66% of the hero's width, 46% of its height x 292/122): short screens shrink the letters. */
+.x2f-mark {
+  position: relative;
+  width: min(280px, 66cqw, calc(46cqh * 292 / 122.15));
+  aspect-ratio: 292 / 122.15;
+  color: var(--x2f-ink);
+}
+.x2f-mark__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform-origin: 50% 100%;
+  will-change: transform, opacity;
+}
+.x2f-mark__layer[data-part='letter-x'] {
+  transform-origin: 19% 100%;
+}
+.x2f-mark__layer[data-part='letter-2'] {
+  transform-origin: 54.5% 100%;
+}
+.x2f-mark__layer[data-part='letter-f'] {
+  transform-origin: 86.4% 100%;
+}
+.x2f-mark__layer[data-part='letter-dot'] {
+  transform-origin: 94.2% 48.3%;
+}
+.x2f-mark__ring {
+  position: absolute;
+  left: calc(94.2% - 5.2%);
+  top: calc(48.3% - 12.4%);
+  width: 10.4%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid var(--x2f-monero);
+  opacity: 0;
+  pointer-events: none;
+}
+.x2f-hello__text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.x2f-hello__h1 {
+  margin: 0;
+  font-family: var(--x2f-font-display);
+  font-size: 30px;
+  line-height: 36px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.x2f-hello__line {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  color: var(--x2f-ink-muted);
+}
+.x2f-hello__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.x2f-hello__choices .x2f-button {
+  width: 100%;
+}
+.x2f-hello__tour.x2f-button {
+  min-height: 56px;
+}
+.x2f-hello__skip.x2f-button {
+  min-height: 52px;
+}
+.x2f-hello__links {
+  display: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+/* The links only show when the screen is at least 760 tall (tour-motion.md §2). */
+@media (min-height: 760px) {
+  .x2f-hello__links {
+    display: grid;
+  }
+}
+.x2f-hello__link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.x2f-hello__link:hover {
+  background: var(--x2f-surface-raised);
+}
+/* The text and buttons rise in once (welcome block 1250 ms, buttons 1400, links 1520; 520 ms each);
+   calm: they fade in with no rise, and the full logo fades in over 600 ms. */
+@media (prefers-reduced-motion: no-preference) {
+  .x2f-hello__text {
+    animation: x2f-hello-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) 1250ms both;
+  }
+  .x2f-hello__choices {
+    animation: x2f-hello-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) 1400ms both;
+  }
+  .x2f-hello__links {
+    animation: x2f-hello-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) 1520ms both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .x2f-mark {
+    animation: x2f-hello-fade 600ms ease-out both;
+  }
+  .x2f-hello__text,
+  .x2f-hello__choices,
+  .x2f-hello__links {
+    animation: x2f-hello-fade 520ms ease-out both;
+  }
+}
+@keyframes x2f-hello-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes x2f-hello-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

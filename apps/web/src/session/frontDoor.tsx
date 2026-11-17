@@ -19,7 +19,7 @@ import type { Session } from './useSession.js';
 import { useSession } from './useSession.js';
 
 /** The front door's own screens: open to anyone, signed in or not. */
-const FRONT_DOOR: readonly RegExp[] = [/^\/$/, /^\/login$/, /^\/login\/backup$/, /^\/setup(\/.*)?$/, /^\/terms$/, /^\/team\/join$/];
+const FRONT_DOOR: readonly RegExp[] = [/^\/$/, /^\/login$/, /^\/login\/backup$/, /^\/setup(\/.*)?$/, /^\/terms$/, /^\/team\/join$/, /^\/help\/[a-z-]+$/];
 
 /**
  * What a recovery (backup) session may open: adding a login method (Security), finishing an open

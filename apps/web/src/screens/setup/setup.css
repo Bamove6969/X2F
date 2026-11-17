@@ -11,7 +11,7 @@
   box-sizing: border-box;
   width: 100%;
   max-width: 480px;
-  height: 100dvh;
+  height: calc(100dvh - var(--x2f-shell-header, 0px));
   margin: 0 auto;
   background: var(--x2f-ground);
   color: var(--x2f-ink);
@@ -800,6 +800,69 @@
 .x2f-welcome__key,
 .x2f-welcome__end {
   color: var(--x2f-ink-muted);
+}
+
+/* The owner's checklist (demo notes 12 Nov 2026). DESIGNER-REVIEW: plain until design restyles it.
+   The owner asked for green ticks and the design tokens have no green yet: the ticks use the kit's
+   escrow colour (its "secured, done" tone, as the release hold's done state) until design adds a
+   good/green token (review 12 Nov, C2: no hard-coded colours outside the token set). */
+.x2f-welcome__checks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-welcome__check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--x2f-surface-raised);
+  font-size: 16px;
+}
+
+.x2f-welcome__what {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.x2f-welcome__title {
+  font-weight: 600;
+}
+
+.x2f-welcome__methods {
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-welcome__tick {
+  display: flex;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-escrow);
+  color: var(--x2f-surface);
+}
+
+.x2f-welcome__tick--open {
+  border: 2px solid var(--x2f-surface-raised);
+  background: transparent;
+}
+
+/* The line under the checklist, in a bigger font (owner). */
+.x2f-welcome__next {
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
 }
 
 @media (max-width: 370px) {
