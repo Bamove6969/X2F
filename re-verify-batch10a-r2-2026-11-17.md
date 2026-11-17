@@ -150,3 +150,9 @@ Every new entry is a route that only apps/web calls. There is no auth-client met
 - **OQ-1 (lead or owner): should the proof pair be in ALWAYS?** That is, should a site-banned person with nothing unfinished keep their ban notice past 10 minutes once bound sessions are on? Recommendation: yes, move `POST /v1/account/session/proof(/challenge)` to ALWAYS. It renews only the caller's own cookie and starts nothing. It does not block landing while the flag is off.
 - **M-1 (lead): the freeze read and the trades list disagree.** While banned, the freeze read can name a finished trade's dispute, which the trades list hides. Recommendation: accept it, since it is the account's own freeze notice. Trimming it would change what users see.
 - **To the lead:** before landing, run my probe and the targeted list above, or rely on the cloud full check plus the probe. I could not get the lock in 2 h.
+
+## Probe run (lead, 17 Nov; cloud runner D at ea5fc7bd, probe on comms at b48b769b)
+- 5 of 5 probe tests pass. Earlier targeted runs: api 111/0 (bans, sessions, tradesList, news, proofs, blurCheck) and auth-client 77/0 (flows.test).
+- Route sweep, site-banned trader with one open trade and one closed trade: every offer, take, new-chat, settings, review and team-management route, and every route on the closed trade, is refused 403 `banned`.
+- Of 151 trader routes, 51 are not refused. That is ALWAYS + ACCOUNT in banState.ts plus routes outside the trader session (login, register, team-join). `GET /v1/events` (by design, S1) and `/v1/logout` are skipped.
+- Lead verdict: the ban gate matches its allow list. Batch 10a is cleared for security. Landing waits only on the serve-boards refs.
