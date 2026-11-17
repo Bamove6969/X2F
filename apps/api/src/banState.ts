@@ -52,11 +52,6 @@ export async function tradeBanned(db: Queryable, accountId: string, now: Date): 
   return (await activeBans(db, accountId, now)).length > 0;
 }
 
-/** The site ban in force at `now`, or null. */
-export async function siteBan(db: Queryable, accountId: string, now: Date): Promise<ActiveBan | null> {
-  return (await activeBans(db, accountId, now)).find((b) => b.kind === 'site') ?? null;
-}
-
 /** SQL: true while trade `t` is unfinished: open (`closed_at` null), or with a dispute not closed (an open appeal included). */
 const UNFINISHED_SQL = `(t.closed_at is null or exists (select 1 from disputes d where d.code = t.code and d.status <> 'closed'))`;
 
