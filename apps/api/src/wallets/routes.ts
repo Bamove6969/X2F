@@ -399,11 +399,42 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * and that is intended. A saved wallet is left as it is. The trade keeps its own copy of the address;
  * nothing here touches the trade.
  */
-export async function useUpOneTimeWallet(db: Queryable, accountId: string, walletId: string, now: Date): Promise<void> {
+export async function useUpOneTimeWallet(db: Queryable, accountId: string, walletId: string, tradeCode: string, now: Date): Promise<void> {
+  // `used_by_trade` (migration 640): the trade that used it, so that trade ending in setup gives it back.
   await db.query(
-    'update wallets set removed_at = $3 where id = $1 and account_id = $2 and one_time and removed_at is null',
-    [walletId, accountId, now],
+    'update wallets set removed_at = $3, used_by_trade = $4 where id = $1 and account_id = $2 and one_time and removed_at is null',
+    [walletId, accountId, now, tradeCode],
   );
+}
+
+/**
+ * Owner, 17 Nov 2026 (note #6 Q10: "they have the option of reusing the wallet over again, but by no
+ * means do they have to"): the one-time wallets trade `tradeCode` used up are open again, still
+ * one-time, with their address and wait as they were. Called by the trade store (trades/store.ts
+ * `applyEvent`) in the transaction that closes a trade straight from `setup` with nothing funded, after
+ * the trade row lock; it takes the lock of each account that has a wallet to give back (in id order),
+ * so it serialises with any take, add or wallet route of that account. It never creates an address, never touches
+ * `had_wallet` or any wait, and never restores a wallet whose removal applied meanwhile (that removal
+ * cleared `used_by_trade`, `applyWalletRemoval`), nor one whose address is open again on the account
+ * (re-added meanwhile) or was purged.
+ */
+export async function restoreOneTimeWallets(db: Queryable, tradeCode: string, accountIds: readonly string[]): Promise<number> {
+  // Only the accounts that have a wallet to give back are locked (most trades have none, and then
+  // nothing is locked): the cancel route already holds the canceller's account lock, so locking the
+  // other side too would deadlock against a take of that side waiting for the canceller's account.
+  const owners = await db.query<{ account_id: string }>(
+    'select distinct account_id from wallets where used_by_trade = $1 and account_id = any($2)',
+    [tradeCode, [...accountIds]],
+  );
+  if (owners.rows.length === 0) return 0;
+  await db.query('select id from accounts where id = any($1) order by id for update', [owners.rows.map((r) => r.account_id)]);
+  const { rowCount } = await db.query(
+    `update wallets w set removed_at = null, used_by_trade = null
+      where w.used_by_trade = $1 and w.account_id = any($2) and w.one_time and w.removed_at is not null and w.address is not null
+        and not exists (select 1 from wallets o where o.account_id = w.account_id and o.address = w.address and o.removed_at is null)`,
+    [tradeCode, [...accountIds]],
+  );
+  return rowCount ?? 0;
 }
 
 /**
@@ -414,6 +445,18 @@ export async function useUpOneTimeWallet(db: Queryable, accountId: string, walle
  * already (a waiting removal is then dropped).
  */
 export async function applyWalletRemoval(db: Queryable, accountId: string, walletId: string, now: Date): Promise<void> {
+  // Owner note #6 Q10: a one-time wallet a trade is using (used up, `used_by_trade` set) is removed
+  // for good: it will not come back if that trade ends in setup. The removal is done, with its alert.
+  const used = await db.query<{ app: WalletApp; label: string; address: string }>(
+    `update wallets set used_by_trade = null where id = $1 and account_id = $2 and used_by_trade is not null
+     returning app, label, address`,
+    [walletId, accountId],
+  );
+  if (used.rows[0]) {
+    const u = used.rows[0];
+    await addAlert(db, accountId, 'wallet-removed', { app: u.app, label: u.label, addressEnd: addressEnd(u.address) }, now);
+    return;
+  }
   const { rows } = await db.query<{ app: WalletApp; label: string; address: string }>(
     `update wallets set removed_at = $3 where id = $1 and account_id = $2 and removed_at is null
      returning app, label, address`,

@@ -424,7 +424,7 @@ export function takeRoutes(app: FastifyInstance): void {
         throw e;
       }
       // Owner demo note #6: a one-time wallet is for this trade only (under the taker's account lock above).
-      await useUpOneTimeWallet(c, takerId, wallet.id, now);
+      await useUpOneTimeWallet(c, takerId, wallet.id, t.code, now);
       // "A take reuses the chat" (Task 20): the pair's open pre-trade chat on this offer becomes the trade's.
       await linkChatToTrade(c, { offerId: id, buyerAccountId: t.buyerId, sellerAccountId: t.sellerId, tradeCode: t.code });
       // Task 18: a team member's take is in the account owner's audit log, in this transaction
@@ -493,7 +493,7 @@ export function takeRoutes(app: FastifyInstance): void {
             );
       if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
       // Owner demo note #6: a one-time wallet is for this trade only (under the poster's account lock above).
-      await useUpOneTimeWallet(c, me, w.id, now);
+      await useUpOneTimeWallet(c, me, w.id, code, now);
       await auditMember(c, req.auth, { action: 'trade-wallet-set', tradeCode: code, detail: { walletId } }, now);
     });
     return reply.code(204).send();

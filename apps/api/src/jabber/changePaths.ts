@@ -78,7 +78,9 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     // one_time (620, owner demo note #6) is set once with the wallet and never updated: a change if it
     // ever were. A one-time wallet used up by a trade sets removed_at, a change that notifies like a removal.
     // is_default (630, owner 17 Nov): the person's choice of default payout wallet, a change.
-    changes: ['id', 'account_id', 'app', 'label', 'created_at', 'usable_from', 'removed_at', 'one_time', 'is_default'],
+    // used_by_trade (640, owner Q10): the trade that used up a one-time wallet. Set and cleared with
+    // removed_at (use-up, restore), a change either way; cleared alone by a removal, which notifies too.
+    changes: ['id', 'account_id', 'app', 'label', 'created_at', 'usable_from', 'removed_at', 'one_time', 'is_default', 'used_by_trade'],
     bookkeeping: { address: "nulled by the purge 90 days after removal (the removal notified)" },
   },
   {

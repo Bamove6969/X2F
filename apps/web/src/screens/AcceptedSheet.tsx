@@ -1,3 +1,4 @@
+import { DEFAULT_TAG } from './walletsCopy.js';
 import { useEffect, useRef, useState } from 'react';
 import { formatFiat, formatXmr } from '@x2f/trade';
 import { api } from '../api/client.js';
@@ -20,6 +21,8 @@ export interface AcceptedWallet {
   address: string;
   addressEnd: string;
   usable: boolean;
+  /** Owner 17 Nov 2026 (note #6 Q9): the API's default, picked first. Absent from older API builds. */
+  isDefault?: boolean;
 }
 
 /** The fields of the poster's `GET /v1/trades/:code` view (Task 6) the sheet shows and confirms. */
@@ -79,7 +82,7 @@ type Phase = 'loading' | 'pick' | 'sending' | 'done';
 /**
  * Shown to an offer's poster on a live `accepted` event: "<display name> accepted your offer".
  * The sheet shows the deal from the poster's own trade view and the poster picks which of their
- * usable wallets this trade uses (spec 2.2 step 4; no default wallet, OD-11); escrow setup starts
+ * usable wallets this trade uses (spec 2.2 step 4; the default is picked first, owner 17 Nov Q9); escrow setup starts
  * after that, and the trade waits in `setup` until `setupBy`. A poster with no usable wallet gets
  * Add a wallet, which comes back to this trade.
  *
@@ -117,11 +120,14 @@ export function AcceptedSheet({
     Promise.all([load.current.loadWallets(), load.current.loadTrade(event.code)]).then(
       ([all, view]) => {
         if (!live) return;
-        // No wallet is pre-selected (OD-11, X-2: no default payout wallet; always ask). The
-        // button stays disabled until the poster picks one.
+        // Owner 17 Nov 2026 (note #6 Q9, overriding OD-11): the default wallet (the API's
+        // `isDefault`) is picked first; the poster can pick another. With no usable default nothing
+        // is picked and the button stays disabled until the poster picks one.
         // A wallet whose address cannot be confirmed (empty, or over 256 characters, the rule
         // readConfirmed applies) is never offered: it could not become `ownAddress` (gap 3).
-        setWallets(all.filter((w) => w.usable && confirmableAddress(w.address)));
+        const offered = all.filter((w) => w.usable && confirmableAddress(w.address));
+        setWallets(offered);
+        setPicked((p) => p ?? offered.find((w) => w.isDefault === true)?.id ?? null);
         const d = posterDeal(view);
         setDeal(d);
         setRole(d ? view.role : null);
@@ -193,6 +199,7 @@ export function AcceptedSheet({
                 />
                 <span className="x2f-accepted__label">{w.label}</span>
                 <span className="x2f-accepted__end">…{addressEnd(w.address)}</span>
+                {w.isDefault === true ? <span className="x2f-accepted__end">{DEFAULT_TAG}</span> : null}
               </label>
             ))}
           </fieldset>
