@@ -460,12 +460,12 @@ describe('DisputeRuling appeal form', () => {
     const text = host.textContent ?? '';
     expect(text).toContain('Goes to Cake Wallet, address ending …k3Fz.');
     expect(text).not.toMatch(/Sent to|already moved/);
-    expect(text).toContain('(48 h). An appeal goes to a senior moderator or the owner who hasn\'t seen this case. If an appeal overturns the ruling, you get a lien. You can\'t trade until you pay the XMR back.');
+    expect(text).toContain('(48 h). An appeal goes to a senior moderator or the owner who hasn\'t seen this case. If an appeal overturns the ruling, you get a lien. You can\'t trade until you pay the trade\'s XMR back.');
     expect(text).not.toMatch(/window closes/);
     // The losing side reads that the lien would fall on the other trader.
     const seller = trade({ role: 'seller', counterparty: 'mira.k', state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const r2 = render(inRouter(<DisputeRuling trade={seller} methodName="Zelle" dispute={ruled()} serverClock={at(500)} onAppeal={async () => undefined} />));
-    expect(r2.host.textContent).toContain('If an appeal overturns the ruling, mira.k gets a lien until they pay the XMR back.');
+    expect(r2.host.textContent).toContain('If an appeal overturns the ruling, mira.k gets a lien until they pay the trade\'s XMR back.');
     expect(r2.host.textContent).not.toMatch(/window closes|address ending/);
   });
 
@@ -473,11 +473,11 @@ describe('DisputeRuling appeal form', () => {
     const seller = trade({ role: 'seller', counterparty: 'mira.k', state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const appealed = ruled({}, { status: 'appealed', appeal: { by: 'seller', at: iso(450) } });
     const { host } = render(inRouter(<DisputeRuling trade={seller} methodName="Zelle" dispute={appealed} serverClock={at(500)} onAppeal={async () => undefined} />));
-    expect(host.textContent).toContain('Appeal sent. A second moderator will look at it. If they overturn the ruling, the other trader gets a lien until they pay the XMR back.');
+    expect(host.textContent).toContain('Appeal sent. A second moderator will look at it. If they overturn the ruling, the other trader gets a lien until they pay the trade\'s XMR back.');
     expect(host.textContent).not.toMatch(/stays locked|already moved/);
     const buyer = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const r2 = render(inRouter(<DisputeRuling trade={buyer} methodName="Zelle" dispute={appealed} serverClock={at(500)} onAppeal={async () => undefined} />));
-    expect(r2.host.textContent).toContain('satoshi_ghost appealed. A second moderator will look at it. If they overturn the ruling, you get a lien until you pay the XMR back.');
+    expect(r2.host.textContent).toContain('satoshi_ghost appealed. A second moderator will look at it. If they overturn the ruling, you get a lien until you pay the trade\'s XMR back.');
     expect(r2.host.textContent).not.toMatch(/already moved/);
   });
 

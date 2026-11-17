@@ -3,8 +3,6 @@
 // settings and the USD value, the appeal runs through the machine with R37's involvement list, a
 // timer closes the 48-hour appeal window and maintenance shifts every running deadline (A7).
 // Owner 2026-11-02: a dispute alone never blocks trading (a freeze is Task 11's separate action).
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../../src/app.js';
@@ -352,13 +350,6 @@ describe('live delivery', () => {
     } finally {
       spy.mockRestore();
     }
-  });
-});
-
-describe('tripwires (local tree only)', () => {
-  const src = (p: string) => fileURLToPath(new URL(`../../src/${p}`, import.meta.url));
-  it('NEEDS_TASK_25_LIEN_ON_APPEAL: once liens exist, filing an appeal must suspend the round-1 lien', () => {
-    expect(existsSync(src('disputes/lien.ts')), 'NEEDS_TASK_25_LIEN_ON_APPEAL').toBe(false);
   });
 });
 

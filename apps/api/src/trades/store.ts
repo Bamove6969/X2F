@@ -1,5 +1,5 @@
 import { addressEnd } from '@x2f/accounts';
-import { apply, type By, type Trade, type TradeEvent, type TradeState } from '@x2f/trade';
+import { apply, isRulingKind, type By, type Trade, type TradeEvent, type TradeState } from '@x2f/trade';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
@@ -417,7 +417,8 @@ export async function applyEvent(
         await eraseReversedReviews(client, code);
         // Plan 4 Task 32: the 1% the settlement paid to the fee wallet goes into the aggregate
         // revenue ledger, once per trade; a cancel or a refund pays none (staff/revenue.ts).
-        await bookTradeRevenue(client, code);
+        // A ruling's payout (Plan 4 Task 14, R-M2) names no settlement on the row: its own kind decides the fee.
+        await bookTradeRevenue(client, code, e.type === 'settled' && isRulingKind(e.kind) ? e.kind : undefined);
       }
       // P5-A8: a release by the seller adds both sides' action times to their running lists (once; traders/actionTimes.ts).
       if (next.state !== prev.state && next.state === 'released') {

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { normalizeTradeCode } from '@x2f/core';
 import { canonicalJson, type Actor } from '@x2f/staff';
 import type { By, TradeEvent } from '@x2f/trade';
@@ -10,39 +9,10 @@ export const LOG_LOCK_KEY = 7240001;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** The stored columns of an entry, as hashed. */
-export interface LogRowFields {
-  id: string;
-  at: Date;
-  actorKind: Actor['kind'];
-  actorId: string | null;
-  actorRole: string | null;
-  tradeCode: string | null;
-  action: string;
-  detail: string;
-}
-
-/**
- * hash = SHA-256(prev_hash ‖ utf8(id | at | actor_kind | actor_id | actor_role | trade_code |
- * action | detail)), `at` as ISO with milliseconds and Z, nulls as empty strings. The migration's
- * chain trigger computes the same.
- */
-export function chainHash(prev: Buffer | null, r: LogRowFields): Buffer {
-  const line = [
-    r.id,
-    r.at.toISOString(),
-    r.actorKind,
-    r.actorId ?? '',
-    r.actorRole ?? '',
-    r.tradeCode ?? '',
-    r.action,
-    r.detail,
-  ].join('|');
-  return createHash('sha256')
-    .update(prev ?? Buffer.alloc(0))
-    .update(line, 'utf8')
-    .digest();
-}
+// The chain's fields and hash live in @x2f/logchain (Plan 4 Task 14: the moderation process verifies
+// the same chain). Re-exported so the API's callers keep their imports.
+import { chainHash, type LogRowFields } from '@x2f/logchain';
+export { chainHash, type LogRowFields };
 
 function actorColumns(a: Actor): { kind: Actor['kind']; id: string | null; role: string | null } {
   switch (a.kind) {

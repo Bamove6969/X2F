@@ -277,7 +277,7 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     await expect(
       verifyAttestation(payload.attestation, payload.sig, modSign.public, {
         trade: code, role: 'buyer', signPublic: buyerId.id.signPublic, boxPublic: buyerId.id.boxPublic,
-        deal: dealOf(termsByCode.get(code)!), ownAddress: termsByCode.get(code)!.buyerPayout,
+        deal: dealOf(termsByCode.get(code)!), ownAddress: termsByCode.get(code)!.buyerPayout, identityCreatedAt: now.getTime(),
       }),
     ).resolves.toBeUndefined();
   });

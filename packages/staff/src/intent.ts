@@ -7,7 +7,8 @@ import { sha256, toHex, utf8 } from './sha256.js';
 export type EscrowOutcome = 'release-to-buyer' | 'refund-to-seller';
 /**
  * How a dispute after a refund can end (A6). `seller-sends-xmr` and `seller-returns-fiat` order
- * restitution the escrow cannot pay, so they put a lien on the seller at publish (Task 25).
+ * restitution the escrow cannot pay. `seller-sends-xmr` puts a lien on the seller at publish (Task
+ * 25, `lienSteps`); `seller-returns-fiat` does not yet (NEEDS_OWNER_FIAT_LIEN in lien.ts).
  */
 export type AfterRefundOutcome = 'seller-sends-xmr' | 'seller-returns-fiat' | 'no-action';
 export type RulingOutcome = EscrowOutcome | AfterRefundOutcome;
@@ -43,20 +44,39 @@ export type AccountAction =
 
 type Invitable = Exclude<StaffRole, 'owner'>;
 
+/**
+ * Lead call on mod-gate review P4 (12 Nov): the owner registry kinds the moderation gate orders
+ * carry `issuedAt`, the API's own start time of the tap (`startKeyTap` stamps it; a client never
+ * sends it), as an ISO UTC time with milliseconds. Signed with the rest of the intent, so the gate
+ * can tell a switch-on made after a switch-off it saw from an older one held back. A tap of these
+ * kinds without it has no valid challenge.
+ */
+export const ISSUED_AT_KINDS = [
+  'create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading',
+] as const;
+const ISSUED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+export const hasIssuedAt = (kind: string): boolean => (ISSUED_AT_KINDS as readonly string[]).includes(kind);
+
+/** The intent as the API stores it for a tap started at `at`: `issuedAt` set on the kinds that carry one. */
+export function stampIssuedAt(i: KeyTapIntent, at: Date): KeyTapIntent {
+  return hasIssuedAt(i.kind) ? ({ ...i, issuedAt: at.toISOString() } as KeyTapIntent) : i;
+}
+
 /** What a security-key tap authorises (Task 5 binds each tap to exactly one of these). */
 export type KeyTapIntent =
-  | { kind: 'emergency-stop' }
-  | { kind: 'resume-trading' }
-  | { kind: 'create-invite'; inviteId: string; role: Invitable; tokenHash: string; expiresAt: string }
-  | { kind: 'switch-on'; accountId: string; role: Invitable }
-  | { kind: 'set-role'; accountId: string; role: Invitable }
+  | { kind: 'emergency-stop'; issuedAt?: string }
+  | { kind: 'resume-trading'; issuedAt?: string }
+  | { kind: 'create-invite'; inviteId: string; role: Invitable; tokenHash: string; expiresAt: string; issuedAt?: string }
+  | { kind: 'switch-on'; accountId: string; role: Invitable; issuedAt?: string }
+  | { kind: 'set-role'; accountId: string; role: Invitable; issuedAt?: string }
   // Owner G4 (7 Nov): permanently removing a staff member is tapped.
-  | { kind: 'remove-staff'; accountId: string }
+  | { kind: 'remove-staff'; accountId: string; issuedAt?: string }
   // D-032 (owner G60): the owner's reset of a staff member's security, bound to the person and to the
   // re-enrolment link (its id, the token's hash and the expiry), as `create-invite` binds an invite.
   | { kind: 'reset-staff-security'; accountId: string; inviteId: string; tokenHash: string; expiresAt: string }
-  | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string }
-  | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number }
+  | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string; issuedAt?: string }
+  | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number; issuedAt?: string }
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
   // staff site, each change confirmed by a tap of one of their security keys.
   | { kind: 'add-pgp-key'; fingerprint: string }
@@ -91,6 +111,17 @@ export type KeyTapIntent =
       accountAction: AccountAction;
       amountAtomic: string;
       reasonSha256: string;
+      /**
+       * Review mod-screens M1: the evidence lines both traders read beside the reason, as the ruling
+       * stores them (in order), bound like the reason: `evidenceSha256(lines)`.
+       */
+      evidenceSha256: string;
+      /**
+       * Round 2: the id of the round-1 ruling this appeal ruling reviews; round 1: null. Signed so
+       * the moderation gate's R37 check rests on the ruling the taps agreed to review, never on the
+       * database's word (mod-gate review B2).
+       */
+      round1Id: string | null;
     };
 
 export const KEY_TAP_KINDS = [
@@ -112,6 +143,20 @@ export const KEY_TAP_KINDS = [
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 
+/**
+ * Review mod-screens M1: what a ruling tap binds of its evidence lines. SHA-256 (lower-case hex) of
+ * the UTF-8 bytes of `canonicalJson(lines)`: a JSON array of the lines as strings, in their order,
+ * with no whitespace (`["a","b"]`), so the order, the split into lines and every character count.
+ * The staff web, the API (which rebuilds it from the lines it stores) and the moderation gate all
+ * use this one function.
+ */
+export function evidenceSha256(lines: readonly string[]): string {
+  if (!Array.isArray(lines) || lines.some((l) => typeof l !== 'string')) throw new TypeError('evidenceSha256: lines must be strings');
+  return toHex(sha256(utf8(canonicalJson([...lines]))));
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /** Shortest nonce accepted (bytes). The server issues 16 (Task 5, `startKeyTap`). */
 const MIN_NONCE = 16;
 
@@ -124,9 +169,16 @@ export function tapChallenge(i: KeyTapIntent, nonce: Uint8Array): Uint8Array {
   if (!(KEY_TAP_KINDS as readonly string[]).includes(i.kind)) throw new TypeError('tapChallenge: unknown intent kind');
   if (!(nonce instanceof Uint8Array) || nonce.length < MIN_NONCE) throw new TypeError('tapChallenge: nonce too short');
   let intent: KeyTapIntent = i;
+  const issued = (i as { issuedAt?: unknown }).issuedAt;
+  if (hasIssuedAt(i.kind) ? typeof issued !== 'string' || !ISSUED_AT.test(issued) || Number.isNaN(Date.parse(issued)) : issued !== undefined) {
+    throw new TypeError('tapChallenge: an owner registry intent carries its issuedAt, any other none');
+  }
   if (i.kind === 'ruling') {
     const code = normalizeTradeCode(i.code);
     if (code === null) throw new TypeError('tapChallenge: invalid trade code');
+    if (i.round === 1 ? i.round1Id !== null : typeof i.round1Id !== 'string' || !UUID.test(i.round1Id)) {
+      throw new TypeError('tapChallenge: a round-2 ruling names its round-1 ruling, a round-1 ruling none');
+    }
     intent = { ...i, code };
   }
   return sha256(utf8(`x2f-keytap-v1\n${canonicalJson(intent)}\n${toHex(nonce)}`));

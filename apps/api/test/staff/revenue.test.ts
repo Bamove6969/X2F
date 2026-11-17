@@ -237,7 +237,7 @@ describe('retention: the ledger keeps amounts, not codes', () => {
 });
 
 describe('GET /staff/v1/revenue (owner only)', () => {
-  it('totals by day and by month, with the owed collections apart and the outstanding total not yet known', async () => {
+  it('totals by day and by month, with the owed collections apart and the outstanding owed total (none here; migration 400)', async () => {
     setNow(new Date('2026-04-10T10:00:00Z'));
     await trade({ to: 'released', amountAtomic: 3n * XMR });
     const fee3 = escrowPlan({ amountAtomic: 3n * XMR, poster: 'seller' }).feeAtomic;
@@ -249,7 +249,7 @@ describe('GET /staff/v1/revenue (owner only)', () => {
     expect(byDay.json()).toMatchObject({
       by: 'day', from: '2026-03-02', to: '2026-03-03',
       buckets: [{ period: '2026-03-02', trades: 2, feeAtomic: (2n * fee1).toString(), owedCollectedAtomic: '0', owedCollections: 0, totalAtomic: (2n * fee1).toString(), usdEstimateCents: '660' }],
-      owedOutstandingAtomic: null,
+      owedOutstandingAtomic: '0',
     });
 
     const byMonth = await owner.get('/staff/v1/revenue?by=month&from=2026-03-01&to=2026-04-30');

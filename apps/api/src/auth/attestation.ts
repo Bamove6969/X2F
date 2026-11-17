@@ -19,7 +19,9 @@ const HEADINGS: Record<AllowlistKind, string> = { owner: 'Owner allowlist', staf
  * line there does not hold a UUID, or when the list is empty (an empty list would refuse every
  * key of that account kind at registration, silently).
  */
-export function parseAllowlist(readme: string, kind: AllowlistKind): string[] {
+export function parseAllowlist(text: string, kind: AllowlistKind): string[] {
+  // A README saved with CRLF line ends reads like one with LF (the moderation gate's copy does the same, review I2).
+  const readme = text.replace(/\r\n?/g, '\n');
   const heading = HEADINGS[kind];
   // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- heading comes from the constant HEADINGS map, not user input
   const start = readme.search(new RegExp(`^## ${heading}[ \\t]*$`, 'm'));

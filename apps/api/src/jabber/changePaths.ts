@@ -103,6 +103,21 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     bookkeeping: {},
   },
   {
+    // J-06 (migration 400): a lien on the account and a 1% it owes are changes to it, like a freeze
+    // (lead default, owner p11-119 pattern; owner may change). Neither is ever deleted (400's guards).
+    table: 'liens', accountColumn: 'debtor_account_id', ops: ['insert', 'update'],
+    changes: [
+      'id', 'debtor_account_id', 'creditor_account_id', 'amount_atomic', 'fee_atomic', 'from_code', 'dispute_seq', 'round', 'cause',
+      'status', 'created_at', 'changed_at', 'lifted_at', 'repayment_code',
+    ],
+    bookkeeping: {},
+  },
+  {
+    table: 'fees_owed', accountColumn: 'account_id', ops: ['insert', 'update'],
+    changes: ['id', 'account_id', 'amount_atomic', 'from_code', 'dispute_seq', 'created_at', 'collected_atomic', 'settled_at'],
+    bookkeeping: {},
+  },
+  {
     table: 'trading_holds', accountColumn: 'account_id', ops: ALL,
     // 208's freeze columns (kind, reason, side, who placed or lifted it, the dispute) are changes like the
     // rest of a hold (lead default, owner p11-119).
@@ -186,5 +201,7 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'feedback_form.account_id': 'feedback sent to X2F',
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
   // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
+  // J-06 (migration 400; lead default): the person a lien is owed to; the dispute's own notices tell them.
+  'liens.creditor_account_id': 'the person a lien is owed to: the debtor is notified (liens.debtor_account_id); the dispute tells the creditor',
   'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
 };

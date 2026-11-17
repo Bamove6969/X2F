@@ -7,11 +7,13 @@ import {
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
   isAttestedTerms,
+  isRulingKind,
   SETTLE_KINDS,
   settleKindFor,
   TradeRuleError,
   type Attestation,
   type AttestedTerms,
+  type RulingKind,
   type SettleKind,
   type TradeEvent,
   type TradeState,
@@ -22,6 +24,7 @@ import type pg from 'pg';
 import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
+import { recordRulingExecution } from '../disputes/execution.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
 /**
@@ -244,8 +247,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
     if (code === null) throw new Refused(400, 'bad-body');
     let event: TradeEvent | null = null;
-    /** `settled`: the kind the watcher counted the sweep for (security review 7 Nov, finding 3). */
-    let claimedKind: SettleKind | null = null;
+    /** `settled`: the kind the watcher counted the sweep for (security review 7 Nov, finding 3), or a ruling's (R-M2). */
+    let claimedKind: SettleKind | RulingKind | null = null;
     switch (body.kind) {
       case 'setup-done':
         if (!keysAre(body, ['kind', 'trade', 'escrowAddress']) || typeof body.escrowAddress !== 'string' || !/^[0-9A-Za-z]{1,128}$/.test(body.escrowAddress)) break;
@@ -261,8 +264,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       }
       case 'settled':
         if (!keysAre(body, ['kind', 'trade', 'txHash', 'settleKind']) || typeof body.txHash !== 'string' || !TX_HASH.test(body.txHash)) break;
-        if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind)) break;
-        claimedKind = body.settleKind as SettleKind | null;
+        if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind) && !isRulingKind(body.settleKind)) break;
+        claimedKind = body.settleKind as SettleKind | RulingKind | null;
         event = { type: 'settled', kind: 'release', txHash: body.txHash }; // kind set below from the trade
         break;
       case 'late-funds':
@@ -289,7 +292,29 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     // a signing window that reverted and a new settlement started in between is refused, never
     // recorded as the other kind.
     let within: Parameters<typeof applyEvent>[4];
-    if (event.type === 'settled') {
+    if (event.type === 'settled' && isRulingKind(claimedKind)) {
+      // Plan 4 Task 14 (R-M2): the moderation process executed a round-1 escrow ruling and its watcher
+      // saw the mod-built sweep. Never named by the trade alone: only a disputed trade whose published
+      // round-1 escrow ruling pays exactly this way (checked again under the dispute's row lock).
+      const t = await loadTrade(o.db, code);
+      const closedAs = claimedKind === 'dispute-buyer' ? 'released' : 'refunded';
+      // The same report again (the watcher retries until a pass is saved) changes nothing.
+      if (t !== null && t.state === closedAs && t.txHash === body.txHash && t.settling === null) {
+        log({ reason: 'internal-settled' });
+        return reply.code(201).send({ ok: true });
+      }
+      if (t === null || t.state !== 'disputed') {
+        if (t !== null && (t.state === 'released' || t.state === 'refunded')) throw new Refused(409, 'wrong-state');
+        throw new Refused(409, 'settle-kind-unknown');
+      }
+      const kind = claimedKind;
+      const txHash = body.txHash as string;
+      event = { type: 'settled', kind, txHash };
+      within = async (c, _prev, _next, at) => {
+        const r = await recordRulingExecution(c, code, kind, txHash, at);
+        if (r !== 'ok') throw new Refused(409, r);
+      };
+    } else if (event.type === 'settled') {
       const t = await loadTrade(o.db, code);
       const kind = t ? settleKindFor(t) : null;
       if (kind === null || claimedKind === null) throw new Refused(409, 'settle-kind-unknown');
@@ -477,6 +502,46 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * `{ kind: 'chat-shredded', chat }`: the moderation service destroyed its copy of the chat's keys.
    * The order is removed; a repeat (or a chat with no order) is still 201, so the report is idempotent.
    */
+  /**
+   * Plan 4 Task 14: the moderation process's log checkpoint `{ id, hash }` (the head it recorded in
+   * its own sealed gate store). Logged as `log.checkpoint` only when that row still has that hash
+   * (else 409 `checkpoint-mismatch`, nothing written): the log then shows every checkpoint the
+   * moderation process holds, and an API that rewrote the row cannot have it logged.
+   */
+  const logCheckpoint = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'id', 'hash']) || typeof body.id !== 'string' || !/^[1-9][0-9]{0,18}$/.test(body.id) || typeof body.hash !== 'string' || !TX_HASH.test(body.hash)) {
+      throw new Refused(400, 'bad-body');
+    }
+    const id = body.id;
+    const hash = body.hash;
+    const client = await o.db.connect();
+    try {
+      await client.query('begin');
+      const { rows } = await client.query<{ hash: Buffer }>('select hash from activity_log where id = $1', [id]);
+      if (rows[0] === undefined || rows[0].hash.toString('hex') !== hash) {
+        await client.query('rollback');
+        throw new Refused(409, 'checkpoint-mismatch');
+      }
+      await appendLog(client, { at: o.clock?.() ?? new Date(now()), actor: { kind: 'system' }, tradeCode: null, action: 'log.checkpoint', detail: { id, hash } });
+      await client.query('commit');
+    } catch (e) {
+      await client.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+    log({ reason: 'internal-log-checkpoint' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /** Plan 4 Task 14: the moderation process's daily verification failed: `site_flags.log_alarm` (the first time stays). */
+  const logAlarm = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind'])) throw new Refused(400, 'bad-body');
+    await o.db.query('update site_flags set log_alarm = coalesce(log_alarm, $1)', [o.clock?.() ?? new Date(now())]);
+    log({ reason: 'internal-log-alarm' });
+    return reply.code(201).send({ ok: true });
+  };
+
   const chatShredded = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind', 'chat'])) throw new Refused(400, 'bad-body');
     const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
@@ -579,6 +644,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-refused') return refuseChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
+    if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
+    if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;
