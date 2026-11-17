@@ -247,8 +247,8 @@ describe('authorizeRuling', () => {
     expect(await authorize(w, n, [tapBy(mod, n.intent('propose'))], null)).toEqual({ ok: false, reason: 'needs-second' });
     // So does any account action, whatever the value.
     const f = ruling(mod);
-    f.ruling.accountAction = { kind: 'trade-ban', until: null, reasonCode: 'terms' };
-    expect(await authorize(w, f, [tapBy(mod, f.intent('propose', { accountAction: { kind: 'trade-ban', until: null, reasonCode: 'terms' } }))], 1_000n)).toEqual({ ok: false, reason: 'needs-second' });
+    f.ruling.accountAction = { kind: 'trade-ban' as const, until: null, reasonCode: 'terms' as const };
+    expect(await authorize(w, f, [tapBy(mod, f.intent('propose', { accountAction: { kind: 'trade-ban' as const, until: null, reasonCode: 'terms' as const } }))], 1_000n)).toEqual({ ok: false, reason: 'needs-second' });
   });
 
   it('a helper cannot propose', async () => {

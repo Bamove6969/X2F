@@ -259,7 +259,9 @@ only if the buyer accepts the shown deduction on the quote. That is not always t
 creditor (re-review N2): the API can hide an appeal and present round 1 alone, so round 1's creditor
 is named after the appeal changed it. Partly closed: the moderation service refuses when its gate
 has seen a round-2 ruling for the source trade that the API did not present
-(`lienRulingVerifier`); an appeal the gate never saw is still hidden. The per-source total is per
+(`lienRulingVerifier`). The gate sees a round-2 ruling only through an earlier lien check that the
+API chose to present it to, so an API that hides the appeal from the start is not caught at all
+(re-review 17 Nov b, M1); the residual is the same as before this check. The per-source total is per
 (source, side), so across both sides at most twice the source trade's XMR. Staging a dispute between
 two accounts of one person needs that person's own device to sign the address. A long-term buyer key the moderation service can bind a lien to would close
 it (owner question 4). The SQL guards (add-only ledger, sum ≤ owed) stop code bugs, not a compromised

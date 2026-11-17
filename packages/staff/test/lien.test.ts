@@ -92,7 +92,7 @@ describe('a round-1 ruling: money moves at once, restitution is liened at once (
     const d = opened(true);
     const a = applyDispute(d, { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
     expect(lienSteps(d, a, sellerPosted, [])).toEqual([]);
-    const waiting = applyDispute(a, { type: 'propose', ruling: { id: 'r1', outcome: 'seller-sends-xmr', accountAction: { kind: 'trade-ban', until: null, reasonCode: 'terms' }, proposer: 'mod-1' } }, mod, at(2), S);
+    const waiting = applyDispute(a, { type: 'propose', ruling: { id: 'r1', outcome: 'seller-sends-xmr', accountAction: { kind: 'trade-ban' as const, until: null, reasonCode: 'terms' as const }, proposer: 'mod-1' } }, mod, at(2), S);
     expect(waiting.status).toBe('awaiting-approval');
     expect(lienSteps(a, waiting, sellerPosted, [])).toEqual([]);
   });
@@ -180,7 +180,7 @@ describe('the appeal decides (D-006, D-008)', () => {
   it('a round-2 proposal awaiting a second approval decides nothing yet', () => {
     const p = appeal(publish(opened(false), 'release-to-buyer'), 'seller');
     const a = applyDispute(p, { type: 'assign', staffId: 'senior-1', role: 'senior' }, senior, at(4), S);
-    const waiting = applyDispute(a, { type: 'propose', ruling: { id: 'r2', outcome: 'refund-to-seller', accountAction: { kind: 'trade-ban', until: null, reasonCode: 'terms' }, proposer: 'senior-1' } }, senior, at(5), S);
+    const waiting = applyDispute(a, { type: 'propose', ruling: { id: 'r2', outcome: 'refund-to-seller', accountAction: { kind: 'trade-ban' as const, until: null, reasonCode: 'terms' as const }, proposer: 'senior-1' } }, senior, at(5), S);
     expect(waiting.status).toBe('awaiting-approval');
     expect(lienSteps(a, waiting, sellerPosted, [])).toEqual([]);
   });

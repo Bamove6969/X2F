@@ -184,7 +184,7 @@ describe('attesting a trade', () => {
     expect(report).toBeDefined();
     for (const [role, t] of [['buyer', buyer], ['seller', seller]] as const) {
       await expect(
-        verifyAttestation(report.attestation, report.sig, modSign.public, { trade: code, role, signPublic: t.id.signPublic, boxPublic: t.id.boxPublic, deal: DEAL, ownAddress: ownAddress(role) }),
+        verifyAttestation(report.attestation, report.sig, modSign.public, { trade: code, role, signPublic: t.id.signPublic, boxPublic: t.id.boxPublic, deal: DEAL, ownAddress: ownAddress(role), identityCreatedAt: NOW.getTime() }),
       ).resolves.toBeUndefined();
     }
     const channels = net.registered.map((r) => r.channel);
@@ -221,7 +221,7 @@ describe('attesting a trade', () => {
     expect(await (await moderation(net.fetch)).tick()).toEqual([code]);
     const report = net.reports.find((r) => r.attestation.trade === code)!;
     expect(report.attestation.terms).toEqual(TERMS);
-    const me = { trade: code, role: 'buyer' as const, signPublic: buyer.id.signPublic, boxPublic: buyer.id.boxPublic };
+    const me = { trade: code, role: 'buyer' as const, signPublic: buyer.id.signPublic, boxPublic: buyer.id.boxPublic, identityCreatedAt: NOW.getTime() };
     // The time to pay is signed as the work item gave it; a device shown another one refuses it.
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...me, deal: DEAL, ownAddress: TERMS.buyerPayout, payWindowMin: TERMS.payWindowMin }))
       .resolves.toBeUndefined();
@@ -322,7 +322,7 @@ describe('attesting a trade', () => {
     // The real buyer checks its own slot: setup aborts.
     await expect(
       verifyAttestation(report.attestation, report.sig, modSign.public, {
-        trade: code, role: 'buyer', signPublic: realBuyer.id.signPublic, boxPublic: realBuyer.id.boxPublic, deal: DEAL, ownAddress: TERMS.buyerPayout,
+        trade: code, role: 'buyer', signPublic: realBuyer.id.signPublic, boxPublic: realBuyer.id.boxPublic, deal: DEAL, ownAddress: TERMS.buyerPayout, identityCreatedAt: NOW.getTime(),
       }),
     ).rejects.toMatchObject({ code: 'not-me' });
 
@@ -351,7 +351,7 @@ describe('attesting a trade', () => {
     const forgedSig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(forged), apiKey.privateKey));
     await expect(
       verifyAttestation(forged, forgedSig, modSign.public, {
-        trade: code, role: 'buyer', signPublic: realBuyer.id.signPublic, boxPublic: realBuyer.id.boxPublic, deal: DEAL, ownAddress: TERMS.buyerPayout,
+        trade: code, role: 'buyer', signPublic: realBuyer.id.signPublic, boxPublic: realBuyer.id.boxPublic, deal: DEAL, ownAddress: TERMS.buyerPayout, identityCreatedAt: NOW.getTime(),
       }),
     ).rejects.toMatchObject({ code: 'bad-signature' });
 
@@ -662,7 +662,7 @@ describe('lien recovery at attestation (review B1, provisional owner answers of 
     const n = await debtorTrade(rec(HALF), await sourceOf(src), creditorBuyer);
     const report = n.net.reports.find((x) => x.attestation.trade === n.code)!;
     const buyer = n.item.participants.buyer;
-    const base = { trade: n.code, role: 'buyer' as const, signPublic: buyer.signPublic, boxPublic: buyer.boxPublic, ownAddress: N_TERMS.buyerPayout };
+    const base = { trade: n.code, role: 'buyer' as const, signPublic: buyer.signPublic, boxPublic: buyer.boxPublic, ownAddress: N_TERMS.buyerPayout, identityCreatedAt: NOW.getTime() };
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: { ...DEAL, lienRecoveryAtomic: HALF } })).resolves.toBeUndefined();
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: DEAL })).rejects.toMatchObject({ code: 'wrong-terms' });
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: { ...DEAL, lienRecoveryAtomic: HALF - 1n } })).rejects.toMatchObject({ code: 'wrong-terms' });

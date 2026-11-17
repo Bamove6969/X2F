@@ -16,6 +16,7 @@ import { EscrowError, PartyError, TransportClosedError, type EscrowEngine, type 
 import type { Identity, Participants } from '@x2f/protocol';
 import {
   AttestationError,
+  attestationKeys,
   channelFor,
   escrowCheckWords,
   fiatCents,
@@ -537,6 +538,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           code: this.code,
           role: c.role,
           identity: { signPublic: id.signPublic, boxPublic: id.boxPublic, signSecret: id.signSecret, boxSecret: id.boxSecret },
+          identityCreatedAt: now(),
           registered: false,
           attestation: null,
           partyState: null,
@@ -611,7 +613,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const view0 = await this.retry(async () => {
         const v = parseTradeView(await deps.api.getTrade(this.code));
         if (!v) throw new Error('unreadable trade view');
-        return { payWindowMin: v.payWindowMin, methodId: v.methodId };
+        return { payWindowMin: v.payWindowMin, methodId: v.methodId, takenAt: v.takenAt };
       });
       if (view0 === undefined || this.stopped) return;
       const shown = view0.payWindowMin;
@@ -620,10 +622,14 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const pinned = this.rec.payWindowMin ?? null;
       if (pinned !== null && pinned !== shown) return this.fail('deal-mismatch');
       try {
+        // The built-in key list (review F5: one key today). `issuedAt` must not be in this device's
+        // future, nor older than the identity this device made for the trade (review M1: a time
+        // only this device knows; a record from before it was kept has none), nor older than the
+        // trade's take time when the (unsigned) view shows one, an extra check only.
         await verifyAttestation(
           att.attestation as Attestation,
           att.sig,
-          deps.config.modSigningPublic,
+          attestationKeys(deps.config.modSigningPublic),
           {
             trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic,
             // The buyer accepts only the lien recovery it confirmed (none: none), @x2f/trade verifyAttestation.
@@ -631,10 +637,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
             ownAddress: this.rec.ownAddress,
             payWindowMin: shown,
             methodId: view0.methodId,
+            now: now(),
+            identityCreatedAt: this.rec.identityCreatedAt ?? null,
+            ...(view0.takenAt !== null ? { takenAt: view0.takenAt } : {}),
           },
         );
       } catch (e) {
-        // stop: no terms, no party, no funding address
+        // stop: no terms, no party, no funding address. A time refusal (`bad-time`) may be this
+        // device's clock: not kept as an integrity failure, found again on the next start.
+        if (e instanceof AttestationError && e.code === 'bad-time') return this.fail('escrow-failed');
         this.fail(e instanceof AttestationError && e.code === 'wrong-terms' ? 'deal-mismatch' : 'participants-mismatch');
         return;
       }

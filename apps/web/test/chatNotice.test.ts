@@ -168,7 +168,7 @@ describe('chat engine: sendNotice and the notice line', () => {
   async function attest(): Promise<Participants> {
     const buyer = api.identities.buyer!;
     const participants: Participants = { buyer: { signPublic: buyer.signPublic, boxPublic: buyer.boxPublic }, seller: pub(seller), mod: pub(mod) };
-    const a: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: '2026-10-28T12:00:00.000Z' };
+    const a: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: new Date().toISOString() };
     api.attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), (await modKey).privateKey)) };
     return participants;
   }

@@ -71,6 +71,12 @@ export interface ChatRecord {
   chat: string;
   role: 'buyer' | 'seller';
   identity: { signPublic: string; boxPublic: string; signSecret: string; boxSecret: string };
+  /**
+   * Device clock (ms) when this device made `identity`, saved with it before it is registered
+   * (review lead-escrow-harden M1): the chat attestation naming it may not be older. Absent in
+   * records written before the field (no lower bound, accepted only with today's unbounded key).
+   */
+  identityCreatedAt?: number;
   registered: boolean;
   attestation: { attestation: unknown; sig: string } | null;
   state: ChatState | null;

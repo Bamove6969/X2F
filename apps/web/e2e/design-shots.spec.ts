@@ -559,7 +559,7 @@ async function stubChat(
       if (!(await chatIdentityProofValid(chatId, me, body))) return json({ error: 'bad-proof' }, 400)(r);
       if (registered.length > 0) return json({ error: 'identity-exists' }, 409)(r);
       registered.push(body);
-      const a: Attestation = { v: 1, trade: chatId, channels: { chat: channel }, participants: participants(), issuedAt: at };
+      const a: Attestation = { v: 1, trade: chatId, channels: { chat: channel }, participants: participants(), issuedAt: new Date().toISOString() };
       attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), modKey.privateKey)) };
       let seq = 0;
       for (const text of lines) {

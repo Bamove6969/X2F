@@ -51,7 +51,7 @@
  */
 import type { Role } from '@x2f/core';
 import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { AttestationError, PayDetailsError, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
+import { AttestationError, PayDetailsError, attestationKeys, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatNoticeId } from './notices.js';
 import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
@@ -154,6 +154,8 @@ export interface ChatEngineDeps {
   store: ChatStore;
   newIdentity: () => Promise<Identity>;
   modSigningPublic: string;
+  /** The device clock (ms); default Date.now(). */
+  now?: () => number;
 }
 
 const hex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
@@ -247,6 +249,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         chat,
         role: view.role,
         identity: { signPublic: me.signPublic, boxPublic: me.boxPublic, signSecret: hex(me.signSecret), boxSecret: hex(me.boxSecret) },
+        identityCreatedAt: (d.now ?? Date.now)(),
         registered: false,
         attestation: null,
         state: null,
@@ -276,12 +279,15 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
 
   async function participantsOf(rec: ChatRecord): Promise<Participants> {
     const a = rec.attestation!;
-    await verifyAttestation(a.attestation as Attestation, a.sig, d.modSigningPublic, {
+    await verifyAttestation(a.attestation as Attestation, a.sig, attestationKeys(d.modSigningPublic), {
       trade: rec.chat,
       role: rec.role,
       signPublic: rec.identity.signPublic,
       boxPublic: rec.identity.boxPublic,
       context: 'chat',
+      now: (d.now ?? Date.now)(),
+      // Review M1: not older than the identity this device made for the chat (none in old records).
+      identityCreatedAt: rec.identityCreatedAt ?? null,
     });
     return (a.attestation as Attestation).participants;
   }
