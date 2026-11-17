@@ -54,6 +54,7 @@ describe('tokens.css', () => {
     }
   });
 
+  // Owner #43 (12 Nov): the type scale one step up; hero-number and result-headline in proportion.
   it('kit 1.5 token fixes: monero #ff6600, mod, radius 10, hero-number, result-headline, no title or monero-hold', () => {
     const colour = Object.fromEntries(json.color.tokens.map((t) => [t.name, t.value]));
     expect(colour['monero']).toEqual({ night: '#ff6600', day: '#ff6600' });
@@ -65,13 +66,13 @@ describe('tokens.css', () => {
     expect(css).toContain('--x2f-radius-tile: 10px;');
     for (const d of [
       '--x2f-hero-number-family: var(--x2f-font-mono);',
-      '--x2f-hero-number-size: 40px;',
-      '--x2f-hero-number-line: 44px;',
+      '--x2f-hero-number-size: 42px;',
+      '--x2f-hero-number-line: 47px;',
       '--x2f-hero-number-weight: 500;',
       '--x2f-hero-number-tracking: -0.02em;',
       '--x2f-result-headline-family: var(--x2f-font-display);',
-      '--x2f-result-headline-size: 32px;',
-      '--x2f-result-headline-line: 36px;',
+      '--x2f-result-headline-size: 34px;',
+      '--x2f-result-headline-line: 38px;',
       '--x2f-result-headline-weight: 700;',
       '--x2f-result-headline-tracking: -0.02em;',
     ]) {

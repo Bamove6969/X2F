@@ -23,9 +23,10 @@ const APP = join(dirname(fileURLToPath(import.meta.url)), '../src/App.tsx');
 const PATHS = [...readFileSync(APP, 'utf8').matchAll(/<Route\s+path="([^"]+)"/g)]
   .map((m) => m[1]!)
   .filter((p) => p !== '*')
-  .map((p) => p.replace(':methodId', 'ZELLE').replace(':offerId', '00000000-0000-4000-8000-000000000000').replace(':code', 'ABCD-EFGH').replace('/*', ''));
+  .map((p) => p.replace(':methodId', 'ZELLE').replace(':offerId', '00000000-0000-4000-8000-000000000000').replace(':code', 'ABCD-EFGH').replace(':topic', 'faq').replace('/*', ''));
 
-const DOOR = ['/', '/setup', '/terms', '/login', '/login/backup', '/team/join'];
+// The help placeholders (owner demo notes 12 Nov #42) are on the front door too.
+const DOOR = ['/', '/setup', '/terms', '/login', '/login/backup', '/team/join', '/help/faq'];
 const BEHIND = PATHS.filter((p) => !DOOR.includes(p));
 
 const FULL = { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };

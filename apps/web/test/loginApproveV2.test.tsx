@@ -73,8 +73,9 @@ describe('design tokens: the v2 scale', () => {
       expect(tokens.spacing.tokens).toContainEqual(expect.objectContaining({ name, value }));
     }
     const styles = tokens.type.groups.flatMap((g) => g.styles);
-    expect(styles).toContainEqual(expect.objectContaining({ name: 'sheet-title', fontSize: '24px', lineHeight: '30px', fontWeight: 700, letterSpacing: '-0.01em' }));
-    expect(styles).toContainEqual(expect.objectContaining({ name: 'screen-title', fontSize: '28px', lineHeight: '32px', fontWeight: 700, letterSpacing: '-0.01em' }));
+    // One step up since the owner's demo layout (b8489a7b): sheet title 24/30 to 26/32, screen title 28/32 to 30/34.
+    expect(styles).toContainEqual(expect.objectContaining({ name: 'sheet-title', fontSize: '26px', lineHeight: '32px', fontWeight: 700, letterSpacing: '-0.01em' }));
+    expect(styles).toContainEqual(expect.objectContaining({ name: 'screen-title', fontSize: '30px', lineHeight: '34px', fontWeight: 700, letterSpacing: '-0.01em' }));
   });
 });
 
