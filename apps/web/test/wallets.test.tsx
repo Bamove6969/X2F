@@ -8,7 +8,7 @@ import { CONFIRM_INVALID_WALLETS, RECOVERY_SESSION_WALLETS, Wallets } from '../s
 import type { WalletView } from '../src/screens/wallets-model.js';
 import { KEEP_FOR } from '../src/screens/walletsCopy.js';
 import { NEW_ADDRESS } from '../src/screens/quote/addressCopy.js';
-import { forgetTypedAddresses, typedAddressOf } from '../src/screens/walletRecord.js';
+import { forgetTypedAddresses, recordTypedAddress, typedAddressOf } from '../src/screens/walletRecord.js';
 import { fire, render } from './render.js';
 
 const address = (seed: string, end: string) => `4${seed.repeat(95).slice(0, 88)}${end}`;
@@ -406,6 +406,22 @@ describe('the add records the address typed on this device, and refuses an answe
     expect([...document.querySelectorAll('[role="alert"]')].some((a) => a.textContent?.includes('different address'))).toBe(true);
     expect(document.body.textContent).not.toContain('OTHER9');
     expect(typedAddressOf('w-new-0')).toBe(ADDR_C);
+  });
+});
+
+describe('the list marks a wallet whose address differs from the one typed on this device (review 17 Nov M4)', () => {
+  it('a row naming another address than this device recorded says it does not match, and offers no Make default', async () => {
+    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
+    const swappedRow: WalletView = { ...READY, id: 'w-swapped', label: 'New', address: address('X', 'OTHER9'), addressEnd: 'OTHER9', isDefault: false };
+    recordTypedAddress('w-swapped', ADDR_C);
+    // A matching record changes nothing.
+    recordTypedAddress('w-other', other.address);
+    stub.wallets = [{ ...READY, isDefault: true }, other, swappedRow];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="not-matching"]') !== null)).toEqual([false, false, true]);
+    expect(rows[2]!.querySelector('[data-part="not-matching"]')!.textContent).toContain('does not match');
+    expect(rows.map((r) => [...r.querySelectorAll('button')].some((b) => b.textContent === 'Make default'))).toEqual([false, true, false]);
   });
 });
 
