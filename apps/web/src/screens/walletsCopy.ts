@@ -22,3 +22,6 @@ export const MAKE_DEFAULT_FAILED = 'That wallet could not be made the default. T
 
 /** Review 17 Nov M4: the add's answer named another address than the one typed on this device. COPY-UNSIGNED */
 export const ADD_SWAPPED = 'X2F answered with a different address from the one you typed, so it is not shown as saved. Check Your wallets before you trade.';
+
+/** Review 17 Nov M4: a listed wallet whose address differs from the one typed on this device for it. COPY-UNSIGNED */
+export const NOT_MATCHING = 'This address does not match the one you typed on this device.';

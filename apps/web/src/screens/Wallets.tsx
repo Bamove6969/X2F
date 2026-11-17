@@ -29,8 +29,8 @@ import {
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
 import { ChoiceGroup } from '../ui/Choice.js';
-import { ADD_SWAPPED, DEFAULT_TAG, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, ONE_TIME_TAG } from './walletsCopy.js';
-import { recordTypedAddress } from './walletRecord.js';
+import { ADD_SWAPPED, DEFAULT_TAG, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG } from './walletsCopy.js';
+import { matchesRecord, recordTypedAddress } from './walletRecord.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -177,6 +177,9 @@ function useOpenEscrowKeys(): string[] {
 
 function WalletRow({ w, onRemove, onMakeDefault }: { w: WalletView; onRemove: (w: WalletView) => void; onMakeDefault: (w: WalletView) => void }) {
   const status = walletStatus(w);
+  // Review 17 Nov M4: a row naming another address than the one typed on this device for that id
+  // (walletRecord.ts) is marked, and is never offered as the default the trade screen picks first.
+  const matches = matchesRecord(w);
   return (
     <li className="x2f-wallet-row">
       <span className="x2f-wallet-row__icon" aria-hidden="true">
@@ -189,9 +192,14 @@ function WalletRow({ w, onRemove, onMakeDefault }: { w: WalletView; onRemove: (w
           {w.oneTime === true ? <span data-part="one-time"> · {ONE_TIME_TAG}</span> : null}
           {w.isDefault === true ? <span data-part="default"> · {DEFAULT_TAG}</span> : null}
         </span>
+        {matches ? null : (
+          <span className="x2f-wallet-row__note" data-part="not-matching">
+            {NOT_MATCHING}
+          </span>
+        )}
         {/* Owner, 17 Nov 2026: any saved wallet may be the default the trade screen picks first, once it
             works (review 17 Nov M1: the API refuses a waiting wallet, 409 wallet-not-ready). */}
-        {w.isDefault !== true && w.oneTime !== true && w.usable ? (
+        {w.isDefault !== true && w.oneTime !== true && w.usable && matches ? (
           <button type="button" className="x2f-link x2f-wallet-row__default" data-part="make-default" onClick={() => onMakeDefault(w)}>
             {MAKE_DEFAULT}
           </button>
