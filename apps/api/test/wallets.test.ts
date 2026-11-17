@@ -1042,6 +1042,67 @@ describe('the default payout wallet (owner, 17 Nov 2026: answer to note #6 Q1)',
     expect((await new Browser(app).put(`/v1/wallets/${theirs.id}/default`, {})).statusCode).toBe(401);
   });
 
+  it('refuses a wallet that is not usable yet: a waiting one is 409 wallet-not-ready until its wait is over (review 17 Nov M1)', async () => {
+    const { id, b } = await trader();
+    const { wallet: first } = await addConfirmed(b);
+    // A later wallet confirmed with a password waits 24 hours: a stolen session must not pre-arm it.
+    const { wallet: waiting } = await addConfirmed(b);
+    expect(waiting.usable).toBe(false);
+    const res = await makeDefault(b, waiting.id);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'wallet-not-ready' });
+    expect(await defaults(b)).toEqual([first.id]);
+    const { rows } = await deps.db.query('select id from wallets where account_id = $1 and is_default', [id]);
+    expect(rows).toEqual([]);
+    // Once its own wait is over it may be chosen.
+    setNow(new Date(Date.parse(waiting.usableFrom) + 1000));
+    const later = await relogin(id);
+    expect((await makeDefault(later, waiting.id)).statusCode).toBe(204);
+    expect(await defaults(later)).toEqual([waiting.id]);
+  });
+
+  it('refuses a staged add, a removed wallet and a used-up one-time wallet (none is an open wallet)', async () => {
+    const { id, b, sessionId } = await trader();
+    const { wallet: first } = await addConfirmed(b);
+    setNow(at(1000));
+    const { wallet: once } = await addReady(b, { oneTime: true });
+    // Used up by a trade (as useUpOneTimeWallet leaves it).
+    await deps.db.query(`update wallets set removed_at = $2, used_by_trade = 'AAAA-BBBB-CCCC-DDDD' where id = $1`, [once.id, now]);
+    expect((await makeDefault(b, once.id)).statusCode).toBe(404);
+    setNow(at(1000));
+    const { wallet: gone } = await addReady(b);
+    expect((await b.delete(`/v1/wallets/${gone.id}`)).statusCode).toBe(204);
+    expect((await makeDefault(b, gone.id)).statusCode).toBe(404);
+    // A username-and-password login: the add is staged (hold model v3); its change id is no wallet.
+    await deps.db.query(`update sessions set strength = 'weak-single' where id = $1`, [sessionId]);
+    const address = fakeAddress();
+    const staged = await addWallet(b, { address, confirmToken: await confirmToken(b, walletAction(address)) });
+    expect(staged.statusCode).toBe(202);
+    const { changeId } = staged.json() as { changeId: string };
+    expect((await makeDefault(b, changeId)).statusCode).toBe(404);
+    const { rows } = await deps.db.query('select id from wallets where account_id = $1 and is_default', [id]);
+    expect(rows).toEqual([]);
+    expect(await defaults(b)).toEqual([first.id]);
+  });
+
+  it('is refused during an account hold (403 recovery-hold), and nothing changes (review 17 Nov M2)', async () => {
+    const { id, b } = await trader();
+    await addConfirmed(b);
+    setNow(at(1000));
+    const { wallet: c } = await addReady(b);
+    await deps.db.query(
+      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'recovery-code', '{}')`,
+      [id, now, new Date(now.getTime() + DAY)],
+    );
+    const res = await makeDefault(b, c.id);
+    expect(res.statusCode).toBe(403);
+    expect((res.json() as { error: string }).error).toBe('recovery-hold');
+    const { rows } = await deps.db.query('select id from wallets where account_id = $1 and is_default', [id]);
+    expect(rows).toEqual([]);
+    await deps.db.query('delete from account_holds where account_id = $1', [id]);
+    expect((await makeDefault(b, c.id)).statusCode).toBe(204);
+  });
+
   it('keeps one default per account even when two are chosen at once', async () => {
     const { id, b } = await trader();
     const { wallet: a } = await addConfirmed(b);

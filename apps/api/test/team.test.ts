@@ -1522,6 +1522,15 @@ describe('the owner\'s hard rules no box can grant (J-10)', () => {
     for (const r of refused) expect(err(r)).toEqual({ status: 403, error: 'owner-only' });
   });
 
+  it('a member, even one who sees the wallet list, cannot choose the default payout wallet (owner-only; review 17 Nov M2)', async () => {
+    const owner = await team();
+    for (const m of [await member(owner.id, ['offers', 'trades']), await member(owner.id, { abilities: ['wallets-see'] })]) {
+      expect(err(await m.browser.put(`/v1/wallets/${owner.wallet}/default`, {}))).toEqual({ status: 403, error: 'owner-only' });
+    }
+    const { rows } = await deps.db.query('select is_default from wallets where id = $1', [owner.wallet]);
+    expect(rows).toEqual([{ is_default: false }]);
+  });
+
   it('every effectful member action is logged with the member\'s name and, on a trade, its amount', async () => {
     const owner = await team();
     const other = await team();
