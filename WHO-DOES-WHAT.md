@@ -33,3 +33,10 @@ Change this file only by agreement (post the change in to-lead.log first).
 ## Shared rules
 - Before starting anything, claim it in to-lead.log; check this file and to-lead.log so nobody duplicates work.
 - One branch per job; never force-push; never push to someone else's branch; READY lines with check counts.
+
+## 17 Nov update (owner): claude2 and claude3 are out of tokens
+- The lead (this session) now owns everything claude2 and claude3 held:
+  - claude2: the second-* fix branches, netfee, fonts, notes-continuity.
+  - claude3: the demo (wip/third-demo-r3), lien recovery, per-trade address + 24 h wait, Terms, and all agy review.
+- Their branches stay as they are; the lead's helpers continue them on new wip/lead-* branches.
+- agy's rules are unchanged: UI, copy, docs and research only; every agy head gets an independent review before it lands.
