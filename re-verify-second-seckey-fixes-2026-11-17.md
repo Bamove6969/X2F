@@ -125,7 +125,10 @@ The same 4 conflict when merging fe6765c7, or the demo-r2 base 3190919d alone. W
   - semgrep 0 findings, audit 0 vulnerabilities.
 - Playwright (Chromium at /opt/pw-browsers/chromium, `--trace off --workers=1`), setup.spec.ts + security-key.spec.ts: **38 passed, 0 failed**. That includes USB, NFC, the wrong-RP-ID and the 403 model-refused cases.
 - The M1 test (`review M1`) passes in every probe run (2 passed with the probe).
-- Probe for kind change and promotion: PROBE3_RESULT
+- Probe for kind change and promotion (PROBE3, the final version, run with the M1 test): **3 passed, 0 failed**.
+  - Mid-ceremony change to staff, owner or member, each with `none`, another root on an allowlisted AAGUID, another root on an unlisted AAGUID, and a genuinely verified allowlisted key: every attestation-less or failing response got 401/403 and stored nothing, and only the genuinely attested key was stored, with `attested=true`.
+  - Trader key from the retry, then promoted to staff, owner or member: the key is not in the assertion options, a forced assertion is refused, and a key tap gives 403.
+  - Earlier probe runs failed on test-setup bugs of mine: a reused challenge, and the one-owner constraint. Neither was a product failure. The probe was reverted and the tree is clean.
 - Not run:
   - a physical key;
   - the real demo stack behind a preview pane;
