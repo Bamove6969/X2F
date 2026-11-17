@@ -498,24 +498,30 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
 /**
  * `PUT /v1/wallets/:id/default` (owner, 17 Nov 2026, note #6 Q1): the account owner chooses which open
  * saved wallet the trade screen picks first. 404 `not-found` for a wallet that is not the account's or
- * not open; 409 `wallet-one-time` for a one-time wallet. Under the account row lock, so one default per
- * account (the partial unique index of migration 630 backs it). Not a security change: it changes no
- * address, no wait and nothing a take accepts (any usable wallet may still be named), so it is not
- * staged; the hold still blocks it, as every wallet write.
+ * not open (removed, used up by a trade, or a staged add, which has no wallet yet); 409 `wallet-one-time`
+ * for a one-time wallet; 409 `wallet-not-ready` for a wallet still in its wait (review 17 Nov M1: a
+ * stolen session must not silently pre-arm an address that has not yet passed the wait meant to let
+ * the user notice it; the same `usable_from <= now` rule as the take's `pickWallet`). Under the
+ * account row lock, so one default per account (the partial unique index of migration 630 backs it).
+ * It changes no address, no wait and nothing a take accepts (any usable wallet may still be named), so
+ * it is not staged; the hold still blocks it, as every wallet write. (Whether it should also send an
+ * in-app alert is owner question Q12, still open.)
  */
 async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const { id } = req.params as { id: string };
   if (!UUID.test(id)) throw new ApiError(404, 'not-found');
+  const now = deps.clock();
   await withTx(deps.db, async (client) => {
     await client.query('select 1 from accounts where id = $1 for update', [req.auth.accountId]);
-    const { rows } = await client.query<{ one_time: boolean }>(
-      'select one_time from wallets where id = $1 and account_id = $2 and removed_at is null',
+    const { rows } = await client.query<{ one_time: boolean; usable_from: Date }>(
+      'select one_time, usable_from from wallets where id = $1 and account_id = $2 and removed_at is null',
       [id, req.auth.accountId],
     );
     const w = rows[0];
     if (!w) throw new ApiError(404, 'not-found');
     if (w.one_time) throw new ApiError(409, 'wallet-one-time');
+    if (w.usable_from.getTime() > now.getTime()) throw new ApiError(409, 'wallet-not-ready');
     await client.query('update wallets set is_default = false where account_id = $1 and is_default and id <> $2', [req.auth.accountId, id]);
     await client.query('update wallets set is_default = true where id = $1 and not is_default', [id]);
   });

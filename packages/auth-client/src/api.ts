@@ -641,7 +641,8 @@ export interface AuthApi {
   removeWallet(id: string): Promise<Staged | undefined>;
   /**
    * Owner, 17 Nov 2026 (note #6 Q1): makes an open saved wallet the default the trade screen picks
-   * first (`PUT /v1/wallets/:id/default`, 204). 409 `wallet-one-time` for a one-time wallet.
+   * first (`PUT /v1/wallets/:id/default`, 204). 409 `wallet-one-time` for a one-time wallet,
+   * 409 `wallet-not-ready` for a wallet still in its wait (review 17 Nov M1).
    */
   setDefaultWallet(id: string): Promise<void>;
   // Session length (owner, 2 Nov 2026). Full trader sessions only. Never staged (lead reading of
