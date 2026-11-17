@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { walletsAction, type WalletRule } from '@x2f/auth-client';
 import { CONFIRM_INVALID_WALLETS, RECOVERY_SESSION_WALLETS, Wallets } from '../src/screens/Wallets.js';
 import type { WalletView } from '../src/screens/wallets-model.js';
+import { KEEP_FOR } from '../src/screens/walletsCopy.js';
+import { NEW_ADDRESS } from '../src/screens/quote/addressCopy.js';
 import { fire, render } from './render.js';
 
 const address = (seed: string, end: string) => `4${seed.repeat(95).slice(0, 88)}${end}`;
@@ -371,5 +373,25 @@ describe('the default payout wallet in Your wallets (owner, 17 Nov 2026)', () =>
     expect(stub.calls.some((c) => c.method === 'PUT' && c.url === '/v1/wallets/w-other/default')).toBe(true);
     const after = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
     expect(after.map((r) => r.querySelector('[data-part="default"]') !== null)).toEqual([false, true, false]);
+  });
+});
+
+describe('Make default only on a wallet that works now (review 17 Nov M1)', () => {
+  it('a waiting wallet offers no Make default (the API refuses it, 409 wallet-not-ready)', async () => {
+    const waiting: WalletView = { ...READY, id: 'w-wait', label: 'New', address: address('W', 'Ww1Ww1'), addressEnd: 'Ww1Ww1', usable: false, usableFrom: '2099-01-01T00:00:00.000Z', isDefault: false };
+    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, other, waiting];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => [...r.querySelectorAll('button')].some((b) => b.textContent === 'Make default'))).toEqual([false, true, false]);
+  });
+});
+
+describe('the one-time copy says only what the restore does (review 17 Nov M3)', () => {
+  it('a one-time wallet comes back only if the trade is cancelled while it is still being set up', () => {
+    for (const note of [KEEP_FOR.oneTimeNote, NEW_ADDRESS.oneTimeNote]) {
+      expect(note).toContain('cancelled while it is still being set up');
+      expect(note).not.toContain('before any XMR is sent');
+    }
   });
 });
