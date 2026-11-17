@@ -93,11 +93,15 @@ export function panelPublishing(tradeCode: string): () => void {
   };
 }
 
-/** An open panel's snapshot for `tradeCode`: the card follows it at once. */
+/**
+ * An open panel's snapshot for `tradeCode`: the card follows it at once. The seller's rows are kept
+ * only while a panel or a pay card for the trade is there (PTW4-I3): a publish that lands after both
+ * went (a late postProofToChat, a sync still in flight at log-out) leaves no rows behind.
+ */
 export function publishPaySnapshot(tradeCode: string, snap: ChatSnapshot): void {
   const key = norm(tradeCode);
   const rows = payRowsOf(snap);
-  latest.set(key, rows);
+  if (panels.has(key) || listeners.has(key)) latest.set(key, rows);
   snapshots.set(key, snap);
   for (const cb of [...(listeners.get(key) ?? [])]) cb(rows);
 }

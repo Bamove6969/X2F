@@ -6,7 +6,8 @@
 // - the chat snapshots payDetailsFeed keeps (proof lines carry their keys) are cleared on both, and a
 //   trade's snapshot goes when its last ChatPanel unmounts with no pay card listening;
 // - the seller's payment-detail rows the feed keeps for the pay card (`latest`) go the same three ways
-//   (review of proof-tripwire-3, P-I4).
+//   (review of proof-tripwire-3, P-I4), and a publish with neither a panel nor a pay card for the trade
+//   keeps none (review of proof-tripwire-4, PTW4-I3).
 import { newProofId, type ProofAttachedPayload } from '@x2f/proof';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiCallError, api } from '../src/api/client.js';
@@ -127,6 +128,22 @@ describe("payDetailsFeed's payment-detail rows (P-I4)", () => {
     await expect(api('/v1/offers')).rejects.toBeInstanceOf(ApiCallError);
     expect(latestPayRows(code)).toBeNull();
     off();
+  });
+
+  it('a publish with no panel and no pay card for the trade keeps no rows (PTW4-I3: a late publish leaves no orphan)', () => {
+    const code = 'ROWS-PPPP-QQQQ-RRRR';
+    publishPaySnapshot(code, ready([payLine]));
+    expect(latestPayRows(code)).toBeNull();
+    // After the last panel has gone, too.
+    const off = panelPublishing(code);
+    off();
+    publishPaySnapshot(code, ready([payLine]));
+    expect(latestPayRows(code)).toBeNull();
+    // And with one open, they are kept (the guard is not "never").
+    const again = panelPublishing(code);
+    publishPaySnapshot(code, ready([payLine]));
+    expect(latestPayRows(code)).not.toBeNull();
+    again();
   });
 
   it("they go when the trade's last panel closes and no pay card listens", () => {

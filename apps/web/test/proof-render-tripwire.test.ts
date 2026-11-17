@@ -21,6 +21,8 @@
 // Review of proof-tripwire-3 (13 Nov 2026): ChatProof's import pin is read from the parser's module record
 // (P-M1), `body ??=` / `||=` and a key held in a const are caught (P-M2), and a decrypting file uses no
 // import.meta.glob, import() or re-export (P-I1).
+// Review of proof-tripwire-4 (17 Nov 2026): the body, key and call rules read the parser's tree, not the
+// text (PTW4-M1, M2, M3, I4): `treeOut` below.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseSync } from 'rolldown/utils';
@@ -52,14 +54,18 @@ function sources(dir: string): string[] {
 const parsed = new Map<string, string>();
 /** Each file's module record from the same parse (its static imports, re-exports, import() calls and import.meta uses). */
 const records = new Map<string, ModuleRecord>();
+/** And its tree (PTW4: the body, key and call rules walk it). */
+const programs = new Map<string, Program>();
 type ModuleRecord = ReturnType<typeof parseSync>['module'];
+type Program = ReturnType<typeof parseSync>['program'];
 function code(rel: string): string {
   const hit = parsed.get(rel);
   if (hit !== undefined) return hit;
   const src = readFileSync(`${ROOT}${rel}`, 'utf8');
-  const { comments, errors, module } = parseSync(rel, src);
+  const { comments, errors, module, program } = parseSync(rel, src);
   expect(errors.map((e) => e.message), `${rel}: the tripwire cannot parse this file`).toEqual([]);
   records.set(rel, module);
+  programs.set(rel, program);
   let out = '';
   let at = 0;
   for (const c of [...comments].sort((a, b) => a.start - b.start)) {
@@ -74,6 +80,11 @@ function code(rel: string): string {
 function moduleOf(rel: string): ModuleRecord {
   code(rel);
   return records.get(rel)!;
+}
+/** The parser's tree for a file (PTW4: the body, key and call rules walk it). */
+function programOf(rel: string): Program {
+  code(rel);
+  return programs.get(rel)!;
 }
 
 /** Tags that put a picture, a frame or media on the screen, as JSX or as createElement's tag name. */
@@ -170,7 +181,7 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
       expect(c, `${f} decrypts a proof: show it with <ProofThumb>`).toMatch(/\bProofThumb\b/);
       expect(c, f).not.toMatch(/new Blob\(|new File\(|<img[\s/>]|data:image\//);
       // Review I3, re-verify R3 and V-M2: and never out of the page.
-      expect(sendsOut(c), `${f} decrypts a proof: it sends nothing out and stores nothing`).toEqual([]);
+      expect(sendsOut(c, programOf(f)), `${f} decrypts a proof: it sends nothing out and stores nothing`).toEqual([]);
       // P-I1: and pulls in no module the import pin cannot see (import.meta.glob, import(), a re-export).
       expect(otherModuleReach(moduleOf(f), c), `${f} decrypts a proof: no import.meta.glob, import() or re-export`).toEqual([]);
     }
@@ -206,8 +217,148 @@ const OUT_RULES: readonly [string, RegExp][] = [
   ['storage (local/session storage, IndexedDB, caches, cookieStore, document.cookie or document[…])', /\b(localStorage|sessionStorage|indexedDB|caches|cookieStore)\b|\bdocument\s*(\.\s*cookie\b|\[)/],
 ];
 
-function sendsOut(c: string): string[] {
+/**
+ * Every rule a decrypting file breaks: the text rules above, then the tree rules (PTW4). A snippet is
+ * parsed here; a file passes the tree from its own parse.
+ */
+function sendsOut(c: string, program: Program = snippetProgram(c)): string[] {
+  return [...textOut(c), ...treeOut(program)];
+}
+/**
+ * The text rules (OUT_RULES). The body, key and call rules among them are the older text forms, kept so
+ * nothing they caught is lost; treeOut is what closes those classes (PTW4). Add no new regex for them.
+ */
+function textOut(c: string): string[] {
   return OUT_RULES.filter(([, re]) => re.test(c)).map(([name]) => name);
+}
+
+/**
+ * Review of proof-tripwire-4 (PTW4-M1, M2, M3, I4): the body, key and call rules read the parser's tree,
+ * not the text, so an operator, a line break, a nested index, an alias, a bracket or a Unicode escape
+ * changes nothing (the parser's names and string values are already unescaped).
+ * - `body` (an identifier, a property key, a string, anywhere) is allowed only as a read of a member
+ *   (`res.body.getReader()`, `res.body?.cancel()`, `res.body === null`): any write (any assignment
+ *   operator, ++/--, a destructuring or for-in/for-of target, delete), key, getter, field or binding fails.
+ * - A computed key (object literal, pattern, getter, method, class field) and a computed member write
+ *   fail unless the key is a static literal that is not "body".
+ * - `Reflect` and `Object` are not named at all (ChatProof uses neither).
+ */
+type Node = { type: string; [k: string]: unknown };
+
+const isNode = (v: unknown): v is Node => typeof v === 'object' && v !== null && typeof (v as Node).type === 'string';
+/** Nodes that only wrap an expression: the context is the first node above them. */
+const WRAPPERS = new Set(['ParenthesizedExpression', 'ChainExpression', 'TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'TSTypeAssertion', 'TSInstantiationExpression']);
+const COMPARE = new Set(['===', '!==', '==', '!=']);
+const BANNED_NAMES = new Set(['Reflect', 'Object']);
+
+/** A node's static string or number value (a literal or a template with no `${}`), or undefined. */
+function staticValue(n: Node): string | undefined {
+  if (n.type === 'Literal' && (typeof n.value === 'string' || typeof n.value === 'number')) return String(n.value);
+  if (n.type === 'TemplateLiteral' && (n.expressions as Node[]).length === 0) return String((n.quasis as { value: { cooked: string | null } }[])[0]?.value.cooked ?? '');
+  return undefined;
+}
+/** A computed key is allowed only when it is a static literal that is not "body". */
+const staticNonBody = (key: Node): boolean => {
+  const v = staticValue(key);
+  return v !== undefined && v.trim() !== 'body';
+};
+/** The name a node spells, if it is a name (identifier, private name, JSX name). */
+const nameOf = (n: Node): string | undefined => (n.type === 'Identifier' || n.type === 'PrivateIdentifier' || n.type === 'JSXIdentifier' ? (n.name as string) : undefined);
+
+/** Is `child` (under `parents`, nearest last) written to: an assignment, ++/--, delete, a for-in/of or destructuring target? */
+function isWritten(child: Node, parents: Node[]): boolean {
+  let c = child;
+  for (let i = parents.length - 1; i >= 0; i--) {
+    const p = parents[i]!;
+    if (WRAPPERS.has(p.type)) {
+      c = p;
+      continue;
+    }
+    switch (p.type) {
+      case 'AssignmentExpression':
+        return p.left === c;
+      case 'UpdateExpression':
+        return true;
+      case 'UnaryExpression':
+        return p.operator === 'delete';
+      case 'ForInStatement':
+      case 'ForOfStatement':
+        return p.left === c;
+      // A pattern is a target all the way up: climb to what the pattern is assigned by.
+      case 'ArrayPattern':
+      case 'ObjectPattern':
+      case 'RestElement':
+        c = p;
+        continue;
+      case 'AssignmentPattern':
+        if (p.left !== c) return false;
+        c = p;
+        continue;
+      case 'Property': {
+        const pp = parents[i - 1];
+        if (pp?.type === 'ObjectPattern' && p.value === c) {
+          c = p;
+          continue;
+        }
+        return false;
+      }
+      default:
+        return false;
+    }
+  }
+  return false;
+}
+
+/** Is the member `m` only read: the object of another member, or a side of a comparison? */
+function isOnlyRead(m: Node, parents: Node[]): boolean {
+  let c = m;
+  for (let i = parents.length - 1; i >= 0; i--) {
+    const p = parents[i]!;
+    if (WRAPPERS.has(p.type)) {
+      c = p;
+      continue;
+    }
+    if (p.type === 'MemberExpression') return p.object === c;
+    if (p.type === 'BinaryExpression') return COMPARE.has(p.operator as string);
+    return false;
+  }
+  return false;
+}
+
+/** What a decrypting file's tree does that the body, key and call rules forbid (PTW4). */
+function treeOut(program: Program): string[] {
+  const out = new Set<string>();
+  const parents: Node[] = [];
+  const visit = (n: Node): void => {
+    const parent = parents[parents.length - 1];
+    // `body` as a name anywhere but the property of a member that is only read.
+    const name = nameOf(n);
+    if (name === 'body') {
+      const readMember = parent?.type === 'MemberExpression' && parent.property === n && parent.computed === false && isOnlyRead(parent, parents.slice(0, -1));
+      if (!readMember) out.add('`body` used other than as a read of a member (a write, a key, a getter, a field or a binding)');
+    }
+    // "body" as a string at all (a quoted key, an index, an argument, a const that holds it).
+    const v = staticValue(n);
+    if (v !== undefined && v.trim() === 'body') out.add('a "body" string');
+    // Reflect and Object, by any reference (an alias, a bracket, globalThis.Object), or as a string.
+    if ((name !== undefined && BANNED_NAMES.has(name)) || (v !== undefined && BANNED_NAMES.has(v.trim()))) out.add('Reflect or Object named');
+    // A computed key in an object literal or pattern, a getter or setter, a method or a class field.
+    if ((n.type === 'Property' || n.type === 'PropertyDefinition' || n.type === 'MethodDefinition' || n.type === 'AccessorProperty' || n.type === 'TSPropertySignature' || n.type === 'TSMethodSignature') && n.computed === true && !staticNonBody(n.key as Node)) {
+      out.add('a computed key that is not a static literal');
+    }
+    // A computed member written to (any operator, ++/--, delete, a destructuring or for-in/of target).
+    if (n.type === 'MemberExpression' && n.computed === true && !staticNonBody(n.property as Node) && isWritten(n, parents)) out.add('a computed member written to');
+    parents.push(n);
+    for (const [k, child] of Object.entries(n)) {
+      if (k === 'type') continue;
+      if (Array.isArray(child)) {
+        for (const c of child) if (isNode(c)) visit(c);
+      } else if (isNode(child)) visit(child);
+    }
+    parents.pop();
+  };
+  visit(program as unknown as Node);
+  return [...out];
 }
 
 /**
@@ -252,6 +403,18 @@ function otherModuleReach(m: ModuleRecord, c: string): string[] {
   // the pin never sees; only a plain env read (`import.meta.env.VITE_…`) is allowed.
   for (const im of m.importMetas) if (!/^\s*\.\s*env\s*\.\s*[A-Za-z_$][\w$]*/.test(c.slice(im.end))) out.push(`import.meta at ${im.start}: ${c.slice(im.start, im.end + 24).replace(/\s+/g, ' ')}`);
   return out;
+}
+
+/**
+ * A snippet's tree, for the rules' own tests. A snippet that is a function's body (a bare `return`) is
+ * parsed inside one.
+ */
+function snippetProgram(src: string): Program {
+  const first = parseSync('snippet.ts', src);
+  if (first.errors.length === 0) return first.program;
+  const wrapped = parseSync('snippet.ts', `async function snippet() {\n${src}\n}`);
+  expect(wrapped.errors.map((e) => e.message), src).toEqual([]);
+  return wrapped.program;
 }
 
 /** A snippet's module record and its code, for the rules' own tests. */
@@ -350,10 +513,127 @@ describe('the decrypt rules themselves (re-verify V-M1, V-M2)', () => {
     ]) expect(sendsOut(snippet), snippet).not.toEqual([]);
   });
 
+  // Review of proof-tripwire-4 (17 Nov 2026), rows 1 to 13: each passed the text rules. K is 'bo' + 'dy'.
+  const K = "const K = 'bo' + 'dy';\n";
+  const PTW4_BYPASSES: readonly [string, string][] = [
+    ['1 (M1)', 'init.body += plain;'],
+    ['2 (M3)', `${K}init[K] += plain;`],
+    ['3 (M1)', '({ x: init.body } = { x: plain });'],
+    ['4 (M1)', '[init.body] = [plain];'],
+    ['5 (M1)', 'for (init.body of [plain]);'],
+    ['6 (M2)', `${K}Object.assign(init, { get [K]() { return plain; } });`],
+    ['7 (M2)', `${K}await fetch(u, { method: 'POST', get [K]() { return plain; } });`],
+    ['8 (M2)', `${K}class I { method = 'POST'; [K] = plain; }\nawait fetch(u, new I());`],
+    ['9 (M3)', `${K}init[\n  K\n] = plain;`],
+    ['10 (M3)', "const k = ['bo' + 'dy'];\ninit[k[0]] = plain;"],
+    ['11 (M3) Reflect alias', `${K}const R = Reflect;\nR.set(init, K, plain);`],
+    ['11 (M3) Object alias', `${K}const O = Object;\nO.defineProperty(init, K, { value: plain });`],
+    ['12 (M3) Reflect bracket', `${K}Reflect['set'](init, K, plain);`],
+    ['12 (M3) Object bracket', `${K}const init = Object['fromEntries']([['method', 'POST'], [K, plain]]);`],
+    ['13 (I4) escaped key', 'await fetch(u, { \\u0062ody: plain });'],
+    ['13 (I4) escaped member', 'init.\\u0062ody = plain;'],
+  ];
+
+  for (const [row, snippet] of PTW4_BYPASSES) {
+    it(`PTW4 row ${row} is caught: ${snippet.replace(/\n/g, ' ')}`, () => {
+      expect(sendsOut(snippet), snippet).not.toEqual([]);
+      // By the tree rules on their own: no regex is needed for it.
+      expect(treeOut(snippetProgram(snippet)), snippet).not.toEqual([]);
+    });
+  }
+
+  it('PTW4: the tree rules alone catch every body, key and call snippet the text rules were written for', () => {
+    for (const snippet of [
+      "const init: RequestInit = { method: 'POST' };\ninit.body = plain;\nawait fetch(u, init);",
+      "init['body'] = plain;",
+      "await fetch(u, { method: 'POST', 'body': plain });",
+      'await fetch(u, { method: "POST", ["body"]: plain });',
+      "const k = 'bo' + 'dy';\nawait fetch(u, { method: 'POST', [k]: plain });",
+      "await fetch(u, { method: 'POST', body });",
+      "await fetch(u, { method: 'POST', body: plain });",
+      "Reflect.set(init, 'body', plain);",
+      "Object.defineProperty(init, 'body', { value: plain });",
+      "const init = Object.fromEntries([['method', 'POST'], ['body', plain]]);",
+      'init. body = plain;',
+      'init .body= plain;',
+      'init.body ??= plain;',
+      'init.body ||= plain;',
+      'init.body &&= plain;',
+      "init['body'] ??= plain;",
+      "const K = 'body';\ninit[K] = plain;",
+      'const K = `body`;\nReflect.set(init, K, plain);',
+      "const K = 'bo' + 'dy';\ninit[K] = plain;",
+      "const K = 'bo' + 'dy';\ninit[K] ??= plain;",
+      "const K = 'bo' + 'dy';\nReflect.set(init, K, plain);",
+      "const K = 'bo' + 'dy';\nObject.defineProperty(init, K, { value: plain });",
+      "const K = 'bo' + 'dy';\nconst init = Object.fromEntries([['method', 'POST'], [K, plain]]);",
+      "Object.assign(init, { [K]: plain });",
+      // (`init?.body ??= plain` is not here: an optional chain cannot be assigned to, so it never parses or runs.)
+      "await fetch(u, { ...{ [K]: plain } });",
+    ]) expect(treeOut(snippetProgram(snippet)), snippet).not.toEqual([]);
+  });
+
+  it('PTW4: every other write to `body`, every non-static computed key or member write, and any Reflect or Object, are caught', () => {
+    const K = "const K = 'bo' + 'dy';\n";
+    for (const snippet of [
+      // A write to a member named body, of any form.
+      'init.body++;',
+      '--init.body;',
+      'init.body -= plain;',
+      'init.body **= plain;',
+      'init.body >>>= plain;',
+      'for (init.body in o);',
+      '({ x: init.body = plain } = {});',
+      '({ ...init.body } = o);',
+      '[...init.body] = p;',
+      '[, init.body] = [0, plain];',
+      'delete init.body;',
+      '(init.body as unknown) = plain;',
+      'init!.body = plain;',
+      '(init.body) = plain;',
+      'class C { #body = 0; m() { this.#body = plain; } }',
+      'const b = res.body;',
+      // body as a key, a getter, a field, a binding.
+      'const o = { get body() { return plain; } };',
+      'const o = { set body(v) {} };',
+      "const o = { get ['body']() { return plain; } };",
+      'class C { body = plain; }',
+      'class C { get body() { return plain; } }',
+      'class C { static body = plain; }',
+      'const { body } = res;',
+      'const o = { body() { return plain; } };',
+      'const o = { "\\u0062ody": plain };',
+      "init['\\x62ody'] = plain;",
+      // A computed key or member write whose key is not a static non-body literal.
+      `${K}[init[K]] = [plain];`,
+      `${K}for (init[K] of [plain]);`,
+      `${K}for (init[K] in o);`,
+      `${K}({ x: init[K] } = { x: plain });`,
+      `${K}init[K]++;`,
+      `${K}delete init[K];`,
+      `${K}(init as Record<string, unknown>)[K] = plain;`,
+      `${K}init[\`\${K}\`] = plain;`,
+      `${K}class I { set [K](v: unknown) {} }`,
+      `${K}class I { static [K] = plain; }`,
+      `${K}class I { [K]() { return plain; } }`,
+      `${K}const o = { [K]() { return plain; } };`,
+      `${K}const { [K]: x } = o;`,
+      // Reflect and Object by any reference.
+      '\\u0052eflect.set(init, k, plain);',
+      'const O = globalThis.Object;',
+      "const R = globalThis['Reflect'];",
+      'const { set } = Reflect;',
+      'fn(Object);',
+    ]) expect(treeOut(snippetProgram(snippet)), snippet).not.toEqual([]);
+  });
+
+
   it("does not trip on reading a response body (ChatProof's own readCapped)", () => {
-    for (const snippet of ['void res.body?.cancel().catch(() => undefined);', 'if (res.body === null) return new Uint8Array(0);', 'const reader = res.body.getReader();', 'if (res.body !== null) n++;', 'const [state, setState] = useState(0);', 'let [a, b] = pair;\n[a, b] = [b, a];', 'if (parts[0] === undefined) n++;', 'const parts: Uint8Array[] = [];']) {
+    for (const snippet of ['void res.body?.cancel().catch(() => undefined);', 'if (res.body === null) return new Uint8Array(0);', 'const reader = res.body.getReader();', 'if (res.body !== null) n++;', 'const [state, setState] = useState(0);', 'let [a, b] = pair;\n[a, b] = [b, a];', 'if (parts[0] === undefined) n++;', 'const parts: Uint8Array[] = [];', 'if (res?.body !== null) n++;', 'const reader = res.body!.getReader();', 'const title = CHAT_PROOF_TITLE[proof.kind];', 'if (res.body == null) n++;']) {
       expect(sendsOut(snippet), snippet).toEqual([]);
     }
-    expect(sendsOut(code('apps/web/src/screens/proof/ChatProof.tsx'))).toEqual([]);
+    // PTW4: a static computed key that is not "body" (a read and a plain index write) is not the tree rules' business.
+    for (const snippet of ["const o = { ['method']: 'POST', [0]: 1 };", 'out[0] = 1;', "init['method'] = 'POST';"]) expect(treeOut(snippetProgram(snippet)), snippet).toEqual([]);
+    expect(sendsOut(code('apps/web/src/screens/proof/ChatProof.tsx'), programOf('apps/web/src/screens/proof/ChatProof.tsx'))).toEqual([]);
   });
 });
