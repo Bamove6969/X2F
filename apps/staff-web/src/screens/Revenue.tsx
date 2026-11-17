@@ -56,13 +56,13 @@ export function Revenue() {
             rowKey={(r) => r.period}
             columns={[
               { title: 'Fees to date', cell: (r) => xmr(r.totalAtomic), mono: true },
-              { title: 'Network fees paid to date', cell: (r) => xmr(r.networkFeeAtomic), mono: true },
+              { title: 'Monero network fees paid to date', cell: (r) => xmr(r.networkFeeAtomic), mono: true },
               { title: 'Net to date', cell: (r) => xmr(r.netAtomic), mono: true },
             ]}
           />
           {!report.treasuryNetworkFeesRecorded ? (
             <p className="x2f-staff-page__lead" data-part="treasury-fees">
-              Network fees for fee sweeps and payroll payments are not recorded yet.
+              Monero network fees for fee sweeps and payroll payments are not recorded yet.
             </p>
           ) : null}
           <h2 className="x2f-h2">By month</h2>
@@ -75,7 +75,7 @@ export function Revenue() {
               { title: 'Month', cell: (r) => r.period, mono: true },
               { title: 'Trades', cell: (r) => String(r.trades), mono: true },
               { title: 'Fees', cell: (r) => xmr(r.totalAtomic), mono: true },
-              { title: 'Network fees paid', cell: (r) => xmr(r.networkFeeAtomic), mono: true },
+              { title: 'Monero network fees paid', cell: (r) => xmr(r.networkFeeAtomic), mono: true },
               { title: 'Net', cell: (r) => xmr(r.netAtomic), mono: true },
             ]}
           />

@@ -59,15 +59,17 @@ describe('Revenue (owner; network fees paid to date and the net total)', () => {
     await click(document.querySelector('a[href="/overview/revenue"]'));
     expect(document.querySelector('[data-screen="revenue"]')).not.toBeNull();
     expect(api.calls.filter((c) => c.path.startsWith('/staff/v1/revenue'))).toHaveLength(1);
-    expect(headers('Revenue to date')).toEqual(['Fees to date', 'Network fees paid to date', 'Net to date']);
+    expect(headers('Revenue to date')).toEqual(['Fees to date', 'Monero network fees paid to date', 'Net to date']);
     expect(rows('Revenue to date')).toEqual([['0.050000000000 XMR', '0.000122880001 XMR', '0.049877119999 XMR']]);
-    expect(headers('Revenue by month')).toEqual(['Month', 'Trades', 'Fees', 'Network fees paid', 'Net']);
+    expect(headers('Revenue by month')).toEqual(['Month', 'Trades', 'Fees', 'Monero network fees paid', 'Net']);
     expect(rows('Revenue by month')).toEqual([
       ['2026-10', '2', '0.025000000000 XMR', '0.000061440000 XMR', '0.024938560000 XMR'],
       ['2026-11', '1', '0.012500000000 XMR', '0.000030720000 XMR', '0.012469280000 XMR'],
     ]);
     // Plan 6: the fee sweep and payroll sends record no network fee yet; the page says so.
     expect(document.querySelector('[data-part="treasury-fees"]')).not.toBeNull();
+    // Owner 16-17 Nov: each receiver pays the network fee for its own payout output; never "half".
+    expect(document.querySelector('[data-screen="revenue"]')?.textContent ?? '').not.toMatch(/half/i);
   });
 
   it('no month with revenue reads as such; a refusal shows the fault', async () => {
