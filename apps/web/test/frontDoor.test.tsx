@@ -16,7 +16,7 @@ import { App } from '../src/App.js';
 import { api } from '../src/api/client.js';
 import { BehindTheDoor, RECOVERY_HOME, doorVerdict, isFrontDoor, isInside } from '../src/session/frontDoor.js';
 import { refreshSession, type Session } from '../src/session/useSession.js';
-import { WELCOME_SEEN_KEY } from '../src/tour/welcomeSeen.js';
+import { WELCOME_SEEN_KEY, resetWelcomeMemory } from '../src/tour/welcomeSeen.js';
 import { render } from './render.js';
 
 const APP = join(dirname(fileURLToPath(import.meta.url)), '../src/App.tsx');
@@ -41,6 +41,9 @@ let meGate: Promise<void> | null;
 beforeEach(() => {
   refreshSession();
   window.localStorage.clear();
+  // A device that has not seen the welcome screen: the flag's in-memory fallback too (a Skip in an
+  // earlier test sets it for the module's life).
+  resetWelcomeMemory();
   me = { status: 401, body: { error: 'not-authenticated' } };
   calls = [];
   meGate = null;
@@ -376,6 +379,12 @@ describe('logged in, first visit on this device', () => {
     await settle();
     expect(host.querySelector('[data-screen="welcome"]')).toBeNull();
     expect(document.querySelector('[data-part="tour"]')?.getAttribute('data-tour')).toBe('member');
+    // The card shows once its stop's target is found (the tour fades out first, then looks).
+    for (let i = 0; i < 40 && document.querySelector('[data-part="tour-card"]') === null; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 50));
+      });
+    }
     expect(document.querySelector('[data-part="tour-card"] h2')?.textContent).toBe('Whose account this is');
     expect(where.split('?')[0]).toBe('/buy');
     expect(window.localStorage.getItem(WELCOME_SEEN_KEY)).toBe('1');
