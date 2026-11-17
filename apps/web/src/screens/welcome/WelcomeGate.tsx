@@ -20,8 +20,11 @@ export function WelcomeGate({ children }: { children: ReactNode }) {
   const { search } = useLocation();
   const session = useSession();
   const tour = useTour();
+  // useSession starts at `loading` in each component: until it has the session, whether this is a
+  // member is not known, and a member must never be sent to the welcome screen on the way.
+  const known = session.status !== 'loading';
   const member = memberOf(session) !== null;
-  const memberFirst = member && !welcomeSeen();
+  const memberFirst = known && member && !welcomeSeen();
   useEffect(() => {
     if (!memberFirst) return;
     markWelcomeSeen();
@@ -29,6 +32,7 @@ export function WelcomeGate({ children }: { children: ReactNode }) {
     tour.start(memberTour(memberAbilities(session)));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on the first visit
   }, [memberFirst]);
+  if (!known) return null;
   if (!member && !welcomeSeen()) return <Navigate to={`${WELCOME_PATH}${search}`} replace />;
   return <>{children}</>;
 }

@@ -50,8 +50,11 @@ export function WelcomeScreen() {
   const navigate = useNavigate();
   const tour = useTour();
   const { search } = useLocation();
-  // Lead, 12 Nov 2026: a team member's way in is the member tour, never this screen.
-  if (memberOf(useSession()) !== null) return <Navigate to="/sell" replace />;
+  const session = useSession();
+  // Lead, 12 Nov 2026: a team member's way in is the member tour, never this screen (and nothing is
+  // shown until the session says who this is).
+  if (session.status === 'loading') return null;
+  if (memberOf(session) !== null) return <Navigate to="/sell" replace />;
   return (
     <main className="x2f-hello" data-screen="welcome">
       <div className="x2f-hello__col">

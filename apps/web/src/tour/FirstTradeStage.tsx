@@ -281,7 +281,7 @@ function Quote({ stop, acted, reduced }: TourStageProps) {
         </dl>
       </section>
       <footer className="x2f-ex__foot" data-tour="request">
-        <span className="x2f-button x2f-button--primary x2f-ex__button" data-tour="request-button" data-state={started ? 'ok' : requested ? 'sent' : 'idle'}>
+        <span className="x2f-ex__button" data-tour="request-button" data-state={started ? 'ok' : requested ? 'sent' : 'idle'}>
           {started ? 'Trade started' : requested ? 'Request sent' : 'Request to sell XMR'}
         </span>
         <span className="x2f-ex__muted">{started ? 'example_seller accepted. The trade has started.' : 'Next, you lock the XMR in escrow.'}</span>
@@ -410,7 +410,7 @@ function Check({ stop, acted, reduced }: TourStageProps) {
         </span>
       </section>
       <footer className="x2f-ex__foot" data-tour="release">
-        <span className="x2f-hold x2f-ex__hold" data-ready={paid ? 'true' : 'false'} data-holding={holding && !released ? 'true' : 'false'} data-done={released ? 'true' : 'false'}>
+        <span className="x2f-ex__hold" data-ready={paid ? 'true' : 'false'} data-holding={holding && !released ? 'true' : 'false'} data-done={released ? 'true' : 'false'}>
           <i className="x2f-ex__fill" aria-hidden="true" />
           <span>{released ? 'Released 0.594354 XMR to example_seller' : holding ? 'Keep holding…' : 'Hold to release 0.594354 XMR'}</span>
         </span>

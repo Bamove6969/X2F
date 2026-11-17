@@ -3,6 +3,9 @@
 // wip/design-brief b3b8315b tour-stops.md and tour-motion.md): the engine's two flows, the
 // once-per-device welcome flag, the remembered stop, the first-trade tour's 17 stops word for word,
 // and the shell (scrim and ring, card, Skip / Back / Next, keys, the closed line, reduced motion).
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -253,6 +256,22 @@ describe('the tour shell', () => {
     expect(document.querySelector('[data-part="tour-ring"]')).toBeNull();
     expect(document.querySelector('[data-part="tour-arrow"]')).toBeNull();
     expect(card()?.dataset.placement).toBe('center');
+  });
+
+  it('the hole glides with its ring: the dim path is set through CSS d, keyed and timed like the ring (review M1)', async () => {
+    const { host } = mount();
+    click(host.querySelector('#start')!);
+    await settle();
+    const dim = document.querySelector<SVGPathElement>('[data-part="tour-dim"]');
+    expect(dim).not.toBeNull();
+    // The attribute stays for a browser that cannot set d from CSS (it then snaps, as before).
+    expect((dim!.style as unknown as { d?: string }).d).toBe(`path("${dim!.getAttribute('d')}")`);
+    expect(dim!.getAttribute('d')).toMatch(/^M0 0H\d+V\d+H0ZM/);
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/tour/tour.css'), 'utf8');
+    const motion = css.slice(css.indexOf('@media (prefers-reduced-motion: no-preference)'));
+    const rule = (sel: string) => /\{([^}]*)\}/.exec(motion.slice(motion.indexOf(sel)))?.[1] ?? '';
+    expect(rule('.x2f-tour__dim')).toMatch(/transition:\s*d 250ms var\(--x2f-tour-ease-out\)/);
+    expect(rule('.x2f-tour__ring {')).toMatch(/x 250ms var\(--x2f-tour-ease-out\)/);
   });
 
   it('keys: → Next, ← Back, Esc Skip tour', async () => {

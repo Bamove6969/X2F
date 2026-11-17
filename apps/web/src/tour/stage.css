@@ -348,9 +348,6 @@
   padding: 12px 0 4px;
   background: var(--x2f-ground);
 }
-/* The example's primary action and release hold wear the kit's own classes (x2f-button--primary,
-   x2f-hold, ui.css), the one orange each screen has (kit rules: selection-ink.test.ts); this only
-   sizes them for the example screen. */
 .x2f-ex__button,
 .x2f-ex__hold {
   position: relative;
@@ -360,6 +357,8 @@
   justify-content: center;
   height: 52px;
   border-radius: var(--x2f-radius-md);
+  background: var(--x2f-monero);
+  color: var(--x2f-on-monero);
   font-weight: 600;
   transition: background-color 300ms;
 }
@@ -446,8 +445,8 @@
   right: 0;
   top: 0;
   height: 2px;
-  /* Ink, with no glow: orange is for the primary action, and the kit has no shadows but the nav lines. */
-  background: var(--x2f-ink);
+  /* The prototype's glow is left out: kit 1.5 has no shadow but the nav-current lines. */
+  background: var(--x2f-monero);
 }
 .x2f-ex__tick {
   display: flex;
