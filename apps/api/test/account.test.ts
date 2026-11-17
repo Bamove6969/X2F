@@ -109,7 +109,7 @@ interface Me {
   suggestions: string[];
   session: { lengthHours: number | null; choices: number[]; expiresAt: string; canExtend: boolean; serverNow: string } | null;
   termsCurrent: boolean;
-  securityRating: 'weak' | 'secure' | null;
+  securityRating: 'weak' | 'medium' | 'high' | null;
 }
 
 async function me(b: Browser): Promise<Me> {
@@ -227,7 +227,7 @@ describe('GET /v1/account/me', () => {
     expect(after.methods).toEqual(['password', 'totp']);
   });
 
-  it('rates the account weak or secure by its login methods (owner demo note #6)', async () => {
+  it('rates the account weak, medium or high by its login methods (owner demo note #6, answers of 17 Nov)', async () => {
     const { id } = await account();
     await addPassword(id);
     const b = await loggedIn(id);
@@ -235,15 +235,19 @@ describe('GET /v1/account/me', () => {
     // A recovery code is a backup way in, not one of the other ways (docs/trade-wallet-note6.md Q6).
     await addRecoveryCodes(id, 1);
     expect((await me(b)).securityRating).toBe('weak');
+    // "User/pass/display name/otp is kinda like medium security."
     await addTotp(id);
-    expect((await me(b)).securityRating).toBe('secure');
+    expect((await me(b)).securityRating).toBe('medium');
     // The authenticator app counts only with a password (owner, 16 Nov 2026).
     await deps.db.query('delete from passwords where account_id = $1', [id]);
     expect((await me(b)).securityRating).toBe('weak');
+    // A PGP key, passkey or security key: high, with or without a password.
     await deps.db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
       id, randomBytes(20).toString('hex'), randomBytes(64), now,
     ]);
-    expect((await me(b)).securityRating).toBe('secure');
+    expect((await me(b)).securityRating).toBe('high');
+    await addPassword(id);
+    expect((await me(b)).securityRating).toBe('high');
   });
 
   it('lists methods in a fixed order; spent recovery codes are not a method', async () => {

@@ -126,7 +126,7 @@ async function addConfirmed(b: Browser, address = fakeAddress(), extra: Record<s
   return { address, wallet: res.json() as WalletOut };
 }
 
-type WalletOut = { id: string; app: string; label: string; address: string; addressEnd: string; usableFrom: string; usable: boolean; oneTime: boolean };
+type WalletOut = { id: string; app: string; label: string; address: string; addressEnd: string; usableFrom: string; usable: boolean; oneTime: boolean; isDefault: boolean };
 
 async function list(b: Browser): Promise<WalletOut[]> {
   const res = await b.get('/v1/wallets');
@@ -852,7 +852,7 @@ describe('listing and removing', () => {
     await addConfirmed(c.b);
     const got = await list(a.b);
     expect(got.map((w) => w.id)).toEqual([w1.id, w2.id]);
-    for (const w of got) expect(Object.keys(w).sort()).toEqual(['address', 'addressEnd', 'app', 'id', 'label', 'oneTime', 'usable', 'usableFrom']);
+    for (const w of got) expect(Object.keys(w).sort()).toEqual(['address', 'addressEnd', 'app', 'id', 'isDefault', 'label', 'oneTime', 'usable', 'usableFrom']);
   });
 
   it('answers 404 for another account’s wallet or a malformed id', async () => {
@@ -944,6 +944,9 @@ describe('one-time wallets (owner demo note #6)', () => {
       [id],
     );
     expect(rows.map((r) => r.change.items.map((i) => [i.address, i.oneTime]))).toEqual([[[address, true]]]);
+    // Review M4: the waiting-changes list says which staged wallets are for one trade only.
+    const view = (await b.get('/v1/account/hold')).json() as { drafts: Array<{ kind: string; oneTime?: boolean[] }> };
+    expect(view.drafts.map((d) => [d.kind, d.oneTime])).toEqual([['wallets', [true]]]);
     // What the hold applies once the 24 hours are over.
     await applyWallets(deps.db, id, rows[0]!.change.items as never, 'password', now);
     const applied = (await list(b)).find((w) => w.address === address)!;
@@ -955,5 +958,99 @@ describe('one-time wallets (owner demo note #6)', () => {
     const address = fakeAddress();
     await applyWallets(deps.db, id, [{ app: 'cake', label: 'Old', address } as never], 'password', now);
     expect((await list(b)).find((w) => w.address === address)!.oneTime).toBe(false);
+  });
+});
+
+describe('the default payout wallet (owner, 17 Nov 2026: answer to note #6 Q1)', () => {
+  const makeDefault = (b: Browser, id: string) => b.put(`/v1/wallets/${id}/default`, {});
+  const defaults = async (b: Browser) => (await list(b)).filter((w) => w.isDefault).map((w) => w.id);
+  /** A later wallet made usable now (as a strong confirm would make it). */
+  async function addReady(b: Browser, extra: Record<string, unknown> = {}) {
+    const r = await addConfirmed(b, fakeAddress(), extra);
+    await deps.db.query('update wallets set usable_from = created_at where id = $1', [r.wallet.id]);
+    return r;
+  }
+
+  it('"If they only have one wallet saved then that\'s the default"', async () => {
+    const { b } = await trader();
+    expect(await list(b)).toEqual([]);
+    const { wallet } = await addConfirmed(b);
+    expect(await defaults(b)).toEqual([wallet.id]);
+  });
+
+  it('with several saved wallets there is none until one is chosen; choosing another moves it', async () => {
+    const { b } = await trader();
+    const { wallet: a } = await addConfirmed(b);
+    setNow(at(1000));
+    const { wallet: c } = await addReady(b);
+    expect(await defaults(b)).toEqual([]);
+    expect((await makeDefault(b, c.id)).statusCode).toBe(204);
+    expect(await defaults(b)).toEqual([c.id]);
+    expect((await makeDefault(b, a.id)).statusCode).toBe(204);
+    expect(await defaults(b)).toEqual([a.id]);
+    // Choosing the default again changes nothing.
+    expect((await makeDefault(b, a.id)).statusCode).toBe(204);
+    expect(await defaults(b)).toEqual([a.id]);
+  });
+
+  it('a one-time wallet is never the default, and does not stop a sole saved wallet being it', async () => {
+    const { b } = await trader();
+    const { wallet: saved } = await addConfirmed(b);
+    setNow(at(1000));
+    const { wallet: once } = await addReady(b, { oneTime: true });
+    expect(await defaults(b)).toEqual([saved.id]);
+    const res = await makeDefault(b, once.id);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'wallet-one-time' });
+    expect(await defaults(b)).toEqual([saved.id]);
+  });
+
+  it('a waiting wallet is not the automatic default: only a usable saved wallet counts as the sole one', async () => {
+    const { b } = await trader();
+    const { wallet: first } = await addConfirmed(b);
+    // A later wallet confirmed with a password waits 24 hours.
+    const { wallet: waiting } = await addConfirmed(b);
+    expect(waiting.usable).toBe(false);
+    expect(await defaults(b)).toEqual([first.id]);
+  });
+
+  it('removing the default leaves none until one is chosen, or the sole remaining wallet', async () => {
+    const { b } = await trader();
+    const { wallet: a } = await addConfirmed(b);
+    setNow(at(1000));
+    const { wallet: c } = await addReady(b);
+    setNow(at(1000));
+    const { wallet: d } = await addReady(b);
+    expect((await makeDefault(b, a.id)).statusCode).toBe(204);
+    expect((await b.delete(`/v1/wallets/${a.id}`)).statusCode).toBe(204);
+    expect(await defaults(b)).toEqual([]);
+    expect((await b.delete(`/v1/wallets/${c.id}`)).statusCode).toBe(204);
+    expect(await defaults(b)).toEqual([d.id]);
+  });
+
+  it("answers 404 for another account's, a removed or a malformed wallet, and refuses a backup session", async () => {
+    const one = await trader();
+    const other = await trader();
+    const { wallet: mine } = await addConfirmed(one.b);
+    const { wallet: theirs } = await addConfirmed(other.b);
+    expect((await makeDefault(one.b, theirs.id)).statusCode).toBe(404);
+    expect((await makeDefault(one.b, 'nope')).statusCode).toBe(404);
+    expect((await one.b.delete(`/v1/wallets/${mine.id}`)).statusCode).toBe(204);
+    expect((await makeDefault(one.b, mine.id)).statusCode).toBe(404);
+    const rec = await trader({ level: 'recovery' });
+    expect((await makeDefault(rec.b, theirs.id)).json()).toEqual({ error: 'recovery-session' });
+    expect((await new Browser(app).put(`/v1/wallets/${theirs.id}/default`, {})).statusCode).toBe(401);
+  });
+
+  it('keeps one default per account even when two are chosen at once', async () => {
+    const { id, b } = await trader();
+    const { wallet: a } = await addConfirmed(b);
+    setNow(at(1000));
+    const { wallet: c } = await addReady(b);
+    const res = await Promise.all([makeDefault(b, a.id), makeDefault(b, c.id)]);
+    expect(res.map((r) => r.statusCode)).toEqual([204, 204]);
+    const { rows } = await deps.db.query('select id from wallets where account_id = $1 and is_default and removed_at is null', [id]);
+    expect(rows).toHaveLength(1);
+    expect(await defaults(b)).toHaveLength(1);
   });
 });

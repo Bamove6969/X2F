@@ -9,6 +9,8 @@ import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { FIAT, XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/hold.js';
+import { issueConfirmToken } from '../src/auth/confirm.js';
+import { addressEnd, addressHash } from '@x2f/accounts';
 import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 5: taking an offer, and the poster's wallet route. Real Postgres (one database per
@@ -43,7 +45,7 @@ type Who = Awaited<ReturnType<typeof trader>> & { wallet: string; address: strin
 
 beforeAll(async () => {
   // A pool larger than any race below, so every racing take holds its own transaction at once.
-  ({ app, deps, trader } = await tradeApp({}, { prices, db: await testDb({ max: 12 }) }));
+  ({ app, deps, trader } = await tradeApp({}, { prices, db: await testDb({ max: 12 }), addresses: { check: async () => 'ok' } }));
   // Small stage thresholds for this file: Building at 1 completed trade and 7 days, Graduated at 2 and 30.
   await deps.db.query(
     `insert into owner_settings (key, value, updated_at) values
@@ -1155,12 +1157,23 @@ describe('one-time wallets and the per-trade address (owner demo note #6)', () =
     expect(await listed(buyer)).toContain(buyer.wallet);
   });
 
-  it("a weak account's new address cannot reach a trade: staged, waiting or sent as an address, the take is refused", async () => {
+  it("a weak account's new address cannot reach a trade: staged, waiting, foreign or sent as an address, the take is refused", async () => {
     const seller = await person();
     const offer = await postOffer(seller);
     const weak = await person();
-    // A username-and-password login (weak account): an add from it is staged, so there is no wallet row to use.
+    // A username-and-password login (weak account): an add from it is staged (202), so there is no wallet row to use.
     await deps.db.query(`update sessions set strength = 'weak-single' where account_id = $1`, [weak.id]);
+    const sessionId = (await deps.db.query<{ id: string }>('select id from sessions where account_id = $1 and revoked_at is null', [weak.id])).rows[0]!.id;
+    const fresh = fakeAddress();
+    const confirmToken = await issueConfirmToken(deps, {
+      sessionId, accountId: weak.id, method: 'password',
+      action: { kind: 'add-wallet', addressHash: await addressHash(fresh), addressEnd: addressEnd(fresh) },
+    });
+    const staged = await weak.browser.post('/v1/wallets', { app: 'cake', label: 'New', address: fresh, confirmToken, oneTime: true });
+    expect(staged.statusCode, staged.body).toBe(202);
+    const { rows: rowsOfFresh } = await deps.db.query('select 1 from wallets where address = $1', [fresh]);
+    expect(rowsOfFresh).toEqual([]);
+    expect(refusal(await take(weak, offer, { ...body(weak, tenth), address: fresh }))).toEqual({ status: 400, error: 'bad-request' });
     const waiting = await addWallet(weak.id, false);
     expect(refusal(await take(weak, offer, body(weak, tenth, undefined, { walletId: waiting.id })))).toEqual({ status: 409, error: 'wallet-not-ready' });
     // The take names a wallet, never an address: an address in the body is refused.
@@ -1170,5 +1183,89 @@ describe('one-time wallets and the per-trade address (owner demo note #6)', () =
     expect(refusal(await take(weak, offer, body(weak, tenth, undefined, { walletId: seller.wallet })))).toEqual({ status: 409, error: 'wallet-not-ready' });
     // Its own usable wallet works as before.
     await taken(weak, offer, body(weak, tenth));
+  });
+});
+
+/**
+ * Review of wip/third-trade-wallet, M2 (claude3, 17 Nov 2026): the use-up of a one-time wallet under
+ * races and rollbacks. It runs in the trade's own transaction under the account lock, so exactly one
+ * trade gets the address, and a trade that does not commit leaves the wallet open.
+ */
+describe('one-time wallets under races and rollbacks (review M2)', () => {
+  async function oneTimeWallet(accountId: string): Promise<{ id: string; address: string }> {
+    const w = await addWallet(accountId);
+    await deps.db.query('update wallets set one_time = true where id = $1', [w.id]);
+    return w;
+  }
+  const open = async (id: string) => (await deps.db.query('select 1 from wallets where id = $1 and removed_at is null', [id])).rows.length === 1;
+  const tradesPayingTo = async (address: string) =>
+    (await deps.db.query('select code from trades where buyer_payout = $1 or seller_refund = $1', [address])).rows.length;
+
+  it('two takes at once with the same one-time wallet: one trade, the other wallet-not-ready', async () => {
+    const seller = await person();
+    const first = await postOffer(seller);
+    const second = await postOffer(seller);
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    const results = await allAtOnce([`select 1 from accounts where id = '${buyer.id}' for update`], 2, () => [
+      take(buyer, first, body(buyer, tenth, undefined, { walletId: once.id })),
+      take(buyer, second, body(buyer, tenth, undefined, { walletId: once.id })),
+    ]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+    expect(refusal(results.find((r) => r.statusCode === 409)!)).toEqual({ status: 409, error: 'wallet-not-ready' });
+    expect(await tradesPayingTo(once.address)).toBe(1);
+    expect(await open(once.id)).toBe(false);
+  });
+
+  it("a take and the poster's wallet route at once with the same one-time wallet: one uses it, the other is refused", async () => {
+    const poster = await person();
+    const taker = await person();
+    const code = await taken(taker, await postOffer(poster, { side: 'sell' }), body(taker, tenth));
+    const other = await person();
+    const offer = await postOffer(other);
+    const once = await oneTimeWallet(poster.id);
+    const results = await allAtOnce([`select 1 from accounts where id = '${poster.id}' for update`], 2, () => [
+      take(poster, offer, body(poster, tenth, undefined, { walletId: once.id })),
+      poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: once.id }),
+    ]);
+    const statuses = results.map((r) => r.statusCode);
+    expect(statuses.filter((s) => s === 200 || s === 204)).toHaveLength(1);
+    const lost = results.find((r) => r.statusCode === 409)!;
+    expect(refusal(lost)).toEqual({ status: 409, error: 'wallet-not-ready' });
+    expect(await tradesPayingTo(once.address)).toBe(1);
+    expect(await open(once.id)).toBe(false);
+  });
+
+  it('a take that fails at commit, after the use-up, leaves the one-time wallet open', async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    // A deferred constraint trigger fails this buyer's trade insert at commit, after the take's use-up ran.
+    await deps.db.query(`create function x2f_test_fail_commit() returns trigger language plpgsql as $$
+      begin if new.buyer_account_id = '${buyer.id}' then raise exception 'test: fail at commit'; end if; return null; end $$`);
+    await deps.db.query(`create constraint trigger x2f_test_fail_commit after insert on trades deferrable initially deferred
+      for each row execute function x2f_test_fail_commit()`);
+    try {
+      const res = await take(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+      expect(res.statusCode).toBe(500);
+    } finally {
+      await deps.db.query('drop trigger x2f_test_fail_commit on trades');
+      await deps.db.query('drop function x2f_test_fail_commit()');
+    }
+    expect(await open(once.id)).toBe(true);
+    expect(await tradesPayingTo(once.address)).toBe(0);
+    await taken(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+    expect(await open(once.id)).toBe(false);
+  });
+
+  it("a refused poster's wallet route leaves the one-time wallet listed", async () => {
+    const poster = await person();
+    const taker = await person();
+    const code = await taken(taker, await postOffer(poster, { side: 'sell' }), body(taker, tenth));
+    expect((await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: poster.wallet })).statusCode).toBe(204);
+    const once = await oneTimeWallet(poster.id);
+    expect(refusal(await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: once.id }))).toEqual({ status: 409, error: 'wrong-state' });
+    expect(await open(once.id)).toBe(true);
   });
 });
