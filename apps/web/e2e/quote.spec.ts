@@ -212,7 +212,7 @@ test.describe('BuyQuote', () => {
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
     expect(seen.takes).toEqual([
-      { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency },
+      { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency, lienRecoveryAtomic: '0' },
     ]);
   });
 
@@ -555,7 +555,7 @@ test.describe('phone sizes: fit and a take by tapping', () => {
       await trade(page).tap();
       await expect(page).toHaveURL(`/trade/${B.code}`);
       expect(seen.takes).toEqual([
-        { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency },
+        { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency, lienRecoveryAtomic: '0' },
       ]);
     });
 
