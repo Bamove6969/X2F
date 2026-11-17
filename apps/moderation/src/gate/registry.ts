@@ -3,7 +3,7 @@ import { verifyRegistrationResponse, type RegistrationResponseJSON } from '@simp
 import { decodeAttestationObject } from '@simplewebauthn/server/helpers';
 import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, involvedIn, type KeyTapIntent } from '@x2f/staff';
 import type pg from 'pg';
-import { ADD_OWNER_KEY_PAIR_MS, MAX_TAP_AGE_MS, SWITCH_ON_SKEW_MS, type GateState, type InvitableRole, type PinnedCred } from './store.js';
+import { ADD_OWNER_KEY_PAIR_MS, LINK_MAX_LIFETIME_MS, MAX_TAP_AGE_MS, SWITCH_ON_SKEW_MS, type GateState, type InvitableRole, type PinnedCred } from './store.js';
 import { credOf, noteCounter, verifyTap, type GateContext, type GateRuling, type StoredTap } from './verify.js';
 
 /**
@@ -132,6 +132,12 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
   };
   const ownerId = g.ownerAccountId;
   const issuedOf = (t: { intent: KeyTapIntent }): number => Date.parse((t.intent as { issuedAt?: string }).issuedAt ?? '');
+  /**
+   * Review D-2: when an invite or reset link closes by the gate's clock: its signed expiresAt, but
+   * never later than LINK_MAX_LIFETIME_MS after its signed issuedAt (NaN, so closed, without either).
+   */
+  const linkClosesAt = (t: { intent: KeyTapIntent & { expiresAt: string } }): number =>
+    Math.min(Date.parse(t.intent.expiresAt), issuedOf(t) + LINK_MAX_LIFETIME_MS);
 
   // 0. Every fresh owner tap is checked once, before any step acts (re-verify N1-N4, N7):
   //    - its signed issuedAt is not after the gate's clock plus the skew (a far-future stamp would
@@ -156,6 +162,10 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       else if (issued > now + SWITCH_ON_SKEW_MS) why = 'issued-in-future';
       else if (now - issued > MAX_TAP_AGE_MS) why = 'issued-too-long-ago';
       else if (hw > 0 && t.counter <= hw) why = 'out-of-order';
+      else if ((t.intent.kind === 'create-invite' || t.intent.kind === 'reset-staff-security') && !(Date.parse(t.intent.expiresAt) - issued <= LINK_MAX_LIFETIME_MS)) {
+        // Review D-2: a link signed to stay open longer than the API itself allows.
+        why = 'link-too-long';
+      }
       if (why !== null) {
         spend(t.tap, why);
         refused(ctx, why);
@@ -213,7 +223,7 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
     }
     const binding = Object.hasOwn(g.invites, intent.inviteId) ? g.invites[intent.inviteId] : undefined;
     if (binding?.closed) continue;
-    const expires = Date.parse(intent.expiresAt);
+    const expires = linkClosesAt({ intent });
     if (!Number.isFinite(expires) || now >= expires) {
       if (binding) binding.closed = true;
       else refused(ctx, 'invite-expired');
@@ -276,6 +286,10 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       if (!inOrder(t, `security:${intent.accountId}`)) continue;
       accept(t, `reset:${intent.inviteId}`, `security:${intent.accountId}`);
       for (const b of Object.values(g.resets)) if (b.accountId === intent.accountId) b.closed = true;
+      // Review D-3: their own invite closes too, joined or not, so step 1 never puts a key
+      // registered through it back after the reset.
+      for (const b of Object.values(g.invites)) if (b.accountId === intent.accountId) b.closed = true;
+      s.inviteClosed = true;
       s.creds = [];
       binding = { accountId: intent.accountId, closed: false };
       g.resets[intent.inviteId] = binding;
@@ -286,7 +300,7 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       continue;
     }
     if (binding.closed) continue;
-    const expires = Date.parse(intent.expiresAt);
+    const expires = linkClosesAt({ intent });
     if (!Number.isFinite(expires) || now >= expires) {
       binding.closed = true;
       continue;

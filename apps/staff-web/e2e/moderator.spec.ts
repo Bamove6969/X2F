@@ -123,3 +123,27 @@ test('ModCase parity at 1280x1600, the code masked; no chat is fetched', async (
   expect(KNOWN_CASE.filter((k) => !failures.some((f) => k.test(f))).map(String)).toEqual([]);
   expect(calls.filter((c) => /\/chat\b/.test(c))).toEqual([]);
 });
+
+// Disputes-stack review 2026-11-16 (merge 3c63c18e): the owner's unread badge (O-040) is styled at
+// a wide and a narrow width, not only inside ModCase's `@media (max-width: 900px)`.
+test('the owner\'s unread badge is styled at 1280 and at 800 px wide', async ({ page }) => {
+  const owner = { ...ME, displayName: 'lumen.k', role: 'owner', nav: ['disputes'] };
+  await page.route('**/staff/v1/**', (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/staff/v1/me') return json(owner)(route);
+    if (path === '/staff/v1/disputes') return json(QUEUE)(route);
+    if (path === '/staff/v1/owner/alerts') return json({ items: [], unread: 3, next: null })(route);
+    return json({ error: 'not-found' }, 404)(route);
+  });
+  for (const width of [1280, 800]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/disputes');
+    const badge = page.locator('[data-part="alerts-badge"]');
+    await expect(badge).toHaveText('3');
+    const style = await badge.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { display: s.display, borderRadius: s.borderTopLeftRadius, textAlign: s.textAlign };
+    });
+    expect(style, `${width} px`).toEqual({ display: 'inline-block', borderRadius: '999px', textAlign: 'center' });
+  }
+});

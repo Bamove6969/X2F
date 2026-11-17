@@ -3,7 +3,7 @@
  * read and tested on their own. Every sentence here is draft copy unless a board words it.
  * COPY-UNSIGNED
  */
-import { evidenceSha256, sha256, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
+import { evidenceSha256, normalizeIncidentId, normalizeTradeCode, sha256, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 
 const ATOMIC_PER_XMR = 1_000_000_000_000n;
 const H = 3_600_000;
@@ -63,6 +63,19 @@ export function hhmm(iso: string): string {
 
 /** "7RWD-3MXE-KQ84-HN2T": a trade code in groups of four. */
 export const codeText = (code: string) => code.replace(/(.{4})(?=.)/g, '$1-');
+
+/**
+ * Review X3-1 (a): whether the case the API returned is the one in the page's address
+ * (`/disputes/:code`), so a ruling tap signs the trade the moderator opened. A trade code in the
+ * address must be the case's code, in any typed form; an incident ID (the API resolves those too)
+ * must be the case's incident ID. Anything else matches nothing.
+ */
+export function caseMatchesAddress(param: string, c: { code: string; incidentId: string }): boolean {
+  const code = normalizeTradeCode(param);
+  if (code !== null) return normalizeTradeCode(c.code) === code;
+  const incident = normalizeIncidentId(param);
+  return incident !== null && normalizeIncidentId(c.incidentId) === incident;
+}
 
 export type DeadlineTone = 'due' | 'overdue' | 'replied';
 
