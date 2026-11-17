@@ -94,32 +94,43 @@ Method counts for an account already exist: `methodCounts` (`routes/account.ts:1
 
 ## Step 2: what was built
 
-1. **Account rating, one server function** `accountRating(counts)` in `apps/api/src/auth/rating.ts`:
-   `secure` when the account holds at least one PGP key, passkey, security key or authenticator app on top
-   of its login name and display name (every account has both); `weak` otherwise (a password alone, or a
-   password with recovery codes only, see Q6). Exposed as `securityRating` on `GET /v1/account/me`
-   (traders; null for team members, whose own login is always two factors) and as `accountRating` on
-   `GET /v1/wallets/rule`.
-2. **Wallet name**: already built (label 1-40); the picker and the new inline add show it with the last
-   6 characters of the address.
-3. **One-time vs saved**: migration `620_wallet_one_time.sql` adds `wallets.one_time` (default false).
-   `POST /v1/wallets` accepts `oneTime: boolean` per wallet (single body or each batch item; anything
-   but a boolean is 400 before the confirm token is looked at). Staged adds carry it through the hold.
-   A one-time wallet is listed (marked "This trade only") until a trade uses it; the take, or the
-   poster's wallet route, marks it removed in the same transaction that writes the trade's address
-   (under the account lock), so it is never listed or usable again. The trade's own address copy, the
-   attested terms and escrow are untouched.
-4. **Amount screen**: the owner's question and smaller text above the wallet list (COPY-UNSIGNED). A
-   secure account gets "Add a new address" inline (name, address, this trade only / save for future
-   trades), saved through the same `POST /v1/wallets` and confirm sheet as Settings; when it is usable at
-   once it is picked for this trade, otherwise the screen says when it works. A weak account gets no
-   inline add and a line pointing to Settings → Your wallets.
-5. **Settings**: the add form has the same this-trade-only / save-for-future choice. The existing rule
-   is kept for everyone: weak logins are staged 24 h (hold v3), password confirms wait 24 h, strong
-   confirms work at once. Nothing was loosened.
-6. **Server enforcement**: the take accepts only a `walletId` of the taker's own usable wallet (no
-   address in the body, 400); a staged or waiting address is 409 `wallet-not-ready`; a used one-time
-   wallet is 409 `wallet-not-ready`. Tests cover a weak account end to end.
+1. **Account rating, one server function**: `accountRating` (`apps/api/src/auth/rating.ts:20-24`).
+   `secure` = a PGP key, passkey or security key, or a password with an authenticator app, on top of the
+   login name and display name every account has; `weak` = anything less (a password alone, a password
+   with recovery codes (Q6), an authenticator app with no password, no method). Exposed as
+   `securityRating` on `GET /v1/account/me` (`apps/api/src/routes/account.ts:72,318`; null for team
+   members, staff and owner). Tests: `apps/api/test/rating.test.ts` (14 combinations),
+   `apps/api/test/account.test.ts` "rates the account weak or secure".
+2. **Wallet name**: already built (label 1-40, `wallets/routes.ts:131-141`); the quote and the new
+   sheet show it with the last 6 characters of the address.
+3. **One-time vs saved**: migration `apps/api/migrations/620_wallet_one_time.sql` (`wallets.one_time`,
+   default false; 620 is free on main and every remote branch). `POST /v1/wallets` takes `oneTime` per
+   wallet (`wallets/routes.ts:136`, 400 before the confirm token otherwise; stored `:235-237`); staged
+   adds keep it through the hold and an older staged change applies as saved. `useUpOneTimeWallet`
+   (`wallets/routes.ts:379`) marks it removed in the trade's own transaction, under the account lock:
+   the take (`apps/api/src/trades/take.ts:427`) and the poster's wallet route (`take.ts:496`). The
+   trade's address copy, `trades_deal_fixed`, the attested terms and escrow are untouched. Jabber change
+   paths classify the new column (`apps/api/src/jabber/changePaths.ts`).
+4. **Amount screen (quote)**: the owner's question and the rule for the account's rating above the
+   wallet list (`quote/WalletPicker.tsx:60-65`, words in `quote/addressCopy.ts`). A secure account gets
+   "Add a new address" (`WalletPicker.tsx:88`, `Quote.tsx:414-419`) opening `quote/NewAddressSheet.tsx`:
+   name, address, "This trade only" (default) / "Future trades too", saved through the same
+   `POST /v1/wallets` + confirm-it's-you as Settings (`NewAddressSheet.tsx:57`). Usable at once → picked
+   for this trade; waiting (password confirm) → says when it works; staged (username-and-password login)
+   → the waiting-changes note. Weak (or unknown rating) → no inline add, the rule points to Settings and
+   the existing "Add another wallet" link stays. One-time wallets are tagged "One trade only".
+5. **Settings → Your wallets**: the add form's "Use it for: Future trades / One trade only" choice
+   (`apps/web/src/screens/Wallets.tsx:324,570`), tag on the row. The existing rule is kept for everyone
+   (weak logins staged 24 h, password confirms wait 24 h, strong confirms at once). Nothing loosened.
+6. **Server enforcement**: the take accepts only a `walletId` of the taker's own usable wallet; an
+   address in the body is 400; a staged, waiting, foreign or used one-time wallet is 409
+   `wallet-not-ready` (`apps/api/test/take.test.ts`, "one-time wallets and the per-trade address").
+
+Checks on the branch head: typecheck (19 workspaces) clean; copy-lint clean (no new `not-a-refusal`
+pragma); separation-check ok; vitest api 116 files / 2703 passed (1 todo), web 138 / 2121,
+auth-client 6 / 77, tools 2 / 7; Playwright quote + wallets 60 passed, fold, block, browse-buy,
+browse-sell, setup, offer-units, team, accepted-phone 150 passed (1 skipped, existing),
+design-shots + parity 50 passed (52 skipped, existing).
 
 ## Owner questions
 
