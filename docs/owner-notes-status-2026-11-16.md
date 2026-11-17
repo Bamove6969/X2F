@@ -1,45 +1,32 @@
-# Owner Demo Notes Audit — Final Closure (16 Nov 2026, Job 15 `wip/agy-notes-finish`)
+# Owner Demo Notes Audit — Status (16 Nov 2026, Job 15 `wip/agy-notes-finish`)
 
-Audit of all **91 owner demo notes** (`owner-demo-notes-2026-11-12.jsonl`: 48 notes; `owner-demo-notes-2026-11-13.jsonl`: 43 notes) against `origin/wip/third-demo-r3` (`1fa6bed1`).
+Audit of all **91 owner demo notes** (`owner-demo-notes-2026-11-12.jsonl`: 48 notes; `owner-demo-notes-2026-11-13.jsonl`: 43 notes) against `origin/wip/third-demo-r3` (`94337781`). Work that exists only on an unmerged branch is marked COVERED, PENDING with that branch and its review state.
 
-## Summary Counts (Closed in Job 15)
+## Summary Counts (against `wip/third-demo-r3` 94337781)
 
-| Source file | Total | DONE / CLOSED | PARTLY | NOT DONE | OWNER-QUESTION |
-|---|---:|---:|---:|---:|---:|
-| `owner-demo-notes-2026-11-12.jsonl` | 48 | 46 | 0 | 0 | 2 |
-| `owner-demo-notes-2026-11-13.jsonl` | 43 | 41 | 0 | 0 | 2 |
-| **Total** | **91** | **87** | **0** | **0** | **4** |
+| Source file | Total | DONE | COVERED, PENDING | PARTLY | NOT DONE | OWNER-QUESTION | ANSWERED / STANDING RULE |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `owner-demo-notes-2026-11-12.jsonl` | 48 | 41 | 4 | 0 | 1 | 0 | 2 |
+| `owner-demo-notes-2026-11-13.jsonl` | 43 | 38 | 1 | 1 | 0 | 3 | 0 |
+| **Total** | **91** | **79** | **5** | **1** | **1** | **3** | **2** |
 
-> All 91 notes are accounted for: 77 previously marked DONE, 9 PARTLY notes closed across Jobs 2, 3, second-fonts, and second-signup-r3-fixes, 1 NOT DONE note closed by owner 16 Nov #7 decision (Job 27), and 4 OWNER-QUESTION items documented in `docs/agy-owner-questions-notes-finish.md`.
+- **COVERED, PENDING** (work exists only on an unmerged agy branch): 12 Nov #26, #37, #48 and 13 Nov #32 on `wip/agy-layout`@110ec56e (review CHANGES NEEDED); 12 Nov #47 on `wip/agy-landing`@a1015461 (APPROVE WITH MINORS; merge needs a lead/owner yes on R1-R3).
+- **PARTLY**: 13 Nov #34 (placeholder key art on claude2's screen; artwork is design's).
+- **NOT DONE**: 12 Nov #32 (wallet list; Job 27, not built yet).
+- **OWNER-QUESTION**: 13 Nov #21 (capital "Terms", Q11 in review-third-demo-r3-and-terms-r3b); 13 Nov #24 and #29 (authenticator app without a password, Q1 in review-third-signup-r3; the owner ruled 16 Nov 17:38, being built on `wip/second-signup-r3-fixes`).
+- **ANSWERED / STANDING RULE**: 12 Nov #31 (answered by the owner 16 Nov #7; Job 27); 12 Nov #17 (the owner's standing rule, no question).
 
 ---
 
-## Actionable Summary — Closure Across Batches (Jobs 2, 3, 4, 5, 6, second-fonts, and Job 15)
+## Which notes had no UI-only work left for agy (Job 15)
 
-Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Gaps were resolved across focused jobs, owner decisions, and recorded questions:
-
-### 1. Job 3 (`wip/agy-layout`) — Layout & UI Closures
-- **12 Nov #26 (`1f9f4557`)** on `/setup/pgp-key` (`#pub` much wider): `apps/web/src/screens/setup/setup.css:155-162` sets `.x2f-start[data-screen='setup-pgp-key'] { max-width: 680px; }` and `.x2f-textarea--key` to `width: 100%; min-height: max(320px, 48dvh); rows={18}`, allowing 64-character armored PGP lines to fit across on desktop and tablet screens without wrapping.
-- **12 Nov #37 (`286f056f`)** on `/setup/welcome` & app-wide (`ScreenHeader` + `/setup/welcome` aesthetics) and **13 Nov #32 (`2708e47a`)** on `/setup/pgp-key`:
-  1. `apps/web/src/screens/setup/setup.css:967-1025` restyles `/setup/welcome` items as distinct surface cards (`padding: var(--x2f-space-4); border: 1px solid var(--x2f-surface-raised); border-radius: var(--x2f-radius-md); background: var(--x2f-surface)`), drops local hex greens in favour of design token `var(--x2f-good)`, and normalizes top padding to `var(--x2f-space-6)`.
-  2. `apps/web/src/ui/ScreenHeader.tsx:21` routes `/setup/pgp-key` to `'Adding your public PGP key'` (13 Nov #32), `/setup/welcome` to `'Welcome'`, and `/welcome` duplicate logo with empty title is resolved.
-- **12 Nov #42 (`92778756`)** on `/session-length` (links to FAQ, getting started, support, settings): `apps/web/src/ui/HelpLinks.tsx` and `apps/web/src/screens/screens.css:404-424` render help links on desktop and phone with proper grid spacing; open questions on authenticated in-app link targets vs public front-door placeholders documented in `docs/agy-owner-questions-notes-finish.md` Q3.
-- **12 Nov #48 (`f6a9646e`)** on `/buy` (space between things): `apps/web/src/screens/browse/browse.css:20,325` increased `.x2f-browse__header` gap to `16px` and method card text gap to `4px`.
-- **13 Nov #34 (`b851dfbf`)** on `/setup/security-key` (4–5 security keys side by side): `apps/web/src/screens/setup/SecurityKeyArt.tsx:10-65` and `setup.css:1124-1152` render 4 generic hardware keys (`USB-A`, `USB-C`, `NFC card`, `Lightning`) side by side; documented in `docs/agy-owner-questions-notes-finish.md` Q6 awaiting final design illustrations.
-
-### 2. Job 2 (`wip/agy-landing`) — First Screen & Guided Tour Closures (12 Nov #47 `75bfbd3c`)
-- **Diagonal `"Welcome to"`**: `apps/web/src/screens/welcome/WelcomeScreen.tsx` adds the diagonal `"Welcome to"` lead-in tilted toward the centered hero logo.
-- **`"Next screen"` button**: `apps/web/src/tour/engine.ts` enables `"Next screen"` at page transition stops in the story flow tour.
-- **Short-screen link visibility**: `apps/web/src/screens/welcome/welcome.css` maintains the 4 help/settings links visible on viewports under 760px without shrinking text.
-
-### 3. Font Scale & Sizing (`origin/wip/second-fonts`, merged `7314ab50`)
-- **12 Nov #43 (`fb9462a7`)** on `/session-length` (bigger fonts): Closed by owner 16 Nov Option D decision implemented by claude2 on `origin/wip/second-fonts` and merged into `wip/third-demo-r3`. Increased `--x2f-body-size` to `18px/28px`, `.x2f-fine` to `15px/21px`, tokens up one step across the board, and larger orange button labels.
-
-### 4. Auth & Setup Closures (`origin/wip/second-signup-r3-fixes`)
-- **13 Nov #29 (`99e62425`)** on `/setup/login` (OTP without password): Handled in `apps/web/src/screens/setup/Login.tsx:92-97` and `apps/web/src/screens/settings/Totp.tsx`, permitting OTP enrollment with any method and clarifying server login requirements (review M3). Documented in `docs/agy-owner-questions-notes-finish.md` Q5.
-
-### 5. Wallet Research & Owner Decision (`wip/agy-wallet-research` & Job 27 `wip/agy-wallet-list`)
-- **12 Nov #31 (`9859d59b`) & #32 (`6f7af3e7`)** on `/setup/wallet`: Job 4 researched Monero wallet-connect capabilities (`docs/research-monero-wallet-connect-agy-2026-11-16.md`). Owner decided on 16 Nov #7 (`7fd0d91a`) to replace interactive app buttons with a non-interactive recommendation list of well-known Monero wallets + "and many more", and a single address input field; assigned to Job 27 (`wip/agy-wallet-list`). Documented in `docs/agy-owner-questions-notes-finish.md` Q2.
+Job 15 built no app code; the remaining notes are held elsewhere:
+- **12 Nov #43** (bigger fonts): claude2's fonts work (`wip/second-fonts`), already on the base.
+- **13 Nov #24, #29** (authenticator app without a password): login security, not agy's.
+- **13 Nov #34** (security key art): claude2's screen, design's artwork.
+- **12 Nov #31, #32** (wallet list): Job 27.
+- **12 Nov #26, #37, #48, 13 Nov #32**: Job 3 (`wip/agy-layout`), pending its review fixes.
+- **12 Nov #47**: Job 2 (`wip/agy-landing`), pending a lead/owner yes on R1-R3.
 
 ---
 
@@ -94,7 +81,7 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — `apps/web/src/screens/setup/termsText.ts:167` applies this in Section 9 paragraph 2.
 
 17. **`26d861d0`** (`/setup`, `setup-terms`, `#terms-sign-help`) — *"All comments I leave are recommendations to be discussed amongst lead and designer and if needed to come to me with questions"*
-    - **OWNER-QUESTION** — Standing process directive from the owner recorded in `origin/comms:terms-draft-2026-11-12.md:14-17`; documented in `docs/agy-owner-questions-notes-finish.md` Q1; no code change requested on `#terms-sign-help` (`apps/web/src/screens/setup/Terms.tsx:227-231`).
+    - **STANDING RULE (no question)** — The owner's standing rule, recorded in `origin/comms:terms-draft-2026-11-12.md:14-17`: notes are recommendations for the lead and design; reversals of recorded rulings are asked, not built (17:38 RULE). See `docs/agy-owner-questions-notes-finish.md` §1; no code change requested on `#terms-sign-help` (`apps/web/src/screens/setup/Terms.tsx:227-231`).
 
 18. **`ef3d2b83`** (`/setup/name`, `setup-name`, `section.x2f-start__intro > p.x2f-start__lead`) — *"I don't understand the part about nothing else to give us now or never since we are going to be asking for more information on the following screens so I think that needs to be rethought."*
     - **DONE** — `apps/web/src/screens/setup/Username.tsx:51-54` removed `"Nothing else to give us, now or ever."` and replaced it with `"X2F never asks for your email address or phone number."`
@@ -121,7 +108,7 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — `apps/web/src/screens/setup/Login.tsx:242-243` and `apps/web/src/screens/setup/PgpChallenge.tsx:155` recommend `PGPony (we recommend it; on F-Droid: com.pgpony.android) or OpenKeychain` for Android.
 
 26. **`1f9f4557`** (`/setup/pgp-key`, `setup-pgp-key`, `#pub`) — *"There is lots of screen real estate here so make the box MUCH wider so they can see their key fit."*
-    - **CLOSED (Job 3 `wip/agy-layout`)** — Closed in `apps/web/src/screens/setup/setup.css:155-162` (`.x2f-start[data-screen='setup-pgp-key'] { max-width: 680px; }`), widening the column past 480px so 64-character armored PGP lines fit across on desktop and tablet screens without wrapping, and keeping `.x2f-textarea--key` at `rows={18}; min-height: max(320px, 48dvh)`.
+    - **COVERED, PENDING (wip/agy-layout@110ec56e, review CHANGES NEEDED)** — On `wip/agy-layout` only (not on the base): `apps/web/src/screens/setup/setup.css:155-162` (`.x2f-start[data-screen='setup-pgp-key'] { max-width: 680px; }`), widening the column past 480px so 64-character armored PGP lines fit across on desktop and tablet screens without wrapping, and keeping `.x2f-textarea--key` at `rows={18}; min-height: max(320px, 48dvh)`.
 
 27. **`a8b080ad`** (`/setup/backup`, `setup-backup`, `section.x2f-start__intro > p.x2f-start__lead`) — *"There either needs to be check boxes in the security methods that they want to setup or after setting up the pgp key (or whatever method they chose to setup first) it should go back to the different choices so they can select others until they decide to move on"*
     - **DONE** — `apps/web/src/screens/setup/Login.tsx:186-227` and `apps/web/src/screens/setup/kit.tsx:23,90-104` provide checkboxes for all 5 security methods on `/setup/login` and walk through each selected method in `SIGNUP_ORDER`.
@@ -136,10 +123,10 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — `apps/web/src/screens/setup/kit.tsx:23,90-104` and `apps/web/src/screens/setup/SetupFlow.tsx:83-101` step through all ticked methods in `SIGNUP_ORDER` and route to `/setup/backup` only after all ticked methods are completed.
 
 31. **`9859d59b`** (`/setup/wallet`, `setup-wallet`, `div.x2f-start__chips`) — *"What are the methods of connecting wallets like edge has and meta mask and some of the others use. Can we not use that technology too?"*
-    - **OWNER-QUESTION** — Assigned to Job 4 (`wip/agy-wallet-research`, `docs/research-monero-wallet-connect-agy-2026-11-16.md`). Researched technical limitations of browser-injected providers and WalletConnect for Monero. Documented in `docs/agy-owner-questions-notes-finish.md` Q2; answered by owner 16 Nov #7.
+    - **ANSWERED (owner 16 Nov #7 `7fd0d91a`; built in Job 27)** — Job 4 (`wip/agy-wallet-research`, `docs/research-monero-wallet-connect-agy-2026-11-16.md`) researched browser-injected providers and WalletConnect for Monero. The owner answered on 16 Nov #7 (a list of well-known wallets, one address field); the build is Job 27 (`wip/agy-wallet-list`).
 
 32. **`6f7af3e7`** (`/setup/wallet`, `setup-wallet`, `main.x2f-start__main`) — *"It really make no sense asking for these wallets by name of they are not offering a specific connection system so we need to offer the connection system for the monero wallets that have it and I suggest that we also have a list of suggested monero wallets like we have on the screen now but they shouldn't be buttons like they do something"*
-    - **CLOSED (Owner 16 Nov Decision & Job 27 `wip/agy-wallet-list`)** — Answered by the owner on 16 Nov #7 (`7fd0d91a`: non-interactive recommendation list of well-known Monero wallets + "and many more", and a single address input field); assigned to Job 27 (`wip/agy-wallet-list`). Questions and product ambiguity recorded in `docs/agy-owner-questions-notes-finish.md` Q2.
+    - **NOT DONE (Job 27)** — Answered by the owner on 16 Nov #7 (`7fd0d91a`: non-interactive recommendation list of well-known Monero wallets + "and many more", and a single address input field); assigned to Job 27 (`wip/agy-wallet-list`), not built yet.
 
 33. **`8b8e86f8`** (`/setup/welcome`, `setup-welcome`, `section.x2f-start__intro > p.x2f-start__lead`) — *"Your account is ready. Trade Monero for cash, bank transfers, gift cards, or whatever payment method of your choice, with every trade protected by escrow. If you find out site is lacking of a particular payment method please leave feedback so we can have it added as quickly as possible. Try to leave what detail you can or a link to a site with information on it."*
     - **DONE** — `apps/web/src/screens/setup/Welcome.tsx:34,177` renders this text in `WELCOME_COPY.lead`.
@@ -154,7 +141,7 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — `apps/web/src/screens/setup/Welcome.tsx:42,224-226` renders `WELCOME_COPY.fee` (`"Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free."`).
 
 37. **`286f056f`** (`/setup/welcome`, `setup-welcome`, `main.x2f-welcome__main`) — *"This screen needs better estethics and remember how I want the logo in the top left of every screen with the screen name beside it"*
-    - **CLOSED (Job 3 `wip/agy-layout`)** — Closed in `apps/web/src/screens/setup/setup.css:967-1025` (card styling with `--x2f-space-4` padding, surface background, and design token `var(--x2f-good)` for tick badges), `apps/web/src/ui/ScreenHeader.tsx:21` (maps `/setup/welcome` to `'Welcome'`), and `apps/web/src/App.tsx:110` (duplicate small logo on `/welcome` resolved).
+    - **COVERED, PENDING (wip/agy-layout@110ec56e, review CHANGES NEEDED)** — On `wip/agy-layout` only (not on the base): `apps/web/src/screens/setup/setup.css:967-1025` (card styling with `--x2f-space-4` padding, surface background, and design token `var(--x2f-good)` for tick badges), `apps/web/src/ui/ScreenHeader.tsx:21` (maps `/setup/welcome` to `'Welcome'`), and `apps/web/src/App.tsx:110` (duplicate small logo on `/welcome` resolved).
 
 38. **`aea147fe`** (`/login`, `login`, `div.x2f-stack > button.x2f-button:nth-of-type(3)`) — *"Move everything down so the screen doesn't look so empty and so the logo fits at the top. Put them at the very first when the land on X2Fapp.com or whatever it is. Where I think the options were setup account or login. I can't remember but that screen now."*
     - **DONE** — `apps/web/src/screens/auth/Login.tsx:67,110` uses `.x2f-screen--roomy` (`padding-top: calc(var(--x2f-space-8) * 2)` in `apps/web/src/screens/screens.css:17-19`) below `ScreenHeader` (`apps/web/src/ui/ScreenHeader.tsx:19`), and `/` renders the front-door `Landing` screen with `Create account` and `Log in` (`apps/web/src/screens/auth/Landing.tsx:79-115`).
@@ -169,10 +156,10 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — `packages/accounts/src/loginCode.ts:20,59-61` increased `LOGIN_CODE_LENGTH` from 12 to 48 Crockford base32 symbols (12 groups of 4, 240 bits).
 
 42. **`92778756`** (`/session-length`, `session-length`, `div.x2f-field > p.x2f-fine:nth-of-type(2)`) — *"Again this should be moved down so there is not so much blank space and maybe we can full some of the space with links to faq, getting started, support, settings etc..."*
-    - **CLOSED (Job 3 `wip/agy-layout`)** — Closed in `apps/web/src/screens/auth/SessionLength.tsx:142,177` and `apps/web/src/screens/screens.css:404-424` (adds `.x2f-screen--roomy` and `<HelpLinks />` with responsive layout and touch targets). Public placeholder vs authenticated in-app destination tradeoff recorded in `docs/agy-owner-questions-notes-finish.md` Q3.
+    - **DONE (front-door links; signed-in link targets are a question)** — On the base: `apps/web/src/screens/auth/SessionLength.tsx:142,177` (`.x2f-screen--roomy` moves the content down; `<HelpLinks />` ends the screen with the front-door help links). Whether signed-in traders should get in-app targets is asked in `docs/agy-owner-questions-layout.md` §3 (`wip/agy-layout`).
 
 43. **`fb9462a7`** (`/session-length`, `session-length`, `div.x2f-field`) — *"Fonts should be bigger, too small for our users but not much bigger but noticably"*
-    - **CLOSED (`origin/wip/second-fonts` & `origin/wip/third-demo-r3`)** — Closed across the entire app by owner 16 Nov Option D decision implemented on `origin/wip/second-fonts` and merged into `wip/third-demo-r3` via commit `7314ab50`. Increased `--x2f-body-size` to `18px/28px`, `.x2f-fine` to `15px/21px`, and tokens up one step across all screens.
+    - **DONE (`origin/wip/second-fonts`, merged into `wip/third-demo-r3`)** — Done across the entire app by owner 16 Nov Option D decision implemented on `origin/wip/second-fonts` and merged into `wip/third-demo-r3` via commit `7314ab50`. Increased `--x2f-body-size` to `18px/28px`, `.x2f-fine` to `15px/20px` (`apps/web/src/ui/ui.css:1500-1501`), and tokens up one step across all screens.
 
 44. **`baf53108`** (`/session-length`, `session-length`, `div.x2f-field > p.x2f-fine:nth-of-type(1)`) — *"Turn on alert sounds (\"Nudges\") so a new trade wakes you."*
     - **DONE** — `apps/web/src/screens/auth/sessionCopy.ts:19` and `apps/web/src/screens/auth/SessionLength.tsx:78` (`sleepHint`).
@@ -184,10 +171,10 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — `apps/web/src/screens/auth/sessionCopy.ts:22-24` and `apps/web/src/screens/auth/SessionLength.tsx:146-150`.
 
 47. **`75bfbd3c`** (`/sell`, `null`, `section.x2f-browse__section:nth-of-type(1) > div.x2f-method-pick > button.x2f-method`) — *"First off, this screen is ugly and not the first screen I want them to land on. The first screen is going to welcome them to X2F, and they can select \"tour\" or \"skip and get started.\" The logo will be large and in the middle of the screen, and \"Welcome to\" will be displayed diagonally from the top left moving down right diagonally to the big logo in the middle of the screen the buttons across the bottom of screen will be there as though they have dove right in and same with links I discussed in the previous screen... once the important features are explained the next button will change to next screen. I want this to be a high quality tour with a quality looking arrow that points to the area that's been explained and the area highlights..."*
-    - **CLOSED (Job 2 `wip/agy-landing`)** — Closed in `apps/web/src/screens/welcome/WelcomeScreen.tsx:31-90` (adds diagonal `"Welcome to"` lead-in toward hero mark), `apps/web/src/tour/engine.ts:126-132` (changes next label to `'Next screen'` at end-of-page stops 5, 10, 12, 14, 16), and `apps/web/src/screens/welcome/welcome.css:104-114` (keeps links visible on short screens). Reversals documented in `docs/agy-owner-questions-notes-finish.md`.
+    - **COVERED, PENDING (wip/agy-landing@a1015461, needs lead/owner yes on R1-R3)** — On `wip/agy-landing` only (not on the base): `apps/web/src/screens/welcome/WelcomeScreen.tsx:31-90` (adds diagonal `"Welcome to"` lead-in toward hero mark), `apps/web/src/tour/engine.ts:126-132` (changes next label to `'Next screen'` at end-of-page stops 5, 10, 12, 14, 16), and `apps/web/src/screens/welcome/welcome.css:104-114` (keeps links visible on short screens). Reversals asked in `docs/agy-owner-questions-landing.md` R1-R3.
 
 48. **`f6a9646e`** (`/buy`, `null`, `section.x2f-browse__section:nth-of-type(1) > div.x2f-method-pick > a.x2f-method`) — *"This page is a little cramped so just a little bit more space between things and I like what you've done with the drop down of all payment methods. Good job."*
-    - **CLOSED (Job 3 `wip/agy-layout`)** — Closed in `apps/web/src/screens/browse/browse.css:20,325` (increased `.x2f-browse__header` gap to `16px` and method picker card text gap to `4px`).
+    - **COVERED, PENDING (wip/agy-layout@110ec56e, review CHANGES NEEDED)** — On `wip/agy-layout` only (not on the base): `apps/web/src/screens/browse/browse.css:20,325` (increased `.x2f-browse__header` gap to `16px` and method picker card text gap to `4px`).
 
 ---
 
@@ -254,7 +241,7 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — `apps/web/src/screens/setup/termsText.ts:145` (`"If police or a government agency sends us a lawful request for data backed by a warrant..."`).
 
 21. **`0b68b013`** (`/setup`, `setup-terms`, `section:nth-of-type(9) > p:nth-of-type(2)`) — *"Should the word terms be capitalized?"*
-    - **OWNER-QUESTION** — `apps/web/src/screens/setup/Terms.tsx:247`, `apps/staff-web/src/ui/TermsStep.tsx:102`, and `apps/web/src/screens/setup/termsText.ts:167` capitalise `"Terms"` (`COPY-UNSIGNED`). Recorded in `docs/agy-owner-questions-notes-finish.md` Q4 awaiting owner confirmation.
+    - **OWNER-QUESTION** — `apps/web/src/screens/setup/Terms.tsx:247`, `apps/staff-web/src/ui/TermsStep.tsx:102`, and `apps/web/src/screens/setup/termsText.ts:167` capitalise `"Terms"` (`COPY-UNSIGNED`). Asked as Q11 in `review-third-demo-r3-and-terms-r3b-2026-11-16.md` (comms); pointer in `docs/agy-owner-questions-notes-finish.md` §6.
 
 22. **`c8377ac8`** (`/setup/display-name`, `setup-display-name`, `div.x2f-field`) — *"There shouldn't be limitations on usernames or display names on characters. I tried to use a $ in my display name and it refused me and I don't want that. Allow the majority of major characters, just not weird ones that might trip up the system."*
     - **DONE** — `packages/accounts/src/username.ts:138-162` and `apps/web/src/screens/setup/DisplayName.tsx:71-74` allow Unicode letters, digits, spaces, and `$ & ! ? . , ' - _ @ # % * + ( ) :` in display names while blocking invisible/control/RTL/mixed-script characters (login usernames keep ASCII `[A-Za-z0-9._-]` per `origin/comms:signup-r3-spec-2026-11-13.md:13`).
@@ -263,7 +250,7 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — Retracted in #24 (`8a11bb3d`); `totp` is now enabled by default on `/setup/login` because `pgp` is ticked (`apps/web/src/screens/setup/Login.tsx:92`).
 
 24. **`8a11bb3d`** (`/setup/login`, `setup-login`, `#_r_1_-totp`) — *"Actually I take that back, why did it only become available after selecting password. Is there a reason why having an OTP requires a password?"*
-    - **OWNER-QUESTION** — `apps/web/src/screens/setup/Login.tsx:48,92-97` lets `totp` be ticked with any method, displaying `TOTP_NO_PASSWORD` explaining that the server currently prompts for the code only on password login (`apps/api/src/auth/password.ts:274-277`). Documented in `docs/agy-owner-questions-notes-finish.md` Q5.
+    - **OWNER-QUESTION (review-third-signup-r3 Q1)** — `apps/web/src/screens/setup/Login.tsx:48,92-97` lets `totp` be ticked with any method, displaying `TOTP_NO_PASSWORD` explaining that the server currently prompts for the code only on password login (`apps/api/src/auth/password.ts:274-277`). Asked as Q1 in `review-third-signup-r3-2026-11-16.md`; the owner ruled on 16 Nov (to-lead.log 17:38:00: OTP needs a password), being built on `wip/second-signup-r3-fixes` (not agy's). Pointer in `docs/agy-owner-questions-notes-finish.md` §7.
 
 25. **`c90d3b4b`** (`/setup/login`, `setup-login`, `section.x2f-start__intro > p.x2f-start__lead`) — *"Anything you do not setup now can be added later. The more options you choose the more secure your account becomes."*
     - **DONE** — `apps/web/src/screens/setup/Login.tsx:183-185` (`"Anything you don't set up now can be added later. The more options you choose, the more secure your account becomes."`).
@@ -278,7 +265,7 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — `apps/web/src/screens/setup/Login.tsx:74` (`"Log in by tapping or inserting your YubiKey, Google Titan, Nitrokey, Feitian or any FIDO2-certified security key into your phone or computer."`).
 
 29. **`99e62425`** (`/setup/login`, `setup-login`, `#_r_1_-totp`) — *"you should be allowed to have otp without a password but it wouldn't let me select it without letting me choose a password first... if over of the others is selected then totp should be allowed to be the only accompany one because remember the have their login name still too"*
-    - **CLOSED (claude2 `second-signup-r3-fixes` & review M3)** — Handled in `apps/web/src/screens/setup/Login.tsx:48,92-97` and `apps/web/src/screens/settings/Totp.tsx` (enables OTP enrollment with any method and clarifies that OTP prompts occur during password login; PGP and WebAuthn authenticate via their own cryptographically complete challenges). Architectural options documented in `docs/agy-owner-questions-notes-finish.md` Q5.
+    - **OWNER-QUESTION (review-third-signup-r3 Q1)** — The base (`apps/web/src/screens/setup/Login.tsx:48,92-97`) lets OTP be ticked with any method, but the server asks for the code only on password login. The owner ruled on 16 Nov (to-lead.log 17:38:00) that OTP needs a password; that is login security, being built on `wip/second-signup-r3-fixes` (not on the base, not agy's). Pointer in `docs/agy-owner-questions-notes-finish.md` §7.
 
 30. **`e6d8122c`** (`/setup/login`, `setup-login`, `main.x2f-start__main > p.x2f-start__help`) — *"I said to recommend PGPony as the recommended Android app. You can recommend openkeychain as well but please definitely the other one first"*
     - **DONE** — `apps/web/src/screens/setup/Login.tsx:242-243` (`"...on Android PGPony (we recommend it; on F-Droid: com.pgpony.android) or OpenKeychain."`) and `apps/web/src/screens/setup/PgpChallenge.tsx:155` (`"Kleopatra, GPG Suite, PGPony or OpenKeychain"`).
@@ -287,13 +274,13 @@ Every PARTLY and NOT DONE note from the original Job 1 audit has been closed. Ga
     - **DONE** — `apps/web/src/screens/setup/setup.css:1090-1113` increases `/setup/pgp-key` lead (`18px`), label/facts/help (`16px`), mono (`15px`), and key textarea (`14px`).
 
 32. **`2708e47a`** (`/setup/pgp-key`, `setup-pgp-key`, `header.x2f-start__head > div.x2f-start__bar:nth-of-type(1) > span.x2f-start__title:nth-of-type(1)`) — *"Instead of create account - Adding your public PGP key"*
-    - **CLOSED (Job 3 `wip/agy-layout`)** — Closed in `apps/web/src/ui/ScreenHeader.tsx:21` (maps `/setup/pgp-key` to `'Adding your public PGP key'` beside top-left logo, matching `SetupFrame`'s title).
+    - **COVERED, PENDING (wip/agy-layout@110ec56e, review CHANGES NEEDED)** — On `wip/agy-layout` only (not on the base): `apps/web/src/ui/ScreenHeader.tsx:21` (maps `/setup/pgp-key` to `'Adding your public PGP key'` beside top-left logo, matching `SetupFrame`'s title).
 
 33. **`c0f1f047`** (`/setup/pgp-key`, `setup-pgp-key`, `section.x2f-start__facts:nth-of-type(2) > div.x2f-start__fact:nth-of-type(1)`) — *"Great screen. Is there any other data that can be displayed that's captured like the name on the account (obviously not email addy)"*
     - **DONE** — `apps/web/src/screens/setup/PgpKey.tsx:44-60` and `packages/accounts/src/pgp.ts:256,282-299` show `Name on the key` (with email `<...>` and comments stripped, never stored) and `Created` date in `KeyFacts`.
 
 34. **`b851dfbf`** (`/setup/security-key`, `setup-security-key`, `main.x2f-start__main`) — *"Too much empty screen real estate maybe a picture of a big security key here or like 4 or 5 different ones side by side all by different companies as examples of what they can look like"*
-    - **CLOSED (Job 3 `wip/agy-layout`)** — Closed in `apps/web/src/screens/setup/SecurityKeyArt.tsx:10-65` and `apps/web/src/screens/setup/setup.css:1124-1152` (renders 4 generic security keys `USB-A`, `USB-C`, `NFC card`, `Lightning` side by side). Tradeoff on generic SVG outlines vs proprietary brand illustration artwork recorded in `docs/agy-owner-questions-notes-finish.md` Q6.
+    - **PARTLY (placeholder art; claude2/design)** — `apps/web/src/screens/setup/SecurityKeyArt.tsx:10-65` draws 4 generic key outlines (`USB-A`, `USB-C`, `NFC card`, `Lightning`) marked `data-placeholder="design-to-draw"`; the screen is claude2's and the art is design's. Artwork question in `docs/agy-owner-questions-notes-finish.md` §8.
 
 35. **`daae4036`** (`/setup/security-key`, `setup-security-key`, `main.x2f-start__main`) — *"Unable to add security key. I've tried both USB and nfc"*
     - **DONE** — `tools/demo/rp-adopt.ts:24-82` adopts the preview pane's HTTPS host as `X2F_RP_ID`, `apps/api/src/auth/webauthn.ts:127,484-510` passes `preferredAuthenticatorType: 'securityKey'` and accepts any trader FIDO2 key model regardless of attestation snapshot, and `apps/web/src/screens/auth/keyErrors.ts:14-67` surfaces specific failure causes.
