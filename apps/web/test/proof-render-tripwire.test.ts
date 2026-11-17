@@ -23,6 +23,9 @@
 // import.meta.glob, import() or re-export (P-I1).
 // Review of proof-tripwire-4 (17 Nov 2026): the body, key and call rules read the parser's tree, not the
 // text (PTW4-M1, M2, M3, I4): `treeOut` below.
+// Review of proof-tripwire-5 (17 Nov 2026): code or a key built at run time (JSON.parse, structuredClone,
+// Proxy, Function, eval, atob, `.constructor`, `.__proto__`, `.__defineGetter__`) and a computed member
+// with a key that is not a static literal are caught too, as tree rules (PTW5-M1, M2).
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseSync } from 'rolldown/utils';
@@ -242,6 +245,14 @@ function textOut(c: string): string[] {
  * - A computed key (object literal, pattern, getter, method, class field) and a computed member write
  *   fail unless the key is a static literal that is not "body".
  * - `Reflect` and `Object` are not named at all (ChatProof uses neither).
+ * - PTW5-M1: code or a key built at run time. `structuredClone`, `Proxy`, `Function`, `eval` and `atob` are
+ *   not named at all; `JSON` only as `JSON.<a static key other than parse>`; and `__defineGetter__`,
+ *   `__defineSetter__`, `__proto__` and `constructor` are never a member (`x.constructor`, `x['__proto__']`)
+ *   or a destructured key (`const { constructor: C } = x`). A class's `constructor() {}` is a method key
+ *   and is not a member.
+ * - PTW5-M2: a computed member (read or written) whose key is not a static literal fails unless its object
+ *   is `CHAT_PROOF_TITLE` (ChatProof's one: `CHAT_PROOF_TITLE[proof.kind]`), so no split-string bracket
+ *   reaches a channel, storage or a banned global (`navigator['send' + 'Beacon']`).
  */
 type Node = { type: string; [k: string]: unknown };
 
@@ -250,6 +261,12 @@ const isNode = (v: unknown): v is Node => typeof v === 'object' && v !== null &&
 const WRAPPERS = new Set(['ParenthesizedExpression', 'ChainExpression', 'TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'TSTypeAssertion', 'TSInstantiationExpression']);
 const COMPARE = new Set(['===', '!==', '==', '!=']);
 const BANNED_NAMES = new Set(['Reflect', 'Object']);
+/** PTW5-M1: what builds code or a key at run time; ChatProof names none of them. */
+const RUNTIME_NAMES = new Set(['structuredClone', 'Proxy', 'Function', 'eval', 'atob']);
+/** PTW5-M1: members that reach Object or set a getter without naming either. */
+const BANNED_MEMBERS = new Set(['__defineGetter__', '__defineSetter__', '__proto__', 'constructor']);
+/** PTW5-M2: the only objects a decrypting file may index with a key that is not a static literal. */
+const DYNAMIC_INDEX_ALLOWED = new Set(['CHAT_PROOF_TITLE']);
 
 /** A node's static string or number value (a literal or a template with no `${}`), or undefined. */
 function staticValue(n: Node): string | undefined {
@@ -264,6 +281,11 @@ const staticNonBody = (key: Node): boolean => {
 };
 /** The name a node spells, if it is a name (identifier, private name, JSX name). */
 const nameOf = (n: Node): string | undefined => (n.type === 'Identifier' || n.type === 'PrivateIdentifier' || n.type === 'JSXIdentifier' ? (n.name as string) : undefined);
+
+/** A member's key: its name, or a computed key's static value; undefined for a key built at run time. */
+const memberKey = (m: Node): string | undefined => (m.computed === true ? staticValue(m.property as Node) : nameOf(m.property as Node))?.trim();
+/** A property's key (object literal or pattern), the same way. */
+const propertyKey = (p: Node): string | undefined => (p.computed === true ? staticValue(p.key as Node) : (nameOf(p.key as Node) ?? staticValue(p.key as Node)))?.trim();
 
 /** Is `child` (under `parents`, nearest last) written to: an assignment, ++/--, delete, a for-in/of or destructuring target? */
 function isWritten(child: Node, parents: Node[]): boolean {
@@ -342,6 +364,22 @@ function treeOut(program: Program): string[] {
     if (v !== undefined && v.trim() === 'body') out.add('a "body" string');
     // Reflect and Object, by any reference (an alias, a bracket, globalThis.Object), or as a string.
     if ((name !== undefined && BANNED_NAMES.has(name)) || (v !== undefined && BANNED_NAMES.has(v.trim()))) out.add('Reflect or Object named');
+    // PTW5-M1: structuredClone, Proxy, Function, eval and atob by any reference, or as a string.
+    if ((name !== undefined && RUNTIME_NAMES.has(name)) || (v !== undefined && RUNTIME_NAMES.has(v.trim()))) out.add('code or a key built at run time (structuredClone, Proxy, Function, eval, atob)');
+    // PTW5-M1: JSON only as the object of a member with a static key that is not parse (so no alias,
+    // no destructuring, no `globalThis.JSON`, no `JSON['parse']`).
+    if (name === 'JSON' || v?.trim() === 'JSON') {
+      const key = parent?.type === 'MemberExpression' && parent.object === n ? memberKey(parent) : undefined;
+      if (key === undefined || key === 'parse') out.add('JSON.parse, or JSON by a reference that can reach it');
+    }
+    // PTW5-M1: __defineGetter__, __defineSetter__, __proto__ and constructor as a member or a destructured key.
+    const member = n.type === 'MemberExpression' ? memberKey(n) : n.type === 'Property' && parent?.type === 'ObjectPattern' ? propertyKey(n) : undefined;
+    if (member !== undefined && BANNED_MEMBERS.has(member)) out.add('__defineGetter__, __defineSetter__, __proto__ or constructor used as a member');
+    // PTW5-M2: a computed member, read or written, whose key is not a static literal, unless its object is allowed.
+    if (n.type === 'MemberExpression' && n.computed === true && staticValue(n.property as Node) === undefined) {
+      const obj = nameOf(n.object as Node);
+      if (!((n.object as Node).type === 'Identifier' && obj !== undefined && DYNAMIC_INDEX_ALLOWED.has(obj))) out.add('a computed member whose key is not a static literal');
+    }
     // A computed key in an object literal or pattern, a getter or setter, a method or a class field.
     if ((n.type === 'Property' || n.type === 'PropertyDefinition' || n.type === 'MethodDefinition' || n.type === 'AccessorProperty' || n.type === 'TSPropertySignature' || n.type === 'TSMethodSignature') && n.computed === true && !staticNonBody(n.key as Node)) {
       out.add('a computed key that is not a static literal');
@@ -627,12 +665,108 @@ describe('the decrypt rules themselves (re-verify V-M1, V-M2)', () => {
     ]) expect(treeOut(snippetProgram(snippet)), snippet).not.toEqual([]);
   });
 
+  // Review of proof-tripwire-5 (17 Nov 2026), section 2 rows 1 to 16 and 21: each passed both the text and
+  // the tree rules of 37d1b701 (code or a key built at run time, a split-string bracket). K is 'bo' + 'dy'.
+  const J = String.raw`'{"bo' + 'dy":' + JSON.stringify(plain) + '}'`;
+  const JM = String.raw`'{"method":"POST","bo' + 'dy":' + JSON.stringify(plain) + '}'`;
+  const PTW5_BYPASSES: readonly [string, string][] = [
+    ['1 (M1) JSON.parse spread', `await fetch(u, { method: 'POST', ...JSON.parse(${J}) });`],
+    ['2 (M1) JSON.parse init', `await fetch(u, JSON.parse(${JM}));`],
+    ['3 (M1) JSON escape', String.raw`await fetch(u, { method: 'POST', ...JSON.parse('{"b\\u006fdy":' + JSON.stringify(plain) + '}') });`],
+    ['4 (M1) structuredClone', `await fetch(u, structuredClone(JSON.parse(${JM})));`],
+    ['5 (M1) Proxy', `${K}await fetch(u, new Proxy({ method: 'POST' }, { get: (t, k) => (k === K ? plain : t[k]) }));`],
+    ['6 (M1) Proxy in a Request', `${K}await fetch(new Request(u, new Proxy({ method: 'POST' }, { get: (t, k) => (k === K ? plain : t[k]) })));`],
+    ['6 (M1) JSON.parse in a Request', `await fetch(new Request(u, { ...JSON.parse(${JM}) }));`],
+    ['7 (M1) atob', "await fetch(u, new Proxy({ method: 'POST' }, { get: (t, k) => (k === atob('Ym9keQ==') ? plain : t[k]) }));"],
+    ['8 (M1) __defineGetter__', `${K}init.__defineGetter__(K, () => plain);\nawait fetch(u, init);`],
+    ['9 (M1) ({}).constructor', `${K}({}).constructor.defineProperty(init, K, { value: plain });`],
+    ['9 (M1) constructor alias', `${K}const O = ({}).constructor;\nO.defineProperty(init, K, { value: plain });`],
+    ['9 (M1) __proto__.constructor', `${K}({}).__proto__.constructor.defineProperty(init, K, { value: plain });`],
+    ['10 (M2) split Reflect', `${K}globalThis['Ref' + 'lect'].set(init, K, plain);`],
+    ['11 (M1) Function', "Function('a', 'b', 'a.bo' + 'dy = b')(init, plain);"],
+    ['11 (M1) new Function', "new Function('a', 'b', 'a.bo' + 'dy = b')(init, plain);"],
+    ['11 (M1) arrow constructor', "(() => 0).constructor('a', 'b', 'a.bo' + 'dy = b')(init, plain);"],
+    ['12 (M1) eval', "eval('init.bo' + 'dy = plain');"],
+    ['12 (M1) indirect eval', "(0, eval)('init.bo' + 'dy = plain');"],
+    ['13 (M2) sendBeacon', "navigator['send' + 'Beacon'](u, plain);"],
+    ['14 (M2) postMessage', "new BroadcastChannel('x')['post' + 'Message'](plain);"],
+    ['14 (M2) postMessage by a const', "const pm = 'post' + 'Message';\nworker[pm](plain);"],
+    ['15 (M2) WebSocket', "new globalThis['Web' + 'Socket'](u).send(plain);"],
+    ['15 (M2) XMLHttpRequest', "const x = new globalThis['XMLHttp' + 'Request']();"],
+    ['16 (M2) localStorage', "globalThis['local' + 'Storage'].setItem('k', plain);"],
+    ['21 (M1) under a label', `out: { await fetch(u, JSON.parse(${JM})); }`],
+  ];
+
+  for (const [row, snippet] of PTW5_BYPASSES) {
+    it(`PTW5 row ${row} is caught: ${snippet.replace(/\n/g, ' ')}`, () => {
+      expect(sendsOut(snippet), snippet).not.toEqual([]);
+      // By the tree rules on their own (PTW5-I3: no new regex).
+      expect(treeOut(snippetProgram(snippet)), snippet).not.toEqual([]);
+    });
+  }
+
+  it('PTW5-M1: JSON.parse, structuredClone, Proxy, Function, eval and atob by any reference, and the members __defineGetter__, __defineSetter__, __proto__ and constructor, are caught', () => {
+    for (const snippet of [
+      'const o = JSON.parse(s);',
+      "const o = JSON['parse'](s);",
+      'const J = JSON;\nconst o = J.parse(s);',
+      'const { parse } = JSON;',
+      'const o = globalThis.JSON.parse(s);',
+      'const o = structuredClone(p);',
+      'const p = new Proxy(o, h);',
+      'class P extends Proxy {}',
+      "const f = Function('return 1');",
+      "const f = globalThis['Function'];",
+      "const x = eval('1');",
+      "const x = globalThis.eval('1');",
+      "const x = window['eval']('1');",
+      'const s = atob(b);',
+      'const a = atob;',
+      "o.__defineGetter__('x', f);",
+      "o.__defineSetter__('x', f);",
+      "o['__defineGetter__']('x', f);",
+      'o.__proto__ = p;',
+      'const p = o.__proto__;',
+      "const p = o['__proto__'];",
+      'const C = o.constructor;',
+      'const C = o?.constructor;',
+      "const C = o['constructor'];",
+      'const C = (o as never).constructor;',
+      'const { constructor: C } = o;',
+      'const { __proto__: P } = o;',
+      'class C { m() { return this.constructor; } }',
+    ]) expect(treeOut(snippetProgram(snippet)), snippet).not.toEqual([]);
+  });
+
+  it('PTW5-M2: a computed member whose key is not a static literal is caught, read or written, unless its object is CHAT_PROOF_TITLE', () => {
+    for (const snippet of [
+      'const t = TITLES[proof.kind];',
+      'const v = o[k];',
+      'const v = a[i + 1];',
+      'const v = o?.[k];',
+      'const v = o[`${k}`];',
+      'f(o[k]);',
+      'const t = CHAT_PROOF_TITLE.x[proof.kind];',
+      'const t = (CHAT_PROOF_TITLE as never)[proof.kind];',
+    ]) expect(treeOut(snippetProgram(snippet)), snippet).not.toEqual([]);
+    for (const snippet of ['const t = CHAT_PROOF_TITLE[proof.kind];', 'const v = o[0];', "const v = o['method'];", 'const v = o[`method`];']) {
+      expect(treeOut(snippetProgram(snippet)), snippet).toEqual([]);
+    }
+  });
+
+  it('PTW5-M1: a class constructor (a method key) and JSON.stringify do not trip', () => {
+    for (const snippet of [
+      "class ProofGone extends Error {\n  constructor() {\n    super('proof-gone');\n    this.name = 'ProofGone';\n  }\n}",
+      'const s = JSON.stringify(o);',
+    ]) expect(sendsOut(snippet), snippet).toEqual([]);
+  });
 
   it("does not trip on reading a response body (ChatProof's own readCapped)", () => {
     for (const snippet of ['void res.body?.cancel().catch(() => undefined);', 'if (res.body === null) return new Uint8Array(0);', 'const reader = res.body.getReader();', 'if (res.body !== null) n++;', 'const [state, setState] = useState(0);', 'let [a, b] = pair;\n[a, b] = [b, a];', 'if (parts[0] === undefined) n++;', 'const parts: Uint8Array[] = [];', 'if (res?.body !== null) n++;', 'const reader = res.body!.getReader();', 'const title = CHAT_PROOF_TITLE[proof.kind];', 'if (res.body == null) n++;']) {
       expect(sendsOut(snippet), snippet).toEqual([]);
     }
     // PTW4: a static computed key that is not "body" (a read and a plain index write) is not the tree rules' business.
+    // (PTW5-I2: these three are checked against the tree only; the text rule's indexed assignment still flags the two writes.)
     for (const snippet of ["const o = { ['method']: 'POST', [0]: 1 };", 'out[0] = 1;', "init['method'] = 'POST';"]) expect(treeOut(snippetProgram(snippet)), snippet).toEqual([]);
     expect(sendsOut(code('apps/web/src/screens/proof/ChatProof.tsx'), programOf('apps/web/src/screens/proof/ChatProof.tsx'))).toEqual([]);
   });
