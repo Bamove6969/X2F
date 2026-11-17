@@ -205,6 +205,7 @@ describe('reviewer probe: batch 10a r2 gate', () => {
     for (const r of routes) {
       const [method, tpl] = r.split(' ') as [string, string];
       if (method === 'PUT' && tpl.includes('/proofs/')) continue;
+      if (method === 'GET' && tpl === '/v1/events') { tried[r] = 0; continue; } // stream; allowed by design (banState.ts review S1)
       const url = tpl.replace(':code', w.closed.code).replace(':chat', w.closedChat).replace(/:proofId|:id/g, PROOF).replace(/:[A-Za-z]+/g, 'x');
       const res = await me(method as 'GET', url, method === 'GET' || method === 'DELETE' ? undefined : { context: w.closed.code });
       tried[r] = res.statusCode === 403 && (res.json() as { error?: string })?.error === 'banned' ? 1 : 0;
