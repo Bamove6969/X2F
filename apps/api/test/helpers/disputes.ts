@@ -5,7 +5,8 @@ import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
 import { withDispute } from '../../src/disputes/store.js';
 
 /**
- * What Plan 4 Task 12 will do when a moderator rules (its staff routes are not built yet): through
+ * A ruling as Plan 4 Task 12's staff routes make one (apps/api/src/disputes/rulings.ts, tested in
+ * test/disputes/rulings.test.ts), without the staff session, the key tap and the draft: through
  * the dispute machine, on the server clock, so the dispute's columns and its trader-visible
  * `dispute_rulings` row agree. Round 1: a moderator takes the case and proposes; under the
  * large-trade limit with no account action it is published at once and the 48-hour appeal window

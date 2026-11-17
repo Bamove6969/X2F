@@ -1,7 +1,7 @@
 // A fake Monero chain and an in-memory relay for three REAL escrow parties (`runParty`), so the
 // moderation watcher's proof can be tested over the real party protocol without regtest.
 import type { Role } from '@x2f/core';
-import { EscrowError, feeBearers, networkFeeShares, type EscrowEngine, type Incoming, type Outgoing, type Payout, type Transport } from '@x2f/escrow';
+import { EscrowError, MAX_NETWORK_FEE, feeBearers, networkFeeShares, type EscrowEngine, type Incoming, type Outgoing, type Payout, type Transport } from '@x2f/escrow';
 import type { Envelope } from '@x2f/protocol';
 
 /** The tx on the fake chain that spends the escrow. */
@@ -97,7 +97,7 @@ export function fakeChain(): FakeChain {
           if (role === 'mod' && c.sweep !== null) c.shows.mod = true;
         },
         buildRelease: async (payouts: Payout[]) => ({ txSet: `set:${payouts.map((p) => `${p.address}=${p.amountAtomic}${p.bearsNetworkFee === true ? '*' : ''}`).join(',')}`, payouts, txKey: SWEEP_KEY }),
-        checkRelease: async () => undefined,
+        checkRelease: async () => MAX_NETWORK_FEE,
         signRelease: async (txSet: string) => ({ signedHex: `signed:${txSet}`, txHash: SWEEP_HASH }),
         submit: async (signedHex: string) => {
           const payouts = signedHex.replace(/^signed:set:/, '').split(',').map((s) => {

@@ -87,6 +87,18 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     change: `update account_holds set hold_until = now() + interval '2 days' where account_id = $1`,
     where: 'account_id = $1',
   },
+  // J-06 (migration 400): never deleted, so no delete path (CHANGE_TABLES ops).
+  liens: {
+    insert: `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
+             values ($1, $2, 1, gen_random_uuid()::text, 1, 1, 'restitution', now(), now())`,
+    change: `update liens set status = 'suspended', changed_at = now() + interval '1 s' where debtor_account_id = $1`,
+    where: 'debtor_account_id = $1',
+  },
+  fees_owed: {
+    insert: `insert into fees_owed (account_id, amount_atomic, from_code, dispute_seq, created_at) values ($1, 10, gen_random_uuid()::text, 1, now())`,
+    change: `update fees_owed set collected_atomic = 5 where account_id = $1`,
+    where: 'account_id = $1',
+  },
   trading_holds: {
     insert: `insert into trading_holds (account_id, created_at) values ($1, now())`,
     change: `update trading_holds set lifted_at = now() + interval '1 s' where account_id = $1`,
@@ -172,6 +184,7 @@ describe('the change paths are complete against the schema', () => {
 
 describe('each change path queues exactly one notice per transaction', () => {
   for (const [table, f] of Object.entries(FIXTURES)) {
+    const deletes = CHANGE_TABLES.find((t) => t.table === table)?.ops.includes('delete') ?? true;
     it(`${table}: insert, change and delete each queue one notice; bookkeeping queues none`, async () => {
       const a = await account();
       const other = await account();
@@ -184,8 +197,11 @@ describe('each change path queues exactly one notice per transaction', () => {
         await db.query(f.bookkeeping, [a]);
         expect(await notices(a), 'bookkeeping').toBe(2);
       }
-      await db.query(`delete from ${table} where ${f.where}`, [a]);
-      expect(await notices(a), 'delete').toBe(3);
+      // A table that is never deleted from (its ops have no delete) has no delete path to check.
+      if (deletes) {
+        await db.query(`delete from ${table} where ${f.where}`, [a]);
+        expect(await notices(a), 'delete').toBe(3);
+      }
       // The other account named in the row (the blocked person) is never told.
       await withJabber(other);
       await db.query(f.insert, f.insert.includes('$2') ? [a, other] : [a]);

@@ -197,6 +197,12 @@ export interface ApiState {
   refuse?: { identity?: 'identity-conflict'; attestation?: 'attestation-refused' | 'trade-closed' };
   /** Per-role fields laid over the view (a lying API telling each side something else). */
   roleView?: Partial<Record<'buyer' | 'seller', Record<string, unknown>>>;
+  /**
+   * The attestation's issuedAt. Default: the clock of the device it is served to, at its identity
+   * registration (the moderation service attests after both registered, so never before either
+   * identity was made). Per device, as tests may give the two devices different clocks.
+   */
+  issuedAt?: string;
 }
 
 export function tradeView(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -221,7 +227,9 @@ export function tradeView(over: Record<string, unknown> = {}): Record<string, un
 /** The participants the API would attest, with a mod identity of its own. */
 export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, state: ApiState) {
   const modId = await testIdentity();
-  const attest = async (): Promise<{ attestation: Attestation; sig: string } | null> => {
+  /** Each device's clock (ms) at its identity registration (device() reports it). */
+  const registeredAt: Partial<Record<'buyer' | 'seller', number>> = {};
+  const attest = async (role: 'buyer' | 'seller'): Promise<{ attestation: Attestation; sig: string } | null> => {
     const { buyer, seller } = state.identities;
     if (!buyer || !seller) return null;
     const participants: Participants = {
@@ -235,7 +243,7 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
       trade: CODE,
       channels: { escrow: await channelFor(CODE, 'escrow'), signals: await channelFor(CODE, 'signals') },
       participants,
-      issuedAt: '2026-10-23T12:00:00.000Z',
+      issuedAt: state.issuedAt ?? new Date(registeredAt[role] ?? Date.parse('2026-10-23T12:00:00.000Z')).toISOString(),
       terms: {
         deal: {
           poster: d.poster, takeAmountAtomic: d.takeAmountAtomic.toString(), currency: d.currency, centsPerXmr: d.centsPerXmr.toString(), maxFiatCents: d.maxFiatCents.toString(),
@@ -255,9 +263,13 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
       if (state.refuse?.identity) throw Object.assign(new Error('api 409'), { status: 409, code: state.refuse.identity });
       state.identities[role] ??= body;
     },
+    /** The registering device's clock, as device() reports it before each registration. */
+    clockAt: (ms: number) => {
+      registeredAt[role] = ms;
+    },
     getAttestation: async () => {
       if (state.refuse?.attestation) throw Object.assign(new Error('api 409'), { status: 409, code: state.refuse.attestation });
-      return attest();
+      return attest(role);
     },
   });
   return { modId, forRole };
@@ -311,8 +323,16 @@ export async function device(
     if (now && pred(now)) return Promise.resolve(now);
     return new Promise((resolve) => waiters.push({ pred, resolve }));
   };
+  const clock = o.now ?? (() => Date.now());
+  const api = {
+    ...o.api,
+    registerIdentity: async (code: string, body: { signPublic: string; boxPublic: string; proof: string }) => {
+      o.api.clockAt(clock());
+      return o.api.registerIdentity(code, body);
+    },
+  };
   const runtime = createEscrowRuntime({
-    api: o.api,
+    api,
     store,
     config: { modSigningPublic: o.modPublic, feeWallet: FEE_WALLET, relayUrl: 'ws://relay.test', daemonUri: 'http://node.test' },
     engine,

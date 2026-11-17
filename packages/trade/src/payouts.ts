@@ -43,6 +43,10 @@ export const SETTLE_KINDS: readonly SettleKind[] = ['release', 'mutual-cancel', 
  */
 export type RulingKind = 'dispute-buyer' | 'dispute-seller';
 
+/** Plan 4 Task 14 (R-M2): the kinds a ruling's own payout is reported and recorded as. */
+export const RULING_KINDS: readonly RulingKind[] = ['dispute-buyer', 'dispute-seller'];
+export const isRulingKind = (k: unknown): k is RulingKind => k === 'dispute-buyer' || k === 'dispute-seller';
+
 export interface PayoutFacts {
   kind: SettleKind | RulingKind;
   amountAtomic: bigint;

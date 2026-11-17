@@ -54,6 +54,14 @@ export interface EscrowRecord {
   code: string;
   role: 'buyer' | 'seller';
   identity: StoredIdentity;
+  /**
+   * Device clock (ms) when this device made `identity`, kept with it before the API ever sees it
+   * (review lead-escrow-harden M1): the attestation naming that identity may not be older, which a
+   * holder of a rotated-out attestation key cannot get around by backdating `issuedAt`. Absent in
+   * records written before the field: verified without a lower bound, which only today's
+   * unbounded key accepts (packages/trade attestation.ts).
+   */
+  identityCreatedAt?: number;
   /** The identity was accepted by the API (or it already held it: 409 identity-exists). */
   registered: boolean;
   /** The attestation and its signature as last verified; re-verified on every resume. */

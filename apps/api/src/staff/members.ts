@@ -223,7 +223,7 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       await log(c, req, 'staff.switched-off', { staffId: id });
     });
     // After the commit (disabled_at already refuses every request): revoke the sessions and end
-    // their streams. NEEDS_P4_MODERATION_REVOKE: then tell the moderation process (Task 13).
+    // their streams. The moderation gate reads the switch-off itself before every ruling it checks (Task 13).
     await endAllSessions({ db, clock, events: req.server.events }, id);
     return { status: 'switched-off' };
   });

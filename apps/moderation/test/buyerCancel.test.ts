@@ -5,7 +5,7 @@ import { fiatCents } from '@x2f/trade';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { REFUND_UNVERIFIED_MS } from '../src/autoRefund.js';
 import { buyerCancelStep } from '../src/buyerCancel.js';
-import { verifyRuling } from '../src/rulings.js';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fromJson, toJson } from '../src/shadow.js';
 import { NO_DESK_FACTS, sweepKindAgrees, type DeskRecord } from '../src/desk.js';
 import {
@@ -588,9 +588,26 @@ describe('buyerCancelStep (pure)', () => {
 });
 
 describe('rulings', () => {
-  it('verifyRuling refuses every input in Plan 3', () => {
-    for (const r of [undefined, null, {}, { ok: true }, 'ruling', 1, [], { kind: 'release', to: [{ address: TERMS.buyerPayout, amountAtomic: FUNDS }], sig: 'aa' }]) {
-      expect(verifyRuling(r)).toBe(false);
+  it('NEEDS_TASK_14: the ruling gate decides, and nothing in it calls settle yet', () => {
+    // Plan 4 Task 13 replaced Plan 3's refuse-everything `verifyRuling` with the gate (gate.test.ts).
+    // Until Task 14's executor lands, no ruling reaches `settle`: the gate only answers.
+    // Review M3: every file under gate/ and cli/, recursively. With the comments stripped, none calls
+    // or names `.settle`, none imports anything from @x2f/escrow but types, and none imports the party,
+    // the desk, the watcher or the service (where a PartyHandle comes from).
+    const files = (rel: string): string[] =>
+      readdirSync(new URL(rel, import.meta.url), { recursive: true, withFileTypes: true })
+        .filter((e) => e.isFile() && /\.ts$/.test(e.name))
+        .map((e) => `${e.parentPath}/${e.name}`);
+    const all = [...files('../src/gate/'), ...files('../src/cli/')];
+    expect(all.length).toBeGreaterThan(5);
+    for (const f of all) {
+      const code = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+      expect(code, f).not.toMatch(/\bsettle\s*\(|\.settle\b|PartyHandle/);
+      for (const m of code.matchAll(/^\s*import\s+(type\s+)?[^;]*?from\s+'([^']+)'/gm)) {
+        if (m[2] === '@x2f/escrow') expect(m[1], `${f}: ${m[0]}`).toBeDefined();
+        expect(m[2], f).not.toMatch(/(^|\/)(party|desk|watcher|main|autoRefund|buyerCancel)\.js$/);
+      }
+      expect(code, f).not.toMatch(/import\(\s*'[^']*(party|desk|watcher|main)\.js'/);
     }
   });
 });

@@ -8,17 +8,22 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "pin-owner": "tsx src/cli/pin-owner.ts"
   },
   "dependencies": {
+    "@simplewebauthn/server": "14.0.3",
     "@x2f/core": "0.0.0",
     "@x2f/escrow": "0.0.0",
+    "@x2f/logchain": "0.0.0",
     "@x2f/protocol": "0.0.0",
+    "@x2f/staff": "0.0.0",
     "@x2f/trade": "0.0.0",
     "libsodium-wrappers": "0.8.4",
     "pg": "8.23.1"
   },
   "devDependencies": {
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "@x2f/regtest": "0.0.0"
   }
 }

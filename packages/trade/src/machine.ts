@@ -5,7 +5,7 @@
  * TradeRuleError. It does no I/O and never reads the device clock.
  */
 import { amountForFunds, escrowPlan, fiatCents as fiatFor, type Price } from './money.js';
-import { SETTLE_KINDS, type SettleKind } from './payouts.js';
+import { SETTLE_KINDS, isRulingKind, type RulingKind, type SettleKind } from './payouts.js';
 import { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS, addMin } from './timers.js';
 
 export type TradeState =
@@ -142,7 +142,12 @@ export type TradeEvent =
   /** The seller ends the trade before funding (Revision 2026-10-29b): only before "Fund escrow" and before any coins. */
   | { type: 'walk-away' }
   | { type: 'release-started' }
-  | { type: 'settled'; kind: SettleKind; txHash: string }
+  /**
+   * The escrow paid out. `kind` is the settlement's (`SettleKind`), or, for a ruling's own payout
+   * (Plan 4 Task 14, R-M2), the ruling's (`RulingKind`): only on a disputed trade, never from the
+   * trade alone (`settleKindFor`).
+   */
+  | { type: 'settled'; kind: SettleKind | RulingKind; txHash: string }
   | { type: 'open-dispute' }
   | { type: 'escalate' }
   | { type: 'release-claimed' }
@@ -546,6 +551,15 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     case 'settled': {
       if (typeof e.txHash !== 'string' || e.txHash === '') throw new RangeError('bad tx hash');
       if (!SETTLED_FROM.includes(s)) return fail('wrong-state');
+      // Plan 4 Task 14 (R-M2): a ruling's payout (mod-built, the winner co-signed) closes the disputed
+      // trade: released when it pays the buyer, refunded when it returns everything to the seller.
+      // Only while the escrow has not paid out already (a seller's cancel refund that landed first,
+      // review I1: then nothing is left to pay). `settling` names no settlement (none was started);
+      // the API books the fee by the ruling's kind (staff/revenue.ts) and records the dispute's execution.
+      if (isRulingKind(e.kind)) {
+        if (s !== 'disputed' || t.txHash !== null) return fail('wrong-state');
+        return { ...t, state: e.kind === 'dispute-buyer' ? 'released' : 'refunded', settling: null, settleBy: null, txHash: e.txHash, closedAt: now };
+      }
       if (!SETTLE_KINDS.includes(e.kind)) throw new RangeError('unknown settle kind');
       // The seller's cancel refund that lands after a dispute was opened on it (review I1, 8 Nov):
       // the moderator nearly always handed it out before the dispute, so it completes anyway. The
@@ -554,10 +568,8 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       // transaction. The same tx reported again changes nothing; a different tx is refused (the
       // escrow paid out once; re-verify 43fbbb2f, R-M1), never a close as `refunded` with the
       // dispute still open.
-      // NEEDS_PLAN_4_RULING_PAYOUT (R-M2): on this shape any sweep is counted as `auto-refund`
-      // (settleKindFor). Before ruling payouts are executed, they must report their own kind
-      // (`RulingKind` in payouts.ts), checked ahead of this branch, so a ruling's escrow payout is
-      // never recorded as the cancel refund (nor flips the dispute to after-refund in the API).
+      // R-M2 (Plan 4 Task 14): a ruling's own payout reports its own kind (`RulingKind`), handled
+      // above, so it is never recorded as the cancel refund (nor flips the dispute to after-refund).
       if (s === 'disputed' && t.settling === 'auto-refund' && e.kind === 'auto-refund') {
         if (t.txHash === e.txHash) return t;
         if (t.txHash === null) return { ...t, settleBy: null, txHash: e.txHash };

@@ -988,6 +988,17 @@ describe('POST /v1/trades/:code/wallet (the poster\'s side, Task 19\'s accepted 
     expect(refusal(await late.poster.browser.post(`/v1/trades/${late.code}/wallet`, { walletId: late.poster.wallet }))).toEqual({ status: 409, error: 'wrong-state' });
   });
 
+  it('refuses a poster with an active lien (409 lien; J-06, review L6), and nothing is set up', async () => {
+    const owing = await setupTrade('sell');
+    await deps.db.query(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
+     values ($1, $2, 1000, gen_random_uuid()::text, 1, 1, 'restitution', $3, $3)`,
+      [owing.poster.id, owing.taker.id, deps.clock()],
+    );
+    expect(refusal(await owing.poster.browser.post(`/v1/trades/${owing.code}/wallet`, { walletId: owing.poster.wallet }))).toEqual({ status: 409, error: 'lien' });
+    expect((await loadTradeRow(deps.db, owing.code))!.seller_refund).toBeNull();
+  });
+
   it('refuses a waiting or foreign wallet (wallet-not-ready), no usable wallet (no-wallet) and a bad body', async () => {
     const { poster, taker, code } = await setupTrade('sell');
     const waiting = await addWallet(poster.id, false);

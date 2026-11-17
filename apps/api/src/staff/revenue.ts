@@ -241,10 +241,10 @@ export interface RevenueReport {
    */
   treasuryNetworkFeesRecorded: boolean;
   /**
-   * Owed fees not yet collected, atomic units. Null until Plan 4 Task 12's `fees_owed` exists
-   * (J-06); then the sum of `amount_atomic - collected_atomic` over unsettled rows.
+   * Owed fees not yet collected, atomic units, whatever the range: the sum of `amount_atomic -
+   * collected_atomic` over the unsettled `fees_owed` rows (migration 400, J-06).
    */
-  owedOutstandingAtomic: string | null;
+  owedOutstandingAtomic: string;
 }
 
 interface SumRow {
@@ -290,7 +290,10 @@ export async function revenueReport(q: Queryable, r: { from: string; to: string;
       return d > 0n ? 1 : d < 0n ? -1 : a.period.localeCompare(b.period);
     });
   const toDate = bucketOf({ ...(await q.query<SumRow>(`select ${SUMS} from revenue_ledger`)).rows[0]!, key: 'to-date' });
-  return { by: r.by, from: r.from, to: r.to, buckets, total, byCurrency, toDate, treasuryNetworkFeesRecorded: false, owedOutstandingAtomic: null };
+  const outstanding = (
+    await q.query<{ n: string }>('select coalesce(sum(amount_atomic - collected_atomic), 0)::text as n from fees_owed where settled_at is null')
+  ).rows[0]!.n;
+  return { by: r.by, from: r.from, to: r.to, buckets, total, byCurrency, toDate, treasuryNetworkFeesRecorded: false, owedOutstandingAtomic: outstanding };
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
