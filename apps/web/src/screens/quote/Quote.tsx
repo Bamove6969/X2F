@@ -19,6 +19,8 @@ import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
 import { useQuoteKept } from './quoteKept.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
+import { NewAddressSheet, type NewAddressResult } from './NewAddressSheet.js';
+import { PAYOUT_QUESTION } from './addressCopy.js';
 import { WhatApplies } from './WhatApplies.js';
 import './quote.css';
 
@@ -165,11 +167,25 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const { signedIn, state, take } = useTake(offerId, refreshMarket);
   const session = useSession();
   const myName = session.status === 'signed-in' ? ((session.me as { displayName?: string }).displayName ?? null) : null;
+  // Owner demo note #6: the API's rating of the account (null when an older API sends none). Only a
+  // secure account is offered the new-address sheet; the API decides what an add does either way.
+  const rating = session.status === 'signed-in' ? (session.me.securityRating ?? null) : null;
+  const [addingAddress, setAddingAddress] = useState(false);
+  const [walletsTick, setWalletsTick] = useState(0);
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
   const { blockedPoster, closedError } = kept;
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
   const method = useLoad((signal) => fetchMethod(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
-  const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn]);
+  const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn, walletsTick]);
+  /** A new address from the sheet: the list is read again; one that works now is picked for this trade. */
+  const onNewAddress = (r: NewAddressResult) => {
+    setWalletsTick((t) => t + 1);
+    if (r.kind === 'usable') {
+      touched();
+      setPicked(r.wallet.id);
+      setAddingAddress(false);
+    }
+  };
 
   const o: QuoteOffer | null = offer.kind === 'ready' ? offer.value : null;
   const methodName = method.kind === 'ready' ? method.value.name : methodId;
@@ -395,8 +411,12 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
               setPicked(id);
             }}
             addHref={addWalletHref(false)}
+            question={copy.adSide === 'sell' ? PAYOUT_QUESTION.buy : PAYOUT_QUESTION.sell}
+            rating={rating}
+            {...(rating === 'secure' ? { onAddNew: () => setAddingAddress(true) } : {})}
           />
         ) : null}
+        {addingAddress && rating === 'secure' ? <NewAddressSheet onClose={() => setAddingAddress(false)} onDone={onNewAddress} /> : null}
         {signedIn === false ? (
           // Design review 8 Nov item 4: the wallet group is on the board before login too. There
           // is nothing to pick yet (the wallet comes with the account), so it says so; no radios.

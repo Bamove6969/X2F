@@ -315,3 +315,41 @@ describe('Your wallets', () => {
     expect(dialog('Before you add a wallet')).not.toBeNull();
   });
 });
+
+describe('one trade only or future trades (owner demo note #6)', () => {
+  function pickKeep(value: 'saved' | 'one-time'): void {
+    const input = document.querySelector<HTMLInputElement>(`[data-part="wallet-keep-for"] input[value="${value}"]`);
+    if (!input) throw new Error(`no keep-for choice ${value}`);
+    fire(input, new MouseEvent('click', { bubbles: true }));
+  }
+
+  it('saves for future trades by default (no oneTime sent), and sends oneTime: true for one trade only', async () => {
+    stub.rule = RULE_FIRST;
+    stub.wallets = [];
+    stub.onPost = (body) => ({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', true) });
+    await mount();
+    await startAdding();
+    expect(document.querySelector<HTMLInputElement>('[data-part="wallet-keep-for"] input[value="saved"]')!.checked).toBe(true);
+    type('#wallet-address', ADDR_C);
+    await save(() => stub.calls.some((c) => c.method === 'POST'));
+    const first = stub.calls.find((c) => c.method === 'POST')!;
+    expect((first.body!.wallets as Array<Record<string, unknown>>)[0]).not.toHaveProperty('oneTime');
+
+    stub.calls.length = 0;
+    await startAdding();
+    pickKeep('one-time');
+    await settle();
+    type('#wallet-address', address('D', 'BBBBB2'));
+    await save(() => stub.calls.some((c) => c.method === 'POST'));
+    const second = stub.calls.find((c) => c.method === 'POST')!;
+    expect((second.body!.wallets as Array<Record<string, unknown>>)[0]).toMatchObject({ oneTime: true });
+  });
+
+  it('marks a one-time wallet in the list', async () => {
+    stub.wallets = [READY, { ...READY, id: 'w-once', label: 'Trade cash', oneTime: true }];
+    await mount();
+    const rows = [...document.querySelectorAll('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="one-time"]') !== null)).toEqual([false, true]);
+    expect(rows[1]!.textContent).toContain('One trade only');
+  });
+});

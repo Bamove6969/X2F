@@ -837,3 +837,31 @@
   transform: rotate(180deg);
 }
 
+
+/* Owner demo note #6: the payout-address question and its rule under the wallet legend. */
+.x2f-quote__address-rule {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: var(--x2f-space-2);
+}
+
+.x2f-quote__address-question {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__add--button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.x2f-quote__new-address {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+}

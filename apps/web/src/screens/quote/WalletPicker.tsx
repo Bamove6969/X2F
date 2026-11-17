@@ -1,6 +1,9 @@
 import { Link } from 'react-router';
+import type { SecurityRating } from '@x2f/auth-client';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { APP_LABELS, takeableWallets, type WalletApp } from '../wallets-model.js';
+import { ONE_TIME_TAG } from '../walletsCopy.js';
+import { NEW_ADDRESS, addressRuleText } from './addressCopy.js';
 import type { PickWallet } from './api.js';
 import './quote.css';
 
@@ -10,6 +13,10 @@ import './quote.css';
 // which asks the person to confirm it's them (X-4), and comes back here.
 // The app names and the usable filter come from the wallets screen's model (Task 29), so the
 // picker and Your wallets name and filter wallets the same way.
+// Owner demo note #6 (16 Nov 2026): the owner's question (`question`) and the rule for this account's
+// rating (`rating`, from the API's GET /v1/account/me) sit under the legend. A secure account gets
+// "Add a new address" on the quote itself (`onAddNew`, the new-address sheet); any other account keeps
+// the link to Settings → Your wallets. A one-time wallet says so.
 
 /** The app's name for an app code from the API, or undefined for a code this build does not know. */
 function appLabel(app: string): string | undefined {
@@ -27,6 +34,9 @@ export function WalletPicker({
   picked,
   onPick,
   addHref,
+  question,
+  rating,
+  onAddNew,
 }: {
   legend: string;
   /** Every open wallet; waiting ones are counted, never offered. */
@@ -34,12 +44,24 @@ export function WalletPicker({
   picked: string | null;
   onPick: (id: string) => void;
   addHref: string;
+  /** Owner note #6: the question above the list (COPY-UNSIGNED, addressCopy.ts). */
+  question?: string;
+  /** Owner note #6: the account's rating from the API; null when not known (an older API build). */
+  rating?: SecurityRating | null;
+  /** Owner note #6: opens the new-address sheet; given for a secure account only. */
+  onAddNew?: () => void;
 }) {
   const usable = takeableWallets(wallets);
   const waiting = wallets.length - usable.length;
   return (
     <fieldset className="x2f-quote__wallets">
       <legend className="x2f-quote__label">{legend}</legend>
+      {question !== undefined ? (
+        <div className="x2f-quote__address-rule" data-part="address-rule">
+          <span className="x2f-quote__address-question">{question}</span>
+          <span className="x2f-quote__muted-sm">{addressRuleText(rating ?? null)}</span>
+        </div>
+      ) : null}
       {usable.map((w) => {
         const name = walletName(w);
         const app = appLabel(w.app);
@@ -51,6 +73,7 @@ export function WalletPicker({
               <span className="x2f-quote__muted-sm">
                 <span className="x2f-quote__mono">…{addressEnd(w.address)}</span>
                 {app !== undefined && app !== name ? ` · ${app}` : ''}
+                {w.oneTime === true ? ` · ${ONE_TIME_TAG}` : ''}
               </span>
             </span>
           </label>
@@ -61,9 +84,15 @@ export function WalletPicker({
           {waiting === 1 ? '1 more wallet is still waiting and cannot be picked yet.' : `${waiting} more wallets are still waiting and cannot be picked yet.`}{/* not-a-refusal: explains the payout-wallet wait */}
         </span>
       ) : null}
-      <Link to={addHref} className="x2f-quote__add">
-        Add another wallet
-      </Link>
+      {onAddNew !== undefined ? (
+        <button type="button" className="x2f-quote__add x2f-quote__add--button" data-part="add-new-address" onClick={onAddNew}>
+          {NEW_ADDRESS.open}
+        </button>
+      ) : (
+        <Link to={addHref} className="x2f-quote__add">
+          Add another wallet
+        </Link>
+      )}
     </fieldset>
   );
 }

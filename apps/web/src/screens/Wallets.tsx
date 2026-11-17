@@ -28,6 +28,8 @@ import {
 } from './wallets-model.js';
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
+import { ChoiceGroup } from '../ui/Choice.js';
+import { KEEP_FOR, ONE_TIME_TAG } from './walletsCopy.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -54,7 +56,8 @@ function addCantDo(e: unknown): CantDoCode | null {
 
 const ADD_FAILED = 'That could not be saved. Check the addresses and try again.';
 
-function addError(e: unknown): string {
+/** The add's error line (shared with the quote's new-address sheet, owner note #6). */
+export function addError(e: unknown): string {
   if (e instanceof ApiCallError || e instanceof AuthApiError) {
     if (e.code === 'address-invalid') return "One of those doesn't look like a Monero address on this network.";
     if (e.code === 'address-integrated') return 'Use a plain address, not an integrated address.';
@@ -182,6 +185,7 @@ function WalletRow({ w, onRemove }: { w: WalletView; onRemove: (w: WalletView) =
         <span className="x2f-wallet-row__name">{w.label}</span>
         <span className="x2f-wallet-row__addr">
           <span>…{w.addressEnd}</span>
+          {w.oneTime === true ? <span data-part="one-time"> · {ONE_TIME_TAG}</span> : null}
         </span>
       </span>
       <span className="x2f-wallet-row__status">
@@ -265,6 +269,8 @@ function WalletsScreen() {
   const [app, setApp] = useState<WalletApp>('cake');
   const [label, setLabel] = useState('');
   const [address, setAddress] = useState('');
+  // Owner demo note #6: each new wallet is for future trades (the default) or for one trade only.
+  const [keepFor, setKeepFor] = useState<'saved' | 'one-time'>('saved');
   const [batch, setBatch] = useState<WalletDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -315,7 +321,7 @@ function WalletsScreen() {
 
   /** The wallet in the form, with the next neutral name when the name is left empty. */
   function current(): WalletDraft {
-    return { app, label: label.trim() || nextWalletName(known), address: trimmed };
+    return { app, label: label.trim() || nextWalletName(known), address: trimmed, ...(keepFor === 'one-time' ? { oneTime: true } : {}) };
   }
 
   function duplicate(addr: string): boolean {
@@ -473,6 +479,7 @@ function WalletsScreen() {
                   <li key={d.address} className="x2f-wallets__batch-item">
                     <span>
                       {d.label} · {APP_LABELS[d.app]} · <span className="x2f-wallets__mono">…{d.address.slice(-6)}</span>
+                      {d.oneTime === true ? ` · ${ONE_TIME_TAG}` : ''}
                     </span>
                     <button
                       type="button"
@@ -553,6 +560,21 @@ function WalletsScreen() {
             <span className="x2f-wallets__confirm-note">
               For extra privacy, paste a fresh address from your wallet for each trade.
             </span>
+
+            <span id="wallet-keep-for" className="x2f-wallets__field">
+              {KEEP_FOR.legend}
+            </span>
+            <ChoiceGroup
+              look="card"
+              labelledBy="wallet-keep-for"
+              part="wallet-keep-for"
+              value={keepFor}
+              onChange={setKeepFor}
+              options={[
+                { value: 'saved', label: KEEP_FOR.saved, note: KEEP_FOR.savedNote },
+                { value: 'one-time', label: KEEP_FOR.oneTime, note: KEEP_FOR.oneTimeNote },
+              ]}
+            />
 
             <Button
               variant="secondary"

@@ -137,6 +137,8 @@ export interface PickWallet {
   address: string;
   addressEnd: string;
   usable: boolean;
+  /** Owner demo note #6: for this trade only (absent from an older API build: saved). */
+  oneTime: boolean;
 }
 
 export async function fetchWallets(signal?: AbortSignal): Promise<PickWallet[]> {
@@ -146,7 +148,11 @@ export async function fetchWallets(signal?: AbortSignal): Promise<PickWallet[]> 
     const at = `wallets[${i}]`;
     const o = obj(v, at);
     if (typeof o.usable !== 'boolean') throw new ApiShapeError(`${at}.usable`);
-    return { id: str(o, 'id', at), app: str(o, 'app', at), label: str(o, 'label', at), address: str(o, 'address', at), addressEnd: str(o, 'addressEnd', at), usable: o.usable };
+    if (o.oneTime !== undefined && typeof o.oneTime !== 'boolean') throw new ApiShapeError(`${at}.oneTime`);
+    return {
+      id: str(o, 'id', at), app: str(o, 'app', at), label: str(o, 'label', at), address: str(o, 'address', at), addressEnd: str(o, 'addressEnd', at),
+      usable: o.usable, oneTime: o.oneTime === true,
+    };
   });
 }
 

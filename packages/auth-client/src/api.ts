@@ -265,7 +265,18 @@ export interface AccountOverview {
    * send it (read it with `isVendor`).
    */
   accountType?: AccountType;
+  /**
+   * Owner demo note #6 (16 Nov 2026): the trader account's rating by its login methods, decided by the
+   * API alone (apps/api/src/auth/rating.ts). `secure` (a passkey, security key, PGP key, or a password
+   * with an authenticator app) may add a payout address on the trade screen; `weak` (a password alone)
+   * adds them in Settings, where they wait 24 hours. Null for team members, staff and owner. Optional:
+   * older API builds do not send it (read it as not secure).
+   */
+  securityRating?: SecurityRating | null;
 }
+
+/** Owner demo note #6: an account's rating by the login methods it holds. */
+export type SecurityRating = 'weak' | 'secure';
 
 /** Owner 2 Nov 2026: Trader and Vendor accounts. */
 export type AccountType = 'trader' | 'vendor';
@@ -363,6 +374,11 @@ export interface Wallet {
   addressEnd: string;
   usableFrom: string;
   usable: boolean;
+  /**
+   * Owner demo note #6: for one trade only; the trade that uses it removes it from the list. Optional:
+   * older API builds do not send it (saved for future trades).
+   */
+  oneTime?: boolean;
 }
 
 /** One wallet of an add (the fields the person fills in). */
@@ -370,6 +386,8 @@ export interface WalletDraft {
   app: WalletApp;
   label: string;
   address: string;
+  /** Owner demo note #6: true for one trade only; absent or false saves it for future trades. */
+  oneTime?: boolean;
 }
 
 /**
