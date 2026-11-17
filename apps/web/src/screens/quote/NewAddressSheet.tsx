@@ -9,7 +9,7 @@ import { isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { StagedNote } from '../settings/HoldChanges.js';
 import { addError } from '../Wallets.js';
 import { ruleNote } from '../wallets-model.js';
-import { recordTypedAddress } from '../walletRecord.js';
+import { recordStagedAddress, recordTypedAddress } from '../walletRecord.js';
 import { DEFAULT_NEW_NAME, NEW_ADDRESS as C } from './addressCopy.js';
 
 // Owner demo note #6 (16 Nov 2026; docs/trade-wallet-note6.md): a highly secure account (owner 17 Nov) adds a payout address
@@ -59,6 +59,9 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
     try {
       const result = await withConfirm(await walletAction(trimmed), post, prove);
       if (isStaged(result)) {
+        // Re-verify O3: no id yet, so the address typed is recorded by itself; a look-alike listed
+        // once the change is applied is then refused like any other (walletRecord.ts).
+        recordStagedAddress(trimmed);
         setAfter({ kind: 'staged' });
         onDone({ kind: 'staged' });
         return;

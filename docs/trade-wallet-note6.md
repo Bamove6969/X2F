@@ -242,13 +242,19 @@ with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
 22. **One-time copy matches the restore as built** (review M3; extending the restore is OQ2, still
     open): Settings' and the quote sheet's notes now say the address comes back only if the trade is
     cancelled while it is still being set up (COPY-UNSIGNED). Supersedes item 18's wording.
-23. **The round-4 check holds across leaving the quote** (review M4). This device keeps the address
-    the user typed for each wallet id they added here (`screens/walletRecord.ts`, localStorage like the
-    other device-held marks, memory when the store throws; never sent to the API). The quote (also from
-    `?wallet=` after a trip away or a reload), the accepted sheet and the add in Settings → Your wallets
-    refuse a listed address that differs from the recorded one for that id. Supersedes item 17's
-    "within the visit". A wallet with no record here (added on another device, or before this) is judged
-    as before (O1 stays open for the threat-model list).
+23. **What the device checks against the API's list, across leaving the quote** (review M4, re-verify
+    N1 and O3). This device keeps each address the user typed here (`screens/walletRecord.ts`,
+    localStorage like the other device-held marks, memory when the store throws; never sent to the
+    API): under the wallet id the API gave it, or by address alone for an add staged for review (202),
+    which has no id yet. The quote (fresh, and from `?wallet=` after a trip away or a reload), the
+    accepted sheet and Settings → Your wallets treat a listed wallet as swapped when its recorded id
+    names another address, or when, under any id, its address ends in the same last 6 characters as
+    an address typed here but differs from it. A swapped wallet is not offered, not picked (even as
+    the default), gets no Make default, and the screen says so. Supersedes item 17's "within the
+    visit". This does not stop every swap: a wallet with no record here (added on another device, or
+    before this check) is trusted as before, and so is a listed address whose ending differs from
+    every address typed here; the screen then shows that different ending (O1 stays open for the
+    threat-model list). Two real addresses sharing the last 6 is about 1 in 3.8e10.
 
 Review minors, final state: M1 built as Q10 (restore) plus copy (item 18); M2-M5 fixed (items 10-13);
 M6 kept as is on the owner's answer (Q11).

@@ -198,10 +198,12 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const giftTermsOk = !giftCard || giftCardTermsComplete(giftRole, giftTicked);
   const marketNow = market.kind === 'ready' ? market.value : null;
   const q: Quote | null = o && market.kind === 'ready' ? quote({ offer: o, market: marketNow, text, unit }) : null;
-  // The address typed on this device for each wallet added here (the new-address sheet or Settings →
-  // Your wallets recorded it, walletRecord.ts; review 17 Nov M4: kept across a trip away and a reload).
-  // A list naming another address for such a wallet is not offered or picked, even from `?wallet=`:
-  // the API never swaps an address the device did not show.
+  // The addresses typed on this device (the new-address sheet, Settings → Your wallets or setup recorded
+  // them, walletRecord.ts; review 17 Nov M4: kept across a trip away and a reload). A listed wallet that
+  // names another address for a recorded id, or (re-verify N1) whose address, under any id, ends in the
+  // same last 6 characters as one typed here but differs, is not offered or picked, even as the default
+  // or from `?wallet=`. Still trusted, as on main: a wallet added on another device or before this
+  // check, and an address whose ending differs from every one typed here (the ending shown differs).
   const swapped = (w: PickWallet) => !matchesRecord(w);
   const listed = wallets.kind === 'ready' ? wallets.value.filter((w) => !swapped(w)) : [];
   const addressSwapped = wallets.kind === 'ready' && wallets.value.some(swapped);
