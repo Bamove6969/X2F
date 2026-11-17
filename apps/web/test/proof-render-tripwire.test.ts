@@ -18,6 +18,9 @@
 // <input type="image">, any "data:" string literal), scans .js/.jsx/.mjs/.cjs too, and strips comments
 // with a real parser (oxc, through the root devDependency rolldown), so a '//' inside a string or JSX
 // text no longer hides the rest of the line.
+// Review of proof-tripwire-3 (13 Nov 2026): ChatProof's import pin is read from the parser's module record
+// (P-M1), `body ??=` / `||=` and a key held in a const are caught (P-M2), and a decrypting file uses no
+// import.meta.glob, import() or re-export (P-I1).
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseSync } from 'rolldown/utils';
@@ -47,12 +50,16 @@ function sources(dir: string): string[] {
  * stays code. Each comment becomes spaces (its line breaks kept). A file the parser cannot read fails.
  */
 const parsed = new Map<string, string>();
+/** Each file's module record from the same parse (its static imports, re-exports, import() calls and import.meta uses). */
+const records = new Map<string, ModuleRecord>();
+type ModuleRecord = ReturnType<typeof parseSync>['module'];
 function code(rel: string): string {
   const hit = parsed.get(rel);
   if (hit !== undefined) return hit;
   const src = readFileSync(`${ROOT}${rel}`, 'utf8');
-  const { comments, errors } = parseSync(rel, src);
+  const { comments, errors, module } = parseSync(rel, src);
   expect(errors.map((e) => e.message), `${rel}: the tripwire cannot parse this file`).toEqual([]);
+  records.set(rel, module);
   let out = '';
   let at = 0;
   for (const c of [...comments].sort((a, b) => a.start - b.start)) {
@@ -62,6 +69,11 @@ function code(rel: string): string {
   out += src.slice(at);
   parsed.set(rel, out);
   return out;
+}
+/** The parser's module record for a file (P-M1: imports are read from it, not from the text). */
+function moduleOf(rel: string): ModuleRecord {
+  code(rel);
+  return records.get(rel)!;
 }
 
 /** Tags that put a picture, a frame or media on the screen, as JSX or as createElement's tag name. */
@@ -159,6 +171,8 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
       expect(c, f).not.toMatch(/new Blob\(|new File\(|<img[\s/>]|data:image\//);
       // Review I3, re-verify R3 and V-M2: and never out of the page.
       expect(sendsOut(c), `${f} decrypts a proof: it sends nothing out and stores nothing`).toEqual([]);
+      // P-I1: and pulls in no module the import pin cannot see (import.meta.glob, import(), a re-export).
+      expect(otherModuleReach(moduleOf(f), c), `${f} decrypts a proof: no import.meta.glob, import() or re-export`).toEqual([]);
     }
     expect(gated, 'the gate still finds ChatProof').toBe(DECRYPT_ALLOWED.length);
   });
@@ -178,10 +192,16 @@ const OUT_RULES: readonly [string, RegExp][] = [
   ['a request body (`body:`)', /\bbody\s*:/],
   ['a shorthand body (`{ body }`)', /[{,]\s*body\s*[,}]/],
   // V-M2: a body set after the object is built (`init.body = …`), never a comparison (`res.body === null`).
-  ['a body assigned (`.body =`, `. body =`)', /\.\s*body\s*=(?!=)/],
-  // T-M2: also a quoted body as an argument or an entry (Reflect.set, Object.defineProperty, Object.fromEntries).
-  ['a quoted body (`[\'body\']`, `\'body\':`, `\'body\',`)', /\[\s*['"`]body['"`]\s*\]|['"`]body['"`]\s*[:,\]]/],
+  // P-M2: the logical assignments too (`init.body ??= …`, `||=`, `&&=`).
+  ['a body assigned (`.body =`, `. body =`, `.body ??=`, `||=`, `&&=`)', /\.\s*body\s*(?:\?\?|\|\||&&)?=(?!=)/],
+  // T-M2, P-M2: "body" as a string at all: a quoted key, an argument (Reflect.set, Object.defineProperty,
+  // Object.fromEntries) or a const that holds it for a computed key later.
+  ['a "body" string (a quoted key, an argument, or a const that holds it)', /(['"`])\s*body\s*\1/],
   ['a computed key (`{ [k]: … }`)', /[{,]\s*\[[^\]\n]+\]\s*:/],
+  // P-M2: a key built elsewhere and set by index (`init[k] = …`, `??=`), or by a property-setting call.
+  // (A member index only: `const [a, b] = …` and `[a, b] = [b, a]` are destructuring, and `T[] = …` a type.)
+  ['an indexed assignment (`x[k] = …`)', /(?<!\b(?:const|let|var)\s*)(?<=[\w$)\]]\s*)\[[^\]\n]+\]\s*(?:\?\?|\|\||&&)?=(?!=)/],
+  ['a property set by a call (Reflect.set / defineProperty, Object.defineProperty / defineProperties / fromEntries)', /\bReflect\s*\.\s*(set|defineProperty)\b|\bObject\s*\.\s*(defineProperty|defineProperties|fromEntries)\b/],
   ['XMLHttpRequest', /\bXMLHttpRequest\b/],
   ['storage (local/session storage, IndexedDB, caches, cookieStore, document.cookie or document[…])', /\b(localStorage|sessionStorage|indexedDB|caches|cookieStore)\b|\bdocument\s*(\.\s*cookie\b|\[)/],
 ];
@@ -202,37 +222,81 @@ const CHATPROOF_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   './ProofThumb.js': ['PROOF_CHECKING', 'PROOF_REFUSED_BODY', 'PROOF_REFUSED_TITLE', 'ProofThumb'],
 };
 
-/** A file's static imports as { specifier: sorted names }; a side-effect, namespace or default import is named by its form. */
-function importsOf(c: string): Record<string, string[]> {
+/**
+ * P-M1: a file's static imports as { specifier: sorted names }, read from the parser's module record (so a
+ * multi-line, a mid-line or an `import x, { y }` import is read as the module system reads it). A renamed
+ * import reads `name as local`; a namespace, default or side-effect import is named by its form.
+ */
+function importsOf(m: ModuleRecord): Record<string, string[]> {
   const out: Record<string, string[]> = {};
-  for (const m of c.matchAll(/^\s*import\s+(?:type\s+)?([^'";]+?)\s+from\s+['"]([^'"]+)['"]|^\s*import\s+['"]([^'"]+)['"]/gm)) {
-    if (m[3] !== undefined) {
-      (out[m[3]] ??= []).push('(side effect)');
-      continue;
+  for (const imp of m.staticImports) {
+    const names = (out[imp.moduleRequest.value] ??= []);
+    if (imp.entries.length === 0) names.push('(side effect)');
+    for (const e of imp.entries) {
+      const local = e.localName.value;
+      if (e.importName.kind === 'NamespaceObject') names.push(`(namespace ${local})`);
+      else if (e.importName.kind === 'Default') names.push(`(default ${local})`);
+      else names.push(e.importName.name === local ? local : `${e.importName.name} as ${local}`);
     }
-    const what = m[1]!.trim();
-    const names = what.startsWith('{')
-      ? what.slice(1, -1).split(',').map((n) => n.trim().replace(/^type\s+/, '')).filter(Boolean)
-      : [what.startsWith('*') ? `(namespace ${what})` : `(default ${what})`];
-    (out[m[2]!] ??= []).push(...names);
   }
   for (const k of Object.keys(out)) out[k]!.sort();
   return out;
 }
 
+/** P-M1, P-I1: the other ways a module reaches code: a re-export, an import() call, or an import.meta use that is not `import.meta.env.NAME`. */
+function otherModuleReach(m: ModuleRecord, c: string): string[] {
+  const out: string[] = [];
+  for (const e of m.staticExports) for (const x of e.entries) if (x.moduleRequest !== null && x.moduleRequest !== undefined) out.push(`re-export from ${x.moduleRequest.value}`);
+  for (const d of m.dynamicImports) out.push(`import() at ${d.start}`);
+  // P-I1: import.meta.glob (and .globEager, an alias of import.meta, import.meta['glob']) pulls in modules
+  // the pin never sees; only a plain env read (`import.meta.env.VITE_…`) is allowed.
+  for (const im of m.importMetas) if (!/^\s*\.\s*env\s*\.\s*[A-Za-z_$][\w$]*/.test(c.slice(im.end))) out.push(`import.meta at ${im.start}: ${c.slice(im.start, im.end + 24).replace(/\s+/g, ' ')}`);
+  return out;
+}
+
+/** A snippet's module record and its code, for the rules' own tests. */
+function parseSnippet(src: string): { m: ModuleRecord; c: string } {
+  const { module, errors } = parseSync('snippet.ts', src);
+  expect(errors.map((e) => e.message), src).toEqual([]);
+  return { m: module, c: src };
+}
+
 describe('T-M1: what ChatProof (the one decrypting file) imports is pinned', () => {
   it('exactly this list: any new import needs review first', () => {
-    const c = code('apps/web/src/screens/proof/ChatProof.tsx');
+    const f = 'apps/web/src/screens/proof/ChatProof.tsx';
     const want = Object.fromEntries(Object.entries(CHATPROOF_IMPORTS).map(([k, v]) => [k, [...v].sort()]));
-    expect(importsOf(c)).toEqual(want);
-    expect(c, 'no dynamic import in ChatProof').not.toMatch(/\bimport\s*\(/);
-    expect(c, 'no require in ChatProof').not.toMatch(/\brequire\s*\(/);
+    expect(importsOf(moduleOf(f))).toEqual(want);
+    expect(otherModuleReach(moduleOf(f), code(f)), 'no re-export, import() or import.meta in ChatProof').toEqual([]);
+    expect(code(f), 'no require in ChatProof').not.toMatch(/\brequire\s*\(/);
   });
 
-  it('the pin reads every import form (a new helper, a namespace, a side effect)', () => {
-    expect(importsOf("import { send } from './helper.js';\nimport * as h from './h.js';\nimport './side.js';\nimport d from './d.js';")).toEqual({
-      './helper.js': ['send'], './h.js': ['(namespace * as h)'], './side.js': ['(side effect)'], './d.js': ['(default d)'],
+  it('the pin reads every import form, as the parser does (P-M1)', () => {
+    const { m } = parseSnippet(
+      "import { send } from './helper.js';\nimport * as h from './h.js';\nimport './side.js';\nimport d from './d.js';\n" +
+        "import {\n  a,\n  type B,\n  c as e,\n} from './multi.js'; import { late } from './same-line.js';\nimport d2, { more } from './both.js';",
+    );
+    expect(importsOf(m)).toEqual({
+      './helper.js': ['send'], './h.js': ['(namespace h)'], './side.js': ['(side effect)'], './d.js': ['(default d)'],
+      './multi.js': ['B', 'a', 'c as e'], './same-line.js': ['late'], './both.js': ['(default d2)', 'more'],
     });
+  });
+
+  it('a re-export, an import() and an import.meta.glob are caught; an env read is not (P-M1, P-I1)', () => {
+    for (const src of [
+      "export { send } from './helper.js';",
+      "export * from './helper.js';",
+      "const h = await import('./helper.js');",
+      "const mods = import.meta.glob('./*.ts', { eager: true });",
+      "const mods = import.meta.globEager('./*.ts');",
+      "const m = import.meta;\nconst mods = m.glob('./*.ts');",
+      "const mods = import.meta['glob']('./*.ts');",
+      "const mods = import . meta . glob('./*.ts');",
+    ]) {
+      const { m, c } = parseSnippet(src);
+      expect(otherModuleReach(m, c), src).not.toEqual([]);
+    }
+    const { m, c } = parseSnippet("const on = import.meta.env.VITE_X2F_PROOF_UPLOAD === '1';");
+    expect(otherModuleReach(m, c)).toEqual([]);
   });
 });
 
@@ -270,8 +334,24 @@ describe('the decrypt rules themselves (re-verify V-M1, V-M2)', () => {
     ]) expect(sendsOut(snippet), snippet).not.toEqual([]);
   });
 
+  it('P-M2: `body ??=`, `body ||=`, `&&=` and a key from a const that holds "body" are caught', () => {
+    for (const snippet of [
+      'init.body ??= plain;',
+      'init.body ||= plain;',
+      'init.body &&= plain;',
+      "init['body'] ??= plain;",
+      "const K = 'body';\ninit[K] = plain;",
+      'const K = `body`;\nReflect.set(init, K, plain);',
+      "const K = 'bo' + 'dy';\ninit[K] = plain;",
+      "const K = 'bo' + 'dy';\ninit[K] ??= plain;",
+      "const K = 'bo' + 'dy';\nReflect.set(init, K, plain);",
+      "const K = 'bo' + 'dy';\nObject.defineProperty(init, K, { value: plain });",
+      "const K = 'bo' + 'dy';\nconst init = Object.fromEntries([['method', 'POST'], [K, plain]]);",
+    ]) expect(sendsOut(snippet), snippet).not.toEqual([]);
+  });
+
   it("does not trip on reading a response body (ChatProof's own readCapped)", () => {
-    for (const snippet of ['void res.body?.cancel().catch(() => undefined);', 'if (res.body === null) return new Uint8Array(0);', 'const reader = res.body.getReader();', 'if (res.body !== null) n++;']) {
+    for (const snippet of ['void res.body?.cancel().catch(() => undefined);', 'if (res.body === null) return new Uint8Array(0);', 'const reader = res.body.getReader();', 'if (res.body !== null) n++;', 'const [state, setState] = useState(0);', 'let [a, b] = pair;\n[a, b] = [b, a];', 'if (parts[0] === undefined) n++;', 'const parts: Uint8Array[] = [];']) {
       expect(sendsOut(snippet), snippet).toEqual([]);
     }
     expect(sendsOut(code('apps/web/src/screens/proof/ChatProof.tsx'))).toEqual([]);

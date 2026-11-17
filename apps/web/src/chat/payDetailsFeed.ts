@@ -46,14 +46,22 @@ const latest = new Map<string, PaymentDetail[] | null>();
  */
 const snapshots = new Map<string, ChatSnapshot>();
 
-/** A log-out or an ended session (push/usePush.ts forgetLocalSession): every snapshot goes (T-I3). */
+/**
+ * A log-out or an ended session (push/usePush.ts forgetLocalSession): every snapshot (T-I3) and every
+ * trade's payment-detail rows (P-I4) go. A card still mounted keeps what it shows until its next sync.
+ */
 export function forgetChatSnapshots(): void {
   snapshots.clear();
+  latest.clear();
 }
 
 /** The newest snapshot of this trade's chat that the feed or an open panel saw, or null. */
 export function latestChatSnapshot(tradeCode: string): ChatSnapshot | null {
   return snapshots.get(norm(tradeCode)) ?? null;
+}
+/** The seller's payment-detail rows the feed keeps for this trade (what a new pay card shows first), or null. */
+export function latestPayRows(tradeCode: string): PaymentDetail[] | null {
+  return latest.get(norm(tradeCode)) ?? null;
 }
 /** How many open panels are publishing for each trade. */
 const panels = new Map<string, number>();
@@ -75,9 +83,13 @@ export function panelPublishing(tradeCode: string): () => void {
       return;
     }
     panels.delete(key);
-    // T-I3: the last panel gone and no pay card listening: nothing keeps this snapshot current, and its
-    // proof lines carry their keys, so it goes (a listening card's feed clears it when the card goes).
-    if (!listeners.has(key)) snapshots.delete(key);
+    // T-I3, P-I4: the last panel gone and no pay card listening: nothing keeps this snapshot or the
+    // seller's rows current, and the proof lines carry their keys, so both go (a listening card's feed
+    // clears them when the card goes).
+    if (!listeners.has(key)) {
+      snapshots.delete(key);
+      latest.delete(key);
+    }
   };
 }
 

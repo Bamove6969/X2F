@@ -4,13 +4,15 @@
 //   asked to log out);
 // - a 401 not-authenticated from any call but `me` (the session-gone listener) clears too;
 // - the chat snapshots payDetailsFeed keeps (proof lines carry their keys) are cleared on both, and a
-//   trade's snapshot goes when its last ChatPanel unmounts with no pay card listening.
+//   trade's snapshot goes when its last ChatPanel unmounts with no pay card listening;
+// - the seller's payment-detail rows the feed keeps for the pay card (`latest`) go the same three ways
+//   (review of proof-tripwire-3, P-I4).
 import { newProofId, type ProofAttachedPayload } from '@x2f/proof';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiCallError, api } from '../src/api/client.js';
 import type { ChatSnapshot } from '../src/chat/engine.js';
 import { setChatClient } from '../src/chat/client.js';
-import { latestChatSnapshot, panelPublishing, publishPaySnapshot } from '../src/chat/payDetailsFeed.js';
+import { latestChatSnapshot, latestPayRows, panelPublishing, publishPaySnapshot } from '../src/chat/payDetailsFeed.js';
 import { chatProofState, proofCheckOf } from '../src/proof/chatProof.js';
 import { forgetLocalSession, logOut, type PushEnv } from '../src/push/usePush.js';
 import { postProofToChat } from '../src/screens/proof/AddProof.js';
@@ -91,5 +93,50 @@ describe("payDetailsFeed's snapshots (T-I3)", () => {
     expect(latestChatSnapshot(code)).not.toBeNull();
     two();
     expect(latestChatSnapshot(code)).toBeNull();
+  });
+});
+
+const PAY = { v: 2 as const, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
+const payLine: ChatSnapshot['lines'][number] = { id: '2', from: 'seller', text: 'Payment details', pay: PAY, at: null, mine: false, gapBefore: false };
+
+describe("payDetailsFeed's payment-detail rows (P-I4)", () => {
+  it('a panel keeps them while it is open (the fixture is real)', () => {
+    const code = 'ROWS-AAAA-BBBB-CCCC';
+    const off = panelPublishing(code);
+    publishPaySnapshot(code, ready([payLine]));
+    expect(latestPayRows(code)).toEqual([{ label: 'Full name', value: 'Jane Doe' }, { label: 'Email', value: 'jane@example.ca' }]);
+    off();
+  });
+
+  it('logOut clears them, even when POST /v1/logout throws', async () => {
+    const code = 'ROWS-DDDD-EEEE-FFFF';
+    const off = panelPublishing(code);
+    publishPaySnapshot(code, ready([payLine]));
+    await expect(logOut(pushEnv(async () => {
+      throw new TypeError('network down');
+    }))).rejects.toThrow('network down');
+    expect(latestPayRows(code)).toBeNull();
+    off();
+  });
+
+  it('a 401 session end clears them', async () => {
+    const code = 'ROWS-GGGG-HHHH-JJJJ';
+    const off = panelPublishing(code);
+    publishPaySnapshot(code, ready([payLine]));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not-authenticated' }), { status: 401, headers: { 'content-type': 'application/json' } })));
+    await expect(api('/v1/offers')).rejects.toBeInstanceOf(ApiCallError);
+    expect(latestPayRows(code)).toBeNull();
+    off();
+  });
+
+  it("they go when the trade's last panel closes and no pay card listens", () => {
+    const code = 'ROWS-KKKK-MMMM-NNNN';
+    const one = panelPublishing(code);
+    const two = panelPublishing(code);
+    publishPaySnapshot(code, ready([payLine]));
+    one();
+    expect(latestPayRows(code)).not.toBeNull();
+    two();
+    expect(latestPayRows(code)).toBeNull();
   });
 });
