@@ -154,7 +154,10 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
               <p className="x2f-staff__countdown" data-part="clock-out-reminder">
                 Clock out at the end of your shift to be paid. Logging out or closing the app does not pay.
               </p>
-              <Button variant="primary" onClick={() => setClockingOut(true)}>
+              {/* The rail is the shell's chrome, never a page's primary action (exactly one data-primary
+                  per screen, the page's own; as apps/web's tab bar carries none). No board places
+                  Clock out (NEEDS_DESIGN_CLOCK_OUT), so it is the outlined button. DESIGN: emphasis */}
+              <Button variant="secondary" onClick={() => setClockingOut(true)}>
                 Clock out
               </Button>
             </>
