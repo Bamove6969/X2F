@@ -27,7 +27,7 @@ async function saveRecoveryCodes(page: Page): Promise<void> {
   await page.click('[data-part="recovery-continue"]');
 }
 
-const TERMS_VERSION = '2026-11-09';
+const TERMS_VERSION = '2026-11-12';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
 const BOARD_MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 /** A 95-character standard address ending like the board's example ("…k3Fz"). */
