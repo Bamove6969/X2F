@@ -34,6 +34,12 @@ export interface Wallet {
    * removed by `useUpOneTimeWallet` in that trade's transaction; false: saved for future trades.
    */
   oneTime: boolean;
+  /**
+   * Owner, 17 Nov 2026 (note #6 Q1): the default the trade screen picks first (`effectiveDefault`):
+   * the saved wallet the person chose, else their only usable saved wallet, else none. Only a
+   * preselection: the take still names a wallet.
+   */
+  isDefault: boolean;
 }
 
 interface WalletRow {
@@ -43,26 +49,41 @@ interface WalletRow {
   address: string;
   usable_from: Date;
   one_time: boolean;
+  is_default: boolean;
 }
 
 function toWallet(r: WalletRow, now: Date): Wallet {
   return {
     id: r.id, app: r.app, label: r.label, address: r.address, addressEnd: addressEnd(r.address),
-    usableFrom: r.usable_from, usable: r.usable_from.getTime() <= now.getTime(), oneTime: r.one_time,
+    usableFrom: r.usable_from, usable: r.usable_from.getTime() <= now.getTime(), oneTime: r.one_time, isDefault: false,
   };
 }
 
 const toJson = (w: Wallet) => ({ ...w, usableFrom: w.usableFrom.toISOString() });
 
-const WALLET_COLUMNS = 'id, app, label, address, usable_from, one_time';
+const WALLET_COLUMNS = 'id, app, label, address, usable_from, one_time, is_default';
 
-/** The account's open (not removed) wallets, oldest first. */
+/**
+ * Owner, 17 Nov 2026 (note #6 Q1): which of the account's open wallets is the default. "If they only
+ * have one wallet saved then that's the default. If they have multiple they can choose to have one as
+ * the default": the open wallet the person chose (`is_default`, never a one-time wallet), else the only
+ * usable saved wallet, else none (several saved and none chosen, or the chosen one removed).
+ */
+export function effectiveDefault(rows: readonly WalletRow[], now: Date): string | null {
+  const chosen = rows.find((r) => r.is_default && !r.one_time);
+  if (chosen) return chosen.id;
+  const saved = rows.filter((r) => !r.one_time && r.usable_from.getTime() <= now.getTime());
+  return saved.length === 1 ? saved[0]!.id : null;
+}
+
+/** The account's open (not removed) wallets, oldest first, the default marked. */
 async function openWallets(db: Queryable, accountId: string, now: Date): Promise<Wallet[]> {
   const { rows } = await db.query<WalletRow>(
     `select ${WALLET_COLUMNS} from wallets where account_id = $1 and removed_at is null order by created_at, id`,
     [accountId],
   );
-  return rows.map((r) => toWallet(r, now));
+  const def = effectiveDefault(rows, now);
+  return rows.map((r) => ({ ...toWallet(r, now), isDefault: r.id === def }));
 }
 
 /** The wallets that may receive a payout now (open and past any wait). Plan 3 calls this when a buyer picks one. */
@@ -372,9 +393,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
  * Owner demo note #6: a one-time wallet is used up by the trade that uses it. Called in the take's
  * (or the poster's wallet route's) transaction, after the trade's address is written and under the
- * account lock those routes hold, so a second trade can never pick it: it is marked removed (no alert:
- * the person chose this when adding it) and is never listed or usable again. A saved wallet is left as
- * it is. The trade keeps its own copy of the address; nothing here touches the trade.
+ * account lock those routes hold, so a second trade can never pick it: it is marked removed and is
+ * never listed or usable again. No in-app alert (the person chose this when adding it); the Jabber
+ * change notice still goes out, from the `wallets` row trigger on `removed_at` (jabber/changePaths.ts),
+ * and that is intended. A saved wallet is left as it is. The trade keeps its own copy of the address;
+ * nothing here touches the trade.
  */
 export async function useUpOneTimeWallet(db: Queryable, accountId: string, walletId: string, now: Date): Promise<void> {
   await db.query(
@@ -430,8 +453,35 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
- * `GET /v1/wallets`, `GET /v1/wallets/rule`, `POST /v1/wallets` (one wallet or a batch) and
- * `DELETE /v1/wallets/:id`. (The opt-in `PUT /v1/account/security/payout-wait` was retired
+ * `PUT /v1/wallets/:id/default` (owner, 17 Nov 2026, note #6 Q1): the account owner chooses which open
+ * saved wallet the trade screen picks first. 404 `not-found` for a wallet that is not the account's or
+ * not open; 409 `wallet-one-time` for a one-time wallet. Under the account row lock, so one default per
+ * account (the partial unique index of migration 630 backs it). Not a security change: it changes no
+ * address, no wait and nothing a take accepts (any usable wallet may still be named), so it is not
+ * staged; the hold still blocks it, as every wallet write.
+ */
+async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
+  const deps = req.server.deps;
+  const { id } = req.params as { id: string };
+  if (!UUID.test(id)) throw new ApiError(404, 'not-found');
+  await withTx(deps.db, async (client) => {
+    await client.query('select 1 from accounts where id = $1 for update', [req.auth.accountId]);
+    const { rows } = await client.query<{ one_time: boolean }>(
+      'select one_time from wallets where id = $1 and account_id = $2 and removed_at is null',
+      [id, req.auth.accountId],
+    );
+    const w = rows[0];
+    if (!w) throw new ApiError(404, 'not-found');
+    if (w.one_time) throw new ApiError(409, 'wallet-one-time');
+    await client.query('update wallets set is_default = false where account_id = $1 and is_default and id <> $2', [req.auth.accountId, id]);
+    await client.query('update wallets set is_default = true where id = $1 and not is_default', [id]);
+  });
+  return reply.code(204).send();
+}
+
+/**
+ * `GET /v1/wallets`, `GET /v1/wallets/rule`, `POST /v1/wallets` (one wallet or a batch),
+ * `PUT /v1/wallets/:id/default` and `DELETE /v1/wallets/:id`. (The opt-in `PUT /v1/account/security/payout-wait` was retired
  * 2026-10-23.) Full trader sessions only (R3: staff and owner accounts never hold payout wallets).
  */
 export function walletRoutes(app: FastifyInstance): void {
@@ -464,4 +514,5 @@ export function walletRoutes(app: FastifyInstance): void {
     addHandler,
   );
   app.delete('/v1/wallets/:id', { preHandler: [session, requireNotHeld] }, removeHandler);
+  app.put('/v1/wallets/:id/default', { preHandler: [session, requireNotHeld] }, defaultHandler);
 }

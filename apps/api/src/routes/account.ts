@@ -65,8 +65,8 @@ export interface AccountOverview {
   accountType: 'trader' | 'vendor';
   /**
    * Owner demo note #6 (16 Nov 2026): the trader account's rating by its login methods
-   * (auth/rating.ts `accountRating`): `secure` lets the trade screen add a payout address there and
-   * then; `weak` adds them in Settings, where they wait 24 hours. Null for a team member (their own
+   * (auth/rating.ts `accountRating`; three levels, owner 17 Nov): `high` lets the trade screen add a
+   * payout address there and then; `medium` and `weak` add them in Settings. Null for a team member (their own
    * login is always two factors; adding wallets is the account owner's) and for staff and owner accounts.
    */
   securityRating: AccountRating | null;
