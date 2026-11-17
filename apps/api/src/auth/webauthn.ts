@@ -21,7 +21,7 @@ import { subkey } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
-import { hasCertificateChain, isUnknownAuthenticator } from './attestation.js';
+import { hasCertificateChain, isUnknownAuthenticator, withoutAttestation } from './attestation.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
 import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
@@ -106,7 +106,7 @@ export function assertCredentialAllowed(accountKind: AccountKind, info: { kind: 
 /**
  * The registration settings for a credential kind and account kind. Passkey: resident key and user
  * verification required. Security key: no resident key, user verification preferred, roaming
- * authenticators only. Attestation `direct` for staff and owner security keys, `none` otherwise
+ * authenticators only, hinted as a security key. Attestation `direct` for staff and owner security keys, `none` otherwise
  * (a staff passkey cannot be attested). An owner passkey → 403 `method-not-allowed`.
  */
 export function registrationOptionsFor(kind: CredentialKind, accountKind: AccountKind) {
@@ -123,6 +123,8 @@ export function registrationOptionsFor(kind: CredentialKind, accountKind: Accoun
           },
     supportedAlgorithmIDs: ALGORITHMS,
     timeout: WEBAUTHN_TTL_MS,
+    // hints ['security-key']: the browser goes straight to "insert or tap your key" (USB, NFC, BLE).
+    ...(kind === 'security-key' ? { preferredAuthenticatorType: 'securityKey' as const } : {}),
   };
 }
 
@@ -265,16 +267,17 @@ async function buildRegistrationOptions(
  * challenge, and user verification for a passkey; then decides `attested` (a `packed` statement
  * with a certificate chain that `MetadataService` verified against the snapshot, and an AAGUID on
  * the owner's allowlist for the owner, staff's otherwise) and applies `assertCredentialAllowed`. `kind` null (Plan 4's helper) means: attested →
- * security key, otherwise passkey. Any verification error → 401 `webauthn-failed`.
+ * security key, otherwise passkey. Any verification error → 401 `webauthn-failed`, except: staff,
+ * owner or member with a model outside the snapshot → 403 `method-not-allowed`; a trader's response
+ * whose attestation statement fails is checked again without it.
  */
 async function verifyRegistration(
   deps: Deps,
   a: { accountKind: AccountKind; kind: CredentialKind | null; response: unknown; expectedChallenge: string },
 ): Promise<NewCredential> {
-  let result;
-  try {
-    result = await verifyRegistrationResponse({
-      response: a.response as RegistrationResponseJSON,
+  const verify = (response: RegistrationResponseJSON) =>
+    verifyRegistrationResponse({
+      response,
       expectedChallenge: a.expectedChallenge,
       expectedOrigin: deps.config.origins,
       expectedRPID: deps.config.rpId,
@@ -283,10 +286,23 @@ async function verifyRegistration(
       requireUserVerification: a.kind === 'passkey',
       supportedAlgorithmIDs: ALGORITHMS,
     });
+  let result;
+  try {
+    result = await verify(a.response as RegistrationResponseJSON);
   } catch (e) {
     // Strict metadata: an attested authenticator outside the snapshot is not allowed for staff or the owner.
     if (a.accountKind !== 'trader' && isUnknownAuthenticator(e)) throw new ApiError(403, 'method-not-allowed');
-    throw failed();
+    // A trader's key of any model is a login method (owner demo 13 Nov): checked as unattested.
+    // Any failure of the statement counts (review M1: a model outside the snapshot, a chain from
+    // another root, an expired leaf, an alg the statement does not list): a trader's `attested`
+    // carries no weight, and the retry still checks challenge, origin, RP ID, type, flags and key.
+    const plain = a.accountKind === 'trader' ? withoutAttestation(a.response as RegistrationResponseJSON) : null;
+    if (plain === null) throw failed();
+    try {
+      result = await verify(plain);
+    } catch {
+      throw failed();
+    }
   }
   if (!result.verified) throw failed();
   const info = result.registrationInfo;

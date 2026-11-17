@@ -662,6 +662,14 @@ export function accountTypeCantDoText(code: CantDoCode): string {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Security keys (owner demo 13 Nov 2026: "Unable to add security key").
+
+/** 403 `method-not-allowed` when a security key is added: the server turned this key's model away (staff, owner and member allowlists). */
+export const KEY_MODEL_REFUSED_CODE = 'method-not-allowed' satisfies CantDoCode;
+/** What setup, Backup and Settings say for it (screens/auth/keyErrors.ts). COPY-UNSIGNED */
+export const KEY_MODEL_REFUSED_TEXT = "This key model isn't accepted yet. Use a different security key.";
+
+// ---------------------------------------------------------------------------------------------
 // Hold model v3 (owner G36, 7 Nov 2026): at most 20 changes (drafts and waiting ones) per account.
 
 /** The change cap's code (409 `too-many-changes` `{ max }`). */
