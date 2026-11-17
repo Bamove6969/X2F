@@ -465,9 +465,11 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
       const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), modSign.secret));
       return signedInject('POST', '/internal/v1/reports', { kind: 'attestation', attestation, sig });
     };
+    // Another last character, always a different one (fakeAddress is random: one ending in X stayed equal, a 1-in-58 flake).
+    const other = (a: string) => `${a.slice(0, -1)}${a.endsWith('X') ? 'Y' : 'X'}`;
     for (const terms of [
-      { ...real, buyerPayout: `${real.buyerPayout.slice(0, -1)}X` },
-      { ...real, sellerRefund: `${real.sellerRefund.slice(0, -1)}X` },
+      { ...real, buyerPayout: other(real.buyerPayout) },
+      { ...real, sellerRefund: other(real.sellerRefund) },
       { ...real, deal: { ...real.deal, poster: 'buyer' } },
       { ...real, deal: { ...real.deal, takeAmountAtomic: '1' } },
       { ...real, deal: { ...real.deal, currency: 'EUR' } },
