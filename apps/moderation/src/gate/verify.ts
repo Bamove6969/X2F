@@ -214,6 +214,12 @@ export interface RulingInput {
   balanceAtomic: bigint;
   /** Round 2: the staff with an activity-log entry on round 1 (R37), from the log. The gate adds round 1's signers itself. */
   involved?: readonly string[];
+  /**
+   * Review B1 (lien recovery): only whether the ruling is authorised (its taps, its signers), as the
+   * moderation service checks a recovery's source trade; no payout is worked out (`settle: null`),
+   * so the balance is not read. Everything else, nonces and `rulingsSeen` included, is as for a settle.
+   */
+  verifyOnly?: boolean;
 }
 
 export type Authorization =
@@ -323,7 +329,7 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
     if (involved.has(proposer.accountId) || (approver !== null && involved.has(approver.accountId))) return refuse('involved');
   }
   let settle: { payouts: Payout[]; winner: 'buyer' | 'seller' } | null = null;
-  if (rul.round === 1 && (ESCROW_OUTCOMES as readonly string[]).includes(rul.outcome)) {
+  if (r.verifyOnly !== true && rul.round === 1 && (ESCROW_OUTCOMES as readonly string[]).includes(rul.outcome)) {
     const winner = rul.outcome === 'release-to-buyer' ? 'buyer' : 'seller';
     try {
       const payouts = payoutsFor({

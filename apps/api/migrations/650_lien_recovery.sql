@@ -1,20 +1,47 @@
--- Lien recovery (owner rules 16 Nov 2026; docs/lien-recovery.md). Numbered 560: the next free
--- number on the dispute stack (550 is ruling_statements; wip/third-netfee-split also uses 550).
+-- Lien recovery (owner rules 16 Nov 2026; docs/lien-recovery.md). Numbered 650 (review M1): 560 is
+-- 560_account_bans on wip/lead-bans and wip/lead-batch10a, 600 is second-netfee-fixes'
+-- 600_revenue_network_fee, and 610 to 640 are taken on other open branches; 650 was the next free
+-- number after 600 on 17 Nov 2026.
 --
 -- 1. liens.recovery_rate_bps: the share of the debtor's proceeds each completed trade recovers
 --    (owner: default 50%). Changed only by a senior-approved rate request (lien_rate_requests).
--- 2. lien_recovery_holds: what a trade in progress reserved at take (its signed terms carry it),
+-- 2. liens.creditor_address (review B1): the creditor's own address from the disputed trade (its
+--    buyer payout when the creditor was the buyer, its seller refund when the seller), bound when
+--    the lien is placed. It is the address the moderation service signed in that trade, so it can
+--    check a recovery against its own records; recoveries are paid to it and nowhere else. Set once,
+--    never changed. Null when the trade had none (nothing can be recovered then).
+-- 3. lien_recovery_holds: what a trade in progress reserved at take (its signed terms carry it),
 --    so two trades never reserve the same remainder. `open` → `recovered` (the trade completed: a
---    ledger row is written in the same transaction) or `released` (cancelled or refunded). The
+--    ledger row is written in the same transaction) or `released` (it can no longer pay it). The
 --    creditor's address is kept only while open (the signed terms need it), then cleared.
--- 3. lien_recoveries: the add-only ledger. One row per lien and trade; the sum never exceeds the
+-- 4. lien_recoveries: the add-only ledger. One row per lien and trade; the sum never exceeds the
 --    lien's amount (rule 2: the creditor never receives more than the moderator determined).
--- 4. lien_rate_requests: a moderator's proposed rate with a required reason, pending until a
+-- 5. lien_rate_requests: a moderator's proposed rate with a required reason, pending until a
 --    senior moderator (or the owner) approves or rejects it; never decided by its proposer.
 alter table liens add column recovery_rate_bps integer not null default 5000 check (recovery_rate_bps between 1 and 10000);
+alter table liens add column creditor_address text check (creditor_address is null or char_length(creditor_address) between 1 and 200);
+
+-- Liens placed before this migration (liens are switched off until the owner rules, so normally
+-- none): the creditor's side of their disputed trade, while that trade still has its addresses.
+update liens l set creditor_address = case when l.creditor_account_id = t.buyer_account_id then t.buyer_payout else t.seller_refund end
+  from trades t
+ where t.code = l.from_code and l.status in ('active', 'suspended');
 
 -- 400's guard freezes the parties, amounts and origin; the rate may change while the lien binds,
--- never once it is over (the guard's L4 rule already refuses any change then).
+-- never once it is over (the guard's L4 rule already refuses any change then). Review B1: the
+-- creditor's address, once set, never changes either.
+create function liens_creditor_address_guard() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if old.creditor_address is not null and new.creditor_address is distinct from old.creditor_address then
+    raise exception 'a lien''s creditor address never changes' using errcode = 'insufficient_privilege';
+  end if;
+  return new;
+end
+$$;
+create trigger liens_creditor_address_guard before update on liens for each row execute function liens_creditor_address_guard();
 
 create table lien_recovery_holds (
   id uuid primary key default gen_random_uuid(),

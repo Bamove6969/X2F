@@ -1,6 +1,7 @@
 import { lienCreditor, lienSteps, type Dispute, type LienCause, type LienRef, type LienSide, type LienStatus } from '@x2f/staff';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
+import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 
 /**
@@ -74,6 +75,8 @@ interface TradeRow {
   poster: LienSide;
   amount_atomic: string;
   fee_atomic: string;
+  buyer_payout: string | null;
+  seller_refund: string | null;
 }
 
 /**
@@ -85,13 +88,16 @@ interface TradeRow {
 export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next: Dispute, now: Date): Promise<void> {
   const t = (
     await client.query<TradeRow>(
-      `select seller_account_id::text as seller, buyer_account_id::text as buyer, poster, amount_atomic::text, fee_atomic::text
+      `select seller_account_id::text as seller, buyer_account_id::text as buyer, poster, amount_atomic::text, fee_atomic::text,
+              buyer_payout, seller_refund
          from trades where code = $1`,
       [next.code],
     )
   ).rows[0];
   if (!t) throw new Error('lien rules: the disputed trade is missing');
   const accountOf = (s: LienSide) => (s === 'seller' ? t.seller : t.buyer);
+  // Review B1: a side's own address in this trade, the one the moderation service signed here.
+  const addressOf = (s: LienSide) => (s === 'seller' ? t.seller_refund : t.buyer_payout);
   const sideOf = (accountId: string): LienSide => (accountId === t.seller ? 'seller' : 'buyer');
   const stored = (
     await client.query<LienRow>(
@@ -123,10 +129,13 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
         const debtor = accountOf(s.debtor);
         const r = await client.query<{ id: string }>(
           `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause,
-             status, created_at, changed_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $9)
+             status, created_at, changed_at, creditor_address)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $9, $10)
            on conflict (from_code, dispute_seq, round, debtor_account_id) do nothing returning id::text`,
-          [debtor, accountOf(lienCreditor(s.debtor)), s.amountAtomic.toString(), s.feeAtomic.toString(), next.code, next.seq, s.round, s.cause, now],
+          [
+            debtor, accountOf(lienCreditor(s.debtor)), s.amountAtomic.toString(), s.feeAtomic.toString(), next.code, next.seq, s.round, s.cause, now,
+            addressOf(lienCreditor(s.debtor)),
+          ],
         );
         if (r.rows[0]) {
           await appendLog(client, {
@@ -156,6 +165,12 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
           repaid: { status: 'repaid', from: ['active', 'suspended'], action: 'lien.repaid' },
         };
         const c = to[s.op];
+        // Review M2: a lien repaid directly (complied) while a trade of the debtor's still carries a
+        // signed recovery for it would be paid twice; the change waits until that trade ends.
+        if (s.op === 'repaid') {
+          const open = await client.query(`select 1 from lien_recovery_holds where lien_id = $1 and status = 'open' limit 1`, [s.id]);
+          if ((open.rowCount ?? 0) > 0) throw new ApiError(409, 'lien-recovery-in-flight');
+        }
         const over = c.status === 'void' || c.status === 'repaid';
         const r = await client.query(
           `update liens set status = $2, changed_at = $3, lifted_at = case when $4 then $3::timestamptz end

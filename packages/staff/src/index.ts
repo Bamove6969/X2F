@@ -79,6 +79,7 @@ export {
 export { INCIDENT_ALPHABET, INCIDENT_ID_LENGTH, incidentCheckChar, isIncidentId, normalizeIncidentId } from './incident.js';
 export {
   lienCreditor,
+  lienCreditorsOf,
   lienSteps,
   type LienCause,
   type LienFacts,
@@ -89,6 +90,7 @@ export {
 } from './lien.js';
 export {
   DEFAULT_RECOVERY_RATE_BPS,
+  MAX_RECOVERY_RATE_BPS,
   RATE_REASON_MAX,
   canDecideRateRequest,
   lienRemaining,

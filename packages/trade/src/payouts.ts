@@ -15,7 +15,7 @@
  * A moderator's ruling pays by the `dispute-buyer` / `dispute-seller` sets
  * (Plan 4 Task 15; owner g63, 7 Nov: the poster pays the 1% only when the trade completes).
  */
-import type { Payout } from '@x2f/escrow';
+import { MAX_NETWORK_FEE, type Payout } from '@x2f/escrow';
 import type { AttestedTerms } from './attestation.js';
 import { escrowPlan } from './money.js';
 
@@ -66,15 +66,44 @@ function out(list: Payout[]): Payout[] {
 }
 
 /**
- * A lien recovery checked against the buyer's proceeds: positive, below the proceeds (the buyer
- * always keeps something), to an address that is none of the trade's own. None: amount 0.
+ * Review B1 (lien recovery, 2026-11-16): the largest share of the buyer's proceeds a recovery may
+ * take, in basis points, whatever rate a lien carries: the owner's 50% default. Every co-signer and
+ * the moderation gate refuse more from the signed terms alone, so an API that signs in a bigger
+ * recovery cannot get it paid. A rate above it needs a rate change the moderation service itself can
+ * verify (NEEDS_GATE_LIEN_RATE, docs/lien-recovery.md).
+ */
+export const LIEN_RECOVERY_MAX_BPS = 5000;
+/**
+ * Review B3: what the buyer's output always keeps after a recovery: the largest network fee a
+ * release may take from it (index 0 bears it, `MAX_NETWORK_FEE`). wallet2 cannot subtract a fee from
+ * an output that is not larger than it, so a smaller output would make the release unbuildable.
+ */
+export const LIEN_BUYER_KEEPS_ATOMIC = MAX_NETWORK_FEE;
+
+/** The most one trade may recover from `proceedsAtomic` (the buyer's share of a release): half, rounded down, leaving the buyer at least LIEN_BUYER_KEEPS_ATOMIC; 0 when nothing can be. */
+export function lienRecoveryCap(proceedsAtomic: bigint): bigint {
+  if (typeof proceedsAtomic !== 'bigint' || proceedsAtomic <= LIEN_BUYER_KEEPS_ATOMIC) return 0n;
+  const byRate = (proceedsAtomic * BigInt(LIEN_RECOVERY_MAX_BPS)) / 10_000n;
+  const keep = proceedsAtomic - LIEN_BUYER_KEEPS_ATOMIC;
+  return byRate < keep ? byRate : keep;
+}
+
+/** What a completed trade (`release`, `dispute-buyer`) pays the buyer before any recovery, from the signed deal. */
+export function buyerProceeds(deal: Pick<AttestedTerms['deal'], 'poster' | 'takeAmountAtomic'>): bigint {
+  const take = BigInt(deal.takeAmountAtomic);
+  return deal.poster === 'seller' ? take : take - escrowPlan({ amountAtomic: take, poster: deal.poster }).feeAtomic;
+}
+
+/**
+ * A lien recovery checked against the buyer's proceeds: positive, at most `lienRecoveryCap` (review
+ * B1, B3), to an address that is none of the trade's own. None: amount 0.
  */
 function recoveryOf(r: { address: string; amountAtomic: bigint } | undefined, proceeds: bigint, own: readonly string[]): Payout {
   if (r === undefined) return { address: '', amountAtomic: 0n };
   if (typeof r !== 'object' || r === null || typeof r.address !== 'string' || r.address === '' || own.includes(r.address)) {
     throw new RangeError('bad recovery address');
   }
-  if (typeof r.amountAtomic !== 'bigint' || r.amountAtomic <= 0n || r.amountAtomic >= proceeds) throw new RangeError('bad recovery amount');
+  if (typeof r.amountAtomic !== 'bigint' || r.amountAtomic <= 0n || r.amountAtomic > lienRecoveryCap(proceeds)) throw new RangeError('bad recovery amount');
   return { address: r.address, amountAtomic: r.amountAtomic };
 }
 

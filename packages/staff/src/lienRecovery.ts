@@ -14,6 +14,15 @@ import { can, type StaffRole } from './roles.js';
 
 /** The owner's default: 50% of the debtor's proceeds, in basis points. */
 export const DEFAULT_RECOVERY_RATE_BPS = 5000;
+/**
+ * Review B1 (2026-11-16): the highest rate a request may propose, the owner's default. The rate is
+ * applied by the API at take and the moderation service cannot yet verify a senior's approval of
+ * another one (NEEDS_GATE_LIEN_RATE), so the signed terms, every device and the moderation gate cap
+ * a recovery at this share of the proceeds (`LIEN_RECOVERY_MAX_BPS` in @x2f/trade, the same number).
+ * A lower rate needs no such check: it only takes less. Owner question: whether a rate may ever be
+ * higher, and up to what.
+ */
+export const MAX_RECOVERY_RATE_BPS = 5000;
 /** The longest reason a rate change request may carry. */
 export const RATE_REASON_MAX = 500;
 
@@ -52,7 +61,7 @@ export type RateRequestRefusal = 'bad-rate' | 'reason-required' | 'reason-too-lo
  * change it at all then the system will force them to enter a reason").
  */
 export function rateRequestRefusal(r: { rateBps: unknown; reason: unknown }): RateRequestRefusal | null {
-  if (!isRate(r.rateBps)) return 'bad-rate';
+  if (!isRate(r.rateBps) || r.rateBps > MAX_RECOVERY_RATE_BPS) return 'bad-rate';
   if (typeof r.reason !== 'string' || r.reason.trim() === '') return 'reason-required';
   if (r.reason.length > RATE_REASON_MAX) return 'reason-too-long';
   return null;

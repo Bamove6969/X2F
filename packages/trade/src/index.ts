@@ -54,7 +54,21 @@ export {
   type Pricing,
   type Side,
 } from './money.js';
-export { RULING_KINDS, SETTLE_KINDS, attestedRecovery, isRulingKind, payoutsFor, sweepMinimums, type PayoutFacts, type RulingKind, type SettleKind } from './payouts.js';
+export {
+  LIEN_BUYER_KEEPS_ATOMIC,
+  LIEN_RECOVERY_MAX_BPS,
+  RULING_KINDS,
+  SETTLE_KINDS,
+  attestedRecovery,
+  buyerProceeds,
+  isRulingKind,
+  lienRecoveryCap,
+  payoutsFor,
+  sweepMinimums,
+  type PayoutFacts,
+  type RulingKind,
+  type SettleKind,
+} from './payouts.js';
 export { moneroUri } from './moneroUri.js';
 export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export { LAUNCH_TRADE_CAP_USD_CENTS } from './limits.js';

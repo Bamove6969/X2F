@@ -423,9 +423,17 @@ export async function applyEvent(
       // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): a trade's reserved recovery is
       // recorded only once the completed-trade payout was seen on chain (`settled` into
       // `released`: rule 4, evidence before enforcement); any other end releases it.
+      // Review M2: a refund seen on chain releases it; a cancel with an escrow keeps it while late
+      // coins could still be ruled for the buyer.
       const recoveryLogs =
         next.state !== prev.state && CLOSED_STATES.includes(next.state)
-          ? await settleRecovery(client, code, next.state === 'released' && e.type === 'settled' && (e.kind === 'release' || e.kind === 'dispute-buyer'), now)
+          ? await settleRecovery(
+              client,
+              code,
+              e.type === 'settled' ? (next.state === 'released' && (e.kind === 'release' || e.kind === 'dispute-buyer') ? 'completed' : 'refunded') : 'closed',
+              next.escrowAddress !== null,
+              now,
+            )
           : [];
       if (within) await within(client, prev, next, now);
       // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction. It is the

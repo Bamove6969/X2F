@@ -129,6 +129,8 @@ export const LOG_ACTIONS = {
   'lien.recovery-reserved': { lienId: 'id', amountAtomic: 'amount' },
   'lien.recovered': { lienId: 'id', amountAtomic: 'amount', remainingAtomic: 'amount' },
   'lien.recovery-released': { lienId: 'id', amountAtomic: 'amount' },
+  // Review M2: a late-paid recovery past what the lien still owed (the ledger records only what was owed).
+  'lien.over-recovered': { lienId: 'id', amountAtomic: 'amount' },
   'lien.rate-proposed': { lienId: 'id', requestId: 'id', rateBps: 'number' },
   'lien.rate-approved': { lienId: 'id', requestId: 'id', rateBps: 'number' },
   'lien.rate-rejected': { lienId: 'id', requestId: 'id' },

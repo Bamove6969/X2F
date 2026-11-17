@@ -3,6 +3,7 @@ import { canonicalJson, type Participants, type PublicKeys } from '@x2f/protocol
 import sodium from 'libsodium-wrappers';
 import { channelFor, CHANNEL_KINDS, type ChannelKind } from './channels.js';
 import { MAX_PAY_WINDOW_MIN } from './machine.js';
+import { buyerProceeds, lienRecoveryCap } from './payouts.js';
 
 /**
  * The moderation service's signed statement of who the three parties to a trade are and which
@@ -329,6 +330,13 @@ export async function verifyAttestation(
   if ((me.role === 'buyer' ? t.buyerPayout : t.sellerRefund) !== me.ownAddress) throw new AttestationError('wrong-terms');
   if (me.payWindowMin !== undefined && t.payWindowMin !== me.payWindowMin) throw new AttestationError('wrong-terms');
   if (me.methodId !== undefined && t.deal.methodId !== me.methodId) throw new AttestationError('wrong-terms');
+  // Review B1, B3: neither device accepts a recovery an honest release could not pay: above
+  // `lienRecoveryCap` of the buyer's proceeds, or to one of the trade's own addresses.
+  if (t.lienRecovery !== undefined) {
+    const r = t.lienRecovery;
+    if (BigInt(r.amountAtomic) > lienRecoveryCap(buyerProceeds(t.deal))) throw new AttestationError('wrong-terms');
+    if (r.address === t.buyerPayout || r.address === t.sellerRefund) throw new AttestationError('wrong-terms');
+  }
   // Lien recovery: the buyer (the debtor) accepts exactly the recovery it confirmed at take, and none
   // when it confirmed none (fail closed). The seller loses nothing by it and is not asked.
   if (me.role === 'buyer') {

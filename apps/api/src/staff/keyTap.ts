@@ -4,6 +4,7 @@ import {
   AFTER_REFUND_OUTCOMES,
   BAN_REASON_CODES,
   ESCROW_OUTCOMES,
+  MAX_RECOVERY_RATE_BPS,
   canonicalJson,
   hasIssuedAt,
   stampIssuedAt,
@@ -445,7 +446,8 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     }
     case 'lien-rate':
       exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
-      if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > 10_000) throw badRequest();
+      // Review B1: at most the default (MAX_RECOVERY_RATE_BPS; NEEDS_GATE_LIEN_RATE).
+      if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > MAX_RECOVERY_RATE_BPS) throw badRequest();
       return { kind: 'lien-rate', lienId: match(r, 'lienId', UUID).toLowerCase(), requestId: match(r, 'requestId', UUID).toLowerCase(), rateBps: r.rateBps };
     case 'ruling': {
       exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256', 'round1Id']);

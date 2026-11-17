@@ -4,7 +4,7 @@ Status: built on `wip/third-lien-recovery` (on the lead's dispute stack), except
 NEEDS_*. Lead security review needed before liens are switched on (`site_flags.liens_enabled`).
 
 Built: `@x2f/staff` lienRecovery.ts (arithmetic, rate request rules); `@x2f/trade` optional
-`lienRecovery` in the attested terms and `payoutsFor`/`sweepMinimums`; migration 560; the API's
+`lienRecovery` in the attested terms and `payoutsFor`/`sweepMinimums`; migration 650; the API's
 reserve at take, record on settle, staff rate routes (`lien-rate` key tap), `GET /v1/account/liens`;
 the moderation service signs and pays it; the web devices verify it and Settings → What you owe.
 
@@ -29,7 +29,7 @@ A lien carries `amount_atomic` (owed to the creditor, the trade's XMR) and `fee_
   NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY (review L2 option a: move the 1% into `fees_owed`, collected by
   NEEDS_FEE_OWED_COLLECTION). Tripwire in the API tests.
 
-## Data (migration 560)
+## Data (migration 650)
 
 - `lien_recoveries` (add-only ledger): `lien_id`, `trade_code`, `amount_atomic > 0`, `at`; one row per
   lien and trade. A trigger refuses update, delete and truncate, and refuses an insert that would make

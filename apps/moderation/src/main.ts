@@ -4,7 +4,8 @@ import type { PartyHandle, Transport } from '@x2f/escrow';
 import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs, type Trade } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
-import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
+import { AttestRefused, attestChat, attestTrade, BadTerms, checkWork } from './attest.js';
+import { checkLienRecovery, LienRefused, recordLienRecovery, type LienRulings } from './lienRecovery.js';
 import { loadChatIdentity, loadParty, saveChatIdentity, saveParty, walletPassword } from './keystore.js';
 import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
@@ -148,12 +149,18 @@ export interface ModerationDeps {
    * `stop` runs before the lock is released. A factory that throws refuses the start.
    */
   gate?: () => Promise<GateRun>;
+  /**
+   * Review B1 (lien recovery): the creditor sides of a source trade's rulings as the gate verified
+   * them (`lienRulingVerifier`). Absent (no gate configured): no lien recovery is ever signed.
+   */
+  lienRulings?: LienRulings;
 }
 
 /** What `ModerationDeps.gate` starts (security review 2026-11-12 M1). */
 export interface GateRun {
   rulings?: ModerationDeps['rulings'];
   checkpoints?: ModerationDeps['checkpoints'];
+  lienRulings?: LienRulings;
   stop(): Promise<void>;
 }
 
@@ -278,6 +285,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     }
   }
   const rulingsDep = gate?.rulings ?? deps.rulings;
+  const lienRulingsDep = gate?.lienRulings ?? deps.lienRulings ?? null;
   const checkpointsDep = gate?.checkpoints ?? deps.checkpoints;
   const lockHeld = deps.lockHeld ?? (() => instanceLockHeld(lock));
   const rawLink: Link = createLink({
@@ -355,12 +363,16 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     const party = await loadParty<SealedParty>(o.db, o.keystoreKey, code);
     if (existing && party) return { attestation: existing.attestation, sig: existing.sig, party };
 
+    // Review B1: a lien recovery is signed only when this service's own records back it.
+    await checkWork({ ...w, trade: code });
+    const recovery = await checkLienRecovery({ ...w, trade: code }, { db: o.db, feeWallet: o.feeWallet, rulings: lienRulingsDep });
     const a = await attestTrade({ ...w, trade: code }, o.signingSecret, now(), deps.newIdentity ?? generateIdentity);
     const sealed: SealedParty = { v: 1, trade: code, role: 'mod', me: toHexIdentity(a.mod), participants: a.participants };
     const client = await o.db.connect();
     try {
       await client.query('begin');
       await client.query('insert into signed_terms (trade, attestation, sig) values ($1, $2, $3)', [code, a.attestation, a.sig]);
+      if (recovery !== null) await recordLienRecovery(client, code, recovery);
       await saveParty(client, o.keystoreKey, code, sealed);
       await walletPassword(client, o.keystoreKey, code);
       await client.query('commit');
@@ -433,6 +445,10 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       } catch (e) {
         if (e instanceof BadTerms) {
           log({ reason: 'bad-terms' });
+          continue;
+        }
+        if (e instanceof LienRefused) {
+          log({ reason: e.message });
           continue;
         }
         if (!(e instanceof AttestRefused) || code === null) {
@@ -937,8 +953,10 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
               const source = pgGateSource(reader);
               const sync = startGateSync(store, source, gateCtx);
               const rulings = rulingExecutor({ store, source, ctx: gateCtx, signingSecret, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
+              const { lienRulingVerifier } = await import('./lienRecovery.js');
               return {
                 rulings,
+                lienRulings: lienRulingVerifier({ store, source, ctx: gateCtx }),
                 checkpoints: { store, reader },
                 stop: async () => {
                   await sync.stop();

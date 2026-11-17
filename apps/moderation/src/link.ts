@@ -23,6 +23,11 @@ export interface WorkItem {
   participants: Record<'buyer' | 'seller', { signPublic: string; boxPublic: string; proof: string }>;
   /** The trade record's deal and both addresses (lead answer 4); signed into the attestation as they are. */
   terms: AttestedTerms;
+  /**
+   * Review B1: with a `terms.lienRecovery`, the disputed trade it comes from and the creditor's
+   * side there; checked against this service's own records before anything is signed (lienRecovery.ts).
+   */
+  lienSource?: { fromCode: string; creditor: 'buyer' | 'seller' };
 }
 
 /** A chat both traders registered a chat identity for (`GET /internal/v1/chat-work`, Task 20). */

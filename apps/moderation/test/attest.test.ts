@@ -429,7 +429,7 @@ describe('lien recovery at attestation (review B1)', () => {
     return code;
   }
 
-  async function debtorTrade(rec: { address: string; amountAtomic: bigint } | null, lienSource: unknown, rulings: ModerationDeps['lienRulings'] | null) {
+  async function debtorTrade(rec: { address: string; amountAtomic: bigint } | null, lienSource: unknown, rulings: NonNullable<ModerationDeps['lienRulings']> | null) {
     const code = newTradeCode();
     const buyer = await trader(code, 'buyer');
     const seller = await trader(code, 'seller');

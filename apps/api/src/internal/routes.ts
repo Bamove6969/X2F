@@ -96,6 +96,9 @@ interface RegisteredRow {
   /** Lien recovery reserved at take (docs/lien-recovery.md), while the trade's hold is open. */
   recovery_address: string | null;
   recovery_atomic: string | null;
+  /** Review B1: the open hold's source, the disputed trade, and the creditor's side in it. */
+  recovery_from: string | null;
+  recovery_creditor: 'buyer' | 'seller' | null;
 }
 
 /**
@@ -109,7 +112,12 @@ const TERMS_COLUMNS = `t.poster, coalesce(t.grown_from_atomic, t.amount_atomic):
                 t.locked_cents_per_xmr::text as locked_cents_per_xmr, t.max_fiat_cents::text as max_fiat_cents,
                 t.pay_window_min, t.method_id, t.method_instructions, t.buyer_payout, t.seller_refund,
                 (select h.address from lien_recovery_holds h where h.trade_code = t.code and h.status = 'open') as recovery_address,
-                (select h.amount_atomic::text from lien_recovery_holds h where h.trade_code = t.code and h.status = 'open') as recovery_atomic`;
+                (select h.amount_atomic::text from lien_recovery_holds h where h.trade_code = t.code and h.status = 'open') as recovery_atomic,
+                (select l.from_code from lien_recovery_holds h join liens l on l.id = h.lien_id
+                  where h.trade_code = t.code and h.status = 'open') as recovery_from,
+                (select case when l.creditor_account_id = s.buyer_account_id then 'buyer' when l.creditor_account_id = s.seller_account_id then 'seller' end
+                   from lien_recovery_holds h join liens l on l.id = h.lien_id left join trades s on s.code = l.from_code
+                  where h.trade_code = t.code and h.status = 'open') as recovery_creditor`;
 
 /** The terms the moderation service must sign for this trade, from the trade record. */
 function termsOf(r: RegisteredRow): AttestedTerms {
@@ -483,6 +491,10 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         seller: { signPublic: r.seller_sign, boxPublic: r.seller_box, proof: r.seller_proof },
       },
       terms: termsOf(r),
+      // Review B1: the moderation service checks the recovery against its own records of this source.
+      ...(r.recovery_address !== null && r.recovery_from !== null && r.recovery_creditor !== null
+        ? { lienSource: { fromCode: r.recovery_from, creditor: r.recovery_creditor } }
+        : {}),
     }));
     return reply.send({ work });
   }));

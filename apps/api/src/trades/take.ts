@@ -21,7 +21,7 @@ import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import { LIEN_BLOCKS_SQL, lienBlocksTrading } from '../disputes/lien.js';
-import { reserveRecovery } from '../disputes/recovery.js';
+import { releaseHoldAt, reserveRecovery } from '../disputes/recovery.js';
 import { appendLog } from '../log/append.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
@@ -443,6 +443,8 @@ export function takeRoutes(app: FastifyInstance): void {
       const recovery = await reserveRecovery(c, {
         code: t.code, buyerId: t.buyerId, sellerId: t.sellerId, now,
         proceedsAtomic: poster === 'seller' ? t.amountAtomic : t.amountAtomic - plan.feeAtomic,
+        // Review B2: never to one of this trade's own addresses (the poster's comes later: the wallet route).
+        ownAddresses: [sides.buyerPayout, sides.sellerRefund],
       });
       if (recovery !== null) {
         // Last (append.ts M2): nothing is awaited after the log lock but the commit.
@@ -516,7 +518,12 @@ export function takeRoutes(app: FastifyInstance): void {
               [code, me, w.address],
             );
       if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
+      // Review B2: a poster's address that is the open recovery's would make the completed trade's
+      // payout unbuildable; the recovery is released before anything is signed (the remainder carries forward).
+      const released = await releaseHoldAt(c, code, w.address, now);
       await auditMember(c, req.auth, { action: 'trade-wallet-set', tradeCode: code, detail: { walletId } }, now);
+      // Last (append.ts M2).
+      if (released !== null) await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: code, action: released.action, detail: released.detail });
     });
     return reply.code(204).send();
   });

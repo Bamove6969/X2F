@@ -20,6 +20,7 @@ import type pg from 'pg';
 import { NO_DESK_FACTS, sweepKindAgrees, WATCH_FRESH_MS, type Desk } from './desk.js';
 import type { DeskArmed } from './execute.js';
 import type { Link, WatchItem } from './link.js';
+import { freeLienRecoveries } from './lienRecovery.js';
 
 /**
  * The moderation service's chain watcher (Plan 3 Task 9), the I/O around `@x2f/trade`'s pure
@@ -85,6 +86,14 @@ interface Row {
   watching: boolean;
   /** Bumped by every state save; a save over another version is dropped (security review 7 Nov, finding 2). */
   version: string;
+}
+
+/** The settle kinds whose payout pays a signed lien recovery (`payoutsFor`): a completed trade. */
+const PAYS_RECOVERY: ReadonlySet<string> = new Set(['release', 'dispute-buyer']);
+
+/** No coin ever reached the escrow, as this watcher saw it (and no sweep was counted). */
+function neverFunded(s: WatchState): boolean {
+  return (s.lastChain === null || s.lastChain.receivedAtomic === 0n) && s.sweepTxs.length === 0;
 }
 
 /** WatchState as JSON: bigints as decimal strings, closedAt as an ISO string. */
@@ -466,6 +475,13 @@ export function createWatcher(o: WatcherOptions): Watcher {
     // refuses settle-kind-unknown and the watcher backs off), never by the desk or the API.
     const settledKind = own ? (builder === 'mod' ? signedKind : (signedKind ?? deskNow?.record().armed?.kind ?? item.settleKind)) : settleKind;
     if (!(await post(row.trade, step.reports, settledKind))) return true;
+    // Review B1, M2: a lien recovery signed for this trade stops counting once it can no longer be
+    // paid: a sweep counted here for a kind that never pays it (a refund), or a watch that ends with
+    // no coin ever received. A release, a ruling for the buyer, or a kind nothing names keeps it.
+    if (step.reports.some((r) => r.kind === 'settled') && settledKind !== null && !PAYS_RECOVERY.has(settledKind)) {
+      await freeLienRecoveries(o.db, row.trade);
+    }
+    if (!step.watching && neverFunded(step.state)) await freeLienRecoveries(o.db, row.trade);
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
     await ensureDesk(args);
     const desk = desks.get(row.trade);
@@ -570,6 +586,13 @@ export function createWatcher(o: WatcherOptions): Watcher {
           watching,
         });
         if (plan.stop) {
+          let coinless = true;
+          try {
+            coinless = neverFunded(reviveWatchState(row.state));
+          } catch {
+            coinless = false;
+          }
+          if (coinless) await freeLienRecoveries(o.db, row.trade);
           await stopParty(row.trade);
           await o.db.query('update mod_watch set watching = false, updated_at = now() where trade = $1', [row.trade]);
           o.log({ reason: 'party-stopped' });

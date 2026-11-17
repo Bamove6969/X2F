@@ -70,6 +70,8 @@ export type ApiErrorCode =
   | 'lien'
   // Lien recovery (owner 16 Nov 2026): a lien already has a rate change request waiting.
   | 'request-pending'
+  // Review M2: complied (a lien repaid directly) while a trade still carries a signed recovery for it.
+  | 'lien-recovery-in-flight'
   | 'trading-paused'
   | 'too-many-offers'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
