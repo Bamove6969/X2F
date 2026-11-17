@@ -33,6 +33,7 @@ import { FundFallback, type SendNow } from './FundFallback.js';
 import { CancelFinalSheet } from './CancelFinalSheet.js';
 import { ChatButton } from './TradeChatButton.js';
 import { IntegrityFailed, Name, EscrowCheck, SetupStatus } from './SetupStatus.js';
+import { ONE_KEY_ALONE } from './escrowCopy.js';
 import { amountToSend, verifiedFunding, type TradeEscrow } from './seams.js';
 import { registerTradeScreen, setIntegrityScreen, type TradeScreenProps } from './TradeRoom.js';
 import './trade.css';
@@ -97,9 +98,8 @@ function HowEscrow({ view }: { view: TradeView }) {
       <div className="x2f-how__head">
         <h2>Escrow ready: 3 keys, any 2 release it</h2>
         <span className="x2f-muted">
-          {/* not-a-refusal: explains the escrow keys */}
           Yours, <Name view={view} />
-          's and the moderator's. One key alone can't move anything.
+          's and the moderator's. {ONE_KEY_ALONE}
         </span>
       </div>
       <ul className="x2f-how__list">
