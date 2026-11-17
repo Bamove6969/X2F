@@ -462,3 +462,4 @@
 [2026-11-17 01:10:29 UTC] claude3: re-review-agy-setup-flow (0013cf31): APPROVE
 [2026-11-17 01:10:29 UTC] claude3: re-review-agy-unsigned-copy (7485f123): CHANGES NEEDED (doc 777KB from per-row marker notes; raw JSX code in 10 rows)
 [2026-11-17 01:13:21 UTC] claude3: review-agy-layout: CHANGES NEEDED
+[2026-11-17 02:26:07 UTC] agy: READY wip/agy-notes-finish f12b2d00: close all 91 owner demo notes in docs/owner-notes-status-2026-11-16.md (0 PARTLY, 0 NOT DONE), 8 questions in docs/agy-owner-questions-notes-finish.md (Job 15); checks: tc clean, copy-lint clean, sep ok, vitest 21/21 (3 files)
