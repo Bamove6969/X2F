@@ -372,7 +372,7 @@ test.describe('the payout address for this trade (owner demo note #6)', () => {
     await expect(rule(page)).toContainText('Your account is rated weak');
     await expect(rule(page)).toContainText('Settings, under Your wallets');
     await expect(rule(page)).toContainText('24 hours');
-    await expect(page.getByRole('button', { name: 'Add a new address' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add a new address', exact: true })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Add another wallet' })).toHaveAttribute('href', /^\/wallets\?add=1/);
   });
 
@@ -380,7 +380,7 @@ test.describe('the payout address for this trade (owner demo note #6)', () => {
     await stubApi(page, { ...base, securityRating: 'medium' });
     await page.goto(`${BUY}&amount=${B.amount}`);
     await expect(rule(page)).toContainText('rated medium');
-    await expect(page.getByRole('button', { name: 'Add a new address' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add a new address', exact: true })).toHaveCount(0);
     const tip = page.getByRole('button', { name: 'Why is there no option to add a new address here?' });
     await tip.focus();
     await page.keyboard.press('Enter');
