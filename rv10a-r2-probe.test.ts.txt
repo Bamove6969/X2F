@@ -68,6 +68,7 @@ const isBanned = (res: { statusCode: number; json(): unknown }) => res.statusCod
 async function lift(by: Person, accountId: string, banId: string) {
   const tapId = await tap(by, { kind: 'lift-ban', accountId, banId } as KeyTapIntent);
   return by.browser.post(`/staff/v1/accounts/${accountId}/bans/${banId}/lift`, { tapId });
+}
 import type { FastifyInstance } from 'fastify';
 import { writeFileSync } from 'node:fs';
 import { siteBanAllows } from '../../src/banState.js';
