@@ -255,6 +255,36 @@ export interface PriceHealth {
 export const priceHealth = () => staffApi<PriceHealth>('/staff/v1/price-health');
 
 // ---------------------------------------------------------------------------------------------
+// The owner's revenue totals (Plan 4 Task 32; perm earnings.read, the owner's alone): mirrors
+// apps/api `RevenueReport`. Owner 16 Nov: every bucket has the network fees X2F's fee outputs paid
+// and the total after them. Amounts are atomic units (decimal strings).
+
+export interface RevenueBucket {
+  period: string;
+  trades: number;
+  feeAtomic: string;
+  owedCollectedAtomic: string;
+  owedCollections: number;
+  totalAtomic: string;
+  usdEstimateCents: string;
+  networkFeeAtomic: string;
+  netAtomic: string;
+}
+export interface RevenueReport {
+  by: 'day' | 'month';
+  from: string;
+  to: string;
+  buckets: RevenueBucket[];
+  total: RevenueBucket;
+  byCurrency: RevenueBucket[];
+  toDate: RevenueBucket;
+  treasuryNetworkFeesRecorded: boolean;
+  owedOutstandingAtomic: string | null;
+}
+/** By month, the API's default range (the twelve months to today). */
+export const revenue = () => staffApi<RevenueReport>('/staff/v1/revenue?by=month');
+
+// ---------------------------------------------------------------------------------------------
 // Staff members (Plan 4 Task 7; perm staff.manage, the owner only) and their per-person
 // checkboxes (owner Q60, J-21: PUT …/grants with a `set-grants` tap bound to the exact sorted list).
 

@@ -336,7 +336,8 @@ export function parseRevenueQuery(query: unknown, now: Date): { from: string; to
  * The owner's revenue totals on the staff API: `GET /staff/v1/revenue` (perm `earnings.read`, the
  * owner's alone: no role but the owner holds it and it cannot be granted) → `RevenueReport`.
  * NEEDS_DESIGN_REVENUE: the staff web page that shows it (StaffOverview's revenue card, growth and
- * the payroll and treasury views) is Claude Design's to draw; apps/staff-web is not on this line yet.
+ * the payroll and treasury views) is Claude Design's to draw; until then apps/staff-web's minimal
+ * Revenue page (screens/Revenue.tsx, under the owner's Overview) shows the to-date and monthly totals.
  */
 export function staffRevenueRoutes(app: FastifyInstance): void {
   const perm = 'earnings.read' as const;

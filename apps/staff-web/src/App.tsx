@@ -6,6 +6,7 @@ import { NewsEditor } from './screens/NewsEditor.js';
 import { OwnerAlerts } from './screens/OwnerAlerts.js';
 import { OwnerSetup } from './screens/OwnerSetup.js';
 import { Prices } from './screens/Prices.js';
+import { Revenue } from './screens/Revenue.js';
 import { StaffGrants } from './screens/StaffGrants.js';
 import { PageTitle, StaffShell } from './ui/StaffShell.js';
 
@@ -42,10 +43,19 @@ function Overview() {
                 News for traders
               </Link>
             </p>
+            {/* NEEDS_DESIGN_REVENUE: no board places the books (StaffOverview's revenue card is
+                design's to draw); under Overview, the owner's alone, next to News, until then.
+                DESIGN: needs drawing COPY-UNSIGNED */}
+            <p className="x2f-staff-page__lead">
+              <Link className="x2f-link" to="/overview/revenue">
+                Revenue
+              </Link>
+            </p>
           </PageTitle>
         }
       />
       <Route path="news" element={<NewsEditor />} />
+      <Route path="revenue" element={<Revenue />} />
     </Routes>
   );
 }
