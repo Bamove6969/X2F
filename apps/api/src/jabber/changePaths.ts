@@ -104,6 +104,9 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     changes: [
       'id', 'debtor_account_id', 'creditor_account_id', 'amount_atomic', 'fee_atomic', 'from_code', 'dispute_seq', 'round', 'cause',
       'status', 'created_at', 'changed_at', 'lifted_at', 'repayment_code',
+      // Lien recovery (migration 560; lead default, owner p11-119 pattern): the share of the debtor's
+      // proceeds each trade recovers is a change to their lien, set only by a senior-approved request.
+      'recovery_rate_bps',
     ],
     bookkeeping: {},
   },
@@ -198,5 +201,8 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
   // J-06 (migration 400; lead default): the person a lien is owed to; the dispute's own notices tell them.
   'liens.creditor_account_id': 'the person a lien is owed to: the debtor is notified (liens.debtor_account_id); the dispute tells the creditor',
+  // Lien recovery (migration 560; lead default): the staff on a rate request; the approved rate notifies the debtor (liens.recovery_rate_bps).
+  'lien_rate_requests.proposed_by': 'the moderator who proposed a lien rate (the debtor is notified when it is approved)',
+  'lien_rate_requests.decided_by': 'the senior moderator who decided a lien rate request (the debtor is notified when it is approved)',
   'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
 };

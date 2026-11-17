@@ -424,6 +424,37 @@ export interface JabberEvents {
 }
 
 /**
+ * Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md; `apps/api` disputes/lienRoutes.ts): one
+ * of the account's own liens. Amounts are atomic XMR as decimal strings; `rateBps` is the share of
+ * each completed trade's proceeds that goes to the creditor (default `defaultRateBps`, 50%). No
+ * account ids, no addresses.
+ */
+export interface LienView {
+  id: string;
+  status: 'active' | 'suspended' | 'repaid';
+  amountAtomic: string;
+  feeAtomic: string;
+  recoveredAtomic: string;
+  remainingAtomic: string;
+  rateBps: number;
+  defaultRateBps: number;
+  fromCode: string;
+  createdAt: string;
+}
+
+/** `GET /v1/account/liens`: what the account owes (never a repaid one) and the liens owed to it, with each recovery that arrived. */
+export interface MyLiens {
+  owes: LienView[];
+  owedTo: Array<LienView & { recoveries: Array<{ amountAtomic: string; at: string }> }>;
+}
+
+/** Haveno review 2026-11-12, finding 2: the moderation service's signed ruling statement, verified by the device itself. */
+export interface RulingStatement {
+  statement: unknown;
+  sig: string;
+}
+
+/**
  * J-23 chat-key courier (`apps/api` auth/chatKeys.ts): a box sealed by one of the person's devices
  * to another device's X25519 key. The API stores and serves it exactly as posted and opens nothing.
  */
@@ -550,6 +581,13 @@ export interface AuthApi {
   cancelHoldChanges(): Promise<void>;
   /** Hold model v3: `DELETE /v1/account/hold/changes/:id`: one waiting change or one of this session's drafts. */
   cancelHoldChange(id: string): Promise<void>;
+  /** Lien recovery: `GET /v1/account/liens`, the account's own liens, both ways. */
+  listLiens(): Promise<MyLiens>;
+  /**
+   * Haveno review finding 2: `GET /v1/trades/:code/ruling-statement`, one of the account's own
+   * trades (participants only); `undefined` while there is none (204).
+   */
+  getRulingStatement(code: string): Promise<RulingStatement | undefined>;
   /** `GET /v1/account/methods` (Task 10). */
   listMethods(): Promise<MethodEntry[]>;
   /** `DELETE /v1/account/methods/:type/:id` (Task 10), the token in a JSON body (R17). */
@@ -780,6 +818,8 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     approveHoldChanges: (b) => post('/v1/account/hold/changes/approve', b),
     cancelHoldChanges: () => done(call('DELETE', '/v1/account/hold/changes')),
     cancelHoldChange: (id) => done(call('DELETE', `/v1/account/hold/changes/${seg(id)}`)),
+    listLiens: () => get('/v1/account/liens'),
+    getRulingStatement: (code) => get(`/v1/trades/${seg(code)}/ruling-statement`),
     listMethods: () => get('/v1/account/methods'),
     removeMethod: (type, id, b) => stagedOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
 
