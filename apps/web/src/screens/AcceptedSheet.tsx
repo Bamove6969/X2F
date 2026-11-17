@@ -1,7 +1,7 @@
-import { DEFAULT_TAG } from './walletsCopy.js';
 import { useEffect, useRef, useState } from 'react';
 import { formatFiat, formatXmr } from '@x2f/trade';
 import { api } from '../api/client.js';
+import { DEFAULT_TAG } from './walletsCopy.js';
 import type { LiveEvent } from '../api/events.js';
 import { addressEnd, confirmableAddress } from '../ui/addressEnd.js';
 import { storeConfirmed, type ConfirmedTrade } from './quote/confirmed.js';

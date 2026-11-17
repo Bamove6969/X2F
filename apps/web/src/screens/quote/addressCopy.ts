@@ -61,12 +61,14 @@ export const NEW_ADDRESS = {
   address: 'Monero address',
   keepLegend: 'Use it for',
   oneTime: 'This trade only',
-  oneTimeNote: 'It is not listed again once this trade uses it.',
+  oneTimeNote: 'It is not listed again once this trade uses it, unless the trade is cancelled before any XMR is sent.',
   saved: 'Future trades too',
   savedNote: 'It stays in Your wallets.',
   save: 'Save address',
   /** A saved address that waits (confirmed with a password): when it starts working. */
   waits: (when: string) => `Saved. This address starts working from ${when}, so pick a saved address for this trade.`,
+  /** The API answered with an address other than the one typed: nothing is picked. */
+  mismatch: 'X2F answered with a different address from the one you typed, so it was not picked for this trade. Check Your wallets in Settings before you trade.',
 } as const;
 
 /** The name a new address gets when the person leaves it empty. COPY-UNSIGNED */

@@ -17,6 +17,8 @@ import { DEFAULT_NEW_NAME, NEW_ADDRESS as C } from './addressCopy.js';
 // so the API alone decides what happens: usable at once (picked for this trade), waiting 24 hours
 // (confirmed with a password), or staged as a waiting change (a username-and-password login, hold
 // model v3). The quote offers this sheet to a highly secure account alone; the API never trusts that.
+// The device never trusts the API's echo either: the wallet handed back must carry the exact address
+// typed here, else nothing is picked (lead, 17 Nov: the API never swaps an address the device did not show).
 
 const LABEL_MAX = 40;
 
@@ -58,6 +60,13 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
       if (isStaged(result)) {
         setAfter({ kind: 'staged' });
         onDone({ kind: 'staged' });
+        return;
+      }
+      // The address must be the one typed on this device: an API answer naming another address is
+      // never picked for the trade or shown as saved (the take would pay whatever the wallet row holds,
+      // and the device would record that as its own address).
+      if (result.address !== trimmed) {
+        setError(C.mismatch);
         return;
       }
       if (result.usable) {

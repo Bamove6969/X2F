@@ -8,7 +8,7 @@ export const KEEP_FOR = {
   saved: 'Future trades',
   savedNote: 'It stays here until you remove it.',
   oneTime: 'One trade only',
-  oneTimeNote: 'Pick it when you start a trade. Once that trade uses it, it leaves this list.',
+  oneTimeNote: 'Pick it when you start a trade. Once that trade uses it, it leaves this list. If that trade is cancelled before any XMR is sent, it comes back.',
 } as const;
 
 /** The tag on a one-time wallet in the lists. COPY-UNSIGNED */

@@ -9,8 +9,9 @@ import type { PickWallet } from './api.js';
 import './quote.css';
 
 // "Which wallet gets paid?" on the BuyQuote board (and the seller's funding and refund wallet on
-// SellQuote). Only usable wallets can be picked (spec 6.3, 6.4); nothing is picked until the person
-// picks (OD-11: no default payout wallet, always ask). "Add another wallet" goes to Add a wallet,
+// SellQuote). Only usable wallets can be picked (spec 6.3, 6.4). The quote picks the default wallet
+// first (owner 17 Nov 2026, overriding OD-11), else nothing until the person picks; the picked wallet's
+// name and address ending are always on screen before Trade. "Add another wallet" goes to Add a wallet,
 // which asks the person to confirm it's them (X-4), and comes back here.
 // The app names and the usable filter come from the wallets screen's model (Task 29), so the
 // picker and Your wallets name and filter wallets the same way.

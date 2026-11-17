@@ -20,7 +20,7 @@ import { useQuoteKept } from './quoteKept.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
 import { NewAddressSheet, type NewAddressResult } from './NewAddressSheet.js';
-import { PAYOUT_QUESTION } from './addressCopy.js';
+import { NEW_ADDRESS, PAYOUT_QUESTION } from './addressCopy.js';
 import { WhatApplies } from './WhatApplies.js';
 import './quote.css';
 
@@ -172,6 +172,10 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const rating = session.status === 'signed-in' ? (session.me.securityRating ?? null) : null;
   const [addingAddress, setAddingAddress] = useState(false);
   const [walletsTick, setWalletsTick] = useState(0);
+  // The address typed on this device for a wallet the new-address sheet added (the sheet checked the
+  // API's answer). The list is read again after an add; if it then names another address for that
+  // wallet, the wallet is not picked: the API never swaps an address the device did not show.
+  const [typedAddress, setTypedAddress] = useState<{ id: string; address: string } | null>(null);
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
   const { blockedPoster, closedError } = kept;
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
@@ -181,6 +185,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const onNewAddress = (r: NewAddressResult) => {
     setWalletsTick((t) => t + 1);
     if (r.kind === 'usable') {
+      setTypedAddress({ id: r.wallet.id, address: r.wallet.address });
       touched();
       setPicked(r.wallet.id);
       setAddingAddress(false);
@@ -197,7 +202,10 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const giftTermsOk = !giftCard || giftCardTermsComplete(giftRole, giftTicked);
   const marketNow = market.kind === 'ready' ? market.value : null;
   const q: Quote | null = o && market.kind === 'ready' ? quote({ offer: o, market: marketNow, text, unit }) : null;
-  const usable = wallets.kind === 'ready' ? wallets.value.filter((w) => w.usable) : [];
+  const swapped = (w: PickWallet) => typedAddress !== null && w.id === typedAddress.id && w.address !== typedAddress.address;
+  const listed = wallets.kind === 'ready' ? wallets.value.filter((w) => !swapped(w)) : [];
+  const addressSwapped = wallets.kind === 'ready' && wallets.value.some(swapped);
+  const usable = listed.filter((w) => w.usable);
   // Owner, 17 Nov 2026 (overrides OD-11): until the person picks, the default wallet (the API's
   // `isDefault`, the chosen one or the only usable saved wallet) is picked for them; they can pick
   // another. A wallet in the URL (a trip away and back) wins. The take still names the wallet shown.
@@ -407,7 +415,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
         {signedIn === true && wallets.kind === 'ready' ? (
           <WalletPicker
             legend={copy.walletLegend}
-            wallets={wallets.value}
+            wallets={listed}
             picked={pickedWallet?.id ?? null}
             onPick={(id) => {
               touched();
@@ -418,6 +426,11 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             rating={rating}
             {...(rating === 'high' ? { onAddNew: () => setAddingAddress(true) } : {})}
           />
+        ) : null}
+        {addressSwapped ? (
+          <p className="x2f-quote__muted-sm" role="alert" data-part="new-address-swapped">
+            {NEW_ADDRESS.mismatch}
+          </p>
         ) : null}
         {addingAddress && rating === 'high' ? <NewAddressSheet onClose={() => setAddingAddress(false)} onDone={onNewAddress} /> : null}
         {signedIn === false ? (
