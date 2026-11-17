@@ -252,7 +252,9 @@ async function freshPhone(browser: Browser, viewport: string, o: { newDevice?: b
     viewport: { width, height },
     colorScheme: 'dark',
     serviceWorkers: 'block',
-    ...(o.newDevice === true ? {} : { storageState: { cookies: [], origins: [{ origin: LOCAL, localStorage: [{ name: 'x2f.welcome.seen', value: '1' }] }] } }),
+    // An empty storage for a new device, given explicitly: a context made here takes the config's
+    // storageState otherwise (which marks the welcome seen on both origins).
+    storageState: o.newDevice === true ? { cookies: [], origins: [] } : { cookies: [], origins: [{ origin: LOCAL, localStorage: [{ name: 'x2f.welcome.seen', value: '1' }] }] },
   });
   return { context, page: await context.newPage() };
 }
