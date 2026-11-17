@@ -55,10 +55,14 @@ import { fromJson } from './shadow.js';
  * at the verified rate, and the buyer's device refuses any figure the buyer did not accept on the
  * quote before the take.
  *
+ * Re-review N1: all of this runs only while this service's own switch is on (`MOD_LIEN_RECOVERY=on`,
+ * off by default); while it is off every recovery is refused (`off`) and no lien statement is signed.
+ *
  * A refusal is never final (the traders did nothing wrong): the work is logged
  * (`lien-refused-<reason>`) and skipped, like malformed terms.
  */
 export type LienRefusal =
+  | 'off'
   | 'no-source'
   | 'bad-source'
   | 'no-authority'
@@ -124,6 +128,8 @@ export interface CheckedRecovery {
 }
 
 export interface LienCheckDeps {
+  /** Re-review N1: this service's own switch (`MOD_LIEN_RECOVERY=on`). False: every recovery is refused (`off`). */
+  enabled: boolean;
   db: Pick<pg.Pool, 'query'>;
   feeWallet: string;
   rulings: LienRulings | null;
@@ -181,6 +187,8 @@ export async function checkLienRecovery(w: { trade: string; terms: AttestedTerms
     if (src !== undefined) throw new LienRefused('bad-source');
     return null;
   }
+  // Re-review N1: nothing outside the API switched recovery on, so nothing carrying one is signed.
+  if (!d.enabled) throw new LienRefused('off');
   if (src === undefined || src === null) throw new LienRefused('no-source');
   if (typeof src !== 'object' || Array.isArray(src)) throw new LienRefused('bad-source');
   const s = src as Record<string, unknown>;

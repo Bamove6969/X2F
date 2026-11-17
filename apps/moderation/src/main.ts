@@ -103,6 +103,13 @@ export interface ModerationOptions {
   relayUrl: string;
   /** MONERO_NETWORK: the escrow wallets' network. */
   network: 'regtest' | 'stagenet' | 'mainnet';
+  /**
+   * Re-review N1 (17 Nov 2026): `MOD_LIEN_RECOVERY=on` (`lienRecoveryFromEnv`), this service's own
+   * switch for lien recovery, apart from the API's `site_flags.liens_enabled`. Absent or false (the
+   * default): every work item whose terms carry a `lienRecovery` is refused (`lien-refused-off`) and
+   * no lien statement is ever signed.
+   */
+  lienRecovery?: boolean;
 }
 
 export interface ModerationDeps {
@@ -369,7 +376,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
 
     // Review B1: a lien recovery is signed only when this service's own records back it.
     await checkWork({ ...w, trade: code });
-    const recovery = await checkLienRecovery({ ...w, trade: code }, { db: o.db, feeWallet: o.feeWallet, rulings: lienRulingsDep, rates: lienRatesDep });
+    const recovery = await checkLienRecovery({ ...w, trade: code }, { enabled: o.lienRecovery === true, db: o.db, feeWallet: o.feeWallet, rulings: lienRulingsDep, rates: lienRatesDep });
     const a = await attestTrade({ ...w, trade: code }, o.signingSecret, now(), deps.newIdentity ?? generateIdentity);
     const sealed: SealedParty = { v: 1, trade: code, role: 'mod', me: toHexIdentity(a.mod), participants: a.participants };
     const client = await o.db.connect();
@@ -887,6 +894,19 @@ export function internalFromEnv(
   };
 }
 
+/**
+ * Re-review N1 (17 Nov 2026): `MOD_LIEN_RECOVERY`, this service's switch for lien recovery
+ * (docs/lien-recovery.md). Unset, empty or `off`: off, and no terms carrying a `lienRecovery` are
+ * ever signed. `on`: recoveries are checked and signed as lienRecovery.ts describes. Anything else
+ * refuses the start, so a typo never turns it on.
+ */
+export function lienRecoveryFromEnv(env: Record<string, string | undefined>): boolean {
+  const v = env.MOD_LIEN_RECOVERY ?? '';
+  if (v === '' || v === 'off') return false;
+  if (v === 'on') return true;
+  throw new Error('moderation: MOD_LIEN_RECOVERY is malformed (on, off or unset)');
+}
+
 function envNetwork(env: Record<string, string | undefined>): ModerationOptions['network'] {
   const v = envString(env, 'MONERO_NETWORK');
   if (v !== 'regtest' && v !== 'stagenet' && v !== 'mainnet') throw new Error('moderation: MONERO_NETWORK must be regtest, stagenet or mainnet');
@@ -944,6 +964,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       feeWallet: envString(env, 'X2F_FEE_WALLET'),
       relayUrl: envString(env, 'RELAY_URL'),
       network: envNetwork(env),
+      lienRecovery: lienRecoveryFromEnv(env),
     },
     {
       log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`),

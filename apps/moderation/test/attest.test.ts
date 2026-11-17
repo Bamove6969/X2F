@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { newTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity } from '@x2f/protocol';
 import {
@@ -144,8 +146,10 @@ async function moderation(
   fetch: Fetch,
   runParty: (a: ModPartyArgs) => void = () => {},
   log?: (e: { reason: string }) => void,
-  extra: Pick<ModerationDeps, 'lienRulings' | 'lienRates'> = {},
+  extra: Pick<ModerationDeps, 'lienRulings' | 'lienRates'> & { lienRecovery?: boolean | 'unset' } = {},
 ): Promise<ModerationHandle> {
+  // Re-review N1: the lien suites run with MOD_LIEN_RECOVERY=on unless they say otherwise; 'unset' leaves the option out (the production default).
+  const { lienRecovery = true, ...deps } = extra;
   await Promise.all(live.splice(0).map((h) => h.stop()));
   const h = await startModeration(
     {
@@ -158,8 +162,9 @@ async function moderation(
       feeWallet: '5'.repeat(95),
       relayUrl: 'ws://relay.test',
       network: 'regtest',
+      ...(lienRecovery === 'unset' ? {} : { lienRecovery }),
     },
-    { fetch, runParty, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, ...(log ? { log } : {}), ...extra },
+    { fetch, runParty, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, ...(log ? { log } : {}), ...deps },
   );
   live.push(h);
   return h;
@@ -460,7 +465,7 @@ describe('lien recovery at attestation (review B1, provisional owner answers of 
     rec: { address: string; amountAtomic: bigint } | null,
     lienSource: unknown,
     rulings: NonNullable<ModerationDeps['lienRulings']> | null,
-    extra: Pick<ModerationDeps, 'lienRates'> = {},
+    extra: Pick<ModerationDeps, 'lienRates'> & { lienRecovery?: boolean | 'unset' } = {},
   ) {
     const code = newTradeCode();
     const buyer = await trader(code, 'buyer');
@@ -493,6 +498,39 @@ describe('lien recovery at attestation (review B1, provisional owner answers of 
     const ls = n.net.lienStatements[0]!;
     expect(lienStatementValid(ls.statement, ls.sig, modSign.public)).toBe(true);
     expect(ls.statement).toMatchObject({ lienId: LIEN, fromCode: src.code, creditorSide: 'buyer', debtor: DEBTOR, creditor: CREDITOR, amountAtomic: '250000000000', rateBps: 5000 });
+  });
+
+  it('re-review N1: with MOD_LIEN_RECOVERY off (the default, or off) every recovery is refused and no lien statement is signed; on, the same item is signed', async () => {
+    const src = await sourceTrade();
+    for (const lienRecovery of ['unset', false] as const) {
+      const n = await debtorTrade(rec(HALF), await sourceOf(src), creditorBuyer, { lienRecovery });
+      expect(n.done, String(lienRecovery)).toEqual([]);
+      expect(n.signed).toBe(false);
+      expect(n.reasons).toContain('lien-refused-off');
+      expect(n.net.reports.filter((x) => x.attestation.trade === n.code)).toEqual([]);
+      expect(n.net.lienStatements).toEqual([]);
+      expect((await db.query('select 1 from mod_lien_recoveries where lien_id = $1', [LIEN])).rows).toEqual([]);
+      expect((await db.query('select 1 from mod_liens where lien_id = $1', [LIEN])).rows).toEqual([]);
+    }
+    // A trade with no recovery is attested as ever while it is off.
+    const plain = await debtorTrade(null, undefined, creditorBuyer, { lienRecovery: false });
+    expect(plain.done).toEqual([plain.code]);
+    // On: the same lien and source are signed.
+    const on = await debtorTrade(rec(HALF), await sourceOf(src), creditorBuyer, { lienRecovery: true });
+    expect(on.done).toEqual([on.code]);
+    expect(on.net.lienStatements).toHaveLength(1);
+  });
+
+  it('re-review N1: MOD_LIEN_RECOVERY is on only when it says on; unset, empty or off is off, anything else refuses the start', async () => {
+    const { lienRecoveryFromEnv } = await import('../src/main.js');
+    expect(lienRecoveryFromEnv({})).toBe(false);
+    expect(lienRecoveryFromEnv({ MOD_LIEN_RECOVERY: '' })).toBe(false);
+    expect(lienRecoveryFromEnv({ MOD_LIEN_RECOVERY: 'off' })).toBe(false);
+    expect(lienRecoveryFromEnv({ MOD_LIEN_RECOVERY: 'on' })).toBe(true);
+    for (const v of ['1', 'true', 'ON', 'yes', ' on']) expect(() => lienRecoveryFromEnv({ MOD_LIEN_RECOVERY: v }), v).toThrow('MOD_LIEN_RECOVERY');
+    // The process entry passes it to startModeration.
+    const main = readFileSync(fileURLToPath(new URL('../src/main.ts', import.meta.url)), 'utf8');
+    expect(main.slice(main.indexOf('// `tsx apps/moderation/src/main.ts`'))).toContain('lienRecovery: lienRecoveryFromEnv(env)');
   });
 
   it('compromised API (review B1): an injected or inflated recovery, or one to any address the creditor did not sign, is refused and nothing is signed', async () => {

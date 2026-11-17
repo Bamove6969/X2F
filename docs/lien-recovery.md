@@ -1,7 +1,10 @@
 # Lien recovery (owner rules, 16 Nov 2026)
 
 Status: built on `wip/third-lien-recovery` (on the lead's dispute stack), except where marked
-NEEDS_*. Lead security review needed before liens are switched on (`site_flags.liens_enabled`).
+NEEDS_*. Lead security review needed before liens are switched on. Recovery needs two switches, and
+both are off by default: the API's `site_flags.liens_enabled` (a database row, so a compromised API
+holds it) and the moderation service's own `MOD_LIEN_RECOVERY=on` (re-review N1, below). Keep the
+moderation switch off until the owner has confirmed Q1-Q6, the copy and the design.
 
 Built: `@x2f/staff` lienRecovery.ts (rate request rules); `@x2f/trade` optional `lienRecovery` in
 the attested terms, `expectedRecovery`, the limits, `payoutsFor`/`sweepMinimums`, the signed
@@ -197,6 +200,12 @@ constant or one rule, so a different answer changes one place (plus its tests).
 
 Threat model of the review: the API and its database compromised; gate.bin, the MOD_* secrets and
 honest staff keys not. What now holds:
+
+- **The moderation service has its own switch** (re-review N1): `MOD_LIEN_RECOVERY` (apps/moderation
+  `lienRecoveryFromEnv`, docs/dev-setup.md). Unset, empty or `off` (the default): every work item
+  whose terms carry a `lienRecovery` is refused (`lien-refused-off`, the trade waits unsigned, as any
+  refusal) and no lien statement is signed. `on`: the checks below. Any other value refuses the
+  start. The API's `site_flags.liens_enabled` alone can no longer turn recovery on.
 
 - **The moderation service is the authority on what is signed** (apps/moderation `lienRecovery.ts`).
   A work item with a `lienRecovery` must name its source and lien (`lienSource { fromCode, creditor,
