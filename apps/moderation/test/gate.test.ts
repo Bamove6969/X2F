@@ -1369,6 +1369,48 @@ describe('lienRulingVerifier (review B1)', () => {
       expect(store.state.executions[r1.ruling.code]).toBeUndefined();
     });
   });
+
+  it('re-review N2, compromised API: once the gate has seen a round-2 ruling for the trade, serving round 1 alone verifies nothing', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    const r1 = ruling(mod, { outcome: 'seller-sends-xmr' });
+    w.api.taps.push(tapBy(mod, r1.intent('propose')));
+    const r2 = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code, outcome: 'no-action' });
+    w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    w.api.rulings.set(r1.ruling.code, { current: r2.ruling, round1: r1.ruling, involved: [] });
+    await withStore(w, async (store) => {
+      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      // The honest view: the appeal overruled the order to pay, so the buyer is no creditor (the gate now has round 2 in rulingsSeen).
+      const honest = await v.creditors(r1.ruling.code, recorded(41_250n));
+      expect(honest).not.toBeNull();
+      expect(honest).not.toContain('buyer');
+      // The API hides the appeal: round 1 alone would name the buyer.
+      w.api.rulings.set(r1.ruling.code, { current: r1.ruling, round1: null, involved: [] });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toBeNull();
+      w.api.rulings.set(r1.ruling.code, { current: null, round1: r1.ruling, involved: [] });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toBeNull();
+    });
+  });
+
+  it('re-review N2: a round-2 ruling the gate saw for another trade does not stop this one', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    const o1 = ruling(mod, { outcome: 'release-to-buyer' });
+    w.api.taps.push(tapBy(mod, o1.intent('propose')));
+    const o2 = ruling(senior, { round: 2, round1Id: o1.ruling.id, code: o1.ruling.code, outcome: 'refund-to-seller' });
+    w.api.taps.push(tapBy(senior, o2.intent('propose')));
+    w.api.rulings.set(o1.ruling.code, { current: o2.ruling, round1: o1.ruling, involved: [] });
+    const c = ruling(mod, { outcome: 'seller-sends-xmr' });
+    w.api.taps.push(tapBy(mod, c.intent('propose')));
+    w.api.rulings.set(c.ruling.code, { current: c.ruling, round1: null, involved: [] });
+    await withStore(w, async (store) => {
+      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      expect(await v.creditors(o1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(await v.creditors(c.ruling.code, recorded(41_250n))).toEqual(['buyer']);
+    });
+  });
 });
 
 // Review M6: the gate pays the attested recovery on a ruling for the buyer, never on one for the seller.
