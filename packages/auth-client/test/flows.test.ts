@@ -39,7 +39,8 @@ const LABEL = 'Browser on Linux';
  * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
  * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
  * apps/web/src/screens/account/AccountFrozen.tsx; S-093: a block row's note, apps/web/src/screens/settings/blockApi.ts;
- * P-012/P-013: the blur check, apps/web/src/api/blurCheck.ts). Any other new route still needs a client method.
+ * P-012/P-013: the blur check, apps/web/src/api/blurCheck.ts; Haveno review finding 2: the signed ruling statement,
+ * read by apps/web/src/escrow/adapters.ts). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
@@ -74,6 +75,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/trades/:code/confirmations',
   'GET /v1/trades/:code/dispute',
   'GET /v1/trades/:code/review',
+  'GET /v1/trades/:code/ruling-statement',
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
   'POST /v1/account/notes',
