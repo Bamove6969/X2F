@@ -243,15 +243,17 @@ async function proveFirstKey(page: Page): Promise<void> {
   await page.locator('[data-part="prove"]').click();
 }
 
-/**
- * A new phone context. A member's first /sell on a device starts the member tour (lead, 12 Nov 2026),
- * which these flows are not about, so the context has had it, as playwright.config marks every
- * spec's own device; `newDevice` leaves storage empty (the member tour's own test).
- */
 async function freshPhone(browser: Browser, viewport: string, o: { newDevice?: boolean } = {}) {
   const [width, height] = viewport.split('x').map(Number) as [number, number];
-  const storageState = o.newDevice === true ? undefined : { cookies: [], origins: [{ origin: LOCAL, localStorage: [{ name: 'x2f.welcome.seen', value: '1' }] }] };
-  const context = await browser.newContext({ viewport: { width, height }, colorScheme: 'dark', serviceWorkers: 'block', ...(storageState ? { storageState } : {}) });
+  // A new device, but one that has seen the welcome screen (it shows once per device, owner note #47,
+  // and would stand between the join and the app's home; tour.spec covers it). For a member that first
+  // visit is the member tour (lead, 12 Nov 2026); `newDevice` leaves storage empty for its own test.
+  const context = await browser.newContext({
+    viewport: { width, height },
+    colorScheme: 'dark',
+    serviceWorkers: 'block',
+    ...(o.newDevice === true ? {} : { storageState: { cookies: [], origins: [{ origin: LOCAL, localStorage: [{ name: 'x2f.welcome.seen', value: '1' }] }] } }),
+  });
   return { context, page: await context.newPage() };
 }
 
