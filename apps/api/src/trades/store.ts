@@ -373,6 +373,18 @@ export async function applyEvent(
       if (!row) throw new ApiError(404, 'not-found');
       const now = deps.clock();
       const prev = rowToTrade(row);
+      // Review of wip/third-trade-wallet 17 Nov (b), B2: a trade in setup that used up a one-time
+      // wallet may give it back below (`restoreOneTimeWallets`), which locks the wallet owner's
+      // account. Lock both parties here, in id order, right after the trade row and before `before`
+      // (whose live-session check locks the caller's account): the lock order is then "trade row,
+      // then both accounts in id order" (migration 016's), the later account locks are re-entrant,
+      // and a take (which locks [taker, poster] in id order and holds no trade row) cannot close a cycle.
+      if (prev.state === 'setup') {
+        const used = await client.query('select 1 from wallets where used_by_trade = $1 limit 1', [code]);
+        if (used.rows.length > 0) {
+          await client.query('select id from accounts where id = any($1) order by id for update', [[prev.sellerId, prev.buyerId]]);
+        }
+      }
       if (before && (await before(client, now, prev)) === 'stop') {
         await client.query('commit');
         return prev;

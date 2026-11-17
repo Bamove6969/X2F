@@ -419,9 +419,9 @@ export async function useUpOneTimeWallet(db: Queryable, accountId: string, walle
  * (re-added meanwhile) or was purged.
  */
 export async function restoreOneTimeWallets(db: Queryable, tradeCode: string, accountIds: readonly string[]): Promise<number> {
-  // Only the accounts that have a wallet to give back are locked (most trades have none, and then
-  // nothing is locked): the cancel route already holds the canceller's account lock, so locking the
-  // other side too would deadlock against a take of that side waiting for the canceller's account.
+  // Review 17 Nov (b), B2: `applyEvent` already locked both parties in id order right after the trade
+  // row (before the cancel route's own account lock), so this lock is re-entrant there and cannot
+  // close a cycle with a take; it stays for any other caller.
   const owners = await db.query<{ account_id: string }>(
     'select distinct account_id from wallets where used_by_trade = $1 and account_id = any($2)',
     [tradeCode, [...accountIds]],

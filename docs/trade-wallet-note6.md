@@ -192,8 +192,11 @@ with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
       received and no funding was seen. It runs in the same transaction, before `countCancel`.
       This covers a buyer cancel, a seller walk-away, a system cancel, and expiry after `setup_by`.
     - The state machine, escrow and payouts are unchanged; this is wallet bookkeeping only.
-    - It locks only the accounts that have a wallet to give back, in id order. Locking both sides
-      deadlocked against a take, because the cancel route already holds the canceller's account lock.
+    - Lock order (review 17 Nov (b), B2): when the trade in setup used up a one-time wallet,
+      `applyEvent` locks both parties' accounts in id order right after the trade row and before the
+      route's own check (`trades/store.ts`, the block after `rowToTrade`). The order is then "trade row,
+      then both accounts in id order", so a take (which locks [taker, poster] in id order and holds no
+      trade row) waits instead of deadlocking.
     - It never restores:
       - a wallet whose removal applied while the trade used it: `applyWalletRemoval` clears
         `used_by_trade` and sends the alert (`wallets/routes.ts:448`);
@@ -208,9 +211,9 @@ with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
       - a removal that applied meanwhile wins;
       - an address added again meanwhile leaves one open row;
       - a cancel and a new take at once is consistent either way.
-    - Residual risk: a poster's cancel can race a take by the other side when that side owns the
-      one-time wallet. Postgres may then end one of the two with a deadlock error (500). It rolls back
-      fully and loses nothing.
+      - B2 (review 17 Nov (b)): the poster walking away while the taker, who owns the one-time wallet
+        and sorts first, takes another of the poster's offers: both answer 200, five runs lined up the
+        same way (it gave a deadlock and a 500 on every run before the lock-order fix).
 16. **Q11: no change.** Offers stay live.
 
 ### Round 4 (lead, 17 Nov, on wip/lead-trade-wallet): the device checks the new address

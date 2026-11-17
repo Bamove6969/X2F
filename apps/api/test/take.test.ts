@@ -1387,6 +1387,63 @@ describe('a one-time wallet comes back when its trade ends in setup (owner, Q10)
     expect(rows).toHaveLength(1);
   });
 
+  // Review of wip/third-trade-wallet 17 Nov (b), B2: the poster's cancel gives back the taker's
+  // one-time wallet (so it locks the taker's account) while the taker takes another of the poster's
+  // offers (which locks [taker, poster] in id order). With the taker's id the lower, the cancel used
+  // to hold the poster and wait for the taker while the take held the taker and waited for the
+  // poster: a deadlock, one side 500. `applyEvent` now locks both parties in id order right after
+  // the trade row, so the take simply waits. Lined up the same way each run: the cancel is stopped
+  // at its trade_events write (holding what it holds by then), the take is fired and stopped at the
+  // account lock it cannot get, then both go. Run several times: no run may give a 500.
+  it('B2: the poster walks away (restoring the taker\'s one-time wallet) while the taker takes another offer: no deadlock, both answer 200', async () => {
+    const lockWaiters = async (holderPid: number) =>
+      (await deps.db.query<{ n: number }>(
+        `select count(*)::int as n from pg_stat_activity
+          where datname = current_database() and pid <> $1 and wait_event_type = 'Lock' and state = 'active'`,
+        [holderPid],
+      )).rows[0]!.n;
+    const untilWaiters = async (holderPid: number, n: number) => {
+      const deadline = Date.now() + 10_000;
+      while ((await lockWaiters(holderPid)) < n) {
+        if (Date.now() > deadline) throw new Error(`fewer than ${n} requests reached a lock`);
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    };
+    for (let run = 0; run < 5; run++) {
+      const a = await person();
+      const c = await person();
+      // The case that deadlocked: the taker (wallet owner) sorts before the poster (canceller).
+      const [buyer, seller] = a.id < c.id ? [a, c] : [c, a];
+      const offer = await postOffer(seller);
+      const once = await oneTimeWallet(buyer.id);
+      const code = await taken(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+      const second = await postOffer(seller);
+      const holder = await deps.db.connect();
+      let results: Array<{ statusCode: number; body: string }>;
+      try {
+        await holder.query('begin');
+        await holder.query('lock table trade_events in share mode');
+        const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+        const cancel = event(seller, code, 'walk-away');
+        await untilWaiters(pid, 1);
+        const took = take(buyer, second, body(buyer, tenth));
+        await untilWaiters(pid, 2);
+        await holder.query('commit');
+        results = await Promise.all([cancel, took]);
+      } catch (e) {
+        await holder.query('rollback').catch(() => {});
+        throw e;
+      } finally {
+        holder.release();
+      }
+      expect(results.map((r) => `${r.statusCode} ${r.statusCode === 200 ? '' : r.body}`), `run ${run}`).toEqual(['200 ', '200 ']);
+      expect((await loadTradeRow(deps.db, code))!.state).toBe('cancelled');
+      expect(await isOpen(once.id)).toBe(true);
+      const { rows } = await deps.db.query('select 1 from trades where buyer_account_id = $1 and seller_account_id = $2 and closed_at is null', [buyer.id, seller.id]);
+      expect(rows).toHaveLength(1);
+    }
+  });
+
   it("a cancel and a new take with the same wallet at once: never two open trades on it, never a lost wallet", async () => {
     const { seller, buyer, once, code } = await takenWithOnce();
     const again = await postOffer(seller);
