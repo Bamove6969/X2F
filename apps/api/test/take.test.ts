@@ -1269,3 +1269,134 @@ describe('one-time wallets under races and rollbacks (review M2)', () => {
     expect(await open(once.id)).toBe(true);
   });
 });
+
+/**
+ * Owner, 17 Nov 2026 (note #6 Q10): "Monero wallets can be used over and over again ... they have the
+ * option of reusing the wallet over again, but by no means do they have to." A one-time wallet used up
+ * by a trade that ends in `setup` (cancelled, walked away from, or expired) before any XMR was funded
+ * is open again (still one-time), in the cancel's own transaction. Never once the trade got past setup.
+ */
+describe('a one-time wallet comes back when its trade ends in setup (owner, Q10)', () => {
+  async function oneTimeWallet(accountId: string): Promise<{ id: string; address: string }> {
+    const w = await addWallet(accountId);
+    await deps.db.query('update wallets set one_time = true where id = $1', [w.id]);
+    return w;
+  }
+  const isOpen = async (id: string) => (await deps.db.query('select 1 from wallets where id = $1 and removed_at is null', [id])).rows.length === 1;
+  const event = (who: Who, code: string, type: string) => who.browser.post(`/v1/trades/${code}/events`, { type });
+
+  /** A buyer taking a sell ad with a one-time wallet: the trade waits in setup for the poster. */
+  async function takenWithOnce() {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    const code = await taken(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+    expect(await isOpen(once.id)).toBe(false);
+    return { seller, buyer, once, code, offer };
+  }
+
+  it("the buyer's cancel in setup restores it, still one-time and usable once more", async () => {
+    const { seller, buyer, once, code } = await takenWithOnce();
+    const res = await event(buyer, code, 'buyer-cancel');
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await loadTradeRow(deps.db, code))!.state).toBe('cancelled');
+    expect(await isOpen(once.id)).toBe(true);
+    const { rows } = await deps.db.query<{ one_time: boolean; address: string }>('select one_time, address from wallets where id = $1', [once.id]);
+    expect(rows[0]).toEqual({ one_time: true, address: once.address });
+    // Used once more by a new trade, and gone again.
+    const again = await postOffer(seller);
+    await taken(buyer, again, body(buyer, tenth, undefined, { walletId: once.id }));
+    expect(await isOpen(once.id)).toBe(false);
+  });
+
+  it("the seller walking away in setup restores the buyer's one-time wallet", async () => {
+    const { seller, once, code } = await takenWithOnce();
+    expect((await event(seller, code, 'walk-away')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(true);
+  });
+
+  it('expiry in setup (setup_by passed) restores it', async () => {
+    const { once, code } = await takenWithOnce();
+    const row = (await loadTradeRow(deps.db, code))!;
+    const after = new Date(row.setup_by!.getTime() + 1000);
+    const t = await applyEvent({ db: deps.db, clock: () => after }, code, { type: 'tick' }, 'system');
+    expect(t.state).toBe('cancelled');
+    expect(await isOpen(once.id)).toBe(true);
+  });
+
+  it("the poster's one-time refund wallet comes back too", async () => {
+    const poster = await person();
+    const taker = await person();
+    const code = await taken(taker, await postOffer(poster, { side: 'sell' }), body(taker, tenth));
+    const once = await oneTimeWallet(poster.id);
+    expect((await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: once.id })).statusCode).toBe(204);
+    expect(await isOpen(once.id)).toBe(false);
+    expect((await event(poster, code, 'walk-away')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(true);
+  });
+
+  it('a trade past setup (funding, then cancelled with nothing funded) does not restore it', async () => {
+    const { buyer, once, code } = await takenWithOnce();
+    await deps.db.query('update trades set seller_refund = $2, seller_wallet_app = $3 where code = $1', [code, fakeAddress(), 'cake']);
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    expect((await loadTradeRow(deps.db, code))!.state).toBe('funding');
+    expect((await event(buyer, code, 'buyer-cancel')).statusCode).toBe(200);
+    expect((await loadTradeRow(deps.db, code))!.state).toBe('cancelled');
+    expect(await isOpen(once.id)).toBe(false);
+  });
+
+  it('a funded trade does not restore it', async () => {
+    const { once, code } = await takenWithOnce();
+    await deps.db.query('update trades set seller_refund = $2, seller_wallet_app = $3 where code = $1', [code, fakeAddress(), 'cake']);
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    const t = rowToTrade((await loadTradeRow(deps.db, code))!);
+    await applyEvent(deps, code, { type: 'chain', receivedAtomic: t.sellerFundsAtomic, unlockedAtomic: 0n, confirmations: 1 }, 'system');
+    expect(await isOpen(once.id)).toBe(false);
+  });
+
+  it('a removal of the wallet that applied while the trade used it wins: no restore', async () => {
+    const { buyer, once, code } = await takenWithOnce();
+    // A removal staged before the take, applied by the hold while the trade had it.
+    const { applyWalletRemoval } = await import('../src/wallets/routes.js');
+    await applyWalletRemoval(deps.db, buyer.id, once.id, deps.clock());
+    expect((await event(buyer, code, 'buyer-cancel')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(false);
+  });
+
+  it('the same address added again meanwhile: the old row stays removed (no duplicate)', async () => {
+    const { buyer, once, code } = await takenWithOnce();
+    await deps.db.query(
+      `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Again', $2, $3, $3)`,
+      [buyer.id, once.address, deps.clock()],
+    );
+    expect((await event(buyer, code, 'buyer-cancel')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(false);
+    const { rows } = await deps.db.query('select 1 from wallets where account_id = $1 and address = $2 and removed_at is null', [buyer.id, once.address]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("a cancel and a new take with the same wallet at once: never two open trades on it, never a lost wallet", async () => {
+    const { seller, buyer, once, code } = await takenWithOnce();
+    const again = await postOffer(seller);
+    const results = await allAtOnce([`select 1 from accounts where id = '${buyer.id}' for update`], 2, () => [
+      event(buyer, code, 'buyer-cancel'),
+      take(buyer, again, body(buyer, tenth, undefined, { walletId: once.id })),
+    ]);
+    expect(results[0]!.statusCode).toBe(200);
+    const open = await isOpen(once.id);
+    const { rows } = await deps.db.query<{ code: string }>(
+      'select code from trades where buyer_payout = $1 and closed_at is null', [once.address],
+    );
+    if (results[1]!.statusCode === 200) {
+      // The take came after the restore: it used the wallet up again.
+      expect(rows).toHaveLength(1);
+      expect(open).toBe(false);
+    } else {
+      // The take came first and found it used up; the cancel then gave it back.
+      expect(refusal(results[1]!)).toEqual({ status: 409, error: 'wallet-not-ready' });
+      expect(rows).toHaveLength(0);
+      expect(open).toBe(true);
+    }
+  });
+});

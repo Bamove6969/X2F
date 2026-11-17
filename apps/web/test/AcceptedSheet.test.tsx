@@ -43,7 +43,31 @@ describe('AcceptedSheet', () => {
     expect(sheet().querySelectorAll('[data-primary]')).toHaveLength(1);
   });
 
-  it('pre-selects no wallet (OD-11, no default payout wallet): Use this wallet is disabled until a radio is chosen', async () => {
+  it('owner 17 Nov (Q9): the default wallet is picked first, and another can be picked instead', async () => {
+    const posted: Array<[string, string]> = [];
+    const withDefault = WALLETS.map((w) => ({ ...w, isDefault: w.id === 'w2' }));
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => withDefault} loadTrade={loadView} submit={async (c, w) => void posted.push([c, w])} onDone={() => undefined} onClose={() => undefined} />);
+    await flush();
+    const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(options.map((o) => o.checked)).toEqual([false, true]);
+    expect((button('Use this wallet') as HTMLButtonElement).disabled).toBe(false);
+    fire(options[0]!, new MouseEvent('click', { bubbles: true }));
+    await flush();
+    expect(options.map((o) => o.checked)).toEqual([true, false]);
+    fire(button('Use this wallet'), new MouseEvent('click', { bubbles: true }));
+    await flush();
+    expect(posted).toEqual([[EVENT.code, 'w1']]);
+  });
+
+  it('a default that is not usable is not picked', async () => {
+    const waitingDefault = WALLETS.map((w) => ({ ...w, isDefault: w.id === 'w3' }));
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => waitingDefault} loadTrade={loadView} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
+    await flush();
+    const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(options.map((o) => o.checked)).toEqual([false, false]);
+  });
+
+  it('with no default, pre-selects no wallet: Use this wallet is disabled until a radio is chosen', async () => {
     render(<AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={loadView} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
     await flush();
     const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
