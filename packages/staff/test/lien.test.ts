@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyDispute,
+  lienCreditorsOf,
   lienSteps,
   newDispute,
   type Actor,
@@ -371,5 +372,56 @@ describe('rule 4: payment claim, evidence and receipt stay distinct', () => {
       expect(() => applyDispute(d, { type: 'complied' }, actor as Actor, at(2), S)).toThrow();
     }
     expect(applyDispute(d, { type: 'complied' }, { kind: 'system' }, at(2), S).compliedAt).toEqual(at(2));
+  });
+});
+
+// Review B1 (lien recovery, 2026-11-16): the moderation service checks a recovery against the
+// rulings its gate verified, so it needs who a trade's rulings can make a lien's creditor without
+// the API's lien rows. It must agree with lienSteps on every place step.
+describe('lienCreditorsOf (review B1)', () => {
+  const OUTCOMES: RulingOutcome[] = ['release-to-buyer', 'refund-to-seller', 'seller-sends-xmr', 'seller-returns-fiat', 'no-action'];
+  const AFTER: RulingOutcome[] = ['seller-sends-xmr', 'seller-returns-fiat', 'no-action'];
+
+  it('round 1 alone: only seller-sends-xmr places a lien (debtor the seller, creditor the buyer)', () => {
+    expect(lienCreditorsOf('seller-sends-xmr', null)).toEqual(['buyer']);
+    for (const o of ['release-to-buyer', 'refund-to-seller', 'seller-returns-fiat', 'no-action'] as const) expect(lienCreditorsOf(o, null)).toEqual([]);
+  });
+
+  it('round 2 overturning an escrow ruling: whoever received the coins owes the other side', () => {
+    expect(lienCreditorsOf('release-to-buyer', 'refund-to-seller')).toEqual(['seller']);
+    expect(lienCreditorsOf('refund-to-seller', 'release-to-buyer')).toEqual(['buyer']);
+    expect(lienCreditorsOf('seller-sends-xmr', 'seller-sends-xmr')).toEqual(['buyer']);
+    expect(lienCreditorsOf('seller-sends-xmr', 'no-action')).toEqual(['seller']);
+    expect(lienCreditorsOf('no-action', 'seller-sends-xmr')).toEqual(['buyer']);
+  });
+
+  it('covers every lien lienSteps places, for every round-1 and round-2 outcome', () => {
+    const facts = sellerPosted;
+    for (const first of OUTCOMES) {
+      const afterRefund = AFTER.includes(first);
+      const r1 = publish(opened(afterRefund), first);
+      // Round 1 published (and, for seller-sends-xmr, the seller complied, so an overturn can place on the buyer).
+      const placed1 = lienSteps(opened(afterRefund), r1, facts, []).filter((s) => s.op === 'place');
+      for (const s of placed1) if (s.op === 'place') expect(lienCreditorsOf(first, null)).toContain(s.debtor === 'buyer' ? 'seller' : 'buyer');
+      for (const final of afterRefund ? AFTER : ['release-to-buyer', 'refund-to-seller'] as RulingOutcome[]) {
+        for (const by of ['buyer', 'seller'] as const) {
+          let before: Dispute;
+          try {
+            const complied = first === 'seller-sends-xmr' ? { ...r1, compliedAt: at(2.5) } : r1;
+            before = appeal(complied, by);
+          } catch {
+            continue;
+          }
+          let after: Dispute;
+          try {
+            after = decide(before, final);
+          } catch {
+            continue;
+          }
+          const placed2 = lienSteps(before, after, facts, []).filter((s) => s.op === 'place');
+          for (const s of placed2) if (s.op === 'place') expect(lienCreditorsOf(first, final)).toContain(s.debtor === 'buyer' ? 'seller' : 'buyer');
+        }
+      }
+    }
   });
 });

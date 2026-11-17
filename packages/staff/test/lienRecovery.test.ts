@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_RECOVERY_RATE_BPS,
+  MAX_RECOVERY_RATE_BPS,
   canDecideRateRequest,
   lienRemaining,
   rateRequestRefusal,
@@ -60,6 +61,12 @@ describe('rate change request (rule 3)', () => {
     expect(rateRequestRefusal({ rateBps: 10001, reason: 'x' })).toBe('bad-rate');
     expect(rateRequestRefusal({ rateBps: 12.5, reason: 'x' })).toBe('bad-rate');
     expect(rateRequestRefusal({ rateBps: 3000, reason: 'x'.repeat(501) })).toBe('reason-too-long');
+  });
+  it('review B1: a rate above the 50% default is refused until the moderation gate can verify a rate change (NEEDS_GATE_LIEN_RATE)', () => {
+    expect(MAX_RECOVERY_RATE_BPS).toBe(5000);
+    expect(rateRequestRefusal({ rateBps: 5001, reason: 'x' })).toBe('bad-rate');
+    expect(rateRequestRefusal({ rateBps: 10000, reason: 'x' })).toBe('bad-rate');
+    expect(rateRequestRefusal({ rateBps: 1, reason: 'x' })).toBeNull();
   });
   it('going back to the default still needs a reason (any change goes to a senior)', () => {
     expect(rateRequestRefusal({ rateBps: 5000, reason: '' })).toBe('reason-required');

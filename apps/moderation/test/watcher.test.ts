@@ -930,3 +930,79 @@ describe('the chain watcher', () => {
     expect(m.parties.get(code)!.stopped).toBe(true);
   });
 });
+
+// Review B1 and M2 (lien recovery, 2026-11-16): a recovery this service signed counts against its
+// source trade's lien until the watcher itself sees the trade end without paying it: a refund
+// proven to the signed refund address, or a watch that ends with no coin ever received.
+describe('lien recoveries signed here are freed only by what the watcher sees (review B1, M2)', () => {
+  const owing = async (code: string) => {
+    await db.query(`insert into mod_lien_recoveries (trade, source_code, creditor, amount_atomic) values ($1, 'SRCE-SRCE-SRCE-SRCE', 'buyer', 1000)`, [code]);
+  };
+  const freed = async (code: string) => (await db.query<{ f: boolean }>('select freed_at is not null as f from mod_lien_recoveries where trade = $1', [code])).rows[0]!.f;
+
+  it('a trade the API closed before any escrow existed frees it', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = newTradeCode();
+    net.work = [await work(code)];
+    await m.handle.tick();
+    await owing(code);
+    net.states.set(code, 'cancelled');
+    await m.handle.watch();
+    expect(await freed(code)).toBe(true);
+    await m.handle.stop();
+  });
+
+  it('a released trade keeps it (the recovery was paid); an own sweep of unknown kind keeps it too', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)] };
+    await m.handle.watch();
+    net.states.set(code, 'settling');
+    p.funds = { ...p.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }], ownTxs: [hash('b')] };
+    await m.handle.watch();
+    expect(net.reports.some((r) => r.kind === 'settled' && r.trade === code)).toBe(true);
+    net.states.set(code, 'released');
+    clock = new Date(clock.getTime() + 31 * 86_400_000);
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    await m.handle.stop();
+  });
+
+  it('a refund proven to the signed refund address frees it', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)] };
+    await m.handle.watch();
+    net.states.set(code, 'settling');
+    net.kinds.set(code, 'mutual-cancel');
+    p.funds = { ...p.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: 'k'.repeat(64) }, { from: 'buyer', txHash: hash('b'), txKey: '' }] };
+    p.prove = () => true;
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === code)).toHaveLength(1);
+    expect(await freed(code)).toBe(true);
+    await m.handle.stop();
+  });
+
+  it('cancelled with an escrow that never got a coin: kept while late coins could still come, freed when the watch ends', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    await m.handle.watch();
+    net.states.set(code, 'cancelled');
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    clock = new Date(clock.getTime() + 31 * 86_400_000);
+    await m.handle.watch();
+    expect(m.parties.get(code)!.stopped).toBe(true);
+    expect(await freed(code)).toBe(true);
+    await m.handle.stop();
+  });
+});

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { feeFor } from '@x2f/core';
-import { escrowPlan, payoutsFor, sweepMinimums, type AttestedTerms, type RulingKind, type SettleKind } from '../src/index.js';
+import { MAX_NETWORK_FEE } from '@x2f/escrow';
+import { LIEN_BUYER_KEEPS_ATOMIC, LIEN_RECOVERY_MAX_BPS, escrowPlan, lienRecoveryCap, payoutsFor, sweepMinimums, type AttestedTerms, type RulingKind, type SettleKind } from '../src/index.js';
 
 const BUYER = 'buyer-payout-address';
 const SELLER = 'seller-refund-address';
@@ -294,5 +295,49 @@ describe('payoutsFor: lien recovery', () => {
       { address: FEE, amountAtomic: FEE_AMOUNT },
       { address: CREDITOR, amountAtomic: R },
     ]);
+  });
+});
+
+// Review B1 and B3 (lien recovery, 2026-11-16): limits every co-signer and the gate enforce from the
+// signed terms alone, so a recovery no honest API would reserve is never paid.
+describe('lien recovery limits (review B1, B3)', () => {
+  const CREDITOR = 'creditor-payout-address';
+  const rec = (amountAtomic: bigint) => ({ ...args('release', 'seller', AMOUNT + FEE_AMOUNT), lienRecovery: { address: CREDITOR, amountAtomic } });
+
+  test('the cap: half the proceeds, rounded down, and never leaving the buyer less than the largest network fee', () => {
+    expect(LIEN_RECOVERY_MAX_BPS).toBe(5000);
+    expect(LIEN_BUYER_KEEPS_ATOMIC).toBe(MAX_NETWORK_FEE);
+    expect(lienRecoveryCap(AMOUNT)).toBe(AMOUNT / 2n);
+    expect(lienRecoveryCap(1_000_000_000_001n)).toBe(500_000_000_000n);
+    // A small trade: half would leave the buyer under the network fee, so the cap is what leaves exactly it.
+    expect(lienRecoveryCap(15_000_000_000n)).toBe(5_000_000_000n);
+    expect(lienRecoveryCap(MAX_NETWORK_FEE)).toBe(0n);
+    expect(lienRecoveryCap(1n)).toBe(0n);
+    expect(lienRecoveryCap(0n)).toBe(0n);
+  });
+
+  test('B1: payoutsFor refuses a recovery above half the proceeds (the API cannot take more by signing it in)', () => {
+    expect(payoutsFor(rec(AMOUNT / 2n))[2]).toEqual({ address: CREDITOR, amountAtomic: AMOUNT / 2n });
+    expect(() => payoutsFor(rec(AMOUNT / 2n + 1n))).toThrow(/bad recovery amount/);
+    expect(() => payoutsFor(rec(AMOUNT - 1n))).toThrow(/bad recovery amount/);
+  });
+
+  test('B3: payoutsFor refuses a recovery that leaves the buyer no more than the network fee could take', () => {
+    const small = 15_000_000_000n;
+    const plan = escrowPlan({ amountAtomic: small, poster: 'seller' });
+    const at = (r: bigint) => payoutsFor({ ...args('release', 'seller', plan.sellerFundsAtomic, small), lienRecovery: { address: CREDITOR, amountAtomic: r } });
+    expect(at(5_000_000_000n)[0]).toEqual({ address: BUYER, amountAtomic: MAX_NETWORK_FEE });
+    expect(() => at(5_000_000_001n)).toThrow(/bad recovery amount/);
+  });
+
+  test('sweepMinimums refuses the same over-cap recovery', () => {
+    const terms: AttestedTerms = {
+      deal: { poster: 'seller', takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'a'.repeat(64) },
+      payWindowMin: 90,
+      buyerPayout: BUYER,
+      sellerRefund: SELLER,
+      lienRecovery: { address: CREDITOR, amountAtomic: (AMOUNT / 2n + 1n).toString() },
+    };
+    expect(() => sweepMinimums({ kind: 'release', terms, feeWallet: FEE, sweptAtomic: AMOUNT + FEE_AMOUNT })).toThrow(RangeError);
   });
 });

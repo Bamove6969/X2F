@@ -282,6 +282,31 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('review B1: a trade with a lien recovery hands moderation its source (the disputed trade and the creditor\'s side) beside the terms', async () => {
+    const { code, buyer, seller } = await freshTrade();
+    const src = await freshTrade();
+    // The disputed trade: the creditor was its buyer; the lien binds that trade's buyer payout.
+    const srcRow = (await deps.db.query<{ buyer_payout: string; buyer_account_id: string }>('select buyer_payout, buyer_account_id::text from trades where code = $1', [src.code])).rows[0]!;
+    const lien = (await deps.db.query<{ id: string }>(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at, creditor_address)
+       values ($1, $2, 1000000, 0, $3, 1, 1, 'restitution', now(), now(), $4) returning id::text`,
+      [buyer.id, srcRow.buyer_account_id, src.code, srcRow.buyer_payout],
+    )).rows[0]!.id;
+    await deps.db.query(`insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, address, created_at) values ($1, $2, 1000, $3, now())`, [lien, code, srcRow.buyer_payout]);
+    await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
+    await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body);
+    const work = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string; terms: AttestedTerms; lienSource?: unknown }> };
+    const item = work.work.find((w) => w.trade === code)!;
+    expect(item.terms.lienRecovery).toEqual({ address: srcRow.buyer_payout, amountAtomic: '1000' });
+    expect(item.lienSource).toEqual({ fromCode: src.code, creditor: 'buyer' });
+    // A trade without one carries no source.
+    const plain = await freshTrade();
+    await plain.buyer.b.post(`/v1/trades/${plain.code}/identity`, identityFor(plain.code, 'buyer').body);
+    await plain.seller.b.post(`/v1/trades/${plain.code}/identity`, identityFor(plain.code, 'seller').body);
+    const again = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string; lienSource?: unknown }> };
+    expect(again.work.find((w) => w.trade === plain.code)).not.toHaveProperty('lienSource');
+  });
+
   it('refuses an unsigned or wrongly signed report to /internal/v1/reports with 401', async () => {
     const { code, buyer, seller } = await freshTrade();
     const buyerId = identityFor(code, 'buyer');

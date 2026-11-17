@@ -24,9 +24,11 @@ import {
   relayRegisterMessage,
   startModeration,
   type Fetch,
+  type ModerationDeps,
   type ModerationHandle,
   type WorkItem,
 } from '../src/main.js';
+import { freeLienRecoveries } from '../src/lienRecovery.js';
 import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 
 const API = 'http://api-internal.test';
@@ -130,7 +132,12 @@ afterEach(async () => {
   await Promise.all(live.splice(0).map((h) => h.stop()));
 });
 
-async function moderation(fetch: Fetch, runParty: (a: ModPartyArgs) => void = () => {}, log?: (e: { reason: string }) => void): Promise<ModerationHandle> {
+async function moderation(
+  fetch: Fetch,
+  runParty: (a: ModPartyArgs) => void = () => {},
+  log?: (e: { reason: string }) => void,
+  extra: Pick<ModerationDeps, 'lienRulings'> = {},
+): Promise<ModerationHandle> {
   await Promise.all(live.splice(0).map((h) => h.stop()));
   const h = await startModeration(
     {
@@ -144,7 +151,7 @@ async function moderation(fetch: Fetch, runParty: (a: ModPartyArgs) => void = ()
       relayUrl: 'ws://relay.test',
       network: 'regtest',
     },
-    { fetch, runParty, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, ...(log ? { log } : {}) },
+    { fetch, runParty, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, ...(log ? { log } : {}), ...extra },
   );
   live.push(h);
   return h;
@@ -394,5 +401,109 @@ describe('database separation', () => {
     } finally {
       await api.end();
     }
+  });
+});
+
+// Review B1 (lien recovery, 2026-11-16): the moderation service no longer signs whatever recovery
+// the API hands it. A recovery is signed only when this service's own records back it: the source
+// trade it attested, a lien creditor of that trade's rulings as its gate verified them (staff key
+// taps), the creditor's own address from that trade's signed terms, at most half the buyer's
+// proceeds (and never leaving the buyer under the network fee), and never more in total than that
+// trade's XMR across the trades it signed and has not seen end without paying.
+describe('lien recovery at attestation (review B1)', () => {
+  /** A new trade by the debtor, as buyer, on other addresses than the source trade's. */
+  const N_TERMS: AttestedTerms = { ...TERMS, buyerPayout: '4'.padEnd(95, 'N'), sellerRefund: '8'.padEnd(95, 'M') };
+  const HALF = 125_000_000_000n; // the cap on N_TERMS: half of the 0.25 XMR proceeds
+  const reasonsOf = () => {
+    const reasons: string[] = [];
+    return { reasons, log: (e: { reason: string }) => void reasons.push(e.reason) };
+  };
+
+  /** Attests the source trade (the disputed one) exactly as any trade. */
+  async function sourceTrade(): Promise<string> {
+    const code = newTradeCode();
+    const buyer = await trader(code, 'buyer');
+    const seller = await trader(code, 'seller');
+    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms: TERMS }]);
+    expect(await (await moderation(net.fetch)).tick()).toEqual([code]);
+    return code;
+  }
+
+  async function debtorTrade(rec: { address: string; amountAtomic: bigint } | null, lienSource: unknown, rulings: ModerationDeps['lienRulings'] | null) {
+    const code = newTradeCode();
+    const buyer = await trader(code, 'buyer');
+    const seller = await trader(code, 'seller');
+    const terms: AttestedTerms = rec === null ? N_TERMS : { ...N_TERMS, lienRecovery: { address: rec.address, amountAtomic: rec.amountAtomic.toString() } };
+    const item = { trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms, ...(lienSource !== undefined ? { lienSource } : {}) } as WorkItem;
+    const net = fakeNetwork(() => [item]);
+    const r = reasonsOf();
+    const done = await (await moderation(net.fetch, () => {}, r.log, rulings === null ? {} : { lienRulings: rulings })).tick();
+    const signed = (await db.query('select 1 from signed_terms where trade = $1', [code])).rows.length === 1;
+    return { code, done, signed, reasons: r.reasons, net, item };
+  }
+
+  const creditorBuyer: NonNullable<ModerationDeps['lienRulings']> = { creditors: async () => ['buyer'] };
+
+  it('signs a recovery its own records back, and records it against the source trade', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: HALF }, { fromCode: src, creditor: 'buyer' }, creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    const report = n.net.reports.find((x) => x.attestation.trade === n.code)!;
+    expect(report.attestation.terms?.lienRecovery).toEqual({ address: TERMS.buyerPayout, amountAtomic: HALF.toString() });
+    const { rows } = await db.query('select source_code, creditor, amount_atomic::text as amount, freed_at from mod_lien_recoveries where trade = $1', [n.code]);
+    expect(rows).toEqual([{ source_code: src, creditor: 'buyer', amount: HALF.toString(), freed_at: null }]);
+  });
+
+  it('refuses (skips, signs nothing) a recovery without the gate, without a source, or to anyone but the creditor', async () => {
+    const src = await sourceTrade();
+    const ok = { fromCode: src, creditor: 'buyer' };
+    const cases: Array<[string, Awaited<ReturnType<typeof debtorTrade>>]> = [
+      ['lien-refused-no-authority', await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: 1000n }, ok, null)],
+      ['lien-refused-no-source', await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: 1000n }, undefined, creditorBuyer)],
+      ['lien-refused-bad-source', await debtorTrade(null, ok, creditorBuyer)],
+      ['lien-refused-source-unknown', await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: 1000n }, { fromCode: newTradeCode(), creditor: 'buyer' }, creditorBuyer)],
+      // The compromised API's own address, or the debtor's side of the source trade.
+      ['lien-refused-wrong-address', await debtorTrade({ address: '4'.padEnd(95, 'Z'), amountAtomic: 1000n }, ok, creditorBuyer)],
+      ['lien-refused-wrong-address', await debtorTrade({ address: TERMS.sellerRefund, amountAtomic: 1000n }, ok, creditorBuyer)],
+      // The rulings make the buyer the creditor; the API names the seller.
+      ['lien-refused-not-creditor', await debtorTrade({ address: TERMS.sellerRefund, amountAtomic: 1000n }, { fromCode: src, creditor: 'seller' }, creditorBuyer)],
+      // No verified ruling places a lien on that trade.
+      ['lien-refused-not-creditor', await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: 1000n }, ok, { creditors: async () => [] })],
+      ['lien-refused-no-authority', await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: 1000n }, ok, { creditors: async () => null })],
+      // More than half the proceeds.
+      ['lien-refused-over-rate', await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: HALF + 1n }, ok, creditorBuyer)],
+    ];
+    for (const [reason, c] of cases) {
+      expect(c.done, reason).toEqual([]);
+      expect(c.signed, reason).toBe(false);
+      expect(c.reasons, reason).toContain(reason);
+      expect(c.net.refusals, reason).toEqual([]);
+    }
+  });
+
+  it('never more in total than the source trade\'s XMR, until a trade that recovered is seen to end without paying it', async () => {
+    const src = await sourceTrade(); // 0.25 XMR: two recoveries of 0.125 XMR use it up
+    const ok = { fromCode: src, creditor: 'buyer' };
+    const a = await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: HALF }, ok, creditorBuyer);
+    const b = await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: HALF }, ok, creditorBuyer);
+    expect([a.signed, b.signed]).toEqual([true, true]);
+    const c = await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: 1n }, ok, creditorBuyer);
+    expect(c.signed).toBe(false);
+    expect(c.reasons).toContain('lien-refused-over-owed');
+    // Trade a ends without paying it (the watcher saw it refunded): its share is free again.
+    await freeLienRecoveries(db, a.code);
+    const d = await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: HALF }, ok, creditorBuyer);
+    expect(d.signed).toBe(true);
+  });
+
+  it('a restart re-posts a trade it already signed without counting its recovery twice', async () => {
+    const src = await sourceTrade();
+    const ok = { fromCode: src, creditor: 'buyer' };
+    const a = await debtorTrade({ address: TERMS.buyerPayout, amountAtomic: HALF }, ok, creditorBuyer);
+    expect(a.signed).toBe(true);
+    const again = fakeNetwork(() => [a.item]);
+    await (await moderation(again.fetch, () => {}, undefined, { lienRulings: creditorBuyer })).tick();
+    const { rows } = await db.query<{ n: number }>('select count(*)::int as n from mod_lien_recoveries where trade = $1', [a.code]);
+    expect(rows[0]!.n).toBe(1);
   });
 });

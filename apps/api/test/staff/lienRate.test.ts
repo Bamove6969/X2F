@@ -50,6 +50,8 @@ describe('rate change requests', () => {
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: '' }))).toBe('bad-request');
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500 }))).toBe('bad-request');
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 0, reason: 'x' }))).toBe('bad-request');
+    // Review B1: above the 50% default the moderation service could not check it (NEEDS_GATE_LIEN_RATE).
+    expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 5001, reason: 'x' }))).toBe('bad-request');
     const res = await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: 'Proceeds are their only income' });
     expect(res.statusCode, res.body).toBe(201);
     const req = (res.json() as { id: string }).id;
@@ -78,8 +80,8 @@ describe('rate change requests', () => {
 
   it('the proposer never decides their own request, even as a senior; a rejection keeps the rate', async () => {
     const l = await lien();
-    const own = (await senior.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 7000, reason: 'Large debt' })).json() as { id: string };
-    const tap = await seedTap(deps, seniorId, { kind: 'lien-rate', lienId: l.id, requestId: own.id, rateBps: 7000 });
+    const own = (await senior.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 4000, reason: 'Large debt' })).json() as { id: string };
+    const tap = await seedTap(deps, seniorId, { kind: 'lien-rate', lienId: l.id, requestId: own.id, rateBps: 4000 });
     expect(errorOf(await senior.post(`/staff/v1/liens/${l.id}/rate/${own.id}/approve`, { tapId: tap }))).toBe('forbidden');
     expect(errorOf(await senior.post(`/staff/v1/liens/${l.id}/rate/${own.id}/reject`, {}))).toBe('forbidden');
     const owner = await seedStaff(deps, { role: 'owner' });

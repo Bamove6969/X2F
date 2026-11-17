@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { GIFT_CARD_TERMS_VERSION, LAUNCH_TRADE_CAP_USD_CENTS, fiatCents, rateFor } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, LAUNCH_TRADE_CAP_USD_CENTS, LIEN_RECOVERY_MAX_BPS, WATCH_CLOSED_DAYS, escrowPlan, fiatCents, lienRecoveryCap, rateFor } from '@x2f/trade';
+import { MAX_RECOVERY_RATE_BPS } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -1111,11 +1112,17 @@ describe('a session revoked while its trading request waits (review round 5 M2)'
 // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): a buyer who owes a lien keeps trading
 // and part of each trade's proceeds is reserved at take for the creditor (signed into the terms).
 describe('lien recovery at take', () => {
-  async function lienOn(debtor: Who, creditor: { id: string }, amountAtomic: bigint, over: { fee?: bigint; rate?: number } = {}): Promise<string> {
+  /**
+   * A lien on `debtor`, owed to `creditor`. Review B1: it carries the creditor's own address from
+   * the disputed trade (`creditor_address`, bound at placement); here the creditor's wallet address
+   * unless `address` says otherwise (null: none recorded).
+   */
+  async function lienOn(debtor: Who, creditor: { id: string; address?: string }, amountAtomic: bigint, over: { fee?: bigint; rate?: number; address?: string | null } = {}): Promise<string> {
+    const address = over.address !== undefined ? over.address : (creditor.address ?? fakeAddress());
     const { rows } = await deps.db.query<{ id: string }>(
-      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at, recovery_rate_bps)
-       values ($1, $2, $3, $4, gen_random_uuid()::text, 1, 1, 'restitution', $5, $5, $6) returning id::text`,
-      [debtor.id, creditor.id, amountAtomic.toString(), (over.fee ?? 0n).toString(), deps.clock(), over.rate ?? 5000],
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at, recovery_rate_bps, creditor_address)
+       values ($1, $2, $3, $4, gen_random_uuid()::text, 1, 1, 'restitution', $5, $5, $6, $7) returning id::text`,
+      [debtor.id, creditor.id, amountAtomic.toString(), (over.fee ?? 0n).toString(), deps.clock(), over.rate ?? 5000, address],
     );
     return rows[0]!.id;
   }
@@ -1160,12 +1167,11 @@ describe('lien recovery at take', () => {
     expect((rc.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBeUndefined();
   });
 
-  it('nothing is reserved when the creditor has no usable wallet, the creditor is the seller, or liens are off', async () => {
+  it('nothing is reserved when the lien has no creditor address, the creditor is the seller, or liens are off', async () => {
     const seller = await person();
     const debtor = await person();
     const creditor = await person();
-    await lienOn(debtor, creditor, XMR);
-    await deps.db.query('update wallets set removed_at = $2 where account_id = $1', [creditor.id, deps.clock()]);
+    await lienOn(debtor, creditor, XMR, { address: null });
     const offer = await postOffer(seller);
     expect(((await take(debtor, offer, body(debtor, XMR))).json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBeUndefined();
 
@@ -1235,6 +1241,109 @@ describe('lien recovery at take', () => {
     expect((await deps.db.query('select status from liens where id = $1', [lien])).rows[0]).toEqual({ status: 'active' });
     const next = (await take(debtor, offer, body(debtor, XMR))).json() as { lienRecoveryAtomic?: string };
     expect(next.lienRecoveryAtomic).toBeUndefined();
+  });
+
+  it('review B1: the hold pays the address bound to the lien (the creditor\'s own in the disputed trade), never a wallet added since', async () => {
+    const seller = await person();
+    const debtor = await person();
+    const creditor = await person();
+    const bound = fakeAddress();
+    const lien = await lienOn(debtor, creditor, 2n * XMR, { address: bound });
+    await addWallet(creditor.id); // newer, usable: ignored
+    const res = await take(debtor, await postOffer(seller), body(debtor, XMR));
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await holds((res.json() as { code: string }).code)).toEqual([{ lien, amount: (XMR / 2n).toString(), address: bound, status: 'open' }]);
+  });
+
+  it('review B2: nothing is reserved when the bound address is one of the trade\'s own (the debtor\'s payout); the remainder carries forward', async () => {
+    const seller = await person();
+    const debtor = await person();
+    const creditor = await person();
+    await lienOn(debtor, creditor, 2n * XMR, { address: debtor.address });
+    const res = await take(debtor, await postOffer(seller), body(debtor, XMR));
+    expect(res.statusCode, res.body).toBe(200);
+    expect((res.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBeUndefined();
+    expect(await holds((res.json() as { code: string }).code)).toEqual([]);
+  });
+
+  it('review B2: a poster-buyer whose payout, chosen after the take, is the bound address keeps nothing reserved', async () => {
+    const debtor = await person();
+    const creditor = await person();
+    const seller = await person();
+    const shared = await addWallet(debtor.id);
+    await lienOn(debtor, creditor, 2n * XMR, { address: shared.address });
+    const code = await taken(seller, await postOffer(debtor, { side: 'buy' }), body(seller, XMR));
+    expect(await holds(code)).toMatchObject([{ status: 'open', address: shared.address }]);
+    expect((await debtor.browser.post(`/v1/trades/${code}/wallet`, { walletId: shared.id })).statusCode).toBe(204);
+    expect(await holds(code)).toMatchObject([{ status: 'released', address: null }]);
+    expect((await debtor.browser.get(`/v1/trades/${code}`)).json()).not.toHaveProperty('lienRecoveryAtomic');
+  });
+
+  it('the poster-buyer path: a seller takes the debtor\'s buy ad, the hold is reserved and reaches the poster\'s view only (review M6)', async () => {
+    const debtor = await person();
+    const creditor = await person();
+    const seller = await person();
+    await lienOn(debtor, creditor, 2n * XMR);
+    const code = await taken(seller, await postOffer(debtor, { side: 'buy' }), body(seller, XMR));
+    const plan = escrowPlan({ amountAtomic: XMR, poster: 'buyer' });
+    const want = ((XMR - plan.feeAtomic) / 2n).toString();
+    expect(await holds(code)).toMatchObject([{ status: 'open', amount: want }]);
+    expect((await debtor.browser.post(`/v1/trades/${code}/wallet`, { walletId: debtor.wallet })).statusCode).toBe(204);
+    expect(((await debtor.browser.get(`/v1/trades/${code}`)).json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBe(want);
+    expect((await seller.browser.get(`/v1/trades/${code}`)).json()).not.toHaveProperty('lienRecoveryAtomic');
+  });
+
+  it('review B1/B3: an approved rate above 50% still reserves at most half, and the buyer always keeps more than the largest network fee', async () => {
+    const debtor = await person();
+    const creditor = await person();
+    await lienOn(debtor, creditor, 100n * XMR, { rate: 10000 });
+    const res = await take(debtor, await postOffer(await person()), body(debtor, XMR));
+    expect(res.statusCode, res.body).toBe(200);
+    expect((res.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBe((XMR / 2n).toString());
+    expect(lienRecoveryCap(XMR)).toBe(XMR / 2n);
+    expect(LIEN_RECOVERY_MAX_BPS).toBe(MAX_RECOVERY_RATE_BPS);
+  });
+
+  it('review M2: a trade cancelled after its escrow was set up keeps its hold (late coins can still complete it), and a late dispute-buyer payout records it', async () => {
+    const seller = await person();
+    const debtor = await person();
+    const creditor = await person();
+    const lien = await lienOn(debtor, creditor, 2n * XMR);
+    const code = await taken(debtor, await postOffer(seller), body(debtor, XMR));
+    await deps.db.query(`update trades set seller_refund = $2 where code = $1`, [code, fakeAddress()]);
+    const t = rowToTrade((await loadTradeRow(deps.db, code))!);
+    await driveTo(deps, t, 'funding');
+    expect((await applyEvent(deps, code, { type: 'buyer-cancel' }, 'buyer')).state).toBe('cancelled');
+    expect((await holds(code))[0]).toMatchObject({ status: 'open' });
+    // Late coins: the trade is escalated, and a ruling pays the buyer (the signed terms pay the recovery).
+    await deps.db.query(`update trades set state = 'disputed', received_atomic = $2 where code = $1`, [code, (XMR + XMR / 100n).toString()]);
+    await applyEvent(deps, code, { type: 'settled', kind: 'dispute-buyer', txHash: 'cd'.repeat(32) }, 'system');
+    expect((await deps.db.query('select coalesce(sum(amount_atomic), 0)::text as a from lien_recoveries where lien_id = $1', [lien])).rows[0]).toEqual({ a: (XMR / 2n).toString() });
+  });
+
+  it('review M2: a hold of a trade closed with no coins for longer than the moderation watch is free again', async () => {
+    const seller = await person();
+    const debtor = await person();
+    const creditor = await person();
+    await lienOn(debtor, creditor, XMR / 2n);
+    const code = await taken(debtor, await postOffer(seller), body(debtor, XMR));
+    await driveTo(deps, rowToTrade((await loadTradeRow(deps.db, code))!), 'funding');
+    await applyEvent(deps, code, { type: 'buyer-cancel' }, 'buyer');
+    // Within the window the remainder stays reserved for it.
+    const again = await take(debtor, await postOffer(await person()), body(debtor, XMR));
+    expect((again.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBeUndefined();
+    await deps.db.query(`update trades set closed_at = $2 where code = $1`, [code, new Date(deps.clock().getTime() - (WATCH_CLOSED_DAYS + 1) * DAY)]);
+    const later = await take(debtor, await postOffer(await person()), body(debtor, XMR));
+    expect((later.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBe((XMR / 2n).toString());
+  });
+
+  it('review I2: a released hold is not shown to the buyer', async () => {
+    const debtor = await person();
+    const creditor = await person();
+    await lienOn(debtor, creditor, XMR);
+    const code = await taken(debtor, await postOffer(await person()), body(debtor, XMR));
+    await applyEvent(deps, code, { type: 'buyer-cancel' }, 'buyer');
+    expect((await debtor.browser.get(`/v1/trades/${code}`)).json()).not.toHaveProperty('lienRecoveryAtomic');
   });
 
   it('a cancelled trade releases its hold and records nothing; the remainder is free again', async () => {
