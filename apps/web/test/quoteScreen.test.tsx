@@ -18,6 +18,7 @@ import { SELL_COPY } from '../src/screens/browse/SellCopy.js';
 import { resetSyncFirst, syncNow } from '../src/session/syncFirst.js';
 import { fire, render } from './render.js';
 import { BLUR_CHECK_LINE } from '../src/screens/quote/tradeTerms.js';
+import { forgetTypedAddresses } from '../src/screens/walletRecord.js';
 
 const session = vi.hoisted(() => ({ status: 'signed-in' as 'signed-in' | 'signed-out' | 'loading', me: {} as Record<string, unknown> }));
 vi.mock('../src/session/useSession.js', () => ({
@@ -1215,6 +1216,11 @@ describe('a new address added on the quote (owner note #6; the API never swaps a
   }
   const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text)!;
 
+  beforeEach(() => {
+    localStorage.clear();
+    forgetTypedAddresses();
+  });
+
   async function addOnQuote(answered: string, listed: string) {
     session.me = { securityRating: 'high' };
     stub.addWallet = () => {
@@ -1262,5 +1268,40 @@ describe('a new address added on the quote (owner note #6; the API never swaps a
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(stub.takes).toHaveLength(0);
+  });
+
+  it('review 17 Nov M4: after a trip away, a fresh quote with ?wallet=<id> still refuses a list naming another address for it', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    expect(first.host.querySelector<HTMLInputElement>('input[value="w-new"]')!.checked).toBe(true);
+    first.unmount();
+    // The quote comes back from the URL (Terms, setup, a reload); the API now lists another address.
+    stub.wallets = [...WALLETS, added(OTHER)];
+    const { host } = await open(`${BUY}&amount=412.50&wallet=w-new`);
+    expect(host.querySelector('input[value="w-new"]')).toBeNull();
+    expect(host.querySelectorAll('input[name="wallet"]:checked')).toHaveLength(0);
+    expect(host.textContent).not.toContain('OTHER1');
+    expect(host.querySelector('[data-part="new-address-swapped"]')!.textContent).toContain('different address');
+    expect(primary(host).disabled).toBe(true);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(0);
+  });
+
+  it('review 17 Nov M4: the same address listed after a trip away is picked and taken; the record never goes to the API', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    first.unmount();
+    const { host } = await open(`${BUY}&amount=412.50&wallet=w-new`);
+    expect(host.querySelector<HTMLInputElement>('input[value="w-new"]')!.checked).toBe(true);
+    expect(host.querySelector('[data-part="new-address-swapped"]')).toBeNull();
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]!.walletId).toBe('w-new');
+    expect((readConfirmed('K7M2-9QXA-4FTR-8WPN') as { ownAddress: string }).ownAddress).toBe(TYPED);
+    // Only the add itself carries the typed address; no other request does (no URL, no body).
+    const carrying = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.filter(([input, init]) => `${String(input)} ${typeof init?.body === 'string' ? init.body : ''}`.includes(TYPED))
+      .map(([input, init]) => `${init?.method ?? 'GET'} ${new URL(String(input), 'http://x2f.test').pathname}`);
+    expect(carrying).toEqual(['POST /v1/wallets']);
   });
 });

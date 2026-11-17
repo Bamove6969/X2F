@@ -8,6 +8,7 @@ import { CONFIRM_INVALID_WALLETS, RECOVERY_SESSION_WALLETS, Wallets } from '../s
 import type { WalletView } from '../src/screens/wallets-model.js';
 import { KEEP_FOR } from '../src/screens/walletsCopy.js';
 import { NEW_ADDRESS } from '../src/screens/quote/addressCopy.js';
+import { forgetTypedAddresses, typedAddressOf } from '../src/screens/walletRecord.js';
 import { fire, render } from './render.js';
 
 const address = (seed: string, end: string) => `4${seed.repeat(95).slice(0, 88)}${end}`;
@@ -55,6 +56,8 @@ function created(body: Record<string, unknown>, usableFrom: string, usable: bool
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  forgetTypedAddresses();
   stub = {
     wallets: [READY],
     rule: RULE_PASSWORD_ONLY,
@@ -373,6 +376,36 @@ describe('the default payout wallet in Your wallets (owner, 17 Nov 2026)', () =>
     expect(stub.calls.some((c) => c.method === 'PUT' && c.url === '/v1/wallets/w-other/default')).toBe(true);
     const after = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
     expect(after.map((r) => r.querySelector('[data-part="default"]') !== null)).toEqual([false, true, false]);
+  });
+});
+
+describe('the add records the address typed on this device, and refuses an answer naming another (review 17 Nov M4)', () => {
+  it('records each typed address under the id the API gave it', async () => {
+    stub.rule = RULE_FIRST;
+    stub.wallets = [];
+    stub.onPost = (body) => ({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', false) });
+    await mount();
+    await startAdding();
+    type('#wallet-address', ADDR_C);
+    await save(() => document.querySelector('.x2f-wallet-row') !== null);
+    expect(typedAddressOf('w-new-0')).toBe(ADDR_C);
+    expect(document.querySelector('.x2f-wallet-row')!.textContent).toContain(ADDR_C.slice(-6));
+    // Never sent anywhere: the only request carrying the address is the add itself.
+    expect(stub.calls.filter((c) => JSON.stringify(c).includes(ADDR_C)).map((c) => `${c.method} ${c.url}`)).toEqual(['POST /v1/wallets']);
+  });
+
+  it('an answer naming another address is refused: not shown as saved, and the typed address stays recorded for that id', async () => {
+    const OTHER = address('X', 'OTHER9');
+    stub.rule = RULE_FIRST;
+    stub.wallets = [];
+    stub.onPost = (body) => ({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', true).map((w) => ({ ...w, address: OTHER, addressEnd: 'OTHER9' })) });
+    await mount();
+    await startAdding();
+    type('#wallet-address', ADDR_C);
+    await save(() => document.querySelector('[role="alert"]') !== null);
+    expect([...document.querySelectorAll('[role="alert"]')].some((a) => a.textContent?.includes('different address'))).toBe(true);
+    expect(document.body.textContent).not.toContain('OTHER9');
+    expect(typedAddressOf('w-new-0')).toBe(ADDR_C);
   });
 });
 
