@@ -41,6 +41,8 @@ export interface HoldChangeSummary {
   wallets?: number;
   /** Wallets: each new address's last 6 characters. Optional: older API builds do not send it. */
   addressEnds?: string[];
+  /** Wallets (owner note #6): for each, in order, whether it is for one trade only. Absent from older API builds. */
+  oneTime?: boolean[];
   on?: boolean;
   memberId?: string;
   roles?: string[];
@@ -266,17 +268,17 @@ export interface AccountOverview {
    */
   accountType?: AccountType;
   /**
-   * Owner demo note #6 (16 Nov 2026): the trader account's rating by its login methods, decided by the
-   * API alone (apps/api/src/auth/rating.ts). `secure` (a passkey, security key, PGP key, or a password
-   * with an authenticator app) may add a payout address on the trade screen; `weak` (a password alone)
-   * adds them in Settings, where they wait 24 hours. Null for team members, staff and owner. Optional:
-   * older API builds do not send it (read it as not secure).
+   * Owner demo note #6 (16 Nov 2026) and his answers of 17 Nov: the trader account's rating by its
+   * login methods, decided by the API alone (apps/api/src/auth/rating.ts). `high` (a passkey, security
+   * key or PGP key, with or without a password) may add a payout address on the trade screen; `medium`
+   * (a password with the authenticator app) and `weak` (a password alone) add them in Settings. Null for
+   * team members, staff and owner. Optional: older API builds do not send it (read it as not high).
    */
   securityRating?: SecurityRating | null;
 }
 
 /** Owner demo note #6: an account's rating by the login methods it holds. */
-export type SecurityRating = 'weak' | 'secure';
+export type SecurityRating = 'weak' | 'medium' | 'high';
 
 /** Owner 2 Nov 2026: Trader and Vendor accounts. */
 export type AccountType = 'trader' | 'vendor';
@@ -379,6 +381,11 @@ export interface Wallet {
    * older API builds do not send it (saved for future trades).
    */
   oneTime?: boolean;
+  /**
+   * Owner, 17 Nov 2026: the default the trade screen picks first (the chosen one, else the only usable
+   * saved wallet). Optional: older API builds do not send it (no default).
+   */
+  isDefault?: boolean;
 }
 
 /** One wallet of an add (the fields the person fills in). */

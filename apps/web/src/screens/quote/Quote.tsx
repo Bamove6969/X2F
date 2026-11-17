@@ -168,7 +168,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const session = useSession();
   const myName = session.status === 'signed-in' ? ((session.me as { displayName?: string }).displayName ?? null) : null;
   // Owner demo note #6: the API's rating of the account (null when an older API sends none). Only a
-  // secure account is offered the new-address sheet; the API decides what an add does either way.
+  // highly secure account (owner 17 Nov) is offered the new-address sheet; the API decides what an add does either way.
   const rating = session.status === 'signed-in' ? (session.me.securityRating ?? null) : null;
   const [addingAddress, setAddingAddress] = useState(false);
   const [walletsTick, setWalletsTick] = useState(0);
@@ -198,7 +198,10 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const marketNow = market.kind === 'ready' ? market.value : null;
   const q: Quote | null = o && market.kind === 'ready' ? quote({ offer: o, market: marketNow, text, unit }) : null;
   const usable = wallets.kind === 'ready' ? wallets.value.filter((w) => w.usable) : [];
-  const pickedWallet = usable.find((w) => w.id === picked) ?? null;
+  // Owner, 17 Nov 2026 (overrides OD-11): until the person picks, the default wallet (the API's
+  // `isDefault`, the chosen one or the only usable saved wallet) is picked for them; they can pick
+  // another. A wallet in the URL (a trip away and back) wins. The take still names the wallet shown.
+  const pickedWallet = usable.find((w) => w.id === picked) ?? (picked === null ? (usable.find((w) => w.isDefault) ?? null) : null);
 
   // The amount, unit and wallet live in the URL, so any trip away (Terms, Add a wallet, setup)
   // comes back to the same quote.
@@ -413,10 +416,10 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             addHref={addWalletHref(false)}
             question={copy.adSide === 'sell' ? PAYOUT_QUESTION.buy : PAYOUT_QUESTION.sell}
             rating={rating}
-            {...(rating === 'secure' ? { onAddNew: () => setAddingAddress(true) } : {})}
+            {...(rating === 'high' ? { onAddNew: () => setAddingAddress(true) } : {})}
           />
         ) : null}
-        {addingAddress && rating === 'secure' ? <NewAddressSheet onClose={() => setAddingAddress(false)} onDone={onNewAddress} /> : null}
+        {addingAddress && rating === 'high' ? <NewAddressSheet onClose={() => setAddingAddress(false)} onDone={onNewAddress} /> : null}
         {signedIn === false ? (
           // Design review 8 Nov item 4: the wallet group is on the board before login too. There
           // is nothing to pick yet (the wallet comes with the account), so it says so; no radios.

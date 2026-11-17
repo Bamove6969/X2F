@@ -11,12 +11,12 @@ import { addError } from '../Wallets.js';
 import { ruleNote } from '../wallets-model.js';
 import { DEFAULT_NEW_NAME, NEW_ADDRESS as C } from './addressCopy.js';
 
-// Owner demo note #6 (16 Nov 2026; docs/trade-wallet-note6.md): a secure account adds a payout address
+// Owner demo note #6 (16 Nov 2026; docs/trade-wallet-note6.md): a highly secure account (owner 17 Nov) adds a payout address
 // right on the quote, named, for this trade only or for future trades too. It is the same add as
 // Settings → Your wallets (`POST /v1/wallets`, one confirm-it's-you bound to the exact address, R17),
 // so the API alone decides what happens: usable at once (picked for this trade), waiting 24 hours
 // (confirmed with a password), or staged as a waiting change (a username-and-password login, hold
-// model v3). The quote offers this sheet only to a secure account; the API never trusts that.
+// model v3). The quote offers this sheet to a highly secure account alone; the API never trusts that.
 
 const LABEL_MAX = 40;
 

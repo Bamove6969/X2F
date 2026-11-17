@@ -139,6 +139,8 @@ export interface PickWallet {
   usable: boolean;
   /** Owner demo note #6: for this trade only (absent from an older API build: saved). */
   oneTime: boolean;
+  /** Owner, 17 Nov 2026: the default, picked first on the quote (absent from an older API build: none). */
+  isDefault: boolean;
 }
 
 export async function fetchWallets(signal?: AbortSignal): Promise<PickWallet[]> {
@@ -149,9 +151,10 @@ export async function fetchWallets(signal?: AbortSignal): Promise<PickWallet[]> 
     const o = obj(v, at);
     if (typeof o.usable !== 'boolean') throw new ApiShapeError(`${at}.usable`);
     if (o.oneTime !== undefined && typeof o.oneTime !== 'boolean') throw new ApiShapeError(`${at}.oneTime`);
+    if (o.isDefault !== undefined && typeof o.isDefault !== 'boolean') throw new ApiShapeError(`${at}.isDefault`);
     return {
       id: str(o, 'id', at), app: str(o, 'app', at), label: str(o, 'label', at), address: str(o, 'address', at), addressEnd: str(o, 'addressEnd', at),
-      usable: o.usable, oneTime: o.oneTime === true,
+      usable: o.usable, oneTime: o.oneTime === true, isDefault: o.isDefault === true,
     };
   });
 }

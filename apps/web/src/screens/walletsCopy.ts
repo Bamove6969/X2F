@@ -13,3 +13,8 @@ export const KEEP_FOR = {
 
 /** The tag on a one-time wallet in the lists. COPY-UNSIGNED */
 export const ONE_TIME_TAG = 'One trade only';
+
+/** Owner, 17 Nov 2026: the default payout wallet, picked first when a trade starts. COPY-UNSIGNED */
+export const DEFAULT_TAG = 'Default';
+export const MAKE_DEFAULT = 'Make default';
+export const MAKE_DEFAULT_FAILED = 'That wallet could not be made the default. Try again.';

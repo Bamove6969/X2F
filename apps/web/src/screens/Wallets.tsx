@@ -29,7 +29,7 @@ import {
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
 import { ChoiceGroup } from '../ui/Choice.js';
-import { KEEP_FOR, ONE_TIME_TAG } from './walletsCopy.js';
+import { DEFAULT_TAG, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, ONE_TIME_TAG } from './walletsCopy.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -174,7 +174,7 @@ function useOpenEscrowKeys(): string[] {
   return codes;
 }
 
-function WalletRow({ w, onRemove }: { w: WalletView; onRemove: (w: WalletView) => void }) {
+function WalletRow({ w, onRemove, onMakeDefault }: { w: WalletView; onRemove: (w: WalletView) => void; onMakeDefault: (w: WalletView) => void }) {
   const status = walletStatus(w);
   return (
     <li className="x2f-wallet-row">
@@ -186,7 +186,14 @@ function WalletRow({ w, onRemove }: { w: WalletView; onRemove: (w: WalletView) =
         <span className="x2f-wallet-row__addr">
           <span>…{w.addressEnd}</span>
           {w.oneTime === true ? <span data-part="one-time"> · {ONE_TIME_TAG}</span> : null}
+          {w.isDefault === true ? <span data-part="default"> · {DEFAULT_TAG}</span> : null}
         </span>
+        {/* Owner, 17 Nov 2026: any saved wallet may be the default the trade screen picks first. */}
+        {w.isDefault !== true && w.oneTime !== true ? (
+          <button type="button" className="x2f-link x2f-wallet-row__default" data-part="make-default" onClick={() => onMakeDefault(w)}>
+            {MAKE_DEFAULT}
+          </button>
+        ) : null}
       </span>
       <span className="x2f-wallet-row__status">
         <span className="x2f-wallet-row__word" data-tone={status.tone}>
@@ -431,6 +438,17 @@ function WalletsScreen() {
     }
   }
 
+  /** Owner, 17 Nov 2026: the default payout wallet. The list is read again: the API marks the default. */
+  async function makeDefault(w: WalletView) {
+    setError(null);
+    try {
+      await api<unknown>(`/v1/wallets/${encodeURIComponent(w.id)}/default`, { method: 'PUT', body: {} });
+      void api<WalletView[]>('/v1/wallets').then(setWallets, () => undefined);
+    } catch {
+      setError(MAKE_DEFAULT_FAILED);
+    }
+  }
+
   const keyCount = codes.length;
 
   return (
@@ -460,7 +478,7 @@ function WalletsScreen() {
             <h2 className="x2f-wallets__section-label">Linked wallets</h2>
             <ul className="x2f-wallets__list">
               {wallets.map((w) => (
-                <WalletRow key={w.id} w={w} onRemove={remove} />
+                <WalletRow key={w.id} w={w} onRemove={remove} onMakeDefault={(x) => void makeDefault(x)} />
               ))}
             </ul>
           </section>
