@@ -180,3 +180,9 @@ the migration lists above.
   - semgrep 0 findings;
   - npm audit 0 vulnerabilities.
 - Not run: Playwright and the escrow/regtest suites.
+
+## Lead review of the N1 fix (158edc07, 17 Nov)
+- **walletRecord.ts:** the look-alike check compares the last 6 characters of every listed address against every address typed on this device: id records plus staged (202) adds, from both localStorage and memory. A full match passes and a same-ending mismatch fails, under any id. Storage errors fall back to memory. Nothing from the record is sent to the API.
+- **Screens:** they already sent every listed wallet through `matchesRecord`, so no screen logic changed.
+- **Tests:** red then green (7 intended failures before the fix). Full check exit 0: vitest 7219, semgrep 0, audit 0. Playwright web 533/0.
+- **Verdict: APPROVE.** N1 and O3 are closed, and O1 is unchanged (as on main). Before landing it still needs to merge onto main and pass the Monero suites.
