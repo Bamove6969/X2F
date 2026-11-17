@@ -425,6 +425,39 @@ describe('the list marks a wallet whose address differs from the one typed on th
   });
 });
 
+describe('a new id whose address ends like one typed on this device is marked too (re-verify 17 Nov N1)', () => {
+  it('a look-alike row (same last 6, another address, another id) says it does not match and offers no Make default', async () => {
+    recordTypedAddress('w-mine', ADDR_C);
+    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
+    const lookalike: WalletView = { ...READY, id: 'w-evil', label: 'New', address: address('Z', 'AAAAA1'), addressEnd: 'AAAAA1', isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, other, lookalike];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="not-matching"]') !== null)).toEqual([false, false, true]);
+    expect(rows.map((r) => [...r.querySelectorAll('button')].some((b) => b.textContent === 'Make default'))).toEqual([false, true, false]);
+  });
+
+  it('O3: an add staged for review (202) records the typed address, so a look-alike listed later is marked', async () => {
+    stub.onPost = () => ({ status: 202, json: { status: 'staged', changeId: 'c-1' } });
+    await mount();
+    await startAdding();
+    type('#wallet-address', ADDR_C);
+    await save(() => document.querySelector('[data-part="staged-note"]') !== null || confirmShown());
+    if (confirmShown()) {
+      type('#confirm-password', 'Correct-Horse-9!');
+      await click('Confirm', dialog("Confirm it's you")!.querySelector('[data-method="password"]')!);
+      await until(() => document.querySelector('[data-part="staged-note"]') !== null);
+    }
+    expect(document.querySelector('[data-part="staged-note"]')).not.toBeNull();
+    document.body.innerHTML = '';
+    const lookalike: WalletView = { ...READY, id: 'w-evil', label: 'New', address: address('Z', 'AAAAA1'), addressEnd: 'AAAAA1', isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, lookalike];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="not-matching"]') !== null)).toEqual([false, true]);
+  });
+});
+
 describe('Make default only on a wallet that works now (review 17 Nov M1)', () => {
   it('a waiting wallet offers no Make default (the API refuses it, 409 wallet-not-ready)', async () => {
     const waiting: WalletView = { ...READY, id: 'w-wait', label: 'New', address: address('W', 'Ww1Ww1'), addressEnd: 'Ww1Ww1', usable: false, usableFrom: '2099-01-01T00:00:00.000Z', isDefault: false };

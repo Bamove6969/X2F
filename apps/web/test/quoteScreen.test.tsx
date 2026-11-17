@@ -1304,4 +1304,61 @@ describe('a new address added on the quote (owner note #6; the API never swaps a
       .map(([input, init]) => `${init?.method ?? 'GET'} ${new URL(String(input), 'http://x2f.test').pathname}`);
     expect(carrying).toEqual(['POST /v1/wallets']);
   });
+
+  // Re-verify 17 Nov N1: the record is by id, and the API chooses ids. A list that drops the recorded
+  // wallet and names a new id whose address ends like the typed one (ground offline) is a swap too.
+  const LOOKALIKE = `4${'Z'.repeat(88)}TYPED1`;
+  const lookalike = () => ({ ...added(LOOKALIKE), id: 'w-evil', isDefault: true });
+  async function expectLookalikeRefused(path: string) {
+    const { host } = await open(path);
+    expect(host.querySelector('input[value="w-evil"]')).toBeNull();
+    expect(host.querySelectorAll('input[name="wallet"]:checked')).toHaveLength(0);
+    expect(host.querySelector('[data-part="new-address-swapped"]')!.textContent).toContain('different address');
+    expect(primary(host).disabled).toBe(true);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(0);
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toBeNull();
+  }
+
+  it('re-verify N1: a fresh quote (no ?wallet=) refuses a new id whose address ends like the one typed here, even as the default', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    first.unmount();
+    stub.wallets = [...WALLETS, lookalike()];
+    await expectLookalikeRefused(`${BUY}&amount=412.50`);
+  });
+
+  it('re-verify N1: the same with ?wallet=<new id>', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    first.unmount();
+    stub.wallets = [...WALLETS, lookalike()];
+    await expectLookalikeRefused(`${BUY}&amount=412.50&wallet=w-evil`);
+  });
+
+  it('re-verify N1 (O3): an add staged for review (202) is recorded by address, so a look-alike listed later is refused', async () => {
+    session.me = { securityRating: 'high' };
+    stub.addWallet = () => ({ status: 202, json: { status: 'staged', changeId: 'c-1' } });
+    const r = await open(`${BUY}&amount=412.50`);
+    fire(r.host.querySelector('[data-part="add-new-address"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    typeInto('#new-address-label', 'Rent');
+    typeInto('#new-address-address', TYPED);
+    fire(button('Save address'), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    await settle();
+    expect(document.querySelector('[data-part="new-address-staged"]')).not.toBeNull();
+    r.unmount();
+    // Applied later under Account changes, under an id this device never saw; the API lists a look-alike.
+    stub.wallets = [...WALLETS, lookalike()];
+    await expectLookalikeRefused(`${BUY}&amount=412.50`);
+  });
+
+  it('re-verify N1: a new id listing exactly the address typed here is offered and picked as before', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    first.unmount();
+    stub.wallets = [...WALLETS, { ...added(TYPED), id: 'w-again', isDefault: true }];
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(host.querySelector<HTMLInputElement>('input[value="w-again"]')!.checked).toBe(true);
+    expect(host.querySelector('[data-part="new-address-swapped"]')).toBeNull();
+  });
 });

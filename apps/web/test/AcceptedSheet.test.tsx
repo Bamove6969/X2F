@@ -296,4 +296,21 @@ describe('AcceptedSheet re-review (gaps 1-3)', () => {
     expect(options.map((o) => [o.value, o.checked])).toEqual([['w1', false], ['w2', true]]);
     expect(sheet().querySelector('[data-part="accepted-address-swapped"]')).toBeNull();
   });
+
+  it('re-verify N1: a new id whose address ends like one typed here (but differs) is never offered, picked or posted, even as the default', async () => {
+    // The poster typed ADDR2 for w2 on this device; the API drops w2 and lists a ground look-alike under a new id.
+    recordTypedAddress('w2', ADDR2);
+    const posted: Array<[string, string]> = [];
+    const lookalike: AcceptedWallet = { id: 'w-evil', app: 'feather', label: 'Feather', address: `5${'Z'.repeat(88)}d4e5f6`, addressEnd: 'd4e5f6', usable: true, isDefault: true };
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => [WALLETS[0]!, lookalike]} loadTrade={loadView} submit={async (c, w) => void posted.push([c, w])} onDone={() => undefined} onClose={() => undefined} />);
+    await flush();
+    const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(options.map((o) => o.value)).toEqual(['w1']);
+    expect(options.map((o) => o.checked)).toEqual([false]);
+    expect(sheet().textContent).not.toContain('d4e5f6');
+    expect(sheet().querySelector('[data-part="accepted-address-swapped"]')!.textContent).toContain('different address');
+    expect((button('Use this wallet') as HTMLButtonElement).disabled).toBe(true);
+    expect(posted).toEqual([]);
+    expect(readConfirmed(EVENT.code)).toBeNull();
+  });
 });
