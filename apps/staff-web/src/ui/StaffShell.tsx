@@ -147,7 +147,7 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
               <p className="x2f-staff__countdown" data-part="clock-out-reminder">
                 Clock out at the end of your shift to be paid. Logging out or closing the app does not pay.
               </p>
-              <Button variant="primary" data-part="clock-out" onClick={() => setClockingOut(true)}>
+              <Button variant="primary" data-part="clock-out-button" onClick={() => setClockingOut(true)}>
                 Clock out
               </Button>
             </>

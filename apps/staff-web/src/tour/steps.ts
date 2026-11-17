@@ -86,7 +86,7 @@ export const SN: TourStep = {
 /** D-045: the Clock out button (every role but the owner). Lead draft, COPY-UNSIGNED. */
 export const SC: TourStep = {
   id: 'SC',
-  target: '[data-part="clock-out"]',
+  target: '[data-part="clock-out-button"]',
   title: 'Clock out',
   body: 'Tap Clock out at the end of every shift. Your pay is worked out when you do.',
   placement: 'auto',
