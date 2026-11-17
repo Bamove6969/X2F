@@ -188,8 +188,9 @@ function WalletRow({ w, onRemove, onMakeDefault }: { w: WalletView; onRemove: (w
           {w.oneTime === true ? <span data-part="one-time"> · {ONE_TIME_TAG}</span> : null}
           {w.isDefault === true ? <span data-part="default"> · {DEFAULT_TAG}</span> : null}
         </span>
-        {/* Owner, 17 Nov 2026: any saved wallet may be the default the trade screen picks first. */}
-        {w.isDefault !== true && w.oneTime !== true ? (
+        {/* Owner, 17 Nov 2026: any saved wallet may be the default the trade screen picks first, once it
+            works (review 17 Nov M1: the API refuses a waiting wallet, 409 wallet-not-ready). */}
+        {w.isDefault !== true && w.oneTime !== true && w.usable ? (
           <button type="button" className="x2f-link x2f-wallet-row__default" data-part="make-default" onClick={() => onMakeDefault(w)}>
             {MAKE_DEFAULT}
           </button>

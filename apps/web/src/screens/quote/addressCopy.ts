@@ -61,7 +61,8 @@ export const NEW_ADDRESS = {
   address: 'Monero address',
   keepLegend: 'Use it for',
   oneTime: 'This trade only',
-  oneTimeNote: 'It is not listed again once this trade uses it, unless the trade is cancelled before any XMR is sent.',
+  // Review 17 Nov M3: the restore runs only for a cancel in setup (owner Q10; extending it is OQ2). COPY-UNSIGNED
+  oneTimeNote: 'It is not listed again once this trade uses it. It comes back only if the trade is cancelled while it is still being set up.',
   saved: 'Future trades too',
   savedNote: 'It stays in Your wallets.',
   save: 'Save address',

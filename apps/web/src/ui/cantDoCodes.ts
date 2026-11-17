@@ -187,7 +187,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   maintenance: "the site is in maintenance: the Maintenance screen with the owner's message",
   'out-of-range': 'an input check on the amount',
   'ad-busy': 'someone else is taking the offer (try again)',
-  'wallet-not-ready': 'pick another wallet (the wait is explained on Wallets)',
+  'wallet-not-ready': 'pick another wallet (the wait is explained on Wallets); Make default is never offered on a waiting wallet',
   'wallet-one-time': 'an input check: the app never offers Make default on a one-time wallet',
   'event-not-allowed': 'the trade state machine (the trade has moved on)',
   'wrong-state': 'the trade state machine (the trade has moved on)',

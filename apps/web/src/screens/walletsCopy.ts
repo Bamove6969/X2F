@@ -8,7 +8,8 @@ export const KEEP_FOR = {
   saved: 'Future trades',
   savedNote: 'It stays here until you remove it.',
   oneTime: 'One trade only',
-  oneTimeNote: 'Pick it when you start a trade. Once that trade uses it, it leaves this list. If that trade is cancelled before any XMR is sent, it comes back.',
+  // Review 17 Nov M3: the restore runs only for a cancel in setup (owner Q10; extending it is OQ2). COPY-UNSIGNED
+  oneTimeNote: 'Pick it when you start a trade. Once that trade uses it, it leaves this list. It comes back only if that trade is cancelled while it is still being set up.',
 } as const;
 
 /** The tag on a one-time wallet in the lists. COPY-UNSIGNED */
