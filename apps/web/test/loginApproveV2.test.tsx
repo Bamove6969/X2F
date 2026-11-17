@@ -73,8 +73,7 @@ describe('design tokens: the v2 scale', () => {
       expect(tokens.spacing.tokens).toContainEqual(expect.objectContaining({ name, value }));
     }
     const styles = tokens.type.groups.flatMap((g) => g.styles);
-    // Owner #43 (12 Nov): the type scale one step up, so the v2 titles moved from 24/30 and 28/32 to
-    // 26/32 and 30/34 (tokens.test.ts pins the same bump). Weight and tracking are unchanged.
+    // One step up since the owner's demo layout (b8489a7b): sheet title 24/30 to 26/32, screen title 28/32 to 30/34.
     expect(styles).toContainEqual(expect.objectContaining({ name: 'sheet-title', fontSize: '26px', lineHeight: '32px', fontWeight: 700, letterSpacing: '-0.01em' }));
     expect(styles).toContainEqual(expect.objectContaining({ name: 'screen-title', fontSize: '30px', lineHeight: '34px', fontWeight: 700, letterSpacing: '-0.01em' }));
   });
