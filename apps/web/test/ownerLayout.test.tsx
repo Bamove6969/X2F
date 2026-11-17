@@ -10,6 +10,7 @@ import { MemoryRouter } from 'react-router';
 import { ScreenHeader, screenName } from '../src/ui/ScreenHeader.js';
 import { HelpLinks, HELP_LINKS } from '../src/ui/HelpLinks.js';
 import { HelpTopic, HELP_TOPICS } from '../src/screens/HelpTopic.js';
+import { WELCOME_COPY } from '../src/screens/welcome/WelcomeScreen.js';
 import { WideTop } from '../src/ui/DesktopShell.js';
 import { TradeHeader } from '../src/ui/TradeHeader.js';
 import { Route, Routes } from 'react-router';
@@ -115,6 +116,8 @@ describe('help links on /login and /session-length (owner #38, #42)', () => {
     expect([...nav.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual(HELP_LINKS.map((l) => [l.label, l.to]));
     expect(read('screens/auth/Login.tsx')).toContain('<HelpLinks');
     expect(read('screens/auth/SessionLength.tsx')).toContain('<HelpLinks');
+    // The welcome screen's four links are the same ones (review 12 Nov, L3: one help page).
+    expect(WELCOME_COPY.links).toBe(HELP_LINKS);
   });
 
   it('a help topic is a placeholder page with its name, and an unknown topic says so', () => {
