@@ -126,35 +126,109 @@ Method counts for an account already exist: `methodCounts` (`routes/account.ts:1
    address in the body is 400; a staged, waiting, foreign or used one-time wallet is 409
    `wallet-not-ready` (`apps/api/test/take.test.ts`, "one-time wallets and the per-trade address").
 
-Checks on the branch head: typecheck (19 workspaces) clean; copy-lint clean (no new `not-a-refusal`
-pragma); separation-check ok; vitest api 116 files / 2703 passed (1 todo), web 138 / 2121,
-auth-client 6 / 77, tools 2 / 7; Playwright quote + wallets 60 passed, fold, block, browse-buy,
-browse-sell, setup, offer-units, team, accepted-phone 150 passed (1 skipped, existing),
-design-shots + parity 50 passed (52 skipped, existing).
+### Round 2: the owner's answers of 17 Nov, and the review's minors
+
+Owner answers to Q1-Q3 (below) and review `review-third-trade-wallet-2026-11-17.md` (claude3: approve
+with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
+
+7. **Three-level rating**: `accountRating` (`apps/api/src/auth/rating.ts:24`). It returns:
+   - `high` for a PGP key, passkey or security key, with or without a password;
+   - `medium` for a password with the authenticator app;
+   - `weak` for anything less.
+
+   It authorises nothing. Tests: `apps/api/test/rating.test.ts`; `account.test.ts` "rates the account
+   weak, medium or high". The web side is `SecurityRating` in `packages/auth-client`.
+8. **Default payout wallet** (overrides OD-11):
+   - Migration `630_wallet_default.sql` adds `wallets.is_default`. A check stops a one-time wallet being
+     the default, and a partial unique index allows one open default per account. 630 is free on every
+     remote branch.
+   - `effectiveDefault` (`wallets/routes.ts:72`) picks the chosen open wallet, else the only usable
+     saved wallet, else none. `GET /v1/wallets` sends it as `isDefault`.
+   - `PUT /v1/wallets/:id/default` (`wallets/routes.ts:463,517`) is for the account owner only. It is
+     blocked during a hold and not staged, because it changes no address and no wait. It runs under the
+     account lock. It answers 404 for a wallet that is not open or not theirs, and 409 `wallet-one-time`.
+   - Route classification: `hold.ts:663` (exempt from the live-session check, with its reason) and
+     `hold.ts:709` (hold-blocked); `frontDoor.ts:160`; Jabber change path; `ApiErrorCode` and
+     `NOT_REFUSAL_CODES`; `setDefaultWallet` in auth-client.
+   - Quote: picks the default first (`Quote.tsx:204`) and marks it "Default" (`WalletPicker.tsx:132`).
+     A wallet in the URL wins, and any usable wallet can still be picked. The take still sends only a
+     `walletId`.
+   - Settings: "Make default" on other saved wallets and a "Default" tag (`Wallets.tsx:193,442`).
+   - AcceptedSheet (the poster's pick) is unchanged: it still has no default (Q9).
+   - The list stays an accessible radio list: the owner left the display open ("whatever creative way",
+     a dropdown "is pretty easy").
+9. **Inline add for high accounts only** (`Quote.tsx:416-419`). Weak and medium accounts get a "?"
+   button (`AddressTip`, `WalletPicker.tsx:30,117`):
+   - it is a real `<button>` with `aria-expanded` and `aria-controls`, so tap, click, Enter and Space all
+     work; it is not hover-only;
+   - Escape closes it and gives focus back to the "?";
+   - the explanation links to Your wallets and to Settings → Security.
+
+   The text is `ADDRESS_TIP` in `quote/addressCopy.ts`, marked COPY-UNSIGNED.
+10. **Review M2** (`apps/api/test/take.test.ts`, "one-time wallets under races and rollbacks"):
+    - two takes at once with the same one-time wallet give 200 and 409 `wallet-not-ready`, with exactly
+      one trade on the address;
+    - a take racing the poster's wallet route has one winner and one 409;
+    - a take that fails at commit (deferred trigger) answers 500 and the wallet stays open;
+    - a refused poster route (`wrong-state`) leaves the wallet listed.
+11. **Review M3**: the test now really posts `POST /v1/wallets` from a weak login (202 staged, no wallet
+    row) and is retitled "staged, waiting, foreign or sent as an address".
+12. **Review M4**: the waiting-changes summary carries `oneTime` per wallet (`holdChanges.ts:89`).
+    Settings shows "(one trade only)" (`settings/holdCopy.ts:58`).
+13. **Review M5**: the use-up comment now names the Jabber change notice (`wallets/routes.ts:397`).
+
+Checks (round 2 head):
+- typecheck: 19 workspaces clean.
+- copy-lint: clean, with no new pragma.
+- separation-check: ok.
+- vitest: api 116 files / 2714 passed (1 todo); web 138 / 2127; auth-client 6 / 77; tools 2 / 7.
+- Playwright: quote + wallets 62 passed. fold, block, browse-buy, browse-sell, setup, offer-units, team,
+  accepted-phone, security, design-shots and parity: 223 passed, 52 skipped. The skips were not added
+  by this work; where they come from was not checked.
 
 ## Owner questions
 
-- **Q1 (default address).** OD-11 says "no default payout wallet; always ask". Your note says secure
-  accounts are "asked to use the default address or enter a new one". Should there be a default address
-  (which one: the first saved, or one you mark)? Built: no default; with one usable address it is the
-  only choice in the list.
-- **Q2 (dropdown).** The quote shows the addresses as a list to tap (the approved board). Do you want
-  it changed to a dropdown? Built: the list, unchanged.
-- **Q3 (inline add for TOTP-secure accounts).** Today a new address confirmed with a password (and
-  authenticator code) works 24 hours later, even from a strong login; with a passkey, security key or
-  PGP key it works at once. So a secure account whose extra method is the authenticator app cannot use
-  a brand-new address on the trade it is starting. Should a password + authenticator confirm make a new
-  address work at once? Built: unchanged (it waits), and the screen says so.
+- **Q1 (default address). ANSWERED 17 Nov:** "If they only have one wallet saved then that's the
+  default. If they have multiple they can choose to have one as the default that will automatically be
+  selected for the trade but they can change to a different using whatever creative way we wish to
+  display them. A drop-down menu is pretty easy." Built: item 8 (overrides OD-11).
+- **Q2 (dropdown). ANSWERED 17 Nov:** same words as Q1 ("whatever creative way ... A drop-down menu is
+  pretty easy"). Built: the accessible radio list stays, with the default picked first.
+- **Q3 (inline add for TOTP accounts). ANSWERED 17 Nov:** "User/pass/display name/otp is kinda like
+  medium security but they still wouldn't qualify to avoid the 24 hour hold since stronger security is
+  so easy to achieve. They will not have the option at the time of trade to change the wallet." And:
+  "on a lot of sites having no password is considered high security... as long as they have a username,
+  a display name, and either a passkey, PGP key, or security key, then their account is rated as highly
+  secure." On the "?" tip: "Maybe we should make some sort of a ? Mark or just something that they can
+  click on or mouse over for more info that says if you are wondering why you cannot add a new wallet
+  to send funds to at this time, it is because of the security rating their account has. Their options
+  are either to go to settings and add a new wallet and wait 24 hours for it to become active, or
+  increase the security on their account and not have to wait at all and be able to add new wallets
+  right at the moment of the trade." Built: items 7 and 9; the confirm-wait rule is unchanged.
 - **Q4 (first wallet).** A brand-new account's first address works at once, however it is confirmed
   (your rule of 23-24 Oct), weak accounts included. Should a weak account's first address wait 24 hours
   too? Built: unchanged.
 - **Q5 (password alone after 16 Nov).** Your 16 Nov decision says a password never stands alone (it
-  needs TOTP or another method). Once that ships, every new account is secure. Is "weak" then only for
+  needs TOTP or another method). Once that ships, every new account is at least medium. Is "weak" then only for
   accounts made before it, and should they be asked to add a method? Built: the rating works either way.
 - **Q6 (recovery code).** Does a recovery code count as "one of the other possibilities"? It is a backup
   way in, not a second factor. Built: it does **not** count (stricter); a password + recovery code
   account is rated weak.
-- **Q7 (expired PGP key).** A PGP key that has expired or been revoked still counts toward "secure" as
+- **Q7 (expired PGP key).** A PGP key that has expired or been revoked still counts toward "high" as
   built (the account holds it). Should only a working key count?
 - **Q8 (wording).** All new text is COPY-UNSIGNED and needs your wording sign-off (the note asked for
   "procure (or buy or purchase, whichever)"; built with "buy").
+- **Q9 (default on the accepted sheet).** The poster's wallet pick on the "accepted your offer" sheet
+  still starts with nothing picked (OD-11, review of Task 19). Should the default be picked first there
+  too? Built: unchanged.
+- **Q10 (review M1: a one-time address spent on a trade that never happens).** A one-time address is
+  used up when the trade starts (take or setup). If that trade is then cancelled in setup, the address
+  is gone. Adding it again follows the normal rule: 24 hours with a password confirm, staged from a
+  password-only login. Should a one-time address come back when its trade is cancelled before funding,
+  or should the screen warn about this? Built: no change (this fails safe).
+- **Q11 (review M6: a vendor whose last usable wallet was one-time).** Posting an offer needs a usable
+  wallet, but taking one does not check the poster's wallets. Once a vendor's last one-time wallet is
+  used up, a new take on another of their offers starts a trade the vendor cannot set up (409
+  `no-wallet`). The trade then runs out at its setup deadline. This already happens after a manual
+  removal; one-time wallets will make it common. Should such offers be hidden until the vendor adds a
+  wallet? Built: no change.
