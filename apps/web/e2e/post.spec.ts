@@ -477,7 +477,9 @@ test('trade size in XMR by default: one switch per box, both boxes switch togeth
       l.evaluate((el) => ({ weight: getComputedStyle(el).fontWeight, size: parseFloat(getComputedStyle(el).fontSize), color: getComputedStyle(el).color })),
     ),
   );
-  expect(Number(chosen!.weight)).toBeGreaterThanOrEqual(600);
+  // DM Mono's heaviest face is 500 (owner 16 Nov fonts D): heavier than the other's 400, no faked bold.
+  expect(Number(chosen!.weight)).toBeGreaterThanOrEqual(500);
+  expect(Number(chosen!.weight)).toBeGreaterThan(Number(other!.weight));
   expect(chosen!.size).toBeGreaterThan(other!.size);
   expect(chosen!.color).not.toBe(other!.color);
 

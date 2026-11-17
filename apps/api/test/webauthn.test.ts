@@ -605,14 +605,17 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     // snapshot has not caught up with), or the leaf has expired: a trader's key still registers.
     const otherRoot = createTestCa();
     const expired = createTestCa({ expiredLeaves: true });
-    const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
-    const trader = await loggedIn(traderId, true);
+    // One new trader per key: since sign-up v2 the sign-up window adds a first key only.
+    const traders: string[] = [];
     for (const [name, att] of [['another root', { aaguid: UNLISTED, ca: otherRoot }], ['another root, allowlisted model', { aaguid: ALLOWED, ca: otherRoot }], ['expired leaf', { aaguid: ALLOWED, ca: expired }]] as const) {
-      const r = await staffAdd(trader, createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: att }), 'security-key');
+      const id = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
+      traders.push(id);
+      const r = await staffAdd(await loggedIn(id, true), createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: att }), 'security-key');
       expect(r.res.statusCode, name).toBe(201);
     }
-    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
+    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = any($1::uuid[])', [traders]);
     expect(rows).toEqual([1, 2, 3].map(() => ({ kind: 'security-key', attested: false })));
+    const trader = await loggedIn(await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' }), true);
 
     // The retry without the statement still checks the rest: a wrong origin is still 401.
     const start = await trader.post('/v1/account/webauthn/start', { kind: 'security-key' });
