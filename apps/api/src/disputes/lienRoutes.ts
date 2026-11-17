@@ -1,12 +1,15 @@
 import { canDecideRateRequest, rateRequestRefusal } from '@x2f/staff';
+import { isRecoveryAddressStatement, recoveryAddressValid } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import sodium from 'libsodium-wrappers';
+import { requireLiveSessionInTx, requireNotHeld, withTx } from '../auth/hold.js';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
-import { LIEN_FIGURES_SQL, lienFigures, type LienFiguresRow } from './recovery.js';
+import { LIEN_FIGURES_SQL, lienFigures, pickRecovery, type LienFiguresRow } from './recovery.js';
+import { ownerDeviceOnly } from '../team/perms.js';
 import { actorOf, body as bodyOf } from './staffRoutes.js';
 
 /**
@@ -24,9 +27,7 @@ import { actorOf, body as bodyOf } from './staffRoutes.js';
  * Each is logged (`lien.rate-*`); the reason stays in `lien_rate_requests`, never in the log.
  * NEEDS_STAFF_WEB_LIEN_RATE: the staff site's screen (and its KeyTapDialog caller) is not built.
  *
- * Trader:
- * - `GET /v1/account/liens`: what this account owes (owed, recovered, remaining, current rate) and
- *   the recoveries arriving on liens owed to it. No account ids, no addresses.
+ * Trader: `accountLienRoutes` below.
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -153,27 +154,109 @@ export function lienRoutes(app: FastifyInstance): void {
   });
 }
 
-/** `GET /v1/account/liens`: the trader's own liens, both ways (rules 1-3: what is owed, recovered, left, and the rate). */
+/** How long ahead of the API's clock a creditor device's signed `issuedAt` may be (its clock may run fast). */
+const ADDRESS_CLOCK_SKEW_MS = 5 * 60_000;
+
+/**
+ * The trader's own liens:
+ * - `GET /v1/account/liens`: as debtor, each active or suspended lien's owed, recovered, left and
+ *   rate; as creditor (review M4, provisional owner answer Q4: totals only), each lien's owed,
+ *   recovered and left, its source trade (the creditor's own, to sign the address with) and whether
+ *   a recovery address is set; never the debtor's purchases (no per-trade rows, no times, no rate),
+ *   no account ids, no addresses.
+ * - `GET /v1/account/liens/preview?offerId&amountAtomic&walletId` (review B1): the recovery taking
+ *   that offer for that amount to that wallet would reserve now (`pickRecovery`), for the buyer's
+ *   quote to show and the buyer to accept; the take refuses any other figure.
+ * - `POST /v1/account/liens/:id/recovery-address { statement, sig }` (Q2): the creditor's device's
+ *   signed "pay my recoveries to X" (@x2f/trade RecoveryAddressStatement), signed with its trade
+ *   identity from the disputed trade; checked here against that identity, refused for an address
+ *   another account holds as a wallet or X2F's fee wallet (review B2), and checked again by the
+ *   moderation service against its own record of that identity before any recovery is signed. The
+ *   owner's device only, a live session (checked in the transaction), never during a hold.
+ */
 export function accountLienRoutes(app: FastifyInstance): void {
   app.get('/v1/account/liens', { preHandler: requireSession({ kinds: ['trader'] }) }, async (req) => {
     const db = req.server.deps.db;
     const me = req.auth.accountId;
     const rows = (
-      await db.query<LienFiguresRow>(
-        `${LIEN_FIGURES_SQL} where (l.debtor_account_id = $1 or l.creditor_account_id = $1) and l.status in ('active', 'suspended', 'repaid')
+      await db.query<LienFiguresRow & { address_set: boolean }>(
+        `${LIEN_FIGURES_SQL.replace('from liens l', ', l.creditor_address is not null as address_set from liens l')}
+          where (l.debtor_account_id = $1 or l.creditor_account_id = $1) and l.status in ('active', 'suspended', 'repaid')
           order by l.created_at, l.id`,
         [me],
       )
     ).rows;
-    const strip = (r: LienFiguresRow) => {
-      const { debtorId: _d, creditorId: _c, ...f } = lienFigures(r);
-      return f;
-    };
-    const owedTo = [];
-    for (const r of rows.filter((x) => x.creditor === me)) {
-      const rec = await db.query<{ amount_atomic: string; at: Date }>('select amount_atomic::text, at from lien_recoveries where lien_id = $1 order by at, id', [r.id]);
-      owedTo.push({ ...strip(r), recoveries: rec.rows.map((x) => ({ amountAtomic: x.amount_atomic, at: x.at.toISOString() })) });
-    }
-    return { owes: rows.filter((x) => x.debtor === me && x.status !== 'repaid').map(strip), owedTo };
+    const owes = rows
+      .filter((x) => x.debtor === me && x.status !== 'repaid')
+      .map((r) => {
+        const f = lienFigures(r);
+        return { id: f.id, status: f.status, amountAtomic: f.amountAtomic, recoveredAtomic: f.recoveredAtomic, remainingAtomic: f.remainingAtomic, rateBps: f.rateBps, defaultRateBps: f.defaultRateBps, fromCode: f.fromCode };
+      });
+    const owedTo = rows
+      .filter((x) => x.creditor === me)
+      .map((r) => {
+        const f = lienFigures(r);
+        return { id: f.id, status: f.status, amountAtomic: f.amountAtomic, recoveredAtomic: f.recoveredAtomic, remainingAtomic: f.remainingAtomic, fromCode: f.fromCode, recoveryAddressSet: r.address_set };
+      });
+    return { owes, owedTo };
+  });
+
+  app.get('/v1/account/liens/preview', { preHandler: requireSession({ kinds: ['trader'] }) }, async (req) => {
+    const { db, clock } = req.server.deps;
+    const me = req.auth.accountId;
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const offerId = typeof q.offerId === 'string' ? q.offerId.toLowerCase() : '';
+    const amount = typeof q.amountAtomic === 'string' && /^[1-9]\d{0,30}$/.test(q.amountAtomic) ? BigInt(q.amountAtomic) : null;
+    const walletId = typeof q.walletId === 'string' ? q.walletId.toLowerCase() : '';
+    if (!UUID.test(offerId) || amount === null || !UUID.test(walletId)) throw new ApiError(400, 'bad-request');
+    const offer = (await db.query<{ account_id: string; side: string }>('select account_id::text, side from offers where id = $1', [offerId])).rows[0];
+    // Only a taker who buys from a seller's ad has proceeds here; anything else reserves nothing.
+    if (offer === undefined || offer.side !== 'sell' || offer.account_id === me) return { lienRecoveryAtomic: '0' };
+    const w = (await db.query<{ address: string | null }>('select address from wallets where id = $1 and account_id = $2 and removed_at is null', [walletId, me])).rows[0];
+    const r = await pickRecovery(db, { buyerId: me, sellerId: offer.account_id, proceedsAtomic: amount, ownAddresses: [w?.address ?? null], feeWallet: req.server.deps.config.feeWallet ?? null, now: clock() }, false);
+    return { lienRecoveryAtomic: (r?.amountAtomic ?? 0n).toString() };
+  });
+
+  app.post('/v1/account/liens/:id/recovery-address', { preHandler: [requireSession({ kinds: ['trader'] }), ownerDeviceOnly, requireNotHeld] }, async (req, reply) => {
+    const b = bodyOf(req, ['statement', 'sig']);
+    const id = param(req, 'id');
+    const me = req.auth.accountId;
+    const { db, clock } = req.server.deps;
+    await withTx(db, async (c) => {
+      const now = clock();
+      // Where the creditor's money goes: the session must still be live, under the account lock (LIVE_SESSION_ROUTES).
+      await requireLiveSessionInTx(c, req.auth, now);
+      const lien = (
+        await c.query<{ creditor: string; status: string; from_code: string; statement: { issuedAt?: string } | null }>(
+          `select creditor_account_id::text as creditor, status, from_code, creditor_address_statement as statement from liens where id = $1 for update`,
+          [id],
+        )
+      ).rows[0];
+      if (lien === undefined || lien.creditor !== me) throw new ApiError(404, 'not-found');
+      if (lien.status !== 'active' && lien.status !== 'suspended') throw new ApiError(409, 'wrong-state');
+      const s = b.statement;
+      if (!isRecoveryAddressStatement(s) || s.fromCode !== lien.from_code) throw new ApiError(400, 'bad-request');
+      const ident = (
+        await c.query<{ sign_public: string; side: 'buyer' | 'seller' }>(
+          `select i.sign_public, i.role as side from trades t join trade_identities i on i.code = t.code
+            where t.code = $1 and i.role = case when t.buyer_account_id = $2 then 'buyer' when t.seller_account_id = $2 then 'seller' end`,
+          [lien.from_code, me],
+        )
+      ).rows[0];
+      // The disputed trade's record (its identities) is gone after the 90-day purge: nothing to check against.
+      if (ident === undefined) throw new ApiError(409, 'wrong-state');
+      await sodium.ready;
+      if (s.creditorSide !== ident.side || !recoveryAddressValid(s, b.sig, ident.sign_public)) throw new ApiError(400, 'bad-request');
+      const issued = Date.parse(s.issuedAt);
+      if (issued > now.getTime() + ADDRESS_CLOCK_SKEW_MS) throw new ApiError(400, 'bad-request');
+      if (lien.statement?.issuedAt !== undefined && !(issued > Date.parse(lien.statement.issuedAt))) throw new ApiError(409, 'wrong-state');
+      // Review B2 with Q2: never an address another account holds as a wallet (the debtor's payout, say).
+      // Nor X2F's fee wallet (B2: the completed trade's payout could not be built).
+      const taken = await c.query('select 1 from wallets where address = $1 and account_id <> $2 limit 1', [s.address, me]);
+      if ((taken.rowCount ?? 0) > 0 || s.address === req.server.deps.config.feeWallet) throw new ApiError(409, 'recovery-address-refused');
+      await c.query('update liens set creditor_address = $2, creditor_address_statement = $3, creditor_address_sig = $4 where id = $1', [id, s.address, s, b.sig]);
+      await appendLog(c, { at: now, actor: { kind: 'trader', side: ident.side }, tradeCode: lien.from_code, action: 'lien.recovery-address-set', detail: { lienId: id } });
+    });
+    return reply.code(204).send();
   });
 }

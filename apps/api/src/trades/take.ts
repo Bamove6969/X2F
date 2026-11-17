@@ -100,20 +100,28 @@ interface TakeBody {
   giftCardTerms: unknown;
   methodId: string;
   currency: string;
+  /**
+   * Lien recovery (review B1, docs/lien-recovery.md): the figure the buyer's quote showed and the
+   * buyer accepted ('0' or absent: none). A taker who buys gets 409 `lien-recovery-changed` when the
+   * trade would reserve any other figure; a taker who sells never sends one.
+   */
+  lienRecoveryAtomic: bigint | null;
 }
 
 function parseTake(body: unknown): TakeBody {
   if (!isObject(body)) throw bad();
-  const keys = Object.keys(body).filter((k) => k !== 'giftCardTerms').sort().join(',');
+  const keys = Object.keys(body).filter((k) => k !== 'giftCardTerms' && k !== 'lienRecoveryAtomic').sort().join(',');
   if (keys !== 'amountAtomic,centsPerXmr,currency,fiatCents,methodId,walletId') throw bad();
-  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents, methodId, currency, giftCardTerms } = body;
+  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents, methodId, currency, giftCardTerms, lienRecoveryAtomic } = body;
+  if (lienRecoveryAtomic !== undefined && (typeof lienRecoveryAtomic !== 'string' || !/^(0|[1-9]\d{0,30})$/.test(lienRecoveryAtomic))) throw bad();
   if (typeof methodId !== 'string' || methodId.length === 0 || methodId.length > 64) throw bad();
   if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) throw bad();
   if (typeof amountAtomic !== 'string' || !ATOMIC.test(amountAtomic)) throw bad();
   if (typeof walletId !== 'string' || !UUID.test(walletId)) throw bad();
   if (typeof centsPerXmr !== 'string' || !PRICE.test(centsPerXmr)) throw bad();
   if (typeof cents !== 'string' || !CENTS.test(cents)) throw bad();
-  return { amountAtomic: BigInt(amountAtomic), walletId, centsPerXmr: BigInt(centsPerXmr), fiatCents: BigInt(cents), methodId, currency, giftCardTerms };
+  return { amountAtomic: BigInt(amountAtomic), walletId, centsPerXmr: BigInt(centsPerXmr), fiatCents: BigInt(cents), methodId, currency, giftCardTerms,
+    lienRecoveryAtomic: lienRecoveryAtomic === undefined ? null : BigInt(lienRecoveryAtomic as string) };
 }
 
 function parseWalletBody(body: unknown): string {
@@ -445,6 +453,10 @@ export function takeRoutes(app: FastifyInstance): void {
         proceedsAtomic: poster === 'seller' ? t.amountAtomic : t.amountAtomic - plan.feeAtomic,
         // Review B2: never to one of this trade's own addresses (the poster's comes later: the wallet route).
         ownAddresses: [sides.buyerPayout, sides.sellerRefund],
+        feeWallet: req.server.deps.config.feeWallet ?? null,
+        // Review B1: a buying taker accepted this figure on the quote (none sent: none); the poster
+        // buyer accepts it on their own screen before anything is signed (AcceptedSheet).
+        accepted: t.buyerId === takerId ? (b.lienRecoveryAtomic ?? 0n) : null,
       });
       if (recovery !== null) {
         // Last (append.ts M2): nothing is awaited after the log lock but the commit.

@@ -614,6 +614,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   // J-23 groundwork: the chat-key courier re-checks the session (strong, strictly) and the hold
   // under the account lock (auth/chatKeys.ts `strongCallerInTx`).
   ...CHAT_KEY_WRITE_ROUTES,
+  // Lien recovery (review B1/Q2): the creditor's signed address its recoveries are paid to
+  // (disputes/lienRoutes.ts; the lock is the account's).
+  'POST /v1/account/liens/:id/recovery-address',
 ];
 
 /**
@@ -723,6 +726,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   ...JABBER_WRITE_ROUTES,
   // J-23 groundwork (design note 2.4): nothing is handed over during a hold (auth/chatKeys.ts).
   ...CHAT_KEY_WRITE_ROUTES,
+  // Lien recovery (review B1/Q2): where a creditor's recoveries are paid is not changed during a hold.
+  'POST /v1/account/liens/:id/recovery-address',
 ];
 
 /**

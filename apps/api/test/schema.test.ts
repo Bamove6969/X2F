@@ -538,6 +538,10 @@ describe('config', () => {
     expect(loadConfig({ ...FULL_ENV, X2F_PGP_SIGNING_FINGERPRINT: 'b'.repeat(64) }).pgpSigningFingerprint).toBe('b'.repeat(64));
     expect(c.vapidPublic).toBe(FULL_ENV.X2F_VAPID_PUBLIC);
     expect(c.vapidPrivate).toBe(FULL_ENV.X2F_VAPID_PRIVATE);
+    // Lien recovery, review B2: X2F's fee wallet is optional.
+    expect(c.feeWallet).toBeNull();
+    const fee = '5'.padEnd(95, 'A');
+    expect(loadConfig({ ...FULL_ENV, X2F_FEE_WALLET: fee }).feeWallet).toBe(fee);
   });
 
   it('needs both VAPID keys (Task 19)', () => {
@@ -564,6 +568,7 @@ describe('config', () => {
     ['X2F_VAPID_PUBLIC', Buffer.alloc(33, 4).toString('base64url')],
     ['X2F_VAPID_PRIVATE', Buffer.alloc(31, 5).toString('base64url')],
     ['X2F_VAPID_PRIVATE', 'not base64url!'],
+    ['X2F_FEE_WALLET', 'not-a-monero-address'],
     ['X2F_VAPID_PUBLIC', (() => { const e = createECDH('prime256v1'); e.generateKeys(); return e.getPublicKey().toString('base64url'); })()],
   ])('refuses malformed %s', (name, value) => {
     expect(() => loadConfig({ ...FULL_ENV, [name]: value })).toThrow(name);

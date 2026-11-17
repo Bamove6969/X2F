@@ -75,8 +75,6 @@ interface TradeRow {
   poster: LienSide;
   amount_atomic: string;
   fee_atomic: string;
-  buyer_payout: string | null;
-  seller_refund: string | null;
 }
 
 /**
@@ -88,16 +86,13 @@ interface TradeRow {
 export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next: Dispute, now: Date): Promise<void> {
   const t = (
     await client.query<TradeRow>(
-      `select seller_account_id::text as seller, buyer_account_id::text as buyer, poster, amount_atomic::text, fee_atomic::text,
-              buyer_payout, seller_refund
+      `select seller_account_id::text as seller, buyer_account_id::text as buyer, poster, amount_atomic::text, fee_atomic::text
          from trades where code = $1`,
       [next.code],
     )
   ).rows[0];
   if (!t) throw new Error('lien rules: the disputed trade is missing');
   const accountOf = (s: LienSide) => (s === 'seller' ? t.seller : t.buyer);
-  // Review B1: a side's own address in this trade, the one the moderation service signed here.
-  const addressOf = (s: LienSide) => (s === 'seller' ? t.seller_refund : t.buyer_payout);
   const sideOf = (accountId: string): LienSide => (accountId === t.seller ? 'seller' : 'buyer');
   const stored = (
     await client.query<LienRow>(
@@ -129,13 +124,10 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
         const debtor = accountOf(s.debtor);
         const r = await client.query<{ id: string }>(
           `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause,
-             status, created_at, changed_at, creditor_address)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $9, $10)
+             status, created_at, changed_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $9)
            on conflict (from_code, dispute_seq, round, debtor_account_id) do nothing returning id::text`,
-          [
-            debtor, accountOf(lienCreditor(s.debtor)), s.amountAtomic.toString(), s.feeAtomic.toString(), next.code, next.seq, s.round, s.cause, now,
-            addressOf(lienCreditor(s.debtor)),
-          ],
+          [debtor, accountOf(lienCreditor(s.debtor)), s.amountAtomic.toString(), s.feeAtomic.toString(), next.code, next.seq, s.round, s.cause, now],
         );
         if (r.rows[0]) {
           await appendLog(client, {
@@ -171,6 +163,10 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
           const open = await client.query(`select 1 from lien_recovery_holds where lien_id = $1 and status = 'open' limit 1`, [s.id]);
           if ((open.rowCount ?? 0) > 0) throw new ApiError(409, 'lien-recovery-in-flight');
         }
+        if (s.op === 'void') {
+          await applyLienVoid(client, s.id, now, next.code);
+          break;
+        }
         const over = c.status === 'void' || c.status === 'repaid';
         const r = await client.query(
           `update liens set status = $2, changed_at = $3, lifted_at = case when $4 then $3::timestamptz end
@@ -181,4 +177,32 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
       }
     }
   }
+}
+
+/**
+ * Voids lien `id` (a round-2 overturn, from `lienSteps`) on `client` inside the dispute's
+ * transaction, logged on `logCode` (the dispute's trade). Q6 (provisional owner answer, 17 Nov
+ * 2026; docs/lien-recovery.md): the holds of the debtor's trades whose terms are not signed yet are
+ * released, so those trades pay nothing; a trade already attested pays what its signed terms carry
+ * (nothing can change them), and `settleRecovery` records that payment and flags it for staff
+ * (`lien.recovered-after-end`; no automatic clawback). True when the lien changed.
+ */
+export async function applyLienVoid(client: pg.PoolClient, id: string, now: Date, logCode?: string): Promise<boolean> {
+  const released = await client.query<{ trade_code: string; amount_atomic: string }>(
+    `update lien_recovery_holds h set status = 'released', closed_at = $2, address = null, address_statement = null, address_sig = null
+      where h.lien_id = $1 and h.status = 'open' and not exists (select 1 from trade_attestations a where a.code = h.trade_code)
+      returning h.trade_code, h.amount_atomic::text`,
+    [id, now],
+  );
+  const r = await client.query(
+    `update liens set status = 'void', changed_at = $2, lifted_at = $2 where id = $1 and status in ('active', 'suspended') returning from_code`,
+    [id, now],
+  );
+  const system = { kind: 'system' as const };
+  for (const h of released.rows) {
+    await appendLog(client, { at: now, actor: system, tradeCode: h.trade_code, action: 'lien.recovery-released', detail: { lienId: id, amountAtomic: h.amount_atomic } });
+  }
+  const changed = (r.rowCount ?? 0) === 1;
+  if (changed) await appendLog(client, { at: now, actor: system, tradeCode: logCode ?? (r.rows[0] as { from_code: string }).from_code, action: 'lien.voided', detail: { lienId: id } });
+  return changed;
 }

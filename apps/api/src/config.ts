@@ -46,6 +46,12 @@ export interface Config {
   jabberKeys: Keyring | null;
   /** X2F's own sending account (`X2F_XMPP_*`). GAP: the production account and server are not set up yet. */
   xmpp: XmppConfig | null;
+  /**
+   * Lien recovery, review B2: X2F's fee wallet address (`X2F_FEE_WALLET`, optional; the same address
+   * every app and the moderation service have built in). Never accepted or reserved as a creditor's
+   * recovery address. Unset: the moderation service still refuses to sign one (docs/lien-recovery.md).
+   */
+  feeWallet?: string | null;
 }
 
 /**
@@ -262,10 +268,13 @@ export function loadConfig(env: Env): Config {
   }
   if (!vapidPairMatches(vapidPublic, vapidPrivate)) throw malformed('X2F_VAPID_PUBLIC', 'not the public half of X2F_VAPID_PRIVATE');
 
+  const feeWallet = env.X2F_FEE_WALLET ? env.X2F_FEE_WALLET.trim() : null;
+  if (feeWallet !== null && !/^[1-9A-HJ-NP-Za-km-z]{95,106}$/.test(feeWallet)) throw malformed('X2F_FEE_WALLET', 'a Monero address');
+
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp,
+    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp, feeWallet,
   };
 }
 

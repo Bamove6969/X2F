@@ -223,31 +223,15 @@ async function complied(code: string) {
   await withDispute(deps, { code }, async (d, _client, now) => applyDispute(d, { type: 'complied' }, { kind: 'system' }, now, S));
 }
 
-// Review B1 (lien recovery, 2026-11-16): a lien keeps the creditor's own address from the disputed
-// trade, the one the moderation service signed there, so recoveries go to it and nowhere the API chooses.
-describe('the creditor\'s address is bound at placement (review B1)', () => {
-  it('seller-sends-xmr: the lien keeps the buyer\'s payout address from the disputed trade', async () => {
-    const { code } = await disputed({ afterRefund: true, poster: 'buyer' });
-    const payout = (await deps.db.query<{ a: string }>('select buyer_payout as a from trades where code = $1', [code])).rows[0]!.a;
-    await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
-    const { rows } = await deps.db.query('select creditor_address from liens where from_code = $1', [code]);
-    expect(rows).toEqual([{ creditor_address: payout }]);
-  });
-
-  it('released at round 1, refunded on appeal: the buyer\'s lien pays the seller\'s refund address', async () => {
-    const { buyer, code } = await disputed({ afterRefund: false });
-    const refund = (await deps.db.query<{ a: string }>('select seller_refund as a from trades where code = $1', [code])).rows[0]!.a;
-    await publishRuling(deps, code, { outcome: 'release-to-buyer' });
-    await appealDirect(deps, code, 'seller');
-    await publishRuling(deps, code, { outcome: 'refund-to-seller' });
-    const { rows } = await deps.db.query('select debtor_account_id::text as d, creditor_address from liens where from_code = $1 and round = 2', [code]);
-    expect(rows).toEqual([{ d: buyer.id, creditor_address: refund }]);
-  });
-
-  it('once set it never changes', async () => {
+// Q2 (provisional owner answer, 17 Nov 2026): no address is bound at placement; recoveries wait for
+// the address the creditor's own device signs (POST /v1/account/liens/:id/recovery-address, take.test.ts).
+describe('the creditor\'s recovery address (Q2)', () => {
+  it('a placed lien carries no address until the creditor signs one; an address without its signed statement is refused by SQL', async () => {
     const { code } = await disputed({ afterRefund: true, poster: 'buyer' });
     await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
-    await expect(deps.db.query(`update liens set creditor_address = 'x' where from_code = $1`, [code])).rejects.toThrow(/never change/);
+    const { rows } = await deps.db.query('select creditor_address, creditor_address_statement, creditor_address_sig from liens where from_code = $1', [code]);
+    expect(rows).toEqual([{ creditor_address: null, creditor_address_statement: null, creditor_address_sig: null }]);
+    await expect(deps.db.query(`update liens set creditor_address = 'x' where from_code = $1`, [code])).rejects.toThrow(/liens_creditor_address_signed/);
   });
 });
 
@@ -260,7 +244,7 @@ describe('complied while a recovery is in flight (review M2)', () => {
     const lien = (await deps.db.query<{ id: string }>('select id::text from liens where from_code = $1', [code])).rows[0]!.id;
     const other = await trader();
     const { code: next } = await seedTrade(deps, { sellerId: other.id, buyerId: seller.id, poster: 'seller' });
-    await deps.db.query(`insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, address, created_at) values ($1, $2, 1000, 'creditor-address', now())`, [lien, next]);
+    await deps.db.query(`insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, created_at) values ($1, $2, 1000, 5000, 'creditor-address', now())`, [lien, next]);
     await expect(complied(code)).rejects.toMatchObject({ status: 409, code: 'lien-recovery-in-flight' });
     expect(await liens(code)).toMatchObject([{ status: 'active' }]);
     await deps.db.query(`update lien_recovery_holds set status = 'released', closed_at = now(), address = null where trade_code = $1`, [next]);

@@ -446,7 +446,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     }
     case 'lien-rate':
       exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
-      // Review B1: at most the default (MAX_RECOVERY_RATE_BPS; NEEDS_GATE_LIEN_RATE).
+      // Q1 (provisional, 17 Nov): at most 90% (MAX_RECOVERY_RATE_BPS). The moderation service verifies this tap itself before it signs a recovery at the rate.
       if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > MAX_RECOVERY_RATE_BPS) throw badRequest();
       return { kind: 'lien-rate', lienId: match(r, 'lienId', UUID).toLowerCase(), requestId: match(r, 'requestId', UUID).toLowerCase(), rateBps: r.rateBps };
     case 'ruling': {

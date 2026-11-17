@@ -6,7 +6,9 @@ import {
   INTERNAL_AT_HEADER,
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
+  signLienStatement,
   verifyAttestation,
+  type LienStatement,
   type Attestation,
   type AttestedTerms,
   type ConfirmedDeal,
@@ -282,29 +284,82 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('review B1: a trade with a lien recovery hands moderation its source (the disputed trade and the creditor\'s side) beside the terms', async () => {
+  it('review B1: a trade with a lien recovery hands moderation its source (the disputed trade and the creditor\'s side), the lien, its parties, this trade\'s buyer, the rate and the creditor\'s signed address', async () => {
     const { code, buyer, seller } = await freshTrade();
     const src = await freshTrade();
-    // The disputed trade: the creditor was its buyer; the lien binds that trade's buyer payout.
-    const srcRow = (await deps.db.query<{ buyer_payout: string; buyer_account_id: string }>('select buyer_payout, buyer_account_id::text from trades where code = $1', [src.code])).rows[0]!;
+    const srcRow = (await deps.db.query<{ buyer_account_id: string }>('select buyer_account_id::text from trades where code = $1', [src.code])).rows[0]!;
+    const address = '4'.padEnd(95, 'R');
+    const statement = { v: 1, fromCode: src.code, creditorSide: 'buyer', address, issuedAt: now.toISOString() };
     const lien = (await deps.db.query<{ id: string }>(
-      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at, creditor_address)
-       values ($1, $2, 1000000, 0, $3, 1, 1, 'restitution', now(), now(), $4) returning id::text`,
-      [buyer.id, srcRow.buyer_account_id, src.code, srcRow.buyer_payout],
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at,
+         recovery_rate_bps, creditor_address, creditor_address_statement, creditor_address_sig)
+       values ($1, $2, 1000000, 0, $3, 1, 1, 'restitution', now(), now(), 7000, $4, $5, $6) returning id::text`,
+      [buyer.id, srcRow.buyer_account_id, src.code, address, statement, 'ab'.repeat(64)],
     )).rows[0]!.id;
-    await deps.db.query(`insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, address, created_at) values ($1, $2, 1000, $3, now())`, [lien, code, srcRow.buyer_payout]);
+    // The hold keeps the rate and the creditor's statement as they were at take (the buyer accepted them).
+    await deps.db.query(
+      `insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, address_statement, address_sig, created_at) values ($1, $2, 1000, 7000, $3, $4, $5, now())`,
+      [lien, code, address, statement, 'ab'.repeat(64)],
+    );
+    // A rate approved and a statement signed after the take change nothing this trade carries.
+    const later = { ...statement, address: '4'.padEnd(95, 'S'), issuedAt: new Date(now.getTime() + 1000).toISOString() };
+    await deps.db.query(`update liens set recovery_rate_bps = 9000, creditor_address = $2, creditor_address_statement = $3, creditor_address_sig = $4 where id = $1`, [
+      lien, later.address, later, 'cd'.repeat(64),
+    ]);
     await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
     await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body);
     const work = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string; terms: AttestedTerms; lienSource?: unknown }> };
     const item = work.work.find((w) => w.trade === code)!;
-    expect(item.terms.lienRecovery).toEqual({ address: srcRow.buyer_payout, amountAtomic: '1000' });
-    expect(item.lienSource).toEqual({ fromCode: src.code, creditor: 'buyer' });
+    expect(item.terms.lienRecovery).toEqual({ address, amountAtomic: '1000' });
+    expect(item.lienSource).toEqual({
+      fromCode: src.code, creditor: 'buyer', lienId: lien, debtorAccount: buyer.id, creditorAccount: srcRow.buyer_account_id,
+      buyerAccount: buyer.id, rateBps: 7000, address: { statement, sig: 'ab'.repeat(64) },
+    });
     // A trade without one carries no source.
     const plain = await freshTrade();
     await plain.buyer.b.post(`/v1/trades/${plain.code}/identity`, identityFor(plain.code, 'buyer').body);
     await plain.seller.b.post(`/v1/trades/${plain.code}/identity`, identityFor(plain.code, 'seller').body);
     const again = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string; lienSource?: unknown }> };
     expect(again.work.find((w) => w.trade === plain.code)).not.toHaveProperty('lienSource');
+  });
+
+  it('review B2: a trade whose recovery address is one of its own is not served as work (checked again before any signature)', async () => {
+    const { code, buyer, seller } = await freshTrade();
+    const src = await freshTrade();
+    const payout = (await deps.db.query<{ a: string }>('select buyer_payout as a from trades where code = $1', [code])).rows[0]!.a;
+    const lien = (await deps.db.query<{ id: string }>(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at,
+         creditor_address, creditor_address_statement, creditor_address_sig)
+       values ($1, $2, 1000000, 0, $3, 1, 1, 'restitution', now(), now(), $4, '{}'::jsonb, repeat('0', 128)) returning id::text`,
+      [buyer.id, seller.id, src.code, payout],
+    )).rows[0]!.id;
+    await deps.db.query(`insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, created_at) values ($1, $2, 1000, 5000, $3, now())`, [lien, code, payout]);
+    await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
+    await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body);
+    const work = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
+    expect(work.work.find((w) => w.trade === code)).toBeUndefined();
+  });
+
+  it('review B1: the moderation service\'s signed lien statement is kept only when signed by it and naming the lien\'s own source, parties and amount; the latest replaces it', async () => {
+    const { buyer, seller } = await freshTrade();
+    const src = await freshTrade();
+    const lien = (await deps.db.query<{ id: string }>(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
+       values ($1, $2, 1000000, 0, $3, 1, 1, 'restitution', now(), now()) returning id::text`,
+      [buyer.id, seller.id, src.code],
+    )).rows[0]!.id;
+    const statement: LienStatement = {
+      v: 1, lienId: lien, fromCode: src.code, creditorSide: 'seller', debtor: buyer.id, creditor: seller.id, amountAtomic: '1000000', rateBps: 5000, issuedAt: now.toISOString(),
+    };
+    const post = async (s: LienStatement, secret = modSign.secret) => signedInject('POST', '/internal/v1/reports', { kind: 'lien-statement', statement: s, sig: await signLienStatement(s, secret) });
+    expect((await post(statement)).statusCode).toBe(201);
+    expect((await post({ ...statement, rateBps: 6000 })).statusCode).toBe(201);
+    expect((await deps.db.query<{ r: number }>(`select (statement->>'rateBps')::int as r from lien_statements where lien_id = $1`, [lien])).rows).toEqual([{ r: 6000 }]);
+    // Not the moderation key, another debtor, another amount: refused, nothing changed.
+    expect((await post(statement, sodium.crypto_sign_keypair().privateKey)).statusCode).toBe(400);
+    expect((await post({ ...statement, debtor: seller.id, creditor: buyer.id })).statusCode).toBe(409);
+    expect((await post({ ...statement, amountAtomic: '2000000' })).statusCode).toBe(409);
+    expect((await deps.db.query<{ r: number }>(`select (statement->>'rateBps')::int as r from lien_statements where lien_id = $1`, [lien])).rows).toEqual([{ r: 6000 }]);
   });
 
   it('refuses an unsigned or wrongly signed report to /internal/v1/reports with 401', async () => {

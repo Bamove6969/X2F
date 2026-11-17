@@ -50,8 +50,8 @@ describe('rate change requests', () => {
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: '' }))).toBe('bad-request');
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500 }))).toBe('bad-request');
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 0, reason: 'x' }))).toBe('bad-request');
-    // Review B1: above the 50% default the moderation service could not check it (NEEDS_GATE_LIEN_RATE).
-    expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 5001, reason: 'x' }))).toBe('bad-request');
+    // Q1 (provisional, 17 Nov): at most 90%.
+    expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 9001, reason: 'x' }))).toBe('bad-request');
     const res = await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: 'Proceeds are their only income' });
     expect(res.statusCode, res.body).toBe(201);
     const req = (res.json() as { id: string }).id;
@@ -98,7 +98,7 @@ describe('rate change requests', () => {
 });
 
 describe('GET /v1/account/liens (rules 1-3: what the debtor owes and the creditor receives)', () => {
-  it('the debtor sees owed, recovered, remaining and the rate; the creditor sees recoveries arriving; no ids or addresses', async () => {
+  it('the debtor sees owed, recovered, remaining and the rate; the creditor sees totals only (review M4, Q4); no ids or addresses', async () => {
     const l = await lien(2n * XMR);
     await deps.db.query(`insert into lien_recoveries (lien_id, trade_code, amount_atomic, at) values ($1, 'AAAA-BBBB-CCCC-DDDD', $2, $3)`, [l.id, (XMR / 2n).toString(), T0]);
     const as = async (id: string) => {
@@ -115,7 +115,12 @@ describe('GET /v1/account/liens (rules 1-3: what the debtor owes and the credito
     expect(JSON.stringify(d)).not.toContain(l.creditor);
     const c = await as(l.creditor);
     expect(c.owes).toEqual([]);
-    expect(c.owedTo).toEqual([expect.objectContaining({ id: l.id, recoveries: [{ amountAtomic: (XMR / 2n).toString(), at: T0.toISOString() }] })]);
+    expect(c.owedTo).toEqual([
+      { id: l.id, status: 'active', amountAtomic: (2n * XMR).toString(), recoveredAtomic: (XMR / 2n).toString(), remainingAtomic: ((3n * XMR) / 2n).toString(), fromCode: expect.any(String), recoveryAddressSet: false },
+    ]);
+    // Review M4: never the debtor's individual purchases (no per-trade rows, no times, no rate).
+    expect(JSON.stringify(c)).not.toContain(T0.toISOString());
+    expect(JSON.stringify(c)).not.toContain('rateBps');
     expect(JSON.stringify(c)).not.toContain(l.debtor);
   });
 });

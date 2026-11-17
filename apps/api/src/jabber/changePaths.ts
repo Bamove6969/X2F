@@ -107,11 +107,14 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       // Lien recovery (migration 650; lead default, owner p11-119 pattern): the share of the debtor's
       // proceeds each trade recovers is a change to their lien, set only by a senior-approved request.
       'recovery_rate_bps',
-      // Review B1 (migration 650): the creditor's address, set with the lien at placement and never
-      // changed (650's guard), so it only ever arrives with the insert that already notifies.
-      'creditor_address',
     ],
-    bookkeeping: {},
+    bookkeeping: {
+      // Q2 (migration 650): where the CREDITOR's recoveries go, set by the creditor's own signed
+      // statement; it changes nothing the debtor owes or does, so the debtor is not notified.
+      creditor_address: "the creditor's own recovery address (the creditor's choice, not a change to the debtor's account)",
+      creditor_address_statement: "the creditor device's signed statement of that address",
+      creditor_address_sig: "the signature on that statement",
+    },
   },
   {
     table: 'fees_owed', accountColumn: 'account_id', ops: ['insert', 'update'],

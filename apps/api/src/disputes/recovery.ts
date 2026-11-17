@@ -1,8 +1,9 @@
-import { DEFAULT_RECOVERY_RATE_BPS, MAX_RECOVERY_RATE_BPS, lienRemaining, recoveryFor } from '@x2f/staff';
-import { WATCH_CLOSED_DAYS, lienRecoveryCap } from '@x2f/trade';
+import { DEFAULT_RECOVERY_RATE_BPS, lienRemaining } from '@x2f/staff';
+import { LIEN_RECOVERY_MAX_BPS, WATCH_CLOSED_DAYS, expectedRecovery, lienRecoveryCap } from '@x2f/trade';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
 import type { LogAction } from '../log/actions.js';
+import { ApiError } from '../errors.js';
 import { LIENS_ON_SQL } from './lien.js';
 
 /**
@@ -17,13 +18,17 @@ import { LIENS_ON_SQL } from './lien.js';
  *   the trade reaches `released` through the chain-observed `settled` event (`settleRecovery`,
  *   trades/store.ts), never on a payment claim. A cancel or refund releases the hold.
  * - Rule 2: the SQL guard (migration 650) and `lienRemaining` both refuse more than the amount.
- * - Review B1 (security, 2026-11-16): the API is not trusted with the money. The recovery is paid
- *   to the creditor's own address from the disputed trade (`liens.creditor_address`, bound at
- *   placement), at most `lienRecoveryCap` of the proceeds (half, never leaving the buyer under the
- *   network fee: review B3), and the moderation service signs it only when its own records back
- *   it (apps/moderation lienRecovery.ts): the source trade it attested, a creditor of that trade's
- *   gate-verified rulings, that creditor's signed address, and the lien's total. The work item
- *   hands it the source (internal/routes.ts `lienSource`).
+ * - Review B1 (security, 2026-11-16) with the provisional owner answers of 17 Nov (Q1, Q2, Q5;
+ *   docs/lien-recovery.md): the API is not trusted with the money. The recovery is exactly
+ *   @x2f/trade `expectedRecovery` (rate × proceeds, at most what is left, at most 90% and never
+ *   leaving the buyer under MAX_NETWORK_FEE + 0.01 XMR, nothing under 0.01 XMR), paid only to the
+ *   address the creditor's own device signed for it (`liens.creditor_address`, set by
+ *   `POST /v1/account/liens/:id/recovery-address`); the buyer accepts the figure before the take
+ *   (`previewRecovery`, take's `lienRecoveryAtomic`); and the moderation service signs it only when
+ *   its own records back it (apps/moderation lienRecovery.ts): the source trade it attested, a
+ *   creditor of that trade's gate-verified rulings, the creditor's signed address, a rate other than
+ *   the default only with a senior's key tap its gate verified, and exactly this figure against what
+ *   it has already signed for the lien. The work item hands it the source (internal/routes.ts `lienSource`).
  * - Review M2: a hold stays reserved while its trade could still pay it: a trade that closed with
  *   an escrow but no coin may yet be funded late, escalated and ruled for the buyer, whose payout
  *   pays the signed recovery. It is released at once only when the trade can never pay it (no
@@ -42,6 +47,11 @@ export interface Reserved {
   lienId: string;
   amountAtomic: bigint;
   address: string;
+  /** The lien's rate the figure was worked out at (kept on the hold: the moderation service checks the figure at it). */
+  rateBps: number;
+  /** The creditor's signed statement for `address` as it is now (kept on the hold, Q2). */
+  statement: unknown;
+  sig: string;
 }
 
 /** A log entry for the caller to append last (append.ts: the log lock is taken just before the commit). */
@@ -53,6 +63,8 @@ export interface PendingLog {
 interface OpenLien {
   id: string;
   creditor_address: string | null;
+  creditor_address_statement: unknown;
+  creditor_address_sig: string | null;
   amount_atomic: string;
   rate: number;
   recovered: string;
@@ -70,52 +82,78 @@ const HOLD_COUNTS_SQL = (h: string, closedBefore: string) =>
 const DAY_MS = 86_400_000;
 
 
+/** What `pickRecovery` needs: the trade's two parties, the buyer's proceeds and the trade's own addresses known so far. */
+export interface RecoveryFacts {
+  buyerId: string;
+  sellerId: string;
+  proceedsAtomic: bigint;
+  ownAddresses: readonly (string | null)[];
+  now: Date;
+  /**
+   * Review B2: X2F's fee wallet (`X2F_FEE_WALLET`, the address every app has built in), never a
+   * recovery address: the completed trade's payout could not be built. Unset: the creditor's route
+   * and the moderation service still refuse it (the latter only by not signing).
+   */
+  feeWallet?: string | null;
+}
+
 /**
- * Reserves this trade's recovery for the buyer's oldest active lien with something left to
- * reserve, on `c` inside the take's transaction (the lien row is locked `for update`, and the take
- * already holds both accounts `for update`, so two takes by one debtor serialise and the second
- * sees the first's hold). Nothing when liens are off, the buyer owes nothing, the creditor is the
- * trade's seller (lead default), the lien has no creditor address, or that address is one of this
- * trade's own (`ownAddresses`, review B2: the release could never be built); the remainder carries
- * forward.
+ * The recovery this trade would reserve, for the buyer's oldest active lien that can take one:
+ * `expectedRecovery` at the lien's rate on what is left (owed − recovered − holds that still count).
+ * Nothing when liens are off, the buyer owes nothing, the creditor is the trade's seller (lead
+ * default), the creditor has not signed an address (Q2: the lien stays and recovery waits), that
+ * address is one of this trade's own or another account's wallet (review B2), or the figure would be
+ * under 0.01 XMR (Q5: carried forward). With `lock` (inside the take's transaction) the lien rows are
+ * locked `for update`; the take already holds both accounts `for update`, so two takes by one debtor
+ * serialise and the second sees the first's hold. Without it, a read for the buyer's quote.
  */
-export async function reserveRecovery(
-  c: pg.PoolClient,
-  a: { code: string; buyerId: string; sellerId: string; proceedsAtomic: bigint; ownAddresses: readonly (string | null)[]; now: Date },
-): Promise<Reserved | null> {
+export async function pickRecovery(c: Queryable, a: RecoveryFacts, lock: boolean): Promise<Reserved | null> {
   const on = (await c.query<{ on: boolean }>(`select ${LIENS_ON_SQL} as on`)).rows[0]?.on === true;
-  // Review B1, B3: never more than half the proceeds, never leaving the buyer under the network fee.
-  const cap = lienRecoveryCap(a.proceedsAtomic);
-  if (!on || cap <= 0n) return null;
+  if (!on || lienRecoveryCap(a.proceedsAtomic) <= 0n) return null;
   const closedBefore = new Date(a.now.getTime() - WATCH_CLOSED_DAYS * DAY_MS);
-  const { rows } = await c.query<OpenLien>(
-    `select l.id::text, l.creditor_address, l.amount_atomic::text, l.recovery_rate_bps as rate,
+  const { rows } = await c.query<OpenLien & { creditor: string }>(
+    `select l.id::text, l.creditor_account_id::text as creditor, l.creditor_address, l.creditor_address_statement, l.creditor_address_sig, l.amount_atomic::text, l.recovery_rate_bps as rate,
             (select coalesce(sum(r.amount_atomic), 0) from lien_recoveries r where r.lien_id = l.id)::text as recovered,
             (select coalesce(sum(h.amount_atomic), 0) from lien_recovery_holds h where h.lien_id = l.id and ${HOLD_COUNTS_SQL('h', '$3')})::text as held
        from liens l
       where l.debtor_account_id = $1 and l.status = 'active' and l.creditor_account_id <> $2
       order by l.created_at, l.id
-      for update of l`,
+      ${lock ? 'for update of l' : ''}`,
     [a.buyerId, a.sellerId, closedBefore],
   );
-  const own = a.ownAddresses.filter((x): x is string => typeof x === 'string' && x !== '');
+  const own = [...a.ownAddresses, a.feeWallet ?? null].filter((x): x is string => typeof x === 'string' && x !== '');
   for (const l of rows) {
     const address = l.creditor_address;
-    if (address === null || own.includes(address)) continue;
+    if (address === null || l.creditor_address_sig === null || own.includes(address)) continue;
+    // Review B2 with Q2: never an address another account holds as a wallet (the debtor's own, say).
+    const taken = await c.query('select 1 from wallets where address = $1 and account_id <> $2 limit 1', [address, l.creditor]);
+    if ((taken.rowCount ?? 0) > 0) continue;
     const remaining = lienRemaining(BigInt(l.amount_atomic), BigInt(l.recovered) > 0n ? [BigInt(l.recovered)] : []);
     const free = remaining - BigInt(l.held);
-    if (free <= 0n) continue;
-    // NEEDS_GATE_LIEN_RATE: a rate above the default is never applied (the signed terms cap it).
-    const rate = l.rate < MAX_RECOVERY_RATE_BPS ? l.rate : MAX_RECOVERY_RATE_BPS;
-    const amount = recoveryFor({ proceedsAtomic: a.proceedsAtomic, rateBps: rate, freeAtomic: free < cap ? free : cap });
+    if (free <= 0n || l.rate < 1 || l.rate > LIEN_RECOVERY_MAX_BPS) continue;
+    const amount = expectedRecovery({ proceedsAtomic: a.proceedsAtomic, rateBps: l.rate, leftAtomic: free });
     if (amount <= 0n) continue;
-    await c.query(
-      `insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, address, created_at) values ($1, $2, $3, $4, $5)`,
-      [l.id, a.code, amount.toString(), address, a.now],
-    );
-    return { lienId: l.id, amountAtomic: amount, address };
+    return { lienId: l.id, amountAtomic: amount, address, rateBps: l.rate, statement: l.creditor_address_statement, sig: l.creditor_address_sig };
   }
   return null;
+}
+
+/**
+ * Reserves this trade's recovery (`pickRecovery`, locked) on `c` inside the take's transaction, and
+ * checks it is the figure the buyer accepted on the quote (`accepted`; null when the taker is not
+ * the buyer, whose acceptance comes on the poster's own screen): any other figure, or one the
+ * buyer was not shown, is 409 `lien-recovery-changed` and the take is rolled back.
+ */
+export async function reserveRecovery(c: pg.PoolClient, a: RecoveryFacts & { code: string; accepted: bigint | null }): Promise<Reserved | null> {
+  const r = await pickRecovery(c, a, true);
+  if (a.accepted !== null && (r?.amountAtomic ?? 0n) !== a.accepted) throw new ApiError(409, 'lien-recovery-changed');
+  if (r === null) return null;
+  await c.query(
+    `insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, address_statement, address_sig, created_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [r.lienId, a.code, r.amountAtomic.toString(), r.rateBps, r.address, JSON.stringify(r.statement), r.sig, a.now],
+  );
+  return r;
 }
 
 /**
@@ -131,7 +169,7 @@ export async function releaseHoldAt(c: pg.PoolClient, code: string, address: str
     )
   ).rows[0];
   if (hold === undefined) return null;
-  await c.query(`update lien_recovery_holds set status = 'released', closed_at = $2, address = null where id = $1`, [hold.id, now]);
+  await c.query(`update lien_recovery_holds set status = 'released', closed_at = $2, address = null, address_statement = null, address_sig = null where id = $1`, [hold.id, now]);
   return { action: 'lien.recovery-released', detail: { lienId: hold.lien_id, amountAtomic: hold.amount_atomic } };
 }
 
@@ -176,7 +214,7 @@ export async function settleRecovery(c: pg.PoolClient, code: string, end: TradeE
   if (hold === undefined) return [];
   if (end !== 'completed') {
     if (end === 'closed' && escrowSetUp) return [];
-    await c.query(`update lien_recovery_holds set status = 'released', closed_at = $2, address = null where id = $1`, [hold.id, now]);
+    await c.query(`update lien_recovery_holds set status = 'released', closed_at = $2, address = null, address_statement = null, address_sig = null where id = $1`, [hold.id, now]);
     return [{ action: 'lien.recovery-released', detail: { lienId: hold.lien_id, amountAtomic: hold.amount_atomic } }];
   }
   const lien = (
@@ -185,7 +223,7 @@ export async function settleRecovery(c: pg.PoolClient, code: string, end: TradeE
       [hold.lien_id],
     )
   ).rows[0]!;
-  await c.query(`update lien_recovery_holds set status = 'recovered', closed_at = $2, address = null where id = $1`, [hold.id, now]);
+  await c.query(`update lien_recovery_holds set status = 'recovered', closed_at = $2, address = null, address_statement = null, address_sig = null where id = $1`, [hold.id, now]);
   const before = (
     await c.query<{ amount_atomic: string }>('select amount_atomic::text from lien_recoveries where lien_id = $1', [hold.lien_id])
   ).rows.map((r) => BigInt(r.amount_atomic));
@@ -205,6 +243,9 @@ export async function settleRecovery(c: pg.PoolClient, code: string, end: TradeE
   const remaining = left - recorded;
   logs.push({ action: 'lien.recovered', detail: { lienId: hold.lien_id, amountAtomic: recorded.toString(), remainingAtomic: remaining.toString() } });
   if (paid > recorded) logs.push({ action: 'lien.over-recovered', detail: { lienId: hold.lien_id, amountAtomic: (paid - recorded).toString() } });
+  // Q6 (provisional, 17 Nov): a lien voided, overturned or suspended while this trade's signed terms
+  // carried its recovery: the money moved, so it is recorded, and flagged for staff (no clawback).
+  if (lien.status !== 'active') logs.push({ action: 'lien.recovered-after-end', detail: { lienId: hold.lien_id, status: lien.status, amountAtomic: hold.amount_atomic } });
   if (remaining === 0n && BigInt(lien.fee_atomic) === 0n && lien.status === 'active') {
     const r = await c.query(
       `update liens set status = 'repaid', changed_at = $2, lifted_at = $2, repayment_code = $3 where id = $1 and status = 'active'`,
