@@ -230,3 +230,8 @@ All 14 are cut from wip/third-demo-r3 (1fa6bed1, b1172d63 or 94337781). claude3 
 
 Claimed but not pushed (no branch on origin): Job 13 screens-check, Job 16 help-pages, Job 17 error-copy, Job 18 web-tests.
 agy is out of tokens (LEAD-START-HERE-17NOV).
+
+## Lead calls, 17 Nov (batch 10a round 2)
+- OQ-1: move `POST /v1/account/session/proof` and `/challenge` to the ban gate's always-allowed list (they renew only the caller's own cookie), with a test. Do it as a follow-up on batch 10a before bound sessions are turned on. It isn't needed for this landing, because the flag is off.
+- M-1: accepted. While banned, the freeze read may still show the account's own finished dispute.
+- Batch 10a lands when: the cloud full check is green apart from serve-boards (whose refs need design's board export), the probe file has run green, and the serve-boards refs are updated.
