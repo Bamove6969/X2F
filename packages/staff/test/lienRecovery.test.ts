@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_RECOVERY_RATE_BPS,
-  MAX_RECOVERY_RATE_BPS,
   canDecideRateRequest,
   lienRemaining,
   rateRequestRefusal,
@@ -11,6 +10,8 @@ import {
 } from '../src/index.js';
 
 const XMR = 1_000_000_000_000n;
+/** Q1 (provisional, 17 Nov): the API passes @x2f/trade LIEN_RECOVERY_MAX_BPS (9000, owner question OQ1). */
+const MAX = 9000;
 
 describe('recoveryFor (rules 1 and 2)', () => {
   it('defaults to 50%', () => {
@@ -52,25 +53,24 @@ describe('lienRemaining', () => {
 
 describe('rate change request (rule 3)', () => {
   it('a change from the default needs a reason', () => {
-    expect(rateRequestRefusal({ rateBps: 2500, reason: '' })).toBe('reason-required');
-    expect(rateRequestRefusal({ rateBps: 2500, reason: '   ' })).toBe('reason-required');
-    expect(rateRequestRefusal({ rateBps: 2500, reason: 'Hardship shown in chat' })).toBeNull();
+    expect(rateRequestRefusal({ rateBps: 2500, reason: '' }, MAX)).toBe('reason-required');
+    expect(rateRequestRefusal({ rateBps: 2500, reason: '   ' }, MAX)).toBe('reason-required');
+    expect(rateRequestRefusal({ rateBps: 2500, reason: 'Hardship shown in chat' }, MAX)).toBeNull();
   });
   it('the rate is whole basis points from 1 to 10000; the reason is bounded', () => {
-    expect(rateRequestRefusal({ rateBps: 0, reason: 'x' })).toBe('bad-rate');
-    expect(rateRequestRefusal({ rateBps: 10001, reason: 'x' })).toBe('bad-rate');
-    expect(rateRequestRefusal({ rateBps: 12.5, reason: 'x' })).toBe('bad-rate');
-    expect(rateRequestRefusal({ rateBps: 3000, reason: 'x'.repeat(501) })).toBe('reason-too-long');
+    expect(rateRequestRefusal({ rateBps: 0, reason: 'x' }, MAX)).toBe('bad-rate');
+    expect(rateRequestRefusal({ rateBps: 10001, reason: 'x' }, MAX)).toBe('bad-rate');
+    expect(rateRequestRefusal({ rateBps: 12.5, reason: 'x' }, MAX)).toBe('bad-rate');
+    expect(rateRequestRefusal({ rateBps: 3000, reason: 'x'.repeat(501) }, MAX)).toBe('reason-too-long');
   });
   it('Q1 (provisional, 17 Nov): a rate above 90% is refused; up to 90% goes to a senior, whose key tap the moderation service verifies', () => {
-    expect(MAX_RECOVERY_RATE_BPS).toBe(9000);
-    expect(rateRequestRefusal({ rateBps: 9000, reason: 'x' })).toBeNull();
-    expect(rateRequestRefusal({ rateBps: 9001, reason: 'x' })).toBe('bad-rate');
-    expect(rateRequestRefusal({ rateBps: 10000, reason: 'x' })).toBe('bad-rate');
-    expect(rateRequestRefusal({ rateBps: 1, reason: 'x' })).toBeNull();
+    expect(rateRequestRefusal({ rateBps: 9000, reason: 'x' }, MAX)).toBeNull();
+    expect(rateRequestRefusal({ rateBps: 9001, reason: 'x' }, MAX)).toBe('bad-rate');
+    expect(rateRequestRefusal({ rateBps: 10000, reason: 'x' }, MAX)).toBe('bad-rate');
+    expect(rateRequestRefusal({ rateBps: 1, reason: 'x' }, MAX)).toBeNull();
   });
   it('going back to the default still needs a reason (any change goes to a senior)', () => {
-    expect(rateRequestRefusal({ rateBps: 5000, reason: '' })).toBe('reason-required');
+    expect(rateRequestRefusal({ rateBps: 5000, reason: '' }, MAX)).toBe('reason-required');
   });
   it('only a senior or the owner holding rulings.approve, and never the proposer, decides', () => {
     expect(canDecideRateRequest({ role: 'senior', id: 's1' }, 'm1')).toBe(true);

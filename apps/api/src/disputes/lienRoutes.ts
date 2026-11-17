@@ -1,5 +1,5 @@
 import { canDecideRateRequest, rateRequestRefusal } from '@x2f/staff';
-import { isRecoveryAddressStatement, recoveryAddressValid } from '@x2f/trade';
+import { LIEN_RECOVERY_MAX_BPS, isRecoveryAddressStatement, recoveryAddressValid } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import { requireLiveSessionInTx, requireNotHeld, withTx } from '../auth/hold.js';
@@ -79,7 +79,7 @@ export function lienRoutes(app: FastifyInstance): void {
 
   app.post('/staff/v1/liens/:id/rate', handle, async (req, reply) => {
     const b = bodyOf(req, ['rateBps', 'reason']);
-    const refusal = rateRequestRefusal({ rateBps: b.rateBps, reason: b.reason });
+    const refusal = rateRequestRefusal({ rateBps: b.rateBps, reason: b.reason }, LIEN_RECOVERY_MAX_BPS);
     if (refusal !== null) throw new ApiError(400, 'bad-request', { field: refusal === 'bad-rate' ? 'rateBps' : 'reason' });
     const id = param(req, 'id');
     const me = actorOf(req);

@@ -14,14 +14,6 @@ import { can, type StaffRole } from './roles.js';
 
 /** The owner's default: 50% of the debtor's proceeds, in basis points. */
 export const DEFAULT_RECOVERY_RATE_BPS = 5000;
-/**
- * Q1 (provisional owner answer, 17 Nov 2026; docs/lien-recovery.md): the highest rate a request may
- * propose, 90%. The same number as `LIEN_RECOVERY_MAX_BPS` in @x2f/trade (a test pins them equal):
- * the signed terms, every device and the moderation gate cap a recovery at this share of the
- * proceeds, and any rate other than the default is applied only once the moderation service has
- * verified the approving senior's `lien-rate` key tap.
- */
-export const MAX_RECOVERY_RATE_BPS = 9000;
 /** The longest reason a rate change request may carry. */
 export const RATE_REASON_MAX = 500;
 
@@ -57,10 +49,12 @@ export type RateRequestRefusal = 'bad-rate' | 'reason-required' | 'reason-too-lo
 
 /**
  * Why a moderator's proposed rate is refused, or null. Any change needs a reason (owner: "if they
- * change it at all then the system will force them to enter a reason").
+ * change it at all then the system will force them to enter a reason"). `maxBps`: the highest rate
+ * (Q1, owner question OQ1), the caller's @x2f/trade `LIEN_RECOVERY_MAX_BPS`, the one constant for
+ * the cap: the signed terms, every device and the moderation gate cap a recovery at it.
  */
-export function rateRequestRefusal(r: { rateBps: unknown; reason: unknown }): RateRequestRefusal | null {
-  if (!isRate(r.rateBps) || r.rateBps > MAX_RECOVERY_RATE_BPS) return 'bad-rate';
+export function rateRequestRefusal(r: { rateBps: unknown; reason: unknown }, maxBps: number): RateRequestRefusal | null {
+  if (!isRate(r.rateBps) || r.rateBps > maxBps) return 'bad-rate';
   if (typeof r.reason !== 'string' || r.reason.trim() === '') return 'reason-required';
   if (r.reason.length > RATE_REASON_MAX) return 'reason-too-long';
   return null;

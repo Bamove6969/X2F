@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { GIFT_CARD_TERMS_VERSION, LAUNCH_TRADE_CAP_USD_CENTS, LIEN_BUYER_KEEPS_ATOMIC, LIEN_RECOVERY_MAX_BPS, WATCH_CLOSED_DAYS, escrowPlan, fiatCents, lienRecoveryCap, rateFor } from '@x2f/trade';
-import { MAX_RECOVERY_RATE_BPS } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -1324,7 +1323,6 @@ describe('lien recovery at take', () => {
     expect(res.statusCode, res.body).toBe(200);
     expect((res.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBe(((XMR * 9n) / 10n).toString());
     expect(lienRecoveryCap(XMR)).toBe((XMR * 9n) / 10n);
-    expect(LIEN_RECOVERY_MAX_BPS).toBe(MAX_RECOVERY_RATE_BPS);
   });
 
   it('PROBE-B3 (review): a high rate on a small purchase is reduced so the buyer keeps MAX_NETWORK_FEE + 0.01 XMR; nothing at all when it would not fit', async () => {

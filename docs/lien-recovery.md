@@ -92,9 +92,12 @@ through the chain-observed `settled` event, never on "I've paid" or a claim. A r
 a close before any escrow was set up, releases the hold. A trade that closed with an escrow keeps its
 hold (review M2): late coins can still be escalated and ruled for the buyer, and that payout pays the
 signed recovery. The hold stops counting once the trade has been closed without a coin for
-`WATCH_CLOSED_DAYS` (30), as the moderation service's own count does; a recovery paid after that, past
-what is still owed, records only what was owed and logs `lien.over-recovered`.
-`complied` refuses (409 `lien-recovery-in-flight`) while the lien has an open hold. The same rule for the lien code: `complied` (which repays a restitution lien) is
+`WATCH_CLOSED_DAYS` (30), as the moderation service's own count does, and is then released
+(re-review N3: the retention job `releaseStaleRecoveryHolds`, and `complied` itself first; logged
+`lien.recovery-released`). A recovery paid after that (late coins ruled for the buyer) is still
+recorded when the trade's attested terms carry exactly that hold's figure; past what is still owed it
+records only what was owed and logs `lien.over-recovered`.
+`complied` refuses (409 `lien-recovery-in-flight`) while the lien has an open hold that still counts. The same rule for the lien code: `complied` (which repays a restitution lien) is
 a system event only (tested), and its future route (NEEDS_TASK_12_TX_PROOF) must emit it only after
 the tx proof is checked on chain: the seller's "sent" claim and uploaded evidence are not receipt.
 
@@ -142,7 +145,8 @@ As built: (c), with tripwire `NEEDS_OWNER_SELLER_DEBTOR` (API test).
 as creditor, totals only (owed, received, still to come; review M4, Q4), the source trade and whether
 a recovery address is set; never the debtor's purchases (no per-trade rows, no times, no rate), no
 account ids or addresses. The web shows it at `/settings/liens` (COPY-UNSIGNED, DESIGN: not drawn).
-The creditor picks a wallet there; the escrow worker signs "pay my recoveries to this wallet" with the
+The creditor picks a wallet there (the ending shown is cut from the full address the device signs,
+never the API's `addressEnd`: re-review B1-new); the escrow worker signs "pay my recoveries to this wallet" with the
 device's own identity from the disputed trade (`signRecoveryAddress`) and the page posts it to
 `POST /v1/account/liens/:id/recovery-address` (the owner's device, a live session checked in the
 transaction, never during a hold; refused for another account's wallet or X2F's fee wallet). A device without that trade's record (another
@@ -159,14 +163,23 @@ design draws it; a link to the screen from Settings is still missing).
 3. Q1 to Q6 of the review: answered provisionally below, not yet confirmed.
 4. Debtor binding: a compromised API can still name a real lien against a buyer who does not owe it
    (account ids are its word). See Security.
+5. OQ1 (re-review 17 Nov): the highest rate, 90% (provisional, Q1 below) or the 50% default. One
+   constant, `LIEN_RECOVERY_MAX_BPS`, plus the SQL checks.
+6. Moderation switch (re-review OQ3): keep `MOD_LIEN_RECOVERY` off until the owner signs the copy,
+   the design and Q1-Q6.
 
 ## Provisional owner answers (17 Nov), not yet confirmed
 
 The review's owner questions, answered with the strict choices until the owner rules. Each is one
 constant or one rule, so a different answer changes one place (plus its tests).
 
-- **Q1, the highest rate:** 90% (`LIEN_RECOVERY_MAX_BPS` = 9000 in @x2f/trade; `MAX_RECOVERY_RATE_BPS`
-  in @x2f/staff and migration 650's checks hold the same number, an API test pins them equal). The
+- **Q1, the highest rate:** 90% (`LIEN_RECOVERY_MAX_BPS` = 9000 in @x2f/trade, the one constant for
+  the cap: the API passes it to @x2f/staff `rateRequestRefusal` and the `lien-rate` tap check, the
+  devices, the gate and the moderation service read it; migration 650's checks and moderation 009's
+  hold the same number in SQL). **Owner question OQ1 (open, re-review 17 Nov):** should the ceiling
+  be 90%, or should no rate go above the 50% default (allow lowering with a senior's tap, raising
+  only if the owner explicitly wants it)? 90% leaves a buyer 10% of a purchase. Changing it is that
+  constant, the SQL checks (`between 1 and 9000`) and their tests. The
   buyer's own output after a recovery is at least `LIEN_BUYER_KEEPS_ATOMIC` = `MAX_NETWORK_FEE` +
   `LIEN_BUYER_MARGIN_ATOMIC` (0.01 + 0.01 XMR), so the buyer keeps at least 0.01 XMR net; a recovery is
   reduced to fit, or skipped when nothing fits (`lienRecoveryCap`). A rate other than the 50% default
@@ -211,7 +224,8 @@ honest staff keys not. What now holds:
   A work item with a `lienRecovery` must name its source and lien (`lienSource { fromCode, creditor,
   lienId, debtorAccount, creditorAccount, buyerAccount, rateBps, address }`). The service signs it only
   if: it attested `fromCode`; the rulings of that trade's dispute, each verified by its gate with the
-  staff key taps (`gateCheck` with `verifyOnly`), make `creditor` a lien creditor (`lienCreditorsOf`);
+  staff key taps (`gateCheck` with `verifyOnly`), make `creditor` a lien creditor (`lienCreditorsOf`),
+  and none is a round-2 ruling the gate has seen but the API left out (re-review N2);
   the address is the one the creditor's device signed (`recoveryAddressValid` against that side's
   identity in its own attestation of `fromCode`) and none of this trade's or the fee wallet; the lien's
   debtor is this trade's buyer, and the lien's source, side, parties and amount are those it pinned
@@ -239,8 +253,14 @@ honest staff keys not. What now holds:
 What a compromised API can still do: delay a rate change a senior approved (by withholding the tap
 or naming the rate it replaced within the 24 hours), never apply a rate no senior approved; and name a real lien (one a verified ruling placed, with the
 creditor's own signed address) against a buyer who does not owe it, since account ids are its word
-(pinned on first sight only). The money then still goes only to that lien's real creditor's own
-address, within the lien's total and at its verified rate, and only if the buyer accepts the shown
-deduction on the quote. A long-term buyer key the moderation service can bind a lien to would close
+(pinned on first sight only). The money then goes to an address signed by the device of a side
+that a gate-verified ruling made a creditor, within that side's total and at a verified rate, and
+only if the buyer accepts the shown deduction on the quote. That is not always the lien's real
+creditor (re-review N2): the API can hide an appeal and present round 1 alone, so round 1's creditor
+is named after the appeal changed it. Partly closed: the moderation service refuses when its gate
+has seen a round-2 ruling for the source trade that the API did not present
+(`lienRulingVerifier`); an appeal the gate never saw is still hidden. The per-source total is per
+(source, side), so across both sides at most twice the source trade's XMR. Staging a dispute between
+two accounts of one person needs that person's own device to sign the address. A long-term buyer key the moderation service can bind a lien to would close
 it (owner question 4). The SQL guards (add-only ledger, sum ≤ owed) stop code bugs, not a compromised
 API role (as 015, M4).

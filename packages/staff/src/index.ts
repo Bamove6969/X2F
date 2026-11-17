@@ -90,7 +90,6 @@ export {
 } from './lien.js';
 export {
   DEFAULT_RECOVERY_RATE_BPS,
-  MAX_RECOVERY_RATE_BPS,
   RATE_REASON_MAX,
   canDecideRateRequest,
   lienRemaining,

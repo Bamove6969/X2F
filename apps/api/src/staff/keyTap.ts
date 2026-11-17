@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { normalizeTradeCode } from '@x2f/core';
+import { LIEN_RECOVERY_MAX_BPS } from '@x2f/trade';
 import {
   AFTER_REFUND_OUTCOMES,
   BAN_REASON_CODES,
   ESCROW_OUTCOMES,
-  MAX_RECOVERY_RATE_BPS,
   canonicalJson,
   hasIssuedAt,
   stampIssuedAt,
@@ -446,8 +446,8 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     }
     case 'lien-rate':
       exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
-      // Q1 (provisional, 17 Nov): at most 90% (MAX_RECOVERY_RATE_BPS). The moderation service verifies this tap itself before it signs a recovery at the rate.
-      if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > MAX_RECOVERY_RATE_BPS) throw badRequest();
+      // Q1 (provisional, 17 Nov): at most 90% (@x2f/trade LIEN_RECOVERY_MAX_BPS, owner question OQ1). The moderation service verifies this tap itself before it signs a recovery at the rate.
+      if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > LIEN_RECOVERY_MAX_BPS) throw badRequest();
       return { kind: 'lien-rate', lienId: match(r, 'lienId', UUID).toLowerCase(), requestId: match(r, 'requestId', UUID).toLowerCase(), rateBps: r.rateBps };
     case 'ruling': {
       exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256', 'round1Id']);
