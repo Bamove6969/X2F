@@ -639,6 +639,11 @@ export interface AuthApi {
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
   /** Owner p5-7: `Staged` (202) from a login with just a username and password: the wallet stays until it applies. */
   removeWallet(id: string): Promise<Staged | undefined>;
+  /**
+   * Owner, 17 Nov 2026 (note #6 Q1): makes an open saved wallet the default the trade screen picks
+   * first (`PUT /v1/wallets/:id/default`, 204). 409 `wallet-one-time` for a one-time wallet.
+   */
+  setDefaultWallet(id: string): Promise<void>;
   // Session length (owner, 2 Nov 2026). Full trader sessions only. Never staged (lead reading of
   // owner p11-26: a hold holds only the security changes made; see routes/account.ts).
   /** This session's length: before it is chosen, from the login; after, shorter applies now, longer from the next extend. */
@@ -835,6 +840,9 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     addWallets: (b) => post('/v1/wallets', b),
     getWalletRule: () => get('/v1/wallets/rule'),
     removeWallet: (id) => stagedOrDone(call('DELETE', `/v1/wallets/${seg(id)}`)),
+    setDefaultWallet: async (id) => {
+      await call('PUT', `/v1/wallets/${seg(id)}/default`, {});
+    },
     setSessionLength: (b) => call('PUT', '/v1/account/session/length', b),
     extendSession: (b) => post('/v1/account/session/extend', b),
     setIdleReminder: (b) => call('PUT', '/v1/account/idle-reminder', b),
