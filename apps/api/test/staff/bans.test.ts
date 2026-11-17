@@ -39,7 +39,7 @@ const trader = () => seedAccount(t.deps, { loginName: `bt${randomBytes(4).toStri
 /** The trader app as the account (a live trader session). */
 async function asTrader(id: string) {
   const { token } = await insertSession(t.deps, id, 'trader');
-  return (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: unknown) =>
+  return (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: unknown) =>
     t.trader.inject({ method, url, headers: { origin: 'https://x2f.test' }, cookies: { '__Host-x2f_session': token }, ...(payload !== undefined ? { payload: payload as object } : {}) });
 }
 
@@ -398,6 +398,91 @@ describe('a site ban on the trader app (Task 27, 2026-10-29b)', () => {
     const id = await trader();
     expect((await ban(senior, id, { kind: 'trade', ruleId: 'abuse', until: IN_A_WEEK })).res.statusCode).toBe(201);
     expect((await (await asTrader(id))('GET', '/v1/wallets')).statusCode).toBe(200);
+  });
+});
+
+// Batch 10a lead call 1 (option (a), widened on purpose): the trade room's later routes. A
+// site-banned trader still finishes their open trades and nothing else: each route is scoped to
+// their own account while something is unfinished, or to a trade they are a party to that is still
+// open or disputed; offers and posting stay refused.
+describe('a site ban and the trade room\'s later routes (batch 10a, lead call 1)', () => {
+  /** A valid proof id (26 Crockford base32 characters, packages/proof isProofId). */
+  const PROOF = '0123456789ABCDEFGHJKMNPQR0';
+  /** A raw PUT of 40 octets, as the proof upload sends (the proof routes read octets only). */
+  async function putProof(id: string, code: string) {
+    const { token } = await insertSession(t.deps, id, 'trader');
+    return t.trader.inject({
+      method: 'PUT', url: `/v1/trades/${code}/proofs/${PROOF}?kind=proof`,
+      headers: { origin: 'https://x2f.test', 'content-type': 'application/octet-stream' },
+      cookies: { '__Host-x2f_session': token }, payload: Buffer.alloc(40),
+    });
+  }
+  const tradeRoutes = (code: string) => [
+    ['GET', `/v1/trades/${code}/blur-checks`, undefined],
+    ['POST', `/v1/trades/${code}/proofs/${PROOF}/blur-check`, { blur: true }],
+    ['POST', `/v1/trades/${code}/blur-checks/${PROOF}`, { correct: true }],
+    ['GET', `/v1/trades/${code}/proofs/${PROOF}`, undefined],
+  ] as const;
+
+  async function bannedWithTrades() {
+    const id = await trader();
+    const other = await trader();
+    const third = await trader();
+    const open = await seedTrade(t.deps, { sellerId: id, buyerId: other, poster: 'seller' });
+    const closed = await seedTrade(t.deps, { sellerId: id, buyerId: other, poster: 'seller' });
+    await driveTo(t.deps, closed.trade, 'released');
+    const disputed = await seedTrade(t.deps, { sellerId: other, buyerId: id, poster: 'seller' });
+    await driveTo(t.deps, disputed.trade, 'released');
+    await t.deps.db.query(`insert into disputes (code, seq, opened_by, reason, opened_at, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents, status) values ($1, 1, 'buyer', 'other', $2, $2, $2::timestamptz + interval '1 day', 0, 100000, 'appealed')`, [disputed.code, t.deps.clock()]);
+    const theirs = await seedTrade(t.deps, { sellerId: other, buyerId: third, poster: 'seller' });
+    expect((await ban(senior, id, { kind: 'site', ruleId: 'abuse', until: IN_A_WEEK })).res.statusCode).toBe(201);
+    return { id, open, closed, disputed, theirs, me: await asTrader(id) };
+  }
+
+  it('the blur checks and the proofs pass on the person\'s own open or disputed trade, and are 403 banned on a closed trade or someone else\'s', async () => {
+    const { id, open, closed, disputed, theirs, me } = await bannedWithTrades();
+    for (const code of [open.code, disputed.code]) {
+      for (const [method, url, body] of tradeRoutes(code)) {
+        const res = await me(method, url, body);
+        expect(isBanned(res), `${method} ${url} ${res.body}`).toBe(false);
+      }
+      const put = await putProof(id, code);
+      expect(isBanned(put), `PUT proofs on ${code} ${put.body}`).toBe(false);
+    }
+    for (const code of [closed.code, theirs.code, newTradeCode()]) {
+      for (const [method, url, body] of tradeRoutes(code)) {
+        const res = await me(method, url, body);
+        expect(isBanned(res), `${method} ${url} ${res.body}`).toBe(true);
+      }
+      const put = await putProof(id, code);
+      expect(isBanned(put), `PUT proofs on ${code} ${put.body}`).toBe(true);
+    }
+  });
+
+  // On main the trades list (D-005) and the session-proof pair (S-085) are not routes yet
+  // (banState.ts NEEDS_TRADES_LIST, NEEDS_DEVICE_BOUND), so lead call 1's account-wide addition
+  // here is the freeze read alone.
+  it('the freeze read passes while something is unfinished, and is 403 banned with nothing unfinished', async () => {
+    const { me } = await bannedWithTrades();
+    const idle = await trader();
+    expect((await ban(senior, idle, { kind: 'site', ruleId: 'abuse', until: IN_A_WEEK })).res.statusCode).toBe(201);
+    const them = await asTrader(idle);
+    const res = await me('GET', '/v1/account/freeze');
+    expect(res.statusCode, res.body).toBe(200);
+    const none = await them('GET', '/v1/account/freeze');
+    expect(isBanned(none), `nothing unfinished: ${none.body}`).toBe(true);
+  });
+
+  it('offers, posting and taking stay 403 banned with an open trade', async () => {
+    const { me } = await bannedWithTrades();
+    const offerId = await seedOffer(t.deps, await trader(), 'seller');
+    for (const [method, url] of [
+      ['GET', '/v1/offers?side=sell&method=zelle'], ['GET', `/v1/offers/${offerId}`], ['POST', '/v1/offers'],
+      ['POST', `/v1/offers/${offerId}/take`], ['GET', '/v1/account/offers'], ['POST', '/v1/account/offers/status'], ['PATCH', `/v1/offers/${offerId}`],
+    ] as const) {
+      const res = await me(method, url, method === 'GET' ? undefined : {});
+      expect(isBanned(res), `${method} ${url} ${res.body}`).toBe(true);
+    }
   });
 });
 

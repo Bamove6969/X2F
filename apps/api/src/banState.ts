@@ -117,6 +117,21 @@ async function unfinishedChat(db: Queryable, accountId: string, raw: unknown): P
  *   unfinished trades (its events, wallet step, chat, dispute and appeal; never its review); a
  *   chat's routes only for the chat of such a trade (never an offer chat, never a closed trade's);
  *   a nudge only in such a trade or its chat (`context`). Never the chat list.
+ * - Batch 10a lead call 1 (widened on purpose, re-verified in batch 10a round 2): the trade room's
+ *   later routes. While anything is unfinished, the account's own freeze read (the app's freeze
+ *   watch, D-016). As a trade's own routes, for that unfinished trade only: its blur checks
+ *   (P-012/P-013: the asks, the announce and the answer) and its proofs (Plan 5 Task 14: the upload
+ *   and the read).
+ *
+ * NEEDS_TRADES_LIST: lead call 1 also lets `GET /v1/trades` (D-005, wip/lead-trades-list, not on
+ * main) through while anything is unfinished, AND has that list return only the unfinished trades
+ * while the caller is site-banned (`and (not <siteBanned> or UNFINISHED_SQL)`, with `siteBanned`
+ * set on req.auth from the session query's ban; batch 10a a1a75df1). Add both together when the
+ * list lands, never the gate entry alone (it would show a banned person their whole history).
+ * NEEDS_DEVICE_BOUND: batch 10a OQ-1 (lead call, e2af08d5) puts S-085's proof pair, `POST
+ * /v1/account/session/proof` and `/challenge` (wip/lead-device-bound, not on main), in ALWAYS: it
+ * renews only the caller's own bound cookie and starts nothing, so a banned person with nothing
+ * unfinished keeps their notice past BOUND_TTL_MS instead of being sent to login.
  *
  * Nothing that starts anything new: no offers, takes, new chats, settings.
  */
@@ -132,10 +147,15 @@ const ACCOUNT: readonly RegExp[] = [
   /^DELETE \/v1\/account\/chat-keys\/:id$/,
   /^GET \/v1\/account\/approvals(\/:id)?$/,
   /^POST \/v1\/account\/approvals\/:id$/,
+  /^GET \/v1\/account\/freeze$/,
 ];
 const TRADE: readonly RegExp[] = [
   /^GET \/v1\/trades\/:code(\/(attestation|confirmations|dispute))?$/,
   /^POST \/v1\/trades\/:code\/(events|wallet|identity|chat|dispute|appeal)$/,
+  /^GET \/v1\/trades\/:code\/blur-checks$/,
+  /^POST \/v1\/trades\/:code\/blur-checks\/:proofId$/,
+  /^POST \/v1\/trades\/:code\/proofs\/:(id|proofId)\/blur-check$/,
+  /^(GET|PUT) \/v1\/trades\/:code\/proofs\/:id$/,
 ];
 const CHAT: readonly RegExp[] = [/^GET \/v1\/chats\/:chat(\/(attestation|envelopes))?$/, /^POST \/v1\/chats\/:chat\/(envelopes|identity)$/];
 const NUDGE = 'POST /v1/nudges';

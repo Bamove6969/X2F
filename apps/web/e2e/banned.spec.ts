@@ -30,6 +30,9 @@ async function siteBanned(page: Page, notice: unknown, refusal: unknown): Promis
   await page.route('**/v1/site', json(OFF));
   await page.route(new RegExp(`/v1/(trades/${CODE}(/.*)?|events|chats/.*)$`), json({ error: 'not-found' }, 404));
   await page.route('**/v1/account/ban', json(notice));
+  // Batch 10a lead call 1: the gate lets the account's own freeze read through while something is
+  // unfinished (the app's freeze watch reads it; not frozen here); with nothing unfinished it is 403.
+  if (((notice as { unfinished?: unknown[] }).unfinished ?? []).length > 0) await page.route('**/v1/account/freeze', json({ freezes: [] }));
   await signedIn(page);
   return refused;
 }
