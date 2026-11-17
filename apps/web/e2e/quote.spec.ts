@@ -33,6 +33,8 @@ interface Stub {
    * is the market rate now (margin 0), else 409 price-changed.
    */
   take?: (body: TakeBody) => { status: number; json: unknown };
+  /** Owner demo note #6: the account's rating on GET /v1/account/me (absent: an older API build). */
+  securityRating?: 'weak' | 'secure';
 }
 
 interface Seen {
@@ -54,7 +56,9 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
   // this again". Its own tests are in test/tradeRoom.test.tsx.
   await page.addInitScript(() => window.localStorage.setItem('x2f.courtesy-sheet.off', '1'));
   await page.route('**/v1/account/me', (r) =>
-    s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'] } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
+    s.signedIn
+      ? r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'], ...(s.securityRating ? { securityRating: s.securityRating } : {}) } })
+      : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );
   await page.route('**/v1/methods?*', (r) =>
     r.fulfill({ json: { live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] } }),
@@ -70,8 +74,15 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
     if (!s.signedIn) return r.fulfill({ status: 401, json: { error: 'not-authenticated' } });
     if (r.request().method() !== 'POST') return r.fulfill({ json: s.wallets });
     // Task 29's Add a wallet; the stub adds them usable at once, as a first wallet is (spec 6.3).
-    const body = r.request().postDataJSON() as { wallets: { app: string; label: string; address: string }[] };
-    seen.walletPosts.push(body);
+    const posted = r.request().postDataJSON() as { wallets: { app: string; label: string; address: string }[] } | { app: string; label: string; address: string; oneTime?: boolean };
+    seen.walletPosts.push(posted);
+    if (!('wallets' in posted)) {
+      // Owner demo note #6: the quote's new-address sheet adds one wallet; the stub makes it usable at once.
+      const one = { ...posted, id: 'w-inline', addressEnd: posted.address.slice(-6), usableFrom: '2026-10-01T00:00:00.000Z', usable: true, oneTime: posted.oneTime === true };
+      s.wallets = [...s.wallets, one];
+      return r.fulfill({ status: 201, json: one });
+    }
+    const body = posted;
     const added = body.wallets.map((w, i) => ({ ...w, id: `w-new-${i}`, addressEnd: w.address.slice(-6), usableFrom: '2026-10-01T00:00:00.000Z', usable: true }));
     s.wallets = [...s.wallets, ...added];
     return r.fulfill({ status: 201, json: added });
@@ -327,6 +338,41 @@ test.describe('BuyQuote', () => {
     // CantDoThat: the message is the dialog's description (C11 review N1, not also an alert).
     await expect(page.getByRole('dialog')).toHaveAccessibleDescription('Your account is on Starter limits up to $200 per trade. Try a smaller amount.');
     await expect(page.locator('body')).not.toContainText(/Building|Graduated/);
+  });
+});
+
+test.describe('the payout address for this trade (owner demo note #6)', () => {
+  const rule = (page: Page) => page.locator('[data-part="address-rule"]');
+
+  test('a secure account adds a named address for this trade only, right on the quote, and the take pays to it', async ({ page }) => {
+    const seen = await stubApi(page, { ...base, securityRating: 'secure' });
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    await expect(rule(page)).toContainText('If you buy with X2F, which wallet address should the XMR be sent to?');
+    await expect(rule(page)).toContainText('Your account is rated secure');
+    await expect(page.getByRole('link', { name: 'Add another wallet' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Add a new address' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Add a new address' });
+    await sheet.getByLabel('Name', { exact: true }).fill('Rent money');
+    await sheet.getByLabel('Monero address').fill('4BoardRentAddressd41MnQ');
+    await expect(sheet.getByRole('radio', { name: /This trade only/ })).toBeChecked();
+    await sheet.getByRole('button', { name: 'Save address' }).click();
+    await expect(sheet).toHaveCount(0);
+    expect(seen.walletPosts).toEqual([{ app: 'other', label: 'Rent money', address: '4BoardRentAddressd41MnQ', oneTime: true }]);
+    await expect(page.getByRole('radio', { name: /Rent money/ })).toBeChecked();
+    await expect(page.locator('.x2f-quote__wallet', { hasText: 'Rent money' })).toContainText('One trade only');
+    await trade(page).click();
+    await expect(page).toHaveURL(`/trade/${B.code}`);
+    expect(seen.takes.map((t) => t.walletId)).toEqual(['w-inline']);
+  });
+
+  test('a weak account gets no inline add: the rule points to Settings, where new addresses wait 24 hours', async ({ page }) => {
+    await stubApi(page, { ...base, securityRating: 'weak' });
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    await expect(rule(page)).toContainText('Your account is rated weak');
+    await expect(rule(page)).toContainText('Settings, under Your wallets');
+    await expect(rule(page)).toContainText('24 hours');
+    await expect(page.getByRole('button', { name: 'Add a new address' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Add another wallet' })).toHaveAttribute('href', /^\/wallets\?add=1/);
   });
 });
 
