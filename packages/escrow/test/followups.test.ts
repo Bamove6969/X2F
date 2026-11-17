@@ -4,7 +4,7 @@ import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@
 import { buildRelay, type Relay } from '@x2f/relay';
 import type { MoneroWalletFull } from 'monero-ts';
 import sodium from 'libsodium-wrappers';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { DAEMON_TIMEOUT_MS, EscrowError, MoneroMultisigEngine, MoneroMultisigSession, type EscrowSession, type Outcome } from '../src/index.js';
 import { blackHole, faultyEngine, holdableProxy, minedWhile, partyKit, spyEngine, type Trade } from './harness.js';
 
@@ -197,6 +197,48 @@ describe('Plan 1 follow-ups on regtest', () => {
       expect(faulty.calls.submit).toBeGreaterThanOrEqual(2); // failed once, then resubmitted
       expect(t.stores.buyer.current()!.release!.phase).toBe('done');
     } finally {
+      await dest.close();
+    }
+  });
+
+  it('a co-signer committed to a set signs it with the bound it checked, even once the node gives no fee estimate (review M3)', async () => {
+    const t = await kit.newTrade();
+    await readyAndFund(t);
+    const dest = await newTestWallet(node.rpcUri);
+    const realFetch = globalThis.fetch;
+    try {
+      const o: Outcome = { kind: 'release', to: [{ address: await dest.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'buyer' };
+      // The buyer checks the seller's set, commits to it, then dies before signing.
+      t.stores.buyer.onSave = (x) => {
+        if (x.release?.phase === 'cosigning') throw new Error('power cut');
+      };
+      const sellerDone = t.parties.seller.settle(o);
+      sellerDone.catch(() => undefined);
+      expect(String(await t.parties.buyer.settle(o).catch((e: unknown) => e))).toMatch(/power cut/);
+      await t.parties.buyer.stop();
+      t.stores.buyer.onSave = undefined;
+      const saved = t.stores.buyer.current()!;
+      expect(saved.release).toMatchObject({ phase: 'cosigning', committed: true });
+      // The bound of that check is kept with the committed set (a decimal string: the state is JSON).
+      expect((saved.release as { feeCeiling?: unknown }).feeCeiling).toMatch(/^[1-9][0-9]*$/);
+      // From now on the node answers everything but get_fee_estimate.
+      let asked = 0;
+      vi.stubGlobal('fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        if (typeof init?.body === 'string' && init.body.includes('get_fee_estimate')) {
+          asked += 1;
+          return Promise.reject(new TypeError('fee estimate withheld'));
+        }
+        return realFetch(input, init);
+      });
+      const restarted = kit.startParty(t, 'buyer');
+      const stalled = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('still cosigning: the node withholds the fee estimate')), 120_000));
+      stalled.catch(() => undefined);
+      const [b, s] = await minedWhile(node.rpcUri, funderAddress, Promise.race([Promise.all([restarted.party.settle(o), sellerDone]), stalled]));
+      expect(b).toMatch(/^[0-9a-f]{64}$/);
+      expect(s).toBeNull();
+      expect(asked).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
       await dest.close();
     }
   });
