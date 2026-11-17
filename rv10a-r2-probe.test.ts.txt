@@ -201,15 +201,19 @@ describe('reviewer probe: batch 10a r2 gate', () => {
     expect((await ban(senior, w.id, { kind: 'site', ruleId: 'abuse', until: IN_A_WEEK })).res.statusCode).toBe(201);
     const me = await asTrader(w.id);
     const tried: Record<string, number> = {};
+    const statuses: Record<string, number> = {};
     const routes = listRoutes(t.trader).map((r) => r.replace(/:([A-Za-z]+)\|:[A-Za-z]+/g, ':$1'));
     for (const r of routes) {
       const [method, tpl] = r.split(' ') as [string, string];
       if (method === 'PUT' && tpl.includes('/proofs/')) continue;
+      if (method === 'POST' && tpl === '/v1/logout') { tried[r] = 0; continue; } // would end the session for every later route
       if (method === 'GET' && tpl === '/v1/events') { tried[r] = 0; continue; } // stream; allowed by design (banState.ts review S1)
       const url = tpl.replace(':code', w.closed.code).replace(':chat', w.closedChat).replace(/:proofId|:id/g, PROOF).replace(/:[A-Za-z]+/g, 'x');
       const res = await me(method as 'GET', url, method === 'GET' || method === 'DELETE' ? undefined : { context: w.closed.code });
       tried[r] = res.statusCode === 403 && (res.json() as { error?: string })?.error === 'banned' ? 1 : 0;
+      if (res.statusCode === 401) throw new Error(`session lost at ${r}`);
+      if (!tried[r]) statuses[r] = res.statusCode;
     }
-    writeFileSync(OUT + '.http', JSON.stringify(Object.entries(tried).filter(([, v]) => v === 0).map(([k]) => k), null, 1));
+    writeFileSync(OUT + '.http', JSON.stringify(statuses, null, 1));
   }, 300_000);
 });
