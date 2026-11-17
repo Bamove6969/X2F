@@ -702,10 +702,11 @@ export interface AuthApi {
   removeWallet(id: string): Promise<Staged | undefined>;
   /**
    * Owner, 17 Nov 2026 (note #6 Q1): makes an open saved wallet the default the trade screen picks
-   * first (`PUT /v1/wallets/:id/default`, 204). 409 `wallet-one-time` for a one-time wallet,
-   * 409 `wallet-not-ready` for a wallet still in its wait (review 17 Nov M1).
+   * first (`PUT /v1/wallets/:id/default`, 204). 409 `wallet-one-time` for a one-time wallet, 409
+   * `wallet-not-ready` for one still waiting. From a username-and-password login it is staged like a
+   * removal (202, `Staged`; review 17 Nov (b) B1).
    */
-  setDefaultWallet(id: string): Promise<void>;
+  setDefaultWallet(id: string): Promise<Staged | undefined>;
   /**
    * Owner demo note #226: renames an open wallet (`PUT /v1/wallets/:id/label`, 204). The name only:
    * the address, the default and any wait stay as they are, so no confirm. 400 `bad-request` for a
@@ -915,9 +916,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     addWallets: (b) => post('/v1/wallets', b),
     getWalletRule: () => get('/v1/wallets/rule'),
     removeWallet: (id) => stagedOrDone(call('DELETE', `/v1/wallets/${seg(id)}`)),
-    setDefaultWallet: async (id) => {
-      await call('PUT', `/v1/wallets/${seg(id)}/default`, {});
-    },
+    setDefaultWallet: (id) => stagedOrDone(call('PUT', `/v1/wallets/${seg(id)}/default`, {})),
     renameWallet: async (id, label) => {
       await call('PUT', `/v1/wallets/${seg(id)}/label`, { label });
     },

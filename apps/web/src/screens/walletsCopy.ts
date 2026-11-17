@@ -79,3 +79,6 @@ export function walletNameHelp(typed: string, addresses: readonly string[] = [])
   const problem = walletLabelProblem(typed, addresses);
   return problem === null ? null : WALLET_NAME_HELP[problem];
 }
+
+/** Review 17 Nov (b) B1: only a wallet past its wait can be the default (409 `wallet-not-ready`). COPY-UNSIGNED */
+export const MAKE_DEFAULT_WAITING = 'That wallet is still waiting. You can make it the default once it is ready.';

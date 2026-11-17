@@ -86,7 +86,9 @@ const WALLET_COLUMNS = 'id, app, label, address, usable_from, one_time, is_defau
  * usable saved wallet, else none (several saved and none chosen, or the chosen one removed).
  */
 export function effectiveDefault(rows: readonly WalletRow[], now: Date): string | null {
-  const chosen = rows.find((r) => r.is_default && !r.one_time);
+  // Review 17 Nov (b), B1: a chosen wallet counts only once it is usable (one chosen while it still
+  // waited, before the route refused that, never outranks a usable one).
+  const chosen = rows.find((r) => r.is_default && !r.one_time && r.usable_from.getTime() <= now.getTime());
   if (chosen) return chosen.id;
   const saved = rows.filter((r) => !r.one_time && r.usable_from.getTime() <= now.getTime());
   return saved.length === 1 ? saved[0]!.id : null;
@@ -546,35 +548,64 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
+ * The default-wallet write (the route's, or a waiting one applied 24 h after a username-and-password
+ * session submitted it), under the account lock: the wallet must still be the account's, open, saved
+ * (409 `wallet-one-time`) and usable now (409 `wallet-not-ready`), else nothing changes (404
+ * `not-found` for one gone; a waiting change is then dropped). Alert `wallet-default` with display
+ * details only (app, label, end of the address), once per actual change: choosing the default again
+ * writes nothing.
+ */
+export async function applyDefaultWallet(db: Queryable, accountId: string, walletId: string, now: Date): Promise<void> {
+  await db.query('select 1 from accounts where id = $1 for update', [accountId]);
+  const { rows } = await db.query<{ app: WalletApp; label: string; address: string; one_time: boolean; usable_from: Date }>(
+    'select app, label, address, one_time, usable_from from wallets where id = $1 and account_id = $2 and removed_at is null',
+    [walletId, accountId],
+  );
+  const w = rows[0];
+  if (!w) throw new ApiError(404, 'not-found');
+  if (w.one_time) throw new ApiError(409, 'wallet-one-time');
+  if (w.usable_from.getTime() > now.getTime()) throw new ApiError(409, 'wallet-not-ready');
+  await db.query('update wallets set is_default = false where account_id = $1 and is_default and id <> $2', [accountId, walletId]);
+  const set = await db.query('update wallets set is_default = true where id = $1 and not is_default', [walletId]);
+  if ((set.rowCount ?? 0) > 0) {
+    await addAlert(db, accountId, 'wallet-default', { app: w.app, label: w.label, addressEnd: addressEnd(w.address) }, now);
+  }
+}
+
+/**
  * `PUT /v1/wallets/:id/default` (owner, 17 Nov 2026, note #6 Q1): the account owner chooses which open
  * saved wallet the trade screen picks first. 404 `not-found` for a wallet that is not the account's or
  * not open (removed, used up by a trade, or a staged add, which has no wallet yet); 409 `wallet-one-time`
  * for a one-time wallet; 409 `wallet-not-ready` for a wallet still in its wait (review 17 Nov M1: a
  * stolen session must not silently pre-arm an address that has not yet passed the wait meant to let
- * the user notice it; the same `usable_from <= now` rule as the take's `pickWallet`). Under the
- * account row lock, so one default per account (the partial unique index of migration 630 backs it).
- * It changes no address, no wait and nothing a take accepts (any usable wallet may still be named), so
- * it is not staged; the hold still blocks it, as every wallet write. (Whether it should also send an
- * in-app alert is owner question Q12, still open.)
+ * the user notice it; the same `usable_from <= now` rule as the take's `pickWallet`).
+ * Review of wip/third-trade-wallet 17 Nov (b), B1: the default steers which address a payout goes to
+ * (the quote and the accepted sheet preselect it), so it is a security change like a removal: the
+ * session is re-checked live under the account lock, a username-and-password login's choice is staged
+ * (`gateChange`, 202) and the hold blocks it; applied, it writes alert `wallet-default` (owner
+ * question Q12 answered by the review). One default per account (the account lock, and migration
+ * 630's partial unique index).
  */
 async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const { id } = req.params as { id: string };
   if (!UUID.test(id)) throw new ApiError(404, 'not-found');
   const now = deps.clock();
-  await withTx(deps.db, async (client) => {
-    await client.query('select 1 from accounts where id = $1 for update', [req.auth.accountId]);
-    const { rows } = await client.query<{ one_time: boolean; usable_from: Date }>(
-      'select one_time, usable_from from wallets where id = $1 and account_id = $2 and removed_at is null',
+  const held = await withTx(deps.db, async (client) => {
+    await requireLiveSessionInTx(client, req.auth, now);
+    const { rows } = await client.query<{ label: string; address: string; one_time: boolean; usable_from: Date }>(
+      'select label, address, one_time, usable_from from wallets where id = $1 and account_id = $2 and removed_at is null',
       [id, req.auth.accountId],
     );
     const w = rows[0];
     if (!w) throw new ApiError(404, 'not-found');
     if (w.one_time) throw new ApiError(409, 'wallet-one-time');
     if (w.usable_from.getTime() > now.getTime()) throw new ApiError(409, 'wallet-not-ready');
-    await client.query('update wallets set is_default = false where account_id = $1 and is_default and id <> $2', [req.auth.accountId, id]);
-    await client.query('update wallets set is_default = true where id = $1 and not is_default', [id]);
+    const g = await gateChange(client, req, { kind: 'default-wallet', walletId: id, label: w.label, addressEnd: addressEnd(w.address) });
+    if (g === null) await applyDefaultWallet(client, req.auth.accountId, id, now);
+    return g;
   });
+  if (held !== null) return reply.code(202).send(stagedReply(held));
   return reply.code(204).send();
 }
 

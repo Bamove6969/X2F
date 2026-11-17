@@ -66,7 +66,7 @@ import { ApiError } from '../errors.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
 import { applyLoginName, applyOneDevice } from '../routes/account.js';
-import { applyWalletRemoval, applyWallets, type PendingWallet } from '../wallets/routes.js';
+import { applyDefaultWallet, applyWalletRemoval, applyWallets, type PendingWallet } from '../wallets/routes.js';
 import type { ConfirmMethod } from './confirm.js';
 import { applyRemoval } from './methods.js';
 import { applyPassword } from './password.js';
@@ -128,6 +128,13 @@ export type PendingChange =
    * characters, never the address) name it in the review list and the alerts.
    */
   | { kind: 'remove-wallet'; walletId: string; label: string; addressEnd: string }
+  /**
+   * Review of wip/third-trade-wallet 17 Nov (b), B1: the default payout wallet chosen by a
+   * username-and-password session. It decides which address the trade screens pick first, so it
+   * waits like a removal; checked again when it applies (`applyDefaultWallet`: still open, saved and
+   * usable, else dropped). `label` and `addressEnd` name it as for a removal.
+   */
+  | { kind: 'default-wallet'; walletId: string; label: string; addressEnd: string }
   /** Owner p5-7: a team member removed by a username-and-password session; they keep their access until it applies. */
   | { kind: 'team-remove'; memberId: string }
   /**
@@ -292,6 +299,9 @@ export async function applyChange(db: Queryable, s: SettleDeps, accountId: strin
     }
     case 'remove-wallet':
       await applyWalletRemoval(db, accountId, c.walletId, now);
+      return false;
+    case 'default-wallet':
+      await applyDefaultWallet(db, accountId, c.walletId, now);
       return false;
     case 'team-remove': {
       const ended = await applyMemberRemoval(db, accountId, c.memberId, now);
@@ -559,6 +569,10 @@ export const SECURITY_CHANGE_ROUTES: readonly string[] = [
   'POST /v1/wallets',
   // Owner p5-7 (7 Nov 2026): removals wait too, so nothing applies early.
   'DELETE /v1/wallets/:id',
+  // Review of wip/third-trade-wallet 17 Nov (b), B1: the default decides which address the trade
+  // screens pick first (a parked address would be preselected the moment its wait ends), so it is
+  // staged from a username-and-password login like a removal, with an alert and the live-session check.
+  'PUT /v1/wallets/:id/default',
 ];
 
 /**
@@ -692,8 +706,6 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/payment-proof': "the seller's proof of a payment a ruling ordered (Plan 4 Task 12); finishes an open dispute, creates no new obligation",
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",
   'POST /v1/trades/:code/wallet': "the poster's payout wallet for an open trade, from the account's own usable wallets",
-  // Owner 17 Nov 2026 (note #6 Q1): the default payout wallet is only what the trade screen picks first.
-  'PUT /v1/wallets/:id/default': "which of the account's own saved wallets the trade screen picks first; changes no address, wait or security state, and every take still names its wallet",
   // Plan 5 Task 10: past reputation. No login, session, approval, security or trading state: the
   // caller's own claim rows only (a moderator approves before anything shows).
   'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",

@@ -17,6 +17,9 @@ export type AlertKind =
   | 'wallet-restored'
   // Owner demo note #226: a wallet renamed (PUT /v1/wallets/:id/label). Detail: app, from, label, addressEnd.
   | 'wallet-renamed'
+  // Review of wip/third-trade-wallet 17 Nov (b) B1: the default payout wallet chosen (PUT /v1/wallets/:id/default,
+  // or applied after its 24 h wait). Detail: app, label, addressEnd.
+  | 'wallet-default'
   | 'device-key-added'
   // Task 16: new-device approval and "One device at a time".
   | 'login-approval'

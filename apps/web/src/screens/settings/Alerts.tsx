@@ -33,6 +33,8 @@ const KIND_WORDS: Record<string, string> = {
   'wallet-restored': 'A one-trade wallet is back in your list',
   // Owner demo note #226: a wallet renamed. COPY-UNSIGNED
   'wallet-renamed': 'A payout wallet was renamed',
+  // Review 17 Nov (b) B1. COPY-UNSIGNED
+  'wallet-default': 'Your default payout wallet was changed',
   'device-key-added': 'A trade signing key was added',
   // Plan 2 Task 16.
   'login-approval': 'A new device asked to log in',
