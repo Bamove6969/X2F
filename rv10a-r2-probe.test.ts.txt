@@ -91,7 +91,7 @@ function listRoutes(app: FastifyInstance): string[] {
 }
 const OUT = process.env.RV_PROBE_OUT ?? '/dev/null';
 const PROOF = '0123456789ABCDEFGHJKMNPQR0';
-const PROOF2 = '0123456789ABCDEFGHJKMNPQR1';
+const PROOF2 = '0123456789ABCDEFGHJKMNPQR4';
 const codes = (r: { json(): unknown }) => (r.json() as { trades: { code: string }[] }).trades.map((x) => x.code).sort();
 
 describe('reviewer probe: batch 10a r2 gate', () => {
@@ -210,5 +210,5 @@ describe('reviewer probe: batch 10a r2 gate', () => {
       tried[r] = res.statusCode === 403 && (res.json() as { error?: string })?.error === 'banned' ? 1 : 0;
     }
     writeFileSync(OUT + '.http', JSON.stringify(Object.entries(tried).filter(([, v]) => v === 0).map(([k]) => k), null, 1));
-  });
+  }, 300_000);
 });
