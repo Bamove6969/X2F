@@ -298,36 +298,39 @@ describe('payoutsFor: lien recovery', () => {
   });
 });
 
-// Review B1 and B3 (lien recovery, 2026-11-16): limits every co-signer and the gate enforce from the
-// signed terms alone, so a recovery no honest API would reserve is never paid.
+// Review B1 and B3 (lien recovery, 2026-11-16), with the provisional owner answers of 17 Nov (Q1: at
+// most 90%, the buyer keeps MAX_NETWORK_FEE + 0.01 XMR; Q5: nothing under 0.01 XMR): limits every
+// co-signer and the gate enforce from the signed terms alone, so a recovery no honest API would
+// reserve is never paid.
 describe('lien recovery limits (review B1, B3)', () => {
   const CREDITOR = 'creditor-payout-address';
   const rec = (amountAtomic: bigint) => ({ ...args('release', 'seller', AMOUNT + FEE_AMOUNT), lienRecovery: { address: CREDITOR, amountAtomic } });
+  const CAP = (AMOUNT * 9n) / 10n;
 
-  test('the cap: half the proceeds, rounded down, and never leaving the buyer less than the largest network fee', () => {
-    expect(LIEN_RECOVERY_MAX_BPS).toBe(5000);
-    expect(LIEN_BUYER_KEEPS_ATOMIC).toBe(MAX_NETWORK_FEE);
-    expect(lienRecoveryCap(AMOUNT)).toBe(AMOUNT / 2n);
-    expect(lienRecoveryCap(1_000_000_000_001n)).toBe(500_000_000_000n);
-    // A small trade: half would leave the buyer under the network fee, so the cap is what leaves exactly it.
-    expect(lienRecoveryCap(15_000_000_000n)).toBe(5_000_000_000n);
-    expect(lienRecoveryCap(MAX_NETWORK_FEE)).toBe(0n);
+  test('the cap: 90% of the proceeds, rounded down, and never leaving the buyer less than the largest network fee + 0.01 XMR', () => {
+    expect(LIEN_RECOVERY_MAX_BPS).toBe(9000);
+    expect(LIEN_BUYER_KEEPS_ATOMIC).toBe(MAX_NETWORK_FEE + 10_000_000_000n);
+    expect(lienRecoveryCap(AMOUNT)).toBe(CAP);
+    expect(lienRecoveryCap(1_000_000_000_001n)).toBe(900_000_000_000n);
+    // A small trade: 90% would leave the buyer under the floor, so the cap is what leaves exactly it.
+    expect(lienRecoveryCap(150_000_000_000n)).toBe(130_000_000_000n);
+    expect(lienRecoveryCap(LIEN_BUYER_KEEPS_ATOMIC)).toBe(0n);
     expect(lienRecoveryCap(1n)).toBe(0n);
     expect(lienRecoveryCap(0n)).toBe(0n);
   });
 
-  test('B1: payoutsFor refuses a recovery above half the proceeds (the API cannot take more by signing it in)', () => {
-    expect(payoutsFor(rec(AMOUNT / 2n))[2]).toEqual({ address: CREDITOR, amountAtomic: AMOUNT / 2n });
-    expect(() => payoutsFor(rec(AMOUNT / 2n + 1n))).toThrow(/bad recovery amount/);
+  test('B1: payoutsFor refuses a recovery above 90% of the proceeds (the API cannot take more by signing it in)', () => {
+    expect(payoutsFor(rec(CAP))[2]).toEqual({ address: CREDITOR, amountAtomic: CAP });
+    expect(() => payoutsFor(rec(CAP + 1n))).toThrow(/bad recovery amount/);
     expect(() => payoutsFor(rec(AMOUNT - 1n))).toThrow(/bad recovery amount/);
   });
 
-  test('B3: payoutsFor refuses a recovery that leaves the buyer no more than the network fee could take', () => {
-    const small = 15_000_000_000n;
+  test('B3: payoutsFor refuses a recovery that leaves the buyer no more than the network fee and the margin', () => {
+    const small = 150_000_000_000n;
     const plan = escrowPlan({ amountAtomic: small, poster: 'seller' });
     const at = (r: bigint) => payoutsFor({ ...args('release', 'seller', plan.sellerFundsAtomic, small), lienRecovery: { address: CREDITOR, amountAtomic: r } });
-    expect(at(5_000_000_000n)[0]).toEqual({ address: BUYER, amountAtomic: MAX_NETWORK_FEE });
-    expect(() => at(5_000_000_001n)).toThrow(/bad recovery amount/);
+    expect(at(130_000_000_000n)[0]).toEqual({ address: BUYER, amountAtomic: LIEN_BUYER_KEEPS_ATOMIC });
+    expect(() => at(130_000_000_001n)).toThrow(/bad recovery amount/);
   });
 
   test('sweepMinimums refuses the same over-cap recovery', () => {
@@ -336,7 +339,7 @@ describe('lien recovery limits (review B1, B3)', () => {
       payWindowMin: 90,
       buyerPayout: BUYER,
       sellerRefund: SELLER,
-      lienRecovery: { address: CREDITOR, amountAtomic: (AMOUNT / 2n + 1n).toString() },
+      lienRecovery: { address: CREDITOR, amountAtomic: (CAP + 1n).toString() },
     };
     expect(() => sweepMinimums({ kind: 'release', terms, feeWallet: FEE, sweptAtomic: AMOUNT + FEE_AMOUNT })).toThrow(RangeError);
   });

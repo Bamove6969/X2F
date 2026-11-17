@@ -433,19 +433,21 @@ export interface LienView {
   id: string;
   status: 'active' | 'suspended' | 'repaid';
   amountAtomic: string;
-  feeAtomic: string;
   recoveredAtomic: string;
   remainingAtomic: string;
   rateBps: number;
   defaultRateBps: number;
   fromCode: string;
-  createdAt: string;
 }
 
-/** `GET /v1/account/liens`: what the account owes (never a repaid one) and the liens owed to it, with each recovery that arrived. */
+/**
+ * `GET /v1/account/liens`: what the account owes (never a repaid one) and the liens owed to it.
+ * Owed to it: totals only (review M4, provisional owner answer Q4: no per-trade rows, no times, no
+ * rate), and whether the creditor has signed a recovery address (Q2).
+ */
 export interface MyLiens {
   owes: LienView[];
-  owedTo: Array<LienView & { recoveries: Array<{ amountAtomic: string; at: string }> }>;
+  owedTo: Array<Pick<LienView, 'id' | 'status' | 'amountAtomic' | 'recoveredAtomic' | 'remainingAtomic' | 'fromCode'> & { recoveryAddressSet: boolean }>;
 }
 
 /** Haveno review 2026-11-12, finding 2: the moderation service's signed ruling statement, verified by the device itself. */

@@ -39,7 +39,9 @@ const LABEL = 'Browser on Linux';
  * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
  * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
  * apps/web/src/screens/account/AccountFrozen.tsx; S-093: a block row's note, apps/web/src/screens/settings/blockApi.ts;
- * P-012/P-013: the blur check, apps/web/src/api/blurCheck.ts). Any other new route still needs a client method.
+ * P-012/P-013: the blur check, apps/web/src/api/blurCheck.ts; lien recovery review B1/Q2: the quote's lien preview,
+ * apps/web/src/screens/quote/api.ts, and the creditor's signed recovery address, apps/web/src/screens/liens/liensApi.ts).
+ * Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
@@ -48,6 +50,7 @@ const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/push',
   'GET /v1/account/blocks',
   'GET /v1/account/freeze',
+  'GET /v1/account/liens/preview',
   'GET /v1/account/notes/:displayName|:id',
   'GET /v1/account/nudges',
   'GET /v1/account/offers',
@@ -76,6 +79,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/trades/:code/review',
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
+  'POST /v1/account/liens/:id/recovery-address',
   'POST /v1/account/notes',
   'POST /v1/account/offers/status',
   'POST /v1/account/past-rep/finish',

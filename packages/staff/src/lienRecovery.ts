@@ -15,14 +15,13 @@ import { can, type StaffRole } from './roles.js';
 /** The owner's default: 50% of the debtor's proceeds, in basis points. */
 export const DEFAULT_RECOVERY_RATE_BPS = 5000;
 /**
- * Review B1 (2026-11-16): the highest rate a request may propose, the owner's default. The rate is
- * applied by the API at take and the moderation service cannot yet verify a senior's approval of
- * another one (NEEDS_GATE_LIEN_RATE), so the signed terms, every device and the moderation gate cap
- * a recovery at this share of the proceeds (`LIEN_RECOVERY_MAX_BPS` in @x2f/trade, the same number).
- * A lower rate needs no such check: it only takes less. Owner question: whether a rate may ever be
- * higher, and up to what.
+ * Q1 (provisional owner answer, 17 Nov 2026; docs/lien-recovery.md): the highest rate a request may
+ * propose, 90%. The same number as `LIEN_RECOVERY_MAX_BPS` in @x2f/trade (a test pins them equal):
+ * the signed terms, every device and the moderation gate cap a recovery at this share of the
+ * proceeds, and any rate other than the default is applied only once the moderation service has
+ * verified the approving senior's `lien-rate` key tap.
  */
-export const MAX_RECOVERY_RATE_BPS = 5000;
+export const MAX_RECOVERY_RATE_BPS = 9000;
 /** The longest reason a rate change request may carry. */
 export const RATE_REASON_MAX = 500;
 

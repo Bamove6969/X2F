@@ -56,11 +56,15 @@ export {
 } from './money.js';
 export {
   LIEN_BUYER_KEEPS_ATOMIC,
+  LIEN_BUYER_MARGIN_ATOMIC,
+  LIEN_DEFAULT_RATE_BPS,
   LIEN_RECOVERY_MAX_BPS,
+  LIEN_RECOVERY_MIN_ATOMIC,
   RULING_KINDS,
   SETTLE_KINDS,
   attestedRecovery,
   buyerProceeds,
+  expectedRecovery,
   isRulingKind,
   lienRecoveryCap,
   payoutsFor,
@@ -69,6 +73,18 @@ export {
   type RulingKind,
   type SettleKind,
 } from './payouts.js';
+export {
+  isLienStatement,
+  isRecoveryAddressStatement,
+  lienStatementBytes,
+  lienStatementValid,
+  recoveryAddressBytes,
+  recoveryAddressValid,
+  signLienStatement,
+  signRecoveryAddress,
+  type LienStatement,
+  type RecoveryAddressStatement,
+} from './lienStatement.js';
 export { moneroUri } from './moneroUri.js';
 export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export { LAUNCH_TRADE_CAP_USD_CENTS } from './limits.js';

@@ -62,9 +62,10 @@ describe('rate change request (rule 3)', () => {
     expect(rateRequestRefusal({ rateBps: 12.5, reason: 'x' })).toBe('bad-rate');
     expect(rateRequestRefusal({ rateBps: 3000, reason: 'x'.repeat(501) })).toBe('reason-too-long');
   });
-  it('review B1: a rate above the 50% default is refused until the moderation gate can verify a rate change (NEEDS_GATE_LIEN_RATE)', () => {
-    expect(MAX_RECOVERY_RATE_BPS).toBe(5000);
-    expect(rateRequestRefusal({ rateBps: 5001, reason: 'x' })).toBe('bad-rate');
+  it('Q1 (provisional, 17 Nov): a rate above 90% is refused; up to 90% goes to a senior, whose key tap the moderation service verifies', () => {
+    expect(MAX_RECOVERY_RATE_BPS).toBe(9000);
+    expect(rateRequestRefusal({ rateBps: 9000, reason: 'x' })).toBeNull();
+    expect(rateRequestRefusal({ rateBps: 9001, reason: 'x' })).toBe('bad-rate');
     expect(rateRequestRefusal({ rateBps: 10000, reason: 'x' })).toBe('bad-rate');
     expect(rateRequestRefusal({ rateBps: 1, reason: 'x' })).toBeNull();
   });

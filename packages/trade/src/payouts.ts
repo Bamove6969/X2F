@@ -66,26 +66,60 @@ function out(list: Payout[]): Payout[] {
 }
 
 /**
- * Review B1 (lien recovery, 2026-11-16): the largest share of the buyer's proceeds a recovery may
- * take, in basis points, whatever rate a lien carries: the owner's 50% default. Every co-signer and
- * the moderation gate refuse more from the signed terms alone, so an API that signs in a bigger
- * recovery cannot get it paid. A rate above it needs a rate change the moderation service itself can
- * verify (NEEDS_GATE_LIEN_RATE, docs/lien-recovery.md).
+ * Lien recovery limits (review B1, B3; provisional owner answers of 17 Nov 2026, docs/lien-recovery.md
+ * "Provisional owner answers"). Each is one constant, so an owner answer changes one line.
+ *
+ * Q1: the largest share of the buyer's proceeds any recovery may take, in basis points, whatever
+ * rate a lien carries: 90%. Every co-signer and the moderation gate refuse more from the signed terms
+ * alone. A rate above the 50% default needs a senior moderator's key tap that the moderation service
+ * itself verifies (apps/moderation lienRecovery.ts).
  */
-export const LIEN_RECOVERY_MAX_BPS = 5000;
+export const LIEN_RECOVERY_MAX_BPS = 9000;
+/** The owner's default rate (rule 3): 50% of the debtor's proceeds. */
+export const LIEN_DEFAULT_RATE_BPS = 5000;
+/** Q1 margin: what the buyer keeps above the largest network fee, 0.01 XMR. */
+export const LIEN_BUYER_MARGIN_ATOMIC = 10_000_000_000n;
 /**
- * Review B3: what the buyer's output always keeps after a recovery: the largest network fee a
- * release may take from it (index 0 bears it, `MAX_NETWORK_FEE`). wallet2 cannot subtract a fee from
- * an output that is not larger than it, so a smaller output would make the release unbuildable.
+ * Review B3 and Q1: what the buyer's output always keeps after a recovery: the largest network fee a
+ * release may take from it (index 0 bears it, `MAX_NETWORK_FEE`) plus the margin, so the buyer keeps
+ * at least 0.01 XMR net. wallet2 cannot subtract a fee from an output that is not larger than it.
  */
-export const LIEN_BUYER_KEEPS_ATOMIC = MAX_NETWORK_FEE;
+export const LIEN_BUYER_KEEPS_ATOMIC = MAX_NETWORK_FEE + LIEN_BUYER_MARGIN_ATOMIC;
+/**
+ * Q5: the smallest recovery a trade pays the creditor, 0.01 XMR. A smaller one (a small trade, or the
+ * lien's last remainder) is not paid: the remainder carries forward to a trade that can pay it.
+ */
+export const LIEN_RECOVERY_MIN_ATOMIC = 10_000_000_000n;
 
-/** The most one trade may recover from `proceedsAtomic` (the buyer's share of a release): half, rounded down, leaving the buyer at least LIEN_BUYER_KEEPS_ATOMIC; 0 when nothing can be. */
+const isRateBps = (bps: unknown): bps is number => typeof bps === 'number' && Number.isSafeInteger(bps) && bps >= 1 && bps <= LIEN_RECOVERY_MAX_BPS;
+
+/**
+ * The most one trade may recover from `proceedsAtomic` (the buyer's share of a release): 90%, rounded
+ * down, reduced so the buyer keeps LIEN_BUYER_KEEPS_ATOMIC; 0 when nothing fits.
+ */
 export function lienRecoveryCap(proceedsAtomic: bigint): bigint {
   if (typeof proceedsAtomic !== 'bigint' || proceedsAtomic <= LIEN_BUYER_KEEPS_ATOMIC) return 0n;
   const byRate = (proceedsAtomic * BigInt(LIEN_RECOVERY_MAX_BPS)) / 10_000n;
   const keep = proceedsAtomic - LIEN_BUYER_KEEPS_ATOMIC;
   return byRate < keep ? byRate : keep;
+}
+
+/**
+ * The exact recovery one trade pays (review B1: the API reserves it, the moderation service signs only
+ * this figure, the buyer's quote shows it): `min(floor(proceeds × rate / 10000), left, cap)`, where
+ * `left` is what is owed less what is already recovered or signed into other trades' terms, and the cap
+ * is `lienRecoveryCap`; 0 when that is below LIEN_RECOVERY_MIN_ATOMIC (Q5: carried forward). Throws
+ * RangeError on a rate outside 1..LIEN_RECOVERY_MAX_BPS or a negative figure.
+ */
+export function expectedRecovery(a: { proceedsAtomic: bigint; rateBps: number; leftAtomic: bigint }): bigint {
+  if (typeof a.proceedsAtomic !== 'bigint' || a.proceedsAtomic < 0n) throw new RangeError('proceeds must not be negative');
+  if (typeof a.leftAtomic !== 'bigint' || a.leftAtomic < 0n) throw new RangeError('remainder must not be negative');
+  if (!isRateBps(a.rateBps)) throw new RangeError('bad rate');
+  let r = (a.proceedsAtomic * BigInt(a.rateBps)) / 10_000n;
+  if (a.leftAtomic < r) r = a.leftAtomic;
+  const cap = lienRecoveryCap(a.proceedsAtomic);
+  if (cap < r) r = cap;
+  return r >= LIEN_RECOVERY_MIN_ATOMIC ? r : 0n;
 }
 
 /** What a completed trade (`release`, `dispute-buyer`) pays the buyer before any recovery, from the signed deal. */
@@ -95,15 +129,16 @@ export function buyerProceeds(deal: Pick<AttestedTerms['deal'], 'poster' | 'take
 }
 
 /**
- * A lien recovery checked against the buyer's proceeds: positive, at most `lienRecoveryCap` (review
- * B1, B3), to an address that is none of the trade's own. None: amount 0.
+ * A lien recovery checked against the buyer's proceeds: at least LIEN_RECOVERY_MIN_ATOMIC (Q5), at
+ * most `lienRecoveryCap` (review B1, B3, Q1), to an address that is none of the trade's own (B2).
+ * None: amount 0. Every co-signer and the gate build the set through here, so a forged set is refused.
  */
 function recoveryOf(r: { address: string; amountAtomic: bigint } | undefined, proceeds: bigint, own: readonly string[]): Payout {
   if (r === undefined) return { address: '', amountAtomic: 0n };
   if (typeof r !== 'object' || r === null || typeof r.address !== 'string' || r.address === '' || own.includes(r.address)) {
     throw new RangeError('bad recovery address');
   }
-  if (typeof r.amountAtomic !== 'bigint' || r.amountAtomic <= 0n || r.amountAtomic > lienRecoveryCap(proceeds)) throw new RangeError('bad recovery amount');
+  if (typeof r.amountAtomic !== 'bigint' || r.amountAtomic < LIEN_RECOVERY_MIN_ATOMIC || r.amountAtomic > lienRecoveryCap(proceeds)) throw new RangeError('bad recovery amount');
   return { address: r.address, amountAtomic: r.amountAtomic };
 }
 
