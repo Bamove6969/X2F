@@ -5,7 +5,7 @@ import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channe
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestChat, attestTrade, BadTerms, checkWork } from './attest.js';
-import { checkLienRecovery, LienRefused, recordLienRecovery, type LienRulings } from './lienRecovery.js';
+import { checkLienRecovery, LienRefused, markLienStatementPosted, recordLienRecovery, unpostedLienStatements, type LienRates, type LienRulings } from './lienRecovery.js';
 import { loadChatIdentity, loadParty, saveChatIdentity, saveParty, walletPassword } from './keystore.js';
 import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
@@ -154,6 +154,8 @@ export interface ModerationDeps {
    * them (`lienRulingVerifier`). Absent (no gate configured): no lien recovery is ever signed.
    */
   lienRulings?: LienRulings;
+  /** Q1 (provisional, 17 Nov): rates other than the default, verified by the gate (`lienRateVerifier`). Absent: the default only. */
+  lienRates?: LienRates;
 }
 
 /** What `ModerationDeps.gate` starts (security review 2026-11-12 M1). */
@@ -161,6 +163,7 @@ export interface GateRun {
   rulings?: ModerationDeps['rulings'];
   checkpoints?: ModerationDeps['checkpoints'];
   lienRulings?: LienRulings;
+  lienRates?: LienRates;
   stop(): Promise<void>;
 }
 
@@ -286,6 +289,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   }
   const rulingsDep = gate?.rulings ?? deps.rulings;
   const lienRulingsDep = gate?.lienRulings ?? deps.lienRulings ?? null;
+  const lienRatesDep = gate?.lienRates ?? deps.lienRates ?? null;
   const checkpointsDep = gate?.checkpoints ?? deps.checkpoints;
   const lockHeld = deps.lockHeld ?? (() => instanceLockHeld(lock));
   const rawLink: Link = createLink({
@@ -365,14 +369,14 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
 
     // Review B1: a lien recovery is signed only when this service's own records back it.
     await checkWork({ ...w, trade: code });
-    const recovery = await checkLienRecovery({ ...w, trade: code }, { db: o.db, feeWallet: o.feeWallet, rulings: lienRulingsDep });
+    const recovery = await checkLienRecovery({ ...w, trade: code }, { db: o.db, feeWallet: o.feeWallet, rulings: lienRulingsDep, rates: lienRatesDep });
     const a = await attestTrade({ ...w, trade: code }, o.signingSecret, now(), deps.newIdentity ?? generateIdentity);
     const sealed: SealedParty = { v: 1, trade: code, role: 'mod', me: toHexIdentity(a.mod), participants: a.participants };
     const client = await o.db.connect();
     try {
       await client.query('begin');
       await client.query('insert into signed_terms (trade, attestation, sig) values ($1, $2, $3)', [code, a.attestation, a.sig]);
-      if (recovery !== null) await recordLienRecovery(client, code, recovery);
+      if (recovery !== null) await recordLienRecovery(client, code, recovery, { signingSecret: o.signingSecret, now: now() });
       await saveParty(client, o.keystoreKey, code, sealed);
       await walletPassword(client, o.keystoreKey, code);
       await client.query('commit');
@@ -383,6 +387,18 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       client.release();
     }
     return { attestation: a.attestation, sig: a.sig, party: sealed };
+  };
+
+  /**
+   * Review B1: the lien statements this service signed and the API has not taken yet, posted over
+   * the signed link (`lien-statement`); one the API refuses stays unposted and is logged.
+   */
+  const postLienStatements = async (): Promise<void> => {
+    for (const l of await unpostedLienStatements(o.db)) {
+      const res = await link.report({ kind: 'lien-statement', statement: l.statement, sig: l.sig }).catch(() => ({ status: 0, error: null }));
+      if (res.status === 201) await markLienStatementPosted(o.db, l.lienId, l.sig);
+      else log({ reason: `lien-statement-refused-${res.status}` });
+    }
   };
 
   const tick = async (): Promise<string[]> => {
@@ -420,6 +436,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           continue;
         }
         await o.db.query('update signed_terms set posted_at = now() where trade = $1', [code]);
+        await postLienStatements();
         const terms = attestation.terms;
         if (terms === undefined) {
           // Unreachable: the API stores no attestation without terms (400). A pre-terms record.
@@ -953,10 +970,11 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
               const source = pgGateSource(reader);
               const sync = startGateSync(store, source, gateCtx);
               const rulings = rulingExecutor({ store, source, ctx: gateCtx, signingSecret, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
-              const { lienRulingVerifier } = await import('./lienRecovery.js');
+              const { lienRateVerifier, lienRulingVerifier } = await import('./lienRecovery.js');
               return {
                 rulings,
                 lienRulings: lienRulingVerifier({ store, source, ctx: gateCtx }),
+                lienRates: lienRateVerifier({ store, source, ctx: gateCtx }),
                 checkpoints: { store, reader },
                 stop: async () => {
                   await sync.stop();

@@ -7,6 +7,7 @@ export { DEFAULT_APPEAL_WINDOW_H, DEFAULT_LIMIT_USD_CENTS, GATE_FILE, GATE_LOCK_
 export {
   authorizeRuling,
   gateNeedsSecond,
+  noteCounter,
   recordedTerms,
   verifyTap,
   type Authorization,

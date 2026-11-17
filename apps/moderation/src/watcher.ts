@@ -20,7 +20,7 @@ import type pg from 'pg';
 import { NO_DESK_FACTS, sweepKindAgrees, WATCH_FRESH_MS, type Desk } from './desk.js';
 import type { DeskArmed } from './execute.js';
 import type { Link, WatchItem } from './link.js';
-import { freeLienRecoveries } from './lienRecovery.js';
+import { freeLienRecoveries, unfreeLienRecoveries } from './lienRecovery.js';
 
 /**
  * The moderation service's chain watcher (Plan 3 Task 9), the I/O around `@x2f/trade`'s pure
@@ -478,8 +478,10 @@ export function createWatcher(o: WatcherOptions): Watcher {
     // Review B1, M2: a lien recovery signed for this trade stops counting once it can no longer be
     // paid: a sweep counted here for a kind that never pays it (a refund), or a watch that ends with
     // no coin ever received. A release, a ruling for the buyer, or a kind nothing names keeps it.
-    if (step.reports.some((r) => r.kind === 'settled') && settledKind !== null && !PAYS_RECOVERY.has(settledKind)) {
-      await freeLienRecoveries(o.db, row.trade);
+    if (step.reports.some((r) => r.kind === 'settled') && settledKind !== null) {
+      if (!PAYS_RECOVERY.has(settledKind)) await freeLienRecoveries(o.db, row.trade);
+      // M2: late coins on a refunded trade, then paid out for the buyer: the recovery was paid after all.
+      else await unfreeLienRecoveries(o.db, row.trade);
     }
     if (!step.watching && neverFunded(step.state)) await freeLienRecoveries(o.db, row.trade);
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.

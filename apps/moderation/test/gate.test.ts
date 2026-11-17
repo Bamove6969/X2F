@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newTradeCode } from '@x2f/core';
 import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, staffLoginChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
-import { escrowPlan } from '@x2f/trade';
+import { LIEN_RECOVERY_MIN_ATOMIC, escrowPlan } from '@x2f/trade';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 import { createSoftAuthenticator, createTestCa, type SoftAuthenticator, type TestCa } from '../../api/test/helpers/softAuthenticator.js';
@@ -32,7 +32,7 @@ import {
 import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity } from './gateWorld.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
 import { LINK_MAX_LIFETIME_MS } from '../src/gate/store.js';
-import { lienRulingVerifier } from '../src/lienRecovery.js';
+import { lienRateApproved, lienRateTaps, lienRulingVerifier } from '../src/lienRecovery.js';
 
 /** A new gate the way an operator makes one: init-gate with "yes", then open it. */
 async function freshGate(dir: string, key: Uint8Array) {
@@ -1393,14 +1393,68 @@ describe('authorizeRuling with a lien recovery (review M6)', () => {
     });
   });
 
-  it('a recovery the terms could not pay (over half the proceeds, or to a party) makes the buyer\'s ruling bad-terms', async () => {
+  it('a recovery the terms could not pay (over 90% of the proceeds, under 0.01 XMR, or to a party) makes the buyer\'s ruling bad-terms', async () => {
     const w = await world();
     const mod = w.hire('mod');
     await syncRegistry(w.api, w.gate, ctx());
-    for (const lienRecovery of [{ address: CREDITOR, amountAtomic: AMOUNT / 2n + 1n }, { address: SELLER, amountAtomic: R }]) {
+    for (const lienRecovery of [
+      { address: CREDITOR, amountAtomic: (AMOUNT * 9n) / 10n + 1n },
+      { address: CREDITOR, amountAtomic: LIEN_RECOVERY_MIN_ATOMIC - 1n },
+      { address: SELLER, amountAtomic: R },
+    ]) {
       const b = ruling(mod);
       expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: { ...recorded(41_250n), lienRecovery }, balanceAtomic: BALANCE }, ctx()))
         .toEqual({ ok: false, reason: 'bad-terms' });
     }
+  });
+});
+
+// Q1 (provisional owner answer, 17 Nov 2026): a lien's rate other than the 50% default is signed
+// only once the gate verified a senior moderator's (or the owner's) `lien-rate` key tap for it.
+describe('lienRateApproved: a rate change the gate verifies itself (Q1)', () => {
+  const LIEN = '6f1c1f9e-0b1a-4a51-9a1b-0c2d3e4f5a6b';
+  const REQ = '7a2d2a0f-1c2b-4b62-8b2c-1d3e4f5a6b7c';
+  const intent = (rateBps: number, lienId = LIEN): KeyTapIntent => ({ kind: 'lien-rate', lienId, requestId: REQ, rateBps });
+
+  it('a senior\'s or the owner\'s tap for exactly that lien and rate approves it; its nonce is then bound to it', async () => {
+    const w = await world();
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const t = tapBy(senior, intent(9000));
+    expect(await lienRateApproved(w.gate, [t], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(true);
+    expect(w.gate.usedNonces[t.nonceHex]).toBe(`lien-rate:${LIEN}:9000`);
+    expect(await lienRateApproved(w.gate, [tapBy(w.owner, intent(7000))], { lienId: LIEN, rateBps: 7000 }, ctx())).toBe(true);
+  });
+
+  it('refused: a moderator\'s tap, another lien or rate, a forged tap, a rate above 90%, a nonce used for anything else, no tap at all', async () => {
+    const w = await world();
+    const senior = w.hire('senior');
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await lienRateApproved(w.gate, [tapBy(mod, intent(9000))], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    expect(await lienRateApproved(w.gate, [tapBy(senior, intent(8000))], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    expect(await lienRateApproved(w.gate, [tapBy(senior, intent(9000, REQ))], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    // A tap an API made up: the intent changed after the key signed it.
+    const forged = { ...tapBy(senior, intent(5000)), intent: canonicalJson(intent(9000)) };
+    expect(await lienRateApproved(w.gate, [forged], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    expect(await lienRateApproved(w.gate, [tapBy(senior, intent(9500))], { lienId: LIEN, rateBps: 9500 }, ctx())).toBe(false);
+    const used = tapBy(senior, intent(9000));
+    w.gate.usedNonces[used.nonceHex] = 'ruling:x:propose';
+    expect(await lienRateApproved(w.gate, [used], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    expect(await lienRateApproved(w.gate, [], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+  });
+
+  it('lienRateTaps lists every verified approval for the lien with its nonce (the moderation service spends each one it applies)', async () => {
+    const w = await world();
+    const senior = w.hire('senior');
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const a = tapBy(senior, intent(6000));
+    const b = tapBy(w.owner, intent(2500));
+    const other = tapBy(senior, intent(7000, REQ));
+    expect(await lienRateTaps(w.gate, [a, tapBy(mod, intent(8000)), b, other], LIEN, ctx())).toEqual([
+      { rateBps: 6000, nonce: a.nonceHex },
+      { rateBps: 2500, nonce: b.nonceHex },
+    ]);
   });
 });
