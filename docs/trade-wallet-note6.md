@@ -177,7 +177,52 @@ with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
     Settings shows "(one trade only)" (`settings/holdCopy.ts:58`).
 13. **Review M5**: the use-up comment now names the Jabber change notice (`wallets/routes.ts:397`).
 
-Checks (round 2 head):
+### Round 3: the owner's answers to Q9-Q11
+
+14. **Q9: the default is picked first on the "accepted your offer" sheet**
+    (`apps/web/src/screens/AcceptedSheet.tsx:130`, and it is tagged "Default"). The poster can still
+    pick another wallet. With no usable default, nothing is picked, as before. Tests:
+    `apps/web/test/AcceptedSheet.test.tsx`.
+15. **Q10: a one-time wallet comes back if its trade ends in setup with nothing funded.**
+    - Migration `640_wallet_used_by_trade.sql` adds `wallets.used_by_trade`. A check allows it only on
+      a removed one-time wallet. 640 is free on every remote branch.
+    - `useUpOneTimeWallet` (`wallets/routes.ts:402`) records the trade's code.
+    - `trades/store.ts:410` `applyEvent` calls `restoreOneTimeWallets` (`wallets/routes.ts:421`) only
+      when all of these hold: the previous state was `setup`, the new state is `cancelled`, nothing was
+      received and no funding was seen. It runs in the same transaction, before `countCancel`.
+      This covers a buyer cancel, a seller walk-away, a system cancel, and expiry after `setup_by`.
+    - The state machine, escrow and payouts are unchanged; this is wallet bookkeeping only.
+    - It locks only the accounts that have a wallet to give back, in id order. Locking both sides
+      deadlocked against a take, because the cancel route already holds the canceller's account lock.
+    - It never restores:
+      - a wallet whose removal applied while the trade used it: `applyWalletRemoval` clears
+        `used_by_trade` and sends the alert (`wallets/routes.ts:448`);
+      - a purged address;
+      - an address that is open again on the account.
+    - It never touches `had_wallet` or any wait, and never creates an address.
+    - Tests (`apps/api/test/take.test.ts:1279`, 9 cases):
+      - buyer cancel, walk-away and expiry in setup each restore it;
+      - the poster's one-time refund wallet comes back;
+      - a restored wallet can be used again;
+      - funding then cancel, and a funded trade, do not restore;
+      - a removal that applied meanwhile wins;
+      - an address added again meanwhile leaves one open row;
+      - a cancel and a new take at once is consistent either way.
+    - Residual risk: a poster's cancel can race a take by the other side when that side owns the
+      one-time wallet. Postgres may then end one of the two with a deadlock error (500). It rolls back
+      fully and loses nothing.
+16. **Q11: no change.** Offers stay live.
+
+Checks (round 3 head):
+- typecheck: 19 workspaces clean.
+- copy-lint: clean.
+- separation-check: ok.
+- vitest: api 116 files / 2723 passed (1 todo); web 138 / 2129; auth-client 6 / 77; tools 2 / 7.
+- Playwright: quote, wallets, accepted-phone, fold, block, browse-buy, browse-sell, setup, offer-units,
+  team, security, design-shots, parity and shell: 293 passed, 53 skipped. The skips were not added by
+  this work; where they come from was not checked.
+
+Round 2 checks, for the record:
 - typecheck: 19 workspaces clean.
 - copy-lint: clean, with no new pragma.
 - separation-check: ok.
@@ -218,17 +263,12 @@ Checks (round 2 head):
   built (the account holds it). Should only a working key count?
 - **Q8 (wording).** All new text is COPY-UNSIGNED and needs your wording sign-off (the note asked for
   "procure (or buy or purchase, whichever)"; built with "buy").
-- **Q9 (default on the accepted sheet).** The poster's wallet pick on the "accepted your offer" sheet
-  still starts with nothing picked (OD-11, review of Task 19). Should the default be picked first there
-  too? Built: unchanged.
-- **Q10 (review M1: a one-time address spent on a trade that never happens).** A one-time address is
-  used up when the trade starts (take or setup). If that trade is then cancelled in setup, the address
-  is gone. Adding it again follows the normal rule: 24 hours with a password confirm, staged from a
-  password-only login. Should a one-time address come back when its trade is cancelled before funding,
-  or should the screen warn about this? Built: no change (this fails safe).
-- **Q11 (review M6: a vendor whose last usable wallet was one-time).** Posting an offer needs a usable
-  wallet, but taking one does not check the poster's wallets. Once a vendor's last one-time wallet is
-  used up, a new take on another of their offers starts a trade the vendor cannot set up (409
-  `no-wallet`). The trade then runs out at its setup deadline. This already happens after a manual
-  removal; one-time wallets will make it common. Should such offers be hidden until the vendor adds a
-  wallet? Built: no change.
+- **Q9 (default on the accepted sheet). ANSWERED 17 Nov:** yes. The default "will automatically be
+  selected for the trade". Built: item 14.
+- **Q10 (review M1: a one-time address spent on a trade that never happens). ANSWERED 17 Nov:**
+  "Monero wallets can be used over and over again, and the fact that they're saving them in the program
+  means they intend on reusing them. So yes, they have the option of reusing the wallet over again, but
+  by no means do they have to." Built: item 15.
+- **Q11 (review M6: a vendor whose last usable wallet was one-time). ANSWERED 17 Nov:** owner: no
+  preference; the current behaviour is kept (the offers stay live, and a take that the vendor cannot set
+  up runs out at its setup deadline).
