@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ROLES, type Role } from '@x2f/core';
+import { ROLES, networkFeeShares, type Role } from '@x2f/core';
 import { MoneroMultisigEngine, runParty, type PartyHandle, type PartyState, type PartyStore } from '@x2f/escrow';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@x2f/regtest';
@@ -141,7 +141,10 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     await expect.poll(pass, { timeout: 120_000, interval: 2000 }).toBe('handed');
     const ex = store.state.executions[code]!;
     expect(ex).toMatchObject({ rulingId: c.ruling.id, winner: 'buyer', settledAt: null });
-    const to = ex.payouts.map((p) => ({ address: p.address, amountAtomic: BigInt(p.amountAtomic) }));
+    // The buyer's app co-signs the list `payoutsFor('dispute-buyer')` gives (apps/web policy.ts), the
+    // gate's own: both outputs bear the network fee (owner 16 Nov), and the mark is in the outcome
+    // digest, so the buyer's outcome carries it as the moderator's does.
+    const to = ex.payouts.map((p) => ({ address: p.address, amountAtomic: BigInt(p.amountAtomic), bearsNetworkFee: true }));
     expect(to.map((p) => p.address)).toEqual([terms.buyerPayout, terms.feeWallet]);
 
     // The buyer's app co-signs exactly that mod-built set (Task 15's cosignPolicy); the tx lands.
@@ -149,11 +152,17 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     expect(tx).toMatch(/^[0-9a-f]{64}$/);
     await mining(expect.poll(() => store.state.executions[code]?.settledAt ?? null, { timeout: 120_000, interval: 1000 }).not.toBeNull());
     await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
+    // Owner 16 Nov: the buyer's output and the fee output share the network fee, wallet2's split
+    // (`networkFeeShares`: the buyer, first in pay order, takes an odd unit).
     const feePayout = to[1]!.amountAtomic;
-    expect(await balanceOf(feeW)).toBe(feePayout);
+    const feeGot = await balanceOf(feeW);
     const got = await balanceOf(buyerW);
-    expect(got).toBeLessThan(to[0]!.amountAtomic);
-    expect(got).toBeGreaterThan(to[0]!.amountAtomic - MAX_NET_FEE);
+    const buyerShort = to[0]!.amountAtomic - got;
+    const feeShort = feePayout - feeGot;
+    const networkFee = buyerShort + feeShort;
+    expect(networkFee).toBeGreaterThan(0n);
+    expect(networkFee).toBeLessThan(MAX_NET_FEE);
+    expect([buyerShort, feeShort]).toEqual(networkFeeShares(networkFee, [true, true]));
     expect(await balanceOf(sellerW)).toBe(0n);
 
     // The end states (R-M2): the moderator's own party shows the sweep as its own tx, the watcher's
