@@ -213,6 +213,23 @@ with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
       fully and loses nothing.
 16. **Q11: no change.** Offers stay live.
 
+### Round 4 (lead, 17 Nov, on wip/lead-trade-wallet): the device checks the new address
+
+17. **The API never swaps a new address the device did not show.** The quote's new-address sheet
+    (`quote/NewAddressSheet.tsx`) refuses a `POST /v1/wallets` answer whose `address` is not the one
+    typed: nothing is picked and it says so (`NEW_ADDRESS.mismatch`, COPY-UNSIGNED). The quote keeps the
+    typed address for that wallet id (`Quote.tsx` `typedAddress`); if the list read again names another
+    address for it, that row is not offered or picked and the quote says so. So the take's `walletId`,
+    the wallet line and the device's `ownAddress` can only be the typed address. Tests:
+    `apps/web/test/quoteAddress.test.tsx` (sheet), `apps/web/test/quoteScreen.test.tsx` "a new address
+    added on the quote" (typed address picked and recorded; sheet answer swapped; re-read list swapped).
+18. **One-time copy matches Q10** (review M1): the quote sheet's and Settings' one-time notes now say a
+    trade cancelled before any XMR is sent gives the address back (COPY-UNSIGNED).
+19. Stale OD-11 comment in `WalletPicker.tsx` updated; `AcceptedSheet.tsx` import order.
+
+Review minors, final state: M1 built as Q10 (restore) plus copy (item 18); M2-M5 fixed (items 10-13);
+M6 kept as is on the owner's answer (Q11).
+
 Checks (round 3 head):
 - typecheck: 19 workspaces clean.
 - copy-lint: clean.
@@ -269,6 +286,14 @@ Round 2 checks, for the record:
   "Monero wallets can be used over and over again, and the fact that they're saving them in the program
   means they intend on reusing them. So yes, they have the option of reusing the wallet over again, but
   by no means do they have to." Built: item 15.
+- **Q12 (changing the default, lead 17 Nov).** `PUT /v1/wallets/:id/default` is blocked during a hold
+  but needs no confirm-it's-you and raises no in-app alert. A stolen session can only point it at a
+  wallet already on the account (each of which passed its own wait and alert), and the quote always
+  shows the picked wallet's name and address ending before Trade. Should a default change also send the
+  usual in-app alert? Recommended: yes (an alert, no extra confirm). Built: no alert.
+- **Q13 (Q7 follow-up).** Main's G13 counts only a usable PGP key (`usablePgp`, review-vendor M3).
+  Recommended: rate the account the same way (an expired or revoked key does not make it high). Built:
+  unchanged, pending Q7.
 - **Q11 (review M6: a vendor whose last usable wallet was one-time). ANSWERED 17 Nov:** owner: no
   preference; the current behaviour is kept (the offers stay live, and a take that the vendor cannot set
   up runs out at its setup deadline).
