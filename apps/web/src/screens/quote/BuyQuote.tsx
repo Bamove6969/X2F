@@ -30,8 +30,9 @@ export const BUY_QUOTE_COPY: QuoteCopy = {
     </>
   ),
   noWalletLine: 'Pick the wallet that gets paid.',
-  // COPY-UNSIGNED (owner 16 Nov: "they pay their fees and we pay our fees"; about half the
-  // typical 0.0001 XMR two-output payout fee).
+  // COPY-UNSIGNED (owner 16 Nov: "they pay their fees and we pay our fees": each receiver pays
+  // the fee for its own payout output; the buyer's output's share of a typical 0.0001 XMR
+  // two-output payout fee).
   networkFee: 'about 0.00005 XMR for your payout, taken from it',
   total: (method) => `You send via ${method}`,
   footnote: (poster) =>

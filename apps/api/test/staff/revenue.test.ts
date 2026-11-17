@@ -318,7 +318,7 @@ describe('owed fees collected (the Task 12 seam, review F5)', () => {
   });
 });
 
-// Owner 16 Nov: the receivers pay the payout's network fee; X2F's fee output pays its wallet2 half.
+// Owner 16 Nov: each receiver pays the network fee for its own payout output; X2F's fee output pays its wallet2 share.
 // The books show the network fees X2F paid and the total after them.
 describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migration 600)', () => {
   const netDay = async (day: string) =>
@@ -328,7 +328,7 @@ describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migr
   const bookedNet = async (code: string) =>
     (await deps.db.query<{ network_fee_atomic: string | null }>("select network_fee_atomic::text from revenue_booked where trade_code = $1 and kind = 'fee'", [code])).rows;
 
-  it('a released trade books the fee output\'s half of the tx fee (the odd unit is the buyer\'s), once', async () => {
+  it('a released trade books the fee output\'s share of the tx fee (the odd unit is the buyer\'s), once', async () => {
     setNow(new Date('2026-05-02T10:00:00Z'));
     const t = await trade({ to: 'released' });
     const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
@@ -364,11 +364,11 @@ describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migr
     setNow(new Date('2026-05-04T10:00:00Z'));
     const t = await trade({ to: 'released' });
     const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
-    // 0.5 XMR reported: X2F's fee output lost at most half of 0.01 XMR, so 0.005 XMR is booked.
+    // 0.5 XMR reported: X2F's fee output lost at most its share of 0.01 XMR, so 0.005 XMR is booked.
     expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 500_000_000_000n))).toBe(true);
     expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: '5000000000' }]);
     expect(await netDay('2026-05-04')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '5000000000' }]);
-    // Exactly the bound books its half; one unit over books the same.
+    // Exactly the bound books its share; one unit over books the same.
     const atBound = await trade({ to: 'released' });
     expect(await withClient((c) => bookSettlementNetworkFee(c, atBound.code, 10_000_000_001n))).toBe(true);
     expect(await bookedNet(atBound.code)).toEqual([{ network_fee_atomic: '5000000000' }]);

@@ -217,7 +217,7 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       // The main key alone does not prove a subaddress payout; nor does one unit more.
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!.slice(0, 64), to)).toBe(false);
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!, [to[0]!, { ...to[1]!, amountAtomic: fee + 1n }])).toBe(false);
-      // The fee output paid its half of the network fee, so it is short of the whole 1%: a minimum
+      // The fee output paid its share of the network fee, so it is short of the whole 1%: a minimum
       // that does not let it bear the fee is not met (the allowance never moves to another output).
       expect(await t.parties.mod.proveSweep!(hash!, keys[0]!, [to[0]!, { address: to[1]!.address, amountAtomic: fee }])).toBe(false);
       await feeWallet.setDaemonConnection({ uri: node.rpcUri });
