@@ -83,8 +83,12 @@ export function deviceAmount(d: Deal, currentAtomic: bigint, balance: bigint, un
 
 export interface PolicyContext {
   role: 'buyer' | 'seller';
-  /** This device's own address: the buyer's payout, the seller's refund. */
-  own: { payout?: string; refund?: string };
+  /**
+   * This device's own address: the buyer's payout, the seller's refund. `lienRecoveryAtomic`
+   * (review B1, buyer only): the recovery the buyer accepted on the quote before the take (absent:
+   * none); a buyer co-signs nothing whose signed terms carry any other figure.
+   */
+  own: { payout?: string; refund?: string; lienRecoveryAtomic?: bigint };
   /** From this device's own funds(), only when balance == unlocked. */
   balance: bigint;
   trade: PolicyTrade;
@@ -158,6 +162,9 @@ function check(c: PolicyContext, o: Outcome): boolean {
   const mine = c.role === 'buyer' ? c.own.payout : c.own.refund;
   const signedMine = c.role === 'buyer' ? c.signedTerms.payout : c.signedTerms.refund;
   if (typeof mine !== 'string' || mine === '' || mine !== signedMine) return false;
+  // Review B1: the buyer (the debtor) co-signs only signed terms whose recovery is exactly the one it
+  // accepted before the take (none accepted: none), whatever the API or the signed terms say.
+  if (c.role === 'buyer' && (c.signedTerms.lienRecovery?.amountAtomic ?? 0n) !== (c.own.lienRecoveryAtomic ?? 0n)) return false;
 
   const state = c.trade.state;
   const { sellerFundsAtomic } = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });

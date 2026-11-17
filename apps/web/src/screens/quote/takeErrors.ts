@@ -58,6 +58,9 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
       return 'This payment method is not available.';
     case 'wallet-not-ready':
       return 'That wallet is still waiting before it can be used. Pick another.';
+    case 'lien-recovery-changed':
+      // The quote fetches the figure again when it sees this refusal (Quote.tsx). COPY-UNSIGNED
+      return 'What this purchase pays to the person you owe changed. Check it and tap Trade again.';
     case 'ad-busy':
       return 'Someone is already taking this offer for that amount. Try again in a few minutes.';
     default:

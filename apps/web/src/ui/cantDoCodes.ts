@@ -99,6 +99,9 @@ export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
 /** Every other code the web knows, with why it is not a "can't do that" refusal. */
 export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
+  // Lien recovery (review B1, provisional owner answers 17 Nov 2026).
+  'lien-recovery-changed': 'the lien recovery the quote showed moved before the take; the quote reads it again and asks for a fresh tap (inline, like price-changed)',
+  'recovery-address-refused': "a creditor's recovery wallet that another account holds; they pick another wallet (inline on the liens screen)",
   // Plan 4 Tasks 5 and 7: staff-API answers traders never get (their words come with the staff web
   // app, Plan 4 Task 16).
   'tap-invalid': 'a staff security-key tap (staff app only)',

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { formatFiat, formatXmr } from '@x2f/trade';
+import { formatFiat, formatXmr, formatXmrExact } from '@x2f/trade';
 import { api } from '../api/client.js';
 import type { LiveEvent } from '../api/events.js';
 import { addressEnd, confirmableAddress } from '../ui/addressEnd.js';
+import { LIEN_QUOTE_COPY } from './liens/liensCopy.js';
 import { storeConfirmed, type ConfirmedTrade } from './quote/confirmed.js';
 import { Button } from '../ui/Button.js';
 import { Sheet } from '../ui/Sheet.js';
@@ -191,6 +192,13 @@ export function AcceptedSheet({
             <p className="x2f-sheet__body" data-part="deal">
               {role === 'seller' ? 'You sell' : 'You buy'} {formatXmr(deal.takeAmountAtomic)} XMR at {formatFiat(deal.centsPerXmr, deal.currency)} per XMR, up to{' '}
               {formatFiat(deal.maxFiatCents, deal.currency)}
+            </p>
+          ) : null}
+          {role === 'buyer' && typeof recovery === 'bigint' && recovery > 0n ? (
+            // Review B1: the poster who buys sees what this purchase pays to the person they owe, and
+            // accepts it with the wallet; the device then takes only that figure.
+            <p className="x2f-sheet__body" data-part="lien-recovery">
+              {LIEN_QUOTE_COPY.sheet(`${formatXmrExact(recovery)} XMR`)}
             </p>
           ) : null}
           <p className="x2f-sheet__body">Pick the wallet for this trade. Escrow setup starts after that.</p>

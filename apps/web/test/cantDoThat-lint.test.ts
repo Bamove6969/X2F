@@ -148,7 +148,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // "Our automated system was unable to detect the amount ..." is a check on the screenshot asking
     // for an explanation; the proof can still be sent. 65 -> 66 (jabber-settings F1, 23fe5783, batch 8):
     // jabberCopy.ts's always-on note under the disabled security box, a standing note; nothing was tried.
-    expect(notARefusal).toBeLessThanOrEqual(66);
+    // 66 -> 67 (lien recovery, provisional owner answer Q2, 17 Nov 2026): liensCopy.ts's `addressTaken`,
+    // a wallet choice to redo on the same screen (another account holds that address), not a rule refusal.
+    expect(notARefusal).toBeLessThanOrEqual(67);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

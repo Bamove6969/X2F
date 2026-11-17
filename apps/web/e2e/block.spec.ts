@@ -32,6 +32,7 @@ async function stubApi(page: Page, o: { signedIn: boolean }): Promise<Seen> {
   await page.route('**/v1/offers?*', (r) => r.fulfill({ json: seen.blocks.includes(B.offer.poster.displayName) ? [] : [B.offer] }));
   await page.route('**/v1/wallets', (r) => (o.signedIn ? r.fulfill({ json: [...B.wallets] }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } })));
   await page.route('**/v1/wallets/rule', (r) => r.fulfill({ json: { firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 } }));
+  await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: '0' } }));
   await page.route('**/v1/account/blocks', (r) => {
     if (r.request().method() === 'POST') {
       const body = r.request().postDataJSON() as { displayName: string };

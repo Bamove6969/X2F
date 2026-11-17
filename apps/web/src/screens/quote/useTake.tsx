@@ -54,9 +54,23 @@ export class LockedRateError extends Error {
 
 export const isPriceChanged = (e: unknown): boolean => e instanceof ApiCallError && e.status === 409 && e.code === 'price-changed';
 
+/** Review B1: the take reserved another lien recovery than the one the buyer accepted on the quote. */
+export const isLienRecoveryChanged = (e: unknown): boolean => e instanceof ApiCallError && e.status === 409 && e.code === 'lien-recovery-changed';
+
+/**
+ * Review B1 (lien recovery): the take answered with another recovery than the one the quote showed
+ * and the buyer accepted. The API refuses that itself; the device records nothing either way.
+ */
+export class LienRecoveryMismatchError extends Error {
+  constructor() {
+    super('the reserved lien recovery is not the accepted one');
+    this.name = 'LienRecoveryMismatchError';
+  }
+}
+
 export interface TakeArgs {
   /** The quote as shown: amount, rate and total. */
-  quote: Pick<TakeRequest, 'amountAtomic' | 'centsPerXmr' | 'fiatCents' | 'methodId' | 'currency' | 'giftCardTerms'>;
+  quote: Pick<TakeRequest, 'amountAtomic' | 'centsPerXmr' | 'fiatCents' | 'methodId' | 'currency' | 'giftCardTerms' | 'lienRecoveryAtomic'>;
   walletId: string | null;
   confirmed: ConfirmedTrade | null;
   /**
@@ -110,6 +124,12 @@ export function useTake(
             dropIfLeft(offerId);
             return;
           }
+          // Review B1: a buyer keeps only the recovery it accepted on the quote (none: none).
+          if (confirmed.role === 'buyer' && (taken.lienRecoveryAtomic ?? 0n) !== (confirmed.lienRecoveryAtomic ?? 0n)) {
+            updateQuote(offerId, { busy: false, error: new LienRecoveryMismatchError() });
+            dropIfLeft(offerId);
+            return;
+          }
           updateQuote(offerId, { busy: false });
           dropIfLeft(offerId);
           // The deal's fiat maximum: the band's limits at the rate that locked (J-16: an XMR band's
@@ -123,8 +143,8 @@ export function useTake(
           const locked: ConfirmedTrade = {
             ...confirmed,
             deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr, maxFiatCents },
-            // Lien recovery: the buyer's device accepts only the signed terms that carry this amount.
-            ...(confirmed.role === 'buyer' && taken.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: taken.lienRecoveryAtomic } : {}),
+            // Lien recovery (review B1): the figure the buyer accepted on the quote (equal to the take's,
+            // checked above); the device accepts only signed terms that carry exactly it.
           };
           storeConfirmed(taken.code, locked);
           void navigate(`/trade/${encodeURIComponent(taken.code)}`, { state: { confirmed: locked } });
@@ -136,7 +156,7 @@ export function useTake(
             void navigate(setupHref(a.resumeHref()));
             return;
           }
-          if (isPriceChanged(error)) onPriceChanged?.();
+          if (isPriceChanged(error) || isLienRecoveryChanged(error)) onPriceChanged?.();
           updateQuote(offerId, { busy: false, error });
           dropIfLeft(offerId);
         },

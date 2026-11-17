@@ -1,14 +1,19 @@
 /**
  * Settings → What you owe (lien recovery, owner 16 Nov 2026, docs/lien-recovery.md): the debtor's
- * notice (owed, paid back so far, still to pay, the current rate) and the creditor's recoveries as
- * they arrive. Figures come from the API only; nothing here moves money. DESIGN: not drawn;
- * COPY-UNSIGNED (liensCopy.ts). NEEDS_DESIGN_LIEN_NOTICE: a line on the quote and the trade room
- * ("this purchase pays X to …") is not placed yet; the trade view carries `lienRecoveryAtomic`.
+ * notice (owed, paid back so far, still to pay, the current rate) and, for a lien owed to this
+ * account, the totals only (review M4, provisional owner answer Q4: never the debtor's purchases)
+ * and the wallet recoveries go to (Q2): this device signs "pay my recoveries to this wallet" with
+ * its own identity from the disputed trade (the escrow worker), and nothing is paid until it has.
+ * Figures come from the API only; nothing here moves money. DESIGN: not drawn; COPY-UNSIGNED
+ * (liensCopy.ts). The buyer's quote shows each purchase's recovery before the take (Quote.tsx).
  */
 import { formatXmrExact } from '@x2f/trade';
 import { useEffect, useState } from 'react';
+import { ApiCallError } from '../../api/client.js';
+import { escrowClient } from '../../escrow/useEscrow.js';
 import { useSession } from '../../session/useSession.js';
-import { fetchLiens, type MyLiens } from './liensApi.js';
+import { fetchWallets, type PickWallet } from '../quote/api.js';
+import { fetchLiens, setRecoveryAddress, type MyLiens, type OwedToMe } from './liensApi.js';
 import { LIENS_COPY as C, pctOf } from './liensCopy.js';
 import '../screens.css';
 
@@ -21,6 +26,7 @@ export function Liens() {
   const signedIn = session.status === 'signed-in';
   const [data, setData] = useState<MyLiens | null>(null);
   const [failed, setFailed] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -29,7 +35,7 @@ export function Liens() {
       if (!ac.signal.aborted) setFailed(true);
     });
     return () => ac.abort();
-  }, [signedIn]);
+  }, [signedIn, reload]);
 
   return (
     <main className="screen">
@@ -68,22 +74,88 @@ export function Liens() {
                 <dt>{C.remaining}</dt>
                 <dd>{xmr(l.remainingAtomic)}</dd>
               </dl>
-              {l.status === 'repaid' && <p>{C.repaid}</p>}
-              {l.recoveries.length === 0 ? (
-                <p>{C.noneYet}</p>
-              ) : (
-                <ul>
-                  {l.recoveries.map((r, i) => (
-                    <li key={i}>
-                      {xmr(r.amountAtomic)} · {new Date(r.at).toLocaleString()}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {l.status === 'repaid' ? <p>{C.repaid}</p> : <RecoveryAddress lien={l} onSet={() => setReload((n) => n + 1)} />}
             </div>
           ))}
         </section>
       )}
     </main>
+  );
+}
+
+/**
+ * Q2 (provisional owner answer, 17 Nov 2026): where recoveries on a lien owed to this account go.
+ * The escrow worker signs the statement with this device's identity in the disputed trade; a device
+ * without that trade's record cannot, and says which device can.
+ */
+export function RecoveryAddress({ lien, onSet }: { lien: OwedToMe; onSet: () => void }) {
+  const [open, setOpen] = useState(!lien.recoveryAddressSet);
+  const [wallets, setWallets] = useState<PickWallet[] | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const ac = new AbortController();
+    fetchWallets(ac.signal).then(
+      (all) => setWallets(all.filter((w) => w.usable)),
+      () => {
+        if (!ac.signal.aborted) setNote(C.addressFailed);
+      },
+    );
+    return () => ac.abort();
+  }, [open]);
+
+  const use = async () => {
+    const w = wallets?.find((x) => x.id === picked);
+    if (!w) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const signed = await escrowClient().signRecoveryAddress?.(lien.fromCode, w.address, new Date().toISOString());
+      if (!signed) {
+        setNote(C.addressNoRecord(lien.fromCode));
+        return;
+      }
+      await setRecoveryAddress(lien.id, signed);
+      setOpen(false);
+      onSet();
+    } catch (e) {
+      setNote(e instanceof ApiCallError && e.code === 'recovery-address-refused' ? C.addressTaken : C.addressFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <p data-part="recovery-address">
+        {C.addressSet}{' '}
+        <button type="button" onClick={() => setOpen(true)}>
+          {C.addressChange}
+        </button>
+      </p>
+    );
+  }
+  return (
+    <div data-part="recovery-address">
+      <p>{C.addressNeeded}</p>
+      {wallets !== null && (
+        <fieldset>
+          <legend>{C.addressPick}</legend>
+          {wallets.map((w) => (
+            <label key={w.id}>
+              <input type="radio" name={`recovery-${lien.id}`} value={w.id} checked={picked === w.id} onChange={() => setPicked(w.id)} />
+              {w.label} …{w.addressEnd}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {note !== null && <p role="alert">{note}</p>}
+      <button type="button" disabled={picked === null || busy} onClick={() => void use()}>
+        {C.addressUse}
+      </button>
+    </div>
   );
 }

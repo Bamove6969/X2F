@@ -12,6 +12,7 @@ import { generateBoxKeyPair, generateIdentity } from '@x2f/protocol';
 import { httpEscrowApi } from './adapters.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowAction, type EscrowRuntime, type EscrowStatus, type RuntimeDeps } from './runtime.js';
 import { openEscrowStore } from './store.js';
+import type { RecoveryAddressStatement } from '@x2f/trade';
 import { createAckKeeper } from '../chat/ack.js';
 import { createChatEngine } from '../chat/engine.js';
 import { httpChatApi } from '../chat/http.js';
@@ -24,9 +25,14 @@ export type ToWorker =
   | { t: 'resume-all' }
   | { t: 'act'; id: number; code: string; action: EscrowAction }
   | { t: 'retry'; code: string }
-  | { t: 'stop'; code: string };
+  | { t: 'stop'; code: string }
+  // Lien recovery (Q2): the creditor's signed recovery address, with this device's identity in `code`.
+  | { t: 'sign-recovery-address'; id: number; code: string; address: string; issuedAt: string };
 
-export type FromWorker = { t: 'status'; code: string; status: EscrowStatus } | { t: 'acted'; id: number; ok: boolean };
+export type FromWorker =
+  | { t: 'status'; code: string; status: EscrowStatus }
+  | { t: 'acted'; id: number; ok: boolean }
+  | { t: 'signed-recovery-address'; id: number; signed: { statement: RecoveryAddressStatement; sig: string } | null };
 
 export interface Port {
   postMessage(m: FromWorker): void;
@@ -80,6 +86,7 @@ export function serveEscrow(port: Port, makeRuntime: (onStatus: (code: string, s
         // No runtime: every trade the page starts is told so, and every action is refused.
         if ((m.t === 'start' || m.t === 'retry') && typeof m.code === 'string') port.postMessage({ t: 'status', code: m.code, status: RUNTIME_FAILED });
         if (m.t === 'act' && typeof m.id === 'number') port.postMessage({ t: 'acted', id: m.id, ok: false });
+        if (m.t === 'sign-recovery-address' && typeof m.id === 'number') port.postMessage({ t: 'signed-recovery-address', id: m.id, signed: null });
         return;
       }
       switch (m.t) {
@@ -95,6 +102,13 @@ export function serveEscrow(port: Port, makeRuntime: (onStatus: (code: string, s
         case 'retry':
           if (typeof m.code === 'string') await rt.retry(m.code).catch(() => undefined);
           return;
+        case 'sign-recovery-address': {
+          if (typeof m.id !== 'number') return;
+          const ok = typeof m.code === 'string' && typeof m.address === 'string' && typeof m.issuedAt === 'string';
+          const signed = ok && rt.signRecoveryAddress ? await rt.signRecoveryAddress(m.code as string, m.address as string, m.issuedAt as string).catch(() => null) : null;
+          port.postMessage({ t: 'signed-recovery-address', id: m.id, signed });
+          return;
+        }
         case 'act': {
           if (typeof m.id !== 'number') return;
           const a = m.action;

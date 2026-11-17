@@ -21,9 +21,12 @@ import {
   fiatCents,
   identityProofBytes,
   instructionsMatch,
+  isRecoveryAddressStatement,
+  signRecoveryAddress,
   verifyAttestation,
   type Attestation,
   type AttestedTerms,
+  type RecoveryAddressStatement,
   type SettleKind,
   type TradeState,
 } from '@x2f/trade';
@@ -221,6 +224,13 @@ export interface EscrowRuntime {
   retry(code: string): Promise<void>;
   stop(code: string): Promise<void>;
   stopAll(): Promise<void>;
+  /**
+   * Lien recovery, provisional owner answer Q2 (docs/lien-recovery.md): the creditor's "pay my
+   * recoveries from the dispute of trade `code` to `address`", signed with this device's own trade
+   * identity from that trade (the side it had there). Null when this device has no record of it
+   * (another device, or past the 30-day keep). Nothing else is signed with it.
+   */
+  signRecoveryAddress?(code: string, address: string, issuedAt: string): Promise<{ statement: RecoveryAddressStatement; sig: string } | null>;
 }
 
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
@@ -759,7 +769,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const refund = r.role === 'seller' ? r.ownAddress : r.theirAddress;
       return {
         role: r.role,
-        own: r.role === 'buyer' ? { payout: r.ownAddress } : { refund: r.ownAddress },
+        own: r.role === 'buyer' ? { payout: r.ownAddress, ...(r.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: r.lienRecoveryAtomic } : {}) } : { refund: r.ownAddress },
         balance,
         trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt, settling: v.settling },
         deal: { poster: r.deal.poster, amountAtomic: size },
@@ -1432,6 +1442,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     async stopAll() {
       await Promise.all([...runs.values()].map((r) => r.halt()));
       runs.clear();
+    },
+    async signRecoveryAddress(raw, address, issuedAt) {
+      const code = normalizeTradeCode(raw);
+      if (code === null || typeof address !== 'string' || address === '' || address.length > 256) return null;
+      const rec = await deps.store.load(code);
+      if (!rec) return null;
+      const statement: RecoveryAddressStatement = { v: 1, fromCode: code, creditorSide: rec.role, address, issuedAt };
+      if (!isRecoveryAddressStatement(statement)) return null;
+      return { statement, sig: await signRecoveryAddress(statement, rec.identity.signSecret) };
     },
   };
 }

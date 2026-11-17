@@ -14,13 +14,19 @@ export interface OwedLien {
   fromCode: string;
 }
 
+/**
+ * A lien owed to this account. Review M4 / provisional owner answer Q4: totals only (owed, received,
+ * still to come), never the debtor's purchases. `fromCode`: the disputed trade, whose identity on
+ * this device signs the recovery address (Q2); `recoveryAddressSet`: whether one is set.
+ */
 export interface OwedToMe {
   id: string;
   status: 'active' | 'suspended' | 'repaid';
   amountAtomic: bigint;
   recoveredAtomic: bigint;
   remainingAtomic: bigint;
-  recoveries: { amountAtomic: bigint; at: string }[];
+  fromCode: string;
+  recoveryAddressSet: boolean;
 }
 
 export interface MyLiens {
@@ -73,15 +79,17 @@ export function parseLiens(raw: unknown): MyLiens {
     const recoveredAtomic = big(l, 'recoveredAtomic');
     const remainingAtomic = big(l, 'remainingAtomic');
     if (recoveredAtomic + remainingAtomic !== amountAtomic) throw new LiensShapeError('figures');
-    const recoveries = list(l.recoveries).map((y) => {
-      const r = rec(y);
-      return { amountAtomic: big(r, 'amountAtomic'), at: str(r, 'at') };
-    });
-    return { id: str(l, 'id'), status, amountAtomic, recoveredAtomic, remainingAtomic, recoveries };
+    if (typeof l.recoveryAddressSet !== 'boolean') throw new LiensShapeError('recoveryAddressSet');
+    return { id: str(l, 'id'), status, amountAtomic, recoveredAtomic, remainingAtomic, fromCode: str(l, 'fromCode'), recoveryAddressSet: l.recoveryAddressSet };
   });
   return { owes, owedTo };
 }
 
 export async function fetchLiens(signal?: AbortSignal): Promise<MyLiens> {
   return parseLiens(await api('/v1/account/liens', signal ? { signal } : {}));
+}
+
+/** Q2: `POST /v1/account/liens/:id/recovery-address` with the creditor device's signed statement. */
+export async function setRecoveryAddress(lienId: string, signed: { statement: unknown; sig: string }): Promise<void> {
+  await api(`/v1/account/liens/${encodeURIComponent(lienId)}/recovery-address`, { method: 'POST', body: signed });
 }

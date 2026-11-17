@@ -19,6 +19,7 @@ interface TakeBody {
   fiatCents: string;
   methodId: string;
   currency: string;
+  lienRecoveryAtomic?: string;
 }
 
 interface Stub {
@@ -33,6 +34,8 @@ interface Stub {
    * is the market rate now (margin 0), else 409 price-changed.
    */
   take?: (body: TakeBody) => { status: number; json: unknown };
+  /** Review B1: what GET /v1/account/liens/preview answers (the buyer's lien recovery); '0' by default. */
+  lienRecovery?: string;
 }
 
 interface Seen {
@@ -79,6 +82,7 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
   await page.route('**/v1/wallets/rule', (r) =>
     r.fulfill({ json: { firstWallet: s.wallets.length === 0, strongMethods: [], password: 'immediate', waitHours: 24 } }),
   );
+  await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: s.lienRecovery ?? '0' } }));
   await page.route('**/v1/offers/*/take', async (r) => {
     const offerId = decodeURIComponent(new URL(r.request().url()).pathname.split('/')[3]!);
     const body = r.request().postDataJSON() as TakeBody;
@@ -317,6 +321,21 @@ test.describe('BuyQuote', () => {
       deal: { poster: 'seller', takeAmountAtomic: seen.takes[0]!.amountAtomic, currency: 'USD', centsPerXmr: B.marketCentsPerXmr, maxFiatCents: B.offer.maxFiatCents },
     });
     expect(seen.takes[0]!.amountAtomic).toBe('1250000000000');
+  });
+
+  test('review B1: a buyer who owes after a dispute sees what this purchase pays to the person they owe before Trade, and the take carries it', async ({ page }) => {
+    const seen = await stubApi(page, {
+      ...base,
+      lienRecovery: '500000000000',
+      take: (body) => ({ status: 200, json: { code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: B.offer.maxFiatCents, lienRecoveryAtomic: '500000000000' } }),
+    });
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+    await expect(page.locator('[data-part="lien-recovery"]')).toContainText('0.5');
+    await expect(page.locator('[data-part="lien-recovery-note"]')).toContainText('Tapping Trade agrees to this.');
+    await trade(page).click();
+    await expect(page).toHaveURL(new RegExp(`/trade/${B.code}`));
+    expect(seen.takes[0]).toMatchObject({ lienRecoveryAtomic: '500000000000' });
   });
 
   test("an over-cap amount is refused with the caller's own stage only", async ({ page }) => {
