@@ -894,6 +894,8 @@ describe('one-time wallets (owner demo note #6)', () => {
     const { b } = await trader();
     const saved = await addConfirmed(b);
     expect(saved.wallet.oneTime).toBe(false);
+    // The list is oldest first: a second later, so the order is fixed.
+    setNow(at(1000));
     const once = await addConfirmed(b, fakeAddress(), { oneTime: true });
     expect(once.wallet.oneTime).toBe(true);
     const listed = await list(b);
