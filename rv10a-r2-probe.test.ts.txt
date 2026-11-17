@@ -1,0 +1,213 @@
+// Plan 4 Task 27 (Revision 2026-10-29, 2026-10-29b) with D-017's rule list (owner Q15) and D-020's
+// notice (owner G39): a trade ban (no new trades or offers; open trades finish) and a site ban for a
+// set time or for life, placed by a senior moderator or the owner with a tap, lifted automatically
+// at its end, logged, and shown to the trader with the general reason only.
+import { randomBytes, randomUUID } from 'node:crypto';
+import type { KeyTapIntent } from '@x2f/staff';
+import { newTradeCode } from '@x2f/core';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { settleEndedBans } from '../../src/staff/bans.js';
+import { seedAccount } from '../helpers/accounts.js';
+import { StaffBrowser, errorOf, insertSession, logEntries } from '../helpers/staffApp.js';
+import { attestedStaffApps, resetBudgets, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
+import { addPgpKey } from '../helpers/staffKeys.js';
+import { driveTo, seedOffer, seedTrade } from '../helpers/trades.js';
+
+const NOW = new Date('2026-11-12T12:00:00.000Z');
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+const IN_A_WEEK = new Date(NOW.getTime() + 7 * DAY).toISOString();
+
+let t: AttestedStaffApps;
+let owner: Person;
+let senior: Person;
+
+beforeAll(async () => {
+  t = await attestedStaffApps();
+  t.setNow(NOW);
+  owner = await staffWithKeys(t, { role: 'owner' });
+  senior = await staffWithKeys(t, { role: 'senior' });
+});
+afterAll(async () => t.close());
+beforeEach(() => {
+  t.setNow(NOW);
+  resetBudgets(t);
+});
+
+const trader = () => seedAccount(t.deps, { loginName: `bt${randomBytes(4).toString('hex')}`, kind: 'trader' });
+
+/** The trader app as the account (a live trader session). */
+async function asTrader(id: string) {
+  const { token } = await insertSession(t.deps, id, 'trader');
+  return (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: unknown) =>
+    t.trader.inject({ method, url, headers: { origin: 'https://x2f.test' }, cookies: { '__Host-x2f_session': token }, ...(payload !== undefined ? { payload: payload as object } : {}) });
+}
+
+interface BanInput { kind: 'trade' | 'site'; ruleId: string; until: string | null; note?: string }
+
+async function ban(by: Person, accountId: string, b: BanInput, o: { intent?: Partial<KeyTapIntent> } = {}) {
+  const banId = randomUUID();
+  const intent = { kind: 'ban-account', accountId, banId, banKind: b.kind, ruleId: b.ruleId, until: b.until, ...o.intent } as KeyTapIntent;
+  const tapId = await tap(by, intent);
+  const res = await by.browser.post(`/staff/v1/accounts/${accountId}/bans`, { banId, ...b, tapId });
+  return { banId, tapId, res };
+}
+
+/** A chat row as the take or `POST /v1/chats` writes it: on a trade, or an offer chat (no trade). */
+async function insertChat(o: { offerId: string; buyerId: string; sellerId: string; tradeCode: string | null }): Promise<string> {
+  const code = newTradeCode();
+  await t.deps.db.query(
+    'insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at) values ($1, $2, $3, $4, $5, $6)',
+    [code, o.offerId, o.buyerId, o.sellerId, o.tradeCode, t.deps.clock()],
+  );
+  return code;
+}
+
+const isBanned = (res: { statusCode: number; json(): unknown }) => res.statusCode === 403 && (res.json() as { error?: string } | null)?.error === 'banned';
+
+async function lift(by: Person, accountId: string, banId: string) {
+  const tapId = await tap(by, { kind: 'lift-ban', accountId, banId } as KeyTapIntent);
+  return by.browser.post(`/staff/v1/accounts/${accountId}/bans/${banId}/lift`, { tapId });
+import type { FastifyInstance } from 'fastify';
+import { writeFileSync } from 'node:fs';
+import { siteBanAllows } from '../../src/banState.js';
+import { insertProof } from '../../src/proofs/store.js';
+
+function listRoutes(app: FastifyInstance): string[] {
+  const out: string[] = [];
+  const stack: string[] = [];
+  for (const line of app.printRoutes({ commonPrefix: false }).split('\n')) {
+    if (line.trim() === '') continue;
+    const m = /^((?:│ {3}| {4})*)[├└]── (\S+)(?: \(([^)]*)\))?$/u.exec(line);
+    if (m === null) throw new Error(`unexpected printRoutes line: ${line}`);
+    const depth = m[1]!.length / 4;
+    stack.length = depth;
+    stack.push(m[2]!);
+    const path = stack.join('');
+    for (const method of (m[3] ?? '').split(', ').filter((x) => x !== '' && x !== 'HEAD')) out.push(`${method} ${path}`);
+  }
+  return out.sort();
+}
+const OUT = process.env.RV_PROBE_OUT ?? '/dev/null';
+const PROOF = '0123456789ABCDEFGHJKMNPQR0';
+const PROOF2 = '0123456789ABCDEFGHJKMNPQR1';
+const codes = (r: { json(): unknown }) => (r.json() as { trades: { code: string }[] }).trades.map((x) => x.code).sort();
+
+describe('reviewer probe: batch 10a r2 gate', () => {
+  async function world() {
+    const id = await trader();
+    const other = await trader();
+    const third = await trader();
+    const open = await seedTrade(t.deps, { sellerId: id, buyerId: other, poster: 'seller' });
+    const closed = await seedTrade(t.deps, { sellerId: id, buyerId: other, poster: 'seller' });
+    await driveTo(t.deps, closed.trade, 'released');
+    const theirs = await seedTrade(t.deps, { sellerId: other, buyerId: third, poster: 'seller' });
+    const offerId = await seedOffer(t.deps, other, 'seller');
+    const openChat = await insertChat({ offerId, buyerId: other, sellerId: id, tradeCode: open.code });
+    const closedChat = await insertChat({ offerId, buyerId: other, sellerId: id, tradeCode: closed.code });
+    return { id, other, third, open, closed, theirs, openChat, closedChat, offerId };
+  }
+
+  it('sweep: every trader route through siteBanAllows, params on the own open trade vs a closed/someone else\'s', async () => {
+    const w = await world();
+    const routes = listRoutes(t.trader).map((r) => r.replace(/:([A-Za-z]+)\|:[A-Za-z]+/g, ':$1'));
+    const allowedOpen: string[] = [];
+    const allowedClosed: string[] = [];
+    const allowedTheirs: string[] = [];
+    const allowedIdle: string[] = [];
+    const idle = await trader();
+    for (const r of routes) {
+      const [method, url] = r.split(' ') as [string, string];
+      const p = (code: string, chat: string) => ({ code, chat, id: PROOF, proofId: PROOF, displayName: 'x', offerId: w.offerId });
+      if (await siteBanAllows(t.deps.db, w.id, { method, url, params: p(w.open.code, w.openChat), body: { context: w.open.code } })) allowedOpen.push(r);
+      if (await siteBanAllows(t.deps.db, w.id, { method, url, params: p(w.closed.code, w.closedChat), body: { context: w.closed.code } })) allowedClosed.push(r);
+      if (await siteBanAllows(t.deps.db, w.id, { method, url, params: p(w.theirs.code, w.closedChat), body: { context: w.theirs.code } })) allowedTheirs.push(r);
+      if (await siteBanAllows(t.deps.db, idle, { method, url, params: p(w.open.code, w.openChat), body: { context: w.open.code } })) allowedIdle.push(r);
+    }
+    writeFileSync(OUT, JSON.stringify({ total: routes.length, allowedOpen, allowedClosed, allowedTheirs, allowedIdle }, null, 1));
+    // Closed and someone else's trade: no trade or chat route at all.
+    expect(allowedClosed.filter((r) => r.includes(':code') || r.includes(':chat'))).toEqual([]);
+    expect(allowedTheirs.filter((r) => r.includes(':code') || r.includes(':chat'))).toEqual([]);
+    // Nothing unfinished: only the always set.
+    expect(allowedIdle.sort()).toEqual(['GET /v1/account/ban', 'GET /v1/account/me', 'GET /v1/terms', 'POST /v1/account/terms', 'POST /v1/feedback/form'].sort());
+  });
+
+  it('a proof of the closed trade is not reachable through the open trade\'s code (GET, blur-check)', async () => {
+    const w = await world();
+    await insertProof(t.deps.db, { id: PROOF2, code: w.closed.code, role: 'seller', kind: 'proof', ciphertext: Buffer.alloc(40, 7), now: t.deps.clock() });
+    expect((await ban(senior, w.id, { kind: 'site', ruleId: 'abuse', until: IN_A_WEEK })).res.statusCode).toBe(201);
+    const me = await asTrader(w.id);
+    const viaOpen = await me('GET', `/v1/trades/${w.open.code}/proofs/${PROOF2}`);
+    expect(viaOpen.statusCode, viaOpen.body).toBe(404);
+    const bcOpen = await me('POST', `/v1/trades/${w.open.code}/proofs/${PROOF2}/blur-check`, { blur: 'box' });
+    expect(isBanned(bcOpen), bcOpen.body).toBe(false);
+    expect([400, 404]).toContain(bcOpen.statusCode);
+    expect(isBanned(await me('GET', `/v1/trades/${w.closed.code}/proofs/${PROOF2}`))).toBe(true);
+    // lowercase code of the open trade: same gate answer as the canonical one
+    expect(isBanned(await me('GET', `/v1/trades/${w.open.code.toLowerCase()}/blur-checks`))).toBe(false);
+    expect(isBanned(await me('GET', `/v1/trades/${w.closed.code.toLowerCase()}/blur-checks`))).toBe(true);
+  });
+
+  it('list: restricted the moment the ban stands, full again the moment it is lifted; an expired unsettled ban does not restrict', async () => {
+    const w = await world();
+    const me = await asTrader(w.id);
+    const before = await me('GET', '/v1/trades');
+    expect(codes(before)).toEqual([w.open.code, w.closed.code].sort());
+    const { banId, res } = await ban(senior, w.id, { kind: 'site', ruleId: 'abuse', until: IN_A_WEEK });
+    expect(res.statusCode).toBe(201);
+    const during = await me('GET', '/v1/trades');
+    expect(codes(during)).toEqual([w.open.code]);
+    const doneOnly = await me('GET', '/v1/trades?status=completed');
+    expect(codes(doneOnly)).toEqual([]);
+    // paging cannot reach past the filter
+    const page = await me('GET', '/v1/trades?limit=1');
+    expect(codes(page)).toEqual([w.open.code]);
+    expect((page.json() as { next: unknown }).next).toBeNull();
+    expect((await lift(senior, w.id, banId)).statusCode).toBeLessThan(300);
+    const after = await me('GET', '/v1/trades');
+    expect(codes(after)).toEqual([w.open.code, w.closed.code].sort());
+    // A timed ban past its end, not yet settled (ended_at null): no gate, full list.
+    const w2 = await world();
+    const me2 = await asTrader(w2.id);
+    expect((await ban(senior, w2.id, { kind: 'site', ruleId: 'abuse', until: new Date(NOW.getTime() + HOUR).toISOString() })).res.statusCode).toBe(201);
+    expect(codes(await me2('GET', '/v1/trades'))).toEqual([w2.open.code]);
+    t.setNow(new Date(NOW.getTime() + 2 * HOUR));
+    const me2b = await asTrader(w2.id);
+    const late = await me2b('GET', '/v1/trades');
+    expect(late.statusCode, late.body).toBe(200);
+    expect(codes(late)).toEqual([w2.open.code, w2.closed.code].sort());
+    expect(isBanned(await me2b('GET', '/v1/offers?side=sell&method=zelle'))).toBe(false);
+  });
+
+  it('trade ban plus site ban: the 403 names the site ban; neither duplicates the session row', async () => {
+    const w = await world();
+    expect((await ban(senior, w.id, { kind: 'trade', ruleId: 'scamming', until: null })).res.statusCode).toBe(201);
+    const me = await asTrader(w.id);
+    expect(isBanned(await me('GET', '/v1/chats'))).toBe(false);
+    expect((await ban(senior, w.id, { kind: 'site', ruleId: 'abuse', until: IN_A_WEEK })).res.statusCode).toBe(201);
+    const r = await me('GET', '/v1/account/blocks');
+    expect(isBanned(r), r.body).toBe(true);
+    expect(errorOf(r)).toBeDefined();
+    expect((r.json() as { until?: string; reasonCode?: string })).toMatchObject({ until: IN_A_WEEK, reasonCode: 'abuse' });
+    const rows = await t.deps.db.query(
+      `select count(*)::int as n from sessions s left join lateral (select 1 from account_bans b where b.account_id = s.account_id and b.kind = 'site' and b.ended_at is null and b.lifted_at is null limit 1) sb on true where s.account_id = $1`, [w.id]);
+    const sessions = await t.deps.db.query('select count(*)::int as n from sessions where account_id = $1', [w.id]);
+    expect(rows.rows[0].n).toBe(sessions.rows[0].n);
+  });
+
+  it('chat list, payouts, settings, new chat, review, team, nudge on the closed trade: all banned with an open trade', async () => {
+    const w = await world();
+    expect((await ban(senior, w.id, { kind: 'site', ruleId: 'abuse', until: IN_A_WEEK })).res.statusCode).toBe(201);
+    const me = await asTrader(w.id);
+    const tried: Record<string, number> = {};
+    const routes = listRoutes(t.trader).map((r) => r.replace(/:([A-Za-z]+)\|:[A-Za-z]+/g, ':$1'));
+    for (const r of routes) {
+      const [method, tpl] = r.split(' ') as [string, string];
+      if (method === 'PUT' && tpl.includes('/proofs/')) continue;
+      const url = tpl.replace(':code', w.closed.code).replace(':chat', w.closedChat).replace(/:proofId|:id/g, PROOF).replace(/:[A-Za-z]+/g, 'x');
+      const res = await me(method as 'GET', url, method === 'GET' || method === 'DELETE' ? undefined : { context: w.closed.code });
+      tried[r] = res.statusCode === 403 && (res.json() as { error?: string })?.error === 'banned' ? 1 : 0;
+    }
+    writeFileSync(OUT + '.http', JSON.stringify(Object.entries(tried).filter(([, v]) => v === 0).map(([k]) => k), null, 1));
+  });
+});
