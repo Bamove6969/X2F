@@ -249,6 +249,17 @@ describe('the new-address sheet (owner demo note #6)', () => {
     expect(document.querySelector('[data-part="new-address-staged"]')).not.toBeNull();
   });
 
+  it('an API answer naming another address than the one typed is refused: nothing is handed back (lead 17 Nov)', async () => {
+    const OTHER = `4${'X'.repeat(88)}OTHER1`;
+    answer = () => ({ status: 201, json: { id: 'w-swap', app: 'other', label: 'Trade address', address: OTHER, addressEnd: 'OTHER1', usableFrom: '2026-11-17T00:00:00.000Z', usable: true, oneTime: true } });
+    const done = await open();
+    type('#new-address-address', ADDR);
+    clickText('Save address');
+    await until(() => document.querySelector('[role="alert"]') !== null);
+    expect(document.querySelector('[role="alert"]')!.textContent).toContain('different address from the one you typed');
+    expect(done).toEqual([]);
+  });
+
   it('shows the address error and hands back nothing', async () => {
     answer = () => ({ status: 400, json: { error: 'address-invalid' } });
     const done = await open();
