@@ -19,6 +19,7 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 import { memberOf } from '../../session/member.js';
 import { useSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
+import { HELP_LINKS } from '../../ui/HelpLinks.js';
 import { FIRST_TRADE_TOUR } from '../../tour/firstTradeTour.js';
 import { useTour } from '../../tour/TourProvider.js';
 import { markWelcomeSeen } from '../../tour/welcomeSeen.js';
@@ -34,15 +35,9 @@ export const WELCOME_COPY = {
   line: 'Swap Monero for cash, bank transfers or gift cards, person to person.',
   tour: 'Take the tour',
   skip: 'Skip and get started',
-  // The one help page, /help/:topic, as /login's help links (review 12 Nov, L3; the pages are on
-  // wip/lead-owner-layout-1): each says the way on for someone signed in (Support to Feedback,
-  // Settings to Security).
-  links: [
-    { label: 'FAQ', to: '/help/faq' },
-    { label: 'Getting started', to: '/help/getting-started' },
-    { label: 'Support', to: '/help/support' },
-    { label: 'Settings', to: '/help/settings' },
-  ],
+  // The one help page, /help/:topic, and the same links as /login's (review 12 Nov, L3): each page
+  // says the way on for someone signed in (Support to Feedback, Settings to Security).
+  links: HELP_LINKS,
   linksLabel: 'Help and settings',
 } as const;
 

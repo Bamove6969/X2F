@@ -558,10 +558,11 @@
 }
 
 /* A screen inside Panes (My offers, the offers) is under its panes' boxes, `display: contents` on
-   a phone (styles/fold.css). */
+   a phone (styles/fold.css). The screen header above it (logo D and the screen name, 52 px) is
+   left out too, or every short screen scrolls by the header's height. */
 [data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main,
 [data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > .x2f-panes > [data-pane='main'] > main {
-  min-height: calc(100dvh - var(--x2f-tab-bar-height));
+  min-height: calc(100dvh - var(--x2f-tab-bar-height) - var(--x2f-shell-header, 0px));
 }
 
 /* Logo D (src/ui/Logo.tsx): the letters are currentColor, the dot the one Monero orange. */
