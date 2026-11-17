@@ -513,3 +513,24 @@ describe('ModCase (board ModCase)', () => {
     expect(api.calls.some((c) => c.path === `/staff/v1/disputes/${CODE}/take`)).toBe(true);
   });
 });
+
+// Plan 4 "exactly one data-primary per screen" (the e2e parity check's rule): a staff member's page
+// inside the shell carries the screen's one primary action, and the shell's own chrome (the rail,
+// with main's Clock out beside Log out) carries none, as apps/web's tab bar carries none. Merge
+// 3c63c18e put main's primary Clock out in the rail beside each page's own primary: two.
+describe('one [data-primary] per staff screen, the rail carries none', () => {
+  it('a moderator\'s ModQueue and ModCase each have exactly one, the page\'s own', async () => {
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes': { body: QUEUE } });
+    await open('/disputes');
+    expect(screen()).toBe('mod-queue');
+    expect(document.querySelectorAll('.x2f-staff__rail [data-primary]')).toHaveLength(0);
+    expect([...document.querySelectorAll('[data-primary]')].map((e) => e.textContent)).toEqual(['Take next case']);
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes/:code': { body: kase() } });
+    await open(`/disputes/${CODE}`);
+    expect(screen()).toBe('mod-case');
+    expect(document.querySelectorAll('.x2f-staff__rail [data-primary]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+    expect(document.querySelector('[data-part="mod-case"] [data-primary], [data-screen="mod-case"] [data-primary]')).not.toBeNull();
+  });
+});
