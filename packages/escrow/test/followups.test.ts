@@ -293,4 +293,30 @@ describe('Plan 1 follow-ups on regtest', () => {
       expect(took).toBeLessThan(DAEMON_TIMEOUT_MS + 5000);
     }
   });
+
+  it('a set wallet2 refuses for good ("destination amount is zero") is a permanent build-failed, not a retryable not-ready (re-verify N2)', async () => {
+    // Re-verify 17 Nov, N2: a 0.02 XMR trade with a 0.0017952 XMR payout fee (regtest's 2-output
+    // fee). The X2F fee output is 0.0002 XMR, below its wallet2 share floor(F/2) = 0.0008976 XMR,
+    // so wallet2 refuses the marked set with "destination amount is zero". No fresh attempt can
+    // build it, so it must not be reported as the retryable not-ready. Any other build error stays
+    // not-ready (e.g. multisig state not imported yet: a fresh export recovers).
+    const amount = 20_000_000_000n; // 0.02 XMR
+    const fee = 200_000_000n; // its 1%
+    const payouts = [
+      { address: 'buyer-stub-address', amountAtomic: amount - fee, bearsNetworkFee: true },
+      { address: 'fee-stub-address', amountAtomic: fee, bearsNetworkFee: true },
+    ];
+    const session = (refusal: string): MoneroMultisigSession => new MoneroMultisigSession({
+      getBalance: async () => amount,
+      getUnlockedBalance: async () => amount,
+      createTxs: async () => { throw new Error(refusal); },
+    } as unknown as MoneroWalletFull, 'http://127.0.0.1:1', 'pw');
+    const zero = await session('destination amount is zero').buildRelease(payouts).then(() => null, (e: unknown) => e);
+    expect(zero).toBeInstanceOf(EscrowError);
+    expect((zero as EscrowError).code).toBe('build-failed');
+    expect((zero as EscrowError).message).toMatch(/destination amount is zero/);
+    const other = await session('multisig wallet: outputs not yet imported').buildRelease(payouts).then(() => null, (e: unknown) => e);
+    expect(other).toBeInstanceOf(EscrowError);
+    expect((other as EscrowError).code).toBe('not-ready');
+  });
 });
