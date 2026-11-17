@@ -368,9 +368,25 @@ describe('logged in, first visit on this device', () => {
 
   // Lead, 12 Nov 2026: a team member never sees the welcome screen or the trader's tour (they get
   // the member tour), and so never its Settings link to an owner-only screen.
-  it('a team member goes straight to /sell, and /welcome sends them there too', async () => {
+  // Lead, 12 Nov 2026: on a member's first /sell on this device the member tour starts (once), in
+  // place of the welcome screen; /welcome sends a member to /sell.
+  it('a team member gets the member tour, not the welcome screen, once per device', async () => {
+    me = { status: 200, body: { ...FULL, member: { name: 'Ana', roles: ['trades'], abilities: [] } } };
+    const host = await open('/sell');
+    await settle();
+    expect(host.querySelector('[data-screen="welcome"]')).toBeNull();
+    expect(document.querySelector('[data-part="tour"]')?.getAttribute('data-tour')).toBe('member');
+    expect(document.querySelector('[data-part="tour-card"] h2')?.textContent).toBe('Whose account this is');
+    expect(where.split('?')[0]).toBe('/buy');
+    expect(window.localStorage.getItem(WELCOME_SEEN_KEY)).toBe('1');
+  });
+
+  it('a team member on a device that has had it: /sell, no tour; /welcome sends them to /sell', async () => {
+    window.localStorage.setItem(WELCOME_SEEN_KEY, '1');
     me = { status: 200, body: { ...FULL, member: { name: 'Ana', roles: ['trades'], abilities: [] } } };
     await open('/sell');
+    await settle();
+    expect(document.querySelector('[data-part="tour"]')).toBeNull();
     expect(where.split('?')[0]).toBe('/sell');
     await open('/welcome');
     expect(where.split('?')[0]).toBe('/sell');

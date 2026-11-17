@@ -122,7 +122,7 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
         </p>
         <nav aria-label="Staff" className="x2f-staff__nav">
           {who.nav.map((item) => (
-            <Link key={item} to={NAV_PATHS[item]} aria-current={pathname === NAV_PATHS[item] || pathname.startsWith(`${NAV_PATHS[item]}/`) ? 'page' : undefined}>
+            <Link key={item} to={NAV_PATHS[item]} data-nav={item} aria-current={pathname === NAV_PATHS[item] || pathname.startsWith(`${NAV_PATHS[item]}/`) ? 'page' : undefined}>
               {NAV_LABELS[item]}
             </Link>
           ))}
@@ -131,7 +131,7 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
           <SessionCountdown endsAt={who.sessionEndsAt} />
           {who.role === 'owner' ? (
             // O-040: no board places it (NOT DRAWN). DESIGNER-REVIEW COPY-UNSIGNED
-            <Link to="/notifications" className="x2f-link" aria-current={pathname === '/notifications' ? 'page' : undefined}>
+            <Link to="/notifications" className="x2f-link" data-part="notifications" aria-current={pathname === '/notifications' ? 'page' : undefined}>
               Notifications
               {unread > 0 ? (
                 <span className="x2f-staff__badge" data-part="alerts-badge" aria-label={`${unread} unread`}>
@@ -147,12 +147,12 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
               <p className="x2f-staff__countdown" data-part="clock-out-reminder">
                 Clock out at the end of your shift to be paid. Logging out or closing the app does not pay.
               </p>
-              <Button variant="primary" onClick={() => setClockingOut(true)}>
+              <Button variant="primary" data-part="clock-out" onClick={() => setClockingOut(true)}>
                 Clock out
               </Button>
             </>
           ) : null}
-          <Button variant="quiet" onClick={() => void onLogout()}>
+          <Button variant="quiet" data-part="logout" onClick={() => void onLogout()}>
             Log out
           </Button>
         </div>

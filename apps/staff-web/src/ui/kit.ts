@@ -27,3 +27,5 @@ export { NewsPost } from '../../../web/src/screens/NewsPost.js';
 // never a copy, and its signature pad (design 9 Nov, p11-15, canvas ea2a9ca8), for the invite's Terms step.
 export { SignaturePad } from '../../../web/src/screens/setup/SignaturePad.js';
 export { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from '../../../web/src/screens/setup/termsText.js';
+// The guided tours (owner 12 Nov 2026): the staff tours are data in the engine's own types (review 12 Nov, S2).
+export type { TourDef, TourPage, TourStep } from '../../../web/src/tour/engine.js';
