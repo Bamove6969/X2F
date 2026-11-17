@@ -1,13 +1,19 @@
 # Re-verify: wip/second-disputes-fixes c084f2b6 (on wip/lead-disputes-stack 1cff3d66), 2026-11-17
 
-**Verdict: __VERDICT__**
+**Verdict: NOT READY (procedural only).** On the code, every finding of the 16 Nov review that this
+branch was meant to fix is fixed, and I found no new security defect. But the reviewers' rule is that
+the head's full `npm run check` must pass under the lock before APPROVED, and **it did not run**: it waited
+2 h for `~/x2f-comms/check.lock` behind other reviewers' runs and was killed by the session's 2 h limit
+before it started (its log is empty). moderation-regtest did not run either (it is one of the projects
+inside `npm test`). Re-run `npm run check` at c084f2b6. If it is green, this is **APPROVED** with no
+code change needed.
 
-This file is not committed. Reviewer: independent security reviewer, read-only on code. I ran `git fetch
+I did not commit this file; someone else committed an in-progress draft of it to comms as c8eacc79 while my test run was waiting. This final version is uncommitted on top of that. Reviewer: independent security reviewer, read-only on code. I ran `git fetch
 origin` first. `origin/wip/second-disputes-fixes` = **c084f2b6**, its parent stack
 `origin/wip/lead-disputes-stack` = **1cff3d66** (unchanged), `origin/main` = **4f0afa14**,
 `origin/wip/lead-batch10a` = **846d83ba**. I worked in a detached worktree (`/home/user/wt/rv-sdf`) at
-c084f2b6 with a fresh `npm ci` (node 24.22.1). Every test ran under `~/x2f-comms/check.lock` with the
-timeout inside the flock. I did not touch dockerd. The worktree and its node_modules were removed
+c084f2b6 with a fresh `npm ci` (node 24.22.1). The only test run was queued under `~/x2f-comms/check.lock` with the
+timeout inside the flock, and it never started (see Tests run). I did not touch dockerd. The worktree and its node_modules were removed
 afterwards.
 
 Read first (origin/comms 06f8ccad): review-disputes-stack-2026-11-16.md and its 2026-11-13 original,
@@ -134,11 +140,42 @@ No test removed, skipped or loosened.
 
 ## Tests run
 
-__TESTS__
+**Nothing ran.** `flock ~/x2f-comms/check.lock timeout 7000 npm run check` at c084f2b6 (fresh `npm ci`,
+node 24.22.1, 0 vulnerabilities from the install) sat in the lock queue from start to finish. At least
+five other jobs held or waited on the lock: escrow runs, `rv-seckey-all.sh`, `rv-eh-run.sh`, `rvnf-run.sh`,
+another full check and single-file probes. flock is not FIFO. The run was killed at the 2 h limit of the
+background task while still waiting, so typecheck, copy-lint, separation-check, every vitest project
+(including `@x2f/moderation`, `@x2f/moderation-regtest`, `@x2f/staff-web` and `@x2f/api`), semgrep and the
+audit **did not run**. I did not restart it, as the limit's note says.
+
+For reference only, not verified by me: the 22:46 16 Nov READY note reports moderation+logchain+staff+trade
+1009/0, moderation-regtest 2/0, escrow 104/0, regtest 4/0, regtest-verify 10/0, node-proxy 34/0, api 2757/0,
+staff-web 95/0, web 2121/0, tsc and copy-lint clean. moderation's 1006 → 1009 and staff-web's 93 → 95 match
+the three new gate tests and the two new staff-web unit tests (X3-1, staffCss).
+
+To do: re-run `npm run check` at c084f2b6 under the lock (it includes moderation-regtest), with a waiter
+that can outlive 2 h, or at a quiet time.
 
 ## Trial merges
 
-__MERGES__
+Run with `git merge-tree --write-tree`; nothing was written to any branch.
+- **Onto main 4f0afa14: clean.** main is an ancestor of c084f2b6 (`origin/main` is still 4f0afa14), so
+  landing is a fast-forward.
+- **Onto origin/wip/lead-batch10a 846d83ba: 7 conflicts, the same 7 as at 1cff3d66 on 16 Nov:**
+  `apps/api/src/chat/routes.ts`, `apps/api/src/offers/routes.ts`, `apps/api/src/trades/take.ts`,
+  `apps/api/test/schema.test.ts`, `apps/web/src/ui/cantDoCodes.ts`, `docs/coordination.md`,
+  `packages/staff/src/intent.ts`. None of this branch's own files (registry.ts, store.ts,
+  packages/staff/src/index.ts, ModCase.tsx, modModel.ts, staff.css, the tests) conflicts.
+  The resolution rules of the 16 Nov review still apply:
+  - keep both the lien guard and the ban guard in chat, offers and take;
+  - in `intent.ts`, keep `issuedAt?` on `reset-staff-security`, `add-owner-key` and `settings`, and add
+    batch10a's `ban-account`/`lift-ban`. I confirmed the hunk: batch10a's side drops `issuedAt?` from
+    all three.
+  - It matters more now. Step 0's new D-2 check (`link-too-long`) and `linkClosesAt` both read the reset
+    tap's `issuedAt`. The runtime stamp comes from `ISSUED_AT_KINDS`, which does not conflict, so dropping
+    the type field is a typecheck and readability hazard rather than a runtime one. Keep it anyway.
+  - The merged `schema.test.ts` lists need 550, then 560-590.
+  - Tests on the merged tree: not run (the conflicts need the lead's resolution).
 
 ## Owner questions
 
@@ -157,4 +194,6 @@ __MERGES__
 
 ## Cleanup
 
-__CLEANUP__
+The detached worktree `/home/user/wt/rv-sdf` and its node_modules were removed after the review
+(`git worktree remove --force`, then `prune`). The trial merges used `merge-tree` only, so there is
+nothing to abort. Nothing was committed or pushed. This file is uncommitted in the comms worktree.
