@@ -34,7 +34,7 @@ interface Stub {
    */
   take?: (body: TakeBody) => { status: number; json: unknown };
   /** Owner demo note #6: the account's rating on GET /v1/account/me (absent: an older API build). */
-  securityRating?: 'weak' | 'secure';
+  securityRating?: 'weak' | 'medium' | 'high';
 }
 
 interface Seen {
@@ -344,11 +344,12 @@ test.describe('BuyQuote', () => {
 test.describe('the payout address for this trade (owner demo note #6)', () => {
   const rule = (page: Page) => page.locator('[data-part="address-rule"]');
 
-  test('a secure account adds a named address for this trade only, right on the quote, and the take pays to it', async ({ page }) => {
-    const seen = await stubApi(page, { ...base, securityRating: 'secure' });
+  test('a highly secure account adds a named address for this trade only, right on the quote, and the take pays to it', async ({ page }) => {
+    const seen = await stubApi(page, { ...base, securityRating: 'high' });
     await page.goto(`${BUY}&amount=${B.amount}`);
     await expect(rule(page)).toContainText('If you buy with X2F, which wallet address should the XMR be sent to?');
-    await expect(rule(page)).toContainText('Your account is rated secure');
+    await expect(rule(page)).toContainText('Your account is rated highly secure');
+    await expect(page.locator('[data-part="address-tip"]')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Add another wallet' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Add a new address' }).click();
     const sheet = page.getByRole('dialog', { name: 'Add a new address' });
@@ -373,6 +374,37 @@ test.describe('the payout address for this trade (owner demo note #6)', () => {
     await expect(rule(page)).toContainText('24 hours');
     await expect(page.getByRole('button', { name: 'Add a new address' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Add another wallet' })).toHaveAttribute('href', /^\/wallets\?add=1/);
+  });
+
+  test('a medium account gets no inline add; the "?" opens why, by keyboard too, with the two ways forward (owner, 17 Nov)', async ({ page }) => {
+    await stubApi(page, { ...base, securityRating: 'medium' });
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    await expect(rule(page)).toContainText('rated medium');
+    await expect(page.getByRole('button', { name: 'Add a new address' })).toHaveCount(0);
+    const tip = page.getByRole('button', { name: 'Why is there no option to add a new address here?' });
+    await tip.focus();
+    await page.keyboard.press('Enter');
+    await expect(tip).toHaveAttribute('aria-expanded', 'true');
+    const panel = page.locator('[data-part="address-tip-panel"]');
+    await expect(panel).toContainText('security rating');
+    await expect(panel.getByRole('link', { name: /Your wallets/ })).toHaveAttribute('href', /^\/wallets\?add=1/);
+    await expect(panel.getByRole('link', { name: /login method/ })).toHaveAttribute('href', '/settings/security');
+    await page.keyboard.press('Escape');
+    await expect(tip).toHaveAttribute('aria-expanded', 'false');
+    await expect(tip).toBeFocused();
+  });
+
+  test('the default wallet is picked first, and another can be picked instead (owner, 17 Nov)', async ({ page }) => {
+    const wallets = B.wallets.map((w) => ({ ...w, isDefault: w.id === 'w-ledger' }));
+    const seen = await stubApi(page, { ...base, wallets, securityRating: 'weak' });
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    await expect(page.getByRole('radio', { name: /Ledger/ })).toBeChecked();
+    await expect(page.locator('.x2f-quote__wallet', { hasText: 'Ledger' })).toContainText('Default');
+    await expect(trade(page)).toBeEnabled();
+    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+    await trade(page).click();
+    await expect(page).toHaveURL(`/trade/${B.code}`);
+    expect(seen.takes.map((t) => t.walletId)).toEqual(['w-cake']);
   });
 });
 

@@ -558,3 +558,12 @@ describe('a change answered 202 staged', () => {
     expect(byPart(host, 'one-device-toggle')!.getAttribute('aria-checked')).toBe('false');
   });
 });
+
+describe('a staged one-time wallet in the waiting changes (review M4, owner note #6)', () => {
+  it('says which staged wallets are for one trade only', async () => {
+    const { changeWords } = await import('../src/screens/settings/holdCopy.js');
+    const w = changeWords({ kind: 'wallets', wallets: 2, addressEnds: ['AAAAA1', 'BBBBB2'], oneTime: [true, false] });
+    expect(w.after).toBe('2 new wallets added: …AAAAA1 (one trade only), …BBBBB2');
+    expect(changeWords({ kind: 'wallets', wallets: 1, addressEnds: ['CCCCC3'] }).after).toBe('1 new wallet added: …CCCCC3');
+  });
+});

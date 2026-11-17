@@ -73,6 +73,7 @@ beforeEach(() => {
         return json(a.status, a.json);
       }
       if (url === '/v1/wallets/rule') return json(200, stub.rule);
+      if (url.startsWith('/v1/wallets/') && url.endsWith('/default') && method === 'PUT') return json(204, null);
       if (url.startsWith('/v1/wallets/') && method === 'DELETE') return json(stub.removeStaged ? 202 : 204, { status: 'staged', changeId: 'c-1' });
       if (url === '/v1/account/me') return json(200, { methods: ['password'] });
       if (url === '/v1/confirm/password') return json(200, { confirmToken: 'tok-1' });
@@ -351,5 +352,24 @@ describe('one trade only or future trades (owner demo note #6)', () => {
     const rows = [...document.querySelectorAll('.x2f-wallet-row')];
     expect(rows.map((r) => r.querySelector('[data-part="one-time"]') !== null)).toEqual([false, true]);
     expect(rows[1]!.textContent).toContain('One trade only');
+  });
+});
+
+describe('the default payout wallet in Your wallets (owner, 17 Nov 2026)', () => {
+  it('marks the default, offers Make default on the other saved wallets only, and saves the choice', async () => {
+    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
+    const once: WalletView = { ...READY, id: 'w-once', label: 'Trade cash', address: address('E', 'Pp7Lx3'), addressEnd: 'Pp7Lx3', oneTime: true, isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, other, once];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="default"]') !== null)).toEqual([true, false, false]);
+    expect(rows.map((r) => [...r.querySelectorAll('button')].some((b) => b.textContent === 'Make default'))).toEqual([false, true, false]);
+    // The server's answer is the truth: the list is read again after the choice.
+    stub.wallets = [{ ...READY, isDefault: false }, { ...other, isDefault: true }, once];
+    fire([...rows[1]!.querySelectorAll('button')].find((b) => b.textContent === 'Make default')!, new MouseEvent('click', { bubbles: true }));
+    await until(() => document.querySelectorAll('.x2f-wallet-row')[1]?.querySelector('[data-part="default"]') != null);
+    expect(stub.calls.some((c) => c.method === 'PUT' && c.url === '/v1/wallets/w-other/default')).toBe(true);
+    const after = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(after.map((r) => r.querySelector('[data-part="default"]') !== null)).toEqual([false, true, false]);
   });
 });
