@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { hasActiveLien } from '../../src/disputes/lien.js';
 import { applyDispute } from '@x2f/staff';
+import { WATCH_CLOSED_DAYS } from '@x2f/trade';
 import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
 import { startDispute, withDispute } from '../../src/disputes/store.js';
 import { disputeTimerJob } from '../../src/disputes/timers.js';
@@ -24,6 +25,7 @@ let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
 const START = new Date('2026-11-12T12:00:00Z');
 const MIN = 60_000;
 const H = 60 * MIN;
+const DAY = 24 * H;
 const at = (ms: number) => new Date(START.getTime() + ms);
 /** The trade's 1% (escrowPlan of AMOUNT). */
 const FEE = AMOUNT / 100n;
@@ -250,6 +252,29 @@ describe('complied while a recovery is in flight (review M2)', () => {
     await deps.db.query(`update lien_recovery_holds set status = 'released', closed_at = now(), address = null where trade_code = $1`, [next]);
     await complied(code);
     expect(await liens(code)).toMatchObject([{ status: 'repaid' }]);
+  });
+});
+
+// Re-review N3: a hold on a trade that closed with an escrow and no coin stops counting after the
+// moderation watch; it must then leave `open`, or complied is refused for ever.
+describe('complied after a hold stopped counting (re-review N3)', () => {
+  it('a hold whose trade closed with an escrow and no coin blocks complied during the watch; after it, the hold is released (logged) and complied goes through', async () => {
+    const { code } = await disputed({ afterRefund: true, poster: 'buyer' });
+    const { seller } = (await deps.db.query<{ seller: string }>('select seller_account_id::text as seller from trades where code = $1', [code])).rows[0]!;
+    await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
+    const lien = (await deps.db.query<{ id: string }>('select id::text from liens where from_code = $1', [code])).rows[0]!.id;
+    const other = await trader();
+    const { code: next } = await seedTrade(deps, { sellerId: other.id, buyerId: seller, poster: 'seller' });
+    await deps.db.query(`insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, created_at) values ($1, $2, 1000, 5000, 'creditor-address', now())`, [lien, next]);
+    const closedAgo = async (days: number) =>
+      deps.db.query(`update trades set state = 'cancelled', escrow_address = 'x', received_atomic = 0, closed_at = $2 where code = $1`, [next, new Date(deps.clock().getTime() - days * DAY)]);
+    await closedAgo(WATCH_CLOSED_DAYS - 1);
+    await expect(complied(code)).rejects.toMatchObject({ status: 409, code: 'lien-recovery-in-flight' });
+    await closedAgo(WATCH_CLOSED_DAYS + 1);
+    await complied(code);
+    expect(await liens(code)).toMatchObject([{ status: 'repaid' }]);
+    expect((await deps.db.query('select status, address from lien_recovery_holds where trade_code = $1', [next])).rows).toEqual([{ status: 'released', address: null }]);
+    expect(await lienLog(next)).toEqual([{ action: 'lien.recovery-released', actor: 'system', detail: { lienId: lien, amountAtomic: '1000' } }]);
   });
 });
 

@@ -4,6 +4,8 @@ import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
 import type { LogAction } from '../log/actions.js';
 import { ApiError } from '../errors.js';
+import { appendLog } from '../log/append.js';
+import type { RetentionJob } from '../retention.js';
 import { LIENS_ON_SQL } from './lien.js';
 
 /**
@@ -80,6 +82,46 @@ const HOLD_COUNTS_SQL = (h: string, closedBefore: string) =>
      select 1 from trades t where t.code = ${h}.trade_code and t.closed_at is not null and t.closed_at < ${closedBefore} and t.received_atomic = 0))`;
 
 const DAY_MS = 86_400_000;
+
+/**
+ * Re-review N3: releases every open hold (of lien `lienId`, or of every lien) that no longer counts
+ * (`HOLD_COUNTS_SQL`): its trade closed without a coin longer than the moderation watch ago. Its
+ * trade can still be paid late (review M2); `settleRecovery` then records what its signed terms
+ * carried. Returns the released holds, for the caller to log (`lien.recovery-released`).
+ */
+export async function releaseStaleHolds(c: Queryable, now: Date, lienId?: string): Promise<Array<{ tradeCode: string; lienId: string; amountAtomic: string }>> {
+  const closedBefore = new Date(now.getTime() - WATCH_CLOSED_DAYS * DAY_MS);
+  const { rows } = await c.query<{ trade_code: string; lien_id: string; amount_atomic: string }>(
+    `update lien_recovery_holds h set status = 'released', closed_at = $1, address = null, address_statement = null, address_sig = null
+      where h.status = 'open' and ($3::uuid is null or h.lien_id = $3::uuid) and not ${HOLD_COUNTS_SQL('h', '$2')}
+      returning h.trade_code, h.lien_id::text, h.amount_atomic::text`,
+    [now, closedBefore, lienId ?? null],
+  );
+  return rows.map((r) => ({ tradeCode: r.trade_code, lienId: r.lien_id, amountAtomic: r.amount_atomic }));
+}
+
+/** Re-review N3: the retention job (RETENTION_JOBS) that releases holds that stopped counting, logged on their trades. */
+export async function releaseStaleRecoveryHolds(db: pg.Pool, now: Date): Promise<number> {
+  const client = await db.connect();
+  try {
+    await client.query('begin');
+    try {
+      const released = await releaseStaleHolds(client, now);
+      for (const h of released) {
+        await appendLog(client, { at: now, actor: { kind: 'system' }, tradeCode: h.tradeCode, action: 'lien.recovery-released', detail: { lienId: h.lienId, amountAtomic: h.amountAtomic } });
+      }
+      await client.query('commit');
+      return released.length;
+    } catch (e) {
+      await client.query('rollback');
+      throw e;
+    }
+  } finally {
+    client.release();
+  }
+}
+
+export const releaseStaleRecoveryHoldsJob: RetentionJob = { name: 'releaseStaleRecoveryHolds', run: releaseStaleRecoveryHolds };
 
 
 /** What `pickRecovery` needs: the trade's two parties, the buyer's proceeds and the trade's own addresses known so far. */
@@ -202,15 +244,32 @@ export type TradeEnd = 'completed' | 'refunded' | 'closed';
  * (`escrowSetUp` false): the hold is released, nothing is recovered. `closed` with an escrow
  * (review M2): the hold stays open, since late coins can still be escalated and ruled for the
  * buyer, whose payout pays the signed recovery; it stops counting after the moderation watch
- * (`HOLD_COUNTS_SQL`). Returns the log entries for the caller to append last.
+ * (`HOLD_COUNTS_SQL`) and is then released (`releaseStaleHolds`, re-review N3); a late `completed`
+ * still records what its signed terms carried. Returns the log entries for the caller to append last.
  */
 export async function settleRecovery(c: pg.PoolClient, code: string, end: TradeEnd, escrowSetUp: boolean, now: Date): Promise<PendingLog[]> {
-  const hold = (
+  let hold = (
     await c.query<{ id: string; lien_id: string; amount_atomic: string }>(
       `select id::text, lien_id::text, amount_atomic::text from lien_recovery_holds where trade_code = $1 and status = 'open' for update`,
       [code],
     )
   ).rows[0];
+  // Re-review N3 with review M2: a hold released after it stopped counting (`releaseStaleHolds`) whose
+  // trade was paid late after all: the payout paid the recovery its signed terms carry, so the money
+  // moved and is recorded. Only when the attested terms carry exactly this hold's figure (a hold
+  // released before its terms were signed was never paid). The released hold itself stays released.
+  let lateAfterRelease = false;
+  if (hold === undefined && end === 'completed') {
+    hold = (
+      await c.query<{ id: string; lien_id: string; amount_atomic: string }>(
+        `select h.id::text, h.lien_id::text, h.amount_atomic::text from lien_recovery_holds h
+           join trade_attestations a on a.code = h.trade_code
+          where h.trade_code = $1 and h.status = 'released' and a.attestation->'terms'->'lienRecovery'->>'amountAtomic' = h.amount_atomic::text`,
+        [code],
+      )
+    ).rows[0];
+    lateAfterRelease = hold !== undefined;
+  }
   if (hold === undefined) return [];
   if (end !== 'completed') {
     if (end === 'closed' && escrowSetUp) return [];
@@ -223,7 +282,9 @@ export async function settleRecovery(c: pg.PoolClient, code: string, end: TradeE
       [hold.lien_id],
     )
   ).rows[0]!;
-  await c.query(`update lien_recovery_holds set status = 'recovered', closed_at = $2, address = null, address_statement = null, address_sig = null where id = $1`, [hold.id, now]);
+  if (!lateAfterRelease) {
+    await c.query(`update lien_recovery_holds set status = 'recovered', closed_at = $2, address = null, address_statement = null, address_sig = null where id = $1`, [hold.id, now]);
+  }
   const before = (
     await c.query<{ amount_atomic: string }>('select amount_atomic::text from lien_recoveries where lien_id = $1', [hold.lien_id])
   ).rows.map((r) => BigInt(r.amount_atomic));

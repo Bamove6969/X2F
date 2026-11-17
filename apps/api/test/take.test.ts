@@ -1386,6 +1386,53 @@ describe('lien recovery at take', () => {
     expect((later.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBe((XMR / 2n).toString());
   });
 
+  it('re-review N3: a hold that stopped counting is released (the retention job, logged); a late payout its signed terms carry is still recorded', async () => {
+    const { releaseStaleRecoveryHolds } = await import('../src/disputes/recovery.js');
+    const { RETENTION_JOBS } = await import('../src/retentionJobs.js');
+    expect(RETENTION_JOBS.map((j) => j.name)).toContain('releaseStaleRecoveryHolds');
+    const seller = await person();
+    const debtor = await person();
+    const creditor = await person();
+    const lien = await lienOn(debtor, creditor, 2n * XMR);
+    const code = await taken(debtor, await postOffer(seller), body(debtor, XMR));
+    await deps.db.query(`update trades set seller_refund = $2 where code = $1`, [code, fakeAddress()]);
+    await driveTo(deps, rowToTrade((await loadTradeRow(deps.db, code))!), 'funding');
+    await applyEvent(deps, code, { type: 'buyer-cancel' }, 'buyer');
+    // Closed with an escrow and no coin: within the watch it stays open.
+    await releaseStaleRecoveryHolds(deps.db, deps.clock());
+    expect((await holds(code))[0]).toMatchObject({ status: 'open' });
+    await deps.db.query(`update trades set closed_at = $2 where code = $1`, [code, new Date(deps.clock().getTime() - (WATCH_CLOSED_DAYS + 1) * DAY)]);
+    expect(await releaseStaleRecoveryHolds(deps.db, deps.clock())).toBeGreaterThanOrEqual(1);
+    expect(await holds(code)).toEqual([{ lien, amount: (XMR / 2n).toString(), address: null, status: 'released' }]);
+    const log = await deps.db.query<{ action: string; detail: string }>(`select action, detail from activity_log where trade_code = $1 and action = 'lien.recovery-released'`, [code]);
+    expect(log.rows.map((r) => JSON.parse(r.detail))).toEqual([{ lienId: lien, amountAtomic: (XMR / 2n).toString() }]);
+    // Review M2 still holds: its signed terms carried the recovery, so a late payout to the buyer pays it, and the ledger records it.
+    await deps.db.query(`insert into trade_attestations (code, attestation, sig) values ($1, $2, $3)`, [
+      code, { trade: code, terms: { lienRecovery: { address: creditor.address, amountAtomic: (XMR / 2n).toString() } } }, '00'.repeat(64),
+    ]);
+    await deps.db.query(`update trades set state = 'disputed', received_atomic = $2 where code = $1`, [code, (XMR + XMR / 100n).toString()]);
+    await applyEvent(deps, code, { type: 'settled', kind: 'dispute-buyer', txHash: 'ce'.repeat(32) }, 'system');
+    expect((await deps.db.query('select coalesce(sum(amount_atomic), 0)::text as a from lien_recoveries where lien_id = $1', [lien])).rows[0]).toEqual({ a: (XMR / 2n).toString() });
+  });
+
+  it('re-review N3: a hold released before its terms were signed (they carry no recovery) records nothing on a later payout', async () => {
+    const { releaseStaleRecoveryHolds } = await import('../src/disputes/recovery.js');
+    const seller = await person();
+    const debtor = await person();
+    const creditor = await person();
+    const lien = await lienOn(debtor, creditor, 2n * XMR);
+    const code = await taken(debtor, await postOffer(seller), body(debtor, XMR));
+    await deps.db.query(`update trades set seller_refund = $2 where code = $1`, [code, fakeAddress()]);
+    await driveTo(deps, rowToTrade((await loadTradeRow(deps.db, code))!), 'funding');
+    await applyEvent(deps, code, { type: 'buyer-cancel' }, 'buyer');
+    await deps.db.query(`update trades set closed_at = $2 where code = $1`, [code, new Date(deps.clock().getTime() - (WATCH_CLOSED_DAYS + 1) * DAY)]);
+    await releaseStaleRecoveryHolds(deps.db, deps.clock());
+    await deps.db.query(`insert into trade_attestations (code, attestation, sig) values ($1, $2, $3)`, [code, { trade: code, terms: {} }, '00'.repeat(64)]);
+    await deps.db.query(`update trades set state = 'disputed', received_atomic = $2 where code = $1`, [code, (XMR + XMR / 100n).toString()]);
+    await applyEvent(deps, code, { type: 'settled', kind: 'dispute-buyer', txHash: 'cf'.repeat(32) }, 'system');
+    expect((await deps.db.query('select count(*)::int as n from lien_recoveries where lien_id = $1', [lien])).rows[0]).toEqual({ n: 0 });
+  });
+
   it('review I2: a released hold is not shown to the buyer', async () => {
     const debtor = await person();
     const creditor = await person();

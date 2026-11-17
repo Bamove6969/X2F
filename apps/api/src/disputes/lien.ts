@@ -3,6 +3,7 @@ import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
+import { releaseStaleHolds } from './recovery.js';
 
 /**
  * Plan 4 Task 25 and Task 12's owed fees (J-06; owner D-006, D-008, D-009, D-062, D-063): the
@@ -160,6 +161,11 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
         // Review M2: a lien repaid directly (complied) while a trade of the debtor's still carries a
         // signed recovery for it would be paid twice; the change waits until that trade ends.
         if (s.op === 'repaid') {
+          // Re-review N3: a hold that stopped counting (its trade closed without a coin for the whole
+          // moderation watch) is released first, so it never blocks complied for ever.
+          for (const h of await releaseStaleHolds(client, now, s.id)) {
+            await appendLog(client, { at: now, actor: system, tradeCode: h.tradeCode, action: 'lien.recovery-released', detail: { lienId: h.lienId, amountAtomic: h.amountAtomic } });
+          }
           const open = await client.query(`select 1 from lien_recovery_holds where lien_id = $1 and status = 'open' limit 1`, [s.id]);
           if ((open.rowCount ?? 0) > 0) throw new ApiError(409, 'lien-recovery-in-flight');
         }
