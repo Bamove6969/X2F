@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { ApiCallError } from '../../api/client.js';
 import { escrowClient } from '../../escrow/useEscrow.js';
 import { useSession } from '../../session/useSession.js';
+import { addressEnd } from '../../ui/addressEnd.js';
 import { fetchWallets, type PickWallet } from '../quote/api.js';
 import { fetchLiens, setRecoveryAddress, type MyLiens, type OwedToMe } from './liensApi.js';
 import { LIENS_COPY as C, pctOf } from './liensCopy.js';
@@ -147,7 +148,8 @@ export function RecoveryAddress({ lien, onSet }: { lien: OwedToMe; onSet: () => 
           {wallets.map((w) => (
             <label key={w.id}>
               <input type="radio" name={`recovery-${lien.id}`} value={w.id} checked={picked === w.id} onChange={() => setPicked(w.id)} />
-              {w.label} …{w.addressEnd}
+              {/* Cut from the address the device signs, never the API's addressEnd (re-review B1-new, Task 19 gap 2). */}
+              {w.label} …{addressEnd(w.address)}
             </label>
           ))}
         </fieldset>

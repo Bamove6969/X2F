@@ -63,13 +63,13 @@ describe('Q2: the creditor chooses the wallet recoveries go to, signed by this d
     vi.resetModules();
   });
   const WALLET = { id: 'w1', app: 'feather', label: 'Main', address: '4'.padEnd(95, 'W'), addressEnd: 'WWWWWW', usable: true };
-  async function screen(signed: { statement: unknown; sig: string } | null) {
+  async function screen(signed: { statement: unknown; sig: string } | null, wallet: typeof WALLET = WALLET) {
     vi.resetModules();
     const posted: unknown[] = [];
     const sign = vi.fn(async () => signed);
     vi.doMock('../src/session/useSession.js', () => ({ useSession: () => ({ status: 'signed-in' }) }));
     vi.doMock('../src/escrow/useEscrow.js', () => ({ escrowClient: () => ({ signRecoveryAddress: sign }) }));
-    vi.doMock('../src/screens/quote/api.js', async (orig) => ({ ...(await orig<typeof import('../src/screens/quote/api.js')>()), fetchWallets: async () => [WALLET] }));
+    vi.doMock('../src/screens/quote/api.js', async (orig) => ({ ...(await orig<typeof import('../src/screens/quote/api.js')>()), fetchWallets: async () => [wallet] }));
     vi.doMock('../src/screens/liens/liensApi.js', async (orig) => ({
       ...(await orig<typeof import('../src/screens/liens/liensApi.js')>()),
       fetchLiens: async () => parseLiens({ owes: [], owedTo: [OWED_TO] }),
@@ -100,6 +100,17 @@ describe('Q2: the creditor chooses the wallet recoveries go to, signed by this d
     await pickAndUse(host);
     expect(sign).toHaveBeenCalledWith('AB12-CD34-EF56-GH78', WALLET.address, expect.any(String));
     expect(posted).toEqual([['l2', signed]]);
+  });
+
+  it('B1-new (re-review 17 Nov): a compromised API\'s addressEnd is never shown; the ending is cut from the address the device signs', async () => {
+    const evil = { ...WALLET, address: '4'.padEnd(89, 'A') + 'EVILXX', addressEnd: 'WWWWWW' };
+    const signed = { statement: { v: 1 }, sig: 'ab'.repeat(64) };
+    const { host, sign } = await screen(signed, evil);
+    const label = host.querySelector('[data-part="recovery-address"] label')!.textContent ?? '';
+    expect(label).toContain('…EVILXX');
+    expect(label).not.toContain('WWWWWW');
+    await pickAndUse(host);
+    expect(sign).toHaveBeenCalledWith('AB12-CD34-EF56-GH78', evil.address, expect.any(String));
   });
 
   it('a device without the disputed trade\'s record says which device can; nothing is posted', async () => {
