@@ -27,8 +27,11 @@ function assertKey(key: Uint8Array): void {
   if (!(key instanceof Uint8Array) || key.length !== KEY_LEN) throw new TypeError('keystore: MOD_KEYSTORE_KEY must be 32 bytes');
 }
 
-/** A purpose-bound subkey of MOD_KEYSTORE_KEY: HKDF-SHA-256, info `x2f/mod/<label>`, 32 bytes. */
-export function modSubkey(keystoreKey: Uint8Array, label: 'wallet'): Uint8Array {
+/**
+ * A purpose-bound subkey of MOD_KEYSTORE_KEY: HKDF-SHA-256, info `x2f/mod/<label>`, 32 bytes.
+ * `wallet`: the escrow wallet passwords (R27); `gate`: the ruling gate's `gate.bin` (Plan 4 Task 13).
+ */
+export function modSubkey(keystoreKey: Uint8Array, label: 'wallet' | 'gate'): Uint8Array {
   assertKey(keystoreKey);
   return new Uint8Array(hkdfSync('sha256', keystoreKey, new Uint8Array(0), `x2f/mod/${label}`, KEY_LEN));
 }

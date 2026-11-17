@@ -3,7 +3,11 @@ import { describe, expect, test } from 'vitest';
 import { normalizeTradeCode } from '@x2f/core';
 import {
   BAN_REASON_CODES,
+  ISSUED_AT_KINDS,
+  hasIssuedAt,
+  stampIssuedAt,
   canonicalJson,
+  evidenceSha256,
   inviteRegistrationChallenge,
   keyCheckCode,
   sha256,
@@ -76,13 +80,23 @@ const ruling: KeyTapIntent = {
   accountAction: { kind: 'none' },
   amountAtomic: '1250000000000',
   reasonSha256: 'a'.repeat(64),
+  evidenceSha256: 'c'.repeat(64),
+  round1Id: null,
 };
 const nonce = new Uint8Array(32).fill(7);
+const AT = new Date('2026-11-12T12:00:00.000Z');
 
 describe('tapChallenge', () => {
   test('is SHA-256 of the labelled canonical intent and the nonce', () => {
     const expected = nodeSha(`x2f-keytap-v1\n${canonicalJson(ruling)}\n${hex(nonce)}`);
     expect(hex(tapChallenge(ruling, nonce))).toBe(expected);
+  });
+
+  test('a round-2 ruling binds the round-1 ruling it reviews; round 1 binds none (mod-gate review B2)', () => {
+    expect(() => tapChallenge({ ...ruling, round: 2 }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, round: 2, round1Id: 'not-a-uuid' }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' }, nonce)).not.toThrow();
   });
 
   test('is the same for the same intent with keys in another order', () => {
@@ -96,7 +110,8 @@ describe('tapChallenge', () => {
       { ...ruling, step: 'approve' },
       { ...ruling, rulingId: '7d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e50' },
       { ...ruling, code: 'K7M2-9QXA-4FTR-8WPM' },
-      { ...ruling, round: 2 },
+      { ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' },
+      { ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e50' },
       { ...ruling, outcome: 'refund-to-seller' },
       { ...ruling, accountAction: { kind: 'site-ban', until: '2027-01-01T00:00:00.000Z', reasonCode: 'terms' } },
       { ...ruling, accountAction: { kind: 'site-ban', until: null, reasonCode: 'terms' } },
@@ -104,6 +119,7 @@ describe('tapChallenge', () => {
       { ...ruling, accountAction: { kind: 'trade-ban', until: null, reasonCode: 'abuse' } },
       { ...ruling, amountAtomic: '1250000000001' },
       { ...ruling, reasonSha256: 'b'.repeat(64) },
+      { ...ruling, evidenceSha256: 'd'.repeat(64) },
     ];
     const seen = new Set([base]);
     for (const v of variants) seen.add(hex(tapChallenge(v, nonce)));
@@ -138,8 +154,22 @@ describe('tapChallenge', () => {
       { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 },
       ruling,
       { ...ruling, outcome: 'seller-sends-xmr' },
-    ];
+    ].map((i) => stampIssuedAt(i as KeyTapIntent, AT));
     expect(new Set(all.map((i) => hex(tapChallenge(i, nonce)))).size).toBe(all.length);
+  });
+
+  test('an owner registry intent carries its signed issuedAt; any other carries none (lead call on mod-gate P4)', () => {
+    for (const kind of ISSUED_AT_KINDS) expect(hasIssuedAt(kind)).toBe(true);
+    expect(hasIssuedAt('ruling')).toBe(false);
+    expect(hasIssuedAt('fee-sweep')).toBe(false);
+    const stop: KeyTapIntent = { kind: 'emergency-stop' };
+    expect(stampIssuedAt(stop, AT)).toEqual({ kind: 'emergency-stop', issuedAt: AT.toISOString() });
+    expect(stampIssuedAt(ruling, AT)).toEqual(ruling);
+    expect(() => tapChallenge(stop, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...stop, issuedAt: '2026-11-12T12:00:00Z' }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, issuedAt: AT.toISOString() } as unknown as KeyTapIntent, nonce)).toThrow(TypeError);
+    // Signed: another issuedAt is another challenge.
+    expect(hex(tapChallenge(stampIssuedAt(stop, AT), nonce))).not.toBe(hex(tapChallenge(stampIssuedAt(stop, new Date(AT.getTime() + 1)), nonce)));
   });
 
   test('the ban reasons are the lead default list', () => {
@@ -169,5 +199,26 @@ describe('inviteRegistrationChallenge', () => {
   test('is SHA-256 of the labelled token hash', () => {
     const th = 'e'.repeat(64);
     expect(hex(inviteRegistrationChallenge(th))).toBe(nodeSha(`x2f-invite-v1\n${th}`));
+  });
+});
+
+describe('evidenceSha256 (review mod-screens M1: the ruling tap binds the evidence lines)', () => {
+  test('is SHA-256 of the UTF-8 canonical JSON array of the lines, in order', () => {
+    const lines = ['The trade chat', 'Bank statement: “paid” 08:51', '日本語 ✓'];
+    expect(evidenceSha256(lines)).toBe(nodeSha(canonicalJson(lines)));
+    expect(evidenceSha256(lines)).toBe(nodeSha(JSON.stringify(lines)));
+    expect(evidenceSha256([])).toBe(nodeSha('[]'));
+  });
+
+  test('changes with the order, the split and the text of the lines', () => {
+    const seen = new Set([
+      evidenceSha256(['a', 'b']),
+      evidenceSha256(['b', 'a']),
+      evidenceSha256(['a,b']),
+      evidenceSha256(['a', 'b ']),
+      evidenceSha256(['a']),
+      evidenceSha256([]),
+    ]);
+    expect(seen.size).toBe(6);
   });
 });

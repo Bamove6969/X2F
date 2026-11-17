@@ -21,6 +21,7 @@
     "@simplewebauthn/server": "14.0.3",
     "@x2f/accounts": "0.0.0",
     "@x2f/core": "0.0.0",
+    "@x2f/logchain": "0.0.0",
     "@x2f/omemo": "0.0.0",
     "@x2f/proof": "0.0.0",
     "@x2f/reputation": "0.0.0",

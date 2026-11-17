@@ -194,6 +194,20 @@ describe('POST /v1/account/offers/status', () => {
     expect(await setStatus(q, [c], 'live')).toEqual([{ id: c, status: 'paused', refused: 'trading-hold' }]);
   });
 
+  it('turning all on with an active lien: every offer stays off, refused lien; turning off still works (J-06, review L6)', async () => {
+    const p = await poster();
+    const creditor = await trader();
+    const a = await post(p);
+    await setStatus(p, 'all', 'paused');
+    await deps.db.query(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
+     values ($1, $2, 1000, gen_random_uuid()::text, 1, 1, 'restitution', $3, $3)`,
+      [p.id, creditor.id, deps.clock()],
+    );
+    expect(await setStatus(p, 'all', 'live')).toEqual([{ id: a, status: 'paused', refused: 'lien' }]);
+    expect(await statuses(p.id)).toEqual({ [a]: 'paused' });
+  });
+
   it('during an emergency stop turning off always succeeds and turning on is refused trading-paused', async () => {
     const p = await poster();
     const a = await post(p);

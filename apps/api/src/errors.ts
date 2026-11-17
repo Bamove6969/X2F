@@ -66,6 +66,8 @@ export type ApiErrorCode =
   | 'method-unavailable'
   | 'no-wallet'
   | 'trading-hold'
+  // Plan 4 Task 25 (J-06): an active lien from a dispute; the debtor cannot trade until it is repaid.
+  | 'lien'
   | 'trading-paused'
   | 'too-many-offers'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
@@ -187,7 +189,13 @@ export type ApiErrorCode =
   // moderator or the owner), or involved in round 1 of an appealed case; `freeze-not-allowed`: the
   // party has not ignored the dispute or the ruling; the moderation process's own answers.
   | 'forbidden-case'
+  // Plan 4 Task 12 (J-06): the ruling routes.
+  | 'reason-too-short'
+  | 'same-person'
+  | 'account-action-unavailable'
   | 'freeze-not-allowed'
+  // Lead call Q1: a ruling while maintenance pauses the dispute.
+  | 'dispute-paused'
   | 'no-chat'
   | 'no-proof'
   | 'moderation-unavailable'

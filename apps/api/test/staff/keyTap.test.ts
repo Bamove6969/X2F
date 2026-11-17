@@ -54,6 +54,8 @@ const RULING: KeyTapIntent = {
   accountAction: { kind: 'none' },
   amountAtomic: '1500000000000',
   reasonSha256: 'a'.repeat(64),
+  evidenceSha256: 'c'.repeat(64),
+  round1Id: null,
 };
 
 beforeAll(async () => {
@@ -126,8 +128,25 @@ describe('startKeyTap', () => {
     );
     expect(rows[0]!.account_id).toBe(id);
     expect(rows[0]!.nonce.length).toBe(16);
-    expect(rows[0]!.intent).toBe(canonicalJson(STOP));
-    expect(options.challenge).toBe(Buffer.from(tapChallenge(STOP, rows[0]!.nonce)).toString('base64url'));
+    // Lead P4 call: an owner registry tap carries the server's start time, signed (issuedAt).
+    const stamped = { ...STOP, issuedAt: T0.toISOString() } as KeyTapIntent;
+    expect(rows[0]!.intent).toBe(canonicalJson(stamped));
+    expect(options.challenge).toBe(Buffer.from(tapChallenge(stamped, rows[0]!.nonce)).toString('base64url'));
+  });
+
+  it('stamps issuedAt only on the registry kinds the moderation gate orders; a client cannot send one (lead P4 call)', async () => {
+    // A fresh account per start: at most 5 open taps per account (RV5 m12).
+    const read = async (i: KeyTapIntent) => {
+      const { id } = await staffWith();
+      const { tapId } = await startKeyTap(deps, id, i);
+      return JSON.parse((await deps.db.query<{ intent: string }>('select intent from key_taps where id = $1', [tapId])).rows[0]!.intent) as Record<string, unknown>;
+    };
+    const acct = '7d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
+    for (const i of [STOP, RESUME, { kind: 'switch-on', accountId: acct, role: 'mod' }, { kind: 'set-role', accountId: acct, role: 'senior' }, { kind: 'remove-staff', accountId: acct }, { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 }] as KeyTapIntent[]) {
+      expect((await read(i)).issuedAt, i.kind).toBe(T0.toISOString());
+    }
+    expect((await read(RULING)).issuedAt).toBeUndefined();
+    expect(() => parseKeyTapIntent({ ...STOP, issuedAt: T0.toISOString() })).toThrow(ApiError);
   });
 
   it('uses a new nonce for every tap, and the database refuses a repeated one', async () => {
@@ -166,6 +185,14 @@ describe('startKeyTap', () => {
     expect(() => parseKeyTapIntent({ kind: 'nope' })).toThrow(ApiError);
     expect(() => parseKeyTapIntent({ ...RULING, outcome: 'pay-me' })).toThrow(ApiError);
     expect(() => parseKeyTapIntent({ ...RULING, round: 3 })).toThrow(ApiError);
+    // mod-gate review B2: a round-2 ruling names the round-1 ruling it reviews; round 1 names none.
+    const R1 = '0d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
+    expect(() => parseKeyTapIntent({ ...RULING, round: 2 })).toThrow(ApiError);
+    expect(() => parseKeyTapIntent({ ...RULING, round1Id: R1 })).toThrow(ApiError);
+    expect(() => parseKeyTapIntent({ ...RULING, round: 2, round1Id: 'x' })).toThrow(ApiError);
+    const { round1Id: _drop, ...noKey } = RULING as Extract<KeyTapIntent, { kind: 'ruling' }>;
+    expect(() => parseKeyTapIntent(noKey)).toThrow(ApiError);
+    expect(parseKeyTapIntent({ ...RULING, round: 2, round1Id: R1.toUpperCase() })).toMatchObject({ round: 2, round1Id: R1 });
     expect(() => parseKeyTapIntent({ ...RULING, code: 'not a code' })).toThrow(ApiError);
     expect(() => parseKeyTapIntent({ ...RULING, accountAction: { kind: 'site-ban', until: null } })).toThrow(ApiError);
     // D-015 (owner 2026-11-02 08:12): a freeze is a separate later act, never on the ruling card.
@@ -181,7 +208,7 @@ describe('finishKeyTap and consumeKeyTap', () => {
     const { id, key } = await staffWith();
     const tapId = await tapped(id, key, STOP);
     const stored = await consume(tapId, id, STOP);
-    expect(stored).toMatchObject({ id: tapId, accountId: id, credentialId: key.credentialId, intent: canonicalJson(STOP) });
+    expect(stored).toMatchObject({ id: tapId, accountId: id, credentialId: key.credentialId, intent: canonicalJson({ ...STOP, issuedAt: T0.toISOString() } as KeyTapIntent) });
     expect(stored.nonceHex).toMatch(/^[0-9a-f]{32}$/);
     // Exactly what the moderation process re-verifies: the stored response answers the stored challenge.
     const challenge = Buffer.from(tapChallenge(JSON.parse(stored.intent) as KeyTapIntent, Buffer.from(stored.nonceHex, 'hex')));
@@ -448,6 +475,13 @@ describe('keyTapRoutes', () => {
     expect(await count()).toBe(0);
     const propose = await app.inject({ method: 'POST', url: '/staff/v1/taps/start', headers: { 'x-test-account': id, 'x-test-perms': 'self,disputes.handle' }, payload: { ...RULING, step: 'propose' } });
     expect(propose.statusCode).toBe(200);
+    expect(await count()).toBe(1);
+    // Review mod-screens M1: a ruling intent without the evidence hash, or with a bad one, is refused.
+    const { evidenceSha256: _e, ...noEvidence } = RULING as Extract<KeyTapIntent, { kind: 'ruling' }>;
+    for (const payload of [noEvidence, { ...RULING, evidenceSha256: 'not-hex' }]) {
+      const bad = await app.inject({ method: 'POST', url: '/staff/v1/taps/start', headers: { 'x-test-account': id, 'x-test-perms': 'self,disputes.handle' }, payload });
+      expect([bad.statusCode, bad.json()]).toEqual([400, { error: 'bad-request' }]);
+    }
     expect(await count()).toBe(1);
   });
 

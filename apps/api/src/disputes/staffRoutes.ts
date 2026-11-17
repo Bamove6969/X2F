@@ -12,6 +12,7 @@ import { requireStaff } from '../staff/guard.js';
 import { traderSummaries } from '../traders/summary.js';
 import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
+import { rulingExtras } from './rulingDrafts.js';
 import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
@@ -86,7 +87,7 @@ interface CaseTrade {
   taken_at: Date;
 }
 
-function body(req: FastifyRequest, keys: readonly string[], required: readonly string[] = keys): Record<string, unknown> {
+export function body(req: FastifyRequest, keys: readonly string[], required: readonly string[] = keys): Record<string, unknown> {
   const b = req.body;
   if (b === null || typeof b !== 'object' || Array.isArray(b)) throw new ApiError(400, 'bad-request');
   const o = b as Record<string, unknown>;
@@ -98,7 +99,7 @@ const isSide = (v: unknown): v is Side => v === 'buyer' || v === 'seller';
 const isSeniorOrOwner = (role: string) => role === 'senior' || role === 'owner';
 
 /** The trade code a `:code` names: a trade code, or a dispute's incident ID (G37, as a trader quotes it). */
-async function codeOf(q: Queryable, req: FastifyRequest): Promise<string> {
+export async function codeOf(q: Queryable, req: FastifyRequest): Promise<string> {
   const raw = (req.params as { code?: unknown }).code;
   if (typeof raw !== 'string') throw new ApiError(404, 'not-found');
   const code = normalizeTradeCode(raw);
@@ -121,7 +122,7 @@ async function caseTrade(q: Queryable, code: string): Promise<CaseTrade> {
   return rows[0];
 }
 
-const actorOf = (req: FastifyRequest): Extract<Actor, { kind: 'staff' }> => ({ kind: 'staff', id: req.staff.accountId, role: req.staff.role });
+export const actorOf = (req: FastifyRequest): Extract<Actor, { kind: 'staff' }> => ({ kind: 'staff', id: req.staff.accountId, role: req.staff.role });
 
 /** Whether this person may work the case's chat, messages, proof and freeze. */
 function mayWork(d: Dispute, req: FastifyRequest): boolean {
@@ -137,7 +138,7 @@ function usd(cents: bigint): string {
   return `${neg ? '-' : ''}${a / 100n}.${(a % 100n).toString().padStart(2, '0')}`;
 }
 
-function ruleError(err: unknown): never {
+export function ruleError(err: unknown): never {
   if (err instanceof DisputeRuleError) {
     if (err.code === 'not-eligible' || err.code === 'wrong-party') throw new ApiError(403, 'forbidden-case');
     throw new ApiError(409, 'wrong-state');
@@ -423,6 +424,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         takenAt: t.taken_at.toISOString(),
       },
       ruling: {
+        // Task 12: the waiting proposal's reason and evidence (staff-only) and the latest send-back.
+        ...(await rulingExtras(deps.db, code)),
         draft: d.ruling,
         round1: d.round1,
         publishedAt: d.publishedAt?.toISOString() ?? null,
