@@ -24,11 +24,6 @@
 .x2f-tour__dim {
   fill: var(--x2f-scrim);
 }
-/* A dim patch over the hole, shown only while the hole fades out and back in (full motion). */
-.x2f-tour__hole {
-  fill: var(--x2f-scrim);
-  opacity: 0;
-}
 .x2f-tour__ring {
   fill: none;
   stroke: var(--x2f-ink);
@@ -206,7 +201,10 @@
   .x2f-tour__card {
     transition: transform 340ms var(--x2f-tour-ease-out);
   }
-  .x2f-tour__hole,
+  /* The hole (the dim path's CSS d, TourProvider.tsx) moves with the ring; Safari snaps it (review M1). */
+  .x2f-tour__dim {
+    transition: d 250ms var(--x2f-tour-ease-out);
+  }
   .x2f-tour__ring {
     transition:
       x 250ms var(--x2f-tour-ease-out),
@@ -219,13 +217,6 @@
   }
   .x2f-tour__ring[data-phase='out'] {
     animation: x2f-tour-out 90ms var(--x2f-tour-ease-in) both;
-  }
-  /* The patch over the hole runs the other way: the hole opening is the patch fading out. */
-  .x2f-tour__hole[data-phase='in'] {
-    animation: x2f-tour-out 120ms var(--x2f-tour-ease-out) 60ms both;
-  }
-  .x2f-tour__hole[data-phase='out'] {
-    animation: x2f-tour-in 90ms var(--x2f-tour-ease-in) both;
   }
   .x2f-tour__pulse {
     animation: x2f-tour-breathe 1.8s var(--x2f-tour-ease-io) infinite;

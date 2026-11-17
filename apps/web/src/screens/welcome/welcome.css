@@ -64,8 +64,7 @@
   width: 10.4%;
   aspect-ratio: 1;
   border-radius: 50%;
-  /* Ink: orange is the dot's alone (x2f-logo__dot), the kit's rule. DESIGNER-REVIEW. */
-  border: 2px solid var(--x2f-ink);
+  border: 2px solid var(--x2f-monero);
   opacity: 0;
   pointer-events: none;
 }
