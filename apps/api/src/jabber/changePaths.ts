@@ -75,7 +75,12 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
   },
   {
     table: 'wallets', accountColumn: 'account_id', ops: ALL,
-    changes: ['id', 'account_id', 'app', 'label', 'created_at', 'usable_from', 'removed_at'],
+    // one_time (620, owner demo note #6) is set once with the wallet and never updated: a change if it
+    // ever were. A one-time wallet used up by a trade sets removed_at, a change that notifies like a removal.
+    // is_default (630, owner 17 Nov): the person's choice of default payout wallet, a change.
+    // used_by_trade (640, owner Q10): the trade that used up a one-time wallet. Set and cleared with
+    // removed_at (use-up, restore), a change either way; cleared alone by a removal, which notifies too.
+    changes: ['id', 'account_id', 'app', 'label', 'created_at', 'usable_from', 'removed_at', 'one_time', 'is_default', 'used_by_trade'],
     bookkeeping: { address: "nulled by the purge 90 days after removal (the removal notified)" },
   },
   {
@@ -129,6 +134,15 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     // S-093 (migration 362): the blocker's own note is a change they made, like the block itself.
     changes: ['account_id', 'blocked_id', 'created_at', 'note'],
     bookkeeping: {},
+  },
+  {
+    // Plan 5 Tasks 5 and 12 (migration 303, trigger in 702; lead call, owner p5-7): which earned
+    // badges the profile shows, and publishing the signed record on it, are changes to the account,
+    // like show_traded_total. One row per account, never deleted except by the account's deletion,
+    // which cascades (notified there), so the trigger watches inserts and updates.
+    table: 'badge_prefs', accountColumn: 'account_id', ops: ['insert', 'update'],
+    changes: ['account_id', 'chosen', 'levels', 'featured_order', 'portable_public'],
+    bookkeeping: { updated_at: "set with every save; the save's other columns notify" },
   },
   {
     table: 'past_reputation', accountColumn: 'account_id', ops: ALL,

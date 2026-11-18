@@ -24,10 +24,16 @@ async function build(mode: string): Promise<string> {
   return out;
 }
 
+/**
+ * Our own output: index.html and everything vite built. The copied OCR files (dist/ocr/, Plan 5 Task
+ * 13) are third-party code checked byte for byte against tools/ocr-assets.sha256 instead.
+ */
 async function bundleText(dir: string): Promise<string> {
   const files = await readdir(dir, { recursive: true, withFileTypes: true });
   const parts = await Promise.all(
-    files.filter((f) => f.isFile() && /\.(js|css|html)$/.test(f.name)).map((f) => readFile(join(f.parentPath, f.name), 'utf8')),
+    files
+      .filter((f) => f.isFile() && /\.(js|css|html)$/.test(f.name) && f.parentPath !== join(dir, 'ocr'))
+      .map((f) => readFile(join(f.parentPath, f.name), 'utf8')),
   );
   return parts.join('\n');
 }
@@ -50,6 +56,36 @@ describe('production bundle', () => {
   it('a fixtures-mode build does include fixture mode (the check bites)', { timeout: 200_000 }, async () => {
     const text = (await bundleText(await build('fixtures'))).toLowerCase();
     expect(text).toContain('fixture');
+  });
+
+  // Plan 5 Task 13: the OCR engine is loaded on demand and its files are served, never bundled.
+  it('tesseract.js is a lazily loaded chunk: not in the entry script, not preloaded, but present', { timeout: 200_000 }, async () => {
+    const dir = await build('production');
+    const html = await readFile(join(dir, 'index.html'), 'utf8');
+    const entry = /<script[^>]*\bsrc="\/(assets\/[^"]+\.js)"/.exec(html)?.[1];
+    expect(entry).toBeDefined();
+    const preloaded = [...html.matchAll(/rel="modulepreload"[^>]*href="\/(assets\/[^"]+)"/g)].map((m) => m[1]!);
+    const chunks = (await readdir(join(dir, 'assets'))).filter((f) => f.endsWith('.js'));
+    const withEngine: string[] = [];
+    for (const f of chunks) if ((await readFile(join(dir, 'assets', f), 'utf8')).includes('Legacy model requested but code missing')) withEngine.push(`assets/${f}`);
+    expect(withEngine.length, 'some chunk carries the engine').toBeGreaterThan(0);
+    for (const c of withEngine) {
+      expect(c).not.toBe(entry);
+      expect(preloaded).not.toContain(c);
+    }
+    // Neither proof/ocr.ts nor the engine is in the entry: both are loaded with the first proof.
+    const entryText = await readFile(join(dir, entry!), 'utf8');
+    for (const internal of ['createWorker', 'Legacy model requested', 'regeneratorRuntime', 'wasm-feature-detect', '/ocr/worker.min.js']) expect(entryText, internal).not.toContain(internal);
+  });
+
+  it('no CDN default reaches the bundle; the OCR core and model are served from /ocr/, never bundled', { timeout: 200_000 }, async () => {
+    const dir = await build('production');
+    const text = await bundleText(dir);
+    expect(text).not.toMatch(/jsdelivr|unpkg\.com/);
+    expect((await readdir(join(dir, 'assets'))).filter((f) => /traineddata|tesseract-core|worker\.min/.test(f))).toEqual([]);
+    expect((await readdir(join(dir, 'ocr'))).sort()).toEqual(
+      ['eng.traineddata.gz', 'rus.traineddata.gz', 'tesseract-core-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'worker.min.js'],
+    );
   });
 
   it('inlines nothing the CSP would block: no inline scripts or styles, no data: fonts', { timeout: 200_000 }, async () => {

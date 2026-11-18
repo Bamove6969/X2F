@@ -50,6 +50,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/alerts': 'my own security alerts',
   'GET /v1/account/approvals': 'my own pending new-device login approvals',
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
+  'GET /v1/account/badges': "my own earned badges, their levels and my next milestones (Plan 5 Task 5); the account owner only",
   'GET /v1/account/blocks': 'the traders I blocked, when, and my own private note on each (S-093)',
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",
@@ -63,6 +64,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/past-rep': 'my own imported past reputation',
   'GET /v1/account/profile/traded-total': 'my own traded-total display setting',
   'GET /v1/account/push': 'my own push subscription state and the VAPID public key',
+  'GET /v1/account/record': "my own signed reputation record (Plan 5 Task 12); the account owner only, once a minute",
   'GET /v1/account/security/devices': 'my own trusted devices',
   'GET /v1/account/sessions': 'my own sessions',
   'GET /v1/chats': 'my own chats',
@@ -82,6 +84,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/ruling-statement': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
+  // Plan 5 Task 14: a proof ciphertext of one of my own trades (participants only; unblurred is 404).
+  'GET /v1/trades/:code/proofs/:id': 'a proof ciphertext of one of my own trades (participants only)',
   'GET /v1/wallets': 'my own payout wallets',
   'GET /v1/wallets/rule': 'my own wallet rule',
 };
@@ -149,6 +153,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/account/notes': "a private note row of my own account on a trader (the account owner, or a member with the notes-add box); answers that note",
   'DELETE /v1/account/notes/:id': "removes one of my own account's note rows (account owner only); no data back",
   'PUT /v1/account/profile/traded-total': 'my own traded-total display setting',
+  'PUT /v1/account/badges': 'one of my own earned badges\' visibility (Featured, On hover, Hidden); answers my own badge settings',
+  'PUT /v1/account/record/public': 'shows or hides my own signed record on my profile; answers the setting',
   'POST /v1/account/past-rep/start': 'a past-rep challenge for my own claim',
   'POST /v1/account/past-rep/finish': 'my own past-rep claim',
   'DELETE /v1/account/past-rep/:id': 'removes my own past-rep claim',
@@ -158,6 +164,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   // Wallets and offers (my own).
   'POST /v1/wallets': 'adds my own payout wallets; answers them',
   'DELETE /v1/wallets/:id': 'removes one of my own payout wallets',
+  'PUT /v1/wallets/:id/default': 'chooses which of my own payout wallets the trade screen picks first',
   'POST /v1/offers': 'posts my own offer; answers its id',
   'PATCH /v1/offers/:id': 'pauses, removes or relists my own offer (403 wrong-party for anyone else\'s)',
   'POST /v1/account/offers/status': 'turns my own offers on or off',
@@ -167,6 +174,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/wallet': "the poster's payout wallet for one of my own trades, from my own wallets",
   'POST /v1/trades/:code/identity': 'my identity for one of my own trades (participants only)',
   'POST /v1/trades/:code/chat': 'the chat of one of my own trades (participants only)',
+  'PUT /v1/trades/:code/proofs/:id': 'a proof ciphertext for one of my own trades (participants only); no data back',
   'POST /v1/trades/:code/dispute': 'opens a dispute on one of my own trades (participants only)',
   // P-012/P-013 (proof-check, classified at the batch 9 merge): the blur check on my own trades.
   'POST /v1/trades/:code/proofs/:proofId/blur-check': 'counts my own proof on one of my own trades for the blur-check sample (participants only); answers only whether to ask',

@@ -36,17 +36,23 @@ const LABEL = 'Browser on Linux';
  * Push (its final-alert receipt route is gone with the final alert: trade-rules, owner 8 Nov p6-1); Task 24: the release confirmations; Task 26: nudges, nudge settings
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
  * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
+ * Plan 5 Tasks 5 and 12: the profile, badge settings and the signed record, apps/web/src/screens/profile/api.ts;
  * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
  * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
  * apps/web/src/screens/account/AccountFrozen.tsx; S-093: a block row's note, apps/web/src/screens/settings/blockApi.ts;
  * P-012/P-013: the blur check, apps/web/src/api/blurCheck.ts; Haveno review finding 2: the signed ruling statement,
- * read by apps/web/src/escrow/adapters.ts; Plan 4 Task 12: the seller's payment proof for a ruling). Any other new route still needs a client method.
+ * read by apps/web/src/escrow/adapters.ts; Plan 5 Tasks 14-15: a proof's ciphertext, read by
+ * apps/web/src/screens/proof/ChatProof.tsx and put by apps/web/src/proof/upload.ts; Plan 4 Task 12: the seller's payment proof for a ruling). Any other new route still needs a client method.
+ * Param names are spelled as the route tree reports them (srv.serverRoutes): the proof stack's
+ * proofs/:id and the blur check's proofs/:proofId share one node, so all three of those routes read
+ * proofs/:id|:proofId; blur-checks/:proofId has no other name at its node and keeps :proofId.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
   'DELETE /v1/account/notes/:displayName|:id',
   'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
+  'GET /v1/account/badges',
   'GET /v1/account/blocks',
   'GET /v1/account/freeze',
   'GET /v1/account/notes/:displayName|:id',
@@ -55,6 +61,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/account/past-rep',
   'GET /v1/account/profile/traded-total',
   'GET /v1/account/push',
+  'GET /v1/account/record',
   'GET /v1/chats',
   'GET /v1/chats/:chat',
   'GET /v1/chats/:chat/attestation',
@@ -69,11 +76,14 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/reviews/pending',
   'GET /v1/site',
   'GET /v1/team/permissions',
+  'GET /v1/traders/:name',
+  'GET /v1/traders/:name/record',
   'GET /v1/trades/:code',
   'GET /v1/trades/:code/attestation',
   'GET /v1/trades/:code/blur-checks',
   'GET /v1/trades/:code/confirmations',
   'GET /v1/trades/:code/dispute',
+  'GET /v1/trades/:code/proofs/:id|:proofId',
   'GET /v1/trades/:code/review',
   'GET /v1/trades/:code/ruling-statement',
   'PATCH /v1/offers/:id',
@@ -99,13 +109,16 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/trades/:code/events',
   'POST /v1/trades/:code/identity',
   'POST /v1/trades/:code/payment-proof',
-  'POST /v1/trades/:code/proofs/:proofId/blur-check',
+  'POST /v1/trades/:code/proofs/:id|:proofId/blur-check',
   'POST /v1/trades/:code/review',
   'POST /v1/trades/:code/review/skip',
   'POST /v1/trades/:code/wallet',
+  'PUT /v1/account/badges',
   'PUT /v1/account/blocks/:displayName/note',
   'PUT /v1/account/nudges',
   'PUT /v1/account/profile/traded-total',
+  'PUT /v1/account/record/public',
+  'PUT /v1/trades/:code/proofs/:id|:proofId',
   // POST /v1/trades/:code/final-alert-seen is gone with the final alert (owner 8 Nov, p6-1; design-results).
 ] as const;
 

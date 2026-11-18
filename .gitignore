@@ -14,3 +14,6 @@ design/x2f-app/support.js
 
 # TypeScript incremental build state (review P-m3)
 *.tsbuildinfo
+
+# Plan 5 Task 13: the self-hosted OCR files, copied and checked at build (tools/copy-ocr-assets.ts)
+apps/web/public/ocr/

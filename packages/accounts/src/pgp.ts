@@ -299,6 +299,13 @@ export function challengeText(a: {
  * a recipient whose only usable encryption subkey is weak, expired or not
  * yet valid makes this throw rather than encrypt to it.
  */
+/**
+ * The notation every challenge signature carries (lead call 18 Nov, review m3): what X2F signed, so
+ * a challenge's signature can never be taken for another X2F-signed text (the API's reputation
+ * record carries `purpose@x2f=reputation-record-v1`). Not critical, so every PGP app still verifies it.
+ */
+export const CHALLENGE_PURPOSE_NOTATION = { name: 'purpose@x2f', value: 'login-challenge' } as const;
+
 export async function encryptChallenge(
   text: string,
   armoredKeys: string[],
@@ -314,6 +321,9 @@ export async function encryptChallenge(
     message,
     encryptionKeys,
     signingKeys: signingKey,
+    signatureNotations: [
+      { name: CHALLENGE_PURPOSE_NOTATION.name, value: new TextEncoder().encode(CHALLENGE_PURPOSE_NOTATION.value), humanReadable: true, critical: false },
+    ],
     wildcard: true,
     date: now,
     format: 'armored',

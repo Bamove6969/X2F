@@ -330,6 +330,72 @@ describe('WebAuthn security checks (P2-I4)', () => {
     expect(errorOf(reg)).toBe('webauthn-failed');
   });
 
+  // Owner decision, 16 Nov 2026 (comms to-lead.log 17:50:46): a security key stands alone, with the
+  // key PIN (user verification) REQUIRED on registration and every login; the server checks the UV
+  // flag itself (the options alone are only a request to the browser).
+  it('a security key needs user verification (its PIN) on registration and every login', async () => {
+    const b = new Browser();
+    const start = (await b.post('/v1/register/webauthn/start', { ...names(uniqueName('skuv')), kind: 'security-key' })).json();
+    const noPin = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    const reg = await b.post('/v1/register/webauthn/finish', {
+      challengeId: start.challengeId, response: noPin.register(start.options, ORIGIN), deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(errorOf(reg)).toBe('webauthn-failed');
+
+    const { auth, username } = await signUp('security-key');
+    const ok = await usernameLogin(auth, username);
+    expect(ok.res.statusCode).toBe(200);
+    auth.flags.userVerified = false;
+    expect(errorOf((await usernameLogin(auth, username)).res)).toBe('webauthn-failed');
+    // And the options ask the browser for it.
+    expect(start.options.authenticatorSelection.userVerification).toBe('required');
+    expect(ok.options.userVerification).toBe('required');
+  });
+
+  it('every kind and account kind asks for user verification at registration (staff and owner at least as strict)', () => {
+    for (const accountKind of ['trader', 'staff', 'member', 'owner'] as const) {
+      for (const kind of ['passkey', 'security-key'] as const) {
+        if (accountKind === 'owner' && kind === 'passkey') continue;
+        expect(registrationOptionsFor(kind, accountKind).authenticatorSelection.userVerification, `${accountKind} ${kind}`).toBe('required');
+      }
+    }
+  });
+
+  it('review m1: a login refused only for missing user verification says the key needs its PIN; nothing else does', async () => {
+    const PIN = "Your key needs its PIN (or fingerprint) to log in. Set one in your key's settings, then try again.";
+    const counterOf = async (auth: SoftAuthenticator) =>
+      (await deps.db.query('select counter from webauthn_credentials where credential_id = $1', [Buffer.from(auth.credentialId, 'base64url')])).rows[0].counter;
+    // A passkey (discoverable login) and a security key (login by name), each answering without UV.
+    const passkey = await signUp('passkey');
+    passkey.auth.flags.userVerified = false;
+    const p = (await discoverableLogin(passkey.auth)).res;
+    expect({ status: p.statusCode, body: p.json() }).toEqual({ status: 401, body: { error: 'webauthn-failed', detail: PIN } });
+    const key = await signUp('security-key');
+    key.auth.flags.userVerified = false;
+    const k = (await usernameLogin(key.auth, key.username)).res;
+    expect({ status: k.statusCode, body: k.json() }).toEqual({ status: 401, body: { error: 'webauthn-failed', detail: PIN } });
+    // The refused answer moved no counter, so the next good one still logs in.
+    expect(await counterOf(key.auth)).toBe('0');
+    key.auth.flags.userVerified = true;
+    expect((await usernameLogin(key.auth, key.username)).res.statusCode).toBe(200);
+
+    // Without UV and also failing anything else, the answer is the plain refusal: no PIN hint.
+    key.auth.flags.userVerified = false;
+    key.auth.flags.userPresent = false;
+    expect((await usernameLogin(key.auth, key.username)).res.json()).toEqual({ error: 'webauthn-failed' });
+    key.auth.flags.userPresent = true;
+    expect((await discoverableLogin(passkey.auth, { origin: 'https://evil.example' })).res.json()).toEqual({ error: 'webauthn-failed' });
+    expect((await discoverableLogin(passkey.auth, { type: 'webauthn.create' })).res.json()).toEqual({ error: 'webauthn-failed' });
+    const stranger = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    expect((await usernameLogin(stranger, key.username)).res.json()).toEqual({ error: 'webauthn-failed' });
+    // A counter that does not increase, without UV: plain too.
+    key.auth.flags.userVerified = true;
+    expect((await usernameLogin(key.auth, key.username)).res.statusCode).toBe(200);
+    key.auth.setCounter(0);
+    key.auth.flags.userVerified = false;
+    expect((await usernameLogin(key.auth, key.username)).res.json()).toEqual({ error: 'webauthn-failed' });
+  });
+
   it('refuses clientDataJSON.type webauthn.create on a login', async () => {
     const { auth } = await signUp('passkey');
     expect(errorOf((await discoverableLogin(auth, { type: 'webauthn.create' })).res)).toBe('webauthn-failed');
@@ -576,21 +642,22 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
   });
 
   it("takes a trader's security key of any model, attested or not, even one outside the snapshot (owner demo 13 Nov)", async () => {
+    // Owner, 16 Nov 2026: every security key verifies its user (PIN), so these keys do; the subject here is attestation.
     const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
     const b = await loggedIn(traderId, true);
     // A browser may pass the key's own attestation on although 'none' was asked for.
     const keys = [
-      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: 'none' }),
-      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: UNLISTED, ca } }),
-      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: NO_STATEMENT, ca } }),
-      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: NO_STATEMENT, self: true } }),
+      createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: 'none' }),
+      createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: UNLISTED, ca } }),
+      createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: NO_STATEMENT, ca } }),
+      createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: NO_STATEMENT, self: true } }),
     ];
     for (const [i, key] of keys.entries()) {
       const r = await staffAdd(b, key, 'security-key');
       expect(r.options.attestation).toBe('none');
       expect(r.options.hints).toEqual(['security-key']);
       expect(r.options.pubKeyCredParams.map((p: { alg: number }) => p.alg)).toEqual([-8, -7, -257]);
-      expect(r.options.authenticatorSelection).toMatchObject({ authenticatorAttachment: 'cross-platform', residentKey: 'discouraged', userVerification: 'preferred' });
+      expect(r.options.authenticatorSelection).toMatchObject({ authenticatorAttachment: 'cross-platform', residentKey: 'discouraged', userVerification: 'required' });
       expect(r.res.statusCode, `key ${i}`).toBe(201);
     }
     const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
@@ -605,7 +672,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
     const trader = await loggedIn(traderId, true);
     for (const [name, att] of [['another root', { aaguid: UNLISTED, ca: otherRoot }], ['another root, allowlisted model', { aaguid: ALLOWED, ca: otherRoot }], ['expired leaf', { aaguid: ALLOWED, ca: expired }]] as const) {
-      const r = await staffAdd(trader, createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: att }), 'security-key');
+      const r = await staffAdd(trader, createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: att }), 'security-key');
       expect(r.res.statusCode, name).toBe(201);
     }
     const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
@@ -614,7 +681,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     // The retry without the statement still checks the rest: a wrong origin is still 401.
     const start = await trader.post('/v1/account/webauthn/start', { kind: 'security-key' });
     const { challengeId, options } = start.json();
-    const wrongOrigin = createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: UNLISTED, ca: otherRoot } }).register(options, 'https://evil.example');
+    const wrongOrigin = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: UNLISTED, ca: otherRoot } }).register(options, 'https://evil.example');
     const bad = await trader.post('/v1/account/webauthn/finish', { challengeId, response: wrongOrigin, label: 'Key' });
     expect(bad.statusCode).toBe(401);
     expect(errorOf(bad)).toBe('webauthn-failed');
@@ -833,7 +900,7 @@ describe('confirm and adding a credential', () => {
     expect(start.statusCode).toBe(200);
     const { challengeId, options } = start.json();
     expect(options.excludeCredentials.map((c: { id: string }) => c.id)).toEqual([t.auth.credentialId]);
-    const second = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    const second = createSoftAuthenticator({ backedUp: false, userVerified: true }); // owner 16 Nov 2026: a security key verifies its user (PIN)
     const fin = await t.b.post('/v1/account/webauthn/finish', { challengeId, response: second.register(options, ORIGIN), label: 'Spare' });
     expect(fin.statusCode).toBe(201);
     const { rows } = await deps.db.query('select label from webauthn_credentials where account_id = $1 order by created_at', [t.accountId]);
@@ -1025,7 +1092,7 @@ describe('review fixes', () => {
     const { challengeId, options } = start.json();
     // Another key reaches the table before this ceremony finishes: the finish is refused too.
     await insertCredential(t.accountId, withIdLength(64), 'security-key', false);
-    const fifth = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    const fifth = createSoftAuthenticator({ backedUp: false, userVerified: true }); // owner 16 Nov 2026: a security key verifies its user (PIN)
     const fin = await t.b.post('/v1/account/webauthn/finish', { challengeId, response: fifth.register(options, ORIGIN), label: 'Sixth' });
     expect(fin.statusCode).toBe(409);
     expect(errorOf(fin)).toBe('security-key-limit');

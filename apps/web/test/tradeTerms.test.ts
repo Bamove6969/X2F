@@ -1,6 +1,6 @@
 // Build spec j31a section 1 (T-034, T-080): the "What applies to you" lists, one per reader.
-import { describe, expect, it } from 'vitest';
-import { BLUR_CHECK_LINE, TERMS_SUBTITLE, TRADE_TERMS, termsParts, type TermsRole } from '../src/screens/quote/tradeTerms.js';
+import { describe, expect, it, afterEach, vi } from 'vitest';
+import { BLUR_CHECK_LINE, TERMS_SUBTITLE, TRADE_TERMS, termsFor, termsParts, type TermsRole } from '../src/screens/quote/tradeTerms.js';
 
 // The boards' WA_DATA, byte-identical on BuyQuote, SellQuote(+Wide) and OfferAd(+Wide) on
 // wip/design-brief (b5bb4faa, 9 Nov 2026), copied verbatim.
@@ -59,5 +59,25 @@ describe('trade terms by reader (T-034, T-080)', () => {
       { text: '2', mono: true },
       { text: 'F fee)', mono: false },
     ]);
+  });
+});
+
+describe('the blur-check line waits for the upload (review of the proof stack, S-M2, lead 12 Nov)', () => {
+  // It promises an ask (BlurCheck) that is not mounted yet, in words not signed yet: on the quote
+  // screen only in a build with the proof upload (VITE_X2F_PROOF_UPLOAD=1, proofUploadOn).
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('flag off (the default): termsFor leaves it out of all four lists, and nothing else', () => {
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '');
+    for (const role of ROLES) {
+      const shown = termsFor(role);
+      expect(shown.flatMap((g) => g.lines), role).not.toContain(BLUR_CHECK_LINE);
+      expect(shown.map((g) => [g.title, [...g.lines]]), role).toEqual(TRADE_TERMS[role].map((g) => [g.title, g.lines.filter((l) => l !== BLUR_CHECK_LINE)]));
+    }
+  });
+
+  it('flag on: the full board, the line included', () => {
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    for (const role of ROLES) expect(termsFor(role).map((g) => [g.title, [...g.lines]])).toEqual(TRADE_TERMS[role].map((g) => [g.title, [...g.lines]]));
   });
 });

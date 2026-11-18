@@ -99,6 +99,27 @@ describe('GET /v1/site', () => {
   });
 });
 
+// Plan 4 Task 17: StaffOverview's log-alarm card shows only when `site_flags.log_alarm` is set
+// (the moderation process's failed daily check, Task 14). The owner's site state carries it; no
+// trader or visitor ever sees it.
+describe('the log alarm on the staff site state', () => {
+  it('GET /staff/v1/site carries logAlarm (null when unset, the time when set); GET /v1/site never does', async () => {
+    await deps.db.query('update site_flags set log_alarm = null');
+    try {
+      const none = await owner.get('/staff/v1/site');
+      expect(none.statusCode, none.body).toBe(200);
+      expect(none.json()).toMatchObject({ logAlarm: null });
+      const at = new Date('2026-11-01T03:04:05.000Z');
+      await deps.db.query('update site_flags set log_alarm = $1', [at]);
+      expect((await owner.get('/staff/v1/site')).json()).toMatchObject({ logAlarm: at.toISOString() });
+      expect(Object.keys(await site())).not.toContain('logAlarm');
+      expect(Object.keys(await outside())).not.toContain('logAlarm');
+    } finally {
+      await deps.db.query('update site_flags set log_alarm = null');
+    }
+  });
+});
+
 describe('emergency stop', () => {
   it('needs a tap for emergency-stop; while stopped, take and post refuse trading-paused and existing trades go on; resume needs its own tap', async () => {
     setNow(T0);

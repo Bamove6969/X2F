@@ -37,13 +37,53 @@ declare global {
      * board's stand-in (src/fixtures/payChat.tsx); e2e/chat.spec.ts sets it.
      */
     __x2fRealChat?: boolean;
+    /**
+     * Fixture builds only (Plan 5 Task 13, e2e/proof-ocr.spec.ts): runs the real `prepareProof` with
+     * the browser deps (decode, the self-hosted OCR worker) on an image given as base64, and answers
+     * what the editor would get. Nothing leaves the page.
+     */
+    __x2fProofLab?: (b64: string, mime: string, keep: { tradeCode: string; fiatCents: string; exponent: number }) => Promise<ProofLabResult>;
   }
+}
+
+/** What `window.__x2fProofLab` answers: boxes in the prepared picture's pixels. */
+export interface ProofLabResult {
+  ocrOk: boolean;
+  width: number;
+  height: number;
+  auto: Array<{ kind: string; x0: number; y0: number; x1: number; y1: number }>;
+  amount: Array<{ x0: number; y0: number; x1: number; y1: number }>;
+  memo: Array<{ x0: number; y0: number; x1: number; y1: number }>;
+  words: string[];
+  /** The OCR words with their boxes and lines (for the recall record, docs/security/plan-5-review.md). */
+  ocr: Array<{ text: string; x0: number; y0: number; x1: number; y1: number; line: number }>;
+  ms: number;
+}
+
+async function proofLab(b64: string, mime: string, keep: { tradeCode: string; fiatCents: string; exponent: number }): Promise<ProofLabResult> {
+  const [{ prepareProof }, { browserProofImageDeps }] = await Promise.all([import('../proof/upload.js'), import('../proof/browserImage.js')]);
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const t0 = performance.now();
+  const p = await prepareProof(new Blob([bytes], { type: mime }), { tradeCode: keep.tradeCode, fiatCents: BigInt(keep.fiatCents), exponent: keep.exponent }, browserProofImageDeps());
+  const box = ({ x0, y0, x1, y1 }: { x0: number; y0: number; x1: number; y1: number }) => ({ x0, y0, x1, y1 });
+  return {
+    ocrOk: p.ocrOk,
+    width: p.width,
+    height: p.height,
+    auto: p.auto.map((r) => ({ kind: r.kind, ...box(r) })),
+    amount: p.amount.map(box),
+    memo: p.memo.map(box),
+    words: p.words.map((w) => w.text),
+    ocr: p.words.map((w) => ({ text: w.text, ...box(w), line: w.line })),
+    ms: performance.now() - t0,
+  };
 }
 
 const big = (v: string | undefined): bigint | null => (v === undefined ? null : BigInt(v));
 
 export function installFixtures(): void {
   document.documentElement.dataset.fixtureMode = 'on';
+  window.__x2fProofLab = proofLab;
   installPayFixtures(window.__x2fRealChat === true);
   const escrow = window.__x2fFixtureEscrow;
   if (!escrow) return;

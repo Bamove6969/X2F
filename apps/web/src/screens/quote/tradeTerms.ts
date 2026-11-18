@@ -11,6 +11,8 @@
 // P-012/P-013) is BLUR_CHECK_LINE: page 11's recommended wording, not answered yet (COPY-UNSIGNED),
 // after the "privacy tool hides..." line in the four lists.
 
+import { proofUploadOn } from '../../proof/flag.js';
+
 /** Who is reading: a taker on a sell ad is `buyer-taker`, on a buy ad `seller-taker`; posters look at a trade on their own ad. */
 export type TermsRole = 'seller-taker' | 'buyer-taker' | 'poster-selling' | 'poster-buying';
 
@@ -117,3 +119,14 @@ export function termsParts(line: string): { text: string; mono: boolean }[] {
     .filter((t) => t !== '')
     .map((text) => ({ text, mono: /^\d/.test(text) }));
 }
+
+/**
+ * What the quote screen shows (review of the proof stack, S-M2, lead 12 Nov): TRADE_TERMS without
+ * BLUR_CHECK_LINE unless the build has the proof upload. The line promises an ask (BlurCheck) that is
+ * not mounted yet, in words not signed yet (page 11), so it waits behind the same flag.
+ */
+export function termsFor(role: TermsRole): readonly TermsGroup[] {
+  if (proofUploadOn()) return TRADE_TERMS[role];
+  return TRADE_TERMS[role].map((g) => ({ ...g, lines: g.lines.filter((l) => l !== BLUR_CHECK_LINE) }));
+}
+

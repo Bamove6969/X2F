@@ -119,6 +119,15 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     change: `update banned_identifiers set banned_at = now() + interval '1 s' where account_id = $1`,
     where: 'account_id = $1',
   },
+  // Plan 5 Tasks 5 and 12 (migration 303): badge visibility and the record on the profile. The
+  // account's deletion cascades the row (notified there), so no delete path (CHANGE_TABLES ops).
+  // One row per account and never deleted, so the closing re-insert below is a no-op (`on conflict`).
+  badge_prefs: {
+    insert: `insert into badge_prefs (account_id, updated_at) values ($1, now()) on conflict (account_id) do nothing`,
+    change: `update badge_prefs set portable_public = true, updated_at = now() + interval '1 s' where account_id = $1`,
+    bookkeeping: `update badge_prefs set updated_at = now() + interval '2 s' where account_id = $1`,
+    where: 'account_id = $1',
+  },
   past_reputation: {
     insert: `insert into past_reputation (account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature_enc, status, created_at)
              values ($1, 'Bisq', 'https://archive.ph/x', 3, '${hex40()}', '\\x01', 't', '\\x01', 'signed', now())`,

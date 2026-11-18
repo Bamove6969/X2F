@@ -1,7 +1,7 @@
 import { createECDH, randomBytes } from 'node:crypto';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import webpush from 'web-push';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { canonicalEndpoint, isPublicAddress, publicOnlyLookup } from '../src/push/endpoint.js';
 import { ownerAlertSink, pushOwnerAlert } from '../src/push/ownerAlert.js';
@@ -58,6 +58,13 @@ beforeEach(() => {
   setNow(new Date(T0.getTime() + ++step * DAY));
 });
 
+// The owner account is shared by the tests: its subscriptions go after every test, failed or not,
+// so one failure does not leave pushes behind for the next test to count.
+afterEach(async () => {
+  if (ownerId === undefined) return;
+  await deps.db.query('delete from push_subscriptions where account_id = $1', [await ownerId]);
+});
+
 const errorOf = (res: LightMyRequestResponse) => (res.json() as { error?: string }).error;
 
 async function trader(o: { kind?: 'trader' | 'staff' | 'owner'; level?: 'full' | 'recovery' } = {}) {
@@ -79,13 +86,36 @@ async function owner(): Promise<{ id: string; b: Browser }> {
   return { id, b };
 }
 
-/** A browser-shaped subscription with a real P-256 key, on an FCM-like endpoint. */
+/**
+ * Strings this file checks pushes and request bodies for. A subscription never contains one, or a
+ * random endpoint or key could hold "EUR" and fail a check that nothing leaked (a flake).
+ */
+const CHECKED = ['EUR', 'X2F'];
+const holdsChecked = (v: string): boolean => CHECKED.some((c) => v.includes(c));
+
+/** A random base64url value with none of the CHECKED strings in it. */
+function clean(make: () => string): string {
+  for (;;) {
+    const v = make();
+    if (!holdsChecked(v)) return v;
+  }
+}
+
+/**
+ * A browser-shaped subscription with a real P-256 key, on an FCM-like endpoint. The endpoint's
+ * token is lower-case hex, so it cannot hold a CHECKED string; the keys are drawn again until clean.
+ */
 function subscription(host = 'fcm.googleapis.com') {
-  const ecdh = createECDH('prime256v1');
-  ecdh.generateKeys();
   const s = {
-    endpoint: `https://${host}/fcm/send/${randomBytes(24).toString('base64url')}`,
-    keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') },
+    endpoint: `https://${host}/fcm/send/${randomBytes(24).toString('hex')}`,
+    keys: {
+      p256dh: clean(() => {
+        const ecdh = createECDH('prime256v1');
+        ecdh.generateKeys();
+        return ecdh.getPublicKey().toString('base64url');
+      }),
+      auth: clean(() => randomBytes(16).toString('base64url')),
+    },
   };
   secrets.push(s.endpoint, s.endpoint.split('/').at(-1)!, s.keys.p256dh, s.keys.auth);
   return s;
@@ -112,6 +142,16 @@ async function stored(accountId: string): Promise<string[]> {
   );
   return rows.map((r) => r.endpoint);
 }
+
+describe('the test subscriptions themselves', () => {
+  it('never hold a string this file checks for (no flake from a random "EUR")', () => {
+    for (let i = 0; i < 500; i++) {
+      const s = subscription();
+      expect(s.endpoint.split('/').at(-1)).toMatch(/^[0-9a-f]{48}$/);
+      for (const v of [s.endpoint, s.keys.p256dh, s.keys.auth]) expect(holdsChecked(v)).toBe(false);
+    }
+  });
+});
 
 describe('POST and DELETE /v1/account/push: who may call', () => {
   it('needs a session', async () => {
