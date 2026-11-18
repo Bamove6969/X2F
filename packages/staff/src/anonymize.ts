@@ -98,8 +98,10 @@ function nameSpans(text: string, names: AnonymizeNames): Span[] {
 
 function tradeCodeSpans(text: string, known: ReadonlySet<string>): Span[] {
   const out: Span[] = [];
-  // Grouped with dashes or spaces, or 16 in a row.
-  for (const m of text.matchAll(/(?<![\p{L}\p{N}_])[0-9A-Za-z]{4}(?:[- ]?[0-9A-Za-z]{4}){3}(?![\p{L}\p{N}_])/gu)) {
+  // Grouped with dashes or spaces, or 16 in a row. Tried at every word start (a zero-width match
+  // with a capture), so "Also 3HW8-…" is not swallowed by a candidate starting at "Also".
+  for (const w of text.matchAll(/(?<![\p{L}\p{N}_])(?=([0-9A-Za-z]{4}(?:[- ]?[0-9A-Za-z]{4}){3})(?![\p{L}\p{N}_]))/gu)) {
+    const m = { index: w.index, 0: w[1]! };
     const code = normalizeTradeCode(m[0]);
     if (code === null) continue;
     // Any other code needs letters and digits, and dashes or upper case (a card number or a long

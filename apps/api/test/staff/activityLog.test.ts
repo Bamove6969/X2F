@@ -29,7 +29,7 @@ let close: () => Promise<void>;
 let owner: { id: string; b: StaffBrowser; name: string };
 let senior: { id: string; b: StaffBrowser };
 let mod: { id: string; b: StaffBrowser; name: string };
-let helper: { b: StaffBrowser };
+let helper: { id: string; b: StaffBrowser };
 let A: SeededTrade;
 let B: SeededTrade;
 let C: SeededTrade;
@@ -121,6 +121,11 @@ beforeAll(async () => {
   await log({ at: ruled, actor: staffActor(mod, 'mod'), tradeCode: C.code, action: 'ruling.published', detail: { rulingId: 'r-c', round: 1, outcome: 'release-to-buyer', accountAction: 'none' } });
   await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [C.code, new Date(opened.getTime() + 52 * H)]);
   setNow(new Date(T0.getTime() + 80 * H));
+  // Fresh sessions at the final clock (a staff session lasts 2 hours).
+  for (const m of [owner, senior, mod, helper] as Array<{ b: StaffBrowser; id?: string }>) {
+    const id = m.id ?? (await deps.db.query<{ account_id: string }>("select account_id::text as account_id from staff_members where role = 'helper' limit 1")).rows[0]!.account_id;
+    m.b.withSession((await insertSession(deps, id, 'staff')).token);
+  }
 });
 afterAll(async () => close());
 
@@ -174,7 +179,7 @@ describe('GET /staff/v1/log', () => {
 
   it('a moderator reads the staff scope: disputed trades only, never settings or staff entries', async () => {
     for (const who of [mod, senior]) {
-      const p = await page(who.b, '?limit=200');
+      const p = await page(who.b, '?limit=100');
       expect(p.scope).toBe('cases');
       expect(p.entries.length).toBeGreaterThan(0);
       for (const e of p.entries) {
@@ -220,7 +225,7 @@ describe('GET /staff/v1/log', () => {
   });
 
   it('pages with `before`: no entry twice, none missed', async () => {
-    const whole = await page(owner.b, '?limit=200');
+    const whole = await page(owner.b, '?limit=100');
     const seen: string[] = [];
     let before: string | null = null;
     do {
@@ -295,13 +300,13 @@ describe('entries never show chat text, ruling reasons, addresses or IP addresse
     await deps.db.query('alter table activity_log disable trigger user');
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into activity_log (at, actor_kind, actor_id, actor_role, trade_code, action, detail, prev_hash, hash)
-       values ($1, 'staff', $2, 'mod', $3, 'chat.read', $4, (select hash from activity_log order by id desc limit 1), '\\x00')
+       values ($1, 'staff', $2, 'mod', $3, 'chat.read', $4, (select hash from activity_log order by id desc limit 1), decode(repeat('00', 32), 'hex'))
        returning id::text as id`,
       [deps.clock(), mod.id, A.code, JSON.stringify({ text: CHAT, ip: IP, address: addresses[0] })],
     );
     await deps.db.query(
       `insert into activity_log (at, actor_kind, trade_code, action, detail, prev_hash, hash)
-       values ($1, 'system', $2, 'trade.chain', 'not json', '\\x00', '\\x01')`,
+       values ($1, 'system', $2, 'trade.chain', 'not json', decode(repeat('02', 32), 'hex'), decode(repeat('01', 32), 'hex'))`,
       [deps.clock(), A.code],
     );
     await deps.db.query('alter table activity_log enable trigger user');

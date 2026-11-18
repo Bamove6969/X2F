@@ -123,7 +123,7 @@ export function staffTrainingRoutes(app: FastifyInstance): void {
       'select round, outcome, reason, evidence, moderator_name, ruled_at from dispute_rulings where code = $1 and seq = $2 order by round',
       [r.code, r.seq],
     );
-    const appeal = await db.query<{ by: string; why: string; at: Date }>('select by, why, at from dispute_appeals where code = $1 and seq = $2', [r.code, r.seq]);
+    const appeal = await db.query<{ by: string; why: string; at: Date }>('select a.by, a.why, a.at from dispute_appeals a where a.code = $1 and a.seq = $2', [r.code, r.seq]);
     const names = await caseNames(db, r, rulings.rows.map((x) => x.moderator_name));
     const scrub = (t: string): Scrubbed => anonymizeText(t, names, [r.code]);
     // The case's own log entries from its opening to its closing (an earlier or later dispute on the same trade is not this case).

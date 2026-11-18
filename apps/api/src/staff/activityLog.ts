@@ -4,7 +4,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { LOG_KINDS, assertDetail, isLogAction, isLogKind, type LogKind } from '../log/actions.js';
-import { LOG_PAGE_MAX, queryLog, type LogEntry } from '../log/query.js';
+import { queryLog, type LogEntry } from '../log/query.js';
 import { verifyLogChain } from '../log/verify.js';
 import { getMethod } from '../methods/profiles.js';
 import { requireStaff } from './guard.js';
@@ -30,6 +30,8 @@ import { requireStaff } from './guard.js';
  */
 
 export const LOG_PAGE = 50;
+/** The largest page a caller may ask for (one more row is read to know whether an older page exists). */
+export const LOG_LIMIT_MAX = 100;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^[1-9]\d{0,18}$/;
@@ -124,7 +126,7 @@ export function staffLogRoutes(app: FastifyInstance): void {
     if (from && to && from >= to) throw new ApiError(400, 'bad-request');
     if (s.before !== undefined && !ID.test(s.before)) throw new ApiError(400, 'bad-request');
     const limit = s.limit === undefined ? LOG_PAGE : Number(s.limit);
-    if (!Number.isInteger(limit) || limit < 1 || limit > LOG_PAGE_MAX) throw new ApiError(400, 'bad-request');
+    if (!Number.isInteger(limit) || limit < 1 || limit > LOG_LIMIT_MAX) throw new ApiError(400, 'bad-request');
 
     const db = req.server.deps.db;
     // One more than the page, to know whether an older page exists.
