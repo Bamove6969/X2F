@@ -266,17 +266,21 @@ describe('build task 9: a staff device seals, moderation countersigns (x2f/mod-c
     await expect(signChatEnvelope({ ...body, extra: 1 }, mod)).rejects.toBeInstanceOf(ProtocolError);
   });
 
-  it('the countersign binds the channel, seq, ciphertext, requestId and issuedAt to the device key', async () => {
+  it('the countersign binds the channel, seq, nonce (review N7), ciphertext, requestId and issuedAt to the device key', async () => {
     const device = await generateIdentity();
     const tk = await newChatKey();
     const body = await encryptChat({ trade: 'chan-1', from: 'mod', seq: 3, type: 'chat.msg', payload: { text: 'hi' }, tk });
     const c = await makeModCountersign({ body, requestId: 'a'.repeat(32), issuedAt: '2026-11-18T12:00:00.000Z', me: device });
     expect(await verifyModCountersign(c, { body, signPublic: device.signPublic })).toEqual(c);
+    expect(c.nonce).toBe(body.nonce);
     const other = await encryptChat({ trade: 'chan-1', from: 'mod', seq: 3, type: 'chat.msg', payload: { text: 'other words' }, tk });
     const stranger = await generateIdentity();
     for (const [why, raw, b, pk] of [
       ['other ciphertext', c, other, device.signPublic],
       ['other seq', c, { ...body, seq: 4 }, device.signPublic],
+      // Review N7: an API that swaps the nonce would have the moderator sign an envelope nobody opens.
+      ['other nonce', c, { ...body, nonce: other.nonce }, device.signPublic],
+      ['other nonce in the countersign too', { ...c, nonce: other.nonce }, { ...body, nonce: other.nonce }, device.signPublic],
       ['other chat', c, { ...body, trade: 'chan-2' }, device.signPublic],
       ['other key', c, body, stranger.signPublic],
       ['changed requestId', { ...c, requestId: 'b'.repeat(32) }, body, device.signPublic],

@@ -45,9 +45,11 @@ export type { ApiView } from './apiView.js';
  * - `POST /internal/chat/send` (+ `seq, nonce, ct, ctSha256, requestId, issuedAt, sig`) → 200 `{ envelope }`:
  *   the countersign (x2f/mod-countersign/v1, lead 18 Nov) must verify by the device's certified
  *   signing key over this exact message (400 `bad-countersign`), its issuedAt be at most 5 minutes
- *   old and 1 minute ahead (403 `stale-countersign`), its requestId never seen (403 `replayed`), and
- *   `seq` this chat's next moderator seq (409 `stale-seq`, with `nextSeq`). Then, in one transaction,
- *   the entry is used, the requestId and the seq taken and a `mod_chat_access` row (`send`) written;
+ *   old and 1 minute ahead (403 `stale-countersign`), its requestId never seen (403 `replayed`; review
+ *   N6: the requestId of a countersign that verified is taken at once, so one refused for any later
+ *   reason is spent), and `seq` this chat's next moderator seq (409 `stale-seq`, with `nextSeq`). The
+ *   countersign binds the nonce too (review N7). Then, in one transaction,
+ *   the entry is used, the seq taken and a `mod_chat_access` row (`send`) written;
  *   then the envelope is signed as `from: 'mod'` with the chat's moderator identity. This process
  *   never decrypts it: it signs only what a staff device on the case sealed and signed.
  *
@@ -269,11 +271,16 @@ async function send(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse):
   let cs;
   try {
     // By the device's CERTIFIED signing key (the gate's record), over this channel, seq and ciphertext.
-    cs = await verifyModCountersign({ chat: c.channel, seq: o.seq, ctSha256: o.ctSha256, requestId: o.requestId, issuedAt: o.issuedAt, sig: o.sig }, { body, signPublic: device.signPublic });
+    cs = await verifyModCountersign({ chat: c.channel, seq: o.seq, nonce: o.nonce, ctSha256: o.ctSha256, requestId: o.requestId, issuedAt: o.issuedAt, sig: o.sig }, { body, signPublic: device.signPublic });
   } catch (err) {
     if (err instanceof ProtocolError || err instanceof TypeError) throw new Refusal(400, 'bad-countersign');
     throw err;
   }
+  // Review N6: a countersign that verified is spent at once, in its own committed statement, before
+  // any later check can refuse it (freshness, the seq): one refused for a seq that is not next can
+  // never be shown again once the seq catches up. Staff-web seals a retry with a new requestId.
+  const fresh = await d.db.query('insert into mod_countersign_requests (request_id, chat, at) values ($1, $2, $3) on conflict (request_id) do nothing', [cs.requestId, c.chat, now]);
+  if (fresh.rowCount !== 1) throw new Refusal(403, 'replayed');
   const age = now.getTime() - Date.parse(cs.issuedAt);
   if (age > COUNTERSIGN_MAX_AGE_MS || age < -COUNTERSIGN_MAX_AHEAD_MS) throw new Refusal(403, 'stale-countersign');
   // Signed only once everything is taken, so a refused send signs nothing; checked before it is taken.
@@ -289,8 +296,6 @@ async function send(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse):
     await client.query('begin');
     const used = await client.query('insert into used_log_entries (id, action, trade) values ($1, $2, $3) on conflict (id) do nothing', [b.logEntryId, e.action, b.code]);
     if (used.rowCount !== 1) throw new Refusal(403, 'log-entry-invalid');
-    const fresh = await client.query('insert into mod_countersign_requests (request_id, chat, at) values ($1, $2, $3) on conflict (request_id) do nothing', [cs.requestId, c.chat, now]);
-    if (fresh.rowCount !== 1) throw new Refusal(403, 'replayed');
     await client.query('insert into mod_chat_seq (chat, next_seq) values ($1, 0) on conflict (chat) do nothing', [c.chat]);
     const { rows } = await client.query<{ next_seq: string }>('select next_seq::text from mod_chat_seq where chat = $1 for update', [c.chat]);
     const next = Number(rows[0]!.next_seq);

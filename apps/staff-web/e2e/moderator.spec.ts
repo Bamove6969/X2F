@@ -280,7 +280,7 @@ async function stub(page: Page, o: { key?: SoftKey; certified?: boolean } = {}):
       if (d === undefined) return json({ error: 'device-not-certified' }, 403)(route);
       const body: ChatEnvelopeV2Body = { v: 2, trade: w.channel, from: 'mod', seq: b.seq as number, nonce: String(b.nonce), ct: String(b.ct) };
       try {
-        await verifyModCountersign({ chat: w.channel, seq: b.seq, ctSha256: b.ctSha256, requestId: b.requestId, issuedAt: b.issuedAt, sig: b.sig }, { body, signPublic: d.signPublic });
+        await verifyModCountersign({ chat: w.channel, seq: b.seq, nonce: b.nonce, ctSha256: b.ctSha256, requestId: b.requestId, issuedAt: b.issuedAt, sig: b.sig }, { body, signPublic: d.signPublic });
       } catch {
         return json({ error: 'bad-countersign' }, 400)(route);
       }

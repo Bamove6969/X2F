@@ -229,8 +229,10 @@ const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 /**
  * Lead 18 Nov: what a certified staff device signs for one moderator message, so the moderation
  * service seals only text a staff member's device sent (never the API's word): Ed25519 by the device
- * key over `x2f/mod-countersign/v1\0` + canonical JSON of `{chat, seq, ctSha256, requestId,
- * issuedAt}`. `chat` is the chat's channel (the envelope's `trade`), `ctSha256` the lower-case hex
+ * key over `x2f/mod-countersign/v1\0` + canonical JSON of `{chat, seq, nonce, ctSha256, requestId,
+ * issuedAt}`. `chat` is the chat's channel (the envelope's `trade`), `nonce` the envelope's nonce
+ * exactly as sealed (review N7: else the API could swap it and have the moderator sign an envelope
+ * nobody can open; v1 had not landed, so it changed in place), `ctSha256` the lower-case hex
  * SHA-256 of the ciphertext's bytes, `requestId` 16 random bytes as hex, `issuedAt` the device's ISO
  * time with milliseconds. Single use: seq is unique per chat in envelope v2, and the moderation
  * service refuses a requestId it has seen and an issuedAt older than 5 minutes.
@@ -238,6 +240,7 @@ const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 export interface ModCountersign {
   chat: string;
   seq: number;
+  nonce: string;
   ctSha256: string;
   requestId: string;
   issuedAt: string;
@@ -252,7 +255,7 @@ async function ctSha256Of(ct: string): Promise<string> {
 }
 
 function countersignBytes(c: Omit<ModCountersign, 'sig'>): Uint8Array {
-  return utf8.encode(COUNTERSIGN_DOMAIN + canonicalJson({ chat: c.chat, seq: c.seq, ctSha256: c.ctSha256, requestId: c.requestId, issuedAt: c.issuedAt }));
+  return utf8.encode(COUNTERSIGN_DOMAIN + canonicalJson({ chat: c.chat, seq: c.seq, nonce: c.nonce, ctSha256: c.ctSha256, requestId: c.requestId, issuedAt: c.issuedAt }));
 }
 
 /** The staff device's countersign of a sealed moderator body (`encryptChat` with from 'mod'). */
@@ -260,7 +263,8 @@ export async function makeModCountersign(a: { body: ChatEnvelopeV2Body; requestI
   await sodium.ready;
   if (a.body.from !== 'mod' || !isValidTrade(a.body.trade) || !isValidSeq(a.body.seq)) throw new TypeError('makeModCountersign: a moderator body');
   if (!REQUEST_ID.test(a.requestId) || !ISO_MS.test(a.issuedAt) || Number.isNaN(Date.parse(a.issuedAt))) throw new TypeError('makeModCountersign: invalid requestId or issuedAt');
-  const c = { chat: a.body.trade, seq: a.body.seq, ctSha256: await ctSha256Of(a.body.ct), requestId: a.requestId, issuedAt: a.issuedAt };
+  b64Field(a.body.nonce, (n) => n === NONCE_LEN, b64Len(NONCE_LEN), 'nonce');
+  const c = { chat: a.body.trade, seq: a.body.seq, nonce: a.body.nonce, ctSha256: await ctSha256Of(a.body.ct), requestId: a.requestId, issuedAt: a.issuedAt };
   const secret = signerSecret(a.me, undefined, 'makeModCountersign');
   return { ...c, sig: sodium.to_hex(sodium.crypto_sign_detached(countersignBytes(c), secret)) };
 }
@@ -271,14 +275,16 @@ export async function makeModCountersign(a: { body: ChatEnvelopeV2Body; requestI
  */
 export async function verifyModCountersign(raw: unknown, a: { body: ChatEnvelopeV2Body; signPublic: string }): Promise<ModCountersign> {
   await sodium.ready;
-  const s = snapshot(raw, ['chat', 'seq', 'ctSha256', 'requestId', 'issuedAt', 'sig'], 'countersign');
+  const s = snapshot(raw, ['chat', 'seq', 'nonce', 'ctSha256', 'requestId', 'issuedAt', 'sig'], 'countersign');
   if (typeof s['requestId'] !== 'string' || !REQUEST_ID.test(s['requestId']) || typeof s['issuedAt'] !== 'string' || !ISO_MS.test(s['issuedAt']) || Number.isNaN(Date.parse(s['issuedAt']))) {
     throw bad('Invalid countersign');
   }
-  if (s['chat'] !== a.body.trade || s['seq'] !== a.body.seq || a.body.from !== 'mod' || s['ctSha256'] !== (await ctSha256Of(a.body.ct))) throw bad('Invalid countersign: not for this message');
+  if (s['chat'] !== a.body.trade || s['seq'] !== a.body.seq || s['nonce'] !== a.body.nonce || a.body.from !== 'mod' || s['ctSha256'] !== (await ctSha256Of(a.body.ct))) {
+    throw bad('Invalid countersign: not for this message');
+  }
   const pk = hexField(a.signPublic, 32, 'signPublic');
   const sig = hexField(s['sig'], sodium.crypto_sign_BYTES, 'countersign.sig');
-  const c = { chat: s['chat'] as string, seq: s['seq'] as number, ctSha256: s['ctSha256'] as string, requestId: s['requestId'], issuedAt: s['issuedAt'] };
+  const c = { chat: s['chat'] as string, seq: s['seq'] as number, nonce: s['nonce'] as string, ctSha256: s['ctSha256'] as string, requestId: s['requestId'], issuedAt: s['issuedAt'] };
   let ok = false;
   try {
     ok = sodium.crypto_sign_verify_detached(sig, countersignBytes(c), pk);

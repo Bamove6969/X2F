@@ -232,6 +232,27 @@ describe('the gate: revoke-device and revoking a person', () => {
     expect(deviceLive(w.gate, mod.id, second.k.deviceKeyId, NOW)).not.toBeNull();
   });
 
+  it('review N8: in one sync a key\'s device and registry taps are judged together in counter order: the owner\'s certify-device before a set-role still certifies', async () => {
+    const { w, mod } = await staffed();
+    const own = certify(w.owner);
+    // The same owner key, a later counter: a registry tap (step 2) that runs before the device step.
+    const role = tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'senior' });
+    w.api.taps.push(own.tap, role);
+    const reasons: string[] = [];
+    await sync(w, NOW, reasons);
+    expect(reasons).not.toContain('gate.refused.device-out-of-order');
+    expect(deviceLive(w.gate, w.owner.id, own.k.deviceKeyId, NOW)).not.toBeNull();
+    expect(w.gate.staff[mod.id]!.role).toBe('senior');
+    // And a device tap counted earlier than a registry tap of an EARLIER sync is still out of order.
+    const stale = certify(w.owner);
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'mod' }, { issuedAt: at(1000) }));
+    await sync(w, at(1000));
+    const r2: string[] = [];
+    w.api.taps.push(stale.tap);
+    await sync(w, at(2000), r2);
+    expect(r2).toContain('gate.refused.device-out-of-order');
+  });
+
   it('leaves every other kind of tap alone (unspent) for its own step', async () => {
     const { w, mod } = await staffed();
     // A set-role for someone the gate does not know yet is kept for later, never spent by the device step.

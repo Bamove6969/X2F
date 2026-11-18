@@ -112,6 +112,18 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
     return;
   }
   const now = ctx.now().getTime();
+  // Review N8: every key's signature-counter mark as it stood before this sync, and the counters this
+  // sync's registry steps take, so the device step (5) judges its taps in counter order together
+  // with the registry taps of the same key, not after a mark step 2 already raised.
+  const marksBefore = new Map<string, number>();
+  for (const c of g.ownerCreds) marksBefore.set(`${g.ownerAccountId}\0${c.credentialId}`, c.counter ?? 0);
+  for (const [id, s] of Object.entries(g.staff)) for (const c of s.creds) marksBefore.set(`${id}\0${c.credentialId}`, c.counter ?? 0);
+  const takenThisSync = new Map<string, Set<number>>();
+  const note = (credentialId: string, counter: number): void => {
+    noteCounter(g, ownerId, credentialId, counter);
+    const k = `${ownerId}\0${credentialId}`;
+    takenThisSync.set(k, (takenThisSync.get(k) ?? new Set()).add(counter));
+  };
   const taps = await source.usedTaps(REGISTRY_KINDS);
   // Owner taps only, each verified against the pinned keys.
   const owner: Array<{ tap: StoredTap; intent: KeyTapIntent; credentialId: string; counter: number }> = [];
@@ -176,11 +188,11 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       pending.add(t.tap);
       if (t.intent.kind === 'create-invite') {
         spend(t.tap, `invite:${t.intent.inviteId}`);
-        noteCounter(g, ownerId, credentialId, t.counter);
+        note(credentialId, t.counter);
       } else if (t.intent.kind === 'reset-staff-security') {
         // As an invite: spent at once as this link's, re-read each sync while the link is open.
         spend(t.tap, `reset:${t.intent.inviteId}`);
-        noteCounter(g, ownerId, credentialId, t.counter);
+        note(credentialId, t.counter);
       }
     }
   }
@@ -204,7 +216,7 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
   };
   const accept = (t: { tap: StoredTap; intent: KeyTapIntent; credentialId: string; counter: number }, what: string, subject: string | null): void => {
     spend(t.tap, what);
-    noteCounter(g, ownerId, t.credentialId, t.counter);
+    note(t.credentialId, t.counter);
     const issuedAt = (t.intent as { issuedAt?: string }).issuedAt;
     if (subject !== null) g.applied[subject] = { credentialId: t.credentialId, counter: t.counter, ...(issuedAt !== undefined ? { issuedAt } : {}) };
   };
@@ -453,7 +465,7 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
 
   // 5. Design task 8: staff device certifications and revocations (gate/devices.ts), after every
   //    revocation above, so a person switched off this sync certifies nothing and loses every device.
-  await syncDevices(source, g, ctx);
+  await syncDevices(source, g, ctx, { marksBefore, takenThisSync });
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -94,7 +94,7 @@ describe('sealModMessage', () => {
     const m = await sealModMessage(o, 'Please send your bank statement.', w.device, now);
     expect({ seq: m.seq, issuedAt: m.issuedAt, deviceKeyId: m.deviceKeyId }).toEqual({ seq: 0, issuedAt: now.toISOString(), deviceKeyId: w.device.deviceKeyId });
     const body = { v: 2 as const, trade: w.channel, from: 'mod' as const, seq: m.seq, nonce: m.nonce, ct: m.ct };
-    await expect(verifyModCountersign({ chat: w.channel, seq: m.seq, ctSha256: m.ctSha256, requestId: m.requestId, issuedAt: m.issuedAt, sig: m.sig }, { body, signPublic: w.device.signPublic })).resolves.toBeDefined();
+    await expect(verifyModCountersign({ chat: w.channel, seq: m.seq, nonce: m.nonce, ctSha256: m.ctSha256, requestId: m.requestId, issuedAt: m.issuedAt, sig: m.sig }, { body, signPublic: w.device.signPublic })).resolves.toBeDefined();
     const env = await signChatEnvelope(body, w.ids.mod);
     expect(await openChat(env, { tk: w.tk, trade: w.channel, participants: w.participants, guard: new ReplayGuard(w.channel) })).toEqual({ from: 'mod', type: 'chat.msg', payload: { text: 'Please send your bank statement.' } });
     // A different request id each time.

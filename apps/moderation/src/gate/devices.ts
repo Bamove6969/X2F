@@ -1,7 +1,7 @@
 import { staffDeviceKeyId, type KeyTapIntent } from '@x2f/staff';
 import type { GateSource } from './registry.js';
 import { MAX_STAFF_DEVICES, MAX_TAP_AGE_MS, STAFF_DEVICE_LIFETIME_MS, SWITCH_ON_SKEW_MS, type GateState, type StaffDevice } from './store.js';
-import { noteCounter, olderThanSeen, verifyTap, type GateContext } from './verify.js';
+import { noteCounter, olderThanSeen, verifyTap, type GateContext, type StoredTap } from './verify.js';
 
 /**
  * Chat membership design task 8 (design section 4; lead 18 Nov): staff device certification, so the
@@ -52,8 +52,23 @@ export function deviceLive(g: GateState, accountId: string, deviceKeyId: string,
   return d;
 }
 
-/** Applies new certify-device and revoke-device taps (the caller saves the gate). */
-export async function syncDevices(source: GateSource, g: GateState, ctx: GateContext): Promise<void> {
+/**
+ * Review N8: what the registry sync hands the device step: each key's counter mark (by
+ * `accountId\0credentialId`) before the sync began, and the counters the registry steps took in it.
+ */
+export interface CounterView {
+  marksBefore: ReadonlyMap<string, number>;
+  takenThisSync: ReadonlyMap<string, ReadonlySet<number>>;
+}
+
+/**
+ * Applies new certify-device and revoke-device taps (the caller saves the gate). Review N8: the taps
+ * are judged in each key's counter order, together with the registry taps of the same key in this
+ * sync: a tap is out of order when its counter is at or below the key's mark before this sync (or
+ * the counter of a device tap of the key applied just before it), or is a counter the registry
+ * steps already took in this sync. Without `view`, the key's current mark.
+ */
+export async function syncDevices(source: GateSource, g: GateState, ctx: GateContext, view?: CounterView): Promise<void> {
   const now = ctx.now();
   const at = now.getTime();
   // Every person who no longer stands loses all their devices, whatever taps follow.
@@ -63,6 +78,8 @@ export async function syncDevices(source: GateSource, g: GateState, ctx: GateCon
     g.usedNonces[nonceHex] = `device-refused:${why}`;
     ctx.log({ reason: `gate.refused.device-${why}` });
   };
+  // Verified first, then judged in counter order (review N8).
+  const verified: Array<{ tap: StoredTap; c: Extract<Awaited<ReturnType<typeof verifyTap>>, { ok: true }> }> = [];
   for (const tap of await source.usedTaps(DEVICE_KINDS)) {
     if (typeof tap?.nonceHex !== 'string' || Object.hasOwn(g.usedNonces, tap.nonceHex)) continue;
     // Only a device tap is ever touched here: any other kind is left for its own step, unspent.
@@ -78,7 +95,24 @@ export async function syncDevices(source: GateSource, g: GateState, ctx: GateCon
       refuse(tap.nonceHex, c.reason);
       continue;
     }
-    if (olderThanSeen(g, c.accountId, c.credentialId, c.counter)) {
+    verified.push({ tap, c });
+  }
+  verified.sort((a, b) => a.c.counter - b.c.counter);
+  /** The running mark per key in this step: the mark before the sync, raised by each device tap applied. */
+  const running = new Map<string, number>();
+  const outOfOrder = (accountId: string, credentialId: string, counter: number): boolean => {
+    if (view === undefined) return olderThanSeen(g, accountId, credentialId, counter);
+    const k = `${accountId}\0${credentialId}`;
+    const hw = running.get(k) ?? view.marksBefore.get(k) ?? 0;
+    return (hw > 0 && counter <= hw) || (view.takenThisSync.get(k)?.has(counter) ?? false);
+  };
+  const applied = (accountId: string, credentialId: string, counter: number): void => {
+    noteCounter(g, accountId, credentialId, counter);
+    const k = `${accountId}\0${credentialId}`;
+    running.set(k, Math.max(running.get(k) ?? view?.marksBefore.get(k) ?? 0, counter));
+  };
+  for (const { tap, c } of verified) {
+    if (outOfOrder(c.accountId, c.credentialId, c.counter)) {
       refuse(tap.nonceHex, 'out-of-order');
       continue;
     }
@@ -100,7 +134,7 @@ export async function syncDevices(source: GateSource, g: GateState, ctx: GateCon
         continue;
       }
       g.usedNonces[tap.nonceHex] = `revoke-device:${i.deviceKeyId}`;
-      noteCounter(g, c.accountId, c.credentialId, c.counter);
+      applied(c.accountId, c.credentialId, c.counter);
       if (existing.revokedAt === null) existing.revokedAt = now.toISOString();
       continue;
     }
@@ -137,7 +171,7 @@ export async function syncDevices(source: GateSource, g: GateState, ctx: GateCon
       continue;
     }
     g.usedNonces[tap.nonceHex] = `certify-device:${i.deviceKeyId}`;
-    noteCounter(g, c.accountId, c.credentialId, c.counter);
+    applied(c.accountId, c.credentialId, c.counter);
     g.devices[i.deviceKeyId] = {
       accountId: i.accountId,
       signPublic: i.signPublic,

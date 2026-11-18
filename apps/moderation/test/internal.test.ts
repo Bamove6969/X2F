@@ -436,6 +436,36 @@ describe('the moderator\'s message: a countersign (build task 9, x2f/mod-counter
     expect(await nextSeq(c.chat)).toBe(1);
   });
 
+  it('review N6: a countersign refused once it verified (a seq that is not next) is spent: shown again once the seq catches up, it is refused as replayed', async () => {
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const d = deps(api);
+    // Told a nextSeq one too high, the device sealed seq 1 while the chat is at 0.
+    const early = await sendBody(api, c, 1, { text: 'Said once.' });
+    const r1 = await call(d, SEND, early);
+    expect({ status: r1.status, error: r1.json().error, nextSeq: r1.json().nextSeq }).toEqual({ status: 409, error: 'stale-seq', nextSeq: 0 });
+    expect((await call(d, SEND, await sendBody(api, c, 0))).status).toBe(200);
+    // The held countersign, with a fresh log entry, now that seq 1 is next: refused, nothing taken.
+    const replay = { ...early, logEntryId: api.entry(REQUESTED, c.code) };
+    const r2 = await call(d, SEND, replay);
+    expect({ status: r2.status, error: r2.json().error }).toEqual({ status: 403, error: 'replayed' });
+    expect((await db.query('select 1 from used_log_entries where id = $1', [replay.logEntryId])).rows).toEqual([]);
+    expect(await nextSeq(c.chat)).toBe(1);
+  });
+
+  it('review N7: a nonce swapped after the device signed is refused (bad-countersign); nothing is signed or taken', async () => {
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const d = deps(api);
+    const a = await sendBody(api, c, 0);
+    const other = await sendBody(api, c, 0);
+    const swapped = { ...a, nonce: other.nonce };
+    const res = await call(d, SEND, swapped);
+    expect({ status: res.status, error: res.json().error }).toEqual({ status: 400, error: 'bad-countersign' });
+    expect((await db.query('select 1 from used_log_entries where id = $1', [swapped.logEntryId])).rows).toEqual([]);
+    expect(await nextSeq(c.chat)).toBe(0);
+  });
+
   it('two identical sends at once: exactly one is signed', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
