@@ -626,3 +626,27 @@ describe('the staff-scope actor list (review m5)', () => {
     expect((await page(mod.b, `?code=${A.code}&limit=100`)).entries.map((e) => e.action)).not.toContain('pay.clawback');
   });
 });
+
+// OWNER p12-11 through this route (merge of train-2's log page with mod-chat's CHAT_READ_VISIBILITY):
+// the page passes the reader's role, so a senior sees the chat.read entries on their own cases and
+// a moderator only their own; the owner sees all. Last in the file: it adds log entries.
+describe('chat.read entries on the log page follow the reader\'s role (OWNER p12-11)', () => {
+  it('the owner sees every chat.read, a senior those on their cases, a moderator only their own', async () => {
+    // C is the senior's case (they opened it above); A is the moderator's alone.
+    await log({ actor: staffActor(senior, 'senior'), tradeCode: C.code, action: 'chat.read' });
+    await log({ actor: staffActor(mod, 'mod'), tradeCode: C.code, action: 'chat.read' });
+    // Who read which case (an earlier test logs another read on A: the set, not the count).
+    const reads = async (b: StaffBrowser) => [
+      ...new Set(
+        (await page(b, '?limit=100&kind=chat')).entries
+          .filter((e) => e.action === 'chat.read')
+          .map((e) => `${e.actor.id === senior.id ? 'senior' : e.actor.id === mod.id ? 'mod' : '?'}@${e.tradeCode === A.code ? 'A' : e.tradeCode === C.code ? 'C' : '?'}`),
+      ),
+    ].sort();
+    expect(await reads(owner.b)).toEqual(['mod@A', 'mod@C', 'senior@C']);
+    // The senior: their own read and the moderator's read on the senior's case C; never mod@A.
+    expect(await reads(senior.b)).toEqual(['mod@C', 'senior@C']);
+    // The moderator: only their own reads, never the senior's.
+    expect(await reads(mod.b)).toEqual(['mod@A', 'mod@C']);
+  });
+});

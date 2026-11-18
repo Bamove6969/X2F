@@ -365,7 +365,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'Can I chat with the other trader?',
     a: 'Yes. Every trade has its own chat, and messages are encrypted on your device before they are sent.',
-    sources: [`${T}/chat.ts:10 CHAT_MSG_TYPE`, `${SPEC}:163 Every chat message is sealed`],
+    sources: [`${T}/chat.ts:10 CHAT_MSG_TYPE`, `${SPEC}:163 Every chat message is an envelope v2 under TK`],
   },
   {
     id: 'payment-proof',
@@ -556,18 +556,18 @@ const ENTRIES: readonly Entry[] = [
     q: 'What does the moderator see?',
     proofUpload: {
       off: {
-        a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there. Reading the trade\'s earlier chat is not part of the moderator\'s screens yet.',
-        sources: ['apps/staff-web/src/screens/ModCase.tsx:86-88 the traders, the payment proof, the escrow', 'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP'],
+        a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there. The moderator can also open the trade\'s full chat, on a confirmed staff device.',
+        sources: ['apps/staff-web/src/screens/ModCase.tsx:86-88 the traders, the payment proof, the escrow', 'apps/staff-web/src/screens/ModCase.tsx:95-96 "Open the full chat" asks the API for the chat key re-wrapped to this'],
       },
       on: {
-        a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there, and can request unblurred proof: a copy of your payment proof with nothing blurred, sealed for the moderator only, though the moderator\'s screens do not open it yet. Reading the trade\'s earlier chat is not part of the moderator\'s screens yet.',
+        a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there, and can request unblurred proof: a copy of your payment proof with nothing blurred, sealed for the moderator only, though the moderator\'s screens do not open it yet. The moderator can also open the trade\'s full chat, on a confirmed staff device.',
         sources: [
           'apps/staff-web/src/screens/ModCase.tsx:86-88 the traders, the payment proof, the escrow',
           'apps/staff-web/src/screens/ModCase.tsx:442 Request unblurred proof from',
           `${WEB}/dispute/seams.tsx:99 proofUploadOn() || request === null`,
           'apps/web/src/proof/upload.ts:359 Seal `proof.unblurred` to the moderator only',
           'apps/staff-web/src/screens/ModCase.tsx:436 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
-          'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP',
+          'apps/staff-web/src/screens/ModCase.tsx:95-96 "Open the full chat" asks the API for the chat key re-wrapped to this',
         ],
       },
     },
@@ -819,8 +819,13 @@ const ENTRIES: readonly Entry[] = [
     id: 'who-reads-chat',
     topic: 'privacy',
     q: 'Can X2F read my chats?',
-    a: 'Chats are encrypted for the buyer, the seller and X2F\'s moderation service, so nobody else can read them on the way or from X2F\'s main database. X2F\'s rule is that staff look at a trade\'s chat only when it is disputed; today that is a rule, not a technical lock.',
-    sources: [`${SPEC}:163-167 can decrypt every chat`, 'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP'],
+    a: 'Chats are encrypted with a key only the buyer and the seller hold, so nobody else can read them on the way or from X2F\'s main database. When a dispute opens, the key goes to X2F\'s moderation service, so the moderators handling the dispute can read the chat.',
+    sources: [
+      `${SPEC}:166 can decrypt a chat only after a trader's app has granted it TK`,
+      'apps/web/src/chat/engine.ts:51 One key per chat, envelope v2',
+      "apps/web/src/chat/engine.ts:191 this trader's signed grant of the chat key to the chat's",
+      'apps/staff-web/src/screens/ModCase.tsx:95-96 "Open the full chat" asks the API for the chat key re-wrapped to this',
+    ],
   },
   {
     id: 'pgp-key-name',
