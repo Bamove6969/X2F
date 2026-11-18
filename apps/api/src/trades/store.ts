@@ -10,6 +10,7 @@ import { bookTradeRevenue } from '../staff/revenue.js';
 import { eraseReversedReviews } from '../reviews/store.js';
 import { countActionTimes, countFastPayment } from '../traders/actionTimes.js';
 import { countCancel, countTradeTotals } from '../traders/tradedTotal.js';
+import { restoreOneTimeWallets } from '../wallets/routes.js';
 
 /**
  * Called after an event is committed (the app passes Task 19's `tradeEventPublisher`: SSE, Web
@@ -372,6 +373,18 @@ export async function applyEvent(
       if (!row) throw new ApiError(404, 'not-found');
       const now = deps.clock();
       const prev = rowToTrade(row);
+      // Review of wip/third-trade-wallet 17 Nov (b), B2: a trade in setup that used up a one-time
+      // wallet may give it back below (`restoreOneTimeWallets`), which locks the wallet owner's
+      // account. Lock both parties here, in id order, right after the trade row and before `before`
+      // (whose live-session check locks the caller's account): the lock order is then "trade row,
+      // then both accounts in id order" (migration 016's), the later account locks are re-entrant,
+      // and a take (which locks [taker, poster] in id order and holds no trade row) cannot close a cycle.
+      if (prev.state === 'setup') {
+        const used = await client.query('select 1 from wallets where used_by_trade = $1 limit 1', [code]);
+        if (used.rows.length > 0) {
+          await client.query('select id from accounts where id = any($1) order by id for update', [[prev.sellerId, prev.buyerId]]);
+        }
+      }
       if (before && (await before(client, now, prev)) === 'stop') {
         await client.query('commit');
         return prev;
@@ -402,6 +415,12 @@ export async function applyEvent(
       // C12b: a completed trade adds its take-time USD value to both sides' running totals; J-21: a
       // cancel of any kind adds one to the cancel figure of the side that ended it (idempotent per
       // trade; traders/tradedTotal.ts). A trade closed as `cancelled` pays nothing, so only the figure.
+      // Owner 17 Nov 2026 (note #6 Q10): a trade that ends straight from setup, nothing funded, gives
+      // back the one-time wallets it used up (wallet bookkeeping only; wallets/routes.ts). Never once
+      // the trade got past setup or any XMR was seen. Before countCancel, which writes an account row.
+      if (prev.state === 'setup' && next.state === 'cancelled' && next.receivedAtomic === 0n && next.fundingSeenAt === null) {
+        await restoreOneTimeWallets(client, code, [next.sellerId, next.buyerId], now);
+      }
       if (next.state !== prev.state && next.state === 'cancelled') await countCancel(client, code);
       if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) {
         await countTradeTotals(client, code);

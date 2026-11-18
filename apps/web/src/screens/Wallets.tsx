@@ -28,6 +28,9 @@ import {
 } from './wallets-model.js';
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
+import { ChoiceGroup } from '../ui/Choice.js';
+import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG } from './walletsCopy.js';
+import { matchesRecord, recordStagedAddress, recordTypedAddress } from './walletRecord.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -54,7 +57,8 @@ function addCantDo(e: unknown): CantDoCode | null {
 
 const ADD_FAILED = 'That could not be saved. Check the addresses and try again.';
 
-function addError(e: unknown): string {
+/** The add's error line (shared with the quote's new-address sheet, owner note #6). */
+export function addError(e: unknown): string {
   if (e instanceof ApiCallError || e instanceof AuthApiError) {
     if (e.code === 'address-invalid') return "One of those doesn't look like a Monero address on this network.";
     if (e.code === 'address-integrated') return 'Use a plain address, not an integrated address.';
@@ -171,8 +175,13 @@ function useOpenEscrowKeys(): string[] {
   return codes;
 }
 
-function WalletRow({ w, onRemove }: { w: WalletView; onRemove: (w: WalletView) => void }) {
-  const status = walletStatus(w);
+function WalletRow({ w, onRemove, onMakeDefault }: { w: WalletView; onRemove: (w: WalletView) => void; onMakeDefault: (w: WalletView) => void }) {
+  // Review 17 Nov (b) M1: a one-time wallet a trade in setup is using; it can still be removed.
+  const inUse = typeof w.inUseByTrade === 'string' ? w.inUseByTrade : null;
+  const status = inUse !== null ? { label: IN_USE_WORD, tone: 'waiting' as const } : walletStatus(w);
+  // Review 17 Nov M4: a row naming another address than the one typed on this device for that id
+  // (walletRecord.ts) is marked, and is never offered as the default the trade screen picks first.
+  const matches = matchesRecord(w);
   return (
     <li className="x2f-wallet-row">
       <span className="x2f-wallet-row__icon" aria-hidden="true">
@@ -182,13 +191,31 @@ function WalletRow({ w, onRemove }: { w: WalletView; onRemove: (w: WalletView) =
         <span className="x2f-wallet-row__name">{w.label}</span>
         <span className="x2f-wallet-row__addr">
           <span>…{w.addressEnd}</span>
+          {w.oneTime === true ? <span data-part="one-time"> · {ONE_TIME_TAG}</span> : null}
+          {w.isDefault === true ? <span data-part="default"> · {DEFAULT_TAG}</span> : null}
         </span>
+        {matches ? null : (
+          <span className="x2f-wallet-row__note" data-part="not-matching">
+            {NOT_MATCHING}
+          </span>
+        )}
+        {/* Owner, 17 Nov 2026: any saved wallet may be the default the trade screen picks first, once it
+            works (review 17 Nov M1: the API refuses a waiting wallet, 409 wallet-not-ready). */}
+        {w.isDefault !== true && w.oneTime !== true && w.usable && matches ? (
+          <button type="button" className="x2f-link x2f-wallet-row__default" data-part="make-default" onClick={() => onMakeDefault(w)}>
+            {MAKE_DEFAULT}
+          </button>
+        ) : null}
       </span>
       <span className="x2f-wallet-row__status">
         <span className="x2f-wallet-row__word" data-tone={status.tone}>
           {status.label}
         </span>
-        {w.usable ? null : <span className="x2f-wallet-row__note">Until {when(w.usableFrom)}</span>}
+        {inUse !== null ? (
+          <span className="x2f-wallet-row__note" data-part="in-use">{IN_USE_NOTE(inUse)}</span>
+        ) : w.usable ? null : (
+          <span className="x2f-wallet-row__note">Until {when(w.usableFrom)}</span>
+        )}
       </span>
       <button type="button" className="x2f-icon-button" aria-label={`Remove ${w.label}`} onClick={() => onRemove(w)}>
         <Icon name="close" size={20} />
@@ -265,6 +292,8 @@ function WalletsScreen() {
   const [app, setApp] = useState<WalletApp>('cake');
   const [label, setLabel] = useState('');
   const [address, setAddress] = useState('');
+  // Owner demo note #6: each new wallet is for future trades (the default) or for one trade only.
+  const [keepFor, setKeepFor] = useState<'saved' | 'one-time'>('saved');
   const [batch, setBatch] = useState<WalletDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -297,9 +326,10 @@ function WalletsScreen() {
   useEffect(() => {
     if (!addMode || wallets === null || arrived.current) return;
     arrived.current = true;
-    if (wallets.length > 0 && wallets.every((w) => !w.usable)) {
-      const first = wallets.map((w) => w.usableFrom).sort()[0] as string;
-      setNotice(`Your ${wallets.length === 1 ? 'wallet' : 'wallets'} can be paid from ${when(first)}.`);
+    const open = wallets.filter((w) => typeof w.inUseByTrade !== 'string');
+    if (open.length > 0 && open.every((w) => !w.usable)) {
+      const first = open.map((w) => w.usableFrom).sort()[0] as string;
+      setNotice(`Your ${open.length === 1 ? 'wallet' : 'wallets'} can be paid from ${when(first)}.`);
     } else {
       setPopup(true);
     }
@@ -315,7 +345,7 @@ function WalletsScreen() {
 
   /** The wallet in the form, with the next neutral name when the name is left empty. */
   function current(): WalletDraft {
-    return { app, label: label.trim() || nextWalletName(known), address: trimmed };
+    return { app, label: label.trim() || nextWalletName(known), address: trimmed, ...(keepFor === 'one-time' ? { oneTime: true } : {}) };
   }
 
   function duplicate(addr: string): boolean {
@@ -365,6 +395,8 @@ function WalletsScreen() {
       // Hold model v3: added from a username-and-password login (a PGP key login is strong, owner
       // Q81), the wallets are a draft to review and submit (202 staged): nothing is listed yet.
       if (isStaged(result)) {
+        // Re-verify O3: no ids yet, so each address typed is recorded by itself (walletRecord.ts).
+        for (const d of drafts) recordStagedAddress(d.address);
         setBatch([]);
         setLabel('');
         setAddress('');
@@ -373,6 +405,17 @@ function WalletsScreen() {
         return;
       }
       const saved = result;
+      // Review 17 Nov M4: this device keeps the address typed for each id the API gave (walletRecord.ts),
+      // so the quote and the accepted sheet refuse any later list naming another. The answer itself
+      // must carry exactly the addresses typed, in order: one naming another is not shown as saved.
+      saved.forEach((w, i) => {
+        const typed = drafts[i]?.address;
+        if (typed !== undefined) recordTypedAddress(w.id, typed);
+      });
+      if (saved.length !== drafts.length || saved.some((w, i) => w.address !== drafts[i]!.address)) {
+        setError(ADD_SWAPPED);
+        return;
+      }
       // Sent here by a 409 no-wallet: go back only when every new wallet can be paid now. A wallet
       // that waits would send the take straight back here (no-wallet again), so the screen stays,
       // shows the wait, and Back returns to returnTo.
@@ -425,6 +468,17 @@ function WalletsScreen() {
     }
   }
 
+  /** Owner, 17 Nov 2026: the default payout wallet. The list is read again: the API marks the default. */
+  async function makeDefault(w: WalletView) {
+    setError(null);
+    try {
+      await api<unknown>(`/v1/wallets/${encodeURIComponent(w.id)}/default`, { method: 'PUT', body: {} });
+      void api<WalletView[]>('/v1/wallets').then(setWallets, () => undefined);
+    } catch {
+      setError(MAKE_DEFAULT_FAILED);
+    }
+  }
+
   const keyCount = codes.length;
 
   return (
@@ -454,7 +508,7 @@ function WalletsScreen() {
             <h2 className="x2f-wallets__section-label">Linked wallets</h2>
             <ul className="x2f-wallets__list">
               {wallets.map((w) => (
-                <WalletRow key={w.id} w={w} onRemove={remove} />
+                <WalletRow key={w.id} w={w} onRemove={remove} onMakeDefault={(x) => void makeDefault(x)} />
               ))}
             </ul>
           </section>
@@ -473,6 +527,7 @@ function WalletsScreen() {
                   <li key={d.address} className="x2f-wallets__batch-item">
                     <span>
                       {d.label} · {APP_LABELS[d.app]} · <span className="x2f-wallets__mono">…{d.address.slice(-6)}</span>
+                      {d.oneTime === true ? ` · ${ONE_TIME_TAG}` : ''}
                     </span>
                     <button
                       type="button"
@@ -553,6 +608,21 @@ function WalletsScreen() {
             <span className="x2f-wallets__confirm-note">
               For extra privacy, paste a fresh address from your wallet for each trade.
             </span>
+
+            <span id="wallet-keep-for" className="x2f-wallets__field">
+              {KEEP_FOR.legend}
+            </span>
+            <ChoiceGroup
+              look="card"
+              labelledBy="wallet-keep-for"
+              part="wallet-keep-for"
+              value={keepFor}
+              onChange={setKeepFor}
+              options={[
+                { value: 'saved', label: KEEP_FOR.saved, note: KEEP_FOR.savedNote },
+                { value: 'one-time', label: KEEP_FOR.oneTime, note: KEEP_FOR.oneTimeNote },
+              ]}
+            />
 
             <Button
               variant="secondary"

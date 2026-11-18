@@ -17,6 +17,8 @@ import { authApi } from '../auth/authApi.js';
 import { SetupFrame, SetupIntro, radioProps, useSetup } from './kit.js';
 import { errorCode } from './register.js';
 import { APP_LABELS, WALLET_APPS, appPromptName, nextWalletName } from '../wallets-model.js';
+import { recordStagedAddress, recordTypedAddress } from '../walletRecord.js';
+import { ADD_SWAPPED } from '../walletsCopy.js';
 
 /** The first wallet's name: neutral, never where the money comes from (spec 6.3, "Labels"). */
 const FIRST_WALLET_LABEL = nextWalletName(0);
@@ -64,7 +66,20 @@ export function Wallet() {
       );
       // Hold model v3: after the sign-up window a username-and-password login adds no wallet at once
       // (202 staged): it is a draft, reviewed and submitted under Account changes.
-      const added = isStaged(result) ? undefined : result[0];
+      const list = isStaged(result) ? undefined : result;
+      // Re-verify O3: a staged add has no id yet, so the address typed is recorded by itself (walletRecord.ts).
+      if (list === undefined) recordStagedAddress(trimmed);
+      const added = list?.[0];
+      // Review 17 Nov M4: this device keeps the address typed under the id the API gave it
+      // (walletRecord.ts), as Settings → Your wallets does, so the quote, the accepted sheet and the
+      // list refuse a later answer naming another. An answer naming another is not taken as saved.
+      if (added !== undefined) {
+        recordTypedAddress(added.id, trimmed);
+        if (list!.length !== 1 || added.address !== trimmed) {
+          setError(ADD_SWAPPED);
+          return;
+        }
+      }
       update({ wallet: { app, addressEnd: added?.addressEnd ?? trimmed.slice(-4) } });
       go('welcome');
     } catch (e) {

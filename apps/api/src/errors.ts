@@ -84,6 +84,8 @@ export type ApiErrorCode =
   | 'out-of-range'
   | 'not-enough-trades'
   | 'wallet-not-ready'
+  // Owner 17 Nov 2026 (note #6 Q1): a one-time wallet cannot be made the default.
+  | 'wallet-one-time'
   | 'already-waiting'
   | 'ad-busy'
   | 'price-changed'

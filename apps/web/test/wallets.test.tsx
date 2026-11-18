@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { walletsAction, type WalletRule } from '@x2f/auth-client';
 import { CONFIRM_INVALID_WALLETS, RECOVERY_SESSION_WALLETS, Wallets } from '../src/screens/Wallets.js';
 import type { WalletView } from '../src/screens/wallets-model.js';
+import { KEEP_FOR } from '../src/screens/walletsCopy.js';
+import { NEW_ADDRESS } from '../src/screens/quote/addressCopy.js';
+import { forgetTypedAddresses, recordTypedAddress, typedAddressOf } from '../src/screens/walletRecord.js';
 import { fire, render } from './render.js';
 
 const address = (seed: string, end: string) => `4${seed.repeat(95).slice(0, 88)}${end}`;
@@ -53,6 +56,8 @@ function created(body: Record<string, unknown>, usableFrom: string, usable: bool
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  forgetTypedAddresses();
   stub = {
     wallets: [READY],
     rule: RULE_PASSWORD_ONLY,
@@ -73,6 +78,7 @@ beforeEach(() => {
         return json(a.status, a.json);
       }
       if (url === '/v1/wallets/rule') return json(200, stub.rule);
+      if (url.startsWith('/v1/wallets/') && url.endsWith('/default') && method === 'PUT') return json(204, null);
       if (url.startsWith('/v1/wallets/') && method === 'DELETE') return json(stub.removeStaged ? 202 : 204, { status: 'staged', changeId: 'c-1' });
       if (url === '/v1/account/me') return json(200, { methods: ['password'] });
       if (url === '/v1/confirm/password') return json(200, { confirmToken: 'tok-1' });
@@ -313,5 +319,174 @@ describe('Your wallets', () => {
     stub.wallets = [];
     await mount('/wallets?add=1&returnTo=%2Fbuy');
     expect(dialog('Before you add a wallet')).not.toBeNull();
+  });
+});
+
+describe('one trade only or future trades (owner demo note #6)', () => {
+  function pickKeep(value: 'saved' | 'one-time'): void {
+    const input = document.querySelector<HTMLInputElement>(`[data-part="wallet-keep-for"] input[value="${value}"]`);
+    if (!input) throw new Error(`no keep-for choice ${value}`);
+    fire(input, new MouseEvent('click', { bubbles: true }));
+  }
+
+  it('saves for future trades by default (no oneTime sent), and sends oneTime: true for one trade only', async () => {
+    stub.rule = RULE_FIRST;
+    stub.wallets = [];
+    stub.onPost = (body) => ({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', true) });
+    await mount();
+    await startAdding();
+    expect(document.querySelector<HTMLInputElement>('[data-part="wallet-keep-for"] input[value="saved"]')!.checked).toBe(true);
+    type('#wallet-address', ADDR_C);
+    await save(() => stub.calls.some((c) => c.method === 'POST'));
+    const first = stub.calls.find((c) => c.method === 'POST')!;
+    expect((first.body!.wallets as Array<Record<string, unknown>>)[0]).not.toHaveProperty('oneTime');
+
+    stub.calls.length = 0;
+    await startAdding();
+    pickKeep('one-time');
+    await settle();
+    type('#wallet-address', address('D', 'BBBBB2'));
+    await save(() => stub.calls.some((c) => c.method === 'POST'));
+    const second = stub.calls.find((c) => c.method === 'POST')!;
+    expect((second.body!.wallets as Array<Record<string, unknown>>)[0]).toMatchObject({ oneTime: true });
+  });
+
+  // Review 17 Nov (b) M1: a one-time wallet a trade in setup is using is shown, and can be removed.
+  it('shows a one-time wallet in use by a trade, with its trade code, and lets the person remove it', async () => {
+    const used: WalletView = { ...READY, id: 'w-used', label: 'Trade cash', oneTime: true, usable: false, inUseByTrade: 'ABCD-EFGH-JKLM-NPQR' };
+    stub.wallets = [READY, used];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows[1]!.querySelector('[data-part="in-use"]')!.textContent).toContain('ABCD-EFGH-JKLM-NPQR');
+    expect(rows[1]!.textContent).toContain('In use');
+    expect(rows[1]!.querySelector('[data-part="make-default"]')).toBeNull();
+    await click('Remove Trade cash');
+    expect(stub.calls.some((c) => c.method === 'DELETE' && c.url === '/v1/wallets/w-used')).toBe(true);
+  });
+
+  it('marks a one-time wallet in the list', async () => {
+    stub.wallets = [READY, { ...READY, id: 'w-once', label: 'Trade cash', oneTime: true }];
+    await mount();
+    const rows = [...document.querySelectorAll('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="one-time"]') !== null)).toEqual([false, true]);
+    expect(rows[1]!.textContent).toContain('One trade only');
+  });
+});
+
+describe('the default payout wallet in Your wallets (owner, 17 Nov 2026)', () => {
+  it('marks the default, offers Make default on the other saved wallets only, and saves the choice', async () => {
+    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
+    const once: WalletView = { ...READY, id: 'w-once', label: 'Trade cash', address: address('E', 'Pp7Lx3'), addressEnd: 'Pp7Lx3', oneTime: true, isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, other, once];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="default"]') !== null)).toEqual([true, false, false]);
+    expect(rows.map((r) => [...r.querySelectorAll('button')].some((b) => b.textContent === 'Make default'))).toEqual([false, true, false]);
+    // The server's answer is the truth: the list is read again after the choice.
+    stub.wallets = [{ ...READY, isDefault: false }, { ...other, isDefault: true }, once];
+    fire([...rows[1]!.querySelectorAll('button')].find((b) => b.textContent === 'Make default')!, new MouseEvent('click', { bubbles: true }));
+    await until(() => document.querySelectorAll('.x2f-wallet-row')[1]?.querySelector('[data-part="default"]') != null);
+    expect(stub.calls.some((c) => c.method === 'PUT' && c.url === '/v1/wallets/w-other/default')).toBe(true);
+    const after = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(after.map((r) => r.querySelector('[data-part="default"]') !== null)).toEqual([false, true, false]);
+  });
+});
+
+describe('the add records the address typed on this device, and refuses an answer naming another (review 17 Nov M4)', () => {
+  it('records each typed address under the id the API gave it', async () => {
+    stub.rule = RULE_FIRST;
+    stub.wallets = [];
+    stub.onPost = (body) => ({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', false) });
+    await mount();
+    await startAdding();
+    type('#wallet-address', ADDR_C);
+    await save(() => document.querySelector('.x2f-wallet-row') !== null);
+    expect(typedAddressOf('w-new-0')).toBe(ADDR_C);
+    expect(document.querySelector('.x2f-wallet-row')!.textContent).toContain(ADDR_C.slice(-6));
+    // Never sent anywhere: the only request carrying the address is the add itself.
+    expect(stub.calls.filter((c) => JSON.stringify(c).includes(ADDR_C)).map((c) => `${c.method} ${c.url}`)).toEqual(['POST /v1/wallets']);
+  });
+
+  it('an answer naming another address is refused: not shown as saved, and the typed address stays recorded for that id', async () => {
+    const OTHER = address('X', 'OTHER9');
+    stub.rule = RULE_FIRST;
+    stub.wallets = [];
+    stub.onPost = (body) => ({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', true).map((w) => ({ ...w, address: OTHER, addressEnd: 'OTHER9' })) });
+    await mount();
+    await startAdding();
+    type('#wallet-address', ADDR_C);
+    await save(() => document.querySelector('[role="alert"]') !== null);
+    expect([...document.querySelectorAll('[role="alert"]')].some((a) => a.textContent?.includes('different address'))).toBe(true);
+    expect(document.body.textContent).not.toContain('OTHER9');
+    expect(typedAddressOf('w-new-0')).toBe(ADDR_C);
+  });
+});
+
+describe('the list marks a wallet whose address differs from the one typed on this device (review 17 Nov M4)', () => {
+  it('a row naming another address than this device recorded says it does not match, and offers no Make default', async () => {
+    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
+    const swappedRow: WalletView = { ...READY, id: 'w-swapped', label: 'New', address: address('X', 'OTHER9'), addressEnd: 'OTHER9', isDefault: false };
+    recordTypedAddress('w-swapped', ADDR_C);
+    // A matching record changes nothing.
+    recordTypedAddress('w-other', other.address);
+    stub.wallets = [{ ...READY, isDefault: true }, other, swappedRow];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="not-matching"]') !== null)).toEqual([false, false, true]);
+    expect(rows[2]!.querySelector('[data-part="not-matching"]')!.textContent).toContain('does not match');
+    expect(rows.map((r) => [...r.querySelectorAll('button')].some((b) => b.textContent === 'Make default'))).toEqual([false, true, false]);
+  });
+});
+
+describe('a new id whose address ends like one typed on this device is marked too (re-verify 17 Nov N1)', () => {
+  it('a look-alike row (same last 6, another address, another id) says it does not match and offers no Make default', async () => {
+    recordTypedAddress('w-mine', ADDR_C);
+    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
+    const lookalike: WalletView = { ...READY, id: 'w-evil', label: 'New', address: address('Z', 'AAAAA1'), addressEnd: 'AAAAA1', isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, other, lookalike];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="not-matching"]') !== null)).toEqual([false, false, true]);
+    expect(rows.map((r) => [...r.querySelectorAll('button')].some((b) => b.textContent === 'Make default'))).toEqual([false, true, false]);
+  });
+
+  it('O3: an add staged for review (202) records the typed address, so a look-alike listed later is marked', async () => {
+    stub.onPost = () => ({ status: 202, json: { status: 'staged', changeId: 'c-1' } });
+    await mount();
+    await startAdding();
+    type('#wallet-address', ADDR_C);
+    await save(() => document.querySelector('[data-part="staged-note"]') !== null || confirmShown());
+    if (confirmShown()) {
+      type('#confirm-password', 'Correct-Horse-9!');
+      await click('Confirm', dialog("Confirm it's you")!.querySelector('[data-method="password"]')!);
+      await until(() => document.querySelector('[data-part="staged-note"]') !== null);
+    }
+    expect(document.querySelector('[data-part="staged-note"]')).not.toBeNull();
+    document.body.innerHTML = '';
+    const lookalike: WalletView = { ...READY, id: 'w-evil', label: 'New', address: address('Z', 'AAAAA1'), addressEnd: 'AAAAA1', isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, lookalike];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="not-matching"]') !== null)).toEqual([false, true]);
+  });
+});
+
+describe('Make default only on a wallet that works now (review 17 Nov M1)', () => {
+  it('a waiting wallet offers no Make default (the API refuses it, 409 wallet-not-ready)', async () => {
+    const waiting: WalletView = { ...READY, id: 'w-wait', label: 'New', address: address('W', 'Ww1Ww1'), addressEnd: 'Ww1Ww1', usable: false, usableFrom: '2099-01-01T00:00:00.000Z', isDefault: false };
+    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, other, waiting];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => [...r.querySelectorAll('button')].some((b) => b.textContent === 'Make default'))).toEqual([false, true, false]);
+  });
+});
+
+describe('the one-time copy says only what the restore does (review 17 Nov M3)', () => {
+  it('a one-time wallet comes back only if the trade is cancelled while it is still being set up', () => {
+    for (const note of [KEEP_FOR.oneTimeNote, NEW_ADDRESS.oneTimeNote]) {
+      expect(note).toContain('cancelled while it is still being set up');
+      expect(note).not.toContain('before any XMR is sent');
+    }
   });
 });

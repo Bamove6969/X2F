@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatFiat, formatXmr } from '@x2f/trade';
 import { api } from '../api/client.js';
+import { DEFAULT_TAG } from './walletsCopy.js';
+import { matchesRecord } from './walletRecord.js';
+import { NEW_ADDRESS } from './quote/addressCopy.js';
 import type { LiveEvent } from '../api/events.js';
 import { addressEnd, confirmableAddress } from '../ui/addressEnd.js';
 import { storeConfirmed, type ConfirmedTrade } from './quote/confirmed.js';
@@ -20,6 +23,8 @@ export interface AcceptedWallet {
   address: string;
   addressEnd: string;
   usable: boolean;
+  /** Owner 17 Nov 2026 (note #6 Q9): the API's default, picked first. Absent from older API builds. */
+  isDefault?: boolean;
 }
 
 /** The fields of the poster's `GET /v1/trades/:code` view (Task 6) the sheet shows and confirms. */
@@ -79,7 +84,7 @@ type Phase = 'loading' | 'pick' | 'sending' | 'done';
 /**
  * Shown to an offer's poster on a live `accepted` event: "<display name> accepted your offer".
  * The sheet shows the deal from the poster's own trade view and the poster picks which of their
- * usable wallets this trade uses (spec 2.2 step 4; no default wallet, OD-11); escrow setup starts
+ * usable wallets this trade uses (spec 2.2 step 4; the default is picked first, owner 17 Nov Q9); escrow setup starts
  * after that, and the trade waits in `setup` until `setupBy`. A poster with no usable wallet gets
  * Add a wallet, which comes back to this trade.
  *
@@ -109,6 +114,7 @@ export function AcceptedSheet({
   const [role, setRole] = useState<ConfirmedTrade['role'] | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [swapped, setSwapped] = useState(false);
   // Loaded once per sheet (a caller's inline loader must not reload, and reset the pick, on every render).
   const load = useRef({ loadWallets, loadTrade });
 
@@ -117,11 +123,17 @@ export function AcceptedSheet({
     Promise.all([load.current.loadWallets(), load.current.loadTrade(event.code)]).then(
       ([all, view]) => {
         if (!live) return;
-        // No wallet is pre-selected (OD-11, X-2: no default payout wallet; always ask). The
-        // button stays disabled until the poster picks one.
+        // Owner 17 Nov 2026 (note #6 Q9, overriding OD-11): the default wallet (the API's
+        // `isDefault`) is picked first; the poster can pick another. With no usable default nothing
+        // is picked and the button stays disabled until the poster picks one.
         // A wallet whose address cannot be confirmed (empty, or over 256 characters, the rule
         // readConfirmed applies) is never offered: it could not become `ownAddress` (gap 3).
-        setWallets(all.filter((w) => w.usable && confirmableAddress(w.address)));
+        // Review 17 Nov M4: nor is a wallet listed with another address than this device recorded
+        // for it when the person typed it here (walletRecord.ts); the sheet says so.
+        const offered = all.filter((w) => w.usable && confirmableAddress(w.address) && matchesRecord(w));
+        setSwapped(all.some((w) => !matchesRecord(w)));
+        setWallets(offered);
+        setPicked((p) => p ?? offered.find((w) => w.isDefault === true)?.id ?? null);
         const d = posterDeal(view);
         setDeal(d);
         setRole(d ? view.role : null);
@@ -162,6 +174,11 @@ export function AcceptedSheet({
 
   return (
     <Sheet open title={`${event.by} accepted your offer`} onClose={onClose}>
+      {swapped && phase !== 'done' && phase !== 'loading' ? (
+        <p role="alert" className="x2f-sheet__body" data-part="accepted-address-swapped">
+          {NEW_ADDRESS.mismatch}
+        </p>
+      ) : null}
       {phase === 'done' ? (
         <StatusChip tone="escrow" icon="shield" label="Setting up escrow" />
       ) : phase === 'loading' ? null : wallets.length === 0 && !failed ? (
@@ -193,6 +210,7 @@ export function AcceptedSheet({
                 />
                 <span className="x2f-accepted__label">{w.label}</span>
                 <span className="x2f-accepted__end">…{addressEnd(w.address)}</span>
+                {w.isDefault === true ? <span className="x2f-accepted__end">{DEFAULT_TAG}</span> : null}
               </label>
             ))}
           </fieldset>
