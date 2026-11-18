@@ -41,3 +41,17 @@ create unique index ruling_payments_one_live on ruling_payments (code, seq) wher
 create index ruling_payments_pending on ruling_payments (checked_at) where status = 'pending';
 
 alter table disputes add column comply_lapsed_at timestamptz;
+
+-- 3. ruling_payment_attempts (re-review m3 follow-up; lead default for owner question RC-4): a proof
+--    the seller sent in time that X2F's checker could not take (503: the node unavailable, or the
+--    checker busy or stuck). Shown in the staff case view ("tried at ..., node unavailable") so a
+--    senior deciding a lapse sees X2F's fault; complyBy never moves for it. Only the time and the
+--    reason: no tx, no key. Goes with the dispute (the purge's cascade).
+create table ruling_payment_attempts (
+  code text not null,
+  seq integer not null,
+  at timestamptz not null,
+  reason text not null check (reason in ('node-unavailable', 'busy')),
+  foreign key (code, seq) references disputes (code, seq) on delete cascade
+);
+create index ruling_payment_attempts_case on ruling_payment_attempts (code, seq, at);

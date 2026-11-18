@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { isTxKey } from '@x2f/escrow';
 import { MoneroNetworkType, MoneroWalletConfig, MoneroWalletFull } from 'monero-ts';
 import type { Config } from '../config.js';
+import { ApiError } from '../errors.js';
 import { Semaphore } from '../limits.js';
 
 /**
@@ -49,6 +50,16 @@ const NETWORKS: Record<Config['moneroNetwork'], MoneroNetworkType> = {
   testnet: MoneroNetworkType.TESTNET,
 };
 
+/**
+ * The watchdog (re-review m3 follow-up): a check whose monero-ts calls have not all settled this long
+ * after it took the slot (the call timeout plus a grace period) gives up on its wallet. The wallet is
+ * a throwaway (random keys, never funded, never synced): it is dropped and closed in the background,
+ * the slot is freed and the next check builds a fresh one.
+ */
+export const TX_PROOF_STUCK_AFTER_MS = 5 * 60_000;
+/** After this many abandoned wallets no new one is made: every check is 503 `busy` until a restart (a wedged WASM runtime must not leak without bound). */
+export const TX_PROOF_MAX_ABANDONED = 3;
+
 const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0;
 
 export interface MoneroTxProofOptions {
@@ -60,6 +71,10 @@ export interface MoneroTxProofOptions {
   fetch?: typeof globalThis.fetch;
   /** Each call to the node (default 15 s). */
   timeoutMs?: number;
+  /** The watchdog, from when a check takes the slot (default TX_PROOF_STUCK_AFTER_MS). */
+  stuckAfterMs?: number;
+  /** Called once per stuck episode, when the first wallet of it is abandoned (main.ts: the owner alert). Must not throw. */
+  onStuck?: () => void;
 }
 
 /**
@@ -75,17 +90,24 @@ export interface MoneroTxProofOptions {
  * monero-ts's WebAssembly and breaks every later call. One check at a time, on the one wallet: a
  * monero-ts call that timed out keeps running inside the wallet, so the check's slot is held until
  * every call it started has settled, though its caller is answered `TxProofUnavailable` at the
- * timeout (review m3). The next check waits in the queue (32, then 503 `busy`) until then.
+ * timeout (review m3). The next check waits in the queue (32, then 503 `busy`) until then, but
+ * never longer than the watchdog (`stuckAfterMs`): a call still running then is abandoned with its
+ * wallet. After TX_PROOF_MAX_ABANDONED wallets every check is 503 `busy` until a restart. A stuck
+ * episode calls `onStuck` once; it ends when a check that used the wallet finishes in time.
  */
 export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
   const base = o.url.replace(/\/+$/, '');
   const fetch = o.fetch ?? globalThis.fetch;
   const timeoutMs = o.timeoutMs ?? 15_000;
+  const stuckAfterMs = o.stuckAfterMs ?? TX_PROOF_STUCK_AFTER_MS;
   const slots = new Semaphore(1, 32);
   let wallet: Promise<MoneroWalletFull> | undefined;
+  let abandoned = 0;
+  let stuck = false;
 
   const walletOf = (): Promise<MoneroWalletFull> => {
-    wallet ??= MoneroWalletFull.createWallet(
+    if (wallet !== undefined) return wallet;
+    const made = MoneroWalletFull.createWallet(
       new MoneroWalletConfig({
         networkType: NETWORKS[o.network],
         ...(o.regtest ? { regtest: true } : {}),
@@ -94,10 +116,28 @@ export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
         proxyToWorker: false,
       }),
     );
-    wallet.catch(() => {
-      wallet = undefined;
+    wallet = made;
+    made.catch(() => {
+      // Only this attempt: never a fresh wallet made after this one was abandoned.
+      if (wallet === made) wallet = undefined;
     });
-    return wallet;
+    return made;
+  };
+
+  /** The watchdog fired: drop the current wallet, close it in the background, count it. */
+  const abandon = (): void => {
+    abandoned++;
+    const w = wallet;
+    wallet = undefined;
+    void w?.then((x) => x.close()).catch(() => undefined);
+    if (!stuck) {
+      stuck = true;
+      try {
+        o.onStuck?.();
+      } catch {
+        // the alert is best effort; the checker goes on
+      }
+    }
   };
 
   /** `p`, or TxProofUnavailable after timeoutMs; `p` itself goes in `held`, waited out before the slot is freed. */
@@ -166,17 +206,32 @@ export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
     };
   };
 
+  const busy = () => new ApiError(503, 'busy');
+
   return (a) =>
     new Promise<TxProofResult | null>((resolve, reject) => {
+      if (abandoned >= TX_PROOF_MAX_ABANDONED) {
+        reject(busy());
+        return;
+      }
       slots
         .run(async () => {
+          // A check that waited in the queue while the last wallet allowed was abandoned.
+          if (abandoned >= TX_PROOF_MAX_ABANDONED) throw busy();
+          const started = Date.now();
           const held: Promise<unknown>[] = [];
           const answer = checkOne(a, held);
           // The caller has its answer now (at the timeout, at the latest) ...
           answer.then(resolve, reject);
           await answer.catch(() => undefined);
-          // ... but the wallet is free for the next check only once every call it started has settled (review m3).
-          await Promise.allSettled(held);
+          // ... but the wallet is free for the next check only once every call it started has
+          // settled (review m3), or the watchdog gives up on that wallet.
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const watchdog = new Promise<'stuck'>((r) => (timer = setTimeout(() => r('stuck'), Math.max(0, stuckAfterMs - (Date.now() - started)))));
+          const outcome = await Promise.race([Promise.allSettled(held).then(() => 'settled' as const), watchdog]);
+          clearTimeout(timer);
+          if (outcome === 'stuck') abandon();
+          else if (held.length > 0) stuck = false;
         })
         // The queue was full (503 `busy`): checkOne never ran.
         .catch(reject);

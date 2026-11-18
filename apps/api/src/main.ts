@@ -26,6 +26,7 @@ import { moneroAddressValidator } from './wallets/address.js';
 import { productionNudgeWiring } from './nudge/wiring.js';
 import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { moneroTxProofCheck } from './disputes/txProof.js';
+import { txProofStuckAlert } from './disputes/comply.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
 import { moderationFromEnv, staffListenFromEnv, startStaffApi } from './staff/main.js';
 import { assertOneSiteFlagsRow } from './site/flags.js';
@@ -104,9 +105,12 @@ const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 // Task 24: X2F's own node for the released screen's confirmations (X2F_MONEROD_URL; unset: not shown).
 const monerod = monerodUrlFromEnv(process.env);
 // Plan 4 Task 12 (A6): the seller's payment proof is checked on the same node (unset: 503, never accepted).
-if (monerod) deps.txProof = moneroTxProofCheck({ url: monerod, network: config.moneroNetwork });
+// Re-review m3 follow-up: a stuck checker alerts the owner (in-app and push) once per episode; the sink is set once the app is built.
+let onTxProofStuck: () => Promise<void> = async () => undefined;
+if (monerod) deps.txProof = moneroTxProofCheck({ url: monerod, network: config.moneroNetwork, onStuck: () => void onTxProofStuck() });
 const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmations({ url: monerod }) } : {});
 onAlert = ownerAlertSink({ db, clock, push: app.push });
+onTxProofStuck = txProofStuckAlert({ db, clock, push: app.push });
 // Plan 2 Task 17, hold model v3: every minute, holds whose 24 hours are up end, changes whose 24
 // hours are up apply, and held trades are paused or resumed as their holds say.
 const stopHolds = startRetention(

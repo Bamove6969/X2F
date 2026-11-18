@@ -3,6 +3,7 @@ import { applyDispute, DisputeRuleError, type Dispute } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { addOwnerAlert } from '../alerts.js';
+import { pushOwnerAlert, type OwnerAlertDeps } from '../push/ownerAlert.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -147,6 +148,14 @@ export function complyRoutes(app: FastifyInstance): void {
     try {
       result = await (deps.txProof ?? noTxProofCheck)({ txHash, txKey, address });
     } catch (err) {
+      // RC-4 (lead default): a proof sent in time that the checker could not take is recorded for the
+      // senior's case view; complyBy does not move.
+      const reason = err instanceof TxProofUnavailable ? 'node-unavailable' : err instanceof ApiError && err.status === 503 && err.code === 'busy' ? 'busy' : null;
+      if (reason !== null) {
+        await deps.db
+          .query('insert into ruling_payment_attempts (code, seq, at, reason) values ($1, $2, $3, $4)', [row.code, rec.dispute.seq, submittedAt, reason])
+          .catch(() => undefined);
+      }
       toApi(err);
     }
     const verdict = judgeProof(result, amount, rec.dispute.openedAt);
@@ -312,7 +321,12 @@ export interface ComplianceView {
   /** Set once the comply time passed with no proof (for the current `complyBy`). */
   lapsedAt: string | null;
   proof: { txHash: string; status: 'pending' | 'accepted' | 'refused'; confirmations: number | null; submittedAt: string } | null;
+  /** RC-4: proofs the checker could not take (503), newest first, at most FAILED_CHECKS_SHOWN. */
+  failedChecks: Array<{ at: string; reason: 'node-unavailable' | 'busy' }>;
 }
+
+/** How many failed checks the case view lists. */
+export const FAILED_CHECKS_SHOWN = 10;
 
 export async function complianceOf(q: Queryable, d: Pick<Dispute, 'code' | 'seq' | 'complyBy'>): Promise<ComplianceView> {
   const lapsed = (await q.query<{ at: Date | null }>('select comply_lapsed_at as at from disputes where code = $1 and seq = $2', [d.code, d.seq])).rows[0]?.at ?? null;
@@ -321,8 +335,28 @@ export async function complianceOf(q: Queryable, d: Pick<Dispute, 'code' | 'seq'
     [d.code, d.seq],
   );
   const p = rows[0];
+  const failed = await q.query<{ at: Date; reason: 'node-unavailable' | 'busy' }>(
+    'select at, reason from ruling_payment_attempts where code = $1 and seq = $2 order by at desc limit $3',
+    [d.code, d.seq, FAILED_CHECKS_SHOWN],
+  );
   return {
+    failedChecks: failed.rows.map((r) => ({ at: r.at.toISOString(), reason: r.reason })),
     lapsedAt: lapsed !== null && d.complyBy !== null && lapsed.getTime() >= d.complyBy.getTime() ? lapsed.toISOString() : null,
     proof: p ? { txHash: p.tx_hash, status: p.status, confirmations: p.confirmations, submittedAt: p.submitted_at.toISOString() } : null,
+  };
+}
+
+/**
+ * Re-review m3 follow-up: the `onStuck` sink main.ts hands the proof checker. The owner alert
+ * `tx-proof-check-stuck` in-app, then the fixed phone push. Best effort: it never throws.
+ */
+export function txProofStuckAlert(deps: OwnerAlertDeps): () => Promise<void> {
+  return async () => {
+    try {
+      await addOwnerAlert(deps.db, 'tx-proof-check-stuck', {}, deps.clock());
+      await pushOwnerAlert(deps, 'tx-proof-check-stuck');
+    } catch {
+      // nothing more to do: the checker answers 503 meanwhile
+    }
   };
 }

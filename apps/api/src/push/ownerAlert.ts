@@ -19,6 +19,8 @@ export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>([
   'appeal-no-reviewer',
   // Plan 4 Task 12 (A6, lead call 18 Nov): a seller let the comply time pass; a senior or the owner decides.
   'dispute-comply-lapsed',
+  // Re-review m3 follow-up: the proof checker is stuck, so a restart happens before sellers' deadlines pass.
+  'tx-proof-check-stuck',
 ]);
 
 export interface OwnerAlertDeps {
