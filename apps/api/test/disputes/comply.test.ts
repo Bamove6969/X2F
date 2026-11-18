@@ -8,7 +8,8 @@ import { COMPLY_H } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../../src/app.js';
-import { COMPLY_CONFIRMATIONS, PROOF_RECHECK_MS } from '../../src/disputes/comply.js';
+import { COMPLY_CONFIRMATIONS, PROOF_LOST_AFTER_MS, PROOF_RECHECK_MS } from '../../src/disputes/comply.js';
+import { PAYMENT_PROOF_BUCKET } from '../../src/limits.js';
 import { hasActiveLien } from '../../src/disputes/lien.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
 import { loadDispute, startDispute } from '../../src/disputes/store.js';
@@ -368,5 +369,140 @@ describe('A6: the comply time lapses with no proof: the case goes to a senior mo
     setNow(d.complyBy!);
     await tick();
     expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.comply-lapsed', 'dispute.comply-lapsed']);
+  });
+});
+
+// After the A6 cases: the disputes below are left unmet, and a later tick would lapse them into
+// the A6 cases' owner alerts.
+describe('review m2: concurrent proofs, a tx the node forgets, a pending tx mined before the dispute', () => {
+  it('two valid proofs at once (two txs, or the same tx twice): exactly one accepted, the other 409; complied and logged once', async () => {
+    for (const same of [false, true]) {
+      const { seller, code, buyerAddress } = await ruled();
+      const a = pays(buyerAddress, AMOUNT);
+      const b = same ? a : pays(buyerAddress, AMOUNT);
+      const res = await Promise.all([a, b].map((txHash) => seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash, txKey: txKey() })));
+      expect(res.map((r) => r.statusCode).sort(), JSON.stringify({ same, bodies: res.map((r) => r.body) })).toEqual([200, 409]);
+      expect(['proof-pending', 'proof-replayed', 'wrong-state']).toContain(errorOf(res.find((r) => r.statusCode === 409)!));
+      expect((await proofs(code)).map((p) => p.status)).toEqual(['accepted']);
+      expect((await loadDispute(deps.db, code))!.compliedAt).toEqual(at(2 * H));
+      expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.complied']);
+      expect(await lienStatus(code)).toEqual(['repaid']);
+    }
+  });
+
+  it('two waiting proofs at once: exactly one waits, the other is 409', async () => {
+    const { seller, code, buyerAddress } = await ruled();
+    const txs = [pays(buyerAddress, AMOUNT, { confirmations: 2 }), pays(buyerAddress, AMOUNT, { confirmations: 2 })];
+    const res = await Promise.all(txs.map((txHash) => seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash, txKey: txKey() })));
+    expect(res.map((r) => r.statusCode).sort()).toEqual([202, 409]);
+    expect(errorOf(res.find((r) => r.statusCode === 409)!)).toBe('proof-pending');
+    expect((await proofs(code)).map((p) => p.status)).toEqual(['pending']);
+  });
+
+  it('a waiting tx the node forgets stays waiting inside PROOF_LOST_AFTER_MS, then is refused; the seller may send another', async () => {
+    const { seller, code, buyerAddress } = await ruled();
+    const txHash = pays(buyerAddress, AMOUNT, { confirmations: 0, minedAt: null });
+    expect((await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash, txKey: txKey() })).statusCode).toBe(202);
+    // The node forgets it (a restart, a pool flush) at the first recheck.
+    node.delete(txHash);
+    const lost = new Date(at(2 * H).getTime() + PROOF_RECHECK_MS);
+    setNow(lost);
+    await tick();
+    expect((await proofs(code)).map((p) => p.status)).toEqual(['pending']);
+    setNow(new Date(lost.getTime() + PROOF_LOST_AFTER_MS - MIN));
+    await tick();
+    expect((await proofs(code)).map((p) => p.status)).toEqual(['pending']);
+    expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.proof-pending']);
+    setNow(new Date(lost.getTime() + PROOF_LOST_AFTER_MS));
+    await tick();
+    expect(await proofs(code)).toEqual([{ tx_hash: txHash, status: 'refused', has_key: false, confirmations: 0 }]);
+    expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.proof-pending', 'dispute.proof-refused']);
+    // Still in time: a new proof is taken.
+    setNow(new Date(COMPLY_BY.getTime() - MIN));
+    await relogin(seller);
+    expect((await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: pays(buyerAddress, AMOUNT), txKey: txKey() })).statusCode).toBe(200);
+  });
+
+  it('a waiting tx later found in a block older than the dispute is refused at the recheck (the replayed verdict)', async () => {
+    const { seller, code, buyerAddress } = await ruled();
+    const txHash = pays(buyerAddress, AMOUNT, { confirmations: 0, minedAt: null });
+    expect((await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash, txKey: txKey() })).statusCode).toBe(202);
+    setNow(new Date(at(2 * H).getTime() + PROOF_RECHECK_MS));
+    node.set(txHash, (address) => ({ good: true, receivedAtomic: address === buyerAddress ? AMOUNT : 0n, confirmations: 20, blockTimestamp: new Date(START.getTime() - MIN) }));
+    await tick();
+    expect(await proofs(code)).toEqual([{ tx_hash: txHash, status: 'refused', has_key: false, confirmations: 0 }]);
+    expect((await loadDispute(deps.db, code))!.compliedAt).toBeNull();
+    expect(await lienStatus(code)).toEqual(['active']);
+    expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.proof-pending', 'dispute.proof-refused']);
+  });
+});
+
+describe('review m1: the "node lost the tx" clock starts when the node first lost it, not at submission', () => {
+  it('a waiting tx the node loses at hour 30 is not refused on the first miss; found again and 10 deep, it is accepted', async () => {
+    const { seller, code, buyerAddress } = await ruled();
+    const txHash = pays(buyerAddress, AMOUNT, { confirmations: 0, minedAt: null });
+    const submitted = at(2 * H);
+    expect((await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash, txKey: txKey() })).statusCode).toBe(202);
+    // Known (in the pool) for 30 hours, so the row keeps being checked.
+    setNow(new Date(submitted.getTime() + 3 * MIN));
+    await tick();
+    // Lost at hour 30: past PROOF_LOST_AFTER_MS since submission, but only just lost.
+    node.delete(txHash);
+    const lost = new Date(submitted.getTime() + 30 * H);
+    setNow(lost);
+    await tick();
+    expect((await proofs(code)).map((p) => p.status)).toEqual(['pending']);
+    setNow(new Date(lost.getTime() + PROOF_LOST_AFTER_MS - MIN));
+    await tick();
+    expect((await proofs(code)).map((p) => p.status)).toEqual(['pending']);
+    // Mined after all.
+    node.set(txHash, (address) => ({ good: true, receivedAtomic: address === buyerAddress ? AMOUNT : 0n, confirmations: 10, blockTimestamp: new Date(lost.getTime() + H) }));
+    setNow(new Date(lost.getTime() + PROOF_LOST_AFTER_MS + 5 * MIN));
+    await tick();
+    expect((await proofs(code)).map((p) => p.status)).toEqual(['accepted']);
+    expect(await lienStatus(code)).toEqual(['repaid']);
+  });
+
+  it('a found-again tx that is lost again starts a fresh clock; lost for PROOF_LOST_AFTER_MS without a break, it is refused', async () => {
+    const { seller, code, buyerAddress } = await ruled();
+    const txHash = pays(buyerAddress, AMOUNT, { confirmations: 0, minedAt: null });
+    const keep = node.get(txHash)!;
+    const submitted = at(2 * H);
+    expect((await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash, txKey: txKey() })).statusCode).toBe(202);
+    node.delete(txHash);
+    const first = new Date(submitted.getTime() + 3 * MIN);
+    setNow(first);
+    await tick();
+    // Back in the pool before the day is up: the clock resets.
+    node.set(txHash, keep);
+    setNow(new Date(first.getTime() + 20 * H));
+    await tick();
+    node.delete(txHash);
+    const second = new Date(first.getTime() + 22 * H);
+    setNow(second);
+    await tick();
+    setNow(new Date(first.getTime() + PROOF_LOST_AFTER_MS + H));
+    await tick();
+    expect((await proofs(code)).map((p) => p.status)).toEqual(['pending']);
+    setNow(new Date(second.getTime() + PROOF_LOST_AFTER_MS));
+    await tick();
+    expect((await proofs(code)).map((p) => p.status)).toEqual(['refused']);
+  });
+});
+
+describe('review m4: proofs are rate limited per account', () => {
+  it('a seller sends at most PAYMENT_PROOF_BUCKET.capacity proofs at once (429 slow-down, the node not asked); another seller is not affected', async () => {
+    const { seller, code } = await ruled();
+    for (let i = 0; i < PAYMENT_PROOF_BUCKET.capacity; i++) {
+      const r = await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: hex(), txKey: txKey() });
+      expect(errorOf(r), String(i)).toBe('proof-invalid');
+    }
+    asked.length = 0;
+    const over = await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: hex(), txKey: txKey() });
+    expect(over.statusCode, over.body).toBe(429);
+    expect(over.json()).toMatchObject({ error: 'slow-down', retryAfterSeconds: expect.any(Number) });
+    expect(asked).toEqual([]);
+    const other = await ruled();
+    expect((await other.seller.browser.post(`/v1/trades/${other.code}/payment-proof`, { txHash: pays(other.buyerAddress, AMOUNT), txKey: txKey() })).statusCode).toBe(200);
   });
 });
