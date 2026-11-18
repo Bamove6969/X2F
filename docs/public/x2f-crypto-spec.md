@@ -160,7 +160,7 @@ Each trader has a **separate chat identity per chat and role**, made on the devi
 
 ### 4.3 Who can read what, and when
 
-Updated 18 Nov 2026 for the chat membership keys (4.4) and the device retention change. Each chat has one key, TK, made on a trader's device and stored only as wraps to the buyer and the seller. Every chat message is an envelope v2 under TK. Once a chat has a key, the API takes no v1 chat message, and no trader's app opens one.
+Updated 18 Nov 2026 for the chat membership keys (4.4) and the device retention change. Each chat has one key, TK, made on a trader's device. At first TK is stored only as wraps to the buyer and the seller; after a grant (4.4) it is also stored as wraps to the moderation service and to each certified staff device that reads. Every chat message is an envelope v2 under TK. Once a chat has a key, the API takes no v1 chat message except the unblurred proof copy a moderator asks for (below, lead decision 16), and no trader's app opens one.
 
 - **The network, the relay, and anyone with only the API database:** cannot read chats.
 - **The moderation service:** can decrypt a chat only after a trader's app has granted it TK, which happens when a dispute opens (4.4). It holds nothing that opens an undisputed chat. The one exception is the unblurred copy of a payment proof that a moderator asks a trader for during a dispute: the app seals that copy to the moderation service's key alone, never under TK (lead decision 16, `docs/security/chat-membership-lead-decisions-2026-11-18.md`).
