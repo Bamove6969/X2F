@@ -306,6 +306,8 @@ export function App() {
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/team/join" element={<MemberInvite />} />
           {/* Owner demo notes 12 Nov #42: the help placeholders linked from /login and /session-length. */}
+          {/* The help library (owner, 18 Nov 2026): every topic at /help, one at /help/:topic. */}
+          <Route path="/help" element={<HelpTopic />} />
           <Route path="/help/:topic" element={<HelpTopic />} />
         </Route>
         {/* Anything else: the front door, which sends a set-up trader on to /sell. */}
