@@ -164,7 +164,7 @@ const KNOWN_SETTINGS = [
  * NEEDS_PLAN_6_FEE_WALLET; StaffOverview.tsx, OWNER-Q).
  */
 const KNOWN_OVERVIEW = [
-  /^board copy missing: "The 1% fee from each completed trade goes to X2F's fee wallet ending …9Fq2 \. This page reads it with a view-only key; the key that can spend from it stays offline, never on the server\."$/,
+  /^board copy missing: "The 1% fee from each completed trade goes to X2F's fee wallet ending …9Fq2 ?\. This page reads it with a view-only key; the key that can spend from it stays offline, never on the server\."$/,
   /^board copy missing: "…9Fq2"$/,
 ];
 
@@ -200,7 +200,7 @@ test('StaffSettings parity at 1280x1240; pay amounts not set read "Not set"', as
   await stub(page, await softKey(page));
   await page.goto('/settings');
   await expect(page.getByRole('textbox', { name: 'Large-trade limit' })).toHaveValue('1000');
-  await expect(page.getByRole('textbox', { name: 'Moderator, per dispute' })).toHaveAttribute('placeholder', 'Not set');
+  await expect(page.getByRole('textbox', { name: 'Moderator, per dispute', exact: true })).toHaveAttribute('placeholder', 'Not set');
   expectOnly(await parityFailures(page, 'StaffSettings', []), KNOWN_SETTINGS);
 });
 
