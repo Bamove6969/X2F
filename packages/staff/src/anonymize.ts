@@ -204,8 +204,16 @@ function nameSpans(text: string, names: AnonymizeNames): Span[] {
     [names.staff, 'Moderator'],
   ];
   for (const [list, word] of lists) {
+    // Re-review 3 m4: a name of several parts also matches each part of 3 or more letters on its own
+    // (`Mira` or `Kowal` for `Mira Kowal`, in any order); initials do not.
+    const variants: string[][] = [];
     for (const raw of list) {
       const parts = skeleton(normalizeText(raw)).s.split(/[^\p{L}\p{N}]+/u).filter((p) => p !== '');
+      variants.push(parts);
+      // A display name's parts are separated by spaces (`Mira Kowal`); a login's (`mira.k`) are not split.
+      if (parts.length > 1 && /\s/u.test(raw.trim())) for (const p of parts) if (p.length >= 3) variants.push([p]);
+    }
+    for (const parts of variants) {
       const letters = parts.join('').length;
       if (letters < 2) continue;
       // A name of 4 or more letters: up to 2 characters of punctuation or space between its letters,
@@ -358,6 +366,8 @@ function ibanValid(raw: string): boolean {
   return rem === 1;
 }
 
+/** Time zones after a dotted time (`14.32 CET`): a currency after it is an amount, kept. */
+const TIME_ZONES = 'UTC|GMT|CET|CEST|EET|EEST|WET|WEST|MSK|BST|IST|EST|EDT|CST|CDT|MST|MDT|PST|PDT|AKST|HST|AEST|AEDT|ACST|AWST|JST|KST|HKT|SGT|NZST|NZDT|Uhr';
 const URL_END = /[.,;:!?'")\]}>]+$/;
 const LOCAL = '[\\p{L}\\p{N}._%+\\-]+';
 const LABEL_PART = '[\\p{L}\\p{N}\\-]+';
@@ -439,9 +449,13 @@ function patternSpans(text: string): Span[] {
   // A clock time (never an offset `T+0:42`): 14:32, 14:32:05, 14h32, 9:05 pm, 7am.
   add(/(?<![\p{N}:.+])(?:[01]?\d|2[0-3])[:h][0-5]\d(?::[0-5]\d)?(?: ?[ap]\.?m\b\.?)?(?![\p{N}])/giu, 'time');
   add(/(?<![\p{L}\p{N}:.+])(?:1[0-2]|0?[1-9]) ?[ap]\.?m\b\.?/giu, 'time');
+  // Re-review 3 m4: 1432h, and 14.32 or 14h32 before a time zone.
+  add(/(?<![\p{L}\p{N}])(?:[01]\d|2[0-3])[0-5]\dh(?![\p{L}\p{N}])/giu, 'time');
+  add(new RegExp(`(?<![\\p{N}.,:+])(?:[01]?\\d|2[0-3])[.][0-5]\\d(?= ?(?:${TIME_ZONES})(?![\\p{L}]))`, 'gu'), 'time');
   // An XMR amount: the number before or after XMR / monero (the unit stays).
-  add(/(?<![\p{L}\p{N}.,])\d+(?:[.,]\d+)*(?= ?(?:xmr|monero|piconero)(?!\p{L}))/giu, 'amount');
-  add(/(?<=(?:^|[^\p{L}])xmr ?)\d+(?:[.,]\d+)*(?![\p{N}])/giu, 'amount');
+  // (Re-review 3 m4: spaces around the point too, `1 . 2345 XMR`.)
+  add(/(?<![\p{L}\p{N}.,])\d+(?: ?[.,] ?\d+)*(?= ?(?:xmr|monero|piconero)(?!\p{L}))/giu, 'amount');
+  add(/(?<=(?:^|[^\p{L}])xmr ?)\d+(?: ?[.,] ?\d+)*(?![\p{N}])/giu, 'amount');
   // An IBAN, grouped by spaces, dashes or dots or not: the longest prefix of the run that passes the
   // mod-97 check (a run can swallow the next word, "DE89 3704 0044 0532 0130 00 please").
   for (const m of text.matchAll(/(?<![\p{L}\p{N}_])[A-Za-z]{2}\d{2}(?:[ .-]?[A-Za-z0-9]){11,40}/gu)) {
@@ -498,11 +512,41 @@ function pick(spans: Span[]): Span[] {
   return out;
 }
 
-/** Where to cut a text longer than MAX_TEXT: at a space near the limit if there is one, never inside a surrogate pair. */
-function cutAt(t: string): number {
+/** How far past MAX_TEXT the masks still read, so an identifier crossing the cut is seen whole (re-review 3 m5). */
+const CUT_LOOKAHEAD = 1000;
+
+/** Every span of `clean`, in the normalized text's offsets. */
+function spansOf(clean: string, names: AnonymizeNames, known: ReadonlySet<string>): Span[] {
+  const sk = skeleton(clean);
+  const found = pick([...addressSpans(sk.s), ...patternSpans(sk.s), ...tradeCodeSpans(sk.s, known), ...nameSpans(sk.s, names)]);
+  // Back from the skeleton to the normalized text, with any combining marks right after a span.
+  return found.map((s) => {
+    let end = sk.to[s.end - 1]!;
+    while (end < clean.length && /\p{M}/u.test(clean[end]!)) end++;
+    return { ...s, start: sk.from[s.start]!, end };
+  });
+}
+
+/**
+ * Where to cut a text longer than MAX_TEXT (re-review 3 m5): at MAX_TEXT, moved back before any
+ * span that crosses it (a split address, an IBAN with spaces, `Mira | Kowal`: the masks read past the
+ * cut, so they see it whole) and before any word that crosses it; never inside a surrogate pair.
+ */
+function cutAt(t: string, spans: readonly Span[]): number {
   let cut = MAX_TEXT;
-  const space = t.lastIndexOf(' ', MAX_TEXT);
-  if (space > MAX_TEXT - 500) cut = space;
+  for (let moved = true; moved; ) {
+    moved = false;
+    for (const s of spans) {
+      if (s.start < cut && s.end > cut) {
+        cut = s.start;
+        moved = true;
+      }
+    }
+    while (cut > 0 && !SPACE.test(t[cut - 1]!) && cut < t.length && !SPACE.test(t[cut]!)) {
+      cut--;
+      moved = true;
+    }
+  }
   const c = t.charCodeAt(cut - 1);
   if (c >= 0xd800 && c <= 0xdbff) cut--;
   return cut;
@@ -511,30 +555,29 @@ function cutAt(t: string): number {
 /** Scrubs one text (see the module comment). `tradeCodes` are the case's own codes, in any form. */
 export function anonymizeText(text: string, names: AnonymizeNames, tradeCodes: readonly string[] = []): Scrubbed {
   const normalized = normalizeText(text);
-  // Re-review m2: past MAX_TEXT characters the rest is one mask (and is never read).
-  const cut = normalized.length > MAX_TEXT ? cutAt(normalized) : normalized.length;
-  const clean = normalized.slice(0, cut);
-  const sk = skeleton(clean);
   const known = new Set(tradeCodes.map((c) => normalizeTradeCode(c)).filter((c): c is string => c !== null));
-  const found = pick([...addressSpans(sk.s), ...patternSpans(sk.s), ...tradeCodeSpans(sk.s, known), ...nameSpans(sk.s, names)]);
-  // Back from the skeleton to the normalized text, with any combining marks right after a span.
-  const spans = found.map((s) => {
-    let end = sk.to[s.end - 1]!;
-    while (end < clean.length && /\p{M}/u.test(clean[end]!)) end++;
-    return { ...s, start: sk.from[s.start]!, end };
-  });
+  // Re-review m2: past MAX_TEXT characters the rest is one mask (and is never shown).
+  const over = normalized.length > MAX_TEXT;
+  const read = over ? normalized.slice(0, MAX_TEXT + CUT_LOOKAHEAD) : normalized;
+  const all = spansOf(read, names, known);
+  const cut = over ? cutAt(read, all) : normalized.length;
+  const clean = normalized.slice(0, cut);
+  const spans = all.filter((s) => s.end <= cut);
   let out = '';
   let at = 0;
   const masks: Mask[] = [];
   for (const s of spans) {
-    if (s.start < at) continue;
-    out += clean.slice(at, s.start);
+    // Re-review 3 m2: a span starting inside the source character that ended the last one (a `ß`
+    // folded to `ss`) is clamped to where the last one ended, never dropped.
+    if (s.end <= at) continue;
+    const start = Math.max(s.start, at);
+    out += clean.slice(at, start);
     if (s.kind) masks.push({ start: out.length, end: out.length + s.out.length, kind: s.kind });
     out += s.out;
     at = s.end;
   }
   out += clean.slice(at);
-  if (cut < normalized.length) {
+  if (over) {
     masks.push({ start: out.length, end: out.length + LABEL.long.length, kind: 'long' });
     out += LABEL.long;
   }

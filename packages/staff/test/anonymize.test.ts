@@ -386,11 +386,12 @@ describe('anonymizeText: re-review 3', () => {
 
   it('m5: the cut at 20 000 characters never leaves part of an identifier showing', () => {
     const pad = (n: number) => 'w'.repeat(n - 1) + ' ';
-    const straddle = (id: string, before: number) => `${pad(MAX_TEXT - before)}${id} tail`;
+    // `before` characters of the identifier fall before the cut, the rest after it.
+    const straddle = (id: string, before: number) => `${pad(MAX_TEXT - before)}${id}${' tail'.repeat(100)}`;
     const iban = 'DE89 3704 0044 0532 0130 00';
     const split = `${ADDR.slice(0, 47)} ${ADDR.slice(47)}`;
     for (const [id, check] of [[iban, 'DE89'], [split, ADDR.slice(0, 20)], ['Mira | Kowal', 'Mira'], [`x ${ADDR.slice(0, 60)}`, ADDR.slice(0, 20)]] as const) {
-      for (const before of [3, 10, 30]) {
+      for (const before of [2, Math.floor(id.length / 2), id.length - 1]) {
         const out = anonymizeText(straddle(id, before), FULL).text;
         expect(out.endsWith('[long text]'), `${check} ${before}`).toBe(true);
         expect(out, `${check} ${before}`).not.toContain(check);

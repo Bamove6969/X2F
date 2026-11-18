@@ -89,6 +89,7 @@ export {
 } from './lien.js';
 export {
   MANUAL_MASK,
+  MAX_TEXT,
   TRADE_CODE_MASK,
   anonymizeCase,
   anonymizeText,
