@@ -40,9 +40,7 @@ export const questionHref = (q: Pick<HelpQuestion, 'id' | 'topic'>): string => `
  * The first published anchors (#price, #bans, ...) and the anchor each now has (#faq-price, ...).
  * A link in the old form is rewritten in place, so it opens the same question.
  */
-export const OLD_ANCHOR_REDIRECTS: Readonly<Record<string, string>> = Object.freeze(
-  Object.fromEntries(QUESTIONS.map((q) => [q.id, questionAnchor(q.id)])),
-);
+export const OLD_ANCHOR_REDIRECTS: ReadonlyMap<string, string> = new Map(QUESTIONS.map((q) => [q.id, questionAnchor(q.id)]));
 
 /** Lower case, accents and curly quotes folded, so "I’ve" finds "I've" and "Mónero" finds "Monero". */
 function fold(s: string): string {
@@ -132,7 +130,8 @@ export function HelpLibrary({ topic }: { topic: HelpTopicId | null }) {
   const focused = useRef<string | null>(null);
 
   // A link in the first form (#price) is rewritten to its anchor now (#faq-price), in place.
-  const moved = OLD_ANCHOR_REDIRECTS[hashName(hash)];
+  // A Map, so a hash such as #constructor or #__proto__ finds nothing (re-review m3).
+  const moved = OLD_ANCHOR_REDIRECTS.get(hashName(hash));
   useEffect(() => {
     if (moved !== undefined) void navigate({ pathname, search, hash: `#${moved}` }, { replace: true });
   }, [moved, navigate, pathname, search]);

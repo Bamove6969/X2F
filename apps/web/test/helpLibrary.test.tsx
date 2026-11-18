@@ -290,6 +290,11 @@ describe('the help library content', () => {
     expect(q('device-limit')).toContain(`Normally ${FACTS.maxDevices}`);
     // Train-1: a security key needs its PIN.
     expect(q('passkey-or-security-key')).toMatch(/PIN/);
+    // Re-review m1: the profile's typical payment time and opt-in traded line are named.
+    expect(q('who-sees-profile')).toMatch(/typical payment time/);
+    expect(q('who-sees-profile')).toMatch(/XMR you have traded if you chose to show it/);
+    // Re-review m4: the Terms signature is erased when the account closes.
+    expect(q('closed-account-data')).toMatch(/signature you gave for the Terms is erased/);
   });
 
   it('the proof-upload questions follow the flag: two answers, each with its own sources', () => {
@@ -305,6 +310,8 @@ describe('the help library content', () => {
     expect(on.find((q) => q.id === 'payment-proof')!.a).toMatch(/^Yes\./);
     expect(off.find((q) => q.id === 'moderator-sees')!.a).not.toMatch(/unblurred/i);
     expect(on.find((q) => q.id === 'moderator-sees')!.a).toMatch(/request unblurred proof/i);
+    // Re-review m2: the staff case cannot open that copy yet (ModCase.tsx), and the answer says so.
+    expect(on.find((q) => q.id === 'moderator-sees')!.a).toMatch(/screens do not open it yet/);
     // Both sets hold the same questions in the same order; only those two answers differ.
     expect(on.map((q) => q.id)).toEqual(off.map((q) => q.id));
     // This test run's build has no VITE_X2F_PROOF_UPLOAD, so QUESTIONS is the off set.
@@ -453,8 +460,8 @@ describe('the help page', () => {
   });
 
   it('a link in the first form (#price) is rewritten to #faq-price and still opens its question', () => {
-    expect(Object.keys(OLD_ANCHOR_REDIRECTS)).toHaveLength(QUESTIONS.length);
-    for (const q of QUESTIONS) expect(OLD_ANCHOR_REDIRECTS[q.id]).toBe(`faq-${q.id}`);
+    expect(OLD_ANCHOR_REDIRECTS.size).toBe(QUESTIONS.length);
+    for (const q of QUESTIONS) expect(OLD_ANCHOR_REDIRECTS.get(q.id)).toBe(`faq-${q.id}`);
     const host = at('/help/trading#price');
     expect(where.now).toBe('/help/trading#faq-price');
     const button = toggleOf(host, 'price');
@@ -466,6 +473,13 @@ describe('the help page', () => {
     // Anything else in the hash is left as it is.
     at('/help#zzqx');
     expect(where.now).toBe('/help#zzqx');
+    // Names an object inherits are not questions (re-review m3): they are left as they are.
+    for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(OLD_ANCHOR_REDIRECTS.has(name), name).toBe(false);
+      const host = at(`/help#${name}`);
+      expect(where.now, name).toBe(`/help#${name}`);
+      expect(host.querySelectorAll('button[aria-expanded="true"]'), name).toHaveLength(0);
+    }
   });
 
   it.each([
