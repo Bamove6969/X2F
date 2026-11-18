@@ -27,7 +27,6 @@ import {
 } from '@x2f/trade';
 import { LIBRARY_TOPICS, QUESTIONS } from '../src/screens/help/helpLibrary.js';
 import { LIBRARY_COPY, matches, searchWords } from '../src/screens/help/HelpLibrary.js';
-import { APPEAL_MIN } from '../src/screens/dispute/rules.js';
 import { HelpTopic } from '../src/screens/HelpTopic.js';
 import { fire, render } from './render.js';
 
@@ -110,7 +109,6 @@ const FACTS: Record<string, string> = {
   rulingGoalHours: `within ${constIn('packages/staff/src/dispute.ts', 'RULING_GOAL_H')} hours`,
   appealWindowHours: `within ${keyIn('apps/api/src/staff/settingsDefaults.ts', 'appealWindowH')} hours of the ruling`,
   appealGoalHours: `decide within ${constIn('packages/staff/src/dispute.ts', 'APPEAL_GOAL_H')} hours`,
-  appealMinChars: `${APPEAL_MIN} characters`,
   holdHours: `${constIn('apps/api/src/auth/hold.ts', 'HOLD_MS') / HOUR} hours`,
   maxHoldChanges: `Up to ${constIn('apps/api/src/auth/holdChanges.ts', 'MAX_HOLD_CHANGES')} changes`,
   recoveryHoldHours: `${constIn('apps/api/src/auth/recovery.ts', 'RECOVERY_HOLD_MS') / HOUR} hours`,

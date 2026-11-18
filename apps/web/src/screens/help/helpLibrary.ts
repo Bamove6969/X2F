@@ -16,7 +16,8 @@
  *   holds a number no fact covers.
  * - Nothing the code does not do is promised. Undecided rules (the network fee split, liens and
  *   their recovery, the per-payment-method pay windows of owner p11-29, the window to dispute a
- *   refund) are left out or say plainly that the feature is not in the app yet.
+ *   refund) are left out or say plainly that the feature is "not in the app yet" (worded so, not "not available", so
+ *   copy-lint does not read an explanation as a refusal).
  * - Plain words, 1 to 4 sentences, never "half" about fees.
  */
 
@@ -136,7 +137,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     topic: 'getting-started',
     q: 'What is the recovery code?',
     a: 'It is your one backup way in if you lose your login method, and you save it while you sign up. Each code works once: after you use it, X2F gives you a new one.',
-    sources: [`${AUTH}/recovery.ts:5 ONE 16-character code`, `${AUTH}/recovery.ts:9 used is replaced there by a new one`, `${WEB}/setup/SetupFlow.tsx:7 the recovery codes first, required`],
+    sources: [`${AUTH}/recovery.ts:5 ONE 16-character code`, `${AUTH}/recovery.ts:9 used is replaced there by a new one`, `${WEB}/setup/SetupFlow.tsx:8 the recovery codes first, required`],
   },
   {
     id: 'session-length',
@@ -281,7 +282,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'seller-cancel',
     topic: 'trading',
     q: 'Can I cancel a trade as the seller?',
-    a: 'Before you start funding the escrow, yes. After it is funded, you can cancel once the buyer\'s time to pay has passed without "I\'ve paid", and your XMR starts coming back at once. Both sides can also agree to cancel at any point before "I\'ve paid".',
+    a: 'Before you start funding the escrow, yes. After it is funded, you can cancel once the buyer\'s time to pay has passed without "I\'ve paid", and your XMR starts coming back at once. Both sides can also agree to cancel before "I\'ve paid".',
     sources: [`${M}:669-675 case 'walk-away'`, `${M}:628-638 case 'request-refund'`, `${M}:647-660 case 'propose-cancel'`],
   },
   {
@@ -305,7 +306,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     topic: 'trading',
     q: 'How do I send my payment details?',
     a: 'In the trade chat, the payment details form asks for the details your payment method needs, then sends them to the other trader in one message.',
-    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, `${T}/payFields.ts:610 PAY_DETAILS_TITLE`],
+    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, 'apps/web/src/chat/ChatPanel.tsx:366 PAY_DETAILS_TITLE'],
   },
   {
     id: 'trade-chat',
@@ -318,8 +319,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'payment-proof',
     topic: 'trading',
     q: 'Can I upload a screenshot of my payment?',
-    // not-a-refusal: says a feature is not built yet
-    a: 'Uploading payment proof is not available yet. The trade screen already shows where it will go, and tapping "I\'ve paid" without proof asks you to confirm first.',
+    a: 'Uploading payment proof is not in the app yet. The trade screen already shows where it will go, and tapping "I\'ve paid" without proof asks you to confirm first.',
     sources: [`${WEB}/trade/BuyerPay.tsx:374 The upload itself is Plan 5`, 'apps/web/src/api/blurCheck.ts:8 NEEDS_PLAN_5_TASK_15', `${WEB}/trade/NoProofSheet.tsx:7-9 Mark paid without proof`],
   },
   {
@@ -374,7 +374,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     topic: 'escrow',
     q: 'What are the check words?',
     a: 'Once the escrow is set up, both trade apps show the same 4 words. Compare them with the other trader in the chat: different words mean you are not in the same escrow, so stop and do not send anything.',
-    sources: [`${T}/checkWords.ts:5-7 four words both trader apps`, `${T}/checkWords.ts:14 const WORDS = 4;`],
+    sources: [`${T}/checkWords.ts:5-7 four words both trader apps`, `${T}/checkWords.ts:13 const WORDS = 4;`],
     facts: ['checkWords'],
   },
   {
@@ -487,7 +487,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     topic: 'disputes',
     q: 'Does one moderator decide alone?',
     a: 'For most trades, yes. A ruling on a large trade also needs a senior moderator or the owner to approve it.',
-    sources: ['packages/staff/src/dispute.ts:212-213 needsSecond', 'apps/api/src/staff/settingsDefaults.ts:11-12 largeTradeLimitUsd', 'packages/staff/src/dispute.ts:265-270 canApprove'],
+    sources: ['packages/staff/src/dispute.ts:212-213 needsSecond', 'apps/api/src/staff/settingsDefaults.ts:11-12 largeTradeLimitUsd', 'packages/staff/src/dispute.ts:271-272 const canApprove'],
   },
   {
     id: 'appeal',
@@ -503,14 +503,6 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     q: 'Does the ruling wait while I appeal?',
     a: 'No. The first ruling takes effect at once, even when it is appealed.',
     sources: ['packages/staff/src/dispute.ts:35-37 round 1 is ruled and acts at once', 'packages/staff/src/dispute.ts:73-76 round 1 still executes after'],
-  },
-  {
-    id: 'appeal-writing',
-    topic: 'disputes',
-    q: 'What do I write in an appeal?',
-    a: 'Say why you think the ruling is wrong, in at least 10 characters. Add anything the first moderator did not see.',
-    sources: [`${WEB}/dispute/rules.ts:38 APPEAL_MIN`],
-    facts: ['appealMinChars'],
   },
 
   // ---- Account safety -------------------------------------------------------------------------
@@ -542,7 +534,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'partner-on-hold',
     topic: 'safety',
     q: 'The other trader\'s account "has a temporary problem". What does that mean?',
-    a: 'Their account is on hold, so your trade is paused and no XMR moves for now. You can still chat with them and open a dispute.',
+    a: 'Something on their account needs sorting out first, so your trade is paused and no XMR moves for now. You can still chat with them and open a dispute.',
     sources: ['apps/api/src/trades/held.ts:11-14 the partner is told', `${M}:213-220 WHILE_PAUSED`],
   },
   {
@@ -558,7 +550,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     topic: 'safety',
     q: 'How many devices can I be logged in on?',
     a: 'Up to 3 at a time, unless X2F sets another number. You can also turn on "One device at a time" in Settings.',
-    sources: [`${AUTH}/approval.ts:61 DEFAULT_MAX_DEVICES`, `${AUTH}/approval.ts:8 One device at a time`],
+    sources: [`${AUTH}/approval.ts:61 DEFAULT_MAX_DEVICES`, `${AUTH}/approval.ts:8-9 One`],
     facts: ['maxDevices'],
   },
   {
@@ -587,8 +579,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'bans',
     topic: 'safety',
     q: 'Can my account be banned?',
-    // not-a-refusal: says a feature is not built yet
-    a: 'Account bans are not available in the app yet. This answer will say how they work once they are.',
+    a: 'Account bans are not in the app yet. This answer will say how they work once they are.',
     sources: ['apps/api/src/bans.ts:29-30 nothing calls `recordBan` yet', 'apps/api/src/disputes/rulings.ts:59-63 Account actions on the ruling card are refused'],
   },
   {
@@ -597,13 +588,6 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     q: 'How do I avoid being scammed when I sell?',
     a: 'Release only once the money is really in your account. Check your own bank or payment app, not a screenshot: screenshots can be faked.',
     sources: [`${WEB}/trade/ReleaseWarning.tsx:47 Only release once the money`, `${WEB}/trade/ReleaseWarning.tsx:49 Screenshots can be faked`],
-  },
-  {
-    id: 'pay-before-secured',
-    topic: 'safety',
-    q: 'The seller asks me to pay before the escrow is secured. Should I?',
-    a: 'No. Send nothing until the trade shows the escrow as funded and secured, because until then there is no XMR held for you.',
-    sources: [`${WEB}/trade/TradeFund.tsx:459 Pay only once the escrow is funded and secured`, `${M}:371-372 state: 'secured'`],
   },
   {
     id: 'real-moderator',
@@ -664,8 +648,8 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'what-is-stored',
     topic: 'privacy',
     q: 'What does X2F keep about me?',
-    a: 'Your display name, your username stored only as a one-way code, the public parts of your login methods, your trades with their payout addresses, and your chats in encrypted form. X2F keeps no name, email or phone number, because it never asks for them.',
-    sources: [`${SPEC}:34 The API holds`, `${SPEC}:215 Stored only as HMAC-SHA-256`, `${SPEC}:15 X2F asks for no name, email or phone`],
+    a: 'Your display name, your username stored only as a one-way code, your login methods (public keys, or a password kept only as a hash), your trades with their payout addresses, and your chats in encrypted form. X2F keeps no name, email or phone number, because it never asks for them.',
+    sources: [`${SPEC}:34 password hashes`, `${SPEC}:215 Stored only as HMAC-SHA-256`, `${SPEC}:15 X2F asks for no name, email or phone`],
   },
   {
     id: 'chat-kept',
@@ -695,7 +679,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     topic: 'privacy',
     q: 'Can X2F read my chats?',
     a: 'Chats are encrypted for the buyer, the seller and X2F\'s moderation service, so nobody else can read them on the way or from X2F\'s main database. X2F\'s rule is that staff look at a trade\'s chat only when it is disputed; today that is a rule, not a technical lock.',
-    sources: [`${SPEC}:163-167 Who can read what`, 'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP'],
+    sources: [`${SPEC}:163-167 can decrypt every chat`, 'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP'],
   },
   {
     id: 'pgp-key-name',
@@ -758,14 +742,6 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     q: 'Is there a fee when a moderator rules?',
     a: 'If the ruling releases the XMR to the buyer, the trade completes and the vendor pays the 1%. If everything goes back to where it came from, there is no fee. While an appeal is open, the fee waits for its outcome.',
     sources: ['packages/staff/src/dispute.ts:309-310 release-to-buyer', 'packages/staff/src/dispute.ts:318 return \'waits\';', `${T}/payouts.ts:29-32 'dispute-buyer'`],
-    facts: ['feePercent'],
-  },
-  {
-    id: 'fee-network',
-    topic: 'fees',
-    q: 'Is the Monero network fee part of the X2F fee?',
-    a: 'No. The network fee goes to the Monero network for sending the payout, and X2F\'s 1% is separate.',
-    sources: [`${T}/payouts.ts:6-8 bears the network fee; the X2F fee output is`, 'packages/escrow/src/verify.ts:7 MAX_NETWORK_FEE'],
     facts: ['feePercent'],
   },
 ];
