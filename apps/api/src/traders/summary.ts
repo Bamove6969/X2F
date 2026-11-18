@@ -11,7 +11,7 @@ import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { verifiedPastRepBySite } from '../pastrep/store.js';
 import { importedLines, tradedOverXmr, tradedXmrSql, type ImportedLine } from './tradedTotal.js';
 import { FINAL_SALES_SQL, reviewHeldSql, rulingCountsSql } from './finalOutcome.js';
-import { COMPLETED_TRADES_SQL, loadStarterSettings, stageFor, type Stage, type StarterSettings } from './stage.js';
+import { COMPLETED_TRADES_SQL, loadStarterSettings, purgedSql, stageFor, type Stage, type StarterSettings } from './stage.js';
 
 /**
  * A trader as anyone else sees them (plan Task 4): on offer cards (`GET /v1/offers`), the
@@ -84,11 +84,16 @@ export function lastSeenSql(account: string, viewer: string): string {
  * completed trades as well. A dispute whose appeal is pending counts neither way until the appeal is
  * decided (R-011 / R-012, J-21 review F1; `rulingCountsSql`, shared with J-21's won count).
  */
-export const LOST_DISPUTES_SQL = `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
+export const LOST_DISPUTES_SQL = `(${lostDisputesLiveSql()} + ${purgedSql('purged_lost')})`;
+
+/** LOST_DISPUTES_SQL's live part alone, with `extra` added to its WHERE (trade alias `t`; see completedTradesLiveSql). */
+export function lostDisputesLiveSql(extra = ''): string {
+  return `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
    where not exists (select 1 from dispute_rulings d2 where d2.code = dr.code and d2.seq = dr.seq and d2.round > dr.round)
      and ${rulingCountsSql('dr.code', 'dr.seq')}
      and ((dr.outcome in ('release-to-buyer', 'seller-sends-xmr', 'seller-returns-fiat') and t.seller_account_id = a.id)
-       or (dr.outcome = 'refund-to-seller' and t.buyer_account_id = a.id)))`;
+       or (dr.outcome = 'refund-to-seller' and t.buyer_account_id = a.id)) ${extra})`;
+}
 
 /**
  * SQL: the disputes `a.id` won, the mirror of LOST_DISPUTES_SQL by the same latest ruling: a release
@@ -96,10 +101,15 @@ export const LOST_DISPUTES_SQL = `(select count(*) from dispute_rulings dr join 
  * seller is won by the seller. An after-refund "no action" ruling counts for neither side, as in
  * LOST_DISPUTES_SQL (owner question, J-21). Read from the live trades until Task 20's running totals.
  */
-const WON_DISPUTES_SQL = `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
+export const WON_DISPUTES_SQL = `(${wonDisputesLiveSql()} + ${purgedSql('purged_won')})`;
+
+/** WON_DISPUTES_SQL's live part alone, with `extra` added to its WHERE (trade alias `t`; see completedTradesLiveSql). */
+export function wonDisputesLiveSql(extra = ''): string {
+  return `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
    where not exists (select 1 from dispute_rulings d2 where d2.code = dr.code and d2.seq = dr.seq and d2.round > dr.round)
      and ((dr.outcome in ('release-to-buyer', 'seller-sends-xmr', 'seller-returns-fiat') and t.buyer_account_id = a.id)
-       or (dr.outcome = 'refund-to-seller' and t.seller_account_id = a.id)))`;
+       or (dr.outcome = 'refund-to-seller' and t.seller_account_id = a.id)) ${extra})`;
+}
 
 /** A trader's side, for the typical time a card shows: a seller's release time, a buyer's payment time. */
 export type SummaryRole = 'buyer' | 'seller';
@@ -177,10 +187,9 @@ export async function traderSummaries(
         ratedReviews: rated,
         // Fast (R-042): 30 payments sent in under half the time to pay (traders/actionTimes.ts countFastPayment).
         fastPayments: r.fast,
-        // NEEDS_TASK_20_LOST_DISPUTES (review 2, M1): Clean record reads lost disputes from the live
-        // trades, so once the 30-day trade delete runs it would undercount and claim "no lost disputes"
-        // falsely. The Plan 7 trade purge must not land before Task 20's `lost_disputes` running total
-        // replaces LOST_DISPUTES_SQL (or Clean record is withheld). docs/coordination.md records this.
+        // Review 2, M1 (was NEEDS_TASK_20_LOST_DISPUTES): Clean record reads the lost disputes of the
+        // live trades plus those the Plan 7 trade purge moved into `purged_lost` (701), so deleting a
+        // trade never makes it claim "no lost disputes" falsely.
         lostDisputes: Number(r.lost),
         accountCreatedAt: r.created_at,
         hasPgp: r.pgp,
