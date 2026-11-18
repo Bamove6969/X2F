@@ -4,10 +4,11 @@
 // specs get the board's stand-in chat), the real chat engine in the escrow worker (device
 // identity in IndexedDB, the attestation checked against the build's pinned moderation key), and a
 // page.route stand-in for the chat API in Task 20's shapes. The other trader and the moderation
-// service are played here with libsodium and @x2f/protocol: the test seals the buyer's line, signs
-// the attestation, and opens what the browser posted.
+// service are played here with libsodium and @x2f/protocol: the test signs the attestation, makes the
+// chat key and its signed record as the buyer (the first trader there, design build task 5), seals
+// the buyer's line under it (envelope v2), and opens what the browser posted with the buyer's copy.
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { open, ReplayGuard, seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { makeChatKeyRecord, newChatKey, openChat, openChatKeyRecord, ReplayGuard, sealChat, type ChatEnvelopeV2, type ChatKeyRecord, type Identity, type Participants } from '@x2f/protocol';
 import { attestationBytes, channelFor, chatIdentityProofValid, type Attestation } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
@@ -54,8 +55,10 @@ const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, 
 
 interface FakeChat {
   registered: { signPublic: string; boxPublic: string; proof: string }[];
-  posted: Envelope[];
+  posted: ChatEnvelopeV2[];
   participants: () => Participants | null;
+  /** The chat key record the buyer made (null until the attestation). */
+  record: () => ChatKeyRecord | null;
   buyer: Identity;
   mod: Identity;
   channel: string;
@@ -67,8 +70,9 @@ async function stubChat(page: Page): Promise<FakeChat> {
   const buyer = identity();
   const mod = identity();
   const registered: FakeChat['registered'] = [];
-  const posted: Envelope[] = [];
-  const envelopes: { id: string; senderRole: string; envelope: Envelope; at: string }[] = [];
+  const posted: ChatEnvelopeV2[] = [];
+  const envelopes: { id: string; senderRole: string; envelope: ChatEnvelopeV2; at: string }[] = [];
+  let record: ChatKeyRecord | null = null;
   let attestation: { attestation: Attestation; sig: string } | null = null;
   const participants = (): Participants | null => {
     const me = registered[0];
@@ -93,17 +97,25 @@ async function stubChat(page: Page): Promise<FakeChat> {
       // The moderation service attests the chat, and the buyer writes first.
       const a: Attestation = { v: 1, trade: CHAT, channels: { chat: channel }, participants: participants()!, issuedAt: new Date().toISOString() };
       attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), modKey.privateKey)) };
-      const hello = await seal({ trade: channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'Hello from the buyer' }, to: ['buyer', 'seller', 'mod'], me: buyer, participants: participants()! });
+      // Envelope v2: the buyer makes the chat key and its record (locked to the attested buyer and
+      // seller), and seals its line under the key.
+      const tk = await newChatKey();
+      record = await makeChatKeyRecord({ chat: channel, by: 'buyer', tk, me: buyer, participants: participants()! });
+      const hello = await sealChat({ trade: channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'Hello from the buyer' }, tk, me: buyer });
+      tk.fill(0);
       envelopes.push({ id: '1', senderRole: 'buyer', envelope: hello, at });
       return json({ ok: true, role: 'seller' }, 201)(r);
     }
+    if (path === '/key' && method === 'GET') return record ? json({ record })(r) : json({ error: 'no-key' }, 404)(r);
+    // The buyer's record came first: the browser must read it, never make a second key.
+    if (path === '/key' && method === 'POST') return json({ error: record ? 'key-exists' : 'chat-not-ready' }, 409)(r);
     if (path === '/attestation' && method === 'GET') return attestation ? json(attestation)(r) : json({ status: 'pending' }, 202)(r);
     if (path === '/envelopes' && method === 'GET') {
       const after = BigInt(url.searchParams.get('after') ?? '0');
       return json({ envelopes: envelopes.filter((e) => BigInt(e.id) > after), more: false })(r);
     }
     if (path === '/envelopes' && method === 'POST') {
-      const env = r.request().postDataJSON() as Envelope;
+      const env = r.request().postDataJSON() as ChatEnvelopeV2;
       posted.push(env);
       const id = String(envelopes.length + 1);
       envelopes.push({ id, senderRole: 'seller', envelope: env, at });
@@ -111,7 +123,7 @@ async function stubChat(page: Page): Promise<FakeChat> {
     }
     return json({ error: 'not-found' }, 404)(r);
   });
-  return { registered, posted, participants, buyer, mod, channel };
+  return { registered, posted, participants, record: () => record, buyer, mod, channel };
 }
 
 async function openRoom(page: Page): Promise<void> {
@@ -130,7 +142,7 @@ async function openRoom(page: Page): Promise<void> {
 /** The room's chat sheet that `#chat` opens on a phone. */
 const chatSheet = (page: Page) => page.getByRole('dialog', { name: `Chat with ${BOARD.buyer}` });
 
-test("the room's #chat sheet: a device-bound identity, the buyer's line, and a sealed reply only the buyer and the mod open", async ({ page }) => {
+test("the room's #chat sheet: a device-bound identity, the buyer's line, and a v2 reply sealed under the chat key", async ({ page }) => {
   const chat = await stubChat(page);
   await openRoom(page);
   const panel = chatSheet(page);
@@ -144,10 +156,14 @@ test("the room's #chat sheet: a device-bound identity, the buyer's line, and a s
   await expect(panel.locator('[data-mine]')).toContainText('Sending the refund details now');
   expect(chat.posted).toHaveLength(1);
   expect(JSON.stringify(chat.posted)).not.toContain('refund details');
-  for (const [role, me] of [['buyer', chat.buyer], ['mod', chat.mod]] as const) {
-    const o = await open(chat.posted[0]!, { me, myRole: role, participants: chat.participants()!, trade: chat.channel, guard: new ReplayGuard(chat.channel) });
-    expect(o.payload).toEqual({ text: 'Sending the refund details now' });
-  }
+  // Envelope v2 only (R16: no sender can leave the moderator's copy out), under the buyer's key: the
+  // browser read the buyer's record and made no key of its own. The buyer opens it with its own copy
+  // (the moderator gets the same key through a grant once a dispute opens: chatEngine/chatGrant tests).
+  expect(chat.posted[0]!.v).toBe(2);
+  const tk = await openChatKeyRecord(chat.record()!, 'buyer', chat.buyer);
+  const o = await openChat(chat.posted[0]!, { tk, trade: chat.channel, participants: chat.participants()!, guard: new ReplayGuard(chat.channel) });
+  expect(o.from).toBe('seller');
+  expect(o.payload).toEqual({ text: 'Sending the refund details now' });
 
   // A reload keeps the identity (no second registration) and the lines (the persisted guard).
   await page.reload();
