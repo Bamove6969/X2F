@@ -994,3 +994,123 @@ describe('chat engine: the payment proof (Plan 5 Task 15)', () => {
     expect(rec.receipts.find((r) => r.id === id)?.refused).toBe(true);
   });
 });
+
+describe('chat engine: the unblurred copy for the moderator (Plan 5 Task 15, Review Focus 4)', () => {
+  async function unblurred(over: Record<string, unknown> = {}) {
+    const { newProofId, proofKeyToBase64 } = await import('@x2f/proof');
+    return { proofId: newProofId(), key: await proofKeyToBase64(new Uint8Array(32).fill(9)), sha256: 'cd'.repeat(32), width: 300, height: 120, mime: 'image/png' as const, ...over };
+  }
+
+  it('sendUnblurred seals proof.unblurred to the moderator only: the seller and the buyer itself cannot open it', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await unblurred();
+    await e.sendUnblurred(chat, p);
+    expect(api.posted).toHaveLength(1);
+    const env = api.posted[0] as Envelope;
+    const wire = JSON.stringify(env);
+    for (const s of [p.key, p.proofId, p.sha256, 'proof.unblurred']) expect(wire, s).not.toContain(s);
+    const { open, ReplayGuard } = await import('@x2f/protocol');
+    const o = await open(env, { me: mod, myRole: 'mod', participants: parts, trade: channel, guard: new ReplayGuard(channel) });
+    expect(o.type).toBe('proof.unblurred');
+    expect(o.payload).toEqual(p);
+    await expect(open(env, { me: seller, myRole: 'seller', participants: parts, trade: channel, guard: new ReplayGuard(channel) })).rejects.toMatchObject({ code: 'not-for-me' });
+    const buyer = made[0]!;
+    await expect(open(env, { me: buyer, myRole: 'buyer', participants: parts, trade: channel, guard: new ReplayGuard(channel), allowSelf: true })).rejects.toMatchObject({ code: 'not-for-me' });
+  });
+
+  it('only while a dispute is open and the trade was secured: not-ready otherwise, nothing sealed, the seq kept', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.sendUnblurred(chat, await unblurred())).rejects.toMatchObject({ code: 'not-ready' });
+    api.view.disputeOpen = true;
+    api.view.tradeSecuredAt = null;
+    await expect(e.sendUnblurred(chat, await unblurred())).rejects.toMatchObject({ code: 'not-ready' });
+    expect(api.posted).toHaveLength(0);
+    expect((await store.load(chat))!.state?.nextSeq ?? 0).toBe(0);
+    await expect(e.sendUnblurred(chat, await unblurred({ key: 'nope' }))).rejects.toMatchObject({ code: 'not-ready' });
+    api.view.tradeSecuredAt = '2026-10-28T11:00:00.000Z';
+    await expect(e.sendUnblurred(chat, await unblurred({ key: 'nope' }))).rejects.toMatchObject({ code: 'bad-proof' });
+    await expect(e.sendUnblurred(chat, await unblurred({ kind: 'proof' }))).rejects.toMatchObject({ code: 'bad-proof' });
+    expect(api.posted).toHaveLength(0);
+  });
+
+  it('the copy is no line for anyone and leaves no gap: the sender\'s next line follows on, on both sides', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await e.send(chat, 'before');
+    await e.sendUnblurred(chat, await unblurred());
+    const snap = await e.send(chat, 'after');
+    expect(snap.lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', false]]);
+    // A fresh read on this device (no text kept) shows the same.
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', false]]);
+    // The seller's device: the same chat read as the seller sees the two lines, no gap and nothing else.
+    const { openChatMessage } = await import('../src/chat/chatCrypto.js');
+    let st = newChatState(channel);
+    const seen: string[] = [];
+    for (const env of api.posted as Envelope[]) {
+      try {
+        const r = await openChatMessage(env, { role: 'seller', me: seller, participants: parts, state: st, modMayPost: true });
+        st = r.state;
+        seen.push(r.message.text);
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'not-for-me' });
+        seen.push('(not for me)');
+      }
+    }
+    expect(seen).toEqual(['before', '(not for me)', 'after']);
+  });
+
+  it('a seller-side engine takes the buyer\'s copy as a receipt with no line, and the buyer\'s next line shows with no gap', async () => {
+    // This device is the seller; the buyer is played here.
+    api.view = { ...api.view, role: 'seller', counterparty: 'Ana', disputeOpen: true };
+    const e = engine();
+    await e.sync(chat);
+    const me = made[0]!;
+    const buyer = await testIdentity();
+    api.identities.buyer = { signPublic: buyer.signPublic, boxPublic: buyer.boxPublic, proof: '' };
+    const participants: Participants = { buyer: pub(buyer), seller: pub(me), mod: pub(mod) };
+    const a: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: new Date().toISOString() };
+    api.attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), modKey.privateKey)) };
+    const { parseProofPayload, sealProofEnvelope } = await import('@x2f/proof');
+    let bs = newChatState(channel);
+    const line = async (text: string) => {
+      const r = await sealChatMessage({ role: 'buyer', me: buyer, participants, state: bs, text });
+      bs = r.state;
+      api.add('buyer', r.envelope);
+    };
+    await line('before');
+    const p = await unblurred();
+    const id = api.add('buyer', await sealProofEnvelope(parseProofPayload('proof.unblurred', p), { trade: channel, from: 'buyer', seq: bs.nextSeq, me: buyer, participants }));
+    bs = { ...bs, nextSeq: bs.nextSeq + 1 };
+    await line('after');
+    const snap = await e.sync(chat);
+    expect(snap.lines.map((l) => [l.from, l.text, l.gapBefore])).toEqual([['buyer', 'before', false], ['buyer', 'after', false]]);
+    const shown = JSON.stringify(snap);
+    for (const s of [p.proofId, p.key, p.sha256]) expect(shown, s).not.toContain(s);
+    const rec = (await store.load(chat))!;
+    expect(rec.receipts.find((r) => r.id === id)).toMatchObject({ from: 'buyer', away: true });
+    // Read again from the start: still no line and no gap.
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', false]]);
+  });
+
+  it('the worker checks the payload before the engine sees it (chat-send-unblurred)', async () => {
+    const { serveChat } = await import('../src/chat/serve.js');
+    const got: unknown[] = [];
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async (_c: string, p: unknown) => (got.push(p), {} as never), sendNotice: async () => ({}) as never, sweep: async () => [] };
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
+    handler({ data: { t: 'chat-send-unblurred', id: 1, chat, proof: { ...(await unblurred()), key: 'bad' } } });
+    handler({ data: { t: 'chat-send-unblurred', id: 2, chat, proof: await unblurred() } });
+    for (let i = 0; i < 200 && out.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(out).toContainEqual({ t: 'chat', id: 1, ok: false, error: 'bad-proof' });
+    expect(out).toContainEqual(expect.objectContaining({ t: 'chat', id: 2, ok: true }));
+    expect(got).toHaveLength(1);
+  });
+});

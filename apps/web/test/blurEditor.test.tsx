@@ -159,6 +159,40 @@ describe('AddProof', () => {
     expect(JSON.stringify(send.mock.calls)).not.toContain('IMG_0042');
   });
 
+  it('P-012/P-013: when the blur check asks, the sent screen asks "did our privacy tool hide the right details?" for that proof', async () => {
+    const { BLUR_CHECK_QUESTION, BLUR_CHECK_THANKS } = await import('../src/screens/proof/BlurCheck.js');
+    const answer = vi.fn(async () => undefined);
+    const { host } = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => prepared()} send={async () => ({ proofId: 'P1', blur: 'auto' as const, hidden: [], ask: true })} answer={answer} />);
+    const input = $(host, 'input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [file()] });
+    fire(input, new Event('change', { bubbles: true }));
+    await flush();
+    click($(host, '[data-part="send-proof"]'));
+    await flush();
+    expect(textOf(host)).toContain(PROOF_SENT);
+    expect(textOf(host)).toContain(BLUR_CHECK_QUESTION);
+    click([...host.querySelectorAll('[data-part="blur-check-answers"] button')].find((b) => b.textContent === 'Yes')!);
+    await flush();
+    expect(answer).toHaveBeenCalledWith(CODE, 'P1', { correct: true });
+    expect(textOf(host)).toContain(BLUR_CHECK_THANKS);
+  });
+
+  it('P-012/P-013: no ask (not sampled, or the announcement failed) shows no question', async () => {
+    const { BLUR_CHECK_QUESTION } = await import('../src/screens/proof/BlurCheck.js');
+    for (const result of [{ proofId: 'P1', blur: 'auto' as const, hidden: [], ask: false }, { proofId: 'P1', blur: 'auto' as const, hidden: [] }]) {
+      const r = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => prepared()} send={async () => result} answer={vi.fn()} />);
+      const input = $(r.host, 'input[type="file"]') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { value: [file()] });
+      fire(input, new Event('change', { bubbles: true }));
+      await flush();
+      click($(r.host, '[data-part="send-proof"]'));
+      await flush();
+      expect(textOf(r.host)).toContain(PROOF_SENT);
+      expect(textOf(r.host)).not.toContain(BLUR_CHECK_QUESTION);
+      r.unmount();
+    }
+  });
+
   it("a file that can't be used says so, and Choose another goes back to the picker", async () => {
     const { ProofInputError } = await import('../src/proof/upload.js');
     const { host } = render(<AddProof code={CODE} expected={EXPECTED} prepare={async () => { throw new ProofInputError('too-large'); }} send={vi.fn()} />);

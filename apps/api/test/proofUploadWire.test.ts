@@ -4,12 +4,14 @@
 // decrypts, with the key from the envelope, to the blurred and cleaned picture only. The screen
 // stays behind VITE_X2F_PROOF_UPLOAD (off by default): this test turns nothing on.
 import { deflateSync, inflateSync } from 'node:zlib';
-import { decryptProof, proofKeyFromBase64, type ProofAttachedPayload } from '@x2f/proof';
+import { decryptProof, proofKeyFromBase64, type ProofAttachedPayload, type ProofUnblurredPayload } from '@x2f/proof';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { ApiCallError } from '../../web/src/api/client.js';
-import { type EditorRegion, type PreparedProof, proofUploadOn, putProof, sendProof } from '../../web/src/proof/upload.js';
+import { type EditorRegion, type PreparedProof, proofUploadOn, putProof, sendProof, sendUnblurred } from '../../web/src/proof/upload.js';
+import { startDispute } from '../src/disputes/store.js';
+import { loadTrade } from '../src/trades/store.js';
 import { Browser, ORIGIN } from './helpers/totp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -169,5 +171,42 @@ describe('the web proof upload against the real proof route (NEEDS_PLAN_5_TASK_1
     const again = await putProof(code, id, 'proof', ct, fetchAs(buyer.browser)).catch((e: unknown) => e);
     expect(again).toBeInstanceOf(ApiCallError);
     expect(again).toMatchObject({ status: 409, code: 'proof-exists' });
+  });
+
+  it('Plan 5 Task 15: sendUnblurred after a moderator asked: stored as kind unblurred, read by no trader, and the dispute view says when it went', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, trade, 'paid');
+    const code = trade.code;
+    const t = (await loadTrade(deps.db, code))!;
+    const client = await deps.db.connect();
+    try {
+      await client.query('begin');
+      await client.query(`update trades set state = 'disputed', dispute_by = 'buyer', dispute_at = $2 where code = $1`, [code, deps.clock()]);
+      await startDispute(client, t, { openedBy: 'buyer', reason: 'paid', note: '', afterRefund: false, now: deps.clock(), prices: null });
+      await client.query('commit');
+    } finally {
+      client.release();
+    }
+    const send = (posted: ProofUnblurredPayload[]) =>
+      sendUnblurred({ code, picture: { rgba: pixels(), width: W, height: H } }, { encode: async (rgba, w, h) => encodePng(rgba, w, h), put: (c, id, kind, ct) => putProof(c, id, kind, ct, fetchAs(buyer.browser)), postUnblurred: async (_c, p) => void posted.push(p) });
+    // Nobody asked yet: the route refuses it and no envelope goes.
+    const none: ProofUnblurredPayload[] = [];
+    await expect(send(none)).rejects.toMatchObject({ status: 409, code: 'not-requested' });
+    expect(none).toHaveLength(0);
+    await deps.db.query(`update disputes set proof_request_side = 'buyer', proof_requested_at = $2, proof_requested_by = 'Mod Ana', proof_request_sent_at = null where code = $1`, [code, deps.clock()]);
+    const posted: ProofUnblurredPayload[] = [];
+    const r = await send(posted);
+    const row = (await deps.db.query<{ ciphertext: Buffer; uploader_role: string; kind: string }>('select ciphertext, uploader_role, kind from trade_proofs where id = $1', [r.proofId])).rows[0]!;
+    expect(row).toMatchObject({ uploader_role: 'buyer', kind: 'unblurred' });
+    // The moderator's key opens it to the whole picture, cleaned; no trader can fetch it.
+    const plain = await decryptProof(new Uint8Array(row.ciphertext), await proofKeyFromBase64(posted[0]!.key), { code, proofId: r.proofId, kind: 'unblurred', sha256: posted[0]!.sha256 });
+    const d = decodePng(plain);
+    expect(d.types).toEqual(['IHDR', 'IDAT', 'IEND']);
+    expect(d.rgba.equals(Buffer.from(pixels()))).toBe(true);
+    for (const who of [buyer, seller]) expect((await fetchAs(who.browser)(`/v1/trades/${code}/proofs/${r.proofId}`)).status).toBe(404);
+    const view = (await fetchAs(buyer.browser)(`/v1/trades/${code}/dispute`).then((x) => x.json())) as { proofRequest: { sentAt: string | null } };
+    expect(view.proofRequest.sentAt).toBe(deps.clock().toISOString());
   });
 });

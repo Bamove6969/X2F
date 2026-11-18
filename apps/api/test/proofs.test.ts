@@ -85,7 +85,8 @@ async function openDispute(code: string, side: 'buyer' | 'seller' = 'buyer') {
 
 /** Plan 4's request for the unblurred proof, as the staff route records it on the dispute. */
 async function requestUnblurred(code: string, side: 'buyer' | 'seller', when = deps.clock()) {
-  await deps.db.query(`update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = 'Mod Ana' where code = $1`, [code, side, when]);
+  // As the staff route: a new request also clears the time the last copy went.
+  await deps.db.query(`update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = 'Mod Ana', proof_request_sent_at = null where code = $1`, [code, side, when]);
 }
 
 const stored = async (id: string) =>
@@ -318,6 +319,29 @@ describe('dispute evidence and the unblurred copy', () => {
       expect(r.rawPayload.length).toBeLessThan(100);
     }
     expect((await put(buyer, code, newProofId(), 'unblurred')).statusCode).toBe(204);
+  });
+
+  it('Plan 5 Task 15: the dispute view tells the asked side when its copy went (sentAt), in the same transaction as the copy', async () => {
+    const { buyer, seller, code } = await tradeIn('paid');
+    await openDispute(code);
+    const view = async (who: Who) => ((await who.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown }).proofRequest;
+    setNow(at(60_000));
+    await requestUnblurred(code, 'buyer');
+    expect(await view(buyer)).toEqual({ username: 'Mod Ana', at: at(60_000).toISOString(), sentAt: null });
+    // A refused copy (a body too short) records nothing.
+    expect((await put(buyer, code, newProofId(), 'unblurred', body(8))).statusCode).toBe(400);
+    expect(await view(buyer)).toMatchObject({ sentAt: null });
+    setNow(at(120_000));
+    expect((await put(buyer, code, newProofId(), 'unblurred')).statusCode).toBe(204);
+    expect(await view(buyer)).toEqual({ username: 'Mod Ana', at: at(60_000).toISOString(), sentAt: at(120_000).toISOString() });
+    // The other side is never told about the request or the copy.
+    await seller.browser.post('/t/login', { accountId: seller.id });
+    expect(await view(seller)).toBeNull();
+    // A new request opens the slot again and clears the time.
+    setNow(at(180_000));
+    await requestUnblurred(code, 'buyer');
+    await buyer.browser.post('/t/login', { accountId: buyer.id });
+    expect(await view(buyer)).toMatchObject({ sentAt: null });
   });
 
   it('review M4 (lead 2026-11-12): evidence has its own 5 per side, and an unblurred copy never counts', async () => {

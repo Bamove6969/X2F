@@ -876,8 +876,20 @@ describe('the proof request in the trader view', () => {
     expect((await mod.b.post(url(code, '/proof-request'), { side: 'buyer' })).statusCode).toBe(204);
     const asBuyer = (await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown };
     const asSeller = (await seller.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown };
-    expect(asBuyer.proofRequest).toEqual({ username: mod.name, at: START.toISOString() });
+    expect(asBuyer.proofRequest).toEqual({ username: mod.name, at: START.toISOString(), sentAt: null });
     expect(asSeller.proofRequest).toBeNull();
+  });
+
+  it('Plan 5 Task 15: a new request clears the time the last unblurred copy went (sentAt)', async () => {
+    const mod = await staff('mod');
+    const { code, buyer } = await disputed();
+    await mod.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    // As if the buyer had answered an earlier request (proofs.test.ts drives the upload itself).
+    await deps.db.query('update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = $4, proof_request_sent_at = $3 where code = $1', [code, 'buyer', START, mod.name]);
+    expect(((await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: { sentAt: unknown } }).proofRequest.sentAt).toBe(START.toISOString());
+    expect((await mod.b.post(url(code, '/proof-request'), { side: 'buyer' })).statusCode).toBe(204);
+    expect(((await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown }).proofRequest).toEqual({ username: mod.name, at: START.toISOString(), sentAt: null });
   });
 });
 

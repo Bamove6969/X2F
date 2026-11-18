@@ -19,9 +19,11 @@ import {
   finishProof,
   manualRegion,
   prepareProof,
+  prepareUnblurred,
   proofUploadOn,
   putProof,
   sendProof,
+  sendUnblurred,
 } from '../src/proof/upload.js';
 import { browserProofImageDeps } from '../src/proof/browserImage.js';
 import { cleanJpeg } from '../../../packages/proof/test/fixtures.js';
@@ -505,5 +507,70 @@ describe('re-verify Z1: a failure after the decode zeroes the decoded pixels', (
     const px = original();
     await expect(prepareProof(pickedFile(), KEEP, deps({ decode: async () => ({ rgba: px, width: W, height: H }), ocr: async () => [null as unknown as OcrWord] }))).rejects.toThrow();
     expect(px.every((b) => b === 0)).toBe(true);
+  });
+});
+
+describe('the unblurred copy for the moderator (Task 15 SendUnblurred, Review Focus 4): stripped, never blurred', () => {
+  it('prepareUnblurred reads the picked file once, decodes it upright, runs no OCR, and zeroes the file bytes', async () => {
+    const ocrCalls = vi.fn(async () => WORDS);
+    let decoded: Blob | null = null;
+    const pic = await prepareUnblurred(pickedFile(), deps({ ocr: ocrCalls, decode: async (b) => ((decoded = b), { rgba: original(), width: W, height: H }) }));
+    expect(ocrCalls).not.toHaveBeenCalled();
+    expect(decoded!.type).toBe('image/png');
+    expect([pic.width, pic.height]).toEqual([W, H]);
+    expect(Buffer.from(pic.rgba).equals(Buffer.from(original()))).toBe(true);
+    // The same refusals as the proof: nothing undecodable or too large.
+    await expect(prepareUnblurred(new Blob([]), deps())).rejects.toBeInstanceOf(ProofInputError);
+    await expect(prepareUnblurred(new Blob([new TextEncoder().encode('not an image')]), deps())).rejects.toBeInstanceOf(ProofInputError);
+  });
+
+  it('only ciphertext of the stripped, cleaned copy goes up as kind=unblurred; the envelope is proof.unblurred; the pixels are zeroed after', async () => {
+    const file = pickedFile();
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const pic = await prepareUnblurred(file, deps());
+    const requests: { url: string; init: RequestInit }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(url), init: init ?? {} });
+      return new Response(null, { status: 204 });
+    }));
+    const posted: { code: string; payload: Record<string, unknown> }[] = [];
+    const r = await sendUnblurred({ code: CODE, picture: pic }, { ...deps(), put: putProof, postUnblurred: async (code, payload) => void posted.push({ code, payload: payload as unknown as Record<string, unknown> }) });
+
+    expect(requests).toHaveLength(1);
+    const req = requests[0]!;
+    expect(req.url).toBe(`/v1/trades/${CODE}/proofs/${r.proofId}?kind=unblurred`);
+    expect(new Headers(req.init.headers).get('content-type')).toBe('application/octet-stream');
+    const body = req.init.body as Uint8Array;
+    expect(has(body, new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
+    expect(has(body, new TextEncoder().encode('GPS'))).toBe(false);
+    expect(has(body, fileBytes.subarray(fileBytes.length - 64))).toBe(false);
+
+    // The payload is exactly proof.unblurred's (no kind, no hidden list, no photo time).
+    expect(posted).toHaveLength(1);
+    expect(Object.keys(posted[0]!.payload).sort()).toEqual(['height', 'key', 'mime', 'proofId', 'sha256', 'width']);
+    const payload = posted[0]!.payload as { proofId: string; key: string; sha256: string; mime: string };
+    expect(payload.proofId).toBe(r.proofId);
+    const wire = JSON.stringify(posted);
+    for (const s of ['GPS', 'iPhone', FILE_META, 'blob:', 'data:']) expect(wire).not.toContain(s);
+
+    // The moderator's view: the whole picture, unblurred, with nothing but the image chunks.
+    const key = await proofKeyFromBase64(payload.key);
+    const plain = await decryptProof(body, key, { code: CODE, proofId: r.proofId, kind: 'unblurred', sha256: payload.sha256 });
+    const d = decodePng(plain);
+    expect(d.types).toEqual(['IHDR', 'IDAT', 'IEND']);
+    expect(has(plain, new TextEncoder().encode('encoder-added'))).toBe(false);
+    expect(Buffer.from(d.rgba).equals(Buffer.from(original()))).toBe(true);
+    // Bound to its kind: it never opens as a payment proof.
+    await expect(decryptProof(body, key, { code: CODE, proofId: r.proofId, kind: 'proof', sha256: payload.sha256 })).rejects.toThrow();
+    // The decoded pixels are gone once it is sent.
+    expect(pic.rgba.every((v) => v === 0)).toBe(true);
+  });
+
+  it('a failed upload posts no envelope, and the pixels are zeroed either way (the trader picks the file again)', async () => {
+    const pic = await prepareUnblurred(pickedFile(), deps());
+    const postUnblurred = vi.fn(async () => undefined);
+    await expect(sendUnblurred({ code: CODE, picture: pic }, { ...deps(), put: async () => { throw new Error('refused'); }, postUnblurred })).rejects.toThrow();
+    expect(postUnblurred).not.toHaveBeenCalled();
+    expect(pic.rgba.every((v) => v === 0)).toBe(true);
   });
 });
