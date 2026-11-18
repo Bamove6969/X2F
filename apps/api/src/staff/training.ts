@@ -76,13 +76,19 @@ function maskTag(key: Uint8Array, field: string, text: string): string {
  * hides the case.
  */
 function fieldTags(key: Uint8Array, auto: ReadonlyMap<string, Scrubbed>): Record<string, string> {
-  return Object.fromEntries([...auto].map(([field, s]) => [field, maskTag(key, `field:${field}`, s.text)]));
+  // Its own label (re-review 4 minor 3), never a field-name convention.
+  const tag = (field: string, text: string) => createHmac('sha256', key).update(`x2f/training-field\0${field}\0${text}`, 'utf8').digest('hex').slice(0, 32);
+  return Object.fromEntries([...auto].map(([field, s]) => [field, tag(field, s.text)]));
 }
 
-/** Re-review 3 m1: the tag of everything a curator reviews (every field's pre-masked text), echoed by the save. */
-function reviewTag(key: Uint8Array, auto: ReadonlyMap<string, Scrubbed>): string {
+/**
+ * Re-review 3 m1: the tag of everything a curator reviews (every field's pre-masked text), echoed by
+ * the save; bound to the case by its training id (re-review 4 minor 2), so one case's tag never
+ * passes on another with the same texts.
+ */
+function reviewTag(key: Uint8Array, id: string, auto: ReadonlyMap<string, Scrubbed>): string {
   const all = JSON.stringify([...auto].map(([field, s]) => [field, s.text]).sort((a, b) => (a[0]! < b[0]! ? -1 : 1)));
-  return createHmac('sha256', key).update(`x2f/training-review\0${all}`, 'utf8').digest('hex');
+  return createHmac('sha256', key).update(`x2f/training-review\0${id}\0${all}`, 'utf8').digest('hex');
 }
 const REVIEW_TAG = /^[0-9a-f]{64}$/;
 
@@ -364,7 +370,7 @@ export function staffTrainingRoutes(app: FastifyInstance): void {
   };
 
   app.get('/staff/v1/training/review/:id', { preHandler: curate, config: curateCfg }, async (req) => {
-    const { r, db, key } = await curatorCase(req);
+    const { r, id, db, key } = await curatorCase(req);
     const t = await caseTexts(db, r);
     const stored = r.manual_masks ?? [];
     const status = r.training_id === null ? 'unmarked' : curated(key, t.auto, stored, r.field_tags) === null ? 'stale' : 'marked';
@@ -372,7 +378,7 @@ export function staffTrainingRoutes(app: FastifyInstance): void {
       ...caseView(r, key, t, t.auto),
       status,
       // Re-review 3 m1: the save sends this back; a case that changed since is refused (409).
-      reviewTag: reviewTag(key, t.auto),
+      reviewTag: reviewTag(key, id, t.auto),
       // Every field pre-masked (automatic masks only), for the curator to add manual masks over.
       fields: Object.fromEntries(t.auto),
       // The stored manual masks, without their tags.
@@ -385,7 +391,7 @@ export function staffTrainingRoutes(app: FastifyInstance): void {
     const t = await caseTexts(db, r);
     const masks = parseMasks(key, req.body, t.auto);
     // Re-review 3 m1: the masks apply to the texts the curator reviewed, or not at all.
-    if ((req.body as { reviewTag: string }).reviewTag !== reviewTag(key, t.auto)) throw new ApiError(409, 'case-changed');
+    if ((req.body as { reviewTag: string }).reviewTag !== reviewTag(key, id, t.auto)) throw new ApiError(409, 'case-changed');
     const now = req.server.deps.clock();
     await withTx(req.server.deps.db, async (c) => {
       await c.query(

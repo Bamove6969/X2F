@@ -87,13 +87,19 @@ async function charBox(page: Page, field: string, index: number): Promise<{ x: n
   );
 }
 
-/** Drags the mouse from the first character of [start, end) to its last, as a curator selecting it. */
-async function dragSelect(page: Page, field: string, start: number, end: number): Promise<string> {
+/**
+ * Drags the mouse over [start, end) as a curator selecting it: from its first character to its last,
+ * or (`backwards`, re-review 4 minor 4) from its last to its first.
+ */
+async function dragSelect(page: Page, field: string, start: number, end: number, backwards = false): Promise<string> {
   const a = await charBox(page, field, start);
   const b = await charBox(page, field, end - 1);
-  await page.mouse.move(a.x + 1, a.y);
+  const from = { x: a.x + 1, y: a.y };
+  const to = { x: b.x + b.w - 1, y: b.y };
+  const [p, q] = backwards ? [to, from] : [from, to];
+  await page.mouse.move(p.x, p.y);
   await page.mouse.down();
-  await page.mouse.move(b.x + b.w - 1, b.y, { steps: 8 });
+  await page.mouse.move(q.x, q.y, { steps: 8 });
   await page.mouse.up();
   return page.evaluate(() => window.getSelection()?.toString() ?? '');
 }
@@ -128,12 +134,18 @@ test('a mouse selection after a multi-byte character and after an automatic mask
   await field(page, 'note').getByRole('button', { name: 'Hide the selected text' }).click();
   await expect(field(page, 'note').locator('mark[data-mask="manual"]')).toHaveText(['never paid', 'noon']);
 
+  // Right to left (re-review 4 minor 4): "Kowalski", after the mask too.
+  const third = { start: NOTE.indexOf('Kowalski'), end: NOTE.indexOf('Kowalski') + 'Kowalski'.length };
+  expect(await dragSelect(page, 'note', third.start, third.end, true)).toBe('Kowalski');
+  await field(page, 'note').getByRole('button', { name: 'Hide the selected text' }).click();
+  await expect(field(page, 'note').locator('mark[data-mask="manual"]')).toHaveText(['never paid', 'noon', 'Kowalski']);
+
   // A selection cutting into the automatic mask is refused and adds nothing.
   const cut = { start: PHONE - 3, end: PHONE + 3 };
   expect(await dragSelect(page, 'note', cut.start, cut.end)).toBe(NOTE.slice(cut.start, cut.end));
   await field(page, 'note').getByRole('button', { name: 'Hide the selected text' }).click();
   await expect(page.getByText('Select whole words outside the marked details.', { exact: false })).toBeVisible();
-  await expect(field(page, 'note').locator('mark[data-mask="manual"]')).toHaveCount(2);
+  await expect(field(page, 'note').locator('mark[data-mask="manual"]')).toHaveCount(3);
 
   // A whole text, then the mark.
   await field(page, 'ruling.1.evidence.0').getByRole('button', { name: 'Hide this whole text' }).click();
@@ -144,6 +156,7 @@ test('a mouse selection after a multi-byte character and after an automatic mask
       masks: [
         { field: 'note', start: first.start, end: first.end },
         { field: 'note', start: second.start, end: second.end },
+        { field: 'note', start: third.start, end: third.end },
         { field: 'ruling.1.evidence.0', whole: true },
       ],
       reviewTag: 'c'.repeat(64),
