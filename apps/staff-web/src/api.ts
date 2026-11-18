@@ -255,6 +255,51 @@ export interface PriceHealth {
 export const priceHealth = () => staffApi<PriceHealth>('/staff/v1/price-health');
 
 // ---------------------------------------------------------------------------------------------
+// Moderator performance (Plan 4 Task 20; perm perf.read, the owner only, spec 6.6), from
+// apps/api/src/staff/performance.ts. Staff names, roles and numbers only: no trader data.
+
+export type PerformancePeriod = '30d' | '90d' | 'all';
+
+export interface PerformanceFigures {
+  cases: number;
+  firstReplyMin: number | null;
+  rulingMin: number | null;
+  overturned: number;
+  withinDeadlinePct: number | null;
+  open: number;
+  payableCases: number;
+  settledWithinGoalPct: number | null;
+  settledWithinDeadlinePct: number | null;
+  appeals: number;
+  appealsWithinGoalPct: number | null;
+}
+
+export interface PerformancePerson extends PerformanceFigures {
+  id: string;
+  name: string;
+  role: StaffRole;
+}
+
+export interface Performance {
+  period: PerformancePeriod;
+  firstResponseH: number;
+  people: PerformancePerson[];
+}
+
+export interface PerformanceWeeks {
+  id: string;
+  name: string;
+  role: StaffRole;
+  firstResponseH: number;
+  from: string;
+  summary: PerformanceFigures;
+  weeks: { weekOf: string; start: string; cases: number; firstReplyMin: number | null }[];
+}
+
+export const getPerformance = (period: PerformancePeriod) => staffApi<Performance>(`/staff/v1/performance?period=${period}`);
+export const getPerformanceWeeks = (id: string) => staffApi<PerformanceWeeks>(`/staff/v1/performance/${encodeURIComponent(id)}/weeks`);
+
+// ---------------------------------------------------------------------------------------------
 // Staff members (Plan 4 Task 7; perm staff.manage, the owner only) and their per-person
 // checkboxes (owner Q60, J-21: PUT …/grants with a `set-grants` tap bound to the exact sorted list).
 

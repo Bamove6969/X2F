@@ -387,3 +387,209 @@
   font-size: 0.8em;
   text-align: center;
 }
+
+/*
+ * Moderator performance (Plan 4 Task 20, board StaffPerformance): the period select, the wide
+ * table (amber "Overturned on appeal" when any), the per-person chart panel and its two SVG charts
+ * (WeekBars, WeekLine). One series per chart in the staff accent (`--x2f-mod`), recessive grid.
+ */
+.x2f-perf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-5);
+  max-width: 1000px;
+}
+
+.x2f-perf__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-perf__period {
+  min-height: 44px;
+  width: auto;
+}
+
+.x2f-perf__scroll {
+  overflow-x: auto;
+}
+
+.x2f-perf__table {
+  min-width: 980px;
+}
+
+.x2f-perf__table td {
+  vertical-align: middle;
+}
+
+.x2f-perf [data-num] {
+  text-align: right;
+}
+
+.x2f-perf__name {
+  font-weight: 600;
+}
+
+.x2f-perf__role {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-perf__table tr[data-on='true'] {
+  background: var(--x2f-surface);
+}
+
+.x2f-perf td[data-tone='caution'] {
+  color: var(--x2f-caution);
+}
+
+.x2f-perf__toggle {
+  min-height: 36px;
+  padding: 0 var(--x2f-space-3);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+  background: transparent;
+  color: var(--x2f-ink);
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.x2f-perf__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-6);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-perf__panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--x2f-space-3);
+}
+
+.x2f-perf__panel-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.x2f-perf__mono {
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-perf__totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--x2f-space-3);
+  margin: 0;
+}
+
+.x2f-perf__totals div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.x2f-perf__totals dt {
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-perf__totals dd {
+  margin: 0;
+  font-family: var(--x2f-font-mono);
+  font-size: 26px;
+}
+
+.x2f-perf__charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: var(--x2f-space-6);
+}
+
+.x2f-perf-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin: 0;
+}
+
+.x2f-perf-chart svg {
+  width: 100%;
+  height: auto;
+}
+
+.x2f-perf-chart__caption {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.x2f-perf-chart__grid {
+  stroke: var(--x2f-surface-raised);
+  stroke-width: 1;
+}
+
+.x2f-perf-chart__tick {
+  font-size: 11px;
+  fill: var(--x2f-ink-muted);
+}
+
+.x2f-perf-chart__hit {
+  fill: transparent;
+}
+
+.x2f-perf-chart__bar {
+  fill: var(--x2f-mod);
+}
+
+.x2f-perf-chart__bar[data-on='true'] {
+  opacity: 0.8;
+}
+
+.x2f-perf-chart__deadline {
+  stroke: var(--x2f-ink-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+}
+
+.x2f-perf-chart__line {
+  fill: none;
+  stroke: var(--x2f-mod);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.x2f-perf-chart__dot {
+  fill: var(--x2f-mod);
+  stroke: var(--x2f-surface);
+  stroke-width: 2;
+}
+
+.x2f-perf-chart__readout {
+  min-height: 20px;
+  font-size: 14px;
+}
+
+.x2f-perf__foot {
+  margin: 0;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+/* Forced colours: the marks keep a system colour so they never vanish. */
+@media (forced-colors: active) {
+  .x2f-perf-chart__bar,
+  .x2f-perf-chart__dot {
+    fill: CanvasText;
+  }
+
+  .x2f-perf-chart__line {
+    stroke: CanvasText;
+  }
+}
