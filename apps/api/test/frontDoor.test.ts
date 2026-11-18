@@ -274,7 +274,7 @@ describe('GET /v1/site on both sides of the door', () => {
       expect((await (await recoveryBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
 
       const t = await trader();
-      expect((await t.browser.get('/v1/site')).json()).toEqual({ banner: { text: 'Upgrade at noon', kind: 'info' }, tradingPaused: true, maintenance: null, plannedMaintenance: null });
+      expect((await t.browser.get('/v1/site')).json()).toEqual({ banner: { text: 'Upgrade at noon', kind: 'info' }, tradingPaused: true, maintenance: null, plannedMaintenance: null, communityLinks: { matrix: null, telegram: null } });
     } finally {
       await deps.db.query(`update site_flags set banner_text = null, banner_kind = null, trading_paused = false`);
     }

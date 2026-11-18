@@ -82,7 +82,20 @@ describe('GET /v1/site', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.json()).toEqual({ maintenance: null, plannedMaintenance: null });
-    expect(await site()).toEqual({ banner: null, tradingPaused: false, maintenance: null, plannedMaintenance: null });
+    expect(await site()).toEqual({ banner: null, tradingPaused: false, maintenance: null, plannedMaintenance: null, communityLinks: { matrix: null, telegram: null } });
+  });
+
+  it("Plan 4 Task 29: a signed-in trader gets the owner's community links (for the stop message); outside the door nothing", async () => {
+    const matrix = 'https://matrix.to/#/#x2f:matrix.org';
+    const telegram = 'https://t.me/x2f_news';
+    await deps.db.query('update settings set community_matrix_url = $1, community_telegram_url = $2 where id = 1', [matrix, telegram]);
+    try {
+      expect((await site()).communityLinks).toEqual({ matrix, telegram });
+      expect(await app.inject({ method: 'GET', url: '/v1/site' }).then((r) => r.json())).toEqual({ maintenance: null, plannedMaintenance: null });
+    } finally {
+      await deps.db.query('update settings set community_matrix_url = null, community_telegram_url = null where id = 1');
+    }
+    expect((await site()).communityLinks).toEqual({ matrix: null, telegram: null });
   });
 });
 
@@ -217,6 +230,7 @@ describe('maintenance', () => {
         tradingPaused: false,
         maintenance: { message: 'Upgrading the database. Back by 14:00 UTC.', kind: 'planned', since: T0.toISOString(), backBy: null },
         plannedMaintenance: null,
+        communityLinks: { matrix: null, telegram: null },
       });
       expect(await outside()).toEqual({ maintenance: { kind: 'planned' }, plannedMaintenance: null });
       expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);

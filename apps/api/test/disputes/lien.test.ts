@@ -217,7 +217,7 @@ describe('a won appeal liens whoever received the coins (D-006)', () => {
   });
 });
 
-/** The seller's payment proof accepted (`complied`), through withDispute as its route will (NEEDS_TASK_12_TX_PROOF). */
+/** The seller's payment proof accepted (`complied`), through withDispute as its route does (disputes/comply.ts, tested in comply.test.ts). */
 async function complied(code: string) {
   const S = { appealWindowH: DISPUTE_DEFAULTS.appealWindowH, firstResponseH: DISPUTE_DEFAULTS.firstResponseH };
   await withDispute(deps, { code }, async (d, _client, now) => applyDispute(d, { type: 'complied' }, { kind: 'system' }, now, S));

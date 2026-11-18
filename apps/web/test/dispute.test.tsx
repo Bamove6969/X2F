@@ -614,7 +614,7 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     // Design X5: "D Mon YYYY, HH:MM UTC" in mono.
     expect(plain.host.textContent).toContain(`Send it by ${utcDateTime(new Date(T0 + 2000 * MIN))}.`);
     expect(utcDateTime(new Date('2026-11-06T15:00:00Z'))).toBe('6 Nov 2026, 15:00 UTC');
-    // No proof route yet (NEEDS_TASK_12_TX_PROOF): no form without a handler.
+    // The screens pass no handler until they show the attested buyer address (NEEDS_TX_PROOF_WEB): no form without one.
     expect(plain.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
 
     const onTxProof = vi.fn(async () => undefined);

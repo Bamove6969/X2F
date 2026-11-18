@@ -78,12 +78,20 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     expect(/feeOwed|fees_owed/.test(routes), 'the dispute view sends the owed fee: check parseDispute against it').toBe(false);
   });
 
-  it('NEEDS_TASK_12_TX_PROOF: the seller-sends-xmr proof form is shown only with a handler', () => {
-    // Plan 4 Task 15 (A6/A8): the seller sends the XMR and proves it (tx hash, tx key). No API route
-    // takes the proof yet, and the view does not carry the buyer's address, so DisputeScreen passes no
-    // onTxProof and the ruling shows the amount and the time only. When the route lands: pass
-    // onTxProof from DisputeScreen and DisputeSlot, show the buyer's address, and delete this.
-    const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
-    expect(/tx-proof|txKey|tx_key/.test(routes), 'the tx-proof route landed: wire onTxProof and the buyer address').toBe(false);
+  it('NEEDS_TX_PROOF_WEB: the seller-sends-xmr proof form is shown only with a handler', () => {
+    // Plan 4 Task 15 (A6/A8): the seller sends the XMR and proves it (tx hash, tx key). Task 12's API
+    // route takes the proof now (POST /v1/trades/:code/payment-proof, apps/api/src/disputes/comply.ts:
+    // 200 accepted, 202 pending-confirmations, 409 proof-invalid / proof-replayed / proof-pending /
+    // too-late, 503 node-unavailable). The screens are not wired: the seller must be shown the buyer's
+    // address to pay, and it must be the address this device verified in the trade's attested terms
+    // (escrow/runtime.ts `attested.buyerPayout`), never an unsigned API field (lead question in the
+    // ruling-compliance report). Until then DisputeScreen and DisputeSlot pass no onTxProof and the
+    // ruling shows the amount and the time only. When wiring it: pass onTxProof from both, show the
+    // attested address, let the key field take a subaddress payment's longer key (1-17 chunks of 64
+    // hex, apps/api `isTxKey`), and delete this.
+    const route = readFileSync(ROOT + 'apps/api/src/disputes/comply.ts', 'utf8');
+    expect(route).toContain("'/v1/trades/:code/payment-proof'");
+    const screens = ['DisputeScreen.tsx', 'DisputeSlot.tsx'].map((f) => readFileSync(ROOT + 'apps/web/src/screens/dispute/' + f, 'utf8')).join('\n');
+    expect(/onTxProof/.test(screens), 'the proof form is wired: show the attested buyer address and delete this').toBe(false);
   });
 });

@@ -108,6 +108,7 @@ describe('parseSite', () => {
       banner: { text: 'Hi', kind: 'warning' }, tradingPaused: true,
       maintenance: { message: 'Back soon', kind: 'planned', since: T0, backBy: '2026-11-09T14:00:00.000Z' },
       plannedMaintenance: null,
+      communityLinks: { matrix: null, telegram: null },
     });
     expect(parseSite(null)).toEqual(SITE_OFF);
     expect(parseSite({ banner: { text: 'Hi', kind: 'danger' }, tradingPaused: 'yes', maintenance: null })).toEqual(SITE_OFF);
@@ -117,6 +118,13 @@ describe('parseSite', () => {
     for (const kind of ['emergency', undefined, 5])
       expect(parseSite({ maintenance: { message: 5, kind, since: 'x', backBy: 'soon' } }).maintenance).toEqual({ message: null, kind: 'unplanned', since: null, backBy: null });
     expect(parseSite({ maintenance: { kind: 'unplanned' } }).maintenance!.kind).toBe('unplanned');
+  });
+
+  it("Plan 4 Task 29: keeps the owner's community links only as https links", () => {
+    const links = { matrix: 'https://matrix.to/#/#x2f:matrix.org', telegram: 'https://t.me/x2f_news' };
+    expect(parseSite({ communityLinks: links }).communityLinks).toEqual(links);
+    expect(parseSite({ communityLinks: { matrix: 'javascript:alert(1)', telegram: 'http://t.me/x' } }).communityLinks).toEqual({ matrix: null, telegram: null });
+    expect(parseSite({ communityLinks: 'https://t.me/x' }).communityLinks).toEqual({ matrix: null, telegram: null });
   });
 
   it('keeps an announced plan only with a valid start and end', () => {
