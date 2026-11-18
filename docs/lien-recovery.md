@@ -219,6 +219,9 @@ honest staff keys not. What now holds:
   whose terms carry a `lienRecovery` is refused (`lien-refused-off`, the trade waits unsigned, as any
   refusal) and no lien statement is signed. `on`: the checks below. Any other value refuses the
   start. The API's `site_flags.liens_enabled` alone can no longer turn recovery on.
+  Off is not an emergency stop: it stops new recoveries from being signed, but a trade already
+  attested with a `lienRecovery` keeps its signed terms and pays it at release. Every start logs
+  `lien-recovery-on` or `lien-recovery-off`.
 
 - **The moderation service is the authority on what is signed** (apps/moderation `lienRecovery.ts`).
   A work item with a `lienRecovery` must name its source and lien (`lienSource { fromCode, creditor,

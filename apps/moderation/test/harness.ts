@@ -244,7 +244,7 @@ export interface Mod {
 export async function moderation(
   ctx: Ctx,
   fetch: Fetch,
-  opts: { deskFails?: { on: boolean }; logs?: string[]; watchIntervalMs?: number; lockHeld?: () => Promise<boolean>; rulings?: ModerationDeps['rulings']; gate?: ModerationDeps['gate'] } = {},
+  opts: { deskFails?: { on: boolean }; logs?: string[]; watchIntervalMs?: number; lockHeld?: () => Promise<boolean>; rulings?: ModerationDeps['rulings']; gate?: ModerationDeps['gate']; lienRecovery?: boolean } = {},
 ): Promise<Mod> {
   const parties = new Map<string, FakeParty>();
   const transports = new Map<string, FakeTransport>();
@@ -261,6 +261,7 @@ export async function moderation(
       keystoreKey: ctx.keystoreKey,
       signingSecret: ctx.modSign.secret,
       feeWallet: FEE_WALLET,
+      ...(opts.lienRecovery === undefined ? {} : { lienRecovery: opts.lienRecovery }),
     },
     {
       fetch,

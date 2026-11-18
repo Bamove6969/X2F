@@ -268,6 +268,9 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   };
   const onLockError = (): void => loseLock();
   lock.on('error', onLockError);
+  // Re-review 17 Nov (b) info: the switch's state is in the log at every start, so an operator can
+  // see whether lien recovery is live without reading the environment.
+  log({ reason: o.lienRecovery === true ? 'lien-recovery-on' : 'lien-recovery-off' });
   // The lock is Postgres's until the session that took it has ended on the server. A lost lock's
   // client hears of it first (a terminated backend sends its FATAL before it exits and frees its
   // locks; a destroyed client only starts closing), so `stop` waits for the connection's end
