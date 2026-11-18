@@ -201,6 +201,36 @@ export type LogAction = keyof typeof LOG_ACTIONS;
 /** Action prefixes that the staff log scope never shows (Task 3; Task 33's pay and shifts too). */
 export const OWNER_ONLY_PREFIXES = ['staff.', 'settings.', 'owner.', 'site.', 'shift.', 'pay.', 'news.', 'treasury.'] as const;
 
+/**
+ * Plan 4 Task 19: the Activity log page's "kind" filter. Each action belongs to exactly one kind,
+ * by its prefix (log.test.ts pins that every action has one). Kinds made only of owner-only
+ * prefixes are the owner's (`ownerOnly`), never offered or matched in the staff scope.
+ */
+export const LOG_KINDS = {
+  trade: { prefixes: ['trade.'], ownerOnly: false },
+  dispute: { prefixes: ['dispute.', 'case.'], ownerOnly: false },
+  chat: { prefixes: ['chat.', 'proof.'], ownerOnly: false },
+  ruling: { prefixes: ['ruling.', 'appeal.'], ownerOnly: false },
+  account: { prefixes: ['hold.', 'account.', 'lien.', 'fee.', 'limits.', 'pastrep.'], ownerOnly: false },
+  staff: { prefixes: ['staff.', 'shift.', 'pay.'], ownerOnly: true },
+  owner: { prefixes: ['owner.', 'settings.', 'treasury.'], ownerOnly: true },
+  site: { prefixes: ['site.', 'news.'], ownerOnly: true },
+  other: { prefixes: ['ticket.', 'training.', 'feedback.', 'log.'], ownerOnly: false },
+} as const satisfies Record<string, { prefixes: readonly string[]; ownerOnly: boolean }>;
+export type LogKind = keyof typeof LOG_KINDS;
+
+export function isLogKind(k: unknown): k is LogKind {
+  return typeof k === 'string' && Object.hasOwn(LOG_KINDS, k);
+}
+
+/** The kind an action belongs to, or undefined (log.test.ts: never for a known action). */
+export function kindOf(action: string): LogKind | undefined {
+  for (const [k, v] of Object.entries(LOG_KINDS) as Array<[LogKind, (typeof LOG_KINDS)[LogKind]]>) {
+    if (v.prefixes.some((p) => action.startsWith(p))) return k;
+  }
+  return undefined;
+}
+
 export class LogDetailError extends Error {
   constructor(message: string) {
     super(message);

@@ -196,7 +196,7 @@ describe('Training library', () => {
     ]);
     expect(page.textContent).toContain("Buyer's card [card] paid Seller.");
     expect(page.querySelector('[data-part="no-chat"]')).not.toBeNull();
-    expect(rows('How the case ran')).toEqual([['T+0:00', 'Seller', 'Dispute opened'], ['T+3:00', 'Moderator', 'Published the ruling: release to the buyer']]);
+    expect(rows('How the case ran')).toEqual([['T+0:00', 'Seller', 'Dispute opened'], ['T+3:00', 'Moderator', 'Published the ruling']]);
   });
 
   it('says so when there is no closed case yet', async () => {

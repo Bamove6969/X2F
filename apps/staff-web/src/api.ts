@@ -416,3 +416,90 @@ export const ownerAlerts = (before?: string) =>
   staffApi<{ items: OwnerAlert[]; unread: number; next: string | null }>(page('/staff/v1/owner/alerts', before));
 export const markOwnerAlertRead = (id: string) => staffApi<unknown>(`/staff/v1/owner/alerts/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} });
 export const markAllOwnerAlertsRead = () => staffApi<unknown>('/staff/v1/owner/alerts/read-all', { method: 'POST', body: {} });
+
+// ---------------------------------------------------------------------------------------------
+// The Activity log (Plan 4 Task 19; perm log.read.cases, the chain check log.read.all)
+
+export type LogKind = 'trade' | 'dispute' | 'chat' | 'ruling' | 'account' | 'staff' | 'owner' | 'site' | 'other';
+
+export interface LogEntry {
+  id: string;
+  at: string;
+  tradeCode: string | null;
+  actor: { kind: 'staff' | 'trader' | 'system'; role: string | null; id: string | null; name: string | null };
+  action: string;
+  /** Ids, enums, amounts and setting numbers only, as the API re-checked them. */
+  detail: Record<string, unknown>;
+  /** The stored detail did not fit its action, so the API showed none of it. */
+  withheld?: true;
+}
+export interface LogPage {
+  scope: 'all' | 'cases';
+  entries: LogEntry[];
+  names: Record<string, string>;
+  next: string | null;
+}
+export interface LogQuery {
+  code?: string;
+  actor?: string;
+  kind?: LogKind | '';
+  from?: string;
+  to?: string;
+  before?: string;
+}
+export const logPage = (q: LogQuery) => {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (typeof v === 'string' && v !== '') p.set(k, v);
+  const s = p.toString();
+  return staffApi<LogPage>(`/staff/v1/log${s ? `?${s}` : ''}`);
+};
+export const logFilters = () =>
+  staffApi<{ scope: 'all' | 'cases'; actors: Array<{ id: string; name: string; role: string | null }>; kinds: LogKind[] }>('/staff/v1/log/filters');
+export interface ActiveDispute {
+  code: string;
+  method: string;
+  methodName: string;
+  xmr: string;
+  status: string;
+}
+export const activeDisputes = () => staffApi<{ items: ActiveDispute[] }>('/staff/v1/log/active-disputes');
+export interface LogIntegrity {
+  checkedAt: string;
+  chain: { ok: true; headId: string | null } | { ok: false; brokenAt: string };
+  entries: number;
+  /** When the moderation process's own check of the log failed (`site_flags.log_alarm`), or null. */
+  alarm: string | null;
+}
+export const logIntegrity = () => staffApi<LogIntegrity>('/staff/v1/log/integrity');
+
+// ---------------------------------------------------------------------------------------------
+// The training library (Plan 4 Task 19; perm training.read): closed cases, read through the anonymizer
+
+export interface ScrubbedText {
+  text: string;
+  masks: Array<{ start: number; end: number; kind: string }>;
+}
+export interface TrainingItem {
+  id: string;
+  closedOn: string;
+  method: string;
+  methodName: string;
+  xmr: string;
+  outcome: string | null;
+  overturned: boolean;
+  afterRefund: boolean;
+}
+export interface TrainingCase extends TrainingItem {
+  tradeCode: string;
+  openedBy: string;
+  reason: string;
+  note: ScrubbedText | null;
+  closedAt: string;
+  rulings: Array<{ round: number; outcome: string; at: string; reason: ScrubbedText; evidence: ScrubbedText[] }>;
+  appeal: { by: string; at: string; why: ScrubbedText } | null;
+  timeline: Array<{ at: string; who: string; action: string }>;
+  chat: 'not-available';
+}
+export const trainingList = (before?: string) =>
+  staffApi<{ items: TrainingItem[]; next: string | null }>(`/staff/v1/training${before ? `?before=${encodeURIComponent(before)}` : ''}`);
+export const trainingCase = (id: string) => staffApi<TrainingCase>(`/staff/v1/training/${encodeURIComponent(id)}`);

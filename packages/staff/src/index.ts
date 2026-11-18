@@ -87,3 +87,18 @@ export {
   type LienStatus,
   type LienStep,
 } from './lien.js';
+export {
+  MANUAL_MASK,
+  TRADE_CODE_MASK,
+  anonymizeCase,
+  anonymizeText,
+  applyManualMasks,
+  offsetLabel,
+  type AnonymizeNames,
+  type CaseMessage,
+  type Mask,
+  type MaskKind,
+  type Scrubbed,
+  type TrainingBody,
+  type TrainingMessage,
+} from './anonymize.js';

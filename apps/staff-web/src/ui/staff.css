@@ -387,3 +387,133 @@
   font-size: 0.8em;
   text-align: center;
 }
+
+/* Plan 4 Task 19: the Activity log page (board StaffLog) and the training library (no board, A8). */
+.x2f-staff-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-5);
+  max-width: 1000px;
+}
+
+.x2f-staff-log__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-staff-log__code {
+  width: 340px;
+  max-width: 100%;
+  min-height: 44px;
+  font-family: var(--x2f-font-mono);
+  font-size: 15px;
+}
+
+.x2f-staff-log__select {
+  width: auto;
+  max-width: 100%;
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.x2f-staff-log__date {
+  width: auto;
+  min-height: 44px;
+}
+
+.x2f-staff-log__date-label {
+  font-size: 14px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-log__clear {
+  height: 36px;
+  padding: 0 var(--x2f-space-3);
+  border: 0;
+  background: transparent;
+  color: var(--x2f-monero);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.x2f-staff-log__summary,
+.x2f-staff-log__check {
+  font-size: 14px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-log__integrity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-staff-log__scroll {
+  overflow-x: auto;
+}
+
+.x2f-staff-log__scroll .x2f-staff-table {
+  min-width: 860px;
+}
+
+.x2f-staff-log__when {
+  white-space: nowrap;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-log__who {
+  white-space: nowrap;
+}
+
+.x2f-staff-log__name {
+  font-weight: 600;
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-staff-log__role {
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-log__foot {
+  margin: 0;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-training {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  max-width: 1000px;
+}
+
+.x2f-staff-training__facts {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-training__quote {
+  margin: 0;
+  padding: var(--x2f-space-3) var(--x2f-space-4);
+  border-left: 2px solid var(--x2f-line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.x2f-staff-training__evidence {
+  margin: 0;
+  padding-left: var(--x2f-space-5);
+}
+
+.x2f-staff-mask {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink-muted);
+  font-family: var(--x2f-font-mono);
+}
