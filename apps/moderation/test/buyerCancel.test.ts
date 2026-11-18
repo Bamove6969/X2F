@@ -588,9 +588,9 @@ describe('buyerCancelStep (pure)', () => {
 });
 
 describe('rulings', () => {
-  it('NEEDS_TASK_14: the ruling gate decides, and nothing in it calls settle yet', () => {
+  it('the ruling gate only decides: nothing in it calls settle (the executor, execute.ts, does)', () => {
     // Plan 4 Task 13 replaced Plan 3's refuse-everything `verifyRuling` with the gate (gate.test.ts).
-    // Until Task 14's executor lands, no ruling reaches `settle`: the gate only answers.
+    // Task 14's executor (execute.ts) is the one place a ruling reaches `settle`: the gate only answers.
     // Review M3: every file under gate/ and cli/, recursively. With the comments stripped, none calls
     // or names `.settle`, none imports anything from @x2f/escrow but types, and none imports the party,
     // the desk, the watcher or the service (where a PartyHandle comes from).
@@ -608,6 +608,8 @@ describe('rulings', () => {
         expect(m[2], f).not.toMatch(/(^|\/)(party|desk|watcher|main|autoRefund|buyerCancel)\.js$/);
       }
       expect(code, f).not.toMatch(/import\(\s*'[^']*(party|desk|watcher|main)\.js'/);
+      // Re-verify: a dynamic import of the escrow package is caught too.
+      expect(code, f).not.toMatch(/import\(\s*['"`]@x2f\/escrow/);
     }
   });
 });

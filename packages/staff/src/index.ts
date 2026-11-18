@@ -2,6 +2,8 @@
 // app (Plan 4): roles and permissions, login hours, key-tap intents and the dispute state machine.
 // No I/O; it runs in the browser too.
 export { canonicalJson } from './canonical.js';
+// The trade code as `tapChallenge` reads a ruling's (the staff site compares a case's code with its address, review X3-1).
+export { normalizeTradeCode } from '@x2f/core';
 export { sha256 } from './sha256.js';
 export {
   GRANTABLE_PERMS,
@@ -24,6 +26,9 @@ export {
   ISSUED_AT_KINDS,
   KEY_TAP_KINDS,
   hasIssuedAt,
+  inviteTokenHash,
+  ownerSetupChallenge,
+  staffLoginChallenge,
   stampIssuedAt,
   evidenceSha256,
   inviteRegistrationChallenge,

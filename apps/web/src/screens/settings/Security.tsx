@@ -24,6 +24,44 @@ import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
 import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './accountTypeCopy.js';
 import '../screens.css';
 import { OwnerOnly } from './OwnerOnly.js';
+import { WELCOME_PATH } from '../../tour/welcomeSeen.js';
+import { FIRST_TRADE_TOUR } from '../../tour/firstTradeTour.js';
+import { REPLAY_COPY, replayLabel } from '../../tour/progress.js';
+import { useTour } from '../../tour/TourProvider.js';
+
+/** COPY-UNSIGNED: the way back to the welcome screen (owner, 12 Nov 2026). */
+export const WELCOME_LINK = 'Welcome screen';
+
+/**
+ * Settings, Help (design, tour-stops.md §1 "Entry and replay"): "Take the tour again", which reads
+ * "Carry on the tour" while one is left half done on this device, and the way back to the welcome
+ * screen. DESIGNER-REVIEW: placement (Security stands in for Settings until its board lands).
+ */
+function HelpCard() {
+  const tour = useTour();
+  const label = replayLabel(FIRST_TRADE_TOUR.id);
+  return (
+    <section className="x2f-card" data-part="help" aria-label={REPLAY_COPY.help}>
+      <h2 className="x2f-section-title">{REPLAY_COPY.help}</h2>
+      <ul className="x2f-list">
+        <li className="x2f-list__row">
+          <button type="button" className="x2f-row-link x2f-tour-replay" data-part="tour-replay" onClick={() => tour.start(FIRST_TRADE_TOUR, { resume: true })}>
+            <span className="x2f-tour-replay__text">
+              <span>{label}</span>
+              <small>{REPLAY_COPY.sub}</small>
+            </span>
+            <Icon name="chevron-right" size={20} />
+          </button>
+        </li>
+        <li className="x2f-list__row">
+          <Link className="x2f-button x2f-button--quiet" to={WELCOME_PATH} data-part="welcome-link">
+            {WELCOME_LINK}
+          </Link>
+        </li>
+      </ul>
+    </section>
+  );
+}
 
 /** The latest of these hold end times (the first on a tie), or null for none. */
 export function latestHoldEnd(ends: readonly string[]): string | null {
@@ -119,6 +157,7 @@ function SecurityScreen() {
             </li>
           </ul>
         </section>
+        <HelpCard />
         {confirmUi}
       </main>
     </ConfirmOpenProvider>

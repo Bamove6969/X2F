@@ -244,7 +244,7 @@ export interface Mod {
 export async function moderation(
   ctx: Ctx,
   fetch: Fetch,
-  opts: { deskFails?: { on: boolean }; logs?: string[]; watchIntervalMs?: number; lockHeld?: () => Promise<boolean>; rulings?: ModerationDeps['rulings'] } = {},
+  opts: { deskFails?: { on: boolean }; logs?: string[]; watchIntervalMs?: number; lockHeld?: () => Promise<boolean>; rulings?: ModerationDeps['rulings']; gate?: ModerationDeps['gate'] } = {},
 ): Promise<Mod> {
   const parties = new Map<string, FakeParty>();
   const transports = new Map<string, FakeTransport>();
@@ -269,6 +269,7 @@ export async function moderation(
       watchIntervalMs: opts.watchIntervalMs ?? 0,
       ...(opts.lockHeld ? { lockHeld: opts.lockHeld } : {}),
       ...(opts.rulings ? { rulings: opts.rulings } : {}),
+      ...(opts.gate ? { gate: opts.gate } : {}),
       log: (e) => logs.push(e.reason),
       startParty: async (a) => {
         started.push(a);

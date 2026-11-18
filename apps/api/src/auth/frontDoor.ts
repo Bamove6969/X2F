@@ -80,6 +80,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   // P-012/P-013 (proof-check, classified at the batch 9 merge): my own side's blur-check asks.
   'GET /v1/trades/:code/blur-checks': 'one of my own trades (participants only): my side\'s blur-check asks',
   'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/ruling-statement': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
   'GET /v1/wallets': 'my own payout wallets',
   'GET /v1/wallets/rule': 'my own wallet rule',

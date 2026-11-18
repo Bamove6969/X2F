@@ -36,8 +36,10 @@ async function stubSetup(page: Page): Promise<{ state: { locked: boolean; keys: 
       case '/staff/v1/setup/account':
         return json({ ok: true }, 201)(route);
       case '/staff/v1/setup/key/start':
+        // Re-verify X2: the staff site derives the challenge from setupNonce itself.
         return json({
           challengeId: b64u(16),
+          setupNonce: randomBytes(32).toString('hex'),
           options: {
             challenge: b64u(32),
             rp: { id: 'localhost', name: 'X2F Staff' },

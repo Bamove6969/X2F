@@ -27,7 +27,7 @@ async function saveRecoveryCodes(page: Page): Promise<void> {
   await page.click('[data-part="recovery-continue"]');
 }
 
-const TERMS_VERSION = '2026-11-09';
+const TERMS_VERSION = '2026-11-12';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
 const BOARD_MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 /** A 95-character standard address ending like the board's example ("…k3Fz"). */
@@ -290,7 +290,7 @@ for (const v of PHONES) {
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
     await expect(page.locator('h1')).toHaveText('Welcome to X2F, lumen.k');
     // Owner S-017: the backup login is the recovery codes saved on the backup step (parity.ts SetupWelcome).
-    await expect(page.locator('[data-part="summary-backup"]')).toHaveText('Recovery codes');
+    await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
     await expectParity(page, 'SetupWelcome', { viewport: v });
     await page.click('[data-part="start-trading"]');
     // Owner G25: the sign-up session ends and Log in comes next, carrying the take on.
@@ -457,8 +457,9 @@ test('Mira.K_ shows exactly as typed after setup (password path, extra backup sk
   const name = page.locator('[data-username]');
   await expect(name).toHaveText('Mira.K_');
   expect(await name.evaluate((el) => getComputedStyle(el).textTransform)).toBe('none');
-  await expect(page.locator('[data-part="summary-backup"]')).toHaveText('Recovery codes');
-  await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.')).toBeVisible();
+  await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
+  // Owner demo notes 12 Nov 2026: Welcome's fee line is now his own (owner-copy.spec.ts).
+  await expect(page.getByText('Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.')).toBeVisible();
   expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.K_', loginName: 'mira-signin-01' });
 
   await page.click('[data-part="start-trading"]');
@@ -625,6 +626,44 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   expect(s.requests).toContain('POST /v1/logout');
   expect(s.bodies['session-length']).toEqual([{ hours: 4 }]);
   expect(s.registered).toBe(true);
+});
+
+// Review 12 Nov (the playwright.config change): every other spec starts on a device that has seen
+// the welcome screen. This journey is what a new device really does: sign up, log in, and the
+// first /sell is the welcome screen (owner, 12 Nov 2026, demo note #47).
+test.describe('on a new device', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('sign-up, then the first login, lands on the welcome screen; Skip goes on to /sell', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/setup');
+    await acceptTerms(page);
+    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await page.click('[data-method="password"]');
+    await page.click('[data-part="method-continue"]');
+    await page.fill('#pw', 'Quiet-harbour-58');
+    await page.fill('#pw2', 'Quiet-harbour-58');
+    await page.click('[data-part="password-set"]');
+    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    await saveRecoveryCodes(page);
+    await page.click('[data-part="backup-skip"]');
+    await page.fill('#addr', ADDRESS);
+    await page.click('[data-part="wallet-finish"]');
+    await page.click('[data-part="start-trading"]');
+    await expect(page.locator('[data-screen="login"]')).toBeVisible();
+    await page.click('[data-method="password"]');
+    await page.fill('#login-name', 'lumen-login-7');
+    await page.fill('#login-password', 'Quiet-harbour-58');
+    await page.click('[data-part="password-login"]');
+    await expect(page.locator('[data-screen="session-length"]')).toBeVisible();
+    await page.selectOption('[data-part="session-length-select"]', '4');
+    await page.click('[data-part="session-length-continue"]');
+    await expect(page).toHaveURL(/\/welcome$/);
+    await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
+    await page.getByRole('button', { name: 'Skip and get started' }).click();
+    await expect(page).toHaveURL(/\/sell$/);
+    expect(await page.evaluate(() => localStorage.getItem('x2f.welcome.seen'))).toBe('1');
+  });
 });
 
 test('someone who already has an account goes from the Terms to Log in, keeping returnTo', async ({ page }) => {

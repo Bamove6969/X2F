@@ -53,6 +53,8 @@ type Invitable = Exclude<StaffRole, 'owner'>;
  */
 export const ISSUED_AT_KINDS = [
   'create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading',
+  // Lead call on the D-032 reset gap: the gate orders the owner's tapped reset like the others.
+  'reset-staff-security',
 ] as const;
 const ISSUED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -74,7 +76,7 @@ export type KeyTapIntent =
   | { kind: 'remove-staff'; accountId: string; issuedAt?: string }
   // D-032 (owner G60): the owner's reset of a staff member's security, bound to the person and to the
   // re-enrolment link (its id, the token's hash and the expiry), as `create-invite` binds an invite.
-  | { kind: 'reset-staff-security'; accountId: string; inviteId: string; tokenHash: string; expiresAt: string }
+  | { kind: 'reset-staff-security'; accountId: string; inviteId: string; tokenHash: string; expiresAt: string; issuedAt?: string }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string; issuedAt?: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number; issuedAt?: string }
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
@@ -197,6 +199,32 @@ export function keyCheckCode(publicKey: Uint8Array): string {
   let raw = '';
   for (let i = 15; i >= 0; i--) raw += CROCKFORD[Number((bits >> BigInt(i * 5)) & 31n)];
   return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}`;
+}
+
+/**
+ * Re-verify round 3, X2 (lead call): every WebAuthn ceremony on the staff site signs a challenge in
+ * its own domain, which the staff site derives itself from a server nonce (64 lower-case hex), so
+ * no login or setup assertion can ever be a tap's (`x2f-keytap-v1`) or another ceremony's.
+ */
+const NONCE_HEX = /^[0-9a-f]{64}$/;
+function domainChallenge(prefix: string, nonceHex: string): Uint8Array {
+  if (typeof nonceHex !== 'string' || !NONCE_HEX.test(nonceHex)) throw new TypeError(`${prefix}: the nonce must be 64 lower-case hex characters`);
+  return sha256(utf8(`${prefix}\n${nonceHex}`));
+}
+
+/** The staff login's WebAuthn challenge: SHA-256 of `"x2f-staff-login-v1\n" + nonce`. */
+export function staffLoginChallenge(nonceHex: string): Uint8Array {
+  return domainChallenge('x2f-staff-login-v1', nonceHex);
+}
+
+/** The owner setup's key-registration challenge: SHA-256 of `"x2f-owner-setup-v1\n" + nonce`. */
+export function ownerSetupChallenge(nonceHex: string): Uint8Array {
+  return domainChallenge('x2f-owner-setup-v1', nonceHex);
+}
+
+/** An invite token's hash (lower-case hex SHA-256 of its UTF-8): what the owner's tap and the registration challenge bind. */
+export function inviteTokenHash(token: string): string {
+  return toHex(sha256(utf8(token)));
 }
 
 /** The registration challenge for an invited staff member's key: SHA-256 of `"x2f-invite-v1\n" + tokenHash`. */

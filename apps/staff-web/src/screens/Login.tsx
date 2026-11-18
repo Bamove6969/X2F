@@ -1,6 +1,7 @@
 import { startAuthentication } from '@simplewebauthn/browser';
 import { useId, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { loginOptions } from '../challenges.js';
 import { codeOf, keyLoginFinish, keyLoginStart, pgpLoginFinish, pgpLoginStart, type LoginResult, type StaffMethod } from '../api.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, ChoiceGroup, Icon, Notice } from '../ui/kit.js';
@@ -67,7 +68,8 @@ export function Login() {
     setEnded(false);
     try {
       const start = await keyLoginStart(second === null ? { loginName: loginName.trim() } : { pendingId: second.pendingId });
-      const response = await startAuthentication({ optionsJSON: start.options });
+      // Re-verify X2: the key signs staffLoginChallenge(loginNonce), never the server's challenge.
+      const response = await startAuthentication({ optionsJSON: loginOptions(start.options, start.loginNonce) });
       after(await keyLoginFinish({ challengeId: start.challengeId, response, ...(second !== null ? { pendingId: second.pendingId } : {}) }));
     } catch (e) {
       // A pending login that expired (5 minutes) starts again from the first key.

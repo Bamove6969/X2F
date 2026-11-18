@@ -46,6 +46,19 @@ describe('checkDisplayName', () => {
     },
   );
 
+  // Lead, 12 Nov 2026 (review of the first-trade tour, B1): the tour's example traders are named
+  // example_seller and example_buyer, so no real account may take those names or a look-alike.
+  test.each(['example_seller', 'example_buyer', 'Example_Seller', 'EXAMPLE.BUYER', 'example-seller', 'exampleseller', 'examp1e_se11er', 'exarnple_buyer'])(
+    'reserved example name: %s',
+    (name) => {
+      expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'reserved' });
+    },
+  );
+
+  test.each(['example_sellers', 'my_example', 'example.k', 'buyer_one', 'seller_42'])('not reserved: %s (only the two example names)', (name) => {
+    expect(checkDisplayName(name)).toEqual({ ok: true, name, key: name.toLowerCase() });
+  });
+
   test('Alice and alice share one key', () => {
     const a = checkDisplayName('alice');
     const b = checkDisplayName('Alice');

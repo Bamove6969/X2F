@@ -100,6 +100,25 @@ async function fullLogin(b: StaffBrowser, accountId: string, loginName: string, 
   });
 }
 
+// Re-verify round 3, X2 (lead call): the staff login's challenge is derived, never chosen.
+describe('the staff login challenge is the staff site\'s own domain (X2)', () => {
+  it('answers a login nonce; the challenge is sha256("x2f-staff-login-v1\\n" + nonce); a tampered challenge row is refused', async () => {
+    const { staffLoginChallenge } = await import('@x2f/staff');
+    const s = await seedStaff(deps, { role: 'mod' });
+    const key = await addKey(s.id);
+    const b = new StaffBrowser(app);
+    const start = (await b.post('/staff/v1/login/security-key/start', { loginName: s.loginName })).json();
+    expect(start.loginNonce).toMatch(/^[0-9a-f]{64}$/);
+    expect(start.options.challenge).toBe(Buffer.from(staffLoginChallenge(start.loginNonce)).toString('base64url'));
+    // A database that swaps the stored challenge (for a tap's, say) gets no login.
+    await deps.db.query(`update challenges set webauthn_challenge = $2 where id = $1`, [start.challengeId, Buffer.alloc(32, 7).toString('base64url')]);
+    const opts = { ...start.options, challenge: Buffer.alloc(32, 7).toString('base64url') };
+    const res = await b.post('/staff/v1/login/security-key/finish', { challengeId: start.challengeId, response: key.authenticate(opts, STAFF_ORIGIN), deviceLabel: 'Desk' });
+    expect(res.statusCode).toBe(400);
+    expect(errorOf(res)).toBe('challenge-expired');
+  });
+});
+
 describe('staff login with login hours', () => {
   it('logs a staff member in with a security key inside their hours, on the staff cookie only', async () => {
     const s = await seedStaff(deps, { role: 'mod', hours: OFFICE });

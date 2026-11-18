@@ -3,7 +3,7 @@
 // or held for a senior moderator's or the owner's tapped approval at or above it; a send-back
 // returns it to the proposer. Every decided state goes through `withDispute`, so the liens (Task 25)
 // and the reviews' erasure on an overturn follow by themselves.
-// NEEDS_TASK_14: nothing moves the escrow's coins yet; the ruling stops at published (or final).
+// The payout itself is Plan 4 Task 14's (the moderation executor; watchReports.test.ts records it).
 import { createHash, randomUUID } from 'node:crypto';
 import { evidenceSha256, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
@@ -303,6 +303,10 @@ describe('at or above the large-trade limit: two people', () => {
       expect(res.statusCode, res.body).toBe(200);
       expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'awaiting-approval', publishedAt: null });
       expect(await published(code)).toEqual([]);
+      // Plan 4 Task 18 (ModCase): the case says whether the viewer made the waiting proposal, so
+      // the approve panel never shows to its proposer.
+      expect(((await senior.b.get(`/staff/v1/disputes/${code}`)).json() as { proposedByYou: boolean }).proposedByYou).toBe(true);
+      expect(((await owner.b.get(`/staff/v1/disputes/${code}`)).json() as { proposedByYou: boolean }).proposedByYou).toBe(false);
 
       const self = await approve(senior, code, rulingId, { outcome: 'refund-to-seller', evidence: TWO_PERSON_EVIDENCE });
       expect({ status: self.statusCode, error: errorOf(self) }).toEqual({ status: 409, error: 'same-person' });

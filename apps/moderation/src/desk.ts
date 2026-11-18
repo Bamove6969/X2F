@@ -85,6 +85,13 @@ export interface DeskStep {
   apiAt?: Date;
   /** Reads the trade from the API again; null when the API could not be read (or no longer lists it). */
   refresh?: () => Promise<{ item: DeskStep['api']; at: Date } | null>;
+  /**
+   * Security review 2026-11-12 M5: the ruling executor has recorded a payout for this trade (sealed
+   * in gate.bin). The desk then arms and hands nothing for it, ever: the party would otherwise trade
+   * the ruling's uncommitted payout for a refund (the executor, in turn, waits while an armed
+   * refund here is not blocked).
+   */
+  rulingRecorded?: boolean;
 }
 
 /**
@@ -546,6 +553,8 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       s.reports.some((x) => x.kind === 'settled');
     if (over) {
       if (r.armed !== null || r.cancelSeen) logOnce('over', 'desk-trade-over');
+    } else if (s.rulingRecorded === true) {
+      logOnce('ruling', 'desk-ruling-recorded');
     } else if (r.armed !== null) {
       const kind = r.armed.kind;
       // Review round 3 R3-N1: an armed buyer cancel the buyer never builds must not switch off the

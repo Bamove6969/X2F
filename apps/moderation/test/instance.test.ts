@@ -3,12 +3,19 @@
 // another (newer) process is never overwritten by a stale one; the test-only watch() never runs a
 // pass alongside another.
 import { readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { GATE_FILE, openGateStore } from '../src/gate/index.js';
+import type { ModerationDeps } from '../src/main.js';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { instanceLockHeld, MOD_INSTANCE_LOCK } from '../src/main.js';
 import { fromJson } from '../src/shadow.js';
 import type { DeskRecord } from '../src/desk.js';
 import { fakeNetwork, inFunding, makeCtx, moderation, secured, type Ctx, stopAll } from './harness.js';
+import { newGate } from './gateWorld.js';
 
 let ctx: Ctx;
 beforeAll(async () => {
@@ -36,6 +43,55 @@ describe('one moderation process (security review 7 Nov, finding 2)', () => {
     await first.handle.stop();
     const next = await moderation(ctx, fetch);
     await next.handle.stop();
+  });
+
+  it('review M1: the gate (its store, its sync, the executor) starts only once this process holds the instance lock; a refused second process never writes gate.bin', async () => {
+    const { fetch } = fakeNetwork(ctx);
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-m1-'));
+    try {
+      const key = new Uint8Array(randomBytes(32));
+      await newGate(dir, key);
+      const seeded = await openGateStore(dir, key);
+      await seeded.save();
+      const file = join(dir, GATE_FILE);
+      const before = await readFile(file);
+      let started = 0;
+      let stopped = 0;
+      // As the process entry's gate: opening the store and its first sync pass save gate.bin.
+      const gate: NonNullable<ModerationDeps['gate']> = async () => {
+        started++;
+        const store = await openGateStore(dir, key);
+        await store.save();
+        return { stop: async () => void stopped++ };
+      };
+      const first = await moderation(ctx, fetch, { gate });
+      expect(started).toBe(1);
+      const afterFirst = await readFile(file);
+      const logs: string[] = [];
+      await expect(moderation(ctx, fetch, { logs, gate })).rejects.toThrow(/another moderation process/);
+      expect(started).toBe(1);
+      expect(Buffer.compare(await readFile(file), afterFirst)).toBe(0);
+      expect(before.length).toBeGreaterThan(0);
+      await first.handle.stop();
+      expect(stopped).toBe(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('review M1: the process entry hands the gate to startModeration as a factory, never opening or syncing it first; the gate reader has a statement_timeout (review M3)', () => {
+    const main = readFileSync(fileURLToPath(new URL('../src/main.ts', import.meta.url)), 'utf8');
+    const entry = main.slice(main.indexOf('// `tsx apps/moderation/src/main.ts`'));
+    const start = entry.indexOf('startModeration(');
+    expect(start).toBeGreaterThan(-1);
+    expect(entry).toMatch(/gate: async/);
+    // Nothing of the gate runs before the start: its store, sync, executor and reader are all made in the factory.
+    const top = entry.slice(0, start);
+    for (const call of ['openGateStore(', 'startGateSync(', 'rulingExecutor(', 'gateConfig.apiReaderUrl']) expect(top, call).not.toContain(call);
+    expect(entry).toMatch(/connectionString: gateConfig\.apiReaderUrl[^}]*statement_timeout: \d+/);
+    // Re-verify, M1 residual: the entry's gate store holds MOD_STATE_DIR's lock file for its life, and its stop closes it.
+    expect(entry).toMatch(/openGateStore\(gateConfig\.stateDir, envBytes\([^)]*\), \{ lock: true \}\)/);
+    expect(entry).toMatch(/stop: async \(\) => \{[^}]*sync\.stop\(\)[^}]*store\.close\(\)/);
   });
 
   it('the process entry exits non-zero when the start is refused', () => {

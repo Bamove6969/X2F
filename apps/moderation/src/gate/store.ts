@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, open as openFile, readFile, rename, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, link, mkdir, open as openFile, readFile, rename, rm, unlink } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { modSubkey, open, seal } from '../keystore.js';
 
 /**
@@ -68,14 +68,27 @@ export interface GateState {
   /** Every tap nonce (hex) the gate has relied on, with what it was used for. */
   usedNonces: Record<string, string>;
   rulingsSeen: Record<string, RulingSeen>;
-  /** Task 14's log checkpoints (NEEDS_TASK_14). */
+  /** Task 14's log checkpoints (checkpoint.ts): the head's id and hash, sealed here when taken. */
   checkpoints: Array<{ id: string; hash: string; at: string }>;
+  /**
+   * Security review 2026-11-12, M3 re-verify (C): the last successful verification of the log (or
+   * when the checkpoints first started, before any), and when the overdue alarm was raised since;
+   * sealed here so a restart never resets the overdue clock. ISO times, or null.
+   */
+  logVerifiedAt: string | null;
+  logOverdueAlarmAt: string | null;
   /**
    * Each owner invite the gate has acted on (review B1): the account it was bound to the first time
    * (never re-pointed by the database), and whether it is closed (the person joined, or it expired):
    * a closed invite adds no key.
    */
   invites: Record<string, { accountId: string; closed: boolean }>;
+  /**
+   * Lead call on the D-032 reset gap: each owner-tapped `reset-staff-security` link the gate acted
+   * on, bound to the person the tap names; closed once it finished (`used`), expired, or a newer
+   * reset of the same person was applied. A closed link adds no key. Its id is never an invite's.
+   */
+  resets: Record<string, { accountId: string; closed: boolean }>;
   /** Accounts the owner removed with a tapped `remove-staff` (review I1): never staff again. */
   removedIds: string[];
   /** The owner's tapped emergency stop (review I1): while set, no ruling is authorised. */
@@ -120,7 +133,10 @@ export function emptyGate(): GateState {
     usedNonces: {},
     rulingsSeen: {},
     checkpoints: [],
+    logVerifiedAt: null,
+    logOverdueAlarmAt: null,
     invites: {},
+    resets: {},
     removedIds: [],
     stopped: false,
     applied: {},
@@ -130,8 +146,22 @@ export function emptyGate(): GateState {
 
 /** The clock skew allowed between the API (which stamps a tap's issuedAt) and this gate: 2 minutes (lead call). */
 export const SWITCH_ON_SKEW_MS = 2 * 60_000;
+/** Re-verify N4 (lead call): a registry tap first seen more than this long after its issuedAt is refused. */
+export const MAX_TAP_AGE_MS = 24 * 3_600_000;
+/** Re-verify N6 (lead call): the two `add-owner-key` taps are issued within this long of each other. */
+export const ADD_OWNER_KEY_PAIR_MS = 10 * 60_000;
+/**
+ * Disputes-stack review D-2 (technical call): the longest an invite or security-reset link may be
+ * signed to stay open, from its tap's signed issuedAt to its signed expiresAt. An invite link works
+ * for 24 hours (spec 6.6, the API's INVITE_TTL_MS), plus what the API itself lets through: the owner's
+ * browser clock up to 5 minutes ahead (INVITE_CLOCK_SKEW_MS) and the link posted up to 2 minutes after
+ * the tap started (KEY_TAP_TTL_MS). The gate enforces it itself, since the API may be the one lying.
+ */
+export const LINK_MAX_LIFETIME_MS = 24 * 3_600_000 + 5 * 60_000 + 2 * 60_000;
 
 export const GATE_FILE = 'gate.bin';
+/** The gate store's lock file in MOD_STATE_DIR (`openGateStore(…, { lock: true })`): the holder's pid. */
+export const GATE_LOCK_FILE = 'gate.lock';
 const AAD = 'x2f/mod/gate/v1';
 
 export interface GateStore {
@@ -143,6 +173,104 @@ export interface GateStore {
   save(): Promise<void>;
   /** Runs `fn` alone: one critical section (sync, authorize, save) on this gate at a time (review M2). */
   exclusive<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Waits for any save under way, then refuses every later one (`gate store closed`) and gives up
+   * the lock file, if this store holds it. Idempotent.
+   */
+  close(): Promise<void>;
+}
+
+/** True while a process with this pid runs (EPERM: it runs as someone else). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** Linux: this boot's id (`/proc/sys/kernel/random/boot_id`), else null. */
+async function bootId(): Promise<string | null> {
+  const id = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8').catch(() => '')).trim();
+  return id === '' ? null : id;
+}
+
+/** Linux: a process's start time in clock ticks since boot (field 22 of `/proc/<pid>/stat`), else null. */
+async function startTime(pid: number): Promise<string | null> {
+  const st = await readFile(`/proc/${pid}/stat`, 'utf8').catch(() => null);
+  if (st === null) return null;
+  const v = st.slice(st.lastIndexOf(')') + 2).split(' ')[19];
+  return v !== undefined && /^[0-9]+$/.test(v) ? v : null;
+}
+
+/** The lock files this process holds (resolved paths): only these name a live holder with our own pid. */
+const heldHere = new Set<string>();
+
+/**
+ * Whether the lock file's holder still holds it. Review of ruling-payout a42dad1b, N2: in a
+ * container the service often runs as pid 1, so after an unclean exit the stale lock names our own
+ * pid: our own pid holds it only if this process took it (`heldHere`). Another pid holds it while
+ * it runs, and, when the lock records the boot id and the holder's start time and this host can
+ * read them, only while both still match (another boot, or a reused pid, is stale). A bare pid (the
+ * older format) is held while it runs.
+ */
+async function holderLive(text: string): Promise<{ pid: number } | null> {
+  let rec: { pid?: unknown; boot?: unknown; start?: unknown };
+  try {
+    rec = JSON.parse(text) as typeof rec;
+    if (typeof rec !== 'object' || rec === null) rec = {};
+  } catch {
+    rec = { pid: Number.parseInt(text.trim(), 10) };
+  }
+  const pid = rec.pid;
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return null;
+  if (pid === process.pid || !alive(pid)) return null;
+  if (typeof rec.boot === 'string' && typeof rec.start === 'string') {
+    const boot = await bootId();
+    if (boot !== null && boot !== rec.boot) return null;
+    const start = await startTime(pid);
+    if (boot !== null && start !== null && start !== rec.start) return null;
+  }
+  return { pid };
+}
+
+/**
+ * Security review 2026-11-12, M1 residual: `dir/gate.lock`, made exclusively (`wx`) for the
+ * store's life, naming this process: its pid, the boot id and its start time (N2). A live holder
+ * (this process included) refuses the open; a lock left by a process that no longer runs, by an
+ * earlier boot, or naming a pid now reused (our own included) is taken over. Node has no flock(2),
+ * so the file and the holder's liveness are the lock: it fences a successor started on the same
+ * host while this process still stops (a lost instance lock), the case the database lock cannot.
+ */
+async function lockDir(dir: string): Promise<() => Promise<void>> {
+  const path = join(dir, GATE_LOCK_FILE);
+  const here = resolve(path);
+  if (heldHere.has(here)) throw new Error(`gate: ${GATE_LOCK_FILE} is locked by process ${process.pid} (another moderation process uses this state directory)`);
+  const mine = `${JSON.stringify({ pid: process.pid, boot: await bootId(), start: await startTime(process.pid) })}\n`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const f = await openFile(path, 'wx', 0o600);
+      try {
+        await f.writeFile(mine);
+        await f.sync();
+      } finally {
+        await f.close();
+      }
+      heldHere.add(here);
+      return async () => {
+        heldHere.delete(here);
+        const now = await readFile(path, 'utf8').catch(() => null);
+        if (now === mine) await unlink(path).catch(() => undefined);
+      };
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      const held = await holderLive(await readFile(path, 'utf8').catch(() => ''));
+      if (held !== null) throw new Error(`gate: ${GATE_LOCK_FILE} is locked by process ${held.pid} (another moderation process uses this state directory)`);
+      await unlink(path).catch(() => undefined);
+    }
+  }
+  throw new Error(`gate: ${GATE_LOCK_FILE} could not be taken`);
 }
 
 /** A promise-chain mutex: each call runs after the previous one settled. */
@@ -165,19 +293,33 @@ function fromJson(text: string): GateState {
   return { ...emptyGate(), ...o, limitUsdCents: BigInt(o.limitUsdCents) };
 }
 
-/** Opens `dir/gate.bin` (a fresh gate when there is none yet; the directory is made, 0700). */
-export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promise<GateStore> {
+/**
+ * Opens `dir/gate.bin`. A missing file is an error (re-verify P6): a deleted or moved gate must
+ * never come back as an empty, re-pinnable one. Only `initGate` (the `init-gate` command, after the
+ * operator's "yes") makes a new one, and only where none exists yet. With `lock`, the store holds
+ * `dir/gate.lock` until `close()` (the process entry's gate does; tests and read-only tools open
+ * without it).
+ */
+export async function openGateStore(dir: string, keystoreKey: Uint8Array, o: { lock?: boolean } = {}): Promise<GateStore> {
   const key = modSubkey(keystoreKey, 'gate');
-  await mkdir(dir, { recursive: true, mode: 0o700 });
+  let closed = false;
   const path = join(dir, GATE_FILE);
+  // Taken before the file is read, so the state read is the last holder's final save.
+  const unlock = o.lock === true ? await lockDir(dir) : null;
   let state: GateState;
-  let sealed: Buffer | null = null;
   try {
-    sealed = await readFile(path);
+    let sealed: Buffer;
+    try {
+      sealed = await readFile(path);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`gate: ${GATE_FILE} is missing (a new gate is made only by init-gate)`);
+      throw e;
+    }
+    state = fromJson(new TextDecoder().decode(open(key, AAD, sealed)));
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    await unlock?.();
+    throw e;
   }
-  state = sealed === null ? emptyGate() : fromJson(new TextDecoder().decode(open(key, AAD, sealed)));
   const saving = serial();
   const store: GateStore = {
     get state() {
@@ -188,6 +330,7 @@ export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promi
     },
     save: () =>
       saving(async () => {
+        if (closed) throw new Error('gate: the gate store is closed');
         const tmp = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
         const f = await openFile(tmp, 'wx', 0o600);
         try {
@@ -209,6 +352,56 @@ export async function openGateStore(dir: string, keystoreKey: Uint8Array): Promi
         }
       }),
     exclusive: serial(),
+    async close() {
+      if (closed) return;
+      // After any save already queued, never during one.
+      await saving(async () => {
+        closed = true;
+      });
+      await unlock?.();
+    },
   };
   return store;
+}
+
+export type InitResult = 'created' | 'declined' | 'exists';
+
+/**
+ * `init-gate` (re-verify P6): makes a new, empty, unpinned `gate.bin` only where none exists, and
+ * only after the operator types `yes`. Then `pin-owner` pins the owner's keys.
+ */
+export async function initGate(o: { dir: string; keystoreKey: Uint8Array; print: (line: string) => void; confirm: (q: string) => Promise<string> }): Promise<InitResult> {
+  const path = join(o.dir, GATE_FILE);
+  const exists = await access(path).then(() => true, () => false);
+  if (exists) return 'exists';
+  o.print(`No ruling gate at ${path}. A new gate trusts nobody until pin-owner pins the owner's keys.`);
+  o.print('If a gate was here before, it was deleted or moved: find out why before you make a new one.');
+  if ((await o.confirm('Type yes to make a new, empty gate: ')).trim() !== 'yes') return 'declined';
+  // Written to a temp file of its own (fsynced), then published under the name with link(), which
+  // fails if gate.bin exists: atomic, and a gate.bin that appeared while this asked is never
+  // replaced (rename would replace it). The temp name is then removed and the directory fsynced.
+  await mkdir(o.dir, { recursive: true, mode: 0o700 });
+  const tmp = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
+  const f = await openFile(tmp, 'wx', 0o600);
+  try {
+    await f.writeFile(seal(modSubkey(o.keystoreKey, 'gate'), AAD, new TextEncoder().encode(toJson(emptyGate()))));
+    await f.sync();
+  } finally {
+    await f.close();
+  }
+  try {
+    await link(tmp, path);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') return 'exists';
+    throw e;
+  } finally {
+    await rm(tmp, { force: true });
+  }
+  const d = await openFile(o.dir, 'r');
+  try {
+    await d.sync();
+  } finally {
+    await d.close();
+  }
+  return 'created';
 }

@@ -288,6 +288,16 @@
   cursor: pointer;
 }
 
+/* Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): logo D and the room's name above the trade header. */
+.x2f-trade-header__brand {
+  padding: var(--x2f-space-3) var(--x2f-space-4) 0;
+}
+
+/* Wide: the rail head already carries the logo and the page name. */
+[data-shell='desktop'] .x2f-trade-header__brand {
+  display: none;
+}
+
 /* Trade-room header (TradeFund, BuyerPay, SellerConfirm boards). */
 .x2f-trade-header {
   display: flex;
@@ -548,10 +558,11 @@
 }
 
 /* A screen inside Panes (My offers, the offers) is under its panes' boxes, `display: contents` on
-   a phone (styles/fold.css). */
+   a phone (styles/fold.css). The screen header above it (logo D and the screen name, 52 px) is
+   left out too, or every short screen scrolls by the header's height. */
 [data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main,
 [data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > .x2f-panes > [data-pane='main'] > main {
-  min-height: calc(100dvh - var(--x2f-tab-bar-height));
+  min-height: calc(100dvh - var(--x2f-tab-bar-height) - var(--x2f-shell-header, 0px));
 }
 
 /* Logo D (src/ui/Logo.tsx): the letters are currentColor, the dot the one Monero orange. */
@@ -662,7 +673,8 @@
 .x2f-wide-top {
   display: flex;
   align-items: center;
-  justify-content: center;
+  /* Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): top left with the screen name, no longer centred. */
+  justify-content: flex-start;
   height: 36px;
   padding: 56px 32px 0;
   color: var(--x2f-ink);
@@ -2681,4 +2693,70 @@
   display: inline-flex;
   align-items: center;
   gap: var(--x2f-space-1);
+}
+
+/*
+ * Owner demo notes 12 Nov 2026 #37 (DESIGNER-REVIEW): the shared header, logo D top left with the
+ * screen name beside it (ScreenHeader.tsx). One line; a long name is cut with an ellipsis, so nothing
+ * scrolls sideways at 360 px.
+ */
+.x2f-screen-header {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-3);
+  min-width: 0;
+  color: var(--x2f-ink);
+}
+
+[data-shell='phone'] > [data-shell-body] > .x2f-screen-header {
+  box-sizing: border-box;
+  height: var(--x2f-shell-header-height);
+  padding: 0 var(--x2f-space-4);
+}
+
+/* The screens drawn at exactly the screen's height (setup, wallets, the trade room) leave room for it. */
+:root {
+  --x2f-shell-header-height: 52px;
+}
+
+[data-shell='phone'] > [data-shell-body]:has(> .x2f-screen-header) {
+  --x2f-shell-header: var(--x2f-shell-header-height);
+}
+
+.x2f-screen-header__logo {
+  display: flex;
+  flex: none;
+}
+
+.x2f-screen-header__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--x2f-heading-family, inherit);
+  font-size: var(--x2f-heading-size);
+  line-height: var(--x2f-heading-line);
+  font-weight: 600;
+}
+
+/* Owner demo notes 12 Nov #42 (DESIGNER-REVIEW): the help links under /login and /session-length; each a 44 px target. */
+.x2f-help-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: var(--x2f-space-4);
+  margin-top: var(--x2f-space-6);
+}
+
+.x2f-help-links__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* The trade header's wrapper (the brand row and the board's header), one block for the tabletop rule. */
+.x2f-trade-header-wrap {
+  flex-shrink: 0;
 }

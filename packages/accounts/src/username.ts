@@ -79,6 +79,12 @@ export function staffNameKey(name: string): string {
 const RESERVED_TOKENS = new Set(
   ['admin', 'administrator', 'moderator', 'mod', 'support', 'staff', 'owner', 'system', 'root', 'help', 'x2f', 'official'].map(lookAlikeKey),
 );
+/**
+ * Whole names kept for the app's own example screens (lead, 12 Nov 2026: the first-trade tour's
+ * pretend traders), so no real account can be shown as the model counterparty. Compared with
+ * look-alikes folded and the separators `.`, `-`, `_` dropped.
+ */
+const RESERVED_NAMES = new Set(['example_seller', 'example_buyer'].map((n) => lookAlikeKey(n).replace(/[._-]/g, '')));
 const F = { admin: lookAlikeKey('admin'), x2f: lookAlikeKey('x2f'), staff: lookAlikeKey('staff'), moderator: lookAlikeKey('moderator'), support: lookAlikeKey('support') };
 
 /** Reserved words and their look-alikes, as whole tokens or by the prefix and suffix rules. */
@@ -86,6 +92,7 @@ function isReserved(key: string): boolean {
   const folded = lookAlikeKey(key);
   if (folded.split(/[._-]/).some((t) => RESERVED_TOKENS.has(t))) return true;
   const flat = folded.replace(/[._-]/g, '');
+  if (RESERVED_NAMES.has(flat)) return true;
   return (
     flat.startsWith(F.admin) ||
     flat.startsWith(F.x2f) ||

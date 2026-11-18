@@ -46,6 +46,9 @@ export type AlertKind =
   // Owner only: a seller's cancel refund landed after an escrow ruling was proposed or published
   // on the buyer's dispute; the case needs a person to re-rule (re-verify 43fbbb2f, R-I1).
   | 'dispute-refund-after-ruling'
+  // Owner only: a ruling's payout was seen on chain after the case was closed (security review
+  // 2026-11-12 I7); the trade stays disputed and needs a person.
+  | 'ruling-payout-dispute-closed'
   // Owner only: the fee wallet's sweep to the cold wallet (B-006, Plan 4 Task 9).
   | 'fee-sweep-due'
   | 'fee-sweep-failed'

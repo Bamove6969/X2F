@@ -56,6 +56,8 @@ export type GateRefusal =
   | 'revoked'
   | 'involved'
   | 'round1-unseen'
+  | 'replayed'
+  | 'stale-round'
   | 'stopped'
   | 'bad-terms';
 
@@ -237,6 +239,10 @@ export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: A
  * - at or above the gate's own limit, by its own recorded value, or with any account action: an
  *   approval by another person (`needs-second`, `same-person`), a senior moderator or the owner
  *   (`approver-role`);
+ * - Haveno review 2026-11-12, finding 2 (lead call): a ruling this gate authorised is only ever
+ *   accepted again for its own trade and round (`replayed`), and rounds only move forward: a ruling
+ *   the gate has not authorised, for a round below or equal to the highest it authorised on the
+ *   trade, is refused (`stale-round`; round 1 as authorised still pays after an appeal);
  * - an appeal ruling reviews a round 1 this gate itself authorised on the same trade
  *   (`round1-unseen`), and its proposer and approver had no part in it (`involved`, R37): round 1's
  *   signers as this gate saw them, plus anyone on the log's list (which can only add);
@@ -268,6 +274,14 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
   }
   const code = typeof rul.code === 'string' ? normalizeTradeCode(rul.code) : null;
   if (code === null) return refuse('intent-mismatch');
+  // Haveno finding 2 (b): no replay onto another trade or round; rounds only move forward.
+  const before = Object.hasOwn(g.rulingsSeen, rul.id) ? g.rulingsSeen[rul.id] : undefined;
+  if (before !== undefined && (before.code !== code || before.round !== rul.round)) return refuse('replayed');
+  if (before === undefined) {
+    let highest = 0;
+    for (const seen of Object.values(g.rulingsSeen)) if (seen.code === code && seen.round > highest) highest = seen.round;
+    if (rul.round <= highest) return refuse('stale-round');
+  }
   for (const c of checked) {
     const i = c.intent as Extract<KeyTapIntent, { kind: 'ruling' }>;
     const agrees =

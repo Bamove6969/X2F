@@ -10,6 +10,7 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
+import { staffLoginChallenge } from '@x2f/staff';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { SIGNED_BODY_LIMIT } from '../termsSignature.js';
@@ -737,7 +738,11 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false, aaguid: null }))].sort((x, y) =>
       Buffer.compare(x.credential_id, y.credential_id),
     );
-    const options = await buildAssertionOptions(deps, creds);
+    // Re-verify round 3, X2 (lead call): on the staff site the challenge is never the server's
+    // choice. It is sha256("x2f-staff-login-v1\n" + a random nonce), which the staff site derives
+    // itself, so a login assertion can never be a tap's (`x2f-keytap-v1`).
+    const loginNonce = opts.realm === 'staff' ? randomBytes(32).toString('hex') : undefined;
+    const options = await buildAssertionOptions(deps, creds, loginNonce !== undefined ? staffLoginChallenge(loginNonce) : undefined);
     const challengeId = await storeChallenge(deps, req, {
       accountId: account?.id ?? null, sessionId: null, purpose: 'login', method: 'security-key', challenge: options.challenge,
       // The pendingId this start was given (any, even one that matched nothing): `finish` uses it and
@@ -745,9 +750,10 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       payload: {
         mode: 'login-name', listed: creds.map((c) => b64url(c.credential_id)), ...(pendingId !== undefined ? { pendingId } : {}),
         ...(account !== null && retag !== undefined ? { retag } : {}),
+        ...(loginNonce !== undefined ? { loginNonce } : {}),
       },
     });
-    return { challengeId, options };
+    return loginNonce !== undefined ? { challengeId, options, loginNonce } : { challengeId, options };
   });
 
   app.post('/finish', { config }, async (req: FastifyRequest, reply: FastifyReply): Promise<LoginResult> => {
@@ -761,6 +767,11 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     const ch = await consumeChallenge(deps.db, challengeId, deps.clock());
     if (!ch || ch.purpose !== 'login' || (ch.method !== 'passkey' && ch.method !== 'security-key') || ch.webauthn_challenge === null) {
       throw expired();
+    }
+    // X2: a staff login's stored challenge must be the derivation of its own nonce, or nothing.
+    if (opts.realm === 'staff') {
+      const n = ch.payload.loginNonce;
+      if (typeof n !== 'string' || !/^[0-9a-f]{64}$/.test(n) || ch.webauthn_challenge !== b64url(staffLoginChallenge(n))) throw expired();
     }
     // The second step of a staff or owner login is bound to the pendingId its start was given.
     const boundPending = typeof ch.payload.pendingId === 'string' ? ch.payload.pendingId : undefined;

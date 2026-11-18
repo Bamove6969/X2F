@@ -17,12 +17,13 @@ import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@
 import type { MoneroWalletFull } from 'monero-ts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyDispute, newDispute } from '@x2f/staff';
-import { apply, fiatCents, newTrade } from '@x2f/trade';
+import { apply, fiatCents, newTrade, verifyRulingStatement, type RulingStatement } from '@x2f/trade';
+import sodium from 'libsodium-wrappers';
 import { rulingExecutor } from '../../src/execute.js';
 import { ownSweepKind } from '../../src/watcher.js';
 import { memoryRelay } from '../chain.js';
 import { openGateStore } from '../../src/gate/index.js';
-import { BALANCE, ctx, recorded, ruling, tapBy, world } from '../gateWorld.js';
+import { BALANCE, ctx, newGate, recorded, ruling, tapBy, world } from '../gateWorld.js';
 
 const engine = new MoneroMultisigEngine({ network: 'regtest' });
 /** The most a network fee may take (Plan 1's MAX_NETWORK_FEE is 0.01 XMR). */
@@ -83,16 +84,29 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
   }
 
   it('propose, approve, gate, payout: the buyer and the fee wallet are paid, once', async () => {
+    await payout('release-to-buyer');
+  });
+
+  // Review I9: the seller wins above the limit with two taps: the whole balance to the seller's
+  // signed refund address, no fee (a full reversal), and the sweep reported as `dispute-seller`.
+  it('seller wins: propose, approve, gate, payout: the whole balance goes to the seller\'s signed refund address, once', async () => {
+    await payout('refund-to-seller');
+  });
+
+  async function payout(outcome: 'release-to-buyer' | 'refund-to-seller'): Promise<void> {
+    const buyerWins = outcome === 'release-to-buyer';
+    const winner = buyerWins ? 'buyer' : 'seller';
     // The staff and the ruling: a moderator proposes, the owner approves (the trade is above the gate's limit).
     const w = await world();
     const mod = w.hire('mod');
-    const c = ruling(mod, { approver: w.owner, outcome: 'release-to-buyer' });
+    const c = ruling(mod, { approver: w.owner, outcome });
     const code = c.ruling.code;
     w.api.taps.push(tapBy(mod, c.intent('propose')), tapBy(w.owner, c.intent('approve')));
     w.api.rulings.set(code, { current: c.ruling, round1: null, involved: [] });
     const dir = await mkdtemp(join(tmpdir(), 'x2f-exec-rt-'));
     dirs.push(dir);
     const key = new Uint8Array(randomBytes(32));
+    await newGate(dir, key);
     const store = await openGateStore(dir, key);
     store.state = w.gate;
     await store.save();
@@ -133,28 +147,47 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     const terms = { ...recorded(200_000n), buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress(), feeWallet: await feeW.getPrimaryAddress() };
 
     // The executor's pass, on the funds the moderator's own party reads, until it hands the payout.
-    const exec = rulingExecutor({ store, source: w.api, ctx: ctx(), log: () => {} });
+    // Haveno review finding 2: the moderation signing key signs the statement the winner's app verifies.
+    await sodium.ready;
+    const modKey = sodium.crypto_sign_keypair();
+    const statements: Array<{ statement: RulingStatement; sig: string }> = [];
+    const exec = rulingExecutor({ store, source: w.api, ctx: ctx(), log: () => {}, signingSecret: modKey.privateKey });
     const pass = async () => {
       const f = await parties.mod.funds();
-      return exec.step({ code, handle: parties.mod, api: { state: 'disputed', paused: false }, funds: { balance: f.balance, unlocked: f.unlocked }, recorded: terms });
+      return exec.step({
+        code, handle: parties.mod, api: { state: 'disputed', paused: false }, funds: { balance: f.balance, unlocked: f.unlocked }, recorded: terms,
+        escrowAddress: addresses[0]!, announce: async (r) => (statements.push(r), true),
+      });
     };
     await expect.poll(pass, { timeout: 120_000, interval: 2000 }).toBe('handed');
     const ex = store.state.executions[code]!;
-    expect(ex).toMatchObject({ rulingId: c.ruling.id, winner: 'buyer', settledAt: null });
+    expect(ex).toMatchObject({ rulingId: c.ruling.id, winner, settledAt: null });
     const to = ex.payouts.map((p) => ({ address: p.address, amountAtomic: BigInt(p.amountAtomic) }));
-    expect(to.map((p) => p.address)).toEqual([terms.buyerPayout, terms.feeWallet]);
+    if (buyerWins) expect(to.map((p) => p.address)).toEqual([terms.buyerPayout, terms.feeWallet]);
+    else expect(to).toEqual([{ address: terms.sellerRefund, amountAtomic: BALANCE }]);
 
-    // The buyer's app co-signs exactly that mod-built set (Task 15's cosignPolicy); the tx lands.
-    const tx = await mining(parties.buyer.settle({ kind: 'release', to, builder: 'mod', cosigner: 'buyer' }));
+    // The winner's app checks the signed statement against its own trade, escrow and payouts first.
+    const st = statements.at(-1)!;
+    expect((await verifyRulingStatement(st.statement, st.sig, sodium.to_hex(modKey.publicKey), { trade: code, escrowAddress: addresses[0]!, winner, payouts: to })).ok).toBe(true);
+    // The winner's app co-signs exactly that mod-built set (Task 15's cosignPolicy); the tx lands.
+    const tx = await mining(parties[winner].settle({ kind: 'release', to, builder: 'mod', cosigner: winner }));
     expect(tx).toMatch(/^[0-9a-f]{64}$/);
     await mining(expect.poll(() => store.state.executions[code]?.settledAt ?? null, { timeout: 120_000, interval: 1000 }).not.toBeNull());
     await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
-    const feePayout = to[1]!.amountAtomic;
-    expect(await balanceOf(feeW)).toBe(feePayout);
-    const got = await balanceOf(buyerW);
-    expect(got).toBeLessThan(to[0]!.amountAtomic);
-    expect(got).toBeGreaterThan(to[0]!.amountAtomic - MAX_NET_FEE);
-    expect(await balanceOf(sellerW)).toBe(0n);
+    if (buyerWins) {
+      expect(await balanceOf(feeW)).toBe(to[1]!.amountAtomic);
+      const got = await balanceOf(buyerW);
+      expect(got).toBeLessThan(to[0]!.amountAtomic);
+      expect(got).toBeGreaterThan(to[0]!.amountAtomic - MAX_NET_FEE);
+      expect(await balanceOf(sellerW)).toBe(0n);
+    } else {
+      // A full reversal: nothing to the fee wallet or the buyer; the seller gets the balance less the network fee.
+      expect(await balanceOf(feeW)).toBe(0n);
+      expect(await balanceOf(buyerW)).toBe(0n);
+      const got = await balanceOf(sellerW);
+      expect(got).toBeLessThan(BALANCE);
+      expect(got).toBeGreaterThan(BALANCE - MAX_NET_FEE);
+    }
 
     // The end states (R-M2): the moderator's own party shows the sweep as its own tx, the watcher's
     // report names the ruling's kind, and on that report the trade machine releases the trade and the
@@ -163,7 +196,7 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     expect(after.balance).toBe(0n);
     expect(after.ownTxs).toContain(tx);
     const kind = ownSweepKind(parties.mod.committedBuilder?.() ?? null, exec.kindFor(code));
-    expect(kind).toBe('dispute-buyer');
+    expect(kind).toBe(buyerWins ? 'dispute-buyer' : 'dispute-seller');
     const T0 = new Date('2026-11-12T10:00:00Z');
     const at = (min: number) => new Date(T0.getTime() + min * 60_000);
     const rate = { currency: 'USD', centsPerXmr: 80_000n };
@@ -174,13 +207,13 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     t = apply(t, { type: 'open-dispute' }, 'buyer', at(200));
     expect(t.state).toBe('disputed');
     t = apply(t, { type: 'settled', kind: kind!, txHash: tx! }, 'system', at(300));
-    expect(t).toMatchObject({ state: 'released', txHash: tx, settling: null });
+    expect(t).toMatchObject({ state: buyerWins ? 'released' : 'refunded', txHash: tx, settling: null });
     const S = { appealWindowH: 48, firstResponseH: 4 };
     const modActor = { kind: 'staff' as const, id: mod.id, role: 'mod' as const };
     const ownerActor = { kind: 'staff' as const, id: w.owner.id, role: 'owner' as const };
     let d = newDispute({ code, openedBy: 'buyer', afterRefund: false, usdCents: 200_000n, limitUsdCents: 100_000n, firstResponseH: 4, now: at(200) });
     d = applyDispute(d, { type: 'assign', staffId: mod.id, role: 'mod' }, modActor, at(210), S);
-    d = applyDispute(d, { type: 'propose', ruling: { id: c.ruling.id, outcome: 'release-to-buyer', accountAction: { kind: 'none' }, proposer: mod.id } }, modActor, at(220), S);
+    d = applyDispute(d, { type: 'propose', ruling: { id: c.ruling.id, outcome, accountAction: { kind: 'none' }, proposer: mod.id } }, modActor, at(220), S);
     d = applyDispute(d, { type: 'approve' }, ownerActor, at(230), S);
     expect(d.status).toBe('published');
     d = applyDispute(d, { type: 'executed' }, { kind: 'system' }, at(300), S);
@@ -191,9 +224,9 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     // Once: this executor and a restarted one (the gate reopened from disk) settle nothing more.
     expect(await pass()).toBe('settled');
     const reopened = await openGateStore(dir, key);
-    const restarted = rulingExecutor({ store: reopened, source: w.api, ctx: ctx(), log: () => {} });
+    const restarted = rulingExecutor({ store: reopened, source: w.api, ctx: ctx(), log: () => {}, signingSecret: modKey.privateKey });
     const asked: unknown[] = [];
-    expect(await restarted.step({ code, handle: { settle: async (o) => (asked.push(o), null) }, api: { state: 'disputed', paused: false }, funds: { balance: BALANCE, unlocked: BALANCE }, recorded: terms })).toBe('settled');
+    expect(await restarted.step({ code, handle: { settle: async (o) => (asked.push(o), null) }, api: { state: 'disputed', paused: false }, funds: { balance: BALANCE, unlocked: BALANCE }, recorded: terms, escrowAddress: addresses[0]!, announce: async () => true })).toBe('settled');
     expect(asked).toEqual([]);
-  });
+  }
 });

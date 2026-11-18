@@ -1,0 +1,353 @@
+/* The tour shell (src/tour/TourProvider.tsx), after design's TourShell boards and tour-motion.md
+   (wip/design-brief b3b8315b). DESIGNER-REVIEW: design to check against the boards. */
+.x2f-tour {
+  --x2f-tour-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --x2f-tour-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --x2f-tour-ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  color: var(--x2f-ink);
+}
+.x2f-tour__catch {
+  position: fixed;
+  inset: 0;
+}
+.x2f-tour__scrim,
+.x2f-tour__arrow {
+  position: fixed;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.x2f-tour__dim {
+  fill: var(--x2f-scrim);
+}
+.x2f-tour__ring {
+  fill: none;
+  stroke: var(--x2f-ink);
+  stroke-width: 2;
+}
+.x2f-tour__pulse {
+  fill: none;
+  stroke: var(--x2f-ink);
+  stroke-width: 2;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.x2f-tour__arrow-line,
+.x2f-tour__arrow-head {
+  fill: none;
+  stroke: var(--x2f-ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.x2f-tour__ripple {
+  position: fixed;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border-radius: 50%;
+  background: var(--x2f-ink);
+  opacity: 0;
+  pointer-events: none;
+}
+.x2f-tour__card {
+  position: fixed;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+  border: 1px solid var(--x2f-line);
+  outline: none;
+}
+.x2f-tour__prog {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.x2f-tour__bars {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+}
+.x2f-tour__bars i {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+}
+.x2f-tour__bars i[data-state='done'] {
+  background: var(--x2f-ink-muted);
+}
+.x2f-tour__bars i[data-state='current'] {
+  background: var(--x2f-ink);
+}
+.x2f-tour__count {
+  font-family: var(--x2f-font-mono);
+  font-size: 14px;
+  color: var(--x2f-ink-muted);
+  white-space: nowrap;
+}
+.x2f-tour__text {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.x2f-tour__text[data-center='true'] {
+  align-items: center;
+  text-align: center;
+}
+.x2f-tour__tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--x2f-radius-md);
+  background: color-mix(in srgb, var(--x2f-escrow) 16%, var(--x2f-surface));
+  color: var(--x2f-escrow);
+}
+.x2f-tour__title {
+  margin: 0;
+  font-family: var(--x2f-font-display);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+}
+.x2f-tour__body {
+  margin: 0;
+  font-size: 17px;
+  line-height: 26px;
+}
+.x2f-tour__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.x2f-tour__skip {
+  min-height: 44px;
+  min-width: 44px;
+  margin-right: auto;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink-muted);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.x2f-tour__controls .x2f-button {
+  min-height: 48px;
+}
+.x2f-tour__next {
+  min-width: 112px;
+}
+.x2f-tour-closed {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(var(--x2f-tab-bar-height, 61px) + 12px);
+  z-index: 1000;
+  max-width: 448px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 16px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  border: 1px solid var(--x2f-line);
+  color: var(--x2f-ink);
+  font-size: 15px;
+  line-height: 20px;
+}
+.x2f-tour-closed__restart {
+  flex-shrink: 0;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: transparent;
+  color: var(--x2f-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+@media (max-height: 720px) {
+  .x2f-tour__card {
+    padding: 16px;
+  }
+  .x2f-tour__body {
+    font-size: 16px;
+    line-height: 24px;
+  }
+}
+
+/* Motion (tour-motion.md §4). Full motion only. */
+@media (prefers-reduced-motion: no-preference) {
+  .x2f-tour__card {
+    transition: transform 340ms var(--x2f-tour-ease-out);
+  }
+  /* The hole (the dim path's CSS d, TourProvider.tsx) moves with the ring; Safari snaps it (review M1). */
+  .x2f-tour__dim {
+    transition: d 250ms var(--x2f-tour-ease-out);
+  }
+  .x2f-tour__ring {
+    transition:
+      x 250ms var(--x2f-tour-ease-out),
+      y 250ms var(--x2f-tour-ease-out),
+      width 250ms var(--x2f-tour-ease-out),
+      height 250ms var(--x2f-tour-ease-out);
+  }
+  .x2f-tour__ring[data-phase='in'] {
+    animation: x2f-tour-in 120ms var(--x2f-tour-ease-out) 60ms both;
+  }
+  .x2f-tour__ring[data-phase='out'] {
+    animation: x2f-tour-out 90ms var(--x2f-tour-ease-in) both;
+  }
+  .x2f-tour__pulse {
+    animation: x2f-tour-breathe 1.8s var(--x2f-tour-ease-io) infinite;
+  }
+  .x2f-tour__arrow[data-phase='in'] .x2f-tour__arrow-line {
+    stroke-dasharray: 1;
+    animation: x2f-tour-draw 320ms var(--x2f-tour-ease-out) 140ms both;
+  }
+  .x2f-tour__arrow[data-phase='in'] .x2f-tour__arrow-head {
+    animation: x2f-tour-in 120ms ease-out 440ms both;
+  }
+  .x2f-tour__arrow[data-phase='out'] {
+    animation: x2f-tour-out 110ms var(--x2f-tour-ease-in) both;
+  }
+  .x2f-tour__card[data-phase='in'] .x2f-tour__text {
+    animation: x2f-tour-text-in 240ms var(--x2f-tour-ease-out) 40ms both;
+  }
+  .x2f-tour__card[data-phase='out'] .x2f-tour__text {
+    animation: x2f-tour-text-out 110ms var(--x2f-tour-ease-in) both;
+  }
+  .x2f-tour__ripple {
+    animation: x2f-tour-ripple 440ms var(--x2f-tour-ease-out) both;
+  }
+}
+/* Calm (tour-motion.md §7): fades only, the arrow shown drawn, no breathing ring. */
+@media (prefers-reduced-motion: reduce) {
+  .x2f-tour__pulse {
+    display: none;
+  }
+  .x2f-tour__arrow[data-phase='in'] {
+    animation: x2f-tour-in 200ms ease-out both;
+  }
+  .x2f-tour__card[data-phase='in'] .x2f-tour__text {
+    animation: x2f-tour-in 200ms ease-out both;
+  }
+  .x2f-tour__ripple {
+    animation: x2f-tour-flash 200ms ease-out both;
+  }
+}
+@keyframes x2f-tour-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes x2f-tour-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes x2f-tour-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes x2f-tour-text-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes x2f-tour-text-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes x2f-tour-breathe {
+  from {
+    opacity: 0.55;
+    transform: scale(1, 1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.06, 1.22);
+  }
+}
+@keyframes x2f-tour-ripple {
+  from {
+    opacity: 0.26;
+    transform: scale(0.25);
+  }
+  50% {
+    opacity: 0.14;
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+@keyframes x2f-tour-flash {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Settings, Help: the replay row (tour-stops.md §1, `tour-replay`), on .x2f-row-link. */
+.x2f-tour-replay {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.x2f-tour-replay__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.x2f-tour-replay__text small {
+  font-size: 14px;
+  color: var(--x2f-ink-muted);
+}

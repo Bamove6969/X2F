@@ -253,6 +253,12 @@ describe('POST /v1/register/password', () => {
     // F4: look-alikes of reserved words are reserved for display names.
     const lookAlike = await register('quiet.one2', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'adm1n.team' });
     expect(lookAlike.json()).toEqual({ error: 'display-name-reserved' });
+    // Lead, 12 Nov 2026: the tour's example traders' names can belong to nobody.
+    for (const [login, name] of [['quiet.one5', 'example_seller'], ['quiet.one6', 'Example.Buyer']] as const) {
+      const example = await register(login, GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: name });
+      expect(example.statusCode, name).toBe(400);
+      expect(example.json(), name).toEqual({ error: 'display-name-reserved' });
+    }
     expect((await register('quiet.one3', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'badminton' })).statusCode).toBe(201);
     const invalid = await register('quiet.one4', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'аlice' }); // Cyrillic а
     expect(invalid.statusCode).toBe(400);

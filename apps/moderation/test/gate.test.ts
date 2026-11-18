@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newTradeCode } from '@x2f/core';
-import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
+import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, staffLoginChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 import { escrowPlan } from '@x2f/trade';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
@@ -15,6 +15,7 @@ import { createSoftAuthenticator, createTestCa, type SoftAuthenticator, type Tes
 import {
   authorizeRuling,
   emptyGate,
+  initGate,
   gateCheck,
   openGateStore,
   pgGateSource,
@@ -28,8 +29,15 @@ import {
   type RecordedTerms,
   type StoredTap,
 } from '../src/gate/index.js';
-import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize } from './gateWorld.js';
+import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity } from './gateWorld.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
+import { LINK_MAX_LIFETIME_MS } from '../src/gate/store.js';
+
+/** A new gate the way an operator makes one: init-gate with "yes", then open it. */
+async function freshGate(dir: string, key: Uint8Array) {
+  expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'yes' })).toBe('created');
+  return openGateStore(dir, key);
+}
 
 describe('the chain of trust (syncRegistry)', () => {
   it('accepts a staff key only through an owner create-invite tap and an attested registration for that token', async () => {
@@ -368,7 +376,7 @@ describe('authorizeRuling', () => {
     w.api.taps.push(t);
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
     try {
-      const store = await openGateStore(dir, new Uint8Array(32).fill(7));
+      const store = await freshGate(dir, new Uint8Array(32).fill(7));
       store.state = w.gate;
       await store.save();
       const check = () => gateCheck(store, w.api, { ruling: c.ruling, recorded: recorded(1n), balanceAtomic: BALANCE, involved: [] }, ctx());
@@ -560,7 +568,7 @@ describe('security review 2026-11-12', () => {
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
     try {
       const key = new Uint8Array(randomBytes(32));
-      const s = await openGateStore(dir, key);
+      const s = await freshGate(dir, key);
       await Promise.all(Array.from({ length: 8 }, (_, i) => {
         s.state.usedNonces[`n${i}`] = 'x';
         return s.save();
@@ -671,6 +679,431 @@ describe('signed issuedAt (review P4, lead call)', () => {
   });
 });
 
+// The re-verify of 12 Nov (re-verify-mod-gate-2026-11-12.md): its PoCs, each refused. N5 (the
+// 2-minute skew) is accepted as designed and the B1 residual is the owner's question (lead calls).
+describe('re-verify 2026-11-12', () => {
+  const at = (min: number) => new Date(NOW.getTime() + min * 60_000);
+  const ctxAt = (d: Date): GateContext => ({ ...ctx(), now: () => d });
+  const FAR = new Date('2030-01-01T00:00:00.000Z');
+
+  it('P6: a missing gate.bin is an error; only the init command, with the operator\'s "yes", makes a new one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
+    try {
+      const key = new Uint8Array(32).fill(7);
+      await expect(openGateStore(dir, key)).rejects.toThrow(/gate\.bin/);
+      expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'no' })).toBe('declined');
+      await expect(openGateStore(dir, key)).rejects.toThrow(/gate\.bin/);
+      expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'yes' })).toBe('created');
+      const s = await openGateStore(dir, key);
+      s.state.ownerAccountId = 'x';
+      await s.save();
+      // Never over an existing gate.
+      expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'yes' })).toBe('exists');
+      expect((await openGateStore(dir, key)).state.ownerAccountId).toBe('x');
+      await rm(join(dir, 'gate.bin'));
+      await expect(openGateStore(dir, key)).rejects.toThrow(/gate\.bin/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('N1: a far-future settings tap is refused, so it cannot lock out the owner\'s later settings', async () => {
+    const w = await world();
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 5000, firstResponseH: 4, appealWindowH: 48 }, { key: w.ownerKey2, issuedAt: FAR }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(0)));
+    expect(w.gate.limitUsdCents).toBe(100_000n);
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 100, firstResponseH: 4, appealWindowH: 48 }, { issuedAt: at(60) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(61)));
+    expect(w.gate.limitUsdCents).toBe(10_000n);
+    // Within the skew ahead is fine.
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 200, firstResponseH: 4, appealWindowH: 48 }, { issuedAt: at(63) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(62)));
+    expect(w.gate.limitUsdCents).toBe(20_000n);
+  });
+
+  it('N2: a far-future resume-trading cannot disable the owner\'s later emergency stop', async () => {
+    const w = await world();
+    w.api.taps.push(tapBy(w.owner, { kind: 'resume-trading' }, { issuedAt: FAR }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(0)));
+    w.api.taps.push(tapBy(w.owner, { kind: 'emergency-stop' }, { key: w.ownerKey2, issuedAt: at(60) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(61)));
+    expect(w.gate.stopped).toBe(true);
+  });
+
+  it('N3: a withheld far-future switch-on restores nobody switched off later', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const old = tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }, { issuedAt: FAR });
+    await syncRegistry(w.api, w.gate, ctxAt(at(1)));
+    w.api.staffRows.get(mod.id)!.switchedOff = true;
+    await syncRegistry(w.api, w.gate, ctxAt(at(30)));
+    w.api.staffRows.get(mod.id)!.switchedOff = false;
+    w.api.taps.push(old);
+    await syncRegistry(w.api, w.gate, ctxAt(at(31)));
+    expect(w.gate.staff[mod.id]!.revoked).toBe(true);
+  });
+
+  it('N3b: a far-future set-role cannot make every later demotion ignored', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctxAt(at(0)));
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'senior' }, { issuedAt: FAR }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(1)));
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'helper' }, { key: w.ownerKey2, issuedAt: at(60) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(61)));
+    expect(w.gate.staff[mod.id]!.role).toBe('helper');
+  });
+
+  it('N4: a registry tap first seen more than 24 hours after its issuedAt is refused', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctxAt(at(0)));
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'senior' }, { issuedAt: at(1) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(30 * 24 * 60)));
+    expect(w.gate.staff[mod.id]!.role).toBe('mod');
+    // Within 24 hours it counts (the gate was down for a while).
+    w.api.taps.push(tapBy(w.owner, { kind: 'set-role', accountId: mod.id, role: 'senior' }, { issuedAt: at(30 * 24 * 60) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(30 * 24 * 60 + 23 * 60)));
+    expect(w.gate.staff[mod.id]!.role).toBe('senior');
+  });
+
+  it('N6: add-owner-key pairs only taps issued within 10 minutes of each other', async () => {
+    const w = await world();
+    const third = newKey();
+    w.api.creds.set(third.credentialId, { accountId: w.owner.id, publicKey: new Uint8Array(third.cosePublicKey), aaguid: AAGUID });
+    const intent: KeyTapIntent = { kind: 'add-owner-key', credentialId: third.credentialId, publicKeySha256: sha256Hex(third.cosePublicKey) };
+    w.api.taps.push(tapBy(w.owner, intent, { issuedAt: at(0) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(1)));
+    w.api.taps.push(tapBy(w.owner, intent, { key: w.ownerKey2, issuedAt: at(11) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(12)));
+    expect(w.gate.ownerCreds.map((c) => c.credentialId)).not.toContain(third.credentialId);
+    // Two taps 5 minutes apart pair.
+    w.api.taps.push(tapBy(w.owner, intent, { issuedAt: at(20) }), tapBy(w.owner, intent, { key: w.ownerKey2, issuedAt: at(25) }));
+    await syncRegistry(w.api, w.gate, ctxAt(at(26)));
+    expect(w.gate.ownerCreds.map((c) => c.credentialId)).toContain(third.credentialId);
+  });
+
+  it('N7: in one sync, taps apply in each key\'s counter order whatever their step: a settings tap before a create-invite still applies', async () => {
+    const w = await world();
+    w.api.taps.push(tapBy(w.owner, { kind: 'settings', largeTradeLimitUsd: 100, firstResponseH: 4, appealWindowH: 48 }, { issuedAt: at(0) }));
+    w.hire('mod'); // the owner's create-invite tap, same key, a later counter
+    await syncRegistry(w.api, w.gate, ctxAt(at(1)));
+    expect(w.gate.limitUsdCents).toBe(10_000n);
+  });
+
+  it('M-R1: the reason\'s SHA-256 is computed here from the stored text, never taken from the database', async () => {
+    const reason = 'r'.repeat(40);
+    const fake = {
+      query: async (sql: string) => {
+        if (/from disputes/.test(sql)) return { rows: [{ seq: 1, round: 1, ruling: { id: randomUUID(), outcome: 'release-to-buyer', accountAction: { kind: 'none' }, proposer: randomUUID(), approver: null }, round1: null }] };
+        // A lying database: a hash column that is not the reason's (the gate must not ask for one).
+        if (/from dispute_rulings/.test(sql)) return { rows: [{ round: 1, reason, evidence: ['a'], h: 'f'.repeat(64) }] };
+        return { rows: [] };
+      },
+    };
+    const got = await pgGateSource(fake as never).storedRulings('ABCD-EFGH-JKMN-PQRS');
+    expect(got.current?.reasonSha256).toBe(sha256Hex(reason));
+  });
+});
+
+// Round 3 (re-verify-mod-gate-2026-11-12.md, X2 and the init race; lead calls).
+describe('Haveno review 2026-11-12, finding 2 (lead call): rulings only move forward, never replayed', () => {
+  it('a ruling the gate authorised on one trade is refused on another, even with fresh taps that name the other trade', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const a = ruling(mod);
+    expect((await authorize(w, a, [tapBy(mod, a.intent('propose'))])).ok).toBe(true);
+    // The same ruling id moved to another trade's dispute (a replay through the database).
+    const other = newTradeCode();
+    const moved = { ...a, ruling: { ...a.ruling, code: other } };
+    const tap = tapBy(mod, a.intent('propose', { code: other }));
+    expect(await authorize(w, moved, [tap])).toEqual({ ok: false, reason: 'replayed' });
+    // Or the same id as another round on the same trade.
+    const asRound2 = { ...a, ruling: { ...a.ruling, round: 2 as const, round1Id: randomUUID() } };
+    expect(await authorize(w, asRound2, [tapBy(mod, a.intent('propose', { round: 2, round1Id: asRound2.ruling.round1Id }))])).toEqual({ ok: false, reason: 'replayed' });
+    // The ruling as authorised is still fine (the executor re-checks every pass).
+    expect((await authorize(w, a, [tapBy(mod, a.intent('propose'))])).ok).toBe(true);
+  });
+
+  it('a stale round: once round 2 is authorised on a trade, a round-1 ruling the gate never saw is refused; round 1 as authorised still pays', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r1 = ruling(mod);
+    const r1Tap = tapBy(mod, r1.intent('propose'));
+    expect((await authorize(w, r1, [r1Tap])).ok).toBe(true);
+    const r2 = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, r2, [tapBy(senior, r2.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: true, settle: null });
+    // A new round-1 ruling on the same trade (another outcome), properly tapped: stale.
+    const late = ruling(senior, { code: r1.ruling.code, outcome: 'refund-to-seller' });
+    expect(await authorize(w, late, [tapBy(senior, late.intent('propose'))])).toEqual({ ok: false, reason: 'stale-round' });
+    // Round 1 as the gate authorised it is unchanged.
+    expect((await authorize(w, r1, [r1Tap])).ok).toBe(true);
+  });
+
+  it('a second ruling for a round the gate already authorised on the trade is refused (round 1 pays once, from one ruling)', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r1 = ruling(mod);
+    expect((await authorize(w, r1, [tapBy(mod, r1.intent('propose'))])).ok).toBe(true);
+    const again = ruling(senior, { code: r1.ruling.code, outcome: 'refund-to-seller' });
+    expect(await authorize(w, again, [tapBy(senior, again.intent('propose'))])).toEqual({ ok: false, reason: 'stale-round' });
+    const r2 = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect((await authorize(w, r2, [tapBy(senior, r2.intent('propose'))], 41_250n, { involved: [] })).ok).toBe(true);
+    const senior2 = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r2again = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await authorize(w, r2again, [tapBy(senior2, r2again.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'stale-round' });
+  });
+});
+
+// Lead call on the D-032 reset gap (disputes-stack review): the API's reset-staff-security deletes
+// a person's credentials and opens a `kind = 'reset'` link. The gate honours it only on a verified
+// owner tap (the same tap rules as the other owner registry taps): it drops the person's old keys,
+// binds the reset link, and takes the re-enrolled keys only through that link while it is open.
+describe('D-032 the owner\'s tapped security reset (lead call)', () => {
+  const canRule = async (w: Awaited<ReturnType<typeof world>>, p: Person) => {
+    const c = ruling(p);
+    return authorize(w, c, [tapBy(p, c.intent('propose'))]);
+  };
+
+  it('after a reset, the old keys are refused', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await canRule(w, mod)).ok).toBe(true);
+    resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, mod)).toEqual({ ok: false, reason: 'unknown-key' });
+    // Even with the API putting the old key back.
+    w.api.creds.set(mod.key.credentialId, { accountId: mod.id, publicKey: new Uint8Array(mod.key.cosePublicKey), aaguid: AAGUID });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, mod)).toEqual({ ok: false, reason: 'unknown-key' });
+  });
+
+  it('the keys re-enrolled through the reset link are accepted; a key the API adds any other way is not', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await canRule(w, r.again)).ok).toBe(true);
+    // A key registered through the person's old (closed) invite, or only in the API's credentials.
+    const stray = newKey();
+    w.api.creds.set(stray.credentialId, { accountId: mod.id, publicKey: new Uint8Array(stray.cosePublicKey), aaguid: AAGUID });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, { ...mod, key: stray })).toEqual({ ok: false, reason: 'unknown-key' });
+    // A key registered with another token than the link's.
+    const wrong = newKey();
+    w.api.invites.get(r.inviteId)!.registrations.push(registration(wrong, sha256Hex('another token')));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, { ...mod, key: wrong })).toEqual({ ok: false, reason: 'unknown-key' });
+  });
+
+  it('a reset without an owner tap (the API assumed compromised) is refused: no new key, the gate keeps its own', async () => {
+    for (const tap of [false, 'senior'] as const) {
+      const w = await world();
+      const mod = w.hire('mod');
+      const senior = w.hire('senior');
+      await syncRegistry(w.api, w.gate, ctx());
+      const r = resetSecurity(w, mod, { tap: tap === false ? false : senior });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect(await canRule(w, r.again), String(tap)).toEqual({ ok: false, reason: 'unknown-key' });
+      // The gate never dropped what it verified itself (the API's deletion is only the API's word).
+      expect((await canRule(w, mod)).ok, String(tap)).toBe(true);
+    }
+    // An owner tap for another person, or another link, resets nobody else.
+    const w = await world();
+    const mod = w.hire('mod');
+    const other = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod, { tap: false });
+    w.api.taps.push(tapBy(w.owner, { kind: 'reset-staff-security', accountId: other.id, inviteId: r.inviteId, tokenHash: r.tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, r.again)).toEqual({ ok: false, reason: 'unknown-key' });
+    expect((await canRule(w, mod)).ok).toBe(true);
+  });
+
+  it('the reset link cannot be replayed: not after it finished or expired, not for another person, not as an invite', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const other = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await canRule(w, r.again)).ok).toBe(true);
+    // The link finished: a key registered on it afterwards is never taken.
+    w.api.invites.get(r.inviteId)!.used = true;
+    await syncRegistry(w.api, w.gate, ctx());
+    const late = newKey();
+    w.api.invites.get(r.inviteId)!.registrations.push(registration(late, r.tokenHash));
+    w.api.invites.get(r.inviteId)!.used = false; // the API pretends it is open again
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, { ...mod, key: late })).toEqual({ ok: false, reason: 'unknown-key' });
+    // The same link re-pointed to another person, with a fresh owner tap naming it for them.
+    w.api.invites.get(r.inviteId)!.accountId = other.id;
+    w.api.taps.push(tapBy(w.owner, { kind: 'reset-staff-security', accountId: other.id, inviteId: r.inviteId, tokenHash: r.tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' }));
+    await syncRegistry(w.api, w.gate, ctx());
+    expect((await canRule(w, other)).ok).toBe(true);
+    expect(await canRule(w, { ...other, key: late })).toEqual({ ok: false, reason: 'unknown-key' });
+    // The link's id reused for an owner create-invite: nobody joins through it.
+    const newcomer = { id: randomUUID(), key: newKey(), role: 'mod' as const };
+    w.api.taps.push(tapBy(w.owner, { kind: 'create-invite', inviteId: r.inviteId, role: 'mod', tokenHash: r.tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' }));
+    w.api.invites.set(r.inviteId, { inviteId: r.inviteId, tokenHash: r.tokenHash, accountId: newcomer.id, registrations: [registration(newcomer.key, r.tokenHash)] });
+    w.api.staffRows.set(newcomer.id, { accountId: newcomer.id, role: 'mod', switchedOff: false, removed: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, newcomer)).toEqual({ ok: false, reason: 'unknown-key' });
+    // An expired reset link takes no key; a newer reset closes the older link.
+    const w2 = await world();
+    const m2 = w2.hire('mod');
+    await syncRegistry(w2.api, w2.gate, ctx());
+    const expired = resetSecurity(w2, m2, { expiresAt: '2026-11-12T11:59:00.000Z' });
+    await syncRegistry(w2.api, w2.gate, ctx());
+    expect(await canRule(w2, expired.again)).toEqual({ ok: false, reason: 'unknown-key' });
+    const first = resetSecurity(w2, m2, { register: false });
+    await syncRegistry(w2.api, w2.gate, ctx());
+    const second = resetSecurity(w2, m2);
+    await syncRegistry(w2.api, w2.gate, ctx());
+    const onFirst = newKey();
+    w2.api.invites.get(first.inviteId)!.registrations.push(registration(onFirst, first.tokenHash));
+    await syncRegistry(w2.api, w2.gate, ctx());
+    expect(await canRule(w2, { ...m2, key: onFirst })).toEqual({ ok: false, reason: 'unknown-key' });
+    expect((await canRule(w2, second.again)).ok).toBe(true);
+  });
+
+  // Disputes-stack review 2026-11-16, D-3 (the reviewer's PoC as a test): the API hides the staff
+  // row, so the person never "joins" in the gate and their invite stays open; the owner's tapped
+  // reset must still close it, or step 1 puts the invite's key back on every sync.
+  it('D-3: a reset closes the person\'s own still-open invite: the invite\'s key never comes back', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    w.api.staffRows.delete(mod.id); // a compromised API: the person never joins, the invite stays open
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    await syncRegistry(w.api, w.gate, ctx());
+    const s = w.gate.staff[mod.id]!;
+    expect(s.creds.map((c) => c.credentialId)).not.toContain(mod.key.credentialId);
+    expect(s.creds.map((c) => c.credentialId)).toContain(r.key.credentialId);
+    expect(w.gate.invites[s.inviteId]!.closed).toBe(true);
+    expect(s.inviteClosed).toBe(true);
+    // A key the API registers on the old invite afterwards is not taken either.
+    const old = w.api.invites.get(s.inviteId)!;
+    const late = newKey();
+    old.registrations.push(registration(late, old.tokenHash));
+    w.api.staffRows.set(mod.id, { accountId: mod.id, role: 'mod', switchedOff: false, removed: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await canRule(w, mod)).toEqual({ ok: false, reason: 'unknown-key' });
+    expect(await canRule(w, { ...mod, key: late })).toEqual({ ok: false, reason: 'unknown-key' });
+    expect((await canRule(w, r.again)).ok).toBe(true);
+  });
+
+  // D-2: the gate bounds a link's signed lifetime itself (spec 6.6: an invite link works for 24
+  // hours), so a lying API cannot keep an invite or a reset link open by never reporting it used.
+  it('D-2: an invite or reset link signed to stay open longer than LINK_MAX_LIFETIME_MS is refused', async () => {
+    const at = (ms: number) => new Date(NOW.getTime() + ms).toISOString();
+    // An invite: 2099, and one millisecond over the bound, bring nobody in; exactly the bound does.
+    for (const expiresAt of ['2099-01-01T00:00:00.000Z', at(LINK_MAX_LIFETIME_MS + 1)]) {
+      const w = await world();
+      const mod = w.hire('mod', { expiresAt });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect(w.gate.staff[mod.id], expiresAt).toBeUndefined();
+      expect(await canRule(w, mod), expiresAt).toEqual({ ok: false, reason: 'unknown-key' });
+    }
+    {
+      const w = await world();
+      const mod = w.hire('mod', { expiresAt: at(LINK_MAX_LIFETIME_MS) });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect((await canRule(w, mod)).ok).toBe(true);
+    }
+    // A reset link: refused, so no key is ever taken through it (review PoC R6).
+    for (const expiresAt of ['2099-01-01T00:00:00.000Z', at(LINK_MAX_LIFETIME_MS + 1)]) {
+      const w = await world();
+      const mod = w.hire('mod');
+      await syncRegistry(w.api, w.gate, ctx());
+      const r = resetSecurity(w, mod, { expiresAt });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect(await canRule(w, r.again), expiresAt).toEqual({ ok: false, reason: 'unknown-key' });
+      expect(Object.hasOwn(w.gate.resets, r.inviteId), expiresAt).toBe(false);
+    }
+    {
+      const w = await world();
+      const mod = w.hire('mod');
+      await syncRegistry(w.api, w.gate, ctx());
+      const r = resetSecurity(w, mod, { expiresAt: at(LINK_MAX_LIFETIME_MS) });
+      await syncRegistry(w.api, w.gate, ctx());
+      expect((await canRule(w, r.again)).ok).toBe(true);
+    }
+  });
+
+  it('D-2: a link the gate bound earlier closes LINK_MAX_LIFETIME_MS after its issuedAt, whatever its signed expiry', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r = resetSecurity(w, mod, { register: false });
+    await syncRegistry(w.api, w.gate, ctx());
+    // As a gate.bin from before the bound holds it: the link bound, its tap spent, a 2099 expiry signed.
+    w.api.taps = w.api.taps.filter((t) => (JSON.parse(t.intent) as { inviteId?: string }).inviteId !== r.inviteId);
+    const long = tapBy(w.owner, { kind: 'reset-staff-security', accountId: mod.id, inviteId: r.inviteId, tokenHash: r.tokenHash, expiresAt: '2099-01-01T00:00:00.000Z' });
+    w.api.taps.push(long);
+    w.gate.usedNonces[long.nonceHex] = `reset:${r.inviteId}`;
+    const later: GateContext = { ...ctx(), now: () => new Date(NOW.getTime() + LINK_MAX_LIFETIME_MS) };
+    const key = newKey();
+    w.api.invites.get(r.inviteId)!.registrations.push(registration(key, r.tokenHash));
+    await syncRegistry(w.api, w.gate, later);
+    expect(w.gate.resets[r.inviteId]!.closed).toBe(true);
+    expect(w.gate.staff[mod.id]!.creds.map((c) => c.credentialId)).not.toContain(key.credentialId);
+  });
+});
+
+describe('re-verify round 3', () => {
+  it('X2: a staff login assertion is never accepted as a tap, whatever intent and nonce it is shown with', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const loginNonce = 'cd'.repeat(32);
+    // What the owner's key signs at a login: the staff site's own derived challenge.
+    const login = w.owner.key.authenticate({ challenge: b64url(staffLoginChallenge(loginNonce)), rpId: RP_ID, allowCredentials: [] }, ORIGIN);
+    const settings = canonicalJson({ kind: 'settings', largeTradeLimitUsd: 1_000_000, firstResponseH: 4, appealWindowH: 48, issuedAt: NOW.toISOString() });
+    for (const nonceHex of [loginNonce.slice(0, 32), loginNonce, randomBytes(16).toString('hex')]) {
+      w.api.taps.push({ id: randomUUID(), accountId: w.owner.id, credentialId: w.owner.key.credentialId, intent: settings, nonceHex, response: login });
+    }
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.limitUsdCents).toBe(100_000n);
+    // As a ruling approval too.
+    const c = ruling(mod, { approver: w.owner });
+    const forged: StoredTap = { id: randomUUID(), accountId: w.owner.id, credentialId: w.owner.key.credentialId, intent: canonicalJson(c.intent('approve')), nonceHex: loginNonce, response: login };
+    expect(await authorize(w, c, [tapBy(mod, c.intent('propose')), forged], 200_000n)).toEqual({ ok: false, reason: 'bad-signature' });
+  });
+
+  it('init-gate creates gate.bin atomically: a gate.bin that appears while it asks is never replaced', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
+    try {
+      const key = new Uint8Array(32).fill(7);
+      const result = await initGate({
+        dir,
+        keystoreKey: key,
+        print: () => {},
+        // Another init-gate (or a restore) wins the race while this one waits for "yes".
+        confirm: async () => {
+          const other = await freshGate(dir, key);
+          other.state.ownerAccountId = 'pinned-elsewhere';
+          await other.save();
+          return 'yes';
+        },
+      });
+      expect(result).toBe('exists');
+      expect((await openGateStore(dir, key)).state.ownerAccountId).toBe('pinned-elsewhere');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the attestation allowlists, gate and API (review I2)', () => {
   it('both parsers read the same README fixtures the same way, CRLF included', async () => {
     const { parseAllowlist } = await import('../../api/src/auth/attestation.js');
@@ -709,7 +1142,7 @@ describe('GateStore', () => {
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
     try {
       const key = new Uint8Array(randomBytes(32));
-      const s = await openGateStore(dir, key);
+      const s = await freshGate(dir, key);
       expect(s.state.ownerCreds).toEqual([]);
       s.state.limitUsdCents = 123_400n;
       s.state.usedNonces.abc = 'x';
