@@ -360,7 +360,9 @@ describe('entries never show chat text, ruling reasons, addresses or IP addresse
 describe('the training library', () => {
   type Item = { id: string; closedMonth: string; method: string; methodName: string; xmr: string; outcome: string; overturned: boolean; afterRefund: boolean };
   type Field = { text: string; masks: Array<{ start: number; end: number; kind: string }> };
-  type Review = Item & { status: 'unmarked' | 'marked' | 'stale'; fields: Record<string, Field>; manual: Array<{ field: string; start?: number; end?: number; whole?: true }> };
+  type Review = Item & { status: 'unmarked' | 'marked' | 'stale'; reviewTag: string; fields: Record<string, Field>; manual: Array<{ field: string; start?: number; end?: number; whole?: true }> };
+  /** The review tag of the case as the curator would load it now (re-review 3 m1: PUT echoes it). */
+  const tagNow = async () => ((await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review).reviewTag;
   const CID = () => trainingId(deps.config.trainingIdKey, C.code, 1);
   const list = async (who: { b: StaffBrowser }) => ((await who.b.get('/staff/v1/training')).json() as { items: Item[] }).items;
 
@@ -392,7 +394,8 @@ describe('the training library', () => {
   });
 
   it('refuses masks that do not fit the pre-masked texts', async () => {
-    const put = (masks: unknown) => owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, { masks });
+    const reviewTag = await tagNow();
+    const put = (masks: unknown) => owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, { masks, reviewTag });
     for (const bad of [
       [{ field: 'nope', start: 0, end: 1 }],
       [{ field: 'note', start: 0, end: 999 }],
@@ -403,7 +406,11 @@ describe('the training library', () => {
       [{ field: 'note', start: 0, end: 1, text: 'x' }],
       'nope',
     ]) expect((await put(bad)).statusCode, JSON.stringify(bad)).toBe(400);
-    expect((await owner.b.send('PUT', `/staff/v1/training/review/${'0'.repeat(32)}`, { masks: [] })).statusCode).toBe(404);
+    // Re-review 3 m1: the review tag is required, and has its shape.
+    for (const body of [{ masks: [] }, { masks: [], reviewTag: 'zz' }, { masks: [], reviewTag: 7 }]) {
+      expect((await owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, body)).statusCode, JSON.stringify(body)).toBe(400);
+    }
+    expect((await owner.b.send('PUT', `/staff/v1/training/review/${'0'.repeat(32)}`, { masks: [], reviewTag })).statusCode).toBe(404);
     expect(await list(mod)).toEqual([]);
   });
 
@@ -411,15 +418,17 @@ describe('the training library', () => {
     const one = (await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review;
     const note = one.fields.note!.text;
     const start = note.indexOf('never paid');
+    expect(one.reviewTag).toMatch(/^[0-9a-f]{64}$/);
     const res = await owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, {
       masks: [{ field: 'note', start, end: start + 'never paid'.length }, { field: 'ruling.1.evidence.0', whole: true }],
+      reviewTag: one.reviewTag,
     });
     expect(res.statusCode, res.body).toBe(200);
     const { rows } = await deps.db.query<{ training_id: string; manual_masks: unknown; marked_by: string }>('select training_id, manual_masks, marked_by::text as marked_by from training_cases');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.training_id).toBe(CID());
     expect(rows[0]!.marked_by).toBe(owner.id);
-    const stored = JSON.stringify(rows[0]!.manual_masks);
+    const stored = JSON.stringify(rows[0]!.manual_masks) + JSON.stringify((await deps.db.query('select field_tags from training_cases')).rows);
     for (const t of ['never paid', 'Screenshot', 'Seller', NOTE, sellerName]) expect(stored, t).not.toContain(t);
     const o = await page(owner.b, '?kind=staff');
     expect(o.entries[0]).toMatchObject({ action: 'staff.training-marked', tradeCode: null, detail: { trainingId: CID(), masks: 2 } });
@@ -475,6 +484,45 @@ describe('the training library', () => {
     expect(c.chat).toBe('not-available');
   });
 
+  it('fails closed on any change the curator did not review: text after a range, or a field with no manual mask (re-review 3 B1)', async () => {
+    const note = (await deps.db.query<{ note: string }>('select note from disputes where code = $1', [C.code])).rows[0]!.note;
+    const reason = (await deps.db.query<{ reason: string }>('select reason from dispute_rulings where code = $1', [C.code])).rows[0]!.reason;
+    const visible = async () => (await mod.b.get(`/staff/v1/training/${CID()}`)).statusCode;
+    expect(await visible()).toBe(200);
+    // Text appended after the note's manual range: the range's own slice still matches.
+    await deps.db.query('update disputes set note = $2 where code = $1', [C.code, `${note} TAIL-SENTINEL John Smith`]);
+    expect(await visible()).toBe(404);
+    expect(await list(mod)).toEqual([]);
+    expect(((await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review).status).toBe('stale');
+    await deps.db.query('update disputes set note = $2 where code = $1', [C.code, note]);
+    expect(await visible()).toBe(200);
+    // Text appended to the ruling reason, a field with no manual mask.
+    await deps.db.query('update dispute_rulings set reason = $2 where code = $1', [C.code, `${reason} PAYER-SENTINEL John Smith`]);
+    expect(await visible()).toBe(404);
+    const body = (await mod.b.get('/staff/v1/training')).body;
+    expect(body).not.toContain('PAYER-SENTINEL');
+    await deps.db.query('update dispute_rulings set reason = $2 where code = $1', [C.code, reason]);
+    expect(await visible()).toBe(200);
+    // A field added (a new evidence line) hides it too.
+    const ev = (await deps.db.query<{ evidence: string[] }>('select evidence from dispute_rulings where code = $1', [C.code])).rows[0]!.evidence;
+    await deps.db.query('update dispute_rulings set evidence = $2 where code = $1', [C.code, JSON.stringify([...ev, 'EXTRA-SENTINEL'])]);
+    expect(await visible()).toBe(404);
+    await deps.db.query('update dispute_rulings set evidence = $2 where code = $1', [C.code, JSON.stringify(ev)]);
+    expect(await visible()).toBe(200);
+  });
+
+  it('a save checks the review tag: a case that changed after the curator opened it is a 409 (re-review 3 m1)', async () => {
+    const opened = (await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review;
+    const note = (await deps.db.query<{ note: string }>('select note from disputes where code = $1', [C.code])).rows[0]!.note;
+    await deps.db.query('update disputes set note = $2 where code = $1', [C.code, `${note}!`]);
+    const res = await owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, { masks: opened.manual, reviewTag: opened.reviewTag });
+    expect(res.statusCode, res.body).toBe(409);
+    expect(res.json()).toMatchObject({ error: 'case-changed' });
+    await deps.db.query('update disputes set note = $2 where code = $1', [C.code, note]);
+    expect((await owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, { masks: opened.manual, reviewTag: opened.reviewTag })).statusCode).toBe(200);
+    expect((await mod.b.get(`/staff/v1/training/${CID()}`)).statusCode).toBe(200);
+  });
+
   it('the opaque id is an HMAC under the training id key, stored on the curation row (review m1, re-review m3)', async () => {
     const unkeyed = createHash('sha256').update(`x2f-training-v1|${C.code}|1`, 'utf8').digest('hex').slice(0, 32);
     expect(CID()).not.toBe(unkeyed);
@@ -506,7 +554,7 @@ describe('the training library', () => {
     expect(r.status).toBe('stale');
     const note = r.fields.note!.text;
     const start = note.indexOf('never paid');
-    expect((await owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, { masks: [{ field: 'note', start, end: start + 10 }, { field: 'ruling.1.evidence.0', whole: true }] })).statusCode).toBe(200);
+    expect((await owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, { masks: [{ field: 'note', start, end: start + 10 }, { field: 'ruling.1.evidence.0', whole: true }], reviewTag: r.reviewTag })).statusCode).toBe(200);
     expect((await list(mod)).map((i) => i.id)).toEqual([CID()]);
     expect(((await mod.b.get(`/staff/v1/training/${CID()}`)).json() as { note: Field }).note.text).toBe('Hello, Buyer [hidden], call me on [phone]');
   });
