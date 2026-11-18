@@ -6,8 +6,9 @@ import { CaseChatError, forget, openCaseChat, sealModMessage, type OpenedChat } 
 
 /**
  * Design build task 10 (design section 2.4 M4; review lead-mod-chat N10): the staff-web chat key
- * worker's state. It alone holds this browser's device key (opened from IndexedDB only here, raw
- * bytes, wiped after each use) and the key of every chat it opened (raw bytes, zeroed on `forget`).
+ * worker's state. It uses this browser's device key (non-extractable WebCrypto keys, re-review B1:
+ * no secret byte of it exists anywhere) and holds the key of every chat it opened (raw bytes, zeroed
+ * on `forget`; copies in libsodium's WebAssembly heap are not).
  * What goes back to the page: the device's public halves, an opened chat's lines (plaintext to
  * show) under an opaque handle, and a sealed, countersigned message (ciphertext to post). Never a
  * chat key, a wrap opened, a device secret or anything they could be rebuilt from.

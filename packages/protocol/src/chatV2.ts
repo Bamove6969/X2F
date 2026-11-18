@@ -46,7 +46,7 @@ import type { Identity } from './identity.js';
 import { canonicalJson, encodePayload } from './payload.js';
 import { ReplayGuard } from './replay.js';
 import { MAX_TRADE_LEN, isPlainObject, isRole, isValidSeq, isValidTrade } from './roles.js';
-import { SEALED_OVERHEAD, openSealed, sealTo, type BoxKeyPair } from './sealed.js';
+import { SEALED_OVERHEAD, openSealed, openSealedWith, sealTo, type BoxKeyPair, type BoxOpener } from './sealed.js';
 
 export const CHAT_KEY_BYTES = 32;
 const NONCE_LEN = 24;
@@ -120,11 +120,12 @@ export async function wrapChatKey(boxPublic: string, tk: Uint8Array): Promise<st
  * Opens a member's wrap and checks it against the pinned `tkh`. A wrap not for this key, malformed,
  * or of some other key: ProtocolError (`not-for-me`, or `bad-signature` for a tkh mismatch).
  */
-export async function unwrapChatKey(me: BoxKeyPair, wrap: unknown, tkh: string): Promise<Uint8Array> {
+export async function unwrapChatKey(me: BoxKeyPair | BoxOpener, wrap: unknown, tkh: string): Promise<Uint8Array> {
   await sodium.ready;
   const bytes = b64Field(wrap, (n) => n === WRAP_LEN, b64Len(WRAP_LEN), 'wrap');
   const want = hexField(tkh, 32, 'tkh');
-  const tk = await openSealed(me, bytes);
+  // A key pair opens with libsodium; an opener (a non-extractable WebCrypto key, review B1) gives the shared secret only.
+  const tk = 'sharedWith' in me ? await openSealedWith(me, bytes) : await openSealed(me, bytes);
   if (tk.length !== CHAT_KEY_BYTES || !sodium.memcmp(sodium.from_hex(await chatKeyHash(tk)), want)) {
     sodium.memzero(tk);
     throw bad('Invalid wrap: the chat key does not match tkh');
@@ -258,15 +259,34 @@ function countersignBytes(c: Omit<ModCountersign, 'sig'>): Uint8Array {
   return utf8.encode(COUNTERSIGN_DOMAIN + canonicalJson({ chat: c.chat, seq: c.seq, nonce: c.nonce, ctSha256: c.ctSha256, requestId: c.requestId, issuedAt: c.issuedAt }));
 }
 
+/**
+ * A signer whose Ed25519 secret never leaves it (review lead-mod-chat B1: a staff device's
+ * non-extractable WebCrypto key, `subtle.sign('Ed25519', key, bytes)`).
+ */
+export interface Signer {
+  signPublic: string;
+  sign(bytes: Uint8Array): Promise<Uint8Array>;
+}
+
 /** The staff device's countersign of a sealed moderator body (`encryptChat` with from 'mod'). */
-export async function makeModCountersign(a: { body: ChatEnvelopeV2Body; requestId: string; issuedAt: string; me: Identity }): Promise<ModCountersign> {
+export async function makeModCountersign(a: { body: ChatEnvelopeV2Body; requestId: string; issuedAt: string; me: Identity | Signer }): Promise<ModCountersign> {
   await sodium.ready;
   if (a.body.from !== 'mod' || !isValidTrade(a.body.trade) || !isValidSeq(a.body.seq)) throw new TypeError('makeModCountersign: a moderator body');
   if (!REQUEST_ID.test(a.requestId) || !ISO_MS.test(a.issuedAt) || Number.isNaN(Date.parse(a.issuedAt))) throw new TypeError('makeModCountersign: invalid requestId or issuedAt');
   b64Field(a.body.nonce, (n) => n === NONCE_LEN, b64Len(NONCE_LEN), 'nonce');
   const c = { chat: a.body.trade, seq: a.body.seq, nonce: a.body.nonce, ctSha256: await ctSha256Of(a.body.ct), requestId: a.requestId, issuedAt: a.issuedAt };
-  const secret = signerSecret(a.me, undefined, 'makeModCountersign');
-  return { ...c, sig: sodium.to_hex(sodium.crypto_sign_detached(countersignBytes(c), secret)) };
+  const bytes = countersignBytes(c);
+  if ('sign' in a.me && typeof a.me.sign === 'function') {
+    // Checked by the signing key it claims, so a mixed-up signer never sends a countersign.
+    const pk = hexField(a.me.signPublic, 32, 'signPublic');
+    const sig = await a.me.sign(bytes);
+    if (!(sig instanceof Uint8Array) || sig.length !== sodium.crypto_sign_BYTES || !sodium.crypto_sign_verify_detached(sig, bytes, pk)) {
+      throw new TypeError('makeModCountersign: the signer does not sign as signPublic');
+    }
+    return { ...c, sig: sodium.to_hex(sig) };
+  }
+  const secret = signerSecret(a.me as Identity, undefined, 'makeModCountersign');
+  return { ...c, sig: sodium.to_hex(sodium.crypto_sign_detached(bytes, secret)) };
 }
 
 /**

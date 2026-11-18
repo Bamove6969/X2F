@@ -36,9 +36,9 @@ describe('the chat key worker', () => {
     expect(v.lines.map((l) => [l.from, l.text])).toEqual([['buyer', 'I paid.'], ['seller', 'Not received.']]);
     expect(keeper.size).toBe(1);
     const sealed = await keys.seal(v.handle, 'Please send the statement.', new Date(NOW), v.nextSeq);
-    const id = await w.device.identity();
+    // No chat key in anything it answers (the device has no secret bytes at all: review B1).
     const answers = JSON.stringify([await keys.device(), v, sealed]);
-    for (const secret of [w.tk, id.signSecret.subarray(0, 32), id.boxSecret]) expect(answers).not.toContain(hex(secret));
+    expect(answers).not.toContain(hex(w.tk));
     // The sealed message is the moderator's, countersigned by the device, and both traders read it once signed.
     const body = { v: 2 as const, trade: w.channel, from: 'mod' as const, seq: sealed.seq, nonce: sealed.nonce, ct: sealed.ct };
     await expect(verifyModCountersign({ chat: w.channel, seq: sealed.seq, nonce: sealed.nonce, ctSha256: sealed.ctSha256, requestId: sealed.requestId, issuedAt: sealed.issuedAt, sig: sealed.sig }, { body, signPublic: w.device.signPublic })).resolves.toBeDefined();

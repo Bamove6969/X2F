@@ -12,10 +12,16 @@ import type { CaseChatAnswer } from '../src/chat/types.js';
 import { staffDeviceKey, type DeviceKeyBackend, type StoredDeviceKey } from '../src/keys/deviceKey.js';
 import { ChatKeeper, serveChatKeeper } from '../src/keys/keeper.js';
 
-export function memory(): DeviceKeyBackend {
-  let w: CryptoKey | null = null;
-  let r: StoredDeviceKey | null = null;
-  return { load: async () => ({ wrap: w, rec: r }), save: async (a, b) => { w = a; r = b; } };
+export function memory(): DeviceKeyBackend & { rec: unknown } {
+  const m = {
+    rec: null as unknown,
+    load: async () => m.rec,
+    save: async (r: StoredDeviceKey) => {
+      // As IndexedDB stores it: a structured clone (CryptoKeys stay non-extractable).
+      m.rec = structuredClone(r);
+    },
+  };
+  return m;
 }
 
 let modSign: { publicKey: Uint8Array; privateKey: Uint8Array } | null = null;

@@ -1,4 +1,6 @@
 import sodium from 'libsodium-wrappers';
+import type { Signer } from './chatV2.js';
+import type { BoxOpener } from './sealed.js';
 
 /** Hex public keys; Ed25519 signing keys with X25519 box keys derived from them. */
 export interface Identity {
@@ -67,5 +69,32 @@ export async function identityKeysMatch(me: Identity): Promise<boolean> {
   } finally {
     sodium.memzero(kp.privateKey);
     sodium.memzero(box);
+  }
+}
+
+/**
+ * Whether keys that never leave their holder (review lead-mod-chat B1: non-extractable WebCrypto
+ * keys) are `signPublic`'s and `boxPublic`'s: the signer's signature over a fresh challenge verifies
+ * by signPublic, and the opener's X25519 with a fresh ephemeral key equals the ephemeral secret
+ * times boxPublic. Throws whatever the signer or opener throws (a browser without the algorithm).
+ */
+export async function deviceKeysMatch(signer: Signer, opener: BoxOpener): Promise<boolean> {
+  await sodium.ready;
+  if (typeof signer?.signPublic !== 'string' || !KEY_HEX.test(signer.signPublic) || typeof opener?.boxPublic !== 'string' || !KEY_HEX.test(opener.boxPublic)) return false;
+  const challenge = sodium.randombytes_buf(32);
+  const sig = await signer.sign(challenge);
+  if (!(sig instanceof Uint8Array) || sig.length !== sodium.crypto_sign_BYTES || !sodium.crypto_sign_verify_detached(sig, challenge, sodium.from_hex(signer.signPublic))) return false;
+  const e = sodium.crypto_box_keypair();
+  const theirs = await opener.sharedWith(e.publicKey);
+  let ours: Uint8Array | null = null;
+  try {
+    ours = sodium.crypto_scalarmult(e.privateKey, sodium.from_hex(opener.boxPublic));
+    return theirs instanceof Uint8Array && theirs.length === 32 && sodium.memcmp(theirs, ours);
+  } catch {
+    return false;
+  } finally {
+    sodium.memzero(e.privateKey);
+    ours?.fill(0);
+    if (theirs instanceof Uint8Array) theirs.fill(0);
   }
 }

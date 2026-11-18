@@ -10,7 +10,7 @@ import {
 } from '@x2f/protocol';
 import { CHAT_MSG_TYPE, channelFor, verifyAttestationSignature, type Attestation, type AttestationKey } from '@x2f/trade';
 import { CASE_CHAT_READ_MAX, modTextOk, type CaseChatAnswer, type CaseChatLine, type SealedModMessage } from '../chat/types.js';
-import { wipeIdentity, type StaffDeviceKey } from './deviceKey.js';
+import type { StaffDeviceKey } from './deviceKey.js';
 
 export { CASE_CHAT_READ_MAX, modTextOk, type CaseChatAnswer, type CaseChatLine };
 
@@ -80,14 +80,12 @@ export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, mo
   } catch {
     throw security();
   }
-  const me = await device.identity();
   let tk: Uint8Array;
   try {
-    tk = await unwrapChatKey({ boxPublic: me.boxPublic, boxSecret: me.boxSecret }, a.wrap, a.tkh);
+    // Opened by the device's non-extractable X25519 key (review B1: deriveBits, then crypto_box_seal_open's steps).
+    tk = await unwrapChatKey(device.opener, a.wrap, a.tkh);
   } catch {
     throw security();
-  } finally {
-    wipeIdentity(me);
   }
   const guard = new ReplayGuard(channel);
   const lines: CaseChatLine[] = [];
@@ -139,11 +137,7 @@ export async function sealModMessage(c: OpenedChat, text: string, device: StaffD
   const body = await encryptChat({ trade: c.channel, from: 'mod', seq, type: CHAT_MSG_TYPE, payload: { text }, tk: c.tk });
   const rid = new Uint8Array(16);
   globalThis.crypto.getRandomValues(rid);
-  const me = await device.identity();
-  try {
-    const cs = await makeModCountersign({ body, requestId: Array.from(rid, (x) => x.toString(16).padStart(2, '0')).join(''), issuedAt: now.toISOString(), me });
-    return { deviceKeyId: device.deviceKeyId, seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig };
-  } finally {
-    wipeIdentity(me);
-  }
+  // Signed by the device's non-extractable Ed25519 key (review B1: subtle.sign).
+  const cs = await makeModCountersign({ body, requestId: Array.from(rid, (x) => x.toString(16).padStart(2, '0')).join(''), issuedAt: now.toISOString(), me: device.signer });
+  return { deviceKeyId: device.deviceKeyId, seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig };
 }
