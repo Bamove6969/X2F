@@ -510,6 +510,10 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const t = await caseTrade(deps.db, code);
     const chat = (await deps.db.query<{ code: string }>('select code from chats where trade_code = $1', [code])).rows[0]?.code;
     if (chat === undefined) throw new ApiError(404, 'no-chat');
+    // Decision 9 (lead 18 Nov): a chat with a key record takes envelope v2 only, and this dev-only
+    // path seals v1, so it is refused before anything is logged or sealed. Moderator messages in
+    // a keyed chat wait for build task 9's countersign (NEEDS_P4_MOD_COUNTERSIGN).
+    if ((await deps.db.query('select 1 from chat_keys where chat = $1', [chat])).rows.length > 0) throw new ApiError(409, 'chat-keyed');
     const logEntryId = await logged(req, code, 'chat.message-requested', {}, workable(req));
     let envelope: unknown;
     try {

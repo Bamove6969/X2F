@@ -360,6 +360,22 @@ describe('who works a case', () => {
     expect((await senior.b.post(url(code, '/messages'), { text: 'Two.' })).statusCode).toBe(201);
   });
 
+  it('decision 9 (lead 18 Nov): in a chat with a key record (envelope v2 only) the dev-only v1 send is refused before anything is logged or sealed', async () => {
+    const mod = await staff('mod');
+    const { code, chat } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    await deps.db.query(
+      `insert into chat_keys (chat, tkh, created_by_role, wrap_buyer, wrap_seller, sig, created_at) values ($1, $2, 'buyer', 'AAAA', 'AAAA', $3, now())`,
+      [chat, '0'.repeat(64), 'a'.repeat(128)],
+    );
+    const before = moderation.calls.length;
+    const res = await mod.b.post(url(code, '/messages'), { text: 'Hello' });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'chat-keyed' });
+    expect(moderation.calls.length).toBe(before);
+    expect((await logOf(code)).filter((e) => e.action === 'chat.message-requested')).toEqual([]);
+    expect((await deps.db.query("select 1 from chat_envelopes where chat = $1 and sender_role = 'mod'", [chat])).rows).toEqual([]);
+  });
+
   it('with logging failing, no message is sealed and the moderation process is never asked', async () => {
     const broken = await buildStaffApi({
       ...deps, staffOrigin: STAFF_ORIGIN, moderation, traderEvents: trader.events,

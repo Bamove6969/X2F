@@ -112,6 +112,7 @@ export type ApiErrorCode =
   | 'bad-key-record'
   | 'key-exists'
   | 'no-key'
+  | 'chat-keyed'
   | 'chat-unavailable'
   // Design 2026-11-08 section 5: a chat purged under the caller (its member mark); the device erases its copy.
   | 'chat-purged'

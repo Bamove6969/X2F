@@ -237,6 +237,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'bad-key-record': 'a device check on the chat key (a fault)',
   'key-exists': 'the other side made the chat key first (the engine reads it)',
   'no-key': 'the chat has no key yet (the engine makes one)',
+  'chat-keyed': 'a staff answer: the dev-only moderator send cannot write to a keyed chat (staff app only)',
   'wrong-channel': 'a device check (a fault)',
   'wrong-sender': 'a device check (a fault)',
   'chat-unavailable': 'the trade has no chat (cannot happen since Task 5\'s offer key; a fault)',
