@@ -1491,6 +1491,26 @@ describe('the rate-first gate on the quote (Plan 5 Task 6; review 18 Nov M1, M2,
     expect(stub.takes[1]!.walletId).toBe('w-ledger');
   });
 
+  it("re-review n1: a gate that refuses with an empty pending list ('empty') takes nothing again, so it cannot loop", async () => {
+    stub.wallets = TWO();
+    // Rated in another tab: the gate still refuses this take, but the list it is read for is empty.
+    stub.pending = [[]];
+    stub.take = () => ({ status: 409, json: { error: 'review-pending' } });
+    const { host } = await open(`${BUY}&amount=412.50`);
+    pick(host, 'w-ledger');
+    await settle();
+    tap(primary(host));
+    await settle();
+    await settle();
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(stub.reviews ?? []).toEqual([]);
+    expect(sheet()).toBeNull();
+    expect(where(host)).toBeNull();
+    // The refusal stays on the screen: the person decides whether to tap Trade again.
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(RATE_FIRST.inline);
+  });
+
   it('m1: a picked wallet no longer usable by the time the rating is done takes nothing (Trade would be off)', async () => {
     const { host } = await refusedOnce();
     // The list is read again (a resume) while the sheet is up, and Ledger is no longer usable.

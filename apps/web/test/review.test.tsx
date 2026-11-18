@@ -551,6 +551,23 @@ describe('AcceptedSheet meets the gate (409 review-pending on the wallet pick)',
     expect(calls).toEqual(['w2', 'w2']);
   });
 
+  it('re-review n2: after Skip review alone, the same wallet pick goes again (the deal is server-locked)', async () => {
+    const { calls, dialog } = gated(TWO);
+    await flush();
+    const radios = [...dialog().querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+    click(radios[1]!);
+    click(buttonNamed(dialog(), 'Use this wallet')!);
+    await flush();
+    await flush();
+    await flush();
+    expect(dialog().querySelector('[data-part="rate-first-title"]')).not.toBeNull();
+    click(buttonNamed(dialog(), 'Skip review')!);
+    await flush();
+    await flush();
+    await flush();
+    expect(calls).toEqual(['w2', 'w2']);
+  });
+
   it('review m6: the swapped-address alert is not stacked on the rating, and still shows on the pick screen', async () => {
     forgetTypedAddresses();
     // This device typed another address for w2: the list's w2 is a swapped address.
