@@ -15,9 +15,9 @@
  * server sends, `GET /staff/v1/me`.`nav` (review S3), so the tour is the menu even when the server
  * narrows it (login hours, a revoked grant). Next / Next screen / Finish follow from the pages.
  *
- * Design's stops on pages or parts that are not built on main yet (ModQueue, ModCase, StaffList,
- * StaffPerformance, StaffLog, StaffSettings, the Overview controls, the past-reputation check, the
- * session countdown shown in tour mode) are PENDING_STAFF_STOPS: named by board, never in a tour
+ * Design's stops on pages or parts that are not built on main yet (ModQueue, ModCase,
+ * StaffPerformance, StaffLog, StaffSettings' pay, fee wallet and owner keys, Overview's approvals,
+ * the past-reputation check, the session countdown shown in tour mode) are PENDING_STAFF_STOPS: named by board, never in a tour
  * until their screen exists, when each gets its selector and moves into PAGE_STEPS. Every live
  * target renders on its route (test/tourSteps.test.tsx).
  */
@@ -148,10 +148,24 @@ const T1_WRITE: TourStep = { ...T1_READ, body: 'Write and update the guides your
 /** Each menu page's live steps for each role (most pages read the same for every role that has them). */
 function pageSteps(item: NavItem, role: StaffRole): readonly TourStep[] {
   switch (item) {
+    // Plan 4 Task 17 built Overview, Staff and Settings: design's stops for them moved here from
+    // PENDING_STAFF_STOPS with design's own words; O6 (approvals on Overview), G1 and G3 still wait.
     case 'overview':
-      return [{ id: 'O4', target: 'a.x2f-link[href="/overview/news"]', title: 'News', body: 'Write the posts traders see under Site news.', placement: 'auto' }];
+      return [
+        { id: 'O1', target: 'section[aria-label="Emergency stop"]', title: 'Emergency stop', body: "Pauses every new trade at once. Use it only when something's really wrong.", placement: 'auto' },
+        { id: 'O2', target: 'section[aria-label="Maintenance mode"]', title: 'Maintenance', body: 'Take the site down for planned work, with a message for traders.', placement: 'auto' },
+        { id: 'O3', target: 'section[aria-label="Announcement banner"]', title: 'Announcements', body: "Put a short notice at the top of every trader's screen.", placement: 'auto' },
+        { id: 'O4', target: 'a.x2f-link[href="/overview/news"]', title: 'News', body: 'Write the posts traders see under Site news.', placement: 'auto' },
+        { id: 'O5', target: 'section[aria-label="Earnings"]', title: 'Earnings', body: 'What X2F has earned in fees, by month.', placement: 'auto' },
+      ];
     case 'staff':
-      return [{ id: 'P3', target: '[data-member] .x2f-check', title: 'Extra access', body: 'Give one person extra access, like support tickets or feedback.', placement: 'auto' }];
+      return [
+        { id: 'P1', target: '[data-part="add-staff"]', title: 'Add staff', body: 'Create an invite link for a new helper or moderator.', placement: 'auto' },
+        { id: 'P2', target: 'table[aria-label="Staff"]', title: 'Your team', body: "Everyone's role, login hours and status at a glance.", placement: 'below' },
+        { id: 'P3', target: '[data-member] .x2f-check', title: 'Extra access', body: 'Give one person extra access, like support tickets or feedback.', placement: 'auto' },
+      ];
+    case 'settings':
+      return [{ id: 'G2', target: 'section[aria-label="Rulings"]', title: 'Case rules', body: 'How long traders have to appeal, and how fast moderators must reply.', placement: 'auto' }];
     case 'prices':
       return [
         { id: 'X1', target: 'table[aria-label="XMR price sources"]', title: 'Price sources', body: 'Where the XMR price comes from. Several sources keep it honest.', placement: 'below' },
@@ -168,7 +182,7 @@ function pageSteps(item: NavItem, role: StaffRole): readonly TourStep[] {
       return [role === 'owner' ? T1_WRITE : T1_READ];
     case 'feedback':
       return F;
-    // Disputes, Performance, Activity log and Settings are title-only on main: their stops wait (PENDING_STAFF_STOPS).
+    // Disputes, Performance and Activity log: their stops wait (PENDING_STAFF_STOPS).
     default:
       return [];
   }
@@ -218,18 +232,11 @@ export const PENDING_STAFF_STOPS: readonly PendingStop[] = [
   { id: 'R1', board: 'StaffImportVerify (past reputation check)', element: 'the check page', title: 'Check past trades', body: 'Confirm the trading history a new trader brings from another site.', placement: 'below', roles: ['senior'], waitsFor: 'the past-reputation check page' },
   { id: 'L1', board: 'StaffLog (Activity log)', element: '"Show", "Trade code" filters', title: 'Find what happened', body: 'Search by trade code to see every step of a case.', placement: 'below', roles: ['mod', 'senior'], waitsFor: 'the Activity log page' },
   { id: 'L2', board: 'StaffLog (Activity log)', element: '"When / What happened" list', title: 'The record', body: 'Everything on your cases is logged, so you can always check back.', placement: 'below', roles: ['mod', 'senior'], waitsFor: 'the Activity log page' },
-  { id: 'O1', board: 'StaffOverview', element: '"Emergency stop", "Pause all new trades"', title: 'Emergency stop', body: "Pauses every new trade at once. Use it only when something's really wrong.", placement: 'auto', roles: ['owner'], waitsFor: 'the Overview page (Plan 4 Task 17)' },
-  { id: 'O2', board: 'StaffOverview', element: '"Maintenance mode"', title: 'Maintenance', body: 'Take the site down for planned work, with a message for traders.', placement: 'auto', roles: ['owner'], waitsFor: 'the Overview page' },
-  { id: 'O3', board: 'StaffOverview', element: '"Announcement banner"', title: 'Announcements', body: "Put a short notice at the top of every trader's screen.", placement: 'auto', roles: ['owner'], waitsFor: 'the Overview page' },
-  { id: 'O5', board: 'StaffOverview', element: '"Earnings" (This month, All time)', title: 'Earnings', body: 'What X2F has earned in fees, by month.', placement: 'auto', roles: ['owner'], waitsFor: 'the Overview page' },
-  { id: 'O6', board: 'StaffOverview', element: '"Ruling waiting for you" (Notifications)', title: 'Needs you', body: 'Anything waiting for your approval shows up here first.', placement: 'auto', roles: ['owner'], waitsFor: 'the Overview page' },
-  { id: 'P1', board: 'StaffList', element: '"Add staff member"', title: 'Add staff', body: 'Create an invite link for a new helper or moderator.', placement: 'auto', roles: ['owner'], waitsFor: 'the StaffList page (the Staff page shows grants only on main)' },
-  { id: 'P2', board: 'StaffList', element: 'the table (Role, Login hours, Status)', title: 'Your team', body: "Everyone's role, login hours and status at a glance.", placement: 'below', roles: ['owner'], waitsFor: 'the StaffList page' },
+  { id: 'O6', board: 'StaffOverview', element: '"Ruling waiting for you" (Notifications)', title: 'Needs you', body: 'Anything waiting for your approval shows up here first.', placement: 'auto', roles: ['owner'], waitsFor: 'approvals waiting on the Overview page (not built)' },
   { id: 'M1', board: 'StaffPerformance', element: '"Moderators" table', title: 'How cases go', body: "Each moderator's cases, reply times and rulings overturned on appeal.", placement: 'below', roles: ['owner'], waitsFor: 'the Performance page' },
   { id: 'M2', board: 'StaffPerformance', element: '"Period"', title: 'Pick a period', body: 'Compare this week, last month or all time.', placement: 'auto', roles: ['owner'], waitsFor: 'the Performance page' },
   { id: 'L1-owner', board: 'StaffLog (Activity log)', element: '"Show everything" (log.read.all)', title: 'Everything, logged', body: 'Every event on the site, from every staff member.', placement: 'below', roles: ['owner'], waitsFor: 'the Activity log page' },
   { id: 'L2-owner', board: 'StaffLog (Activity log)', element: '"When / What happened"', title: 'The record', body: 'Filter by trade code or person to follow any thread.', placement: 'below', roles: ['owner'], waitsFor: 'the Activity log page' },
-  { id: 'G1', board: 'StaffSettings', element: '"Staff pay"', title: 'Staff pay', body: 'Set what helpers and moderators earn.', placement: 'auto', roles: ['owner'], waitsFor: 'the Settings page (Plan 4 Task 20)' },
-  { id: 'G2', board: 'StaffSettings', element: '"Rulings" (Appeal window, First response deadline)', title: 'Case rules', body: 'How long traders have to appeal, and how fast moderators must reply.', placement: 'auto', roles: ['owner'], waitsFor: 'the Settings page' },
-  { id: 'G3', board: 'StaffSettings', element: '"Fee wallet", "Owner keys"', title: 'Money and keys', body: 'Where fees are swept and which keys can approve. Every change needs your key.', placement: 'auto', roles: ['owner'], waitsFor: 'the Settings page' },
+  { id: 'G1', board: 'StaffSettings', element: '"Staff pay"', title: 'Staff pay', body: 'Set what helpers and moderators earn.', placement: 'auto', roles: ['owner'], waitsFor: 'design wording that matches the pay built in Task 33 (per completed dispute; helpers earn nothing)' },
+  { id: 'G3', board: 'StaffSettings', element: '"Fee wallet", "Owner keys"', title: 'Money and keys', body: 'Where fees are swept and which keys can approve. Every change needs your key.', placement: 'auto', roles: ['owner'], waitsFor: 'the Settings page\'s Fee wallet and Owner keys sections (not drawn)' },
 ];

@@ -460,7 +460,9 @@ describe('removing a login method', () => {
     expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'last-login-method']);
   });
 
-  it('a trader whose only primary method is a password keeps it; TOTP and recovery codes can go', async () => {
+  // Owner, 16 Nov 2026: a password never stands alone, so TOTP beside a lone password stays too
+  // (409 password-alone); recovery codes can still go.
+  it('a trader whose only primary method is a password keeps it and its TOTP; recovery codes can go', async () => {
     const { id } = await account();
     await addPassword(id);
     await addTotp(id);
@@ -472,10 +474,48 @@ describe('removing a login method', () => {
     expect(errorOf(res)).toBe('last-login-method');
 
     const t2 = await token(b, id, { kind: 'remove-method', method: 'totp', id: 'totp' });
-    expect((await b.del('/v1/account/methods/totp/totp', { confirmToken: t2 })).statusCode).toBe(200);
+    const totp = await b.del('/v1/account/methods/totp/totp', { confirmToken: t2 });
+    expect([totp.statusCode, errorOf(totp)]).toEqual([409, 'password-alone']);
     const t3 = await token(b, id, { kind: 'remove-method', method: 'recovery-codes', id: 'recovery-codes' });
     expect((await b.del('/v1/account/methods/recovery-codes/recovery-codes', { confirmToken: t3 })).statusCode).toBe(200);
-    expect((await listMethods(deps.db, id)).map((m) => m.type)).toEqual(['password']);
+    expect((await listMethods(deps.db, id)).map((m) => m.type)).toEqual(['password', 'totp']);
+  });
+
+  // The password-alone check counts only usable PGP keys, as G13 does (security review 8 Nov M3:
+  // an expired or revoked key logs no one in).
+  it('password-alone: an expired PGP key does not count, so a trader with a password, one and a passkey keeps the passkey', async () => {
+    const { id } = await account();
+    await addPassword(id);
+    await addPgp(id, await genKey({ keyExpirationTime: 86_400 }));
+    const passkey = await addCredential(id, 'passkey', false);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
+    const refused = await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'password-alone']);
+    expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'password', 'pgp']);
+  });
+
+  it('password-alone: a revoked PGP key does not count, so a trader with a password, one and a passkey keeps the passkey', async () => {
+    const { id } = await account();
+    await addPassword(id);
+    const key = await genKey();
+    await addPgp(id, key);
+    await revokeStored(id, key);
+    const passkey = await addCredential(id, 'passkey', false);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
+    const refused = await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'password-alone']);
+  });
+
+  it('password-alone: with a usable PGP key beside the password, the passkey can go', async () => {
+    const { id } = await account();
+    await addPassword(id);
+    await addPgp(id, await genKey());
+    const passkey = await addCredential(id, 'passkey', false);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
+    expect((await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t })).statusCode).toBe(200);
   });
 
   it('owner minimums: two attested keys and a PGP key stay', async () => {

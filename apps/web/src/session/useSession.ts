@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AccountOverview } from '@x2f/auth-client';
 import { ApiCallError, api, setSessionGoneListener } from '../api/client.js';
+import { forgetLocalSession } from '../push/usePush.js';
 
 /**
  * The signed-in account, a thin hook over Plan 2's `me()` (`GET /v1/account/me`). It goes through
@@ -45,7 +46,11 @@ export function sessionEnded(): void {
   once = Promise.resolve({ status: 'signed-out' });
   for (const l of [...listeners]) l();
 }
-setSessionGoneListener(sessionEnded);
+// T-I2: an ended session (a 401 not-authenticated from any call but `me`) forgets what this tab kept for it.
+setSessionGoneListener(() => {
+  forgetLocalSession();
+  sessionEnded();
+});
 
 /** The public display name exactly as stored (FU-A `displayName`); '' when the answer has none. */
 export function displayNameOf(me: { displayName?: string }): string {

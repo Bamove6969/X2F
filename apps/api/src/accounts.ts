@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { checkLoginName, checkNames, lookAlikeKey, type AccountKind } from '@x2f/accounts';
+import { checkLoginName, checkNames, staffNameKey, type AccountKind } from '@x2f/accounts';
 import type { Deps } from './app.js';
 import { subkey, type Config } from './config.js';
 import type { Queryable } from './db/pool.js';
@@ -31,10 +31,29 @@ export async function assertNewNames(db: Queryable, displayName: unknown, loginN
     if (r.field === 'displayName') throw new ApiError(400, r.reason === 'reserved' ? 'display-name-reserved' : 'display-name-invalid');
     throw new ApiError(400, r.reason === 'same' ? 'names-same' : 'login-name-invalid');
   }
-  const folded = lookAlikeKey(r.display.key);
+  // F4, review of second-signup-r3 M2 (ported 18 Nov): punctuation is ignored too (staffNameKey).
+  const folded = staffNameKey(r.display.key);
   const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind in ('staff', 'owner')");
-  if (rows.some((s) => lookAlikeKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
+  if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
   return { displayName: r.display.name, displayKey: r.display.key, loginKey: r.login.key };
+}
+
+/**
+ * The other direction of F4 (review of lead-signup-rules-main, M1): a new staff or owner display
+ * name may not look like an existing trader's display name or a live team member's name (or open
+ * member invite), compared by `staffNameKey` as `assertNewNames` compares the other way, so a
+ * trader who signed up first can never read like staff. A member's own login account is skipped:
+ * its display name is a random placeholder nobody sees. 400 `display-name-reserved`, as for a
+ * reserved word. Read in full on each call: it runs only at staff invite accept and owner setup.
+ */
+export async function assertStaffNameUnlike(db: Queryable, displayKey: string): Promise<void> {
+  const folded = staffNameKey(displayKey);
+  const { rows } = await db.query<{ display_key: string }>(
+    `select display_key from accounts where kind = 'trader'
+     union all
+     select display_key from team_members where removed_at is null`,
+  );
+  if (rows.some((r) => staffNameKey(r.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
 }
 
 /**

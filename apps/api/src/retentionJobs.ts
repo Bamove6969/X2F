@@ -1,5 +1,6 @@
 import { purgeExpired } from './auth/challenges.js';
 import { purgeChatsJob } from './chat/retention.js';
+import { purgeProofsJob } from './proofs/store.js';
 import { purgeFeedbackForm } from './feedback/form.js';
 import { purgeBlurChecks } from './proof/blurCheck.js';
 import { purgeFeedback } from './feedback/mood.js';
@@ -28,4 +29,4 @@ import { purgeTradesJob } from './retention/tradePurge.js';
  * deletes a trade's chat no later than the trade (@x2f/trade retention.ts): it deletes a trade whole
  * 30 days after it closed, or 90 days after its last dispute closed.
  */
-export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeTradesJob, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts];
+export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeProofsJob, purgeTradesJob, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts];

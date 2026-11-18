@@ -54,6 +54,13 @@ const KNOWN_TRANSPORTS: ReadonlySet<string> = new Set(['usb', 'nfc', 'ble', 'hyb
 
 const b64url = (b: Uint8Array): string => Buffer.from(b).toString('base64url');
 const failed = (): ApiError => new ApiError(401, 'webauthn-failed');
+
+/**
+ * Review of lead-signup-rules-main, m1: the `detail` of a login's 401 `webauthn-failed` when the
+ * assertion checked out in every way except user verification (a key without a PIN, or one asked
+ * not to check it). Said only then: any other failure stays the plain refusal. COPY-UNSIGNED
+ */
+export const KEY_NEEDS_PIN = "Your key needs its PIN (or fingerprint) to log in. Set one in your key's settings, then try again.";
 const expired = (): ApiError => new ApiError(400, 'challenge-expired');
 
 function record(body: unknown): Record<string, unknown> {
@@ -106,8 +113,9 @@ export function assertCredentialAllowed(accountKind: AccountKind, info: { kind: 
 
 /**
  * The registration settings for a credential kind and account kind. Passkey: resident key and user
- * verification required. Security key: no resident key, user verification preferred, roaming
- * authenticators only, hinted as a security key. Attestation `direct` for staff and owner security keys, `none` otherwise
+ * verification required. Security key: no resident key, user verification required (its PIN; owner,
+ * 16 Nov 2026, for every account kind), roaming authenticators only, hinted as a security key.
+ * Attestation `direct` for staff and owner security keys, `none` otherwise
  * (a staff passkey cannot be attested). An owner passkey → 403 `method-not-allowed`.
  */
 export function registrationOptionsFor(kind: CredentialKind, accountKind: AccountKind) {
@@ -119,7 +127,7 @@ export function registrationOptionsFor(kind: CredentialKind, accountKind: Accoun
         ? { residentKey: 'required' as const, userVerification: 'required' as const }
         : {
             residentKey: 'discouraged' as const,
-            userVerification: 'preferred' as const,
+            userVerification: 'required' as const,
             authenticatorAttachment: 'cross-platform' as const,
           },
     supportedAlgorithmIDs: ALGORITHMS,
@@ -265,7 +273,7 @@ async function buildRegistrationOptions(
 
 /**
  * Checks a registration response: origin, RP ID, type `webauthn.create`, user presence, the
- * challenge, and user verification for a passkey; then decides `attested` (a `packed` statement
+ * challenge, and user verification (every credential, owner 16 Nov 2026); then decides `attested` (a `packed` statement
  * with a certificate chain that `MetadataService` verified against the snapshot, and an AAGUID on
  * the owner's allowlist for the owner, staff's otherwise) and applies `assertCredentialAllowed`. `kind` null (Plan 4's helper) means: attested →
  * security key, otherwise passkey. Any verification error → 401 `webauthn-failed`, except: staff,
@@ -284,7 +292,8 @@ async function verifyRegistration(
       expectedRPID: deps.config.rpId,
       expectedType: 'webauthn.create',
       requireUserPresence: true,
-      requireUserVerification: a.kind === 'passkey',
+      // Owner, 16 Nov 2026: user verification on every registration, passkey and security key alike.
+      requireUserVerification: true,
       supportedAlgorithmIDs: ALGORITHMS,
     });
   let result;
@@ -312,7 +321,7 @@ async function verifyRegistration(
   const attested =
     info.fmt === 'packed' && hasCertificateChain(info.attestationObject) && deps.attestation.isAllowed(info.aaguid, info.fmt, list);
   const kind = a.kind ?? (attested ? 'security-key' : 'passkey');
-  if (kind === 'passkey' && !info.userVerified) throw failed();
+  if (!info.userVerified) throw failed();
   assertCredentialAllowed(a.accountKind, { kind, attested });
   // Owner G3 (review P-m1): a moderator's passkey must be another device than their security key,
   // or the key-plus-passkey pair is one key and its PIN. A staff passkey is registered without
@@ -344,7 +353,7 @@ async function buildAssertionOptions(
   return generateAuthenticationOptions({
     rpID: deps.config.rpId,
     allowCredentials: creds.map((c) => ({ id: b64url(c.credential_id) })),
-    userVerification: creds.some((c) => c.kind === 'passkey') ? 'required' : 'preferred',
+    userVerification: 'required',
     timeout: WEBAUTHN_TTL_MS,
     ...(challenge ? { challenge: new Uint8Array(challenge) } : {}),
   });
@@ -352,23 +361,26 @@ async function buildAssertionOptions(
 
 /**
  * Checks an assertion against the stored credential it names: origin, RP ID, type `webauthn.get`,
- * user presence, the challenge, the signature, user verification for a passkey, and the counter (a
+ * user presence, the challenge, the signature, user verification (every credential, owner 16 Nov
+ * 2026), and the counter (a
  * non-zero counter that does not increase is refused). `accountId` null accepts any account's
  * credential (discoverable login); otherwise the credential must belong to that account. Stores
- * the new counter and `last_used_at`. Any failure → 401 `webauthn-failed`.
+ * the new counter and `last_used_at`. Any failure → 401 `webauthn-failed`. With `uvDetail` (the
+ * login routes), an assertion whose only fault is missing user verification gets that `detail`:
+ * the same response is checked again without the UV requirement, so the hint is given only for a
+ * genuine answer of this very credential to this challenge, and it still logs no one in.
  */
 async function verifyAssertion(
   deps: Deps,
-  a: { accountId: string | null; response: unknown; expectedChallenge: string },
+  a: { accountId: string | null; response: unknown; expectedChallenge: string; uvDetail?: string },
 ): Promise<CredentialRow> {
   const id = a.response !== null && typeof a.response === 'object' ? (a.response as { id?: unknown }).id : undefined;
   if (typeof id !== 'string' || !CREDENTIAL_ID.test(id)) throw failed();
   const { rows } = await deps.db.query<CredentialRow>(`${CREDENTIAL_SELECT} where c.credential_id = $1`, [Buffer.from(id, 'base64url')]);
   const row = rows[0];
   if (!row || (a.accountId !== null && row.account_id !== a.accountId)) throw failed();
-  let result;
-  try {
-    result = await verifyAuthenticationResponse({
+  const check = (requireUserVerification: boolean) =>
+    verifyAuthenticationResponse({
       response: a.response as AuthenticationResponseJSON,
       expectedChallenge: a.expectedChallenge,
       expectedOrigin: deps.config.origins,
@@ -380,9 +392,14 @@ async function verifyAssertion(
         counter: Number(row.counter),
         ...(row.transports ? { transports: row.transports } : {}),
       },
-      requireUserVerification: row.kind === 'passkey',
+      requireUserVerification,
     });
+  let result;
+  try {
+    // Owner, 16 Nov 2026: user verification on every login, passkey and security key alike.
+    result = await check(true);
   } catch {
+    if (a.uvDetail !== undefined && (await uvOnlyFault(() => check(false)))) throw new ApiError(401, 'webauthn-failed', { detail: a.uvDetail });
     throw failed();
   }
   if (!result.verified) throw failed();
@@ -393,6 +410,16 @@ async function verifyAssertion(
   );
   if ((updated.rowCount ?? 0) === 0) throw failed(); // a parallel assertion moved the counter first
   return row;
+}
+
+/** True when the assertion verifies without the UV requirement and its flags say UV was not done. */
+async function uvOnlyFault(checkWithoutUv: () => ReturnType<typeof verifyAuthenticationResponse>): Promise<boolean> {
+  try {
+    const r = await checkWithoutUv();
+    return r.verified && !r.authenticationInfo.userVerified;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -775,14 +802,14 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     let row: CredentialRow;
     if (ch.payload.mode === 'discoverable') {
       if (!opts.discoverable) throw expired();
-      row = await verifyAssertion(deps, { accountId: null, response: body.response, expectedChallenge: ch.webauthn_challenge });
+      row = await verifyAssertion(deps, { accountId: null, response: body.response, expectedChallenge: ch.webauthn_challenge, uvDetail: KEY_NEEDS_PIN });
       const handle = (body.response as { response?: { userHandle?: unknown } }).response?.userHandle;
       if (row.kind !== 'passkey' || handle !== b64url(row.webauthn_user_id)) throw failed();
       if (row.account_kind !== 'trader' || !opts.kinds.includes(row.account_kind)) throw failed();
     } else {
       // A decoy challenge has no account: nothing can match it.
       if (ch.account_id === null) throw failed();
-      row = await verifyAssertion(deps, { accountId: ch.account_id, response: body.response, expectedChallenge: ch.webauthn_challenge });
+      row = await verifyAssertion(deps, { accountId: ch.account_id, response: body.response, expectedChallenge: ch.webauthn_challenge, uvDetail: KEY_NEEDS_PIN });
       if (!opts.kinds.includes(row.account_kind)) throw failed();
     }
     assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });

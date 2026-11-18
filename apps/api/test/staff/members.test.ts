@@ -378,6 +378,31 @@ describe('invites', () => {
   });
 });
 
+describe('a staff name that looks like an existing trader or member (review lead-signup-rules-main M1)', () => {
+  it('is refused at invite accept with 400 display-name-reserved, in either direction of punctuation and look-alikes; the invite stays open', async () => {
+    // A day earlier: the owner's tap starts here stay out of the later tests' 10-minute window (in memory).
+    t.setNow(new Date(MON_NOON.getTime() - 2 * 86_400_000));
+    const tag = Date.now().toString(36).slice(-5);
+    const trader = await seedAccount(t.deps, { loginName: `trlogin${tag}`, displayName: `Mira_${tag}` });
+    await t.deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+       values ($1, $2, lower($2), '{offers-see}', $3, $3)`,
+      [trader, `Ren_${tag}`, new Date(MON_NOON.getTime() + 86_400_000)],
+    );
+    const inv = await createInvite('mod');
+    const b = invitee();
+    const pick = (displayName: string) => b.post(acceptUrl(inv.token, '/account'), { displayName, loginName: loginName(), ...signed() });
+    for (const name of [`Mira.${tag}`, `M1ra${tag}`, `ren-${tag}`, `Re-n${tag}`]) {
+      const res = await pick(name);
+      expect({ name, status: res.statusCode, error: errorOf(res) }).toEqual({ name, status: 400, error: 'display-name-reserved' });
+    }
+    expect((await t.deps.db.query('select account_id from staff_invites where id = $1', [inv.inviteId])).rows).toEqual([{ account_id: null }]);
+    // A name unlike both still works.
+    const ok = await pick(`Lark_${tag}`);
+    expect(ok.statusCode, ok.body).toBe(201);
+  });
+});
+
 describe('a banned PGP key on a staff invite (lead review 2026-11-06 item 1)', () => {
   it('pgp/start answers as for any key (no answer before proof); pgp/finish reaches insertPgpKey and refuses 409 key-unavailable', async () => {
     // A day earlier: the owner's tap starts here stay out of the later tests' 10-minute window (in memory).

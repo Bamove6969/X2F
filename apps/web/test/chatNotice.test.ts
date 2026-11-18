@@ -4,7 +4,7 @@
  * cannot write into it: the poster's device seals `{ text, notice }` in an ordinary `chat.msg`
  * envelope. The wording is fixed (CHAT_NOTICES); every reader checks the sealed text IS that
  * wording and shows its own copy, and refuses other words, unknown notices, extra keys and a
- * mod-signed notice. NEEDS_PLAN_5_TASK_15: nothing sends it until the BlurEditor lands.
+ * mod-signed notice. The upload sends it with the proof (AddProof.tsx sendCodeNotice; proofStackSeams.test.ts).
  */
 import { newTradeCode, type Role } from '@x2f/core';
 import { ProtocolError, ReplayGuard, open, seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';

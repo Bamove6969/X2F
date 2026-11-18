@@ -3,7 +3,7 @@
 // bytes and the type and size the `proof.attached` envelope declares, runs the receiving device's
 // check (`showableProof`: header walk, size cap, decode, redraw on a fresh canvas) and shows only
 // the redrawn copy. A proof that fails any step is never shown: the user sees a refusal instead.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReceiveDeclared, ReceiveDeps } from '@x2f/proof';
 import { Notice } from '../../ui/Notice.js';
 import { type ShownProof, showableProof } from '../../proof/receive.js';
@@ -19,16 +19,39 @@ export const PROOF_CHECKING = 'Checking the proof image';
 
 type State = { kind: 'checking' } | { kind: 'shown'; proof: ShownProof } | { kind: 'refused' };
 
-export function ProofThumb({ bytes, declared, alt, deps }: { bytes: Uint8Array; declared: ReceiveDeclared; alt: string; deps?: ReceiveDeps }) {
+export function ProofThumb({
+  bytes,
+  declared,
+  alt,
+  deps,
+  onChecked,
+}: {
+  bytes: Uint8Array;
+  declared: ReceiveDeclared;
+  alt: string;
+  deps?: ReceiveDeps;
+  /** The check's verdict (shown or refused), for the proof state (ChatProof, review M3). */
+  onChecked?: (ok: boolean) => void;
+}) {
   const [state, setState] = useState<State>({ kind: 'checking' });
   const { mime, width, height } = declared;
+  const report = useRef(onChecked);
+  report.current = onChecked;
   useEffect(() => {
     let live = true;
     setState({ kind: 'checking' });
     showableProof(bytes, { mime, width, height }, deps).then(
-      (proof) => live && setState({ kind: 'shown', proof }),
+      (proof) => {
+        if (!live) return;
+        setState({ kind: 'shown', proof });
+        report.current?.(true);
+      },
       // Any failure, ProofReceiveError or not, is a refusal: never the received bytes, never a crash.
-      () => live && setState({ kind: 'refused' }),
+      () => {
+        if (!live) return;
+        setState({ kind: 'refused' });
+        report.current?.(false);
+      },
     );
     return () => {
       live = false;

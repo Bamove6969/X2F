@@ -49,6 +49,9 @@ export {
   RECEIVE_MAX_SIDE,
   RECEIVE_MIMES,
   readImageHeader,
+  readInputHeader,
+  PROOF_MAX_DECODED_PIXELS,
+  PROOF_MAX_INPUT_BYTES,
   receiveProof,
   sniffImage,
 } from './receive.js';

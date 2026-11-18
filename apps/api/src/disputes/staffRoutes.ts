@@ -542,7 +542,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   });
 
   // Asks the trader named for the unblurred proof (logged; the request goes to that trader only).
-  // NEEDS_P5_PROOF_ENVELOPE: once the proof package lands, ask the trader who uploaded the proof.
+  // NEEDS_P4_CHAT_MEMBERSHIP (was NEEDS_P5_PROOF_ENVELOPE; proof storage landed, Task 14). OPEN (lead):
+  // this asks the side the moderator names, not necessarily a side that uploaded a proof.
   app.post('/staff/v1/disputes/:code/proof-request', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
     const b = body(req, ['side']);
     if (!isSide(b.side)) throw new ApiError(400, 'bad-request');
@@ -551,9 +552,10 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const code = await codeOf(deps.db, req);
     const t = await caseTrade(deps.db, code);
     await logged(req, code, 'proof.unblurred-requested', { side }, workable(req));
-    // The trader named sees the request in the dispute view too (the live event is only a hint).
+    // The trader named sees the request in the dispute view too (the live event is only a hint). A new
+    // request clears the time the last unblurred copy went (Plan 5 Task 15, migration 585).
     await deps.db.query(
-      `update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = $4
+      `update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = $4, proof_request_sent_at = null
         where code = $1 and seq = (select max(seq) from disputes where code = $1)`,
       [code, side, deps.clock(), req.staff.displayName],
     );
