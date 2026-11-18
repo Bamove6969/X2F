@@ -361,6 +361,41 @@ describe('WebAuthn security checks (P2-I4)', () => {
     }
   });
 
+  it('review m1: a login refused only for missing user verification says the key needs its PIN; nothing else does', async () => {
+    const PIN = "Your key needs its PIN (or fingerprint) to log in. Set one in your key's settings, then try again.";
+    const counterOf = async (auth: SoftAuthenticator) =>
+      (await deps.db.query('select counter from webauthn_credentials where credential_id = $1', [Buffer.from(auth.credentialId, 'base64url')])).rows[0].counter;
+    // A passkey (discoverable login) and a security key (login by name), each answering without UV.
+    const passkey = await signUp('passkey');
+    passkey.auth.flags.userVerified = false;
+    const p = (await discoverableLogin(passkey.auth)).res;
+    expect({ status: p.statusCode, body: p.json() }).toEqual({ status: 401, body: { error: 'webauthn-failed', detail: PIN } });
+    const key = await signUp('security-key');
+    key.auth.flags.userVerified = false;
+    const k = (await usernameLogin(key.auth, key.username)).res;
+    expect({ status: k.statusCode, body: k.json() }).toEqual({ status: 401, body: { error: 'webauthn-failed', detail: PIN } });
+    // The refused answer moved no counter, so the next good one still logs in.
+    expect(await counterOf(key.auth)).toBe('0');
+    key.auth.flags.userVerified = true;
+    expect((await usernameLogin(key.auth, key.username)).res.statusCode).toBe(200);
+
+    // Without UV and also failing anything else, the answer is the plain refusal: no PIN hint.
+    key.auth.flags.userVerified = false;
+    key.auth.flags.userPresent = false;
+    expect((await usernameLogin(key.auth, key.username)).res.json()).toEqual({ error: 'webauthn-failed' });
+    key.auth.flags.userPresent = true;
+    expect((await discoverableLogin(passkey.auth, { origin: 'https://evil.example' })).res.json()).toEqual({ error: 'webauthn-failed' });
+    expect((await discoverableLogin(passkey.auth, { type: 'webauthn.create' })).res.json()).toEqual({ error: 'webauthn-failed' });
+    const stranger = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    expect((await usernameLogin(stranger, key.username)).res.json()).toEqual({ error: 'webauthn-failed' });
+    // A counter that does not increase, without UV: plain too.
+    key.auth.flags.userVerified = true;
+    expect((await usernameLogin(key.auth, key.username)).res.statusCode).toBe(200);
+    key.auth.setCounter(0);
+    key.auth.flags.userVerified = false;
+    expect((await usernameLogin(key.auth, key.username)).res.json()).toEqual({ error: 'webauthn-failed' });
+  });
+
   it('refuses clientDataJSON.type webauthn.create on a login', async () => {
     const { auth } = await signUp('passkey');
     expect(errorOf((await discoverableLogin(auth, { type: 'webauthn.create' })).res)).toBe('webauthn-failed');
