@@ -136,6 +136,15 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     bookkeeping: {},
   },
   {
+    // Plan 5 Tasks 5 and 12 (migration 303, trigger in 702; lead call, owner p5-7): which earned
+    // badges the profile shows, and publishing the signed record on it, are changes to the account,
+    // like show_traded_total. One row per account, never deleted except by the account's deletion,
+    // which cascades (notified there), so the trigger watches inserts and updates.
+    table: 'badge_prefs', accountColumn: 'account_id', ops: ['insert', 'update'],
+    changes: ['account_id', 'chosen', 'levels', 'featured_order', 'portable_public'],
+    bookkeeping: { updated_at: "set with every save; the save's other columns notify" },
+  },
+  {
     table: 'past_reputation', accountColumn: 'account_id', ops: ALL,
     changes: [
       'id', 'account_id', 'site', 'evidence_url', 'claimed_trades', 'fingerprint', 'key_enc', 'challenge_text', 'signature_enc', 'status',
