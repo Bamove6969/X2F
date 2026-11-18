@@ -1,8 +1,8 @@
 // Plan 4 Task 19: the Activity log page in a real browser, checked with the parity harness against
 // board StaffLog at 1280x900 (codes and times masked), and the training library (no board, A8).
 // The staff API is stubbed with page.route in the shapes of apps/api/src/staff/activityLog.ts and
-// training.ts, filled with the board's own example entries. Board copy the page does not show is
-// listed below with its reason, or fails the test.
+// training.ts, filled with the board's own example entries. Any board copy the page does not show
+// fails the test.
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { expectParity } from '../../web/e2e/parity.js';
 
@@ -70,17 +70,6 @@ const TRAINING_CASE = {
   timeline: [{ at: 'T+0:00', who: 'Seller', action: 'dispute.opened' }, { at: 'T+0:42', who: 'Moderator', action: 'case.opened' }],
 };
 
-/**
- * StaffLog copy the page does not show, each for a reason:
- * - "Entries are examples." closes the board's footnote; the page's entries are real.
- * - "Show everything" shows only while a filter is set (as on the board, whose preview has none set
- *   but whose text check reads the hidden button too).
- */
-const KNOWN = [
-  /^board copy missing: "Every trade gets a random 16-character code .* Entries are examples\."$/,
-  /^board copy missing: "Show everything"$/,
-];
-
 async function parityFailures(page: Page, masks: ReturnType<Page['locator']>[]): Promise<string[]> {
   await page.evaluate(() => document.fonts.ready);
   try {
@@ -103,7 +92,9 @@ test('StaffLog parity at 1280x900, codes and times masked; the board\'s example 
   expect(what).toContain('Escrow secured after 10 confirmations');
   expect(what).toContain('Proposed a ruling: release 1.80 XMR to the buyer');
   const failures = await parityFailures(page, [page.locator('[data-part="log-code"]'), page.locator('.x2f-staff-log__when'), page.locator('[data-part="integrity"]')]);
-  expect(failures.filter((f) => !KNOWN.some((k) => k.test(f)))).toEqual([]);
+  // Every board text is on the page (the footnote's "Entries are examples." and the filtered-only
+  // "Show everything" are not required by the harness).
+  expect(failures).toEqual([]);
 });
 
 test('searching by a code typed without dashes asks the API for that trade and says the board\'s summary', async ({ page }) => {
@@ -117,7 +108,7 @@ test('searching by a code typed without dashes asks the API for that trade and s
   // The Active disputes list fills the code field.
   await page.getByLabel('Active disputes').selectOption(A);
   await expect(page.getByLabel('Trade code')).toHaveValue('3HW8-ZD2N-RT6K-Q9VB');
-  await expect(page.locator('[data-part="summary"]')).toHaveText('3 entries for trade 3HW8-ZD2N-RT6K-Q9VB, newest first.');
+  await expect(page.locator('[data-part="summary"]')).toHaveText('4 entries for trade 3HW8-ZD2N-RT6K-Q9VB, newest first.');
 });
 
 test('a moderator never asks for the chain check; the training library lists and opens a scrubbed case', async ({ page }) => {
