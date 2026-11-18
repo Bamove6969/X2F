@@ -1,6 +1,8 @@
 import { staffDeviceKeyId } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
+import { addAlert, addOwnerAlert } from '../alerts.js';
 import { withTx } from '../auth/hold.js';
+import { pushOwnerAlert } from '../push/ownerAlert.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { requireStaff } from './guard.js';
@@ -22,6 +24,10 @@ import { retireStaffCopies } from './staffCopies.js';
  *   `certify-device` tap bound to exactly this person and these keys (id `staffDeviceKeyId`) is used,
  *   and `staff.device-certified` logged, in one transaction. 409 `device-exists` for a key id still
  *   live, 409 `device-limit` at STAFF_DEVICE_MAX live devices (the gate enforces both itself too).
+ *   Re-review 2 m3 (lead default, an owner question): every certification alerts the owner (in-app
+ *   and pushed, `staff-device-certified`) and the person (their own alerts, and one Jabber
+ *   account-change notice when they have Jabber set up), because a page script can plant a key pair
+ *   of its own and have it certified with one routine-looking tap: this alert is the signal.
  * - `POST /staff/v1/devices/:id/revoke { tapId }` → 204: a `revoke-device` tap naming that key id;
  *   the device's chat key copies marked removed (review N11 e); `staff.device-revoked` logged.
  */
@@ -116,7 +122,14 @@ export function staffDeviceRoutes(app: FastifyInstance): void {
       const issued = Date.parse((JSON.parse(tap.intent) as { issuedAt?: string }).issuedAt ?? '');
       expiresAt = new Date(issued + STAFF_DEVICE_LIFETIME_MS).toISOString();
       await log(c as Parameters<typeof log>[0], req, 'staff.device-certified', { deviceKeyId });
+      // COPY-UNSIGNED
+      const detail = { staffId: me, deviceKeyId, message: 'A browser was confirmed to read disputed chats. If this was not you, revoke it and tell the owner.' };
+      await addOwnerAlert(c, 'staff-device-certified', detail, now);
+      if (req.staff.role !== 'owner') await addAlert(c, me, 'staff-device-certified', detail, now);
+      // The account-change path (owner rule p5-7): one discreet notice, when the person set Jabber up.
+      await c.query("select jabber_queue(j.account_id, j.jid_sealed) from jabber_contacts j where j.account_id = $1 and j.enabled and j.jid_sealed is not null", [me]);
     });
+    await pushOwnerAlert({ db, push: req.server.push }, 'staff-device-certified').catch(() => undefined);
     return reply.code(201).send({ deviceKeyId, expiresAt });
   });
 

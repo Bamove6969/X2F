@@ -60,7 +60,10 @@ export type AlertKind =
   | 'appeal-no-reviewer'
   // Owner only (re-review lead-mod-chat m5): the moderation service's dispute notice for a chat was
   // refused by this API for good (a 4xx other than 409/429); that dispute's chat gets no notice (T2).
-  | 'chat-notice-refused';
+  | 'chat-notice-refused'
+  // Re-review 2 m3 (lead default, owner question): a staff device was certified to read disputed
+  // chats; to the owner (pushed) and to the person.
+  | 'staff-device-certified';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

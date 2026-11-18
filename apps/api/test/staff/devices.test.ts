@@ -4,6 +4,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { staffDeviceKeyId } from '@x2f/staff';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PUSHED_OWNER_ALERTS } from '../../src/push/ownerAlert.js';
 import { liveDevices, STAFF_DEVICE_LIFETIME_MS, STAFF_DEVICE_MAX } from '../../src/staff/devices.js';
 import { errorOf, insertSession, logEntries, StaffBrowser } from '../helpers/staffApp.js';
 import { attestedStaffApps, staffWithKeys, tap, type AttestedStaffApps } from '../helpers/staffKeys.js';
@@ -81,6 +82,29 @@ describe('staff device keys', () => {
     });
     const certify = async (p: { id: string; browser: StaffBrowser; keys: Parameters<typeof tap>[0]['keys'] }, k: ReturnType<typeof keys>) =>
       p.browser.post('/staff/v1/devices', { signPublic: k.signPublic, boxPublic: k.boxPublic, tapId: await tap(p as Parameters<typeof tap>[0], { kind: 'certify-device', accountId: p.id, ...k }) });
+
+    it('re-review 2 m3: every certification alerts the owner (in-app and pushed) and the person (their own alerts and their Jabber, when set up)', async () => {
+      t.setNow(NOW);
+      expect(PUSHED_OWNER_ALERTS.has('staff-device-certified')).toBe(true);
+      const mod = await staffWithKeys(t, { role: 'mod' });
+      // The person has Jabber alerts set up (a proven, sealed address, switched on).
+      await t.deps.db.query('insert into jabber_contacts (account_id, jid_sealed, verified_at, enabled) values ($1, $2, $3, true)', [mod.id, randomBytes(48), NOW]);
+      const k = keys();
+      expect((await certify(mod, k)).statusCode).toBe(201);
+      const alerts = async (who: string) =>
+        (await t.deps.db.query<{ detail: Record<string, unknown> }>("select detail from alerts where account_id = $1 and kind = 'staff-device-certified'", [who])).rows.map((r) => r.detail);
+      expect(await alerts(owner.id)).toContainEqual(expect.objectContaining({ staffId: mod.id, deviceKeyId: k.deviceKeyId }));
+      expect(await alerts(mod.id)).toEqual([expect.objectContaining({ staffId: mod.id, deviceKeyId: k.deviceKeyId })]);
+      const { rows } = await t.deps.db.query<{ kind: string }>('select kind from jabber_outbox where account_id = $1', [mod.id]);
+      expect(rows.map((r) => r.kind)).toEqual(['account-change']);
+      // The owner confirming their own device: one alert, to the owner.
+      const before = (await alerts(owner.id)).length;
+      const ko = keys();
+      expect((await certify(owner, ko)).statusCode).toBe(201);
+      const after = await alerts(owner.id);
+      expect(after).toHaveLength(before + 1);
+      expect(after).toContainEqual(expect.objectContaining({ staffId: owner.id, deviceKeyId: ko.deviceKeyId }));
+    });
 
     it('switched off and on again: nothing is live; the same key certifies again (201) and is listed', async () => {
       t.setNow(NOW);

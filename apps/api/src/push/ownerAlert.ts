@@ -17,6 +17,8 @@ import type { PushKind } from './send.js';
 export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>([
   'market-prices-paused', 'price-source-failing', 'fee-sweep-due', 'fee-sweep-failed', 'staff-security-reset', 'staff-security-reset-finished',
   'appeal-no-reviewer',
+  // Re-review 2 m3: a staff device certified to read disputed chats (the countermeasure to a planted key).
+  'staff-device-certified',
 ]);
 
 export interface OwnerAlertDeps {
