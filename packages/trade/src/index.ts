@@ -107,6 +107,8 @@ export {
   CHAT_TEXT_MAX_BYTES,
   ChatEnvelopeError,
   chatIdentityProofBytes,
+  checkChatEnvelopeV2,
+  type ChatEnvelopeV2Shape,
   chatIdentityProofValid,
   chatPurgeDue,
   checkChatEnvelope,

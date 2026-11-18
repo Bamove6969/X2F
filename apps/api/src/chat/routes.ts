@@ -16,6 +16,12 @@
  * - `POST /v1/chats/:chat/envelopes` (an `Envelope`, at most 16 KiB, 413 above) → 201 `{ id }`.
  *   `checkChatEnvelope(body, channelFor(chat, 'chat'), sessionRole)`; the stored `sender_role` is
  *   the session's role (Revision 2026-10-28). A seq not above that sender's last is 409 `stale-seq`.
+ * - `POST /v1/chats/:chat/key` (the creator's signed key record, design build task 4) → 201; once the
+ *   chat is attested, by either trader for their own role (`by`), verified against the registered
+ *   chat identities (400 `bad-key-record`). First writer wins: a second record is 409 `key-exists`
+ *   and the device then reads the stored one. `GET /v1/chats/:chat/key` → `{ record }`, or 404 `no-key`.
+ *   Once a chat has a key record it takes only envelope v2 (`checkChatEnvelopeV2`); before, only v1.
+ *   The API cannot open any wrap: it stores and serves them.
  * - `GET /v1/chats/:chat/envelopes?after=<id>` → `{ envelopes: [{ id, senderRole, envelope, at }], more }`.
  *
  * Write budgets per account (review M7, limits.ts): a new pre-trade chat takes from
@@ -36,7 +42,8 @@
  * may need it, so it stays usable until the trade closes (lead decision 2026-10-29).
  */
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
-import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope } from '@x2f/trade';
+import { ProtocolError, verifyChatKeyRecord } from '@x2f/protocol';
+import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope, checkChatEnvelopeV2 } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import { ACTIVE_LIEN_SQL } from '../disputes/lien.js';
@@ -385,9 +392,12 @@ export function chatRoutes(app: FastifyInstance): void {
     const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
     const ready = await deps.db.query('select 1 from chat_attestations where chat = $1', [row.code]);
     if (ready.rows.length === 0) throw new ApiError(409, 'chat-not-ready');
+    // Design build task 4: a chat with a key record takes only envelope v2 (one ciphertext under its
+    // key, nothing a sender can leave out for the moderator, R16); one without takes only v1.
+    const keyed = (await deps.db.query('select 1 from chat_keys where chat = $1', [row.code])).rows.length > 0;
     let env;
     try {
-      env = checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);
+      env = keyed ? checkChatEnvelopeV2(req.body, await channelFor(row.code, 'chat'), role) : checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);
     } catch (e) {
       if (!(e instanceof ChatEnvelopeError)) throw e;
       if (e.code === 'too-large') throw new ApiError(413, 'bad-request');
@@ -414,6 +424,47 @@ export function chatRoutes(app: FastifyInstance): void {
     });
     for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
     return reply.code(201).send({ id });
+  });
+
+  app.post('/v1/chats/:chat/key', { preHandler: requireTrader }, async (req, reply) => {
+    const deps = req.server.deps;
+    const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const ready = await deps.db.query('select 1 from chat_attestations where chat = $1', [row.code]);
+    if (ready.rows.length === 0) throw new ApiError(409, 'chat-not-ready');
+    const ids = await deps.db.query<{ role: 'buyer' | 'seller'; sign_public: string; box_public: string }>(
+      'select role, sign_public, box_public from chat_identities where chat = $1',
+      [row.code],
+    );
+    const participants: Partial<Record<'buyer' | 'seller', { signPublic: string; boxPublic: string }>> = {};
+    for (const r of ids.rows) participants[r.role] = { signPublic: r.sign_public, boxPublic: r.box_public };
+    let rec;
+    try {
+      rec = await verifyChatKeyRecord(req.body, { chat: await channelFor(row.code, 'chat'), participants });
+    } catch (e) {
+      if (e instanceof ProtocolError) throw new ApiError(400, 'bad-key-record');
+      throw e;
+    }
+    if (rec.by !== role) throw new ApiError(400, 'bad-key-record');
+    const { rowCount } = await deps.db.query(
+      `insert into chat_keys (chat, tkh, created_by_role, wrap_buyer, wrap_seller, sig, created_at)
+       values ($1, $2, $3, $4, $5, $6, $7) on conflict (chat) do nothing`,
+      [row.code, rec.tkh, rec.by, rec.wrapBuyer, rec.wrapSeller, rec.sig, deps.clock()],
+    );
+    if (rowCount === 0) throw new ApiError(409, 'key-exists');
+    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
+    return reply.code(201).send({ ok: true });
+  });
+
+  app.get('/v1/chats/:chat/key', { preHandler: requireTrader }, async (req) => {
+    const deps = req.server.deps;
+    const { row } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const { rows } = await deps.db.query<{ tkh: string; created_by_role: string; wrap_buyer: string; wrap_seller: string; sig: string }>(
+      'select tkh, created_by_role, wrap_buyer, wrap_seller, sig from chat_keys where chat = $1',
+      [row.code],
+    );
+    const k = rows[0];
+    if (!k) throw new ApiError(404, 'no-key');
+    return { record: { v: 1, chat: await channelFor(row.code, 'chat'), tkh: k.tkh, by: k.created_by_role, wrapBuyer: k.wrap_buyer, wrapSeller: k.wrap_seller, sig: k.sig } };
   });
 
   app.get('/v1/chats/:chat/envelopes', { preHandler: requireTrader }, async (req) => {

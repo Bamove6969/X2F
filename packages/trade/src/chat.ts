@@ -3,7 +3,7 @@
  * the browser's chatCrypto seals and opens; the API stores ciphertext only and checks the shape.
  */
 import { normalizeTradeCode, ROLES, type Role } from '@x2f/core';
-import { ENVELOPE_KEYS, hasExactKeys, isPlainObject, isValidSeq } from '@x2f/protocol';
+import { CHAT_ENVELOPE_V2_KEYS, ENVELOPE_KEYS, hasExactKeys, isPlainObject, isValidSeq } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
 
 /** The `type` inside every chat envelope's ciphertext. */
@@ -102,6 +102,42 @@ export function checkChatEnvelope(body: unknown, channel: string, sessionRole?: 
     ctNonce: b64(ctNonce, 32, 'ctNonce'),
     sig: hex(sig, 128, 'sig'),
   };
+  if (trade !== channel) throw new ChatEnvelopeError('wrong-channel', 'Envelope is for another channel');
+  if (sessionRole !== undefined && from !== sessionRole) throw new ChatEnvelopeError('wrong-sender', 'Envelope sender is not the session role');
+  return out;
+}
+
+/** A v2 chat envelope as the API stores it (@x2f/protocol's ChatEnvelopeV2; design build task 4). */
+export interface ChatEnvelopeV2Shape {
+  v: 2;
+  trade: string;
+  from: Role;
+  seq: number;
+  nonce: string;
+  ct: string;
+  sig: string;
+}
+
+/**
+ * The API's check of a posted v2 chat envelope (design-chat-membership-keys-2026-11-08 section 2.3):
+ * the exact v2 key set, field types, at most CHAT_BODY_MAX_BYTES as JSON, `trade` the chat's channel
+ * and `from` the session's role. Like v1, it cannot check the signature or open anything.
+ */
+export function checkChatEnvelopeV2(body: unknown, channel: string, sessionRole?: Role): ChatEnvelopeV2Shape {
+  if (!isPlainObject(body) || !hasExactKeys(body, CHAT_ENVELOPE_V2_KEYS)) throw bad('envelope shape');
+  let json: string;
+  try {
+    json = JSON.stringify(body);
+  } catch {
+    throw bad('envelope');
+  }
+  if (new TextEncoder().encode(json).length > CHAT_BODY_MAX_BYTES) throw new ChatEnvelopeError('too-large', 'Envelope too large');
+  const { v, trade, from, seq, nonce, ct, sig } = body;
+  if (v !== 2) throw bad('v');
+  if (typeof trade !== 'string') throw bad('trade');
+  if (typeof from !== 'string' || !(ROLES as readonly string[]).includes(from)) throw bad('from');
+  if (!isValidSeq(seq)) throw bad('seq');
+  const out: ChatEnvelopeV2Shape = { v: 2, trade, from: from as Role, seq, nonce: b64(nonce, 32, 'nonce'), ct: b64(ct, CHAT_BODY_MAX_BYTES, 'ct'), sig: hex(sig, 128, 'sig') };
   if (trade !== channel) throw new ChatEnvelopeError('wrong-channel', 'Envelope is for another channel');
   if (sessionRole !== undefined && from !== sessionRole) throw new ChatEnvelopeError('wrong-sender', 'Envelope sender is not the session role');
   return out;

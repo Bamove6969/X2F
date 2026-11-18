@@ -108,6 +108,10 @@ export type ApiErrorCode =
   | 'stale-seq'
   | 'wrong-channel'
   | 'wrong-sender'
+  // Design build task 4 (chat membership keys): the signed key record.
+  | 'bad-key-record'
+  | 'key-exists'
+  | 'no-key'
   | 'chat-unavailable'
   // Design 2026-11-08 section 5: a chat purged under the caller (its member mark); the device erases its copy.
   | 'chat-purged'

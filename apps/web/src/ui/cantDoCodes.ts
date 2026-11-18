@@ -233,6 +233,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 3 Task 20 (encrypted chat): the chat's own protocol and state, never a rule about the user.
   'chat-not-ready': 'the chat is still being secured (wait)',
   'stale-seq': 'a device step out of order (the engine re-syncs; a fault)',
+  // Design build task 4 (chat membership keys): the chat's signed key record; device faults or races, never refusals.
+  'bad-key-record': 'a device check on the chat key (a fault)',
+  'key-exists': 'the other side made the chat key first (the engine reads it)',
+  'no-key': 'the chat has no key yet (the engine makes one)',
   'wrong-channel': 'a device check (a fault)',
   'wrong-sender': 'a device check (a fault)',
   'chat-unavailable': 'the trade has no chat (cannot happen since Task 5\'s offer key; a fault)',
