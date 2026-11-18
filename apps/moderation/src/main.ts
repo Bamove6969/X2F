@@ -1,4 +1,5 @@
 import { grantPass } from './grants.js';
+import { noticePass } from './notices.js';
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import type { PartyHandle, Transport } from '@x2f/escrow';
@@ -170,6 +171,8 @@ export interface ModerationHandle {
   shredTick(): Promise<string[]>;
   /** One pass over the API's unaccepted dispute grants (design build task 6); resolves with the chats accepted. */
   grantTick(): Promise<string[]>;
+  /** One pass signing dispute notices (design build task 7, T2); resolves with the chats noticed. */
+  noticeTick(): Promise<string[]>;
   /** One chain-watcher pass (Task 9). */
   watch(): Promise<void>;
   /** Stops the loops, then every running moderator party. */
@@ -581,6 +584,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           // Design section 5: this process's own staff-access record for the chat (design task 9 groundwork).
           await client.query('delete from mod_chat_access where chat = $1', [chat]);
           await client.query('delete from mod_chat_grants where chat = $1', [chat]);
+          await client.query('delete from mod_chat_notices where chat = $1', [chat]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');
@@ -603,6 +607,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   };
 
   const grantTick = (): Promise<string[]> => grantPass({ link, db: o.db, keystoreKey: o.keystoreKey, now, log });
+  const noticeTick = (): Promise<string[]> => noticePass({ link, db: o.db, keystoreKey: o.keystoreKey, now, log });
 
   const intervalMs = deps.intervalMs ?? 5_000;
   let stopped = false;
@@ -616,6 +621,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       .then(chatTick)
       .then(shredTick)
       .then(grantTick)
+      .then(noticeTick)
       .catch(() => log({ reason: 'work-pass-failed' }))
       .finally(() => {
         if (!stopped) timer = setTimeout(loop, intervalMs);
@@ -675,6 +681,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     chatTick,
     shredTick,
     grantTick,
+    noticeTick,
     // Through the watcher's own queue: never a pass alongside the loop's (finding 2).
     watch: () => watcher.tick(),
     stop,

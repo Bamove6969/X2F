@@ -16,6 +16,7 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
   role: 'buyer',
   counterparty: 'Sam',
   disputeOpen: false,
+  systemCalled: false,
   paySecured: true,
   lines: [],
   more: false,
@@ -126,6 +127,17 @@ describe('ChatPanel', () => {
     expect(items).toEqual([`Sam: ${MISSING_LINE} Sent 6 Nov 2026, 15:00 UTC.`, 'You: Paid']);
     expect(host.querySelector('li[data-missing] time')?.getAttribute('dateTime')).toBe('2026-11-06T15:00:00.000Z');
     expect(host.querySelectorAll('li[data-missing]')).toHaveLength(1);
+  });
+
+  it('design build task 7 (T2): the system\'s dispute shows "A moderator has been called by the system" only when the engine says so', async () => {
+    current = snap({ disputeOpen: true });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    expect(host.querySelector('[data-system="system-dispute"]')).toBeNull();
+    current = snap({ disputeOpen: true, systemCalled: true });
+    const again = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    expect(again.host.querySelector('[data-system="system-dispute"]')?.textContent).toBe('A moderator has been called by the system.');
   });
 
   it('outside the dispute room a moderator line reads "Moderator", with no badge, and the panel says a dispute is open', async () => {

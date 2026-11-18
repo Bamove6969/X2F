@@ -28,7 +28,7 @@ import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { recordRulingExecution } from '../disputes/execution.js';
-import { acceptGrant, pendingGrants } from '../chat/grants.js';
+import { acceptGrant, noticeCandidates, pendingGrants, storeNotice } from '../chat/grants.js';
 import { loadDisputeRecord } from '../disputes/store.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
@@ -526,6 +526,12 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.send({ grants: await pendingGrants(o.db, o.workLimit ?? WORK_LIMIT) });
   }));
 
+  // ── Dispute notices (design-chat-membership-keys section 3 T2, build task 7) ─────────────
+  // Keyed chats of disputed trades with no accepted grant and no notice for the current dispute.
+  app.get('/internal/v1/chat-notices', guard('/internal/v1/chat-notices', async (_req, reply) => {
+    return reply.send({ candidates: await noticeCandidates(o.db, o.workLimit ?? WORK_LIMIT) });
+  }));
+
   app.get('/internal/v1/chat-shred', guard('/internal/v1/chat-shred', async (_req, reply) => {
     const { rows } = await o.db.query<{ chat: string; trade_code: string | null; purged_at: Date }>(
       `with picked as (
@@ -644,6 +650,24 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.code(201).send({ ok: true });
   };
 
+  /**
+   * `{ kind: 'chat-dispute-notice', chat, notice }` (build task 7): moderation's signed T2 notice.
+   * Stored only when signed by the chat's attested moderator identity and naming the linked trade's
+   * current open dispute exactly (else 400 `bad-notice`, 404 `not-found`, 409 `not-disputed`); a
+   * repeat is 201.
+   */
+  const chatDisputeNotice = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat', 'notice'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const r = await storeNotice(o.db, code, body.notice, o.clock?.() ?? new Date(now()));
+    if (r === 'bad') throw new Refused(400, 'bad-notice');
+    if (r === 'unknown') throw new Refused(404, 'not-found');
+    if (r === 'not-disputed') throw new Refused(409, 'not-disputed');
+    log({ reason: 'internal-chat-dispute-notice' });
+    return reply.code(201).send({ ok: true });
+  };
+
   const chatShredded = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind', 'chat'])) throw new Refused(400, 'bad-body');
     const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
@@ -747,6 +771,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-grant-accepted') return chatGrantAccepted(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-dispute-notice') return chatDisputeNotice(body, reply);
     if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
     if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
     if (isPlainObject(body) && body.kind === 'ruling-statement') return rulingStatement(body, reply);

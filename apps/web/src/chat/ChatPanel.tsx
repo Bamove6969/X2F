@@ -228,6 +228,12 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
     <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={phase ?? 'loading'}>
       <p className="x2f-chat__notice">{CHAT_NOTICE}</p>
       <BlockAction displayName={name} onBlocked={() => void sync()} />
+      {snap?.systemCalled ? (
+        // Design build task 7 (T2): this device handed the chat key to the moderator on the system's dispute. COPY-UNSIGNED
+        <p className="x2f-chat__system" data-system="system-dispute">
+          A moderator has been called by the system.
+        </p>
+      ) : null}
       {snap?.disputeOpen && dispute === undefined ? (
         <p className="x2f-chat__system" data-system="dispute">
           A dispute is open. A moderator can read this conversation and write here.

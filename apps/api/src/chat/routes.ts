@@ -53,7 +53,7 @@ import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { purgedTagSql } from './retention.js';
-import { chatGrants, fallbackGrant } from './grants.js';
+import { chatGrants, chatNotice, fallbackGrant } from './grants.js';
 import { MARKET_PRICED } from '../offers/routes.js';
 import { assertNotBlocked, blockedEitherWaySql } from '../traders/blocks.js';
 import { traderSummaries, type TraderSummary } from '../traders/summary.js';
@@ -85,6 +85,11 @@ export interface ChatView {
    * the moderator's signed acceptance (null until moderation opened it). Every device verifies both.
    */
   grants: Array<{ grant: unknown; accepted: unknown | null }>;
+  /**
+   * Design build task 7 (T2): the moderator's signed dispute notice for the trade's current open
+   * dispute, or null. A device grants on it only when it verifies AND `disputeOpen` is true.
+   */
+  notice: unknown | null;
   /**
    * The signing key registered for the caller's own role, or null: a device that holds no chat
    * identity, or another key, knows the chat is open on another device (read-only).
@@ -358,6 +363,7 @@ export function chatRoutes(app: FastifyInstance): void {
       tradeSecuredAt: facts.rows[0]!.secured_at?.toISOString() ?? null,
       attested: facts.rows[0]!.attested,
       grants: await chatGrants(deps.db, row.code),
+      notice: await chatNotice(deps.db, row.code, row.trade_code),
       mySignPublic: facts.rows[0]!.mine,
       createdAt: row.created_at.toISOString(),
       lastMessageAt: row.last_message_at?.toISOString() ?? null,

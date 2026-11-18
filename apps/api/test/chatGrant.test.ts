@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { newTradeCode } from '@x2f/core';
-import { makeChatGrant, makeChatKeyRecord, makeGrantAccepted, newChatKey, unwrapChatKey, verifyChatGrant, seal, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { makeChatGrant, makeChatKeyRecord, makeDisputeNotice, makeGrantAccepted, newChatKey, verifyDisputeNotice, unwrapChatKey, verifyChatGrant, seal, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import {
   attestationBytes,
   CHAT_BODY_MAX_BYTES,
@@ -19,6 +19,7 @@ import { CHAT_PURGED_MARK_DAYS, purgeChats } from '../src/chat/retention.js';
 import { CHAT_OPEN_BUCKET, CHAT_POST_BUCKET } from '../src/limits.js';
 import { buildInternalListener } from '../src/internal/routes.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
+import { applyEvent } from '../src/trades/store.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
@@ -308,6 +309,66 @@ describe('moderation\'s acceptance and the counterparty\'s fallback', () => {
     expect((await dispute(k, g)).statusCode).toBe(200);
     expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-grant-accepted', chat: k.chat, accepted: await makeGrantAccepted({ grant: g, mod: k.mod }) })).statusCode).toBe(201);
     const res = await k.poster.b.post(`/v1/chats/${k.chat}/grant`, await grantOf(k, 'seller'));
+    expect({ s: res.statusCode, e: res.json().error }).toEqual({ s: 409, e: 'grant-not-needed' });
+  });
+});
+
+// Design build task 7 (design section 3, T2): a dispute no trader's grant reached the moderator
+// through. Moderation signs a dispute notice with the chat's moderator identity; the API files it
+// only when it verifies and names the trade's current open dispute; then either side's device may
+// grant once (trigger `notice`), and none once a grant is accepted.
+describe('the dispute notice (T2)', () => {
+  const candidates = async () =>
+    ((await signedInject('GET', '/internal/v1/chat-notices')).json() as { candidates: Array<{ chat: string; trade: string; disputeSeq: number; openedAt: string; openedBy: string }> }).candidates;
+  const report = (chat: string, notice: unknown) => signedInject('POST', '/internal/v1/reports', { kind: 'chat-dispute-notice', chat, notice });
+  /** The watcher's 6 h fallback for a settlement it was not shown: the system opens the dispute. */
+  const escalate = async (k: Keyed) => {
+    if ((await disputed(k.trade)) !== 'settling') await applyEvent(deps, k.trade, { type: 'release-started' }, 'seller');
+    await applyEvent(deps, k.trade, { type: 'escalate' }, 'system');
+  };
+
+  it('a system escalation of a keyed chat is listed for moderation; only the attested moderator\'s notice naming the current dispute is filed, and both traders see it', async () => {
+    const k = await keyedTrade();
+    expect((await candidates()).some((c) => c.chat === k.chat)).toBe(false);
+    await escalate(k);
+    const c = (await candidates()).find((x) => x.chat === k.chat)!;
+    expect(c).toMatchObject({ trade: k.trade, disputeSeq: 1, openedBy: 'system' });
+    const good = { chat: k.channel, disputeSeq: c.disputeSeq, openedAt: c.openedAt, openedBy: 'system' as const };
+    // Signed by anyone but the attested moderator identity: 400; another dispute or opener: 409.
+    expect((await report(k.chat, await makeDisputeNotice({ ...good, mod: k.seller }))).statusCode).toBe(400);
+    expect((await report(k.chat, await makeDisputeNotice({ ...good, chat: await channelFor(newTradeCode(), 'chat'), mod: k.mod }))).statusCode).toBe(400);
+    expect((await report(k.chat, await makeDisputeNotice({ ...good, disputeSeq: 2, mod: k.mod }))).statusCode).toBe(409);
+    expect((await report(k.chat, await makeDisputeNotice({ ...good, openedBy: 'buyer', mod: k.mod }))).statusCode).toBe(409);
+    expect((await report(k.chat, await makeDisputeNotice({ ...good, openedAt: new Date(Date.parse(good.openedAt) - 1000).toISOString(), mod: k.mod }))).statusCode).toBe(409);
+    expect((await report(newTradeCode(), await makeDisputeNotice({ ...good, mod: k.mod }))).statusCode).toBe(404);
+    for (const side of [k.taker, k.poster]) expect(((await side.b.get(`/v1/chats/${k.chat}`)).json() as { notice: unknown }).notice).toBeNull();
+    const notice = await makeDisputeNotice({ ...good, mod: k.mod });
+    expect((await report(k.chat, notice)).statusCode).toBe(201);
+    expect((await report(k.chat, notice)).statusCode).toBe(201);
+    for (const side of [k.taker, k.poster]) {
+      const view = (await side.b.get(`/v1/chats/${k.chat}`)).json() as { notice: unknown; disputeOpen: boolean };
+      expect(view.disputeOpen).toBe(true);
+      expect(await verifyDisputeNotice(view.notice, { chat: k.channel, participants: k.participants })).toEqual(notice);
+    }
+    expect((await candidates()).some((x) => x.chat === k.chat)).toBe(false);
+  });
+
+  it('with a filed notice and no accepted grant, either side may grant once (trigger notice); none once a grant is accepted; none without a notice', async () => {
+    const k = await keyedTrade();
+    await escalate(k);
+    const grant = async (side: 'buyer' | 'seller') => (side === 'buyer' ? k.taker : k.poster).b.post(`/v1/chats/${k.chat}/grant`, await grantOf(k, side));
+    // No notice yet and no other grant: nothing to fall back on.
+    let res = await grant('seller');
+    expect({ s: res.statusCode, e: res.json().error }).toEqual({ s: 409, e: 'grant-not-needed' });
+    const c = (await candidates()).find((x) => x.chat === k.chat)!;
+    expect((await report(k.chat, await makeDisputeNotice({ chat: k.channel, disputeSeq: c.disputeSeq, openedAt: c.openedAt, openedBy: 'system', mod: k.mod }))).statusCode).toBe(201);
+    expect((await grant('seller')).statusCode).toBe(201);
+    expect((await grant('seller')).statusCode).toBe(409);
+    const { rows } = await deps.db.query<{ granted_by: string; trigger: string }>("select granted_by, trigger from chat_members where chat = $1 and member_kind = 'mod' order by id", [k.chat]);
+    expect(rows).toEqual([{ granted_by: 'seller', trigger: 'notice' }]);
+    const g = (await deps.db.query<{ statement: ChatGrant }>("select statement from chat_members where chat = $1 and granted_by = 'seller'", [k.chat])).rows[0]!.statement;
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-grant-accepted', chat: k.chat, accepted: await makeGrantAccepted({ grant: g, mod: k.mod }) })).statusCode).toBe(201);
+    res = await grant('buyer');
     expect({ s: res.statusCode, e: res.json().error }).toEqual({ s: 409, e: 'grant-not-needed' });
   });
 });

@@ -1,5 +1,5 @@
 import { newTradeCode, type Role } from '@x2f/core';
-import { makeChatGrant, makeGrantAccepted, unwrapChatKey, verifyChatGrant, openChat, openChatKeyRecord, ProtocolError, ReplayGuard as Guard2, seal, sealChat, verifyChatKeyRecord, makeChatKeyRecord, newChatKey, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { makeChatGrant, makeDisputeNotice, makeGrantAccepted, unwrapChatKey, verifyChatGrant, openChat, openChatKeyRecord, ProtocolError, ReplayGuard as Guard2, seal, sealChat, verifyChatKeyRecord, makeChatKeyRecord, newChatKey, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { attestationBytes, channelFor, chatIdentityProofValid, checkChatEnvelopeV2, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -31,7 +31,7 @@ beforeAll(async () => {
 
 /** An in-memory chat API standing in for apps/api's routes (one chat, seen as the buyer). */
 class FakeApi implements ChatApi {
-  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, tradeSecuredAt: '2026-10-28T11:00:00.000Z', mySignPublic: null, grants: [] };
+  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, tradeSecuredAt: '2026-10-28T11:00:00.000Z', mySignPublic: null, grants: [], notice: null };
   grantPosts: unknown[] = [];
   async postGrant(_chat: string, grant: unknown) {
     this.check();
@@ -961,5 +961,60 @@ describe('chat engine: the dispute grant (design build task 6)', () => {
     clock += GRANT_FALLBACK_MS + 1;
     await e.sync(chat);
     expect(api.grantPosts).toEqual([]);
+  });
+});
+
+describe('chat engine: the dispute notice (design build task 7, T2)', () => {
+  async function ready() {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    expect((await e.sync(chat)).phase).toBe('ready');
+    return { e, parts };
+  }
+  const noticeBy = (by: Identity, o: { openedBy?: 'buyer' | 'seller' | 'system'; chat?: string } = {}) =>
+    makeDisputeNotice({ chat: o.chat ?? channel, disputeSeq: 1, openedAt: '2026-11-18T12:00:00.000Z', openedBy: o.openedBy ?? 'system', mod: by });
+
+  it('grants at once on a notice the attested moderator signed while the API shows the dispute open, shows the system banner, and grants only once', async () => {
+    const { e, parts } = await ready();
+    api.view.notice = await noticeBy(mod);
+    // Both checks: the notice alone (no dispute open by the API) does nothing.
+    let snap = await e.sync(chat);
+    expect(api.grantPosts).toEqual([]);
+    expect(snap.systemCalled).toBe(false);
+    api.view.disputeOpen = true;
+    snap = await e.sync(chat);
+    expect(snap.systemCalled).toBe(true);
+    expect(api.grantPosts).toHaveLength(1);
+    const g = await verifyChatGrant(api.grantPosts[0], { chat: channel, participants: parts });
+    expect(g.by).toBe('buyer');
+    expect(sodium.memcmp(await unwrapChatKey(mod, g.wrap, g.tkh), await tkOf(parts))).toBe(true);
+    api.view.grants = [{ grant: g, accepted: null }];
+    await e.sync(chat);
+    expect(api.grantPosts).toHaveLength(1);
+  });
+
+  it('a notice signed by anyone but the attested moderator identity, or for another chat, grants nothing and shows no banner', async () => {
+    const { e } = await ready();
+    api.view.disputeOpen = true;
+    for (const n of [await noticeBy(seller), await noticeBy(await testIdentity()), await noticeBy(mod, { chat: 'another-channel' })]) {
+      api.view.notice = n;
+      const snap = await e.sync(chat);
+      expect(snap.systemCalled).toBe(false);
+    }
+    expect(api.grantPosts).toEqual([]);
+  });
+
+  it('a trader-opened dispute\'s notice grants (a disputer with no key) but shows no system banner; nothing once a grant is accepted', async () => {
+    const { e, parts } = await ready();
+    api.view.disputeOpen = true;
+    api.view.notice = await noticeBy(mod, { openedBy: 'seller' });
+    const theirs = await makeChatGrant({ chat: channel, by: 'seller', tk: await tkOf(parts), disputeAt: new Date().toISOString(), me: seller, participants: parts });
+    api.view.grants = [{ grant: theirs, accepted: await makeGrantAccepted({ grant: theirs, mod }) }];
+    expect((await e.sync(chat)).systemCalled).toBe(false);
+    expect(api.grantPosts).toEqual([]);
+    api.view.grants = [];
+    await e.sync(chat);
+    expect(api.grantPosts).toHaveLength(1);
   });
 });

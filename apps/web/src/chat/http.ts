@@ -23,6 +23,7 @@ export function parseChatView(v: unknown): ChatApiView | null {
     grants: Array.isArray(v.grants)
       ? v.grants.filter(isRecord).map((g) => ({ grant: g.grant, accepted: g.accepted ?? null }))
       : [],
+    notice: v.notice ?? null,
   };
 }
 

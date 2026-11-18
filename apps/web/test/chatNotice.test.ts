@@ -116,7 +116,7 @@ describe('sealChatNotice / openChatMessage', () => {
 const modKey = sodium.ready.then(() => sodium.crypto_sign_keypair());
 
 class FakeApi implements ChatApi {
-  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, tradeSecuredAt: '2026-10-28T12:30:00.000Z', mySignPublic: null, grants: [] };
+  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, tradeSecuredAt: '2026-10-28T12:30:00.000Z', mySignPublic: null, grants: [], notice: null };
   async postGrant(): Promise<'ok' | 'not-needed'> {
     return 'ok';
   }

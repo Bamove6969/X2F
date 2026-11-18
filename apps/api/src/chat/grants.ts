@@ -12,11 +12,18 @@
  *   disputed, only when the other side's grant is stored and not accepted, and only once per side
  *   (409 `grant-not-needed` otherwise). It is T1 by proxy: the counterparty's app acts only on a
  *   grant the disputer's own key signed, which the API cannot forge.
+ * - Build task 7 (T2): the moderation service's signed dispute notice, for a dispute no trader's own
+ *   grant reached it through. Moderation pulls the keyed chats of disputed trades with no accepted
+ *   grant and no notice for the current dispute (`/internal/v1/chat-notices`) and reports the
+ *   notice it signed (`chat-dispute-notice`), stored only when it verifies against the attested
+ *   moderator identity and names the trade's current, open dispute exactly. With a stored notice
+ *   and no accepted grant, either trader's device may grant (`POST /v1/chats/:chat/grant`, trigger
+ *   `notice`), once per side.
  * - The moderation service pulls unaccepted grants (`/internal/v1/chat-grants`) with the key record,
  *   opens each wrap, checks it against the record's tkh, and reports a signed `chat-grant-accepted`,
  *   which is stored only when it verifies against the attested moderator identity.
  */
-import { ProtocolError, verifyChatGrant, verifyGrantAccepted, type ChatGrant, type GrantAccepted } from '@x2f/protocol';
+import { ProtocolError, verifyChatGrant, verifyDisputeNotice, verifyGrantAccepted, type ChatGrant, type DisputeNotice, type GrantAccepted } from '@x2f/protocol';
 import { channelFor } from '@x2f/trade';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -61,12 +68,12 @@ async function checkedGrant(k: Keyed, side: 'buyer' | 'seller', raw: unknown, no
   return g;
 }
 
-async function storeGrant(q: Queryable, k: Keyed, g: ChatGrant, now: Date): Promise<boolean> {
+async function storeGrant(q: Queryable, k: Keyed, g: ChatGrant, now: Date, trigger: 'dispute' | 'notice' = 'dispute'): Promise<boolean> {
   const { rowCount } = await q.query(
     `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, grant_at, statement)
-     values ($1, 'mod', 'mod', $2, $3, $4, 'dispute', $5, $6, $7, $8, $9)
+     values ($1, 'mod', 'mod', $2, $3, $4, $10, $5, $6, $7, $8, $9)
      on conflict (chat, member_ref, granted_by) where removed_at is null do nothing`,
-    [k.chat, k.modBox, g.wrap, g.tkh, g.by, now, g.sig, g.disputeAt, g],
+    [k.chat, k.modBox, g.wrap, g.tkh, g.by, now, g.sig, g.disputeAt, g, trigger],
   );
   return rowCount === 1;
 }
@@ -90,7 +97,11 @@ export async function disputeGrant(q: Queryable, tradeCode: string, side: 'buyer
   };
 }
 
-/** The counterparty's fallback grant (T1 by proxy). */
+/**
+ * The fallback grant: the counterparty's (T1 by proxy: the other side's grant is stored and not
+ * accepted), or either side's on a stored dispute notice for the trade's current dispute while no
+ * grant is accepted (T2, build task 7). Only while the trade is disputed, once per side.
+ */
 export async function fallbackGrant(q: Queryable, chat: string, tradeCode: string | null, side: 'buyer' | 'seller', raw: unknown, now: Date): Promise<void> {
   const disputed = tradeCode !== null && (await q.query("select 1 from trades where code = $1 and state = 'disputed'", [tradeCode])).rows.length > 0;
   const k = await keyedChat(q, chat);
@@ -102,8 +113,77 @@ export async function fallbackGrant(q: Queryable, chat: string, tradeCode: strin
     [chat],
   );
   const theirs = rows.find((r) => r.granted_by === other);
-  if (theirs === undefined || theirs.accepted !== null || rows.some((r) => r.granted_by === side)) throw new ApiError(409, 'grant-not-needed');
-  if (!(await storeGrant(q, k, g, now))) throw new ApiError(409, 'grant-not-needed');
+  const byProxy = theirs !== undefined && theirs.accepted === null;
+  const byNotice = !rows.some((r) => r.accepted !== null) && (await chatNotice(q, chat, tradeCode)) !== null;
+  if (rows.some((r) => r.granted_by === side) || !(byProxy || byNotice)) throw new ApiError(409, 'grant-not-needed');
+  if (!(await storeGrant(q, k, g, now, byProxy ? 'dispute' : 'notice'))) throw new ApiError(409, 'grant-not-needed');
+}
+
+/** The trade's current, open dispute: its seq, when and by whom it opened; null when none or closed. */
+async function currentDispute(q: Queryable, tradeCode: string): Promise<{ seq: number; openedAt: Date; openedBy: string } | null> {
+  const { rows } = await q.query<{ seq: number; status: string; opened_at: Date; opened_by: string }>(
+    'select seq, status, opened_at, opened_by from disputes where code = $1 order by seq desc limit 1',
+    [tradeCode],
+  );
+  const d = rows[0];
+  return d === undefined || d.status === 'closed' ? null : { seq: d.seq, openedAt: d.opened_at, openedBy: d.opened_by };
+}
+
+/** Build task 7: the stored dispute notice for the trade's current open dispute, exactly as signed, or null. */
+export async function chatNotice(q: Queryable, chat: string, tradeCode: string | null): Promise<unknown | null> {
+  if (tradeCode === null) return null;
+  const d = await currentDispute(q, tradeCode);
+  if (d === null) return null;
+  const { rows } = await q.query<{ notice: unknown }>('select notice from chat_dispute_notices where chat = $1 and dispute_seq = $2', [chat, d.seq]);
+  return rows[0]?.notice ?? null;
+}
+
+/**
+ * For moderation (build task 7): keyed chats whose linked trade is disputed, whose current dispute is
+ * not closed, with no accepted grant and no notice for that dispute yet. Every value is the API's
+ * word; moderation signs a notice only when its own records agree.
+ */
+export async function noticeCandidates(q: Queryable, limit: number): Promise<Array<{ chat: string; trade: string; disputeSeq: number; openedAt: string; openedBy: string }>> {
+  const { rows } = await q.query<{ chat: string; trade: string; seq: number; opened_at: Date; opened_by: string }>(
+    `select c.code as chat, c.trade_code as trade, d.seq, d.opened_at, d.opened_by
+       from chats c
+       join chat_keys k on k.chat = c.code
+       join trades t on t.code = c.trade_code and t.state = 'disputed'
+       join lateral (select seq, status, opened_at, opened_by from disputes where code = c.trade_code order by seq desc limit 1) d on d.status <> 'closed'
+      where not exists (select 1 from chat_members m where m.chat = c.code and m.member_kind = 'mod' and m.removed_at is null and m.accepted is not null)
+        and not exists (select 1 from chat_dispute_notices n where n.chat = c.code and n.dispute_seq = d.seq)
+      order by d.opened_at, c.code
+      limit $1`,
+    [limit],
+  );
+  return rows.map((r) => ({ chat: r.chat, trade: r.trade, disputeSeq: r.seq, openedAt: r.opened_at.toISOString(), openedBy: r.opened_by }));
+}
+
+/**
+ * Stores moderation's dispute notice (build task 7) once it verifies against the chat's attested
+ * moderator identity, for this chat's channel, and names the linked trade's current open dispute
+ * exactly (its seq, opening time and opener; else 'not-disputed'). A repeat is 'ok'.
+ */
+export async function storeNotice(q: Queryable, chat: string, raw: unknown, now: Date): Promise<'ok' | 'bad' | 'unknown' | 'not-disputed'> {
+  const a = await q.query<{ attestation: { participants?: { mod?: { signPublic: string; boxPublic: string } } }; trade_code: string | null }>(
+    'select a.attestation, c.trade_code from chats c join chat_attestations a on a.chat = c.code where c.code = $1',
+    [chat],
+  );
+  const row = a.rows[0];
+  const mod = row?.attestation?.participants?.mod;
+  if (row === undefined || mod === undefined) return 'unknown';
+  let n: DisputeNotice;
+  try {
+    n = await verifyDisputeNotice(raw, { chat: await channelFor(chat, 'chat'), participants: { mod } });
+  } catch (e) {
+    if (e instanceof ProtocolError) return 'bad';
+    throw e;
+  }
+  const disputed = row.trade_code !== null && (await q.query("select 1 from trades where code = $1 and state = 'disputed'", [row.trade_code])).rows.length > 0;
+  const d = row.trade_code === null ? null : await currentDispute(q, row.trade_code);
+  if (!disputed || d === null || d.seq !== n.disputeSeq || d.openedBy !== n.openedBy || d.openedAt.getTime() !== Date.parse(n.openedAt)) return 'not-disputed';
+  await q.query('insert into chat_dispute_notices (chat, dispute_seq, notice, received_at) values ($1, $2, $3, $4) on conflict do nothing', [chat, n.disputeSeq, n, now]);
+  return 'ok';
 }
 
 /** The grants of a chat as its traders see them: each signed grant and its acceptance, if any. */

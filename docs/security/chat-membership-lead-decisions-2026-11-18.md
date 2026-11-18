@@ -80,3 +80,13 @@ Tasks 5 and 6 are on `wip/lead-mod-chat`. None of these is a new primitive; the 
 
    The API files a fallback grant only under the same conditions, once per side.
 10. **The grant passes through the page.** It crosses postMessage from the worker to the page, which sends it with the dispute request. Its only secret part is a wrap that only the moderator's key opens.
+
+## Builder's calls in task 7 (T2, the dispute notice), for the reviewer
+
+No new primitive: the notice format (`x2f/chat-dispute-notice/v1\0 {chat, disputeSeq, openedAt, openedBy}`) is task 3's.
+
+1. **When moderation signs a notice.** Only when all of these hold, on its own records: it attested the chat; its own `mod_chat_trade` links the chat to the trade the API names; its own `mod_dispute_seen` shows the trade disputed within `CHAT_AFTER_DISPUTE_DAYS`; it accepted no grant for the chat (`mod_chat_grants`); it signed no notice for that dispute seq (`mod_chat_notices`, migration 018, shredded with the chat). The seq, opening time and opener are the API's word, listed by `GET /internal/v1/chat-notices`.
+2. **A trader-opened dispute waits.** `NOTICE_AFTER_TRADER_MS` = 2 minutes after its opening, by moderation's clock, so the disputer's own grant (T1) goes first. A system dispute gets its notice at once. This also covers the disputer whose device holds no key.
+3. **What the API files.** The notice is stored (`chat_dispute_notices`, migration 712, cascades with the chat) only when it verifies against the chat's attested moderator identity for this chat's channel and names the linked trade's current open dispute exactly (seq, opening time, opener). The chat view shows the notice for the current open dispute only.
+4. **What the device does.** With the API's `disputeOpen` true AND a notice that verifies against the attested moderator identity, and no grant of this side and no verified acceptance, the device grants once at once (`POST /v1/chats/:chat/grant`, trigger `notice`). The API takes such a grant only while disputed, with a stored notice for the current dispute and no accepted grant, once per side.
+5. **The banner.** A verified notice with `openedBy: 'system'` shows "A moderator has been called by the system." (COPY-UNSIGNED, the design's own words). A trader-opened dispute's notice grants without the banner: the trader already sees the dispute.

@@ -45,6 +45,15 @@ export interface ChatGrantItem {
   record: unknown;
 }
 
+/** Build task 7: a keyed chat of a disputed trade the API lists for a dispute notice; every field untrusted. */
+export interface ChatNoticeCandidate {
+  chat: string;
+  trade: string;
+  disputeSeq: number;
+  openedAt: string;
+  openedBy: string;
+}
+
 /** One trade on the API's watch list. */
 export interface WatchItem {
   state: string;
@@ -66,6 +75,8 @@ export interface Link {
   pullChatShred(): Promise<ChatShredOrder[]>;
   /** Build task 6: unaccepted dispute grants; malformed items come back with chat ''. */
   pullChatGrants(): Promise<ChatGrantItem[]>;
+  /** Build task 7: dispute notice candidates; malformed fields come back empty (logged and skipped). */
+  pullChatNotices(): Promise<ChatNoticeCandidate[]>;
   postReport(report: unknown): Promise<number>;
   /** Like postReport, with the API's refusal code (`{ error }`) when it gives one. */
   report(report: unknown): Promise<{ status: number; error: string | null }>;
@@ -155,6 +166,19 @@ export function createLink(o: {
         chat: typeof x?.chat === 'string' ? x.chat : '',
         grant: x?.grant,
         record: x?.record,
+      }));
+    },
+    async pullChatNotices() {
+      const res = await internal('GET', '/internal/v1/chat-notices');
+      if (res.status !== 200) throw new LinkError(res.status, 'pull chat notices');
+      const body = (await res.json()) as { candidates?: unknown };
+      if (!Array.isArray(body.candidates)) return [];
+      return (body.candidates as Array<Record<string, unknown> | null>).map((x) => ({
+        chat: typeof x?.chat === 'string' ? x.chat : '',
+        trade: typeof x?.trade === 'string' ? x.trade : '',
+        disputeSeq: typeof x?.disputeSeq === 'number' ? x.disputeSeq : 0,
+        openedAt: typeof x?.openedAt === 'string' ? x.openedAt : '',
+        openedBy: typeof x?.openedBy === 'string' ? x.openedBy : '',
       }));
     },
     async postReport(report) {

@@ -59,7 +59,7 @@
  *   record (a block hides a chat with that same 404, and it may come back).
  */
 import type { Role } from '@x2f/core';
-import { isPlainObject, makeChatGrant, ProtocolError, ReplayGuard, verifyChatGrant, verifyGrantAccepted, type ChatEnvelopeV2, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { isPlainObject, makeChatGrant, ProtocolError, ReplayGuard, verifyChatGrant, verifyDisputeNotice, verifyGrantAccepted, type ChatEnvelopeV2, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, attestationKeys, checkChatEnvelopeV2, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ChatError, chatChannel, chatKeyOf, makeChatKey, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatNoticeId } from './notices.js';
@@ -75,6 +75,8 @@ export interface ChatApiView {
   mySignPublic: string | null;
   /** Build task 6: the trader grants of the chat key to the moderator, each with its acceptance (both unverified here). */
   grants: Array<{ grant: unknown; accepted: unknown | null }>;
+  /** Build task 7 (T2): the moderator's signed dispute notice for the current dispute, or null (unverified here). */
+  notice: unknown | null;
 }
 
 export interface ApiEnvelope {
@@ -128,6 +130,13 @@ export interface ChatSnapshot {
   role: 'buyer' | 'seller';
   counterparty: string | null;
   disputeOpen: boolean;
+  /**
+   * Build task 7 (T2): the dispute was opened by the system, and both checks hold: the moderator's
+   * notice verifies against the attested moderator identity AND the API's own `disputeOpen` is true.
+   * The panel then shows "A moderator has been called by the system", so the trader sees why their
+   * app handed the chat key to the moderator.
+   */
+  systemCalled?: boolean;
   /** The trade's escrow is secured (owner Q12): the payee may send a package, and packages are shown. */
   paySecured: boolean;
   lines: ChatLine[];
@@ -262,6 +271,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       role: view.role,
       counterparty: view.counterparty,
       disputeOpen: view.disputeOpen,
+      systemCalled: false,
       paySecured: view.tradeSecuredAt !== null,
       // By the server's order: a moderator line held until a dispute opened is shown where it was posted.
       lines: [...(rec?.receipts ?? [])]
@@ -522,22 +532,27 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     }
     const read = await readAll(rec, view, parts, tk);
     rec = read.rec;
-    if (view.disputeOpen) await fallbackGrant(rec, view, parts, tk);
-    return { snap: snapshot(rec, view, 'ready', null, read.more), rec, parts, view, tk };
+    const called = view.disputeOpen ? await fallbackGrant(rec, view, parts, tk) : { systemCalled: false };
+    return { snap: { ...snapshot(rec, view, 'ready', null, read.more), ...called }, rec, parts, view, tk };
   }
 
   /**
    * Build task 6, T1 by proxy: while the trade is disputed, when the other side's grant (signed by its
    * ATTESTED identity, for this chat) has no acceptance signed by the attested moderator identity
    * after GRANT_FALLBACK_MS, and this side has granted nothing, this device grants too. It acts only
-   * on a grant the disputer's own key signed, which the API cannot forge. Best effort: a refusal is
-   * left for the next sync, a purge erases the chat as everywhere.
+   * on a grant the disputer's own key signed, which the API cannot forge.
+   * Build task 7, T2: with no accepted grant and nothing granted by this side, a dispute notice signed
+   * by the ATTESTED moderator identity for this chat makes this device grant at once (the caller runs
+   * this only while the API's own `disputeOpen` is true: both checks of design section 3). A system
+   * notice also sets `systemCalled` for the panel's banner. Best effort: a refusal is left for the
+   * next sync, a purge erases the chat as everywhere.
    */
-  async function fallbackGrant(rec: ChatRecord, view: ChatApiView, parts: Participants, tk: Uint8Array): Promise<void> {
+  async function fallbackGrant(rec: ChatRecord, view: ChatApiView, parts: Participants, tk: Uint8Array): Promise<{ systemCalled: boolean }> {
     const channel = await chatChannel(rec.chat);
     const now = (d.now ?? Date.now)();
     let theirs: ChatGrant | null = null;
     let accepted = false;
+    let mineFiled = false;
     for (const g of view.grants) {
       let v: ChatGrant;
       try {
@@ -545,8 +560,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       } catch {
         continue;
       }
-      if (v.by === rec.role) return;
-      theirs = v;
+      if (v.by === rec.role) mineFiled = true;
+      else theirs = v;
       try {
         const a = await verifyGrantAccepted(g.accepted, { chat: channel, participants: parts });
         if (a.grantSig === v.sig && a.grantBy === v.by) accepted = true;
@@ -554,13 +569,27 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         // No acceptance, or one that does not verify: not accepted.
       }
     }
-    if (theirs === null || accepted || now - Date.parse(theirs.disputeAt) < GRANT_FALLBACK_MS) return;
+    // Build task 7 (T2): a notice counts only when it verifies against the attested moderator identity
+    // for this chat, and only because the API's own disputeOpen is true too (the caller's check).
+    let notice: { openedBy: string } | null = null;
+    if (view.notice !== null) {
+      try {
+        notice = await verifyDisputeNotice(view.notice, { chat: channel, participants: parts });
+      } catch {
+        notice = null;
+      }
+    }
+    const systemCalled = notice !== null && notice.openedBy === 'system';
+    if (mineFiled || accepted) return { systemCalled };
+    const byProxy = theirs !== null && now - Date.parse(theirs.disputeAt) >= GRANT_FALLBACK_MS;
+    if (!byProxy && notice === null) return { systemCalled };
     const mine = await makeChatGrant({ chat: channel, by: rec.role, tk, disputeAt: new Date(now).toISOString(), me: toIdentity(rec.identity), participants: parts });
     try {
       await d.api.postGrant(rec.chat, mine);
     } catch (e) {
       if (isPurged(e)) throw e;
     }
+    return { systemCalled };
   }
 
   /** Runs `fn`; a 410 `chat-purged` from the API on the way erases the chat here before it is rethrown. */
