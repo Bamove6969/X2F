@@ -150,8 +150,11 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // jabberCopy.ts's always-on note under the disabled security box, a standing note; nothing was tried.
     // 66 -> 67 (owner demo notes 12 Nov 2026): sessionCopy.ts's askHint, the owner's own words ("If you
     // are unable to confirm your identity at that time, your account will be logged out ..."), a hint
-    // shown before the session ends; nothing was refused.
-    expect(notARefusal).toBeLessThanOrEqual(67);
+    // shown before the session ends; nothing was refused. 67 -> 68 (Plan 5 Task 12, wip/lead-profile,
+    // for the lead's review): the BadgeSettings board's standing footer "The New badge always shows
+    // while you have it and can't be hidden." (profile/profileCopy.ts), on every visit; New's row has
+    // no controls, so nothing is ever tried and refused.
+    expect(notARefusal).toBeLessThanOrEqual(68);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

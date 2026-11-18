@@ -13,6 +13,7 @@ import { testDb } from './helpers/db.js';
 import { flexBody } from './helpers/offers.js';
 import { spySql } from './helpers/sqlSpy.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { ORIGIN } from './helpers/totp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 
 let app: FastifyInstance;
@@ -200,7 +201,9 @@ describe('badge settings', () => {
 
   it('is the account owner\'s own: logged out gets 401', async () => {
     expect((await app.inject({ method: 'GET', url: '/v1/account/badges' })).statusCode).toBe(401);
-    expect((await app.inject({ method: 'PUT', url: '/v1/account/badges', payload: { id: 'pgp', level: 'hidden' } })).statusCode).toBe(401);
+    // From the site's own origin (a write from anywhere else stops at the origin check first).
+    const put = await app.inject({ method: 'PUT', url: '/v1/account/badges', headers: { origin: ORIGIN }, payload: { id: 'pgp', level: 'hidden' } });
+    expect(put.statusCode).toBe(401);
   });
 });
 
