@@ -495,11 +495,15 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
     try {
       const dir = new URL('../../api/migrations/', import.meta.url);
       const { readdir } = await import('node:fs/promises');
-      for (const f of (await readdir(dir)).filter((n) => /^\d{3}_[a-z0-9_]+\.sql$/.test(n)).sort()) {
-        await owner.query(await readFile(new URL(f, dir), 'utf8'));
-      }
       const login = `modr_${randomBytes(4).toString('hex')}`;
-      await owner.query(`create role ${login} login password '${pass}' in role x2f_mod_reader`);
+      // One run of the API's migrations at a time on this cluster (their roles: apiSchema.ts).
+      const { withApiSchemaLock } = await import('./apiSchema.js');
+      await withApiSchemaLock(async () => {
+        for (const f of (await readdir(dir)).filter((n) => /^\d{3}_[a-z0-9_]+\.sql$/.test(n)).sort()) {
+          await owner.query(await readFile(new URL(f, dir), 'utf8'));
+        }
+        await owner.query(`create role ${login} login password '${pass}' in role x2f_mod_reader`);
+      });
       const code = newTradeCode();
       const chat = newTradeCode();
       const at = '2026-11-02T12:00:00.000Z';
