@@ -390,8 +390,9 @@ function MessageCard({ code, keys, device, opened, onSent }: { code: string; key
       <Button variant="secondary" disabled={busy || !ready || !modTextOk(text)} onClick={() => void send()}>
         Send
       </Button>
-      {/* COPY-UNSIGNED */}
-      {ready ? <p className="x2f-staff-hint">Your messages show the X2F Moderator badge to both traders.</p> : <p className="x2f-staff-hint">Open the full chat on this device to write to both traders.</p>}
+      {/* Board ModCase's line, always shown (parity); until the chat is open, how to write (COPY-UNSIGNED). */}
+      <p className="x2f-staff-hint">Your messages show the X2F Moderator badge to both traders.</p>
+      {ready ? null : <p className="x2f-staff-hint">Open the full chat on this device to write to both traders.</p>}
       {note !== null ? (note.tone === 'ok' ? <p className="x2f-staff-ok">{note.text}</p> : <Notice tone="danger">{note.text}</Notice>) : null}
     </section>
   );

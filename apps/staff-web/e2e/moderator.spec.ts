@@ -450,18 +450,12 @@ test('design build task 9: a moderator confirms this device, opens the disputed 
     `POST /staff/v1/disputes/${CASE.code}/messages`,
   ]);
 
-  // Nothing refused on the way. WebAssembly may compile ('wasm-unsafe-eval'), JS eval still may not.
+  // Nothing refused on the way. WebAssembly may compile ('wasm-unsafe-eval'); JS eval stays refused by
+  // the policy checked above (no 'unsafe-eval'; page.evaluate itself runs outside the page's CSP, so it
+  // cannot show that here).
   expect(await csp.violations()).toEqual([]);
   expect(csp.console).toEqual([]);
   expect(foreign).toEqual([]);
-  const evals = await page.evaluate(() => {
-    try {
-      return String(new Function('return 1')());
-    } catch (e) {
-      return String(e);
-    }
-  });
-  expect(evals).toMatch(/EvalError|Content Security Policy|unsafe-eval/i);
 });
 
 // Disputes-stack review 2026-11-16 (merge 3c63c18e): the owner's unread badge (O-040) is styled at
