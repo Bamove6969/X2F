@@ -87,3 +87,18 @@ export {
   type LienStatus,
   type LienStep,
 } from './lien.js';
+// Plan 4 Task 20: the moderator performance maths.
+export {
+  CHART_WEEKS,
+  PERIODS,
+  chartStart,
+  median,
+  periodStart,
+  personMetrics,
+  weekStart,
+  weekly,
+  type CaseRow,
+  type Period,
+  type PersonMetrics,
+  type WeekMetrics,
+} from './metrics.js';
