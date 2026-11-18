@@ -12,7 +12,7 @@ import { COMPLY_CONFIRMATIONS, PROOF_LOST_AFTER_MS, PROOF_RECHECK_MS } from '../
 import { PAYMENT_PROOF_BUCKET } from '../../src/limits.js';
 import { ApiError } from '../../src/errors.js';
 import { PUSHED_OWNER_ALERTS } from '../../src/push/ownerAlert.js';
-import { txProofStuckAlert } from '../../src/disputes/comply.js';
+import { txProofStoppedAlert, txProofStuckAlert } from '../../src/disputes/comply.js';
 import { hasActiveLien } from '../../src/disputes/lien.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
 import { loadDispute, startDispute } from '../../src/disputes/store.js';
@@ -568,6 +568,7 @@ describe('re-review m3 follow-up: a proof the checker could not take is recorded
   it('txProofStuckAlert: the owner gets tx-proof-check-stuck in-app and the fixed push to the phone', async () => {
     const owner = await ownerOf();
     expect(PUSHED_OWNER_ALERTS.has('tx-proof-check-stuck')).toBe(true);
+    expect(PUSHED_OWNER_ALERTS.has('tx-proof-check-stopped')).toBe(true);
     const push = { send: vi.fn(async (_id: string, _kind: string) => true) };
     setNow(at(5 * H));
     await txProofStuckAlert({ db: deps.db, clock: deps.clock, push })();
@@ -579,5 +580,34 @@ describe('re-review m3 follow-up: a proof the checker could not take is recorded
     expect(push.send.mock.calls).toEqual([[owner.id, 'alert']]);
     // A failing push or database never throws into the checker.
     await expect(txProofStuckAlert({ db: { query: async () => Promise.reject(new Error('down')) }, clock: deps.clock, push })()).resolves.toBeUndefined();
+  });
+});
+
+describe('re-review w1, w2: the checker stopped at its cap', () => {
+  it('txProofStoppedAlert: the owner gets tx-proof-check-stopped in-app and the fixed push', async () => {
+    const owner = await ownerOf();
+    const push = { send: vi.fn(async (_id: string, _kind: string) => true) };
+    setNow(at(6 * H));
+    await txProofStoppedAlert({ db: deps.db, clock: deps.clock, push })();
+    const alerts = await deps.db.query<{ detail: unknown; created_at: Date }>(
+      `select detail, created_at from alerts where account_id = $1 and kind = 'tx-proof-check-stopped'`,
+      [owner.id],
+    );
+    expect(alerts.rows).toEqual([{ detail: {}, created_at: at(6 * H) }]);
+    expect(push.send.mock.calls).toEqual([[owner.id, 'alert']]);
+  });
+
+  it('w2: a waiting proof whose recheck gets 503 busy stays waiting and the timer pass ends without a failure; checked again later, it is accepted', async () => {
+    const { seller, code, buyerAddress } = await ruled();
+    const txHash = pays(buyerAddress, AMOUNT, { confirmations: 3 });
+    expect((await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash, txKey: txKey() })).statusCode).toBe(202);
+    nodeBusy = true;
+    setNow(new Date(at(2 * H).getTime() + PROOF_RECHECK_MS));
+    await expect(tick()).resolves.toBeTypeOf('number');
+    expect(await proofs(code)).toEqual([{ tx_hash: txHash, status: 'pending', has_key: true, confirmations: 3 }]);
+    nodeBusy = false;
+    node.set(txHash, (address) => ({ good: true, receivedAtomic: address === buyerAddress ? AMOUNT : 0n, confirmations: 10, blockTimestamp: at(2 * H) }));
+    await tick();
+    expect((await proofs(code)).map((p) => p.status)).toEqual(['accepted']);
   });
 });

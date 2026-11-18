@@ -169,3 +169,62 @@ describe('moneroTxProofCheck watchdog (re-review m3 follow-up): a call that neve
     await until(() => onStuck.mock.calls.length === 2);
   });
 });
+
+describe('moneroTxProofCheck watchdog, re-review w1: the abandoned count decays, and reaching the cap alerts', () => {
+  const address = '4' + 'B'.repeat(94);
+  let now = Date.parse('2026-11-18T12:00:00Z');
+  const H = 3_600_000;
+  const mk = () => {
+    const onStuck = vi.fn();
+    const onStopped = vi.fn();
+    const check = moneroTxProofCheck({
+      url: 'http://node.invalid', network: 'mainnet', fetch: fetchOk, timeoutMs: 30, stuckAfterMs: 120, onStuck, onStopped, clock: () => new Date(now),
+    });
+    return { check, onStuck, onStopped };
+  };
+  /** One check whose wallet call never settles: abandoned by the watchdog. */
+  const stall = async (check: ReturnType<typeof mk>['check'], h: string) => {
+    const n = wallets.length;
+    await expect(check({ txHash: hash(h), txKey: KEY, address })).rejects.toBeInstanceOf(TxProofUnavailable);
+    await until(() => wallets[n]?.closed === 1);
+  };
+  /** One check that finishes in time. */
+  const healthy = async (check: ReturnType<typeof mk>['check'], h: string) => {
+    const n = calls.length;
+    const r = check({ txHash: hash(h), txKey: KEY, address });
+    await until(() => calls.length === n + 1);
+    calls[n]!.answer.resolve(good(1n));
+    await expect(r).resolves.toMatchObject({ receivedAtomic: 1n });
+  };
+
+  it('24 h of healthy checks after the last abandoned wallet reset the count: three more stalls are needed to stop', async () => {
+    const { check, onStopped } = mk();
+    await stall(check, '1');
+    await stall(check, '2');
+    now += 24 * H;
+    await healthy(check, '3');
+    await stall(check, '4');
+    await stall(check, '5');
+    // Without the reset this would be the fourth abandoned wallet, past the cap: still checking.
+    await healthy(check, '6');
+    expect(onStopped).not.toHaveBeenCalled();
+  });
+
+  it('a healthy check inside 24 h resets nothing: the third stall reaches the cap; tx-proof-check-stopped fires once, there', async () => {
+    const { check, onStuck, onStopped } = mk();
+    await stall(check, '1');
+    await stall(check, '2');
+    expect(onStopped).not.toHaveBeenCalled();
+    now += 24 * H - 60_000;
+    await healthy(check, '3');
+    await stall(check, '4');
+    expect(onStopped).toHaveBeenCalledTimes(1);
+    await expect(check({ txHash: hash('5'), txKey: KEY, address })).rejects.toMatchObject({ status: 503, code: 'busy' });
+    // Healthy time passing changes nothing once stopped: only a restart.
+    now += 48 * H;
+    await expect(check({ txHash: hash('6'), txKey: KEY, address })).rejects.toMatchObject({ status: 503, code: 'busy' });
+    expect(onStopped).toHaveBeenCalledTimes(1);
+    // The healthy check ended the first episode, so the stall after it alerted again.
+    expect(onStuck).toHaveBeenCalledTimes(2);
+  });
+});
