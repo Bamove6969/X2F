@@ -163,4 +163,9 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/log/integrity', perm: 'log.read.all', allowed: OWNER },
   { method: 'GET', url: '/staff/v1/training', perm: 'training.read', allowed: MODERATORS },
   { method: 'GET', url: '/staff/v1/training/:id', perm: 'training.read', allowed: MODERATORS },
+  // Lead call 18 Nov (re-review): the library is review-first; a curator marks each case.
+  { method: 'GET', url: '/staff/v1/training/review', perm: 'training.curate', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/training/review/:id', perm: 'training.curate', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/training/review/:id', perm: 'training.curate', allowed: OWNER, body: { masks: [] } },
+  { method: 'DELETE', url: '/staff/v1/training/review/:id', perm: 'training.curate', allowed: OWNER },
 ];

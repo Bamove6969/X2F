@@ -645,6 +645,11 @@ describe('config', () => {
     expect(Buffer.from(loadConfig({ ...FULL_ENV, X2F_MONERO_NETWORK: 'testnet' }).trainingIdKey)).toEqual(Buffer.from(DEV_TRAINING_ID_KEY));
     expect(() => loadConfig({ ...FULL_ENV, X2F_MONERO_NETWORK: 'mainnet' })).toThrow('config: X2F_TRAINING_ID_KEY is missing');
     expect(Buffer.from(loadConfig({ ...FULL_ENV, X2F_MONERO_NETWORK: 'mainnet', X2F_TRAINING_ID_KEY: k32(22) }).trainingIdKey)).toEqual(Buffer.alloc(32, 22));
+    // Re-review m4: the public development key is refused on mainnet even when it is set.
+    expect(() => loadConfig({ ...FULL_ENV, X2F_MONERO_NETWORK: 'mainnet', X2F_TRAINING_ID_KEY: Buffer.from(DEV_TRAINING_ID_KEY).toString('base64') })).toThrow(
+      /^config: X2F_TRAINING_ID_KEY is malformed \(the public development key is refused on mainnet\)/,
+    );
+    expect(Buffer.from(loadConfig({ ...FULL_ENV, X2F_TRAINING_ID_KEY: Buffer.from(DEV_TRAINING_ID_KEY).toString('base64') }).trainingIdKey)).toEqual(Buffer.from(DEV_TRAINING_ID_KEY));
     for (const bad of [Buffer.alloc(16, 1).toString('base64'), 'not base64!']) {
       expect(() => loadConfig({ ...FULL_ENV, X2F_TRAINING_ID_KEY: bad })).toThrow(
         expect.objectContaining({ message: expect.stringMatching(/^config: X2F_TRAINING_ID_KEY is malformed/) }),

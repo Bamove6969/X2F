@@ -12,7 +12,7 @@ import { appendLog } from '../../src/log/append.js';
 import { roundXmrAtomic, trainingId } from '../../src/staff/training.js';
 import { LOG_ACTIONS, kindOf } from '../../src/log/actions.js';
 import { seedAccount } from '../helpers/accounts.js';
-import { StaffBrowser, insertSession, seedStaff, staffApps, uniqueName } from '../helpers/staffApp.js';
+import { StaffBrowser, insertSession, seedStaff, staffApps } from '../helpers/staffApp.js';
 import { driveTo, fakeAddress, seedTrade, type SeededTrade } from '../helpers/trades.js';
 
 const T0 = new Date('2026-11-10T09:00:00.000Z');
@@ -36,8 +36,21 @@ let A: SeededTrade;
 let B: SeededTrade;
 let C: SeededTrade;
 const addresses: string[] = [];
-const buyerName = uniqueName('mira');
-const sellerName = uniqueName('quietfox');
+// Re-review B1: fixed names, trade codes and addresses, so every run reads the same texts.
+const buyerName = 'Mirakowal';
+const sellerName = 'Quietfoxseller';
+const CODES = { A: 'K7M2-9QXA-4FTR-8WPN', B: 'RVGF-4PMG-R9CM-EZA9', C: 'FTYB-J3ZD-7MCZ-WKRA' } as const;
+const BASE58 = '123456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+/** A made-up stagenet-shaped address (never a real key), the same on every run for a seed. */
+function fixedAddress(seed: number): string {
+  let s = '5';
+  let x = seed;
+  for (let i = 1; i < 95; i++) {
+    x = (x * 1103515245 + 12345) % 2147483648;
+    s += BASE58[(x >> 8) % BASE58.length];
+  }
+  return s;
+}
 
 async function tx<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
   const c = await deps.db.connect();
@@ -58,7 +71,7 @@ const log = (e: { at?: Date; actor: Actor; tradeCode: string | null; action: key
   tx((c) => appendLog(c, { at: e.at ?? deps.clock(), actor: e.actor, tradeCode: e.tradeCode, action: e.action, detail: e.detail ?? {} }));
 
 async function member(role: 'owner' | 'senior' | 'mod' | 'helper') {
-  const s = await seedStaff(deps, { role });
+  const s = await seedStaff(deps, { role, loginName: { owner: 'owner_one', senior: 'senior_one', mod: 'dmitri_mod', helper: 'helper_one' }[role] });
   const b = new StaffBrowser(app).withSession((await insertSession(deps, s.id, 'staff')).token);
   const name = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [s.id])).rows[0]!.display_name;
   return { id: s.id, b, name };
@@ -81,12 +94,13 @@ beforeAll(async () => {
   senior = await member('senior');
   mod = await member('mod');
   helper = await member('helper');
-  const buyer = await seedAccount(deps, { loginName: uniqueName('mlogin'), displayName: buyerName });
-  const seller = await seedAccount(deps, { loginName: uniqueName('qlogin'), displayName: sellerName });
+  const buyer = await seedAccount(deps, { loginName: 'mlogin_mira', displayName: buyerName });
+  const seller = await seedAccount(deps, { loginName: 'qlogin_quiet', displayName: sellerName });
+  const fixed = (n: number) => ({ buyerPayout: fixedAddress(2 * n + 1), sellerRefund: fixedAddress(2 * n + 2) });
   // A: disputed and open. B: never disputed. C: disputed and closed (the training case).
-  A = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller', methodId: 'ZELLE' });
-  B = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
-  C = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller', methodId: 'REVOLUT' });
+  A = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller', methodId: 'ZELLE', code: CODES.A, ...fixed(0) });
+  B = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller', code: CODES.B, ...fixed(1) });
+  C = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller', methodId: 'REVOLUT', code: CODES.C, ...fixed(2) });
   for (const t of [A, B, C]) addresses.push(t.sides.buyerPayout!, t.sides.sellerRefund!);
   await driveTo(deps, A.trade, 'paid');
   await driveTo(deps, B.trade, 'funding');
@@ -345,18 +359,84 @@ describe('entries never show chat text, ruling reasons, addresses or IP addresse
 
 describe('the training library', () => {
   type Item = { id: string; closedMonth: string; method: string; methodName: string; xmr: string; outcome: string; overturned: boolean; afterRefund: boolean };
+  type Field = { text: string; masks: Array<{ start: number; end: number; kind: string }> };
+  type Review = Item & { status: 'unmarked' | 'marked' | 'stale'; fields: Record<string, Field>; manual: Array<{ field: string; start?: number; end?: number; whole?: true }> };
+  const CID = () => trainingId(deps.config.trainingIdKey, C.code, 1);
+  const list = async (b: StaffBrowser) => ((await b.get('/staff/v1/training')).json() as { items: Item[] }).items;
 
-  it('lists the closed cases only, by an opaque id, with day, method, amount and outcome', async () => {
+  it('lists nothing until a curator marks a case (lead call: review-first)', async () => {
+    for (const who of [mod, senior, owner]) {
+      const res = await who.b.get('/staff/v1/training');
+      expect(res.statusCode, res.body).toBe(200);
+      expect((res.json() as { items: Item[] }).items).toEqual([]);
+    }
+    expect((await mod.b.get(`/staff/v1/training/${CID()}`)).statusCode).toBe(404);
+  });
+
+  it('only a curator (the owner) reviews: the closed cases with their status, then one case pre-masked', async () => {
+    for (const who of [mod, senior, helper]) {
+      expect((await who.b.get('/staff/v1/training/review')).statusCode).toBe(403);
+      expect((await who.b.get(`/staff/v1/training/review/${CID()}`)).statusCode).toBe(403);
+      expect((await who.b.send('PUT', `/staff/v1/training/review/${CID()}`, { masks: [] })).statusCode).toBe(403);
+    }
+    const res = await owner.b.get('/staff/v1/training/review');
+    expect(res.statusCode, res.body).toBe(200);
+    const items = (res.json() as { items: Array<Item & { status: string }> }).items;
+    expect(items).toEqual([expect.objectContaining({ id: CID(), status: 'unmarked', closedMonth: '2026-11', xmr: '1300000000000' })]);
+    expect(res.body).not.toContain(C.code);
+    const one = (await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review;
+    expect(one.status).toBe('unmarked');
+    expect(one.manual).toEqual([]);
+    expect(Object.keys(one.fields)).toEqual(['note', 'ruling.1.reason', 'ruling.1.evidence.0']);
+    expect(one.fields.note!.text).toBe('Buyer never paid, call me on [phone]');
+  });
+
+  it('refuses masks that do not fit the pre-masked texts', async () => {
+    const put = (masks: unknown) => owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, { masks });
+    for (const bad of [
+      [{ field: 'nope', start: 0, end: 1 }],
+      [{ field: 'note', start: 0, end: 999 }],
+      [{ field: 'note', start: 2, end: 1 }],
+      [{ field: 'note', start: 0, end: 3 }, { field: 'note', start: 2, end: 4 }],
+      [{ field: 'note', start: 30, end: 32 }],
+      [{ field: 'note', whole: false }],
+      [{ field: 'note', start: 0, end: 1, text: 'x' }],
+      'nope',
+    ]) expect((await put(bad)).statusCode, JSON.stringify(bad)).toBe(400);
+    expect((await owner.b.send('PUT', `/staff/v1/training/review/${'0'.repeat(32)}`, { masks: [] })).statusCode).toBe(404);
+    expect(await list(mod)).toEqual([]);
+  });
+
+  it('a curator marks the case with the masks they reviewed: stored as ranges and tags, never the text; logged for the owner only', async () => {
+    const one = (await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review;
+    const note = one.fields.note!.text;
+    const start = note.indexOf('never paid');
+    const res = await owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, {
+      masks: [{ field: 'note', start, end: start + 'never paid'.length }, { field: 'ruling.1.evidence.0', whole: true }],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const { rows } = await deps.db.query<{ training_id: string; manual_masks: unknown; marked_by: string }>('select training_id, manual_masks, marked_by::text as marked_by from training_cases');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.training_id).toBe(CID());
+    expect(rows[0]!.marked_by).toBe(owner.id);
+    const stored = JSON.stringify(rows[0]!.manual_masks);
+    for (const t of ['never paid', 'Screenshot', 'Seller', NOTE, sellerName]) expect(stored, t).not.toContain(t);
+    const o = await page(owner.b, '?kind=staff');
+    expect(o.entries[0]).toMatchObject({ action: 'staff.training-marked', tradeCode: null, detail: { trainingId: CID(), masks: 2 } });
+    expect((await page(mod.b, '?limit=100')).entries.map((e) => e.action)).not.toContain('staff.training-marked');
+    expect(((await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review).status).toBe('marked');
+  });
+
+  it('lists the marked case by its opaque id, with the month, method, rounded amount and outcome', async () => {
     for (const who of [mod, senior, owner]) {
       const res = await who.b.get('/staff/v1/training');
       expect(res.statusCode, res.body).toBe(200);
       const items = (res.json() as { items: Item[] }).items;
-      expect(items).toHaveLength(1);
       // Review m1: the closing month only, and the amount rounded to 2 significant figures (1.25 XMR shows as 1.3).
-      expect(items[0]).toEqual({
-        id: expect.stringMatching(/^[0-9a-f]{32}$/), closedMonth: '2026-11', method: 'REVOLUT', methodName: 'Revolut',
+      expect(items).toEqual([{
+        id: CID(), closedMonth: '2026-11', method: 'REVOLUT', methodName: 'Revolut',
         xmr: '1300000000000', outcome: 'release-to-buyer', overturned: false, afterRefund: false,
-      });
+      }]);
       expect(C.trade.amountAtomic).toBe(1_250_000_000_000n);
       expect(res.body).not.toContain(C.code);
       expect(res.body).not.toContain(C.code.replaceAll('-', ''));
@@ -364,25 +444,26 @@ describe('the training library', () => {
     expect((await helper.b.get('/staff/v1/training')).statusCode).toBe(403);
   });
 
-  it('a case reads through the anonymizer: no names, code, address, card, phone or date; times are offsets', async () => {
-    const id = ((await mod.b.get('/staff/v1/training')).json() as { items: Item[] }).items[0]!.id;
-    const res = await mod.b.get(`/staff/v1/training/${id}`);
+  it('a case reads through the automatic and the curator\'s masks: no names, code, address, card, phone or date; times are offsets', async () => {
+    const res = await mod.b.get(`/staff/v1/training/${CID()}`);
     expect(res.statusCode, res.body).toBe(200);
     const c = res.json() as {
-      tradeCode: string; openedBy: string; reason: string; note: { text: string; masks: unknown[] }; closedAt: string; chat: string;
-      rulings: Array<{ round: number; outcome: string; at: string; reason: { text: string; masks: Array<{ kind: string }> }; evidence: Array<{ text: string }> }>;
+      tradeCode: string; openedBy: string; reason: string; note: Field; closedAt: string; chat: string;
+      rulings: Array<{ round: number; outcome: string; at: string; reason: Field; evidence: Field[] }>;
       timeline: Array<{ at: string; who: string; action: string }>;
     };
     for (const s of [buyerName, sellerName, mod.name, C.code, C.code.replaceAll('-', ''), CARD, '+1 (555)', ...addresses]) expect(res.body, s.slice(0, 20)).not.toContain(s);
     expect(res.body).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
     expect(c.tradeCode).toBe('XXXX-XXXX-XXXX-XXXX');
-    expect(c.note.text).toBe('Buyer never paid, call me on [phone]');
+    expect(c.note.text).toBe('Buyer [hidden], call me on [phone]');
+    expect(c.note.masks.map((m) => m.kind)).toEqual(['manual', 'phone']);
     expect(c.rulings).toHaveLength(1);
+    // Re-review B1, now with fixed names, codes and addresses: the reason keeps its words.
     expect(c.rulings[0]!.reason.text).toBe(
       `${REASON}: Buyer's payment from card [card] shows in Seller's bank. Trade XXXX-XXXX-XXXX-XXXX. Refund address [address].`,
     );
     expect(c.rulings[0]!.reason.masks.map((m) => m.kind)).toEqual(['card', 'address']);
-    expect(c.rulings[0]!.evidence.map((e) => e.text)).toEqual(['Screenshot sent by Seller']);
+    expect(c.rulings[0]!.evidence.map((e) => e.text)).toEqual(['[hidden]']);
     expect(c.rulings[0]!.at).toBe('T+3:00');
     expect(c.closedAt).toBe('T+52:00');
     expect(c.timeline).toEqual([
@@ -394,18 +475,14 @@ describe('the training library', () => {
     expect(c.chat).toBe('not-available');
   });
 
-  it('the opaque id is an HMAC under the training id key, not an unkeyed hash of the code (review m1)', async () => {
-    const id = ((await mod.b.get('/staff/v1/training')).json() as { items: Item[] }).items[0]!.id;
+  it('the opaque id is an HMAC under the training id key, stored on the curation row (review m1, re-review m3)', async () => {
     const unkeyed = createHash('sha256').update(`x2f-training-v1|${C.code}|1`, 'utf8').digest('hex').slice(0, 32);
-    expect(id).not.toBe(unkeyed);
-    expect(id).toBe(trainingId(deps.config.trainingIdKey, C.code, 1));
-    expect(createHmac('sha256', deps.config.trainingIdKey).update(`x2f/training-id\0${C.code}\0${1}`, 'utf8').digest('hex').slice(0, 32)).toBe(id);
+    expect(CID()).not.toBe(unkeyed);
+    expect(createHmac('sha256', deps.config.trainingIdKey).update(`x2f/training-id\0${C.code}\0${1}`, 'utf8').digest('hex').slice(0, 32)).toBe(CID());
     // The key is the training id's own: no other secret of the config holds it.
     const others = [deps.config.serverKey, ...[deps.config.passwordPeppers, deps.config.recoveryCodeKeys, deps.config.totpKeys, deps.config.loginNameKeys].flatMap((r) => [...r.keys.values()])];
     for (const k of others) expect(Buffer.from(k).equals(Buffer.from(deps.config.trainingIdKey))).toBe(false);
-    // Paging and the case read both use the keyed id.
-    expect((await mod.b.get(`/staff/v1/training/${id}`)).statusCode).toBe(200);
-    expect((await mod.b.get(`/staff/v1/training?before=${id}`)).statusCode).toBe(200);
+    expect((await mod.b.get(`/staff/v1/training?before=${CID()}`)).statusCode).toBe(200);
     expect((await mod.b.get(`/staff/v1/training/${unkeyed}`)).statusCode).toBe(404);
   });
 
@@ -419,12 +496,40 @@ describe('the training library', () => {
     expect(roundXmrAtomic('0')).toBe('0');
   });
 
-  it('an unknown or malformed id is not found; no route stores a training copy', async () => {
+  it('fails closed: when the masked text no longer matches, the case is hidden until it is curated again', async () => {
+    const before = await deps.db.query<{ note: string }>('select note from disputes where code = $1', [C.code]);
+    // Stands for an anonymizer change that moves the pre-masked text under a stored range.
+    await deps.db.query('update disputes set note = $2 where code = $1', [C.code, `Hello, ${before.rows[0]!.note}`]);
+    expect(await list(mod)).toEqual([]);
+    expect((await mod.b.get(`/staff/v1/training/${CID()}`)).statusCode).toBe(404);
+    const r = (await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review;
+    expect(r.status).toBe('stale');
+    const note = r.fields.note!.text;
+    const start = note.indexOf('never paid');
+    expect((await owner.b.send('PUT', `/staff/v1/training/review/${CID()}`, { masks: [{ field: 'note', start, end: start + 10 }, { field: 'ruling.1.evidence.0', whole: true }] })).statusCode).toBe(200);
+    expect((await list(mod)).map((i) => i.id)).toEqual([CID()]);
+    expect(((await mod.b.get(`/staff/v1/training/${CID()}`)).json() as { note: Field }).note.text).toBe('Hello, Buyer [hidden], call me on [phone]');
+  });
+
+  it('an unknown or malformed id is not found; the only writes are the curator\'s mark and unmark', async () => {
     expect((await mod.b.get(`/staff/v1/training/${'0'.repeat(32)}`)).statusCode).toBe(404);
     expect((await mod.b.get('/staff/v1/training/not-an-id')).statusCode).toBe(404);
     expect((await mod.b.get('/staff/v1/training?before=zz')).statusCode).toBe(400);
     expect((await owner.b.post('/staff/v1/training', { previewId: 'x', manualMasks: [] })).statusCode).toBe(404);
-    expect(app.staffRoutes.filter((r) => r.url.startsWith('/staff/v1/training') && r.method !== 'GET')).toEqual([]);
+    expect(app.staffRoutes.filter((r) => r.url.startsWith('/staff/v1/training') && r.method !== 'GET').map((r) => `${r.method} ${r.url}`).sort()).toEqual([
+      'DELETE /staff/v1/training/review/:id', 'PUT /staff/v1/training/review/:id',
+    ]);
+  });
+
+  it('a curator unmarks a case: it leaves the list at once, and it is logged', async () => {
+    expect((await mod.b.send('DELETE', `/staff/v1/training/review/${CID()}`)).statusCode).toBe(403);
+    const res = await owner.b.send('DELETE', `/staff/v1/training/review/${CID()}`);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await list(mod)).toEqual([]);
+    expect((await mod.b.get(`/staff/v1/training/${CID()}`)).statusCode).toBe(404);
+    expect((await page(owner.b, '?kind=staff')).entries[0]).toMatchObject({ action: 'staff.training-unmarked', tradeCode: null, detail: { trainingId: CID() } });
+    expect((await owner.b.send('DELETE', `/staff/v1/training/review/${CID()}`)).statusCode).toBe(404);
+    expect(((await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review).status).toBe('unmarked');
   });
 });
 
