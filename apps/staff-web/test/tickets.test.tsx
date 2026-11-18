@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { STAFF_REFUSALS } from '../src/refusals.js';
-import { button, click, fakeApi, field, refused, render, settle, typeInto } from './helpers.js';
+import { button, click, fakeApi, field, honestTapStart, refused, render, settle, typeInto } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
@@ -61,7 +61,8 @@ describe('Compromised accounts (accounts.freeze)', () => {
           account: { id: ACCOUNT, displayName: 'victim_1', kind: 'trader', createdAt: '2026-01-01T00:00:00.000Z', lockedAt: REPORT.createdAt, openTrades: [{ code: 'ABCD-EFGH-JKMN-PQRS', state: 'secured', side: 'seller', paused: true }] },
         },
       },
-      'POST /staff/v1/taps/start': { body: { tapId: 'tap-1', options: { challenge: 'x' } } },
+      // Re-verify X1 on main: an honest taps/start (nonce, issuedAt, the challenge the dialog rebuilds).
+      'POST /staff/v1/taps/start': honestTapStart('tap-1'),
       'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-1' } },
       'POST /staff/v1/compromised/:id/unlock': { body: { status: 'unlocked' } },
       'POST /staff/v1/compromised/:id/close': refused(409, 'account-locked'),

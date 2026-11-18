@@ -102,7 +102,7 @@ describe('NAV', () => {
     expect(navFor('mod')).toEqual(['disputes', 'training', 'log']);
     expect(navFor('senior')).toEqual(['disputes', 'training', 'log', 'feedback', 'compromised']);
     expect(navFor('senior', ['tickets.handle'])).toEqual(['disputes', 'training', 'log', 'feedback', 'tickets', 'compromised']);
-    expect(navFor('owner')).toEqual(['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'feedback', 'tickets', 'compromised', 'settings']);
+    expect(navFor('owner')).toEqual(['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'tickets', 'compromised', 'settings']);
   });
   test('helper sees nothing', () => {
     expect(NAV.helper).toEqual([]);
