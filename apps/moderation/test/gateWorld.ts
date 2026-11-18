@@ -10,6 +10,7 @@ import { createSoftAuthenticator, createTestCa, type SoftAuthenticator, type Tes
 import {
   authorizeRuling,
   emptyGate,
+  initGate,
   pinOwner,
   type GateContext,
   type GateRuling,
@@ -58,7 +59,7 @@ export class FakeApi implements GateSource {
   owner: { accountId: string; keys: Array<{ credentialId: string; publicKey: Uint8Array; aaguid: string | null }> } | null = null;
   taps: StoredTap[] = [];
   creds = new Map<string, { accountId: string; publicKey: Uint8Array; aaguid: string | null }>();
-  invites = new Map<string, { inviteId: string; tokenHash: string; accountId: string | null; registrations: Array<{ credentialId: string; response: unknown }> }>();
+  invites = new Map<string, { inviteId: string; tokenHash: string; accountId: string | null; used?: boolean; registrations: Array<{ credentialId: string; response: unknown }> }>();
   staffRows = new Map<string, { accountId: string; role: string; switchedOff: boolean; removed: boolean }>();
 
   async ownerKeys() {
@@ -91,7 +92,7 @@ export class FakeApi implements GateSource {
 
 /** A tap as the API stores it: the person's key answered `tapChallenge(intent, nonce)` on the staff origin. */
 /** The registry kinds the API stamps with its start time (lead P4 call); tests stamp them too, at NOW unless told. */
-export const STAMPED: readonly string[] = ['create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading'];
+export const STAMPED: readonly string[] = ['create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading', 'reset-staff-security'];
 export function tapBy(p: Person, intent: KeyTapIntent, o: { key?: SoftAuthenticator; issuedAt?: Date | null } = {}): StoredTap {
   const key = o.key ?? p.key;
   const nonce = randomBytes(16);
@@ -105,13 +106,46 @@ export function tapBy(p: Person, intent: KeyTapIntent, o: { key?: SoftAuthentica
   return { id: randomUUID(), accountId: p.id, credentialId: key.credentialId, intent: canonicalJson(norm), nonceHex: nonce.toString('hex'), response };
 }
 
+/** A key registration as a staff invite page makes it: the challenge is `inviteRegistrationChallenge(tokenHash)`. */
+export function registration(key: SoftAuthenticator, tokenHash: string): { credentialId: string; response: unknown } {
+  const response = key.register(
+    {
+      challenge: b64url(inviteRegistrationChallenge(tokenHash)),
+      rp: { id: RP_ID, name: 'X2F Staff' },
+      user: { id: b64url(randomBytes(16)), name: 'x', displayName: 'x' },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+      attestation: 'direct',
+    },
+    ORIGIN,
+  );
+  return { credentialId: key.credentialId, response };
+}
+
+/**
+ * D-032 as the API does it (apps/api staff/invites.ts reset-security): the person's credentials
+ * deleted, a `kind = 'reset'` invite for their existing account, and (`register`) a new key
+ * registered through it. `tap`: the owner's tapped `reset-staff-security` (by `tapBy` someone else
+ * when given a person; none with false). Returns the new key and the link's id and token hash.
+ */
+export function resetSecurity(w: World, p: Person, o: { tap?: boolean | Person; register?: boolean; inviteId?: string; expiresAt?: string } = {}) {
+  const key = newKey();
+  const inviteId = o.inviteId ?? randomUUID();
+  const tokenHash = sha256Hex(randomBytes(32).toString('base64url'));
+  const intent: KeyTapIntent = { kind: 'reset-staff-security', accountId: p.id, inviteId, tokenHash, expiresAt: o.expiresAt ?? '2026-11-13T12:00:00.000Z' };
+  if (o.tap !== false) w.api.taps.push(tapBy(o.tap === undefined || o.tap === true ? w.owner : o.tap, intent));
+  for (const [id, c] of w.api.creds) if (c.accountId === p.id) w.api.creds.delete(id);
+  w.api.invites.set(inviteId, { inviteId, tokenHash, accountId: p.id, registrations: o.register === false ? [] : [registration(key, tokenHash)] });
+  if (o.register !== false) w.api.creds.set(key.credentialId, { accountId: p.id, publicKey: new Uint8Array(key.cosePublicKey), aaguid: AAGUID });
+  return { key, inviteId, tokenHash, again: { ...p, key } as Person };
+}
+
 export interface World {
   api: FakeApi;
   gate: GateState;
   owner: Person;
   ownerKey2: SoftAuthenticator;
   /** Invites a staff member the proper way: an owner `create-invite` tap and an attested registration. */
-  hire(role: 'senior' | 'mod' | 'helper', o?: { attest?: 'x5c' | 'self' | 'none'; aaguid?: string; noTap?: boolean; wrongToken?: boolean }): Person;
+  hire(role: 'senior' | 'mod' | 'helper', o?: { attest?: 'x5c' | 'self' | 'none'; aaguid?: string; noTap?: boolean; wrongToken?: boolean; expiresAt?: string }): Person;
 }
 
 export async function world(): Promise<World> {
@@ -130,7 +164,7 @@ export async function world(): Promise<World> {
     const inviteId = randomUUID();
     const token = randomBytes(32).toString('base64url');
     const tokenHash = sha256Hex(token);
-    const intent: KeyTapIntent = { kind: 'create-invite', inviteId, role, tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' };
+    const intent: KeyTapIntent = { kind: 'create-invite', inviteId, role, tokenHash, expiresAt: o.expiresAt ?? '2026-11-13T12:00:00.000Z' };
     if (!o.noTap) api.taps.push(tapBy(owner, intent));
     const challengeHash = o.wrongToken ? sha256Hex('another token') : tokenHash;
     const response = p.key.register(
@@ -194,3 +228,9 @@ export function ruling(proposer: Person, o: { approver?: Person | null; outcome?
 
 export const authorize = (w: World, c: Case, taps: StoredTap[], usdCents: bigint | null = 41_250n, extra: { involved?: string[] } = {}) =>
   authorizeRuling(w.gate, { ruling: c.ruling, taps, recorded: recorded(usdCents), balanceAtomic: BALANCE, ...extra }, ctx());
+
+/** A new gate.bin in `dir`, the way an operator makes one (init-gate, "yes"): a missing one never opens. */
+export async function newGate(dir: string, key: Uint8Array): Promise<void> {
+  expect(await initGate({ dir, keystoreKey: key, print: () => {}, confirm: async () => 'yes' })).toBe('created');
+}
+

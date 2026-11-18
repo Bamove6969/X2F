@@ -140,6 +140,8 @@ function MemberGrants({ member }: { member: Member }) {
           intent={{ kind: 'set-grants', accountId: id, grants: draft }}
           title={`Change what ${name} may do`}
           body="Tap your security key to save this change."
+          // X3: the person's name next to the account id the key signs. COPY-UNSIGNED.
+          labels={{ accountId: name }}
           onDone={(tapId) => void save(tapId)}
           onCancel={() => setTapping(false)}
         />

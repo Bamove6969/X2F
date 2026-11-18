@@ -1,4 +1,5 @@
 import { Link, Route, Routes } from 'react-router';
+import { Disputes } from './screens/Disputes.js';
 import { Feedback } from './screens/Feedback.js';
 import { Invite } from './screens/Invite.js';
 import { Login } from './screens/Login.js';
@@ -11,8 +12,8 @@ import { PageTitle, StaffShell } from './ui/StaffShell.js';
 
 /**
  * The staff app (Plan 4 Task 16): Login, invite acceptance and owner setup outside the shell;
- * every other path is the shell, which shows the signed-in role's pages. Pages a later task builds
- * (Tasks 17-20) show their title until then.
+ * every other path is the shell, which shows the signed-in role's pages: Disputes (Task 18) and
+ * Feedback so far. Pages a later task builds (Tasks 17, 19, 20) show their title until then.
  */
 export function App() {
   return (
@@ -20,7 +21,7 @@ export function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/invite/:token" element={<Invite />} />
       <Route path="/setup" element={<OwnerSetup />} />
-      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, staff: <StaffGrants />, prices: <Prices />, feedback: <Feedback /> }} notifications={<OwnerAlerts />} />} />
+      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, disputes: <Disputes />, staff: <StaffGrants />, prices: <Prices />, feedback: <Feedback /> }} notifications={<OwnerAlerts />} />} />
     </Routes>
   );
 }

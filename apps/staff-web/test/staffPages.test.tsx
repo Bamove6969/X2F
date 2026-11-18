@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { NAV_LABELS } from '../src/ui/StaffShell.js';
 import { button, click, fakeApi, refused, render, settle, tick } from './helpers.js';
+import { honestTapStart } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
@@ -109,7 +110,7 @@ describe('Staff: per-person checkboxes (owner Q60, J-21)', () => {
     const api = fakeApi({
       'GET /staff/v1/me': { body: OWNER },
       'GET /staff/v1/members': { body: { members: MEMBERS } },
-      'POST /staff/v1/taps/start': { body: { tapId: 'tap-1', options: { challenge: 'x' } } },
+      'POST /staff/v1/taps/start': honestTapStart('tap-1'),
       'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-1' } },
       'PUT /staff/v1/members/:id/grants': (b) => ({ body: { grants: (b as { grants: string[] }).grants } }),
     });
@@ -118,8 +119,13 @@ describe('Staff: per-person checkboxes (owner Q60, J-21)', () => {
     expect(api.calls.some((c) => c.method === 'PUT')).toBe(false);
     await click(button('Save', document.querySelector('[data-member="m-1"]')!));
     expect(api.calls.some((c) => c.method === 'PUT')).toBe(false);
+    // X3: the dialog shows the person's name next to the account id it signs.
+    const accountLine = [...document.querySelectorAll('[data-part="key-tap-intent"] div')].find((d) => d.querySelector('dt')?.textContent === 'accountId')?.querySelector('dd')?.textContent ?? '';
+    expect(accountLine).toContain('m-1');
+    expect(accountLine).toContain(MEMBERS.find((m) => m.accountId === 'm-1')!.displayName!);
     await click(button('Tap security key'));
     expect(api.calls.find((c) => c.path === '/staff/v1/taps/start')?.body).toEqual({ kind: 'set-grants', accountId: 'm-1', grants: ['feedback.read', 'tickets.handle'] });
+
     expect(api.calls.find((c) => c.method === 'PUT')).toMatchObject({ path: '/staff/v1/members/m-1/grants', body: { grants: ['feedback.read', 'tickets.handle'], tapId: 'tap-1' } });
     expect(document.querySelector('[data-member="m-1"] [data-part="grants-saved"]')).not.toBeNull();
   });
@@ -128,7 +134,7 @@ describe('Staff: per-person checkboxes (owner Q60, J-21)', () => {
     fakeApi({
       'GET /staff/v1/me': { body: OWNER },
       'GET /staff/v1/members': { body: { members: MEMBERS } },
-      'POST /staff/v1/taps/start': { body: { tapId: 'tap-1', options: { challenge: 'x' } } },
+      'POST /staff/v1/taps/start': honestTapStart('tap-1'),
       'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-1' } },
       'PUT /staff/v1/members/:id/grants': refused(403, 'tap-invalid'),
     });

@@ -134,6 +134,17 @@ describe('startKeyTap', () => {
     expect(options.challenge).toBe(Buffer.from(tapChallenge(stamped, rows[0]!.nonce)).toString('base64url'));
   });
 
+  it('answers the nonce and issuedAt, so the staff site can check the challenge itself (re-verify X1)', async () => {
+    const { id } = await staffWith();
+    const s = await startKeyTap(deps, id, STOP);
+    expect(s.issuedAt).toBe(T0.toISOString());
+    expect(s.nonce).toMatch(/^[0-9a-f]{32}$/);
+    expect(s.options.challenge).toBe(Buffer.from(tapChallenge({ ...STOP, issuedAt: s.issuedAt } as KeyTapIntent, Buffer.from(s.nonce, 'hex'))).toString('base64url'));
+    const r = await startKeyTap(deps, id, RULING);
+    expect(r.issuedAt).toBeNull();
+    expect(r.options.challenge).toBe(Buffer.from(tapChallenge(RULING, Buffer.from(r.nonce, 'hex'))).toString('base64url'));
+  });
+
   it('stamps issuedAt only on the registry kinds the moderation gate orders; a client cannot send one (lead P4 call)', async () => {
     // A fresh account per start: at most 5 open taps per account (RV5 m12).
     const read = async (i: KeyTapIntent) => {

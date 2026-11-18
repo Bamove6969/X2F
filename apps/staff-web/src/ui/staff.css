@@ -280,6 +280,101 @@
   }
 }
 
+/* Plan 4 Task 18: ModQueue and ModCase (boards ModQueue and ModCase). DESIGNER-REVIEW */
+.x2f-staff-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+  margin: 0 0 var(--x2f-space-4);
+}
+
+.x2f-staff-filter {
+  height: 36px;
+  padding: 0 var(--x2f-space-3);
+  border: 1px solid var(--x2f-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--x2f-ink);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.x2f-staff-filter[aria-pressed='true'] {
+  border-color: var(--x2f-monero);
+  background: var(--x2f-surface-raised);
+  font-weight: 600;
+}
+
+.x2f-staff-approval,
+.x2f-staff-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--x2f-space-2);
+  border: 1px solid var(--x2f-line);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.x2f-staff-approval {
+  border-color: var(--x2f-caution);
+  color: var(--x2f-caution);
+}
+
+.x2f-staff-deadline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  min-width: 160px;
+}
+
+.x2f-staff-deadline__text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--x2f-caution);
+}
+
+.x2f-staff-deadline[data-tone='overdue'] .x2f-staff-deadline__text {
+  color: var(--x2f-danger);
+}
+
+.x2f-staff-deadline[data-tone='replied'] .x2f-staff-deadline__text {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-deadline__bar {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--x2f-line);
+  overflow: hidden;
+}
+
+.x2f-staff-deadline__fill {
+  display: block;
+  height: 100%;
+  background: var(--x2f-caution);
+}
+
+.x2f-staff-deadline[data-tone='overdue'] .x2f-staff-deadline__fill {
+  background: var(--x2f-danger);
+}
+
+.x2f-staff-case {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--x2f-space-6);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .x2f-staff-case {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* O-040: the owner's unread notifications count. DESIGNER-REVIEW */
 .x2f-staff__badge {
   display: inline-block;

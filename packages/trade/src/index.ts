@@ -17,6 +17,17 @@ export {
   type AttestedTerms,
   type ConfirmedDeal,
 } from './attestation.js';
+export {
+  isRulingStatement,
+  rulingStatementBytes,
+  rulingStatementValid,
+  signRulingStatement,
+  verifyRulingStatement,
+  type RulingStatement,
+  type RulingStatementCheck,
+  type RulingStatementExpect,
+  type RulingStatementRefusal,
+} from './rulingStatement.js';
 export { escrowCheckWords } from './checkWords.js';
 export { WORDLIST } from './wordlist.js';
 export {

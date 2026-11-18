@@ -16,6 +16,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { isIncidentId } from '@x2f/staff';
 import { ModerationError, NO_MODERATION } from '../../src/disputes/moderationClient.js';
+import { disputeSettings } from '../../src/disputes/settings.js';
+import { getMethod } from '../../src/methods/profiles.js';
 import { loadDispute } from '../../src/disputes/store.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
 import { appealDirect, publishRuling } from '../helpers/disputes.js';
@@ -130,11 +132,11 @@ const CONFIRM_WINDOW_MIN = 120;
  * lets the buyer open a dispute only after "I've paid" and the method's full wait, so `at` is the
  * first moment the dispute may open.
  */
-async function disputed(at = START, pair?: { seller: Awaited<ReturnType<typeof newTrader>>; buyer: Awaited<ReturnType<typeof newTrader>> }) {
+async function disputed(at = START, o: { methodId?: string; seller?: Awaited<ReturnType<typeof newTrader>>; buyer?: Awaited<ReturnType<typeof newTrader>> } = {}) {
   setNow(new Date(at.getTime() - CONFIRM_WINDOW_MIN * MIN));
-  const seller = pair?.seller ?? (await newTrader());
-  const buyer = pair?.buyer ?? (await newTrader());
-  const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+  const seller = o.seller ?? (await newTrader());
+  const buyer = o.buyer ?? (await newTrader());
+  const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', ...(o.methodId ? { methodId: o.methodId } : {}) });
   expect(trade.confirmWindowMin).toBe(CONFIRM_WINDOW_MIN);
   const t = await driveTo(deps, trade, 'paid');
   expect(t.confirmBy).toEqual(at);
@@ -196,6 +198,11 @@ describe('the queue', () => {
     expect(body.counts.overdue).toBeGreaterThanOrEqual(1);
     expect(body.counts.unassigned).toBeGreaterThanOrEqual(2);
     expect(body.counts).toHaveProperty('needApproval');
+    // Plan 4 Task 18 (ModQueue): the header's reply time and the footer's large-trade limit.
+    expect((all.json() as { settings: unknown }).settings).toEqual({
+      firstResponseH: (await disputeSettings(deps.db)).firstResponseH,
+      largeTradeLimitUsd: (await disputeSettings(deps.db)).largeTradeLimitUsd,
+    });
 
     // `next` takes the unassigned dispute due first (here: b or an older one from another test).
     const next = await mod.b.post('/staff/v1/disputes/next', {});
@@ -256,6 +263,24 @@ describe('the queue', () => {
 });
 
 describe('the case view', () => {
+  it('names the payment method from the catalog (data/payment-methods.json), and gives the id where the catalog has none', async () => {
+    const { code } = await disputed();
+    const mod = await staff('mod');
+    const first = await mod.b.get(url(code));
+    expect(first.statusCode, first.body).toBe(200);
+    // The trade helper seeds `zelle`, which is not a catalog id: the id is shown as it is.
+    expect(((await mod.b.get(url(code))).json() as { escrow: { methodName: string } }).escrow.methodName).toBe('zelle');
+    // A trade's deal never changes, so the catalog case is its own dispute, on the catalog's id.
+    const named = (await disputed(START, { methodId: 'ZELLE' })).code;
+    await mod.fresh();
+    const v = (await mod.b.get(url(named))).json() as { escrow: { methodId: string; methodName: string } };
+    expect(v.escrow).toMatchObject({ methodId: 'ZELLE', methodName: getMethod('ZELLE')!.name });
+    expect(getMethod('ZELLE')!.name).toBe('Zelle');
+    const q = (await mod.b.get('/staff/v1/disputes?filter=all')).json() as { rows: Array<{ code: string; method: string; methodName: string }> };
+    expect(q.rows.find((r) => r.code === named)).toMatchObject({ method: 'ZELLE', methodName: 'Zelle' });
+    expect(q.rows.find((r) => r.code === code)).toMatchObject({ method: 'zelle', methodName: 'zelle' });
+  });
+
   it('shows the header, both traders, the escrow and the ruling state; logs case.opened once per person; returns no chat', async () => {
     const mod = await staff('mod');
     const { code, seller } = await disputed();
@@ -810,6 +835,8 @@ describe('G37: incident IDs and taking a case', () => {
     const v = (await mod.b.get(url(code))).json() as Record<string, unknown>;
     expect(v).toMatchObject({
       assignee: mod.name, assignedToYou: true, mayWork: true,
+      // Plan 4 Task 18 (ModCase "Above the 1,000 USD limit"): the limit the dispute snapshotted when it opened.
+      limitUsd: Number((await loadDispute(deps.db, code))!.limitUsdCents / 100n),
       taken: { by: mod.name, at: START.toISOString(), openedAt: new Date(START.getTime() + 7 * MIN).toISOString() },
     });
     const other = await staff('mod');

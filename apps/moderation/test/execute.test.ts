@@ -10,12 +10,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Outcome, PartyHandle } from '@x2f/escrow';
-import { escrowPlan } from '@x2f/trade';
+import { escrowPlan, verifyRulingStatement, type RulingStatement } from '@x2f/trade';
+import sodium from 'libsodium-wrappers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rulingExecutor, type RulingStepInput } from '../src/execute.js';
 import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, syncRegistry, type GateStore } from '../src/gate/index.js';
-import { BALANCE, ctx, recorded, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
-import { DEAL, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
+import { BALANCE, ctx, newGate, recorded, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
+import { DEAL, ESCROW, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
 
 const dirs: string[] = [];
 afterAll(async () => {
@@ -53,11 +54,22 @@ async function setup(o: { outcome?: 'release-to-buyer' | 'refund-to-seller' | 's
   const dir = await mkdtemp(join(tmpdir(), 'x2f-exec-'));
   dirs.push(dir);
   const key = new Uint8Array(randomBytes(32));
+  await newGate(dir, key);
   const store = await openGateStore(dir, key);
   store.state = w.gate;
   await store.save();
   return { w, c, dir, key, store };
 }
+
+/** The moderation signing key (MOD_SIGNING_SECRET) the executor signs its ruling statements with. */
+let modKey: { publicKey: Uint8Array; privateKey: Uint8Array };
+beforeAll(async () => {
+  await sodium.ready;
+  modKey = sodium.crypto_sign_keypair();
+});
+/** Every ruling statement the executor announced to the API, in order (the API accepts each). */
+const announced: Array<{ statement: RulingStatement; sig: string }> = [];
+const accept = async (r: { statement: RulingStatement; sig: string }) => (announced.push(r), true);
 
 const step = (s: Setup, handle: Pick<PartyHandle, 'settle'>, over: Partial<RulingStepInput> = {}): RulingStepInput => ({
   code: s.c.ruling.code,
@@ -65,10 +77,13 @@ const step = (s: Setup, handle: Pick<PartyHandle, 'settle'>, over: Partial<Rulin
   api: { state: 'disputed', paused: false },
   funds: { balance: BALANCE, unlocked: BALANCE },
   recorded: recorded(41_250n),
+  escrowAddress: ESCROW,
+  announce: accept,
   ...over,
 });
 
-const executor = (s: Setup, store: GateStore = s.store, logs: string[] = []) => rulingExecutor({ store, source: s.w.api, ctx: ctx(), log: (e) => logs.push(e.reason) });
+const executor = (s: Setup, store: GateStore = s.store, logs: string[] = []) =>
+  rulingExecutor({ store, source: s.w.api, ctx: ctx(), log: (e) => logs.push(e.reason), signingSecret: modKey.privateKey });
 
 /** What the gate itself says may be co-signed for this case (a fresh copy of the gate, so the store is untouched). */
 async function authorised(s: Setup) {
@@ -188,6 +203,47 @@ describe('the ruling executor (Plan 4 Task 14)', () => {
   });
 });
 
+describe('the ruling statement (Haveno review 2026-11-12, finding 2; lead call)', () => {
+  it('before the party is asked, the moderator signs the payout it worked out, bound to the trade, the escrow and round 1, and the API took it', async () => {
+    const s = await setup();
+    const want = await authorised(s);
+    const order: string[] = [];
+    const announce = async (r: { statement: RulingStatement; sig: string }) => (order.push('announce'), announced.push(r), true);
+    const handle: Pick<PartyHandle, 'settle'> = { settle: () => (order.push('settle'), new Promise<string | null>(() => {})) };
+    expect(await executor(s).step(step(s, handle, { announce }))).toBe('handed');
+    expect(order).toEqual(['announce', 'settle']);
+    const { statement, sig } = announced.at(-1)!;
+    const check = await verifyRulingStatement(statement, sig, sodium.to_hex(modKey.publicKey), { trade: s.c.ruling.code, escrowAddress: ESCROW, winner: 'buyer', payouts: want.payouts });
+    expect(check.ok).toBe(true);
+    expect(statement).toMatchObject({ v: 1, trade: s.c.ruling.code, escrowAddress: ESCROW, round: 1, rulingId: s.c.ruling.id, outcome: 'release-to-buyer', winner: 'buyer' });
+    // The same statement after a restart (issued at the recorded payout's time): never a second, different one.
+    const again: Array<{ statement: RulingStatement; sig: string }> = [];
+    const second = await openGateStore(s.dir, s.key);
+    expect(await executor(s, second).step(step(s, recordingParty().handle, { announce: async (r) => (again.push(r), true) }))).toBe('handed');
+    expect(again).toEqual([{ statement, sig }]);
+  });
+
+  it('an announcement the API refuses hands nothing; the next pass that is accepted pays', async () => {
+    const s = await setup();
+    const p = recordingParty();
+    const exec = executor(s);
+    expect(await exec.step(step(s, p.handle, { announce: async () => false }))).toBe('announce-failed');
+    expect(await exec.step(step(s, p.handle, { announce: async () => Promise.reject(new Error('down')) }))).toBe('announce-failed');
+    expect(p.settles).toEqual([]);
+    expect(await exec.step(step(s, p.handle))).toBe('handed');
+    expect(p.settles).toHaveLength(1);
+  });
+
+  it('without the escrow address this process recorded, nothing is signed or handed', async () => {
+    const s = await setup();
+    const p = recordingParty();
+    const seen: unknown[] = [];
+    expect(await executor(s).step(step(s, p.handle, { escrowAddress: null, announce: async (r) => (seen.push(r), true) }))).toBe('no-escrow');
+    expect(seen).toEqual([]);
+    expect(p.settles).toEqual([]);
+  });
+});
+
 describe('the watcher hands each disputed trade to the executor', () => {
   let c: Ctx;
   beforeAll(async () => {
@@ -210,6 +266,11 @@ describe('the watcher hands each disputed trade to the executor', () => {
     expect(mine.length).toBeGreaterThan(0);
     const last = mine.at(-1)!;
     expect(last.funds).toEqual({ balance: FUNDS, unlocked: FUNDS });
+    // Haveno finding 2: the escrow address this process recorded at setup, and an announcement over its own signed link.
+    expect(last.escrowAddress).toBe(ESCROW);
+    const statement = { v: 1, trade: l.code } as unknown as RulingStatement;
+    await last.announce({ statement, sig: 'ab' });
+    expect(net.reports.filter((r) => r.kind === 'ruling-statement')).toEqual([{ kind: 'ruling-statement', trade: l.code, statement, sig: 'ab' }]);
     expect(last.recorded).toEqual(
       gateRecordedTerms({
         terms: TERMS,
@@ -218,6 +279,33 @@ describe('the watcher hands each disputed trade to the executor', () => {
       }),
     );
   });
+  it('review M4: a mod-built sweep with no executor record is named by nothing (null), never by the desk or the API', async () => {
+    const { net, fetch } = fakeNetwork(c);
+    const m = await moderation(c, fetch, { rulings: { step: async () => 'none', kindFor: () => null } });
+    const l = await inFunding(c, m, net);
+    await secured(c, l);
+    net.states.set(l.code, 'disputed');
+    // The API (or a stale desk) would call it the seller's cancel refund.
+    net.settleKinds.set(l.code, 'auto-refund');
+    l.party.committed = true;
+    l.party.settles.push({ kind: 'release', to: [{ address: TERMS.buyerPayout, amountAtomic: FUNDS }], builder: 'mod', cosigner: 'buyer' });
+    const tx = '8'.repeat(64);
+    l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic: FUNDS }], ownTxs: [tx] };
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: tx, settleKind: null }]);
+  });
+
+  it("review M5: the executor hands nothing while the desk's armed refund is not blocked; once it is blocked, it pays", async () => {
+    const s = await setup();
+    const p = recordingParty();
+    const exec = executor(s);
+    expect(await exec.step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: null } }))).toBe('desk-armed');
+    expect(p.settles).toEqual([]);
+    expect(s.store.state.executions[s.c.ruling.code]).toBeUndefined();
+    expect(await exec.step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: 'auto-refund-api-disputed' } }))).toBe('handed');
+    expect(p.settles).toHaveLength(1);
+  });
+
   it("reports the ruling's own sweep with the ruling's kind (R-M2): the payout the executor recorded names it, never the API", async () => {
     const { net, fetch } = fakeNetwork(c);
     const m = await moderation(c, fetch, { rulings: { step: async () => 'none', kindFor: () => 'dispute-buyer' } });

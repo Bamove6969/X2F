@@ -8,6 +8,8 @@ import {
   internalSignedBytes,
   isAttestedTerms,
   isRulingKind,
+  isRulingStatement,
+  rulingStatementBytes,
   SETTLE_KINDS,
   settleKindFor,
   TradeRuleError,
@@ -19,12 +21,14 @@ import {
   type TradeState,
 } from '@x2f/trade';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import { canonicalJson } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { recordRulingExecution } from '../disputes/execution.js';
+import { loadDisputeRecord } from '../disputes/store.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
 /**
@@ -243,6 +247,32 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * trade store as `system`. The state machine's refusal is 409 with its rule code, so a repeated
    * report is refused `wrong-state` and the watcher counts it as done.
    */
+  /**
+   * Security review 2026-11-12 I7: a ruling's payout seen after its case was closed (by a senior's
+   * close). The coins moved but the trade stays disputed and the watcher backs off, so the owner is
+   * alerted, once per trade (the case row locked, so two reports never alert twice).
+   */
+  const raiseClosedCase = async (x: { code: string; txHash: string }): Promise<void> => {
+    const c = await o.db.connect();
+    try {
+      await c.query('begin');
+      const { rows } = await c.query<{ seq: number }>(
+        'select seq from disputes where code = $1 and seq = (select max(seq) from disputes where code = $1) for update',
+        [x.code],
+      );
+      const seen = await c.query("select 1 from alerts where kind = 'ruling-payout-dispute-closed' and detail->>'trade' = $1 limit 1", [x.code]);
+      if (rows[0] !== undefined && seen.rows.length === 0) {
+        await addOwnerAlert(c, 'ruling-payout-dispute-closed', { trade: x.code, seq: rows[0].seq, txHash: x.txHash }, o.clock?.() ?? new Date(now()));
+      }
+      await c.query('commit');
+    } catch (e) {
+      await c.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      c.release();
+    }
+  };
+
   const watcherReport = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
     if (code === null) throw new Refused(400, 'bad-body');
@@ -292,6 +322,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     // a signing window that reverted and a new settlement started in between is refused, never
     // recorded as the other kind.
     let within: Parameters<typeof applyEvent>[4];
+    /** Review I7: a ruling payout's trade and tx, raised to the owner if its case turns out closed. */
+    let closedCase: { code: string; txHash: string } | null = null;
     if (event.type === 'settled' && isRulingKind(claimedKind)) {
       // Plan 4 Task 14 (R-M2): the moderation process executed a round-1 escrow ruling and its watcher
       // saw the mod-built sweep. Never named by the trade alone: only a disputed trade whose published
@@ -314,6 +346,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         const r = await recordRulingExecution(c, code, kind, txHash, at);
         if (r !== 'ok') throw new Refused(409, r);
       };
+      closedCase = { code, txHash };
     } else if (event.type === 'settled') {
       const t = await loadTrade(o.db, code);
       const kind = t ? settleKindFor(t) : null;
@@ -333,8 +366,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         // `resolveFinal` close a `release-to-buyer` case with nothing owed, so it is left as it is
         // (it waits for an execution that cannot come, and never closes) and raised for staff to
         // re-rule with `seller-sends-xmr`: logged on the case and the owner alerted.
-        // NEEDS_PLAN_4_RULING_PAYOUT (R-M2): a ruling's own payout must report its own kind
-        // (`RulingKind`), never `auto-refund`, before ruling execution lands; see machine.ts `settled`.
+        // R-M2 (Plan 4 Task 14): a ruling's own payout reports its own kind (`RulingKind`, the branch
+        // above), never `auto-refund`; machine.ts `settled` refuses a ruling kind once txHash is set.
         if (prev.state === 'disputed' && next.state === 'disputed' && prev.txHash === null && next.txHash !== null) {
           const { rows } = await c.query<{ seq: number; status: string }>(
             `select seq, status from disputes
@@ -356,6 +389,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     try {
       await applyEvent({ db: o.db, clock: o.clock ?? (() => new Date(now())), ...(o.publish ? { publish: o.publish } : {}) }, code, event, 'system', within);
     } catch (e) {
+      // Review I7: the payout's transaction rolled back; the owner is told once, in its own transaction.
+      if (e instanceof Refused && e.reason === 'dispute-closed' && closedCase !== null) await raiseClosedCase(closedCase).catch(() => log({ reason: 'internal-dispute-closed-alert-failed' }));
       if (e instanceof TradeRuleError) throw new Refused(409, e.code);
       if (e instanceof ApiError && e.status === 404) throw new Refused(404, 'not-found');
       if (e instanceof RangeError) throw new Refused(400, 'bad-body');
@@ -534,6 +569,49 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.code(201).send({ ok: true });
   };
 
+  /**
+   * RetoSwap/Haveno review 2026-11-12, finding 2 (lead call): `{ kind: 'ruling-statement', trade,
+   * statement, sig }`, the moderation process's signed statement of the payout it worked out for a
+   * round-1 escrow ruling its gate authorised. The traders' devices verify it themselves before they
+   * co-sign (the API's word is never enough); the API keeps it for them only when it is signed by
+   * MOD_SIGNING_PUBLIC (`bad-statement`), for this trade (`wrong-trade`), round 1, a trade still
+   * disputed (`wrong-state`) whose escrow address it names (`wrong-escrow`), and the trade's
+   * published round-1 escrow ruling with that outcome (`stale-ruling`). The first statement stays:
+   * the same one again is 201, any other (an altered payout) 409 `statement-conflict`.
+   */
+  const rulingStatement = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'trade', 'statement', 'sig'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const s = body.statement;
+    const sig = body.sig;
+    if (!isRulingStatement(s) || typeof sig !== 'string' || !/^[0-9a-f]{128}$/.test(sig)) throw new Refused(400, 'bad-statement');
+    let sigOk = false;
+    try {
+      sigOk = sodium.crypto_sign_verify_detached(sodium.from_hex(sig), rulingStatementBytes(s), modKey);
+    } catch {
+      sigOk = false;
+    }
+    if (!sigOk || s.round !== 1) throw new Refused(400, 'bad-statement');
+    if (normalizeTradeCode(s.trade) !== code) throw new Refused(400, 'wrong-trade');
+    const t = await loadTrade(o.db, code);
+    if (t === null) throw new Refused(404, 'not-found');
+    if (t.state !== 'disputed') throw new Refused(409, 'wrong-state');
+    if (t.escrowAddress === null || t.escrowAddress !== s.escrowAddress) throw new Refused(409, 'wrong-escrow');
+    const rec = await loadDisputeRecord(o.db, code);
+    const d = rec?.dispute ?? null;
+    const paid = d === null ? null : d.round === 1 ? d.ruling : d.round1;
+    if (d === null || paid === null || d.afterRefund || d.publishedAt === null || paid.id !== s.rulingId || paid.outcome !== s.outcome) {
+      throw new Refused(409, 'stale-ruling');
+    }
+    await o.db.query('insert into ruling_statements (code, statement, sig, created_at) values ($1, $2, $3, now()) on conflict (code) do nothing', [code, s, sig]);
+    const { rows } = await o.db.query<{ statement: unknown; sig: string }>('select statement, sig from ruling_statements where code = $1', [code]);
+    const kept = rows[0];
+    if (kept === undefined || kept.sig !== sig || canonicalJson(kept.statement) !== canonicalJson(s)) throw new Refused(409, 'statement-conflict');
+    log({ reason: 'internal-ruling-statement' });
+    return reply.code(201).send({ ok: true });
+  };
+
   /** Plan 4 Task 14: the moderation process's daily verification failed: `site_flags.log_alarm` (the first time stays). */
   const logAlarm = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind'])) throw new Refused(400, 'bad-body');
@@ -646,6 +724,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
     if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
     if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
+    if (isPlainObject(body) && body.kind === 'ruling-statement') return rulingStatement(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;

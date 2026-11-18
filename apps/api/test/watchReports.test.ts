@@ -2,7 +2,7 @@
 // settled, late-funds) and the watch list it reads trade states from.
 import { createHash, randomBytes } from 'node:crypto';
 import { newTradeCode } from '@x2f/core';
-import { INTERNAL_AT_HEADER, INTERNAL_SIG_HEADER, internalSignedBytes, type Trade } from '@x2f/trade';
+import { INTERNAL_AT_HEADER, INTERNAL_SIG_HEADER, internalSignedBytes, signRulingStatement, type RulingStatement, type Trade } from '@x2f/trade';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -14,6 +14,7 @@ import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { appealDirect, publishRuling } from './helpers/disputes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
+import { insertSession, SESSION_COOKIE } from './helpers/staffApp.js';
 import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
 
 let app: FastifyInstance;
@@ -428,7 +429,7 @@ describe('POST /internal/v1/reports: watcher reports', () => {
   });
 });
 
-// Plan 4 Task 14, R-M2 (NEEDS_PLAN_4_RULING_PAYOUT): the moderation process executed a round-1
+// Plan 4 Task 14, R-M2: the moderation process executed a round-1
 // escrow ruling (mod-built, the winner co-signed) and its watcher reports the sweep with the ruling's
 // own kind. The API applies it in one transaction: the trade released (dispute-buyer) or refunded
 // (dispute-seller), the dispute's `executed` (it closes once final: the appeal window still runs,
@@ -508,6 +509,25 @@ describe('a ruling\'s payout reported by the watcher (Plan 4 Task 14, R-M2)', ()
     expect(await loadTrade(deps.db, settling.code)).toMatchObject({ state: 'settling', txHash: null });
   });
 
+  it('review I7: a payout reported for a dispute already closed is refused as dispute-closed and raised to the owner once, not a silent stall', async () => {
+    const owner = (await deps.db.query<{ id: string }>("select id from accounts where kind = 'owner' and disabled_at is null")).rows[0]?.id
+      ?? (await seedAccount(deps, { loginName: 'wrowner7', kind: 'owner' }));
+    const { t, d } = await ruled('release-to-buyer');
+    // A senior closed the case meanwhile (the coins moved anyway).
+    await deps.db.query("update disputes set status = 'closed', closed_at = $2 where code = $1 and seq = $3", [t.code, NOW, d.seq]);
+    const txHash = randomBytes(32).toString('hex');
+    for (let i = 0; i < 2; i++) {
+      const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-buyer' });
+      expect([res.statusCode, res.json()]).toEqual([409, { error: 'dispute-closed' }]);
+    }
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', txHash: null });
+    const alerts = await deps.db.query<{ detail: Record<string, unknown> }>(
+      `select detail from alerts where account_id = $1 and kind = 'ruling-payout-dispute-closed'`,
+      [owner],
+    );
+    expect(alerts.rows.map((r) => r.detail)).toEqual([{ trade: t.code, seq: d.seq, txHash }]);
+  });
+
   it('after an appeal, round 1\'s payout is still recorded against round 1 (Note 2026-10-30 M3); the appeal goes on', async () => {
     const { t, d } = await ruled('release-to-buyer');
     await appealDirect(deps, t.code, 'seller');
@@ -553,5 +573,82 @@ describe('log checkpoints and the log alarm (Plan 4 Task 14)', () => {
     expect((await report({ kind: 'log-alarm' })).statusCode).toBe(201);
     expect((await deps.db.query('select log_alarm from site_flags')).rows).toEqual([{ log_alarm: new Date('2026-01-01T00:00:00Z') }]);
     expect((await report({ kind: 'log-alarm', extra: 1 })).statusCode).toBe(400);
+  });
+});
+
+// RetoSwap/Haveno review 2026-11-12, finding 2 (lead call): the moderation service's own signed
+// ruling statement (the payout it worked out from its attested terms, bound to the trade, the
+// escrow address and round 1). The API only checks and keeps it for the two traders, whose devices
+// verify it themselves against the pinned key before they co-sign; it is never the API's word.
+describe('the ruling statement (Haveno review finding 2)', () => {
+  const ESCROW = fakeAddress();
+  async function disputed(outcome: 'release-to-buyer' | 'refund-to-seller' = 'release-to-buyer') {
+    const t = await trade();
+    await driveTo(deps, t, 'settling', ESCROW);
+    expect((await report({ kind: 'spend-unshown', trade: t.code })).statusCode).toBe(201);
+    const d = await publishRuling(deps, t.code, { outcome });
+    return { t, d };
+  }
+  const statementFor = (code: string, rulingId: string, o: Partial<RulingStatement> = {}): RulingStatement => ({
+    v: 1, trade: code, escrowAddress: ESCROW, round: 1, rulingId, outcome: 'release-to-buyer', winner: 'buyer',
+    payouts: [{ address: fakeAddress(), amountAtomic: '1000' }], issuedAt: NOW.toISOString(), ...o,
+  });
+  const post = async (code: string, statement: RulingStatement, key = modSecret) =>
+    report({ kind: 'ruling-statement', trade: code, statement, sig: await signRulingStatement(statement, key) });
+  const traderGet = async (code: string, side: 'buyer' | 'seller') => {
+    const { rows } = await deps.db.query<{ id: string }>(`select ${side}_account_id as id from trades where code = $1`, [code]);
+    const { token } = await insertSession(deps, rows[0]!.id, 'trader');
+    return app.inject({ method: 'GET', url: `/v1/trades/${code}/ruling-statement`, cookies: { [SESSION_COOKIE]: token } });
+  };
+
+  it('a statement signed by the moderation key for this disputed trade, its escrow and its round-1 ruling is kept and served to both traders', async () => {
+    const { t, d } = await disputed();
+    expect((await traderGet(t.code, 'buyer')).statusCode).toBe(204);
+    const s = statementFor(t.code, d.ruling!.id);
+    const res = await post(t.code, s);
+    expect([res.statusCode, res.json()]).toEqual([201, { ok: true }]);
+    // The same statement again is fine (the executor announces before every hand-over).
+    expect((await post(t.code, s)).statusCode).toBe(201);
+    for (const side of ['buyer', 'seller'] as const) {
+      const got = await traderGet(t.code, side);
+      expect(got.statusCode).toBe(200);
+      expect(got.json()).toEqual({ statement: s, sig: await signRulingStatement(s, modSecret) });
+    }
+  });
+
+  it('a forged statement (another key) is refused, and nothing is kept', async () => {
+    const { t, d } = await disputed();
+    const forger = sodium.crypto_sign_keypair();
+    const res = await post(t.code, statementFor(t.code, d.ruling!.id), forger.privateKey);
+    expect([res.statusCode, res.json()]).toEqual([400, { error: 'bad-statement' }]);
+    expect((await traderGet(t.code, 'buyer')).statusCode).toBe(204);
+  });
+
+  it('a statement replayed from another trade, or for another escrow, is refused', async () => {
+    const a = await disputed();
+    const b = await disputed();
+    const res = await post(b.t.code, statementFor(a.t.code, a.d.ruling!.id));
+    expect([res.statusCode, res.json()]).toEqual([400, { error: 'wrong-trade' }]);
+    const other = await post(a.t.code, statementFor(a.t.code, a.d.ruling!.id, { escrowAddress: fakeAddress() }));
+    expect([other.statusCode, other.json()]).toEqual([409, { error: 'wrong-escrow' }]);
+  });
+
+  it('a stale ruling (not the trade\'s published round-1 ruling, or round 2) is refused; a trade not disputed is wrong-state', async () => {
+    const { t, d } = await disputed();
+    expect((await post(t.code, statementFor(t.code, randomBytes(16).toString('hex')))).json()).toEqual({ error: 'stale-ruling' });
+    expect((await post(t.code, statementFor(t.code, d.ruling!.id, { outcome: 'refund-to-seller', winner: 'seller' }))).json()).toEqual({ error: 'stale-ruling' });
+    expect((await post(t.code, statementFor(t.code, d.ruling!.id, { round: 2 as 1 }))).statusCode).toBe(400);
+    const open = await trade();
+    await driveTo(deps, open, 'secured', ESCROW);
+    expect((await post(open.code, statementFor(open.code, d.ruling!.id))).json()).toEqual({ error: 'wrong-state' });
+  });
+
+  it('an altered payout after the first statement is refused (409 statement-conflict); the first one stays', async () => {
+    const { t, d } = await disputed();
+    const first = statementFor(t.code, d.ruling!.id);
+    expect((await post(t.code, first)).statusCode).toBe(201);
+    const altered = { ...first, payouts: [{ address: fakeAddress(), amountAtomic: '1000' }] };
+    expect((await post(t.code, altered)).json()).toEqual({ error: 'statement-conflict' });
+    expect(((await traderGet(t.code, 'seller')).json() as { statement: RulingStatement }).statement).toEqual(first);
   });
 });

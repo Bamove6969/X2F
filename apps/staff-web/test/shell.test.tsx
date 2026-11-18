@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 // Plan 4 Task 16: the staff shell (nav per role, user chip, session countdown, login hours ending),
 // the API client and KeyTapDialog.
-import { NAV } from '@x2f/staff';
+import { NAV, hasIssuedAt, stampIssuedAt, tapChallenge, type KeyTapIntent } from '@x2f/staff';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { staffApi } from '../src/api.js';
 import { App } from '../src/App.js';
 import { NAV_LABELS } from '../src/ui/StaffShell.js';
-import { KeyTapDialog } from '../src/ui/KeyTapDialog.js';
+import { KeyTapDialog, checkTapChallenge } from '../src/ui/KeyTapDialog.js';
 import { RoleChip } from '../src/ui/RoleChip.js';
 import { button, click, fakeApi, refused, render, settle } from './helpers.js';
 
@@ -125,11 +125,25 @@ describe('the staff API client', () => {
   });
 });
 
+/**
+ * What `taps/start` answers (re-verify X1): the options, the nonce and the server's issuedAt, with
+ * a challenge that is `tapChallenge` of the intent as stamped. `over` lets a test play a lying server.
+ */
+function started(intent: KeyTapIntent, over: { issuedAt?: string | null; signs?: KeyTapIntent } = {}) {
+  const nonce = new Uint8Array(16).fill(9);
+  const issuedAt = over.issuedAt !== undefined ? over.issuedAt : hasIssuedAt(intent.kind) ? new Date().toISOString() : null;
+  // A server that answers no issuedAt for a stamped kind still signed one (now).
+  const signed = over.signs ?? (hasIssuedAt(intent.kind) ? stampIssuedAt(intent, issuedAt !== null ? new Date(issuedAt) : new Date()) : intent);
+  const challenge = Buffer.from(tapChallenge(signed, nonce)).toString('base64url');
+  return { tapId: 't1', options: { challenge }, nonce: Buffer.from(nonce).toString('hex'), issuedAt };
+}
+
 describe('KeyTapDialog', () => {
   it('calls taps/start, runs startAuthentication, then finish, and returns the tapId', async () => {
     const intent = { kind: 'emergency-stop' as const };
+    const body = started(intent);
     const api = fakeApi({
-      'POST /staff/v1/taps/start': { body: { tapId: 't1', options: { challenge: 'abc' } } },
+      'POST /staff/v1/taps/start': { body },
       'POST /staff/v1/taps/:id/finish': { body: { tapId: 't1' } },
     });
     webauthn.startAuthentication.mockResolvedValue({ id: 'cred', response: {} });
@@ -143,13 +157,13 @@ describe('KeyTapDialog', () => {
     await click(button('Tap security key'));
     expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /staff/v1/taps/start', 'POST /staff/v1/taps/t1/finish']);
     expect(api.calls[0]!.body).toEqual(intent);
-    expect(webauthn.startAuthentication).toHaveBeenCalledWith({ optionsJSON: { challenge: 'abc' } });
+    expect(webauthn.startAuthentication).toHaveBeenCalledWith({ optionsJSON: { challenge: body.options.challenge } });
     expect(api.calls[1]!.body).toEqual({ response: { id: 'cred', response: {} } });
     expect(onDone).toHaveBeenCalledWith('t1');
   });
 
   it('a cancelled tap leaves the dialog open with a way to try again', async () => {
-    fakeApi({ 'POST /staff/v1/taps/start': { body: { tapId: 't1', options: { challenge: 'abc' } } } });
+    fakeApi({ 'POST /staff/v1/taps/start': { body: started({ kind: 'emergency-stop' }) } });
     webauthn.startAuthentication.mockRejectedValue(new DOMException('cancelled', 'NotAllowedError'));
     const onDone = vi.fn();
     render(
@@ -161,6 +175,51 @@ describe('KeyTapDialog', () => {
     expect(onDone).not.toHaveBeenCalled();
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('The key tap did not finish. Try again.');
     expect(button('Tap security key')).toBeDefined();
+  });
+
+  // Re-verify X1 (lead call, 12 Nov): the key shows nothing of what it signs, so the staff site
+  // checks the challenge itself before the key is asked, and shows the whole intent.
+  const dialog = (intent: KeyTapIntent) =>
+    render(
+      <MemoryRouter>
+        <KeyTapDialog intent={intent} title="Change settings" body="Tap your key." onDone={() => undefined} onCancel={() => undefined} />
+      </MemoryRouter>,
+    );
+  const SETTINGS: KeyTapIntent = { kind: 'settings', largeTradeLimitUsd: 2000, firstResponseH: 4, appealWindowH: 48 };
+
+  it('shows every field the key will sign', async () => {
+    dialog(SETTINGS);
+    const shown = document.querySelector('[data-part="key-tap-intent"]')?.textContent ?? '';
+    for (const v of ['settings', 'largeTradeLimitUsd', '2000', 'firstResponseH', '4', 'appealWindowH', '48']) expect(shown).toContain(v);
+  });
+
+  it('refuses to ask the key when the server\'s challenge is for another intent', async () => {
+    fakeApi({ 'POST /staff/v1/taps/start': { body: started(SETTINGS, { signs: { ...SETTINGS, largeTradeLimitUsd: 1_000_000, issuedAt: new Date().toISOString() } as KeyTapIntent }) } });
+    dialog(SETTINGS);
+    await click(button('Tap security key'));
+    expect(webauthn.startAuthentication).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-part="key-tap-fault"]')?.textContent).toContain('Nothing was signed');
+  });
+
+  it('refuses an issuedAt more than 2 minutes from this device\'s clock, or one on a kind that has none', async () => {
+    const now = Date.now();
+    expect(checkTapChallenge(SETTINGS, started(SETTINGS), now)).toBe(true);
+    for (const issuedAt of [new Date(now + 3 * 60_000).toISOString(), new Date(now - 3 * 60_000).toISOString(), null]) {
+      expect(checkTapChallenge(SETTINGS, started(SETTINGS, { issuedAt }), now), String(issuedAt)).toBe(false);
+    }
+    // Within 2 minutes either way is fine.
+    expect(checkTapChallenge(SETTINGS, started(SETTINGS, { issuedAt: new Date(now + 90_000).toISOString() }), now)).toBe(true);
+    const RULING: KeyTapIntent = {
+      kind: 'ruling', step: 'propose', rulingId: '7d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d', code: 'ABCD-EFGH-JKMN-PQRS', round: 1, outcome: 'release-to-buyer',
+      accountAction: { kind: 'none' }, amountAtomic: '1', reasonSha256: 'a'.repeat(64), evidenceSha256: 'b'.repeat(64), round1Id: null,
+    };
+    expect(checkTapChallenge(RULING, started(RULING), now)).toBe(true);
+    expect(checkTapChallenge(RULING, { ...started(RULING), issuedAt: new Date(now).toISOString() }, now)).toBe(false);
+    // And the dialog never asks the key when the check fails.
+    fakeApi({ 'POST /staff/v1/taps/start': { body: started(SETTINGS, { issuedAt: new Date(now + 3 * 60_000).toISOString() }) } });
+    dialog(SETTINGS);
+    await click(button('Tap security key'));
+    expect(webauthn.startAuthentication).not.toHaveBeenCalled();
   });
 
   it('a refused tap (no security key on this account) is a CantDoThat', async () => {

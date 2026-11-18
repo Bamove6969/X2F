@@ -16,6 +16,11 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     // When the runtime gains a path that settles a set whose builder is 'mod' (Plan 4), that path
     // must call rulingAllowsCosign with the real cosignPolicy closed over its PolicyContext
     // ((o) => cosignPolicy(ctx, o)), and the stand-in policy in test/dispute.test.tsx goes.
+    // Haveno review 2026-11-12, finding 2 (lead call): that PolicyContext must carry `ruling`, the
+    // moderation service's signed statement from GET /v1/trades/:code/ruling-statement
+    // (adapters.ts httpEscrowApi.getRulingStatement) with this trade's code, the escrow address the
+    // device's own party derived and the pinned modSigningPublic: without it cosignPolicy refuses
+    // every mod-built set (policy.ts `ruled`).
     const runtime = readFileSync(ROOT + 'apps/web/src/escrow/runtime.ts', 'utf8');
     expect(/'mod'|rulingAllowsCosign/.test(runtime), 'the runtime settles mod-built sets: gate them with rulingAllowsCosign').toBe(false);
   });

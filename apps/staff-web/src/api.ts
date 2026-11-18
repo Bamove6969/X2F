@@ -121,7 +121,7 @@ export interface PgpChallenge {
 }
 
 export const keyLoginStart = (b: { loginName: string } | { pendingId: string }) =>
-  staffApi<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON }>('/staff/v1/login/security-key/start', { method: 'POST', body: b });
+  staffApi<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON; loginNonce?: string }>('/staff/v1/login/security-key/start', { method: 'POST', body: b });
 export const keyLoginFinish = (b: { challengeId: string; response: AuthenticationResponseJSON; pendingId?: string }) =>
   staffApi<LoginResult>('/staff/v1/login/security-key/finish', { method: 'POST', body: { ...b, deviceLabel: deviceLabel() } });
 export const pgpLoginStart = (b: { key: string; pendingId?: string }) => staffApi<PgpChallenge>('/staff/v1/login/pgp/start', { method: 'POST', body: b });
@@ -132,7 +132,7 @@ export const pgpLoginFinish = (b: { challengeId: string; code: string }) =>
 // Key taps (Task 5): every tapped action first proves a security-key tap bound to its intent.
 
 export const tapStart = (intent: KeyTapIntent) =>
-  staffApi<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON }>('/staff/v1/taps/start', { method: 'POST', body: intent });
+  staffApi<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON; nonce: string; issuedAt: string | null }>('/staff/v1/taps/start', { method: 'POST', body: intent });
 export const tapFinish = (tapId: string, response: AuthenticationResponseJSON) =>
   staffApi<{ tapId: string }>(`/staff/v1/taps/${encodeURIComponent(tapId)}/finish`, { method: 'POST', body: { response } });
 
@@ -160,7 +160,7 @@ const fetchProbe = () => staffApi<unknown>('/staff/v1/setup/finish', { method: '
 export const setupCode = (code: string) => staffApi<{ ok: true; expiresAt: string }>('/staff/v1/setup/code', { method: 'POST', body: { code } });
 export const setupAccount = (b: { displayName: string; loginName: string }) => staffApi<{ ok: true }>('/staff/v1/setup/account', { method: 'POST', body: b });
 export const setupKeyStart = () =>
-  staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
+  staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON; setupNonce?: string }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
 export const setupKeyFinish = (b: { challengeId: string; response: RegistrationResponseJSON; label?: string }) =>
   staffApi<{ keys: number }>('/staff/v1/setup/key/finish', { method: 'POST', body: b });
 export const setupPgpStart = (publicKey: string) => staffApi<PgpChallenge>('/staff/v1/setup/pgp/start', { method: 'POST', body: { publicKey } });
@@ -271,6 +271,97 @@ export const setGrants = (accountId: string, grants: GrantablePerm[], tapId: str
   staffApi<{ grants: GrantablePerm[] }>(`/staff/v1/members/${encodeURIComponent(accountId)}/grants`, { method: 'PUT', body: { grants, tapId } });
 
 // ---------------------------------------------------------------------------------------------
+// Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)
+
+export type DisputeStatus = 'open' | 'awaiting-approval' | 'published' | 'appealed' | 'final' | 'complying' | 'closed';
+export interface QueueRow {
+  code: string;
+  incidentId: string;
+  status: DisputeStatus;
+  round: 1 | 2;
+  /** The trade's XMR, atomic units. */
+  xmr: string;
+  /** Dollars, "412.50". */
+  usd: string;
+  method: string;
+  /** The catalog's display name (data/payment-methods.json, sent by the staff API), never shown as the raw id. */
+  methodName: string;
+  openedBy: 'buyer' | 'seller' | 'system';
+  waitingMs: number;
+  replyDueAt: string;
+  rulingDueAt: string;
+  deadlineTone: 'due' | 'overdue' | 'replied';
+  approval: 'not-needed' | 'needs-second' | { waitingFor: 'second-approval'; proposedBy: string | null };
+  assignee: string | null;
+  mine: boolean;
+}
+export interface Queue {
+  rows: QueueRow[];
+  counts: { open: number; overdue: number; unassigned: number; needApproval: number };
+  settings: { firstResponseH: number; largeTradeLimitUsd: number };
+}
+
+export interface CaseTrader {
+  displayName: string;
+  completedTrades: number;
+  positivePct: number | null;
+}
+export interface CaseRuling {
+  proposal: { rulingId: string; reason: string; evidence: string[]; proposer: string; proposedAt: string } | null;
+  sentBack: { rulingId: string; note: string | null; at: string } | null;
+  draft: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
+  /** Round 1's ruling once there is an appeal (the API's `round1`): a round-2 tap names its id. */
+  round1?: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
+  publishedAt: string | null;
+  appealEndsAt: string | null;
+}
+export interface DisputeCase {
+  code: string;
+  incidentId: string;
+  status: DisputeStatus;
+  round: 1 | 2;
+  openedBy: 'buyer' | 'seller' | 'system';
+  reason: string;
+  note: string;
+  afterRefund: boolean;
+  openedAt: string;
+  replyDueAt: string;
+  rulingDueAt: string;
+  firstReplyAt: string | null;
+  usd: string;
+  overLimit: boolean;
+  /** The large-trade limit the dispute snapshotted when it opened, whole dollars. */
+  limitUsd: number;
+  assignee: string | null;
+  assignedToYou: boolean;
+  proposedByYou: boolean;
+  mayWork: boolean;
+  traders: { buyer: CaseTrader | null; seller: CaseTrader | null };
+  escrow: { state: string; amountAtomic: string; methodId: string; methodName: string; currency: string; centsPerXmr: string; fiatCents: string; confirmations: number };
+  ruling: CaseRuling;
+  freezes: { buyer: boolean; seller: boolean };
+}
+export type Side = 'buyer' | 'seller';
+
+const casePath = (code: string, rest = '') => `/staff/v1/disputes/${encodeURIComponent(code)}${rest}`;
+
+export const disputeQueue = () => staffApi<Queue>('/staff/v1/disputes?filter=all');
+export const takeNext = () => staffApi<{ code: string | null }>('/staff/v1/disputes/next', { method: 'POST', body: {} });
+export const takeCase = (code: string) => staffApi<{ code: string }>(casePath(code, '/take'), { method: 'POST', body: {} });
+export const disputeCase = (code: string) => staffApi<DisputeCase>(casePath(code));
+export const messageTraders = (code: string, text: string) => staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: { text } });
+export const requestProof = (code: string, side: Side) => staffApi<unknown>(casePath(code, '/proof-request'), { method: 'POST', body: { side } });
+export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
+  staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });
+export const proposeRuling = (
+  code: string,
+  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string },
+) => staffApi<{ code: string; ruling: CaseRuling }>(casePath(code, '/rulings'), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
+export const approveRuling = (code: string, rulingId: string, tapId: string) =>
+  staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/approve`), { method: 'POST', body: { tapId } });
+export const sendBackRuling = (code: string, rulingId: string, note: string) =>
+  staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/send-back`), { method: 'POST', body: { note } });
+
 // Pay at clock-out (Plan 4 Task 33, D-041..D-045; perm self: one's own pay only)
 
 export interface PayoutAddress {
