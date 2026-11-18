@@ -196,6 +196,21 @@ describe('placing a ban (Task 27, D-017)', () => {
     expect((await (await asTrader(id))('GET', '/v1/account/ban')).json().bans).toEqual([]);
     expect((await lift(senior, id, b.banId)).statusCode).toBe(409);
   });
+
+  it('lead call (18 Nov): the ban\'s tap and the lift\'s tap carry the signed issuedAt, their start time, like the other tapped actions', async () => {
+    const id = await trader();
+    const b = await ban(senior, id, { kind: 'trade', ruleId: 'abuse', until: IN_A_WEEK });
+    expect(b.res.statusCode, b.res.body).toBe(201);
+    t.setNow(new Date(NOW.getTime() + 60_000));
+    const liftTap = await tap(senior, { kind: 'lift-ban', accountId: id, banId: b.banId } as KeyTapIntent);
+    expect((await senior.browser.post(`/staff/v1/accounts/${id}/bans/${b.banId}/lift`, { tapId: liftTap })).statusCode).toBe(200);
+    const stored = async (tapId: string) => {
+      const { rows } = await t.deps.db.query<{ intent: string; used: boolean }>('select intent, used_at is not null as used from key_taps where id = $1', [tapId]);
+      return { intent: JSON.parse(rows[0]!.intent) as Record<string, unknown>, used: rows[0]!.used };
+    };
+    expect(await stored(b.tapId)).toEqual({ intent: expect.objectContaining({ kind: 'ban-account', issuedAt: NOW.toISOString() }), used: true });
+    expect(await stored(liftTap)).toEqual({ intent: expect.objectContaining({ kind: 'lift-ban', issuedAt: new Date(NOW.getTime() + 60_000).toISOString() }), used: true });
+  });
 });
 
 describe('placing a site ban ends the live streams; settling an ended ban logs it (review S2, S5)', () => {
