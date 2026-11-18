@@ -35,7 +35,8 @@ describe('anonymizeText', () => {
 
   it('never masks a username inside a longer word', () => {
     expect(scrub('admira.kx is someone else').text).toBe('admira.kx is someone else');
-    expect(scrub('xmira.k and mira.kxyz').text).toBe('xmira.k and mira.kxyz');
+    // (mira.kxyz would now read as a host name, re-review M2; the 3-letter suffix is checked with `_`.)
+    expect(scrub('xmira.k and mira_kxyz').text).toBe('xmira.k and mira_kxyz');
   });
 
   it('replaces the trade code, with or without dashes, and any other grouped code', () => {
@@ -60,9 +61,9 @@ describe('anonymizeText', () => {
     expect(s.text).not.toContain(ADDR.slice(70));
   });
 
-  it('does not mask a base58 run of the wrong length', () => {
+  it('does not take a base58 run of the wrong length for an address (re-review: any long random word is an [id])', () => {
     const short = ADDR.slice(0, 94);
-    expect(scrub(short).text).toBe(short);
+    expect(scrub(short).text).toBe('[id]');
   });
 
   it('masks an IBAN, a Luhn-valid card, an email, a phone number and a tx id', () => {
@@ -245,7 +246,7 @@ describe('anonymizeText: the re-review', () => {
   });
 
   it('B1: never looks for an address across words, however mixed the prose', () => {
-    const prose = 'A Buyer SENT 4 XMR via Zen Bank on Tuesday, Ref ABC123 and Ref XYZ789, then Buyer WAS ANGRY 3 days after the Bank TRANSFER, Ref QRS456';
+    const prose = 'A Buyer SENT 4 BTC via Zen Bank on Tuesday, Ref ABC123 and Ref XYZ789, then Buyer WAS ANGRY 3 days after the Bank TRANSFER, Ref QRS456';
     expect(s(prose)).toBe(prose);
     const words = 'A Buyer and A Seller met at Bank 7 then Bank 8 then Bank 9 to check the Payment Status of Trade KTXR and Trade WQPV';
     expect(s(words)).toBe(words);
