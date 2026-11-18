@@ -343,7 +343,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'how-escrow-works',
     topic: 'escrow',
     q: 'How does the escrow work?',
-    a: 'Each trade gets its own Monero wallet with 3 keys: one for the buyer, one for the seller and one for an X2F moderator. Any 2 keys together can move the XMR, and one key alone moves nothing.',
+    a: 'Each trade gets its own Monero wallet with 3 keys: one for the buyer, one for the seller and one for a moderator from X2F. Any 2 keys together can move the XMR, and one key alone moves nothing.',
     sources: [`${SPEC}:53-57 fresh Monero 2-of-3 multisig wallet`, `${WEB}/trade/escrowCopy.ts:7-9 any 2 release it`],
     facts: ['escrowKeys', 'escrowThreshold'],
   },
@@ -593,7 +593,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'real-moderator',
     topic: 'safety',
     q: 'How do I know a message is really from a moderator?',
-    a: 'Moderator messages appear only inside a disputed trade, with the X2F Moderator tag. Someone who types "X2F Moderator" into a normal chat is another trader.',
+    a: 'Moderator messages appear only inside a disputed trade, with the moderator tag beside them. Someone who calls themselves a moderator in a normal trade chat is another trader.',
     sources: [`${WEB}/dispute/ModeratorTag.tsx:1-4 only when`],
   },
   {
