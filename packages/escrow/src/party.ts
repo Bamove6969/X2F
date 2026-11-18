@@ -10,7 +10,7 @@ import {
   type ReplayGuardJSON,
 } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
-import { DAEMON_TIMEOUT_MS, EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Outgoing, type Payout, type SavedSession } from './engine.js';
+import { DAEMON_TIMEOUT_MS, EscrowError, UNBUILDABLE, type EscrowEngine, type EscrowSession, type Incoming, type Outgoing, type Payout, type SavedSession } from './engine.js';
 import type { Transport } from './transport.js';
 import { MAX_NETWORK_FEE, feeBearers, networkFeeShares, sumPayouts } from './verify.js';
 
@@ -580,18 +580,25 @@ export function runParty(a: PartyArgs): PartyHandle {
    */
   const nextAttempt = async (rel: ReleaseState): Promise<void> => {
     rel.attempt += 1;
+    if (rel.attempt > MAX_ATTEMPT) return giveUp(rel);
     rel.committed = false;
     delete rel.txSet;
     delete rel.txKey;
-    if (rel.attempt > MAX_ATTEMPT) {
-      // Give up on this outcome only; the party stays alive and can settle another.
-      rel.phase = 'exhausted';
-      await saveState();
-      settleWaiter?.reject(new PartyError('bad-outcome', 'settlement attempts for this outcome are used up'));
-      return;
-    }
     rel.phase = 'waiting-funds';
     await saveState();
+  };
+
+  /**
+   * Give up on this outcome only; the party stays alive and can settle another (the caller sees
+   * `bad-outcome` "...used up", the app's attempts-exhausted). `why` names a permanent refusal.
+   */
+  const giveUp = async (rel: ReleaseState, why?: string): Promise<void> => {
+    rel.committed = false;
+    delete rel.txSet;
+    delete rel.txKey;
+    rel.phase = 'exhausted';
+    await saveState();
+    settleWaiter?.reject(new PartyError('bad-outcome', `settlement attempts for this outcome are used up${why ? ` (${why})` : ''}`));
   };
 
   /** The escrow holds exactly what the outcome pays, all of it unlocked. */
@@ -652,6 +659,15 @@ export function runParty(a: PartyArgs): PartyHandle {
           await persist(); // the set is saved before it leaves the device; never rebuilt
           await send(txSetKey(rel), [cp]);
         } catch (e) {
+          // A set the wallet can never build for this outcome (re-verify 17 Nov, N2: an output
+          // below its fee share) is refused before anything is signed: no attempt can recover it,
+          // so give up on it at once rather than spend every attempt, and keep the party alive
+          // for another outcome (the seller refund still builds).
+          if (e instanceof EscrowError && e.code === 'build-failed' && UNBUILDABLE.test(e.message)) {
+            ignored('release-unbuildable');
+            await giveUp(rel, e.message);
+            return;
+          }
           if (!(e instanceof EscrowError) || !RETRYABLE.has(e.code)) throw e;
           ignored(`build-${e.code}`);
           await nextAttempt(rel);
