@@ -9,7 +9,7 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ChatFailed } from '../src/chat/client.js';
+import { ChatFailed, setChatClient, type ChatClient, type ChatSnapshot } from '../src/chat/client.js';
 import { parseDispute, type DisputeTrade, type DisputeView } from '../src/screens/dispute/api.js';
 import { systemCardsFor, UnblurredRequest } from '../src/screens/dispute/seams.js';
 import { DisputeRoom } from '../src/screens/dispute/DisputeRoom.js';
@@ -125,6 +125,30 @@ describe('SendUnblurred', () => {
     await flush();
     expect(r.host.textContent).not.toContain('Sent to');
     expect(r.host.querySelector('input[type=file]')).toBeNull();
+  });
+
+  it('review I2: the default receipt read is the trade chat\'s modOnlySentAt; a chat not ready on this device claims neither "Sent" nor a lost key', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ chat: 'C1' }), { status: 200, headers: { 'content-type': 'application/json' } })));
+    const snap = (phase: ChatSnapshot['phase'], modOnlySentAt: string[]): ChatSnapshot => ({ phase, problem: null, role: 'buyer', counterparty: 'satoshi_ghost', disputeOpen: true, paySecured: true, more: false, lines: [], modOnlySentAt });
+    const fake = (s: ChatSnapshot) => ({ sync: vi.fn(async () => s), send: vi.fn(), sendPay: vi.fn(), sendProof: vi.fn(), sendUnblurred: vi.fn(), sendNotice: vi.fn() }) as unknown as ChatClient;
+    const request = { username: 'sarah.v', at: ASKED, sentAt: SENT };
+    try {
+      setChatClient(fake(snap('other-device', [])));
+      const other = render(<SendUnblurred code={CODE} request={request} counterparty="satoshi_ghost" />);
+      await flush();
+      expect(other.host.textContent).not.toContain('Sent to');
+      expect(other.host.querySelector('[data-part="unblurred-lost"]')).toBeNull();
+      expect(other.host.querySelector('input[type=file]')).toBeNull();
+      other.unmount();
+      forgetLocalSession();
+      setChatClient(fake(snap('ready', [SENT])));
+      const ready = render(<SendUnblurred code={CODE} request={request} counterparty="satoshi_ghost" />);
+      await flush();
+      expect(ready.host.textContent).toContain('Sent to sarah.v at 10:58');
+    } finally {
+      setChatClient(null);
+      vi.unstubAllGlobals();
+    }
   });
 
   it('review I2: the upload worked but the post did not: "not sent yet", never "Sent" even once the poll brings sentAt; Try again posts only', async () => {

@@ -69,9 +69,15 @@ export function sendTradeUnblurred(a: { code: string; picture: UnblurredPicture 
   });
 }
 
-/** This side's own moderator-only receipts in the trade's chat (ChatSnapshot.modOnlySentAt). */
+/**
+ * This side's own moderator-only receipts in the trade's chat (ChatSnapshot.modOnlySentAt). A chat
+ * that is not ready here (another device holds it, or it failed) cannot tell: that rejects, so the
+ * card claims neither "Sent" nor that the key never arrived.
+ */
 export async function chatUnblurredReceipts(code: string): Promise<string[]> {
-  return (await chatClient().sync(await openTradeChat(code))).modOnlySentAt ?? [];
+  const snap = await chatClient().sync(await openTradeChat(code));
+  if (snap.phase !== 'ready') throw new Error('chat not ready');
+  return snap.modOnlySentAt ?? [];
 }
 
 /**
