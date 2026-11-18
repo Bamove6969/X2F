@@ -14,7 +14,7 @@ import {
 import sodium from 'libsodium-wrappers';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { attestationKeys } from '@x2f/trade';
-import { CASE_CHAT_READ_MAX, CaseChatError, forget, modTextOk, openCaseChat, sealModMessage, type CaseChatAnswer } from '../src/chat/reader.js';
+import { CASE_CHAT_READ_MAX, CaseChatError, forget, modTextOk, openCaseChat, sealModMessage, type CaseChatAnswer } from '../src/keys/reader.js';
 import { modKey, MOD_PUB as modPub, world } from './chatWorld.js';
 
 let MOD = '';

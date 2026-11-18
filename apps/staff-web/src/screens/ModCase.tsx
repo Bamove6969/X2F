@@ -1,7 +1,6 @@
 import type { KeyTapIntent, RulingOutcome, StaffRole } from '@x2f/staff';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { attestationKeys } from '@x2f/trade';
 import {
   approveRuling,
   codeOf,
@@ -19,8 +18,8 @@ import {
   type DisputeCase,
   type Side,
 } from '../api.js';
-import { CaseChatError, forget, modTextOk, openCaseChat, sealModMessage, type CaseChatLine, type OpenedChat } from '../chat/reader.js';
-import type { StaffDeviceKey } from '../device/deviceKey.js';
+import { browserChatKeys, type ChatKeys } from '../chat/client.js';
+import { ChatKeyError, modTextOk, type CaseChatLine, type ChatView, type DevicePublic } from '../chat/types.js';
 import { DeviceCard } from '../ui/DeviceCard.js';
 import { faultText } from '../refusals.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
@@ -94,9 +93,10 @@ function rulingLabels(c: DisputeCase, outcome: RulingOutcome): Record<string, st
  * or the owner who is not the proposer approves (rulings.approve; the API still checks R37).
  *
  * Design build task 9: "Open the full chat" asks the API for the chat key re-wrapped to this
- * browser's certified device (DeviceCard confirms it first) and decrypts here (chat/reader.ts); the
- * read is logged. A message to both traders is sealed and countersigned here too. The chat key is
- * held in this page's memory while it is open and wiped when it closes.
+ * browser's certified device (DeviceCard confirms it first); the read is logged. Design build task
+ * 10: the chat key worker (keys/, through chat/client.ts) verifies and decrypts it and keeps the
+ * key; this page gets the lines to show. A message to both traders is sealed and countersigned in
+ * the worker too. The key is wiped in the worker when this screen goes away.
  * NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is not readable here yet.
  *
  * The board's account actions are not offered: a freeze is its own act (D-015, the Freeze card) and
@@ -104,19 +104,20 @@ function rulingLabels(c: DisputeCase, outcome: RulingOutcome): Record<string, st
  * trader lines (disputes, cancel rate, last ratings) are not in the case answer. DESIGNER-REVIEW.
  * Sentences the board does not word are COPY-UNSIGNED.
  */
-export function ModCase({ role, loadDevice }: { role: StaffRole; /** This browser's device key (DeviceCard's loader; tests inject one). */ loadDevice?: () => Promise<StaffDeviceKey> }) {
+export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat key worker (the page's own by default; tests give one). */ keys?: ChatKeys }) {
   const { code = '' } = useParams();
   const [c, setC] = useState<DisputeCase | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [tap, setTap] = useState<Tap | null>(null);
-  const [device, setDevice] = useState<StaffDeviceKey | null>(null);
-  const [opened, setOpened] = useState<OpenedChat | null>(null);
-  // The chat key never outlives the screen (review N1: wiped on unmount only; every `opened` after a
-  // message shares the same key, so wiping on each change wiped the key the next message needs).
-  const openedRef = useRef<OpenedChat | null>(null);
+  const [keys] = useState<ChatKeys>(() => given ?? browserChatKeys());
+  const [device, setDevice] = useState<DevicePublic | null>(null);
+  const [opened, setOpened] = useState<ChatView | null>(null);
+  // The chat key never outlives the screen (review N1: wiped on unmount only, never after a message;
+  // task 10: in the worker, by the opened chat's handle).
+  const openedRef = useRef<ChatView | null>(null);
   openedRef.current = opened;
   useEffect(() => () => {
-    if (openedRef.current !== null) forget(openedRef.current);
+    if (openedRef.current !== null) keys.forget(openedRef.current.handle);
   }, []);
 
   const load = async () => {
@@ -180,8 +181,8 @@ export function ModCase({ role, loadDevice }: { role: StaffRole; /** This browse
 
       <div className="x2f-staff-case">
         <div className="x2f-stack">
-          <ChatCard code={c.code} work={work} device={device} onDevice={setDevice} loadDevice={loadDevice} opened={opened} onOpened={setOpened} buyer={buyer} seller={seller} />
-          {work ? <MessageCard code={c.code} device={device} opened={opened} onSent={(o) => setOpened(o)} /> : null}
+          <ChatCard code={c.code} work={work} keys={keys} device={device} onDevice={setDevice} opened={opened} onOpened={setOpened} buyer={buyer} seller={seller} />
+          {work ? <MessageCard code={c.code} keys={keys} device={device} opened={opened} onSent={(o) => setOpened(o)} /> : null}
         </div>
         <div className="x2f-stack">
           <TradersCard c={c} />
@@ -271,21 +272,18 @@ function CaseChips({ c, role, onTaken }: { c: DisputeCase; role: StaffRole; onTa
   );
 }
 
-/** The pinned moderation signing key, as the trader app pins it (VITE_MOD_SIGNING_PUBLIC; read when used). */
-const modSigningPublic = (): string => (import.meta.env?.VITE_MOD_SIGNING_PUBLIC as string | undefined) ?? '';
-
 /**
  * Design build task 9: the full chat, opened on this certified device. No board copy for these
  * states yet (A8): every string is COPY-UNSIGNED, DESIGNER-REVIEW.
  */
-function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, buyer, seller }: {
+function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer, seller }: {
   code: string;
   work: boolean;
-  device: StaffDeviceKey | null;
-  onDevice: (k: StaffDeviceKey | null) => void;
-  loadDevice: (() => Promise<StaffDeviceKey>) | undefined;
-  opened: OpenedChat | null;
-  onOpened: (o: OpenedChat) => void;
+  keys: ChatKeys;
+  device: DevicePublic | null;
+  onDevice: (k: DevicePublic | null) => void;
+  opened: ChatView | null;
+  onOpened: (o: ChatView) => void;
   buyer: string;
   seller: string;
 }) {
@@ -299,7 +297,8 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
     setBusy(true);
     setFault(null);
     try {
-      onOpened(await openCaseChat(await readCaseChat(code, device.deviceKeyId), device, attestationKeys(modSigningPublic())));
+      // Verified and decrypted in the worker, against its own pinned moderation keys.
+      onOpened(await keys.open(await readCaseChat(code, device.deviceKeyId)));
     } catch (e) {
       if (codeOf(e) === 'device-not-certified') {
         onDevice(null);
@@ -307,7 +306,7 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
         return;
       }
       // not-a-refusal: a check on what the server sent, or a fault; the refusals come through faultText
-      if (e instanceof CaseChatError) setFault('This chat did not check out on this device, so nothing is shown. Tell the owner.');
+      if (e instanceof ChatKeyError) setFault('This chat did not check out on this device, so nothing is shown. Tell the owner.');
       else setFault(faultText(e, 'The chat could not be opened just now. Try again.'));
     } finally {
       setBusy(false);
@@ -319,7 +318,7 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
       <h2 className="x2f-h2">Full chat</h2>
       {opened === null ? (
         <>
-          {work ? <DeviceCard key={refusedDevice} notCertified={refusedDevice > 0} onReady={onDevice} {...(loadDevice !== undefined ? { load: loadDevice } : {})} /> : null}
+          {work ? <DeviceCard key={refusedDevice} notCertified={refusedDevice > 0} onReady={onDevice} load={() => keys.device()} /> : null}
           <p className="x2f-staff-hint">Opening the chat is written to the activity log.</p>
           <Button variant="secondary" disabled={!work || device === null || busy} onClick={() => void open()}>
             Open the full chat
@@ -347,7 +346,7 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
   );
 }
 
-function MessageCard({ code, device, opened, onSent }: { code: string; device: StaffDeviceKey | null; opened: OpenedChat | null; onSent: (o: OpenedChat) => void }) {
+function MessageCard({ code, keys, device, opened, onSent }: { code: string; keys: ChatKeys; device: DevicePublic | null; opened: ChatView | null; onSent: (o: ChatView) => void }) {
   const id = useId();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -362,13 +361,13 @@ function MessageCard({ code, device, opened, onSent }: { code: string; device: S
       let seq = opened.nextSeq;
       let res: { id: string };
       try {
-        res = await messageTraders(code, await sealModMessage(opened, text, device, serverNow(), seq));
+        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq));
       } catch (e) {
         // Another moderator message went first: seal again at the seq the moderation process names, once.
         const next = e instanceof StaffApiError ? e.extra.nextSeq : undefined;
         if (codeOf(e) !== 'stale-seq' || typeof next !== 'number') throw e;
         seq = next;
-        res = await messageTraders(code, await sealModMessage(opened, text, device, serverNow(), seq));
+        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq));
       }
       onSent({ ...opened, nextSeq: seq + 1, lines: [...opened.lines, { id: res.id, from: 'mod', text, at: serverNow().toISOString(), missingBefore: 0 }] });
       setText('');

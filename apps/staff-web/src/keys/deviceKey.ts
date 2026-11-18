@@ -10,6 +10,12 @@ import { staffDeviceKeyId } from '@x2f/staff';
  * (`staffDeviceKeyId(signPublic)`) are what the person certifies with a security-key tap; the
  * moderation gate then re-wraps a disputed chat's key to `boxPublic` (design task 9).
  * `identity()` opens the secrets for one use; the caller wipes them afterwards (`wipeIdentity`).
+ *
+ * Design build task 10 (review N10): this module runs only inside the chat key worker
+ * (keys/chatWorker.ts); the page never imports it, so the secrets are never decrypted in the page.
+ * They are stored and opened as raw bytes (record v2: the 64-byte Ed25519 secret key, then the
+ * 32-byte X25519 secret, sealed), never as text, so every copy can be zeroed. A record of another
+ * version (v1 kept them as hex in JSON, before this was landed) is `bad-record`.
  */
 
 export interface StaffDeviceKey {
@@ -19,9 +25,9 @@ export interface StaffDeviceKey {
   identity(): Promise<Identity>;
 }
 
-/** What is stored: the public halves in the clear, the secrets sealed (`iv`, `ct`). */
+/** What is stored: the public halves in the clear, the secrets sealed (`iv`, `ct`: signSecret || boxSecret). */
 export interface StoredDeviceKey {
-  v: 1;
+  v: 2;
   signPublic: string;
   boxPublic: string;
   iv: Uint8Array;
@@ -41,10 +47,10 @@ export class DeviceKeyError extends Error {
   }
 }
 
-const AAD: Uint8Array<ArrayBuffer> = new TextEncoder().encode('x2f-staff-device/v1');
+const AAD: Uint8Array<ArrayBuffer> = new TextEncoder().encode('x2f-staff-device/v2');
+const SIGN_SECRET_LEN = 64;
+const BOX_SECRET_LEN = 32;
 const HEX64 = /^[0-9a-f]{64}$/;
-const toHex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
-const fromHex = (h: string): Uint8Array => new Uint8Array(h.match(/../g)!.map((x) => Number.parseInt(x, 16)));
 
 /** Wipes an opened identity's secrets. */
 export function wipeIdentity(i: Identity): void {
@@ -59,18 +65,20 @@ export async function staffDeviceKey(backend: DeviceKeyBackend, cr: Crypto = glo
   if (wrap === null || rec === null) {
     wrap = await cr.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
     const id = await generateIdentity();
-    const secrets = new TextEncoder().encode(JSON.stringify({ signSecret: toHex(id.signSecret), boxSecret: toHex(id.boxSecret) }));
+    const secrets = new Uint8Array(SIGN_SECRET_LEN + BOX_SECRET_LEN);
+    secrets.set(id.signSecret, 0);
+    secrets.set(id.boxSecret, SIGN_SECRET_LEN);
     const iv = cr.getRandomValues(new Uint8Array(12));
     try {
       const ct = await cr.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: AAD }, wrap, secrets);
-      rec = { v: 1, signPublic: id.signPublic, boxPublic: id.boxPublic, iv, ct };
+      rec = { v: 2, signPublic: id.signPublic, boxPublic: id.boxPublic, iv, ct };
     } finally {
       secrets.fill(0);
       wipeIdentity(id);
     }
     await backend.save(wrap, rec);
   }
-  if (rec.v !== 1 || !HEX64.test(rec.signPublic) || !HEX64.test(rec.boxPublic)) throw new DeviceKeyError('bad-record');
+  if (rec.v !== 2 || !HEX64.test(rec.signPublic) || !HEX64.test(rec.boxPublic)) throw new DeviceKeyError('bad-record');
   const key = wrap;
   const stored = rec;
   return {
@@ -85,13 +93,10 @@ export async function staffDeviceKey(backend: DeviceKeyBackend, cr: Crypto = glo
         throw new DeviceKeyError('bad-record');
       }
       try {
-        const s = JSON.parse(new TextDecoder().decode(plain)) as { signSecret?: unknown; boxSecret?: unknown };
-        if (typeof s.signSecret !== 'string' || typeof s.boxSecret !== 'string') throw new DeviceKeyError('bad-record');
-        const signSecret = fromHex(s.signSecret);
-        // The stored secrets must be the stored public key's (the last 32 bytes of an Ed25519 secret key).
-        if (signSecret.length !== 64 || toHex(signSecret.subarray(32)) !== stored.signPublic) throw new DeviceKeyError('bad-record');
-        // Review N11 (d): and both secrets the stored public keys' (the box secret's too).
-        const id = { signPublic: stored.signPublic, boxPublic: stored.boxPublic, signSecret, boxSecret: fromHex(s.boxSecret) };
+        if (plain.length !== SIGN_SECRET_LEN + BOX_SECRET_LEN) throw new DeviceKeyError('bad-record');
+        // Copies the caller wipes; `plain` is zeroed below.
+        const id = { signPublic: stored.signPublic, boxPublic: stored.boxPublic, signSecret: plain.slice(0, SIGN_SECRET_LEN), boxSecret: plain.slice(SIGN_SECRET_LEN) };
+        // The stored secrets must be the stored public keys' (review N11 d: the box secret's too).
         if (!(await identityKeysMatch(id))) {
           wipeIdentity(id);
           throw new DeviceKeyError('bad-record');

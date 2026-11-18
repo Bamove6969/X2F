@@ -1,18 +1,22 @@
 // @vitest-environment happy-dom
 // Design build task 9 on the ModCase screen (review lead-mod-chat t7-9): the full chat opened on a
 // confirmed device, and messages to both traders. Review N1: the chat key is wiped when the screen
-// goes away, never after a message (the second message used to find a wiped key).
+// goes away, never after a message (the second message used to find a wiped key). Design build task
+// 10: the screen talks to the chat key worker (its keeper runs here behind a copying message pair),
+// which alone holds the key.
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { OpenedChat } from '../src/chat/reader.js';
+import type { ChatKeys } from '../src/chat/client.js';
+import type { OpenedChat } from '../src/keys/reader.js';
+import type { ChatKeeper } from '../src/keys/keeper.js';
 import { ModCase } from '../src/screens/ModCase.js';
 import { button, cleanup, click, fakeApi, field, refused, render, settle, typeInto } from './helpers.js';
-import { MOD_PUB, world } from './chatWorld.js';
+import { memory, MOD_PUB, workerPair, world } from './chatWorld.js';
 
 const opened = vi.hoisted(() => [] as OpenedChat[]);
-vi.mock('../src/chat/reader.js', async (orig) => {
-  const m = await orig<typeof import('../src/chat/reader.js')>();
+vi.mock('../src/keys/reader.js', async (orig) => {
+  const m = await orig<typeof import('../src/keys/reader.js')>();
   return {
     ...m,
     openCaseChat: async (...a: Parameters<typeof m.openCaseChat>) => {
@@ -48,13 +52,20 @@ async function until(ok: () => boolean): Promise<void> {
 }
 
 beforeAll(async () => {
-  vi.stubEnv('VITE_MOD_SIGNING_PUBLIC', await MOD_PUB());
+  await MOD_PUB();
 });
 afterEach(() => {
   opened.splice(0);
 });
 
-async function screen(w: Awaited<ReturnType<typeof world>>, o: { chat?: Parameters<typeof fakeApi>[0][string] } = {}) {
+/** A world whose device key the in-process worker holds too (one backend). */
+async function setup(): Promise<{ w: Awaited<ReturnType<typeof world>>; keeper: ChatKeeper; keys: ChatKeys }> {
+  const backend = memory();
+  const w = await world({ backend });
+  return { w, ...(await workerPair({ backend })) };
+}
+
+async function screen(w: Awaited<ReturnType<typeof world>>, keys: ChatKeys, o: { chat?: Parameters<typeof fakeApi>[0][string] } = {}) {
   let sent = 0;
   const api = fakeApi({
     'GET /staff/v1/disputes/:code': { body: kase() },
@@ -65,7 +76,7 @@ async function screen(w: Awaited<ReturnType<typeof world>>, o: { chat?: Paramete
   render(
     <MemoryRouter initialEntries={[`/disputes/${CODE}`]}>
       <Routes>
-        <Route path="/disputes/:code" element={<ModCase role="mod" loadDevice={async () => w.device} />} />
+        <Route path="/disputes/:code" element={<ModCase role="mod" keys={keys} />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -75,8 +86,8 @@ async function screen(w: Awaited<ReturnType<typeof world>>, o: { chat?: Paramete
 
 describe('ModCase: the full chat and messages (design build task 9)', () => {
   it('review N1: two messages in a row both go out; the chat key is wiped only when the screen goes away', async () => {
-    const w = await world();
-    const api = await screen(w);
+    const { w, keeper, keys } = await setup();
+    const api = await screen(w, keys);
     await until(() => part('device-certified') !== null);
     expect(part('device-certified')).not.toBeNull();
     await click(button('Open the full chat'));
@@ -91,20 +102,25 @@ describe('ModCase: the full chat and messages (design build task 9)', () => {
     }
     const sends = api.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/messages'));
     expect(sends.map((c) => (c.body as { seq: number }).seq)).toEqual([0, 1]);
-    // Still the chat's key while the screen is up.
+    // The page holds no key: what it got back from the worker is lines and a handle.
+    expect(JSON.stringify(sends.map((c) => c.body))).not.toContain(Buffer.from(w.tk).toString('hex'));
+    // Still the chat's key, in the worker, while the screen is up.
+    expect(keeper.size).toBe(1);
     expect(opened[0]!.tk.some((x) => x !== 0)).toBe(true);
     cleanup();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(keeper.size).toBe(0);
     expect(opened[0]!.tk.every((x) => x === 0)).toBe(true);
   });
 
   it('review N2: a line the server dropped is shown as missing where it was', async () => {
-    const w = await world();
+    const { w, keys } = await setup();
     // The buyer's seq 1 is withheld: their seq 2 follows one missing message.
     w.answer.envelopes = [
       { id: '1', senderRole: 'buyer', envelope: await w.seal('buyer', 0, 'I paid.'), at: 'a' },
       { id: '2', senderRole: 'buyer', envelope: await w.seal('buyer', 2, 'Here is the receipt.'), at: 'b' },
     ];
-    await screen(w);
+    await screen(w, keys);
     await until(() => part('device-certified') !== null);
     await click(button('Open the full chat'));
     await until(() => part('chat-lines') !== null);
@@ -113,8 +129,8 @@ describe('ModCase: the full chat and messages (design build task 9)', () => {
   });
 
   it('review N4: a device the moderation process does not know as certified (403 device-not-certified) goes back to "Confirm this device"', async () => {
-    const w = await world();
-    await screen(w, { chat: refused(403, 'device-not-certified') });
+    const { w, keys } = await setup();
+    await screen(w, keys, { chat: refused(403, 'device-not-certified') });
     await until(() => part('device-certified') !== null);
     await click(button('Open the full chat'));
     await until(() => part('device-uncertified') !== null);

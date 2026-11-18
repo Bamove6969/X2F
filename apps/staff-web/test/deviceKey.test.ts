@@ -2,7 +2,7 @@
 // only sealed under a non-extractable AES-GCM key; the id is SHA-256 of the signing key, first 32 hex.
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { DeviceKeyError, staffDeviceKey, wipeIdentity, type DeviceKeyBackend, type StoredDeviceKey } from '../src/device/deviceKey.js';
+import { DeviceKeyError, staffDeviceKey, wipeIdentity, type DeviceKeyBackend, type StoredDeviceKey } from '../src/keys/deviceKey.js';
 
 function memory(): DeviceKeyBackend & { wrap: CryptoKey | null; rec: StoredDeviceKey | null } {
   const m = {

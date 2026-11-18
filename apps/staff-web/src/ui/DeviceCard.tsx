@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { certifyDevice, myDevices } from '../api.js';
-import { indexedDbDeviceBackend, staffDeviceKey, type StaffDeviceKey } from '../device/deviceKey.js';
+import { browserChatKeys } from '../chat/client.js';
+import { ChatKeyError, type DevicePublic } from '../chat/types.js';
 import { faultText } from '../refusals.js';
 import { KeyTapDialog } from './KeyTapDialog.js';
 import { Button, Notice } from './kit.js';
@@ -9,17 +10,19 @@ import { Button, Notice } from './kit.js';
  * Chat membership design task 8: whether this browser's device key is certified, and the way to
  * certify it with a security-key tap bound to exactly its keys. A disputed chat opens only on a
  * certified device (design task 9). No board yet: DESIGNER-REVIEW. Every string is COPY-UNSIGNED.
+ * Design build task 10: the key is made and kept by the chat key worker; this card sees only its
+ * public halves (`load`, by default the page's worker).
  */
-export function DeviceCard({ onReady, load = () => staffDeviceKey(indexedDbDeviceBackend()), notCertified = false }: {
-  onReady?: (k: StaffDeviceKey) => void;
-  load?: () => Promise<StaffDeviceKey>;
+export function DeviceCard({ onReady, load = () => browserChatKeys().device(), notCertified = false }: {
+  onReady?: (k: DevicePublic) => void;
+  load?: () => Promise<DevicePublic>;
   /**
    * Review N4: the moderation process answered `device-not-certified` for this device (it revoked it,
    * say after a switch-off or a security reset): show the confirm step whatever the API lists.
    */
   notCertified?: boolean;
 }) {
-  const [key, setKey] = useState<StaffDeviceKey | null>(null);
+  const [key, setKey] = useState<DevicePublic | null>(null);
   const [me, setMe] = useState<string | null>(null);
   const [certified, setCertified] = useState<boolean | null>(null);
   const [tapping, setTapping] = useState(false);
@@ -27,7 +30,7 @@ export function DeviceCard({ onReady, load = () => staffDeviceKey(indexedDbDevic
   // Cleared once this device is confirmed again here.
   const refusedRef = useRef(notCertified);
 
-  const refresh = async (k: StaffDeviceKey): Promise<void> => {
+  const refresh = async (k: DevicePublic): Promise<void> => {
     const list = await myDevices();
     setMe(list.accountId);
     const ok = list.devices.some((d) => d.deviceKeyId === k.deviceKeyId) && !refusedRef.current;
@@ -45,7 +48,9 @@ export function DeviceCard({ onReady, load = () => staffDeviceKey(indexedDbDevic
         await refresh(k);
       } catch (e) {
         // COPY-UNSIGNED. not-a-refusal: a browser fault (no IndexedDB or WebCrypto), not a rule about the person
-        if (live) setFault(faultText(e, 'This browser cannot keep a device key. Use another browser to read chats.'));
+        const text = 'This browser cannot keep a device key. Use another browser to read chats.';
+        // The worker's own refusal is this browser's, never the network's.
+        if (live) setFault(e instanceof ChatKeyError ? text : faultText(e, text));
       }
     })();
     return () => {

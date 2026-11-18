@@ -8,8 +8,11 @@ import {
   verifyChatKeyRecord,
   type Participants,
 } from '@x2f/protocol';
-import { CHAT_MSG_TYPE, CHAT_TEXT_MAX_BYTES, channelFor, verifyAttestationSignature, type Attestation, type AttestationKey } from '@x2f/trade';
-import { wipeIdentity, type StaffDeviceKey } from '../device/deviceKey.js';
+import { CHAT_MSG_TYPE, channelFor, verifyAttestationSignature, type Attestation, type AttestationKey } from '@x2f/trade';
+import { CASE_CHAT_READ_MAX, modTextOk, type CaseChatAnswer, type CaseChatLine, type SealedModMessage } from '../chat/types.js';
+import { wipeIdentity, type StaffDeviceKey } from './deviceKey.js';
+
+export { CASE_CHAT_READ_MAX, modTextOk, type CaseChatAnswer, type CaseChatLine };
 
 /**
  * Design build task 9 (design section 2.4 M4): the moderator's read of a disputed chat, in the staff
@@ -27,34 +30,9 @@ import { wipeIdentity, type StaffDeviceKey } from '../device/deviceKey.js';
  *   sender's first line above seq 0 follows missing ones. Only envelopes that verified count (a seq
  *   the API wrote on one that did not is its word). The API can still cut the end of the chat.
  * The chat key is held in memory only (`OpenedChat.tk`); `forget` wipes it. Nothing is stored.
- * NEEDS_DESIGN_TASK_10: the design wants the decryption in a worker (design task 10, the staff-web
- * reader); here it runs in the page.
+ * Design build task 10: this module runs only inside the chat key worker (keys/chatWorker.ts,
+ * through keys/keeper.ts); the page never imports it (test/workerBoundary.test.ts).
  */
-
-/** The most envelopes one read returns (the API's CHAT_READ_MAX): the newest ones. */
-export const CASE_CHAT_READ_MAX = 5000;
-
-export interface CaseChatAnswer {
-  chat: string;
-  channel: string;
-  wrap: string;
-  tkh: string;
-  nextSeq: number;
-  attestation: { attestation: unknown; sig: string } | null;
-  record: unknown;
-  envelopes: Array<{ id: string; senderRole: string; envelope: unknown; at: string }>;
-  /** Review N11 (f): the chat has more envelopes than one read returns; these are the newest. */
-  olderNotShown?: boolean;
-}
-
-export interface CaseChatLine {
-  id: string;
-  from: 'buyer' | 'seller' | 'mod';
-  text: string;
-  at: string;
-  /** Review N2: how many of this sender's messages are missing just before this line (0: none). */
-  missingBefore: number;
-}
 
 export interface OpenedChat {
   chat: string;
@@ -152,16 +130,8 @@ export function forget(c: OpenedChat): void {
   c.tk.fill(0);
 }
 
-// Control characters other than tab and line feed (as the trader app and the old moderator route refused).
-const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
-
-/** A moderator message's text: not blank, no control characters, at most CHAT_TEXT_MAX_BYTES of UTF-8. */
-export function modTextOk(text: string): boolean {
-  return text.trim() !== '' && !CONTROL.test(text) && new TextEncoder().encode(text).length <= CHAT_TEXT_MAX_BYTES;
-}
-
 /** What `POST …/messages` takes: the message sealed under the chat key as `mod` at `seq`, countersigned by this device. */
-export async function sealModMessage(c: OpenedChat, text: string, device: StaffDeviceKey, now: Date, seq = c.nextSeq) {
+export async function sealModMessage(c: OpenedChat, text: string, device: StaffDeviceKey, now: Date, seq = c.nextSeq): Promise<SealedModMessage> {
   if (!modTextOk(text)) throw new CaseChatError('unreadable');
   // The key must still be the chat's (never sealed under a wiped key).
   if (c.tk.every((x) => x === 0)) throw security();
