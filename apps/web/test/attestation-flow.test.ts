@@ -521,6 +521,21 @@ describe('what this device signs comes from what the user confirmed, never the A
     expect(buyer.last()?.methodId).toBe('ZELLE');
   });
 
+  it('Plan 4 Task 12 (A6): the seller\'s status carries the attested buyer address and take amount to pay a ruling; the buyer\'s none; none before the attestation', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    expect(seller.last()?.restitution ?? null).toBeNull();
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    expect(await seller.status((s) => s.phase === 'ready')).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: AMOUNT } });
+    expect(await buyer.status((s) => s.phase === 'ready')).toMatchObject({ restitution: null });
+    // A view naming another address changes nothing: only the signed terms count.
+    t.state.view = { ...tradeView({ state: 'secured' }), buyerPayout: '4AttackerAddress' } as typeof t.state.view;
+    await Promise.all([t.parties.ticks('seller', 2)]);
+    expect(seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: AMOUNT });
+  });
+
   it('re-verify R1: "I\'ve paid" needs this device\'s own view to be secured; a view that says securing (no securedAt, no text) is refused', async () => {
     const t = await setup();
     const buyer = await t.mk('buyer');

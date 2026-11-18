@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { COMPLY_H } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { COMPLY_CONFIRMATIONS, PROOF_RECHECK_MS } from '../../src/disputes/comply.js';
 import { hasActiveLien } from '../../src/disputes/lien.js';
@@ -330,6 +330,21 @@ describe('A6: the comply time lapses with no proof: the case goes to a senior mo
     expect(await queueOf('mod')).toEqual([]);
     expect(await queueOf('senior')).toMatchObject([{ code, status: 'published', complyLapsed: true }]);
     expect(await queueOf('owner')).toMatchObject([{ code, complyLapsed: true }]);
+  });
+
+  it("the owner's phone gets the fixed alert push once per lapse (the owner-alert push path)", async () => {
+    const owner = await seedStaff(deps, { role: 'owner' });
+    const { code } = await ruled();
+    const push = { send: vi.fn(async (_id: string, _kind: string) => true) };
+    const run = () => disputeTimerJob(undefined, push, txProof).run(deps.db, deps.clock());
+    setNow(new Date(COMPLY_BY.getTime() - MIN));
+    await run();
+    expect(push.send).not.toHaveBeenCalledWith(owner.id, 'alert');
+    setNow(COMPLY_BY);
+    await run();
+    await run();
+    expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.comply-lapsed']);
+    expect(push.send.mock.calls.filter(([id]) => id === owner.id)).toEqual([[owner.id, 'alert']]);
   });
 
   it('a round-2 "Decision stands" gives a fresh comply time, and a second lapse is marked again', async () => {

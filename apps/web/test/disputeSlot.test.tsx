@@ -187,6 +187,91 @@ describe('DisputeSlot', () => {
   });
 });
 
+describe('DisputeSlot: the seller proves a seller-sends-xmr payment (Plan 4 Task 12, A6)', () => {
+  const ruling = {
+    round: 1,
+    outcome: 'seller-sends-xmr',
+    reason: "The buyer's payment reached the seller after the refund.",
+    evidence: ['The trade chat'],
+    moderatorName: 'sarah.v',
+    ruledAt: at(-30 * MIN),
+    appealUntil: at(47 * 60 * MIN),
+    destination: null,
+  };
+  const ATTESTED = { address: '4AttestedBuyerAddressXyz', amountAtomic: 1_250_000_000_000n };
+
+  it('the form shows only the address and amount the escrow verified in the attested terms, and posts the proof', async () => {
+    disputeAnswer = () => jsonResponse(openDispute({ status: 'ruled', afterRefund: true, ruling, complyBy: at(23 * 60 * MIN) }));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith('/payment-proof')) return jsonResponse({ status: 'accepted', confirmations: 10 });
+      return String(url).endsWith('/dispute') ? disputeAnswer() : jsonResponse({ error: 'not-found' }, 404);
+    });
+    const refresh = vi.fn(async () => undefined);
+    const { host } = render(
+      <MemoryRouter>
+        <DisputeSlot {...{ ...props(disputedView(), refresh), escrow: { ...PENDING_ESCROW, restitution: ATTESTED } }} />
+      </MemoryRouter>,
+    );
+    await settle();
+    const form = host.querySelector('[aria-label="Transfer proof"]')!;
+    expect(form).not.toBeNull();
+    expect(form.querySelector('[data-part="pay-address"]')!.textContent).toBe(ATTESTED.address);
+    expect(form.querySelector('[data-part="pay-amount"]')!.textContent).toBe('1.250000 XMR');
+    const [hash, key] = [...form.querySelectorAll<HTMLInputElement>('input')];
+    for (const [el, v] of [[hash!, 'c'.repeat(64)], [key!, 'd'.repeat(128)]] as const) {
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
+    await act(async () => {
+      form.querySelector<HTMLButtonElement>('button')!.click();
+    });
+    await settle();
+    const post = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/payment-proof'))!;
+    expect(String(post[0])).toContain(`/v1/trades/${disputedView().code}/payment-proof`);
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ txHash: 'c'.repeat(64), txKey: 'd'.repeat(128) });
+    expect(refresh).toHaveBeenCalled();
+    expect(host.querySelector('[data-part="tx-proof-sent"]')!.textContent).toContain('Payment proven');
+  });
+
+  it('a refused proof says why; with no attested terms on this device there is no form at all', async () => {
+    disputeAnswer = () => jsonResponse(openDispute({ status: 'ruled', afterRefund: true, ruling, complyBy: at(23 * 60 * MIN) }));
+    const none = render(
+      <MemoryRouter>
+        <DisputeSlot {...props(disputedView())} />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(none.host.textContent).toContain('You must send');
+    expect(none.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/payment-proof')) return jsonResponse({ error: 'proof-invalid' }, 409);
+      return String(url).endsWith('/dispute') ? disputeAnswer() : jsonResponse({ error: 'not-found' }, 404);
+    });
+    const { host } = render(
+      <MemoryRouter>
+        <DisputeSlot {...{ ...props(disputedView()), escrow: { ...PENDING_ESCROW, restitution: ATTESTED } }} />
+      </MemoryRouter>,
+    );
+    await settle();
+    const form = host.querySelector('[aria-label="Transfer proof"]')!;
+    const [hash, key] = [...form.querySelectorAll<HTMLInputElement>('input')];
+    for (const [el, v] of [[hash!, 'c'.repeat(64)], [key!, 'd'.repeat(64)]] as const) {
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
+    await act(async () => {
+      form.querySelector<HTMLButtonElement>('button')!.click();
+    });
+    await settle();
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain('do not show this amount paid to this address');
+  });
+});
+
 describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
   const refunded = (over: Partial<TradeView> = {}) => sellerView({ role: 'buyer', state: 'refunded', closedAt: at(-10 * 60 * MIN), ...over }) as TradeView;
   // "the seller", never the name, on refund and cancel results (owner 2026-10-29; lead 8 Nov).
