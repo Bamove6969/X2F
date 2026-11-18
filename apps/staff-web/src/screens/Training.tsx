@@ -2,7 +2,7 @@ import { applyManualMasks, can } from '@x2f/staff';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, Route, Routes, useParams } from 'react-router';
 import {
-  markTrainingCase, trainingCase, trainingList, trainingReviewCase, trainingReviewList, unmarkTrainingCase,
+  StaffApiError, markTrainingCase, trainingCase, trainingList, trainingReviewCase, trainingReviewList, unmarkTrainingCase,
   type ManualMask, type ScrubbedText, type TrainingCase, type TrainingItem, type TrainingReviewCase, type TrainingReviewItem, type TrainingStatus,
 } from '../api.js';
 import { faultText } from '../refusals.js';
@@ -402,11 +402,14 @@ function TrainingReviewCaseView() {
 
   const mark = async () => {
     try {
-      await markTrainingCase(id, masks);
+      if (c === null) return;
+      await markTrainingCase(id, masks, c.reviewTag);
       setStatus('marked');
       setFault(null);
     } catch (e) {
-      setFault(faultText(e, 'X2F could not mark this case. Reload it and try again.'));
+      // Re-review 3 m1: the texts changed after the case was opened; the masks were not saved.
+      if (e instanceof StaffApiError && e.code === 'case-changed') setFault('This case changed after you opened it. Reload it and review it again.');
+      else setFault(faultText(e, 'X2F could not mark this case. Reload it and try again.'));
     }
   };
   const unmark = async () => {

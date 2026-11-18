@@ -520,10 +520,12 @@ export interface TrainingReviewCase extends TrainingCase {
   fields: Record<string, ScrubbedText>;
   /** The manual masks saved for the case. */
   manual: ManualMask[];
+  /** Re-review 3 m1: the tag of the texts as loaded; the save sends it back (409 `case-changed` if they changed). */
+  reviewTag: string;
 }
 export const trainingReviewList = () => staffApi<{ items: TrainingReviewItem[] }>('/staff/v1/training/review');
 export const trainingReviewCase = (id: string) => staffApi<TrainingReviewCase>(`/staff/v1/training/review/${encodeURIComponent(id)}`);
-export const markTrainingCase = (id: string, masks: ManualMask[]) =>
-  staffApi<{ id: string; status: 'marked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'PUT', body: { masks } });
+export const markTrainingCase = (id: string, masks: ManualMask[], reviewTag: string) =>
+  staffApi<{ id: string; status: 'marked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'PUT', body: { masks, reviewTag } });
 export const unmarkTrainingCase = (id: string) =>
   staffApi<{ id: string; status: 'unmarked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'DELETE' });

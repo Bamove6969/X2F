@@ -221,6 +221,7 @@ describe('Training review (curator)', () => {
     ...CASE,
     status: 'unmarked',
     manual: [],
+    reviewTag: 'c'.repeat(64),
     fields: {
       note: CASE.note,
       'ruling.1.reason': CASE.rulings[0]!.reason,
@@ -284,7 +285,8 @@ describe('Training review (curator)', () => {
     await click(button('Mark as training case'));
     const put = api.calls.find((c) => c.method === 'PUT')!;
     expect(put.path).toBe(`/staff/v1/training/review/${ITEM.id}`);
-    expect(put.body).toEqual({ masks: [{ field: 'note', start: 6, end: 16 }, { field: 'ruling.1.evidence.0', whole: true }] });
+    // Re-review 3 m1: the save echoes the review tag of the texts the curator saw.
+    expect(put.body).toEqual({ masks: [{ field: 'note', start: 6, end: 16 }, { field: 'ruling.1.evidence.0', whole: true }], reviewTag: 'c'.repeat(64) });
     expect(page.textContent).toContain('This case is in the training library.');
   });
 
@@ -294,6 +296,15 @@ describe('Training review (curator)', () => {
     expect(document.querySelector('[data-part="review-status"]')!.textContent).toContain('no longer fit');
     await click(button('Take it out of the library'));
     expect(api.calls.some((c) => c.method === 'DELETE' && c.path === `/staff/v1/training/review/${ITEM.id}`)).toBe(true);
+    expect(document.querySelector('[data-part="review-status"]')!.textContent).toContain('not in the training library');
+  });
+
+  it('a case that changed since it was opened is not saved: the curator is asked to reload (re-review 3 m1)', async () => {
+    const api = reviewApi();
+    api.set(`PUT /staff/v1/training/review/${ITEM.id}`, { status: 409, body: { error: 'case-changed' } });
+    await open(`/training/review/${ITEM.id}`);
+    await click(button('Mark as training case'));
+    expect(document.querySelector('[data-screen="training-review-case"]')!.textContent).toContain('This case changed after you opened it. Reload it and review it again.');
     expect(document.querySelector('[data-part="review-status"]')!.textContent).toContain('not in the training library');
   });
 

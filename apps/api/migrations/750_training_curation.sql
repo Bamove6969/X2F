@@ -4,13 +4,16 @@
 -- read from the dispute and masked on every read (Revision 2026-10-29b), and the row goes with its
 -- dispute. A manual mask is a range of the pre-masked text plus an HMAC tag of the text it covers
 -- (never the text), or a whole field; a range whose tag no longer matches hides the case until it is
--- curated again. `training_id` is the case's opaque id (HMAC under X2F_TRAINING_ID_KEY), stored so
+-- curated again. `field_tags` (re-review 3 B1) holds, for every field the curator reviewed, an HMAC
+-- tag of the field's whole pre-masked text: a changed, added or removed field hides the case too,
+-- whether or not it has a manual mask. `training_id` is the case's opaque id (HMAC under X2F_TRAINING_ID_KEY), stored so
 -- a read never computes it for every closed dispute.
 create table training_cases (
   code text not null,
   seq smallint not null,
   training_id text not null unique check (training_id ~ '^[0-9a-f]{32}$'),
   manual_masks jsonb not null default '[]'::jsonb check (jsonb_typeof(manual_masks) = 'array'),
+  field_tags jsonb not null check (jsonb_typeof(field_tags) = 'object'),
   marked_by uuid not null references accounts (id),
   marked_at timestamptz not null,
   primary key (code, seq),

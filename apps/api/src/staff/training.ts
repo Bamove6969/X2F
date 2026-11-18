@@ -40,9 +40,11 @@ import { requireStaff } from './guard.js';
  *   ("Mark as training case", PUT). Only the curation record is stored (`training_cases`: the
  *   dispute's key, the stored training id, the manual masks, who and when), never a scrubbed copy;
  *   each read masks the dispute's own texts again, automatic masks then manual ones. A manual
- *   range is kept with an HMAC tag of the text it covered, never the text: when the automatic masks
- *   change under it (an anonymizer change, an edited text), the tag no longer matches and the case
- *   is hidden until it is curated again (fail closed). Marking and unmarking are logged
+ *   range is kept with an HMAC tag of the text it covered, never the text, and every reviewed field
+ *   with a tag of its whole pre-masked text (re-review 3 B1): when anything the curator saw changes
+ *   (an anonymizer change, an edited text, a field added or gone), a tag no longer matches and the
+ *   case is hidden until it is curated again (fail closed). A save echoes the `reviewTag` the
+ *   curator's GET gave; a case that changed in between is refused (409 `case-changed`, m1). Marking and unmarking are logged
  *   (`staff.training-marked`, `staff.training-unmarked`: owner-only kinds, no trade code).
  */
 
@@ -67,6 +69,22 @@ export function roundXmrAtomic(atomic: string): string {
 function maskTag(key: Uint8Array, field: string, text: string): string {
   return createHmac('sha256', key).update(`x2f/training-mask\0${field}\0${text}`, 'utf8').digest('hex').slice(0, 32);
 }
+
+/**
+ * Re-review 3 B1: one tag per reviewed field over its whole pre-masked text, so any change the
+ * curator did not see (outside a range, in a field without a manual mask, a field added or gone)
+ * hides the case.
+ */
+function fieldTags(key: Uint8Array, auto: ReadonlyMap<string, Scrubbed>): Record<string, string> {
+  return Object.fromEntries([...auto].map(([field, s]) => [field, maskTag(key, `field:${field}`, s.text)]));
+}
+
+/** Re-review 3 m1: the tag of everything a curator reviews (every field's pre-masked text), echoed by the save. */
+function reviewTag(key: Uint8Array, auto: ReadonlyMap<string, Scrubbed>): string {
+  const all = JSON.stringify([...auto].map(([field, s]) => [field, s.text]).sort((a, b) => (a[0]! < b[0]! ? -1 : 1)));
+  return createHmac('sha256', key).update(`x2f/training-review\0${all}`, 'utf8').digest('hex');
+}
+const REVIEW_TAG = /^[0-9a-f]{64}$/;
 
 /** A stored manual mask: a whole field, or a range of the field's pre-masked text with its tag. */
 type StoredMask = { field: string; whole: true } | { field: string; start: number; end: number; tag: string };
@@ -106,12 +124,13 @@ interface CaseRow {
   /** From the curation row, when the case is marked. */
   training_id: string | null;
   manual_masks: StoredMask[] | null;
+  field_tags: Record<string, string> | null;
 }
 
 const CASE_COLUMNS = `d.code, d.seq, d.closed_at, d.opened_at, d.opened_by, d.reason, d.note, d.after_refund, d.overturned,
          t.method_id, t.amount_atomic::text as amount_atomic, t.buyer_account_id::text as buyer, t.seller_account_id::text as seller,
          (select r.outcome from dispute_rulings r where r.code = d.code and r.seq = d.seq order by r.round desc limit 1) as outcome,
-         tc.training_id, tc.manual_masks`;
+         tc.training_id, tc.manual_masks, tc.field_tags`;
 /** The marked cases only (readers). */
 const MARKED_SELECT = `select ${CASE_COLUMNS}
     from training_cases tc join disputes d on d.code = tc.code and d.seq = tc.seq join trades t on t.code = d.code
@@ -189,7 +208,12 @@ const evidenceOf = (v: unknown): string[] => (Array.isArray(v) ? v : []).filter(
  * Every field with the manual masks over the automatic ones, or null when a stored mask no longer
  * fits (its field is gone, its range is out of the text, or its tag does not match): fail closed.
  */
-function curated(key: Uint8Array, auto: ReadonlyMap<string, Scrubbed>, stored: readonly StoredMask[]): Map<string, Scrubbed> | null {
+function curated(key: Uint8Array, auto: ReadonlyMap<string, Scrubbed>, stored: readonly StoredMask[], tags: Readonly<Record<string, string>> | null): Map<string, Scrubbed> | null {
+  // Re-review 3 B1: exactly the fields reviewed, each with the pre-masked text the curator saw.
+  if (tags === null) return null;
+  const now = fieldTags(key, auto);
+  const keys = Object.keys(tags);
+  if (keys.length !== auto.size || keys.some((f) => now[f] !== tags[f])) return null;
   const out = new Map(auto);
   for (const [field, s] of auto) {
     const mine = stored.filter((m) => m.field === field);
@@ -218,7 +242,8 @@ function parseMasks(key: Uint8Array, body: unknown, auto: ReadonlyMap<string, Sc
   const bad = () => new ApiError(400, 'bad-request');
   if (body === null || typeof body !== 'object' || Array.isArray(body)) throw bad();
   const b = body as Record<string, unknown>;
-  if (Object.keys(b).some((k) => k !== 'masks') || !Array.isArray(b.masks) || b.masks.length > MAX_MASKS) throw bad();
+  if (Object.keys(b).some((k) => k !== 'masks' && k !== 'reviewTag') || !Array.isArray(b.masks) || b.masks.length > MAX_MASKS) throw bad();
+  if (typeof b.reviewTag !== 'string' || !REVIEW_TAG.test(b.reviewTag)) throw bad();
   const out: StoredMask[] = [];
   const ranges = new Map<string, Array<{ start: number; end: number }>>();
   for (const raw of b.masks as unknown[]) {
@@ -277,7 +302,7 @@ function caseView(r: CaseRow, key: Uint8Array, t: CaseTexts, fields: ReadonlyMap
 /** A marked case as readers see it, or null when its curation no longer fits (hidden until curated again). */
 async function readable(db: Queryable, key: Uint8Array, r: CaseRow): Promise<ReturnType<typeof caseView> | null> {
   const t = await caseTexts(db, r);
-  const fields = curated(key, t.auto, r.manual_masks ?? []);
+  const fields = curated(key, t.auto, r.manual_masks ?? [], r.field_tags);
   return fields === null ? null : caseView(r, key, t, fields);
 }
 
@@ -342,10 +367,12 @@ export function staffTrainingRoutes(app: FastifyInstance): void {
     const { r, db, key } = await curatorCase(req);
     const t = await caseTexts(db, r);
     const stored = r.manual_masks ?? [];
-    const status = r.training_id === null ? 'unmarked' : curated(key, t.auto, stored) === null ? 'stale' : 'marked';
+    const status = r.training_id === null ? 'unmarked' : curated(key, t.auto, stored, r.field_tags) === null ? 'stale' : 'marked';
     return {
       ...caseView(r, key, t, t.auto),
       status,
+      // Re-review 3 m1: the save sends this back; a case that changed since is refused (409).
+      reviewTag: reviewTag(key, t.auto),
       // Every field pre-masked (automatic masks only), for the curator to add manual masks over.
       fields: Object.fromEntries(t.auto),
       // The stored manual masks, without their tags.
@@ -357,12 +384,14 @@ export function staffTrainingRoutes(app: FastifyInstance): void {
     const { r, id, db, key } = await curatorCase(req);
     const t = await caseTexts(db, r);
     const masks = parseMasks(key, req.body, t.auto);
+    // Re-review 3 m1: the masks apply to the texts the curator reviewed, or not at all.
+    if ((req.body as { reviewTag: string }).reviewTag !== reviewTag(key, t.auto)) throw new ApiError(409, 'case-changed');
     const now = req.server.deps.clock();
     await withTx(req.server.deps.db, async (c) => {
       await c.query(
-        `insert into training_cases (code, seq, training_id, manual_masks, marked_by, marked_at) values ($1, $2, $3, $4, $5, $6)
-         on conflict (code, seq) do update set manual_masks = excluded.manual_masks, marked_by = excluded.marked_by, marked_at = excluded.marked_at`,
-        [r.code, r.seq, id, JSON.stringify(masks), req.staff.accountId, now],
+        `insert into training_cases (code, seq, training_id, manual_masks, field_tags, marked_by, marked_at) values ($1, $2, $3, $4, $5, $6, $7)
+         on conflict (code, seq) do update set manual_masks = excluded.manual_masks, field_tags = excluded.field_tags, marked_by = excluded.marked_by, marked_at = excluded.marked_at`,
+        [r.code, r.seq, id, JSON.stringify(masks), JSON.stringify(fieldTags(key, t.auto)), req.staff.accountId, now],
       );
       // No trade code: the curator is not involved in the case (R37), and the entry is owner-only.
       await appendLog(c, { at: now, actor: { kind: 'staff', id: req.staff.accountId, role: req.staff.role }, tradeCode: null, action: 'staff.training-marked', detail: { trainingId: id, masks: masks.length } });
