@@ -237,22 +237,23 @@ describe('Training review (curator)', () => {
       [`DELETE /staff/v1/training/review/${ITEM.id}`]: { body: { id: ITEM.id, status: 'unmarked' } },
     });
 
-  /** Selects `text` inside the review field `field`, as a curator dragging over it would. */
+  /** Selects `text` inside the review field `field` (across marks too), as a curator dragging over it would. */
   function select(field: string, text: string) {
     const box = document.querySelector(`[data-field="${field}"] [data-part="field-text"]`)!;
+    const at = (box.textContent ?? '').indexOf(text);
+    if (at < 0) throw new Error(`no ${text} in ${field}`);
     const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    const r = document.createRange();
+    let seen = 0;
     for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
-      const i = (n.textContent ?? '').indexOf(text);
-      if (i < 0) continue;
-      const r = document.createRange();
-      r.setStart(n, i);
-      r.setEnd(n, i + text.length);
-      const sel = window.getSelection()!;
-      sel.removeAllRanges();
-      sel.addRange(r);
-      return;
+      const len = (n.textContent ?? '').length;
+      if (at >= seen && at < seen + len) r.setStart(n, at - seen);
+      if (at + text.length > seen && at + text.length <= seen + len) r.setEnd(n, at + text.length - seen);
+      seen += len;
     }
-    throw new Error(`no ${text} in ${field}`);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
   }
 
   it('the owner reaches the review from the library and sees each closed case\'s status', async () => {

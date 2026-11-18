@@ -146,6 +146,8 @@ function sentence(
     // Staff (owner only).
     case 'staff.invite-created': return `Created an invite link for a new ${ROLE_WORDS[str(d.role)] ?? 'staff member'}`;
     case 'staff.invite-cancelled': return 'Cancelled an invite link';
+    case 'staff.training-marked': return `Marked a case for the training library${typeof d.masks === 'number' ? ` (${num(d.masks)} extra ${d.masks === 1 ? 'mask' : 'masks'})` : ''}`;
+    case 'staff.training-unmarked': return 'Took a case out of the training library';
     case 'staff.joined': return `${who('staffId', 'A new staff member')} joined as ${ROLE_WORDS[str(d.role)] ?? 'staff'}`;
     case 'staff.switched-off': return `Switched off ${who('staffId', 'a staff member')}`;
     case 'staff.switched-on': return `Switched on ${who('staffId', 'a staff member')}`;

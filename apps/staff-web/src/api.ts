@@ -505,3 +505,25 @@ export interface TrainingCase extends TrainingItem {
 export const trainingList = (before?: string) =>
   staffApi<{ items: TrainingItem[]; next: string | null }>(`/staff/v1/training${before ? `?before=${encodeURIComponent(before)}` : ''}`);
 export const trainingCase = (id: string) => staffApi<TrainingCase>(`/staff/v1/training/${encodeURIComponent(id)}`);
+
+// Lead call 18 Nov (re-review): the review-first library. A curator (`training.curate`, the owner)
+// reviews each closed case pre-masked and marks it with the manual masks they add.
+/** A curator's mask: a range of a field's pre-masked text, or the whole field. */
+export type ManualMask = { field: string; start: number; end: number } | { field: string; whole: true };
+export type TrainingStatus = 'unmarked' | 'marked' | 'stale';
+export interface TrainingReviewItem extends TrainingItem {
+  status: TrainingStatus;
+}
+export interface TrainingReviewCase extends TrainingCase {
+  status: TrainingStatus;
+  /** Each text of the case pre-masked (automatic masks only), by field key, in reading order. */
+  fields: Record<string, ScrubbedText>;
+  /** The manual masks saved for the case. */
+  manual: ManualMask[];
+}
+export const trainingReviewList = () => staffApi<{ items: TrainingReviewItem[] }>('/staff/v1/training/review');
+export const trainingReviewCase = (id: string) => staffApi<TrainingReviewCase>(`/staff/v1/training/review/${encodeURIComponent(id)}`);
+export const markTrainingCase = (id: string, masks: ManualMask[]) =>
+  staffApi<{ id: string; status: 'marked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'PUT', body: { masks } });
+export const unmarkTrainingCase = (id: string) =>
+  staffApi<{ id: string; status: 'unmarked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'DELETE' });
