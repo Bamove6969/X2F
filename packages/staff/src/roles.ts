@@ -29,6 +29,9 @@ export const PERMS = [
   'feedback.read',
   'training.read',
   'training.write',
+  // Lead call 18 Nov 2026 (re-review of Task 19): mark a closed case as a training case, with the
+  // masks the curator reviewed, or unmark it. The owner by role (not grantable).
+  'training.curate',
   'self',
 ] as const;
 export type Perm = (typeof PERMS)[number];

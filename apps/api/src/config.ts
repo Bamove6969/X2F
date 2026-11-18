@@ -198,7 +198,8 @@ function parseKeyring(name: string, raw: string): Keyring {
 
 /**
  * `X2F_TRAINING_ID_KEY` (or `X2F_TRAINING_ID_KEY_FILE`, as for the key rings): base64 of 32 random
- * bytes. Unset: the development key, except on mainnet, where it is required.
+ * bytes. Unset: the development key, except on mainnet, where it is required and may not be the
+ * development key.
  */
 function parseTrainingIdKey(env: Env, network: Config['moneroNetwork']): Uint8Array {
   const name = 'X2F_TRAINING_ID_KEY';
@@ -210,6 +211,8 @@ function parseTrainingIdKey(env: Env, network: Config['moneroNetwork']): Uint8Ar
   if (!BASE64.test(raw)) throw malformed(name, 'base64 of 32 random bytes');
   const key = new Uint8Array(Buffer.from(raw, 'base64'));
   if (key.length !== 32) throw malformed(name, 'base64 of 32 random bytes');
+  // Re-review m4: a copied stagenet setting must not put the public key on mainnet.
+  if (network === 'mainnet' && timingSafeEqual(key, DEV_TRAINING_ID_KEY)) throw malformed(name, 'the public development key is refused on mainnet');
   return key;
 }
 

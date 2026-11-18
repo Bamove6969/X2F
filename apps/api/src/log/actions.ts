@@ -133,6 +133,9 @@ export const LOG_ACTIONS = {
   'staff.joined': { staffId: 'uuid', role: 'id' },
   'staff.switched-off': { staffId: 'uuid' },
   'staff.switched-on': { staffId: 'uuid', role: 'id' },
+  // The training library's curation (Task 19, lead call 18 Nov): a case marked with its masks, or unmarked.
+  'staff.training-marked': { trainingId: 'id', masks: 'number' },
+  'staff.training-unmarked': { trainingId: 'id' },
   'staff.removed': { staffId: 'uuid' },
   // D-032 (owner G60): the owner reset a staff member's security; the link was used.
   'staff.security-reset': { staffId: 'uuid', inviteId: 'id' },

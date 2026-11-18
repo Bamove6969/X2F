@@ -362,7 +362,7 @@ describe('the training library', () => {
   type Field = { text: string; masks: Array<{ start: number; end: number; kind: string }> };
   type Review = Item & { status: 'unmarked' | 'marked' | 'stale'; fields: Record<string, Field>; manual: Array<{ field: string; start?: number; end?: number; whole?: true }> };
   const CID = () => trainingId(deps.config.trainingIdKey, C.code, 1);
-  const list = async (b: StaffBrowser) => ((await b.get('/staff/v1/training')).json() as { items: Item[] }).items;
+  const list = async (who: { b: StaffBrowser }) => ((await who.b.get('/staff/v1/training')).json() as { items: Item[] }).items;
 
   it('lists nothing until a curator marks a case (lead call: review-first)', async () => {
     for (const who of [mod, senior, owner]) {
