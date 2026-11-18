@@ -5,5 +5,6 @@
 -- is the API's word: moderation still takes the person's role from the gate and requires a
 -- certified device key, so a compromised API can at most point a case at a real moderator, which
 -- moderation's own `mod_chat_access` record then shows (design section 10, staff device row).
--- API number 510: no range was reserved for this job (J-23 has 500-509, 520 is used); the lead to confirm.
+-- API number 710 (lead 18 Nov): after retention's 701, above every number main uses, so an
+-- existing database applies it in order.
 grant select (assignee) on disputes to x2f_mod_reader;

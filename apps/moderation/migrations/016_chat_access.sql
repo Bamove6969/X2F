@@ -1,6 +1,6 @@
 -- Design build task 9 groundwork (design-chat-membership-keys-2026-11-08 section 4; lead 18 Nov,
--- option C). Moderation number 020: no range was reserved for this job (J-01 has 010-011, J-06
--- 012-015); the lead to confirm.
+-- option C). Moderation number 016: the next free one
+-- (009 is the lien branch's, 010-015 are reserved for J-01 and J-06).
 --
 -- mod_chat_access: this process's OWN record of every staff access to a disputed chat, which the
 -- API cannot write (the API's `chat.read` activity-log entry is the API's word; this is the

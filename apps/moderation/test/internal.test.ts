@@ -442,7 +442,7 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
       // The current dispute is the highest seq.
       expect(await view.disputeStatus(code)).toBe('appealed');
       expect(await view.disputeStatus(newTradeCode())).toBeNull();
-      // Design task 9 groundwork (migration 510): the current dispute's assignee, nothing else new.
+      // Design task 9 groundwork (migration 710): the current dispute's assignee, nothing else new.
       expect(await view.disputeAssignee(code)).toBe('00000000-0000-4000-8000-000000000002');
       expect(await view.disputeAssignee(newTradeCode())).toBeNull();
       expect(await view.chatOf(code)).toBe(chat);

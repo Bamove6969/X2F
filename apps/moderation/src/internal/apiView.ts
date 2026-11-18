@@ -13,7 +13,7 @@ export interface LogEntryRow {
 
 /**
  * What the internal API reads from the API's database (Plan 4 Task 11), through the read-only role
- * `x2f_mod_reader` (migrations 208, 211, 212 and 510: these columns of these tables, nothing else, no writes;
+ * `x2f_mod_reader` (migrations 208, 211, 212 and 710: these columns of these tables, nothing else, no writes;
  * no chat envelopes until the moderator's chat read is built, NEEDS_P4_CHAT_MEMBERSHIP).
  * Reading the log entry from the database itself, rather than taking the API's word for it, is the
  * point: a moderator's message leaves a hash-chained log entry or it does not happen.

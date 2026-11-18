@@ -1,6 +1,6 @@
 -- Design build task 4 (design-chat-membership-keys-2026-11-08 section 2.2): the key cabinet. Ciphertext
--- only: the API is the courier and holds nothing that opens any wrap. API number 511 (no range was
--- reserved for this job; the lead to confirm).
+-- only: the API is the courier and holds nothing that opens any wrap. API number 711 (lead 18 Nov:
+-- after retention's 701).
 --
 -- chat_keys: the creator's signed key record, "TK with fingerprint tkh, locked to the buyer's and the
 --   seller's attested chat identities". First writer wins (the primary key); the other side opens its

@@ -25,7 +25,7 @@ These were made on `wip/lead-mod-chat` while building `POST /internal/chat/grant
    - live, joined staff who are not switched off and not removed;
    - their role.
 
-   The gate registry is synced before each check, as `gateCheck` does, so a switch-off already shown by the API counts at once. Only the assignee comes from the API (migration 510 grants the read-only role `disputes.assignee` and nothing else). A compromised API can therefore only point a case at a real moderator, and the access is recorded in `mod_chat_access`.
+   The gate registry is synced before each check, as `gateCheck` does, so a switch-off already shown by the API counts at once. Only the assignee comes from the API (migration 710 grants the read-only role `disputes.assignee` and nothing else). A compromised API can therefore only point a case at a real moderator, and the access is recorded in `mod_chat_access`.
 2. **"Disputed" means two things must both hold.** The API's current dispute is not closed, and this process itself saw the trade disputed within `CHAT_AFTER_DISPUTE_DAYS` (`mod_dispute_seen`, which comes from the watch list and its own escalations). This narrows what the API alone can claim. It is not independent of the API, because the watch list is the API's word too (design section 3, table, API row).
 3. **The log entry is bound to the person.** The `chat.read` entry must have actor kind `staff` and the actor must be exactly the staff account named in the request. It must also:
    - be of this trade;
@@ -43,4 +43,4 @@ These were made on `wip/lead-mod-chat` while building `POST /internal/chat/grant
 6. **Nothing is granted yet.** A request that passes every check is answered 503 `grant-unavailable`, because no moderator copy of the chat key exists until tasks 3–6 (NEEDS_P4_CHAT_MEMBERSHIP). In production `devices` is `NO_CERTIFIED_DEVICES` until task 8, so in practice every request stops at `device-not-certified`.
 7. **The grant route is not dev-only.** `/internal/chat/send` stays behind `X2F_DEV_MOD_CHAT` (NEEDS_P4_MOD_COUNTERSIGN) until the countersign is built.
 8. **Shredding.** The shred pass deletes `mod_chat_access` with the chat's keys (design section 5).
-9. **Migration numbers.** API 510 and moderation 020 were taken because no range was reserved for this job. The lead to confirm.
+9. **Migration numbers.** API 710 and 711 (lead 18 Nov: after retention's 701, so an existing database applies them in order) and moderation 016 (the next free number).
