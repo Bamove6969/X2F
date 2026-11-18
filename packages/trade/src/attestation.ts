@@ -321,6 +321,34 @@ export interface AttestationSelf {
 }
 
 /**
+ * Chat membership design task 9: the attestation's signature alone, by a pinned moderation key
+ * (as `verifyAttestation` checks it), for a reader who is not one of its participants: a staff
+ * device reading a disputed chat. Throws AttestationError('bad-signature').
+ */
+export async function verifyAttestationSignature(a: Attestation, sig: string, keys: string | readonly AttestationKey[]): Promise<void> {
+  await sodium.ready;
+  const pinned: readonly unknown[] = typeof keys === 'string' ? [{ signPublic: keys, notBefore: null, notAfter: null }] : Array.isArray(keys) ? keys : [];
+  if (!wellFormed(a) || typeof sig !== 'string') throw new AttestationError('bad-signature');
+  const issuedMs = isoMs(a.issuedAt);
+  let ok = false;
+  try {
+    const sigBytes = sodium.from_hex(sig);
+    if (sigBytes.length === sodium.crypto_sign_BYTES) {
+      const bytes = attestationBytes(a);
+      for (const k of pinned) {
+        if (keyCovers(k, issuedMs) && sodium.crypto_sign_verify_detached(sigBytes, bytes, sodium.from_hex((k as AttestationKey).signPublic))) {
+          ok = true;
+          break;
+        }
+      }
+    }
+  } catch {
+    ok = false;
+  }
+  if (!ok) throw new AttestationError('bad-signature');
+}
+
+/**
  * Verify an attestation a trader received: throws nothing on success, an `AttestationError`
  * otherwise. Checks, in order: the moderation signature over `attestationBytes` with a pinned key
  * whose validity range holds `issuedAt` (`bad-signature`, also for any malformed input, an

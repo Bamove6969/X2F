@@ -24,6 +24,7 @@
     "@x2f/auth-client": "0.0.0",
     "@x2f/protocol": "0.0.0",
     "@x2f/staff": "0.0.0",
+    "@x2f/trade": "0.0.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-router": "8.4.0"

@@ -164,14 +164,29 @@ export interface SealChatArgs {
   me: Identity;
 }
 
-export async function sealChat(a: SealChatArgs): Promise<ChatEnvelopeV2> {
+/** Build task 9: the parts of a v2 envelope a sender seals under TK, before any signature. */
+export interface ChatEnvelopeV2Body {
+  readonly v: 2;
+  readonly trade: string;
+  readonly from: Role;
+  readonly seq: number;
+  readonly nonce: string;
+  readonly ct: string;
+}
+
+/**
+ * Build task 9: the AEAD half of `sealChat`, with no signature: the padded canonical `{type,
+ * payload}` under TK with the v2 associated data. A staff device seals the moderator's message this
+ * way; the moderation service signs it as `from: 'mod'` (`signChatEnvelope`) once it checked the
+ * staff device's countersign. Nothing new: `sealChat` is exactly this, then the signature.
+ */
+export async function encryptChat(a: Omit<SealChatArgs, 'me'>): Promise<ChatEnvelopeV2Body> {
   await sodium.ready;
   if (typeof a.type !== 'string') throw new TypeError('sealChat: type must be a string');
   if (!isValidTrade(a.trade)) throw new TypeError('sealChat: invalid trade');
   if (!isRole(a.from)) throw new TypeError('sealChat: unknown from role');
   if (!isValidSeq(a.seq)) throw new TypeError('sealChat: seq must be a non-negative safe integer');
   assertKey(a.tk, 'sealChat');
-  const secret = signerSecret(a.me, undefined, 'sealChat');
   const padded = pad(utf8.encode(canonicalJson({ type: a.type, payload: encodePayload(a.payload) })));
   const nonce = sodium.randombytes_buf(NONCE_LEN);
   let ct: Uint8Array;
@@ -180,8 +195,98 @@ export async function sealChat(a: SealChatArgs): Promise<ChatEnvelopeV2> {
   } finally {
     sodium.memzero(padded);
   }
-  const unsigned = { v: 2 as const, trade: a.trade, from: a.from, seq: a.seq, nonce: toB64(nonce), ct: toB64(ct) };
+  return { v: 2 as const, trade: a.trade, from: a.from, seq: a.seq, nonce: toB64(nonce), ct: toB64(ct) };
+}
+
+/**
+ * Build task 9: signs a sealed v2 body with the sender's attested chat identity (the envelope's
+ * signature, unchanged). The body is strictly checked first (shape, trade, role, seq, a 24-byte
+ * nonce, a ciphertext of one padding bucket), so nothing malformed is ever signed.
+ */
+export async function signChatEnvelope(body: unknown, me: Identity): Promise<ChatEnvelopeV2> {
+  await sodium.ready;
+  const s = snapshot(body, ['v', 'trade', 'from', 'seq', 'nonce', 'ct'], 'envelope');
+  if (s['v'] !== 2 || typeof s['trade'] !== 'string' || !isValidTrade(s['trade']) || !isRole(s['from']) || !isValidSeq(s['seq'])) throw bad('Invalid envelope');
+  b64Field(s['nonce'], (n) => n === NONCE_LEN, b64Len(NONCE_LEN), 'nonce');
+  b64Field(s['ct'], (n) => CT_LENS.has(n), CT_MAX_CHARS, 'ct');
+  const unsigned = { v: 2 as const, trade: s['trade'], from: s['from'], seq: s['seq'], nonce: s['nonce'] as string, ct: s['ct'] as string };
+  const secret = signerSecret(me, undefined, 'signChatEnvelope');
   return { ...unsigned, sig: sodium.to_hex(sodium.crypto_sign_detached(envelopeMessage(unsigned), secret)) };
+}
+
+export async function sealChat(a: SealChatArgs): Promise<ChatEnvelopeV2> {
+  await sodium.ready;
+  signerSecret(a.me, undefined, 'sealChat');
+  return signChatEnvelope(await encryptChat(a), a.me);
+}
+
+// ── the moderator's countersign (build task 9, lead 18 Nov) ─────────────
+
+const COUNTERSIGN_DOMAIN = 'x2f/mod-countersign/v1\0';
+const REQUEST_ID = /^[0-9a-f]{32}$/;
+const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * Lead 18 Nov: what a certified staff device signs for one moderator message, so the moderation
+ * service seals only text a staff member's device sent (never the API's word): Ed25519 by the device
+ * key over `x2f/mod-countersign/v1\0` + canonical JSON of `{chat, seq, ctSha256, requestId,
+ * issuedAt}`. `chat` is the chat's channel (the envelope's `trade`), `ctSha256` the lower-case hex
+ * SHA-256 of the ciphertext's bytes, `requestId` 16 random bytes as hex, `issuedAt` the device's ISO
+ * time with milliseconds. Single use: seq is unique per chat in envelope v2, and the moderation
+ * service refuses a requestId it has seen and an issuedAt older than 5 minutes.
+ */
+export interface ModCountersign {
+  chat: string;
+  seq: number;
+  ctSha256: string;
+  requestId: string;
+  issuedAt: string;
+  sig: string;
+}
+
+async function ctSha256Of(ct: string): Promise<string> {
+  await sodium.ready;
+  const bytes = b64Field(ct, (n) => CT_LENS.has(n), CT_MAX_CHARS, 'ct');
+  // SHA-256 from WebCrypto (browsers and Node alike): the libsodium-wrappers build has no SHA-256.
+  return sodium.to_hex(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>)));
+}
+
+function countersignBytes(c: Omit<ModCountersign, 'sig'>): Uint8Array {
+  return utf8.encode(COUNTERSIGN_DOMAIN + canonicalJson({ chat: c.chat, seq: c.seq, ctSha256: c.ctSha256, requestId: c.requestId, issuedAt: c.issuedAt }));
+}
+
+/** The staff device's countersign of a sealed moderator body (`encryptChat` with from 'mod'). */
+export async function makeModCountersign(a: { body: ChatEnvelopeV2Body; requestId: string; issuedAt: string; me: Identity }): Promise<ModCountersign> {
+  await sodium.ready;
+  if (a.body.from !== 'mod' || !isValidTrade(a.body.trade) || !isValidSeq(a.body.seq)) throw new TypeError('makeModCountersign: a moderator body');
+  if (!REQUEST_ID.test(a.requestId) || !ISO_MS.test(a.issuedAt) || Number.isNaN(Date.parse(a.issuedAt))) throw new TypeError('makeModCountersign: invalid requestId or issuedAt');
+  const c = { chat: a.body.trade, seq: a.body.seq, ctSha256: await ctSha256Of(a.body.ct), requestId: a.requestId, issuedAt: a.issuedAt };
+  const secret = signerSecret(a.me, undefined, 'makeModCountersign');
+  return { ...c, sig: sodium.to_hex(sodium.crypto_sign_detached(countersignBytes(c), secret)) };
+}
+
+/**
+ * Verifies a countersign for exactly this body (its channel, seq and ciphertext) by the device key
+ * `signPublic` (hex). Freshness and single use are the caller's (moderation's) checks.
+ */
+export async function verifyModCountersign(raw: unknown, a: { body: ChatEnvelopeV2Body; signPublic: string }): Promise<ModCountersign> {
+  await sodium.ready;
+  const s = snapshot(raw, ['chat', 'seq', 'ctSha256', 'requestId', 'issuedAt', 'sig'], 'countersign');
+  if (typeof s['requestId'] !== 'string' || !REQUEST_ID.test(s['requestId']) || typeof s['issuedAt'] !== 'string' || !ISO_MS.test(s['issuedAt']) || Number.isNaN(Date.parse(s['issuedAt']))) {
+    throw bad('Invalid countersign');
+  }
+  if (s['chat'] !== a.body.trade || s['seq'] !== a.body.seq || a.body.from !== 'mod' || s['ctSha256'] !== (await ctSha256Of(a.body.ct))) throw bad('Invalid countersign: not for this message');
+  const pk = hexField(a.signPublic, 32, 'signPublic');
+  const sig = hexField(s['sig'], sodium.crypto_sign_BYTES, 'countersign.sig');
+  const c = { chat: s['chat'] as string, seq: s['seq'] as number, ctSha256: s['ctSha256'] as string, requestId: s['requestId'], issuedAt: s['issuedAt'] };
+  let ok = false;
+  try {
+    ok = sodium.crypto_sign_verify_detached(sig, countersignBytes(c), pk);
+  } catch {
+    ok = false;
+  }
+  if (!ok) throw bad('Invalid countersign.sig');
+  return { ...c, sig: s['sig'] as string };
 }
 
 export interface OpenChatArgs {

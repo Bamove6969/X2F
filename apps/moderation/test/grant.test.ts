@@ -9,16 +9,17 @@
 //   not closed; the owner is no exception (OWNER p12-1);
 // - the staff device key is a live certified one (design task 8; none exist yet);
 // - the chat is one this process attested.
-// Only then is the entry used up and a `mod_chat_access` row written. NEEDS_P4_CHAT_MEMBERSHIP:
-// there is still no moderator copy of the chat key to re-wrap (design tasks 3-6), so every grant
-// that passes every check is still refused, 503 `grant-unavailable`.
+// Design build task 9: then the trader grant this process accepted is read back and checked again,
+// its wrap opened with the chat's moderator identity and the key re-wrapped to the certified device's
+// box key; only then is the entry used up and a `mod_chat_access` row (`grant`) written.
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newTradeCode } from '@x2f/core';
-import { generateIdentity, type Participants } from '@x2f/protocol';
+import { generateIdentity, makeChatGrant, newChatKey, unwrapChatKey, type Identity, type Participants } from '@x2f/protocol';
+import sodium from 'libsodium-wrappers';
 import { channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_TS_HEADER } from '@x2f/trade';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
@@ -84,6 +85,11 @@ class FakeApi implements ApiView {
   async chatOf(code: string) {
     return this.chats.get(code) ?? null;
   }
+  /** The moderator grants as the API files them, by chat, side and signature. */
+  grants = new Map<string, unknown>();
+  async modGrant(chat: string, by: string, sig: string) {
+    return this.grants.get(`${chat}/${by}/${sig}`) ?? null;
+  }
 }
 
 /** The people, as the ruling gate knows them. */
@@ -107,17 +113,25 @@ function staffDir(): StaffDirectory {
   return { standing: async (id) => people[id] ?? null };
 }
 
-/** Every device key id certified, live (stands in for design task 8, not built). */
-const ALL_CERTIFIED: DeviceCertificates = { live: async () => true };
-const DEVICE = deviceKeyIdOf(new Uint8Array(randomBytes(32)));
+/** A staff device key, certified (stands in for the gate's record, design task 8). */
+let DEVICE_ID: Identity;
+let DEVICE: string;
+beforeAll(async () => {
+  await sodium.ready;
+  DEVICE_ID = await generateIdentity();
+  DEVICE = deviceKeyIdOf(sodium.from_hex(DEVICE_ID.signPublic));
+});
+const ALL_CERTIFIED: DeviceCertificates = { device: async () => ({ signPublic: DEVICE_ID.signPublic, boxPublic: DEVICE_ID.boxPublic }) };
 
 interface Case {
   code: string;
   chat: string;
+  tk: Uint8Array;
+  tkh: string;
 }
 
 /** A trade disputed in this process's own view and the API's, with its chat attested here. */
-async function disputedCase(api: FakeApi, o: { status?: string; seen?: boolean; assignee?: string | null } = {}): Promise<Case> {
+async function disputedCase(api: FakeApi, o: { status?: string; seen?: boolean; assignee?: string | null; grant?: boolean } = {}): Promise<Case> {
   const code = newTradeCode();
   const chat = newTradeCode();
   const ids = { buyer: await generateIdentity(), seller: await generateIdentity(), mod: await generateIdentity() };
@@ -131,7 +145,14 @@ async function disputedCase(api: FakeApi, o: { status?: string; seen?: boolean; 
   api.disputes.set(code, o.status ?? 'open');
   api.assignees.set(code, o.assignee === undefined ? MOD : o.assignee);
   api.chats.set(code, chat);
-  return { code, chat };
+  // The buyer's dispute grant, accepted by this process (task 6), filed by the API.
+  const tk = await newChatKey();
+  const g = await makeChatGrant({ chat: channel, by: 'buyer', tk, disputeAt: NOW.toISOString(), me: ids.buyer, participants });
+  if (o.grant !== false) {
+    await db.query('insert into mod_chat_grants (chat, grant_by, grant_sig, tkh, accepted_at) values ($1, $2, $3, $4, $5)', [chat, 'buyer', g.sig, g.tkh, NOW]);
+    api.grants.set(`${chat}/buyer/${g.sig}`, g);
+  }
+  return { code, chat, tk, tkh: g.tkh };
 }
 
 function deps(api: ApiView, o: Partial<InternalDeps> = {}): InternalDeps {
@@ -141,6 +162,8 @@ function deps(api: ApiView, o: Partial<InternalDeps> = {}): InternalDeps {
 const mac = (method: string, path: string, body: string, ts: string) =>
   createHmac('sha256', SECRET).update(`x2f/mod-internal/v1\0${method}\0${path}\0${body}\0${ts}`, 'utf8').digest('hex');
 
+/** The last answer's whole body (a grant's wrap). */
+let last: Record<string, unknown> = {};
 async function call(d: InternalDeps, body: unknown, o: { noMac?: boolean } = {}): Promise<{ status: number; error: unknown }> {
   const dir = await mkdtemp(join(tmpdir(), 'x2f-mod-'));
   await chmod(dir, 0o750);
@@ -158,7 +181,10 @@ async function call(d: InternalDeps, body: unknown, o: { noMac?: boolean } = {})
       const req = request({ socketPath: socket, path: GRANT, method: 'POST', headers }, (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, error: (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { error?: unknown }).error }));
+        res.on('end', () => {
+          last = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+          resolve({ status: res.statusCode ?? 0, error: last.error });
+        });
       });
       req.on('error', reject);
       req.end(text);
@@ -191,7 +217,7 @@ describe('the owner questions this is built to (recommendations, to be confirmed
 });
 
 describe('/internal/chat/grant: who may be granted', () => {
-  it('passes every check for the assigned moderator, a senior and the owner, records the access, and still grants nothing (NEEDS_P4_CHAT_MEMBERSHIP)', async () => {
+  it('passes every check for the assigned moderator, a senior and the owner: re-wraps the chat key to the certified device only, and records the grant', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
     const d = deps(api);
@@ -199,10 +225,31 @@ describe('/internal/chat/grant: who may be granted', () => {
     for (const who of [MOD, SENIOR, OWNER]) {
       const b = body(api, c, who);
       ids.push(b.logEntryId);
-      expect(await call(d, b), who).toEqual({ status: 503, error: 'grant-unavailable' });
+      expect(await call(d, b), who).toEqual({ status: 200 });
+      expect({ tkh: last.tkh, boxPublic: last.boxPublic, nextSeq: last.nextSeq }).toEqual({ tkh: c.tkh, boxPublic: DEVICE_ID.boxPublic, nextSeq: 0 });
+      // Only the device's box key opens it, to the chat's key.
+      const tk = await unwrapChatKey(DEVICE_ID, last.wrap, c.tkh);
+      expect(sodium.memcmp(tk, c.tk)).toBe(true);
+      const stranger = await generateIdentity();
+      await expect(unwrapChatKey(stranger, last.wrap, c.tkh)).rejects.toBeDefined();
       expect(await used(b.logEntryId)).toBe(true);
     }
-    expect(await accessRows(c.chat)).toEqual([MOD, SENIOR, OWNER].map((who, i) => ({ staff_id: who, device_key_id: DEVICE, log_entry_id: ids[i], action: 'grant-unavailable' })));
+    expect(await accessRows(c.chat)).toEqual([MOD, SENIOR, OWNER].map((who, i) => ({ staff_id: who, device_key_id: DEVICE, log_entry_id: ids[i], action: 'grant' })));
+  });
+
+  it('with no accepted grant, or a filed statement that does not match what this process accepted, nothing is granted and nothing is used (409 no-grant)', async () => {
+    const api = new FakeApi();
+    const none = await disputedCase(api, { grant: false });
+    const b = body(api, none, MOD);
+    expect(await call(deps(api), b)).toEqual({ status: 409, error: 'no-grant' });
+    expect(await used(b.logEntryId)).toBe(false);
+    // The API serves another statement under the accepted signature: refused.
+    const c = await disputedCase(api);
+    for (const [k, v] of api.grants) if (k.startsWith(`${c.chat}/`)) api.grants.set(k, { ...(v as object), disputeAt: '2026-11-18T12:01:00.000Z' });
+    const b2 = body(api, c, MOD);
+    expect(await call(deps(api), b2)).toEqual({ status: 409, error: 'no-grant' });
+    expect(await used(b2.logEntryId)).toBe(false);
+    expect(await accessRows(c.chat)).toEqual([]);
   });
 
   it('refuses a moderator who is not the one assigned, and any moderator on an unassigned case', async () => {
@@ -272,13 +319,13 @@ describe('/internal/chat/grant: only on a disputed trade', () => {
     const api = new FakeApi();
     for (const s of ['open', 'awaiting-approval', 'published', 'appealed', 'final', 'complying']) {
       const c = await disputedCase(api, { status: s });
-      expect(await call(deps(api), body(api, c, MOD)), s).toEqual({ status: 503, error: 'grant-unavailable' });
+      expect(await call(deps(api), body(api, c, MOD)), s).toEqual({ status: 200 });
     }
   });
 });
 
 describe('/internal/chat/grant: the staff device key', () => {
-  it('refuses a staff device with no certified key (no certifications exist before design task 8)', async () => {
+  it('refuses a staff device with no certified key (the gate knows no certification of it)', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
     const b = body(api, c, MOD);
@@ -292,9 +339,9 @@ describe('/internal/chat/grant: the staff device key', () => {
     const c = await disputedCase(api);
     const asked: Array<[string, string, string]> = [];
     const onlySenior: DeviceCertificates = {
-      live: async (who, key, at) => {
+      device: async (who, key, at) => {
         asked.push([who, key, at.toISOString()]);
-        return who === SENIOR && key === DEVICE;
+        return who === SENIOR && key === DEVICE ? { signPublic: DEVICE_ID.signPublic, boxPublic: DEVICE_ID.boxPublic } : null;
       },
     };
     expect(await call(deps(api, { devices: onlySenior }), body(api, c, MOD))).toEqual({ status: 403, error: 'device-not-certified' });
@@ -322,7 +369,7 @@ describe('/internal/chat/grant: the chat.read log entry', () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
     const b = body(api, c, MOD);
-    expect(await call(deps(api), b)).toEqual({ status: 503, error: 'grant-unavailable' });
+    expect(await call(deps(api), b)).toEqual({ status: 200 });
     expect(await call(deps(api), b)).toEqual({ status: 403, error: 'log-entry-invalid' });
     // The same entry for another person, the senior, is used up as well.
     expect(await call(deps(api), { ...b, staffAccountId: SENIOR })).toEqual({ status: 403, error: 'log-entry-invalid' });
@@ -334,7 +381,7 @@ describe('/internal/chat/grant: the chat.read log entry', () => {
     const c = await disputedCase(api);
     const b = body(api, c, MOD);
     const got = await Promise.all([call(deps(api), b), call(deps(api), b)]);
-    expect(got.map((g) => g.status).sort()).toEqual([403, 503]);
+    expect(got.map((g) => g.status).sort()).toEqual([200, 403]);
     expect(got.find((g) => g.status === 403)!.error).toBe('log-entry-invalid');
     expect(await accessRows(c.chat)).toHaveLength(1);
   });
@@ -368,7 +415,7 @@ describe('/internal/chat/grant: the chat.read log entry', () => {
       expect(await call(deps(api), body(api, c, MOD, { logEntryId: id })), why).toEqual({ status: 403, error: 'log-entry-invalid' });
       expect(await used(id), why).toBe(false);
     }
-    expect(await call(deps(api), body(api, c, MOD, { logEntryId: api.entry('chat.read', c.code, MOD, { at: new Date(NOW.getTime() - 59_000) }) }))).toEqual({ status: 503, error: 'grant-unavailable' });
+    expect(await call(deps(api), body(api, c, MOD, { logEntryId: api.entry('chat.read', c.code, MOD, { at: new Date(NOW.getTime() - 59_000) }) }))).toEqual({ status: 200 });
   });
 
   it('refuses a missing HMAC and a malformed body without using anything', async () => {
@@ -389,15 +436,6 @@ describe('/internal/chat/grant: the chat.read log entry', () => {
     const b = body(api, c, MOD);
     expect(await call(deps(api), b)).toEqual({ status: 404, error: 'no-chat' });
     expect(await used(b.logEntryId)).toBe(false);
-  });
-});
-
-describe('/internal/chat/grant is not dev-only', () => {
-  it('answers with the message route off (production), and the message route stays off', async () => {
-    const api = new FakeApi();
-    const c = await disputedCase(api);
-    const d = deps(api, { devModChat: false });
-    expect(await call(d, body(api, c, MOD))).toEqual({ status: 503, error: 'grant-unavailable' });
   });
 });
 

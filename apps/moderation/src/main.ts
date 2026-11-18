@@ -14,7 +14,9 @@ import { openDesk } from './desk.js';
 import { createWatcher } from './watcher.js';
 import type { DeskArmed, RulingExecutor } from './execute.js';
 import { startCheckpoints, type CheckpointOptions } from './checkpoint.js';
-import { recordedTerms, type RecordedTerms } from './gate/verify.js';
+import { recordedTerms, type GateContext, type RecordedTerms } from './gate/verify.js';
+import type { GateSource } from './gate/registry.js';
+import type { GateStore } from './gate/store.js';
 
 /**
  * The shred pass's own clock (design 2026-11-08 section 5): no purge the API may make comes sooner
@@ -585,6 +587,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           await client.query('delete from mod_chat_access where chat = $1', [chat]);
           await client.query('delete from mod_chat_grants where chat = $1', [chat]);
           await client.query('delete from mod_chat_notices where chat = $1', [chat]);
+          await client.query('delete from mod_countersign_requests where chat = $1', [chat]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');
@@ -847,27 +850,25 @@ function envString(env: Record<string, string | undefined>, name: string): strin
  * internal API does not start. Set, it needs `MOD_INTERNAL_SOCKET_GID` (the numeric id of the
  * dedicated group the API's user is in, never 0; review 8 Nov I-3), `MOD_INTERNAL_SECRET` (base64 of
  * 32 bytes, shared with the API only) and `MOD_API_READER_DATABASE_URL` (the API's database as a
- * member of the read-only role `x2f_mod_reader`, migration 208). NEEDS_P4_MOD_COUNTERSIGN:
- * `X2F_DEV_MOD_CHAT=1` turns on the moderator's message route (dev only; accepted only with
- * NODE_ENV=development or test, any other value or unset refuses it; review 8 Nov I-2, R-1). Errors name the variable, never the value.
+ * member of the read-only role `x2f_mod_reader`, migration 208). Design build task 9: the
+ * moderator's message is a countersign now, so the old dev-only switch `X2F_DEV_MOD_CHAT` is gone
+ * and refused if still set (a stale setting is told, never silently ignored). Errors name the
+ * variable, never the value.
  */
 export function internalFromEnv(
   env: Record<string, string | undefined>,
-): { socketPath: string; gid: number; secret: Uint8Array; apiReaderUrl: string; devModChat: boolean } | null {
+): { socketPath: string; gid: number; secret: Uint8Array; apiReaderUrl: string } | null {
   const socketPath = env.MOD_INTERNAL_SOCKET;
   if (socketPath === undefined || socketPath === '') return null;
   if (!socketPath.startsWith('/')) throw new Error('moderation: MOD_INTERNAL_SOCKET is malformed (an absolute Unix socket path)');
   const gidText = env.MOD_INTERNAL_SOCKET_GID ?? '';
   if (!/^[1-9][0-9]{0,9}$/.test(gidText)) throw new Error('moderation: MOD_INTERNAL_SOCKET_GID is malformed (the dedicated group\'s numeric id, not 0)');
-  const dev = env.X2F_DEV_MOD_CHAT ?? '';
-  if (dev !== '' && dev !== '1') throw new Error('moderation: X2F_DEV_MOD_CHAT is malformed (1 or unset)');
-  if (dev === '1' && env.NODE_ENV !== 'development' && env.NODE_ENV !== 'test') throw new Error('moderation: X2F_DEV_MOD_CHAT is accepted only with NODE_ENV=development or test (review 8 Nov I-2, R-1)');
+  if ((env.X2F_DEV_MOD_CHAT ?? '') !== '') throw new Error('moderation: X2F_DEV_MOD_CHAT is no longer used (the moderator\'s message is countersigned by a staff device); unset it');
   return {
     socketPath,
     gid: Number(gidText),
     secret: envBytes(env, 'MOD_INTERNAL_SECRET', 32),
     apiReaderUrl: envString(env, 'MOD_API_READER_DATABASE_URL'),
-    devModChat: dev === '1',
   };
 }
 
@@ -913,6 +914,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   // Security review 2026-11-12 M1: the gate is a factory startModeration runs only once it holds the
   // instance lock; a refused second process never opens, syncs or saves gate.bin.
   let gateReader: pg.Pool | null = null;
+  let gateParts: { store: GateStore; source: GateSource; ctx: GateContext } | null = null;
   // Both the attestations and the gate's ruling statements (Haveno finding 2) are signed with it.
   const signingSecret = envBytes(env, 'MOD_SIGNING_SECRET', 64);
   let handle: ModerationHandle;
@@ -953,6 +955,8 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
               };
               const source = pgGateSource(reader);
               const sync = startGateSync(store, source, gateCtx);
+              // Review F8: the internal server asks this same gate who is staff and which devices are certified.
+              gateParts = { store, source, ctx: gateCtx };
               const rulings = rulingExecutor({ store, source, ctx: gateCtx, signingSecret, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
               return {
                 rulings,
@@ -980,6 +984,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   if (internal) {
     const { pgApiView } = await import('./internal/apiView.js');
     const { startInternalServer } = await import('./internal/server.js');
+    const { gateInternalDeps } = await import('./internal/gateDeps.js');
     apiReader = new pgMod.Pool({ connectionString: internal.apiReaderUrl, max: 2 });
     apiReader.on('error', () => process.stderr.write('{"level":50,"msg":"api reader idle client error"}\n'));
     server = await startInternalServer({ path: internal.socketPath, gid: internal.gid }, {
@@ -987,7 +992,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       api: pgApiView(apiReader),
       db,
       keystoreKey: envBytes(env, 'MOD_KEYSTORE_KEY', 32),
-      devModChat: internal.devModChat,
+      ...(gateParts !== null ? gateInternalDeps(gateParts) : {}),
     });
   }
   const shutdown = async () => {

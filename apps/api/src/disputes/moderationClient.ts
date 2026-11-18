@@ -3,30 +3,51 @@ import { request } from 'node:http';
 import { MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_TS_HEADER, modInternalMacInput } from '@x2f/trade';
 
 /**
- * Plan 4 Task 11: the API's client of the moderation process's internal API. The moderation
- * process holds the chat's moderator identity, so only it can seal the moderator's message.
- *
- * NEEDS_P4_CHAT_MEMBERSHIP: there is NO chat read here (the plan's `chatRead`, plaintext from the
- * moderation process through the API, was removed: a compromised API could read every disputed
- * chat), and NO proof read (`proofRead`, the unblurred image through the API, review 8 Nov I-1).
- * Build task 9 of design-chat-membership-keys-2026-11-08 (`/internal/chat/grant`, keys wrapped to
- * certified staff device keys; the proof key re-wrapped the same way) replaces both.
- * NEEDS_P4_MOD_COUNTERSIGN: the moderation process answers `chatSend` only in dev builds
- * (X2F_DEV_MOD_CHAT=1, review 8 Nov I-2); in production it is 404 and the API answers 502. It listens on a Unix socket only
+ * Plan 4 Task 11: the API's client of the moderation process's internal API; design build task 9
+ * (design-chat-membership-keys-2026-11-08). No chat text passes through it:
+ * - `chatGrant`: the chat key re-wrapped by the moderation process to a certified staff device of a
+ *   staff member on the case; the API stores and forwards the wrap, which only that device opens.
+ * - `chatSend`: a moderator message a certified staff device sealed under the chat key and
+ *   countersigned (x2f/mod-countersign/v1); the moderation process checks it and signs the v2
+ *   envelope as the moderator; the API stores it.
+ * NEEDS_P5_PROOF_ENVELOPE: there is NO proof read (`proofRead`, the unblurred image through the API,
+ * review 8 Nov I-1); the design re-wraps the proof key to the staff device the same way, once the
+ * unblurred proof exists. The moderation process listens on a Unix socket only
  * (`MOD_INTERNAL_SOCKET`); every request carries an HMAC (`MOD_INTERNAL_SECRET`) over the method,
  * the path, the exact body and the time, and names the activity-log entry the API committed for
  * it, which the moderation process checks in the API's database before it does anything.
  */
 
+/** Who asks, on which device: the staff member the log entry names and their certified device key id. */
+export interface ModCaseCall {
+  code: string;
+  logEntryId: string;
+  staffAccountId: string;
+  deviceKeyId: string;
+}
+
+/** The staff device's sealed, countersigned moderator message (as staff-web sends it). */
+export interface ModCountersigned {
+  seq: number;
+  nonce: string;
+  ct: string;
+  ctSha256: string;
+  requestId: string;
+  issuedAt: string;
+  sig: string;
+}
+
 export interface ModerationClient {
   readonly name: 'moderation';
-  /** `POST /internal/chat/send`: the moderator's message sealed to both traders; the API stores it. */
-  chatSend(a: { code: string; logEntryId: string; text: string }): Promise<{ envelope: unknown }>;
+  /** `POST /internal/chat/grant`: the chat key re-wrapped to the staff device (`wrap`, of `tkh`), and the next moderator seq. */
+  chatGrant(a: ModCaseCall): Promise<{ wrap: string; tkh: string; boxPublic: string; nextSeq: number }>;
+  /** `POST /internal/chat/send`: the countersigned message signed as the moderator; the API stores it. */
+  chatSend(a: ModCaseCall & ModCountersigned): Promise<{ envelope: unknown }>;
 }
 
 /** A refusal from the moderation process (its status and error code), or `moderation-unavailable` (503). */
 export class ModerationError extends Error {
-  constructor(readonly status: number, readonly code: string) {
+  constructor(readonly status: number, readonly code: string, readonly nextSeq: number | null = null) {
     super(code);
     this.name = 'ModerationError';
   }
@@ -35,6 +56,9 @@ export class ModerationError extends Error {
 /** Stands in where no moderation process is configured: every call is `moderation-unavailable`. */
 export const NO_MODERATION: ModerationClient = {
   name: 'moderation',
+  chatGrant: async () => {
+    throw new ModerationError(503, 'moderation-unavailable');
+  },
   chatSend: async () => {
     throw new ModerationError(503, 'moderation-unavailable');
   },
@@ -65,7 +89,7 @@ export function socketModerationClient(o: SocketModerationOptions): ModerationCl
   if (!(o.secret instanceof Uint8Array) || o.secret.length !== 32) throw new TypeError('config: MOD_INTERNAL_SECRET must be 32 bytes');
   const timeoutMs = o.timeoutMs ?? 10_000;
 
-  const call = (path: string, payload: Record<string, string>): Promise<Answer> => {
+  const call = (path: string, payload: Record<string, string | number>): Promise<Answer> => {
     const body = JSON.stringify(payload);
     const ts = String(o.clock().getTime());
     const mac = createHmac('sha256', o.secret).update(modInternalMacInput({ method: 'POST', path, body, ts }), 'utf8').digest('hex');
@@ -109,13 +133,15 @@ export function socketModerationClient(o: SocketModerationOptions): ModerationCl
   /** A non-200 answer as a ModerationError carrying the process's own code (when it is one). */
   const refusal = (a: Answer): ModerationError => {
     let code = 'moderation-unavailable';
+    let nextSeq: number | null = null;
     try {
-      const v = JSON.parse(a.body.toString('utf8')) as { error?: unknown };
+      const v = JSON.parse(a.body.toString('utf8')) as { error?: unknown; nextSeq?: unknown };
       if (typeof v.error === 'string' && ERROR_CODE.test(v.error)) code = v.error;
+      if (typeof v.nextSeq === 'number' && Number.isSafeInteger(v.nextSeq) && v.nextSeq >= 0) nextSeq = v.nextSeq;
     } catch {
       // Not JSON: keep the generic code.
     }
-    return new ModerationError(a.status >= 400 && a.status < 600 ? a.status : 502, code);
+    return new ModerationError(a.status >= 400 && a.status < 600 ? a.status : 502, code, nextSeq);
   };
 
   const json = (a: Answer): Record<string, unknown> => {
@@ -131,8 +157,16 @@ export function socketModerationClient(o: SocketModerationOptions): ModerationCl
 
   return {
     name: 'moderation',
+    async chatGrant(a) {
+      const v = json(await call('/internal/chat/grant', { code: a.code, logEntryId: a.logEntryId, staffAccountId: a.staffAccountId, deviceKeyId: a.deviceKeyId }));
+      if (typeof v.wrap !== 'string' || typeof v.tkh !== 'string' || typeof v.boxPublic !== 'string' || typeof v.nextSeq !== 'number') throw new ModerationError(502, 'moderation-unavailable');
+      return { wrap: v.wrap, tkh: v.tkh, boxPublic: v.boxPublic, nextSeq: v.nextSeq };
+    },
     async chatSend(a) {
-      const v = json(await call('/internal/chat/send', { code: a.code, logEntryId: a.logEntryId, text: a.text }));
+      const v = json(await call('/internal/chat/send', {
+        code: a.code, logEntryId: a.logEntryId, staffAccountId: a.staffAccountId, deviceKeyId: a.deviceKeyId,
+        seq: a.seq, nonce: a.nonce, ct: a.ct, ctSha256: a.ctSha256, requestId: a.requestId, issuedAt: a.issuedAt, sig: a.sig,
+      }));
       if (v.envelope === undefined) throw new ModerationError(502, 'moderation-unavailable');
       return { envelope: v.envelope };
     },

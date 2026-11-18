@@ -46,7 +46,7 @@ describe('the gate: certify-device', () => {
     let syncs = 0;
     const devices = gateDevices({ state: w.gate, sync: async () => { syncs += 1; } });
     expect(await devices.device(mod.id, k.deviceKeyId, NOW)).toEqual({ signPublic: k.signPublic, boxPublic: k.boxPublic });
-    expect(await devices.live(mod.id, k.deviceKeyId, NOW)).toBe(true);
+    expect(await devices.device(w.owner.id, k.deviceKeyId, NOW)).toBeNull();
     expect(syncs).toBe(2);
   });
 

@@ -186,11 +186,12 @@ describe('ModCase (board ModCase)', () => {
     expect(text('escrow')).toContain('4.000000 XMR locked');
     expect(text('escrow')).toContain('10 confirmations');
     expect(button('Request unblurred proof from harbor_lin')).toBeDefined();
-    // The chat stays closed: its read is not built (NEEDS_P4_CHAT_MEMBERSHIP), and nothing asks for it.
+    // Design build task 9: the chat opens only on a confirmed device (this test browser keeps no device
+    // key: no IndexedDB), and nothing asks for it until the moderator opens it.
     const chat = part('chat')!;
     expect(button('Open the full chat', chat)?.disabled).toBe(true);
     expect(api.calls.filter((c) => /\/chat\b/.test(c.path))).toEqual([]);
-    expect(text('message')).toContain('Your messages show the X2F Moderator badge to both traders.');
+    expect(text('message')).toContain('Open the full chat on this device to write to both traders.');
   });
 
   it('the ruling: two outcomes, the 40-character hint, "Send ruling for approval" above the limit; the tap binds exactly this ruling', async () => {
@@ -463,7 +464,7 @@ describe('ModCase (board ModCase)', () => {
     expect(part('ruling')).not.toBeNull();
   });
 
-  it('messages both traders, asks for unblurred proof and freezes or lifts a party', async () => {
+  it('never sends a message as text (design build task 9: sealed on a confirmed device only), asks for unblurred proof and freezes or lifts a party', async () => {
     const api = fakeApi({
       'GET /staff/v1/me': { body: MOD },
       'GET /staff/v1/disputes/:code': { body: kase({}, {}) },
@@ -475,9 +476,11 @@ describe('ModCase (board ModCase)', () => {
     await open(`/disputes/${CODE}`);
     typeInto(field('Message both traders'), 'Hello both, I am looking at this now.');
     await settle();
+    // Until the chat is open on a confirmed device there is no key to seal with: Send stays off,
+    // and no text ever goes to the API (the sealing itself is tested in caseChat.test.ts).
+    expect(button('Send', part('message')!)?.disabled).toBe(true);
     await click(button('Send', part('message')!));
-    expect(api.calls.find((c) => c.path === `/staff/v1/disputes/${CODE}/messages`)!.body).toEqual({ text: 'Hello both, I am looking at this now.' });
-    expect(text('message')).toContain('Sent and logged.');
+    expect(api.calls.filter((c) => c.path === `/staff/v1/disputes/${CODE}/messages`)).toEqual([]);
 
     await click(button('Request unblurred proof from harbor_lin'));
     expect(api.calls.find((c) => c.path === `/staff/v1/disputes/${CODE}/proof-request`)!.body).toEqual({ side: 'buyer' });

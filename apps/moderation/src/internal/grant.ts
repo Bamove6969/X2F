@@ -3,11 +3,9 @@ import { deviceLive } from '../gate/devices.js';
 import type { GateState } from '../gate/store.js';
 
 /**
- * Design build task 9 groundwork (design-chat-membership-keys-2026-11-08; lead 18 Nov, option C):
- * who may be granted a disputed trade's chat key, by this process's own records. `server.ts` runs
- * these checks for `POST /internal/chat/grant`; nothing is re-wrapped yet (NEEDS_P4_CHAT_MEMBERSHIP:
- * there is no moderator copy of the chat key until design tasks 3-6), so a request that passes
- * every check is recorded in `mod_chat_access` and still refused.
+ * Design build task 9 (design-chat-membership-keys-2026-11-08; lead 18 Nov): who may be granted a
+ * disputed trade's chat key, and who may send as the moderator, by this process's own records.
+ * `server.ts` runs these checks for `POST /internal/chat/grant` and `POST /internal/chat/send`.
  */
 
 /**
@@ -32,29 +30,28 @@ export interface StaffDirectory {
 }
 
 /**
- * The live certified staff device keys (design task 8, the `certify-device` tap). `live` is true
- * only for a certification of exactly this key to exactly this person, unexpired and unrevoked at
- * `at` (this process's clock), while the person still stands in the gate.
+ * The live certified staff device keys (design task 8, the `certify-device` tap). `device` answers
+ * the device's certified public keys (hex) only for a certification of exactly this key to exactly
+ * this person, unexpired and unrevoked at `at` (this process's clock), while the person still
+ * stands in the gate; else null.
  */
 export interface DeviceCertificates {
-  live(accountId: string, deviceKeyId: string, at: Date): Promise<boolean>;
+  device(accountId: string, deviceKeyId: string, at: Date): Promise<{ signPublic: string; boxPublic: string } | null>;
 }
 
 /** The certified device keys on the gate's state (design task 8); syncs the registry first, as `gateStaffDirectory`. */
-export function gateDevices(g: { readonly state: GateState; sync(): Promise<void> }): DeviceCertificates & {
-  /** The device's certified public keys (hex) when it is live, else null. */
-  device(accountId: string, deviceKeyId: string, at: Date): Promise<{ signPublic: string; boxPublic: string } | null>;
-} {
-  const device = async (accountId: string, deviceKeyId: string, at: Date) => {
-    await g.sync();
-    const d = deviceLive(g.state, accountId, deviceKeyId, at);
-    return d === null ? null : { signPublic: d.signPublic, boxPublic: d.boxPublic };
+export function gateDevices(g: { readonly state: GateState; sync(): Promise<void> }): DeviceCertificates {
+  return {
+    async device(accountId, deviceKeyId, at) {
+      await g.sync();
+      const d = deviceLive(g.state, accountId, deviceKeyId, at);
+      return d === null ? null : { signPublic: d.signPublic, boxPublic: d.boxPublic };
+    },
   };
-  return { device, live: async (accountId, deviceKeyId, at) => (await device(accountId, deviceKeyId, at)) !== null };
 }
 
 /** No gate: no device key is certified, so no grant passes. */
-export const NO_CERTIFIED_DEVICES: DeviceCertificates = { live: async () => false };
+export const NO_CERTIFIED_DEVICES: DeviceCertificates = { device: async () => null };
 
 /** Lead 18 Nov: a staff device key's id is SHA-256 of its Ed25519 signing public key, hex, first 32 characters. */
 export function deviceKeyIdOf(signPublic: Uint8Array): string {

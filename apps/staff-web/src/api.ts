@@ -349,7 +349,14 @@ export const disputeQueue = () => staffApi<Queue>('/staff/v1/disputes?filter=all
 export const takeNext = () => staffApi<{ code: string | null }>('/staff/v1/disputes/next', { method: 'POST', body: {} });
 export const takeCase = (code: string) => staffApi<{ code: string }>(casePath(code, '/take'), { method: 'POST', body: {} });
 export const disputeCase = (code: string) => staffApi<DisputeCase>(casePath(code));
-export const messageTraders = (code: string, text: string) => staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: { text } });
+/**
+ * Design build task 9: a moderator message, sealed under the chat key and countersigned by this
+ * device (chat/reader.ts `sealModMessage`); the API never sees its text.
+ */
+export const messageTraders = (code: string, sealed: Record<string, unknown>) => staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: sealed });
+/** Design build task 9: the moderator's read: the chat key re-wrapped to this device, and the chat's ciphertext. Logged (`chat.read`). */
+export const readCaseChat = (code: string, deviceKeyId: string) =>
+  staffApi<import('./chat/reader.js').CaseChatAnswer>(casePath(code, '/chat'), { method: 'POST', body: { deviceKeyId } });
 export const requestProof = (code: string, side: Side) => staffApi<unknown>(casePath(code, '/proof-request'), { method: 'POST', body: { side } });
 export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
   staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });

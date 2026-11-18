@@ -7,6 +7,8 @@ import {
   disputeCase,
   messageTraders,
   proposeRuling,
+  readCaseChat,
+  StaffApiError,
   requestProof,
   sendBackRuling,
   serverNow,
@@ -16,6 +18,9 @@ import {
   type DisputeCase,
   type Side,
 } from '../api.js';
+import { CaseChatError, forget, modTextOk, openCaseChat, sealModMessage, type CaseChatLine, type OpenedChat } from '../chat/reader.js';
+import type { StaffDeviceKey } from '../device/deviceKey.js';
+import { DeviceCard } from '../ui/DeviceCard.js';
 import { faultText } from '../refusals.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { Button, ChoiceGroup, Notice } from '../ui/kit.js';
@@ -87,9 +92,11 @@ function rulingLabels(c: DisputeCase, outcome: RulingOutcome): Record<string, st
  * owner, never someone involved in round 1 of an appeal); only the assignee proposes; only a senior
  * or the owner who is not the proposer approves (rulings.approve; the API still checks R37).
  *
- * NEEDS_P4_CHAT_MEMBERSHIP: the full chat and the unblurred proof are not readable here yet (the
- * staff chat keys, design-chat-membership-keys-2026-11-08 build task 9). "Open the full chat" stays
- * disabled and nothing on this page fetches chat text.
+ * Design build task 9: "Open the full chat" asks the API for the chat key re-wrapped to this
+ * browser's certified device (DeviceCard confirms it first) and decrypts here (chat/reader.ts); the
+ * read is logged. A message to both traders is sealed and countersigned here too. The chat key is
+ * held in this page's memory while it is open and wiped when it closes.
+ * NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is not readable here yet.
  *
  * The board's account actions are not offered: a freeze is its own act (D-015, the Freeze card) and
  * the bans are Task 27's (the API refuses any account action on the ruling). The board's extra
@@ -101,6 +108,12 @@ export function ModCase({ role }: { role: StaffRole }) {
   const [c, setC] = useState<DisputeCase | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [tap, setTap] = useState<Tap | null>(null);
+  const [device, setDevice] = useState<StaffDeviceKey | null>(null);
+  const [opened, setOpened] = useState<OpenedChat | null>(null);
+  // The chat key never outlives the page.
+  useEffect(() => () => {
+    if (opened !== null) forget(opened);
+  }, [opened]);
 
   const load = async () => {
     try {
@@ -163,8 +176,8 @@ export function ModCase({ role }: { role: StaffRole }) {
 
       <div className="x2f-staff-case">
         <div className="x2f-stack">
-          <ChatCard />
-          {work ? <MessageCard code={c.code} /> : null}
+          <ChatCard code={c.code} work={work} device={device} onDevice={setDevice} opened={opened} onOpened={setOpened} buyer={buyer} seller={seller} />
+          {work ? <MessageCard code={c.code} device={device} opened={opened} onSent={(o) => setOpened(o)} /> : null}
         </div>
         <div className="x2f-stack">
           <TradersCard c={c} />
@@ -254,31 +267,91 @@ function CaseChips({ c, role, onTaken }: { c: DisputeCase; role: StaffRole; onTa
   );
 }
 
-/** NEEDS_P4_CHAT_MEMBERSHIP: closed, and no way to open it yet (no board copy for the closed state; A8). COPY-UNSIGNED */
-function ChatCard() {
+/** The pinned moderation signing key, as the trader app pins it (VITE_MOD_SIGNING_PUBLIC). */
+const MOD_SIGNING_PUBLIC: string = (import.meta.env?.VITE_MOD_SIGNING_PUBLIC as string | undefined) ?? '';
+
+/**
+ * Design build task 9: the full chat, opened on this certified device. No board copy for these
+ * states yet (A8): every string is COPY-UNSIGNED, DESIGNER-REVIEW.
+ */
+function ChatCard({ code, work, device, onDevice, opened, onOpened, buyer, seller }: {
+  code: string;
+  work: boolean;
+  device: StaffDeviceKey | null;
+  onDevice: (k: StaffDeviceKey) => void;
+  opened: OpenedChat | null;
+  onOpened: (o: OpenedChat) => void;
+  buyer: string;
+  seller: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+  const open = async () => {
+    if (device === null) return;
+    setBusy(true);
+    setFault(null);
+    try {
+      onOpened(await openCaseChat(await readCaseChat(code, device.deviceKeyId), device, MOD_SIGNING_PUBLIC));
+    } catch (e) {
+      // not-a-refusal: a check on what the server sent, or a fault; the refusals come through faultText
+      if (e instanceof CaseChatError) setFault('This chat did not check out on this device, so nothing is shown. Tell the owner.');
+      else setFault(faultText(e, 'The chat could not be opened just now. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const who = (f: CaseChatLine['from']) => (f === 'mod' ? 'Moderator' : f === 'buyer' ? buyer : seller);
   return (
     <section className="x2f-card" data-part="chat">
       <h2 className="x2f-h2">Full chat</h2>
-      {/* not-a-refusal: an explanation: the chat read is not built yet (a gap, not a rule that stops the moderator) */}
-      <p className="x2f-staff-hint">The full chat can't be opened here yet. It needs the staff chat keys, which are still being built. Opening it will be written to the activity log.</p>
-      <Button variant="secondary" disabled>
-        Open the full chat
-      </Button>
+      {opened === null ? (
+        <>
+          {work ? <DeviceCard onReady={onDevice} /> : null}
+          <p className="x2f-staff-hint">Opening the chat is written to the activity log.</p>
+          <Button variant="secondary" disabled={!work || device === null || busy} onClick={() => void open()}>
+            Open the full chat
+          </Button>
+        </>
+      ) : (
+        <ol className="x2f-staff-chat" data-part="chat-lines" aria-label="Messages">
+          {opened.lines.map((l) => (
+            <li key={l.id} data-from={l.from}>
+              <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
+              {l.text}
+            </li>
+          ))}
+          {opened.unreadable > 0 ? <li data-part="chat-unreadable">{`${opened.unreadable} message(s) did not open on this device.`}</li> : null}
+        </ol>
+      )}
+      {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
     </section>
   );
 }
 
-function MessageCard({ code }: { code: string }) {
+function MessageCard({ code, device, opened, onSent }: { code: string; device: StaffDeviceKey | null; opened: OpenedChat | null; onSent: (o: OpenedChat) => void }) {
   const id = useId();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
+  const ready = device !== null && opened !== null;
 
   const send = async () => {
+    if (device === null || opened === null) return;
     setBusy(true);
     setNote(null);
     try {
-      await messageTraders(code, text);
+      let seq = opened.nextSeq;
+      let res: { id: string };
+      try {
+        res = await messageTraders(code, await sealModMessage(opened, text, device, serverNow(), seq));
+      } catch (e) {
+        // Another moderator message went first: seal again at the seq the moderation process names, once.
+        const next = e instanceof StaffApiError ? e.extra.nextSeq : undefined;
+        if (codeOf(e) !== 'stale-seq' || typeof next !== 'number') throw e;
+        seq = next;
+        res = await messageTraders(code, await sealModMessage(opened, text, device, serverNow(), seq));
+      }
+      onSent({ ...opened, nextSeq: seq + 1, lines: [...opened.lines, { id: res.id, from: 'mod', text, at: serverNow().toISOString() }] });
       setText('');
       setNote({ tone: 'ok', text: 'Sent and logged.' });
     } catch (e) {
@@ -296,10 +369,11 @@ function MessageCard({ code }: { code: string }) {
         </label>
         <textarea id={id} className="x2f-textarea" rows={3} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} />
       </div>
-      <Button variant="secondary" disabled={busy || text.trim() === ''} onClick={() => void send()}>
+      <Button variant="secondary" disabled={busy || !ready || !modTextOk(text)} onClick={() => void send()}>
         Send
       </Button>
-      <p className="x2f-staff-hint">Your messages show the X2F Moderator badge to both traders.</p>
+      {/* COPY-UNSIGNED */}
+      {ready ? <p className="x2f-staff-hint">Your messages show the X2F Moderator badge to both traders.</p> : <p className="x2f-staff-hint">Open the full chat on this device to write to both traders.</p>}
       {note !== null ? (note.tone === 'ok' ? <p className="x2f-staff-ok">{note.text}</p> : <Notice tone="danger">{note.text}</Notice>) : null}
     </section>
   );
@@ -340,7 +414,7 @@ function ProofCard({ c, buyer, seller, work }: { c: DisputeCase; buyer: string; 
   return (
     <section className="x2f-card" data-part="proof">
       <h2 className="x2f-h2">Payment proof</h2>
-      {/* NEEDS_P4_CHAT_MEMBERSHIP: the proof itself is not readable here yet. COPY-UNSIGNED */}
+      {/* NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet. COPY-UNSIGNED */}
       {/* not-a-refusal: an explanation: viewing the proof is not built yet */}
       <p className="x2f-staff-hint">The proof can't be viewed here yet. You can still ask a trader for the unblurred copy.</p>
       {work && asked === null ? (

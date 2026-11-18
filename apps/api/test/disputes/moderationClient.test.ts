@@ -48,19 +48,36 @@ const json = (res: ServerResponse, status: number, v: unknown) => {
   res.end(JSON.stringify(v));
 };
 
+/** A countersigned message as staff-web sends it (the shapes only: this client never checks them). */
+const SEND = {
+  code: CODE, logEntryId: '42', staffAccountId: '00000000-0000-4000-8000-0000000000aa', deviceKeyId: 'd'.repeat(32),
+  seq: 0, nonce: 'bm9uY2U=', ct: 'Y3Q=', ctSha256: 'e'.repeat(64), requestId: 'f'.repeat(32), issuedAt: '2026-11-02T12:00:00.000Z', sig: 'a'.repeat(128),
+};
+const GRANT = { code: CODE, logEntryId: '43', staffAccountId: SEND.staffAccountId, deviceKeyId: SEND.deviceKeyId };
+
 const client = (socket: string, timeoutMs?: number) => socketModerationClient({ socketPath: socket, secret: SECRET, clock: () => NOW, ...(timeoutMs ? { timeoutMs } : {}) });
 
 describe('socketModerationClient', () => {
   it('signs method, path, exact body and time with the shared secret', async () => {
     const { socket, seen } = await serve((_q, res) => json(res, 200, { envelope: { v: 1 } }));
-    expect(await client(socket).chatSend({ code: CODE, logEntryId: '42', text: 'Hi' })).toEqual({ envelope: { v: 1 } });
+    expect(await client(socket).chatSend(SEND)).toEqual({ envelope: { v: 1 } });
     const s = seen[0]!;
-    expect([s.method, s.path, s.body, s.ts]).toEqual(['POST', '/internal/chat/send', JSON.stringify({ code: CODE, logEntryId: '42', text: 'Hi' }), String(NOW.getTime())]);
+    expect([s.method, s.path, s.body, s.ts]).toEqual(['POST', '/internal/chat/send', JSON.stringify(SEND), String(NOW.getTime())]);
     const want = createHmac('sha256', SECRET).update(`x2f/mod-internal/v1\0POST\0/internal/chat/send\0${s.body}\0${s.ts}`, 'utf8').digest('hex');
     expect(s.mac).toBe(want);
   });
 
-  it('NEEDS_P4_CHAT_MEMBERSHIP: has no chat read and no proof read (the key-membership design replaces both)', async () => {
+  it('landed (was NEEDS_P4_CHAT_MEMBERSHIP): the read is a grant (a wrap and its fingerprint), never text', async () => {
+    const { socket, seen } = await serve((_q, res) => json(res, 200, { wrap: 'd3JhcA==', tkh: 'b'.repeat(64), boxPublic: 'c'.repeat(64), nextSeq: 3 }));
+    expect(await client(socket).chatGrant(GRANT)).toEqual({ wrap: 'd3JhcA==', tkh: 'b'.repeat(64), boxPublic: 'c'.repeat(64), nextSeq: 3 });
+    expect([seen[0]!.path, seen[0]!.body]).toEqual(['/internal/chat/grant', JSON.stringify(GRANT)]);
+    const { socket: bad } = await serve((_q, res) => json(res, 200, { text: 'plaintext' }));
+    await expect(client(bad).chatGrant(GRANT)).rejects.toMatchObject({ status: 502, code: 'moderation-unavailable' });
+    const src = await (await import('node:fs/promises')).readFile(new URL('../../src/disputes/moderationClient.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/NEEDS_P4_CHAT_MEMBERSHIP|NEEDS_P4_MOD_COUNTERSIGN|X2F_DEV_MOD_CHAT|text: a\.text/);
+  });
+
+  it('NEEDS_P5_PROOF_ENVELOPE: has no chat read and no proof read returning plaintext', async () => {
     // Review 8 Nov I-1: the unblurred proof is not relayed through the API either.
     const c = client('/tmp/x2f-unused.sock') as unknown as Record<string, unknown>;
     for (const m of ['chatRead', 'proofRead']) {
@@ -76,21 +93,24 @@ describe('socketModerationClient', () => {
     let answer: (res: ServerResponse) => void = (res) => json(res, 403, { error: 'log-entry-invalid' });
     const { socket } = await serve((_q, res) => answer(res));
     const c = client(socket);
-    await expect(c.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 403, code: 'log-entry-invalid' });
+    await expect(c.chatSend(SEND)).rejects.toMatchObject({ status: 403, code: 'log-entry-invalid' });
     answer = (res) => json(res, 404, { error: 'no-chat' });
-    await expect(c.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 404, code: 'no-chat' });
+    await expect(c.chatSend(SEND)).rejects.toMatchObject({ status: 404, code: 'no-chat' });
+    // A stale seq carries the next one.
+    answer = (res) => json(res, 409, { error: 'stale-seq', nextSeq: 7 });
+    await expect(c.chatSend(SEND)).rejects.toMatchObject({ status: 409, code: 'stale-seq', nextSeq: 7 });
     // An answer with no envelope, a code that is not one: refused.
     answer = (res) => json(res, 200, { messages: [] });
-    await expect(c.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 502, code: 'moderation-unavailable' });
+    await expect(c.chatSend(SEND)).rejects.toMatchObject({ status: 502, code: 'moderation-unavailable' });
     answer = (res) => json(res, 500, { error: 'Something <b>long</b> and odd' });
-    await expect(c.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 500, code: 'moderation-unavailable' });
+    await expect(c.chatSend(SEND)).rejects.toMatchObject({ status: 500, code: 'moderation-unavailable' });
   });
 
   it('a missing socket, or one that never answers, is moderation-unavailable (503)', async () => {
     const missing = client(join(tmpdir(), `x2f-none-${randomBytes(6).toString('hex')}.sock`));
-    await expect(missing.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 503, code: 'moderation-unavailable' });
+    await expect(missing.chatSend(SEND)).rejects.toMatchObject({ status: 503, code: 'moderation-unavailable' });
     const { socket } = await serve(() => undefined);
-    await expect(client(socket, 200).chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toBeInstanceOf(ModerationError);
+    await expect(client(socket, 200).chatSend(SEND)).rejects.toBeInstanceOf(ModerationError);
   });
 
   it('needs a 32-byte secret', () => {
@@ -103,7 +123,7 @@ describe('moderationFromEnv', () => {
   it('is no moderation process when both are unset', async () => {
     const c = moderationFromEnv({}, () => NOW);
     expect(c).toBe(NO_MODERATION);
-    await expect(c.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 503, code: 'moderation-unavailable' });
+    await expect(c.chatSend(SEND)).rejects.toMatchObject({ status: 503, code: 'moderation-unavailable' });
   });
 
   it('refuses one without the other or a malformed value, naming the variable and never the value', () => {

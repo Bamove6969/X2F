@@ -240,6 +240,15 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'grant-required': 'the dispute needs the chat key grant (the app adds it and asks again)',
   'bad-grant': 'a device check on the dispute grant (a fault)',
   'grant-not-needed': 'no fallback grant is needed (the engine moves on)',
+  // Design build task 9: the moderation process's refusals of a moderator's read or message; staff app only.
+  'device-not-certified': 'a staff answer: this staff device is not confirmed (staff app only)',
+  'not-on-case': 'a staff answer: the moderation process does not see this person on the case (staff app only)',
+  'not-disputed': 'a staff answer: the moderation process does not see the trade disputed (staff app only)',
+  'no-grant': 'a staff answer: no trader has handed the chat key to the moderator yet (staff app only)',
+  replayed: 'a staff answer: that moderator message was already sent (staff app only)',
+  'stale-countersign': 'a staff answer: the moderator message was signed too long ago (staff app only)',
+  'bad-countersign': 'a staff device check on the moderator message (a fault; staff app only)',
+  'gate-unavailable': 'a staff answer: the moderation process has no ruling gate (staff app only)',
   // Design build task 8: staff device certification; staff app only, never a trader answer.
   'device-exists': 'a staff answer: that staff device key is already certified (staff app only)',
   'device-limit': 'a staff answer: the staff member already has 3 certified devices (staff app only)',

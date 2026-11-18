@@ -10,6 +10,7 @@ export {
   instructionsSha256,
   isAttestedTerms,
   verifyAttestation,
+  verifyAttestationSignature,
   type Attestation,
   type AttestationErrorCode,
   type AttestationKey,

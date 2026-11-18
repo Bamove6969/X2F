@@ -1,7 +1,7 @@
 // Plan 4 Task 18: the moderator pages in a real browser, checked with the parity harness against
 // their boards: ModQueue at 1280x1000 and ModCase at 1280x1600, with the trade codes masked; the
-// stubbed times are set to the boards' own, and the chat is not on the page at all
-// (NEEDS_P4_CHAT_MEMBERSHIP). The staff API is stubbed
+// stubbed times are set to the boards' own, and the chat's lines are not on the page (design build
+// task 9: they show only once opened on a confirmed device, which this run does not do). The staff API is stubbed
 // with page.route in the shapes of apps/api/src/disputes/staffRoutes.ts, filled with the boards' own
 // example data, so any board copy the page does not show is either listed below with its reason or
 // fails the test. The case page is also checked to make no chat request.
@@ -81,14 +81,14 @@ async function parityFailures(page: Page, board: string, viewport: '1280x1000' |
 
 /**
  * ModCase copy the page does not show, each for a reason recorded in ModCase.tsx:
- * - NEEDS_P4_CHAT_MEMBERSHIP: no chat read yet, so no transcript and no "Opened by you at" header;
+ * - design build task 9: the chat is not opened in this run (it needs a confirmed staff device), so no transcript and no "Opened by you at" header;
  * - the proof itself is not viewable yet, so its three facts are not shown, and the request names
  *   the trader asked (the API asks for a side; the board has one button for the uploader);
  * - the board's trader lines past trades and positive share are not in the case answer;
  * - the escrow's "Secured · 10 of 10": the case answer has the confirmations, not the target.
  */
 const KNOWN_CASE = [
-  // The chat (NEEDS_P4_CHAT_MEMBERSHIP): its header, both sections and every line.
+  // The chat (not opened in this run, design build task 9): its header, both sections and every line.
   /^board copy missing: "Opened by you at \d\d:\d\d · logged"$/,
   /^board copy missing: "Before the trade"$/,
   /^board copy missing: "Trade"$/,

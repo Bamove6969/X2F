@@ -150,6 +150,7 @@ describe('the shred pass', () => {
     // Build task 6: this process's record of an accepted grant goes too.
     await db.query('insert into mod_chat_grants (chat, grant_by, grant_sig, tkh, accepted_at) values ($1, $2, $3, $4, $5)', [c.chat, 'buyer', 'c'.repeat(128), 'd'.repeat(64), T0]);
     await db.query('insert into mod_chat_notices (chat, trade, dispute_seq, issued_at) values ($1, $2, 1, $3)', [c.chat, c.chat, T0]);
+    await db.query('insert into mod_countersign_requests (request_id, chat, at) values ($1, $2, $3)', [randomBytes(16).toString('hex'), c.chat, T0]);
 
     now = new Date(T0.getTime() + 31 * DAY);
     const net = fakeApi({ orders: () => [order(c.chat)] });
@@ -165,6 +166,7 @@ describe('the shred pass', () => {
     expect((await db.query('select 1 from mod_chat_access where chat = $1', [c.chat])).rows).toHaveLength(0);
     expect((await db.query('select 1 from mod_chat_grants where chat = $1', [c.chat])).rows).toHaveLength(0);
     expect((await db.query('select 1 from mod_chat_notices where chat = $1', [c.chat])).rows).toHaveLength(0);
+    expect((await db.query('select 1 from mod_countersign_requests where chat = $1', [c.chat])).rows).toHaveLength(0);
     const dump = await dumpAll();
     expect(dump).not.toContain(c.chat);
     expect(dump).not.toContain(c.participants.mod.signPublic);

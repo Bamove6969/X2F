@@ -19,6 +19,10 @@ import {
   ReplayGuard,
   seal,
   sealChat,
+  encryptChat,
+  signChatEnvelope,
+  makeModCountersign,
+  verifyModCountersign,
   unwrapChatKey,
   verifyChatGrant,
   verifyChatKeyRecord,
@@ -243,5 +247,46 @@ describe('the grant acceptance (build task 6)', () => {
     expect(await code(verifyGrantAccepted(acc, { chat: 'other', participants }))).toBe('bad-signature');
     // Not a grant, a record or a notice.
     expect(await code(verifyChatGrant(acc, { chat: CHAT, participants }))).toBe('bad-signature');
+  });
+});
+
+describe('build task 9: a staff device seals, moderation countersigns (x2f/mod-countersign/v1)', () => {
+  it('encryptChat then signChatEnvelope is a v2 envelope every member opens, as sealChat makes', async () => {
+    const buyer = await generateIdentity();
+    const seller = await generateIdentity();
+    const mod = await generateIdentity();
+    const participants = { buyer: { signPublic: buyer.signPublic, boxPublic: buyer.boxPublic }, seller: { signPublic: seller.signPublic, boxPublic: seller.boxPublic }, mod: { signPublic: mod.signPublic, boxPublic: mod.boxPublic } };
+    const tk = await newChatKey();
+    const body = await encryptChat({ trade: 'chan-1', from: 'mod', seq: 3, type: 'chat.msg', payload: { text: 'moderator here' }, tk });
+    const env = await signChatEnvelope(body, mod);
+    const o = await openChat(env, { tk, trade: 'chan-1', participants, guard: new ReplayGuard('chan-1') });
+    expect(o).toEqual({ type: 'chat.msg', payload: { text: 'moderator here' }, from: 'mod' });
+    // Nothing malformed is ever signed.
+    await expect(signChatEnvelope({ ...body, ct: 'AAAA' }, mod)).rejects.toBeInstanceOf(ProtocolError);
+    await expect(signChatEnvelope({ ...body, extra: 1 }, mod)).rejects.toBeInstanceOf(ProtocolError);
+  });
+
+  it('the countersign binds the channel, seq, ciphertext, requestId and issuedAt to the device key', async () => {
+    const device = await generateIdentity();
+    const tk = await newChatKey();
+    const body = await encryptChat({ trade: 'chan-1', from: 'mod', seq: 3, type: 'chat.msg', payload: { text: 'hi' }, tk });
+    const c = await makeModCountersign({ body, requestId: 'a'.repeat(32), issuedAt: '2026-11-18T12:00:00.000Z', me: device });
+    expect(await verifyModCountersign(c, { body, signPublic: device.signPublic })).toEqual(c);
+    const other = await encryptChat({ trade: 'chan-1', from: 'mod', seq: 3, type: 'chat.msg', payload: { text: 'other words' }, tk });
+    const stranger = await generateIdentity();
+    for (const [why, raw, b, pk] of [
+      ['other ciphertext', c, other, device.signPublic],
+      ['other seq', c, { ...body, seq: 4 }, device.signPublic],
+      ['other chat', c, { ...body, trade: 'chan-2' }, device.signPublic],
+      ['other key', c, body, stranger.signPublic],
+      ['changed requestId', { ...c, requestId: 'b'.repeat(32) }, body, device.signPublic],
+      ['changed issuedAt', { ...c, issuedAt: '2026-11-18T12:00:01.000Z' }, body, device.signPublic],
+      ['extra field', { ...c, x: 1 }, body, device.signPublic],
+    ] as const) {
+      await expect(verifyModCountersign(raw, { body: b as typeof body, signPublic: pk }), why).rejects.toBeInstanceOf(ProtocolError);
+    }
+    // Only for a moderator body.
+    const fromBuyer = await encryptChat({ trade: 'chan-1', from: 'buyer', seq: 3, type: 'chat.msg', payload: { text: 'hi' }, tk });
+    await expect(makeModCountersign({ body: fromBuyer, requestId: 'a'.repeat(32), issuedAt: '2026-11-18T12:00:00.000Z', me: device })).rejects.toBeInstanceOf(TypeError);
   });
 });

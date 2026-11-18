@@ -111,6 +111,15 @@ export type ApiErrorCode =
   // Design build task 4 (chat membership keys): the signed key record.
   | 'bad-key-record'
   | 'key-exists'
+  // Chat membership design task 9: the moderator's read (a re-wrap) and countersigned message, as the moderation process refuses them.
+  | 'device-not-certified'
+  | 'not-on-case'
+  | 'not-disputed'
+  | 'no-grant'
+  | 'replayed'
+  | 'stale-countersign'
+  | 'bad-countersign'
+  | 'gate-unavailable'
   // Chat membership design task 8: staff device certification.
   | 'device-exists'
   | 'device-limit'

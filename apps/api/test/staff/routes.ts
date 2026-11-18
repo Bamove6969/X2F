@@ -133,6 +133,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/disputes/:code/take', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
   { method: 'GET', url: '/staff/v1/disputes/:code', perm: 'disputes.handle', allowed: MODERATORS },
   { method: 'POST', url: '/staff/v1/disputes/:code/messages', perm: 'disputes.handle', allowed: MODERATORS, body: { text: 'Hello' } },
+  // Design build task 9: the moderator's read (a re-wrap to the certified device; a bad body stops at validation).
+  { method: 'POST', url: '/staff/v1/disputes/:code/chat', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
   { method: 'POST', url: '/staff/v1/disputes/:code/proof-request', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'buyer' } },
   { method: 'POST', url: '/staff/v1/disputes/:code/freeze', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', on: true, reason: 'no-reply' } },
   // Task 12: rulings. Bodies are valid in shape, so the allowed roles reach the handler (an unknown case: 404).
