@@ -309,6 +309,19 @@ const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and
 const posterRated = (now: string): string => `not ${pendingReviewSql('o.account_id', now)}`;
 
 /**
+ * Plan 5 Task 5: how many of `accountId`'s offers anyone may see now (the profile's "Offers (n)"),
+ * by the same rules as every list (LISTED, posterRated).
+ */
+export async function listedOfferCount(q: Queryable, accountId: string, now: Date): Promise<number> {
+  const { rows } = await q.query<{ n: string }>(
+    `select count(*) as n from offers o join accounts a on a.id = o.account_id
+      where o.account_id = $1 and ${LISTED} and ${posterRated('$2::timestamptz')}`,
+    [accountId, now],
+  );
+  return Number(rows[0]!.n);
+}
+
+/**
  * A rate in SQL, with the currency's market price bound as `param` (null while the feed has none)
  * and `bps` the basis points over it: the same number as @x2f/trade's `rateFor` (rounded half up:
  * (market × (10000 + bps) × 2 + 10000) div 20000), so the database can sort before the limit.

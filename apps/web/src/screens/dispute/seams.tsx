@@ -6,11 +6,14 @@
 //   2026-10-30), under the server's own system cards (dispute opened, moderator joined) drawn here.
 // - Proof pipeline (Plan 5 Tasks 13-15): "Add more evidence" on DisputeOpen and the unblurred-proof
 //   request on DisputeRoom. Spec 4.2: metadata is stripped and private details blurred on the device,
-//   and the unblurred copy goes to the moderator only. Plan 5 builds that pipeline; until then no
-//   file can be picked at all (there is no file input), so nothing unprocessed can ever be sent.
+//   and the unblurred copy goes to the moderator only. The request is wired (UnblurredRequest ->
+//   screens/proof/SendUnblurred.tsx, behind VITE_X2F_PROOF_UPLOAD). NEEDS_PLAN_5 evidence: no file
+//   can be picked for evidence yet (no file input), so nothing unprocessed can ever be sent.
 // - Proofs already in the trade (Task 23's proof slot, then Plan 5): the "Zelle screenshot · Already
 //   in this trade, blurred" card and the "Your Zelle screenshot" evidence chip. None until then.
 import type { ReactNode } from 'react';
+import { proofUploadOn } from '../../proof/flag.js';
+import { SendUnblurred, UNBLURRED_SENT_CARD } from '../proof/SendUnblurred.js';
 import type { DisputeTrade, DisputeView } from './api.js';
 import { clockTime, reasonLabel } from './rules.js';
 
@@ -35,7 +38,7 @@ export function DisputeSystemCards({ systemCards }: ChatSlotProps): ReactNode {
 }
 
 /** The server-recorded events of the dispute, as the board's system cards, for this side. */
-export function systemCardsFor(trade: DisputeTrade, d: DisputeView): { at: string; text: string }[] {
+export function systemCardsFor(trade: DisputeTrade, d: DisputeView, unblurredSent = false): { at: string; text: string }[] {
   const cards: { at: string; text: string }[] = [];
   cards.push({
     at: d.openedAt,
@@ -48,6 +51,11 @@ export function systemCardsFor(trade: DisputeTrade, d: DisputeView): { at: strin
           : `${trade.counterparty} opened a dispute`,
   });
   if (d.moderator !== null) cards.push({ at: d.moderator.joinedAt, text: `Moderator ${d.moderator.name} joined this dispute` });
+  // Plan 5 Task 15: the board's line, from the server's record of the copy (proofRequest.sentAt),
+  // which only the side that was asked ever gets. Review I2: and only once the copy's key reached the
+  // moderator (`unblurredSent`, SendUnblurred's useUnblurredStatus): `sentAt` alone is the upload.
+  const sentAt = d.proofRequest?.sentAt ?? null;
+  if (sentAt !== null && unblurredSent) cards.push({ at: sentAt, text: UNBLURRED_SENT_CARD });
   return cards;
 }
 
@@ -81,9 +89,15 @@ export function EvidenceUpload(): ReactNode {
   );
 }
 
-/** NEEDS_PLAN_5 (Task 15 SendUnblurred) with Plan 4's proof request record: nothing until both exist. */
-export function UnblurredRequest(_p: { trade: DisputeTrade; dispute: DisputeView }): ReactNode {
-  return null;
+/**
+ * Plan 5 Task 15: SendUnblurred once the open dispute's moderator asked THIS trader (the dispute
+ * view's `proofRequest`, which the other side never gets), behind the proof-upload flag like the
+ * rest of the pipeline. The dispute screen's poll (and the live hint) brings the server's `sentAt`.
+ */
+export function UnblurredRequest({ trade, dispute }: { trade: DisputeTrade; dispute: DisputeView }): ReactNode {
+  const request = dispute.proofRequest ?? null;
+  if (!proofUploadOn() || request === null || dispute.status === 'closed') return null;
+  return <SendUnblurred code={trade.code} request={request} counterparty={trade.counterparty} />;
 }
 
 function UploadIcon() {

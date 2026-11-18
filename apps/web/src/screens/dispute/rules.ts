@@ -327,10 +327,11 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
     destination = { app, end: r.destination.addressEnd.slice(-4) };
   }
   const loser = loserOf(r.outcome);
-  // The board's line, true today and neutral on how long: nothing deletes dispute records yet, and
-  // the keep time after the dispute closes is pending the owner's Plan 7 Q1 (Plan 4 Task 23 builds
-  // the purge); change this line with it. The lost-dispute clause is the board's; a lost dispute
-  // still counts as a completed trade and drops no stage (owner 2026-10-29). COPY-UNSIGNED (pending Q1)
+  // The board's line, true and neutral on how long: dispute records live exactly as long as the
+  // trade (Plan 4 Task 23 / Plan 7 Task 2: the whole trade goes 90 days after its last dispute
+  // closes, owner p11-11), and the trade room shows that date (SelfDestruct.tsx). The lost-dispute
+  // clause is the board's; a lost dispute still counts as a completed trade and drops no stage
+  // (owner 2026-10-29), and it stays on the profile after the purge (701 purged_lost). COPY-UNSIGNED
   let footer = 'This ruling and its evidence are kept with the trade.';
   if (loser !== null) footer += loser === me ? ' It appears on your profile as a lost dispute.' : ` It appears on ${nameOf(otherSide)}'s profile as a lost dispute.`;
   return { label, title, destination, footer };

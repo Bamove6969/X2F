@@ -92,7 +92,8 @@ export interface DisputeView {
    * Plan 4 Task 11: the moderator's latest request for this trader's unblurred proof (only the side
    * it names sees it), from server records only.
    */
-  proofRequest: { username: string; at: string } | null;
+  /** `sentAt`: when this side's unblurred copy answering the request was stored (Plan 5 Task 15), or null. */
+  proofRequest: { username: string; at: string; sentAt: string | null } | null;
   /** The appeal window's length in hours, from the owner's settings. */
   appealWindowH: number;
   /**
@@ -163,8 +164,8 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
   const rec = await loadDisputeRecord(q, row.code);
   if (rec === null) return null;
   const d = rec.dispute;
-  const extra = (await q.query<{ incident_id: string; proof_request_side: Party | null; proof_requested_at: Date | null; proof_requested_by: string | null }>(
-    'select incident_id, proof_request_side, proof_requested_at, proof_requested_by from disputes where code = $1 and seq = $2',
+  const extra = (await q.query<{ incident_id: string; proof_request_side: Party | null; proof_requested_at: Date | null; proof_requested_by: string | null; proof_request_sent_at: Date | null }>(
+    'select incident_id, proof_request_side, proof_requested_at, proof_requested_by, proof_request_sent_at from disputes where code = $1 and seq = $2',
     [row.code, d.seq],
   )).rows[0]!;
   const r = (await q.query<RulingRow>('select * from dispute_rulings where code = $1 and seq = $2 order by round desc limit 1', [row.code, d.seq])).rows[0];
@@ -219,7 +220,7 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
     appealWaiting: await appealWaiting(q, d),
     proofRequest:
       extra.proof_request_side === side && extra.proof_requested_at !== null && extra.proof_requested_by !== null
-        ? { username: extra.proof_requested_by, at: extra.proof_requested_at.toISOString() }
+        ? { username: extra.proof_requested_by, at: extra.proof_requested_at.toISOString(), sentAt: extra.proof_request_sent_at?.toISOString() ?? null }
         : null,
     // Lead review 7 Nov: the appeal window's length as the owner set it (settings), for the ruling page.
     appealWindowH: (await disputeSettings(q)).appealWindowH,

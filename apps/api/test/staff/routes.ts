@@ -111,6 +111,9 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER },
   // Owner Q13 (6 Nov): the owner's Price health, moved from the trader API.
   { method: 'GET', url: '/staff/v1/price-health', perm: 'stats.read', allowed: OWNER },
+  // Plan 4 Task 20: moderator performance (spec 6.6, owner only: a senior or a mod gets forbidden).
+  { method: 'GET', url: '/staff/v1/performance', perm: 'perf.read', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/performance/:id/weeks', perm: 'perf.read', allowed: OWNER },
   // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
   { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
   // Lead hold v3 review (owner G35): a recovery-code hold extended or ended by staff, logged.

@@ -478,6 +478,25 @@ a.x2f-method:last-of-type {
   overflow-wrap: anywhere;
 }
 
+/* Plan 5 Task 12: the poster's name opens their profile; it looks exactly like the plain name. */
+.x2f-offer__profile {
+  /* A 32 px tall tap target (e2e/phone.ts MIN_TAP) that takes no more room than the plain name did. */
+  margin: -5px -4px;
+  padding: 5px 4px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.x2f-offer__profile:hover {
+  text-decoration: underline;
+}
+
+.x2f-offer__profile:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+  border-radius: var(--x2f-radius-sm);
+}
+
 .x2f-offer__dot {
   flex-shrink: 0;
   width: 8px;

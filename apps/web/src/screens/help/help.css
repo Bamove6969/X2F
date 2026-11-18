@@ -1,0 +1,187 @@
+/* The help library (screens/help/HelpLibrary.tsx). Theme tokens only; no orange fill (the page has
+   no primary action). DESIGNER-REVIEW: the whole layout. */
+
+.x2f-help {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  min-width: 0;
+}
+
+.x2f-help ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The topic links: a row of pills that wraps, never a sideways scroll. */
+.x2f-help__topics ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-help__topic {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--x2f-space-3);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-pill);
+  color: var(--x2f-ink);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  text-decoration: none;
+}
+
+.x2f-help__topic[aria-current='page'] {
+  border-color: var(--x2f-ink);
+  background: var(--x2f-surface-raised);
+  font-weight: 600;
+}
+
+.x2f-help__topic:focus-visible,
+.x2f-help__toggle:focus-visible,
+.x2f-help__group-link:focus-visible,
+.x2f-help__search-input:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+}
+
+.x2f-help__search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+}
+
+.x2f-help__search-label {
+  color: var(--x2f-ink);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: 600;
+}
+
+.x2f-help__search-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  padding: 0 var(--x2f-space-3);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.x2f-help__hint,
+.x2f-help__count,
+.x2f-help__intro {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+}
+
+.x2f-help__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-help__group-title {
+  margin: var(--x2f-space-3) 0 0;
+  font-family: var(--x2f-heading-family);
+  font-size: var(--x2f-heading-size);
+  line-height: var(--x2f-heading-line);
+  font-weight: var(--x2f-heading-weight);
+}
+
+.x2f-help__group-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--x2f-ink);
+  text-decoration: none;
+}
+
+.x2f-help__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-help__item {
+  padding: 0 var(--x2f-space-4);
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+  /* A deep link lands below the sticky header, not under it. */
+  scroll-margin-top: var(--x2f-space-8);
+}
+
+.x2f-help__question {
+  margin: 0;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.x2f-help__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--x2f-space-3) 0;
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: start;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.x2f-help__chevron {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--x2f-ink-muted);
+  transition: transform 150ms ease-out;
+}
+
+.x2f-help__chevron[data-open='true'] {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .x2f-help__chevron {
+    transition: none;
+  }
+}
+
+.x2f-help__answer {
+  padding-bottom: var(--x2f-space-4);
+  color: var(--x2f-ink);
+}
+
+.x2f-help__answer p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.x2f-help__answer .x2f-help__permalink {
+  margin-top: var(--x2f-space-2);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+}
+
+/* A control on its own line, so it keeps a tap target of its own (e2e/phone.ts MIN_TAP). */
+.x2f-help__permalink .x2f-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+}
