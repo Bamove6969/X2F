@@ -1,5 +1,5 @@
 import type { KeyTapIntent, RulingOutcome, StaffRole } from '@x2f/staff';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import {
   approveRuling,
@@ -103,17 +103,20 @@ function rulingLabels(c: DisputeCase, outcome: RulingOutcome): Record<string, st
  * trader lines (disputes, cancel rate, last ratings) are not in the case answer. DESIGNER-REVIEW.
  * Sentences the board does not word are COPY-UNSIGNED.
  */
-export function ModCase({ role }: { role: StaffRole }) {
+export function ModCase({ role, loadDevice }: { role: StaffRole; /** This browser's device key (DeviceCard's loader; tests inject one). */ loadDevice?: () => Promise<StaffDeviceKey> }) {
   const { code = '' } = useParams();
   const [c, setC] = useState<DisputeCase | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [tap, setTap] = useState<Tap | null>(null);
   const [device, setDevice] = useState<StaffDeviceKey | null>(null);
   const [opened, setOpened] = useState<OpenedChat | null>(null);
-  // The chat key never outlives the page.
+  // The chat key never outlives the screen (review N1: wiped on unmount only; every `opened` after a
+  // message shares the same key, so wiping on each change wiped the key the next message needs).
+  const openedRef = useRef<OpenedChat | null>(null);
+  openedRef.current = opened;
   useEffect(() => () => {
-    if (opened !== null) forget(opened);
-  }, [opened]);
+    if (openedRef.current !== null) forget(openedRef.current);
+  }, []);
 
   const load = async () => {
     try {
@@ -176,7 +179,7 @@ export function ModCase({ role }: { role: StaffRole }) {
 
       <div className="x2f-staff-case">
         <div className="x2f-stack">
-          <ChatCard code={c.code} work={work} device={device} onDevice={setDevice} opened={opened} onOpened={setOpened} buyer={buyer} seller={seller} />
+          <ChatCard code={c.code} work={work} device={device} onDevice={setDevice} loadDevice={loadDevice} opened={opened} onOpened={setOpened} buyer={buyer} seller={seller} />
           {work ? <MessageCard code={c.code} device={device} opened={opened} onSent={(o) => setOpened(o)} /> : null}
         </div>
         <div className="x2f-stack">
@@ -267,18 +270,19 @@ function CaseChips({ c, role, onTaken }: { c: DisputeCase; role: StaffRole; onTa
   );
 }
 
-/** The pinned moderation signing key, as the trader app pins it (VITE_MOD_SIGNING_PUBLIC). */
-const MOD_SIGNING_PUBLIC: string = (import.meta.env?.VITE_MOD_SIGNING_PUBLIC as string | undefined) ?? '';
+/** The pinned moderation signing key, as the trader app pins it (VITE_MOD_SIGNING_PUBLIC; read when used). */
+const modSigningPublic = (): string => (import.meta.env?.VITE_MOD_SIGNING_PUBLIC as string | undefined) ?? '';
 
 /**
  * Design build task 9: the full chat, opened on this certified device. No board copy for these
  * states yet (A8): every string is COPY-UNSIGNED, DESIGNER-REVIEW.
  */
-function ChatCard({ code, work, device, onDevice, opened, onOpened, buyer, seller }: {
+function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, buyer, seller }: {
   code: string;
   work: boolean;
   device: StaffDeviceKey | null;
   onDevice: (k: StaffDeviceKey) => void;
+  loadDevice: (() => Promise<StaffDeviceKey>) | undefined;
   opened: OpenedChat | null;
   onOpened: (o: OpenedChat) => void;
   buyer: string;
@@ -291,7 +295,7 @@ function ChatCard({ code, work, device, onDevice, opened, onOpened, buyer, selle
     setBusy(true);
     setFault(null);
     try {
-      onOpened(await openCaseChat(await readCaseChat(code, device.deviceKeyId), device, MOD_SIGNING_PUBLIC));
+      onOpened(await openCaseChat(await readCaseChat(code, device.deviceKeyId), device, modSigningPublic()));
     } catch (e) {
       // not-a-refusal: a check on what the server sent, or a fault; the refusals come through faultText
       if (e instanceof CaseChatError) setFault('This chat did not check out on this device, so nothing is shown. Tell the owner.');
@@ -306,7 +310,7 @@ function ChatCard({ code, work, device, onDevice, opened, onOpened, buyer, selle
       <h2 className="x2f-h2">Full chat</h2>
       {opened === null ? (
         <>
-          {work ? <DeviceCard onReady={onDevice} /> : null}
+          {work ? <DeviceCard onReady={onDevice} {...(loadDevice !== undefined ? { load: loadDevice } : {})} /> : null}
           <p className="x2f-staff-hint">Opening the chat is written to the activity log.</p>
           <Button variant="secondary" disabled={!work || device === null || busy} onClick={() => void open()}>
             Open the full chat

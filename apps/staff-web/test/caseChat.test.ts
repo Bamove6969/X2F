@@ -1,58 +1,26 @@
 // Design build task 9: the moderator's read and message in staff-web. The chat's attestation must be
 // the pinned moderation key's, its key record the attested trader's with the re-wrapped tkh, and the
 // wrap open only with this device's key; a message is sealed under the chat key and countersigned.
-import { newTradeCode } from '@x2f/core';
 import {
   generateIdentity,
   makeChatKeyRecord,
   newChatKey,
   openChat,
   ReplayGuard,
-  sealChat,
   signChatEnvelope,
   verifyModCountersign,
   wrapChatKey,
-  type Participants,
 } from '@x2f/protocol';
-import { attestationBytes, channelFor, type Attestation } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CaseChatError, forget, modTextOk, openCaseChat, sealModMessage, type CaseChatAnswer } from '../src/chat/reader.js';
-import { staffDeviceKey, type DeviceKeyBackend, type StoredDeviceKey } from '../src/device/deviceKey.js';
+import { modKey, MOD_PUB as modPub, world } from './chatWorld.js';
 
-function memory(): DeviceKeyBackend {
-  let w: CryptoKey | null = null;
-  let r: StoredDeviceKey | null = null;
-  return { load: async () => ({ wrap: w, rec: r }), save: async (a, b) => { w = a; r = b; } };
-}
-
-let modSign: { publicKey: Uint8Array; privateKey: Uint8Array };
+let MOD = '';
 beforeAll(async () => {
-  await sodium.ready;
-  modSign = sodium.crypto_sign_keypair();
+  MOD = await modPub();
 });
-
-async function world(o: { signer?: Uint8Array } = {}) {
-  const chat = newTradeCode();
-  const channel = await channelFor(chat, 'chat');
-  const ids = { buyer: await generateIdentity(), seller: await generateIdentity(), mod: await generateIdentity() };
-  const participants = Object.fromEntries((['buyer', 'seller', 'mod'] as const).map((r) => [r, { signPublic: ids[r].signPublic, boxPublic: ids[r].boxPublic }])) as Participants;
-  const attestation: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: '2026-11-18T12:00:00.000Z' };
-  const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), o.signer ?? modSign.privateKey));
-  const tk = await newChatKey();
-  const record = await makeChatKeyRecord({ chat: channel, by: 'buyer', tk, me: ids.buyer, participants });
-  const device = await staffDeviceKey(memory());
-  const envelopes = [
-    { id: '1', senderRole: 'buyer', envelope: await sealChat({ trade: channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'I paid.' }, tk, me: ids.buyer }), at: 'a' },
-    { id: '2', senderRole: 'seller', envelope: await sealChat({ trade: channel, from: 'seller', seq: 0, type: 'chat.msg', payload: { text: 'Not received.' }, tk, me: ids.seller }), at: 'b' },
-    // Under another key: it never opens, so it is counted, never shown.
-    { id: '3', senderRole: 'seller', envelope: await sealChat({ trade: channel, from: 'seller', seq: 1, type: 'chat.msg', payload: { text: 'hidden' }, tk: await newChatKey(), me: ids.seller }), at: 'c' },
-  ];
-  const answer: CaseChatAnswer = { chat, channel, wrap: await wrapChatKey(device.boxPublic, tk), tkh: record.tkh, nextSeq: 0, attestation: { attestation, sig }, record, envelopes };
-  return { chat, channel, ids, participants, tk, record, device, answer };
-}
-
-const MOD_PUB = () => sodium.to_hex(modSign.publicKey);
+const MOD_PUB = () => MOD;
 
 describe('openCaseChat', () => {
   it('opens the chat on this device: every line by its attested sender; a line under another key is counted, never shown', async () => {
@@ -71,6 +39,7 @@ describe('openCaseChat', () => {
     const stranger = await generateIdentity();
     const fakeTk = await newChatKey();
     const fakeRecord = await makeChatKeyRecord({ chat: w.channel, by: 'buyer', tk: fakeTk, me: stranger, participants: { ...w.participants, buyer: { signPublic: stranger.signPublic, boxPublic: stranger.boxPublic } } });
+    await modKey();
     const notMod = sodium.crypto_sign_keypair();
     const cases: Array<[string, CaseChatAnswer]> = [
       ['attestation by another key', (await world({ signer: notMod.privateKey })).answer],
