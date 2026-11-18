@@ -6,8 +6,10 @@
 // boards' data (browse-stub.ts), as the browse specs do.
 import { expect, test, type Page } from '@playwright/test';
 import { BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardSellOffers } from '../src/fixtures/boards.js';
+import { BOARD_BUY_QUOTE as Q } from '../src/fixtures/quoteBoard.js';
 import { stubBrowseApi } from './browse-stub.js';
 import { expectParity } from './parity.js';
+import { INSIDE } from './session.js';
 
 const OFF = { banner: null, tradingPaused: false, maintenance: null, plannedMaintenance: null, communityLinks: { matrix: null, telegram: null } };
 const MATRIX = 'https://matrix.to/#/#x2f:matrix.org';
@@ -32,6 +34,23 @@ function browse(page: Page) {
 }
 
 const stopped = (page: Page) => page.locator('[data-part="trading-stopped"]');
+
+/** The BuyQuote board's offer, price and wallets, as quote.spec.ts stubs them (src/fixtures/quoteBoard.ts). */
+async function quoteApi(page: Page): Promise<void> {
+  await page.addInitScript(() => window.localStorage.setItem('x2f.courtesy-sheet.off', '1'));
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'] } }));
+  await page.route('**/v1/methods?*', (r) =>
+    r.fulfill({ json: { live: [{ id: Q.method.id, name: Q.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: Q.marketCentsPerXmr }], all: [] } }),
+  );
+  await page.route('**/v1/price?*', (r) => {
+    const currency = new URL(r.request().url()).searchParams.get('currency');
+    return r.fulfill({ json: { currency, centsPerXmr: Q.marketCentsPerXmr, exponent: 2, at: new Date().toISOString(), usdCentsPerXmr: Q.marketCentsPerXmr } });
+  });
+  await page.route('**/v1/offers?*', (r) => r.fulfill({ json: [Q.offer] }));
+  await page.route('**/v1/wallets', (r) => r.fulfill({ json: Q.wallets }));
+  await page.route('**/v1/wallets/rule', (r) => r.fulfill({ json: { firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 } }));
+  await page.route('**/v1/news', (r) => r.fulfill({ json: { items: [], serverNow: new Date().toISOString() } }));
+}
 
 test.describe('the emergency stop on the offer lists', () => {
   for (const path of ['/sell', '/buy']) {
@@ -89,13 +108,21 @@ test.describe('the emergency stop on the offer lists', () => {
     await expect(page).toHaveURL(/\/news$/);
   });
 
-  test('the quote: the message, and Trade is off', async ({ page }) => {
-    await site(page, { paused: true });
-    await browse(page);
-    const offer = boardSellOffers()[0]!;
-    await page.goto(`/sell/ZELLE/${encodeURIComponent(offer.id)}?currency=USD`);
+  test('the quote: Trade works with the stop off, and is off with the message while it is on', async ({ page }) => {
+    const state = { paused: false };
+    await site(page, state);
+    await quoteApi(page);
+    const path = `/buy/${Q.method.id}/${Q.offer.id}?currency=${Q.currency}&amount=${Q.amount}`;
+    await page.goto(path);
+    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+    const trade = page.getByRole('button', { name: 'Trade', exact: true });
+    await expect(trade).toBeEnabled();
+    await expect(stopped(page)).toHaveCount(0);
+    state.paused = true;
+    await page.reload();
+    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
     await expect(stopped(page)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Trade', exact: true })).toBeDisabled();
+    await expect(trade).toBeDisabled();
   });
 
   test('Post offer: the message, and the Post offer button is off', async ({ page }) => {
