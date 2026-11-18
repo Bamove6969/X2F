@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { newTradeCode } from '@x2f/core';
 import { makeChatGrant, makeChatKeyRecord, makeDisputeNotice, makeGrantAccepted, newChatKey, verifyDisputeNotice, unwrapChatKey, verifyChatGrant, seal, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import {
@@ -12,6 +12,7 @@ import {
   type Attestation,
 } from '@x2f/trade';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
+import { newProofId, sealProofEnvelope } from '@x2f/proof';
 import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
@@ -469,5 +470,71 @@ describe('review fixes of tasks 3-6 (F2, F5, F6)', () => {
     // A refused grant counts as unaccepted for the counterparty's fallback.
     const r = await deps.db.query("select refused_at is not null as refused from chat_members where chat = $1", [bad[0]!.chat]);
     expect(r.rows).toEqual([{ refused: true }]);
+  });
+});
+
+// Decision 16 (docs/security/chat-membership-lead-decisions-2026-11-18.md, lead call 18 Nov, option
+// i): a keyed chat takes envelope v2 only, with ONE exception: the side an open dispute's moderator
+// asked for an unblurred proof may post exactly one v1 envelope per request (the moderator-only
+// `proof.unblurred`, which no shared chat key can carry). The API cannot see a v1 envelope's type or
+// recipients (both are sealed), so it checks what it can see: a keyed chat, an open request for this
+// side, and no v1 envelope from it since that request. Every trader's engine keeps any v1 envelope
+// unopened (R16 holds); the moderator's reader is the one that checks its type.
+describe("a keyed chat's one v1 exception: the moderator's unblurred-proof request (decision 16)", () => {
+  const unblurred = (k: Keyed, from: 'buyer' | 'seller', seq: number) =>
+    sealProofEnvelope(
+      { type: 'proof.unblurred', payload: { proofId: newProofId(), key: randomBytes(32).toString('base64'), sha256: randomBytes(32).toString('hex'), width: 800, height: 600, mime: 'image/jpeg' } },
+      { trade: k.channel, from, seq, me: from === 'buyer' ? k.buyer : k.seller, participants: k.participants },
+    );
+  const post = (k: Keyed, from: 'buyer' | 'seller', body: unknown) => (from === 'buyer' ? k.taker : k.poster).b.post(`/v1/chats/${k.chat}/envelopes`, body);
+  const ask = (k: Keyed, side: 'buyer' | 'seller') =>
+    deps.db.query("update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = 'mod-1', proof_request_sent_at = null where code = $1 and status <> 'closed'", [k.trade, side, now]);
+  const disputedKeyed = async (): Promise<Keyed> => {
+    const k = await keyedTrade();
+    expect((await dispute(k, await grantOf(k, 'buyer'))).statusCode).toBe(200);
+    return k;
+  };
+  const v1Rows = async (chat: string) => (await deps.db.query("select sender_role, seq from chat_envelopes where chat = $1 and envelope->>'v' = '1' order by id", [chat])).rows;
+
+  it('no open request: every v1 is refused (an open dispute alone is not enough)', async () => {
+    const k = await disputedKeyed();
+    for (const from of ['buyer', 'seller'] as const) {
+      const res = await post(k, from, await unblurred(k, from, 0));
+      expect({ from, s: res.statusCode }).toEqual({ from, s: 400 });
+    }
+    // A v1 chat message is refused the same way.
+    expect((await post(k, 'buyer', await envelope(k, 'buyer', 0))).statusCode).toBe(400);
+    expect(await v1Rows(k.chat)).toEqual([]);
+  });
+
+  it('the wrong side is refused: the request names the buyer, so the seller may post no v1', async () => {
+    const k = await disputedKeyed();
+    await ask(k, 'buyer');
+    expect((await post(k, 'seller', await unblurred(k, 'seller', 0))).statusCode).toBe(400);
+    expect(await v1Rows(k.chat)).toEqual([]);
+  });
+
+  it('the exact one is accepted, and a second v1 for the same request is refused; a new request allows one more', async () => {
+    const k = await disputedKeyed();
+    await ask(k, 'buyer');
+    const res = await post(k, 'buyer', await unblurred(k, 'buyer', 0));
+    expect(res.statusCode, res.body).toBe(201);
+    expect((await post(k, 'buyer', await unblurred(k, 'buyer', 1))).statusCode).toBe(400);
+    // A v1 chat message in its place is refused too (one v1 per request, whatever it holds).
+    expect((await post(k, 'buyer', await envelope(k, 'buyer', 1))).statusCode).toBe(400);
+    // v2 lines carry on as ever.
+    const { sealChat } = await import('@x2f/protocol');
+    expect((await post(k, 'buyer', await sealChat({ trade: k.channel, from: 'buyer', seq: 1, type: 'chat.msg', payload: { text: 'after' }, tk: k.tk, me: k.buyer }))).statusCode).toBe(201);
+    setNow(new Date(now.getTime() + MIN));
+    await ask(k, 'buyer');
+    expect((await post(k, 'buyer', await unblurred(k, 'buyer', 2))).statusCode).toBe(201);
+    expect(await v1Rows(k.chat)).toEqual([{ sender_role: 'buyer', seq: '0' }, { sender_role: 'buyer', seq: '2' }]);
+  });
+
+  it('a request on a dispute that has closed allows nothing', async () => {
+    const k = await disputedKeyed();
+    await ask(k, 'buyer');
+    await deps.db.query("update disputes set status = 'closed', closed_at = $2 where code = $1", [k.trade, now]);
+    expect((await post(k, 'buyer', await unblurred(k, 'buyer', 0))).statusCode).toBe(400);
   });
 });

@@ -56,8 +56,12 @@ export interface DisputeView {
    * traders at the top of the trade (where and how is design's: DESIGNER-REVIEW). Absent from an older view.
    */
   incidentId?: string | null;
-  /** Plan 4 Task 11: the moderator asked THIS trader for the unblurred proof (who, when). */
-  proofRequest?: { username: string; at: string } | null;
+  /**
+   * Plan 4 Task 11: the moderator asked THIS trader for the unblurred proof (who, when). `sentAt`
+   * (Plan 5 Task 15): when this trader's copy answering it was stored, from the server's record; null
+   * until then (and in an older view).
+   */
+  proofRequest?: { username: string; at: string; sentAt: string | null } | null;
   /** 'system' when the trade was escalated (late funds after it ended, a lapse nobody refunded). */
   openedBy: Party | 'system';
   reason: DisputeReason;
@@ -204,7 +208,7 @@ export function parseDispute(v: unknown): DisputeView {
     }),
     proofRequest: later(d.proofRequest, (v) => {
       const p = rec(v, 'proofRequest');
-      return { username: str(p.username, 'proofRequest.username'), at: iso(p.at, 'proofRequest.at') };
+      return { username: str(p.username, 'proofRequest.username'), at: iso(p.at, 'proofRequest.at'), sentAt: later(p.sentAt, (v) => iso(v, 'proofRequest.sentAt')) };
     }),
     openedBy: oneOf(d.openedBy, ['buyer', 'seller', 'system'] as const, 'openedBy'),
     reason: oneOf(d.reason, ['paid', 'silent', 'terms', 'other', 'escalated'] as const, 'reason'),

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { inviteRegistrationChallenge, keyCheckCode } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { assertNewNames, assertTermsAccepted, createAccount } from '../accounts.js';
+import { assertNewNames, assertStaffNameUnlike, assertTermsAccepted, createAccount } from '../accounts.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { lockAccount, withTx } from '../auth/hold.js';
 import { PGP_BODY_LIMIT, checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge } from '../auth/pgp.js';
@@ -329,6 +329,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const b = body(req);
     const terms = assertTermsAccepted(deps, b.acceptedTerms, b.termsSignature);
     const names = await assertNewNames(deps.db, b.displayName, b.loginName);
+    await assertStaffNameUnlike(deps.db, names.displayKey);
     const now = deps.clock();
     await withTx(deps.db, async (c) => {
       const i = await openInvite(c, tokenOf(req), now, true);

@@ -31,8 +31,10 @@
  * (R16). The message rules above are the same for both. `makeChatKey` makes the chat key and its
  * signed record (the first trader device after attestation); `chatKeyOf` checks a stored record
  * against the ATTESTED participants (never the API's word) and opens this trader's own copy,
- * pinned to the record's tkh. The engine is v2 only; v1 stays here for its own tests and the
- * signals channel's code.
+ * pinned to the record's tkh. The engine is v2 only, but for decision 16's one exception: the
+ * moderator-only `proof.unblurred` (sealProofUnblurred) stays v1; v1 also stays here for its own
+ * tests and the signals channel's code. `proof.attached` is v2 under the chat key (sealProofAttached
+ * with `tk`).
  *
  * Identities are made elsewhere and passed in: in apps/web only the escrow worker may name the
  * protocol's identity maker (separation check, lead answer 2026-10-24).
@@ -75,6 +77,8 @@ import {
 } from '@x2f/trade';
 import { CHAT_NOTICES, isChatNotice, type ChatNoticeId } from './notices.js';
 
+import { PROOF_RECIPIENTS, type ProofAttachedPayload, type ProofUnblurredPayload, parseProofPayload, sealProofEnvelope } from '@x2f/proof';
+
 export type ChatRole = 'buyer' | 'seller';
 export type ChatErrorCode = 'bad-text' | 'too-large' | 'bad-state' | 'bad-message' | 'mod-not-allowed';
 
@@ -105,6 +109,12 @@ export interface ChatMessage {
   text: string;
   /** The payee's packaged payment details (J-08), checked; absent on a plain line. */
   pay?: PayDetailsPayload;
+  /**
+   * NEEDS_PROOF_RECEIVE: a `proof.attached` (Plan 5 Task 8): the proof's key and facts, checked by
+   * parseProofPayload and the kind rules below; `text` is empty. The picture is fetched and
+   * decrypted by the page (proof/chatProof.ts) and shown only through ProofThumb.
+   */
+  proof?: ProofAttachedPayload;
   /** A fixed notice (P-020); `text` is then this reader's own wording of it (CHAT_NOTICES). */
   notice?: ChatNoticeId;
 }
@@ -232,6 +242,76 @@ export async function sealPayDetails<A extends SealPayArgs>(a: A): Promise<{ env
   return sealInner(a, { text, pay }) as Promise<{ envelope: SealedEnvelope<A>; state: ChatState }>;
 }
 
+export interface SealProofArgs {
+  role: ChatRole;
+  me: Identity;
+  participants: Participants;
+  state: ChatState;
+  /** The `proof.attached` payload: the proof's key and facts, never the image (Plan 5 Task 15). */
+  proof: ProofAttachedPayload;
+  /** Decision 16 item 1: the chat key. Given, the proof is an envelope v2 under it, as any line. */
+  tk?: Uint8Array;
+}
+
+/**
+ * Seals a `proof.attached` envelope (Plan 5 Task 8 `sealProofEnvelope`, to buyer, seller and mod:
+ * the recipients come from the type) under the chat's seq rules, like sealChatMessage. A payment
+ * proof (`kind: 'proof'`) is the buyer's only; evidence is either trader's. Throws TypeError for
+ * another role, ProofError('bad-payload') for a malformed payload, ChatError 'too-large'.
+ */
+export async function sealProofAttached<A extends SealProofArgs>(a: A): Promise<{ envelope: SealedEnvelope<A>; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealProofAttached: role must be buyer or seller');
+  const parsed = parseProofPayload('proof.attached', a.proof);
+  if (parsed.type !== 'proof.attached' || (parsed.payload.kind === 'proof' && a.role !== 'buyer')) throw new TypeError('sealProofAttached: only the buyer sends a payment proof');
+  const state = parseChatState(a.state, a.state.channel);
+  const seq = nextSeqOf(state, a.role);
+  // Decision 16 item 1: under the chat key every member reads it, exactly PROOF_RECIPIENTS' buyer,
+  // seller and mod for proof.attached (fail closed should that list ever change). The payload is the
+  // one parseProofPayload returned, so every @x2f/proof check above still decides what is sealed.
+  if (a.tk !== undefined && PROOF_RECIPIENTS['proof.attached'].join() !== 'buyer,seller,mod') throw new TypeError('sealProofAttached: proof.attached must reach every member');
+  const envelope = a.tk !== undefined
+    ? await sealChat({ trade: state.channel, from: a.role, seq, type: parsed.type, payload: parsed.payload, tk: a.tk, me: a.me })
+    : await sealProofEnvelope(parsed, { trade: state.channel, from: a.role, seq, me: a.me, participants: a.participants });
+  if (new TextEncoder().encode(JSON.stringify(envelope)).length > CHAT_BODY_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
+  return { envelope: envelope as SealedEnvelope<A>, state: { ...state, nextSeq: seq + 1 } };
+}
+
+export interface SealUnblurredArgs {
+  role: ChatRole;
+  me: Identity;
+  participants: Participants;
+  state: ChatState;
+  /** The `proof.unblurred` payload: the unblurred copy's key and facts, never the image. */
+  proof: ProofUnblurredPayload;
+}
+
+/**
+ * Seals a `proof.unblurred` envelope (Plan 5 Task 15, Review Focus 4) through `sealProofEnvelope`,
+ * which fixes its recipients to the moderator alone: no trader (the sender included) can open it.
+ * Always envelope v1, never under the chat key (every member holds it): decision 16, the one v1
+ * envelope a keyed chat takes, once per moderator request.
+ * Under the chat's seq rules, like sealProofAttached. Throws TypeError for a role other than a
+ * trader, ProofError('bad-payload') for a malformed payload, ChatError 'too-large'.
+ */
+export async function sealProofUnblurred(a: SealUnblurredArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealProofUnblurred: role must be buyer or seller');
+  const parsed = parseProofPayload('proof.unblurred', a.proof);
+  if (parsed.type !== 'proof.unblurred') throw new TypeError('sealProofUnblurred: not an unblurred copy');
+  const state = parseChatState(a.state, a.state.channel);
+  const seq = nextSeqOf(state, a.role);
+  const envelope = await sealProofEnvelope(parsed, { trade: state.channel, from: a.role, seq, me: a.me, participants: a.participants });
+  if (new TextEncoder().encode(JSON.stringify(envelope)).length > CHAT_BODY_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
+  return { envelope, state: { ...state, nextSeq: seq + 1 } };
+}
+
+/** The seq to seal with: never one this device has already seen from itself (see sealInner). */
+function nextSeqOf(state: ChatState, role: ChatRole): number {
+  const seenOwn = state.guard.seen[role];
+  const seq = seenOwn !== undefined && seenOwn >= state.nextSeq ? seenOwn + 1 : state.nextSeq;
+  if (!Number.isSafeInteger(seq + 1)) throw new ChatError('bad-state', 'Sequence exhausted');
+  return seq;
+}
+
 export interface SealNoticeArgs {
   role: ChatRole;
   me: Identity;
@@ -299,6 +379,12 @@ export interface OpenChatArgs {
   payAllowed?: boolean;
   /** The chat key: open envelope v2 under it, and nothing else (build task 5). Absent: envelope v1. */
   tk?: Uint8Array;
+  /**
+   * Accept dispute evidence (`proof.attached` kind 'evidence'). Default false: evidence belongs to
+   * an open dispute only (P5-A30), so the engine sets it from the API's `disputeOpen`. When false,
+   * evidence is refused with ChatError('bad-message') for good.
+   */
+  evidenceAllowed?: boolean;
 }
 
 /**
@@ -333,6 +419,20 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
   }
   const p = opened.payload;
   const notChat = (): ChatError => new ChatError('bad-message', 'Not a chat message');
+  if (opened.type === 'proof.attached') {
+    let proof: ProofAttachedPayload;
+    try {
+      const parsed = parseProofPayload(opened.type, p);
+      if (parsed.type !== 'proof.attached') throw notChat();
+      proof = parsed.payload;
+    } catch {
+      throw notChat();
+    }
+    // The payment proof is the buyer's only; evidence a trader's, only while a dispute is open.
+    if (proof.kind === 'proof' && opened.from !== 'buyer') throw notChat();
+    if (proof.kind === 'evidence' && (opened.from === 'mod' || a.evidenceAllowed !== true)) throw notChat();
+    return { message: { from: opened.from, seq: env.seq, text: '', proof }, state: { ...state, guard: guard.toJSON() } };
+  }
   if (opened.type !== CHAT_MSG_TYPE || typeof p !== 'object' || p === null || Array.isArray(p) || !Object.prototype.hasOwnProperty.call(p, 'text')) throw notChat();
   const keys = Object.keys(p);
   const packaged = keys.length === 2 && Object.prototype.hasOwnProperty.call(p, 'pay');

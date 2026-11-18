@@ -137,6 +137,19 @@ describe('Login', () => {
     expect(cantDo()).toBeNull();
     expect(document.querySelector('[data-part="login-fault"]')?.textContent).toContain('That did not work');
   });
+
+  it("review m1: a key refused only for its missing PIN shows the API's PIN sentence", async () => {
+    const PIN = "Your key needs its PIN (or fingerprint) to log in. Set one in your key's settings, then try again.";
+    fakeApi({
+      'POST /staff/v1/login/security-key/start': { body: { challengeId: 'c1', options: {}, loginNonce: NONCE } },
+      'POST /staff/v1/login/security-key/finish': refused(401, 'webauthn-failed', { detail: PIN }),
+    });
+    await open('/login');
+    typeInto(field('Login name'), 'nightowl');
+    await click(button('Tap security key'));
+    expect(cantDo()).toBeNull();
+    expect(document.querySelector('[data-part="login-fault"]')?.textContent).toContain(PIN);
+  });
 });
 
 describe('Invite', () => {

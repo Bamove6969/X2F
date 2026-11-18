@@ -35,6 +35,12 @@ export const CANT_DO_CODES = [
   'security-key-limit',
   'login-name-set',
   'last-login-method',
+  // Owner, 16 Nov 2026: the authenticator app goes only with a password (no TOTP without one, no
+  // password removal while TOTP is on), and a password never stands alone. totp-needs-password is
+  // API only, no words here: the web offers the authenticator app only with a password.
+  'totp-needs-password',
+  'password-has-totp',
+  'password-alone',
   'method-not-allowed',
   'account-disabled',
   // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key
@@ -128,6 +134,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'changes-changed': 'a state conflict: the list changed since it was reviewed',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',
+  // Plan 5 Task 15: a picked proof image that can't be read (ProofInputError); shown as PROOF_CANT_USE.
+  unsupported: 'an input check on the picked proof image',
+  // Proof review M2: a proof's post got no answer (it may have been stored); shown as PROOF_SEND_UNCERTAIN.
+  uncertain: 'a fault: no answer, so the send may have gone through',
   internal: 'a server fault',
   busy: 'the server is busy (try again)',
   'display-name-invalid': 'an input check on a typed name',
@@ -254,6 +264,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'device-exists': 'a staff answer: that staff device key is already certified (staff app only)',
   'device-limit': 'a staff answer: the staff member already has 3 certified devices (staff app only)',
   'chat-keyed': 'a staff answer: the dev-only moderator send cannot write to a keyed chat (staff app only)',
+  // Plan 5 Task 15: @x2f/protocol's open() on an envelope sealed past this reader (the unblurred copy for the moderator); the chat engine keeps an `away` receipt, nothing is shown.
+  'not-for-me': 'a chat envelope addressed to someone else (the moderator); never shown',
   'wrong-channel': 'a device check (a fault)',
   'wrong-sender': 'a device check (a fault)',
   'chat-unavailable': 'the trade has no chat (cannot happen since Task 5\'s offer key; a fault)',
@@ -429,6 +441,18 @@ export const LAST_METHOD_CODE = 'last-login-method' satisfies CantDoCode;
 
 /** 409 `last-login-method` (and the client's own check before asking): the account's only way to log in. */
 export const LAST_METHOD_MESSAGE = 'That is your only way to log in. Add another login method before removing this one.';
+
+/** The code for removing the password while the authenticator app is on (owner, 16 Nov 2026). */
+export const PASSWORD_HAS_TOTP_CODE = 'password-has-totp' satisfies CantDoCode;
+
+/** 409 `password-has-totp` (and the client's own check before asking). COPY-UNSIGNED */
+export const PASSWORD_HAS_TOTP_MESSAGE = 'Your authenticator app works with your password. Remove the authenticator app first.';
+
+/** The code for a change that would leave a password alone (owner, 16 Nov 2026). */
+export const PASSWORD_ALONE_CODE = 'password-alone' satisfies CantDoCode;
+
+/** 409 `password-alone` (and the client's own check before asking). COPY-UNSIGNED */
+export const PASSWORD_ALONE_MESSAGE = 'A password needs the authenticator app or another way to log in. Add one before removing this.';
 
 /** 409 `no-extensions-left` (Plan 3 Task 6): the payment time was already extended as often as allowed. */
 export const NO_EXTENSIONS_LEFT = 'This trade has had all the extra time it can get. Cancel and get your refund, or keep waiting for the payment.';

@@ -7,11 +7,14 @@ import { PUBLIC_LOGIN } from './login.js';
 /**
  * Serves the built staff app (apps/staff-web/dist) on the staff origin (Plan 4 Task 16), when
  * `X2F_STAFF_WEB_ROOT` names it: the built files, and index.html for every other GET outside
- * /staff (the client router takes it from there). Every answer already carries the staff API's
+ * /staff, and for `/staff` itself, the Staff page (the client router takes it from there). Every answer already carries the staff API's
  * STAFF_CSP (Plan 3's policy without the relay or the node proxy; 'wasm-unsafe-eval' for libsodium only),
  * SECURITY_HEADERS and `no-store` from buildStaffApi's hooks. The routes are public (perm
  * `public-login`): the pages hold nothing until the API lets the person in.
  */
+/** The staff app's Staff page path, the one app page under the API's `/staff` prefix. */
+export const STAFF_PAGE = '/staff';
+
 export async function serveStaffWeb(app: FastifyInstance, root: string): Promise<void> {
   // `serve: false`: no routes of its own (each staff route must declare a perm); only sendFile.
   // `dotfiles: 'ignore'`: @fastify/send refuses dot files itself (a second layer under fileUnderRoot).
@@ -21,6 +24,9 @@ export async function serveStaffWeb(app: FastifyInstance, root: string): Promise
   app.get('/', { config: PUBLIC_LOGIN }, page);
   app.get('/*', { config: PUBLIC_LOGIN }, (req, reply) => {
     const path = req.url.split('?', 1)[0] ?? '';
+    // Plan 4 Task 17: `/staff` itself, exactly, is the owner's Staff page (staff-web NAV_PATHS.staff),
+    // so a reload or a pasted link opens it. No API route is `/staff` alone.
+    if (path === STAFF_PAGE) return page(req, reply);
     // An unknown /staff path is the API's 404, never the app page.
     if (isApiOrFilePath(req.url, 'staff')) {
       const segments = path.split('/').filter((s) => s !== '');

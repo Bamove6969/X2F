@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { newProofId } from '@x2f/proof';
+import { newProofId, isProofId } from '@x2f/proof';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
@@ -50,7 +50,23 @@ async function pair() {
   const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE' });
   return { seller, buyer, code: trade.code };
 }
-const posted = (who: Who, code: string, proofId: string, blur = 'auto') => call(who, 'POST', `/v1/trades/${code}/proofs/${proofId}/blur-check`, { blur });
+/**
+ * Announces a proof the caller's side has stored (proof stack: the blur check names only a proof in
+ * trade_proofs, Task 14), stored directly first; `store: false` announces an id with no stored proof.
+ */
+async function posted(who: Who, code: string, proofId: string, blur = 'auto', o: { store?: boolean } = {}) {
+  if (o.store !== false && isProofId(proofId)) {
+    await deps.db.query(
+      `insert into trade_proofs (id, trade_code, uploader_role, kind, ciphertext, created_at)
+       select $1, t.code, s.role, case when s.role = 'buyer' then 'proof' else 'evidence' end, $3, now()
+         from trades t cross join lateral (select case when t.buyer_account_id = $2 then 'buyer' when t.seller_account_id = $2 then 'seller' end as role) s
+        where t.code = $4 and s.role is not null
+       on conflict (id) do nothing`,
+      [proofId, who.id, Buffer.alloc(64), code],
+    );
+  }
+  return call(who, 'POST', `/v1/trades/${code}/proofs/${proofId}/blur-check`, { blur });
+}
 const pending = async (who: Who, code: string) => {
   const res = await call(who, 'GET', `/v1/trades/${code}/blur-checks`);
   expect(res.statusCode, res.body).toBe(200);
@@ -59,6 +75,22 @@ const pending = async (who: Who, code: string) => {
 const answer = (who: Who, code: string, proofId: string, body: unknown) => call(who, 'POST', `/v1/trades/${code}/blur-checks/${proofId}`, body);
 const setting = (key: string, value: number) =>
   deps.db.query(`insert into owner_settings (key, value, updated_at) values ($1, $2, now()) on conflict (key) do update set value = excluded.value`, [key, value]);
+
+describe('only a stored proof (proof stack: Task 14 storage)', () => {
+  it("an id with no stored proof, the other side's proof or an unblurred copy is 404; nothing is counted", async () => {
+    const { seller, buyer, code } = await pair();
+    const before = (await deps.db.query<{ proofs: string }>('select proofs from blur_check_counter where id = 1')).rows[0]!.proofs;
+    expect((await posted(buyer, code, newProofId(), 'auto', { store: false })).statusCode).toBe(404);
+    const theirs = newProofId();
+    expect((await posted(buyer, code, theirs)).statusCode).toBe(200);
+    expect((await posted(seller, code, theirs, 'auto', { store: false })).statusCode).toBe(404);
+    const unblurred = newProofId();
+    await deps.db.query(`insert into trade_proofs (id, trade_code, uploader_role, kind, ciphertext, created_at) values ($1, $2, 'buyer', 'unblurred', $3, now())`, [unblurred, code, Buffer.alloc(64)]);
+    expect((await posted(buyer, code, unblurred, 'auto', { store: false })).statusCode).toBe(404);
+    const after = (await deps.db.query<{ proofs: string }>('select proofs from blur_check_counter where id = 1')).rows[0]!.proofs;
+    expect(Number(after) - Number(before)).toBe(1);
+  });
+});
 
 describe('who is asked, and when', () => {
   it('in the first weeks every proof asks both parties: the uploader and the receiver', async () => {

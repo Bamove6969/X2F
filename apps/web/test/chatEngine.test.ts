@@ -525,7 +525,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
   it('review M3: sweeps the stored chats for purged ones when the worker starts, before any chat message, and once', async () => {
     const { serveChat } = await import('../src/chat/serve.js');
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: async () => (sweeps++, []) };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: async () => (sweeps++, []) };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -553,7 +553,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
       async () => [],
     ];
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -1075,5 +1075,542 @@ describe('chat engine: review fixes of tasks 3-6 (F3, F4, F6)', () => {
     clock = base + GRANT_FALLBACK_MS + 1;
     await e.sync(chat);
     expect(api.grantPosts).toHaveLength(1);
+  });
+});
+
+describe('chat engine: proof.attached lines (NEEDS_PROOF_RECEIVE)', () => {
+  async function fromSellerProof(kind: 'proof' | 'evidence', parts: Participants) {
+    const { newProofId, proofKeyToBase64 } = await import('@x2f/proof');
+    const payload = {
+      proofId: newProofId(), kind, key: await proofKeyToBase64(new Uint8Array(32).fill(5)), sha256: 'ef'.repeat(32),
+      width: 200, height: 100, mime: 'image/png' as const, hidden: [], photoTakenAt: null,
+    };
+    // Decision 16 item 1: proof.attached is an envelope v2 under the chat key, as any line.
+    const env = await sealChat({ trade: channel, from: 'seller', seq: sellerState.nextSeq, type: 'proof.attached', payload, tk: await tkOf(parts), me: seller });
+    sellerState = { ...sellerState, nextSeq: sellerState.nextSeq + 1 };
+    api.add('seller', env);
+    return payload;
+  }
+
+  it('evidence from the other trader is a proof line while a dispute is open; the key is never stored', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await fromSellerProof('evidence', parts);
+    const snap = await e.sync(chat);
+    expect(snap.lines).toEqual([{ id: '1', from: 'seller', text: '', proof: p, at: expect.any(String), mine: false, gapBefore: false }]);
+    expect(JSON.stringify([...store.records.values()])).not.toContain(p.key);
+  });
+
+  it("a 'payment proof' from the seller is refused for good; evidence outside a dispute is held, not shown; the next line still shows", async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const ev = await fromSellerProof('evidence', parts);
+    await fromSellerProof('proof', parts);
+    await fromSeller('after', parts);
+    const snap = await e.sync(chat);
+    expect(snap.lines.map((l) => [l.text, l.proof === undefined])).toEqual([['after', true]]);
+    // The seller's 'payment proof' is decided for good; the evidence is held (review M2) and shows
+    // once a dispute is open.
+    api.view.disputeOpen = true;
+    expect((await e.sync(chat)).lines.map((l) => l.proof ?? l.text)).toEqual([ev, 'after']);
+  });
+
+  it('review M1: evidence shown during an open dispute is shown again after a reload (a new worker), not as a gap', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await fromSellerProof('evidence', parts);
+    expect((await e.sync(chat)).lines.map((l) => l.proof)).toEqual([p]);
+    const again = await engine().sync(chat);
+    expect(again.lines).toEqual([{ id: '1', from: 'seller', text: '', proof: p, at: expect.any(String), mine: false, gapBefore: false }]);
+  });
+
+  it('review M2: evidence that arrives before the dispute record is held, not refused; it shows once a dispute is open, after a reload too', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await fromSellerProof('evidence', parts);
+    await fromSeller('after', parts);
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['after']);
+    const r = (await store.load(chat))!.receipts.find((x) => x.id === '1')!;
+    expect(r.refused).toBeUndefined();
+    expect(JSON.stringify([...store.records.values()])).not.toContain(p.key);
+    api.view.disputeOpen = true;
+    expect((await e.sync(chat)).lines.map((l) => [l.id, l.proof ?? l.text])).toEqual([['1', p], ['2', 'after']]);
+    expect((await engine().sync(chat)).lines.map((l) => [l.id, l.proof ?? l.text])).toEqual([['1', p], ['2', 'after']]);
+  });
+});
+
+describe('chat engine: the payment proof (Plan 5 Task 15)', () => {
+  async function attached(over: Record<string, unknown> = {}) {
+    const { newProofId, proofKeyToBase64 } = await import('@x2f/proof');
+    return {
+      proofId: newProofId(),
+      kind: 'proof' as const,
+      key: await proofKeyToBase64(new Uint8Array(32).fill(7)),
+      sha256: 'ab'.repeat(32),
+      width: 300,
+      height: 120,
+      mime: 'image/png' as const,
+      hidden: ['card' as const, 'email' as const],
+      photoTakenAt: null,
+      ...over,
+    };
+  }
+
+  it('sendProof seals proof.attached as envelope v2 under the chat key (decision 16): the seller and the mod (through its grant) read it, never in the clear', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await attached();
+    await e.sendProof(chat, p);
+    expect(api.posted).toHaveLength(1);
+    const wire = JSON.stringify(api.posted[0]);
+    expect(() => checkChatEnvelopeV2(JSON.parse(wire), channel, 'buyer')).not.toThrow();
+    for (const s of [p.key, p.proofId, p.sha256, 'proof.attached', '"hidden"']) expect(wire, s).not.toContain(s);
+    // The seller with its own copy of the key, and the moderator with the key its grant wraps.
+    const g = await e.grant(chat, new Date().toISOString());
+    const rec = await verifyChatKeyRecord(api.key, { chat: channel, participants: parts });
+    for (const tk of [await tkOf(parts), await unwrapChatKey(mod, g.wrap, rec.tkh)]) {
+      const o = await openChat(api.posted[0], { tk, trade: channel, participants: parts, guard: new Guard2(channel) });
+      expect(o.type).toBe('proof.attached');
+      expect(o.payload).toEqual(p);
+    }
+    // The next line follows on the next seq: the proof used exactly one.
+    await e.send(chat, 'sent it');
+    expect((api.posted[1] as ChatEnvelopeV2).seq).toBe((api.posted[0] as ChatEnvelopeV2).seq + 1);
+  });
+
+  it('a malformed payload, or a seller sending a proof, is refused as bad-proof with nothing posted', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.sendProof(chat, await attached({ key: 'nope' }))).rejects.toMatchObject({ code: 'bad-proof' });
+    await expect(e.sendProof(chat, await attached({ extra: 1 }))).rejects.toMatchObject({ code: 'bad-proof' });
+    expect(api.posted).toHaveLength(0);
+    // Only the buyer sends a payment proof (kind 'proof'): the sealing itself refuses another role.
+    const { sealProofAttached } = await import('../src/chat/chatCrypto.js');
+    const parts = attest();
+    await expect(sealProofAttached({ role: 'seller', me: seller, participants: parts, state: sellerState, proof: await attached() })).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('the worker checks the payload before the engine sees it (chat-send-proof)', async () => {
+    const { serveChat } = await import('../src/chat/serve.js');
+    const got: unknown[] = [];
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async (_c: string, p: unknown) => (got.push(p), {} as never), sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: async () => [] };
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
+    handler({ data: { t: 'chat-send-proof', id: 1, chat, proof: { ...(await attached()), key: 'bad' } } });
+    handler({ data: { t: 'chat-send-proof', id: 2, chat, proof: await attached() } });
+    for (let i = 0; i < 200 && out.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(out).toContainEqual({ t: 'chat', id: 1, ok: false, error: 'bad-proof' });
+    expect(out).toContainEqual(expect.objectContaining({ t: 'chat', id: 2, ok: true }));
+    expect(got).toHaveLength(1);
+  });
+
+  it('review M4: no proof before the trade is secured: the engine refuses it with not-ready, nothing sealed or posted, the seq kept', async () => {
+    api.view.tradeSecuredAt = null;
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.sendProof(chat, await attached())).rejects.toMatchObject({ code: 'not-ready' });
+    // Evidence waits for securing too (the lead's call, review M4's owner question: recommendation no).
+    await expect(e.sendProof(chat, await attached({ kind: 'evidence' }))).rejects.toMatchObject({ code: 'not-ready' });
+    expect(api.posted).toHaveLength(0);
+    expect((await store.load(chat))!.state?.nextSeq ?? 0).toBe(0);
+    await e.send(chat, 'still securing');
+    expect((api.posted[0] as Envelope).seq).toBe(0);
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    await e.sendProof(chat, await attached());
+    expect(api.posted).toHaveLength(2);
+  });
+
+  it('review M4: the worker answers chat-send-proof with not-ready while the trade is not secured', async () => {
+    api.view.tradeSecuredAt = null;
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    const { serveChat } = await import('../src/chat/serve.js');
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => e);
+    handler({ data: { t: 'chat-send-proof', id: 1, chat, proof: await attached() } });
+    for (let i = 0; i < 400 && out.length < 1; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(out).toEqual([{ t: 'chat', id: 1, ok: false, error: 'not-ready' }]);
+    expect(api.posted).toHaveLength(0);
+  });
+
+  it('review M2: a proof whose post got no answer (the connection dropped, or a 5xx) is uncertain, not refused; a 4xx is still refused', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    const post = api.postEnvelope.bind(api);
+    // Stored, then the connection dropped on the response.
+    api.postEnvelope = async (c, env) => {
+      await post(c, env);
+      throw new TypeError('Failed to fetch');
+    };
+    await expect(e.sendProof(chat, await attached())).rejects.toMatchObject({ code: 'uncertain' });
+    api.postEnvelope = async () => {
+      throw Object.assign(new Error('api 502'), { status: 502, code: 'internal' });
+    };
+    await expect(e.sendProof(chat, await attached())).rejects.toMatchObject({ code: 'uncertain' });
+    api.postEnvelope = async () => {
+      throw Object.assign(new Error('api 403'), { status: 403, code: 'forbidden' });
+    };
+    await expect(e.sendProof(chat, await attached())).rejects.toMatchObject({ code: 'refused' });
+    // A chat line is unchanged by this (its copy is ChatPanel's).
+    api.postEnvelope = async () => {
+      throw new TypeError('Failed to fetch');
+    };
+    await expect(e.send(chat, 'hello')).rejects.toMatchObject({ code: 'refused' });
+    // The worker passes the code through.
+    const { serveChat } = await import('../src/chat/serve.js');
+    let handler: (ev: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (ev: { data: unknown }) => void) => (handler = cb) } as never, async () => e);
+    handler({ data: { t: 'chat-send-proof', id: 9, chat, proof: await attached() } });
+    for (let i = 0; i < 400 && out.length < 1; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(out).toEqual([{ t: 'chat', id: 9, ok: false, error: 'uncertain' }]);
+  });
+
+  it('review M2: a proof the API stored is sent even when the read after it fails', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await e.sync(chat);
+    const post = api.postEnvelope.bind(api);
+    let down = false;
+    api.postEnvelope = async (c, env) => {
+      const id = await post(c, env);
+      down = true;
+      return id;
+    };
+    const get = api.getChat.bind(api);
+    api.getChat = async () => {
+      if (down) throw new TypeError('Failed to fetch');
+      return get();
+    };
+    await expect(e.sendProof(chat, await attached())).resolves.toBeDefined();
+    expect(api.posted).toHaveLength(1);
+  });
+
+  // TRIPWIRE NEEDS_PROOF_RECEIVE (review I1): the API sees only `from`, so a modified seller client
+  // can seal `proof.attached` kind 'proof' and the server stores it. The receiving half (ChatPanel's
+  // ProofThumb, Task 15) must refuse a payment proof from anyone but the buyer and show nothing of it.
+  // The receive half is in (proof stack merge): proof.attached opens as a proof line, and this keeps
+  // the seller's "payment proof" refused for good.
+  it('NEEDS_PROOF_RECEIVE tripwire: a payment proof (kind proof) from the seller is refused on receipt and shows nothing', async () => {
+    const { parseProofPayload } = await import('@x2f/proof');
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await e.sync(chat);
+    const fake = await attached();
+    // A modified seller client seals it under the chat key (v2), as any line.
+    const env = await sealChat({ trade: channel, from: 'seller', seq: 0, type: 'proof.attached', payload: parseProofPayload('proof.attached', fake).payload, tk: await tkOf(parts), me: seller });
+    const id = api.add('seller', env);
+    await fromSeller('after it', parts, 'seller', 1);
+    const snap = await e.sync(chat);
+    const shown = JSON.stringify(snap);
+    for (const s of [fake.proofId, fake.key, fake.sha256]) expect(shown, s).not.toContain(s);
+    expect(snap.lines.map((l) => l.text)).toEqual(['after it']);
+    const rec = (await store.load(chat))!;
+    expect(rec.receipts.find((r) => r.id === id)?.refused).toBe(true);
+  });
+});
+
+describe('chat engine: the unblurred copy for the moderator (Plan 5 Task 15, Review Focus 4)', () => {
+  async function unblurred(over: Record<string, unknown> = {}) {
+    const { newProofId, proofKeyToBase64 } = await import('@x2f/proof');
+    return { proofId: newProofId(), key: await proofKeyToBase64(new Uint8Array(32).fill(9)), sha256: 'cd'.repeat(32), width: 300, height: 120, mime: 'image/png' as const, ...over };
+  }
+
+  it('sendUnblurred seals proof.unblurred to the moderator only: the seller and the buyer itself cannot open it', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const p = await unblurred();
+    await e.sendUnblurred(chat, p);
+    expect(api.posted).toHaveLength(1);
+    const env = api.posted[0] as Envelope;
+    const wire = JSON.stringify(env);
+    for (const s of [p.key, p.proofId, p.sha256, 'proof.unblurred']) expect(wire, s).not.toContain(s);
+    const { open, ReplayGuard } = await import('@x2f/protocol');
+    const o = await open(env, { me: mod, myRole: 'mod', participants: parts, trade: channel, guard: new ReplayGuard(channel) });
+    expect(o.type).toBe('proof.unblurred');
+    expect(o.payload).toEqual(p);
+    await expect(open(env, { me: seller, myRole: 'seller', participants: parts, trade: channel, guard: new ReplayGuard(channel) })).rejects.toMatchObject({ code: 'not-for-me' });
+    const buyer = made[0]!;
+    await expect(open(env, { me: buyer, myRole: 'buyer', participants: parts, trade: channel, guard: new ReplayGuard(channel), allowSelf: true })).rejects.toMatchObject({ code: 'not-for-me' });
+  });
+
+  it('only while a dispute is open and the trade was secured: not-ready otherwise, nothing sealed, the seq kept', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.sendUnblurred(chat, await unblurred())).rejects.toMatchObject({ code: 'not-ready' });
+    api.view.disputeOpen = true;
+    api.view.tradeSecuredAt = null;
+    await expect(e.sendUnblurred(chat, await unblurred())).rejects.toMatchObject({ code: 'not-ready' });
+    expect(api.posted).toHaveLength(0);
+    expect((await store.load(chat))!.state?.nextSeq ?? 0).toBe(0);
+    await expect(e.sendUnblurred(chat, await unblurred({ key: 'nope' }))).rejects.toMatchObject({ code: 'not-ready' });
+    api.view.tradeSecuredAt = '2026-10-28T11:00:00.000Z';
+    await expect(e.sendUnblurred(chat, await unblurred({ key: 'nope' }))).rejects.toMatchObject({ code: 'bad-proof' });
+    await expect(e.sendUnblurred(chat, await unblurred({ kind: 'proof' }))).rejects.toMatchObject({ code: 'bad-proof' });
+    expect(api.posted).toHaveLength(0);
+  });
+
+  it('the copy is no line for anyone and leaves no gap: the sender\'s next line follows on, on both sides', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await e.send(chat, 'before');
+    await e.sendUnblurred(chat, await unblurred());
+    const snap = await e.send(chat, 'after');
+    expect(snap.lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', false]]);
+    // A fresh read on this device (no text kept) shows the same.
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', false]]);
+    // The seller's device: the same chat read as the seller sees the two lines, no gap and nothing else.
+    const { openChatMessage } = await import('../src/chat/chatCrypto.js');
+    let st = newChatState(channel);
+    const seen: string[] = [];
+    const tk = await tkOf(parts);
+    for (const env of api.posted as Array<Envelope | ChatEnvelopeV2>) {
+      try {
+        // The lines are v2 under the chat key; the copy is the one v1 (decision 16), sealed to the mod alone.
+        const r = await openChatMessage(env, { role: 'seller', me: seller, participants: parts, state: st, modMayPost: true, ...(env.v === 2 ? { tk } : {}) });
+        st = r.state;
+        seen.push(r.message.text);
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'not-for-me' });
+        seen.push('(not for me)');
+      }
+    }
+    expect(seen).toEqual(['before', '(not for me)', 'after']);
+  });
+
+  it('a seller-side engine takes the buyer\'s copy as a receipt with no line, and the buyer\'s next line shows with no gap', async () => {
+    // This device is the seller; the buyer is played here.
+    api.view = { ...api.view, role: 'seller', counterparty: 'Ana', disputeOpen: true };
+    const e = engine();
+    await e.sync(chat);
+    const me = made[0]!;
+    const buyer = await testIdentity();
+    api.identities.buyer = { signPublic: buyer.signPublic, boxPublic: buyer.boxPublic, proof: '' };
+    const participants: Participants = { buyer: pub(buyer), seller: pub(me), mod: pub(mod) };
+    const a: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: new Date().toISOString() };
+    api.attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), modKey.privateKey)) };
+    const { parseProofPayload, sealProofEnvelope } = await import('@x2f/proof');
+    // The buyer's device came first: it made the chat key (envelope v2 for its lines).
+    const bk = await makeChatKey({ channel, role: 'buyer', me: buyer, participants });
+    api.key = bk.record;
+    let bs = newChatState(channel);
+    const line = async (text: string) => {
+      const r = await sealChatMessage({ role: 'buyer', me: buyer, participants, state: bs, text, tk: bk.tk });
+      bs = r.state;
+      api.add('buyer', r.envelope);
+    };
+    await line('before');
+    const p = await unblurred();
+    const id = api.add('buyer', await sealProofEnvelope(parseProofPayload('proof.unblurred', p), { trade: channel, from: 'buyer', seq: bs.nextSeq, me: buyer, participants }));
+    bs = { ...bs, nextSeq: bs.nextSeq + 1 };
+    await line('after');
+    const snap = await e.sync(chat);
+    expect(snap.lines.map((l) => [l.from, l.text, l.gapBefore])).toEqual([['buyer', 'before', false], ['buyer', 'after', false]]);
+    const shown = JSON.stringify(snap);
+    for (const s of [p.proofId, p.key, p.sha256]) expect(shown, s).not.toContain(s);
+    const rec = (await store.load(chat))!;
+    expect(rec.receipts.find((r) => r.id === id)).toMatchObject({ from: 'buyer', away: true });
+    // Read again from the start: still no line and no gap.
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', false]]);
+  });
+
+  /** A seller-side engine with the buyer played here (as the test above). */
+  async function sellerSide(disputeOpen: boolean) {
+    api.view = { ...api.view, role: 'seller', counterparty: 'Ana', disputeOpen };
+    const e = engine();
+    await e.sync(chat);
+    const me = made[0]!;
+    const buyer = await testIdentity();
+    api.identities.buyer = { signPublic: buyer.signPublic, boxPublic: buyer.boxPublic, proof: '' };
+    const participants: Participants = { buyer: pub(buyer), seller: pub(me), mod: pub(mod) };
+    const a: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: new Date().toISOString() };
+    api.attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), modKey.privateKey)) };
+    const { parseProofPayload, sealProofEnvelope } = await import('@x2f/proof');
+    const bk = await makeChatKey({ channel, role: 'buyer', me: buyer, participants });
+    api.key = bk.record;
+    let bs = newChatState(channel);
+    const buyerSays = {
+      line: async (text: string) => {
+        const r = await sealChatMessage({ role: 'buyer', me: buyer, participants, state: bs, text, tk: bk.tk });
+        bs = r.state;
+        return api.add('buyer', r.envelope);
+      },
+      /** The relay drops the buyer's next line: its seq is spent, nothing reaches the seller. */
+      dropped: () => {
+        bs = { ...bs, nextSeq: bs.nextSeq + 1 };
+      },
+      copy: async () => {
+        const id = api.add('buyer', await sealProofEnvelope(parseProofPayload('proof.unblurred', await unblurred()), { trade: channel, from: 'buyer', seq: bs.nextSeq, me: buyer, participants }));
+        bs = { ...bs, nextSeq: bs.nextSeq + 1 };
+        return id;
+      },
+    };
+    return { e, buyerSays };
+  }
+
+  it('review I1: a line the relay dropped before the copy still shows as a gap, on the sender\'s next shown line only', async () => {
+    const { e, buyerSays } = await sellerSide(true);
+    await buyerSays.line('before');
+    buyerSays.dropped();
+    await buyerSays.copy();
+    await buyerSays.line('after');
+    await buyerSays.line('then');
+    const want = [['buyer', 'before', false], ['buyer', 'after', true], ['buyer', 'then', false]];
+    expect((await e.sync(chat)).lines.map((l) => [l.from, l.text, l.gapBefore])).toEqual(want);
+    // A fresh read from the start shows the same.
+    expect((await engine().sync(chat)).lines.map((l) => [l.from, l.text, l.gapBefore])).toEqual(want);
+  });
+
+  it('review I1: the gap is carried even when the next line comes in a later sync', async () => {
+    const { e, buyerSays } = await sellerSide(true);
+    await buyerSays.line('before');
+    buyerSays.dropped();
+    await buyerSays.copy();
+    expect((await e.sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false]]);
+    await buyerSays.line('after');
+    expect((await e.sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', true]]);
+  });
+
+  it('lead call 18 Nov: outside a dispute, a moderator-only message from a trader is never taken (refused for good, R16), and shows as a gap as before', async () => {
+    const { e, buyerSays } = await sellerSide(false);
+    await buyerSays.line('before');
+    const id = await buyerSays.copy();
+    await buyerSays.line('after');
+    const snap = await e.sync(chat);
+    expect(snap.lines.map((l) => [l.from, l.text, l.gapBefore])).toEqual([['buyer', 'before', false], ['buyer', 'after', true]]);
+    // Merge with the chat-key design (R16): a v1 envelope in a keyed chat is decided for good, its seq not taken.
+    const r = (await store.load(chat))!.receipts.find((x) => x.id === id);
+    expect(r).toMatchObject({ refused: true });
+    expect(r?.away).toBeUndefined();
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', true]]);
+  });
+
+  it('lead call 18 Nov: while a dispute is open the same message is away: no line and no gap', async () => {
+    const { e, buyerSays } = await sellerSide(true);
+    await buyerSays.line('before');
+    const id = await buyerSays.copy();
+    await buyerSays.line('after');
+    expect((await e.sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', false]]);
+    expect((await store.load(chat))!.receipts.find((r) => r.id === id)).toMatchObject({ away: true });
+  });
+
+  it('review I2: the snapshot names when this side\'s own moderator-only copy reached the chat (its receipt), and never the other side\'s', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    expect((await e.sync(chat)).modOnlySentAt).toEqual([]);
+    attest();
+    await e.send(chat, 'before');
+    const snap = await e.sendUnblurred(chat, await unblurred());
+    expect(snap.modOnlySentAt).toHaveLength(1);
+    expect(snap.modOnlySentAt?.[0]).toBe((api.envelopes.at(-1) as { at: string }).at);
+    expect((await engine().sync(chat)).modOnlySentAt).toEqual(snap.modOnlySentAt);
+    const other = await sellerSide(true);
+    await other.buyerSays.copy();
+    expect((await other.e.sync(chat)).modOnlySentAt).toEqual([]);
+  });
+
+  it('the worker checks the payload before the engine sees it (chat-send-unblurred)', async () => {
+    const { serveChat } = await import('../src/chat/serve.js');
+    const got: unknown[] = [];
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async (_c: string, p: unknown) => (got.push(p), {} as never), sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: async () => [] };
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
+    handler({ data: { t: 'chat-send-unblurred', id: 1, chat, proof: { ...(await unblurred()), key: 'bad' } } });
+    handler({ data: { t: 'chat-send-unblurred', id: 2, chat, proof: await unblurred() } });
+    for (let i = 0; i < 200 && out.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(out).toContainEqual({ t: 'chat', id: 1, ok: false, error: 'bad-proof' });
+    expect(out).toContainEqual(expect.objectContaining({ t: 'chat', id: 2, ok: true }));
+    expect(got).toHaveLength(1);
+  });
+});
+
+// Decision 16 (lead call 18 Nov, option i): the one v1 envelope a keyed chat takes is the moderator's
+// requested unblurred copy. R16 still holds for everything else: no trader's engine ever opens a v1
+// envelope here, so a sender who seals a v1 line to the counterparty alone (leaving the moderator's
+// copy out) is never read, during a dispute too.
+describe('chat engine: decision 16, R16 holds for v1 text in a keyed chat', () => {
+  it('a v1 chat message sealed to this trader is never a line, not even while a dispute is open; the lines around it still show', async () => {
+    for (const disputeOpen of [false, true]) {
+      chat = newTradeCode();
+      channel = await channelFor(chat, 'chat');
+      api = new FakeApi(chat);
+      sellerState = newChatState(channel);
+      api.view.disputeOpen = disputeOpen;
+      const e = engine();
+      await e.sync(chat);
+      const parts = attest();
+      await fromSeller('v2 before', parts);
+      // Sealed to buyer, seller and mod (v1, a real slot for this buyer): the engine must not open it.
+      const v1 = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: sellerState, text: 'pay to account B' });
+      sellerState = v1.state;
+      const id = api.add('seller', v1.envelope);
+      await fromSeller('v2 after', parts);
+      const snap = await e.sync(chat);
+      expect({ disputeOpen, lines: snap.lines.map((l) => l.text) }).toEqual({ disputeOpen, lines: ['v2 before', 'v2 after'] });
+      expect(JSON.stringify(snap)).not.toContain('account B');
+      const r = (await store.load(chat))!.receipts.find((x) => x.id === id)!;
+      // Outside a dispute it is refused for good; inside, a validly signed trader v1 is the away receipt
+      // the moderator's unblurred copy gets (no line, no gap), never opened either way.
+      expect({ disputeOpen, refused: r.refused === true, away: r.away === true }).toEqual({ disputeOpen, refused: !disputeOpen, away: disputeOpen });
+      expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['v2 before', 'v2 after']);
+    }
+  });
+
+  it('a v1 envelope whose signature does not check out, or whose sender the server misnames, is refused for good, never an away receipt', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await fromSeller('v2 before', parts);
+    const v1 = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: sellerState, text: 'forged' });
+    sellerState = v1.state;
+    const env = v1.envelope as Envelope;
+    const badSig = { ...env, sig: (env.sig[0] === 'a' ? 'b' : 'a') + env.sig.slice(1) };
+    const forged = api.add('seller', badSig);
+    const misnamed = api.add('buyer', env);
+    await fromSeller('v2 after', parts);
+    const snap = await e.sync(chat);
+    expect(snap.lines.map((l) => l.text)).toEqual(['v2 before', 'v2 after']);
+    const rec = (await store.load(chat))!;
+    for (const id of [forged, misnamed]) {
+      const r = rec.receipts.find((x) => x.id === id)!;
+      expect({ id, refused: r.refused, away: r.away }).toEqual({ id, refused: true, away: undefined });
+    }
+    expect(snap.modOnlySentAt).toEqual([]);
+  });
+
+  it('sendUnblurred in a keyed chat posts the one v1 (to the moderator alone) and every other send stays v2', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    const { newProofId, proofKeyToBase64 } = await import('@x2f/proof');
+    await e.send(chat, 'one');
+    await e.sendUnblurred(chat, { proofId: newProofId(), key: await proofKeyToBase64(new Uint8Array(32).fill(3)), sha256: 'aa'.repeat(32), width: 10, height: 10, mime: 'image/png' });
+    const snap = await e.send(chat, 'two');
+    expect(api.posted.map((x) => (x as { v: number }).v)).toEqual([2, 1, 2]);
+    expect(snap.lines.map((l) => l.text)).toEqual(['one', 'two']);
+    expect(snap.modOnlySentAt).toHaveLength(1);
   });
 });

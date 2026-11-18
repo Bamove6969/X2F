@@ -39,6 +39,30 @@ export function payRowsOf(snap: ChatSnapshot): PaymentDetail[] | null {
 const norm = (c: string): string => c.replace(/-/g, '').toUpperCase();
 const listeners = new Map<string, Set<(d: PaymentDetail[] | null) => void>>();
 const latest = new Map<string, PaymentDetail[] | null>();
+/**
+ * NEEDS_PROOF_RECEIVE: each trade's newest snapshot, for the proof state (proof/chatProof.ts
+ * chatProofState). Memory only. It holds any proof line's key (review I4), as the open panel does,
+ * until the trade's last listener goes.
+ */
+const snapshots = new Map<string, ChatSnapshot>();
+
+/**
+ * A log-out or an ended session (push/usePush.ts forgetLocalSession): every snapshot (T-I3) and every
+ * trade's payment-detail rows (P-I4) go. A card still mounted keeps what it shows until its next sync.
+ */
+export function forgetChatSnapshots(): void {
+  snapshots.clear();
+  latest.clear();
+}
+
+/** The newest snapshot of this trade's chat that the feed or an open panel saw, or null. */
+export function latestChatSnapshot(tradeCode: string): ChatSnapshot | null {
+  return snapshots.get(norm(tradeCode)) ?? null;
+}
+/** The seller's payment-detail rows the feed keeps for this trade (what a new pay card shows first), or null. */
+export function latestPayRows(tradeCode: string): PaymentDetail[] | null {
+  return latest.get(norm(tradeCode)) ?? null;
+}
 /** How many open panels are publishing for each trade. */
 const panels = new Map<string, number>();
 
@@ -54,16 +78,31 @@ export function panelPublishing(tradeCode: string): () => void {
     if (released) return;
     released = true;
     const n = (panels.get(key) ?? 1) - 1;
-    if (n <= 0) panels.delete(key);
-    else panels.set(key, n);
+    if (n > 0) {
+      panels.set(key, n);
+      return;
+    }
+    panels.delete(key);
+    // T-I3, P-I4: the last panel gone and no pay card listening: nothing keeps this snapshot or the
+    // seller's rows current, and the proof lines carry their keys, so both go (a listening card's feed
+    // clears them when the card goes).
+    if (!listeners.has(key)) {
+      snapshots.delete(key);
+      latest.delete(key);
+    }
   };
 }
 
-/** An open panel's snapshot for `tradeCode`: the card follows it at once. */
+/**
+ * An open panel's snapshot for `tradeCode`: the card follows it at once. The seller's rows are kept
+ * only while a panel or a pay card for the trade is there (PTW4-I3): a publish that lands after both
+ * went (a late postProofToChat, a sync still in flight at log-out) leaves no rows behind.
+ */
 export function publishPaySnapshot(tradeCode: string, snap: ChatSnapshot): void {
   const key = norm(tradeCode);
   const rows = payRowsOf(snap);
-  latest.set(key, rows);
+  if (panels.has(key) || listeners.has(key)) latest.set(key, rows);
+  snapshots.set(key, snap);
   for (const cb of [...(listeners.get(key) ?? [])]) cb(rows);
 }
 
@@ -110,6 +149,7 @@ export const chatPaymentDetailsSource: PaymentDetailsSource = (code, onDetails) 
     if (set.size === 0) {
       listeners.delete(key);
       latest.delete(key);
+      snapshots.delete(key);
     }
     offLive?.();
     if (timer !== null) clearInterval(timer);

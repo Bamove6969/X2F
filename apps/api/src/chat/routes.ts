@@ -21,6 +21,11 @@
  *   chat identities (400 `bad-key-record`). First writer wins: a second record is 409 `key-exists`
  *   and the device then reads the stored one. `GET /v1/chats/:chat/key` → `{ record }`, or 404 `no-key`.
  *   Once a chat has a key record it takes only envelope v2 (`checkChatEnvelopeV2`); before, only v1.
+ *   One exception (decision 16, lead call 18 Nov): the side an open dispute's moderator asked for an
+ *   unblurred proof may post exactly ONE v1 envelope per request (the moderator-only
+ *   `proof.unblurred`, which the shared chat key cannot carry). The API cannot see a v1 envelope's
+ *   type or recipients (both are sealed), so it checks what it can: an open dispute of the chat's
+ *   trade whose request names the sender's side, and no v1 envelope from that side since the request.
  *   The API cannot open any wrap: it stores and serves them.
  * - `POST /v1/chats/:chat/grant` (build task 6): the counterparty's fallback grant to the moderator
  *   (chat/grants.ts); the chat view lists every grant and its acceptance (`grants`).
@@ -44,7 +49,7 @@
  * may need it, so it stays usable until the trade closes (lead decision 2026-10-29).
  */
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
-import { ProtocolError, verifyChatKeyRecord } from '@x2f/protocol';
+import { isPlainObject, ProtocolError, verifyChatKeyRecord } from '@x2f/protocol';
 import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope, checkChatEnvelopeV2 } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
@@ -410,9 +415,11 @@ export function chatRoutes(app: FastifyInstance): void {
     // Design build task 4: a chat with a key record takes only envelope v2 (one ciphertext under its
     // key, nothing a sender can leave out for the moderator, R16); one without takes only v1.
     const keyed = (await deps.db.query('select 1 from chat_keys where chat = $1', [row.code])).rows.length > 0;
+    // Decision 16: in a keyed chat, a v1 body is only ever the answer to a moderator's request (checked under the lock below).
+    const v1InKeyed = keyed && isPlainObject(req.body) && req.body.v === 1;
     let env;
     try {
-      env = keyed ? checkChatEnvelopeV2(req.body, await channelFor(row.code, 'chat'), role) : checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);
+      env = keyed && !v1InKeyed ? checkChatEnvelopeV2(req.body, await channelFor(row.code, 'chat'), role) : checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);
     } catch (e) {
       if (!(e instanceof ChatEnvelopeError)) throw e;
       if (e.code === 'too-large') throw new ApiError(413, 'bad-request');
@@ -430,6 +437,20 @@ export function chatRoutes(app: FastifyInstance): void {
       );
       const top = last.rows[0]?.seq;
       if (top !== null && top !== undefined && BigInt(env.seq) <= BigInt(top)) throw new ApiError(409, 'stale-seq');
+      if (v1InKeyed) {
+        // Decision 16: an open dispute of this chat's trade whose moderator asked THIS side, with no
+        // v1 envelope from it since the request; otherwise refused as any v1 in a keyed chat (400).
+        // Under the chat row's lock, so two posts can never both answer one request.
+        const asked = row.trade_code === null ? [] : (await q.query(
+          `select 1 from disputes d
+            where d.code = $1 and d.status <> 'closed' and d.proof_request_side = $2
+              and not exists (select 1 from chat_envelopes e where e.chat = $3 and e.sender_role = $2
+                                 and e.envelope->>'v' = '1' and e.created_at >= d.proof_requested_at)
+            limit 1`,
+          [row.trade_code, role, row.code],
+        )).rows;
+        if (asked.length === 0) throw new ApiError(400, 'bad-request');
+      }
       const ins = await q.query<{ id: string }>(
         `insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ($1, $2, $3, $4, $5) returning id::text as id`,
         [row.code, role, env.seq, env, now],

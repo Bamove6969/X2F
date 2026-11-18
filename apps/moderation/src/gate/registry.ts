@@ -74,7 +74,7 @@ async function verifiedRegistration(response: unknown, tokenHash: string, ctx: G
       expectedRPID: ctx.rp.rpId,
       expectedType: 'webauthn.create',
       requireUserPresence: true,
-      requireUserVerification: false,
+      requireUserVerification: true,
       supportedAlgorithmIDs: ALGORITHMS,
     });
     const info = v.registrationInfo;

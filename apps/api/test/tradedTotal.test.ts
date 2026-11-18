@@ -305,7 +305,7 @@ describe('one cancel figure (moderators only)', () => {
     expect(await cancels(buyer)).toBe(1);
     const { summary, body } = await summaryOf(seller, code);
     expect(Object.keys(summary).sort()).toEqual(
-      ['badges', 'completedTrades', 'displayName', 'disputes', 'imported', 'lastSeenAt', 'online', 'positivePct', 'stage', 'tradedOverXmr', 'typicalMinutes'],
+      ['badges', 'completedTrades', 'displayName', 'disputes', 'featuredBadges', 'imported', 'lastSeenAt', 'online', 'positivePct', 'stage', 'tradedOverXmr', 'typicalMinutes'],
     );
     // The public cancel rate is gone (owner T-017): no cancel figure of any kind on the trade view.
     expect(body).not.toMatch(/cancelRate|cancel_rate|cancels"|cancelledByMe/i);

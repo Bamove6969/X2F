@@ -3,7 +3,7 @@ import { normalizeLoginCode } from '@x2f/accounts';
 import { keyCheckCode, ownerSetupChallenge } from '@x2f/staff';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { assertNewNames, createAccount } from '../accounts.js';
+import { assertNewNames, assertStaffNameUnlike, createAccount } from '../accounts.js';
 import type { Deps } from '../app.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { COOKIE_ATTRS, ensureDeviceCookie } from '../auth/device.js';
@@ -204,6 +204,7 @@ export function ownerSetupRoutes(app: FastifyInstance): void {
       await c.query('update challenges set account_id = null where id = $1', [s.id]);
       await c.query("delete from accounts where kind = 'owner' and disabled_at is not null");
       const names = await assertNewNames(c, b.displayName, b.loginName);
+      await assertStaffNameUnlike(c, names.displayKey);
       const ownerId = await createAccount(c, deps.config, { ...names, kind: 'owner', termsVersion: null, now });
       await c.query('update accounts set disabled_at = $2 where id = $1', [ownerId, now]);
       await c.query('update challenges set account_id = $2 where id = $1', [s.id, ownerId]);

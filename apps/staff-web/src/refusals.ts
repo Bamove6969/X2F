@@ -6,7 +6,7 @@
  *
  * Every sentence here is draft copy. COPY-UNSIGNED
  */
-import { codeOf } from './api.js';
+import { codeOf, type StaffApiError } from './api.js';
 
 export const STAFF_REFUSALS = {
   // Task 4: a switched-off staff member, or a login outside the member's login hours (the API
@@ -48,5 +48,8 @@ export function faultText(e: unknown, fallback: string): string {
   if (code === null) return 'X2F could not be reached just now. Try again.';
   if (code === 'slow-down') return 'Too many tries. Wait a few minutes, then try again.';
   if (code === 'challenge-expired') return 'That step has expired. Start again.';
+  // Review m1: a key login refused only for its missing PIN; the API words it (KEY_NEEDS_PIN, COPY-UNSIGNED).
+  const detail = (e as StaffApiError).extra.detail;
+  if (code === 'webauthn-failed' && typeof detail === 'string' && detail.trim() !== '') return detail;
   return fallback;
 }

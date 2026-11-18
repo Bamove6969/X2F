@@ -42,6 +42,12 @@ export type ApiErrorCode =
   | 'counterparty-unavailable'
   | 'method-not-allowed'
   | 'last-login-method'
+  // Owner, 16 Nov 2026: the authenticator app goes only with a password (@x2f/accounts
+  // METHOD_PARTNERS): no TOTP enrolment without a password, no password removal while TOTP is on.
+  | 'totp-needs-password'
+  | 'password-has-totp'
+  // Owner, 16 Nov 2026: a password does not stand alone (TOTP or a PGP key, passkey or security key with it).
+  | 'password-alone'
   | 'webauthn-failed'
   | 'security-key-limit'
   | 'origin-refused'
@@ -147,7 +153,13 @@ export type ApiErrorCode =
   | 'comment-too-long'
   | 'comment-bad-character'
   | 'review-exists'
+  // Plan 5, Task 14: proof storage (proofs/routes.ts); its 409 too-many-proofs is declared above (blur check).
+  | 'proof-exists'
+  | 'not-requested'
   | 'review-pending'
+  // Plan 5 Task 5: @x2f/reputation's BadgeError codes (badge settings), answered as 400.
+  | 'new-is-fixed'
+  | 'not-earned'
   // Plan 5, Task 3: @x2f/reputation's ReviewError codes, answered as 400 (reviews/routes.ts checks
   // at compile time that every ReviewErrorCode is listed here).
   | 'bad-shape'

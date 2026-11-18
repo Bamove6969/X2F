@@ -44,6 +44,7 @@
  * pre-trade chat on an offer (the quote's Chat button).
  */
 import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
+import { ChatProof } from '../screens/proof/ChatProof.js';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
@@ -74,9 +75,13 @@ const SEND_ERRORS: Record<ChatFailure, string> = {
   'bad-text': 'Type a message first, and leave out hidden characters.',
   // COPY-UNSIGNED (J-08): the worker refused the package (a box the page's own check let through).
   'bad-details': 'Check the details and try again.',
+  // COPY-UNSIGNED (Plan 5 Task 15): the worker refused a proof's envelope (the composer never sends one).
+  'bad-proof': "Couldn't send this proof. Try again.",
   'too-large': 'This message is too long.',
   'slow-down': "You're sending messages too fast. Wait a minute and try again.",
   refused: "Couldn't send. Check your connection and try again.",
+  // COPY-UNSIGNED (proof review M2): only a proof's send is ever uncertain, and the composer never sends one.
+  uncertain: 'This may have been sent. Check the chat before you send it again.',
   unavailable: "Couldn't send. Check your connection and try again.",
   'not-found': CHAT_CLOSED,
 };
@@ -263,7 +268,10 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
                 <span className="x2f-chat__hidden">: </span>
               </span>
               {/* A line this device showed before that the server no longer serves (review I2): a gap, not a silence. */}
-              {l.notice !== undefined ? (
+              {l.proof !== undefined ? (
+                // NEEDS_PROOF_RECEIVE: a proof is fetched and decrypted here, shown only through ProofThumb.
+                tradeCode ? <ChatProof tradeCode={tradeCode} proof={l.proof} /> : null
+              ) : l.notice !== undefined ? (
                 <span className="x2f-chat__autonotice">{CHAT_NOTICES[l.notice]}</span>
               ) : l.pay !== undefined ? (
                 <PayCard pay={l.pay} />

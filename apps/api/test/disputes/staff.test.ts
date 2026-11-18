@@ -1017,8 +1017,20 @@ describe('the proof request in the trader view', () => {
     expect((await mod.b.post(url(code, '/proof-request'), { side: 'buyer' })).statusCode).toBe(204);
     const asBuyer = (await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown };
     const asSeller = (await seller.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown };
-    expect(asBuyer.proofRequest).toEqual({ username: mod.name, at: START.toISOString() });
+    expect(asBuyer.proofRequest).toEqual({ username: mod.name, at: START.toISOString(), sentAt: null });
     expect(asSeller.proofRequest).toBeNull();
+  });
+
+  it('Plan 5 Task 15: a new request clears the time the last unblurred copy went (sentAt)', async () => {
+    const mod = await staff('mod');
+    const { code, buyer } = await disputed();
+    await mod.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    // As if the buyer had answered an earlier request (proofs.test.ts drives the upload itself).
+    await deps.db.query('update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = $4, proof_request_sent_at = $3 where code = $1', [code, 'buyer', START, mod.name]);
+    expect(((await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: { sentAt: unknown } }).proofRequest.sentAt).toBe(START.toISOString());
+    expect((await mod.b.post(url(code, '/proof-request'), { side: 'buyer' })).statusCode).toBe(204);
+    expect(((await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown }).proofRequest).toEqual({ username: mod.name, at: START.toISOString(), sentAt: null });
   });
 });
 
@@ -1118,20 +1130,52 @@ describe('g62: maintenance holds the freeze clock', () => {
 describe('Task 11 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
-  it('NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is read through the proof pipeline once its storage lands', async () => {
-    // @x2f/proof (sealProofEnvelope, `proof.unblurred` sealed to the mod only, decryptProof) is on
-    // main, but no API table stores a proof's ciphertext yet (Plan 5 Tasks 13-15). When one lands:
-    // the moderator's unblurred view follows the key-membership design (the proof key re-wrapped to
-    // the staff device key, decrypted in staff-web; NEVER bytes relayed through this API, review
-    // 8 Nov I-1), and the proof-request route asks the trader who uploaded the proof instead of the
-    // side the moderator names.
+  it('NEEDS_P4_CHAT_MEMBERSHIP (was NEEDS_P5_PROOF_ENVELOPE): proof storage has landed, and still no route relays a proof to staff', async () => {
+    // Plan 5 Task 14 (wip/lead-proof-store, 12 Nov) stores proof ciphertexts (migration 580,
+    // apps/api/src/proofs). The moderator's unblurred view still follows the key-membership design
+    // (the proof key re-wrapped to the staff device key, decrypted in staff-web; NEVER bytes relayed
+    // through this API, review 8 Nov I-1): until it lands there is no staff proof route and no
+    // internal proof read, and a trader's GET of an `unblurred` proof is 404 (proofs.test.ts).
+    // OPEN (lead): the proof-request route still asks the side the moderator names; whether it
+    // should instead ask only a side that has uploaded a proof is a decision, not made here.
     const { readdirSync, readFileSync } = await import('node:fs');
     const dir = `${ROOT}apps/api/migrations/`;
     const sql = readdirSync(dir).map((f) => readFileSync(dir + f, 'utf8')).join('\n');
-    // The blur check's bookkeeping (migration 367, P-012/P-013: `blur_check_proofs` holds only a
-    // trade code, a proof id and whether to ask) stores no proof, so it is not the storage meant here.
-    expect(/create table\s+(?!blur_check_)\w*proof/i.test(sql), 'a proof table landed: wire the ProofSource (see this test)').toBe(false);
+    expect(/create table\s+trade_proofs\b/i.test(sql)).toBe(true);
+    const staff = readFileSync(`${ROOT}apps/api/src/disputes/staffRoutes.ts`, 'utf8');
+    expect(staff).not.toMatch(/['`]\/staff\/v1\/disputes\/:code\/proof['`]/);
+    // Review I2: the whole API tree, not only staffRoutes.ts and src/internal: only proofs/ and the
+    // retention job list may name the proof tables, the store or a proof route (src/staff/*,
+    // trades/held.ts and disputes/moderationClient.ts included).
+    const SRC = `${ROOT}apps/api/src/`;
+    const files = (readdirSync(SRC, { recursive: true }) as string[]).filter((f) => /\.ts$/.test(f)).map((f) => f.replace(/\\/g, '/'));
+    expect(files).toEqual(expect.arrayContaining(['staff/app.ts', 'trades/held.ts', 'disputes/moderationClient.ts', 'disputes/staffRoutes.ts']));
+    expect(files.some((f) => f.startsWith('internal/'))).toBe(true);
+    for (const f of files) {
+      if (f.startsWith('proofs/') || f === 'retentionJobs.ts') continue;
+      const c = readFileSync(SRC + f, 'utf8');
+      // Proof stack: the blur check's announce asks only whether a stored proof exists
+      // (isStoredProof from the store, existence only); it names no table and reads no ciphertext.
+      if (f === 'proof/blurCheck.ts') {
+        expect(c, f).toMatch(/import \{ isStoredProof \} from '\.\.\/proofs\/store\.js';/);
+        expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|ciphertext/);
+        // Stack review S-M1: that one import and nothing else from the store (no second named import,
+        // no namespace import), and no dynamic import(.
+        expect(c.match(/proofs\/store/g), f).toHaveLength(1);
+        expect(c, f).not.toMatch(/\bimport\s*\(/);
+        continue;
+      }
+      expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|proofs\/store/);
+      // The route lists (auth/frontDoor.ts, auth/hold.ts) name the trader's proof route; staff,
+      // internal and dispute code never does.
+      if (/^(staff|internal|disputes)\//.test(f) || f === 'trades/held.ts') expect(c, f).not.toMatch(/proofs\/:id/);
+    }
+    // Review I1: the GET's kind filter itself (a match on the import of readableProof proved nothing).
+    const store = readFileSync(`${SRC}proofs/store.ts`, 'utf8');
+    const readable = /export async function readableProof\b[\s\S]*?\n}/.exec(store)?.[0] ?? '';
+    expect(readable).toMatch(/\bkind in \('proof', 'evidence'\)/);
     expect(existsSync(`${ROOT}packages/proof`)).toBe(true);
   });
+
 
 });
