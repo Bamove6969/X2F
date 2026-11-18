@@ -111,7 +111,7 @@ export interface World {
   owner: Person;
   ownerKey2: SoftAuthenticator;
   /** Invites a staff member the proper way: an owner `create-invite` tap and an attested registration. */
-  hire(role: 'senior' | 'mod' | 'helper', o?: { attest?: 'x5c' | 'self' | 'none'; aaguid?: string; noTap?: boolean; wrongToken?: boolean }): Person;
+  hire(role: 'senior' | 'mod' | 'helper', o?: { attest?: 'x5c' | 'self' | 'none'; aaguid?: string; noTap?: boolean; wrongToken?: boolean; noUv?: boolean }): Person;
 }
 
 export async function world(): Promise<World> {
@@ -133,6 +133,8 @@ export async function world(): Promise<World> {
     const intent: KeyTapIntent = { kind: 'create-invite', inviteId, role, tokenHash, expiresAt: '2026-11-13T12:00:00.000Z' };
     if (!o.noTap) api.taps.push(tapBy(owner, intent));
     const challengeHash = o.wrongToken ? sha256Hex('another token') : tokenHash;
+    // `noUv`: the key registers without user verification (no PIN or fingerprint), then verifies again.
+    if (o.noUv) p.key.flags.userVerified = false;
     const response = p.key.register(
       {
         challenge: b64url(inviteRegistrationChallenge(challengeHash)),
@@ -143,6 +145,7 @@ export async function world(): Promise<World> {
       },
       ORIGIN,
     );
+    p.key.flags.userVerified = true;
     api.invites.set(inviteId, { inviteId, tokenHash, accountId: p.id, registrations: [{ credentialId: p.key.credentialId, response }] });
     api.creds.set(p.key.credentialId, { accountId: p.id, publicKey: new Uint8Array(p.key.cosePublicKey), aaguid: o.aaguid ?? AAGUID });
     api.staffRows.set(p.id, { accountId: p.id, role, switchedOff: false, removed: false });

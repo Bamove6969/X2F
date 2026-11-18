@@ -588,6 +588,40 @@ describe('security review 2026-11-12', () => {
 // Lead call on review P4 (12 Nov): owner registry taps carry a signed issuedAt (the API's start
 // time); the gate notes when it first saw each switch-off by its own clock, and a switch-on counts
 // only when issued after that, less a 2-minute skew. Taps without issuedAt are refused.
+describe('user verification on every key (owner, 16 Nov 2026; lead call 18 Nov)', () => {
+  it('a staff key registered without user verification is never accepted', async () => {
+    const w = await world();
+    const noUv = w.hire('mod', { noUv: true });
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(Object.keys(w.gate.staff)).toEqual([mod.id]);
+    const c = ruling(noUv);
+    expect(await authorize(w, c, [tapBy(noUv, c.intent('propose'))])).toEqual({ ok: false, reason: 'unknown-key' });
+  });
+
+  it('a tap without user verification is refused, for staff and for the owner', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const c = ruling(mod);
+    mod.key.flags.userVerified = false;
+    const unverified = tapBy(mod, c.intent('propose'));
+    mod.key.flags.userVerified = true;
+    expect(await authorize(w, c, [unverified])).toEqual({ ok: false, reason: 'bad-signature' });
+    expect((await authorize(w, c, [tapBy(mod, c.intent('propose'))])).ok).toBe(true);
+
+    // An owner create-invite tap without user verification invites nobody.
+    w.owner.key.flags.userVerified = false;
+    const before = w.api.taps.length;
+    const hired = w.hire('mod');
+    w.owner.key.flags.userVerified = true;
+    expect(w.api.taps.length).toBe(before + 1);
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(Object.keys(w.gate.staff)).toEqual([mod.id]);
+    expect(Object.keys(w.gate.staff)).not.toContain(hired.id);
+  });
+});
+
 describe('signed issuedAt (review P4, lead call)', () => {
   const at = (min: number) => new Date(NOW.getTime() + min * 60_000);
   const ctxAt = (d: Date): GateContext => ({ ...ctx(), now: () => d });

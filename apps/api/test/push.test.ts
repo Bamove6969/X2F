@@ -79,7 +79,16 @@ async function owner(): Promise<{ id: string; b: Browser }> {
   return { id, b };
 }
 
-/** A browser-shaped subscription with a real P-256 key, on an FCM-like endpoint. */
+/**
+ * Strings this file checks pushes and request bodies for. A subscription never contains one, or a
+ * random endpoint or key could hold "EUR" and fail a check that nothing leaked (a flake).
+ */
+const CHECKED = ['EUR', 'X2F'];
+const holdsChecked = (v: string): boolean => CHECKED.some((c) => v.includes(c));
+
+/**
+ * A browser-shaped subscription with a real P-256 key, on an FCM-like endpoint.
+ */
 function subscription(host = 'fcm.googleapis.com') {
   const ecdh = createECDH('prime256v1');
   ecdh.generateKeys();
@@ -112,6 +121,16 @@ async function stored(accountId: string): Promise<string[]> {
   );
   return rows.map((r) => r.endpoint);
 }
+
+describe('the test subscriptions themselves', () => {
+  it('never hold a string this file checks for (no flake from a random "EUR")', () => {
+    for (let i = 0; i < 500; i++) {
+      const s = subscription();
+      expect(s.endpoint.split('/').at(-1)).toMatch(/^[0-9a-f]{48}$/);
+      for (const v of [s.endpoint, s.keys.p256dh, s.keys.auth]) expect(holdsChecked(v)).toBe(false);
+    }
+  });
+});
 
 describe('POST and DELETE /v1/account/push: who may call', () => {
   it('needs a session', async () => {

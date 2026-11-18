@@ -481,6 +481,43 @@ describe('removing a login method', () => {
     expect((await listMethods(deps.db, id)).map((m) => m.type)).toEqual(['password', 'totp']);
   });
 
+  // The password-alone check counts only usable PGP keys, as G13 does (security review 8 Nov M3:
+  // an expired or revoked key logs no one in).
+  it('password-alone: an expired PGP key does not count, so a trader with a password, one and a passkey keeps the passkey', async () => {
+    const { id } = await account();
+    await addPassword(id);
+    await addPgp(id, await genKey({ keyExpirationTime: 86_400 }));
+    const passkey = await addCredential(id, 'passkey', false);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
+    const refused = await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'password-alone']);
+    expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'password', 'pgp']);
+  });
+
+  it('password-alone: a revoked PGP key does not count, so a trader with a password, one and a passkey keeps the passkey', async () => {
+    const { id } = await account();
+    await addPassword(id);
+    const key = await genKey();
+    await addPgp(id, key);
+    await revokeStored(id, key);
+    const passkey = await addCredential(id, 'passkey', false);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
+    const refused = await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'password-alone']);
+  });
+
+  it('password-alone: with a usable PGP key beside the password, the passkey can go', async () => {
+    const { id } = await account();
+    await addPassword(id);
+    await addPgp(id, await genKey());
+    const passkey = await addCredential(id, 'passkey', false);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
+    expect((await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t })).statusCode).toBe(200);
+  });
+
   it('owner minimums: two attested keys and a PGP key stay', async () => {
     const { id } = await account('owner');
     const k1 = await addCredential(id, 'security-key', true);
