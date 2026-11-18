@@ -16,3 +16,29 @@ export {
 } from './envelope.js';
 export { canonicalJson } from './payload.js';
 export { hasExactKeys, isPlainObject, isValidSeq } from './roles.js';
+export {
+  CHAT_ENVELOPE_V2_KEYS,
+  CHAT_GRANT_KEYS,
+  CHAT_KEY_BYTES,
+  CHAT_KEY_RECORD_KEYS,
+  DISPUTE_NOTICE_KEYS,
+  chatKeyHash,
+  makeChatGrant,
+  makeChatKeyRecord,
+  makeDisputeNotice,
+  newChatKey,
+  openChat,
+  openChatKeyRecord,
+  sealChat,
+  unwrapChatKey,
+  verifyChatGrant,
+  verifyChatKeyRecord,
+  verifyDisputeNotice,
+  wrapChatKey,
+  type ChatEnvelopeV2,
+  type ChatGrant,
+  type ChatKeyRecord,
+  type DisputeNotice,
+  type OpenChatArgs,
+  type SealChatArgs,
+} from './chatV2.js';
