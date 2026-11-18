@@ -63,7 +63,10 @@ export type AlertKind =
   | 'dispute-comply-lapsed'
   // Owner only (re-review m3 follow-up): the payment-proof checker gave up on a stuck wallet; once
   // per stuck episode. After three, proofs answer 503 until the API is restarted.
-  | 'tx-proof-check-stuck';
+  | 'tx-proof-check-stuck'
+  // Owner only (re-review w1): the checker gave up on its third stuck wallet; every proof answers 503
+  // until the API is restarted. Once.
+  | 'tx-proof-check-stopped';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

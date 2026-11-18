@@ -80,6 +80,13 @@ function assertTakesProof(d: Dispute, at: Date): void {
   if (at.getTime() >= d.complyBy.getTime()) throw new DisputeRuleError('too-late');
 }
 
+/** Why the checker could not take a proof (X2F's fault, not the seller's), or null for any other error. */
+function checkerDown(err: unknown): 'node-unavailable' | 'busy' | null {
+  if (err instanceof TxProofUnavailable) return 'node-unavailable';
+  if (err instanceof ApiError && err.status === 503 && err.code === 'busy') return 'busy';
+  return null;
+}
+
 const toApi = (err: unknown): never => {
   if (err instanceof DisputeRuleError) throw new ApiError(409, err.code === 'too-late' ? 'too-late' : 'wrong-state');
   if (err instanceof TxProofUnavailable) throw new ApiError(503, 'node-unavailable');
@@ -150,7 +157,7 @@ export function complyRoutes(app: FastifyInstance): void {
     } catch (err) {
       // RC-4 (lead default): a proof sent in time that the checker could not take is recorded for the
       // senior's case view; complyBy does not move.
-      const reason = err instanceof TxProofUnavailable ? 'node-unavailable' : err instanceof ApiError && err.status === 503 && err.code === 'busy' ? 'busy' : null;
+      const reason = checkerDown(err);
       if (reason !== null) {
         await deps.db
           .query('insert into ruling_payment_attempts (code, seq, at, reason) values ($1, $2, $3, $4)', [row.code, rec.dispute.seq, submittedAt, reason])
@@ -222,7 +229,9 @@ export async function runPendingProofs(deps: DisputeDeps & { txProof?: TxProofCh
       try {
         result = await check({ txHash: p.tx_hash, txKey: p.tx_key, address: t.buyer_payout });
       } catch (err) {
-        if (err instanceof TxProofUnavailable) continue;
+        // The node cannot be asked, or the checker is busy or stopped (503 busy, re-review w2): it
+        // stays waiting, quietly, for the next pass.
+        if (checkerDown(err) !== null) continue;
         throw err;
       }
       let accepted = false;
@@ -351,10 +360,19 @@ export async function complianceOf(q: Queryable, d: Pick<Dispute, 'code' | 'seq'
  * `tx-proof-check-stuck` in-app, then the fixed phone push. Best effort: it never throws.
  */
 export function txProofStuckAlert(deps: OwnerAlertDeps): () => Promise<void> {
+  return checkerAlert(deps, 'tx-proof-check-stuck');
+}
+
+/** Re-review w1: the `onStopped` sink: the checker reached its cap and answers 503 until a restart. */
+export function txProofStoppedAlert(deps: OwnerAlertDeps): () => Promise<void> {
+  return checkerAlert(deps, 'tx-proof-check-stopped');
+}
+
+function checkerAlert(deps: OwnerAlertDeps, kind: 'tx-proof-check-stuck' | 'tx-proof-check-stopped'): () => Promise<void> {
   return async () => {
     try {
-      await addOwnerAlert(deps.db, 'tx-proof-check-stuck', {}, deps.clock());
-      await pushOwnerAlert(deps, 'tx-proof-check-stuck');
+      await addOwnerAlert(deps.db, kind, {}, deps.clock());
+      await pushOwnerAlert(deps, kind);
     } catch {
       // nothing more to do: the checker answers 503 meanwhile
     }

@@ -21,6 +21,8 @@ export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>([
   'dispute-comply-lapsed',
   // Re-review m3 follow-up: the proof checker is stuck, so a restart happens before sellers' deadlines pass.
   'tx-proof-check-stuck',
+  // Re-review w1: the checker stopped at its cap; only a restart brings it back.
+  'tx-proof-check-stopped',
 ]);
 
 export interface OwnerAlertDeps {

@@ -59,6 +59,8 @@ const NETWORKS: Record<Config['moneroNetwork'], MoneroNetworkType> = {
 export const TX_PROOF_STUCK_AFTER_MS = 5 * 60_000;
 /** After this many abandoned wallets no new one is made: every check is 503 `busy` until a restart (a wedged WASM runtime must not leak without bound). */
 export const TX_PROOF_MAX_ABANDONED = 3;
+/** Re-review w1: a check that finishes in time this long after the last abandoned wallet resets the count (unrelated stalls months apart never add up to the cap). */
+export const TX_PROOF_ABANDON_RESET_MS = 24 * 3_600_000;
 
 const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0;
 
@@ -75,6 +77,10 @@ export interface MoneroTxProofOptions {
   stuckAfterMs?: number;
   /** Called once per stuck episode, when the first wallet of it is abandoned (main.ts: the owner alert). Must not throw. */
   onStuck?: () => void;
+  /** Called once, when the TX_PROOF_MAX_ABANDONED-th wallet is abandoned: from then on every check is 503 until a restart (re-review w1). Must not throw. */
+  onStopped?: () => void;
+  /** For the count's 24-hour reset only (default the system clock). */
+  clock?: () => Date;
 }
 
 /**
@@ -93,7 +99,10 @@ export interface MoneroTxProofOptions {
  * timeout (review m3). The next check waits in the queue (32, then 503 `busy`) until then, but
  * never longer than the watchdog (`stuckAfterMs`): a call still running then is abandoned with its
  * wallet. After TX_PROOF_MAX_ABANDONED wallets every check is 503 `busy` until a restart. A stuck
- * episode calls `onStuck` once; it ends when a check that used the wallet finishes in time.
+ * episode calls `onStuck` once; it ends when a check that used the wallet finishes in time. Reaching
+ * the cap calls `onStopped` once. A check that finishes in time TX_PROOF_ABANDON_RESET_MS or more
+ * after the last abandoned wallet resets the count to 0 (re-review w1); once at the cap nothing runs,
+ * so only a restart clears it.
  */
 export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
   const base = o.url.replace(/\/+$/, '');
@@ -104,6 +113,15 @@ export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
   let wallet: Promise<MoneroWalletFull> | undefined;
   let abandoned = 0;
   let stuck = false;
+  let lastAbandonAt = 0;
+  const clock = o.clock ?? (() => new Date());
+  const fire = (f: (() => void) | undefined): void => {
+    try {
+      f?.();
+    } catch {
+      // the alert is best effort; the checker goes on
+    }
+  };
 
   const walletOf = (): Promise<MoneroWalletFull> => {
     if (wallet !== undefined) return wallet;
@@ -127,17 +145,21 @@ export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
   /** The watchdog fired: drop the current wallet, close it in the background, count it. */
   const abandon = (): void => {
     abandoned++;
+    lastAbandonAt = clock().getTime();
     const w = wallet;
     wallet = undefined;
     void w?.then((x) => x.close()).catch(() => undefined);
     if (!stuck) {
       stuck = true;
-      try {
-        o.onStuck?.();
-      } catch {
-        // the alert is best effort; the checker goes on
-      }
+      fire(o.onStuck);
     }
+    if (abandoned === TX_PROOF_MAX_ABANDONED) fire(o.onStopped);
+  };
+
+  /** A check used the wallet and finished in time: the episode is over; a long healthy stretch clears the count. */
+  const healthy = (): void => {
+    stuck = false;
+    if (abandoned > 0 && clock().getTime() - lastAbandonAt >= TX_PROOF_ABANDON_RESET_MS) abandoned = 0;
   };
 
   /** `p`, or TxProofUnavailable after timeoutMs; `p` itself goes in `held`, waited out before the slot is freed. */
@@ -231,7 +253,7 @@ export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
           const outcome = await Promise.race([Promise.allSettled(held).then(() => 'settled' as const), watchdog]);
           clearTimeout(timer);
           if (outcome === 'stuck') abandon();
-          else if (held.length > 0) stuck = false;
+          else if (held.length > 0) healthy();
         })
         // The queue was full (503 `busy`): checkOne never ran.
         .catch(reject);

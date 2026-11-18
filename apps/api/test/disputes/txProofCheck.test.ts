@@ -184,9 +184,10 @@ describe('moneroTxProofCheck watchdog, re-review w1: the abandoned count decays,
   };
   /** One check whose wallet call never settles: abandoned by the watchdog. */
   const stall = async (check: ReturnType<typeof mk>['check'], h: string) => {
-    const n = wallets.length;
     await expect(check({ txHash: hash(h), txKey: KEY, address })).rejects.toBeInstanceOf(TxProofUnavailable);
-    await until(() => wallets[n]?.closed === 1);
+    // The wallet the stuck call ran on (a fresh one, or the one a healthy check left in use).
+    const w = calls.at(-1)!.wallet;
+    await until(() => wallets[w]?.closed === 1);
   };
   /** One check that finishes in time. */
   const healthy = async (check: ReturnType<typeof mk>['check'], h: string) => {

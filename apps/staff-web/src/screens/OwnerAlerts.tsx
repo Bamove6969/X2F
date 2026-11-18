@@ -23,6 +23,7 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'dispute-refund-after-ruling': 'A refund landed after a ruling: the case needs a new ruling',
   'dispute-comply-lapsed': 'A seller did not prove the payment a ruling ordered: the case needs a senior moderator',
   'tx-proof-check-stuck': 'The payment proof checker is stuck: restart the API so sellers can prove their payments',
+  'tx-proof-check-stopped': 'The payment proof checker has stopped: no seller can prove a payment until the API is restarted',
   'fee-sweep-due': 'Fee wallet sweep',
   'fee-sweep-failed': 'Fee wallet sweep did not go through',
   'new-login': 'New login to the owner account',
