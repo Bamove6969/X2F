@@ -265,10 +265,88 @@ export interface Member {
   role: StaffRole;
   status: 'active' | 'switched-off' | 'waiting';
   grants: GrantablePerm[];
+  hours: LoginHours;
+  joinedAt: string | null;
+  lastActiveAt: string | null;
+  openCases: number;
+  /** An invite's expiry (null for a member). */
+  expiresAt: string | null;
+  /** The login methods a moderator or senior moderator still lacks (owner G3, as D-070 changed it). */
+  missingMethods: Array<'security-key' | 'pgp' | 'passkey'>;
 }
+const memberPath = (accountId: string, rest = '') => `/staff/v1/members/${encodeURIComponent(accountId)}${rest}`;
 export const members = () => staffApi<{ members: Member[] }>('/staff/v1/members');
 export const setGrants = (accountId: string, grants: GrantablePerm[], tapId: string) =>
-  staffApi<{ grants: GrantablePerm[] }>(`/staff/v1/members/${encodeURIComponent(accountId)}/grants`, { method: 'PUT', body: { grants, tapId } });
+  staffApi<{ grants: GrantablePerm[] }>(memberPath(accountId, '/grants'), { method: 'PUT', body: { grants, tapId } });
+/** Plan 4 Task 7: at once, no tap (it only removes power); the API ends their sessions. */
+export const switchOff = (accountId: string) => staffApi<{ status: 'switched-off' }>(memberPath(accountId, '/switch-off'), { method: 'POST', body: {} });
+/** A `switch-on` tap bound to the person and their current role. */
+export const switchOn = (accountId: string, tapId: string) => staffApi<{ status: 'active' }>(memberPath(accountId, '/switch-on'), { method: 'POST', body: { tapId } });
+export const setHours = (accountId: string, hours: LoginHours) => staffApi<{ hours: LoginHours }>(memberPath(accountId, '/hours'), { method: 'PUT', body: { hours } });
+/** A `set-role` tap bound to the person and the new role. */
+export const setRole = (accountId: string, role: InviteRole, tapId: string) => staffApi<{ role: InviteRole }>(memberPath(accountId, '/role'), { method: 'PUT', body: { role, tapId } });
+/** A `remove-staff` tap bound to the person (owner G4). */
+export const removeMember = (accountId: string, tapId: string) => staffApi<unknown>(memberPath(accountId, ''), { method: 'DELETE', body: { tapId } });
+/**
+ * A new invite (Task 7): this browser makes the invite id, the token (32 random bytes, base64url)
+ * and the expiry, because the owner's `create-invite` tap is bound to the token's hash before the
+ * invite exists. The link is shown once; the token is never stored by the API.
+ */
+export const createInvite = (b: { role: InviteRole; hours: LoginHours; inviteId: string; token: string; expiresAt: string; tapId: string }) =>
+  staffApi<{ inviteId: string; link: string; expiresAt: string }>('/staff/v1/invites', { method: 'POST', body: b });
+export const cancelInvite = (inviteId: string) => staffApi<unknown>(`/staff/v1/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' });
+
+// ---------------------------------------------------------------------------------------------
+// Settings (Plan 4 Task 8; perm settings.write) and pay settings (Task 33; tap `pay-settings`)
+
+export interface RulingSettings {
+  largeTradeLimitUsd: number;
+  firstResponseH: number;
+  appealWindowH: number;
+}
+export const settings = () => staffApi<RulingSettings & Record<string, unknown>>('/staff/v1/settings');
+/** `tapId` is required when the limit or the appeal window changes (a `settings` tap of the values after it). */
+export const putSettings = (change: Partial<RulingSettings>, tapId?: string) =>
+  staffApi<RulingSettings>('/staff/v1/settings', { method: 'PUT', body: tapId === undefined ? change : { ...change, tapId } });
+
+export interface PaySettings {
+  modDisputeUsdCents: number | null;
+  seniorDisputeUsdCents: number | null;
+  seniorLargeTradeBp: number | null;
+  largeTradeThresholdUsd: number | null;
+}
+export const paySettings = () => staffApi<PaySettings>('/staff/v1/pay/settings');
+export const putPaySettings = (next: PaySettings, tapId: string) => staffApi<PaySettings>('/staff/v1/pay/settings', { method: 'PUT', body: { ...next, tapId } });
+
+// ---------------------------------------------------------------------------------------------
+// Site controls (Plan 4 Task 8; perm site.control) and the owner's revenue (Task 32; earnings.read)
+
+export type MaintenanceKind = 'planned' | 'unplanned';
+export interface StaffSite {
+  tradingPaused: boolean;
+  stoppedAt: string | null;
+  banner: { text: string; kind: 'info' | 'warning' } | null;
+  maintenance: { since: string; message: string | null; kind: MaintenanceKind; backBy: string | null } | null;
+  planned: { startsAt: string; endsAt: string; message: string | null } | null;
+  /** When the moderation process's daily activity-log check first failed (Task 14), or null. */
+  logAlarm: string | null;
+}
+export const site = () => staffApi<StaffSite>('/staff/v1/site');
+export const stopTrading = (tapId: string) => staffApi<StaffSite>('/staff/v1/site/stop', { method: 'POST', body: { tapId } });
+export const resumeTrading = (tapId: string) => staffApi<StaffSite>('/staff/v1/site/resume', { method: 'POST', body: { tapId } });
+export const setBanner = (text: string, kind: 'info' | 'warning') => staffApi<StaffSite>('/staff/v1/site/banner', { method: 'PUT', body: { text, kind } });
+export const removeBanner = () => staffApi<unknown>('/staff/v1/site/banner', { method: 'DELETE' });
+export const setMaintenance = (b: { on: true; kind: MaintenanceKind; message: string | null } | { on: false }) =>
+  staffApi<StaffSite>('/staff/v1/site/maintenance', { method: 'PUT', body: b });
+
+export interface RevenueBucket {
+  period: string;
+  trades: number;
+  totalAtomic: string;
+  usdEstimateCents: string;
+}
+export const revenue = (q: { by: 'day' | 'month'; from: string; to: string }) =>
+  staffApi<{ buckets: RevenueBucket[]; total: RevenueBucket }>(`/staff/v1/revenue?by=${q.by}&from=${q.from}&to=${q.to}`);
 
 // ---------------------------------------------------------------------------------------------
 // Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)
