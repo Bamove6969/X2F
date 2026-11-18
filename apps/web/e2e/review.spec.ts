@@ -1,7 +1,7 @@
 // Plan 5 Task 6: the rating under Released (board Review.dc.html, the rating and "How's X2F
 // doing?" cards), and the rate-first gate (spec 5.1, P5-A4): a trade completes, the next take is
-// refused 409 review-pending, the trader rates (or skips) it in the sheet, and the same take goes
-// through to the new trade.
+// refused 409 review-pending, the trader rates it in the sheet, and the same take goes through to
+// the new trade (a skip alone clears the gate and waits for a fresh tap: lead, 18 Nov).
 //
 // The API is stubbed per test with page.route in the shapes of Task 3 (GET/POST
 // /v1/trades/:code/review, /review/skip, GET /v1/reviews/pending), Task 4 (POST /v1/feedback),
@@ -246,7 +246,7 @@ test('the gate: the trade completes, the next take is refused, the trader rates 
   expect(seen.takes[1]).toEqual(seen.takes[0]);
 });
 
-test('the gate: Skip review clears it too, and closing the sheet leaves the reason on the quote', async ({ page }) => {
+test('the gate: Skip review clears it too but takes nothing by itself (lead, 18 Nov), and closing the sheet leaves the reason on the quote', async ({ page }) => {
   const seen = await stub(page);
   await page.goto(`${BASE}${BUY}`);
   await page.getByRole('radio', { name: /Cake Wallet/ }).check();
@@ -260,8 +260,14 @@ test('the gate: Skip review clears it too, and closing the sheet leaves the reas
   await page.locator('[data-primary]').click();
   await expect(sheet).toBeVisible();
   await sheet.getByRole('button', { name: 'Skip review' }).click();
-  await expect(page).toHaveURL(`${BASE}/trade/${NEW}`);
+  await expect(sheet).toHaveCount(0);
   expect(seen.skips).toEqual([OLD]);
   expect(seen.reviews).toEqual([]);
+  // A skip alone clears the gate but takes nothing: the person taps Trade again.
+  expect(seen.takes).toHaveLength(2);
+  await expect(page.getByText('Rate your last trade, or skip rating it, before you start a new one.')).toHaveCount(0);
+  await page.locator('[data-primary]').click();
+  await expect(page).toHaveURL(`${BASE}/trade/${NEW}`);
   expect(seen.takes).toHaveLength(3);
+  expect(seen.takes[2]).toEqual(seen.takes[0]);
 });
