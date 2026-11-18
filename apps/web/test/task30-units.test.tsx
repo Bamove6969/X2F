@@ -2,12 +2,14 @@
 // Task 30 fix round: the password-login rules mirror (I1), the wallet-wait note driven by
 // GET /v1/wallets/rule (M2), one confirm at a time (M3), and alert labels (M1).
 import { act, useEffect } from 'react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthApiError, walletAction, walletsAction, type ApiErrorCode, type ConfirmAction, type WalletRule } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
 import { ConfirmSheet, useConfirm, walletWaitNote } from '../src/screens/auth/ConfirmSheet.js';
+import { authApi } from '../src/screens/auth/authApi.js';
 import { loginFailure, shouldSendAway } from '../src/screens/auth/loginRules.js';
-import { alertWords } from '../src/screens/settings/Alerts.js';
+import { Alerts, alertWords } from '../src/screens/settings/Alerts.js';
 import { render } from './render.js';
 
 afterEach(() => {
@@ -114,5 +116,17 @@ describe('alert labels', () => {
 
   it('never shows an unknown kind raw', () => {
     expect(alertWords('payout-wait-off-scheduled')).toBe('Security alert');
+  });
+
+  it('member={true} hides the alerts list card and skips loading alerts (order #2 M3)', () => {
+    const listSpy = vi.spyOn(authApi, 'listAlerts');
+    const { host } = render(
+      <MemoryRouter>
+        <Alerts member={true} />
+      </MemoryRouter>,
+    );
+    expect(host.querySelector('[data-part="alerts"]')).toBeNull();
+    expect(listSpy).not.toHaveBeenCalled();
+    listSpy.mockRestore();
   });
 });

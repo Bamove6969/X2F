@@ -15,9 +15,10 @@ const TABS: { to: string; label: string; icon: IconName; match: (path: string) =
   { to: '/profile', label: 'Profile', icon: 'user', match: (p) => /^\/profile(\/|$)/.test(p) },
 ];
 
-export function BottomNav({ postOffers = true }: { postOffers?: boolean }) {
+export function BottomNav({ postOffers = true, wallets = true }: { postOffers?: boolean; wallets?: boolean | undefined }) {
   const { pathname } = useLocation();
-  const tabs = postOffers ? TABS : TABS.filter((t) => t.to !== '/post');
+  let tabs = postOffers ? TABS : TABS.filter((t) => t.to !== '/post');
+  if (!wallets) tabs = tabs.filter((t) => t.to !== '/wallets');
   return (
     <nav aria-label="Main" className="x2f-bottom-nav">
       {tabs.map((t) => {

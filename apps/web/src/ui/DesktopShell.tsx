@@ -89,15 +89,16 @@ function PageName({ name }: { name: RailPageName }) {
 
 /**
  * The left rail. `postOffers` false leaves out Post offer, as the phone tab bar does for a member
- * without the Offers role. `member` true leaves out owner-only links (Wallets, Settings), which
- * team members cannot open (OwnerOnly.tsx).
+ * without the Offers role. `member` true or `wallets` false leaves out owner-only routes (Wallets).
+ * Members keep Settings (order #2 M3).
  */
-export function DesktopRail({ postOffers = true, member = false }: { postOffers?: boolean; member?: boolean }) {
+export function DesktopRail({ postOffers = true, member = false, wallets }: { postOffers?: boolean; member?: boolean; wallets?: boolean | undefined }) {
   const { pathname } = useLocation();
+  const showWallets = wallets !== undefined ? wallets : !member;
   let links = postOffers ? LINKS : LINKS.filter((l) => l.to !== '/post');
-  if (member) {
-    // Owner-only routes (Wallets, Settings) cannot be opened by team members (OwnerOnly.tsx).
-    links = links.filter((l) => l.to !== '/wallets' && l.to !== '/settings/security');
+  if (!showWallets) {
+    // Owner-only routes (Wallets) cannot be opened by team members (OwnerOnly.tsx).
+    links = links.filter((l) => l.to !== '/wallets');
   }
   // Without the Offers role Post offer is not listed, so /profile/offers sits under Profile.
   const isCurrent = (l: (typeof LINKS)[number]) =>
@@ -141,12 +142,22 @@ export function WideTop({ name = '' }: { name?: RailPageName }) {
 }
 
 /** The frame on its own around a page (the app shell, App.tsx, draws the same parts in one tree for every layout). */
-export function DesktopShell({ children, postOffers = true, member = false }: { children: ReactNode; postOffers?: boolean; member?: boolean }) {
+export function DesktopShell({
+  children,
+  postOffers = true,
+  member = false,
+  wallets,
+}: {
+  children: ReactNode;
+  postOffers?: boolean;
+  member?: boolean;
+  wallets?: boolean | undefined;
+}) {
   const { pathname } = useLocation();
   const frame = wideFrameOf(pathname);
   return (
     <div data-shell="desktop" data-wide-frame={frame} className="x2f-desktop">
-      {frame === 'rail' ? <DesktopRail postOffers={postOffers} member={member} /> : <WideTop />}
+      {frame === 'rail' ? <DesktopRail postOffers={postOffers} member={member} wallets={wallets} /> : <WideTop />}
       <div className="x2f-desktop__body">{children}</div>
     </div>
   );

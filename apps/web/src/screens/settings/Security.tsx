@@ -10,7 +10,7 @@ import { Link } from 'react-router';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { holdSentence } from '../auth/refusals.js';
-import { IDLE_COPY, IDLE_REMINDER_PATH } from '../auth/sessionCopy.js';
+import { IDLE_COPY, IDLE_REMINDER_PATH, SESSION_LENGTH_PATH } from '../auth/sessionCopy.js';
 import { Icon } from '../../ui/icons.js';
 import { Alerts } from './Alerts.js';
 import { AccountChanges } from './HoldChanges.js';
@@ -23,7 +23,8 @@ import { PayoutWait } from './PayoutWait.js';
 import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
 import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './accountTypeCopy.js';
 import '../screens.css';
-import { OwnerOnly } from './OwnerOnly.js';
+import { memberOf } from '../../session/member.js';
+import { useSession } from '../../session/useSession.js';
 import { WELCOME_PATH } from '../../tour/welcomeSeen.js';
 import { FIRST_TRADE_TOUR } from '../../tour/firstTradeTour.js';
 import { REPLAY_COPY, replayLabel } from '../../tour/progress.js';
@@ -99,36 +100,38 @@ function HoldBanner() {
   );
 }
 
-/** Plan 2 Task 18: the account owner's screen; a team member gets the owner-only refusal. */
+/** Plan 2 Task 18, order #2 M3: Settings screen. Owner sees full security settings; team members see member settings. */
 export function Security() {
-  return (
-    <OwnerOnly screen="security">
-      <SecurityScreen />
-    </OwnerOnly>
-  );
+  return <SecurityScreen />;
 }
 
 function SecurityScreen() {
   const { prove, confirmUi, open } = useConfirm();
+  const session = useSession();
+  const member = memberOf(session) !== null;
 
   return (
     <ConfirmOpenProvider value={open}>
       <main className="x2f-screen" data-screen="security">
         <h1 className="x2f-screen__title">Security</h1>
-        <HoldBanner />
-        {/* Hold model v3 (lead review item 3): a new recovery code to write down, and the account's changes. */}
-        <NewRecoveryCode />
-        <AccountChanges />
-        <Methods prove={prove} />
-        <PayoutWait />
-        {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it. */}
-        <section className="x2f-card" data-part="devices-link" aria-label={DEVICES_TITLE}>
-          <Link className="x2f-row-link" to={DEVICES_PATH}>
-            <span>{DEVICES_TITLE}</span>
-            <Icon name="chevron-right" size={20} />
-          </Link>
-        </section>
-        <Alerts />
+        {!member ? (
+          <>
+            <HoldBanner />
+            {/* Hold model v3 (lead review item 3): a new recovery code to write down, and the account's changes. */}
+            <NewRecoveryCode />
+            <AccountChanges />
+            <Methods prove={prove} />
+            <PayoutWait />
+            {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it. */}
+            <section className="x2f-card" data-part="devices-link" aria-label={DEVICES_TITLE}>
+              <Link className="x2f-row-link" to={DEVICES_PATH}>
+                <span>{DEVICES_TITLE}</span>
+                <Icon name="chevron-right" size={20} />
+              </Link>
+            </section>
+          </>
+        ) : null}
+        <Alerts member={member} />
         {/* Task 37 review M3: the way to the Blocked list until Plan 5's Profile tab (Block board's Settings, Blocked traders). */}
         <section className="x2f-card" data-part="blocked-link" aria-label={BLOCK_COPY.title}>
           <ul className="x2f-list">
@@ -143,18 +146,28 @@ function SecurityScreen() {
                 {IDLE_COPY.link}
               </Link>
             </li>
-            {/* Owner 2 Nov 2026: Settings > Account type (Trader or Vendor), until the Settings board places it. */}
-            <li className="x2f-list__row">
-              <Link className="x2f-button x2f-button--quiet" to={ACCOUNT_TYPE_PATH} data-part="account-type-link">
-                {ACCOUNT_TYPE_COPY.title}
-              </Link>
-            </li>
-            {/* Plan 2 Task 18: the way to the Team screen until a board places it (NEEDS_DESIGN_TEAM). */}
-            <li className="x2f-list__row">
-              <Link className="x2f-button x2f-button--quiet" to={TEAM_PATH} data-part="team-link">
-                {TEAM_COPY.title}
-              </Link>
-            </li>
+            {member ? (
+              <li className="x2f-list__row">
+                <Link className="x2f-button x2f-button--quiet" to={SESSION_LENGTH_PATH} data-part="session-length-link">
+                  Session length
+                </Link>
+              </li>
+            ) : (
+              <>
+                {/* Owner 2 Nov 2026: Settings > Account type (Trader or Vendor), until the Settings board places it. */}
+                <li className="x2f-list__row">
+                  <Link className="x2f-button x2f-button--quiet" to={ACCOUNT_TYPE_PATH} data-part="account-type-link">
+                    {ACCOUNT_TYPE_COPY.title}
+                  </Link>
+                </li>
+                {/* Plan 2 Task 18: the way to the Team screen until a board places it (NEEDS_DESIGN_TEAM). */}
+                <li className="x2f-list__row">
+                  <Link className="x2f-button x2f-button--quiet" to={TEAM_PATH} data-part="team-link">
+                    {TEAM_COPY.title}
+                  </Link>
+                </li>
+              </>
+            )}
           </ul>
         </section>
         <HelpCard />
