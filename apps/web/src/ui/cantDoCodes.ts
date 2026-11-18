@@ -134,6 +134,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'changes-changed': 'a state conflict: the list changed since it was reviewed',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',
+  // Plan 5 Task 15: a picked proof image that can't be read (ProofInputError); shown as PROOF_CANT_USE.
+  unsupported: 'an input check on the picked proof image',
+  // Proof review M2: a proof's post got no answer (it may have been stored); shown as PROOF_SEND_UNCERTAIN.
+  uncertain: 'a fault: no answer, so the send may have gone through',
   internal: 'a server fault',
   busy: 'the server is busy (try again)',
   'display-name-invalid': 'an input check on a typed name',
@@ -240,6 +244,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 3 Task 20 (encrypted chat): the chat's own protocol and state, never a rule about the user.
   'chat-not-ready': 'the chat is still being secured (wait)',
   'stale-seq': 'a device step out of order (the engine re-syncs; a fault)',
+  // Plan 5 Task 15: @x2f/protocol's open() on an envelope sealed past this reader (the unblurred copy for the moderator); the chat engine keeps an `away` receipt, nothing is shown.
+  'not-for-me': 'a chat envelope addressed to someone else (the moderator); never shown',
   'wrong-channel': 'a device check (a fault)',
   'wrong-sender': 'a device check (a fault)',
   'chat-unavailable': 'the trade has no chat (cannot happen since Task 5\'s offer key; a fault)',

@@ -82,6 +82,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/ruling-statement': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
+  // Plan 5 Task 14: a proof ciphertext of one of my own trades (participants only; unblurred is 404).
+  'GET /v1/trades/:code/proofs/:id': 'a proof ciphertext of one of my own trades (participants only)',
   'GET /v1/wallets': 'my own payout wallets',
   'GET /v1/wallets/rule': 'my own wallet rule',
 };
@@ -168,6 +170,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/wallet': "the poster's payout wallet for one of my own trades, from my own wallets",
   'POST /v1/trades/:code/identity': 'my identity for one of my own trades (participants only)',
   'POST /v1/trades/:code/chat': 'the chat of one of my own trades (participants only)',
+  'PUT /v1/trades/:code/proofs/:id': 'a proof ciphertext for one of my own trades (participants only); no data back',
   'POST /v1/trades/:code/dispute': 'opens a dispute on one of my own trades (participants only)',
   // P-012/P-013 (proof-check, classified at the batch 9 merge): the blur check on my own trades.
   'POST /v1/trades/:code/proofs/:proofId/blur-check': 'counts my own proof on one of my own trades for the blur-check sample (participants only); answers only whether to ask',
