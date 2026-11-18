@@ -88,6 +88,13 @@ export const SECURITY_CHANGE_BUCKET: BucketSize = { capacity: 10, perMinute: 5 }
 export const APPROVAL_DECISION_BUCKET: BucketSize = { capacity: 10, perMinute: 5 };
 
 /**
+ * `POST /v1/tickets/compromised` (J-14 review J5): its own app-wide budget, apart from the login
+ * starts, so a flood of reports (each writes a ticket row) never starves logins. A lead default; the
+ * 3 a day per typed name (COMPROMISED_PER_NAME_DAILY) still applies.
+ */
+export const COMPROMISED_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
+
+/**
  * `POST /v1/register/name-check` (the sign-up's live "is available" tick, lead job 2026-11-08), site
  * wide, counted in Postgres for every API process together (`takeSharedBucket`, review F2). The tick answers whether a private login name exists, so this budget is what bounds
  * enumeration: at most 30 at once and 10 a minute (14,400 a day) for the whole site, however many
@@ -189,6 +196,8 @@ export const PAST_REP_FINISH_BUCKET: BucketSize = { capacity: PAST_REP_FINISHES_
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
+  /** `POST /v1/tickets/compromised`, app-wide, apart from `start` (J-14 review J5). */
+  compromised: TokenBucket;
   suggest: TokenBucket;
   /**
    * `POST /v1/register/name-check`, site wide, in this process only: a load shed in front of the
@@ -220,6 +229,7 @@ export function newBudgets(clock: () => Date): Budgets {
   return {
     register: new TokenBucket(REGISTER_BUCKET.capacity, REGISTER_BUCKET.perMinute, clock),
     start: new TokenBucket(START_BUCKET.capacity, START_BUCKET.perMinute, clock),
+    compromised: new TokenBucket(COMPROMISED_BUCKET.capacity, COMPROMISED_BUCKET.perMinute, clock),
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
     nameCheckShed: new TokenBucket(NAME_CHECK_BUCKET.capacity, NAME_CHECK_BUCKET.perMinute, clock),
     nameCheckDeviceShed: new KeyedBuckets(NAME_CHECK_DEVICE_BUCKET, clock),

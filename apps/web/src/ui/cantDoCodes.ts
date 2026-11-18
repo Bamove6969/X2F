@@ -94,6 +94,10 @@ export const CANT_DO_CODES = [
   // one account. No popup words yet (Task 12's PastRepClaim screen); lead question.
   'site-claimed',
   'fingerprint-claimed',
+  // Plan 4 Task 30 / J-14: one open support ticket per account (D-055), and the daily ticket cap
+  // (Q67; the API answers it with 429 `slow-down` `{ limit: 'daily' }`, this code is the web's).
+  'ticket-open',
+  'ticket-limit',
 ] as const;
 export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
@@ -251,6 +255,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'settled-elsewhere': 'the escrow already settled',
   stopped: 'the escrow stopped (a fault)',
   'wrong-terms': 'an escrow safety check on this device',
+  // J-14 (D-059): a ticket's own state, and the compromised-account lock.
+  'ticket-closed': 'the ticket itself is closed (its state)',
+  'account-locked': 'a compromised ticket cannot close while its lock stands (staff app only)',
+  'trade-held': "the trade is paused while staff check the other trader's account (a security state, not a rule about this user)",
 };
 
 export function isCantDoCode(code: unknown): code is CantDoCode {
@@ -660,6 +668,17 @@ export function accountTypeCantDoText(code: CantDoCode): string {
       return "Your account can't switch to a vendor account right now.";
   }
 }
+
+/**
+ * Plan 4 Task 31 / J-14: the support-ticket refusals. COPY-UNSIGNED, DESIGN: wording (owner Q67: the
+ * daily cap says it is there to stop spam; design to word it).
+ */
+export const TICKET_OPEN_CODE = 'ticket-open' satisfies CantDoCode;
+export const TICKET_LIMIT_CODE = 'ticket-limit' satisfies CantDoCode;
+export const TICKET_CANT_OPEN_TITLE = "This ticket can't be opened yet";
+export const ticketOpenText = (n: number): string => `Ticket ${n} is still open. Add to it, or close it, before you open another.`;
+export const ticketLimitText = (perDay: number): string =>
+  `You've opened ${perDay} tickets today, the most for one day. The limit helps keep spam out. You can open another tomorrow.`;
 
 // ---------------------------------------------------------------------------------------------
 // Security keys (owner demo 13 Nov 2026: "Unable to add security key").

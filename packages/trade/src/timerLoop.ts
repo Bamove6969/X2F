@@ -44,23 +44,33 @@ const reasonOf = (e: unknown): string => (e instanceof TradeRuleError ? e.code :
  *   hold) is frozen until the hold ends or a moderator decides (owner G7, G33; lead review 8 Nov
  *   C2): never resumed and never ticked. Maintenance still pauses it when it is not paused yet, and
  *   a lapse refund that was already overdue still escalates to a moderator.
+ * - `locked` (J-14, owner D-059): codes of trades whose buyer or seller account is locked by a "My
+ *   account has been compromised" ticket. A locked open trade is paused at `now` and stays paused
+ *   (never resumed, never ticked), with or without maintenance, until it is no longer locked; then
+ *   the rules above resume it. `locked` wins over `held`.
  * At most one event per trade per pass. A trade the state machine refuses is skipped and returned
  * in `skipped` with its rule code, and the pass goes on.
  */
-export function timerEvents(trades: readonly Trade[], maintenanceSince: Date | null, now: Date, held: ReadonlySet<string> = new Set()): TimerPass {
+export function timerEvents(trades: readonly Trade[], maintenanceSince: Date | null, now: Date, held: ReadonlySet<string> = new Set(), locked: ReadonlySet<string> = new Set()): TimerPass {
   checkDate(now);
   if (maintenanceSince !== null) checkDate(maintenanceSince);
   const events: TimerEvent[] = [];
   const skipped: TimerPass['skipped'] = [];
   for (const t of trades) {
     try {
-      const e = decide(t, maintenanceSince, now, held.has(t.code));
+      const e = locked.has(t.code) ? lockEvent(t, now) : decide(t, maintenanceSince, now, held.has(t.code));
       if (e !== null) events.push(e);
     } catch (err) {
       skipped.push({ code: t.code, reason: reasonOf(err) });
     }
   }
   return { events, skipped };
+}
+
+/** A locked trade (J-14): paused at once if it has a timer and is not paused yet, else nothing. */
+function lockEvent(t: Trade, now: Date): TimerEvent | null {
+  if ((t.closedAt !== null && !awaitingCancelConfirm(t)) || t.pausedAt !== null) return null;
+  return { code: t.code, event: { type: 'pause' }, at: now };
 }
 
 function decide(t: Trade, maintenanceSince: Date | null, now: Date, held: boolean): TimerEvent | null {

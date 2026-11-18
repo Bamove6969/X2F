@@ -384,8 +384,9 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       exactKeys(r, ['kind', 'accountId', 'role']);
       return { kind: r.kind, accountId: match(r, 'accountId', UUID).toLowerCase(), role: oneOf(r, 'role', INVITABLE) };
     case 'remove-staff':
+    case 'unlock-account':
       exactKeys(r, ['kind', 'accountId']);
-      return { kind: 'remove-staff', accountId: match(r, 'accountId', UUID).toLowerCase() };
+      return { kind: r.kind, accountId: match(r, 'accountId', UUID).toLowerCase() };
     case 'reset-staff-security':
       exactKeys(r, ['kind', 'accountId', 'inviteId', 'tokenHash', 'expiresAt']);
       return {
@@ -498,6 +499,8 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'fee-sweep':
     case 'pay-settings':
       return 'settings.write';
+    case 'unlock-account':
+      return 'accounts.freeze';
     // Review MF1 (mod-rules 12 Nov): the reset is the owner role's own, never a perm a grant could hand out.
     case 'reset-staff-security':
     case 'add-owner-key':

@@ -5,6 +5,7 @@ import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { bookTradeRevenue } from '../staff/revenue.js';
 import { eraseReversedReviews } from '../reviews/store.js';
@@ -371,6 +372,15 @@ export async function applyEvent(
       const row = await loadTradeRow(client, code, true);
       if (!row) throw new ApiError(404, 'not-found');
       const now = deps.clock();
+      // J-14 (D-059): while the buyer's or the seller's account is locked by a compromised-account
+      // ticket, no trader event moves the trade (the other party's neither); system events (chain,
+      // reports, the timer's pause) still apply. Read under the trade's row lock. Nor does a system
+      // `resume`: since main's recovery-code holds (trades/held.ts) a hold's end resumes the trades it
+      // paused, and a trade the lock also holds must stay paused until staff unlock it.
+      if (by !== 'system' || e.type === 'resume') {
+        const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [code]);
+        if (held.rows[0]?.held === true) throw new ApiError(409, 'trade-held');
+      }
       const prev = rowToTrade(row);
       if (before && (await before(client, now, prev)) === 'stop') {
         await client.query('commit');

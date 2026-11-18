@@ -7,6 +7,7 @@ import { purgeJabberPreKeys } from './jabber/prekeys.js';
 import { purgeJabberPending } from './jabber/retention.js';
 import { purgeNudges } from './nudge/routes.js';
 import type { RetentionJob } from './retention.js';
+import { purgeTickets } from './tickets/traderRoutes.js';
 import { purgeTradeAddressesJob } from './trades/purge.js';
 import { purgeTeamLeftovers } from './team/members.js';
 import { purgeStaffInviteLeftovers } from './staff/invites.js';
@@ -21,7 +22,7 @@ import { purgeRemovedWalletAddresses } from './wallets/routes.js';
  * and purgeFeedback (Task 4), purgeJabberPending (owner rule p5-7, review L4), purgeJabberPreKeys (the OMEMO prekey
  * record, 180 days), purgeChatKeyEnvelopes (J-23 review F5: expired and collected chat-key envelopes), and closeInactiveAccounts
  * (owner answer Q77, 6 Nov 2026: not a purge; it closes a vendor account 60 days after its last login).
- * Plan 4's purgeStaffInviteLeftovers (Task 7/16, security review 2026-11-09) runs after purgeTeamLeftovers: it erases
+ * Plan 4's purgeTickets (Task 30) runs after purgeChatKeyEnvelopes. Plan 4's purgeStaffInviteLeftovers (Task 7/16, security review 2026-11-09) runs after purgeTeamLeftovers: it erases
  * the Terms signature of a half-made staff account whose invite was cancelled or expired (owner p11-13).
  */
-export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts];
+export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, purgeTickets, closeInactiveAccounts];

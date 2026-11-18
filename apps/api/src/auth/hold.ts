@@ -663,6 +663,11 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // caller's own claim rows only (a moderator approves before anything shows).
   'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",
   'DELETE /v1/account/past-rep/:id': "sets the caller's own past-rep claim to removed",
+  // Plan 4 Task 30 / J-14: support tickets. Like the feedback form, open to held and backup sessions
+  // on purpose (a person in trouble can still ask for help); the open serialises on the account lock.
+  'POST /v1/tickets': "a support-ticket row and its first message only; no account, session, approval or security state, no obligation",
+  'POST /v1/tickets/:id/messages': "a message on the account's own open ticket; no account, session, approval or security state",
+  'POST /v1/tickets/:id/close': "closes the account's own ticket; no account, session, approval or security state",
   // Job 1c (J-10, S-094): notes on traders. Social, as blocks: a note row only (the add also re-checks
   // the session under the account lock and a member's boxes live, in its transaction).
   'POST /v1/account/notes': 'social: a private note row on another trader only; no account, session, approval or security state, no obligation',

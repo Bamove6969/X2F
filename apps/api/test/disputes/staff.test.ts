@@ -972,6 +972,33 @@ describe('g62: maintenance holds the freeze clock', () => {
   });
 });
 
+describe('J-14 (D-059): a held trade takes no freeze', () => {
+  // A compromised-account lock stops all the trade's timers, as maintenance does (g62): the locked
+  // party cannot reply, so the freeze waits too, from the lock's commit on (before the dispute
+  // timers' next pass marks the dispute paused). Lifting a freeze already in place still works.
+  it('no freeze on either side while either account is locked; lifting one still works; allowed again once unlocked', async () => {
+    const mod = await staff('mod');
+    const { code, seller, buyer } = await disputed(new Date(START.getTime() + 300 * H));
+    await mod.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    setNow(new Date(START.getTime() + 355 * H));
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/freeze'), { side: 'buyer', on: true, reason: 'no-reply' })).statusCode).toBe(200);
+    await deps.db.query('insert into account_locks (account_id, locked_at, set_disabled) values ($1, $2, false)', [seller.id, deps.clock()]);
+    for (const side of ['seller', 'buyer'] as const) {
+      if (side === 'buyer') expect((await mod.b.post(url(code, '/freeze'), { side: 'buyer', on: false })).statusCode).toBe(200);
+      const res = await mod.b.post(url(code, '/freeze'), { side, on: true, reason: 'no-reply' });
+      expect({ side, status: res.statusCode, error: errorOf(res) }).toEqual({ side, status: 409, error: 'freeze-not-allowed' });
+    }
+    expect(await activeFreezes(seller.id)).toEqual([]);
+    expect(await activeFreezes(buyer.id)).toEqual([]);
+    await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [seller.id, deps.clock()]);
+    const res = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' });
+    expect(res.statusCode, res.body).toBe(200);
+    setNow(START);
+  });
+});
+
 describe('Task 11 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 

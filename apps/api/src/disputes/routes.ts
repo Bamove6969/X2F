@@ -8,6 +8,7 @@ import { FINISH_OPEN_TRADES } from '../trades/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow } from '../trades/store.js';
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
@@ -349,6 +350,10 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     let noReviewer = false;
     try {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {
+        // J-14 (D-059): no trader event moves a held trade, the other party's neither (as applyEvent
+        // refuses them): the appeal waits until staff lift the lock (its window is paused meanwhile).
+        const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [d.code]);
+        if (held.rows[0]?.held === true) throw new ApiError(409, 'trade-held');
         // A held trade's own account may not appeal while held (lead hold v3 review, minor).
         await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');
         const s = await disputeSettings(client);

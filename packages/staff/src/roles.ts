@@ -65,11 +65,12 @@ export function can(role: StaffRole, perm: Perm, grants: readonly Perm[] = []): 
   return (GRANTABLE_PERMS as readonly Perm[]).includes(perm) && grants.includes(perm);
 }
 
-export type NavItem = 'overview' | 'disputes' | 'staff' | 'performance' | 'prices' | 'training' | 'log' | 'feedback' | 'settings';
+export type NavItem = 'overview' | 'disputes' | 'staff' | 'performance' | 'prices' | 'training' | 'log' | 'feedback' | 'tickets' | 'compromised' | 'settings';
 
 /**
  * The perm each menu item's page reads with (the API refuses the page's data without it, whatever
  * the menu shows). `prices`: the price-health data (`GET /staff/v1/price-health`, owner Q13).
+ * `tickets` and `compromised` (J-14, Plan 4 Task 31): the ticket queues' own perms.
  */
 export const NAV_PERM: Readonly<Record<NavItem, Perm>> = {
   overview: 'site.control',
@@ -80,6 +81,8 @@ export const NAV_PERM: Readonly<Record<NavItem, Perm>> = {
   training: 'training.read',
   log: 'log.read.cases',
   feedback: 'feedback.read',
+  tickets: 'tickets.handle',
+  compromised: 'accounts.freeze',
   settings: 'settings.write',
 };
 
@@ -94,9 +97,19 @@ export const NAV: Readonly<Record<StaffRole, readonly NavItem[]>> = {
   helper: [],
 };
 
-/** The menu for one person: their role's, plus Feedback when the owner granted it (owner Q60). */
+/**
+ * The menu for one person: their role's, plus Feedback when the owner granted it (owner Q60), plus
+ * (J-14, Plan 4 Task 31) Tickets for whoever holds `tickets.handle` and Compromised accounts for
+ * `accounts.freeze` (senior moderators and the owner). No board places the two yet: after the rest,
+ * and before Settings on the owner's menu (DESIGNER-REVIEW).
+ */
 export function navFor(role: StaffRole, grants: readonly Perm[] = []): readonly NavItem[] {
-  const base = NAV[role] ?? [];
-  if (base.includes('feedback') || !can(role, 'feedback.read', grants)) return base;
-  return [...base, 'feedback'];
+  const base: NavItem[] = [...(NAV[role] ?? [])];
+  if (!base.includes('feedback') && can(role, 'feedback.read', grants)) base.push('feedback');
+  const extra: NavItem[] = [];
+  if (can(role, 'tickets.handle', grants)) extra.push('tickets');
+  if (can(role, 'accounts.freeze', grants)) extra.push('compromised');
+  const at = base.indexOf('settings');
+  if (at === -1) return [...base, ...extra];
+  return [...base.slice(0, at), ...extra, ...base.slice(at)];
 }

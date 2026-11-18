@@ -24,10 +24,12 @@ const APP = join(dirname(fileURLToPath(import.meta.url)), '../src/App.tsx');
 const PATHS = [...readFileSync(APP, 'utf8').matchAll(/<Route\s+path="([^"]+)"/g)]
   .map((m) => m[1]!)
   .filter((p) => p !== '*')
-  .map((p) => p.replace(':methodId', 'ZELLE').replace(':offerId', '00000000-0000-4000-8000-000000000000').replace(':code', 'ABCD-EFGH').replace(':topic', 'faq').replace('/*', ''));
+  .map((p) => p.replace(':methodId', 'ZELLE').replace(':offerId', '00000000-0000-4000-8000-000000000000').replace(':code', 'ABCD-EFGH').replace(':topic', 'faq').replace(':id', '00000000-0000-4000-8000-000000000001').replace('/*', ''));
 
-// The help placeholders (owner demo notes 12 Nov #42) are on the front door too.
-const DOOR = ['/', '/setup', '/terms', '/login', '/login/backup', '/team/join', '/help/faq'];
+// The help placeholders (owner demo notes 12 Nov #42) are on the front door too. J-14 (D-059): "My
+// account has been compromised" is a front-door screen (its API route is the PUBLIC_ROUTES exemption);
+// the rest of support (/support, /support/:id) is behind the door.
+const DOOR = ['/', '/setup', '/terms', '/login', '/login/backup', '/team/join', '/help/faq', '/support/compromised'];
 const BEHIND = PATHS.filter((p) => !DOOR.includes(p));
 
 const FULL = { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
@@ -121,6 +123,17 @@ describe('logged out', () => {
     });
   }
 
+  it('/support/compromised opens the "My account has been compromised" form, with no app navigation and no marketplace call; /support itself stays behind the door', async () => {
+    expect(BEHIND).toContain('/support');
+    expect(BEHIND).toContain('/support/00000000-0000-4000-8000-000000000001');
+    const host = await open('/support/compromised');
+    expect(where).toBe('/support/compromised');
+    expect(host.querySelector('[data-screen="compromised"]')).not.toBeNull();
+    expect(host.querySelector('[data-part="compromised-methods"]')).not.toBeNull();
+    expect(appNav(host)).toHaveLength(0);
+    expect(calls.filter((c) => MARKET.includes(c) || c.startsWith('/v1/tickets'))).toEqual([]);
+  });
+
   for (const path of ['/login', '/login/backup', '/setup', '/terms']) {
     it(`${path} opens on the front door`, async () => {
       await open(path);
@@ -182,11 +195,12 @@ describe('half set up: an account on an old Terms version', () => {
 });
 
 describe('a recovery (backup) session', () => {
-  it('reaches Security, open trades and the feedback form only', () => {
+  it('reaches Security, open trades, the feedback form and support tickets only', () => {
     const rec: Session = { status: 'signed-in', me: { ...FULL, level: 'recovery' } as never };
     for (const p of BEHIND) {
       const v = doorVerdict(rec, p, '');
-      const allowed = p === '/settings/security' || p.startsWith('/trade/') || p === '/feedback';
+      // J-14: the ticket API allows a recovery session (allowRecovery), like the feedback form.
+      const allowed = p === '/settings/security' || p.startsWith('/trade/') || p === '/feedback' || p === '/support' || p.startsWith('/support/');
       expect(v, p).toEqual(allowed ? { kind: 'in' } : { kind: 'go', to: RECOVERY_HOME });
     }
   });

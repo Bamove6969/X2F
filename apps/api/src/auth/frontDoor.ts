@@ -72,6 +72,9 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/events': 'my own live events (per account and per trade, no marketplace broadcast)',
   'GET /v1/reviews/pending': 'reviews I still owe for my own trades',
   'GET /v1/team': "my own team's members (account owner only)",
+  // J-14 (owner Q69: a team shares its tickets): the account's own support tickets, never another's (404).
+  'GET /v1/tickets': "my own account's support tickets",
+  'GET /v1/tickets/:id': "one of my own account's support tickets (another account's is 404)",
   'GET /v1/team/audit': "my own team's audit log (account owner only)",
   'GET /v1/team/permissions': 'the static abilities catalogue (groups, boxes, presets, hard rules): no account data; read on stale Terms too, so a member sees what their boxes mean before agreeing',
   'GET /v1/trades/:code': 'one of my own trades (participants only)',
@@ -155,6 +158,10 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/method-suggestions': 'a method suggestion row of mine; no data back',
   'POST /v1/feedback': 'a platform-feedback row; no data back',
   'POST /v1/feedback/form': 'a feedback row; no data back',
+  // J-14 support tickets (D-055, D-057): my own account's tickets; answers only that ticket.
+  'POST /v1/tickets': "opens a support ticket of my own account; answers that ticket (409 ticket-open names only my own open one)",
+  'POST /v1/tickets/:id/messages': "a message on my own account's ticket; no data back",
+  'POST /v1/tickets/:id/close': "closes my own account's ticket; answers that ticket",
   // Wallets and offers (my own).
   'POST /v1/wallets': 'adds my own payout wallets; answers them',
   'DELETE /v1/wallets/:id': 'removes one of my own payout wallets',
@@ -219,4 +226,8 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   'POST /v1/team/join/second/webauthn/finish': 'team member sign-up, second login method',
   'POST /v1/team/join/second/pgp/start': 'team member sign-up, second login method',
   'POST /v1/team/join/second/pgp/finish': 'team member sign-up, second login method',
+  // J-14 (D-059): the person may have lost every way in, so the report needs no session. It answers
+  // 202 { number } alike for every name (a trader's, a member's, a staff name, none, one already
+  // locked): it never says whether a name exists, and returns no account data.
+  'POST /v1/tickets/compromised': '"My account has been compromised": locks the named account; the same 202 { number } for every name',
 };

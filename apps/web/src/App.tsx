@@ -15,6 +15,7 @@ import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
+import { Compromised, TicketThread, Tickets } from './screens/support/Support.js';
 import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
@@ -291,6 +292,9 @@ export function App() {
             <Route path="/settings/account-type" element={<AccountType />} />
             <Route path="/news" element={<News />} />
             <Route path="/feedback" element={<Feedback />} />
+            {/* Plan 4 Task 31 / J-14: support tickets (D-055, D-057), behind the door. */}
+            <Route path="/support" element={<Tickets />} />
+            <Route path="/support/:id" element={<TicketThread />} />
             {/* D-016: the frozen-account notice, from GET /v1/account/freeze (home while not frozen). */}
             <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
           </Route>
@@ -307,6 +311,9 @@ export function App() {
           <Route path="/team/join" element={<MemberInvite />} />
           {/* Owner demo notes 12 Nov #42: the help placeholders linked from /login and /session-length. */}
           <Route path="/help/:topic" element={<HelpTopic />} />
+          {/* J-14 (D-059): "My account has been compromised" works without a login (the person may have
+              lost every way in); FRONT_DOOR in session/frontDoor.tsx lists it. */}
+          <Route path="/support/compromised" element={<Compromised />} />
         </Route>
         {/* Anything else: the front door, which sends a set-up trader on to /sell. */}
         <Route path="*" element={<Navigate to="/" replace />} />

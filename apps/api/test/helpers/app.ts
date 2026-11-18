@@ -42,6 +42,7 @@ export function testConfig(over: Partial<Config> = {}): Config {
     recoveryCodeKeys: testRing(),
     totpKeys: testRing(),
     loginNameKeys: testRing(),
+    ticketKeys: testRing(),
     legacySecrets: true,
     jabberKeys: testRing(),
     xmpp: null,

@@ -40,7 +40,7 @@ const LABEL = 'Browser on Linux';
  * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
  * apps/web/src/screens/account/AccountFrozen.tsx; S-093: a block row's note, apps/web/src/screens/settings/blockApi.ts;
  * P-012/P-013: the blur check, apps/web/src/api/blurCheck.ts; Haveno review finding 2: the signed ruling statement,
- * read by apps/web/src/escrow/adapters.ts). Any other new route still needs a client method.
+ * read by apps/web/src/escrow/adapters.ts; Plan 4 Task 31 / J-14: the six support-ticket routes). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
@@ -69,6 +69,8 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/reviews/pending',
   'GET /v1/site',
   'GET /v1/team/permissions',
+  'GET /v1/tickets',
+  'GET /v1/tickets/:id',
   'GET /v1/trades/:code',
   'GET /v1/trades/:code/attestation',
   'GET /v1/trades/:code/blur-checks',
@@ -92,6 +94,10 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/nudges',
   'POST /v1/offers',
   'POST /v1/offers/:id/take',
+  'POST /v1/tickets',
+  'POST /v1/tickets/:id/close',
+  'POST /v1/tickets/:id/messages',
+  'POST /v1/tickets/compromised',
   'POST /v1/trades/:code/appeal',
   'POST /v1/trades/:code/blur-checks/:proofId',
   'POST /v1/trades/:code/chat',

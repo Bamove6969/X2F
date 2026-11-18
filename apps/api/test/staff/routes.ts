@@ -122,6 +122,16 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   // P-012/P-013: the blur-check answers, read by the feedback readers.
   { method: 'GET', url: '/staff/v1/feedback/blur-checks', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  // Plan 4 Task 30 / J-14: support tickets (the owner by role, anyone else by the owner's grant) and
+  // "My account has been compromised" tickets (senior moderators and the owner, `accounts.freeze`).
+  { method: 'GET', url: '/staff/v1/tickets', perm: 'tickets.handle', allowed: OWNER, grantable: true },
+  { method: 'GET', url: '/staff/v1/tickets/:id', perm: 'tickets.handle', allowed: OWNER, grantable: true },
+  { method: 'POST', url: '/staff/v1/tickets/:id/messages', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: { body: 'Hello' } },
+  { method: 'POST', url: '/staff/v1/tickets/:id/close', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
+  { method: 'GET', url: '/staff/v1/compromised', perm: 'accounts.freeze', allowed: ['owner', 'senior'] },
+  { method: 'GET', url: '/staff/v1/compromised/:id', perm: 'accounts.freeze', allowed: ['owner', 'senior'] },
+  { method: 'POST', url: '/staff/v1/compromised/:id/unlock', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: { tapId: '00000000-0000-4000-8000-000000000000' } },
+  { method: 'POST', url: '/staff/v1/compromised/:id/close', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
   // incident ID: 404 past the guard).
   { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },

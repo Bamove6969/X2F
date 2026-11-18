@@ -20,6 +20,7 @@ import { staffOwnerAlertRoutes } from './ownerAlerts.js';
 import { keyTapRoutes } from './keyTap.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
+import { staffTicketRoutes } from '../tickets/staffRoutes.js';
 import { staffFeedbackRoutes } from './feedback.js';
 import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
@@ -182,6 +183,8 @@ export async function buildStaffApi(
   });
   // Plan 4 Task 12: rulings (propose, approve, send back) and the appeal's eligible reviewers.
   staffRulingRoutes(app, deps.traderEvents ? { traderEvents: deps.traderEvents } : {});
+  // Plan 4 Task 30 / J-14: support tickets and compromised-account tickets (D-055, D-057, D-059).
+  staffTicketRoutes(app);
   // Plan 4 Task 32: the owner's revenue totals from the internal revenue ledger (earnings.read).
   staffRevenueRoutes(app);
   // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).

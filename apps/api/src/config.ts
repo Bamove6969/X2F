@@ -44,6 +44,12 @@ export interface Config {
    * `xmpp`, the Jabber set-up answers 503 `jabber-unavailable`.
    */
   jabberKeys: Keyring | null;
+  /**
+   * J-14 review J6: keys that seal support-ticket text at rest (`ticket_messages.body_sealed`: every
+   * message of a ticket, staff replies and the compromised report's comment), `X2F_TICKET_KEYS`, env
+   * or file, like the other rings. Required: tickets are always on.
+   */
+  ticketKeys: Keyring;
   /** X2F's own sending account (`X2F_XMPP_*`). GAP: the production account and server are not set up yet. */
   xmpp: XmppConfig | null;
 }
@@ -238,6 +244,7 @@ export function loadConfig(env: Env): Config {
   const recoveryCodeKeys = parseKeyring('X2F_RECOVERY_CODE_KEYS', ringSource(env, 'X2F_RECOVERY_CODE_KEYS'));
   const totpKeys = parseKeyring('X2F_TOTP_KEYS', ringSource(env, 'X2F_TOTP_KEYS'));
   const loginNameKeys = parseKeyring('X2F_LOGIN_NAME_KEYS', ringSource(env, 'X2F_LOGIN_NAME_KEYS'));
+  const ticketKeys = parseKeyring('X2F_TICKET_KEYS', ringSource(env, 'X2F_TICKET_KEYS'));
   const legacy = env.X2F_LEGACY_SECRETS || 'on';
   if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
   const legacySecrets = legacy === 'on';
@@ -247,7 +254,7 @@ export function loadConfig(env: Env): Config {
   if (xmpp !== null && jabberKeys === null) throw missing('X2F_JABBER_KEYS');
   assertSeparate(serverKey, [
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
-    ['X2F_LOGIN_NAME_KEYS', loginNameKeys], ...(jabberKeys ? [['X2F_JABBER_KEYS', jabberKeys] as [string, Keyring]] : []),
+    ['X2F_LOGIN_NAME_KEYS', loginNameKeys], ['X2F_TICKET_KEYS', ticketKeys], ...(jabberKeys ? [['X2F_JABBER_KEYS', jabberKeys] as [string, Keyring]] : []),
   ]);
 
   // Task 19: Web Push needs a VAPID key pair (docs/dev-setup.md says how to make one).
@@ -265,7 +272,7 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp,
+    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, ticketKeys, xmpp,
   };
 }
 
