@@ -246,6 +246,27 @@ describe('badge settings', () => {
     expect(await count(people.map((p) => p.id))).toBe(few);
   });
 
+  it('owner rule p5-7: a badge save and a record-on-profile switch each queue one Jabber notice; a save that changes only updated_at queues none', async () => {
+    const me = await trader();
+    await veteranWithKeys(me);
+    await deps.db.query('insert into jabber_contacts (account_id, jid_sealed, verified_at, enabled) values ($1, $2, now(), true)', [me.id, Buffer.from('01aa', 'hex')]);
+    const notices = async () => (await deps.db.query<{ n: number }>('select count(*)::int as n from jabber_outbox where account_id = $1', [me.id])).rows[0]!.n;
+    // The first save creates the row and writes the choice in one transaction: one notice.
+    expect((await choose(me, 'pgp', 'hidden')).statusCode).toBe(200);
+    expect(await notices()).toBe(1);
+    // The same choice again rewrites only updated_at: no notice.
+    setNow(new Date(deps.clock().getTime() + 1_000));
+    expect((await choose(me, 'pgp', 'hidden')).statusCode).toBe(200);
+    expect(await notices()).toBe(1);
+    expect((await choose(me, 'pgp', 'featured')).statusCode).toBe(200);
+    expect(await notices()).toBe(2);
+    expect((await me.browser.put('/v1/account/record/public', { on: true })).statusCode).toBe(200);
+    expect(await notices()).toBe(3);
+    setNow(new Date(deps.clock().getTime() + 1_000));
+    expect((await me.browser.put('/v1/account/record/public', { on: true })).statusCode).toBe(200);
+    expect(await notices()).toBe(3);
+  });
+
   it('is the account owner\'s own: logged out gets 401', async () => {
     expect((await app.inject({ method: 'GET', url: '/v1/account/badges' })).statusCode).toBe(401);
     // From the site's own origin (a write from anywhere else stops at the origin check first).
