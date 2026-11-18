@@ -64,6 +64,16 @@ describe('GET /v1/trades/:code', () => {
     });
   }
 
+  it('Plan 7 Task 3: deleteAt is null while the trade is open and 30 days after its close once it has ended, for both sides', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    expect(((await seller.browser.get(`/v1/trades/${trade.code}`)).json() as View).deleteAt).toBeNull();
+    const done = await driveTo(deps, trade, 'released');
+    const want = new Date(done.closedAt!.getTime() + 30 * 86_400_000).toISOString();
+    for (const who of [seller, buyer]) expect(((await who.browser.get(`/v1/trades/${trade.code}`)).json() as View).deleteAt).toBe(want);
+  });
+
   it('gives the escrow address and funding link to the seller only, and never once funded (Revision 2026-10-21)', async () => {
     const seller = await trader();
     const buyer = await trader();

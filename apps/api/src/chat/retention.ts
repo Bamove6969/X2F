@@ -1,5 +1,6 @@
 import { chatPurgeDue, type ChatRetentionFacts } from '@x2f/trade';
 import type pg from 'pg';
+import type { Queryable } from '../db/pool.js';
 import type { RetentionJob } from '../retention.js';
 import { PURGE_ROLE } from '../trades/purge.js';
 
@@ -116,31 +117,9 @@ async function deleteChats(db: pg.Pool, codes: string[], now: Date, due: ChatPur
         return 0;
       }
       await client.query(`set local role ${PURGE_ROLE}`);
-      // Checked again under the purge role: a chat whose trade went into dispute since it was read stays,
-      // and so does one with any dispute not yet closed (122 grants the role just these two columns).
-      // The shred order for moderation and each member's purged mark are written by the same
-      // statement as the delete (123): no chat is ever gone without them.
-      const { rows } = await client.query<{ n: number }>(
-        `with gone as (
-           delete from chats c where c.code = any($1)
-             and not exists (select 1 from trades t where t.code = c.trade_code and t.state = 'disputed')
-             and not exists (select 1 from disputes d where d.code = c.trade_code and d.status <> 'closed')
-           returning c.code, c.trade_code, c.buyer_account_id, c.seller_account_id
-         ), orders as (
-           insert into chat_shred_orders (chat, trade_code, purged_at)
-           select code, trade_code, $2 from gone
-           on conflict (chat) do nothing
-         ), marks as (
-           insert into chat_purged_marks (tag, purged_at)
-           select ${purgedTagSql('g.code', 'm.account_id')}, $2
-             from gone g cross join lateral (values (g.buyer_account_id), (g.seller_account_id)) m (account_id)
-           on conflict (tag) do nothing
-         )
-         select count(*)::int as n from gone`,
-        [still, now],
-      );
+      const n = await deleteChatRowsAsPurge(client, still, now);
       await client.query('commit');
-      return rows[0]?.n ?? 0;
+      return n;
     } catch (e) {
       await client.query('rollback');
       throw e;
@@ -148,6 +127,38 @@ async function deleteChats(db: pg.Pool, codes: string[], now: Date, due: ChatPur
   } finally {
     client.release();
   }
+}
+
+/**
+ * The delete itself, inside the caller's transaction and ALREADY under `set local role x2f_purge`
+ * (purgeChats above, and Plan 7's whole-trade purge, retention/tradePurge.ts, for a chat still
+ * linked to a trade it deletes). Checked again under the purge role: a chat whose trade went into
+ * dispute since it was read stays, and so does one with any dispute not yet closed (122 grants the
+ * role just these two columns). The shred order for moderation and each member's purged mark are
+ * written by the same statement as the delete (123): no chat is ever gone without them. Returns
+ * the number of chats deleted.
+ */
+export async function deleteChatRowsAsPurge(client: Queryable, codes: string[], now: Date): Promise<number> {
+  const { rows } = await client.query<{ n: number }>(
+    `with gone as (
+       delete from chats c where c.code = any($1)
+         and not exists (select 1 from trades t where t.code = c.trade_code and t.state = 'disputed')
+         and not exists (select 1 from disputes d where d.code = c.trade_code and d.status <> 'closed')
+       returning c.code, c.trade_code, c.buyer_account_id, c.seller_account_id
+     ), orders as (
+       insert into chat_shred_orders (chat, trade_code, purged_at)
+       select code, trade_code, $2 from gone
+       on conflict (chat) do nothing
+     ), marks as (
+       insert into chat_purged_marks (tag, purged_at)
+       select ${purgedTagSql('g.code', 'm.account_id')}, $2
+         from gone g cross join lateral (values (g.buyer_account_id), (g.seller_account_id)) m (account_id)
+       on conflict (tag) do nothing
+     )
+     select count(*)::int as n from gone`,
+    [codes, now],
+  );
+  return rows[0]?.n ?? 0;
 }
 
 export const purgeChatsJob: RetentionJob = { name: 'purgeChats', run: (db, now) => purgeChats(db, now) };
