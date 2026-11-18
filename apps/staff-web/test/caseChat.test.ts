@@ -53,6 +53,39 @@ describe('openCaseChat', () => {
   });
 });
 
+describe('openCaseChat: gaps (review N2)', () => {
+  // The API can drop or withhold envelopes; each sender's seq runs 0, 1, 2, … so a drop is shown
+  // where it happened ("n message(s) missing here"), never hidden.
+  async function chatOf(seqs: Array<['buyer' | 'seller' | 'mod', number]>) {
+    const w = await world();
+    const envelopes = [];
+    for (const [i, [from, seq]] of seqs.entries()) envelopes.push({ id: String(i + 1), senderRole: from, envelope: await w.seal(from, seq, `${from} ${seq}`), at: 'a' });
+    return { w, answer: { ...w.answer, envelopes } };
+  }
+  const shown = (o: { lines: Array<{ text: string; missingBefore: number }> }) => o.lines.map((l) => [l.text, l.missingBefore]);
+
+  it('no gap when every sender runs from 0 without a hole', async () => {
+    const { w, answer } = await chatOf([['buyer', 0], ['seller', 0], ['buyer', 1], ['mod', 0], ['seller', 1]]);
+    const o = await openCaseChat(answer, w.device, MOD_PUB());
+    expect(shown(o)).toEqual([['buyer 0', 0], ['seller 0', 0], ['buyer 1', 0], ['mod 0', 0], ['seller 1', 0]]);
+    expect(o.missing).toBe(0);
+  });
+
+  it('a dropped middle line: the next line of that sender says how many are missing before it', async () => {
+    const { w, answer } = await chatOf([['buyer', 0], ['seller', 0], ['seller', 3], ['buyer', 1]]);
+    const o = await openCaseChat(answer, w.device, MOD_PUB());
+    expect(shown(o)).toEqual([['buyer 0', 0], ['seller 0', 0], ['seller 3', 2], ['buyer 1', 0]]);
+    expect(o.missing).toBe(2);
+  });
+
+  it('a dropped first line: a sender whose first line is above seq 0 follows missing ones', async () => {
+    const { w, answer } = await chatOf([['buyer', 1], ['seller', 0], ['mod', 2]]);
+    const o = await openCaseChat(answer, w.device, MOD_PUB());
+    expect(shown(o)).toEqual([['buyer 1', 1], ['seller 0', 0], ['mod 2', 2]]);
+    expect(o.missing).toBe(3);
+  });
+});
+
 describe('sealModMessage', () => {
   it('seals under the chat key as the moderator at the next seq and countersigns with the device key; both traders read it once moderation signs it', async () => {
     const w = await world();

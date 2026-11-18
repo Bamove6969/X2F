@@ -96,4 +96,19 @@ describe('ModCase: the full chat and messages (design build task 9)', () => {
     cleanup();
     expect(opened[0]!.tk.every((x) => x === 0)).toBe(true);
   });
+
+  it('review N2: a line the server dropped is shown as missing where it was', async () => {
+    const w = await world();
+    // The buyer's seq 1 is withheld: their seq 2 follows one missing message.
+    w.answer.envelopes = [
+      { id: '1', senderRole: 'buyer', envelope: await w.seal('buyer', 0, 'I paid.'), at: 'a' },
+      { id: '2', senderRole: 'buyer', envelope: await w.seal('buyer', 2, 'Here is the receipt.'), at: 'b' },
+    ];
+    await screen(w);
+    await until(() => part('device-certified') !== null);
+    await click(button('Open the full chat'));
+    await until(() => part('chat-lines') !== null);
+    const items = [...part('chat-lines')!.querySelectorAll('li')].map((li) => li.textContent);
+    expect(items).toEqual(['the buyer: I paid.', '1 message(s) missing here', 'the buyer: Here is the receipt.']);
+  });
 });

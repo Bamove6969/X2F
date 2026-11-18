@@ -1,5 +1,5 @@
 import type { KeyTapIntent, RulingOutcome, StaffRole } from '@x2f/staff';
-import { useEffect, useId, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import {
   approveRuling,
@@ -319,10 +319,14 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
       ) : (
         <ol className="x2f-staff-chat" data-part="chat-lines" aria-label="Messages">
           {opened.lines.map((l) => (
-            <li key={l.id} data-from={l.from}>
-              <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
-              {l.text}
-            </li>
+            <Fragment key={l.id}>
+              {/* COPY-UNSIGNED. Review N2: where the server dropped or held back messages, shown where it happened. */}
+              {l.missingBefore > 0 ? <li data-part="chat-missing">{`${l.missingBefore} message(s) missing here`}</li> : null}
+              <li data-from={l.from}>
+                <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
+                {l.text}
+              </li>
+            </Fragment>
           ))}
           {opened.unreadable > 0 ? <li data-part="chat-unreadable">{`${opened.unreadable} message(s) did not open on this device.`}</li> : null}
         </ol>
@@ -355,7 +359,7 @@ function MessageCard({ code, device, opened, onSent }: { code: string; device: S
         seq = next;
         res = await messageTraders(code, await sealModMessage(opened, text, device, serverNow(), seq));
       }
-      onSent({ ...opened, nextSeq: seq + 1, lines: [...opened.lines, { id: res.id, from: 'mod', text, at: serverNow().toISOString() }] });
+      onSent({ ...opened, nextSeq: seq + 1, lines: [...opened.lines, { id: res.id, from: 'mod', text, at: serverNow().toISOString(), missingBefore: 0 }] });
       setText('');
       setNote({ tone: 'ok', text: 'Sent and logged.' });
     } catch (e) {

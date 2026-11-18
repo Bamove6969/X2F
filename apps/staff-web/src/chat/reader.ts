@@ -20,7 +20,11 @@ import { wipeIdentity, type StaffDeviceKey } from '../device/deviceKey.js';
  *   the one the moderation process re-wrapped, so a key the API made up is refused;
  * - the wrap is opened with this device's own box key to a key of that tkh, and every envelope is
  *   verified (signed by an attested participant) and decrypted under it; one that does not open is
- *   left out and counted (`unreadable`).
+ *   left out and counted (`unreadable`);
+ * - review N2: each sender's seq runs 0, 1, 2, …, so where the API dropped or withheld envelopes the
+ *   next line of that sender carries how many are missing before it (`missingBefore`), and a
+ *   sender's first line above seq 0 follows missing ones. Only envelopes that verified count (a seq
+ *   the API wrote on one that did not is its word). The API can still cut the end of the chat.
  * The chat key is held in memory only (`OpenedChat.tk`); `forget` wipes it. Nothing is stored.
  * NEEDS_DESIGN_TASK_10: the design wants the decryption in a worker (design task 10, the staff-web
  * reader); here it runs in the page.
@@ -42,6 +46,8 @@ export interface CaseChatLine {
   from: 'buyer' | 'seller' | 'mod';
   text: string;
   at: string;
+  /** Review N2: how many of this sender's messages are missing just before this line (0: none). */
+  missingBefore: number;
 }
 
 export interface OpenedChat {
@@ -53,6 +59,8 @@ export interface OpenedChat {
   lines: CaseChatLine[];
   /** Envelopes that did not verify or open (shown as a count, never as text). */
   unreadable: number;
+  /** Review N2: messages missing in all (the sum of the lines' `missingBefore`, and any after the last line). */
+  missing: number;
 }
 
 export class CaseChatError extends Error {
@@ -93,17 +101,34 @@ export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, mo
   const guard = new ReplayGuard(channel);
   const lines: CaseChatLine[] = [];
   let unreadable = 0;
+  let missing = 0;
+  // Review N2: the last verified seq per sender; a gap found on an envelope that is not a line is
+  // carried to the next line shown.
+  const last = new Map<string, number>();
+  let carried = 0;
   for (const e of a.envelopes) {
+    let o;
     try {
-      const o = await openChat(e.envelope, { tk, trade: channel, participants, guard });
-      const p = o.payload as { text?: unknown } | null;
-      if (o.type !== CHAT_MSG_TYPE || typeof p?.text !== 'string' || o.from !== e.senderRole) throw new Error('not a line');
-      lines.push({ id: e.id, from: o.from as CaseChatLine['from'], text: p.text, at: e.at });
+      o = await openChat(e.envelope, { tk, trade: channel, participants, guard });
     } catch {
       unreadable += 1;
+      continue;
     }
+    // Verified: signed by the attested `from` at this seq (the replay guard took it as newer).
+    const seq = (e.envelope as { seq: number }).seq;
+    const gap = seq - ((last.get(o.from) ?? -1) + 1);
+    last.set(o.from, seq);
+    missing += gap;
+    carried += gap;
+    const p = o.payload as { text?: unknown } | null;
+    if (o.type !== CHAT_MSG_TYPE || typeof p?.text !== 'string' || o.from !== e.senderRole) {
+      unreadable += 1;
+      continue;
+    }
+    lines.push({ id: e.id, from: o.from as CaseChatLine['from'], text: p.text, at: e.at, missingBefore: carried });
+    carried = 0;
   }
-  return { chat: a.chat, channel, participants, tk, nextSeq: a.nextSeq, lines, unreadable };
+  return { chat: a.chat, channel, participants, tk, nextSeq: a.nextSeq, lines, unreadable, missing };
 }
 
 /** Wipes the chat key held for an opened chat. */
