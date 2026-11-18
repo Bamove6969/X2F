@@ -199,7 +199,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wrong-party': 'the trade state machine (not this side)',
   'too-early': "the trade's own clock",
   'too-late': "the trade's own clock",
-  // Plan 4 Task 12 (A6): the seller's payment proof for a ruling (the form is not wired yet: NEEDS_TX_PROOF_WEB).
+  // Plan 4 Task 12 (A6): the seller's payment proof for a ruling.
   'proof-invalid': 'an input check on the payment proof (the tx and key do not show the payment)',
   'proof-replayed': 'an input check on the payment proof (that tx was already used, or predates the dispute)',
   'proof-pending': 'a wait: the proof sent earlier is waiting for its confirmations',

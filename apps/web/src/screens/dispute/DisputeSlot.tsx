@@ -10,7 +10,7 @@ import { methodOf } from '../../api/trade.js';
 import { registerTradeScreen, type TradeScreenProps } from '../trade/TradeRoom.js';
 import { fetchDispute, proofRefusalText, refusalText, sendAppeal, sendPaymentProof, tradeFromView, type DisputeView } from './api.js';
 import { DisputeRoom } from './DisputeRoom.js';
-import { DisputeRuling } from './DisputeRuling.js';
+import { DisputeRuling, sameAmount } from './DisputeRuling.js';
 import { DoNotPay, mustNotPay } from './DoNotPay.js';
 import { disputeScreenFor } from './DisputeScreen.js';
 import './dispute.css';
@@ -56,8 +56,9 @@ export function DisputeSlot({ code, view, escrow, refresh, serverClock }: TradeS
           await refresh();
         }}
         // Plan 4 Task 12 (A6): the seller's payment proof. Where and how much come ONLY from the
-        // attested terms the room's escrow verified on this device (`restitution`), never the API.
-        payTo={escrow.restitution ?? null}
+        // attested terms the room's escrow verified on this device (`restitution`), never the API,
+        // and only when that amount equals the trade amount the server checks against (review B1).
+        payTo={escrow.restitution != null && sameAmount(escrow.restitution.amountAtomic, trade.amountAtomic) ? escrow.restitution : null}
         onTxProof={async (txHash, txKey) => {
           let sent;
           try {

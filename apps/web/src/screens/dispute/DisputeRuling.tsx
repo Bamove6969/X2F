@@ -147,6 +147,11 @@ export interface PayTo {
   amountAtomic: bigint;
 }
 
+/** The attested amount equals the dispute view's trade amount (a decimal string of atomic units). */
+export function sameAmount(attested: bigint, viewAtomic: string): boolean {
+  return /^[0-9]+$/.test(viewAtomic) && BigInt(viewAtomic) === attested;
+}
+
 /** What the API answered a proof it took: proven now, or waiting for its confirmations. */
 export type ProofSent = 'accepted' | 'pending-confirmations';
 
@@ -246,7 +251,11 @@ export function DisputeRuling({
   const chat = `/trade/${encodeURIComponent(trade.code)}/dispute?view=chat`;
   // The ruling orders the seller to send the XMR and the proof form is wired: Send proof is the primary.
   // Only with the attested address and amount: never a form that would send the seller to an address the API chose.
-  const proofDue = r.outcome === 'seller-sends-xmr' && trade.role === 'seller' && onTxProof !== undefined && payTo !== null;
+  // Review B1: and only when the attested amount equals the trade amount the server checks a proof
+  // against (the dispute view's `amountAtomic`). Otherwise no form: one the server would refuse is
+  // never shown. The server's figure is only compared here, never shown as the sum to send.
+  const proofDue =
+    r.outcome === 'seller-sends-xmr' && trade.role === 'seller' && onTxProof !== undefined && payTo !== null && sameAmount(payTo.amountAtomic, trade.amountAtomic);
   return (
     <div className="dispute-screen">
       <TradeHeader
