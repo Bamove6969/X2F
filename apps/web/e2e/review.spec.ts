@@ -173,7 +173,7 @@ test('under Released: the board\'s rating card, one primary; Submit is disabled 
   // Board parity (copy): the rating section and its footer, without the blind-reveal line.
   // (KNOWN_EXCEPTIONS.Review in parity.ts leaves out the blind-reveal line.)
   const texts = await boardTexts(page, 'Review', { within: 'section[aria-label="Rate satoshi_ghost"]' });
-  expect(texts.length).toBeGreaterThan(5);
+  expect(texts).toEqual(expect.arrayContaining(['How was trading with satoshi_ghost?', 'One-line note (optional)']));
   expect(await missingTexts(page, [...texts, 'Submit rating', 'Neutral, skip details'], [])).toEqual([]);
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await expect(page.locator('[data-primary]')).toHaveText('Submit rating');
