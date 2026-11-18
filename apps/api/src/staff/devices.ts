@@ -1,0 +1,112 @@
+import { staffDeviceKeyId } from '@x2f/staff';
+import type { FastifyInstance } from 'fastify';
+import { withTx } from '../auth/hold.js';
+import type { Queryable } from '../db/pool.js';
+import { ApiError } from '../errors.js';
+import { requireStaff } from './guard.js';
+import { consumeKeyTap } from './keyTap.js';
+import { body, log, tapIdOf } from './members.js';
+
+/**
+ * Chat membership design task 8 (design section 4; lead 18 Nov): a staff member's own staff-web
+ * device keys (perm `self`, every role, own account only). Staff-web makes and keeps the key; this
+ * API only carries the tapped certification to the moderation gate, which re-verifies it from the
+ * stored tap (`key_taps`) and is the only judge of what is certified. What this API answers is its
+ * own view, for the staff site's display.
+ *
+ * - `GET /staff/v1/devices` → `{ accountId, devices: [{ deviceKeyId, signPublic, boxPublic, certifiedAt, expiresAt }] }`:
+ *   the caller's certifications not revoked and not expired, by the used taps.
+ * - `POST /staff/v1/devices { signPublic, boxPublic, tapId }` → 201 `{ deviceKeyId, expiresAt }`: a
+ *   `certify-device` tap bound to exactly this person and these keys (id `staffDeviceKeyId`) is used,
+ *   and `staff.device-certified` logged, in one transaction. 409 `device-exists` for a key id still
+ *   live, 409 `device-limit` at STAFF_DEVICE_MAX live devices (the gate enforces both itself too).
+ * - `POST /staff/v1/devices/:id/revoke { tapId }` → 204: a `revoke-device` tap naming that key id;
+ *   `staff.device-revoked` logged.
+ */
+
+/** Lead 18 Nov: a certification lasts 365 days; at most 3 live devices per person (the gate's own rules). */
+export const STAFF_DEVICE_LIFETIME_MS = 365 * 86_400_000;
+export const STAFF_DEVICE_MAX = 3;
+const HEX64 = /^[0-9a-f]{64}$/;
+const DEVICE_KEY_ID = /^[0-9a-f]{32}$/;
+
+interface Device {
+  deviceKeyId: string;
+  signPublic: string;
+  boxPublic: string;
+  certifiedAt: string;
+  expiresAt: string;
+}
+
+/** The person's live certifications as this API's used taps show them (revocations by anyone applied). */
+export async function liveDevices(q: Queryable, accountId: string, now: Date): Promise<Device[]> {
+  const { rows } = await q.query<{ intent: string }>(
+    `select intent from key_taps
+      where used_at is not null and (intent::jsonb ->> 'kind') in ('certify-device', 'revoke-device')
+        and (intent::jsonb ->> 'accountId') = $1
+      order by used_at, id`,
+    [accountId],
+  );
+  const live = new Map<string, Device>();
+  for (const r of rows) {
+    const i = JSON.parse(r.intent) as { kind: string; deviceKeyId: string; signPublic?: string; boxPublic?: string; issuedAt?: string };
+    if (i.kind === 'revoke-device') {
+      live.delete(i.deviceKeyId);
+      continue;
+    }
+    const at = Date.parse(i.issuedAt ?? '');
+    if (!Number.isFinite(at) || typeof i.signPublic !== 'string' || typeof i.boxPublic !== 'string') continue;
+    live.set(i.deviceKeyId, { deviceKeyId: i.deviceKeyId, signPublic: i.signPublic, boxPublic: i.boxPublic, certifiedAt: new Date(at).toISOString(), expiresAt: new Date(at + STAFF_DEVICE_LIFETIME_MS).toISOString() });
+  }
+  return [...live.values()].filter((d) => Date.parse(d.expiresAt) > now.getTime());
+}
+
+export function staffDeviceRoutes(app: FastifyInstance): void {
+  const opts = { config: { perm: 'self' as const }, preHandler: requireStaff('self') };
+
+  app.get('/staff/v1/devices', opts, async (req) => ({ accountId: req.staff.accountId, devices: await liveDevices(req.server.deps.db, req.staff.accountId, req.server.deps.clock()) }));
+
+  app.post('/staff/v1/devices', opts, async (req, reply) => {
+    const b = body(req);
+    if (Object.keys(b).length !== 3 || typeof b.signPublic !== 'string' || !HEX64.test(b.signPublic) || typeof b.boxPublic !== 'string' || !HEX64.test(b.boxPublic)) {
+      throw new ApiError(400, 'bad-request');
+    }
+    const signPublic = b.signPublic;
+    const boxPublic = b.boxPublic;
+    const tapId = tapIdOf(b);
+    const deviceKeyId = staffDeviceKeyId(signPublic);
+    const { db, clock } = req.server.deps;
+    const me = req.staff.accountId;
+    const now = clock();
+    let expiresAt = '';
+    await withTx(db, async (c) => {
+      await c.query("select pg_advisory_xact_lock(hashtextextended('staff-devices/' || $1, 0))", [me]);
+      const live = await liveDevices(c, me, now);
+      if (live.some((d) => d.deviceKeyId === deviceKeyId)) throw new ApiError(409, 'device-exists');
+      if (live.length >= STAFF_DEVICE_MAX) throw new ApiError(409, 'device-limit');
+      const tap = await consumeKeyTap(c, tapId, me, { kind: 'certify-device', accountId: me, deviceKeyId, signPublic, boxPublic }, now, { sessionId: req.auth.sessionId });
+      const issued = Date.parse((JSON.parse(tap.intent) as { issuedAt?: string }).issuedAt ?? '');
+      expiresAt = new Date(issued + STAFF_DEVICE_LIFETIME_MS).toISOString();
+      await log(c as Parameters<typeof log>[0], req, 'staff.device-certified', { deviceKeyId });
+    });
+    return reply.code(201).send({ deviceKeyId, expiresAt });
+  });
+
+  app.post('/staff/v1/devices/:id/revoke', opts, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!DEVICE_KEY_ID.test(id)) throw new ApiError(404, 'not-found');
+    const b = body(req);
+    if (Object.keys(b).length !== 1) throw new ApiError(400, 'bad-request');
+    const tapId = tapIdOf(b);
+    const { db, clock } = req.server.deps;
+    const me = req.staff.accountId;
+    const now = clock();
+    await withTx(db, async (c) => {
+      await c.query("select pg_advisory_xact_lock(hashtextextended('staff-devices/' || $1, 0))", [me]);
+      if (!(await liveDevices(c, me, now)).some((d) => d.deviceKeyId === id)) throw new ApiError(404, 'not-found');
+      await consumeKeyTap(c, tapId, me, { kind: 'revoke-device', accountId: me, deviceKeyId: id }, now, { sessionId: req.auth.sessionId });
+      await log(c as Parameters<typeof log>[0], req, 'staff.device-revoked', { deviceKeyId: id });
+    });
+    return reply.code(204).send();
+  });
+}

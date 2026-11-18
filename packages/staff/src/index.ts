@@ -34,6 +34,7 @@ export {
   inviteRegistrationChallenge,
   keyCheckCode,
   tapChallenge,
+  staffDeviceKeyId,
   type AccountAction,
   type AfterRefundOutcome,
   type BanReasonCode,

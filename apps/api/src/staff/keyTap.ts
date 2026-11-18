@@ -54,6 +54,8 @@ export const KEY_TAP_PURGE_MS = 24 * 60 * 60_000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX64 = /^[0-9a-f]{64}$/;
+/** Lead 18 Nov: a staff device key id, 32 lower-case hex characters. */
+const DEVICE_KEY_ID = /^[0-9a-f]{32}$/;
 /** A v4 OpenPGP fingerprint, 40 hex characters. */
 const FINGERPRINT = /^[0-9a-fA-F]{40}$/;
 const B64URL_ID = /^[A-Za-z0-9_-]{16,1364}$/;
@@ -429,6 +431,18 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       const opt = (key: string, re: RegExp): string | null => (r[key] === null ? null : match(r, key, re));
       return { kind: 'fee-sweep', thresholdAtomic: opt('thresholdAtomic', ATOMIC), floatAtomic: opt('floatAtomic', ATOMIC), coldAddress: opt('coldAddress', COLD_ADDRESS) };
     }
+    case 'certify-device':
+      exactKeys(r, ['kind', 'accountId', 'deviceKeyId', 'signPublic', 'boxPublic']);
+      return {
+        kind: 'certify-device',
+        accountId: match(r, 'accountId', UUID).toLowerCase(),
+        deviceKeyId: match(r, 'deviceKeyId', DEVICE_KEY_ID),
+        signPublic: match(r, 'signPublic', HEX64),
+        boxPublic: match(r, 'boxPublic', HEX64),
+      };
+    case 'revoke-device':
+      exactKeys(r, ['kind', 'accountId', 'deviceKeyId']);
+      return { kind: 'revoke-device', accountId: match(r, 'accountId', UUID).toLowerCase(), deviceKeyId: match(r, 'deviceKeyId', DEVICE_KEY_ID) };
     case 'payout-address':
       exactKeys(r, ['kind', 'address']);
       return { kind: 'payout-address', address: match(r, 'address', COLD_ADDRESS) };
@@ -504,6 +518,9 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return 'owner';
     case 'add-pgp-key':
     case 'remove-method':
+    // Chat membership design task 8: one's own staff device keys (the route binds them to the signed-in account).
+    case 'certify-device':
+    case 'revoke-device':
     // Task 33: one's own payout address (the action route binds it to the signed-in account).
     case 'payout-address':
       // One's own login methods: any staff member or the owner, for their own account only (the

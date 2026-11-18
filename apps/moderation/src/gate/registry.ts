@@ -5,6 +5,7 @@ import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, involvedIn,
 import type pg from 'pg';
 import { ADD_OWNER_KEY_PAIR_MS, LINK_MAX_LIFETIME_MS, MAX_TAP_AGE_MS, SWITCH_ON_SKEW_MS, type GateState, type InvitableRole, type PinnedCred } from './store.js';
 import { credOf, noteCounter, verifyTap, type GateContext, type GateRuling, type StoredTap } from './verify.js';
+import { revokeDevicesOf, syncDevices } from './devices.js';
 
 /**
  * Plan 4 Task 13: the chain of trust. Everything here is read from the API's database through the
@@ -291,6 +292,8 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       for (const b of Object.values(g.invites)) if (b.accountId === intent.accountId) b.closed = true;
       s.inviteClosed = true;
       s.creds = [];
+      // Design task 8: a security reset revokes every device the person certified with the old keys.
+      revokeDevicesOf(g, intent.accountId, ctx.now());
       binding = { accountId: intent.accountId, closed: false };
       g.resets[intent.inviteId] = binding;
     } else if (binding.accountId !== intent.accountId) {
@@ -442,6 +445,10 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
     }
     g.ownerCreds.push({ credentialId: intent.credentialId, publicKey: Buffer.from(row.publicKey).toString('base64url'), aaguid: row.aaguid });
   }
+
+  // 5. Design task 8: staff device certifications and revocations (gate/devices.ts), after every
+  //    revocation above, so a person switched off this sync certifies nothing and loses every device.
+  await syncDevices(source, g, ctx);
 }
 
 // ---------------------------------------------------------------------------------------------

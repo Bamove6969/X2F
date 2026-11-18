@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { deviceLive } from '../gate/devices.js';
 import type { GateState } from '../gate/store.js';
 
 /**
@@ -31,15 +32,28 @@ export interface StaffDirectory {
 }
 
 /**
- * The live certified staff device keys (design task 8, the `certify-device` tap; not built). `live`
- * is true only for a certification of exactly this key to exactly this person, unexpired and
- * unrevoked at `at` (this process's clock).
+ * The live certified staff device keys (design task 8, the `certify-device` tap). `live` is true
+ * only for a certification of exactly this key to exactly this person, unexpired and unrevoked at
+ * `at` (this process's clock), while the person still stands in the gate.
  */
 export interface DeviceCertificates {
   live(accountId: string, deviceKeyId: string, at: Date): Promise<boolean>;
 }
 
-/** Until design task 8: no device key is certified, so no grant passes. */
+/** The certified device keys on the gate's state (design task 8); syncs the registry first, as `gateStaffDirectory`. */
+export function gateDevices(g: { readonly state: GateState; sync(): Promise<void> }): DeviceCertificates & {
+  /** The device's certified public keys (hex) when it is live, else null. */
+  device(accountId: string, deviceKeyId: string, at: Date): Promise<{ signPublic: string; boxPublic: string } | null>;
+} {
+  const device = async (accountId: string, deviceKeyId: string, at: Date) => {
+    await g.sync();
+    const d = deviceLive(g.state, accountId, deviceKeyId, at);
+    return d === null ? null : { signPublic: d.signPublic, boxPublic: d.boxPublic };
+  };
+  return { device, live: async (accountId, deviceKeyId, at) => (await device(accountId, deviceKeyId, at)) !== null };
+}
+
+/** No gate: no device key is certified, so no grant passes. */
 export const NO_CERTIFIED_DEVICES: DeviceCertificates = { live: async () => false };
 
 /** Lead 18 Nov: a staff device key's id is SHA-256 of its Ed25519 signing public key, hex, first 32 characters. */

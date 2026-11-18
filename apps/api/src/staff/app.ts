@@ -18,6 +18,7 @@ import { staffMemberRoutes } from './members.js';
 import { ownerKeyRoutes } from './ownerKeys.js';
 import { staffOwnerAlertRoutes } from './ownerAlerts.js';
 import { keyTapRoutes } from './keyTap.js';
+import { staffDeviceRoutes } from './devices.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
@@ -145,6 +146,8 @@ export async function buildStaffApi(
   await staffLoginRoutes(app);
   // Lead re-review 6 Nov items 1-2: one's own login methods, sessions, alerts and push.
   staffAccountRoutes(app);
+  // Chat membership design task 8: one's own staff device keys.
+  staffDeviceRoutes(app);
   // Plan 4 Task 5: security-key taps, used by every tapped action (Tasks 7, 8, 12).
   keyTapRoutes(app, {
     guard: requireStaff('self'),

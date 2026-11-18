@@ -18,7 +18,8 @@ const uses = (re: RegExp) => files.filter((f) => re.test(f.text)).map((f) => f.p
  * publicKeySha256) and shows names next to ids, with a test of its own. A new caller is added here
  * only together with that test (docs/coordination.md, mod-gate merge requirement).
  */
-const KEY_TAP_CALLERS: string[] = ['screens/ModCase.tsx', 'screens/StaffGrants.tsx', 'ui/ClockOut.tsx'];
+const KEY_TAP_CALLERS: string[] = ['screens/ModCase.tsx', 'screens/StaffGrants.tsx', 'ui/ClockOut.tsx', 'ui/DeviceCard.tsx'];
+// Chat membership design task 8: DeviceCard taps `certify-device` with every signed field labelled (X3).
 
 describe('WebAuthn on the staff site (re-verify X2, X3)', () => {
   it('startAuthentication only in KeyTapDialog (the checked tap) and Login (the derived login challenge)', () => {

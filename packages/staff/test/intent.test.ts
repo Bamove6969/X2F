@@ -15,6 +15,7 @@ import {
   keyCheckCode,
   sha256,
   tapChallenge,
+  staffDeviceKeyId,
   type KeyTapIntent,
 } from '@x2f/staff';
 
@@ -250,3 +251,21 @@ describe('staff-site challenge domains (X2)', () => {
   });
 });
 
+
+describe('staff device certification intents (chat membership design task 8)', () => {
+  test('certify-device and revoke-device carry the signed issuedAt, and the device key id is SHA-256 of the signing key, first 32 hex', () => {
+    const sign = 'ab'.repeat(32);
+    const id = staffDeviceKeyId(sign);
+    expect(id).toBe(createHash('sha256').update(Buffer.from(sign, 'hex')).digest('hex').slice(0, 32));
+    expect(() => staffDeviceKeyId(sign.toUpperCase())).toThrow(TypeError);
+    expect(() => staffDeviceKeyId(sign.slice(2))).toThrow(TypeError);
+    expect(hasIssuedAt('certify-device')).toBe(true);
+    expect(hasIssuedAt('revoke-device')).toBe(true);
+    const nonce = new Uint8Array(16).fill(7);
+    const at = new Date('2026-11-18T12:00:00.000Z');
+    const certify = stampIssuedAt({ kind: 'certify-device', accountId: 'a1', deviceKeyId: id, signPublic: sign, boxPublic: 'cd'.repeat(32) }, at);
+    const revoke = stampIssuedAt({ kind: 'revoke-device', accountId: 'a1', deviceKeyId: id }, at);
+    expect(hex(tapChallenge(certify, nonce))).not.toBe(hex(tapChallenge(revoke, nonce)));
+    expect(() => tapChallenge({ kind: 'revoke-device', accountId: 'a1', deviceKeyId: id }, nonce)).toThrow(TypeError);
+  });
+});

@@ -45,6 +45,10 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/account/pgp/start', perm: 'self', allowed: EVERY_ROLE, body: {} },
   { method: 'POST', url: '/staff/v1/account/pgp/finish', perm: 'self', allowed: EVERY_ROLE, body: {} },
   { method: 'DELETE', url: '/staff/v1/account/methods/:type/:id', perm: 'self', allowed: EVERY_ROLE },
+  // Chat membership design task 8: one's own staff device keys (a bad body stops at validation).
+  { method: 'GET', url: '/staff/v1/devices', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/devices', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'POST', url: '/staff/v1/devices/:id/revoke', perm: 'self', allowed: EVERY_ROLE, body: {} },
   { method: 'GET', url: '/staff/v1/account/sessions', perm: 'self', allowed: EVERY_ROLE },
   { method: 'DELETE', url: '/staff/v1/account/sessions/:id', perm: 'self', allowed: EVERY_ROLE },
   { method: 'GET', url: '/staff/v1/account/alerts', perm: 'self', allowed: EVERY_ROLE },

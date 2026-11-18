@@ -416,3 +416,20 @@ export const ownerAlerts = (before?: string) =>
   staffApi<{ items: OwnerAlert[]; unread: number; next: string | null }>(page('/staff/v1/owner/alerts', before));
 export const markOwnerAlertRead = (id: string) => staffApi<unknown>(`/staff/v1/owner/alerts/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} });
 export const markAllOwnerAlertsRead = () => staffApi<unknown>('/staff/v1/owner/alerts/read-all', { method: 'POST', body: {} });
+
+// ---------------------------------------------------------------------------------------------
+// Chat membership design task 8: one's own staff device keys (perm self)
+
+export interface CertifiedDevice {
+  deviceKeyId: string;
+  signPublic: string;
+  boxPublic: string;
+  certifiedAt: string;
+  expiresAt: string;
+}
+export const myDevices = () => staffApi<{ accountId: string; devices: CertifiedDevice[] }>('/staff/v1/devices');
+/** Certifies this browser's device key; `tapId` is a tap of intent `certify-device` for exactly these keys. */
+export const certifyDevice = (signPublic: string, boxPublic: string, tapId: string) =>
+  staffApi<{ deviceKeyId: string; expiresAt: string }>('/staff/v1/devices', { method: 'POST', body: { signPublic, boxPublic, tapId } });
+export const revokeDevice = (deviceKeyId: string, tapId: string) =>
+  staffApi<unknown>(`/staff/v1/devices/${encodeURIComponent(deviceKeyId)}/revoke`, { method: 'POST', body: { tapId } });

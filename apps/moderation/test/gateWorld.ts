@@ -92,7 +92,7 @@ export class FakeApi implements GateSource {
 
 /** A tap as the API stores it: the person's key answered `tapChallenge(intent, nonce)` on the staff origin. */
 /** The registry kinds the API stamps with its start time (lead P4 call); tests stamp them too, at NOW unless told. */
-export const STAMPED: readonly string[] = ['create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading', 'reset-staff-security'];
+export const STAMPED: readonly string[] = ['create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading', 'reset-staff-security', 'certify-device', 'revoke-device'];
 export function tapBy(p: Person, intent: KeyTapIntent, o: { key?: SoftAuthenticator; issuedAt?: Date | null } = {}): StoredTap {
   const key = o.key ?? p.key;
   const nonce = randomBytes(16);

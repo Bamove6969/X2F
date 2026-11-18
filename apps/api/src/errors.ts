@@ -111,6 +111,9 @@ export type ApiErrorCode =
   // Design build task 4 (chat membership keys): the signed key record.
   | 'bad-key-record'
   | 'key-exists'
+  // Chat membership design task 8: staff device certification.
+  | 'device-exists'
+  | 'device-limit'
   | 'no-key'
   | 'chat-keyed'
   // Design build task 6: the dispute grant.

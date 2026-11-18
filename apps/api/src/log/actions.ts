@@ -145,6 +145,9 @@ export const LOG_ACTIONS = {
   // one of their sessions on the staff site (the method kind only: never a fingerprint or a label).
   'staff.method-added': { method: 'id' },
   'staff.method-removed': { method: 'id' },
+  // Chat membership design task 8: one's own staff device key certified or revoked (its id only).
+  'staff.device-certified': { deviceKeyId: 'id' },
+  'staff.device-revoked': { deviceKeyId: 'id' },
   'staff.session-ended': {},
   // Lead review 7 Nov M1: silencing actions on the staff site.
   // Owner-alerts review OA2: which kind of alert was hidden (one), or how many (all at once); never its detail.

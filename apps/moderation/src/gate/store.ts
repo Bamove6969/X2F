@@ -101,7 +101,31 @@ export interface GateState {
    * is ever settled for it. Empty in a gate.bin written before Task 14.
    */
   executions: Record<string, RulingExecution>;
+  /** Design task 8: certified staff device keys by id (empty in a gate.bin written before it). */
+  devices: Record<string, StaffDevice>;
 }
+
+/**
+ * Chat membership design task 8 (lead 18 Nov): one certified staff device key, by its id
+ * (`staffDeviceKeyId(signPublic)`), as this gate verified its owner's `certify-device` tap. Live from
+ * its signed issuedAt for STAFF_DEVICE_LIFETIME_MS, until revoked (`revoke-device`, or the person's
+ * switch-off, removal or security reset). Keys as lower-case hex.
+ */
+export interface StaffDevice {
+  accountId: string;
+  signPublic: string;
+  boxPublic: string;
+  /** The certify tap's signed issuedAt (the API's start time of the tap). */
+  certifiedAt: string;
+  expiresAt: string;
+  /** When this gate revoked it (its own clock), or null. Never undone: a new tap certifies again. */
+  revokedAt: string | null;
+}
+
+/** Lead 18 Nov: a device certification lasts 365 days. */
+export const STAFF_DEVICE_LIFETIME_MS = 365 * 86_400_000;
+/** Lead 18 Nov: at most 3 live certified devices per staff member (as the trader device limit). */
+export const MAX_STAFF_DEVICES = 3;
 
 /** One trade's ruling payout as the executor recorded it (amounts as decimal strings). */
 export interface RulingExecution {
@@ -141,6 +165,7 @@ export function emptyGate(): GateState {
     stopped: false,
     applied: {},
     executions: {},
+    devices: {},
   };
 }
 

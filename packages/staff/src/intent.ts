@@ -55,6 +55,9 @@ export const ISSUED_AT_KINDS = [
   'create-invite', 'set-role', 'switch-on', 'settings', 'add-owner-key', 'remove-staff', 'emergency-stop', 'resume-trading',
   // Lead call on the D-032 reset gap: the gate orders the owner's tapped reset like the others.
   'reset-staff-security',
+  // Chat membership design task 8 (lead 18 Nov): a staff member's own device certification and
+  // revocation. The gate ages a certification (365 days) from this signed start time.
+  'certify-device', 'revoke-device',
 ] as const;
 const ISSUED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -79,6 +82,11 @@ export type KeyTapIntent =
   | { kind: 'reset-staff-security'; accountId: string; inviteId: string; tokenHash: string; expiresAt: string; issuedAt?: string }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string; issuedAt?: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number; issuedAt?: string }
+  // Chat membership design task 8 (design section 4, lead 18 Nov): a staff member certifies one of
+  // their own staff-web device keys (Ed25519 signing key and X25519 box key, lower-case hex), named
+  // by its id `staffDeviceKeyId(signPublic)`; and revokes one by that id.
+  | { kind: 'certify-device'; accountId: string; deviceKeyId: string; signPublic: string; boxPublic: string; issuedAt?: string }
+  | { kind: 'revoke-device'; accountId: string; deviceKeyId: string; issuedAt?: string }
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
   // staff site, each change confirmed by a tap of one of their security keys.
   | { kind: 'add-pgp-key'; fingerprint: string }
@@ -142,8 +150,22 @@ export const KEY_TAP_KINDS = [
   'fee-sweep',
   'payout-address',
   'pay-settings',
+  'certify-device',
+  'revoke-device',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
+
+/**
+ * Lead 18 Nov (design task 8): a staff device key's id, SHA-256 of its 32-byte Ed25519 signing
+ * public key (given as 64 lower-case hex), as hex, first 32 characters (128 bits). The staff site,
+ * the API and the moderation gate all derive it this one way.
+ */
+export function staffDeviceKeyId(signPublicHex: string): string {
+  if (typeof signPublicHex !== 'string' || !/^[0-9a-f]{64}$/.test(signPublicHex)) throw new TypeError('staffDeviceKeyId: signPublic must be 64 lower-case hex characters');
+  const b = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) b[i] = Number.parseInt(signPublicHex.slice(i * 2, i * 2 + 2), 16);
+  return toHex(sha256(b)).slice(0, 32);
+}
 
 /**
  * Review mod-screens M1: what a ruling tap binds of its evidence lines. SHA-256 (lower-case hex) of

@@ -240,6 +240,9 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'grant-required': 'the dispute needs the chat key grant (the app adds it and asks again)',
   'bad-grant': 'a device check on the dispute grant (a fault)',
   'grant-not-needed': 'no fallback grant is needed (the engine moves on)',
+  // Design build task 8: staff device certification; staff app only, never a trader answer.
+  'device-exists': 'a staff answer: that staff device key is already certified (staff app only)',
+  'device-limit': 'a staff answer: the staff member already has 3 certified devices (staff app only)',
   'chat-keyed': 'a staff answer: the dev-only moderator send cannot write to a keyed chat (staff app only)',
   'wrong-channel': 'a device check (a fault)',
   'wrong-sender': 'a device check (a fault)',
