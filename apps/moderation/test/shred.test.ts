@@ -147,6 +147,8 @@ describe('the shred pass', () => {
        values ($1, $2, $3, '00000000-0000-4000-8000-000000000009', $4, $5, 'grant-unavailable')`,
       [c.chat, newTradeCode(), T0, 'ab'.repeat(16), entry],
     );
+    // Build task 6: this process's record of an accepted grant goes too.
+    await db.query('insert into mod_chat_grants (chat, grant_by, grant_sig, tkh, accepted_at) values ($1, $2, $3, $4, $5)', [c.chat, 'buyer', 'c'.repeat(128), 'd'.repeat(64), T0]);
 
     now = new Date(T0.getTime() + 31 * DAY);
     const net = fakeApi({ orders: () => [order(c.chat)] });
@@ -160,6 +162,7 @@ describe('the shred pass', () => {
     expect((await db.query('select 1 from signed_chats where chat = $1', [c.chat])).rows).toHaveLength(0);
     expect((await db.query('select 1 from mod_chat_identities where chat = $1', [c.chat])).rows).toHaveLength(0);
     expect((await db.query('select 1 from mod_chat_access where chat = $1', [c.chat])).rows).toHaveLength(0);
+    expect((await db.query('select 1 from mod_chat_grants where chat = $1', [c.chat])).rows).toHaveLength(0);
     const dump = await dumpAll();
     expect(dump).not.toContain(c.chat);
     expect(dump).not.toContain(c.participants.mod.signPublic);

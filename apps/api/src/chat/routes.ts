@@ -22,6 +22,8 @@
  *   and the device then reads the stored one. `GET /v1/chats/:chat/key` → `{ record }`, or 404 `no-key`.
  *   Once a chat has a key record it takes only envelope v2 (`checkChatEnvelopeV2`); before, only v1.
  *   The API cannot open any wrap: it stores and serves them.
+ * - `POST /v1/chats/:chat/grant` (build task 6): the counterparty's fallback grant to the moderator
+ *   (chat/grants.ts); the chat view lists every grant and its acceptance (`grants`).
  * - `GET /v1/chats/:chat/envelopes?after=<id>` → `{ envelopes: [{ id, senderRole, envelope, at }], more }`.
  *
  * Write budgets per account (review M7, limits.ts): a new pre-trade chat takes from
@@ -51,6 +53,7 @@ import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { purgedTagSql } from './retention.js';
+import { chatGrants, fallbackGrant } from './grants.js';
 import { MARKET_PRICED } from '../offers/routes.js';
 import { assertNotBlocked, blockedEitherWaySql } from '../traders/blocks.js';
 import { traderSummaries, type TraderSummary } from '../traders/summary.js';
@@ -77,6 +80,11 @@ export interface ChatView {
   tradeSecuredAt: string | null;
   /** The moderation service's attestation is ready. */
   attested: boolean;
+  /**
+   * Design build task 6: the trader grants of the chat key to the moderator, each signed grant with
+   * the moderator's signed acceptance (null until moderation opened it). Every device verifies both.
+   */
+  grants: Array<{ grant: unknown; accepted: unknown | null }>;
   /**
    * The signing key registered for the caller's own role, or null: a device that holds no chat
    * identity, or another key, knows the chat is open on another device (read-only).
@@ -349,6 +357,7 @@ export function chatRoutes(app: FastifyInstance): void {
       disputeOpen: facts.rows[0]!.disputed,
       tradeSecuredAt: facts.rows[0]!.secured_at?.toISOString() ?? null,
       attested: facts.rows[0]!.attested,
+      grants: await chatGrants(deps.db, row.code),
       mySignPublic: facts.rows[0]!.mine,
       createdAt: row.created_at.toISOString(),
       lastMessageAt: row.last_message_at?.toISOString() ?? null,
@@ -452,6 +461,14 @@ export function chatRoutes(app: FastifyInstance): void {
     );
     if (rowCount === 0) throw new ApiError(409, 'key-exists');
     for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
+    return reply.code(201).send({ ok: true });
+  });
+
+  // Design build task 6: the counterparty's fallback grant (chat/grants.ts).
+  app.post('/v1/chats/:chat/grant', { preHandler: requireTrader }, async (req, reply) => {
+    const deps = req.server.deps;
+    const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    await locked(req, row.code, (q) => fallbackGrant(q, row.code, row.trade_code, role, req.body, deps.clock()));
     return reply.code(201).send({ ok: true });
   });
 

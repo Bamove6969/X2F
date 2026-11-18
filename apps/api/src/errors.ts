@@ -113,6 +113,10 @@ export type ApiErrorCode =
   | 'key-exists'
   | 'no-key'
   | 'chat-keyed'
+  // Design build task 6: the dispute grant.
+  | 'grant-required'
+  | 'bad-grant'
+  | 'grant-not-needed'
   | 'chat-unavailable'
   // Design 2026-11-08 section 5: a chat purged under the caller (its member mark); the device erases its copy.
   | 'chat-purged'

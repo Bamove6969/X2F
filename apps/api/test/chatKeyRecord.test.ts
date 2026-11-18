@@ -242,9 +242,9 @@ describe('the chat key record', () => {
     const tk = await newChatKey();
     expect((await r.taker.b.post(`/v1/chats/${r.chat}/key`, await keyRecord(r, 'buyer', tk))).statusCode).toBe(201);
     await deps.db.query(
-      `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig)
-       values ($1, 'mod', 'mod', $2, 'AAAA', $3, 'dispute', 'buyer', $4, 'aa')`,
-      [r.chat, r.mod.boxPublic, '0'.repeat(64), now],
+      `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, grant_at, statement)
+       values ($1, 'mod', 'mod', $2, 'AAAA', $3, 'dispute', 'buyer', $4, $5, $4, '{}')`,
+      [r.chat, r.mod.boxPublic, '0'.repeat(64), now, 'a'.repeat(128)],
     );
     const removed = await purgeChats(deps.db, now, () => true);
     expect(removed).toBeGreaterThan(0);

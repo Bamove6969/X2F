@@ -18,6 +18,7 @@ import { appealWaiting, syncNoReviewerAlert } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, startDispute, withDispute } from './store.js';
 import { refuseHeldTradeEvent } from '../trades/held.js';
+import { disputeGrant } from '../chat/grants.js';
 
 /**
  * Trader-side disputes (Plan 3 Task 27; spec 2.3, 6.6), on Plan 4's dispute machine (Task 10):
@@ -306,16 +307,20 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
   // `dispute` is set (by a trader or the system) a new one is refused, whatever rows exist, so a
   // purge of old dispute rows can never re-open a decided case.
   app.post('/v1/trades/:code/dispute', { preHandler: owner }, async (req) => {
-    const b = bodyOf(req, ['reason', 'note']);
+    // Design build task 6: `grant`, the disputer's signed grant of the chat key to the moderator
+    // (chat/grants.ts), required once the trade's chat has a key record.
+    const b = bodyOf(req, ['reason', 'note', 'grant']);
     if (!isReason(b.reason)) throw new ApiError(400, 'bad-request');
     if (!isText(b.note, NOTE_MAX)) throw new ApiError(400, 'bad-request');
     const reason = b.reason;
     const note = b.note;
     const { row, side } = await participant(req);
     const deps = req.server.deps;
+    const keepGrant = await disputeGrant(deps.db, row.code, side, b.grant, deps.clock());
     try {
       await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, { type: 'open-dispute' }, side, async (client, prev, _next, now) => {
         if (prev.dispute !== null) throw new ApiError(409, 'dispute-exists');
+        if (keepGrant !== null) await keepGrant(client);
         // A held trade: the held account's own sessions are refused (403 recovery-hold); the
         // partner may open one (owner G7; lead hold v3 review item 5 and minor).
         await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');

@@ -4,6 +4,7 @@
 // - GET|POST /v1/trades/:code/dispute, POST /v1/trades/:code/appeal: apps/api/src/disputes/routes.ts;
 // The method is named from the bundled catalog by id (disputeMethodName), never from the API.
 import { api, ApiCallError } from '../../api/client.js';
+import { chatClient, openTradeChat } from '../../chat/client.js';
 import { getTrade, methodOf, publicName, type TradeView } from '../../api/trade.js';
 import { catalogMethodName } from '../../methods/catalogNames.js';
 
@@ -254,8 +255,23 @@ export async function fetchDispute(code: string, signal?: AbortSignal): Promise<
   }
 }
 
-export async function openDispute(code: string, reason: Reason, note: string): Promise<DisputeView> {
-  return parseDispute(await api(`${path(code)}/dispute`, { method: 'POST', body: { reason, note } }));
+/**
+ * Opens the dispute. Design build task 6: once the trade's chat has a key, the API needs this
+ * trader's signed grant of it to the moderator (400 grant-required); the escrow worker makes it and
+ * the request is sent once more with it. A chat with no key needs none.
+ */
+export async function openDispute(code: string, reason: Reason, note: string, d: { chatOf?: (code: string) => Promise<string>; grant?: (chat: string, disputeAt: string) => Promise<unknown> } = {}): Promise<DisputeView> {
+  try {
+    return parseDispute(await api(`${path(code)}/dispute`, { method: 'POST', body: { reason, note } }));
+  } catch (err) {
+    if (!(err instanceof ApiCallError) || err.status !== 400 || err.code !== 'grant-required') throw err;
+  }
+  const chat = await (d.chatOf ?? openTradeChat)(code);
+  const c = d.grant === undefined ? chatClient() : null;
+  const make = d.grant ?? (c?.grant === undefined ? undefined : c.grant.bind(c));
+  if (make === undefined) throw new ApiCallError(400, 'grant-required');
+  const grant = await make(chat, new Date().toISOString());
+  return parseDispute(await api(`${path(code)}/dispute`, { method: 'POST', body: { reason, note, grant } }));
 }
 
 export async function sendAppeal(code: string, why: string): Promise<DisputeView> {

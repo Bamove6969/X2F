@@ -1,3 +1,4 @@
+import { grantPass } from './grants.js';
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import type { PartyHandle, Transport } from '@x2f/escrow';
@@ -167,6 +168,8 @@ export interface ModerationHandle {
    * the chats whose keys are gone here and whose shred the API recorded this pass.
    */
   shredTick(): Promise<string[]>;
+  /** One pass over the API's unaccepted dispute grants (design build task 6); resolves with the chats accepted. */
+  grantTick(): Promise<string[]>;
   /** One chain-watcher pass (Task 9). */
   watch(): Promise<void>;
   /** Stops the loops, then every running moderator party. */
@@ -577,6 +580,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           await client.query('delete from mod_chat_trade where chat = $1', [chat]);
           // Design section 5: this process's own staff-access record for the chat (design task 9 groundwork).
           await client.query('delete from mod_chat_access where chat = $1', [chat]);
+          await client.query('delete from mod_chat_grants where chat = $1', [chat]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');
@@ -598,6 +602,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     return done;
   };
 
+  const grantTick = (): Promise<string[]> => grantPass({ link, db: o.db, keystoreKey: o.keystoreKey, now, log });
+
   const intervalMs = deps.intervalMs ?? 5_000;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -609,6 +615,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     running = tick()
       .then(chatTick)
       .then(shredTick)
+      .then(grantTick)
       .catch(() => log({ reason: 'work-pass-failed' }))
       .finally(() => {
         if (!stopped) timer = setTimeout(loop, intervalMs);
@@ -667,6 +674,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     tick,
     chatTick,
     shredTick,
+    grantTick,
     // Through the watcher's own queue: never a pass alongside the loop's (finding 2).
     watch: () => watcher.tick(),
     stop,

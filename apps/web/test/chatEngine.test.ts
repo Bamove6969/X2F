@@ -1,10 +1,10 @@
 import { newTradeCode, type Role } from '@x2f/core';
-import { openChat, openChatKeyRecord, ProtocolError, ReplayGuard as Guard2, seal, sealChat, verifyChatKeyRecord, makeChatKeyRecord, newChatKey, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { makeChatGrant, makeGrantAccepted, unwrapChatKey, verifyChatGrant, openChat, openChatKeyRecord, ProtocolError, ReplayGuard as Guard2, seal, sealChat, verifyChatKeyRecord, makeChatKeyRecord, newChatKey, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { attestationBytes, channelFor, chatIdentityProofValid, checkChatEnvelopeV2, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { chatKeyOf, makeChatKey, newChatState, sealChatMessage, sealPayDetails, type ChatState } from '../src/chat/chatCrypto.js';
-import { ChatSendFailed, createChatEngine, type ApiEnvelope, type ChatApi, type ChatApiView, type ChatEngine } from '../src/chat/engine.js';
+import { ChatSendFailed, GRANT_FALLBACK_MS, createChatEngine, type ApiEnvelope, type ChatApi, type ChatApiView, type ChatEngine } from '../src/chat/engine.js';
 import { memoryChatStore } from '../src/chat/store.js';
 
 /** A chat identity made with libsodium (apps/web makes real identities only in the escrow worker). */
@@ -31,7 +31,13 @@ beforeAll(async () => {
 
 /** An in-memory chat API standing in for apps/api's routes (one chat, seen as the buyer). */
 class FakeApi implements ChatApi {
-  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, tradeSecuredAt: '2026-10-28T11:00:00.000Z', mySignPublic: null };
+  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, tradeSecuredAt: '2026-10-28T11:00:00.000Z', mySignPublic: null, grants: [] };
+  grantPosts: unknown[] = [];
+  async postGrant(_chat: string, grant: unknown) {
+    this.check();
+    this.grantPosts.push(grant);
+    return 'ok' as const;
+  }
   identities: Partial<Record<'buyer' | 'seller', { signPublic: string; boxPublic: string; proof: string }>> = {};
   attestation: { attestation: unknown; sig: unknown } | null = null;
   refused = false;
@@ -519,7 +525,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
   it('review M3: sweeps the stored chats for purged ones when the worker starts, before any chat message, and once', async () => {
     const { serveChat } = await import('../src/chat/serve.js');
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendNotice: async () => ({}) as never, sweep: async () => (sweeps++, []) };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: async () => (sweeps++, []) };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -547,7 +553,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
       async () => [],
     ];
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendNotice: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -884,5 +890,76 @@ describe('chat engine: one key per chat, envelope v2 (design build task 5)', () 
     expect(stored).not.toContain(hexKey);
     expect(stored).not.toContain(b64Key);
     expect(stored).not.toContain('"wrapBuyer"');
+  });
+});
+
+describe('chat engine: the dispute grant (design build task 6)', () => {
+  it('grant() signs this trader\'s grant of the chat key to the attested moderator identity; only the mod identity opens its wrap', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await expect(e.grant(chat, '2026-11-18T12:00:00.000Z')).resolves.toBeDefined();
+    const g = await verifyChatGrant(await e.grant(chat, '2026-11-18T12:00:00.000Z'), { chat: channel, participants: parts });
+    expect({ by: g.by, at: g.disputeAt }).toEqual({ by: 'buyer', at: '2026-11-18T12:00:00.000Z' });
+    const tk = await unwrapChatKey(mod, g.wrap, g.tkh);
+    expect(sodium.memcmp(tk, await tkOf(parts))).toBe(true);
+    await expect(unwrapChatKey(seller, g.wrap, g.tkh)).rejects.toBeInstanceOf(ProtocolError);
+  });
+
+  it('grant() before the chat is ready (no attestation, so no key) is not-ready', async () => {
+    const e = engine();
+    await e.sync(chat);
+    await expect(e.grant(chat, '2026-11-18T12:00:00.000Z')).rejects.toMatchObject({ code: 'not-ready' });
+  });
+
+  it('T1 by proxy: in a dispute, the seller\'s unaccepted grant older than the wait makes this device grant once; never before the wait, after an acceptance, or outside a dispute', async () => {
+    const base = Date.now();
+    let clock = base;
+    const e = createChatEngine({ api, store, newIdentity: async () => testIdentity(), modSigningPublic, now: () => clock });
+    await e.sync(chat);
+    const parts = attest();
+    await e.sync(chat);
+    expect((await e.sync(chat)).phase).toBe('ready');
+    const theirs = await makeChatGrant({ chat: channel, by: 'seller', tk: await tkOf(parts), disputeAt: new Date(base).toISOString(), me: seller, participants: parts });
+    api.view.grants = [{ grant: theirs, accepted: null }];
+    // Not disputed: nothing.
+    clock = base + GRANT_FALLBACK_MS + 1;
+    await e.sync(chat);
+    expect(api.grantPosts).toEqual([]);
+    api.view.disputeOpen = true;
+    // Disputed, but within the wait: nothing.
+    clock = base + GRANT_FALLBACK_MS - 1;
+    await e.sync(chat);
+    expect(api.grantPosts).toEqual([]);
+    // Accepted by the attested moderator: nothing.
+    clock = base + GRANT_FALLBACK_MS + 1;
+    api.view.grants = [{ grant: theirs, accepted: await makeGrantAccepted({ grant: theirs, mod }) }];
+    await e.sync(chat);
+    expect(api.grantPosts).toEqual([]);
+    // An "acceptance" signed by someone else does not count: this device grants, once.
+    api.view.grants = [{ grant: theirs, accepted: await makeGrantAccepted({ grant: theirs, mod: seller }) }];
+    await e.sync(chat);
+    expect(api.grantPosts).toHaveLength(1);
+    const mine = await verifyChatGrant(api.grantPosts[0], { chat: channel, participants: parts });
+    expect(mine.by).toBe('buyer');
+    api.view.grants = [...api.view.grants, { grant: mine, accepted: null }];
+    await e.sync(chat);
+    expect(api.grantPosts).toHaveLength(1);
+  });
+
+  it('acts only on a grant the attested counterparty signed: one signed by a stranger, or for another chat, is ignored', async () => {
+    let clock = Date.now();
+    const e = createChatEngine({ api, store, newIdentity: async () => testIdentity(), modSigningPublic, now: () => clock });
+    await e.sync(chat);
+    const parts = attest();
+    expect((await e.sync(chat)).phase).toBe('ready');
+    api.view.disputeOpen = true;
+    const stranger = await testIdentity();
+    const forged = await makeChatGrant({ chat: channel, by: 'seller', tk: await tkOf(parts), disputeAt: new Date(clock).toISOString(), me: stranger, participants: { ...parts, seller: pub(stranger) } });
+    const elsewhere = await makeChatGrant({ chat: 'another-channel', by: 'seller', tk: await tkOf(parts), disputeAt: new Date(clock).toISOString(), me: seller, participants: parts });
+    api.view.grants = [{ grant: forged, accepted: null }, { grant: elsewhere, accepted: null }];
+    clock += GRANT_FALLBACK_MS + 1;
+    await e.sync(chat);
+    expect(api.grantPosts).toEqual([]);
   });
 });

@@ -20,6 +20,9 @@ export function parseChatView(v: unknown): ChatApiView | null {
     disputeOpen: v.disputeOpen === true,
     tradeSecuredAt: typeof v.tradeSecuredAt === 'string' ? v.tradeSecuredAt : null,
     mySignPublic: typeof v.mySignPublic === 'string' ? v.mySignPublic : null,
+    grants: Array.isArray(v.grants)
+      ? v.grants.filter(isRecord).map((g) => ({ grant: g.grant, accepted: g.accepted ?? null }))
+      : [],
   };
 }
 
@@ -83,6 +86,15 @@ export function httpChatApi(f: typeof fetch = (u, i) => fetch(u, i)): ChatApi {
       if (res.status === 409) {
         const b = (await res.clone().json().catch(() => null)) as { error?: unknown } | null;
         if (b?.error === 'key-exists') return 'exists';
+      }
+      return fail(res);
+    },
+    async postGrant(chat, grant) {
+      const res = await call(path(chat, '/grant'), { method: 'POST', body: JSON.stringify(grant) });
+      if (res.ok) return 'ok';
+      if (res.status === 409) {
+        const b = (await res.clone().json().catch(() => null)) as { error?: unknown } | null;
+        if (b?.error === 'grant-not-needed') return 'not-needed';
       }
       return fail(res);
     },

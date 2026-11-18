@@ -44,3 +44,39 @@ These were made on `wip/lead-mod-chat` while building `POST /internal/chat/grant
 7. **The grant route is not dev-only.** `/internal/chat/send` stays behind `X2F_DEV_MOD_CHAT` (NEEDS_P4_MOD_COUNTERSIGN) until the countersign is built.
 8. **Shredding.** The shred pass deletes `mod_chat_access` with the chat's keys (design section 5).
 9. **Migration numbers.** API 710 and 711 (lead 18 Nov: after retention's 701, so an existing database applies them in order) and moderation 016 (the next free number).
+
+## Builder's calls in tasks 5 and 6, for the reviewer
+
+Tasks 5 and 6 are on `wip/lead-mod-chat`. None of these is a new primitive; the formats follow the design's own pattern (Ed25519 over a domain string and canonical JSON).
+
+**Task 5, the trader engine**
+1. **Getting the key.** The engine gets the chat key right after the attestation checks out, before it reads or seals any envelope. With no record on the server, it makes the key and posts the record. On 409 it reads the record that won.
+2. **Checking the record.** The engine checks the record against the attested participants, never the API's word. The record must be signed by the trader it names, for this chat's channel. This device's copy must hash to the record's tkh. If any check fails, the chat shows the `security` failure and nothing is read or sent.
+3. **The key is never stored on the device.** It is held in the worker's memory and erased with the chat. Each worker start opens the device's copy again.
+4. **The engine is v2 only.** A v1 envelope is never shown: it gets a refused receipt, and the lines after it still show. Envelope v1 stays in chatCrypto for its own tests. Consequence: a chat that already holds v1 lines from before its key record shows none of them. The design assumes there are no production chats yet. The lead should confirm.
+5. **No "unreadable" line.** Design section 9 wants a message that does not open shown as "unreadable". Today it is dropped, as before, because a visible line needs copy (an owner/design item).
+
+**Task 6, the dispute grant (T1)**
+
+6. **Grant-accepted statement.** Domain `x2f/chat-grant-accepted/v1\0`, body `{v, chat, tkh, grantBy, grantSig}`. It names exactly one grant, by that grant's signature, and is signed with the chat's moderator identity.
+7. **What the API checks before filing a grant.** The grant must:
+   - be signed by the registered identity of the side sending it, for this chat's channel;
+   - carry the key record's tkh;
+   - have a `disputeAt` within 10 minutes of the server's clock.
+
+   The grant is required once the chat has a key (400 `grant-required`) and refused when it has none. The API stores the signed grant exactly as posted, in `chat_members.statement`.
+8. **What moderation checks before accepting a grant.** All of these come from its own records:
+   - the chat is one it attested;
+   - the key record and the grant are each signed by the attested trader they name;
+   - the grant's tkh equals the record's tkh;
+   - the wrap opens with the chat's sealed moderator identity to a key with that tkh.
+
+   The key is wiped from memory at once. Moderation keeps only a `mod_chat_grants` record (no key; deleted by the shred pass). It does not check its own view of the dispute, because a grant is the trader's own act.
+9. **Fallback grant (T1 by proxy).** The counterparty's device grants too only when all of these hold:
+   - the trade is disputed;
+   - the other side's grant, signed by its attested identity for this chat, has no acceptance that verifies against the attested moderator identity;
+   - `GRANT_FALLBACK_MS` = 2 minutes have passed since that grant's `disputeAt`;
+   - this side has not granted.
+
+   The API files a fallback grant only under the same conditions, once per side.
+10. **The grant passes through the page.** It crosses postMessage from the worker to the page, which sends it with the dispute request. Its only secret part is a wrap that only the moderator's key opens.

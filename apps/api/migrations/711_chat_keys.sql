@@ -34,9 +34,19 @@ create table chat_members (
   sig text not null,
   log_entry_id bigint,
   removed_at timestamptz,
-  check ((member_kind = 'mod') = (member_ref = 'mod'))
+  -- Build task 6: a trader's dispute grant to the moderator (`granted_by` buyer or seller, its
+  -- signed `disputeAt` here), and the moderator's signed acceptance of it, once it opened the wrap.
+  grant_at timestamptz,
+  -- The signed statements exactly as posted (the grant, and the moderator's acceptance of it), so
+  -- every reader verifies the same bytes.
+  statement jsonb,
+  accepted jsonb,
+  accepted_at timestamptz,
+  check ((member_kind = 'mod') = (member_ref = 'mod')),
+  check (member_kind <> 'mod' or (granted_by in ('buyer', 'seller') and grant_at is not null and statement is not null and sig ~ '^[0-9a-f]{128}$'))
 );
--- One live copy per member per chat; a removed one may be granted again (a fresh row).
-create unique index chat_members_live on chat_members (chat, member_ref) where removed_at is null;
+-- One live copy per member per chat per granter (the disputer's grant and the counterparty's
+-- fallback grant are both kept); a removed one may be granted again (a fresh row).
+create unique index chat_members_live on chat_members (chat, member_ref, granted_by) where removed_at is null;
 
 grant select, delete on chat_keys, chat_members to x2f_purge;

@@ -59,7 +59,7 @@
  *   record (a block hides a chat with that same 404, and it may come back).
  */
 import type { Role } from '@x2f/core';
-import { isPlainObject, ProtocolError, ReplayGuard, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { isPlainObject, makeChatGrant, ProtocolError, ReplayGuard, verifyChatGrant, verifyGrantAccepted, type ChatEnvelopeV2, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, attestationKeys, checkChatEnvelopeV2, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ChatError, chatChannel, chatKeyOf, makeChatKey, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatNoticeId } from './notices.js';
@@ -73,6 +73,8 @@ export interface ChatApiView {
   tradeSecuredAt: string | null;
   /** The signing key the API holds for the caller's role in this chat, or null. */
   mySignPublic: string | null;
+  /** Build task 6: the trader grants of the chat key to the moderator, each with its acceptance (both unverified here). */
+  grants: Array<{ grant: unknown; accepted: unknown | null }>;
 }
 
 export interface ApiEnvelope {
@@ -95,6 +97,8 @@ export interface ChatApi {
   getKey(chat: string): Promise<unknown | null>;
   /** Posts this device's signed key record; 'exists' for 409 key-exists (the other side's came first). */
   postKey(chat: string, record: unknown): Promise<'ok' | 'exists'>;
+  /** Build task 6: the counterparty's fallback grant (`POST …/grant`); 'not-needed' for 409 grant-not-needed. */
+  postGrant(chat: string, grant: unknown): Promise<'ok' | 'not-needed'>;
 }
 
 export type ChatPhase = 'waiting' | 'ready' | 'other-device' | 'failed';
@@ -152,12 +156,25 @@ export interface ChatEngine {
   /** Seals and posts a fixed notice (P-020); 'not-ready' while the trade is not secured. */
   sendNotice(chat: string, notice: ChatNoticeId): Promise<ChatSnapshot>;
   /**
+   * Build task 6 (design section 3, T1): this trader's signed grant of the chat key to the chat's
+   * attested moderator identity, for the dispute request (`disputeAt`: this device's time, ISO).
+   * 'not-ready' when the chat is not ready (no key yet: then the API needs no grant). The grant holds
+   * only a wrap the moderator's key opens; no key or text crosses to the page.
+   */
+  grant(chat: string, disputeAt: string): Promise<ChatGrant>;
+  /**
    * Asks the API about every chat stored on this device and erases each one it answers 410
    * `chat-purged` for; resolves with those. Any other answer (or none) keeps the record. Rejects on
    * a 401 (no live session: nothing can be told apart), so the caller tries again later.
    */
   sweep(): Promise<string[]>;
 }
+
+/**
+ * Build task 6: how long a counterparty waits for the moderator to accept the disputer's grant
+ * before granting too (T1 by proxy). Engineering call, for the reviewer.
+ */
+export const GRANT_FALLBACK_MS = 2 * 60_000;
 
 /** The API purged the chat (410 `chat-purged`): the device's copy must go. */
 export const isPurged = (e: unknown): boolean => (e as { status?: unknown } | null)?.status === 410;
@@ -505,7 +522,45 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     }
     const read = await readAll(rec, view, parts, tk);
     rec = read.rec;
+    if (view.disputeOpen) await fallbackGrant(rec, view, parts, tk);
     return { snap: snapshot(rec, view, 'ready', null, read.more), rec, parts, view, tk };
+  }
+
+  /**
+   * Build task 6, T1 by proxy: while the trade is disputed, when the other side's grant (signed by its
+   * ATTESTED identity, for this chat) has no acceptance signed by the attested moderator identity
+   * after GRANT_FALLBACK_MS, and this side has granted nothing, this device grants too. It acts only
+   * on a grant the disputer's own key signed, which the API cannot forge. Best effort: a refusal is
+   * left for the next sync, a purge erases the chat as everywhere.
+   */
+  async function fallbackGrant(rec: ChatRecord, view: ChatApiView, parts: Participants, tk: Uint8Array): Promise<void> {
+    const channel = await chatChannel(rec.chat);
+    const now = (d.now ?? Date.now)();
+    let theirs: ChatGrant | null = null;
+    let accepted = false;
+    for (const g of view.grants) {
+      let v: ChatGrant;
+      try {
+        v = await verifyChatGrant(g.grant, { chat: channel, participants: parts });
+      } catch {
+        continue;
+      }
+      if (v.by === rec.role) return;
+      theirs = v;
+      try {
+        const a = await verifyGrantAccepted(g.accepted, { chat: channel, participants: parts });
+        if (a.grantSig === v.sig && a.grantBy === v.by) accepted = true;
+      } catch {
+        // No acceptance, or one that does not verify: not accepted.
+      }
+    }
+    if (theirs === null || accepted || now - Date.parse(theirs.disputeAt) < GRANT_FALLBACK_MS) return;
+    const mine = await makeChatGrant({ chat: channel, by: rec.role, tk, disputeAt: new Date(now).toISOString(), me: toIdentity(rec.identity), participants: parts });
+    try {
+      await d.api.postGrant(rec.chat, mine);
+    } catch (e) {
+      if (isPurged(e)) throw e;
+    }
   }
 
   /** Runs `fn`; a 410 `chat-purged` from the API on the way erases the chat here before it is rethrown. */
@@ -571,6 +626,11 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       return gone;
     },
     send: (chat, text) => post(chat, (a) => sealChatMessage({ ...a, text })),
+    grant: (chat, disputeAt) => serial(chat, () => purging(chat, async () => {
+      const s = await syncLocked(chat);
+      if (s.snap.phase !== 'ready' || !s.rec || !s.parts || !s.tk) throw new ChatSendFailed('not-ready');
+      return makeChatGrant({ chat: await chatChannel(chat), by: s.rec.role, tk: s.tk, disputeAt, me: toIdentity(s.rec.identity), participants: s.parts });
+    })),
     sendPay: (chat, pay) => post(chat, (a) => sealPayDetails({ ...a, pay }), true),
     sendNotice: (chat, notice) => post(chat, (a) => sealChatNotice({ ...a, notice }), true),
   };

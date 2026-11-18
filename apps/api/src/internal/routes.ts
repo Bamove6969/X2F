@@ -28,6 +28,7 @@ import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { recordRulingExecution } from '../disputes/execution.js';
+import { acceptGrant, pendingGrants } from '../chat/grants.js';
 import { loadDisputeRecord } from '../disputes/store.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
@@ -518,6 +519,13 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // before it shreds; this list is only the trigger. Never-served orders first, then the least
   // recently served (review M4): orders moderation holds move to the back instead of keeping the
   // ones behind them waiting.
+  // ── Dispute grants (design-chat-membership-keys section 3 T1, build task 6) ──────────────
+  // The trader grants of a chat key to the moderator that moderation has not accepted yet, each
+  // with its chat's key record (moderation checks the grant's wrap against the record's tkh).
+  app.get('/internal/v1/chat-grants', guard('/internal/v1/chat-grants', async (_req, reply) => {
+    return reply.send({ grants: await pendingGrants(o.db, o.workLimit ?? WORK_LIMIT) });
+  }));
+
   app.get('/internal/v1/chat-shred', guard('/internal/v1/chat-shred', async (_req, reply) => {
     const { rows } = await o.db.query<{ chat: string; trade_code: string | null; purged_at: Date }>(
       `with picked as (
@@ -617,6 +625,22 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (!keysAre(body, ['kind'])) throw new Refused(400, 'bad-body');
     await o.db.query('update site_flags set log_alarm = coalesce(log_alarm, $1)', [o.clock?.() ?? new Date(now())]);
     log({ reason: 'internal-log-alarm' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /**
+   * `{ kind: 'chat-grant-accepted', chat, accepted }` (build task 6): moderation opened one grant's
+   * wrap to the chat's key. Stored only when signed by the chat's attested moderator identity and
+   * naming a stored grant (else 400 `bad-acceptance`, 404 `not-found`); a repeat is 201.
+   */
+  const chatGrantAccepted = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat', 'accepted'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const r = await acceptGrant(o.db, code, body.accepted, o.clock?.() ?? new Date(now()));
+    if (r === 'bad') throw new Refused(400, 'bad-acceptance');
+    if (r === 'unknown') throw new Refused(404, 'not-found');
+    log({ reason: 'internal-chat-grant-accepted' });
     return reply.code(201).send({ ok: true });
   };
 
@@ -722,6 +746,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-refused') return refuseChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-grant-accepted') return chatGrantAccepted(body, reply);
     if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
     if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
     if (isPlainObject(body) && body.kind === 'ruling-statement') return rulingStatement(body, reply);

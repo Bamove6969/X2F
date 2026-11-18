@@ -1,7 +1,9 @@
 /**
  * The chat half of the escrow worker's message protocol (Task 20). The page asks for `chat-sync`
  * and `chat-send`; the worker answers with a ChatSnapshot of verified plain lines, or an error code.
- * No key, ciphertext or ChatState ever crosses postMessage.
+ * No key, ciphertext or ChatState ever crosses postMessage, with one exception: `chat-grant` (design
+ * build task 6) answers the trader's signed dispute grant, whose only secret part is a wrap that the
+ * moderator's key alone opens; the page forwards it with the dispute request.
  */
 import { PayDetailsError, parsePayDetails } from '@x2f/trade';
 import { ChatSendFailed, type ChatEngine, type ChatSnapshot } from './engine.js';
@@ -13,11 +15,16 @@ export type ToChatWorker =
   /** The payee's packaged payment details (J-08): the page sends the boxes, the worker seals them. */
   | { t: 'chat-send-pay'; id: number; chat: string; pay: unknown }
   /** A fixed notice (P-020): the page names it, the worker seals its own wording. */
-  | { t: 'chat-send-notice'; id: number; chat: string; notice: unknown };
+  | { t: 'chat-send-notice'; id: number; chat: string; notice: unknown }
+  /** Build task 6: the trader's signed dispute grant, for the dispute request. */
+  | { t: 'chat-grant'; id: number; chat: string; disputeAt: unknown };
 
 export type ChatFailure = 'not-ready' | 'bad-text' | 'bad-details' | 'too-large' | 'slow-down' | 'refused' | 'unavailable' | 'not-found';
 
-export type FromChatWorker = { t: 'chat'; id: number; ok: true; snapshot: ChatSnapshot } | { t: 'chat'; id: number; ok: false; error: ChatFailure };
+export type FromChatWorker =
+  | { t: 'chat'; id: number; ok: true; snapshot: ChatSnapshot }
+  | { t: 'chat'; id: number; ok: true; grant: unknown }
+  | { t: 'chat'; id: number; ok: false; error: ChatFailure };
 
 export interface ChatPort {
   postMessage(m: FromChatWorker): void;
@@ -69,7 +76,7 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
   let engine: Promise<ChatEngine> | null = make();
   port.addEventListener('message', (e) => {
     const m = e.data as Partial<ToChatWorker> | null;
-    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send' && m.t !== 'chat-send-pay' && m.t !== 'chat-send-notice') || typeof m.id !== 'number') return;
+    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send' && m.t !== 'chat-send-pay' && m.t !== 'chat-send-notice' && m.t !== 'chat-grant') || typeof m.id !== 'number') return;
     const id = m.id;
     void (async () => {
       try {
@@ -77,6 +84,12 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
         engine ??= make();
         const eng = await engine;
         sweep(eng);
+        if (m.t === 'chat-grant') {
+          const at = m.disputeAt;
+          if (typeof at !== 'string' || Number.isNaN(Date.parse(at))) throw new ChatSendFailed('refused');
+          port.postMessage({ t: 'chat', id, ok: true, grant: await eng.grant(m.chat, at) });
+          return;
+        }
         let snapshot: ChatSnapshot;
         if (m.t === 'chat-send') {
           if (typeof m.text !== 'string') throw new ChatSendFailed('bad-text');

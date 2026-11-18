@@ -1,0 +1,158 @@
+/**
+ * Design build task 6 (design-chat-membership-keys-2026-11-08 section 3, T1): a trader's dispute grant
+ * to the moderation service. The API is the courier: it checks the grant's signature against the
+ * chat's registered (attested) identity of the side that sent it, that it is for this chat's channel,
+ * that its `tkh` is the chat key record's, and that its signed `disputeAt` is near the server's time.
+ * It cannot open the wrap, and it never can: only the chat's moderator identity does.
+ *
+ * - With the dispute (`POST /v1/trades/:code/dispute`, `grant`): required once the trade's chat has a
+ *   key record (400 `grant-required`), refused when it has none (400 `bad-request`), stored in the
+ *   same transaction as the dispute.
+ * - The counterparty's fallback (`POST /v1/chats/:chat/grant`): only while the linked trade is
+ *   disputed, only when the other side's grant is stored and not accepted, and only once per side
+ *   (409 `grant-not-needed` otherwise). It is T1 by proxy: the counterparty's app acts only on a
+ *   grant the disputer's own key signed, which the API cannot forge.
+ * - The moderation service pulls unaccepted grants (`/internal/v1/chat-grants`) with the key record,
+ *   opens each wrap, checks it against the record's tkh, and reports a signed `chat-grant-accepted`,
+ *   which is stored only when it verifies against the attested moderator identity.
+ */
+import { ProtocolError, verifyChatGrant, verifyGrantAccepted, type ChatGrant, type GrantAccepted } from '@x2f/protocol';
+import { channelFor } from '@x2f/trade';
+import type { Queryable } from '../db/pool.js';
+import { ApiError } from '../errors.js';
+
+/** How far a grant's signed `disputeAt` may be from the server's clock (device clocks drift). */
+export const GRANT_SKEW_MS = 10 * 60_000;
+
+interface Keyed {
+  chat: string;
+  channel: string;
+  tkh: string;
+  modBox: string;
+  participants: Record<'buyer' | 'seller', { signPublic: string; boxPublic: string }>;
+}
+
+/** The chat's key and attested identities, or null when it has no key record. */
+async function keyedChat(q: Queryable, chat: string): Promise<Keyed | null> {
+  const k = await q.query<{ tkh: string; attestation: { participants?: { mod?: { boxPublic?: unknown } } } | null }>(
+    'select k.tkh, a.attestation from chat_keys k left join chat_attestations a on a.chat = k.chat where k.chat = $1',
+    [chat],
+  );
+  const row = k.rows[0];
+  if (!row) return null;
+  const modBox = row.attestation?.participants?.mod?.boxPublic;
+  if (typeof modBox !== 'string') return null;
+  const ids = await q.query<{ role: 'buyer' | 'seller'; sign_public: string; box_public: string }>('select role, sign_public, box_public from chat_identities where chat = $1', [chat]);
+  const participants = {} as Keyed['participants'];
+  for (const r of ids.rows) participants[r.role] = { signPublic: r.sign_public, boxPublic: r.box_public };
+  return { chat, channel: await channelFor(chat, 'chat'), tkh: row.tkh, modBox, participants };
+}
+
+/** Verifies a grant from `side` for this keyed chat, or throws 400 `bad-grant`. */
+async function checkedGrant(k: Keyed, side: 'buyer' | 'seller', raw: unknown, now: Date): Promise<ChatGrant> {
+  let g: ChatGrant;
+  try {
+    g = await verifyChatGrant(raw, { chat: k.channel, participants: k.participants });
+  } catch (e) {
+    if (e instanceof ProtocolError) throw new ApiError(400, 'bad-grant');
+    throw e;
+  }
+  if (g.by !== side || g.tkh !== k.tkh || Math.abs(Date.parse(g.disputeAt) - now.getTime()) > GRANT_SKEW_MS) throw new ApiError(400, 'bad-grant');
+  return g;
+}
+
+async function storeGrant(q: Queryable, k: Keyed, g: ChatGrant, now: Date): Promise<boolean> {
+  const { rowCount } = await q.query(
+    `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, grant_at, statement)
+     values ($1, 'mod', 'mod', $2, $3, $4, 'dispute', $5, $6, $7, $8, $9)
+     on conflict (chat, member_ref, granted_by) where removed_at is null do nothing`,
+    [k.chat, k.modBox, g.wrap, g.tkh, g.by, now, g.sig, g.disputeAt, g],
+  );
+  return rowCount === 1;
+}
+
+/**
+ * For the dispute route: checks the grant for the trade's chat before the dispute opens. Null when
+ * the trade has no keyed chat (and no grant was sent); otherwise a function that stores it in the
+ * dispute's own transaction.
+ */
+export async function disputeGrant(q: Queryable, tradeCode: string, side: 'buyer' | 'seller', raw: unknown, now: Date): Promise<((c: Queryable) => Promise<void>) | null> {
+  const chat = (await q.query<{ code: string }>('select code from chats where trade_code = $1', [tradeCode])).rows[0]?.code;
+  const k = chat === undefined ? null : await keyedChat(q, chat);
+  if (k === null) {
+    if (raw !== undefined) throw new ApiError(400, 'bad-request');
+    return null;
+  }
+  if (raw === undefined) throw new ApiError(400, 'grant-required');
+  const g = await checkedGrant(k, side, raw, now);
+  return async (c) => {
+    await storeGrant(c, k, g, now);
+  };
+}
+
+/** The counterparty's fallback grant (T1 by proxy). */
+export async function fallbackGrant(q: Queryable, chat: string, tradeCode: string | null, side: 'buyer' | 'seller', raw: unknown, now: Date): Promise<void> {
+  const disputed = tradeCode !== null && (await q.query("select 1 from trades where code = $1 and state = 'disputed'", [tradeCode])).rows.length > 0;
+  const k = await keyedChat(q, chat);
+  if (!disputed || k === null) throw new ApiError(409, 'grant-not-needed');
+  const g = await checkedGrant(k, side, raw, now);
+  const other = side === 'buyer' ? 'seller' : 'buyer';
+  const { rows } = await q.query<{ granted_by: string; accepted: unknown }>(
+    `select granted_by, accepted from chat_members where chat = $1 and member_kind = 'mod' and removed_at is null`,
+    [chat],
+  );
+  const theirs = rows.find((r) => r.granted_by === other);
+  if (theirs === undefined || theirs.accepted !== null || rows.some((r) => r.granted_by === side)) throw new ApiError(409, 'grant-not-needed');
+  if (!(await storeGrant(q, k, g, now))) throw new ApiError(409, 'grant-not-needed');
+}
+
+/** The grants of a chat as its traders see them: each signed grant and its acceptance, if any. */
+export async function chatGrants(q: Queryable, chat: string): Promise<Array<{ grant: unknown; accepted: unknown | null }>> {
+  const { rows } = await q.query<{ statement: unknown; accepted: unknown | null }>(
+    `select statement, accepted from chat_members where chat = $1 and member_kind = 'mod' and removed_at is null order by id`,
+    [chat],
+  );
+  return rows.map((r) => ({ grant: r.statement, accepted: r.accepted }));
+}
+
+/** For moderation: unaccepted grants with their chat's key record. */
+export async function pendingGrants(q: Queryable, limit: number): Promise<Array<{ chat: string; grant: unknown; record: unknown }>> {
+  const { rows } = await q.query<{ chat: string; statement: unknown; tkh: string; created_by_role: string; wrap_buyer: string; wrap_seller: string; sig: string }>(
+    `select m.chat, m.statement, k.tkh, k.created_by_role, k.wrap_buyer, k.wrap_seller, k.sig
+       from chat_members m join chat_keys k on k.chat = m.chat
+      where m.member_kind = 'mod' and m.removed_at is null and m.accepted is null
+      order by m.id limit $1`,
+    [limit],
+  );
+  const out = [];
+  for (const r of rows) {
+    out.push({
+      chat: r.chat,
+      grant: r.statement,
+      record: { v: 1, chat: await channelFor(r.chat, 'chat'), tkh: r.tkh, by: r.created_by_role, wrapBuyer: r.wrap_buyer, wrapSeller: r.wrap_seller, sig: r.sig },
+    });
+  }
+  return out;
+}
+
+/** Stores moderation's acceptance once it verifies against the attested moderator identity and names a stored grant. */
+export async function acceptGrant(q: Queryable, chat: string, raw: unknown, now: Date): Promise<'ok' | 'bad' | 'unknown'> {
+  const a = await q.query<{ attestation: { participants?: { mod?: { signPublic: string; boxPublic: string } } } }>('select attestation from chat_attestations where chat = $1', [chat]);
+  const mod = a.rows[0]?.attestation?.participants?.mod;
+  if (mod === undefined) return 'unknown';
+  let acc: GrantAccepted;
+  try {
+    acc = await verifyGrantAccepted(raw, { chat: await channelFor(chat, 'chat'), participants: { mod } });
+  } catch (e) {
+    if (e instanceof ProtocolError) return 'bad';
+    throw e;
+  }
+  const { rowCount } = await q.query(
+    `update chat_members set accepted = $4, accepted_at = $5
+      where chat = $1 and member_kind = 'mod' and removed_at is null and granted_by = $2 and sig = $3 and tkh = $6 and accepted is null`,
+    [chat, acc.grantBy, acc.grantSig, acc, now, acc.tkh],
+  );
+  if (rowCount === 1) return 'ok';
+  const same = await q.query('select 1 from chat_members where chat = $1 and member_kind = $2 and granted_by = $3 and sig = $4 and accepted is not null', [chat, 'mod', acc.grantBy, acc.grantSig]);
+  return same.rows.length > 0 ? 'ok' : 'unknown';
+}

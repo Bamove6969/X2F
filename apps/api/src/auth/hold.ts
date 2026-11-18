@@ -643,6 +643,8 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // Plan 3 Task 20 (encrypted chat), classified at its landing next to Tasks 16-17.
   'POST /v1/chats': 'social: opens a pre-trade chat row on an offer; no account, session, approval or security state, no obligation',
   'POST /v1/chats/:chat/envelopes': 'an encrypted chat line in a chat the caller is in; no account, session, approval or security state',
+  'POST /v1/chats/:chat/key': "the signed key record of a chat the caller is in (wraps only); no account, session, approval or security state",
+  'POST /v1/chats/:chat/grant': "the caller's fallback grant of a disputed trade's chat key to the moderator (a wrap only); no account, session, approval or security state, no new obligation",
   'POST /v1/chats/:chat/identity': "the caller's chat identity key for one chat; no account, session, approval or security state",
   'POST /v1/trades/:code/chat': "a participant's chat for an open trade (R42: finishing open trades stays allowed); no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',

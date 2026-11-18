@@ -21,8 +21,10 @@
  *     disputeAt}`, `wrap` being TK sealed to the moderator's chat identity;
  *   - a dispute notice (`x2f/chat-dispute-notice/v1\0`, design T2): the moderator's `{chat, disputeSeq,
  *     openedAt, openedBy}`.
- *   The design names the grant's and the envelope's domains; the key record's and the notice's are this
- *   module's (same pattern), listed for the reviewer.
+ *   - a grant acceptance (`x2f/chat-grant-accepted/v1\0`, design T1, build task 6): the moderator's
+ *     `{chat, tkh, grantBy, grantSig}`, saying it opened that one grant's wrap to a key matching tkh.
+ *   The design names the grant's and the envelope's domains; the key record's, the notice's and the
+ *   acceptance's are this module's (same pattern), listed for the reviewer.
  *
  * The escrow `signals` channel keeps envelope v1 (`envelope.ts`) unchanged. Browser-safe.
  */
@@ -64,6 +66,7 @@ const ENVELOPE_DOMAIN = 'x2f/chat-envelope/v2\0';
 const RECORD_DOMAIN = 'x2f/chat-key-record/v1\0';
 const GRANT_DOMAIN = 'x2f/chat-grant/v1\0';
 const NOTICE_DOMAIN = 'x2f/chat-dispute-notice/v1\0';
+const ACCEPTED_DOMAIN = 'x2f/chat-grant-accepted/v1\0';
 
 export const CHAT_ENVELOPE_V2_KEYS = ['v', 'trade', 'from', 'seq', 'nonce', 'ct', 'sig'] as const;
 
@@ -395,4 +398,34 @@ export async function makeDisputeNotice(a: { chat: string; disputeSeq: number; o
 export async function verifyDisputeNotice(raw: unknown, a: { chat: string; participants: Partial<Participants> }): Promise<DisputeNotice> {
   const body = await verifyStatement(NOTICE_DOMAIN, raw, DISPUTE_NOTICE_KEYS, (s) => s['chat'] === a.chat && noticeOk(s), () => a.participants.mod, 'notice');
   return body as unknown as DisputeNotice;
+}
+
+export interface GrantAccepted {
+  v: 1;
+  chat: string;
+  tkh: string;
+  grantBy: 'buyer' | 'seller';
+  /** The accepted grant's own signature: an acceptance names exactly one grant. */
+  grantSig: string;
+  sig: string;
+}
+export const GRANT_ACCEPTED_KEYS = ['v', 'chat', 'tkh', 'grantBy', 'grantSig', 'sig'] as const;
+const SIG_HEX = /^[0-9a-f]{128}$/;
+
+/** The moderator's acceptance of one verified grant (build task 6), signed with the chat's moderator identity. */
+export async function makeGrantAccepted(a: { grant: ChatGrant; mod: Identity }): Promise<GrantAccepted> {
+  await sodium.ready;
+  const body = { v: 1 as const, chat: a.grant.chat, tkh: a.grant.tkh, grantBy: a.grant.by, grantSig: a.grant.sig };
+  if (!isValidTrade(body.chat) || !TKH_HEX.test(body.tkh) || !isTrader(body.grantBy) || !SIG_HEX.test(body.grantSig)) throw new TypeError('makeGrantAccepted: invalid grant');
+  return { ...body, sig: await signStatement(ACCEPTED_DOMAIN, body, a.mod, 'makeGrantAccepted') };
+}
+
+export async function verifyGrantAccepted(raw: unknown, a: { chat: string; participants: Partial<Participants> }): Promise<GrantAccepted> {
+  const body = await verifyStatement(
+    ACCEPTED_DOMAIN, raw, GRANT_ACCEPTED_KEYS,
+    (s) => s['chat'] === a.chat && typeof s['tkh'] === 'string' && TKH_HEX.test(s['tkh']) && isTrader(s['grantBy']) && typeof s['grantSig'] === 'string' && SIG_HEX.test(s['grantSig']),
+    () => a.participants.mod,
+    'grant acceptance',
+  );
+  return body as unknown as GrantAccepted;
 }

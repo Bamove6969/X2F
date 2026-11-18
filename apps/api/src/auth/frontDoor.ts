@@ -69,6 +69,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/chats/:chat': 'one of my own chats (participants only)',
   'GET /v1/chats/:chat/attestation': 'one of my own chats (participants only)',
   'GET /v1/chats/:chat/envelopes': 'one of my own chats (participants only)',
+  'GET /v1/chats/:chat/key': "one of my own chats' key record: wraps only, each opened only by its member's own key (participants only)",
   'GET /v1/events': 'my own live events (per account and per trade, no marketplace broadcast)',
   'GET /v1/reviews/pending': 'reviews I still owe for my own trades',
   'GET /v1/team': "my own team's members (account owner only)",
@@ -178,6 +179,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/chats': 'opens my own pre-trade chat on a listed offer; answers its code and my role',
   'POST /v1/chats/:chat/identity': 'my chat identity key for one of my own chats',
   'POST /v1/chats/:chat/envelopes': 'an encrypted line in one of my own chats',
+  'POST /v1/chats/:chat/key': 'the signed key record of one of my own chats (wraps only; first writer wins)',
+  'POST /v1/chats/:chat/grant': 'my fallback grant of my own chat\'s key to the moderator, only while its trade is disputed',
   // My own team (account owner only).
   'POST /v1/team/invites': 'an invite to my own team; answers its id, code and deadline',
   'PATCH /v1/team/members/:id': "changes a member's boxes (abilities) in my own team",

@@ -9,6 +9,8 @@ import {
   makeChatGrant,
   makeChatKeyRecord,
   makeDisputeNotice,
+  makeGrantAccepted,
+  verifyGrantAccepted,
   newChatKey,
   open,
   openChat,
@@ -225,5 +227,21 @@ describe('the dispute grant (T1) and the dispute notice (T2)', () => {
     const g = await makeChatGrant({ chat: CHAT, by: 'buyer', tk, disputeAt: '2026-11-18T12:00:00.000Z', me: ids.buyer, participants });
     expect(await code(verifyChatKeyRecord(g, { chat: CHAT, participants }))).toBe('bad-signature');
     expect(await code(verifyDisputeNotice(g, { chat: CHAT, participants }))).toBe('bad-signature');
+  });
+});
+
+describe('the grant acceptance (build task 6)', () => {
+  it('names exactly one grant, verifies against the moderator identity only, and refuses a change', async () => {
+    const g = await makeChatGrant({ chat: CHAT, by: 'seller', tk, disputeAt: '2026-11-18T12:00:00.000Z', me: ids.seller, participants });
+    const acc = await makeGrantAccepted({ grant: g, mod: ids.mod });
+    expect(await verifyGrantAccepted(acc, { chat: CHAT, participants })).toEqual(acc);
+    expect(acc.grantSig).toBe(g.sig);
+    const byTrader = await makeGrantAccepted({ grant: g, mod: ids.buyer });
+    expect(await code(verifyGrantAccepted(byTrader, { chat: CHAT, participants }))).toBe('bad-signature');
+    expect(await code(verifyGrantAccepted({ ...acc, grantBy: 'buyer' }, { chat: CHAT, participants }))).toBe('bad-signature');
+    expect(await code(verifyGrantAccepted({ ...acc, grantSig: '0'.repeat(128) }, { chat: CHAT, participants }))).toBe('bad-signature');
+    expect(await code(verifyGrantAccepted(acc, { chat: 'other', participants }))).toBe('bad-signature');
+    // Not a grant, a record or a notice.
+    expect(await code(verifyChatGrant(acc, { chat: CHAT, participants }))).toBe('bad-signature');
   });
 });
