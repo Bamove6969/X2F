@@ -15,32 +15,43 @@ const deferred = <T>(): Deferred<T> => {
   return { promise, resolve, reject };
 };
 
-/** Each checkTxKey call: when it started, and the answer it waits for. */
-const calls: Array<{ txHash: string; answer: Deferred<unknown> }> = [];
-let running = 0;
+/** Each checkTxKey call: the wallet it ran on, and the answer it waits for. */
+const calls: Array<{ txHash: string; wallet: number; answer: Deferred<unknown> }> = [];
+/** Every wallet created (in order): how many calls run on it now, and how often it was closed. */
+const wallets: Array<{ running: number; closed: number }> = [];
+/** Two calls ran on one wallet at the same time. */
 let overlapped = false;
 
 vi.mock('monero-ts', () => {
   class MoneroWalletConfig {
     constructor(readonly o: unknown) {}
   }
-  const wallet = {
-    checkTxKey(txHash: string) {
-      if (running > 0) overlapped = true;
-      running++;
-      const answer = deferred<unknown>();
-      calls.push({ txHash, answer });
-      return answer.promise.finally(() => running--);
-    },
+  const createWallet = async () => {
+    const id = wallets.length;
+    const state = { running: 0, closed: 0 };
+    wallets.push(state);
+    return {
+      checkTxKey(txHash: string) {
+        if (state.running > 0) overlapped = true;
+        state.running++;
+        const answer = deferred<unknown>();
+        calls.push({ txHash, wallet: id, answer });
+        return answer.promise.finally(() => state.running--);
+      },
+      async close() {
+        state.closed++;
+      },
+    };
   };
   return {
     MoneroNetworkType: { MAINNET: 0, TESTNET: 1, STAGENET: 2 },
     MoneroWalletConfig,
-    MoneroWalletFull: { createWallet: async () => wallet },
+    MoneroWalletFull: { createWallet },
   };
 });
 
-const { moneroTxProofCheck, TxProofUnavailable } = await import('../../src/disputes/txProof.js');
+const { moneroTxProofCheck, TxProofUnavailable, TX_PROOF_MAX_ABANDONED } = await import('../../src/disputes/txProof.js');
+const { ApiError } = await import('../../src/errors.js');
 
 const hash = (c: string) => c.repeat(64);
 const KEY = 'a'.repeat(62) + '05';
@@ -61,7 +72,7 @@ const until = async (cond: () => boolean) => {
 
 afterEach(() => {
   calls.length = 0;
-  running = 0;
+  wallets.length = 0;
   overlapped = false;
 });
 
@@ -97,5 +108,64 @@ describe('moneroTxProofCheck (review m3): a timed-out wallet call never overlaps
     calls[1]!.answer.resolve(good(9n));
     await expect(next).resolves.toMatchObject({ receivedAtomic: 9n });
     expect(overlapped).toBe(false);
+  });
+});
+
+describe('moneroTxProofCheck watchdog (re-review m3 follow-up): a call that never settles', () => {
+  const address = '4' + 'B'.repeat(94);
+  const mk = (onStuck = vi.fn()) => ({
+    onStuck,
+    check: moneroTxProofCheck({ url: 'http://node.invalid', network: 'mainnet', fetch: fetchOk, timeoutMs: 30, stuckAfterMs: 120, onStuck }),
+  });
+
+  it('holds the slot until stuckAfterMs, then abandons the wallet (closed in the background) and the next check runs on a fresh one; the owner hook fires once', async () => {
+    const { check, onStuck } = mk();
+    await expect(check({ txHash: hash('1'), txKey: KEY, address })).rejects.toBeInstanceOf(TxProofUnavailable);
+    const next = check({ txHash: hash('2'), txKey: KEY, address });
+    await new Promise((r) => setTimeout(r, 40));
+    // Still inside the grace period: the stuck call keeps its wallet and the slot.
+    expect(calls).toHaveLength(1);
+    expect(onStuck).not.toHaveBeenCalled();
+    await until(() => calls.length === 2);
+    expect(calls.map((c) => c.wallet)).toEqual([0, 1]);
+    await until(() => wallets[0]!.closed === 1);
+    expect(onStuck).toHaveBeenCalledTimes(1);
+    calls[1]!.answer.resolve(good(7n));
+    await expect(next).resolves.toMatchObject({ receivedAtomic: 7n });
+    expect(overlapped).toBe(false);
+    // The abandoned call settling late changes nothing.
+    calls[0]!.answer.resolve(good(5n));
+    expect(onStuck).toHaveBeenCalledTimes(1);
+  });
+
+  it(`after ${3} abandoned wallets it stops making new ones and answers 503 busy until a restart; one alert for the whole episode`, async () => {
+    expect(TX_PROOF_MAX_ABANDONED).toBe(3);
+    const { check, onStuck } = mk();
+    for (let i = 0; i < TX_PROOF_MAX_ABANDONED; i++) {
+      await expect(check({ txHash: hash(String(i + 1)), txKey: KEY, address })).rejects.toBeInstanceOf(TxProofUnavailable);
+      await until(() => wallets[i]?.closed === 1);
+    }
+    expect(wallets).toHaveLength(TX_PROOF_MAX_ABANDONED);
+    for (const h of ['a', 'b']) {
+      const r = check({ txHash: hash(h), txKey: KEY, address });
+      await expect(r).rejects.toBeInstanceOf(ApiError);
+      await expect(r).rejects.toMatchObject({ status: 503, code: 'busy' });
+    }
+    expect(wallets).toHaveLength(TX_PROOF_MAX_ABANDONED);
+    expect(calls).toHaveLength(TX_PROOF_MAX_ABANDONED);
+    expect(onStuck).toHaveBeenCalledTimes(1);
+  });
+
+  it('a check that finishes in time ends the episode: the next stuck call alerts again', async () => {
+    const { check, onStuck } = mk();
+    await expect(check({ txHash: hash('1'), txKey: KEY, address })).rejects.toBeInstanceOf(TxProofUnavailable);
+    await until(() => wallets[0]?.closed === 1);
+    expect(onStuck).toHaveBeenCalledTimes(1);
+    const ok = check({ txHash: hash('2'), txKey: KEY, address });
+    await until(() => calls.length === 2);
+    calls[1]!.answer.resolve(good(1n));
+    await expect(ok).resolves.toMatchObject({ receivedAtomic: 1n });
+    await expect(check({ txHash: hash('3'), txKey: KEY, address })).rejects.toBeInstanceOf(TxProofUnavailable);
+    await until(() => onStuck.mock.calls.length === 2);
   });
 });

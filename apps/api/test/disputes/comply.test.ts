@@ -10,6 +10,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { Deps } from '../../src/app.js';
 import { COMPLY_CONFIRMATIONS, PROOF_LOST_AFTER_MS, PROOF_RECHECK_MS } from '../../src/disputes/comply.js';
 import { PAYMENT_PROOF_BUCKET } from '../../src/limits.js';
+import { ApiError } from '../../src/errors.js';
+import { PUSHED_OWNER_ALERTS } from '../../src/push/ownerAlert.js';
+import { txProofStuckAlert } from '../../src/disputes/comply.js';
 import { hasActiveLien } from '../../src/disputes/lien.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
 import { loadDispute, startDispute } from '../../src/disputes/store.js';
@@ -37,9 +40,12 @@ const txKey = () => randomBytes(31).toString('hex') + '05';
 const node = new Map<string, (address: string) => TxProofResult | null>();
 const asked: Array<{ txHash: string; txKey: string; address: string }> = [];
 let nodeDown = false;
+/** The checker's queue is full, or it gave up on stuck wallets (txProof.ts: 503 busy). */
+let nodeBusy = false;
 const txProof: TxProofCheck = async (a) => {
   asked.push(a);
   if (nodeDown) throw new TxProofUnavailable();
+  if (nodeBusy) throw new ApiError(503, 'busy');
   return node.get(a.txHash)?.(a.address) ?? null;
 };
 
@@ -69,6 +75,7 @@ afterAll(async () => {
 beforeEach(() => {
   asked.length = 0;
   nodeDown = false;
+  nodeBusy = false;
 });
 
 const errorOf = (res: { body: string }) => (res.body === '' ? undefined : (JSON.parse(res.body) as { error?: string }).error);
@@ -506,5 +513,71 @@ describe('review m4: proofs are rate limited per account', () => {
     expect(asked).toEqual([]);
     const other = await ruled();
     expect((await other.seller.browser.post(`/v1/trades/${other.code}/payment-proof`, { txHash: pays(other.buyerAddress, AMOUNT), txKey: txKey() })).statusCode).toBe(200);
+  });
+});
+
+describe('re-review m3 follow-up: a proof the checker could not take is recorded for the senior; the checker stuck alerts the owner', () => {
+  const caseOf = async (code: string) => {
+    const senior = await seedStaff(deps, { role: 'senior' });
+    const b = new StaffBrowser(staffApp).withSession((await insertSession(deps, senior.id, 'staff')).token);
+    const res = await b.get(`/staff/v1/disputes/${code}`);
+    expect(res.statusCode, res.body).toBe(200);
+    return (res.json() as { ruling: { complyBy: string | null; compliance: { failedChecks: Array<{ at: string; reason: string }> } } }).ruling;
+  };
+
+  it('503 node-unavailable and 503 busy are each recorded with the time (newest first); complyBy does not move and the lapse still comes', async () => {
+    const { seller, buyer, code, buyerAddress } = await ruled();
+    expect((await caseOf(code)).compliance.failedChecks).toEqual([]);
+    nodeDown = true;
+    const down = await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: pays(buyerAddress, AMOUNT), txKey: txKey() });
+    expect(down.statusCode).toBe(503);
+    expect(errorOf(down)).toBe('node-unavailable');
+    nodeDown = false;
+    nodeBusy = true;
+    setNow(at(3 * H));
+    const busy = await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: pays(buyerAddress, AMOUNT), txKey: txKey() });
+    expect(busy.statusCode).toBe(503);
+    expect(errorOf(busy)).toBe('busy');
+    // Refusals that are not the checker's fault are not recorded: the buyer, a bad body, an invalid proof.
+    nodeBusy = false;
+    await buyer.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: pays(buyerAddress, AMOUNT), txKey: txKey() });
+    await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: 'ab', txKey: txKey() });
+    await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: hex(), txKey: txKey() });
+    const r = await caseOf(code);
+    expect(r.compliance.failedChecks).toEqual([
+      { at: at(3 * H).toISOString(), reason: 'busy' },
+      { at: at(2 * H).toISOString(), reason: 'node-unavailable' },
+    ]);
+    expect(r.complyBy).toBe(COMPLY_BY.toISOString());
+    expect(await proofs(code)).toEqual([]);
+    setNow(COMPLY_BY);
+    await tick();
+    expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.comply-lapsed']);
+    expect((await loadDispute(deps.db, code))!.complyBy).toEqual(COMPLY_BY);
+  });
+
+  it('a proof after complyBy is too-late and is not recorded as a failed check (the node is never asked)', async () => {
+    const { seller, code, buyerAddress } = await ruled();
+    setNow(COMPLY_BY);
+    await relogin(seller);
+    nodeDown = true;
+    expect(errorOf(await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: pays(buyerAddress, AMOUNT), txKey: txKey() }))).toBe('too-late');
+    expect((await caseOf(code)).compliance.failedChecks).toEqual([]);
+  });
+
+  it('txProofStuckAlert: the owner gets tx-proof-check-stuck in-app and the fixed push to the phone', async () => {
+    const owner = await ownerOf();
+    expect(PUSHED_OWNER_ALERTS.has('tx-proof-check-stuck')).toBe(true);
+    const push = { send: vi.fn(async (_id: string, _kind: string) => true) };
+    setNow(at(5 * H));
+    await txProofStuckAlert({ db: deps.db, clock: deps.clock, push })();
+    const alerts = await deps.db.query<{ detail: unknown; created_at: Date }>(
+      `select detail, created_at from alerts where account_id = $1 and kind = 'tx-proof-check-stuck'`,
+      [owner.id],
+    );
+    expect(alerts.rows).toEqual([{ detail: {}, created_at: at(5 * H) }]);
+    expect(push.send.mock.calls).toEqual([[owner.id, 'alert']]);
+    // A failing push or database never throws into the checker.
+    await expect(txProofStuckAlert({ db: { query: async () => Promise.reject(new Error('down')) }, clock: deps.clock, push })()).resolves.toBeUndefined();
   });
 });
