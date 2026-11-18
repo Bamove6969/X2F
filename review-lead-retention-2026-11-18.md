@@ -96,3 +96,62 @@ Suggested fix (cheap): purge locally only when the view is not `broken`, `view.c
 ## Owner questions
 
 - **Q1 (copy, m5).** "Nothing about it is kept on this device" is not always true when the screen shows: the escrow record can outlive the date, by design, for coin safety. Recommendation: "This trade has self-destructed. Its messages and details are gone from this device; the wallet keeps the escrow only while coins could still be in it."
+
+---
+
+## Round 2: wip/lead-retention @ 708d821d (red tests in 6bcba2a3, fix in 708d821d)
+
+Re-checked the exact head, 18 Nov 2026, about 07:55 BC time.
+
+### Verdict: APPROVE
+
+This assumes the cloud runner's full `npm run check` comes back green on 708d821d. I did not run it.
+
+### The fixes
+
+- **I1: fixed.**
+  - `purgeOne` now runs at `begin isolation level repeatable read`.
+  - The trade's own share is read once, before the deletes. It uses the readers' own predicates (`completedTradesLiveSql`, `finalSalesLiveSql`, `wonDisputesLiveSql`, `lostDisputesLiveSql`), limited by `and t.code = $2`. The before/after difference is gone.
+  - On 40001 the trade rolls back and is skipped until the next pass.
+  - The public `COMPLETED_TRADES_SQL`, `FINAL_SALES_SQL`, `WON_DISPUTES_SQL` and `LOST_DISPUTES_SQL` are textually the same as before: the live part plus `purged_*`.
+  - Verified with two scratch tests, not committed. Both pass:
+    - my round-1 scenario (another trade released mid-purge, from a trigger on `trade_identities`) now gives completedTrades 2;
+    - a real second connection holds the trade's row lock, updates the row and commits while the purge waits. The purge gets 40001 and skips the trade: nothing is deleted and the count stays 1. This exercises the repeatable-read path itself.
+  - Race with a dispute opening under repeatable read: opening a dispute updates the trade row, so the purge gets 40001. A bare `disputes` insert still waits on the key-share lock and then fails its foreign key. The m1 trigger refuses a non-closed dispute in any case.
+  - The builder's I1 test (an after-delete trigger on `trades`) also covers this.
+- **I2: fixed.**
+  - `endedForLocalPurge` requires all of:
+    - a closed state (`released`, `refunded`, `cancelled` or `lapsed`);
+    - a valid `closedAt`;
+    - no `appealUntil` in the future;
+    - `deleteAt >= closedAt + TRADE_KEEP_DAYS`.
+  - Both the room hook and the start-up path check it. A past date on a view that does not show the trade ended does nothing.
+  - `useSelfDestruct` now takes `broken`, and TradeRoom passes it. A broken room deletes nothing.
+  - The start-up 404 path keeps the round-1 rule, as recommended: its date was stored from a view that already passed the gate.
+  - Tests cover an open, disputed, appeal-open, too-early and broken room, plus a full room render where the fund mark survives.
+- **m1: fixed.** 701 adds `before delete` triggers for `current_user = 'x2f_purge'`:
+  - on `trades`, refusing `closed_at is null or state = 'disputed'`;
+  - on `disputes`, refusing `status <> 'closed'`.
+  - Both raise 42501, and the test covers each.
+- **m2: fixed.** A test now checks that `team_audit.trade_code` is null after the purge.
+- **m5: fixed.** The copy is the recommended line, still COPY-UNSIGNED, so owner Q1 now only needs the sign-off.
+
+### No test weakened
+
+The removed lines in `selfDestruct.test.tsx` only add the new view fields (`state`, `closedAt`, `appealUntil`) to existing fixtures. The expectations are unchanged.
+
+### Remaining minor (does not block)
+
+- **r2-m1.** `endedForLocalPurge` does not read `view.dispute`. A closed trade whose dispute is `final` or `complying`, with no appeal window, would pass the gate if the API forged a date for it. The real server never gives one a date. Only local marks are at stake: the chat and the escrow are never touched. An optional extra check would be to refuse when `view.dispute` is set and `deleteAt < closedAt + DISPUTE_KEEP_DAYS`.
+- m3 and m4 from round 1 stand as recorded. They are spec gaps for the lead.
+
+### Tests run on 708d821d (my worktree, no lock, `nice -n 10`)
+
+| Run | Result |
+|---|---|
+| `packages/trade/test/retention.test.ts` | 22/22 pass |
+| `@x2f/api` (tradePurge, retention, purge, chat, view, schema, disputes/lien, staff/revenue, profiles, team) | 10 files, 365/365 pass |
+| `@x2f/web` (dispute-tripwires, selfDestruct) | 2 files, 31/31 pass |
+| `npm run typecheck`, all workspaces | pass |
+| Two scratch race tests for I1 (not committed) | 2/2 pass |
+| Full `npm run check` | not run; the cloud runner's job |
