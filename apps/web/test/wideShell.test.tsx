@@ -14,10 +14,10 @@ import { render } from './render.js';
 // happy-dom's import.meta.url is not a file URL; the directory is.
 const SRC = join(import.meta.dirname, '..', 'src');
 
-function rail(path: string, postOffers = true) {
+function rail(path: string, postOffers = true, member = false) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <DesktopRail postOffers={postOffers} />
+      <DesktopRail postOffers={postOffers} member={member} />
     </MemoryRouter>,
   ).host;
 }
@@ -92,9 +92,45 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     }
   });
 
-  it('leaves out Post offer for a team member without the Offers role, as the phone tab bar does', () => {
-    const host = rail('/sell', false);
+  it('leaves out Post offer for a trader/vendor without the Offers role', () => {
+    const host = rail('/sell', false, false);
     expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile', 'Settings', 'Help']);
+  });
+
+  it('leaves out owner-only routes (Wallets, Settings) for a team member (Order #2)', () => {
+    // Member with offers role: Trade, Post offer, Profile, Help (never Wallets or Settings)
+    const hostWithOffers = rail('/sell', true, true);
+    expect([...hostWithOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
+      'Trade',
+      'Post offer',
+      'Profile',
+      'Help',
+    ]);
+    expect([...hostWithOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.getAttribute('href'))).toEqual([
+      '/sell',
+      '/post',
+      '/profile',
+      '/feedback',
+    ]);
+
+    // Member without offers role: Trade, Profile, Help
+    const hostWithoutOffers = rail('/sell', false, true);
+    expect([...hostWithoutOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
+      'Trade',
+      'Profile',
+      'Help',
+    ]);
+
+    // Account owner: all 6 links present
+    const hostOwner = rail('/sell', true, false);
+    expect([...hostOwner.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
+      'Trade',
+      'Post offer',
+      'Wallets',
+      'Profile',
+      'Settings',
+      'Help',
+    ]);
   });
 });
 

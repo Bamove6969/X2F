@@ -96,7 +96,7 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
   const helpInside = HELP.test(pathname) && isInside(session);
   const frame = outside ? 'centred' : helpInside ? 'rail' : wideFrameOf(pathname);
   let top: ReactNode = null;
-  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} />;
+  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} member={memberOf(session) !== null} />;
   else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop name={screenName(pathname)} />;
   return (
     <div data-shell={wide ? 'desktop' : 'phone'} data-wide-frame={wide ? frame : undefined} className={wide ? 'x2f-desktop' : undefined}>
