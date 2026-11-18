@@ -321,10 +321,15 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       }
       const kind = claimedKind;
       const txHash = body.txHash as string;
+      const fee = networkFee;
       event = { type: 'settled', kind, txHash };
-      within = async (c, _prev, _next, at) => {
+      within = async (c, _prev, next, at) => {
         const r = await recordRulingExecution(c, code, kind, txHash, at);
         if (r !== 'ok') throw new Refused(409, r);
+        // C1 / NF-1 (lead 18 Nov): a buyer ruling's payout has X2F's fee output as a release's does
+        // (payoutsFor), so its share of the network fee is booked with the 1% the store booked in this
+        // same transaction, as on the release path. A seller ruling (full reversal) has no fee output.
+        if (kind === 'dispute-buyer' && fee !== null && next.state === 'released') await bookSettlementNetworkFee(c, code, fee);
       };
     } else if (event.type === 'settled') {
       const t = await loadTrade(o.db, code);
