@@ -1,8 +1,19 @@
 import type { ProofUnblurredPayload } from '@x2f/proof';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { chatClient, openTradeChat } from '../../chat/client.js';
 import { browserProofImageDeps } from '../../proof/browserImage.js';
-import { type UnblurredPicture, prepareUnblurred, putProof, sendUnblurred } from '../../proof/upload.js';
+import { type UnblurredPicture, UnblurredPostFailed, prepareUnblurred, putProof, sendUnblurred } from '../../proof/upload.js';
+import {
+  askUnblurredReceipt,
+  keepUnblurredPost,
+  keptUnblurredPost,
+  markUnblurredPosted,
+  subscribeUnblurred,
+  unblurredKey,
+  unblurredPostedAt,
+  unblurredReceipt,
+  unblurredVersion,
+} from '../../proof/unblurredSent.js';
 import { clockTime } from '../dispute/rules.js';
 import { Notice } from '../../ui/Notice.js';
 import { proofSendNotice, type ProofSendNotice } from './AddProof.js';
@@ -26,6 +37,20 @@ export const UNBLURRED_PICK_AGAIN = 'Pick the same screenshot again. Location an
 export const UNBLURRED_PREPARING = 'Getting your copy ready…';
 /** The board's system line (DisputeRoom "10:58 · You sent an unblurred proof to the moderator only"). */
 export const UNBLURRED_SENT_CARD = 'You sent an unblurred proof to the moderator only';
+/** COPY-UNSIGNED (review I2): the copy is stored, its key's post failed; Try again posts it only. */
+export function unblurredKept(mod: string): string {
+  return `Your copy is uploaded but not sent to ${mod} yet. Check your connection and try again.`;
+}
+// COPY-UNSIGNED (review I2)
+export const UNBLURRED_TRY_AGAIN = 'Try again';
+/**
+ * COPY-UNSIGNED (review I2, owner question): the server holds this side's copy (`sentAt`) but the
+ * chat has no sign its key was posted, and this tab no longer holds it (a reload). The API takes one
+ * copy per request, so another upload would be refused.
+ */
+export function unblurredLost(mod: string): string {
+  return `Your copy is on X2F, but ${mod} has no way to open it yet. Tell ${mod} in the chat.`;
+}
 
 export interface UnblurredRequestView {
   username: string;
@@ -44,7 +69,42 @@ export function sendTradeUnblurred(a: { code: string; picture: UnblurredPicture 
   });
 }
 
-type Step = { s: 'ask'; notice: ProofSendNotice | null } | { s: 'busy' } | { s: 'sent'; at: Date };
+/** This side's own moderator-only receipts in the trade's chat (ChatSnapshot.modOnlySentAt). */
+export async function chatUnblurredReceipts(code: string): Promise<string[]> {
+  return (await chatClient().sync(await openTradeChat(code))).modOnlySentAt ?? [];
+}
+
+/**
+ * Review I2: whether this request's copy reached the moderator. `sent` only once this tab saw the
+ * key's post succeed or the chat holds this side's moderator-only receipt from after the request;
+ * the server's `sentAt` alone (the ciphertext is stored) is `checking`, then `lost` if the chat has
+ * none. `kept`: the post failed after the upload, and this tab still holds it to try again.
+ */
+export type UnblurredStatus = { s: 'none' } | { s: 'checking' } | { s: 'kept' } | { s: 'lost' } | { s: 'sent'; at: Date };
+
+export function useUnblurredStatus(code: string, request: UnblurredRequestView | null, receipts: (code: string) => Promise<string[]> = chatUnblurredReceipts): UnblurredStatus {
+  const v = useSyncExternalStore(subscribeUnblurred, unblurredVersion);
+  const key = request === null ? null : unblurredKey(code, request.at);
+  const sentAt = request?.sentAt ?? null;
+  const requestAt = request?.at ?? null;
+  const ask = useRef(receipts);
+  ask.current = receipts;
+  useEffect(() => {
+    if (key === null || sentAt === null || requestAt === null) return;
+    if (unblurredPostedAt(key) !== undefined || keptUnblurredPost(key) !== undefined) return;
+    askUnblurredReceipt(key, requestAt, () => ask.current(code));
+  }, [key, sentAt, requestAt, code, v]);
+  if (key === null) return { s: 'none' };
+  const postedAt = unblurredPostedAt(key);
+  if (postedAt !== undefined) return { s: 'sent', at: sentAt !== null ? new Date(sentAt) : postedAt };
+  if (keptUnblurredPost(key) !== undefined) return { s: 'kept' };
+  if (sentAt === null) return { s: 'none' };
+  const found = unblurredReceipt(key);
+  if (found === undefined) return { s: 'checking' };
+  return found ? { s: 'sent', at: new Date(sentAt) } : { s: 'lost' };
+}
+
+type Step = { s: 'ask'; notice: ProofSendNotice | null } | { s: 'busy' };
 
 export function SendUnblurred({
   code,
@@ -54,6 +114,7 @@ export function SendUnblurred({
   send = sendTradeUnblurred,
   onSent,
   now = () => new Date(),
+  receipts = chatUnblurredReceipts,
 }: {
   code: string;
   request: UnblurredRequestView;
@@ -63,6 +124,8 @@ export function SendUnblurred({
   onSent?: () => void;
   /** The time shown right after a send, until the dispute view brings the server's `sentAt`. */
   now?: () => Date;
+  /** This side's moderator-only receipts in the trade's chat (review I2: "Sent" needs one, or a post seen here). */
+  receipts?: (code: string) => Promise<string[]>;
 }) {
   const inputId = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -75,6 +138,8 @@ export function SendUnblurred({
     };
   }, []);
   const mod = request.username;
+  const key = unblurredKey(code, request.at);
+  const status = useUnblurredStatus(code, request, receipts);
 
   const pick = async (file: File | undefined) => {
     if (input.current) input.current.value = '';
@@ -92,26 +157,59 @@ export function SendUnblurred({
       return;
     }
     try {
-      // sendUnblurred zeroes the pixels whatever happens; a failure asks for the file again.
+      // sendUnblurred zeroes the pixels whatever happens; a failed upload asks for the file again.
       await send({ code, picture });
     } catch (e) {
       picture.rgba.fill(0);
-      if (alive.current) setStep({ s: 'ask', notice: proofSendNotice(e) });
+      // Review I2: stored, but the key's post failed after its tries: keep it (past this card) to post again.
+      if (e instanceof UnblurredPostFailed) keepUnblurredPost(key, e.retry);
+      if (alive.current) setStep({ s: 'ask', notice: e instanceof UnblurredPostFailed ? null : proofSendNotice(e) });
       return;
     }
+    markUnblurredPosted(key, now());
     onSent?.();
-    if (alive.current) setStep({ s: 'sent', at: now() });
+    if (alive.current) setStep({ s: 'ask', notice: null });
   };
 
-  const sentAt = request.sentAt !== null ? new Date(request.sentAt) : step.s === 'sent' ? step.at : null;
+  /** Review I2: posts the kept payload again, and nothing else (the copy is never sent up twice). */
+  const tryAgain = async () => {
+    const retry = keptUnblurredPost(key);
+    if (retry === undefined) return;
+    setStep({ s: 'busy' });
+    try {
+      await retry();
+    } catch (e) {
+      if (e instanceof UnblurredPostFailed) keepUnblurredPost(key, e.retry);
+      if (alive.current) setStep({ s: 'ask', notice: null });
+      return;
+    }
+    markUnblurredPosted(key, now());
+    onSent?.();
+    if (alive.current) setStep({ s: 'ask', notice: null });
+  };
+
   return (
     <section aria-label="Request from the moderator" className="x2f-stack x2f-unblurred" data-part="send-unblurred">
       <p className="x2f-unblurred__ask">{unblurredAsk(mod, counterparty)}</p>
-      {sentAt !== null ? (
+      {status.s === 'sent' ? (
         <p className="x2f-unblurred__sent" role="status" data-part="unblurred-sent">
-          Sent to {mod} at {clockTime(sentAt)}
+          {/* COPY-UNSIGNED */}
+          Sent to {mod} at {clockTime(status.at)}
         </p>
-      ) : (
+      ) : status.s === 'kept' ? (
+        <>
+          <Notice tone="caution" live="alert" data-part="unblurred-kept">
+            {unblurredKept(mod)}
+          </Notice>
+          <button type="button" className="x2f-button x2f-button--primary" data-primary="" disabled={step.s === 'busy'} onClick={() => void tryAgain()}>
+            {UNBLURRED_TRY_AGAIN}
+          </button>
+        </>
+      ) : status.s === 'lost' ? (
+        <Notice tone="caution" live="status" data-part="unblurred-lost">
+          {unblurredLost(mod)}
+        </Notice>
+      ) : status.s === 'checking' ? null : (
         <>
           {step.s === 'ask' && step.notice ? (
             <Notice tone="caution" live="alert" data-part={step.notice.part}>
@@ -125,6 +223,7 @@ export function SendUnblurred({
           ) : null}
           <p className="x2f-note">{UNBLURRED_PICK_AGAIN}</p>
           <label htmlFor={inputId} className="x2f-button x2f-button--primary" data-primary="" aria-disabled={step.s === 'busy' ? 'true' : undefined}>
+            {/* COPY-UNSIGNED */}
             Send unblurred proof to {mod}
             <input
               ref={input}

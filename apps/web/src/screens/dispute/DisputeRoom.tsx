@@ -16,6 +16,7 @@ import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
 import { HOURGLASS_LINE, repliedIn } from './rules.js';
 import { DisputeSystemCards, systemCardsFor, tradeProofs, UnblurredRequest } from './seams.js';
+import { useUnblurredStatus } from '../proof/SendUnblurred.js';
 import './dispute.css';
 
 /**
@@ -115,6 +116,7 @@ export function DisputeRoom({
   chat,
   unblurred,
   backTo,
+  unblurredReceipts,
 }: {
   trade: DisputeTrade;
   methodName: string;
@@ -126,9 +128,13 @@ export function DisputeRoom({
   unblurred?: ReactNode;
   /** The header's back link: the trade room by default (the room's own slot passes the list instead). */
   backTo?: string;
+  /** This side's moderator-only receipts in the chat (SendUnblurred's default reads the chat; tests pass their own). */
+  unblurredReceipts?: (code: string) => Promise<string[]>;
 }) {
   const now = serverClock();
   const proofs = tradeProofs(trade);
+  // Review I2: the chip and the system card say the copy was sent only once its key reached the moderator.
+  const unblurredSent = useUnblurredStatus(trade.code, dispute.proofRequest ?? null, unblurredReceipts).s === 'sent';
   const ruling = `/trade/${encodeURIComponent(trade.code)}/dispute`;
   return (
     <div className="dispute-screen">
@@ -187,10 +193,11 @@ export function DisputeRoom({
               <DisputeIcon name="chat" size={14} />
               Trade chat
             </span>
-            {/* Plan 5 Task 15: the board's chip, once the server holds this side's copy. */}
-            {dispute.proofRequest?.sentAt ? (
+            {/* Plan 5 Task 15: the board's chip, once the server holds this side's copy and (review I2) its key reached the moderator. */}
+            {dispute.proofRequest?.sentAt && unblurredSent ? (
               <span className="dispute-evidence-chip">
                 <DisputeIcon name="doc" size={14} />
+                {/* COPY-UNSIGNED */}
                 Unblurred copy · moderator only
               </span>
             ) : null}
@@ -202,7 +209,7 @@ export function DisputeRoom({
           <p className="dispute-chat-notice">A dispute is open. A moderator can read this whole chat, including messages from before the trade.</p>
         ) : null}
 
-        <DisputeSystemCards trade={trade} dispute={dispute} systemCards={systemCardsFor(trade, dispute)} />
+        <DisputeSystemCards trade={trade} dispute={dispute} systemCards={systemCardsFor(trade, dispute, unblurredSent)} />
         {chat ?? <TradeChatPanel code={trade.code} name={trade.counterparty} dispute={{ moderator: dispute.moderator?.name ?? null }} />}
         {unblurred ?? <UnblurredRequest trade={trade} dispute={dispute} />}
       </div>

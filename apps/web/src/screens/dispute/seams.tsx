@@ -38,7 +38,7 @@ export function DisputeSystemCards({ systemCards }: ChatSlotProps): ReactNode {
 }
 
 /** The server-recorded events of the dispute, as the board's system cards, for this side. */
-export function systemCardsFor(trade: DisputeTrade, d: DisputeView): { at: string; text: string }[] {
+export function systemCardsFor(trade: DisputeTrade, d: DisputeView, unblurredSent = false): { at: string; text: string }[] {
   const cards: { at: string; text: string }[] = [];
   cards.push({
     at: d.openedAt,
@@ -52,9 +52,10 @@ export function systemCardsFor(trade: DisputeTrade, d: DisputeView): { at: strin
   });
   if (d.moderator !== null) cards.push({ at: d.moderator.joinedAt, text: `Moderator ${d.moderator.name} joined this dispute` });
   // Plan 5 Task 15: the board's line, from the server's record of the copy (proofRequest.sentAt),
-  // which only the side that was asked ever gets.
+  // which only the side that was asked ever gets. Review I2: and only once the copy's key reached the
+  // moderator (`unblurredSent`, SendUnblurred's useUnblurredStatus): `sentAt` alone is the upload.
   const sentAt = d.proofRequest?.sentAt ?? null;
-  if (sentAt !== null) cards.push({ at: sentAt, text: UNBLURRED_SENT_CARD });
+  if (sentAt !== null && unblurredSent) cards.push({ at: sentAt, text: UNBLURRED_SENT_CARD });
   return cards;
 }
 

@@ -8,7 +8,7 @@
 // moderator only" from the server's own record (`proofRequest.sentAt`).
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatFailed } from '../src/chat/client.js';
 import { parseDispute, type DisputeTrade, type DisputeView } from '../src/screens/dispute/api.js';
 import { systemCardsFor, UnblurredRequest } from '../src/screens/dispute/seams.js';
@@ -35,9 +35,10 @@ function pickIn(host: HTMLElement) {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  // What this tab kept of a copy's post goes with the session (and between tests).
-  forgetLocalSession();
 });
+// What this tab kept of a copy's post goes with the session, and between tests (once the last test's
+// cards are unmounted, so none of them asks the chat again).
+beforeEach(() => forgetLocalSession());
 
 describe('SendUnblurred', () => {
   it('says who asked and that the other side never sees it; the board button picks the file again', () => {

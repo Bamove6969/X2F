@@ -124,6 +124,12 @@ export interface ChatSnapshot {
   paySecured: boolean;
   lines: ChatLine[];
   /**
+   * Review I2 (wip/lead-proof-upload): the server's times of this side's own moderator-only envelopes
+   * (its `away` receipts, the unblurred copy's key), oldest first. SendUnblurred shows "Sent" only
+   * with one of these at or after the request, never from the dispute view's `sentAt` alone.
+   */
+  modOnlySentAt?: string[];
+  /**
    * The sync stopped at its page cap with envelopes still unread (review M8): the next sync goes on
    * from the saved cursor, and the panel says "Loading more messages…".
    */
@@ -166,7 +172,7 @@ export interface ChatEngine {
    * the moderator only; 'not-ready' unless the trade was secured and a dispute is open (the API's own
    * rule for the copy is the moderator's request); 'bad-proof' for a malformed payload; 'uncertain' as
    * sendProof. No trader's device can open it, this one included: syncs keep it as an `away` receipt
-   * (no line, no gap). The image went up as ciphertext before this (proof/upload.ts sendUnblurred).
+   * (no line, no gap of its own; review I1: a gap before it shows on the sender's next line). The image went up as ciphertext before this (proof/upload.ts sendUnblurred).
    */
   sendUnblurred(chat: string, proof: ProofUnblurredPayload): Promise<ChatSnapshot>;
   /**
@@ -246,6 +252,23 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
      * placeholder; an envelope refused for good (pay-details review M1) never is.
      */
     const withheld = (m: StoredChatReceipt): boolean => m.refused === true || m.away === true || ((m.heldPay === true || m.heldEvidence === true) && session?.texts.has(m.id) !== true);
+    const sorted = [...(rec?.receipts ?? [])].sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+    /**
+     * Each shown line's gap marker. Review I1 (wip/lead-proof-upload): an `away` receipt is never
+     * shown, so a gap before it (lines the relay dropped) goes onto that sender's next shown line.
+     */
+    const gaps = new Map<string, boolean>();
+    const carried = new Set<Role>();
+    for (const m of sorted) {
+      if (m.refused === true) continue;
+      if (m.away === true) {
+        if (m.gapBefore) carried.add(m.from);
+        continue;
+      }
+      if (withheld(m) || !(session?.texts.has(m.id) === true || judged(m.id))) continue;
+      gaps.set(m.id, m.gapBefore || carried.has(m.from));
+      carried.delete(m.from);
+    }
     return {
       phase,
       more,
@@ -254,12 +277,12 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       counterparty: view.counterparty,
       disputeOpen: view.disputeOpen,
       paySecured: view.tradeSecuredAt !== null,
+      modOnlySentAt: sorted.filter((m) => m.away === true && m.from === view.role && m.at !== null).map((m) => m.at as string),
       // By the server's order: a moderator line held until a dispute opened is shown where it was posted.
-      lines: [...(rec?.receipts ?? [])]
-        .filter((m) => !withheld(m) && (session?.texts.has(m.id) === true || judged(m.id)))
-        .sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1))
+      lines: sorted
+        .filter((m) => gaps.has(m.id))
         .map((m): ChatLine => {
-          const line = { id: m.id, from: m.from, at: m.at, mine: m.from === view.role, gapBefore: m.gapBefore };
+          const line = { id: m.id, from: m.from, at: m.at, mine: m.from === view.role, gapBefore: gaps.get(m.id) === true };
           const shown = session?.texts.get(m.id);
           if (shown === undefined) return { ...line, text: '', missing: true };
           if (shown.proof !== undefined) return { ...line, text: shown.text, proof: shown.proof };
@@ -435,10 +458,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           // before it (the guard did not move for it). A package before the trade is secured was
           // held above. Nothing else can become valid later.
           if (err instanceof ChatError && err.code === 'mod-not-allowed') advance = false;
-          else if (err instanceof ProtocolError && err.code === 'not-for-me' && (e.senderRole === 'buyer' || e.senderRole === 'seller')) {
+          else if (view.disputeOpen && err instanceof ProtocolError && err.code === 'not-for-me' && (e.senderRole === 'buyer' || e.senderRole === 'seller')) {
             // Plan 5 Task 15: signed by its trader (open checks the signature before the unwrap) but
             // sealed past this reader: the unblurred copy for the moderator. Its seq is taken (no gap
-            // before the sender's next line); it is never a line and never opened again.
+            // before the sender's next line, but a gap before it moves onto that line: review I1);
+            // it is never a line and never opened again. Lead call (18 Nov, the review's owner
+            // question, option a): only while a dispute is open, as sendUnblurred sends only then.
+            // Outside a dispute a trader's moderator-only envelope is skipped as before, so the
+            // sender's next line shows a gap.
             const h = headerOf(e.envelope, channel);
             if (h !== null && h.from === e.senderRole) {
               const prev = lastSeq.get(h.from);

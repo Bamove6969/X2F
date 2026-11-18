@@ -211,24 +211,52 @@ export function blurKindOf(auto: readonly EditorRegion[], regions: readonly Edit
 /** The ciphertext adds a 24-byte nonce and a 16-byte tag to the image. */
 const SEAL_OVERHEAD = 40;
 
-/** Burn the regions into a copy, encode it afresh and clean it. Never returns uncleaned bytes. */
+/**
+ * Burn the regions into a copy, encode it afresh and clean it. Never returns uncleaned bytes. Review
+ * m1 (wip/lead-proof-upload): every working buffer is zeroed on every way out, the copy, a PNG
+ * dropped for JPEG, the uncleaned bytes and a cleaned result that is refused; only the returned
+ * bytes survive, and the caller zeroes those.
+ */
 export async function finishProof(
   p: Pick<PreparedProof, 'rgba' | 'width' | 'height'>,
   regions: readonly EditorRegion[],
   deps: Pick<ProofImageDeps, 'encode'>,
 ): Promise<{ bytes: Uint8Array; mime: ProofMime; width: number; height: number; hidden: HiddenKind[] }> {
   const copy = new Uint8ClampedArray(p.rgba);
-  redact(copy, p.width, p.height, [...regions]);
+  let clean: Uint8Array;
   let mime: ProofMime = 'image/png';
-  let bytes = await deps.encode(copy, p.width, p.height, mime);
-  if (bytes.length + SEAL_OVERHEAD > PROOF_MAX_CIPHERTEXT) {
-    mime = 'image/jpeg';
-    bytes = await deps.encode(copy, p.width, p.height, mime);
+  try {
+    redact(copy, p.width, p.height, [...regions]);
+    let bytes = await deps.encode(copy, p.width, p.height, mime);
+    if (bytes.length + SEAL_OVERHEAD > PROOF_MAX_CIPHERTEXT) {
+      const png = bytes;
+      mime = 'image/jpeg';
+      let jpeg: Uint8Array;
+      try {
+        jpeg = await deps.encode(copy, p.width, p.height, mime);
+      } catch (e) {
+        png.fill(0);
+        throw e;
+      }
+      // The dropped PNG (unless the encoder handed the same buffer back).
+      if (jpeg !== png) png.fill(0);
+      bytes = jpeg;
+    }
+    try {
+      clean = cleanImage(bytes);
+    } finally {
+      bytes.fill(0);
+    }
+  } finally {
+    copy.fill(0);
   }
-  copy.fill(0);
-  const clean = cleanImage(bytes);
-  assertClean(clean);
-  if (clean.length + SEAL_OVERHEAD > PROOF_MAX_CIPHERTEXT) throw new ProofInputError('too-large');
+  try {
+    assertClean(clean);
+    if (clean.length + SEAL_OVERHEAD > PROOF_MAX_CIPHERTEXT) throw new ProofInputError('too-large');
+  } catch (e) {
+    clean.fill(0);
+    throw e;
+  }
   const hidden = [...new Set(regions.map((r) => r.kind))];
   return { bytes: clean, mime, width: p.width, height: p.height, hidden };
 }
@@ -269,8 +297,14 @@ export async function sendProof(
 ): Promise<{ proofId: string; blur: BlurKind; hidden: HiddenKind[]; ask: boolean }> {
   const proofId = newProofId();
   const fin = await finishProof(a.prepared, a.regions, deps);
-  const { ciphertext, key, sha256 } = await encryptProof(fin.bytes, { code: a.code, proofId, kind: 'proof' });
-  fin.bytes.fill(0);
+  let sealed: Awaited<ReturnType<typeof encryptProof>>;
+  try {
+    sealed = await encryptProof(fin.bytes, { code: a.code, proofId, kind: 'proof' });
+  } finally {
+    // Review m1: zeroed even when the encryption throws.
+    fin.bytes.fill(0);
+  }
+  const { ciphertext, key, sha256 } = sealed;
   let keyB64: string;
   try {
     keyB64 = await proofKeyToBase64(key);
@@ -324,31 +358,81 @@ export interface UnblurredSendDeps extends Pick<ProofImageDeps, 'encode'> {
   put(code: string, proofId: string, kind: ProofKind, ciphertext: Uint8Array): Promise<void>;
   /** Seal `proof.unblurred` to the moderator only and post it in the trade's chat (chat engine). */
   postUnblurred(code: string, payload: ProofUnblurredPayload): Promise<void>;
+  /** The wait between tries of the post (tests); setTimeout otherwise. */
+  sleep?(ms: number): Promise<void>;
+}
+
+/**
+ * Review I2: the waits between tries of the key's post once the copy is stored. One try, then one
+ * more after each wait: four in all, about 13 s, then UnblurredPostFailed.
+ */
+export const UNBLURRED_POST_BACKOFF_MS: readonly number[] = [1000, 3000, 9000];
+
+/**
+ * Review I2 (wip/lead-proof-upload): the copy is stored (the PUT succeeded, and the API takes one
+ * copy per request, so it is never sent up again) but its key did not reach the chat after the
+ * bounded tries. `retry` posts the same payload again (another bounded round), and only that. The
+ * payload (the key and the picture's facts, never its pixels) stays in this closure, in memory only.
+ */
+export class UnblurredPostFailed extends Error {
+  constructor(
+    readonly proofId: string,
+    /** The last post's error (a ChatFailed: slow-down, uncertain, refused, not-ready...). */
+    readonly last: unknown,
+    readonly retry: () => Promise<{ proofId: string }>,
+  ) {
+    super('the unblurred copy is stored but its key was not posted');
+    this.name = 'UnblurredPostFailed';
+  }
+}
+
+/** A payload the engine refuses as malformed: another try fails the same way. */
+const malformed = (e: unknown): boolean => (e as { code?: unknown } | null)?.code === 'bad-proof';
+
+async function postKept(code: string, proofId: string, payload: ProofUnblurredPayload, deps: UnblurredSendDeps): Promise<{ proofId: string }> {
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let last: unknown;
+  for (let i = 0; ; i++) {
+    try {
+      await deps.postUnblurred(code, payload);
+      return { proofId };
+    } catch (e) {
+      last = e;
+      const wait = UNBLURRED_POST_BACKOFF_MS[i];
+      if (malformed(e) || wait === undefined) break;
+      await sleep(wait);
+    }
+  }
+  throw new UnblurredPostFailed(proofId, last, () => postKept(code, proofId, payload, deps));
 }
 
 /**
  * Re-encode the picture from its pixels (no regions) and clean it (finishProof: only the image
  * chunks or segments survive), encrypt it as kind `unblurred`, `PUT ?kind=unblurred` (the API takes
  * it only from the side the open dispute's moderator asked), then post its key sealed to the
- * moderator only. The pixels are zeroed on every way out: a failed send asks for the file again.
+ * moderator only. The pixels and the encoded bytes are zeroed on every way out, before the upload:
+ * a failed upload asks for the file again. A failed post after the upload is tried again with
+ * backoff and then throws UnblurredPostFailed, whose `retry` posts only (review I2).
  */
 export async function sendUnblurred(a: { code: string; picture: UnblurredPicture }, deps: UnblurredSendDeps): Promise<{ proofId: string }> {
+  const proofId = newProofId();
+  let sealed: { ciphertext: Uint8Array; keyB64: string; sha256: string; width: number; height: number; mime: ProofMime };
   try {
-    const proofId = newProofId();
     const fin = await finishProof(a.picture, [], deps);
-    const { ciphertext, key, sha256 } = await encryptProof(fin.bytes, { code: a.code, proofId, kind: 'unblurred' });
-    fin.bytes.fill(0);
-    let keyB64: string;
     try {
-      keyB64 = await proofKeyToBase64(key);
+      const { ciphertext, key, sha256 } = await encryptProof(fin.bytes, { code: a.code, proofId, kind: 'unblurred' });
+      try {
+        sealed = { ciphertext, keyB64: await proofKeyToBase64(key), sha256, width: fin.width, height: fin.height, mime: fin.mime };
+      } finally {
+        key.fill(0);
+      }
     } finally {
-      key.fill(0);
+      fin.bytes.fill(0);
     }
-    await deps.put(a.code, proofId, 'unblurred', ciphertext);
-    const env = parseProofPayload('proof.unblurred', { proofId, key: keyB64, sha256, width: fin.width, height: fin.height, mime: fin.mime });
-    await deps.postUnblurred(a.code, env.payload as ProofUnblurredPayload);
-    return { proofId };
   } finally {
     a.picture.rgba.fill(0);
   }
+  await deps.put(a.code, proofId, 'unblurred', sealed.ciphertext);
+  const env = parseProofPayload('proof.unblurred', { proofId, key: sealed.keyB64, sha256: sealed.sha256, width: sealed.width, height: sealed.height, mime: sealed.mime });
+  return postKept(a.code, proofId, env.payload as ProofUnblurredPayload, deps);
 }

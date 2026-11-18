@@ -1182,7 +1182,7 @@ describe('chat engine: the unblurred copy for the moderator (Plan 5 Task 15, Rev
     await e.send(chat, 'before');
     const snap = await e.sendUnblurred(chat, await unblurred());
     expect(snap.modOnlySentAt).toHaveLength(1);
-    expect(snap.modOnlySentAt[0]).toBe((api.envelopes.at(-1) as { at: string }).at);
+    expect(snap.modOnlySentAt?.[0]).toBe((api.envelopes.at(-1) as { at: string }).at);
     expect((await engine().sync(chat)).modOnlySentAt).toEqual(snap.modOnlySentAt);
     const other = await sellerSide(true);
     await other.buyerSays.copy();
