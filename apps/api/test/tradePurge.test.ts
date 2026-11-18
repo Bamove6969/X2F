@@ -13,6 +13,7 @@ import { purgeTrades, purgeTradesJob, TRADE_CHILD_TABLES, tradeSelfDestruct } fr
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { purgeChatsJob } from '../src/chat/retention.js';
 import { revenueReport } from '../src/staff/revenue.js';
+import { rolesToAbilities } from '../src/team/abilities.js';
 import { tradeCap } from '../src/traders/stage.js';
 import { traderSummary } from '../src/traders/summary.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -352,5 +353,77 @@ describe('tradeSelfDestruct (TradeView.deleteAt)', () => {
     expect((await tradeSelfDestruct(deps.db, code)).deleteAt).toBeNull();
     await deps.db.query(`update disputes set status = 'closed', closed_at = $2, published_at = $2, appeal_ends_at = $2 where code = $1`, [code, plus(t0, 4)]);
     expect((await tradeSelfDestruct(deps.db, code)).deleteAt).toEqual(plus(t0, 94));
+  });
+});
+
+describe('review round 1', () => {
+  it('I1: another trade of the same account released while the purge runs: the purged trade still counts, and so does the new one', async () => {
+    const t0 = new Date('2026-03-10T00:00:00Z');
+    const { seller, buyer } = await pair();
+    now = new Date(t0.getTime() - DAY);
+    const due = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
+    const open = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
+    await deps.db.query(`update trades set state = 'released', closed_at = $2 where code = $1`, [due.code, t0]);
+    const when = plus(t0, 31);
+    expect((await traderSummary(deps.db, seller, when, null, 'seller')).completedTrades).toBe(1);
+    // Inside the purge, after it has read what the trade counts and while it deletes, the other
+    // trade is released and committed (as a concurrent release looks under READ COMMITTED).
+    await deps.db.query('create table if not exists purge_race (due text, other text, at timestamptz)');
+    await deps.db.query('insert into purge_race values ($1, $2, $3)', [due.code, open.code, plus(t0, 30)]);
+    await deps.db.query(`create or replace function purge_race_fn() returns trigger language plpgsql security definer as $$
+      begin
+        update trades t set state = 'released', closed_at = r.at from purge_race r where r.due = old.code and t.code = r.other;
+        return old;
+      end $$`);
+    await deps.db.query('drop trigger if exists purge_race_t on trades');
+    await deps.db.query('create trigger purge_race_t after delete on trades for each row execute function purge_race_fn()');
+    try {
+      await purgeTrades(deps.db, when);
+    } finally {
+      await deps.db.query('drop trigger purge_race_t on trades');
+      await deps.db.query('delete from purge_race');
+    }
+    expect(await exists(due.code)).toBe(false);
+    const after = await traderSummary(deps.db, seller, when, null, 'seller');
+    expect(after.completedTrades).toBe(2);
+    expect((await deps.db.query<{ n: number }>('select purged_completed as n from account_traded_totals where account_id = $1', [seller])).rows[0]!.n).toBe(1);
+  });
+
+  it('m1: the database refuses x2f_purge a delete of an open trade or of a dispute that is not closed', async () => {
+    const { seller, buyer } = await pair();
+    const { code } = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
+    const asPurge = async (sql: string, args: unknown[]) => {
+      const c = await deps.db.connect();
+      try {
+        await c.query('begin');
+        await c.query('set local role x2f_purge');
+        await c.query(sql, args);
+      } finally {
+        await c.query('rollback');
+        c.release();
+      }
+    };
+    await expect(asPurge('delete from trades where code = $1', [code])).rejects.toMatchObject({ code: '42501' });
+    const t0 = new Date('2026-03-11T00:00:00Z');
+    const done = await closed(t0);
+    await addDispute(done.code, 1, 'published', { openedAt: t0 });
+    await expect(asPurge('delete from disputes where code = $1', [done.code])).rejects.toMatchObject({ code: '42501' });
+    await deps.db.query(`update trades set state = 'disputed', closed_at = null where code = $1`, [done.code]);
+    await expect(asPurge('delete from trades where code = $1', [done.code])).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it("m2: the team log forgets the purged trade's code (199)", async () => {
+    const t0 = new Date('2026-03-12T00:00:00Z');
+    const { code, buyer } = await closed(t0);
+    const member = (await deps.db.query<{ id: string }>(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+       values ($1, 'Desk', 'desk', $3, $2, $2) returning id`,
+      [buyer, t0, rolesToAbilities(['trades'])],
+    )).rows[0]!.id;
+    await deps.db.query(`insert into team_audit (account_id, member_id, at, action, trade_code) values ($1, $2, $3, 'mark-paid', $4)`, [buyer, member, t0, code]);
+    await purgeTrades(deps.db, plus(t0, 31));
+    expect(await exists(code)).toBe(false);
+    const { rows } = await deps.db.query<{ trade_code: string | null }>('select trade_code from team_audit where member_id = $1', [member]);
+    expect(rows).toEqual([{ trade_code: null }]);
   });
 });

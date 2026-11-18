@@ -19,7 +19,7 @@ import {
   type ConfirmDeps,
   type ServerTradeAnswer,
 } from '../src/chat/localPurge.js';
-import { SelfDestructNotice, selfDestructText, useSelfDestruct } from '../src/screens/trade/SelfDestruct.js';
+import { SelfDestructNotice, selfDestructText, useSelfDestruct, type SelfDestructView } from '../src/screens/trade/SelfDestruct.js';
 import { render } from './render.js';
 
 const CODE = '7Q3M-K9TA-XR2B-4WNE';
@@ -154,7 +154,7 @@ describe('runConfirmedLocalPurge (start-up)', () => {
     localStorage.setItem(`x2f.fund.opened.${CODE}`, '1');
     localStorage.setItem(`x2f.fund.opened.${OTHER}`, '1');
     const done = await runConfirmedLocalPurge(
-      deps(ms(AT) + 1, { [CODE]: { kind: 'view', deleteAt: null, serverNow: new Date(ms(AT) + 1).toISOString() }, [OTHER]: { kind: 'unknown' } }),
+      deps(ms(AT) + 1, { [CODE]: { kind: 'view', deleteAt: null, serverNow: new Date(ms(AT) + 1).toISOString(), state: 'disputed', closedAt: null, appealUntil: null }, [OTHER]: { kind: 'unknown' } }),
     );
     expect(done).toEqual([]);
     expect(localStorage.getItem(`x2f.fund.opened.${CODE}`)).toBe('1');
@@ -162,18 +162,31 @@ describe('runConfirmedLocalPurge (start-up)', () => {
     expect(localPurgeDue(ms(AT) + 1)).toEqual([OTHER]);
   });
 
+  const CLOSED_AT = new Date(ms(AT) - 30 * 86_400_000).toISOString();
+  const ended = { state: 'released', closedAt: CLOSED_AT, appealUntil: null };
+
   it('a view whose date has passed by its own serverNow goes too', async () => {
     rememberDeleteAt(CODE, AT);
     localStorage.setItem(`x2f.fund.opened.${CODE}`, '1');
     const after = new Date(ms(AT) + 5).toISOString();
-    expect(await runConfirmedLocalPurge(deps(ms(AT) + 1, { [CODE]: { kind: 'view', deleteAt: AT, serverNow: after } }))).toEqual([CODE]);
+    expect(await runConfirmedLocalPurge(deps(ms(AT) + 1, { [CODE]: { kind: 'view', deleteAt: AT, serverNow: after, ...ended } }))).toEqual([CODE]);
     expect(localStorage.getItem(`x2f.fund.opened.${CODE}`)).toBeNull();
+  });
+
+  it('I2: a view with a past date that does not show the trade ended keeps everything', async () => {
+    rememberDeleteAt(CODE, AT);
+    localStorage.setItem(`x2f.fund.opened.${CODE}`, '1');
+    const after = new Date(ms(AT) + 5).toISOString();
+    expect(await runConfirmedLocalPurge(deps(ms(AT) + 1, { [CODE]: { kind: 'view', deleteAt: AT, serverNow: after, state: 'secured', closedAt: null, appealUntil: null } }))).toEqual([]);
+    expect(localStorage.getItem(`x2f.fund.opened.${CODE}`)).toBe('1');
   });
 });
 
 describe('useSelfDestruct (the trade room)', () => {
-  function Probe({ at, clock }: { at: string | null; clock: () => Date }) {
-    const { gone } = useSelfDestruct(CODE, { deleteAt: at }, clock);
+  /** An ended trade (released 30 days before AT) unless `view` says otherwise. */
+  const CLOSED = new Date(ms(AT) - 30 * 86_400_000).toISOString();
+  function Probe({ at, clock, view = {}, broken = false }: { at: string | null; clock: () => Date; view?: Partial<SelfDestructView>; broken?: boolean }) {
+    const { gone } = useSelfDestruct(CODE, { deleteAt: at, state: 'released', closedAt: CLOSED, appealUntil: null, ...view }, clock, broken);
     return <p>{gone ? 'gone' : 'here'}</p>;
   }
   const flush = async () => {
@@ -195,6 +208,28 @@ describe('useSelfDestruct (the trade room)', () => {
     expect(after.host.textContent).toBe('gone');
     expect(localStorage.getItem(`x2f.fund.opened.${CODE}`)).toBeNull();
     expect(localPurgeDue(ms(AT) + 1)).toEqual([]);
+  });
+
+  it.each([
+    ['an open trade', { state: 'paid' as const, closedAt: null }],
+    ['a disputed trade', { state: 'disputed' as const, closedAt: null }],
+    ['a ruling still open to appeal', { appealUntil: new Date(ms(AT) + 86_400_000).toISOString() }],
+    ['a date sooner than 30 days after the close', { closedAt: new Date(ms(AT) - 29 * 86_400_000).toISOString() }],
+  ])('I2: %s with a past date keeps everything and remembers nothing', async (_n, view) => {
+    localStorage.setItem(`x2f.fund.opened.${CODE}`, '1');
+    const r = render(<Probe at={AT} clock={() => new Date(ms(AT) + 1)} view={view} />);
+    await flush();
+    expect(r.host.textContent).toBe('here');
+    expect(localStorage.getItem(`x2f.fund.opened.${CODE}`)).toBe('1');
+    expect(localPurgeDue(ms(AT) + 1)).toEqual([]);
+  });
+
+  it('I2: a room whose escrow integrity check failed keeps everything', async () => {
+    localStorage.setItem(`x2f.fund.opened.${CODE}`, '1');
+    const r = render(<Probe at={AT} clock={() => new Date(ms(AT) + 1)} broken />);
+    await flush();
+    expect(r.host.textContent).toBe('here');
+    expect(localStorage.getItem(`x2f.fund.opened.${CODE}`)).toBe('1');
   });
 
   it('no date: nothing is remembered or deleted', async () => {
@@ -242,5 +277,16 @@ describe('in the trade room', () => {
     const r = await openRoom({ ...sellerView(), code: CODE, state: 'released', closedAt: '2026-11-06T10:00:00.000Z', deleteAt: AT, serverNow: '2026-12-07T10:00:00.000Z' });
     for (let i = 0; i < 6; i++) await act(async () => await Promise.resolve());
     expect(r.host.querySelector('[data-screen="trade"]')?.getAttribute('data-trade-state')).toBe('self-destructed');
+    expect(r.host.querySelector('[data-part="self-destructed"]')?.textContent).toBe(
+      'This trade has self-destructed. Its messages and details are gone from this device; the wallet keeps the escrow only while coins could still be in it.',
+    );
+  });
+
+  it('I2: an open trade whose view carries a past date stays as it is, and its marks stay', async () => {
+    localStorage.setItem(`x2f.fund.opened.${CODE}`, '1');
+    const r = await openRoom({ ...sellerView(), code: CODE, deleteAt: AT, serverNow: '2026-12-07T10:00:00.000Z' });
+    for (let i = 0; i < 6; i++) await act(async () => await Promise.resolve());
+    expect(r.host.querySelector('[data-screen="trade"]')?.getAttribute('data-trade-state')).toBe('secured');
+    expect(localStorage.getItem(`x2f.fund.opened.${CODE}`)).toBe('1');
   });
 });
