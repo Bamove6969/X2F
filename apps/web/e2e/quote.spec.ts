@@ -604,12 +604,19 @@ test.describe('phone sizes: fit and a take by tapping', () => {
       await page.setViewportSize(vp);
       const seen = await stubApi(page, base);
       await page.goto(`${BUY}&amount=${B.amount}`);
-      await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+      // The amount is on screen when the quote opens, on every phone.
+      await expect(page.locator('#quote-amount')).toBeInViewport();
+      await page.getByRole('radio', { name: /Cake Wallet/ }).tap();
+      await expect(page.getByRole('radio', { name: /Cake Wallet/ })).toBeChecked();
       await expect(card(page)).toContainText('1.250000 XMR');
       await expect(card(page)).toContainText('$412.50 USD');
       // The bands card fits the phone too (expectFitsPhone checks every element), its band marked.
       await expect(marked(page)).toHaveCount(1);
-      await expect(page.locator('#quote-amount')).toBeInViewport();
+      // After the pick the amount can be scrolled back to and then sits wholly on screen. (On a
+      // 320x568 phone the payout question and its rule above the wallets, owner note #6, put the
+      // amount and the wallets more than one screen apart, so tapping a wallet scrolls the amount off.)
+      await page.locator('#quote-amount').scrollIntoViewIfNeeded();
+      await expect(page.locator('#quote-amount')).toBeInViewport({ ratio: 1 });
       await expectFitsPhone(page);
       await trade(page).tap();
       await expect(page).toHaveURL(`/trade/${B.code}`);

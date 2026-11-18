@@ -1442,10 +1442,12 @@ describe('Task 18 seams', () => {
     // (1) the API's database user owns team_audit, so its append-only triggers stop code bugs, not
     // a compromised API role (that needs a separate schema-owner role); (2) deleting an account
     // (Plan 7) deletes its team log by cascade: decide the log's retention then; (3) a removed
-    // member's login is deleted at removal (review M6) and purgeTeamLeftovers clears the rest. When
-    // Plan 7's purge migration (701) lands, revisit these and delete this check.
+    // member's login is deleted at removal (review M6) and purgeTeamLeftovers clears the rest.
+    // Plan 7's whole-trade purge (701, wip/lead-retention) landed and deletes trades as x2f_purge, so
+    // 199's trigger now runs on every purged trade (tradePurge.test.ts). Points (1) and (2) are still
+    // open and belong to Plan 7 Task 18 (Delete my account): revisit them when it lands.
     expect(readFileSync(`${ROOT}apps/api/migrations/199_team_audit_trades.sql`, 'utf8')).toMatch(/after delete on trades/);
-    expect(existsSync(`${ROOT}apps/api/migrations/701_trade_purge.sql`), 'Plan 7 purge landed: decide the team log retention and roles').toBe(false);
+    expect(existsSync(`${ROOT}apps/api/src/account/delete.ts`), 'Plan 7 Task 18 landed: decide the team log retention and roles').toBe(false);
   });
 });
 

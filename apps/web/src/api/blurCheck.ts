@@ -5,10 +5,12 @@ import { api } from './client.js';
  * The uploader's app calls `proofPosted` once it has sent a proof (only the proof id and how it was
  * blurred go to the API, never the image); each party then reads its own asks and answers them.
  *
- * NEEDS_PLAN_5_TASK_15: the proof upload flow (BlurEditor, the sealed proof in the chat) is not built
- * on main, so nothing calls these yet. When it lands: call `proofPosted` after the proof is sent,
- * then show `BlurCheck` (screens/proof/BlurCheck.tsx) for each of `pendingBlurChecks` to the
- * uploader and, on their side, to the receiver once the proof has opened.
+ * Proof stack: the upload calls `proofPosted` after the proof is sent (screens/proof/AddProof.tsx
+ * tradeProofDeps), and the API announces only a stored proof of the caller's side.
+ * Plan 5 Task 15: the uploader is asked at once when `proofPosted` answers `ask` (AddProof's sent
+ * screen mounts `BlurCheck`; DESIGNER-REVIEW, no board). NEEDS_BLUR_CHECK_SCREEN: the receiver's ask
+ * (`pendingBlurChecks`, once the proof has opened) and an uploader's ask missed on a reload are not
+ * mounted yet: no board says where.
  */
 export type BlurKind = 'auto' | 'manual' | 'both' | 'none';
 

@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { Icon } from '../../ui/icons.js';
-import { TERMS_SUBTITLE, TRADE_TERMS, termsParts, type TermsRole } from './tradeTerms.js';
+import { TERMS_SUBTITLE, termsFor, termsParts, type TermsRole } from './tradeTerms.js';
 
 /**
  * "What applies to you" (build spec j31a section 1; boards BuyQuote, SellQuote(+Wide), OfferAd(+Wide)
@@ -12,7 +12,7 @@ export function WhatApplies({ role }: { role: TermsRole }) {
   const [open, setOpen] = useState(false);
   const titleId = useId();
   const groupsId = useId();
-  const groups = TRADE_TERMS[role];
+  const groups = termsFor(role);
   const total = groups.reduce((n, g) => n + g.lines.length, 0);
   return (
     <section aria-labelledby={titleId} className="x2f-wa" data-part="what-applies" data-role={role}>

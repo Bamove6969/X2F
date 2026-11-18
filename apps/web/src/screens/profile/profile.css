@@ -1,0 +1,152 @@
+/* Plan 5 Task 12: the profile, badge settings and record screens (Profile and BadgeSettings boards). Tokens only. */
+
+.x2f-profile__head {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-3);
+}
+
+.x2f-profile__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.x2f-profile__name {
+  font-family: var(--x2f-heading-family);
+  font-size: var(--x2f-heading-size);
+  font-weight: var(--x2f-heading-weight);
+  line-height: var(--x2f-heading-line);
+  color: var(--x2f-ink);
+  overflow-wrap: anywhere;
+}
+
+/* Text links on these screens are full tap targets on a phone (44 px tall). */
+.x2f-profile__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.x2f-profile__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--x2f-space-2);
+}
+
+.x2f-profile__stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  padding: var(--x2f-space-3);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-profile__stat-value {
+  font-size: var(--x2f-heading-size);
+  font-weight: var(--x2f-heading-weight);
+  color: var(--x2f-ink);
+}
+
+.x2f-profile__stat-label {
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-profile__section-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-profile__reviews {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-profile__review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  padding-bottom: var(--x2f-space-3);
+  border-bottom: 1px solid var(--x2f-line);
+}
+
+.x2f-profile__review:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.x2f-profile__review-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+/* Stars are amber everywhere (design, 2026-10-29b). */
+.x2f-profile__stars {
+  color: var(--x2f-caution);
+  letter-spacing: 2px;
+}
+
+.x2f-profile__stars-off {
+  color: var(--x2f-line);
+}
+
+.x2f-profile__neutral,
+.x2f-profile__phrases {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-profile__note {
+  color: var(--x2f-ink);
+  overflow-wrap: anywhere;
+}
+
+.x2f-badgeset__preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-badgeset__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-badgeset__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-badgeset__levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-badgeset__milestone {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-record__text {
+  max-height: 360px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -1,4 +1,5 @@
 import type { Socket } from 'node:net';
+import { join, resolve, sep } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -117,6 +118,14 @@ export function cspFor(o: ConnectOrigins): string {
   ].join('; ');
 }
 
+/**
+ * The CSP on every `/ocr/*` response (Plan 5 Task 13, Global Constraints). A dedicated worker takes
+ * its CSP from its own response, not from the page, so the OCR worker gets this one: it may load
+ * scripts and compile WebAssembly from this origin and fetch from this origin, nothing else (so even
+ * a CDN default inside tesseract.js could not be reached).
+ */
+export const OCR_WORKER_CSP = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'";
+
 /** The web settings from the environment; `null` when this process does not serve the web app. */
 export function webOptionsFromEnv(env: Record<string, string | undefined>): WebOptions | null {
   const root = env.X2F_WEB_ROOT;
@@ -171,7 +180,11 @@ export function isApiOrFilePath(url: string, apiSegment = 'v1'): boolean {
   if (first === apiSegment) return true;
   const last = segments.at(-1) ?? '';
   const dot = last.lastIndexOf('.');
-  return dot > 0 && FILE_EXTENSIONS.has(last.slice(dot + 1));
+  const ext = last.slice(dot + 1);
+  // The OCR model (Plan 5 Task 13): a missing /ocr/*.gz is a 404, never the app page. Only there, so
+  // a profile such as /u/alice.gz stays the app page (review m-4).
+  if (dot > 0 && ext === 'gz') return first === 'ocr';
+  return dot > 0 && FILE_EXTENSIONS.has(ext);
 }
 
 const IMMUTABLE = 'public, max-age=31536000, immutable';
@@ -183,6 +196,7 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
  */
 export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<void> {
   const csp = cspFor(o);
+  const ocrDir = join(resolve(o.root), 'ocr') + sep;
   await app.register(async (scope) => {
     scope.addHook('onRequest', addSecurityHeaders);
     await scope.register(fastifyStatic, {
@@ -191,7 +205,10 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
       index: false,
       serveDotFiles: false,
       setHeaders(reply, path) {
-        if (path.endsWith('.html')) {
+        if (resolve(path).startsWith(ocrDir)) {
+          // Plan 5 Task 13: the OCR worker, its engine and model get the worker's own CSP.
+          void reply.header('content-security-policy', OCR_WORKER_CSP);
+        } else if (path.endsWith('.html')) {
           void reply.header('content-security-policy', csp).header('cache-control', 'no-cache');
         } else if (/[\\/]sw\.js$/.test(path) && !/[\\/]assets[\\/]/.test(path)) {
           // The service worker (Task 19) keeps its name across releases: always revalidated.

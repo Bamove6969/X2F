@@ -2,7 +2,10 @@ import { createHash, createHmac, randomBytes } from 'node:crypto';
 import type { AccountKind } from '@x2f/accounts';
 import { loginTag } from '../../src/accounts.js';
 import type { Deps } from '../../src/app.js';
+import type { ConfirmAction } from '@x2f/accounts';
+import { issueConfirmToken } from '../../src/auth/confirm.js';
 import { trustDevice } from '../../src/auth/device.js';
+import { SESSION_COOKIE } from '../../src/auth/sessions.js';
 import { subkey } from '../../src/config.js';
 
 /** A login name's tag under the current `X2F_LOGIN_NAME_KEYS` key (or under key `keyId` of the ring). */
@@ -73,4 +76,16 @@ export async function trustedDevice(deps: Pick<Deps, 'db' | 'clock' | 'config'>,
   const value = randomBytes(32).toString('base64url');
   await trustDevice(deps, accountId, createHmac('sha256', subkey(deps.config, 'device')).update(value).digest());
   return value;
+}
+
+/**
+ * A confirm token for `action`, minted straight into the table for the session behind `cookies`
+ * (as a PGP confirm would). For tests whose subject is not the confirm step itself (brought from
+ * sign-up v2 with the 16 Nov 2026 login-method rules).
+ */
+export async function confirmTokenFor(deps: Pick<Deps, 'db' | 'clock'>, cookies: Record<string, string>, action: ConfirmAction): Promise<string> {
+  const { rows } = await deps.db.query<{ id: string; account_id: string }>('select id, account_id from sessions where token_hash = $1', [
+    createHash('sha256').update(cookies[SESSION_COOKIE]!).digest(),
+  ]);
+  return issueConfirmToken(deps, { sessionId: rows[0]!.id, accountId: rows[0]!.account_id, action, method: 'pgp' });
 }

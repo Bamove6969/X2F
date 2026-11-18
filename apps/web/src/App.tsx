@@ -13,6 +13,9 @@ import { SyncGate } from './ui/SyncGate.js';
 import { useResumeSync, watchResume } from './session/syncFirst.js';
 import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
+import { BadgeSettings } from './screens/profile/BadgeSettings.js';
+import { MyProfile, TraderProfileRoute } from './screens/profile/Profile.js';
+import { PublicRecord, RecordExport } from './screens/profile/Record.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
 import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
@@ -63,7 +66,8 @@ import { WelcomeGate } from './screens/welcome/WelcomeGate.js';
 import { WelcomeScreen } from './screens/welcome/WelcomeScreen.js';
 import { TourProvider } from './tour/TourProvider.js';
 import { WELCOME_PATH } from './tour/welcomeSeen.js';
-import { setPaymentDetailsSource, setTradeChat } from './screens/trade/paySeams.js';
+import { setPaymentDetailsSource, setProofSource, setTradeChat } from './screens/trade/paySeams.js';
+import { chatProofState } from './proof/chatProof.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
 
@@ -73,6 +77,8 @@ setTradeChat(TradeChatPanel);
 // J-08 (S-090): the buyer's "Send exactly" card reads the seller's details from the newest package
 // in the trade's encrypted chat. A fixtures build replaces this too (fixtures/payChat.tsx).
 setPaymentDetailsSource(chatPaymentDetailsSource);
+// "Mark paid without proof?" reads the buyer's chat and a proof just sent here (attached, none or unavailable).
+setProofSource(chatProofState);
 
 /**
  * The app shell. Phones, foldables' panes and the flip cover screen get the phone frame (the bottom
@@ -267,6 +273,9 @@ export function App() {
             <Route path={WELCOME_PATH} element={<WelcomeScreen />} />
             <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
             <Route path="/profile/offers" element={<MyOffers />} />
+            {/* Plan 5 Task 12: my own profile (the Profile tab) and other traders' public profiles. */}
+            <Route path="/profile" element={<MyProfile />} />
+            <Route path="/u/:name" element={<TraderProfileRoute />} />
           </Route>
           <Route element={<Layout nav={false} banner={site.banner} planned={site.plannedMaintenance} />}>
             <Route path="/post" element={<PostOffer />} />
@@ -289,6 +298,10 @@ export function App() {
             <Route path="/settings/team" element={<Team />} />
             <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
             <Route path="/settings/account-type" element={<AccountType />} />
+            {/* Plan 5 Task 12: badge visibility and the signed reputation record. */}
+            <Route path="/settings/badges" element={<BadgeSettings />} />
+            <Route path="/settings/record" element={<RecordExport />} />
+            <Route path="/u/:name/record" element={<PublicRecord />} />
             <Route path="/news" element={<News />} />
             <Route path="/feedback" element={<Feedback />} />
             {/* D-016: the frozen-account notice, from GET /v1/account/freeze (home while not frozen). */}

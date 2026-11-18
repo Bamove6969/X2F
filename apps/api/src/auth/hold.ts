@@ -645,12 +645,17 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/chats/:chat/envelopes': 'an encrypted chat line in a chat the caller is in; no account, session, approval or security state',
   'POST /v1/chats/:chat/identity': "the caller's chat identity key for one chat; no account, session, approval or security state",
   'POST /v1/trades/:code/chat': "a participant's chat for an open trade (R42: finishing open trades stays allowed); no new obligation",
+  // Plan 5 Task 14.
+  'PUT /v1/trades/:code/proofs/:id': "a participant's proof ciphertext for their own trade (R42: finishing open trades stays allowed); no account, session, approval or security state, no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
   // Plan 5 Task 3 (reviews), classified at its merge with Tasks 16-17.
   'POST /v1/trades/:code/review': "a participant's one review of their own finished trade (a reviews row only); no account, session, approval or security state, no new obligation",
   'POST /v1/trades/:code/review/skip': "a participant's Skip review of their own finished trade (a review_skips row only); no account, session, approval or security state, no new obligation",
   // C12b (owner 2026-11-01/02): the opt-in "traded to date" profile line.
   'PUT /v1/account/profile/traded-total': "the caller's own profile display preference (one accounts column); no session, approval or security state, no obligation",
+  // Plan 5 Tasks 5 and 12: badge visibility and showing the signed record (one badge_prefs row).
+  'PUT /v1/account/badges': "the caller's own badge visibility (a badge_prefs row only; badges are earned, never set); no session, approval or security state, no obligation",
+  'PUT /v1/account/record/public': "the caller's own record-on-profile preference (a badge_prefs column only); no session, approval or security state, no obligation",
   // Owner Q75 (6 Nov 2026): the idle reminder.
   'PUT /v1/account/idle-reminder': "the person's own reminder preference (one accounts column of their login); never ends or extends a session; no approval or security state, no obligation",
   // Plan 5 Task 4 (platform feedback), classified at its merge with Tasks 16-17.
