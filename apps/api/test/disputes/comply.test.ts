@@ -72,6 +72,9 @@ beforeEach(() => {
 
 const errorOf = (res: { body: string }) => (res.body === '' ? undefined : (JSON.parse(res.body) as { error?: string }).error);
 const tick = () => disputeTimerJob(undefined, undefined, txProof).run(deps.db, deps.clock());
+/** The one owner account (the database allows one), seeded on first use. */
+let theOwner: Promise<{ id: string; loginName: string }> | undefined;
+const ownerOf = () => (theOwner ??= seedStaff(deps, { role: 'owner' }));
 
 async function relogin(...who: { id: string; browser: { post(url: string, body: unknown): Promise<{ statusCode: number }> } }[]) {
   for (const w of who) expect((await w.browser.post('/t/login', { accountId: w.id })).statusCode).toBe(200);
@@ -301,7 +304,7 @@ describe('a proof waiting for its confirmations', () => {
 
 describe('A6: the comply time lapses with no proof: the case goes to a senior moderator or the owner', () => {
   it('marked once, logged by the system, the owner alerted; the lien stays; listed for seniors and the owner, not for a moderator', async () => {
-    const owner = await seedStaff(deps, { role: 'owner' });
+    const owner = await ownerOf();
     const { seller, code } = await ruled();
     setNow(new Date(COMPLY_BY.getTime() - MIN));
     await tick();
@@ -333,7 +336,7 @@ describe('A6: the comply time lapses with no proof: the case goes to a senior mo
   });
 
   it("the owner's phone gets the fixed alert push once per lapse (the owner-alert push path)", async () => {
-    const owner = await seedStaff(deps, { role: 'owner' });
+    const owner = await ownerOf();
     const { code } = await ruled();
     const push = { send: vi.fn(async (_id: string, _kind: string) => true) };
     const run = () => disputeTimerJob(undefined, push, txProof).run(deps.db, deps.clock());
