@@ -220,7 +220,6 @@ test('the buyer adds a payment proof, checks the blur and sends it: the seller d
   const mark = (kind: string) => gt.marks.find((m) => m.kind === kind)! as unknown as Box;
   const surface = page.locator('[data-part="blur-surface"]');
   const s = (await surface.boundingBox())!;
-  const toPage = (x: number, y: number) => ({ x: s.x + (x / gt.width) * s.width, y: s.y + (y / gt.height) * s.height });
   const regions = page.locator('[data-part="blur-region"][data-source="auto"]');
   expect(await regions.count()).toBeGreaterThanOrEqual(4);
 
@@ -241,8 +240,13 @@ test('the buyer adds a payment proof, checks the blur and sends it: the seller d
   // Draw one of their own over the labels left of the name.
   const own: Box = { x0: 24, y0: 100, x1: 120, y1: 138 };
   await page.locator('[data-part="add-blur"]').click();
-  const a = toPage(own.x0, own.y0);
-  const b = toPage(own.x1, own.y1);
+  await expect(surface).toHaveAttribute('data-drawing', 'true');
+  // Clicking the button below the picture can scroll the page: measure the picture again.
+  await surface.scrollIntoViewIfNeeded();
+  const s2 = (await surface.boundingBox())!;
+  const toPage2 = (x: number, y: number) => ({ x: s2.x + (x / gt.width) * s2.width, y: s2.y + (y / gt.height) * s2.height });
+  const a = toPage2(own.x0, own.y0);
+  const b = toPage2(own.x1, own.y1);
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
   await page.mouse.move(b.x, b.y, { steps: 4 });
