@@ -68,12 +68,14 @@ export interface MoneroTxProofOptions {
  * `checkTxKey` on a throwaway in-memory wallet (random keys, never synced, never funded) connected to
  * the same node: wallet2's `check_tx_key` needs only the daemon, the tx key and the address.
  *
- * NEEDS_REGTEST_TX_PROOF (Plan 4 Task 12 step 3): `checkTxKey`'s `isGood`, `receivedAmount` and
- * `numConfirmations` are exercised on regtest only through the escrow's `proveTx`
- * (packages/escrow/src/monero.ts); this wallet's own regtest run is not written yet.
+ * Plan 4 Task 12 step 3 (was NEEDS_REGTEST_TX_PROOF): this check runs against a real regtest
+ * monerod in test/regtest/txProof.regtest.test.ts.
  *
  * The key is checked to be a list of reduced scalars first (`isTxKey`): anything else aborts
- * monero-ts's WebAssembly and breaks every later call. One check at a time.
+ * monero-ts's WebAssembly and breaks every later call. One check at a time, on the one wallet: a
+ * monero-ts call that timed out keeps running inside the wallet, so the check's slot is held until
+ * every call it started has settled, though its caller is answered `TxProofUnavailable` at the
+ * timeout (review m3). The next check waits in the queue (32, then 503 `busy`) until then.
  */
 export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
   const base = o.url.replace(/\/+$/, '');
@@ -98,7 +100,9 @@ export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
     return wallet;
   };
 
-  const timed = async <T>(p: Promise<T>): Promise<T> => {
+  /** `p`, or TxProofUnavailable after timeoutMs; `p` itself goes in `held`, waited out before the slot is freed. */
+  const timed = async <T>(p: Promise<T>, held: Promise<unknown>[]): Promise<T> => {
+    held.push(p);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([p, new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new TxProofUnavailable()), timeoutMs)))]);
@@ -136,30 +140,45 @@ export function moneroTxProofCheck(o: MoneroTxProofOptions): TxProofCheck {
     return { inPool: false, timestamp: new Date(tx.block_timestamp * 1000) };
   };
 
+  const checkOne = async (a: { txHash: string; txKey: string; address: string }, held: Promise<unknown>[]): Promise<TxProofResult | null> => {
+    if (!TX_HASH.test(a.txHash) || !isTxKey(a.txKey) || typeof a.address !== 'string' || a.address === '') return null;
+    const b = await block(a.txHash);
+    if (b === null) return null;
+    let w: MoneroWalletFull;
+    try {
+      w = await timed(walletOf(), held);
+    } catch {
+      throw new TxProofUnavailable();
+    }
+    let c: Awaited<ReturnType<MoneroWalletFull['checkTxKey']>>;
+    try {
+      c = await timed(w.checkTxKey(a.txHash, a.txKey, a.address), held);
+    } catch (e) {
+      if (e instanceof TxProofUnavailable) throw e;
+      return null; // a key that does not fit, or an address of another network
+    }
+    const confirmations = b.inPool || c.getInTxPool() === true ? 0 : c.getNumConfirmations();
+    return {
+      good: c.getIsGood() === true,
+      receivedAtomic: c.getReceivedAmount() ?? 0n,
+      confirmations: isCount(confirmations) ? confirmations : 0,
+      blockTimestamp: b.inPool ? null : b.timestamp,
+    };
+  };
+
   return (a) =>
-    slots.run(async () => {
-      if (!TX_HASH.test(a.txHash) || !isTxKey(a.txKey) || typeof a.address !== 'string' || a.address === '') return null;
-      const b = await block(a.txHash);
-      if (b === null) return null;
-      let w: MoneroWalletFull;
-      try {
-        w = await timed(walletOf());
-      } catch {
-        throw new TxProofUnavailable();
-      }
-      let c: Awaited<ReturnType<MoneroWalletFull['checkTxKey']>>;
-      try {
-        c = await timed(w.checkTxKey(a.txHash, a.txKey, a.address));
-      } catch (e) {
-        if (e instanceof TxProofUnavailable) throw e;
-        return null; // a key that does not fit, or an address of another network
-      }
-      const confirmations = b.inPool || c.getInTxPool() === true ? 0 : c.getNumConfirmations();
-      return {
-        good: c.getIsGood() === true,
-        receivedAtomic: c.getReceivedAmount() ?? 0n,
-        confirmations: isCount(confirmations) ? confirmations : 0,
-        blockTimestamp: b.inPool ? null : b.timestamp,
-      };
+    new Promise<TxProofResult | null>((resolve, reject) => {
+      slots
+        .run(async () => {
+          const held: Promise<unknown>[] = [];
+          const answer = checkOne(a, held);
+          // The caller has its answer now (at the timeout, at the latest) ...
+          answer.then(resolve, reject);
+          await answer.catch(() => undefined);
+          // ... but the wallet is free for the next check only once every call it started has settled (review m3).
+          await Promise.allSettled(held);
+        })
+        // The queue was full (503 `busy`): checkOne never ran.
+        .catch(reject);
     });
 }

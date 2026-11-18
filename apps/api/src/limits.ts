@@ -186,6 +186,14 @@ export const PAST_REP_START_BUCKET: BucketSize = { capacity: PAST_REP_STARTS_PER
 export const PAST_REP_FINISHES_PER_HOUR = 10;
 export const PAST_REP_FINISH_BUCKET: BucketSize = { capacity: PAST_REP_FINISHES_PER_HOUR, perMinute: PAST_REP_FINISHES_PER_HOUR / 60 };
 
+/**
+ * `POST /v1/trades/:code/payment-proof` (Plan 4 Task 12 review m4), per account: every proof costs a
+ * round trip to X2F's node and a turn in the one-at-a-time check queue, so one seller cannot starve
+ * the others' checks. A seller retyping a mistyped key a few times never comes near it. Lead
+ * default; the owner may change it.
+ */
+export const PAYMENT_PROOF_BUCKET: BucketSize = { capacity: 10, perMinute: 1 };
+
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
@@ -213,6 +221,8 @@ export interface Budgets {
   chatKeyCollect: KeyedBuckets;
   /** Per account: `POST /v1/account/past-rep/finish`. */
   pastRepFinish: KeyedBuckets;
+  /** Per account: `POST /v1/trades/:code/payment-proof` (Plan 4 Task 12 review m4). */
+  paymentProof: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -231,5 +241,6 @@ export function newBudgets(clock: () => Date): Budgets {
     chatKeyPost: new KeyedBuckets(CHAT_KEY_POST_BUCKET, clock),
     chatKeyCollect: new KeyedBuckets(CHAT_KEY_COLLECT_BUCKET, clock),
     pastRepFinish: new KeyedBuckets(PAST_REP_FINISH_BUCKET, clock),
+    paymentProof: new KeyedBuckets(PAYMENT_PROOF_BUCKET, clock),
   };
 }

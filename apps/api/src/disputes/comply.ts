@@ -49,7 +49,11 @@ import { noTxProofCheck, TX_HASH, TxProofUnavailable, type TxProofCheck, type Tx
 export const COMPLY_CONFIRMATIONS = 10;
 /** A waiting proof is checked again at most this often. */
 export const PROOF_RECHECK_MS = 2 * 60_000;
-/** A waiting tx the node no longer knows is refused only after this long (a pool tx can be slow to mine). */
+/**
+ * A waiting tx the node no longer knows is refused only once it has been unknown this long without a
+ * break, counted from the first check that missed it (`lost_since`; review m1), not from submission:
+ * a node restart that loses a tx late must not refuse a payment that is mined later.
+ */
 export const PROOF_LOST_AFTER_MS = 24 * 3_600_000;
 
 type Verdict = 'invalid' | 'replayed' | 'pending' | 'accepted';
@@ -116,8 +120,10 @@ export interface PaymentProofAnswer {
 
 export function complyRoutes(app: FastifyInstance): void {
   const owner = requireSession({ ...FINISH_OPEN_TRADES });
+  // Review m4: a per-account budget (429 slow-down), after the session check and before the node is asked.
+  const budget = async (req: FastifyRequest) => req.server.budgets.paymentProof.take(req.auth.accountId);
 
-  app.post('/v1/trades/:code/payment-proof', { preHandler: owner }, async (req, reply): Promise<PaymentProofAnswer> => {
+  app.post('/v1/trades/:code/payment-proof', { preHandler: [owner, budget] }, async (req, reply): Promise<PaymentProofAnswer> => {
     const { txHash, txKey } = bodyOf(req);
     const row = await tradeFor(req);
     const side = roleOf(rowToTrade(row), req.auth.accountId);
@@ -183,7 +189,7 @@ interface PendingRow {
  * The dispute timer's re-check of waiting proofs, each checked at most every PROOF_RECHECK_MS: at
  * COMPLY_CONFIRMATIONS it is accepted (`complied`) though `complyBy` may have passed since (it was
  * submitted in time); a tx whose check now fails, or that the node has not known for
- * PROOF_LOST_AFTER_MS, is refused (`dispute.proof-refused`) and the seller may submit another.
+ * PROOF_LOST_AFTER_MS since a check first missed it, is refused (`dispute.proof-refused`) and the seller may submit another.
  * A node that cannot be asked leaves it waiting. Returns the number of disputes changed.
  */
 export async function runPendingProofs(deps: DisputeDeps & { txProof?: TxProofCheck }, failures: unknown[]): Promise<number> {
@@ -212,11 +218,13 @@ export async function runPendingProofs(deps: DisputeDeps & { txProof?: TxProofCh
       }
       let accepted = false;
       await withDispute(deps, { code: p.code, seq: p.seq }, async (d, client, at) => {
-        const live = await client.query('select 1 from ruling_payments where tx_hash = $1 and status = $2 for update', [p.tx_hash, 'pending']);
+        const live = await client.query<{ lost_since: Date | null }>('select lost_since from ruling_payments where tx_hash = $1 and status = $2 for update', [p.tx_hash, 'pending']);
         if ((live.rowCount ?? 0) === 0) return d;
         let verdict = judgeProof(result, BigInt(t.amount_atomic), d.openedAt);
-        // Unknown to the node now: refused only once it has been lost for a day.
-        if (result === null && at.getTime() - p.submitted_at.getTime() < PROOF_LOST_AFTER_MS) verdict = 'pending';
+        // Unknown to the node now: refused only once it has been lost for PROOF_LOST_AFTER_MS without
+        // a break, from the first check that missed it (review m1). Known again: the clock resets.
+        const lostSince = result === null ? (live.rows[0]!.lost_since ?? at) : null;
+        if (lostSince !== null && at.getTime() - lostSince.getTime() < PROOF_LOST_AFTER_MS) verdict = 'pending';
         if (verdict === 'accepted') {
           let next: Dispute;
           try {
@@ -238,7 +246,7 @@ export async function runPendingProofs(deps: DisputeDeps & { txProof?: TxProofCh
           }
         }
         if (verdict === 'pending') {
-          await client.query('update ruling_payments set checked_at = $2, confirmations = $3 where tx_hash = $1', [p.tx_hash, at, result?.confirmations ?? null]);
+          await client.query('update ruling_payments set checked_at = $2, confirmations = $3, lost_since = $4 where tx_hash = $1', [p.tx_hash, at, result?.confirmations ?? null, lostSince]);
           return d;
         }
         await client.query(`update ruling_payments set status = 'refused', tx_key = null, decided_at = $2, checked_at = $2 where tx_hash = $1`, [p.tx_hash, at]);

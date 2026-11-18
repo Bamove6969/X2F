@@ -26,6 +26,9 @@ create table ruling_payments (
   received_atomic numeric(30, 0) check (received_atomic >= 0),
   confirmations integer check (confirmations >= 0),
   decided_at timestamptz,
+  -- A waiting tx the node no longer knows: when a check first missed it (cleared once the node knows
+  -- it again). Refused once it has been lost this long without a break (review m1).
+  lost_since timestamptz,
   foreign key (code, seq) references disputes (code, seq) on delete cascade,
   check ((status = 'pending') = (decided_at is null)),
   -- The key goes once the proof is decided: nothing needs it again.

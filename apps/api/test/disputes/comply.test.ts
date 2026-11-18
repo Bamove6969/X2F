@@ -399,7 +399,7 @@ describe('review m2: concurrent proofs, a tx the node forgets, a pending tx mine
     expect((await proofs(code)).map((p) => p.status)).toEqual(['pending']);
   });
 
-  it('a waiting tx the node forgets stays waiting inside PROOF_LOST_AFTER_MS, then is refused; the seller may send another', async () => {
+  it('a waiting tx the node forgets stays waiting inside PROOF_LOST_AFTER_MS, then is refused (here past complyBy, so the case lapses)', async () => {
     const { seller, code, buyerAddress } = await ruled();
     const txHash = pays(buyerAddress, AMOUNT, { confirmations: 0, minedAt: null });
     expect((await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash, txKey: txKey() })).statusCode).toBe(202);
@@ -409,18 +409,20 @@ describe('review m2: concurrent proofs, a tx the node forgets, a pending tx mine
     setNow(lost);
     await tick();
     expect((await proofs(code)).map((p) => p.status)).toEqual(['pending']);
-    setNow(new Date(lost.getTime() + PROOF_LOST_AFTER_MS - MIN));
+    setNow(new Date(lost.getTime() + PROOF_LOST_AFTER_MS - PROOF_RECHECK_MS));
     await tick();
     expect((await proofs(code)).map((p) => p.status)).toEqual(['pending']);
     expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.proof-pending']);
     setNow(new Date(lost.getTime() + PROOF_LOST_AFTER_MS));
     await tick();
-    expect(await proofs(code)).toEqual([{ tx_hash: txHash, status: 'refused', has_key: false, confirmations: 0 }]);
-    expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.proof-pending', 'dispute.proof-refused']);
-    // Still in time: a new proof is taken.
-    setNow(new Date(COMPLY_BY.getTime() - MIN));
+    // The last check that saw it found none (the node no longer knew it).
+    expect(await proofs(code)).toEqual([{ tx_hash: txHash, status: 'refused', has_key: false, confirmations: null }]);
+    // By then complyBy has passed with nothing waiting: the case lapses to a senior in the same tick,
+    // and a new proof is too late.
+    expect(lost.getTime() + PROOF_LOST_AFTER_MS).toBeGreaterThan(COMPLY_BY.getTime());
+    expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.proof-pending', 'dispute.proof-refused', 'dispute.comply-lapsed']);
     await relogin(seller);
-    expect((await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: pays(buyerAddress, AMOUNT), txKey: txKey() })).statusCode).toBe(200);
+    expect(errorOf(await seller.browser.post(`/v1/trades/${code}/payment-proof`, { txHash: pays(buyerAddress, AMOUNT), txKey: txKey() }))).toBe('too-late');
   });
 
   it('a waiting tx later found in a block older than the dispute is refused at the recheck (the replayed verdict)', async () => {
