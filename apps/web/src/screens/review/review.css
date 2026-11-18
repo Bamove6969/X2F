@@ -1,5 +1,7 @@
 /* Plan 5 Task 6: the rating and "How's X2F doing?" cards (board Review.dc.html), from the theme's
-   tokens. Stars follow the board (#ff6600, the Monero token); chips are teal (good) and rose (bad). */
+   tokens. Chips are teal (good) and rose (bad). Selection is ink, never orange (CONVENTIONS, owner
+   rule; selection-ink.test): the board's orange stars and orange picked mood are ink here, and orange
+   stays on the primary action only. Unfilled stars are an ink-muted outline. */
 
 .x2f-review {
   display: flex;
@@ -57,13 +59,14 @@
 
 .x2f-review__star path {
   fill: none;
-  stroke: var(--x2f-monero);
+  stroke: var(--x2f-ink-muted);
   stroke-width: 1.5;
   stroke-linejoin: round;
 }
 
 .x2f-review__star path[data-on] {
-  fill: var(--x2f-monero);
+  fill: var(--x2f-ink);
+  stroke: var(--x2f-ink);
 }
 
 .x2f-review__phrases {
@@ -179,8 +182,10 @@
   font-size: 15px;
 }
 
+/* The shared selection style (ui.css .x2f-choice): a 2 px ink border on surface-raised. The mood is
+   border-box with a min-height, so the extra 1 px comes out of its content box, not the grid. */
 .x2f-review__mood[aria-checked='true'] {
-  border-color: var(--x2f-monero);
+  border: 2px solid var(--x2f-ink);
   background: var(--x2f-surface-raised);
   font-weight: 600;
 }
