@@ -136,6 +136,9 @@ export type ApiErrorCode =
   | 'proof-exists'
   | 'not-requested'
   | 'review-pending'
+  // Plan 5 Task 5: @x2f/reputation's BadgeError codes (badge settings), answered as 400.
+  | 'new-is-fixed'
+  | 'not-earned'
   // Plan 5, Task 3: @x2f/reputation's ReviewError codes, answered as 400 (reviews/routes.ts checks
   // at compile time that every ReviewErrorCode is listed here).
   | 'bad-shape'

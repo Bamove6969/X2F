@@ -155,7 +155,11 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // used. Try a screenshot."), an input check on the picked image (Review Focus 2); another can be picked.
     // 68 -> 69 (NEEDS_PROOF_RECEIVE): screens/proof/ChatProof.tsx's CHAT_PROOF_GONE ("This proof is no
     // longer stored."), a note in place of a proof past its retention, not a rule the user ran into.
-    expect(notARefusal).toBeLessThanOrEqual(69);
+    // 69 -> 70 (Plan 5 Task 12, wip/lead-profile; train-1 merge, the proof upload's +2 and the profile's
+    // +1 summed on 67): the BadgeSettings board's standing footer "The New badge always shows
+    // while you have it and can't be hidden." (profile/profileCopy.ts), on every visit; New's row has
+    // no controls, so nothing is ever tried and refused.
+    expect(notARefusal).toBeLessThanOrEqual(70);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

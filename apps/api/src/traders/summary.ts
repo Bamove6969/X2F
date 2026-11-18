@@ -5,10 +5,13 @@ import {
   earnedBadges,
   resolveVisibility,
   typicalMinutes,
+  type BadgeId,
+  type BadgePrefs,
 } from '@x2f/reputation';
 import type { Queryable } from '../db/pool.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { verifiedPastRepBySite } from '../pastrep/store.js';
+import { prefsFromRow } from '../reputation/prefs.js';
 import { importedLines, tradedOverXmr, tradedXmrSql, type ImportedLine } from './tradedTotal.js';
 import { FINAL_SALES_SQL, reviewHeldSql, rulingCountsSql } from './finalOutcome.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, purgedSql, stageFor, type Stage, type StarterSettings } from './stage.js';
@@ -30,7 +33,13 @@ export interface TraderSummary {
   lastSeenAt: string | null;
   typicalMinutes: number | null;
   positivePct: number | null;
+  /**
+   * The badges shown, Featured first, then the "+N" list (Plan 5 Task 5): earned from records on
+   * every read, in the trader's own visibility (badge_prefs); Hidden ones are left out.
+   */
   badges: string[];
+  /** How many of `badges` are Featured (New included while it shows); the rest are the "+N" list. */
+  featuredBadges: number;
   /** The starter-limits stage (spec 2.3; plan Task 4 Revision 2026-10-26): the New badge shows until 'graduated'. */
   stage: Stage;
   /**
@@ -111,6 +120,24 @@ export function wonDisputesLiveSql(extra = ''): string {
        or (dr.outcome = 'refund-to-seller' and t.seller_account_id = a.id)) ${extra})`;
 }
 
+/**
+ * Everything the profile and badge settings need beside the summary (Plan 5 Task 5), from the same
+ * single query: never returned as is.
+ */
+export interface TraderFacts {
+  summary: TraderSummary;
+  /** Every earned badge, Hidden ones included (the owner's own settings list them). */
+  earned: BadgeId[];
+  prefs: BadgePrefs;
+  shown: { featured: BadgeId[]; more: BadgeId[] };
+  createdAt: Date;
+  /** Released trades plus settled disputes whoever won, as the badges count them. */
+  completedTrades: number;
+  lostDisputes: number;
+  /** Positive and negative reviews behind `positivePct`. */
+  ratedReviews: number;
+}
+
 /** A trader's side, for the typical time a card shows: a seller's release time, a buyer's payment time. */
 export type SummaryRole = 'buyer' | 'seller';
 
@@ -129,7 +156,20 @@ export async function traderSummaries(
   settings?: StarterSettings,
   roles?: ReadonlyMap<string, SummaryRole>,
 ): Promise<Map<string, TraderSummary>> {
-  const out = new Map<string, TraderSummary>();
+  const facts = await traderFacts(q, accountIds, now, viewerId, settings, roles);
+  return new Map([...facts].map(([id, f]) => [id, f.summary]));
+}
+
+/** `traderSummaries` with the facts behind each summary (one query for any number of accounts). */
+export async function traderFacts(
+  q: Queryable,
+  accountIds: readonly string[],
+  now: Date,
+  viewerId: string | null,
+  settings?: StarterSettings,
+  roles?: ReadonlyMap<string, SummaryRole>,
+): Promise<Map<string, TraderFacts>> {
+  const out = new Map<string, TraderFacts>();
   const ids = [...new Set(accountIds)];
   if (ids.length === 0) return out;
   const s = settings ?? (await loadStarterSettings(q));
@@ -137,6 +177,7 @@ export async function traderSummaries(
   const { rows } = await q.query<{
     id: string; name: string; created_at: Date; completed: string; sales: string; fast: number; last_seen: Date | null; show_traded: boolean; traded: string;
     positive: string; negative: string; pay: number[] | null; release: number[] | null; pgp: boolean; security_key: boolean; lost: string; won: string;
+    bp_chosen: boolean | null; bp_levels: unknown; bp_order: string[] | null;
   }>(
     `select a.id, a.${PUBLIC_NAME_COLUMN} as name, a.created_at,
             ${COMPLETED_TRADES_SQL} as completed,
@@ -150,8 +191,10 @@ export async function traderSummaries(
             exists (select 1 from pgp_keys k where k.account_id = a.id) as pgp,
             exists (select 1 from webauthn_credentials w where w.account_id = a.id and w.kind = 'security-key') as security_key,
             ${LOST_DISPUTES_SQL} as lost,
-            ${WON_DISPUTES_SQL} as won
+            ${WON_DISPUTES_SQL} as won,
+            bp.chosen as bp_chosen, bp.levels as bp_levels, bp.featured_order as bp_order
        from accounts a
+       left join badge_prefs bp on bp.account_id = a.id
        cross join lateral (
          select count(*) filter (where not r.neutral and r.stars >= $3) as positive,
                 count(*) filter (where not r.neutral and r.stars <= $4) as negative
@@ -199,10 +242,12 @@ export async function traderSummaries(
       },
       now,
     );
-    // No badge settings exist yet (Plan 5 Task 5), so the spec 5.4 defaults apply: New first, then
-    // Trusted, a trade milestone, Fast, Veteran in the featured slots, every other earned badge after.
-    const shown = resolveVisibility(earned, { chosen: false, levels: {}, order: [] });
-    out.set(r.id, {
+    // The trader's own visibility (Plan 5 Task 5, badge_prefs); before a first choice the spec 5.4
+    // defaults: New first, then Trusted, a trade milestone, Fast, Veteran in the featured slots,
+    // every other earned badge after. New always shows; Hidden badges are in neither list.
+    const prefs = prefsFromRow({ chosen: r.bp_chosen, levels: r.bp_levels, featured_order: r.bp_order });
+    const shown = resolveVisibility(earned, prefs);
+    const summary: TraderSummary = {
       displayName: r.name,
       completedTrades: completed,
       online: r.last_seen !== null && r.last_seen.getTime() >= since,
@@ -211,11 +256,13 @@ export async function traderSummaries(
       typicalMinutes: typical,
       positivePct,
       badges: [...shown.featured, ...shown.more],
+      featuredBadges: shown.featured.length,
       stage,
       tradedOverXmr: tradedOverXmr(r.show_traded, r.traded),
       imported: r.show_traded ? importedLines(sites.get(r.id)) : [],
       disputes: { won: Number(r.won), lost: Number(r.lost) },
-    });
+    };
+    out.set(r.id, { summary, earned, prefs, shown, createdAt: r.created_at, completedTrades: completed, lostDisputes: Number(r.lost), ratedReviews: rated });
   }
   return out;
 }

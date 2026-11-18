@@ -9,6 +9,7 @@ import {
   STRICT_CONFIG,
   challengeText,
   encryptChallenge,
+  CHALLENGE_PURPOSE_NOTATION,
   inspectPublicKey,
 } from '@x2f/accounts';
 import * as keys from './fixtures/keys.js';
@@ -335,6 +336,12 @@ describe('encryptChallenge', () => {
     expect(signatures.length).toBe(1);
     expect(signatures[0]?.keyID.equals(signingKey.getKeyID())).toBe(true);
     await expect(signatures[0]?.verified).resolves.toBe(true);
+    // Lead call 18 Nov (review m3): the signature names what X2F signed, not critical.
+    const sig = await signatures[0]!.signature;
+    const notes = sig.packets[0]!.rawNotations.map((n) => ({ name: n.name, value: new TextDecoder().decode(n.value), critical: n.critical }));
+    // openpgp.js adds its own salt notation (salt@notations.openpgpjs.org); ours is the one X2F notation.
+    expect(notes.filter((n) => n.name.endsWith('@x2f'))).toEqual([{ name: 'purpose@x2f', value: 'login-challenge', critical: false }]);
+    expect(CHALLENGE_PURPOSE_NOTATION).toEqual({ name: 'purpose@x2f', value: 'login-challenge' });
   });
 
   test('fails closed instead of falling back to a weak subkey (strict config)', async () => {

@@ -56,6 +56,8 @@ export interface TraderSummary {
   typicalMinutes: number | null;
   positivePct: number | null;
   badges: string[];
+  /** Plan 5 Task 5: how many of `badges` are Featured (New included); the rest are "+N". Missing: 2. */
+  featuredBadges?: number;
   /** The poster's starter-limits stage, from the API (spec 2.3). New shows until 'graduated'. */
   stage: Stage;
   /**

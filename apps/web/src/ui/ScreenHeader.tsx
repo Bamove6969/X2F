@@ -30,8 +30,11 @@ const MORE: [RegExp, string][] = [
   [/^\/settings\/jabber\/events(\/|$)/, 'Jabber notices'],
   [/^\/settings\/jabber(\/|$)/, 'Jabber'],
   [/^\/settings\/account-type(\/|$)/, 'Account type'],
+  [/^\/settings\/badges(\/|$)/, 'Your badges'],
+  [/^\/settings\/record(\/|$)/, 'Signed record'],
   [/^\/settings(\/|$)/, 'Settings'],
   [/^\/profile(\/|$)/, 'Profile'],
+  [/^\/u\//, 'Trader profile'],
 ];
 
 /** The name beside the logo for `pathname`; '' for the Landing board and any route with no name. */
