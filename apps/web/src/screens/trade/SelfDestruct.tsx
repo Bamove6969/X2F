@@ -10,11 +10,14 @@
  */
 import { useEffect, useState } from 'react';
 import type { TradeView } from '../../api/trade.js';
-import { purgeTradeLocally, rememberDeleteAt } from '../../chat/localPurge.js';
+import { endedForLocalPurge, purgeTradeLocally, rememberDeleteAt } from '../../chat/localPurge.js';
 import { formatDate } from '../../ui/dates.js';
 import { When } from '../../ui/When.js';
 
 type DateView = Pick<TradeView, 'deleteAt' | 'dispute'>;
+
+/** What the room's local purge reads from the view. */
+export type SelfDestructView = Pick<TradeView, 'deleteAt' | 'state' | 'closedAt' | 'appealUntil'>;
 
 /** The notice's text, or null when the trade has no date yet. */
 export function selfDestructText(view: Partial<DateView>): string | null {
@@ -28,20 +31,30 @@ export function selfDestructText(view: Partial<DateView>): string | null {
 
 /**
  * Remembers the trade's date on this device and, once it has passed by the server clock, deletes
- * this device's copies and reports `gone`. A view with no date (open, a dispute open) forgets any
- * date stored before; a view from an older API (no `deleteAt` at all) changes nothing.
+ * this device's copies and reports `gone`. Review round 1, I2: only in a room that is not `broken`
+ * (the escrow integrity check failed) and for a view that itself shows the trade ended
+ * (`endedForLocalPurge`); otherwise it does nothing, except that a view with no date forgets any
+ * date stored before. A view from an older API (no `deleteAt` at all) changes nothing.
  */
-export function useSelfDestruct(code: string, view: Pick<TradeView, 'deleteAt'>, serverClock: () => Date): { gone: boolean } {
+export function useSelfDestruct(code: string, view: SelfDestructView, serverClock: () => Date, broken = false): { gone: boolean } {
   const known = view.deleteAt !== undefined;
   const at = view.deleteAt ?? null;
+  const { state, closedAt } = view;
+  const appealUntil = view.appealUntil ?? null;
   const [gone, setGone] = useState(false);
   useEffect(() => {
-    if (!known) return;
+    if (!known || broken) return;
+    if (at === null) {
+      rememberDeleteAt(code, null);
+      return;
+    }
+    const facts = { state, closedAt, deleteAt: at, appealUntil };
+    if (!endedForLocalPurge(facts, serverClock().getTime())) return;
     rememberDeleteAt(code, at);
-    if (at === null) return;
     let stop = false;
     const check = (): boolean => {
       if (Date.parse(at) > serverClock().getTime()) return false;
+      if (!endedForLocalPurge(facts, serverClock().getTime())) return false;
       void purgeTradeLocally(code).then(() => {
         if (!stop) setGone(true);
       });
@@ -57,7 +70,7 @@ export function useSelfDestruct(code: string, view: Pick<TradeView, 'deleteAt'>,
       stop = true;
       clearTimeout(timer);
     };
-  }, [code, known, at, serverClock]);
+  }, [code, known, broken, at, state, closedAt, appealUntil, serverClock]);
   return { gone };
 }
 
@@ -83,7 +96,7 @@ export function SelfDestructed() {
   return (
     <p className="x2f-note" data-part="self-destructed" role="status">
       {/* COPY-UNSIGNED (Plan 7 Task 3) */}
-      This trade has self-destructed. Nothing about it is kept on this device.
+      This trade has self-destructed. Its messages and details are gone from this device; the wallet keeps the escrow only while coins could still be in it.
     </p>
   );
 }

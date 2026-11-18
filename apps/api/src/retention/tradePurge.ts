@@ -14,9 +14,9 @@ import { deleteDisputeRecords, DISPUTE_FACTS_SQL } from '../disputes/purge.js';
 import { WATCH_LIST_CLOSED_DAYS } from '../internal/routes.js';
 import type { RetentionJob } from '../retention.js';
 import { detachReviews } from '../reviews/store.js';
-import { FINAL_SALES_SQL } from '../traders/finalOutcome.js';
-import { COMPLETED_TRADES_SQL } from '../traders/stage.js';
-import { LOST_DISPUTES_SQL, WON_DISPUTES_SQL } from '../traders/summary.js';
+import { finalSalesLiveSql } from '../traders/finalOutcome.js';
+import { completedTradesLiveSql } from '../traders/stage.js';
+import { lostDisputesLiveSql, wonDisputesLiveSql } from '../traders/summary.js';
 import { PURGE_ROLE } from '../trades/purge.js';
 
 /**
@@ -38,10 +38,11 @@ import { PURGE_ROLE } from '../trades/purge.js';
  *   account or aggregate records with no foreign key to the trade, which x2f_purge may not delete;
  * - anything during site maintenance (no pass runs; the first pass after it catches up).
  *
- * Profiles and starter limits stay the same: before the delete, under the trade's lock, the two
- * accounts' completed trades (R38, the stage), final sales (the count shown), won and lost
- * disputes are read with the readers' own SQL; after it they are read again, and the difference is
- * added to `account_traded_totals.purged_*` (701), which those readers add back. The dollar and XMR
+ * Profiles and starter limits stay the same: before the delete, under the trade's lock and in one
+ * repeatable-read snapshot, what THIS trade adds to the two accounts' completed trades (R38, the
+ * stage), final sales (the count shown), won and lost disputes is read with the readers' own
+ * predicates limited to its code, and added to `account_traded_totals.purged_*` (701), which those
+ * readers add back. The dollar and XMR
  * totals, the buyer cancels, the fast payments and the typical times are already running totals.
  *
  * Safe under concurrency: the trade is locked `for update` (as applyEvent does), then its disputes
@@ -166,13 +167,19 @@ interface Counts {
   lost: string;
 }
 
-/** The figures a purged trade must leave as they were, by the readers' own SQL (alias `a`). */
-async function countsOf(q: Queryable, ids: string[]): Promise<Map<string, Counts>> {
+/**
+ * What trade `code` itself adds to each account's figures, by the readers' own predicates limited
+ * to that one trade (`and t.code = $2`; review round 1, I1). Read once, before the deletes: a
+ * difference of two whole-account reads would also take in any other trade of the account that
+ * changed in between and lose a count for good.
+ */
+async function shareOf(q: Queryable, ids: string[], code: string): Promise<Map<string, Counts>> {
+  const only = 'and t.code = $2';
   const { rows } = await q.query<Counts>(
-    `select a.id::text as id, ${COMPLETED_TRADES_SQL} as completed, ${FINAL_SALES_SQL} as sales,
-            ${WON_DISPUTES_SQL} as won, ${LOST_DISPUTES_SQL} as lost
+    `select a.id::text as id, ${completedTradesLiveSql(only)} as completed, ${finalSalesLiveSql(only)} as sales,
+            ${wonDisputesLiveSql(only)} as won, ${lostDisputesLiveSql(only)} as lost
        from accounts a where a.id = any($1::uuid[])`,
-    [ids],
+    [ids, code],
   );
   return new Map(rows.map((r) => [r.id, r]));
 }
@@ -185,7 +192,10 @@ async function countsOf(q: Queryable, ids: string[]): Promise<Map<string, Counts
 async function purgeOne(db: pg.Pool, code: string, now: Date): Promise<boolean> {
   const client = await db.connect();
   try {
-    await client.query('begin');
+    // Review round 1, I1: one snapshot for every read of this transaction (with its own deletes). A
+    // trade changed by another transaction since the snapshot makes its FOR UPDATE fail with 40001;
+    // it is then skipped and picked up on the next pass.
+    await client.query('begin isolation level repeatable read');
     try {
       // Locks first, under the API's role (FOR UPDATE needs rights x2f_purge does not have).
       const locked = await client.query<{ buyer: string; seller: string }>(
@@ -205,7 +215,7 @@ async function purgeOne(db: pg.Pool, code: string, now: Date): Promise<boolean> 
         return false;
       }
       const ids = [trade.buyer, trade.seller];
-      const before = await countsOf(client, ids);
+      const share = await shareOf(client, ids, code);
 
       const { rows: role } = await client.query<{ r: string }>(`select current_setting('role') as r`);
       // PURGE_ROLE is a compile-time constant: an SQL identifier, interpolated, not a bound parameter.
@@ -227,14 +237,12 @@ async function purgeOne(db: pg.Pool, code: string, now: Date): Promise<boolean> 
       // Back to the API's role for the running totals (x2f_purge deletes; it never writes a total).
       await client.query(`select set_config('role', $1, true)`, [role[0]!.r]);
 
-      const afterCounts = await countsOf(client, ids);
       for (const id of ids) {
-        const b = before.get(id);
-        const a = afterCounts.get(id);
-        if (!b || !a) throw new Error('trade purge: account missing');
+        const b = share.get(id);
+        if (!b) throw new Error('trade purge: account missing');
         const d = (k: keyof Omit<Counts, 'id'>): number => {
-          const n = Number(b[k]) - Number(a[k]);
-          if (!Number.isSafeInteger(n) || n < 0) throw new Error('trade purge: a count rose');
+          const n = Number(b[k]);
+          if (!Number.isSafeInteger(n) || n < 0) throw new Error('trade purge: bad count');
           return n;
         };
         const delta = { completed: d('completed'), sales: d('sales'), won: d('won'), lost: d('lost') };
@@ -254,6 +262,8 @@ async function purgeOne(db: pg.Pool, code: string, now: Date): Promise<boolean> 
       return true;
     } catch (e) {
       await client.query('rollback');
+      // Serialization failure under repeatable read: another transaction changed the trade first.
+      if ((e as { code?: unknown } | null)?.code === '40001') return false;
       throw e;
     }
   } finally {

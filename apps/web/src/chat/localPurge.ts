@@ -16,6 +16,9 @@
  *   follows the escrow runtime's own rule (KEEP_AFTER_CLOSE_MS, and never before this device saw
  *   the escrow settled and empty), so no key goes while coins could still be in the escrow.
  *
+ * Nothing is deleted for a view that does not itself show the trade ended (`endedForLocalPurge`,
+ * review round 1, I2), nor in a room whose escrow integrity check failed.
+ *
  * Times are the server's, never this device's clock alone: the room compares with its server clock;
  * at start-up a stored date is compared with the server's time (`GET /v1/news` `serverNow`), and a
  * trade goes only once the server confirms it: the trade is gone (404), or its view still carries
@@ -28,7 +31,31 @@
  * leftovers go whichever account is signed in.
  */
 
+import { TRADE_KEEP_DAYS } from '@x2f/trade';
+
 export const DELETE_AT_KEY = 'x2f.deleteAt';
+
+/** The view fields the device checks before it deletes anything (review round 1, I2). */
+export interface EndedFacts {
+  state: string;
+  closedAt: string | null;
+  deleteAt?: string | null;
+  appealUntil?: string | null;
+}
+
+const ENDED_STATES = ['released', 'refunded', 'cancelled', 'lapsed'];
+
+/**
+ * Review round 1, I2: the device deletes its copies only for a view that itself shows the trade
+ * ended: a closed state with a close time, no ruling still open to appeal at `nowMs`, and a date no
+ * sooner than TRADE_KEEP_DAYS after the close (the rule never gives an earlier one). The API's date
+ * alone is never enough: these marks guard the escrow against the API (fund.ts, the confirmed deal).
+ */
+export function endedForLocalPurge(v: EndedFacts, nowMs: number): boolean {
+  if (!ENDED_STATES.includes(v.state) || !isIso(v.closedAt) || !isIso(v.deleteAt)) return false;
+  if (isIso(v.appealUntil) && Date.parse(v.appealUntil) > nowMs) return false;
+  return Date.parse(v.deleteAt) >= Date.parse(v.closedAt) + TRADE_KEEP_DAYS * 86_400_000;
+}
 
 type Deleter = (code: string) => Promise<void> | void;
 const deleters = new Map<string, Deleter>();
@@ -133,7 +160,10 @@ export async function purgeTradeLocally(code: string): Promise<void> {
 }
 
 /** What the server says about a trade at start-up. */
-export type ServerTradeAnswer = { kind: 'gone' } | { kind: 'view'; deleteAt: string | null; serverNow: string } | { kind: 'unknown' };
+export type ServerTradeAnswer =
+  | { kind: 'gone' }
+  | ({ kind: 'view'; deleteAt: string | null; serverNow: string } & EndedFacts)
+  | { kind: 'unknown' };
 
 export interface ConfirmDeps {
   /** The server's current time in ms, or null when it cannot be read. */
@@ -163,11 +193,14 @@ export const serverConfirm: ConfirmDeps = {
       const res = await fetch(`/v1/trades/${encodeURIComponent(code)}`, { credentials: 'same-origin', headers: { accept: 'application/json' } });
       if (res.status === 404) return { kind: 'gone' };
       if (!res.ok) return { kind: 'unknown' };
-      const v = (await res.json()) as { deleteAt?: unknown; serverNow?: unknown } | null;
-      if (!isIso(v?.serverNow)) return { kind: 'unknown' };
-      const at = v?.deleteAt ?? null;
+      const v = (await res.json()) as { deleteAt?: unknown; serverNow?: unknown; state?: unknown; closedAt?: unknown; appealUntil?: unknown } | null;
+      if (!isIso(v?.serverNow) || typeof v.state !== 'string') return { kind: 'unknown' };
+      const at = v.deleteAt ?? null;
       if (at !== null && !isIso(at)) return { kind: 'unknown' };
-      return { kind: 'view', deleteAt: at, serverNow: v.serverNow };
+      return {
+        kind: 'view', deleteAt: at, serverNow: v.serverNow, state: v.state,
+        closedAt: isIso(v.closedAt) ? v.closedAt : null, appealUntil: isIso(v.appealUntil) ? v.appealUntil : null,
+      };
     } catch {
       return { kind: 'unknown' };
     }
@@ -191,13 +224,14 @@ export async function runConfirmedLocalPurge(deps: ConfirmDeps = serverConfirm):
       done.push(code);
     } else if (a.kind === 'view') {
       const at = a.deleteAt === null ? null : Date.parse(a.deleteAt);
-      if (at !== null && at <= Date.parse(a.serverNow)) {
+      if (at !== null && at <= Date.parse(a.serverNow) && endedForLocalPurge(a, Date.parse(a.serverNow))) {
         await purgeTradeLocally(code);
         done.push(code);
-      } else {
+      } else if (a.deleteAt === null || at! > Date.parse(a.serverNow)) {
         // No date any more (late coins escalated it) or a later one: keep, and remember what the server says now.
         rememberDeleteAt(code, a.deleteAt);
       }
+      // A past date on a view that does not show the trade ended (I2): nothing is done.
     }
   }
   return done;

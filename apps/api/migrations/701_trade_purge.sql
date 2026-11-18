@@ -43,3 +43,38 @@ grant select (code) on trade_identities, trade_attestations, trade_refusals, tra
 grant delete on trade_identities, trade_attestations, trade_refusals, trade_work_served, ruling_statements to x2f_purge;
 grant select (code) on dispute_appeals, ruling_drafts, dispute_rulings to x2f_purge;
 grant delete on dispute_appeals, ruling_drafts, dispute_rulings, disputes to x2f_purge;
+
+-- 3. Defence in depth behind the purge's own check under the trade lock (review round 1, m1), as
+--    104 guards trade_events: x2f_purge may never delete a trade that is open or disputed, nor a
+--    dispute that is not closed (an appeal window, round 2, a payout or payment still owed).
+create function purge_keeps_open_trades() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if current_user = 'x2f_purge' and (old.closed_at is null or old.state = 'disputed') then
+    raise exception 'x2f_purge may not delete an open trade' using errcode = 'insufficient_privilege';
+  end if;
+  return old;
+end
+$$;
+
+create trigger purge_keeps_open_trades
+  before delete on trades
+  for each row execute function purge_keeps_open_trades();
+
+create function purge_keeps_open_disputes() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if current_user = 'x2f_purge' and old.status <> 'closed' then
+    raise exception 'x2f_purge may not delete a dispute that is not closed' using errcode = 'insufficient_privilege';
+  end if;
+  return old;
+end
+$$;
+
+create trigger purge_keeps_open_disputes
+  before delete on disputes
+  for each row execute function purge_keeps_open_disputes();

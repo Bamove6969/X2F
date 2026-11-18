@@ -382,7 +382,7 @@ function ReadyRoom({ code, ownCode, view: apiView, refresh, navState, hash }: { 
   const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} methodId={view.methodId} /> : null;
   const chatPane = chatPaneFor(layout, Chat !== null, view, broken);
   // Plan 7 Task 3: the self-destruct date, and this device's copies going once it has passed.
-  const { gone } = useSelfDestruct(ownCode, view, clock);
+  const { gone } = useSelfDestruct(ownCode, view, clock, broken);
   if (gone && !broken) {
     return (
       <main data-screen="trade" data-trade-state="self-destructed" data-role={view.role}>
