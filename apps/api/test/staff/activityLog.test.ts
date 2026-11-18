@@ -569,6 +569,38 @@ describe('the training library', () => {
     ]);
   });
 
+  it('a review tag is bound to its case: case A\'s tag is refused on case B with identical texts (re-review 4 minor 2)', async () => {
+    // D: another closed case on the same traders whose texts mask to exactly C's.
+    const buyer = (await deps.db.query<{ id: string }>('select buyer_account_id::text as id from trades where code = $1', [C.code])).rows[0]!.id;
+    const seller = (await deps.db.query<{ id: string }>('select seller_account_id::text as id from trades where code = $1', [C.code])).rows[0]!.id;
+    const D = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller', methodId: 'REVOLUT', code: 'H7YA-W3PY-NMPF-WFJ3', buyerPayout: fixedAddress(21), sellerRefund: fixedAddress(22) });
+    const c = (await deps.db.query<{ note: string; opened_at: Date; closed_at: Date }>('select note, opened_at, closed_at from disputes where code = $1', [C.code])).rows[0]!;
+    const r = (await deps.db.query<{ reason: string; evidence: unknown; moderator_name: string; ruled_at: Date }>('select reason, evidence, moderator_name, ruled_at from dispute_rulings where code = $1', [C.code])).rows[0]!;
+    await deps.db.query(
+      `insert into disputes (code, seq, opened_by, reason, note, opened_at, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents, status, closed_at)
+       values ($1, 1, 'seller', 'paid', $2, $3, $3, $3, 41250, 100000, 'closed', $4)`,
+      [D.code, c.note, c.opened_at, c.closed_at],
+    );
+    await deps.db.query(
+      `insert into dispute_rulings (code, seq, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until)
+       values ($1, 1, 1, 'release-to-buyer', $2, $3, $4, $5, $5)`,
+      [D.code, r.reason.replace(C.code, D.code), JSON.stringify(r.evidence), r.moderator_name, r.ruled_at],
+    );
+    const DID = trainingId(deps.config.trainingIdKey, D.code, 1);
+    const a = (await owner.b.get(`/staff/v1/training/review/${CID()}`)).json() as Review;
+    const b = (await owner.b.get(`/staff/v1/training/review/${DID}`)).json() as Review;
+    expect(b.fields).toEqual(a.fields);
+    expect(b.reviewTag).not.toBe(a.reviewTag);
+    const res = await owner.b.send('PUT', `/staff/v1/training/review/${DID}`, { masks: [], reviewTag: a.reviewTag });
+    expect(res.statusCode, res.body).toBe(409);
+    expect((await owner.b.send('PUT', `/staff/v1/training/review/${DID}`, { masks: [], reviewTag: b.reviewTag })).statusCode).toBe(200);
+    // Re-review 4 minor 3: field tags carry their own label, whatever the field is called.
+    const tags = (await deps.db.query<{ field_tags: Record<string, string> }>('select field_tags from training_cases where training_id = $1', [DID])).rows[0]!.field_tags;
+    const own = (f: string, t: string) => createHmac('sha256', deps.config.trainingIdKey).update(`x2f/training-field\0${f}\0${t}`, 'utf8').digest('hex').slice(0, 32);
+    expect(tags).toEqual(Object.fromEntries(Object.entries(b.fields).map(([f, x]) => [f, own(f, x.text)])));
+    expect((await owner.b.send('DELETE', `/staff/v1/training/review/${DID}`)).statusCode).toBe(200);
+  });
+
   it('a curator unmarks a case: it leaves the list at once, and it is logged', async () => {
     expect((await mod.b.send('DELETE', `/staff/v1/training/review/${CID()}`)).statusCode).toBe(403);
     const res = await owner.b.send('DELETE', `/staff/v1/training/review/${CID()}`);
