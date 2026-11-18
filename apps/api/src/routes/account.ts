@@ -171,13 +171,13 @@ export interface MethodCounts {
   recoveryCodes: number;
 }
 
-/** Owner p4-8: the lead's waiting changes as a member's banner sees them: only the date. */
 /** The account's completed trades, either side (COMPLETED_TRADES_SQL). */
 async function completedTrades(db: Queryable, accountId: string): Promise<number> {
   const { rows } = await db.query<{ n: number }>(`select ${COMPLETED_TRADES_SQL}::int as n from accounts a where a.id = $1`, [accountId]);
   return rows[0]?.n ?? 0;
 }
 
+/** Owner p4-8: the lead's waiting changes as a member's banner sees them: only the date. */
 async function teamHoldOf(db: Queryable, accountId: string): Promise<{ takesEffectAt: string } | null> {
   const p = await pendingSummary(db, accountId);
   return p === null ? null : { takesEffectAt: p.takesEffectAt };
