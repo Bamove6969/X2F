@@ -79,7 +79,8 @@ describe('anonymizeText', () => {
 
   it('does not mask a Luhn-invalid 16-digit number, an amount or a date', () => {
     expect(scrub('ref 4111 1111 1111 1112').text).toBe('ref 4111 1111 1111 1112');
-    expect(scrub('paid 1,320.00 USD for 1.25 XMR on 2026-11-02').text).toBe('paid 1,320.00 USD for 1.25 XMR on 2026-11-02');
+    // Re-review m1: the exact XMR amount is masked; the fiat amount and the day stay.
+    expect(scrub('paid 1,320.00 USD for 1.25 XMR on 2026-11-02').text).toBe('paid 1,320.00 USD for [amount] XMR on 2026-11-02');
   });
 });
 
@@ -224,7 +225,130 @@ describe('anonymizeText: the review\'s bypasses', () => {
   });
 
   it('still leaves amounts, a date and an offset alone', () => {
-    expect(s('paid 1,320.00 USD for 1.25 XMR on 2026-11-02 at T+0:42')).toBe('paid 1,320.00 USD for 1.25 XMR on 2026-11-02 at T+0:42');
+    expect(s('paid 1,320.00 USD on 2026-11-02 at T+0:42')).toBe('paid 1,320.00 USD on 2026-11-02 at T+0:42');
+  });
+});
+
+// Re-review 2026-11-18 (B1, M1, M2, m1, m2): one test each, red first.
+describe('anonymizeText: the re-review', () => {
+  const FULL: AnonymizeNames = { buyer: ['mira.k', 'Mira Kowal'], seller: ['quietfox', 'José', 'Strauß'], staff: ['dmitri_k'] };
+  const s = (t: string, codes: readonly string[] = []) => anonymizeText(t, FULL, codes).text;
+  const OWN = 'FTYB-J3ZD-7MCZ-WKRA';
+
+  it('B1: a ruling reason with names, a card, a trade code and an address keeps its words', () => {
+    // The shape that failed half the time: a fixed buyer, seller and code with no 0 in them.
+    const names: AnonymizeNames = { buyer: ['Dmira7ab3f9c', 'mira7ab3f9c'], seller: ['Dquietfox8cd2e4', 'quietfox8cd2e4'], staff: ['Ddmitrimod'] };
+    const reason = `REASON-SENTINEL: Dmira7ab3f9c's payment from card ${CARD} shows in Dquietfox8cd2e4's bank. Trade ${OWN}. Refund address ${ADDR}.`;
+    expect(anonymizeText(reason, names, [OWN]).text).toBe(
+      `REASON-SENTINEL: Buyer's payment from card [card] shows in Seller's bank. Trade ${TRADE_CODE_MASK}. Refund address [address].`,
+    );
+  });
+
+  it('B1: never looks for an address across words, however mixed the prose', () => {
+    const prose = 'A Buyer SENT 4 XMR via Zen Bank on Tuesday, Ref ABC123 and Ref XYZ789, then Buyer WAS ANGRY 3 days after the Bank TRANSFER, Ref QRS456';
+    expect(s(prose)).toBe(prose);
+    const words = 'A Buyer and A Seller met at Bank 7 then Bank 8 then Bank 9 to check the Payment Status of Trade KTXR and Trade WQPV';
+    expect(s(words)).toBe(words);
+  });
+
+  it('M1: combining marks inside a name', () => {
+    expect(s('m̀ira.k paid')).toBe('Buyer paid');
+    expect(s('quietföx paid')).toBe('Seller paid');
+  });
+
+  it('M1: a name typed without its accent, or ß as ss', () => {
+    expect(s('Jose paid')).toBe('Seller paid');
+    expect(s('Strauss paid and STRAUSS too')).toBe('Seller paid and Seller too');
+  });
+
+  it('M1: a dotted capital I (Turkish)', () => {
+    expect(s('MİRA.K paid')).toBe('Buyer paid');
+  });
+
+  it('M1: Armenian and small-capital look-alikes', () => {
+    expect(s('quietfօx paid')).toBe('Seller paid');
+    expect(s('ᴍira.k paid')).toBe('Buyer paid');
+  });
+
+  it('M1: 0 for o and 1 for i or l inside a name', () => {
+    expect(s('quietf0x paid')).toBe('Seller paid');
+    expect(s('m1ra.k paid')).toBe('Buyer paid');
+    expect(s('dm1tr1_k here')).toBe('Moderator here');
+  });
+
+  it('M1: separators between letters and , · / between parts', () => {
+    for (const v of ['m.i.r.a.k', 'm i r a k', 'mira,k', 'mira·k', 'mira/k', 'q-u-i-e-t-f-o-x']) expect(s(`${v} paid`), v).not.toMatch(/m.?i.?r.?a|q.?u.?i.?e/i);
+    expect(s('mira,k paid')).toBe('Buyer paid');
+  });
+
+  it('M1: a digit or underscore suffix', () => {
+    expect(s('quietfox_real on Telegram')).toBe('Seller on Telegram');
+    expect(s('quietfox99 again')).toBe('Seller again');
+    expect(s('mira.k_2 again')).toBe('Buyer again');
+  });
+
+  it('M2: another trade\'s code in lower case, with spaces, dots or slashes', () => {
+    for (const v of ['rvgf4pmgr9cmeza9', 'rvgf 4pmg r9cm eza9', 'RVGF.4PMG.R9CM.EZA9', 'rvgf/4pmg/r9cm/eza9', 'RVGF_4PMG_R9CM_EZA9']) {
+      expect(s(`see ${v} too`), v).toBe(`see ${TRADE_CODE_MASK} too`);
+    }
+  });
+
+  it('M2: an address split by a wider gap, or with a non-base58 character inserted', () => {
+    expect(s(`to ${ADDR.slice(0, 47)} -- ${ADDR.slice(47)} ok`)).toBe('to [address] ok');
+    expect(s(`to ${ADDR.slice(0, 40)}0${ADDR.slice(40)} ok`)).toBe('to [address] ok');
+    expect(s(`to ${ADDR.slice(0, 40)}l${ADDR.slice(40)} ok`)).toBe('to [address] ok');
+  });
+
+  it('M2: a tx id in two halves with a word between, or with O for 0', () => {
+    const out = s(`tx ${TX.slice(0, 32)} and ${TX.slice(32)} done`);
+    expect(out).not.toContain(TX.slice(0, 12));
+    expect(out).not.toContain(TX.slice(40, 52));
+    const tx0 = '0a'.repeat(32);
+    expect(s(`tx ${tx0.replaceAll('0', 'O')} done`)).toBe('tx [tx] done');
+  });
+
+  it('M2: an IBAN with dashes or dots', () => {
+    expect(s('IBAN DE89-3704-0044-0532-0130-00 ok')).toBe('IBAN [account] ok');
+    expect(s('IBAN DE89.3704.0044.0532.0130.00 ok')).toBe('IBAN [account] ok');
+  });
+
+  it('M2: a card with " - " or slashes', () => {
+    expect(s('card 4111 - 1111 - 1111 - 1111 ok')).toBe('card [card] ok');
+    expect(s('card 4111/1111/1111/1111 ok')).toBe('card [card] ok');
+  });
+
+  it('M2: Bitcoin addresses (base58 and bech32)', () => {
+    for (const v of ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', 'BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4']) {
+      expect(s(`btc ${v} ok`), v).toBe('btc [address] ok');
+    }
+  });
+
+  it('M2: a Session id', () => {
+    const sid = `05${'3f'.repeat(32)}`;
+    expect(s(`session ${sid} ok`)).toBe('session [session id] ok');
+  });
+
+  it('M2: a bare host with any top-level domain', () => {
+    for (const v of ['quietfox-store.shop', 'mira.example.travel', 'pay.something.xn--p1ai']) expect(s(`see ${v} now`), v).toBe('see [link] now');
+  });
+
+  it('m1: clock times and exact XMR amounts are masked; fiat amounts and days are kept', () => {
+    expect(s('paid on 12 Nov 2026 at 14:32, then 9:05 pm and 7am')).toBe('paid on 12 Nov 2026 at [time], then [time] and [time]');
+    expect(s('412.37 EUR for 1.2345 XMR, or XMR 0.5, or 2 monero')).toBe('412.37 EUR for [amount] XMR, or XMR [amount], or [amount] monero');
+    expect(s('opened at T+0:42')).toBe('opened at T+0:42');
+  });
+
+  it('m2: past 20 000 characters (after normalizing) the rest is one [long text] mask', () => {
+    const long = `${'word '.repeat(4100)}${ADDR} tail mira.k`;
+    const out = anonymizeText(long, FULL);
+    expect(out.text.endsWith('[long text]')).toBe(true);
+    expect(out.text.length).toBeLessThanOrEqual(20_000 + '[long text]'.length);
+    expect(out.text).not.toContain('mira.k');
+    expect(out.masks[out.masks.length - 1]!.kind).toBe('long');
+    // NFKC can make a text longer: the cap is on the normalized text.
+    const grown = anonymizeText('㏂'.repeat(6000), FULL);
+    expect(grown.text.endsWith('[long text]')).toBe(true);
+    expect(anonymizeText('short', FULL).text).toBe('short');
   });
 });
 
@@ -284,10 +408,9 @@ describe('anonymizeCase', () => {
 
   it('the scrubbed body holds none of the fixture\'s sensitive strings', () => {
     const json = JSON.stringify(anonymizeCase(c).body);
-    for (const s of SENSITIVE.filter((x) => x !== '09:42')) expect(json, s).not.toContain(s);
-    // A clock time inside free text is not one of the plan's masks: the reason keeps "09:42" (the
-    // owner reviews free text, Review Focus 5); every recorded time is an offset.
-    expect(json).toContain('Buyer\'s payment shows in Seller\'s activity');
+    for (const s of SENSITIVE) expect(json, s).not.toContain(s);
+    // Re-review m1: a clock time inside free text is masked too.
+    expect(json).toContain('Buyer\'s payment shows in Seller\'s activity at [time]');
     expect(json).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
   });
 });
