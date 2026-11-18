@@ -294,6 +294,53 @@ describe('the gate: revoke-device and revoking a person', () => {
     expect(r2.some((x) => x.startsWith('gate.refused.device-before'))).toBe(true);
   });
 
+  it('re-review 2 m2: the gate\'s clock 10 s ahead of the API\'s: switch-off seen, switch-on, a fresh browser confirmed 5 s later is live (the watermark is signed times only)', async () => {
+    const { w, mod } = await staffed();
+    const a = certify(mod);
+    w.api.taps.push(a.tap);
+    await sync(w);
+    w.api.staffRows.set(mod.id, { ...w.api.staffRows.get(mod.id)!, switchedOff: true });
+    await sync(w, at(100_000)); // the gate's clock says +100 s (the API's +90 s)
+    expect(w.gate.devices[a.k.deviceKeyId]!.revokedAt).toBe(at(100_000).toISOString());
+    w.api.staffRows.set(mod.id, { ...w.api.staffRows.get(mod.id)!, switchedOff: false });
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }, { issuedAt: at(92_000) })); // the API's clock
+    const fresh = certify(mod, undefined, { issuedAt: at(97_000) });
+    w.api.taps.push(fresh.tap);
+    const reasons: string[] = [];
+    await sync(w, at(200_000), reasons);
+    expect(reasons.filter((x) => x.includes('device'))).toEqual([]);
+    expect(deviceLive(w.gate, mod.id, fresh.k.deviceKeyId, at(200_000))).not.toBeNull();
+    // The old device stays revoked, and the watermark is the switch-on's signed time.
+    expect(deviceLive(w.gate, mod.id, a.k.deviceKeyId, at(200_000))).toBeNull();
+    expect(w.gate.devicesRevokedAt[mod.id]).toBe(at(92_000).toISOString());
+  });
+
+  it('re-review 2 m2: the same browser key confirmed again 5 s after the switch-on, with the gate\'s clock 10 s ahead, is live too; a revoke-device tap revokes as of its signed time, and a certify tap issued before it never brings the key back', async () => {
+    const { w, mod } = await staffed();
+    const a = certify(mod);
+    w.api.taps.push(a.tap);
+    await sync(w);
+    w.api.staffRows.set(mod.id, { ...w.api.staffRows.get(mod.id)!, switchedOff: true });
+    await sync(w, at(100_000));
+    w.api.staffRows.set(mod.id, { ...w.api.staffRows.get(mod.id)!, switchedOff: false });
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }, { issuedAt: at(92_000) }));
+    w.api.taps.push(certify(mod, a.k, { issuedAt: at(97_000) }).tap);
+    const reasons: string[] = [];
+    await sync(w, at(200_000), reasons);
+    expect(reasons.filter((x) => x.includes('device'))).toEqual([]);
+    expect(deviceLive(w.gate, mod.id, a.k.deviceKeyId, at(200_000))).not.toBeNull();
+    // Revoked by its own tap, signed at +300 s and synced at +400 s: as of +300 s.
+    w.api.taps.push(revoke(mod, mod.id, a.k.deviceKeyId, at(300_000)));
+    await sync(w, at(400_000));
+    // Tapped after it (a later counter), but signed as issued just before it.
+    const stale = certify(mod, a.k, { issuedAt: at(299_000) });
+    expect(w.gate.devices[a.k.deviceKeyId]!.revokedAt).toBe(at(300_000).toISOString());
+    const r2: string[] = [];
+    w.api.taps.push(stale.tap);
+    await sync(w, at(401_000), r2);
+    expect(r2).toContain('gate.refused.device-before-revoke');
+  });
+
   it('leaves every other kind of tap alone (unspent) for its own step', async () => {
     const { w, mod } = await staffed();
     // A set-role for someone the gate does not know yet is kept for later, never spent by the device step.

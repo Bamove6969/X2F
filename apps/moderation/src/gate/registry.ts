@@ -308,7 +308,7 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       // Re-review M1: as of the reset tap's signed issuedAt (never later than now), as N5 does, so the
       // same browser key certified again after the reset but before this sync counts. The person is
       // disabled from the reset tap on, and their old keys no longer verify.
-      revokeDevicesOf(g, intent.accountId, new Date(Math.min(issuedOf(t), ctx.now().getTime())));
+      revokeDevicesOf(g, intent.accountId, new Date(Math.min(issuedOf(t), ctx.now().getTime())), { watermark: true });
       binding = { accountId: intent.accountId, closed: false };
       g.resets[intent.inviteId] = binding;
     } else if (binding.accountId !== intent.accountId) {
@@ -402,7 +402,7 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
         // and on again between two syncs). Every device the person certified before it is revoked,
         // as of the switch-on's signed issuedAt (never later than now), so a device tapped after the
         // switch-on may be certified again.
-        if (intent.kind === 'switch-on') revokeDevicesOf(g, intent.accountId, new Date(Math.min(issuedOf(t), ctx.now().getTime())));
+        if (intent.kind === 'switch-on') revokeDevicesOf(g, intent.accountId, new Date(Math.min(issuedOf(t), ctx.now().getTime())), { watermark: true });
         if (s.removed || !INVITABLE.includes(intent.role)) continue;
         const row = rows.get(intent.accountId);
         s.role = intent.role as InvitableRole;

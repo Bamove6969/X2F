@@ -42,11 +42,20 @@ const live = (d: StaffDevice, at: number): boolean => d.revokedAt === null && at
 
 /**
  * Revokes every live device of a person (their switch-off, removal, security reset or switch-on) as
- * of `now`, and (re-review M2) raises their watermark: no certification issued at or before it
- * counts afterwards, a pending one included.
+ * of `now`. With `watermark` (re-review M2; only for a time the API's clock signed: a switch-on's or
+ * a reset's issuedAt), it also raises their watermark: no certification issued at or before it
+ * counts afterwards, a pending one included. Re-review 2 m2: a time of the gate's own clock (a
+ * switch-off or removal it saw) never sets the watermark, since certifications carry the API's
+ * clock; those are covered by `before-off` (`offSeenAt`, with its skew allowance).
  */
-export function revokeDevicesOf(g: GateState, accountId: string, now: Date): void {
-  for (const d of Object.values(g.devices)) if (d.accountId === accountId && d.revokedAt === null) d.revokedAt = now.toISOString();
+export function revokeDevicesOf(g: GateState, accountId: string, now: Date, o: { watermark?: boolean } = {}): void {
+  for (const d of Object.values(g.devices)) {
+    if (d.accountId !== accountId || d.revokedAt !== null) continue;
+    d.revokedAt = now.toISOString();
+    // Re-review 2 m2: a revocation by the gate's own clock is compared with the skew allowance.
+    if (o.watermark !== true) d.revokedOnGateClock = true;
+  }
+  if (o.watermark !== true) return;
   g.devicesRevokedAt ??= {};
   const was = Object.hasOwn(g.devicesRevokedAt, accountId) ? Date.parse(g.devicesRevokedAt[accountId]!) : Number.NEGATIVE_INFINITY;
   if (now.getTime() > was) g.devicesRevokedAt[accountId] = now.toISOString();
@@ -142,7 +151,8 @@ export async function syncDevices(source: GateSource, g: GateState, ctx: GateCon
       }
       g.usedNonces[tap.nonceHex] = `revoke-device:${i.deviceKeyId}`;
       applied(c.accountId, c.credentialId, c.counter);
-      if (existing.revokedAt === null) existing.revokedAt = now.toISOString();
+      // Re-review 2 m2: as of the tap's signed issuedAt (the API's clock, as certifications are), never later than now.
+      if (existing.revokedAt === null) existing.revokedAt = new Date(Math.min(issued, at)).toISOString();
       continue;
     }
     if (c.accountId !== i.accountId) {
@@ -174,7 +184,10 @@ export async function syncDevices(source: GateSource, g: GateState, ctx: GateCon
       refuse(tap.nonceHex, 'live');
       continue;
     }
-    if (existing?.revokedAt != null && !(issued > Date.parse(existing.revokedAt))) {
+    // A revocation signed by the API's clock is compared strictly; one by the gate's own clock (a
+    // switch-off or removal it saw) with SWITCH_ON_SKEW_MS, as `before-off` (re-review 2 m2).
+    const skew = existing?.revokedOnGateClock === true ? SWITCH_ON_SKEW_MS : 0;
+    if (existing?.revokedAt != null && !(issued > Date.parse(existing.revokedAt) - skew)) {
       refuse(tap.nonceHex, 'before-revoke');
       continue;
     }

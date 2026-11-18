@@ -104,9 +104,10 @@ export interface GateState {
   /** Design task 8: certified staff device keys by id (empty in a gate.bin written before it). */
   devices: Record<string, StaffDevice>;
   /**
-   * Re-review M2: per person, when this gate last revoked all their devices (a switch-off or removal
-   * it saw, an applied switch-on, a security reset). A certification issued at or before it never
-   * counts, even one tapped earlier and synced only now. Empty in a gate.bin written before it.
+   * Re-review M2: per person, the signed time (the API's clock) as of which this gate last revoked all
+   * their devices: an applied switch-on's or security reset's issuedAt (re-review 2 m2: never the
+   * gate's own clock). A certification issued at or before it never counts, even one tapped earlier
+   * and synced only now. Empty in a gate.bin written before it.
    */
   devicesRevokedAt: Record<string, string>;
 }
@@ -124,8 +125,13 @@ export interface StaffDevice {
   /** The certify tap's signed issuedAt (the API's start time of the tap). */
   certifiedAt: string;
   expiresAt: string;
-  /** When this gate revoked it (its own clock), or null. Never undone: a new tap certifies again. */
+  /**
+   * As of when it was revoked, or null. Never undone: a new tap certifies again. A signed time (the
+   * API's clock: a revoke-device, switch-on or reset tap's issuedAt) unless `revokedOnGateClock`
+   * (a switch-off or removal this gate saw, by its own clock; re-review 2 m2).
+   */
   revokedAt: string | null;
+  revokedOnGateClock?: true;
 }
 
 /** Lead 18 Nov: a device certification lasts 365 days. */
