@@ -11,10 +11,10 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "fastify": "5.12.7"
+    "fastify": "5.12.8"
   },
   "devDependencies": {
     "@x2f/regtest": "0.0.0",
-    "monero-ts": "0.11.16"
+    "monero-ts": "0.11.21"
   }
 }
