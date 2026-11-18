@@ -14,8 +14,10 @@
 // signed with the build's pinned moderation key (modKey.ts), the chat key is the buyer's signed key
 // record, re-wrapped to the device's box key; the message's countersign is verified by the device's
 // certified key, its freshness, request id and seq checked, it is signed as the moderator and a
-// trader opens it. The whole run is under STAFF_CSP (no 'wasm-unsafe-eval'): libsodium's JS build
-// does every step and no CSP violation is reported.
+// trader opens it. The whole run is under STAFF_CSP (no 'wasm-unsafe-eval'), and must report no CSP
+// violation and no page error. FAILS on 6695ff61 (reported to the lead 18 Nov, the CSP not changed):
+// libsodium-wrappers 0.8.4 has no JS fallback (both its ESM and CJS builds embed only WebAssembly),
+// so under STAFF_CSP `sodium.ready` aborts with a WebAssembly CompileError and no device key is made.
 import { createHash, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, verify, type KeyObject } from 'node:crypto';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { newTradeCode } from '@x2f/core';
@@ -430,8 +432,7 @@ test('design build task 9: a moderator confirms this device, opens the disputed 
     `POST /staff/v1/disputes/${CASE.code}/messages`,
   ]);
 
-  // libsodium did all of it without WebAssembly: this page may not compile any (no 'wasm-unsafe-eval'),
-  // and nothing was refused on the way.
+  // All of it under a page that may not compile WebAssembly (no 'wasm-unsafe-eval'), and nothing refused on the way.
   expect(await csp.violations()).toEqual([]);
   expect(csp.console).toEqual([]);
   expect(foreign).toEqual([]);
