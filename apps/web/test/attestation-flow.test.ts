@@ -1042,6 +1042,29 @@ describe('settling', () => {
       expect(t.parties.settles.find((x) => x.o.cosigner === 'mod')!.o.to).toEqual([{ address: ADDR.seller, amountAtomic: fundsFor(grown) }]);
     });
 
+    it('Plan 4 Task 12 (B1): a grown trade\'s ruling payment is the amount this seller fixed at paid, never the take amount; a view naming another amount changes nothing', async () => {
+      const t = await paidAtMiddle();
+      expect(await t.seller.status((x) => x.restitution?.amountAtomic === middle)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: middle } });
+      for (const lie of [AMOUNT, grown, grown * 2n]) {
+        t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: lie.toString() });
+        await t.parties.ticks('seller', 2);
+        expect(t.seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: middle });
+      }
+    });
+
+    it('Plan 4 Task 12 (B1): a seller funded above the take amount, nothing fixed yet: the ruling payment is the grown amount (the API amount within [take, own size]); above its own size, no amount (no form)', async () => {
+      const t = await ready();
+      t.state.view = tradeView({ state: 'securing' });
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown);
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      expect(await t.seller.status((x) => x.restitution?.amountAtomic === grown)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: grown } });
+      expect(t.seller.last()?.restitution?.amountAtomic).not.toBe(AMOUNT);
+      // An API amount above what this device's own escrow funds grew to: no amount, so no form.
+      t.state.view = tradeView({ state: 'secured', amountAtomic: (grown + 1n).toString() });
+      expect(await t.seller.status((x) => x.restitution === null)).toMatchObject({ restitution: null });
+    });
+
     it('I3 status: amountAtomic and fiatCents are the sum this device will accept: the API amount in range, the bound one once a release was handed over (even when the API grows it), the fixed one after paid', async () => {
       const t = await ready();
       expect(await t.buyer.status((x) => x.phase === 'ready')).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) }); // the API amount, in range

@@ -606,7 +606,7 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(not.host.textContent).not.toContain('owe the 1% fee');
   });
 
-  it('seller-sends-xmr: the seller reads the amount and the time to send it; the tx-proof form shows the attested address and amount and needs a 64-hex hash and a 1-17 chunk key', async () => {
+  it('seller-sends-xmr: the seller reads the amount and the time to send it; the tx-proof form shows the attested address and amount (only when it equals the dispute view\'s amount) and needs a 64-hex hash and a 1-17 chunk key', async () => {
     const t = trade({ role: 'seller', counterparty: 'mira.k', state: 'refunded', dispute: { by: 'buyer', at: iso(130) } });
     const d = { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true, status: 'final' as const }), complyBy: iso(2000) };
     const plain = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
@@ -619,13 +619,20 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     const noTerms = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={async () => 'accepted'} />));
     expect(noTerms.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
 
-    // The attested terms say 1.3 XMR to this address: the form shows those, not the trade view's 1.25.
-    const payTo = { address: '4AttestedBuyerAddressXyz', amountAtomic: 1_300_000_000_000n };
+    // Review B1 (lead 18 Nov, a spec change): the attested terms say 1.3 XMR but the dispute view's
+    // trade is 1.25. The server checks a proof against its own amount, so a form for 1.3 would be
+    // refused (or a 1.25 payment would pay what this device never accepted): no form at all, and the
+    // server's 1.25 is never shown as the amount to send.
+    const mismatch = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={async () => 'accepted'} payTo={{ address: '4AttestedBuyerAddressXyz', amountAtomic: 1_300_000_000_000n }} />));
+    expect(mismatch.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+    expect(mismatch.host.querySelector('[data-part="pay-amount"]')).toBeNull();
+    // The attested terms and the dispute view agree on 1.25 XMR: the form shows the attested address and amount.
+    const payTo = { address: '4AttestedBuyerAddressXyz', amountAtomic: 1_250_000_000_000n };
     const onTxProof = vi.fn(async () => 'pending-confirmations' as const);
     const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} payTo={payTo} />));
     const form = host.querySelector('[aria-label="Transfer proof"]')!;
     expect(form.querySelector('[data-part="pay-address"]')!.textContent).toBe('4AttestedBuyerAddressXyz');
-    expect(form.querySelector('[data-part="pay-amount"]')!.textContent).toBe('1.300000 XMR');
+    expect(form.querySelector('[data-part="pay-amount"]')!.textContent).toBe('1.250000 XMR');
     const [hash, key] = [...form.querySelectorAll<HTMLInputElement>('input')];
     const type = (el: HTMLInputElement, v: string) =>
       act(() => {

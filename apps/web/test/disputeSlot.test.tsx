@@ -235,6 +235,30 @@ describe('DisputeSlot: the seller proves a seller-sends-xmr payment (Plan 4 Task
     expect(host.querySelector('[data-part="tx-proof-sent"]')!.textContent).toContain('Payment proven');
   });
 
+  it('review B1: the attested amount differs from the trade amount the server checks against (a grown trade): no form, and the server amount is never shown as the sum to send', async () => {
+    disputeAnswer = () => jsonResponse(openDispute({ status: 'ruled', afterRefund: true, ruling, complyBy: at(23 * 60 * MIN) }));
+    for (const amountAtomic of [1_200_000_000_000n, 1_300_000_000_000n]) {
+      const { host } = render(
+        <MemoryRouter>
+          <DisputeSlot {...{ ...props(disputedView()), escrow: { ...PENDING_ESCROW, restitution: { ...ATTESTED, amountAtomic } } }} />
+        </MemoryRouter>,
+      );
+      await settle();
+      expect(host.textContent).toContain('You must send');
+      expect(host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+      expect(host.querySelector('[data-part="pay-amount"]')).toBeNull();
+      expect(host.querySelector('[data-part="pay-address"]')).toBeNull();
+    }
+    // The control: the same view with the matching attested amount does show the form.
+    const ok = render(
+      <MemoryRouter>
+        <DisputeSlot {...{ ...props(disputedView()), escrow: { ...PENDING_ESCROW, restitution: ATTESTED } }} />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(ok.host.querySelector('[aria-label="Transfer proof"]')).not.toBeNull();
+  });
+
   it('a refused proof says why; with no attested terms on this device there is no form at all', async () => {
     disputeAnswer = () => jsonResponse(openDispute({ status: 'ruled', afterRefund: true, ruling, complyBy: at(23 * 60 * MIN) }));
     const none = render(
