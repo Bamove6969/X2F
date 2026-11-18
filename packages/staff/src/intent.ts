@@ -65,6 +65,9 @@ export const ISSUED_AT_KINDS = [
   // Chat membership design task 8 (lead 18 Nov): a staff member's own device certification and
   // revocation. The gate ages a certification (365 days) from this signed start time.
   'certify-device', 'revoke-device',
+  // Lead call (18 Nov, batch 10a merge): a tapped ban and its lift carry the signed start time too
+  // (the API checks it on use; the moderation gate does not read ban taps).
+  'ban-account', 'lift-ban',
 ] as const;
 const ISSUED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -89,8 +92,8 @@ export type KeyTapIntent =
   | { kind: 'reset-staff-security'; accountId: string; inviteId: string; tokenHash: string; expiresAt: string; issuedAt?: string }
   // Plan 4 Task 27 with D-017: a ban placed outside a ruling, bound to the account, the ban's id, its
   // kind, its rule and its end (null = lifetime); and lifting one.
-  | { kind: 'ban-account'; accountId: string; banId: string; banKind: 'trade' | 'site'; ruleId: string; until: string | null }
-  | { kind: 'lift-ban'; accountId: string; banId: string }
+  | { kind: 'ban-account'; accountId: string; banId: string; banKind: 'trade' | 'site'; ruleId: string; until: string | null; issuedAt?: string }
+  | { kind: 'lift-ban'; accountId: string; banId: string; issuedAt?: string }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string; issuedAt?: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number; issuedAt?: string }
   // Chat membership design task 8 (design section 4, lead 18 Nov): a staff member certifies one of
