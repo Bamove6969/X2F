@@ -51,8 +51,9 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
   });
 
   it('NEEDS_PLAN_5: evidence upload and the unblurred copy wait for the on-device proof pipeline', () => {
-    // EvidenceUpload, UnblurredRequest and tradeProofs in screens/dispute/seams.tsx are stand-ins
-    // (no file input at all). Plan 5 Tasks 13-15 replace them (strip metadata, blur, check, seal).
+    // EvidenceUpload and tradeProofs in screens/dispute/seams.tsx are stand-ins (no file input at
+    // all). Plan 5 Tasks 13-15 replace them (strip metadata, blur, check, seal). UnblurredRequest is
+    // wired (Task 15: SendUnblurred, behind VITE_X2F_PROOF_UPLOAD).
     expect(has('apps/web/src/proof/pipeline.ts'), 'Plan 5 pipeline landed: replace the evidence seams').toBe(false);
   });
 

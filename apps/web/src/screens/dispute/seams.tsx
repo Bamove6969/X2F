@@ -6,8 +6,9 @@
 //   2026-10-30), under the server's own system cards (dispute opened, moderator joined) drawn here.
 // - Proof pipeline (Plan 5 Tasks 13-15): "Add more evidence" on DisputeOpen and the unblurred-proof
 //   request on DisputeRoom. Spec 4.2: metadata is stripped and private details blurred on the device,
-//   and the unblurred copy goes to the moderator only. Plan 5 builds that pipeline; until then no
-//   file can be picked at all (there is no file input), so nothing unprocessed can ever be sent.
+//   and the unblurred copy goes to the moderator only. The request is wired (UnblurredRequest ->
+//   screens/proof/SendUnblurred.tsx, behind VITE_X2F_PROOF_UPLOAD). NEEDS_PLAN_5 evidence: no file
+//   can be picked for evidence yet (no file input), so nothing unprocessed can ever be sent.
 // - Proofs already in the trade (Task 23's proof slot, then Plan 5): the "Zelle screenshot · Already
 //   in this trade, blurred" card and the "Your Zelle screenshot" evidence chip. None until then.
 import type { ReactNode } from 'react';
