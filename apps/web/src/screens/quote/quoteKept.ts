@@ -29,9 +29,14 @@ export interface QuoteKept {
   blockedPoster: boolean;
   /** The header's Chat hint was asked for. */
   chatHint: boolean;
+  /**
+   * The rate and total the person last tapped Trade at (review 18 Nov M1): the take goes again by
+   * itself after the rate-first sheet only while the quote still shows exactly these.
+   */
+  tapped: { centsPerXmr: bigint; fiatCents: bigint } | null;
 }
 
-const EMPTY: QuoteKept = { amount: null, busy: false, error: null, closedError: null, back: false, blockedPoster: false, chatHint: false };
+const EMPTY: QuoteKept = { amount: null, busy: false, error: null, closedError: null, back: false, blockedPoster: false, chatHint: false, tapped: null };
 
 const store = new Map<string, QuoteKept>();
 const listeners = new Map<string, Set<() => void>>();
