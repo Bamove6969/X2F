@@ -69,6 +69,13 @@ test('StaffPerformance parity at 1280x1400 with the figures masked, dmitri_k\'s 
     if (/content security policy/i.test(m.text())) violations.push(m.text());
   });
   await openDmitri(page);
+  await page.locator('[data-part="week-bar"]').nth(2).hover();
+  await page.getByRole('button', { name: 'Show as table' }).click();
+  await page.getByRole('button', { name: 'Show as charts' }).click();
+  // The page itself, its charts included, sets no inline style. Checked before the parity harness,
+  // which parses the board (inline styles throughout) inside the page and is refused by the CSP.
+  expect(violations).toEqual([]);
+  await page.mouse.move(0, 0);
   await page.evaluate(() => document.fonts.ready);
   let failures: string[] = [];
   try {
@@ -82,7 +89,6 @@ test('StaffPerformance parity at 1280x1400 with the figures masked, dmitri_k\'s 
   expect(failures.filter((f) => !KNOWN.some((k) => k.test(f)))).toEqual([]);
   // Overturned on appeal is amber only where it is above 0 (dmitri_k's 3 of 17).
   await expect(page.locator('[data-part="overturned"][data-tone="caution"]')).toHaveText(['3 of 17']);
-  expect(violations).toEqual([]);
 });
 
 test('hovering a bar shows that week\'s cases, and a dot that week\'s typical first reply', async ({ page }) => {
