@@ -134,7 +134,7 @@ export function PublicRecord() {
           </pre>
         </section>
       ) : null}
-      <Link className="x2f-link" to={`/u/${encodeURIComponent(name)}`}>
+      <Link className="x2f-link x2f-profile__link" to={`/u/${encodeURIComponent(name)}`}>
         {name}
       </Link>
     </main>

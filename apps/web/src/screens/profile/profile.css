@@ -21,6 +21,13 @@
   overflow-wrap: anywhere;
 }
 
+/* Text links on these screens are full tap targets on a phone (44 px tall). */
+.x2f-profile__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
 .x2f-profile__stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

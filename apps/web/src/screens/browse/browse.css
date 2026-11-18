@@ -480,6 +480,9 @@ a.x2f-method:last-of-type {
 
 /* Plan 5 Task 12: the poster's name opens their profile; it looks exactly like the plain name. */
 .x2f-offer__profile {
+  /* A 32 px tall tap target (e2e/phone.ts MIN_TAP) that takes no more room than the plain name did. */
+  margin: -5px -4px;
+  padding: 5px 4px;
   color: inherit;
   text-decoration: none;
 }

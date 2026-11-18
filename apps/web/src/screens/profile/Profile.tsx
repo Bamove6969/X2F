@@ -135,7 +135,7 @@ export function ProfileView({ profile: p }: { profile: TraderProfile }) {
             {C.badges}
           </h2>
           {p.self ? (
-            <Link className="x2f-link" to="/settings/badges" data-part="choose-badges">
+            <Link className="x2f-link x2f-profile__link" to="/settings/badges" data-part="choose-badges">
               {C.chooseBadges}
             </Link>
           ) : null}
@@ -166,7 +166,7 @@ export function ProfileView({ profile: p }: { profile: TraderProfile }) {
       {p.recordPublic ? (
         <p className="x2f-note" data-part="record-line">
           {C.record}{' '}
-          <Link className="x2f-link" to={`/u/${encodeURIComponent(name)}/record`}>
+          <Link className="x2f-link x2f-profile__link" to={`/u/${encodeURIComponent(name)}/record`}>
             {C.verify}
           </Link>
         </p>
