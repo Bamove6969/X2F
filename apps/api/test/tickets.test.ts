@@ -99,6 +99,9 @@ describe('support tickets: trader side', () => {
     expect((await other.b.get('/v1/tickets')).json().tickets).toEqual([]);
     expect((await other.b.get(`/v1/tickets/${ticket.id}`)).statusCode).toBe(404);
     expect((await other.b.post(`/v1/tickets/${ticket.id}/messages`, { body: 'hi' })).statusCode).toBe(404);
+    // Another trader cannot close it either (landing check, 18 Nov): 404, and it stays open.
+    expect((await other.b.post(`/v1/tickets/${ticket.id}/close`, {})).statusCode).toBe(404);
+    expect((await a.b.get(`/v1/tickets/${ticket.id}`)).json().ticket.status).toBe('open');
     const thread = (await a.b.get(`/v1/tickets/${ticket.id}`)).json();
     expect(thread.messages).toEqual([{ author: 'trader', memberName: null, body: 'I cannot see my trade', at: T0.toISOString() }]);
     const bad = await other.b.post('/v1/tickets', { category: 'compromised', body: 'x' });
