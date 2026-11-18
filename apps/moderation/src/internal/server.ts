@@ -4,10 +4,11 @@ import { dirname } from 'node:path';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { normalizeTradeCode } from '@x2f/core';
 import type { Participants } from '@x2f/protocol';
-import { channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_MAX_SKEW_MS, MOD_INTERNAL_TS_HEADER, modInternalMacInput } from '@x2f/trade';
+import { CHAT_AFTER_DISPUTE_DAYS, channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_MAX_SKEW_MS, MOD_INTERNAL_TS_HEADER, modInternalMacInput } from '@x2f/trade';
 import { loadChatIdentity, type Queryable } from '../keystore.js';
 import type { ApiView } from './apiView.js';
 import { ChatTextError, checkModText, sealModMessage } from './chat.js';
+import { DEVICE_KEY_ID, NO_CERTIFIED_DEVICES, OWNER_NEEDS_DISPUTE, onCase, type DeviceCertificates, type StaffDirectory } from './grant.js';
 
 export type { ApiView } from './apiView.js';
 
@@ -31,6 +32,19 @@ export type { ApiView } from './apiView.js';
  *   refused with NODE_ENV=production) until build task 9 makes it a countersign (text signed by a
  *   certified staff device key that this process's own records show on the case).
  *
+ * - `POST /internal/chat/grant {code, logEntryId, staffAccountId, deviceKeyId}` (design build task 9
+ *   groundwork, lead 18 Nov option C; registered in production too). It checks, in this order, and
+ *   refuses at the first that fails: the ruling gate is present (503 `gate-unavailable`); the named
+ *   entry is a fresh unused `chat.read` of this trade whose actor is this staff member (403
+ *   `log-entry-invalid`); the trade's current dispute is not closed AND this process itself saw it
+ *   disputed within CHAT_AFTER_DISPUTE_DAYS (`mod_dispute_seen`), the owner included (OWNER p12-1)
+ *   (403 `not-disputed`); the person, as the gate knows them, is the assigned moderator, a senior or
+ *   the owner (OWNER p12-4) (403 `not-on-case`); the device key id is live certified to them (403
+ *   `device-not-certified`; none are before design task 8); the chat is one this process attested
+ *   (404 `no-chat`). Then the entry is used up and a `mod_chat_access` row written in one statement.
+ *   NEEDS_P4_CHAT_MEMBERSHIP: there is no moderator copy of the chat key to re-wrap yet (design tasks
+ *   3-6), so it then answers 503 `grant-unavailable` and grants nothing.
+ *
  * Every request carries `X-X2F-Internal` (hex HMAC-SHA-256 under MOD_INTERNAL_SECRET of
  * `modInternalMacInput`) and `X-X2F-Internal-Ts` within 30 s of this process's clock; else 401.
  * Then each call is refused (403 `log-entry-invalid`) unless the API activity-log entry it names,
@@ -53,6 +67,10 @@ export interface InternalDeps {
    * `internalFromEnv` refuses it with NODE_ENV=production). Off or omitted: every path is 404.
    */
   devModChat?: boolean;
+  /** The ruling gate's view of staff (`gateStaffDirectory`). Omitted (no gate): every grant is refused. */
+  staff?: StaffDirectory;
+  /** Live certified staff device keys (design task 8). Omitted: none (`NO_CERTIFIED_DEVICES`). */
+  devices?: DeviceCertificates;
 }
 
 /** How old the named log entry may be. */
@@ -65,7 +83,11 @@ const MAC = /^[0-9a-f]{64}$/;
 const ROUTES = {
   // The API commits `chat.message-requested` before asking, and `chat.message-sent {envelopeId}`
   // once it stored the envelope (review 8 Nov M-2); only the first authorises a seal.
-  '/internal/chat/send': { action: 'chat.message-requested', keys: ['code', 'logEntryId', 'text'] },
+  '/internal/chat/send': { action: 'chat.message-requested', keys: ['code', 'logEntryId', 'text'], devOnly: true },
+  // The API commits one `chat.read` per read, with the staff member as its actor (lead 18 Nov:
+  // the activity log until the per-trade audit, design task 12; this process's `mod_chat_access`
+  // is the authoritative record).
+  '/internal/chat/grant': { action: 'chat.read', keys: ['code', 'logEntryId', 'staffAccountId', 'deviceKeyId'], devOnly: false },
 } as const;
 type RoutePath = keyof typeof ROUTES;
 
@@ -113,7 +135,10 @@ function authentic(d: InternalDeps, req: IncomingMessage, path: string, body: st
   return timingSafeEqual(want, Buffer.from(mac, 'hex'));
 }
 
-function parse(path: RoutePath, body: string): { code: string; logEntryId: string; text: string } {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DAY_MS = 86_400_000;
+
+function parse(path: RoutePath, body: string): { code: string; logEntryId: string; o: Record<string, unknown> } {
   let v: unknown;
   try {
     v = JSON.parse(body);
@@ -126,20 +151,33 @@ function parse(path: RoutePath, body: string): { code: string; logEntryId: strin
   if (Object.keys(o).length !== keys.length || !keys.every((k) => Object.hasOwn(o, k))) throw new Refusal(400, 'bad-request');
   const code = typeof o.code === 'string' ? normalizeTradeCode(o.code) : null;
   if (code === null || typeof o.logEntryId !== 'string' || !LOG_ID.test(o.logEntryId)) throw new Refusal(400, 'bad-request');
+  return { code, logEntryId: o.logEntryId, o };
+}
+
+function parseText(v: unknown): string {
   try {
-    return { code, logEntryId: o.logEntryId, text: checkModText(o.text) };
+    return checkModText(v);
   } catch {
     throw new Refusal(400, 'bad-request');
   }
 }
 
-/** Checks the named log entry and the trade's dispute, then marks the entry used (once only). */
-async function useEntry(d: InternalDeps, path: RoutePath, code: string, id: string, now: Date): Promise<void> {
+/** The named log entry: this path's action, this trade, fresh, not yet used (it is not marked used here). */
+async function checkEntry(d: InternalDeps, path: RoutePath, code: string, id: string, now: Date) {
   const invalid = new Refusal(403, 'log-entry-invalid');
   const e = await d.api.logEntry(id);
   if (e === null || e.action !== ROUTES[path].action || e.tradeCode === null || normalizeTradeCode(e.tradeCode) !== code) throw invalid;
   const age = now.getTime() - e.at.getTime();
   if (age > LOG_ENTRY_MAX_AGE_MS || age < -MOD_INTERNAL_MAX_SKEW_MS) throw invalid;
+  const { rows } = await d.db.query('select 1 from used_log_entries where id = $1', [id]);
+  if (rows.length > 0) throw invalid;
+  return e;
+}
+
+/** Checks the named log entry and the trade's dispute, then marks the entry used (once only). */
+async function useEntry(d: InternalDeps, path: RoutePath, code: string, id: string, now: Date): Promise<void> {
+  const invalid = new Refusal(403, 'log-entry-invalid');
+  const e = await checkEntry(d, path, code, id, now);
   const status = await d.api.disputeStatus(code);
   if (status === null || status === 'closed') throw invalid;
   const { rowCount } = await d.db.query(
@@ -164,9 +202,49 @@ async function attestedChat(d: InternalDeps, code: string) {
   return { chat, channel, mod, participants: att.participants };
 }
 
+/**
+ * `/internal/chat/grant` (design build task 9 groundwork): every check, in the documented order,
+ * then the access record; NEEDS_P4_CHAT_MEMBERSHIP: nothing is granted yet.
+ */
+async function grant(d: InternalDeps, path: RoutePath, b: { code: string; logEntryId: string; o: Record<string, unknown> }, now: Date, res: ServerResponse): Promise<void> {
+  const staffId = b.o.staffAccountId;
+  const deviceKeyId = b.o.deviceKeyId;
+  if (typeof staffId !== 'string' || !UUID.test(staffId) || typeof deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(deviceKeyId)) throw new Refusal(400, 'bad-request');
+  const staff = d.staff;
+  if (staff === undefined) throw new Refusal(503, 'gate-unavailable');
+  const e = await checkEntry(d, path, b.code, b.logEntryId, now);
+  // The log must name this person as the one reading: a staff actor, exactly this account.
+  if (e.actorKind !== 'staff' || e.actorId === null || e.actorId.toLowerCase() !== staffId) throw new Refusal(403, 'log-entry-invalid');
+  let who;
+  try {
+    who = await staff.standing(staffId);
+  } catch {
+    throw new Refusal(503, 'gate-unavailable');
+  }
+  const status = await d.api.disputeStatus(b.code);
+  const { rows: seen } = await d.db.query('select 1 from mod_dispute_seen where trade = $1 and last_seen_at >= $2', [
+    b.code, new Date(now.getTime() - CHAT_AFTER_DISPUTE_DAYS * DAY_MS),
+  ]);
+  const disputed = status !== null && status !== 'closed' && seen.length > 0;
+  if (!disputed && (who?.kind !== 'owner' || OWNER_NEEDS_DISPUTE)) throw new Refusal(403, 'not-disputed');
+  if (!onCase(who, staffId, await d.api.disputeAssignee(b.code))) throw new Refusal(403, 'not-on-case');
+  if (!(await (d.devices ?? NO_CERTIFIED_DEVICES).live(staffId, deviceKeyId, now))) throw new Refusal(403, 'device-not-certified');
+  const c = await attestedChat(d, b.code);
+  // One statement: the entry is used up and the access recorded together, or neither (a replay finds the entry used).
+  const { rowCount } = await d.db.query(
+    `with u as (insert into used_log_entries (id, action, trade) values ($1, $2, $3) on conflict (id) do nothing returning id)
+     insert into mod_chat_access (chat, trade, at, staff_id, device_key_id, log_entry_id, action)
+     select $4, $3, $5, $6, $7, id, 'grant-unavailable' from u`,
+    [b.logEntryId, e.action, b.code, c.chat, now, staffId, deviceKeyId],
+  );
+  if (rowCount !== 1) throw new Refusal(403, 'log-entry-invalid');
+  // NEEDS_P4_CHAT_MEMBERSHIP: no moderator copy of the chat key exists to re-wrap (design tasks 3-6).
+  answer(res, 503, { error: 'grant-unavailable' });
+}
+
 async function handle(d: InternalDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const path = (req.url ?? '') as RoutePath;
-  if (req.method !== 'POST' || !Object.hasOwn(ROUTES, path) || d.devModChat !== true) {
+  if (req.method !== 'POST' || !Object.hasOwn(ROUTES, path) || (ROUTES[path].devOnly && d.devModChat !== true)) {
     // Drain and refuse without reading anything else.
     req.resume();
     answer(res, 404, { error: 'not-found' });
@@ -176,6 +254,8 @@ async function handle(d: InternalDeps, req: IncomingMessage, res: ServerResponse
   const now = (d.now ?? (() => new Date()))();
   if (!authentic(d, req, path, body, now)) throw new Refusal(401, 'unauthorized');
   const b = parse(path, body);
+  if (path === '/internal/chat/grant') return grant(d, path, b, now, res);
+  const text = parseText(b.o.text);
   await useEntry(d, path, b.code, b.logEntryId, now);
   const c = await attestedChat(d, b.code);
   // A seq is taken before sealing and never reused (a message the API failed to store is a gap).
@@ -185,7 +265,7 @@ async function handle(d: InternalDeps, req: IncomingMessage, res: ServerResponse
     [c.chat],
   );
   try {
-    const envelope = await sealModMessage({ channel: c.channel, seq: Number(rows[0]!.seq), mod: c.mod, participants: c.participants, text: b.text });
+    const envelope = await sealModMessage({ channel: c.channel, seq: Number(rows[0]!.seq), mod: c.mod, participants: c.participants, text });
     answer(res, 200, { envelope });
   } catch (e) {
     if (e instanceof ChatTextError) throw new Refusal(400, 'too-large');

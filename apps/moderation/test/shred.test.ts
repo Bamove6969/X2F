@@ -139,6 +139,14 @@ describe('the shred pass', () => {
     const kept = await loadChatIdentity(db, keystoreKey, c.chat);
     const opened = await open(c.envelope, { me: { ...kept! }, myRole: 'mod', participants: c.participants, trade: c.channel, guard: new ReplayGuard(c.channel) });
     expect(opened.payload).toEqual({ text: 'the account is 1234' });
+    // Design task 9 groundwork: this process's own record of a staff access to the chat goes with it.
+    const entry = String(1_000_000 + Math.floor(Math.random() * 1_000_000_000));
+    await db.query("insert into used_log_entries (id, action, trade) values ($1, 'chat.read', $2)", [entry, newTradeCode()]);
+    await db.query(
+      `insert into mod_chat_access (chat, trade, at, staff_id, device_key_id, log_entry_id, action)
+       values ($1, $2, $3, '00000000-0000-4000-8000-000000000009', $4, $5, 'grant-unavailable')`,
+      [c.chat, newTradeCode(), T0, 'ab'.repeat(16), entry],
+    );
 
     now = new Date(T0.getTime() + 31 * DAY);
     const net = fakeApi({ orders: () => [order(c.chat)] });
@@ -151,6 +159,7 @@ describe('the shred pass', () => {
     expect(await loadChatIdentity(db, keystoreKey, c.chat)).toBeNull();
     expect((await db.query('select 1 from signed_chats where chat = $1', [c.chat])).rows).toHaveLength(0);
     expect((await db.query('select 1 from mod_chat_identities where chat = $1', [c.chat])).rows).toHaveLength(0);
+    expect((await db.query('select 1 from mod_chat_access where chat = $1', [c.chat])).rows).toHaveLength(0);
     const dump = await dumpAll();
     expect(dump).not.toContain(c.chat);
     expect(dump).not.toContain(c.participants.mod.signPublic);

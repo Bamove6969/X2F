@@ -575,6 +575,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           await client.query('delete from mod_chat_identities where chat = $1', [chat]);
           await client.query('delete from signed_chats where chat = $1', [chat]);
           await client.query('delete from mod_chat_trade where chat = $1', [chat]);
+          // Design section 5: this process's own staff-access record for the chat (design task 9 groundwork).
+          await client.query('delete from mod_chat_access where chat = $1', [chat]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');

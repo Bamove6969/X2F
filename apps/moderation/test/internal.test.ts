@@ -53,14 +53,14 @@ afterAll(async () => {
 
 /** The API's tables as the moderation process reads them, in memory. */
 class FakeApi implements ApiView {
-  log = new Map<string, { id: string; at: Date; action: string; tradeCode: string | null }>();
+  log = new Map<string, { id: string; at: Date; action: string; tradeCode: string | null; actorKind: string; actorId: string | null }>();
   disputes = new Map<string, string>();
   chats = new Map<string, string>();
   // One counter for the file: the moderation database (and its used entries) is shared by every test.
   private static next = 1;
   entry(action: string, code: string | null, at = NOW): string {
     const id = String(FakeApi.next++);
-    this.log.set(id, { id, at, action, tradeCode: code });
+    this.log.set(id, { id, at, action, tradeCode: code, actorKind: 'system', actorId: null });
     return id;
   }
   async logEntry(id: string) {
@@ -68,6 +68,9 @@ class FakeApi implements ApiView {
   }
   async disputeStatus(code: string) {
     return this.disputes.get(code) ?? null;
+  }
+  async disputeAssignee() {
+    return null;
   }
   async chatOf(code: string) {
     return this.chats.get(code) ?? null;
@@ -423,6 +426,7 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
              values ($1, $2, 'buyer', 'paid', '', $3, false, $4, $5, $3, $3, 0, 100000)`,
             [code, seq, at, status, status === 'closed' ? at : null],
           );
+          await c.query('update disputes set assignee = $3 where code = $1 and seq = $2', [code, seq, seq === 2 ? u2 : u1]);
         }
         await c.query(`insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at) values ($1, $2, $3, $4, $5, $6)`, [chat, u1, u1, u2, code, at]);
         await c.query(`insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ($1, 'buyer', 0, '{"a":1}', $2), ($1, 'mod', 0, '{"b":2}', $2)`, [chat, at]);
@@ -433,11 +437,14 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
       const u = new URL(admin);
       reader = new pg.Pool({ connectionString: `postgres://${login}:${pass}@${u.host}/${name}`, max: 1 });
       const view = pgApiView(reader);
-      expect(await view.logEntry('1')).toEqual({ id: '1', at: new Date(at), action: 'chat.read', tradeCode: code });
+      expect(await view.logEntry('1')).toEqual({ id: '1', at: new Date(at), action: 'chat.read', tradeCode: code, actorKind: 'system', actorId: null });
       expect(await view.logEntry('2')).toBeNull();
       // The current dispute is the highest seq.
       expect(await view.disputeStatus(code)).toBe('appealed');
       expect(await view.disputeStatus(newTradeCode())).toBeNull();
+      // Design task 9 groundwork (migration 510): the current dispute's assignee, nothing else new.
+      expect(await view.disputeAssignee(code)).toBe('00000000-0000-4000-8000-000000000002');
+      expect(await view.disputeAssignee(newTradeCode())).toBeNull();
       expect(await view.chatOf(code)).toBe(chat);
       expect(await view.chatOf(newTradeCode())).toBeNull();
       // NEEDS_P4_CHAT_MEMBERSHIP: no chat read yet, so the reader cannot read a chat's envelopes.
