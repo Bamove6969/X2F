@@ -57,6 +57,8 @@ import {
 } from '@x2f/trade';
 import { CHAT_NOTICES, isChatNotice, type ChatNoticeId } from './notices.js';
 
+import { type ProofAttachedPayload, parseProofPayload, sealProofEnvelope } from '@x2f/proof';
+
 export type ChatRole = 'buyer' | 'seller';
 export type ChatErrorCode = 'bad-text' | 'too-large' | 'bad-state' | 'bad-message' | 'mod-not-allowed';
 
@@ -87,6 +89,12 @@ export interface ChatMessage {
   text: string;
   /** The payee's packaged payment details (J-08), checked; absent on a plain line. */
   pay?: PayDetailsPayload;
+  /**
+   * NEEDS_PROOF_RECEIVE: a `proof.attached` (Plan 5 Task 8): the proof's key and facts, checked by
+   * parseProofPayload and the kind rules below; `text` is empty. The picture is fetched and
+   * decrypted by the page (proof/chatProof.ts) and shown only through ProofThumb.
+   */
+  proof?: ProofAttachedPayload;
   /** A fixed notice (P-020); `text` is then this reader's own wording of it (CHAT_NOTICES). */
   notice?: ChatNoticeId;
 }
@@ -206,6 +214,40 @@ export async function sealPayDetails(a: SealPayArgs): Promise<{ envelope: Envelo
   return sealInner(a, { text, pay });
 }
 
+export interface SealProofArgs {
+  role: ChatRole;
+  me: Identity;
+  participants: Participants;
+  state: ChatState;
+  /** The `proof.attached` payload: the proof's key and facts, never the image (Plan 5 Task 15). */
+  proof: ProofAttachedPayload;
+}
+
+/**
+ * Seals a `proof.attached` envelope (Plan 5 Task 8 `sealProofEnvelope`, to buyer, seller and mod:
+ * the recipients come from the type) under the chat's seq rules, like sealChatMessage. A payment
+ * proof (`kind: 'proof'`) is the buyer's only; evidence is either trader's. Throws TypeError for
+ * another role, ProofError('bad-payload') for a malformed payload, ChatError 'too-large'.
+ */
+export async function sealProofAttached(a: SealProofArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealProofAttached: role must be buyer or seller');
+  const parsed = parseProofPayload('proof.attached', a.proof);
+  if (parsed.type !== 'proof.attached' || (parsed.payload.kind === 'proof' && a.role !== 'buyer')) throw new TypeError('sealProofAttached: only the buyer sends a payment proof');
+  const state = parseChatState(a.state, a.state.channel);
+  const seq = nextSeqOf(state, a.role);
+  const envelope = await sealProofEnvelope(parsed, { trade: state.channel, from: a.role, seq, me: a.me, participants: a.participants });
+  if (new TextEncoder().encode(JSON.stringify(envelope)).length > CHAT_BODY_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
+  return { envelope, state: { ...state, nextSeq: seq + 1 } };
+}
+
+/** The seq to seal with: never one this device has already seen from itself (see sealInner). */
+function nextSeqOf(state: ChatState, role: ChatRole): number {
+  const seenOwn = state.guard.seen[role];
+  const seq = seenOwn !== undefined && seenOwn >= state.nextSeq ? seenOwn + 1 : state.nextSeq;
+  if (!Number.isSafeInteger(seq + 1)) throw new ChatError('bad-state', 'Sequence exhausted');
+  return seq;
+}
+
 export interface SealNoticeArgs {
   role: ChatRole;
   me: Identity;
@@ -268,6 +310,12 @@ export interface OpenChatArgs {
    * not move, so the same envelope opens once the trade is secured.
    */
   payAllowed?: boolean;
+  /**
+   * Accept dispute evidence (`proof.attached` kind 'evidence'). Default false: evidence belongs to
+   * an open dispute only (P5-A30), so the engine sets it from the API's `disputeOpen`. When false,
+   * evidence is refused with ChatError('bad-message') for good.
+   */
+  evidenceAllowed?: boolean;
 }
 
 /**
@@ -300,6 +348,20 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
   }
   const p = opened.payload;
   const notChat = (): ChatError => new ChatError('bad-message', 'Not a chat message');
+  if (opened.type === 'proof.attached') {
+    let proof: ProofAttachedPayload;
+    try {
+      const parsed = parseProofPayload(opened.type, p);
+      if (parsed.type !== 'proof.attached') throw notChat();
+      proof = parsed.payload;
+    } catch {
+      throw notChat();
+    }
+    // The payment proof is the buyer's only; evidence a trader's, only while a dispute is open.
+    if (proof.kind === 'proof' && opened.from !== 'buyer') throw notChat();
+    if (proof.kind === 'evidence' && (opened.from === 'mod' || a.evidenceAllowed !== true)) throw notChat();
+    return { message: { from: opened.from, seq: env.seq, text: '', proof }, state: { ...state, guard: guard.toJSON() } };
+  }
   if (opened.type !== CHAT_MSG_TYPE || typeof p !== 'object' || p === null || Array.isArray(p) || !Object.prototype.hasOwnProperty.call(p, 'text')) throw notChat();
   const keys = Object.keys(p);
   const packaged = keys.length === 2 && Object.prototype.hasOwnProperty.call(p, 'pay');

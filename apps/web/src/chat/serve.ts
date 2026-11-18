@@ -1,8 +1,16 @@
 /**
  * The chat half of the escrow worker's message protocol (Task 20). The page asks for `chat-sync`
  * and `chat-send`; the worker answers with a ChatSnapshot of verified plain lines, or an error code.
- * No key, ciphertext or ChatState ever crosses postMessage.
+ * No chat key, ciphertext or ChatState ever crosses postMessage. Proof keys do, both ways, on this
+ * same-origin channel, never stored or logged, their strings not zeroable (a known residual):
+ * - page to worker (proof-upload review I6): `chat-send-proof` carries a proof's own key, because the
+ *   page made it and encrypted the image under it (proof/upload.ts); the worker seals it into
+ *   `proof.attached` and keeps nothing;
+ * - worker to page (proof-receive review I4): a `proof.attached` line carries its proof's key in the
+ *   snapshot, so the page can fetch and decrypt that one picture (screens/proof/ChatProof.tsx). It
+ *   stays in the page's memory (React state and payDetailsFeed's last snapshot).
  */
+import { ProofError, parseProofPayload, type ProofAttachedPayload } from '@x2f/proof';
 import { PayDetailsError, parsePayDetails } from '@x2f/trade';
 import { ChatSendFailed, type ChatEngine, type ChatSnapshot } from './engine.js';
 import { isChatNotice } from './notices.js';
@@ -12,10 +20,12 @@ export type ToChatWorker =
   | { t: 'chat-send'; id: number; chat: string; text: string }
   /** The payee's packaged payment details (J-08): the page sends the boxes, the worker seals them. */
   | { t: 'chat-send-pay'; id: number; chat: string; pay: unknown }
+  /** Plan 5 Task 15: a `proof.attached` payload (the proof's key); the worker checks and seals it. */
+  | { t: 'chat-send-proof'; id: number; chat: string; proof: unknown }
   /** A fixed notice (P-020): the page names it, the worker seals its own wording. */
   | { t: 'chat-send-notice'; id: number; chat: string; notice: unknown };
 
-export type ChatFailure = 'not-ready' | 'bad-text' | 'bad-details' | 'too-large' | 'slow-down' | 'refused' | 'unavailable' | 'not-found';
+export type ChatFailure = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused' | 'uncertain' | 'unavailable' | 'not-found';
 
 export type FromChatWorker = { t: 'chat'; id: number; ok: true; snapshot: ChatSnapshot } | { t: 'chat'; id: number; ok: false; error: ChatFailure };
 
@@ -29,6 +39,7 @@ const CODE = /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/;
 function failure(e: unknown): ChatFailure {
   if (e instanceof ChatSendFailed) return e.code;
   if (e instanceof PayDetailsError) return 'bad-details';
+  if (e instanceof ProofError) return 'bad-proof';
   const status = (e as { status?: unknown })?.status;
   // 410 chat-purged (the engine has erased the device's copy) shows as the closed chat, like a 404.
   if (status === 404 || status === 410) return 'not-found';
@@ -69,7 +80,7 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
   let engine: Promise<ChatEngine> | null = make();
   port.addEventListener('message', (e) => {
     const m = e.data as Partial<ToChatWorker> | null;
-    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send' && m.t !== 'chat-send-pay' && m.t !== 'chat-send-notice') || typeof m.id !== 'number') return;
+    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send' && m.t !== 'chat-send-pay' && m.t !== 'chat-send-proof' && m.t !== 'chat-send-notice') || typeof m.id !== 'number') return;
     const id = m.id;
     void (async () => {
       try {
@@ -84,6 +95,10 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
         } else if (m.t === 'chat-send-pay') {
           // Checked here so that nothing but a well-formed package reaches the engine.
           snapshot = await eng.sendPay(m.chat, parsePayDetails(m.pay));
+        } else if (m.t === 'chat-send-proof') {
+          // Checked here too, so that nothing but a well-formed proof payload reaches the engine.
+          const parsed = parseProofPayload('proof.attached', m.proof);
+          snapshot = await eng.sendProof(m.chat, parsed.payload as ProofAttachedPayload);
         } else if (m.t === 'chat-send-notice') {
           // Only a known notice reaches the engine; anything else is a page bug, refused.
           if (!isChatNotice(m.notice)) throw new ChatSendFailed('refused');

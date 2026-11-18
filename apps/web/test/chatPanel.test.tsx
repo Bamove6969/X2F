@@ -23,12 +23,7 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
 });
 
 let current: ChatSnapshot;
-let client: {
-  sync: ReturnType<typeof vi.fn<ChatClient['sync']>>;
-  send: ReturnType<typeof vi.fn<ChatClient['send']>>;
-  sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>>;
-  sendNotice: ReturnType<typeof vi.fn<ChatClient['sendNotice']>>;
-};
+let client: { sync: ReturnType<typeof vi.fn<ChatClient['sync']>>; send: ReturnType<typeof vi.fn<ChatClient['send']>>; sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>>; sendProof: ReturnType<typeof vi.fn<ChatClient['sendProof']>>; sendNotice: ReturnType<typeof vi.fn<ChatClient['sendNotice']>> };
 
 const flush = async (): Promise<void> => {
   await act(async () => {
@@ -38,7 +33,7 @@ const flush = async (): Promise<void> => {
 
 beforeEach(() => {
   current = snap();
-  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current), sendNotice: vi.fn(async () => current) };
+  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current), sendProof: vi.fn(async () => current), sendNotice: vi.fn(async () => current) };
   setChatClient(client);
 });
 

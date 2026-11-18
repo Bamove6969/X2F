@@ -25,7 +25,7 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({ phase: 'read
 const line = (id: string, from: 'buyer' | 'seller', pay: typeof PAY | null = PAY) => ({ id, from, text: pay ? TEXT : 'hi', ...(pay ? { pay } : {}), at: null, mine: from === 'buyer', gapBefore: false });
 
 let current: ChatSnapshot;
-let client: { sync: ReturnType<typeof vi.fn<ChatClient['sync']>>; send: ReturnType<typeof vi.fn<ChatClient['send']>>; sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>>; sendNotice: ReturnType<typeof vi.fn<ChatClient['sendNotice']>> };
+let client: { sync: ReturnType<typeof vi.fn<ChatClient['sync']>>; send: ReturnType<typeof vi.fn<ChatClient['send']>>; sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>>; sendProof: ReturnType<typeof vi.fn<ChatClient['sendProof']>>; sendNotice: ReturnType<typeof vi.fn<ChatClient['sendNotice']>> };
 let fetchMock: ReturnType<typeof vi.fn>;
 
 const tick = async (): Promise<void> => {
@@ -35,7 +35,7 @@ const tick = async (): Promise<void> => {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   current = snap();
-  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current), sendNotice: vi.fn(async () => current) };
+  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current), sendProof: vi.fn(async () => current), sendNotice: vi.fn(async () => current) };
   setChatClient(client);
   fetchMock = vi.fn(async (url: string) => {
     if (url === `/v1/trades/${CODE}/chat`) return new Response(JSON.stringify({ chat: CHAT }), { status: 200, headers: { 'content-type': 'application/json' } });

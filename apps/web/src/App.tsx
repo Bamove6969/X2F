@@ -63,7 +63,8 @@ import { WelcomeGate } from './screens/welcome/WelcomeGate.js';
 import { WelcomeScreen } from './screens/welcome/WelcomeScreen.js';
 import { TourProvider } from './tour/TourProvider.js';
 import { WELCOME_PATH } from './tour/welcomeSeen.js';
-import { setPaymentDetailsSource, setTradeChat } from './screens/trade/paySeams.js';
+import { setPaymentDetailsSource, setProofSource, setTradeChat } from './screens/trade/paySeams.js';
+import { chatProofState } from './proof/chatProof.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
 
@@ -73,6 +74,8 @@ setTradeChat(TradeChatPanel);
 // J-08 (S-090): the buyer's "Send exactly" card reads the seller's details from the newest package
 // in the trade's encrypted chat. A fixtures build replaces this too (fixtures/payChat.tsx).
 setPaymentDetailsSource(chatPaymentDetailsSource);
+// "Mark paid without proof?" reads the buyer's chat and a proof just sent here (attached, none or unavailable).
+setProofSource(chatProofState);
 
 /**
  * The app shell. Phones, foldables' panes and the flip cover screen get the phone frame (the bottom

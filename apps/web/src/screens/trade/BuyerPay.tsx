@@ -44,6 +44,8 @@ import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
 import { registerTradeScreen, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
 import { ChatButton, ChatSlot } from './TradeChatButton.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
+import { proofUploadOn } from '../../proof/upload.js';
+import { ProofSlotLive, proofExpectedOf } from '../proof/proofSlot.js';
 import './pay.css';
 
 /**
@@ -371,24 +373,13 @@ function SendExactlyCard({ view, method, total, rate }: { view: TradeView; metho
   );
 }
 
-/** The payment proof slot. The upload itself is Plan 5's; here it is the board's slot, not yet active. */
-function ProofSlot({ wide }: { wide: boolean }) {
-  return (
-    <section aria-label="Payment proof" className="x2f-proof" data-wide={wide || undefined}>
-      <label htmlFor="proof" className="x2f-proof__slot" aria-disabled="true">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" focusable="false">
-          <path d="M12 16V4" />
-          <path d="M7 9l5-5 5 5" />
-          <path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
-        </svg>
-        <span className="x2f-proof__text">
-          <span className="x2f-proof__title">Add payment proof</span>
-          <span className="x2f-proof__hint">Private details are blurred for you to check next. Location and device info are removed.</span>
-        </span>
-        <input id="proof" type="file" accept="image/*" disabled className="x2f-visually-hidden" />
-      </label>
-    </section>
-  );
+/**
+ * The payment proof slot (Plan 5 Task 15): the board's slot, live behind VITE_X2F_PROOF_UPLOAD=1
+ * (screens/proof/proofSlot.tsx; off until the storage route, Task 14, exists).
+ */
+function ProofSlot({ wide, view, escrow, serverClock }: { wide: boolean } & Pick<TradeScreenProps, 'view' | 'escrow' | 'serverClock'>) {
+  // No proof while the escrow is securing (lead 2026-11-12): BuyerPay is also the securing screen.
+  return <ProofSlotLive enabled={proofUploadOn()} secured={view.state !== 'securing'} code={view.code} expected={proofExpectedOf(view, escrow, serverClock())} wide={wide} />;
 }
 
 /** The wide room (Desktop board): the trade on the left, the counterparty and the chat on the right. */
@@ -685,7 +676,7 @@ export function BuyerPay(p: TradeScreenProps) {
           {notices}
           <div className="x2f-room__grid">
             <PaymentCard view={view} method={method} total={total} rate={deviceRate(escrow)} />
-            <ProofSlot wide />
+            <ProofSlot wide view={view} escrow={escrow} serverClock={serverClock} />
           </div>
           <div className="x2f-room__actions">
             {primary}
@@ -706,7 +697,7 @@ export function BuyerPay(p: TradeScreenProps) {
         {notices}
         {paid ? null : <PayTimerCard view={view} serverClock={serverClock} />}
         <PaymentCard view={view} method={method} total={total} rate={null} />
-        <ProofSlot wide={false} />
+        <ProofSlot wide={false} view={view} escrow={escrow} serverClock={serverClock} />
       </div>
       <footer className="x2f-pay__footer">
         {primary}

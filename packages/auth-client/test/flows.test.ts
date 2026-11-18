@@ -40,7 +40,11 @@ const LABEL = 'Browser on Linux';
  * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
  * apps/web/src/screens/account/AccountFrozen.tsx; S-093: a block row's note, apps/web/src/screens/settings/blockApi.ts;
  * P-012/P-013: the blur check, apps/web/src/api/blurCheck.ts; Haveno review finding 2: the signed ruling statement,
- * read by apps/web/src/escrow/adapters.ts). Any other new route still needs a client method.
+ * read by apps/web/src/escrow/adapters.ts; Plan 5 Tasks 14-15: a proof's ciphertext, read by
+ * apps/web/src/screens/proof/ChatProof.tsx and put by apps/web/src/proof/upload.ts). Any other new route still needs a client method.
+ * Param names are spelled as the route tree reports them (srv.serverRoutes): the proof stack's
+ * proofs/:id and the blur check's proofs/:proofId share one node, so all three of those routes read
+ * proofs/:id|:proofId; blur-checks/:proofId has no other name at its node and keeps :proofId.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
@@ -74,6 +78,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/trades/:code/blur-checks',
   'GET /v1/trades/:code/confirmations',
   'GET /v1/trades/:code/dispute',
+  'GET /v1/trades/:code/proofs/:id|:proofId',
   'GET /v1/trades/:code/review',
   'GET /v1/trades/:code/ruling-statement',
   'PATCH /v1/offers/:id',
@@ -98,13 +103,14 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/trades/:code/dispute',
   'POST /v1/trades/:code/events',
   'POST /v1/trades/:code/identity',
-  'POST /v1/trades/:code/proofs/:proofId/blur-check',
+  'POST /v1/trades/:code/proofs/:id|:proofId/blur-check',
   'POST /v1/trades/:code/review',
   'POST /v1/trades/:code/review/skip',
   'POST /v1/trades/:code/wallet',
   'PUT /v1/account/blocks/:displayName/note',
   'PUT /v1/account/nudges',
   'PUT /v1/account/profile/traded-total',
+  'PUT /v1/trades/:code/proofs/:id|:proofId',
   // POST /v1/trades/:code/final-alert-seen is gone with the final alert (owner 8 Nov, p6-1; design-results).
 ] as const;
 

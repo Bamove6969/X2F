@@ -58,6 +58,11 @@ export interface StoredChatReceipt {
    */
   heldPay?: true;
   /**
+   * Dispute evidence taken while the API's view had no open dispute (proof-receive review M2): held
+   * like `heldPay`, shown (decrypted again) once a dispute is open. Never set on another line.
+   */
+  heldEvidence?: true;
+  /**
    * An envelope that can never become a line (pay-details review M1): a payload that is not a chat
    * message, a package whose text is not the rendering of its boxes, a malformed or mod-signed
    * package. The cursor passed it and a re-read never opens it again; the guard did not move for it
