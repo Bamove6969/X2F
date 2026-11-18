@@ -92,11 +92,10 @@ function PageName({ name }: { name: RailPageName }) {
  * without the Offers role. `member` true or `wallets` false leaves out owner-only routes (Wallets).
  * Members keep Settings (order #2 M3).
  */
-export function DesktopRail({ postOffers = true, member = false, wallets }: { postOffers?: boolean; member?: boolean; wallets?: boolean | undefined }) {
+export function DesktopRail({ postOffers = true, wallets = true }: { postOffers?: boolean; wallets?: boolean | undefined }) {
   const { pathname } = useLocation();
-  const showWallets = wallets !== undefined ? wallets : !member;
   let links = postOffers ? LINKS : LINKS.filter((l) => l.to !== '/post');
-  if (!showWallets) {
+  if (!wallets) {
     // Owner-only routes (Wallets) cannot be opened by team members (OwnerOnly.tsx).
     links = links.filter((l) => l.to !== '/wallets');
   }
@@ -145,19 +144,17 @@ export function WideTop({ name = '' }: { name?: RailPageName }) {
 export function DesktopShell({
   children,
   postOffers = true,
-  member = false,
-  wallets,
+  wallets = true,
 }: {
   children: ReactNode;
   postOffers?: boolean;
-  member?: boolean;
   wallets?: boolean | undefined;
 }) {
   const { pathname } = useLocation();
   const frame = wideFrameOf(pathname);
   return (
     <div data-shell="desktop" data-wide-frame={frame} className="x2f-desktop">
-      {frame === 'rail' ? <DesktopRail postOffers={postOffers} member={member} wallets={wallets} /> : <WideTop />}
+      {frame === 'rail' ? <DesktopRail postOffers={postOffers} wallets={wallets} /> : <WideTop />}
       <div className="x2f-desktop__body">{children}</div>
     </div>
   );

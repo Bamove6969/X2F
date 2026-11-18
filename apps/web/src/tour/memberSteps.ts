@@ -95,7 +95,7 @@ function effective(abilities: readonly string[]): Set<string> {
   return has;
 }
 
-/** COPY-UNSIGNED: the tour's name for screen readers, and the line after Skip (members have no Settings › Help to replay it from yet). */
+/** COPY-UNSIGNED: the tour's name for screen readers, and the line after Skip. */
 export const MEMBER_TOUR_LABEL = 'Team member tour';
 export const MEMBER_TOUR_CLOSED = 'Tour closed.';
 

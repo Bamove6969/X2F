@@ -8,6 +8,7 @@ import { refreshSession } from '../src/session/useSession.js';
 import { render } from './render.js';
 
 let isMember = false;
+let fetchedUrls: string[] = [];
 
 function json(status: number, body: unknown): Response {
   return new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -15,11 +16,13 @@ function json(status: number, body: unknown): Response {
 
 beforeEach(() => {
   isMember = false;
+  fetchedUrls = [];
   refreshSession();
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string) => {
       const url = String(input).split('?')[0]!;
+      fetchedUrls.push(url);
       if (url === '/v1/account/me') {
         return json(200, {
           kind: 'trader',
@@ -53,11 +56,15 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
   it('renders owner sections and links for the account owner', async () => {
     isMember = false;
     refreshSession();
-    const { host } = render(
-      <MemoryRouter initialEntries={['/settings/security']}>
-        <Security />
-      </MemoryRouter>,
-    );
+    let host: HTMLElement = null!;
+    await act(async () => {
+      const res = render(
+        <MemoryRouter initialEntries={['/settings/security']}>
+          <Security />
+        </MemoryRouter>,
+      );
+      host = res.host;
+    });
     await settle();
 
     expect(host.querySelector('[data-owner-only]')).toBeNull();
@@ -67,16 +74,26 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
     expect(host.querySelector('[data-part="session-length-link"]')).toBeNull();
     expect(host.querySelector('[data-part="blocked-link"]')).not.toBeNull();
     expect(host.querySelector('[data-part="idle-reminder-link"]')).not.toBeNull();
+    expect(host.querySelector('[data-part="tour-replay"]')).not.toBeNull();
   });
 
-  it('renders member settings and hides owner sections for a team member', async () => {
+  it('renders member settings, hides owner sections, and does not fire owner fetches for a team member (M1, M2, M3, m1)', async () => {
     isMember = true;
     refreshSession();
-    const { host } = render(
-      <MemoryRouter initialEntries={['/settings/security']}>
-        <Security />
-      </MemoryRouter>,
-    );
+    let host: HTMLElement = null!;
+    await act(async () => {
+      const res = render(
+        <MemoryRouter initialEntries={['/settings/security']}>
+          <Security />
+        </MemoryRouter>,
+      );
+      host = res.host;
+    });
+
+    // M1: On initial render while session is loading, no owner sections mount and no owner calls go out
+    const ownerUrls = ['/v1/account/hold', '/v1/account/methods', '/v1/wallets/rule', '/v1/account/jabber', '/v1/account/alerts'];
+    expect(fetchedUrls.filter((u) => ownerUrls.includes(u))).toEqual([]);
+
     await settle();
 
     // No CantDoThat / OwnerOnly refusal
@@ -89,9 +106,20 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
     expect(host.querySelector('[data-part="team-link"]')).toBeNull();
     expect(host.querySelector('[data-part="alerts"]')).toBeNull();
 
-    // Member sections shown
-    expect(host.querySelector('[data-part="session-length-link"]')).not.toBeNull();
-    expect(host.querySelector('[data-part="blocked-link"]')).not.toBeNull();
+    // M2: Blocked link hidden for members
+    expect(host.querySelector('[data-part="blocked-link"] a[href="/settings/blocked"]')).toBeNull();
+
+    // m1: Tour replay hidden for members
+    expect(host.querySelector('[data-part="tour-replay"]')).toBeNull();
+
+    // M3: Session length link dropped
+    expect(host.querySelector('[data-part="session-length-link"]')).toBeNull();
+
+    // Member sections shown: idle reminder and alarm settings
     expect(host.querySelector('[data-part="idle-reminder-link"]')).not.toBeNull();
+    expect(host.querySelector('[data-part="alarm"]')).not.toBeNull();
+
+    // M1: Even after settle, owner calls were never fired for member
+    expect(fetchedUrls.filter((u) => ownerUrls.includes(u))).toEqual([]);
   });
 });

@@ -14,10 +14,10 @@ import { render } from './render.js';
 // happy-dom's import.meta.url is not a file URL; the directory is.
 const SRC = join(import.meta.dirname, '..', 'src');
 
-function rail(path: string, postOffers = true, member = false, wallets?: boolean) {
+function rail(path: string, postOffers = true, wallets = true) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <DesktopRail postOffers={postOffers} member={member} wallets={wallets} />
+      <DesktopRail postOffers={postOffers} wallets={wallets} />
     </MemoryRouter>,
   ).host;
 }
@@ -93,13 +93,13 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
   });
 
   it('leaves out Post offer for a trader/vendor without the Offers role', () => {
-    const host = rail('/sell', false, false);
+    const host = rail('/sell', false, true);
     expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile', 'Settings', 'Help']);
   });
 
   it('leaves out owner-only routes (Wallets) for a team member while keeping Settings (Order #2 M3)', () => {
-    // Member with offers role: Trade, Post offer, Profile, Settings, Help (never Wallets)
-    const hostWithOffers = rail('/sell', true, true);
+    // Member with offers role (wallets=false): Trade, Post offer, Profile, Settings, Help (never Wallets)
+    const hostWithOffers = rail('/sell', true, false);
     expect([...hostWithOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
       'Post offer',
@@ -115,8 +115,8 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
       '/feedback',
     ]);
 
-    // Member without offers role: Trade, Profile, Settings, Help
-    const hostWithoutOffers = rail('/sell', false, true);
+    // Member without offers role (postOffers=false, wallets=false): Trade, Profile, Settings, Help
+    const hostWithoutOffers = rail('/sell', false, false);
     expect([...hostWithoutOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
       'Profile',
@@ -124,8 +124,8 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
       'Help',
     ]);
 
-    // Account owner: all 6 links present
-    const hostOwner = rail('/sell', true, false);
+    // Account owner (wallets=true): all 6 links present
+    const hostOwner = rail('/sell', true, true);
     expect([...hostOwner.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
       'Post offer',
@@ -136,7 +136,7 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     ]);
 
     // Cold load / loading session (wallets=false): leaves out Wallets to avoid flicker (M1)
-    const hostLoading = rail('/sell', true, false, false);
+    const hostLoading = rail('/sell', true, false);
     expect([...hostLoading.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
       'Post offer',

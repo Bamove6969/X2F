@@ -487,7 +487,7 @@ for (const viewport of PHONE_VIEWPORTS) {
   });
 }
 
-for (const [path, screen] of [['/wallets', 'wallets'], ['/settings/security', 'security'], ['/settings/team', 'team']] as const) {
+for (const [path, screen] of [['/wallets', 'wallets'], ['/settings/team', 'team']] as const) {
   test(`a member opening ${path} gets CantDoThat owner-only, never a blank screen`, async ({ page }) => {
     await page.route('**/v1/account/me', json(memberMe(['offers', 'trades'])));
     // The API refuses every owner-only call too (requireSession's fail-closed default).
@@ -500,6 +500,18 @@ for (const [path, screen] of [['/wallets', 'wallets'], ['/settings/security', 's
     await expectPhoneLayout(page);
   });
 }
+
+test('a member opening /settings/security sees the Security screen with no owner sections, and no CantDoThat', async ({ page }) => {
+  await page.route('**/v1/account/me', json(memberMe(['offers', 'trades'])));
+  await page.route(/\/v1\/(team|wallets|account\/(sessions|security|alerts|blocks)).*/, json({ error: 'owner-only' }, 403));
+  await page.goto('/settings/security');
+  await expect(page.locator('[data-screen="security"]')).toBeVisible();
+  await expect(page.locator('[data-part="cant-do-that"]')).toHaveCount(0);
+  await expect(page.locator('[data-part="methods"]')).toHaveCount(0);
+  await expect(page.locator('[data-part="devices-link"]')).toHaveCount(0);
+  await expect(page.locator('[data-part="alarm"]')).toBeVisible();
+  await expectPhoneLayout(page);
+});
 
 // ---- 6. The trade side until Plan 3 Task 42 ----------------------------------------------------------
 

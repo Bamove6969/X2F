@@ -149,7 +149,7 @@ export function SessionLengthScreen() {
         {C.changeAfter}
       </p>
       {/* DESIGN: placement (owner Q75): the way to the idle reminder for everyone, a team member
-          included (members have no Security screen), until a board places it. */}
+          included (members now have Settings for alarms and idle reminder), until a board places it. */}
       <p className="x2f-fine">
         <Link to={IDLE_REMINDER_PATH} data-part="idle-reminder-link">
           {IDLE_COPY.link}

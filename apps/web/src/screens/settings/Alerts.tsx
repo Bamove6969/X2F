@@ -122,7 +122,7 @@ export function Alerts({ member = false }: { member?: boolean | undefined } = {}
   return (
     <>
       <AlarmSettingsCard />
-      <JabberAlerts />
+      {!member ? <JabberAlerts /> : null}
       {!member ? (
         <section className="x2f-card" data-part="alerts" aria-labelledby="alerts-h">
           <h2 className="x2f-card__title" id="alerts-h">
