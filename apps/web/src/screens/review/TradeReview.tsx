@@ -3,6 +3,7 @@ import { shouldAskFeedback, type Side } from '@x2f/reputation';
 import { FeedbackCard } from './FeedbackCard.js';
 import { RatingSaved, ReviewCard, type ReviewOutcome } from './ReviewCard.js';
 import { fetchCompletedTrades, fetchTradeReview, type TradeReviewView } from './api.js';
+import { REVIEW_COPY } from './copy.js';
 
 /**
  * The rating on a finished trade's own screen (Plan 5 Task 6): under Released, and on the dispute
@@ -15,6 +16,13 @@ import { fetchCompletedTrades, fetchTradeReview, type TradeReviewView } from './
  * After a star or Neutral rating: the board's "Rating saved" card, then "How's X2F doing?" when
  * `shouldAskFeedback` says so for the trader's completed trades now (P5-A19: the 1st and every
  * 10th), never before the rating is saved. After Skip review: nothing (it shows nothing to anyone).
+ * A 409 `review-exists` or `not-reviewable` (skipped in another tab, a dispute opened meanwhile):
+ * nothing was saved, so a neutral line, no feedback, and the trade's review state is read again
+ * (review m2); read again as still reviewable, the card shows again.
+ *
+ * TODO(review 18 Nov m5): `reviewable` is read on mount only. On the dispute ruling screen, kept
+ * open while the appeal window closes and the dispute turns final, no card appears until a reload.
+ * The gate's sheet still asks at the next take, so it is cosmetic; left as is on the lead's call.
  */
 export function TradeReview({
   code,
@@ -33,17 +41,22 @@ export function TradeReview({
   const [view, setView] = useState<TradeReviewView | null>(null);
   const [outcome, setOutcome] = useState<ReviewOutcome | null>(null);
   const [ask, setAsk] = useState(false);
+  // Bumped after a `gone` outcome: the review state is read again.
+  const [reads, setReads] = useState(0);
 
   useEffect(() => {
     const ac = new AbortController();
     load(code, ac.signal).then(
       (v) => {
-        if (!ac.signal.aborted) setView(v);
+        if (ac.signal.aborted) return;
+        setView(v);
+        // Read again after `gone`: still reviewable here, so the card comes back.
+        if (reads > 0 && v.reviewable) setOutcome((o) => (o === 'gone' ? null : o));
       },
       () => undefined,
     );
     return () => ac.abort();
-  }, [code, load]);
+  }, [code, load, reads]);
 
   useEffect(() => {
     if (outcome !== 'rated' && outcome !== 'neutral') return;
@@ -60,6 +73,15 @@ export function TradeReview({
   }, [outcome, completed]);
 
   if (outcome === 'skipped') return null;
+  if (outcome === 'gone') {
+    return (
+      <div data-part="trade-review">
+        <p role="status" className="x2f-review__sub x2f-review__sub--body" data-part="review-gone">
+          {REVIEW_COPY.gone}
+        </p>
+      </div>
+    );
+  }
   if (outcome !== null) {
     return (
       <div data-part="trade-review">
@@ -71,7 +93,15 @@ export function TradeReview({
   if (view === null || !view.reviewable) return null;
   return (
     <div data-part="trade-review">
-      <ReviewCard code={code} counterparty={counterparty} rated={rated} onDone={setOutcome} />
+      <ReviewCard
+        code={code}
+        counterparty={counterparty}
+        rated={rated}
+        onDone={(o) => {
+          setOutcome(o);
+          if (o === 'gone') setReads((n) => n + 1);
+        }}
+      />
     </div>
   );
 }

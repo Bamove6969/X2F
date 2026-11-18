@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { ApiCallError } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { postMood, type Mood } from './api.js';
 import { FEEDBACK_COPY } from './copy.js';
@@ -6,6 +7,9 @@ import './review.css';
 
 /** The note's limit, as the API's (apps/api/src/feedback/mood.ts FEEDBACK_NOTE_MAX). */
 export const FEEDBACK_NOTE_MAX = 500;
+
+/** The characters the API refuses in a note, as its own rule (apps/api/src/feedback/form.ts HIDDEN). */
+export const FEEDBACK_HIDDEN = /(?![\n\t\u200c\u200d])[\p{Cc}\p{Cf}]/u;
 
 /**
  * "How's X2F doing?" (Plan 5 Task 4 / Task 6, board Review.dc.html; P5-A19, spec 5.2). The caller
@@ -15,13 +19,16 @@ export const FEEDBACK_NOTE_MAX = 500;
  * it is optional) and **Not now**.
  *
  * The request body is exactly `{ mood, note }`: no username, no trade code, nothing about the
- * trade it follows (the card is given none of it). Not now closes it; a send leaves a thank-you line. A failed send closes the card like a sent one:
- * the API answers 202 even over its daily limit, and a courtesy prompt never shows an error.
+ * trade it follows (the card is given none of it). Not now closes it; a send the API took (202,
+ * which it answers even over its daily limit) leaves a thank-you line. A send that failed says it
+ * could not be sent and offers to send again (review m4); a 400 for a note holding a hidden
+ * character says what to fix.
  */
 export function FeedbackCard({ onDone, send = postMood }: { onDone?: () => void; send?: (mood: Mood, note: string) => Promise<void> }) {
   const [mood, setMood] = useState<Mood | null>(null);
   const [note, setNote] = useState('');
   const [state, setState] = useState<'open' | 'sending' | 'sent' | 'closed'>('open');
+  const [error, setError] = useState<string | null>(null);
   const noteId = useId();
 
   if (state === 'closed') return null;
@@ -36,10 +43,16 @@ export function FeedbackCard({ onDone, send = postMood }: { onDone?: () => void;
   const submit = async () => {
     if (mood === null || state !== 'open') return;
     setState('sending');
+    setError(null);
+    const line = note.trim();
     try {
-      await send(mood, note.trim());
-    } catch {
-      // Nothing to fix for the person: the prompt just closes.
+      await send(mood, line);
+    } catch (e) {
+      // Not sent: the card stays, with what was picked, so it can go again.
+      const hidden = e instanceof ApiCallError && e.status === 400 && FEEDBACK_HIDDEN.test(line);
+      setError(hidden ? FEEDBACK_COPY.hidden : FEEDBACK_COPY.failed);
+      setState('open');
+      return;
     }
     setState('sent');
     onDone?.();
@@ -72,10 +85,15 @@ export function FeedbackCard({ onDone, send = postMood }: { onDone?: () => void;
           />
         </label>
         <span className="x2f-review__fine">{FEEDBACK_COPY.privacy}</span>
+        {error !== null ? (
+          <p role="alert" className="x2f-review__error">
+            {error}
+          </p>
+        ) : null}
       </section>
       <footer className="x2f-review__footer">
         <Button variant="secondary" disabled={mood === null || state !== 'open'} onClick={() => void submit()}>
-          {FEEDBACK_COPY.send}
+          {error === null ? FEEDBACK_COPY.send : FEEDBACK_COPY.retry}
         </Button>
         <Button
           variant="quiet"

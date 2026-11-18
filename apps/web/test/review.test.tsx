@@ -10,16 +10,22 @@ import { ApiCallError } from '../src/api/client.js';
 import { AcceptedSheet, type AcceptedTradeView, type AcceptedWallet } from '../src/screens/AcceptedSheet.js';
 import { takeRefusal } from '../src/screens/quote/takeErrors.js';
 import { FeedbackCard } from '../src/screens/review/FeedbackCard.js';
-import { RateFirst } from '../src/screens/review/RateFirstSheet.js';
+import { RateFirst, type RateFirstCleared } from '../src/screens/review/RateFirstSheet.js';
 import { ReviewCard, type ReviewOutcome } from '../src/screens/review/ReviewCard.js';
 import { TradeReview } from '../src/screens/review/TradeReview.js';
 import type { PendingReview, TradeReviewView } from '../src/screens/review/api.js';
 import { RATE_FIRST } from '../src/ui/cantDoCodes.js';
+import { REVIEW_COPY, FEEDBACK_COPY } from '../src/screens/review/copy.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { forgetTypedAddresses, recordTypedAddress } from '../src/screens/walletRecord.js';
 import type { QuoteOffer } from '../src/screens/quote/quoteModel.js';
 import { fire, render } from './render.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
 const flush = () => act(async () => undefined);
+const source = (rel: string) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), rel), 'utf8');
 const click = (el: Element) => fire(el, new MouseEvent('click', { bubbles: true }));
 const buttonNamed = (root: ParentNode, text: string) =>
   [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text || b.getAttribute('aria-label') === text);
@@ -120,6 +126,18 @@ describe('ReviewCard', () => {
     expect(done).toEqual(['neutral']);
   });
 
+  it('review m8: the card is named "Rate <counterparty>" from the copy map, marked COPY-UNSIGNED', () => {
+    const { host } = card();
+    expect(host.querySelector('section')!.getAttribute('aria-label')).toBe('Rate satoshi_ghost');
+    expect(REVIEW_COPY.rateLabel('satoshi_ghost')).toBe('Rate satoshi_ghost');
+    const src = source('../src/screens/review/copy.ts');
+    const line = src.split('\n').findIndex((l) => l.includes('rateLabel:'));
+    expect(line).toBeGreaterThan(0);
+    expect(src.split('\n')[line - 1]! + src.split('\n')[line]!).toContain('COPY-UNSIGNED');
+    // No screen-reader string is built in the card itself.
+    expect(source('../src/screens/review/ReviewCard.tsx')).not.toContain('`Rate ${');
+  });
+
   it('Skip review calls the skip route and sends no review (owner 2026-11-01, item 28)', async () => {
     const { host, sent, skipped, done } = card();
     click(buttonNamed(host, 'Skip review')!);
@@ -139,11 +157,15 @@ describe('ReviewCard', () => {
     expect(buttonNamed(host, 'Submit rating')!.disabled).toBe(false);
   });
 
-  it('a 409 review-exists (rated in another tab) finishes the card; another failure says try again', async () => {
+  it('a 409 review-exists or not-reviewable finishes the card as gone (nothing was saved here, review m2); another failure says try again', async () => {
     const a = card({ submit: async () => Promise.reject(new ApiCallError(409, 'review-exists')) });
     click(buttonNamed(a.host, 'Neutral, skip details')!);
     await flush();
-    expect(a.done).toEqual(['neutral']);
+    expect(a.done).toEqual(['gone']);
+    const c = card({ skip: async () => Promise.reject(new ApiCallError(409, 'not-reviewable')) });
+    click(buttonNamed(c.host, 'Skip review')!);
+    await flush();
+    expect(c.done).toEqual(['gone']);
     const b = card({ skip: async () => Promise.reject(new ApiCallError(500, 'internal')) });
     click(buttonNamed(b.host, 'Skip review')!);
     await flush();
@@ -183,6 +205,53 @@ describe('FeedbackCard', () => {
     await flush();
     expect(bodies).toHaveLength(1);
     expect(Object.keys(bodies[0] as object).sort()).toEqual(['mood', 'note']);
+  });
+
+  it('review m4: a failed send says it could not be sent and offers to try again; only a real success says thanks', async () => {
+    let fail = true;
+    const sent: unknown[] = [];
+    const { host } = render(
+      <FeedbackCard
+        send={async (mood, note) => {
+          sent.push({ mood, note });
+          if (fail) throw new TypeError('network down');
+        }}
+      />,
+    );
+    click(buttonNamed(host, 'OK')!);
+    click(buttonNamed(host, 'Send feedback')!);
+    await flush();
+    expect(host.querySelector('[data-part="feedback-sent"]')).toBeNull();
+    expect(host.textContent).not.toContain('Thanks');
+    expect(host.querySelector('[role="alert"]')!.textContent).toBe(FEEDBACK_COPY.failed);
+    expect(FEEDBACK_COPY.failed).toBe('Your feedback could not be sent.');
+    // The card stays, with what was picked, and offers to send again.
+    expect(buttonNamed(host, 'OK')!.getAttribute('aria-checked')).toBe('true');
+    fail = false;
+    click(buttonNamed(host, FEEDBACK_COPY.retry)!);
+    await flush();
+    expect(sent).toHaveLength(2);
+    expect(host.querySelector('[data-part="feedback-sent"]')!.textContent).toBe('Thanks. Your feedback was sent.');
+  });
+
+  it('review m4: a 400 for a hidden character in the note says what to fix', async () => {
+    const { host } = render(<FeedbackCard send={async () => Promise.reject(new ApiCallError(400, 'bad-request'))} />);
+    click(buttonNamed(host, 'Great')!);
+    typeInto(host.querySelector('textarea')!, 'Nice\u202e work');
+    click(buttonNamed(host, 'Send feedback')!);
+    await flush();
+    expect(host.querySelector('[role="alert"]')!.textContent).toBe(FEEDBACK_COPY.hidden);
+    expect(host.textContent).not.toContain('Thanks');
+    expect(host.querySelector('[data-part="feedback-card"]')).not.toBeNull();
+  });
+
+  it('the copy for a failed send is marked COPY-UNSIGNED', () => {
+    const src = source('../src/screens/review/copy.ts').split('\n');
+    for (const key of ['failed:', 'hidden:']) {
+      const i = src.findIndex((l, n) => l.includes(key) && src.slice(0, n).some((x) => x.includes('FEEDBACK_COPY')));
+      expect(i, key).toBeGreaterThan(0);
+      expect(src[i - 1]! + src[i]!, key).toContain('COPY-UNSIGNED');
+    }
   });
 
   it('Not now closes it without sending', () => {
@@ -230,6 +299,48 @@ describe('TradeReview (the card under Released and on a closed dispute)', () => 
     }
   });
 
+  it('review m2: a 409 review-exists shows a neutral line, not "Rating saved", asks no feedback, and reads the trade again', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'review-exists' }), { status: 409, headers: { 'content-type': 'application/json' } })));
+    let loads = 0;
+    const { host } = render(
+      <TradeReview
+        code={CODE}
+        counterparty="mira.k"
+        rated="buyer"
+        load={async () => {
+          loads += 1;
+          return loads === 1 ? view() : view({ reviewable: false });
+        }}
+        completed={async () => 1}
+      />,
+    );
+    await flush();
+    click(buttonNamed(host, 'Neutral, skip details')!);
+    await flush();
+    await flush();
+    await flush();
+    expect(host.querySelector('[data-part="rating-saved"]')).toBeNull();
+    expect(host.textContent).not.toContain('Rating saved');
+    expect(host.querySelector('[data-part="feedback-card"]')).toBeNull();
+    expect(host.querySelector('[data-part="review-gone"]')!.textContent).toBe(REVIEW_COPY.gone);
+    expect(loads).toBe(2);
+    const src = source('../src/screens/review/copy.ts').split('\n');
+    const i = src.findIndex((l) => l.includes('gone:'));
+    expect(src[i - 1]! + src[i]!).toContain('COPY-UNSIGNED');
+  });
+
+  it('review m2: read again, a trade this side may still rate shows the card again', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not-reviewable' }), { status: 409, headers: { 'content-type': 'application/json' } })));
+    const { host } = render(<TradeReview code={CODE} counterparty="mira.k" rated="buyer" load={async () => view()} completed={async () => 1} />);
+    await flush();
+    click(buttonNamed(host, 'Skip review')!);
+    await flush();
+    await flush();
+    await flush();
+    expect(host.querySelector('[data-part="review-card"]')).not.toBeNull();
+    expect(host.querySelector('[data-part="review-gone"]')).toBeNull();
+  });
+
   it('Neutral is a saved rating too; Skip review leaves nothing on the screen', async () => {
     expect((await shown(1, { action: 'Neutral, skip details' })).querySelector('[data-part="feedback-card"]')).not.toBeNull();
     expect((await shown(1, { action: 'Skip review' })).textContent).toBe('');
@@ -239,13 +350,18 @@ describe('TradeReview (the card under Released and on a closed dispute)', () => 
 describe('RateFirst (the rate-first gate)', () => {
   const P = (code: string, counterparty: string): PendingReview => ({ code, counterparty, reviewableSince: '2026-11-01T00:00:00.000Z' });
 
-  function gate(lists: PendingReview[][]) {
-    const cleared: boolean[] = [];
+  function gate(lists: PendingReview[][], o: { loadRated?: () => Promise<'buyer' | 'seller' | null>; skip?: (code: string) => Promise<void> } = {}) {
+    const cleared: RateFirstCleared[] = [];
     let i = 0;
     okFetch();
     const { host } = render(
       <MemoryRouter>
-        <RateFirst onCleared={(r) => cleared.push(r)} loadPending={async () => lists[Math.min(i++, lists.length - 1)]!} loadRated={async () => 'seller'} />
+        <RateFirst
+          onCleared={(r) => cleared.push(r)}
+          loadPending={async () => lists[Math.min(i++, lists.length - 1)]!}
+          loadRated={o.loadRated ?? (async () => 'seller')}
+          {...(o.skip ? { skip: o.skip } : {})}
+        />
       </MemoryRouter>,
     );
     return { host, cleared };
@@ -275,13 +391,58 @@ describe('RateFirst (the rate-first gate)', () => {
     click(buttonNamed(host, 'Skip review')!);
     await flush();
     await flush();
-    expect(cleared).toEqual([true]);
+    expect(cleared).toEqual(['rated']);
   });
 
-  it('an empty list from the start reports cleared(false): nothing was rated, so nothing is retried', async () => {
+  it('cleared by Skip review only, it says so (the quote does not take again on a skip alone)', async () => {
+    const { host, cleared } = gate([[P('A', 'mira.k')], []]);
+    await flush();
+    await flush();
+    click(buttonNamed(host, 'Skip review')!);
+    await flush();
+    await flush();
+    expect(cleared).toEqual(['skipped']);
+  });
+
+  it('an empty list from the start reports cleared as empty: nothing was rated, so nothing is retried', async () => {
     const { cleared } = gate([[]]);
     await flush();
-    expect(cleared).toEqual([false]);
+    expect(cleared).toEqual(['empty']);
+  });
+
+  it('review m3: when the trade view cannot be read, Skip review is still offered beside Try again', async () => {
+    const skipped: string[] = [];
+    const { host, cleared } = gate([[P('A', 'mira.k')], []], { loadRated: async () => Promise.reject(new Error('down')), skip: async (c) => void skipped.push(c) });
+    await flush();
+    await flush();
+    expect(host.querySelector('[role="alert"]')!.textContent).toBe('That did not work. Try again.');
+    expect(buttonNamed(host, 'Try again')).toBeDefined();
+    expect(host.querySelector('[data-part="review-card"]')).toBeNull();
+    click(buttonNamed(host, 'Skip review')!);
+    await flush();
+    await flush();
+    expect(skipped).toEqual(['A']);
+    expect(cleared).toEqual(['skipped']);
+  });
+
+  it('review m3: the same when the view has no usable role', async () => {
+    const { host } = gate([[P('A', 'mira.k')]], { loadRated: async () => null, skip: async () => undefined });
+    await flush();
+    await flush();
+    expect(buttonNamed(host, 'Skip review')).toBeDefined();
+  });
+
+  it('review m3: a list that cannot be read offers only Try again (there is no trade to skip)', async () => {
+    okFetch();
+    const { host } = render(
+      <MemoryRouter>
+        <RateFirst onCleared={() => undefined} loadPending={async () => Promise.reject(new Error('down'))} loadRated={async () => 'seller'} />
+      </MemoryRouter>,
+    );
+    await flush();
+    await flush();
+    expect(buttonNamed(host, 'Try again')).toBeDefined();
+    expect(buttonNamed(host, 'Skip review')).toBeUndefined();
   });
 });
 
@@ -339,5 +500,70 @@ describe('AcceptedSheet meets the gate (409 review-pending on the wallet pick)',
     await flush();
     expect(calls).toEqual(['w1', 'w1']);
     expect(done).toEqual([EVENT.code]);
+  });
+
+  const TWO: AcceptedWallet[] = [
+    { ...WALLET, isDefault: true },
+    { id: 'w2', app: 'feather', label: 'Feather', address: `5${'B'.repeat(88)}d4e5f6`, addressEnd: 'd4e5f6', usable: true, isDefault: false },
+  ];
+
+  function gated(wallets: AcceptedWallet[]) {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 201 })));
+    const calls: string[] = [];
+    let refuse = true;
+    const lists: PendingReview[][] = [[{ code: 'OLD-1', counterparty: 'bob', reviewableSince: '2026-11-01T00:00:00.000Z' }], []];
+    render(
+      <MemoryRouter>
+        <AcceptedSheet
+          event={EVENT}
+          loadWallets={async () => wallets}
+          loadTrade={async () => VIEW}
+          submit={async (_c, w) => {
+            calls.push(w);
+            if (refuse) {
+              refuse = false;
+              throw new ApiCallError(409, 'review-pending');
+            }
+          }}
+          rateFirst={{ loadPending: async () => lists.shift() ?? [], loadRated: async () => 'buyer' }}
+          onDone={() => undefined}
+          onClose={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+    return { calls, dialog: () => document.querySelector('[role="dialog"]') as HTMLElement };
+  }
+
+  it('review m8: with two wallets, a picked non-default wallet is the one picked again after the rating', async () => {
+    const { calls, dialog } = gated(TWO);
+    await flush();
+    const radios = [...dialog().querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+    expect(radios.map((r) => r.checked)).toEqual([true, false]);
+    click(radios[1]!);
+    click(buttonNamed(dialog(), 'Use this wallet')!);
+    await flush();
+    await flush();
+    await flush();
+    click(buttonNamed(dialog(), 'Neutral, skip details')!);
+    await flush();
+    await flush();
+    await flush();
+    expect(calls).toEqual(['w2', 'w2']);
+  });
+
+  it('review m6: the swapped-address alert is not stacked on the rating, and still shows on the pick screen', async () => {
+    forgetTypedAddresses();
+    // This device typed another address for w2: the list's w2 is a swapped address.
+    recordTypedAddress('w2', `5${'C'.repeat(88)}c0ffee`);
+    const { dialog } = gated(TWO);
+    await flush();
+    expect(dialog().querySelector('[data-part="accepted-address-swapped"]')).not.toBeNull();
+    click(buttonNamed(dialog(), 'Use this wallet')!);
+    await flush();
+    await flush();
+    await flush();
+    expect(dialog().querySelector('[data-part="rate-first-title"]')).not.toBeNull();
+    expect(dialog().querySelector('[data-part="accepted-address-swapped"]')).toBeNull();
+    forgetTypedAddresses();
   });
 });

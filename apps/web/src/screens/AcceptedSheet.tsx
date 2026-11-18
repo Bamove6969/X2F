@@ -185,7 +185,8 @@ export function AcceptedSheet({
 
   return (
     <Sheet open title={`${event.by} accepted your offer`} onClose={onClose}>
-      {swapped && phase !== 'done' && phase !== 'loading' ? (
+      {/* Review m6: about which wallets are offered, so not stacked on the rating (the pick is fixed then). */}
+      {swapped && phase !== 'done' && phase !== 'loading' && phase !== 'rate' ? (
         <p role="alert" className="x2f-sheet__body" data-part="accepted-address-swapped">
           {NEW_ADDRESS.mismatch}
         </p>
@@ -199,9 +200,11 @@ export function AcceptedSheet({
           </h3>
           <RateFirst
             {...rateFirst}
-            onCleared={(rated) => {
+            onCleared={(how) => {
               setPhase('pick');
-              if (rated) void use();
+              // The same wallet pick goes again once a trade was rated or skipped here; the deal
+              // shown is the locked one, so nothing on it can have moved meanwhile.
+              if (how !== 'empty') void use();
             }}
           />
         </>

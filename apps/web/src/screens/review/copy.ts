@@ -11,6 +11,8 @@
 export const REVIEW_COPY = {
   // COPY-UNSIGNED (replaces the board's blind-reveal line; R-007)
   shown: 'Shown on their profile as soon as you submit it.',
+  // COPY-UNSIGNED (the card's name for a screen reader; the board has none)
+  rateLabel: (name: string) => `Rate ${name}`,
   starsLabel: 'Stars',
   star: (n: number) => `${n} ${n === 1 ? 'star' : 'stars'}`,
   // COPY-UNSIGNED (the chips' group name for a screen reader; the board has none)
@@ -23,6 +25,8 @@ export const REVIEW_COPY = {
   skip: 'Skip review',
   // COPY-UNSIGNED (replaces the board's blind-reveal line; R-007)
   saved: (name: string) => `Rating saved. ${name} can see it now.`,
+  // COPY-UNSIGNED (review m2: a 409 review-exists or not-reviewable; nothing was saved by this tap)
+  gone: 'There is nothing left to rate on this trade.',
   // P5-A6, COPY-UNSIGNED
   personalDetails: 'Remove personal details from the note.',
   failed: 'That did not work. Try again.',
@@ -45,4 +49,10 @@ export const FEEDBACK_COPY = {
   later: 'Not now',
   // COPY-UNSIGNED
   sent: 'Thanks. Your feedback was sent.',
+  // COPY-UNSIGNED (review m4: the send failed; the card stays so it can go again)
+  failed: 'Your feedback could not be sent.',
+  // COPY-UNSIGNED (review m4: a 400 for a hidden character in the note, the API's HIDDEN rule)
+  hidden: 'The note has a hidden character. Remove it, then send again.',
+  // COPY-UNSIGNED
+  retry: 'Try again',
 } as const;

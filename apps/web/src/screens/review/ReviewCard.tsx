@@ -6,8 +6,11 @@ import { nothingToRate, postReview, postSkip } from './api.js';
 import { REVIEW_COPY } from './copy.js';
 import './review.css';
 
-/** How the card finished: a star rating, Neutral, or Skip review (shows nothing to anyone). */
-export type ReviewOutcome = 'rated' | 'neutral' | 'skipped';
+/**
+ * How the card finished: a star rating, Neutral, Skip review (shows nothing to anyone), or `gone`:
+ * a 409 `review-exists` or `not-reviewable`, so nothing was saved by this tap (review m2).
+ */
+export type ReviewOutcome = 'rated' | 'neutral' | 'skipped' | 'gone';
 
 const STAR_PATH = 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z';
 const STAR_VALUES = Array.from({ length: STAR_MAX }, (_, i) => (i + 1) as Stars);
@@ -21,7 +24,7 @@ const STAR_VALUES = Array.from({ length: STAR_MAX }, (_, i) => (i + 1) as Stars)
  *
  * The body never names a reviewer, a side or an amount: the server takes them from the trade and
  * the session. A 409 `review-exists` or `not-reviewable` means there is nothing left to rate here
- * (another tab did it), so the card finishes as if it had. The note's rules are the package's
+ * (another tab did it, or a dispute was opened), so the card finishes as `gone`, never as saved. The note's rules are the package's
  * (one line, at most REVIEW_NOTE_MAX characters); the server's personal-details check answers 400
  * `note-personal-details`.
  */
@@ -59,7 +62,7 @@ export function ReviewCard({
       await call();
     } catch (e) {
       if (nothingToRate(e)) {
-        onDone(outcome);
+        onDone('gone');
         return;
       }
       setBusy(false);
@@ -93,7 +96,7 @@ export function ReviewCard({
 
   return (
     <div className="x2f-review" data-part="review-card">
-      <section aria-label={`Rate ${counterparty}`} className="x2f-review__card">
+      <section aria-label={REVIEW_COPY.rateLabel(counterparty)} className="x2f-review__card">
         <div className="x2f-review__head">
           <h2 className="x2f-review__title">
             How was trading with <span data-username="">{counterparty}</span>?
