@@ -2,7 +2,7 @@
 -- sent the buyer the trade's XMR, as a `seller-sends-xmr` ruling orders, within COMPLY_H.
 -- Numbered 740: clear of the numbers other open branches use (550-701).
 --
--- 1. payment_proofs: every tx a seller submitted for a dispute. The API checks it on X2F's own node
+-- 1. ruling_payments: every tx a seller submitted for a dispute. The API checks it on X2F's own node
 --    (monero check_tx_key against the trade's buyer payout address, for at least the trade's XMR) and
 --    accepts it at 10 confirmations; with fewer it waits (`pending`) and the dispute timer checks it
 --    again. `tx_hash` is the primary key: a tx proves one payment, once, whichever dispute it was
@@ -14,7 +14,7 @@
 -- 2. disputes.comply_lapsed_at: A6, the seller let COMPLY_H pass with no proof accepted or pending.
 --    The dispute timer sets it once, logs `dispute.comply-lapsed` and alerts the owner; the case is
 --    then listed for senior moderators and the owner (the queue), who decide the suspension.
-create table payment_proofs (
+create table ruling_payments (
   tx_hash text primary key check (tx_hash ~ '^[0-9a-f]{64}$'),
   code text not null,
   seq integer not null,
@@ -34,7 +34,7 @@ create table payment_proofs (
 );
 
 -- One live proof per dispute: a second submission while one waits or after one was accepted is refused.
-create unique index payment_proofs_one_live on payment_proofs (code, seq) where status in ('pending', 'accepted');
-create index payment_proofs_pending on payment_proofs (checked_at) where status = 'pending';
+create unique index ruling_payments_one_live on ruling_payments (code, seq) where status in ('pending', 'accepted');
+create index ruling_payments_pending on ruling_payments (checked_at) where status = 'pending';
 
 alter table disputes add column comply_lapsed_at timestamptz;

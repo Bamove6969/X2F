@@ -83,7 +83,7 @@ const toApi = (err: unknown): never => {
 /** A tx hash already used: submitted for any dispute, or a trade's settlement tx. */
 async function txUsed(q: Queryable, txHash: string): Promise<boolean> {
   const { rows } = await q.query<{ used: boolean }>(
-    `select exists (select 1 from payment_proofs where tx_hash = $1) or exists (select 1 from trades where tx_hash = $1) as used`,
+    `select exists (select 1 from ruling_payments where tx_hash = $1) or exists (select 1 from trades where tx_hash = $1) as used`,
     [txHash],
   );
   return rows[0]?.used === true;
@@ -150,7 +150,7 @@ export function complyRoutes(app: FastifyInstance): void {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code, seq: rec.dispute.seq }, async (d, client, now) => {
         assertTakesProof(d, submittedAt);
         const ins = await client.query(
-          `insert into payment_proofs (tx_hash, code, seq, tx_key, status, submitted_at, checked_at, received_atomic, confirmations, decided_at)
+          `insert into ruling_payments (tx_hash, code, seq, tx_key, status, submitted_at, checked_at, received_atomic, confirmations, decided_at)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) on conflict do nothing`,
           [txHash, d.code, d.seq, verdict === 'pending' ? txKey : null, verdict, submittedAt, now, result!.receivedAtomic.toString(), confirmations,
             verdict === 'accepted' ? now : null],
@@ -190,7 +190,7 @@ export async function runPendingProofs(deps: DisputeDeps & { txProof?: TxProofCh
   if (check === undefined) return 0;
   const now = deps.clock();
   const { rows } = await deps.db.query<PendingRow>(
-    `select p.tx_hash, p.code, p.seq, p.tx_key, p.submitted_at from payment_proofs p
+    `select p.tx_hash, p.code, p.seq, p.tx_key, p.submitted_at from ruling_payments p
       where p.status = 'pending' and p.checked_at <= $1 order by p.checked_at limit 50`,
     [new Date(now.getTime() - PROOF_RECHECK_MS)],
   );
@@ -211,7 +211,7 @@ export async function runPendingProofs(deps: DisputeDeps & { txProof?: TxProofCh
       }
       let accepted = false;
       await withDispute(deps, { code: p.code, seq: p.seq }, async (d, client, at) => {
-        const live = await client.query('select 1 from payment_proofs where tx_hash = $1 and status = $2 for update', [p.tx_hash, 'pending']);
+        const live = await client.query('select 1 from ruling_payments where tx_hash = $1 and status = $2 for update', [p.tx_hash, 'pending']);
         if ((live.rowCount ?? 0) === 0) return d;
         let verdict = judgeProof(result, BigInt(t.amount_atomic), d.openedAt);
         // Unknown to the node now: refused only once it has been lost for a day.
@@ -228,7 +228,7 @@ export async function runPendingProofs(deps: DisputeDeps & { txProof?: TxProofCh
           }
           if (verdict === 'accepted') {
             await client.query(
-              `update payment_proofs set status = 'accepted', tx_key = null, decided_at = $2, checked_at = $2, received_atomic = $3, confirmations = $4 where tx_hash = $1`,
+              `update ruling_payments set status = 'accepted', tx_key = null, decided_at = $2, checked_at = $2, received_atomic = $3, confirmations = $4 where tx_hash = $1`,
               [p.tx_hash, at, result!.receivedAtomic.toString(), result!.confirmations],
             );
             await appendLog(client, { at, actor: { kind: 'system' }, tradeCode: d.code, action: 'dispute.complied', detail: { txHash: p.tx_hash } });
@@ -237,10 +237,10 @@ export async function runPendingProofs(deps: DisputeDeps & { txProof?: TxProofCh
           }
         }
         if (verdict === 'pending') {
-          await client.query('update payment_proofs set checked_at = $2, confirmations = $3 where tx_hash = $1', [p.tx_hash, at, result?.confirmations ?? null]);
+          await client.query('update ruling_payments set checked_at = $2, confirmations = $3 where tx_hash = $1', [p.tx_hash, at, result?.confirmations ?? null]);
           return d;
         }
-        await client.query(`update payment_proofs set status = 'refused', tx_key = null, decided_at = $2, checked_at = $2 where tx_hash = $1`, [p.tx_hash, at]);
+        await client.query(`update ruling_payments set status = 'refused', tx_key = null, decided_at = $2, checked_at = $2 where tx_hash = $1`, [p.tx_hash, at]);
         await appendLog(client, { at, actor: { kind: 'system' }, tradeCode: d.code, action: 'dispute.proof-refused', detail: { txHash: p.tx_hash } });
         return d;
       });
@@ -266,7 +266,7 @@ export async function runComplyLapses(deps: DisputeDeps, failures: unknown[]): P
       where d.after_refund and d.status in ('published', 'complying') and d.complied_at is null
         and d.comply_by is not null and d.comply_by <= $1 and d.paused_since is null
         and (d.comply_lapsed_at is null or d.comply_lapsed_at < d.comply_by)
-        and not exists (select 1 from payment_proofs p where p.code = d.code and p.seq = d.seq and p.status = 'pending')`,
+        and not exists (select 1 from ruling_payments p where p.code = d.code and p.seq = d.seq and p.status = 'pending')`,
     [now],
   );
   let n = 0;
@@ -278,7 +278,7 @@ export async function runComplyLapses(deps: DisputeDeps, failures: unknown[]): P
         if (d.ruling?.outcome !== 'seller-sends-xmr') return d;
         const fresh = await client.query(
           `update disputes set comply_lapsed_at = $3 where code = $1 and seq = $2 and (comply_lapsed_at is null or comply_lapsed_at < comply_by)
-             and not exists (select 1 from payment_proofs x where x.code = $1 and x.seq = $2 and x.status = 'pending')`,
+             and not exists (select 1 from ruling_payments x where x.code = $1 and x.seq = $2 and x.status = 'pending')`,
           [d.code, d.seq, at],
         );
         if ((fresh.rowCount ?? 0) === 0) return d;
@@ -308,7 +308,7 @@ export interface ComplianceView {
 export async function complianceOf(q: Queryable, d: Pick<Dispute, 'code' | 'seq' | 'complyBy'>): Promise<ComplianceView> {
   const lapsed = (await q.query<{ at: Date | null }>('select comply_lapsed_at as at from disputes where code = $1 and seq = $2', [d.code, d.seq])).rows[0]?.at ?? null;
   const { rows } = await q.query<{ tx_hash: string; status: 'pending' | 'accepted' | 'refused'; confirmations: number | null; submitted_at: Date }>(
-    'select tx_hash, status, confirmations, submitted_at from payment_proofs where code = $1 and seq = $2 order by submitted_at desc, tx_hash limit 1',
+    'select tx_hash, status, confirmations, submitted_at from ruling_payments where code = $1 and seq = $2 order by submitted_at desc, tx_hash limit 1',
     [d.code, d.seq],
   );
   const p = rows[0];

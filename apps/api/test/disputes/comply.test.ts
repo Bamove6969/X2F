@@ -78,11 +78,11 @@ async function relogin(...who: { id: string; browser: { post(url: string, body: 
 }
 
 /** A refunded trade the buyer disputed at START, ruled `seller-sends-xmr` at PUBLISHED (by default). */
-async function ruled(o: { outcome?: 'seller-sends-xmr' | 'no-action' | 'seller-returns-fiat'; afterRefund?: boolean } = {}) {
+async function ruled(o: { outcome?: 'seller-sends-xmr' | 'no-action' | 'seller-returns-fiat'; afterRefund?: boolean; buyerPayout?: string } = {}) {
   setNow(START);
   const seller = await trader();
   const buyer = await trader();
-  const { trade, sides } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer' });
+  const { trade, sides } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer', ...(o.buyerPayout ? { buyerPayout: o.buyerPayout } : {}) });
   const t = await driveTo(deps, trade, 'paid');
   const client = await deps.db.connect();
   try {
@@ -103,7 +103,7 @@ async function ruled(o: { outcome?: 'seller-sends-xmr' | 'no-action' | 'seller-r
 
 async function proofs(code: string) {
   const { rows } = await deps.db.query<{ tx_hash: string; status: string; has_key: boolean; confirmations: number | null }>(
-    'select tx_hash, status, tx_key is not null as has_key, confirmations from payment_proofs where code = $1 order by submitted_at, tx_hash',
+    'select tx_hash, status, tx_key is not null as has_key, confirmations from ruling_payments where code = $1 order by submitted_at, tx_hash',
     [code],
   );
   return rows;
@@ -203,9 +203,8 @@ describe('refused proofs (red: amount, address, late, replay)', () => {
 
   it('a replayed proof is 409 proof-replayed: the same tx for a second dispute, a trade settlement tx, a tx mined before the dispute opened', async () => {
     const a = await ruled();
-    const b = await ruled();
-    // b's seller is a's seller's twin: the same buyer address on both trades makes the replay real.
-    await deps.db.query('update trades set buyer_payout = $2 where code = $1', [b.code, a.buyerAddress]);
+    // The same buyer address on both trades (a saved wallet) makes the replay real.
+    const b = await ruled({ buyerPayout: a.buyerAddress });
     const txHash = pays(a.buyerAddress, AMOUNT);
     expect((await a.seller.browser.post(`/v1/trades/${a.code}/payment-proof`, { txHash, txKey: txKey() })).statusCode).toBe(200);
     const again = await b.seller.browser.post(`/v1/trades/${b.code}/payment-proof`, { txHash, txKey: txKey() });
