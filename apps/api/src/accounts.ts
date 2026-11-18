@@ -39,6 +39,24 @@ export async function assertNewNames(db: Queryable, displayName: unknown, loginN
 }
 
 /**
+ * The other direction of F4 (review of lead-signup-rules-main, M1): a new staff or owner display
+ * name may not look like an existing trader's display name or a live team member's name (or open
+ * member invite), compared by `staffNameKey` as `assertNewNames` compares the other way, so a
+ * trader who signed up first can never read like staff. A member's own login account is skipped:
+ * its display name is a random placeholder nobody sees. 400 `display-name-reserved`, as for a
+ * reserved word. Read in full on each call: it runs only at staff invite accept and owner setup.
+ */
+export async function assertStaffNameUnlike(db: Queryable, displayKey: string): Promise<void> {
+  const folded = staffNameKey(displayKey);
+  const { rows } = await db.query<{ display_key: string }>(
+    `select display_key from accounts where kind = 'trader'
+     union all
+     select display_key from team_members where removed_at is null`,
+  );
+  if (rows.some((r) => staffNameKey(r.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
+}
+
+/**
  * `NewNames` as a sign-up challenge's payload keeps them (FU-D, FU-A review note 1): the display
  * name in clear (it is public), the login name sealed with AES-256-GCM under `subkey('login-seal')`,
  * so a stolen database holds no login name, not even one waiting in a sign-up.
