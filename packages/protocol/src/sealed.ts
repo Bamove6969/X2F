@@ -150,7 +150,12 @@ export async function openSealedWith(recipient: BoxOpener, sealed: Uint8Array): 
   let k: Uint8Array | null = null;
   try {
     // An all-zero shared secret (a low-order ephemeral key) opens nothing, as libsodium refuses it.
-    if (!(shared instanceof Uint8Array) || shared.length !== 32 || shared.every((b) => b === 0)) throw new ProtocolError('not-for-me', 'sealed box does not open with this key');
+    // Re-review 2 m4: checked in constant time (an OR over every byte, as sodium_is_zero), never by
+    // an early exit that would time where the first non-zero byte of a secret is.
+    if (!(shared instanceof Uint8Array) || shared.length !== 32) throw new ProtocolError('not-for-me', 'sealed box does not open with this key');
+    let z = 0;
+    for (const b of shared) z |= b;
+    if (z === 0) throw new ProtocolError('not-for-me', 'sealed box does not open with this key');
     k = hsalsa20(shared);
     const nonce = sodium.crypto_generichash(sodium.crypto_box_NONCEBYTES, new Uint8Array([...epk, ...pub]), null);
     try {

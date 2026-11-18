@@ -46,6 +46,16 @@ async function webBox(): Promise<{ opener: BoxOpener; privateKey: CryptoKey }> {
 }
 
 describe('hsalsa20', () => {
+  // Re-review 2 m5: the NaCl reference vectors (tests/core1 and tests/core2). core2 checks the input
+  // words (6-9), which crypto_box_beforenm never uses.
+  const H = (x: string) => Uint8Array.from(Buffer.from(x, 'hex'));
+  it('NaCl core1: HSalsa20(shared, 0^16) = firstkey', () => {
+    expect(hex(hsalsa20(H('4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742'), new Uint8Array(16)))).toBe('1b27556473e985d462cd51197a9a46c76009549eac6474f206c4ee0844f68389');
+  });
+  it('NaCl core2: HSalsa20(firstkey, nonce prefix) = secondkey', () => {
+    expect(hex(hsalsa20(H('1b27556473e985d462cd51197a9a46c76009549eac6474f206c4ee0844f68389'), H('69696ee955b62b73cd62bda875fc73d6')))).toBe('dc908dda0b9344a953629b733820778880f3ceb421bb61b91cbd4c3e66256ce4');
+  });
+
   it('is crypto_box_beforenm\'s step: HSalsa20(X25519(sk, pk), 0^16) equals crypto_box_beforenm(pk, sk)', () => {
     for (let i = 0; i < 20; i++) {
       const a = sodium.crypto_box_keypair();
@@ -113,3 +123,20 @@ describe('the countersign by a WebCrypto Ed25519 key (B1)', () => {
     await expect(makeModCountersign({ body, requestId: 'a'.repeat(32), issuedAt: '2026-11-18T12:00:00.000Z', me: liar })).rejects.toBeInstanceOf(TypeError);
   });
 });
+
+describe('openSealedWith: the all-zero check (re-review 2 m4)', () => {
+  it('refuses a shared secret that is all zeros, and one that is zero but for its last byte opens nothing either (not-for-me), never an early exit on the first byte', async () => {
+    const kp = sodium.crypto_box_keypair();
+    const sealed = sodium.crypto_box_seal(new Uint8Array([1]), kp.publicKey);
+    const opener = (shared: Uint8Array): BoxOpener => ({ boxPublic: hex(kp.publicKey), sharedWith: async () => shared.slice() });
+    await expect(openSealedWith(opener(new Uint8Array(32)), sealed)).rejects.toMatchObject({ code: 'not-for-me' });
+    const last = new Uint8Array(32);
+    last[31] = 1;
+    await expect(openSealedWith(opener(last), sealed)).rejects.toMatchObject({ code: 'not-for-me' });
+    const src = (await import('node:fs')).readFileSync(new URL('../src/sealed.ts', import.meta.url), 'utf8');
+    // Constant time: an OR over every byte (as sodium_is_zero), never Array.prototype.every / some.
+    expect(src).not.toMatch(/shared\.(every|some|find|indexOf)\(/);
+    expect(src).toMatch(/for \(const b of shared\) z \|= b;/);
+  });
+});
+
