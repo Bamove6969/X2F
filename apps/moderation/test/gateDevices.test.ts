@@ -253,6 +253,47 @@ describe('the gate: revoke-device and revoking a person', () => {
     expect(r2).toContain('gate.refused.device-out-of-order');
   });
 
+  it('re-review M2: a certify tap made before a switch-off and not yet synced is never certified by the sync that applies the switch-on', async () => {
+    const { w, mod } = await staffed();
+    // Tapped NOW (say by someone who briefly had the person's session and key), not yet synced.
+    const b = certify(mod);
+    w.api.taps.push(b.tap);
+    // Switched off at +30 s and on at +60 s, both between two syncs.
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }, { issuedAt: at(60_000) }));
+    const reasons: string[] = [];
+    await sync(w, at(2 * 60_000), reasons);
+    expect(deviceLive(w.gate, mod.id, b.k.deviceKeyId, at(2 * 60_000))).toBeNull();
+    expect(reasons).toContain('gate.refused.device-before-revoke-person');
+    expect(w.gate.devicesRevokedAt[mod.id]).toBe(at(60_000).toISOString());
+    // A device tapped after the switch-on certifies.
+    const c = certify(mod, deviceKeys(), { issuedAt: at(90_000) });
+    w.api.taps.push(c.tap);
+    await sync(w, at(2 * 60_000));
+    expect(deviceLive(w.gate, mod.id, c.k.deviceKeyId, at(2 * 60_000))).not.toBeNull();
+  });
+
+  it('re-review M1: after a security reset, the same browser key certified again before the gate syncs the reset is live (revoked as of the reset tap\'s issuedAt)', async () => {
+    const { w, mod } = await staffed();
+    const a = certify(mod);
+    w.api.taps.push(a.tap);
+    await sync(w);
+    const r = resetSecurity(w, mod); // the owner's reset tap, issued NOW
+    // Re-enrolled, the same device key certified again at +60 s, before the gate's next sync at +3 min.
+    const again = certify(r.again, a.k, { issuedAt: at(60_000) });
+    w.api.taps.push(again.tap);
+    const reasons: string[] = [];
+    await sync(w, at(3 * 60_000), reasons);
+    expect(reasons.filter((x) => x.includes('device'))).toEqual([]);
+    expect(deviceLive(w.gate, mod.id, a.k.deviceKeyId, at(4 * 60_000))).not.toBeNull();
+    expect(w.gate.devices[a.k.deviceKeyId]!.certifiedAt).toBe(at(60_000).toISOString());
+    // A certification issued before the reset never counts again.
+    const stale = certify(r.again, deviceKeys(), { issuedAt: at(-1000) });
+    w.api.taps.push(stale.tap);
+    const r2: string[] = [];
+    await sync(w, at(3 * 60_000 + 1000), r2);
+    expect(r2.some((x) => x.startsWith('gate.refused.device-before'))).toBe(true);
+  });
+
   it('leaves every other kind of tap alone (unspent) for its own step', async () => {
     const { w, mod } = await staffed();
     // A set-role for someone the gate does not know yet is kept for later, never spent by the device step.

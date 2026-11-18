@@ -305,7 +305,10 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       s.inviteClosed = true;
       s.creds = [];
       // Design task 8: a security reset revokes every device the person certified with the old keys.
-      revokeDevicesOf(g, intent.accountId, ctx.now());
+      // Re-review M1: as of the reset tap's signed issuedAt (never later than now), as N5 does, so the
+      // same browser key certified again after the reset but before this sync counts. The person is
+      // disabled from the reset tap on, and their old keys no longer verify.
+      revokeDevicesOf(g, intent.accountId, new Date(Math.min(issuedOf(t), ctx.now().getTime())));
       binding = { accountId: intent.accountId, closed: false };
       g.resets[intent.inviteId] = binding;
     } else if (binding.accountId !== intent.accountId) {

@@ -103,6 +103,12 @@ export interface GateState {
   executions: Record<string, RulingExecution>;
   /** Design task 8: certified staff device keys by id (empty in a gate.bin written before it). */
   devices: Record<string, StaffDevice>;
+  /**
+   * Re-review M2: per person, when this gate last revoked all their devices (a switch-off or removal
+   * it saw, an applied switch-on, a security reset). A certification issued at or before it never
+   * counts, even one tapped earlier and synced only now. Empty in a gate.bin written before it.
+   */
+  devicesRevokedAt: Record<string, string>;
 }
 
 /**
@@ -166,6 +172,7 @@ export function emptyGate(): GateState {
     applied: {},
     executions: {},
     devices: {},
+    devicesRevokedAt: {},
   };
 }
 

@@ -40,9 +40,16 @@ export function personStands(g: GateState, accountId: string): boolean {
 
 const live = (d: StaffDevice, at: number): boolean => d.revokedAt === null && at < Date.parse(d.expiresAt) && at >= Date.parse(d.certifiedAt) - SWITCH_ON_SKEW_MS;
 
-/** Revokes every live device of a person (their switch-off, removal or security reset), by the gate's clock. */
+/**
+ * Revokes every live device of a person (their switch-off, removal, security reset or switch-on) as
+ * of `now`, and (re-review M2) raises their watermark: no certification issued at or before it
+ * counts afterwards, a pending one included.
+ */
 export function revokeDevicesOf(g: GateState, accountId: string, now: Date): void {
   for (const d of Object.values(g.devices)) if (d.accountId === accountId && d.revokedAt === null) d.revokedAt = now.toISOString();
+  g.devicesRevokedAt ??= {};
+  const was = Object.hasOwn(g.devicesRevokedAt, accountId) ? Date.parse(g.devicesRevokedAt[accountId]!) : Number.NEGATIVE_INFINITY;
+  if (now.getTime() > was) g.devicesRevokedAt[accountId] = now.toISOString();
 }
 
 /** A live certified device of exactly this person at `at` (this process's clock), or null. */
@@ -72,7 +79,7 @@ export async function syncDevices(source: GateSource, g: GateState, ctx: GateCon
   const now = ctx.now();
   const at = now.getTime();
   // Every person who no longer stands loses all their devices, whatever taps follow.
-  for (const d of Object.values(g.devices)) if (d.revokedAt === null && !personStands(g, d.accountId)) d.revokedAt = now.toISOString();
+  for (const d of Object.values(g.devices)) if (d.revokedAt === null && !personStands(g, d.accountId)) revokeDevicesOf(g, d.accountId, now);
   if (g.ownerAccountId === null) return;
   const refuse = (nonceHex: string, why: string): void => {
     g.usedNonces[nonceHex] = `device-refused:${why}`;
@@ -155,6 +162,12 @@ export async function syncDevices(source: GateSource, g: GateState, ctx: GateCon
     const s = Object.hasOwn(g.staff, i.accountId) ? g.staff[i.accountId] : undefined;
     if (s?.offSeenAt !== undefined && !(issued > Date.parse(s.offSeenAt) - SWITCH_ON_SKEW_MS)) {
       refuse(tap.nonceHex, 'before-off');
+      continue;
+    }
+    // Re-review M2: issued after the last time this person's devices were all revoked.
+    const mark = g.devicesRevokedAt && Object.hasOwn(g.devicesRevokedAt, i.accountId) ? Date.parse(g.devicesRevokedAt[i.accountId]!) : null;
+    if (mark !== null && !(issued > mark)) {
+      refuse(tap.nonceHex, 'before-revoke-person');
       continue;
     }
     if (existing !== undefined && live(existing, at)) {
