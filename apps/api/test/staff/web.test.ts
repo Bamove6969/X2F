@@ -40,6 +40,8 @@ describe('the staff web app on the staff origin', () => {
     // Lead call 18 Nov: 'wasm-unsafe-eval' lets libsodium compile its WebAssembly (it has no JS
     // fallback); it permits wasm compilation only, never JS eval.
     expect(STAFF_CSP).toContain("script-src 'self' 'wasm-unsafe-eval';");
+    // Re-review m6: workers only from this origin, whatever script-src becomes.
+    expect(STAFF_CSP).toContain("worker-src 'self';");
     expect(STAFF_CSP).toContain("connect-src 'self';");
   });
 

@@ -376,6 +376,57 @@ test('ModCase parity at 1280x1600 on a device not yet confirmed: one primary act
   expect(calls.filter((c) => /\/chat\b/.test(c))).toEqual([]);
 });
 
+// Re-review B1 (the reviewer's probe, kept): the device key lives in IndexedDB, which page script
+// shares with the chat key worker. It must find no secret there: the record holds only the public
+// halves and two non-extractable CryptoKeys (Ed25519, X25519), no AES wrap key, no bytes, and
+// exporting either key in any format is refused. (Page script can still USE them while it runs:
+// the stated residual.)
+test('re-review B1: page script reads the device record from IndexedDB and gets no secret bytes; exportKey is refused', async ({ page }) => {
+  await stub(page);
+  await page.goto(`/disputes/${CASE.code}`);
+  await expect(page.locator('[data-part="device-uncertified"]')).toBeVisible();
+  const probe = await page.evaluate(
+    () =>
+      new Promise<unknown>((resolve, reject) => {
+        const r = indexedDB.open('x2f-staff-device', 1);
+        r.onerror = () => reject(r.error);
+        r.onsuccess = () => {
+          const db = r.result;
+          const tx = db.transaction('device');
+          const all = tx.objectStore('device').getAll();
+          const keys = tx.objectStore('device').getAllKeys();
+          tx.oncomplete = async () => {
+            db.close();
+            const rec = (all.result as Array<Record<string, unknown>>).find((x) => x?.v !== undefined) ?? {};
+            const bytesIn = (v: unknown): number => (v instanceof ArrayBuffer ? v.byteLength : ArrayBuffer.isView(v) ? v.byteLength : 0);
+            const out: Record<string, unknown> = { storeKeys: keys.result, fields: Object.keys(rec).sort(), v: rec.v, bytes: Object.values(rec).reduce((n: number, v) => n + bytesIn(v), 0) };
+            for (const f of ['sign', 'box']) {
+              const k = rec[f];
+              if (!(k instanceof CryptoKey)) {
+                out[f] = 'not a CryptoKey';
+                continue;
+              }
+              const exports: string[] = [];
+              for (const fmt of ['raw', 'pkcs8', 'jwk'] as const) {
+                exports.push(await crypto.subtle.exportKey(fmt, k).then(() => `${fmt}:EXPORTED`, () => `${fmt}:refused`));
+              }
+              out[f] = { alg: k.algorithm.name, type: k.type, extractable: k.extractable, exports };
+            }
+            resolve(out);
+          };
+        };
+      }),
+  );
+  expect(probe).toEqual({
+    storeKeys: ['key'],
+    fields: ['box', 'boxPublic', 'sign', 'signPublic', 'v'],
+    v: 3,
+    bytes: 0,
+    sign: { alg: 'Ed25519', type: 'private', extractable: false, exports: ['raw:refused', 'pkcs8:refused', 'jwk:refused'] },
+    box: { alg: 'X25519', type: 'private', extractable: false, exports: ['raw:refused', 'pkcs8:refused', 'jwk:refused'] },
+  });
+});
+
 /** Every CSP violation the page reports (the event, which the console line also shows), and console errors. */
 async function watchCsp(page: Page): Promise<{ violations: () => Promise<string[]>; console: string[] }> {
   const console: string[] = [];
@@ -388,7 +439,27 @@ async function watchCsp(page: Page): Promise<{ violations: () => Promise<string[
     w.__cspViolations = [];
     document.addEventListener('securitypolicyviolation', (e) => w.__cspViolations.push(`${e.effectiveDirective} ${e.blockedURI}`));
   });
-  return { violations: () => page.evaluate(() => (window as unknown as { __cspViolations: string[] }).__cspViolations.slice()), console };
+  // Re-review m6: violations inside the chat key worker too (it reports them on its own scope), and its errors.
+  const workers: import('@playwright/test').Worker[] = [];
+  page.on('worker', (wk) => {
+    workers.push(wk);
+    wk.on('console', (m) => {
+      if (m.type() === 'error' || /content security policy|refused to/i.test(m.text())) console.push(`worker ${m.type()}: ${m.text()}`);
+    });
+    void wk
+      .evaluate(() => {
+        const s = self as unknown as { __cspViolations: string[]; addEventListener: (t: string, l: (e: SecurityPolicyViolationEvent) => void) => void };
+        s.__cspViolations = [];
+        s.addEventListener('securitypolicyviolation', (e) => s.__cspViolations.push(`${e.effectiveDirective} ${e.blockedURI}`));
+      })
+      .catch(() => undefined);
+  });
+  const violations = async (): Promise<string[]> => {
+    const out = await page.evaluate(() => (window as unknown as { __cspViolations: string[] }).__cspViolations.slice());
+    for (const wk of workers) out.push(...(await wk.evaluate(() => (self as unknown as { __cspViolations?: string[] }).__cspViolations ?? []).catch(() => [] as string[])).map((v) => `worker ${v}`));
+    return out;
+  };
+  return { violations, console };
 }
 
 test('design build task 9: a moderator confirms this device, opens the disputed chat and sends a countersigned message, under STAFF_CSP', async ({ page, baseURL }) => {
@@ -404,6 +475,7 @@ test('design build task 9: a moderator confirms this device, opens the disputed 
   const res = await page.goto(`/disputes/${CASE.code}`);
   const policy = res?.headers()['content-security-policy'] ?? '';
   expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval'");
+  expect(policy).toContain("worker-src 'self'");
   expect(policy).not.toMatch(/'unsafe-eval'|'unsafe-inline'/);
   await expect(page.locator('[data-screen="mod-case"]')).toBeVisible();
   const openChatButton = page.getByRole('button', { name: 'Open the full chat' });
