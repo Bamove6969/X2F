@@ -18,7 +18,8 @@ import type { ChatNoticeCandidate, Link } from './link.js';
  * - it accepted no grant for the chat (`mod_chat_grants`) and signed no notice for that dispute
  *   (`mod_chat_notices`); review N3: a notice it signed but the API never took (`posted_at` null) is
  *   posted again, the SAME signed notice, on each pass while the API lists the dispute, and never a
- *   second one;
+ *   second one; re-review m5: unless the API refused it for good (a 4xx other than 409 or 429), when
+ *   it stops and the owner is alerted (`chat-notice-stopped`);
  * - a dispute a trader opened is at least NOTICE_AFTER_TRADER_MS old by this process's clock, so the
  *   disputer's own grant (T1) is tried first; a system dispute gets its notice at once.
  * The dispute's seq, opening time and opener are the API's word; the API files the notice only when
@@ -29,6 +30,17 @@ import type { ChatNoticeCandidate, Link } from './link.js';
 /** Engineering call (as GRANT_FALLBACK_MS in the trader engine): a trader-opened dispute's T1 grant goes first. */
 export const NOTICE_AFTER_TRADER_MS = 2 * 60_000;
 const DAY_MS = 86_400_000;
+
+/** Re-review m5: tells the API (an owner alert) that this dispute's notice was refused for good; once it is taken, never again. */
+async function stopped(d: { link: Link; db: Queryable; log: (e: { reason: string }) => void }, chat: string, disputeSeq: number, status: number, now: Date): Promise<void> {
+  const got = await d.link.postReport({ kind: 'chat-notice-stopped', chat, disputeSeq, status });
+  if (got !== 201) {
+    d.log({ reason: `chat-notice-stopped-report-refused-${got}` });
+    return;
+  }
+  await d.db.query('update mod_chat_notices set alerted_at = $3 where chat = $1 and dispute_seq = $2', [chat, disputeSeq, now]);
+  d.log({ reason: 'chat-notice-stopped' });
+}
 
 export async function noticePass(d: { link: Link; db: Queryable; keystoreKey: Uint8Array; now: () => Date; log: (e: { reason: string }) => void }): Promise<string[]> {
   let items: ChatNoticeCandidate[];
@@ -53,13 +65,14 @@ export async function noticePass(d: { link: Link; db: Queryable; keystoreKey: Ui
       const now = d.now();
       const { rows } = await d.db.query<{
         attestation: { channels?: { chat?: string } } | null; linked: string | null; seen: boolean; granted: boolean;
-        noticed: { notice: unknown; posted: boolean } | null;
+        noticed: { notice: unknown; posted: boolean; refused: number | null; alerted: boolean } | null;
       }>(
         `select (select attestation from signed_chats where chat = $1) as attestation,
                 (select trade from mod_chat_trade where chat = $1) as linked,
                 exists (select 1 from mod_dispute_seen where trade = $2 and last_seen_at >= $3) as seen,
                 exists (select 1 from mod_chat_grants where chat = $1) as granted,
-                (select json_build_object('notice', notice, 'posted', posted_at is not null) from mod_chat_notices where chat = $1 and dispute_seq = $4) as noticed`,
+                (select json_build_object('notice', notice, 'posted', posted_at is not null, 'refused', refused_status, 'alerted', alerted_at is not null)
+                   from mod_chat_notices where chat = $1 and dispute_seq = $4) as noticed`,
         [chat, trade, new Date(now.getTime() - CHAT_AFTER_DISPUTE_DAYS * DAY_MS), it.disputeSeq],
       );
       const r = rows[0]!;
@@ -82,6 +95,11 @@ export async function noticePass(d: { link: Link; db: Queryable; keystoreKey: Ui
         // Review N3: signed before. Taken by the API: done. Not taken: the same notice again. A row
         // with no notice (from before migration 020) is never signed a second time.
         if (r.noticed.posted || r.noticed.notice === null) continue;
+        // Re-review m5: refused for good: never posted again; the owner told until the API takes it.
+        if (r.noticed.refused !== null) {
+          if (!r.noticed.alerted) await stopped(d, chat, it.disputeSeq, r.noticed.refused, now);
+          continue;
+        }
         notice = r.noticed.notice;
       } else {
         if (openedBy !== 'system' && now.getTime() - openedAt < NOTICE_AFTER_TRADER_MS) continue;
@@ -104,8 +122,13 @@ export async function noticePass(d: { link: Link; db: Queryable; keystoreKey: Ui
       }
       const status = await d.link.postReport({ kind: 'chat-dispute-notice', chat, notice });
       if (status !== 201) {
-        // Not counted; the row stays unposted, so the next pass posts this same notice again.
         d.log({ reason: `chat-notice-report-refused-${status}` });
+        if (status >= 400 && status < 500 && status !== 409 && status !== 429) {
+          // Re-review m5: the API will not take it (bad body, unknown chat, ...): stop, and tell the owner.
+          await d.db.query('update mod_chat_notices set refused_status = $3 where chat = $1 and dispute_seq = $2 and posted_at is null', [chat, it.disputeSeq, status]);
+          await stopped(d, chat, it.disputeSeq, status, now);
+        }
+        // Otherwise (a 5xx, 409, 429) the row stays unposted, so the next pass posts this same notice again.
         continue;
       }
       await d.db.query('update mod_chat_notices set posted_at = $3 where chat = $1 and dispute_seq = $2 and posted_at is null', [chat, it.disputeSeq, now]);

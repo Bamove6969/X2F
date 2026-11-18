@@ -693,6 +693,27 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.code(201).send({ ok: true });
   };
 
+  /**
+   * `{ kind: 'chat-notice-stopped', chat, disputeSeq, status }` (re-review m5): the moderation
+   * service stopped re-posting a dispute notice this API refused for good. One owner alert.
+   */
+  const chatNoticeStopped = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat', 'disputeSeq', 'status'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    const seq = body.disputeSeq;
+    const status = body.status;
+    if (code === null || typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 1 || typeof status !== 'number' || !Number.isInteger(status) || status < 400 || status > 499) {
+      throw new Refused(400, 'bad-body');
+    }
+    await addOwnerAlert(o.db, 'chat-notice-refused', {
+      chat: code, disputeSeq: seq, status,
+      // COPY-UNSIGNED
+      message: 'A disputed chat could not get its moderator notice: moderators may not be able to read it. Check the dispute.',
+    }, o.clock?.() ?? new Date(now()));
+    log({ reason: 'internal-chat-notice-stopped' });
+    return reply.code(201).send({ ok: true });
+  };
+
   /** `{ kind: 'chat-refused', chat, reason }`: the moderation service will never attest this chat. */
   const refuseChat = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     const keys = Object.keys(body);
@@ -788,6 +809,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-grant-accepted') return chatGrantAccepted(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-dispute-notice') return chatDisputeNotice(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-notice-stopped') return chatNoticeStopped(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-grant-refused') return chatGrantRefused(body, reply);
     if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
     if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);

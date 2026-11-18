@@ -159,4 +159,51 @@ describe('the dispute notice pass (T2)', () => {
     expect(await run(link)).toEqual([]);
     expect(reports).toHaveLength(3);
   });
+
+  it('re-review m5: a notice refused for good (a 4xx other than 409 or 429) is not posted again, and the owner is alerted once; a 5xx, a 409, a 429 or a network error keeps retrying', async () => {
+    const run2 = async (answers: Array<number | 'throw'>) => {
+      const c = await attested();
+      const reports: Array<{ kind: string }> = [];
+      const link = {
+        pullChatNotices: async () => [cand(c)],
+        postReport: async (r: { kind: string }) => {
+          reports.push(r);
+          if (r.kind !== 'chat-dispute-notice') return 201;
+          const a = answers.shift() ?? 201;
+          if (a === 'throw') throw new Error('network');
+          return a;
+        },
+      } as unknown as Link;
+      for (let i = 0; i < 4; i++) await run(link);
+      return { c, kinds: reports.map((r) => r.kind), reports };
+    };
+    // 400: stopped after the first refusal, the owner told once (with the chat, the dispute and the status).
+    const stopped = await run2([400, 201]);
+    expect(stopped.kinds).toEqual(['chat-dispute-notice', 'chat-notice-stopped']);
+    expect(stopped.reports[1]).toEqual({ kind: 'chat-notice-stopped', chat: stopped.c.chat, disputeSeq: 1, status: 400 });
+    // 404 likewise.
+    expect((await run2([404])).kinds).toEqual(['chat-dispute-notice', 'chat-notice-stopped']);
+    // Retried until 201: 503, 409, 429, a throw.
+    expect((await run2([503, 409, 429, 201])).kinds).toEqual(['chat-dispute-notice', 'chat-dispute-notice', 'chat-dispute-notice', 'chat-dispute-notice']);
+    expect((await run2(['throw', 201])).kinds).toEqual(['chat-dispute-notice', 'chat-dispute-notice']);
+  });
+
+  it('re-review m5: an owner alert the API did not take is sent again on the next pass, never the notice', async () => {
+    const c = await attested();
+    const reports: Array<{ kind: string }> = [];
+    let alertAnswer = 503;
+    const link = {
+      pullChatNotices: async () => [cand(c)],
+      postReport: async (r: { kind: string }) => {
+        reports.push(r);
+        return r.kind === 'chat-dispute-notice' ? 400 : alertAnswer;
+      },
+    } as unknown as Link;
+    await run(link);
+    alertAnswer = 201;
+    await run(link);
+    await run(link);
+    expect(reports.map((r) => r.kind)).toEqual(['chat-dispute-notice', 'chat-notice-stopped', 'chat-notice-stopped']);
+  });
 });
+

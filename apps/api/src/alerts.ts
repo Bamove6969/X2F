@@ -57,7 +57,10 @@ export type AlertKind =
   | 'staff-security-reset-finished'
   // Owner only: an appeal nobody may review (every senior moderator and the owner was involved in
   // round 1, or none is switched on); it waits in the queue until one is added (D-011, Plan 4 Task 24).
-  | 'appeal-no-reviewer';
+  | 'appeal-no-reviewer'
+  // Owner only (re-review lead-mod-chat m5): the moderation service's dispute notice for a chat was
+  // refused by this API for good (a 4xx other than 409/429); that dispute's chat gets no notice (T2).
+  | 'chat-notice-refused';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

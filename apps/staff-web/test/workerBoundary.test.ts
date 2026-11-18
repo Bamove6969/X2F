@@ -3,7 +3,8 @@
 // imports the key-handling modules (src/keys/) or a chat crypto package; the one link to the worker is
 // `new Worker(new URL('../keys/chatWorker.ts', import.meta.url))` in chat/client.ts, which starts it
 // as its own module graph.
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHAT_TEXT_MAX_BYTES } from '@x2f/trade';
@@ -77,4 +78,36 @@ describe('the chat key worker boundary (design build task 10)', () => {
   it('the page\'s text cap is the chat\'s', () => {
     expect(MOD_TEXT_MAX_BYTES).toBe(CHAT_TEXT_MAX_BYTES);
   });
+
+  // Re-review m2: the import walk sees only the page's direct packages; a package it imports could
+  // pull libsodium in on its own. So the BUILT page bundle is checked too: no libsodium, no
+  // countersign domain, no device database, none of the key code; the worker chunk has them.
+  it('the built page bundle carries no libsodium and no key code; the worker chunk does', async () => {
+    const { build } = await import('vite');
+    const out = mkdtempSync(join(tmpdir(), 'x2f-staff-web-boundary-'));
+    const before = process.env.VITE_MOD_SIGNING_PUBLIC;
+    process.env.VITE_MOD_SIGNING_PUBLIC = '1f'.repeat(32);
+    try {
+      await build({ root: resolve(SRC, '..'), configFile: resolve(SRC, '../vite.config.ts'), mode: 'production', logLevel: 'silent', build: { outDir: out, emptyOutDir: true } });
+      const assets = readdirSync(join(out, 'assets')).filter((f) => f.endsWith('.js'));
+      const page = assets.filter((f) => f.startsWith('index-'));
+      const worker = assets.filter((f) => f.startsWith('chatWorker-'));
+      expect(page).toHaveLength(1);
+      expect(worker).toHaveLength(1);
+      const text = (f: string) => readFileSync(join(out, 'assets', f), 'utf8');
+      // libsodium's own symbols, the countersign domain and the device database.
+      const markers = ['crypto_box_seal', 'crypto_sign_detached', 'x2f/mod-countersign/v1', 'x2f-staff-device'];
+      for (const m of markers) {
+        expect(text(page[0]!), `page: ${m}`).not.toContain(m);
+        expect(text(worker[0]!), `worker: ${m}`).toContain(m);
+      }
+      // Every chunk the page loads is the page's (only the worker chunk is the worker's).
+      for (const f of assets.filter((a) => !a.startsWith('chatWorker-'))) for (const m of markers) expect(text(f), `${f}: ${m}`).not.toContain(m);
+    } finally {
+      if (before === undefined) delete process.env.VITE_MOD_SIGNING_PUBLIC;
+      else process.env.VITE_MOD_SIGNING_PUBLIC = before;
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 120_000);
 });
+

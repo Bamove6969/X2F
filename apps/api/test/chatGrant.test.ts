@@ -211,6 +211,32 @@ const modRows = async (chat: string) =>
 const disputed = async (code: string) => (await deps.db.query<{ state: string }>('select state from trades where code = $1', [code])).rows[0]!.state;
 
 describe('the dispute grant (T1)', () => {
+  it('re-review m5: moderation\'s chat-notice-stopped report raises one owner alert naming the chat, the dispute and the status; anything else in it is 400', async () => {
+    const { seedStaff } = await import('./helpers/staffApp.js');
+    const owner = await seedStaff(deps, { role: 'owner' });
+    const k = await keyedTrade();
+    const res = await signedInject('POST', '/internal/v1/reports', { kind: 'chat-notice-stopped', chat: k.chat, disputeSeq: 1, status: 400 });
+    expect(res.statusCode, res.body).toBe(201);
+    const { rows } = await deps.db.query<{ detail: Record<string, unknown> }>("select detail from alerts where account_id = $1 and kind = 'chat-notice-refused'", [owner.id]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.detail).toMatchObject({ chat: k.chat, disputeSeq: 1, status: 400 });
+    for (const bad of [{ kind: 'chat-notice-stopped', chat: k.chat, disputeSeq: 0, status: 400 }, { kind: 'chat-notice-stopped', chat: k.chat, disputeSeq: 1, status: 503 }, { kind: 'chat-notice-stopped', chat: 'nope', disputeSeq: 1, status: 400 }, { kind: 'chat-notice-stopped', chat: k.chat, disputeSeq: 1, status: 400, x: 1 }]) {
+      expect((await signedInject('POST', '/internal/v1/reports', bad)).statusCode, JSON.stringify(bad)).toBe(400);
+    }
+  });
+
+  it('re-review m1, migration 716: a staff row never carries a signed statement (23514); a moderator row may', async () => {
+    const k = await keyedTrade();
+    const ins = (kind: 'mod' | 'staff', ref: string, statement: string | null) =>
+      deps.db.query(
+        `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, statement)
+         values ($1, $2, $3, $4, 'w', $5, 'assigned', 'mod', $6, '', $7)`,
+        [k.chat, kind, ref, 'a'.repeat(64), k.tkh, now, statement],
+      );
+    await expect(ins('staff', `00000000-0000-4000-8000-000000000001/${'d'.repeat(32)}`, '{"s":1}')).rejects.toMatchObject({ code: '23514' });
+    await expect(ins('staff', `00000000-0000-4000-8000-000000000001/${'d'.repeat(32)}`, null)).resolves.toBeDefined();
+  });
+
   it('a keyed chat: no grant is 400 grant-required and opens nothing; the disputer\'s grant opens the dispute and is filed for the moderator', async () => {
     const k = await keyedTrade();
     let res = await dispute(k);
