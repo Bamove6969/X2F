@@ -46,3 +46,6 @@ The component itself is clean:
 - A first run at 18 Nov 16:14 UTC was discarded: the lead's disk cleanup removed this worktree's node_modules mid-run. The numbers above are from the clean rerun.
 
 Counts: 0 blocking, 4 minor, 2 info.
+
+## Addendum: proof receive.test rerun at 3c1c3dad
+- `npx vitest run --project @x2f/proof packages/proof/test/receive.test.ts`, run twice under the lock: 42/42 passed both times. The earlier failure was a load timeout, not agy's change. The full-check result stands at 7133/7133 on the merits. Verdict unchanged: APPROVE WITH MINORS.
