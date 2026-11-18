@@ -15,6 +15,7 @@ import type { DisputeTrade, DisputeView } from './api.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
 import { ModeratorTag } from './ModeratorTag.js';
+import { TradeReview } from '../review/TradeReview.js';
 import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, feeOwedLine, isTxHex, overturnLien, rulingCopy, rulingFinal, utcDateTime } from './rules.js';
 import './dispute.css';
 
@@ -291,6 +292,8 @@ export function DisputeRuling({
         ) : null}
         {proofDue ? <TxProofForm onTxProof={onTxProof!} /> : null}
         <AppealSection dispute={dispute} me={trade.role} other={trade.counterparty} serverClock={serverClock} onAppeal={onAppeal} quiet={proofDue} />
+        {/* Plan 5 Task 6: rate the trade once its dispute is closed (the API says when: reviewable). */}
+        <TradeReview code={trade.code} counterparty={trade.counterparty} rated={trade.role === 'buyer' ? 'seller' : 'buyer'} />
         <p className="dispute-footnote">{copy.footer}</p>
       </div>
     </div>

@@ -1,0 +1,208 @@
+/* Plan 5 Task 6: the rating and "How's X2F doing?" cards (board Review.dc.html), from the theme's
+   tokens. Stars follow the board (#ff6600, the Monero token); chips are teal (good) and rose (bad). */
+
+.x2f-review {
+  display: flex;
+  flex-direction: column;
+}
+
+.x2f-review__card {
+  margin: 0 var(--x2f-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-review__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+}
+
+.x2f-review__title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.x2f-review__sub {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-review__sub--body {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.x2f-review__stars {
+  display: flex;
+  gap: var(--x2f-space-1);
+}
+
+.x2f-review__star {
+  width: 52px;
+  height: 52px;
+  border: 0;
+  background: transparent;
+  padding: var(--x2f-space-1);
+  cursor: pointer;
+}
+
+.x2f-review__star path {
+  fill: none;
+  stroke: var(--x2f-monero);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.x2f-review__star path[data-on] {
+  fill: var(--x2f-monero);
+}
+
+.x2f-review__phrases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-review__phrase,
+.x2f-review__mood {
+  box-sizing: border-box;
+  border: 1px solid var(--x2f-line);
+  background: transparent;
+  color: var(--x2f-ink);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.x2f-review__phrase {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--x2f-radius-pill);
+  font-size: 14px;
+}
+
+.x2f-review__phrase[aria-pressed='true'] {
+  background: var(--x2f-surface-raised);
+  font-weight: 600;
+}
+
+.x2f-review__phrase[aria-pressed='true'][data-tone='good'] {
+  border-color: var(--x2f-escrow);
+  color: var(--x2f-escrow);
+}
+
+.x2f-review__phrase[aria-pressed='true'][data-tone='bad'] {
+  border-color: var(--x2f-danger);
+  color: var(--x2f-danger);
+}
+
+.x2f-review__label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-review__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--x2f-radius-sm);
+  border: 1px solid var(--x2f-line);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 16px;
+  resize: none;
+}
+
+.x2f-review__error {
+  margin: 0;
+  color: var(--x2f-danger);
+  font-size: 14px;
+}
+
+.x2f-review__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  padding: var(--x2f-space-4);
+}
+
+.x2f-review__saved {
+  margin: 0 var(--x2f-space-4);
+  display: flex;
+  gap: var(--x2f-space-3);
+  align-items: flex-start;
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-escrow);
+  color: var(--x2f-escrow);
+}
+
+.x2f-review__saved svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.x2f-review__saved p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--x2f-ink);
+  overflow-wrap: anywhere;
+}
+
+.x2f-review__feedback {
+  margin-top: var(--x2f-space-4);
+}
+
+.x2f-review__moods {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--x2f-space-2);
+}
+
+.x2f-review__mood {
+  min-height: 48px;
+  border-radius: var(--x2f-radius-md);
+  font-size: 15px;
+}
+
+.x2f-review__mood[aria-checked='true'] {
+  border-color: var(--x2f-monero);
+  background: var(--x2f-surface-raised);
+  font-weight: 600;
+}
+
+.x2f-review__fine {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+/* The rate-first sheet: the card sits inside the sheet's padding, so it drops its own margins. */
+.x2f-rate-first {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+}
+
+.x2f-rate-first .x2f-review__card,
+.x2f-rate-first .x2f-review__saved {
+  margin: 0;
+}
+
+.x2f-rate-first .x2f-review__footer {
+  padding: 0;
+}
