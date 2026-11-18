@@ -387,3 +387,308 @@
   font-size: 0.8em;
   text-align: center;
 }
+
+/* Plan 4 Task 17: the owner pages (boards StaffList, StaffSettings, StaffOverview). DESIGNER-REVIEW */
+.x2f-staff-narrow {
+  max-width: 1000px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-6);
+}
+
+.x2f-staff-narrow .x2f-staff-page__head {
+  margin-bottom: 0;
+}
+
+.x2f-staff-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--x2f-space-4);
+  max-width: 1000px;
+  margin-bottom: var(--x2f-space-6);
+}
+
+.x2f-staff-head-row .x2f-staff-page__head {
+  margin-bottom: 0;
+}
+
+.x2f-staff-card,
+.x2f-staff-add {
+  padding: var(--x2f-space-6);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  border: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-staff-add {
+  max-width: 1000px;
+  box-sizing: border-box;
+  margin-bottom: var(--x2f-space-6);
+  border-color: var(--x2f-mod);
+}
+
+.x2f-staff-role-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--x2f-space-3);
+}
+
+.x2f-staff-role-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 2px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.x2f-staff-role-card[aria-checked='true'] {
+  border-color: var(--x2f-monero);
+}
+
+.x2f-staff-role-card__name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.x2f-staff-role-card__desc {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-box {
+  margin: 0;
+  padding: var(--x2f-space-4);
+  border: 1px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-md);
+}
+
+.x2f-staff-box__legend {
+  padding: 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.x2f-staff-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-staff-pill {
+  height: 36px;
+  min-width: 52px;
+  padding: 0 10px;
+  border: 1px solid var(--x2f-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--x2f-ink-muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.x2f-staff-pill[aria-pressed='true'],
+.x2f-staff-pill[aria-checked='true'] {
+  border-color: var(--x2f-monero);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-weight: 600;
+}
+
+.x2f-staff-pill:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.x2f-staff-hours-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.x2f-staff-time,
+.x2f-staff-select,
+.x2f-staff-number {
+  width: auto;
+  min-height: 44px;
+  font-family: var(--x2f-font-mono);
+  font-size: 15px;
+}
+
+.x2f-staff-select {
+  font-family: inherit;
+}
+
+.x2f-staff-number {
+  width: 160px;
+}
+
+.x2f-staff-link {
+  flex: 1 1 0;
+  min-width: 0;
+  font-family: var(--x2f-font-mono);
+  font-size: 14px;
+}
+
+.x2f-staff-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.x2f-staff-scroll {
+  max-width: 1000px;
+  overflow-x: auto;
+}
+
+.x2f-staff-scroll .x2f-staff-table {
+  min-width: 900px;
+}
+
+.x2f-staff-scroll + .x2f-staff-hint {
+  max-width: 1000px;
+  margin-top: var(--x2f-space-4);
+}
+
+.x2f-staff-role {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+/* Violet appears only on the X2F Moderator badge and on staff role chips (Plan 4 Global Constraints). */
+.x2f-staff-role[data-role='senior'],
+.x2f-staff-role[data-role='owner'] {
+  background: var(--x2f-mod);
+  color: var(--x2f-ground);
+}
+
+.x2f-staff-role[data-role='mod'] {
+  background: transparent;
+  border: 1px solid var(--x2f-mod);
+  color: var(--x2f-mod);
+}
+
+.x2f-staff-status {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--x2f-escrow);
+}
+
+.x2f-staff-status[data-status='waiting'] {
+  color: var(--x2f-caution);
+}
+
+.x2f-staff-status[data-status='switched-off'] {
+  color: var(--x2f-danger);
+}
+
+.x2f-staff-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+  justify-content: flex-end;
+}
+
+.x2f-staff-grants {
+  max-width: 1000px;
+  margin-top: var(--x2f-space-8);
+}
+
+.x2f-staff-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.x2f-staff-setting__label {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.x2f-staff-setting__value {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.x2f-staff-state {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.x2f-staff-state[data-tone='ok'] {
+  color: var(--x2f-escrow);
+}
+
+.x2f-staff-state[data-tone='danger'] {
+  color: var(--x2f-danger);
+}
+
+.x2f-staff-earnings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--x2f-space-3);
+}
+
+.x2f-staff-earn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-staff-earn__xmr {
+  font-family: var(--x2f-amount-family);
+  font-size: var(--x2f-amount-size);
+  line-height: var(--x2f-amount-line);
+  font-weight: var(--x2f-amount-weight);
+}
+
+.x2f-staff-count[data-tone='danger'] {
+  color: var(--x2f-danger);
+  font-weight: 600;
+}
+
+.x2f-staff-banner-preview {
+  min-height: 22px;
+  padding: 12px 16px;
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-surface-raised);
+  border-left: 4px solid var(--x2f-escrow);
+  font-size: 15px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.x2f-staff-banner-preview[data-kind='warning'] {
+  border-left-color: var(--x2f-caution);
+}
