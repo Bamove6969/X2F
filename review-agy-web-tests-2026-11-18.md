@@ -38,7 +38,7 @@ Two of the eight new files are broken at their own head. One breaks `npm run typ
 - `npm test` (Docker up): 404 files: 402 passed, 2 failed. Tests: 7344 passed, 5 failed, 1 todo.
   - 4 failures are `myOfferDetailScreen.test.tsx` (B2).
   - 1 failure is `serve-boards.test.ts` capture-refs, the known baseline red.
-  - The other 6 new files pass: feedback, helpTopic, landing, maintenance (at runtime; the typecheck still fails), ownerOnly, payoutWait and recoveryCodes.
+  - The other 7 new files pass: feedback, helpTopic, landing, maintenance (at runtime; the typecheck still fails), ownerOnly, payoutWait and recoveryCodes.
 - `npm run semgrep`: 0 findings.
 - `npm run audit`: 0 vulnerabilities.
 - Playwright: not run. The branch is test-only and changes no app source.
