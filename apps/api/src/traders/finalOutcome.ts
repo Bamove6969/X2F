@@ -1,4 +1,5 @@
 import type { RulingOutcome } from '@x2f/staff';
+import { purgedSql } from './stage.js';
 
 /**
  * R-011 and R-012 (owner Q40 and Q41, 6 Nov 2026; replacing R-010's "overturned erases"): feedback
@@ -69,11 +70,12 @@ export const isFinalSaleSql = (t: string): string =>
  * A trade counted before (its 'completed' mark, traders/tradedTotal.ts) whose later dispute or appeal
  * is still pending stays in, matching the running totals until the result decides (review m2).
  */
-export const FINAL_SALES_SQL = `(select count(*) from trades t
+export const FINAL_SALES_SQL = `((select count(*) from trades t
    cross join lateral (select ${disputeOutcomeSql('t')} as o) x
    where (t.buyer_account_id = a.id or t.seller_account_id = a.id)
      and (coalesce(x.o, case when t.state = 'released' then 'sale' end) = 'sale'
-       or (x.o = 'pending' and exists (select 1 from trade_totals_counted c where c.trade_code = t.code and c.kind = 'completed'))))`;
+       or (x.o = 'pending' and exists (select 1 from trade_totals_counted c where c.trade_code = t.code and c.kind = 'completed'))))
+   + ${purgedSql('purged_sales')})`;
 
 /**
  * SQL (boolean): the dispute row (alias `d`, a `disputes` row) has an appeal PENDING: `appealed`, or

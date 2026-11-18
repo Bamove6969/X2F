@@ -13,6 +13,7 @@ import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
 import { actorOfBy, appendLog } from '../log/append.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
+import { tradeSelfDestruct } from '../retention/tradePurge.js';
 import { appealOpenUntil } from '../disputes/appeals.js';
 import { hasAbility } from '../team/abilities.js';
 
@@ -118,6 +119,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
         && (req.auth.memberId === null || (hasAbility(req.auth.memberAbilities, 'disputes-appeal') && hasAbility(req.auth.memberAbilities, 'disputes-answer')))
         ? await appealOpenUntil(deps.db, t.code, now)
         : null,
+      // Plan 7 Task 3: the self-destruct date, the same for both traders.
+      deleteAt: (await tradeSelfDestruct(deps.db, t.code)).deleteAt,
     });
   };
 

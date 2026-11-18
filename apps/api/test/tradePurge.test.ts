@@ -44,6 +44,8 @@ async function pair(): Promise<{ seller: string; buyer: string }> {
 /** A trade set straight into a closed state at `closedAt` (as chat.test.ts's purge fixtures do). */
 async function closed(closedAt: Date, state: 'released' | 'refunded' | 'cancelled' = 'released', o: { attested?: boolean } = {}) {
   const { seller, buyer } = await pair();
+  // Taken a day before it closes.
+  now = new Date(closedAt.getTime() - DAY);
   const { code } = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
   await deps.db.query('update trades set state = $2, closed_at = $3 where code = $1', [code, state, closedAt]);
   if (o.attested) {
@@ -257,12 +259,12 @@ describe('never deleted', () => {
   it('during site maintenance nothing is deleted; the first pass after it deletes', async () => {
     const t0 = new Date('2026-03-05T00:00:00Z');
     const { code } = await closed(t0);
-    await deps.db.query('update site_flags set maintenance_since = $1', [t0]);
+    await deps.db.query(`update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'`, [t0]);
     try {
       await purgeTrades(deps.db, plus(t0, 60));
       expect(await exists(code)).toBe(true);
     } finally {
-      await deps.db.query('update site_flags set maintenance_since = null');
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     }
     await purgeTrades(deps.db, plus(t0, 60));
     expect(await exists(code)).toBe(false);
