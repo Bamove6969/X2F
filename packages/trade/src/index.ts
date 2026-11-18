@@ -98,6 +98,14 @@ export {
   type WatchState,
   type WatchStepResult,
 } from './watch.js';
+export {
+  DISPUTE_KEEP_DAYS,
+  TRADE_KEEP_DAYS,
+  refundDisputeWindowEndsAt,
+  tradeDeleteAt,
+  tradeDeleteDue,
+  type RetentionFacts,
+} from './retention.js';
 export { modPartyArgs, modPartyPlan, type ModPartyArgs, type ModPartyFacts, type ModPartyPlan } from './modParty.js';
 export {
   CHAT_AFTER_CLOSE_DAYS,

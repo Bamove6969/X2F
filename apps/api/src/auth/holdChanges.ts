@@ -61,6 +61,8 @@ export interface ChangeSummary {
   /** Wallets: how many, and each address's last 6 characters (lead hold v3 review, minor). */
   wallets?: number;
   addressEnds?: string[];
+  /** Wallets (review M4, owner note #6): for each, in order, whether it is for one trade only. */
+  oneTime?: boolean[];
   /** The one-device switch, a member's new roles (an old staged change) or boxes. */
   on?: boolean;
   memberId?: string;
@@ -82,7 +84,10 @@ export function describeChange(c: PendingChange): ChangeSummary {
     case 'remove-method':
       return { kind: c.kind, method: c.type };
     case 'wallets':
-      return { kind: c.kind, wallets: c.items.length, addressEnds: c.items.map((w) => addressEnd(w.address)) };
+      return {
+        kind: c.kind, wallets: c.items.length, addressEnds: c.items.map((w) => addressEnd(w.address)),
+        oneTime: c.items.map((w) => w.oneTime === true),
+      };
     case 'one-device':
       return { kind: c.kind, on: c.on };
     case 'team-roles':

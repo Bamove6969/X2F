@@ -107,9 +107,27 @@ export interface TradeCap {
  * (no seller-side kind yet), so such a trade ends `refunded` with `dispute_by` set; a released
  * trade whose late deposit was escalated and refunded ends the same way and still counts.
  */
-export const COMPLETED_TRADES_SQL = `(select count(*) from trades t
+export const COMPLETED_TRADES_SQL = `(${completedTradesLiveSql()} + ${purgedSql('purged_completed')})`;
+
+/**
+ * COMPLETED_TRADES_SQL's live part alone (no purged total), with `extra` added to its WHERE (the
+ * trade alias is `t`): the whole-trade purge reads one trade's own share with `and t.code = $n`.
+ */
+export function completedTradesLiveSql(extra = ''): string {
+  return `(select count(*) from trades t
    where (t.state = 'released' or (t.state = 'refunded' and t.dispute_by is not null))
-     and (t.buyer_account_id = a.id or t.seller_account_id = a.id))`;
+     and (t.buyer_account_id = a.id or t.seller_account_id = a.id) ${extra})`;
+}
+
+/**
+ * SQL (bigint): what Plan 7's whole-trade purge moved out of the live trades into account `a.id`'s
+ * running total `column` (701, retention/tradePurge.ts), 0 for an account with none. Every count
+ * read from the live trades adds its own column back, so a profile and a stage are the same before
+ * and after a trade is deleted. `column` is a constant name, never input.
+ */
+export function purgedSql(column: 'purged_completed' | 'purged_sales' | 'purged_won' | 'purged_lost'): string {
+  return `coalesce((select pt.${column} from account_traded_totals pt where pt.account_id = a.id), 0)`;
+}
 
 /**
  * The plan's shared helper `tradeCap(deps, accountId, now)` (Revision 2026-10-24), for Task 5's

@@ -9,6 +9,8 @@ import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { FIAT, XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/hold.js';
+import { issueConfirmToken } from '../src/auth/confirm.js';
+import { addressEnd, addressHash } from '@x2f/accounts';
 import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 5: taking an offer, and the poster's wallet route. Real Postgres (one database per
@@ -43,7 +45,7 @@ type Who = Awaited<ReturnType<typeof trader>> & { wallet: string; address: strin
 
 beforeAll(async () => {
   // A pool larger than any race below, so every racing take holds its own transaction at once.
-  ({ app, deps, trader } = await tradeApp({}, { prices, db: await testDb({ max: 12 }) }));
+  ({ app, deps, trader } = await tradeApp({}, { prices, db: await testDb({ max: 12 }), addresses: { check: async () => 'ok' } }));
   // Small stage thresholds for this file: Building at 1 completed trade and 7 days, Graduated at 2 and 30.
   await deps.db.query(
     `insert into owner_settings (key, value, updated_at) values
@@ -1106,4 +1108,409 @@ describe('a session revoked while its trading request waits (review round 5 M2)'
   });
 
   for (const route of Object.keys(ROWS)) it(`${route}: 401, nothing written`, ROWS[route]!);
+});
+
+/**
+ * Owner demo note #6 (16 Nov 2026): a one-time payout wallet is used for the trade being started
+ * only, and the server never lets a trade use an address that is not one of the account's own
+ * usable wallets (a weak account's new address waits 24 hours, staged by hold model v3).
+ */
+describe('one-time wallets and the per-trade address (owner demo note #6)', () => {
+  async function oneTimeWallet(accountId: string): Promise<{ id: string; address: string }> {
+    const w = await addWallet(accountId);
+    await deps.db.query('update wallets set one_time = true where id = $1', [w.id]);
+    return w;
+  }
+  // The open wallets: a used-up one-time wallet whose trade is still in setup is listed too, as in
+  // use by that trade (review 17 Nov (b) M1), and is left out here.
+  const listed = async (who: Who) =>
+    ((await who.browser.get('/v1/wallets')).json() as Array<{ id: string; inUseByTrade: string | null }>).filter((w) => w.inUseByTrade === null).map((w) => w.id);
+
+  it("a take with a one-time wallet pays to it, then the wallet is no longer listed or usable", async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    expect(await listed(buyer)).toContain(once.id);
+    const code = await taken(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+    expect((await loadTradeRow(deps.db, code))!.buyer_payout).toBe(once.address);
+    expect(await listed(buyer)).not.toContain(once.id);
+    expect(await listed(buyer)).toContain(buyer.wallet);
+    // The trade keeps its own copy: the address written at take is unchanged.
+    const second = await postOffer(seller);
+    expect(refusal(await take(buyer, second, body(buyer, tenth, undefined, { walletId: once.id })))).toEqual({ status: 409, error: 'wallet-not-ready' });
+    expect((await loadTradeRow(deps.db, code))!.buyer_payout).toBe(once.address);
+  });
+
+  it('a refused take leaves the one-time wallet listed', async () => {
+    const seller = await person();
+    const offer = await postOffer(seller, { minFiatCents: '3000', maxFiatCents: '6000' });
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    expect(refusal(await take(buyer, offer, body(buyer, XMR / 5n, undefined, { walletId: once.id })))).toEqual({ status: 409, error: 'out-of-range' });
+    expect(await listed(buyer)).toContain(once.id);
+  });
+
+  it("the poster's one-time wallet is used up by the poster's wallet route", async () => {
+    const poster = await person();
+    const taker = await person();
+    const offer = await postOffer(poster, { side: 'sell' });
+    const code = await taken(taker, offer, body(taker, tenth));
+    const once = await oneTimeWallet(poster.id);
+    const res = await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: once.id });
+    expect(res.statusCode, res.body).toBe(204);
+    expect((await loadTradeRow(deps.db, code))!.seller_refund).toBe(once.address);
+    expect(await listed(poster)).not.toContain(once.id);
+  });
+
+  it('a saved wallet stays listed after a take', async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const buyer = await person();
+    await taken(buyer, offer, body(buyer, tenth));
+    expect(await listed(buyer)).toContain(buyer.wallet);
+  });
+
+  it("a weak account's new address cannot reach a trade: staged, waiting, foreign or sent as an address, the take is refused", async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const weak = await person();
+    // A username-and-password login (weak account): an add from it is staged (202), so there is no wallet row to use.
+    await deps.db.query(`update sessions set strength = 'weak-single' where account_id = $1`, [weak.id]);
+    const sessionId = (await deps.db.query<{ id: string }>('select id from sessions where account_id = $1 and revoked_at is null', [weak.id])).rows[0]!.id;
+    const fresh = fakeAddress();
+    const confirmToken = await issueConfirmToken(deps, {
+      sessionId, accountId: weak.id, method: 'password',
+      action: { kind: 'add-wallet', addressHash: await addressHash(fresh), addressEnd: addressEnd(fresh) },
+    });
+    const staged = await weak.browser.post('/v1/wallets', { app: 'cake', label: 'New', address: fresh, confirmToken, oneTime: true });
+    expect(staged.statusCode, staged.body).toBe(202);
+    const { rows: rowsOfFresh } = await deps.db.query('select 1 from wallets where address = $1', [fresh]);
+    expect(rowsOfFresh).toEqual([]);
+    expect(refusal(await take(weak, offer, { ...body(weak, tenth), address: fresh }))).toEqual({ status: 400, error: 'bad-request' });
+    const waiting = await addWallet(weak.id, false);
+    expect(refusal(await take(weak, offer, body(weak, tenth, undefined, { walletId: waiting.id })))).toEqual({ status: 409, error: 'wallet-not-ready' });
+    // The take names a wallet, never an address: an address in the body is refused.
+    expect(refusal(await take(weak, offer, { ...body(weak, tenth), address: fakeAddress() }))).toEqual({ status: 400, error: 'bad-request' });
+    expect(refusal(await take(weak, offer, { ...body(weak, tenth), walletId: undefined, address: fakeAddress() }))).toEqual({ status: 400, error: 'bad-request' });
+    // A wallet of another account is not this account's to use.
+    expect(refusal(await take(weak, offer, body(weak, tenth, undefined, { walletId: seller.wallet })))).toEqual({ status: 409, error: 'wallet-not-ready' });
+    // Its own usable wallet works as before.
+    await taken(weak, offer, body(weak, tenth));
+  });
+});
+
+/**
+ * Review of wip/third-trade-wallet, M2 (claude3, 17 Nov 2026): the use-up of a one-time wallet under
+ * races and rollbacks. It runs in the trade's own transaction under the account lock, so exactly one
+ * trade gets the address, and a trade that does not commit leaves the wallet open.
+ */
+describe('one-time wallets under races and rollbacks (review M2)', () => {
+  async function oneTimeWallet(accountId: string): Promise<{ id: string; address: string }> {
+    const w = await addWallet(accountId);
+    await deps.db.query('update wallets set one_time = true where id = $1', [w.id]);
+    return w;
+  }
+  const open = async (id: string) => (await deps.db.query('select 1 from wallets where id = $1 and removed_at is null', [id])).rows.length === 1;
+  const tradesPayingTo = async (address: string) =>
+    (await deps.db.query('select code from trades where buyer_payout = $1 or seller_refund = $1', [address])).rows.length;
+
+  it('two takes at once with the same one-time wallet: one trade, the other wallet-not-ready', async () => {
+    const seller = await person();
+    const first = await postOffer(seller);
+    const second = await postOffer(seller);
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    const results = await allAtOnce([`select 1 from accounts where id = '${buyer.id}' for update`], 2, () => [
+      take(buyer, first, body(buyer, tenth, undefined, { walletId: once.id })),
+      take(buyer, second, body(buyer, tenth, undefined, { walletId: once.id })),
+    ]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+    expect(refusal(results.find((r) => r.statusCode === 409)!)).toEqual({ status: 409, error: 'wallet-not-ready' });
+    expect(await tradesPayingTo(once.address)).toBe(1);
+    expect(await open(once.id)).toBe(false);
+  });
+
+  it("a take and the poster's wallet route at once with the same one-time wallet: one uses it, the other is refused", async () => {
+    const poster = await person();
+    const taker = await person();
+    const code = await taken(taker, await postOffer(poster, { side: 'sell' }), body(taker, tenth));
+    const other = await person();
+    const offer = await postOffer(other);
+    const once = await oneTimeWallet(poster.id);
+    const results = await allAtOnce([`select 1 from accounts where id = '${poster.id}' for update`], 2, () => [
+      take(poster, offer, body(poster, tenth, undefined, { walletId: once.id })),
+      poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: once.id }),
+    ]);
+    const statuses = results.map((r) => r.statusCode);
+    expect(statuses.filter((s) => s === 200 || s === 204)).toHaveLength(1);
+    const lost = results.find((r) => r.statusCode === 409)!;
+    expect(refusal(lost)).toEqual({ status: 409, error: 'wallet-not-ready' });
+    expect(await tradesPayingTo(once.address)).toBe(1);
+    expect(await open(once.id)).toBe(false);
+  });
+
+  it('a take that fails at commit, after the use-up, leaves the one-time wallet open', async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    // A deferred constraint trigger fails this buyer's trade insert at commit, after the take's use-up ran.
+    await deps.db.query(`create function x2f_test_fail_commit() returns trigger language plpgsql as $$
+      begin if new.buyer_account_id = '${buyer.id}' then raise exception 'test: fail at commit'; end if; return null; end $$`);
+    await deps.db.query(`create constraint trigger x2f_test_fail_commit after insert on trades deferrable initially deferred
+      for each row execute function x2f_test_fail_commit()`);
+    try {
+      const res = await take(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+      expect(res.statusCode).toBe(500);
+    } finally {
+      await deps.db.query('drop trigger x2f_test_fail_commit on trades');
+      await deps.db.query('drop function x2f_test_fail_commit()');
+    }
+    expect(await open(once.id)).toBe(true);
+    expect(await tradesPayingTo(once.address)).toBe(0);
+    await taken(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+    expect(await open(once.id)).toBe(false);
+  });
+
+  it("a refused poster's wallet route leaves the one-time wallet listed", async () => {
+    const poster = await person();
+    const taker = await person();
+    const code = await taken(taker, await postOffer(poster, { side: 'sell' }), body(taker, tenth));
+    expect((await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: poster.wallet })).statusCode).toBe(204);
+    const once = await oneTimeWallet(poster.id);
+    expect(refusal(await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: once.id }))).toEqual({ status: 409, error: 'wrong-state' });
+    expect(await open(once.id)).toBe(true);
+  });
+});
+
+/**
+ * Owner, 17 Nov 2026 (note #6 Q10): "Monero wallets can be used over and over again ... they have the
+ * option of reusing the wallet over again, but by no means do they have to." A one-time wallet used up
+ * by a trade that ends in `setup` (cancelled, walked away from, or expired) before any XMR was funded
+ * is open again (still one-time), in the cancel's own transaction. Never once the trade got past setup.
+ */
+describe('a one-time wallet comes back when its trade ends in setup (owner, Q10)', () => {
+  async function oneTimeWallet(accountId: string): Promise<{ id: string; address: string }> {
+    const w = await addWallet(accountId);
+    await deps.db.query('update wallets set one_time = true where id = $1', [w.id]);
+    return w;
+  }
+  const isOpen = async (id: string) => (await deps.db.query('select 1 from wallets where id = $1 and removed_at is null', [id])).rows.length === 1;
+  const event = (who: Who, code: string, type: string) => who.browser.post(`/v1/trades/${code}/events`, { type });
+
+  /** A buyer taking a sell ad with a one-time wallet: the trade waits in setup for the poster. */
+  async function takenWithOnce() {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const buyer = await person();
+    const once = await oneTimeWallet(buyer.id);
+    const code = await taken(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+    expect(await isOpen(once.id)).toBe(false);
+    return { seller, buyer, once, code, offer };
+  }
+
+  it("the buyer's cancel in setup restores it, still one-time and usable once more", async () => {
+    const { seller, buyer, once, code } = await takenWithOnce();
+    const res = await event(buyer, code, 'buyer-cancel');
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await loadTradeRow(deps.db, code))!.state).toBe('cancelled');
+    expect(await isOpen(once.id)).toBe(true);
+    const { rows } = await deps.db.query<{ one_time: boolean; address: string }>('select one_time, address from wallets where id = $1', [once.id]);
+    expect(rows[0]).toEqual({ one_time: true, address: once.address });
+    // Used once more by a new trade, and gone again.
+    const again = await postOffer(seller);
+    await taken(buyer, again, body(buyer, tenth, undefined, { walletId: once.id }));
+    expect(await isOpen(once.id)).toBe(false);
+  });
+
+  it("the seller walking away in setup restores the buyer's one-time wallet", async () => {
+    const { seller, once, code } = await takenWithOnce();
+    expect((await event(seller, code, 'walk-away')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(true);
+  });
+
+  it('expiry in setup (setup_by passed) restores it', async () => {
+    const { once, code } = await takenWithOnce();
+    const row = (await loadTradeRow(deps.db, code))!;
+    const after = new Date(row.setup_by!.getTime() + 1000);
+    const t = await applyEvent({ db: deps.db, clock: () => after }, code, { type: 'tick' }, 'system');
+    expect(t.state).toBe('cancelled');
+    expect(await isOpen(once.id)).toBe(true);
+  });
+
+  it("the poster's one-time refund wallet comes back too", async () => {
+    const poster = await person();
+    const taker = await person();
+    const code = await taken(taker, await postOffer(poster, { side: 'sell' }), body(taker, tenth));
+    const once = await oneTimeWallet(poster.id);
+    expect((await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: once.id })).statusCode).toBe(204);
+    expect(await isOpen(once.id)).toBe(false);
+    expect((await event(poster, code, 'walk-away')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(true);
+  });
+
+  it('a trade past setup (funding, then cancelled with nothing funded) does not restore it', async () => {
+    const { buyer, once, code } = await takenWithOnce();
+    await deps.db.query('update trades set seller_refund = $2, seller_wallet_app = $3 where code = $1', [code, fakeAddress(), 'cake']);
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    expect((await loadTradeRow(deps.db, code))!.state).toBe('funding');
+    expect((await event(buyer, code, 'buyer-cancel')).statusCode).toBe(200);
+    expect((await loadTradeRow(deps.db, code))!.state).toBe('cancelled');
+    expect(await isOpen(once.id)).toBe(false);
+  });
+
+  it('a funded trade does not restore it', async () => {
+    const { once, code } = await takenWithOnce();
+    await deps.db.query('update trades set seller_refund = $2, seller_wallet_app = $3 where code = $1', [code, fakeAddress(), 'cake']);
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    const t = rowToTrade((await loadTradeRow(deps.db, code))!);
+    await applyEvent(deps, code, { type: 'chain', receivedAtomic: t.sellerFundsAtomic, unlockedAtomic: 0n, confirmations: 1 }, 'system');
+    expect(await isOpen(once.id)).toBe(false);
+  });
+
+  it('a removal of the wallet that applied while the trade used it wins: no restore', async () => {
+    const { buyer, once, code } = await takenWithOnce();
+    // A removal staged before the take, applied by the hold while the trade had it.
+    const { applyWalletRemoval } = await import('../src/wallets/routes.js');
+    await applyWalletRemoval(deps.db, buyer.id, once.id, deps.clock());
+    expect((await event(buyer, code, 'buyer-cancel')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(false);
+  });
+
+  it('the same address added again meanwhile: the old row stays removed (no duplicate)', async () => {
+    const { buyer, once, code } = await takenWithOnce();
+    await deps.db.query(
+      `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Again', $2, $3, $3)`,
+      [buyer.id, once.address, deps.clock()],
+    );
+    expect((await event(buyer, code, 'buyer-cancel')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(false);
+    const { rows } = await deps.db.query('select 1 from wallets where account_id = $1 and address = $2 and removed_at is null', [buyer.id, once.address]);
+    expect(rows).toHaveLength(1);
+  });
+
+  // Review of wip/third-trade-wallet 17 Nov (b), M1: a used-up one-time wallet is visible while its
+  // trade is in setup, can be removed then (for good: it does not come back), and its return is told.
+  type Listed = { id: string; usable: boolean; inUseByTrade: string | null };
+  const listAll = async (who: Who) => (await who.browser.get('/v1/wallets')).json() as Listed[];
+  const alertsOf = async (id: string, kind: string) =>
+    (await deps.db.query<{ detail: unknown }>('select detail from alerts where account_id = $1 and kind = $2 order by created_at', [id, kind])).rows.map((r) => r.detail);
+
+  it('M1: while its trade is in setup the used-up wallet is listed as in use by that trade, not usable', async () => {
+    const { buyer, once, code } = await takenWithOnce();
+    const entry = (await listAll(buyer)).find((w) => w.id === once.id);
+    expect(entry).toMatchObject({ usable: false, inUseByTrade: code, isDefault: false });
+    // Still not usable for a take.
+    const seller2 = await person();
+    expect(refusal(await take(buyer, await postOffer(seller2), body(buyer, tenth, undefined, { walletId: once.id })))).toEqual({ status: 409, error: 'wallet-not-ready' });
+    // Once the trade is past setup it leaves the list.
+    await deps.db.query('update trades set seller_refund = $2, seller_wallet_app = $3 where code = $1', [code, fakeAddress(), 'cake']);
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    expect((await listAll(buyer)).map((w) => w.id)).not.toContain(once.id);
+  });
+
+  it('M1: the owner can remove it while its trade is in setup; it then never comes back, and the removal is told', async () => {
+    const { seller, buyer, once, code } = await takenWithOnce();
+    const res = await buyer.browser.delete(`/v1/wallets/${once.id}`);
+    expect(res.statusCode, res.body).toBe(204);
+    expect((await listAll(buyer)).map((w) => w.id)).not.toContain(once.id);
+    expect(await alertsOf(buyer.id, 'wallet-removed')).toEqual([{ app: 'feather', label: 'Main', addressEnd: addressEnd(once.address) }]);
+    expect((await event(seller, code, 'walk-away')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(false);
+    expect(await alertsOf(buyer.id, 'wallet-restored')).toEqual([]);
+    // Removed already: a second removal is 404.
+    expect((await buyer.browser.delete(`/v1/wallets/${once.id}`)).statusCode).toBe(404);
+  });
+
+  it('M1: a wallet given back writes one wallet-restored alert with the end of the address only', async () => {
+    const { seller, buyer, once, code } = await takenWithOnce();
+    expect((await event(seller, code, 'walk-away')).statusCode).toBe(200);
+    expect(await isOpen(once.id)).toBe(true);
+    const alerts = await alertsOf(buyer.id, 'wallet-restored');
+    expect(alerts).toEqual([{ app: 'feather', label: 'Main', addressEnd: addressEnd(once.address) }]);
+    expect(JSON.stringify(alerts)).not.toContain(once.address);
+    expect(await alertsOf(seller.id, 'wallet-restored')).toEqual([]);
+  });
+
+  // Review of wip/third-trade-wallet 17 Nov (b), B2: the poster's cancel gives back the taker's
+  // one-time wallet (so it locks the taker's account) while the taker takes another of the poster's
+  // offers (which locks [taker, poster] in id order). With the taker's id the lower, the cancel used
+  // to hold the poster and wait for the taker while the take held the taker and waited for the
+  // poster: a deadlock, one side 500. `applyEvent` now locks both parties in id order right after
+  // the trade row, so the take simply waits. Lined up the same way each run: the cancel is stopped
+  // at its trade_events write (holding what it holds by then), the take is fired and stopped at the
+  // account lock it cannot get, then both go. Run several times: no run may give a 500.
+  it('B2: the poster walks away (restoring the taker\'s one-time wallet) while the taker takes another offer: no deadlock, both answer 200', async () => {
+    const lockWaiters = async (holderPid: number) =>
+      (await deps.db.query<{ n: number }>(
+        `select count(*)::int as n from pg_stat_activity
+          where datname = current_database() and pid <> $1 and wait_event_type = 'Lock' and state = 'active'`,
+        [holderPid],
+      )).rows[0]!.n;
+    const untilWaiters = async (holderPid: number, n: number) => {
+      const deadline = Date.now() + 10_000;
+      while ((await lockWaiters(holderPid)) < n) {
+        if (Date.now() > deadline) throw new Error(`fewer than ${n} requests reached a lock`);
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    };
+    for (let run = 0; run < 5; run++) {
+      const a = await person();
+      const c = await person();
+      // The case that deadlocked: the taker (wallet owner) sorts before the poster (canceller).
+      const [buyer, seller] = a.id < c.id ? [a, c] : [c, a];
+      const offer = await postOffer(seller);
+      const once = await oneTimeWallet(buyer.id);
+      const code = await taken(buyer, offer, body(buyer, tenth, undefined, { walletId: once.id }));
+      const second = await postOffer(seller);
+      const holder = await deps.db.connect();
+      let results: Array<{ statusCode: number; body: string }>;
+      try {
+        await holder.query('begin');
+        await holder.query('lock table trade_events in share mode');
+        const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+        const cancel = event(seller, code, 'walk-away');
+        await untilWaiters(pid, 1);
+        const took = take(buyer, second, body(buyer, tenth));
+        await untilWaiters(pid, 2);
+        await holder.query('commit');
+        results = await Promise.all([cancel, took]);
+      } catch (e) {
+        await holder.query('rollback').catch(() => {});
+        throw e;
+      } finally {
+        holder.release();
+      }
+      expect(results.map((r) => `${r.statusCode} ${r.statusCode === 200 ? '' : r.body}`), `run ${run}`).toEqual(['200 ', '200 ']);
+      expect((await loadTradeRow(deps.db, code))!.state).toBe('cancelled');
+      expect(await isOpen(once.id)).toBe(true);
+      const { rows } = await deps.db.query('select 1 from trades where buyer_account_id = $1 and seller_account_id = $2 and closed_at is null', [buyer.id, seller.id]);
+      expect(rows).toHaveLength(1);
+    }
+  });
+
+  it("a cancel and a new take with the same wallet at once: never two open trades on it, never a lost wallet", async () => {
+    const { seller, buyer, once, code } = await takenWithOnce();
+    const again = await postOffer(seller);
+    const results = await allAtOnce([`select 1 from accounts where id = '${buyer.id}' for update`], 2, () => [
+      event(buyer, code, 'buyer-cancel'),
+      take(buyer, again, body(buyer, tenth, undefined, { walletId: once.id })),
+    ]);
+    expect(results[0]!.statusCode).toBe(200);
+    const open = await isOpen(once.id);
+    const { rows } = await deps.db.query<{ code: string }>(
+      'select code from trades where buyer_payout = $1 and closed_at is null', [once.address],
+    );
+    if (results[1]!.statusCode === 200) {
+      // The take came after the restore: it used the wallet up again.
+      expect(rows).toHaveLength(1);
+      expect(open).toBe(false);
+    } else {
+      // The take came first and found it used up; the cancel then gave it back.
+      expect(refusal(results[1]!)).toEqual({ status: 409, error: 'wallet-not-ready' });
+      expect(rows).toHaveLength(0);
+      expect(open).toBe(true);
+    }
+  });
 });

@@ -3,6 +3,7 @@ import { act } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AcceptedSheet, acceptedNavigation, type AcceptedTradeView, type AcceptedWallet } from '../src/screens/AcceptedSheet.js';
 import { confirmedKey, readConfirmed, type ConfirmedTrade } from '../src/screens/quote/confirmed.js';
+import { forgetTypedAddresses, recordTypedAddress } from '../src/screens/walletRecord.js';
 import { fire, render } from './render.js';
 
 // Fixtures (test-only): an accepted event and the poster's wallets as GET /v1/wallets returns them.
@@ -29,6 +30,8 @@ const button = (text: string) =>
 
 beforeEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
+  forgetTypedAddresses();
 });
 
 describe('AcceptedSheet', () => {
@@ -43,7 +46,31 @@ describe('AcceptedSheet', () => {
     expect(sheet().querySelectorAll('[data-primary]')).toHaveLength(1);
   });
 
-  it('pre-selects no wallet (OD-11, no default payout wallet): Use this wallet is disabled until a radio is chosen', async () => {
+  it('owner 17 Nov (Q9): the default wallet is picked first, and another can be picked instead', async () => {
+    const posted: Array<[string, string]> = [];
+    const withDefault = WALLETS.map((w) => ({ ...w, isDefault: w.id === 'w2' }));
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => withDefault} loadTrade={loadView} submit={async (c, w) => void posted.push([c, w])} onDone={() => undefined} onClose={() => undefined} />);
+    await flush();
+    const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(options.map((o) => o.checked)).toEqual([false, true]);
+    expect((button('Use this wallet') as HTMLButtonElement).disabled).toBe(false);
+    fire(options[0]!, new MouseEvent('click', { bubbles: true }));
+    await flush();
+    expect(options.map((o) => o.checked)).toEqual([true, false]);
+    fire(button('Use this wallet'), new MouseEvent('click', { bubbles: true }));
+    await flush();
+    expect(posted).toEqual([[EVENT.code, 'w1']]);
+  });
+
+  it('a default that is not usable is not picked', async () => {
+    const waitingDefault = WALLETS.map((w) => ({ ...w, isDefault: w.id === 'w3' }));
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => waitingDefault} loadTrade={loadView} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
+    await flush();
+    const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(options.map((o) => o.checked)).toEqual([false, false]);
+  });
+
+  it('with no default, pre-selects no wallet: Use this wallet is disabled until a radio is chosen', async () => {
     render(<AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={loadView} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
     await flush();
     const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
@@ -241,6 +268,49 @@ describe('AcceptedSheet re-review (gaps 1-3)', () => {
     expect(button('Add a wallet')).toBeDefined();
     expect(posted).toEqual([]);
     expect(done).toEqual([]);
+    expect(readConfirmed(EVENT.code)).toBeNull();
+  });
+
+  it('review 17 Nov M4: a wallet listed with another address than this device recorded for it is never offered, picked or posted', async () => {
+    // The poster typed ADDR2's twin for w2 on this device (quote or Settings); the API now lists ADDR2.
+    recordTypedAddress('w2', `5${'B'.repeat(88)}TYPED2`);
+    const posted: Array<[string, string]> = [];
+    const withDefault = WALLETS.map((w) => ({ ...w, isDefault: w.id === 'w2' }));
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => withDefault} loadTrade={loadView} submit={async (c, w) => void posted.push([c, w])} onDone={() => undefined} onClose={() => undefined} />);
+    await flush();
+    const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(options.map((o) => o.value)).toEqual(['w1']);
+    expect(options.map((o) => o.checked)).toEqual([false]);
+    expect(sheet().textContent).not.toContain('d4e5f6');
+    expect(sheet().querySelector('[data-part="accepted-address-swapped"]')!.textContent).toContain('different address');
+    expect((button('Use this wallet') as HTMLButtonElement).disabled).toBe(true);
+    expect(posted).toEqual([]);
+  });
+
+  it('review 17 Nov M4: a wallet listed with the address this device recorded is offered as before', async () => {
+    recordTypedAddress('w2', ADDR2);
+    const withDefault = WALLETS.map((w) => ({ ...w, isDefault: w.id === 'w2' }));
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => withDefault} loadTrade={loadView} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
+    await flush();
+    const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(options.map((o) => [o.value, o.checked])).toEqual([['w1', false], ['w2', true]]);
+    expect(sheet().querySelector('[data-part="accepted-address-swapped"]')).toBeNull();
+  });
+
+  it('re-verify N1: a new id whose address ends like one typed here (but differs) is never offered, picked or posted, even as the default', async () => {
+    // The poster typed ADDR2 for w2 on this device; the API drops w2 and lists a ground look-alike under a new id.
+    recordTypedAddress('w2', ADDR2);
+    const posted: Array<[string, string]> = [];
+    const lookalike: AcceptedWallet = { id: 'w-evil', app: 'feather', label: 'Feather', address: `5${'Z'.repeat(88)}d4e5f6`, addressEnd: 'd4e5f6', usable: true, isDefault: true };
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => [WALLETS[0]!, lookalike]} loadTrade={loadView} submit={async (c, w) => void posted.push([c, w])} onDone={() => undefined} onClose={() => undefined} />);
+    await flush();
+    const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(options.map((o) => o.value)).toEqual(['w1']);
+    expect(options.map((o) => o.checked)).toEqual([false]);
+    expect(sheet().textContent).not.toContain('d4e5f6');
+    expect(sheet().querySelector('[data-part="accepted-address-swapped"]')!.textContent).toContain('different address');
+    expect((button('Use this wallet') as HTMLButtonElement).disabled).toBe(true);
+    expect(posted).toEqual([]);
     expect(readConfirmed(EVENT.code)).toBeNull();
   });
 });
