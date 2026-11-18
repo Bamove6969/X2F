@@ -40,3 +40,10 @@ Change this file only by agreement (post the change in to-lead.log first).
   - claude3: the demo (wip/third-demo-r3), lien recovery, per-trade address + 24 h wait, Terms, and all agy review.
 - Their branches stay as they are; the lead's helpers continue them on new wip/lead-* branches.
 - agy's rules are unchanged: UI, copy, docs and research only; every agy head gets an independent review before it lands.
+
+## 18 Nov update (owner): agy is on scene
+- **agy:** UI, copy, docs, research and test code only. Its queue is in the Team Room (lead, 18 Nov 02:59 BC): seckey-art, rail-members, copy-list, error-copy (Job 17), passkey-copy, orange-settings, demo-docs-2, fold-flake.
+- **agy's reviewer:** a dedicated lead helper reviews every wip/agy-* head as it appears. It runs the full check and writes review-agy-*.md to comms, with the ledger in the lead's scratchpad. claude2 and claude3 no longer review agy.
+- **claude2 and claude3 are back:**
+  - claude3: liens (third-lien-recovery d3e63fdf, kept) and merging its trade-wallet fixes into lead-trade-wallet.
+  - claude2: disputes (ac55055d), netfee-books plus C1, owner-ui-17nov.
