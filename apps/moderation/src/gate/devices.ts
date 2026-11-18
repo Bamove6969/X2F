@@ -21,7 +21,9 @@ import { noteCounter, olderThanSeen, verifyTap, type GateContext } from './verif
  * A certification lasts STAFF_DEVICE_LIFETIME_MS (365 days) from its signed issuedAt.
  * `revoke-device {accountId, deviceKeyId, issuedAt}` names the key id, tapped by the device's own
  * person or by the owner. Revoking a person (switch-off, removal, a security reset) revokes all of
- * their devices: `revokeDevicesOf`, and `deviceLive` checks the person stands as well.
+ * their devices: `revokeDevicesOf`, and `deviceLive` checks the person stands as well. Review N5: so
+ * does an applied owner switch-on (a switch-off this gate never saw, off and on between two syncs),
+ * as of the switch-on's signed issuedAt.
  * Anything refused is spent (its nonce) and logged as `gate.refused.device-*`.
  */
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { certifyDevice, myDevices } from '../api.js';
 import { indexedDbDeviceBackend, staffDeviceKey, type StaffDeviceKey } from '../device/deviceKey.js';
 import { faultText } from '../refusals.js';
@@ -10,17 +10,27 @@ import { Button, Notice } from './kit.js';
  * certify it with a security-key tap bound to exactly its keys. A disputed chat opens only on a
  * certified device (design task 9). No board yet: DESIGNER-REVIEW. Every string is COPY-UNSIGNED.
  */
-export function DeviceCard({ onReady, load = () => staffDeviceKey(indexedDbDeviceBackend()) }: { onReady?: (k: StaffDeviceKey) => void; load?: () => Promise<StaffDeviceKey> }) {
+export function DeviceCard({ onReady, load = () => staffDeviceKey(indexedDbDeviceBackend()), notCertified = false }: {
+  onReady?: (k: StaffDeviceKey) => void;
+  load?: () => Promise<StaffDeviceKey>;
+  /**
+   * Review N4: the moderation process answered `device-not-certified` for this device (it revoked it,
+   * say after a switch-off or a security reset): show the confirm step whatever the API lists.
+   */
+  notCertified?: boolean;
+}) {
   const [key, setKey] = useState<StaffDeviceKey | null>(null);
   const [me, setMe] = useState<string | null>(null);
   const [certified, setCertified] = useState<boolean | null>(null);
   const [tapping, setTapping] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
+  // Cleared once this device is confirmed again here.
+  const refusedRef = useRef(notCertified);
 
   const refresh = async (k: StaffDeviceKey): Promise<void> => {
     const list = await myDevices();
     setMe(list.accountId);
-    const ok = list.devices.some((d) => d.deviceKeyId === k.deviceKeyId);
+    const ok = list.devices.some((d) => d.deviceKeyId === k.deviceKeyId) && !refusedRef.current;
     setCertified(ok);
     if (ok) onReady?.(k);
   };
@@ -62,7 +72,10 @@ export function DeviceCard({ onReady, load = () => staffDeviceKey(indexedDbDevic
           onDone={(tapId) => {
             setTapping(false);
             void certifyDevice(key.signPublic, key.boxPublic, tapId)
-              .then(() => refresh(key))
+              .then(() => {
+                refusedRef.current = false;
+                return refresh(key);
+              })
               .catch((e: unknown) => setFault(faultText(e, 'This device was not confirmed. Try again.'))); // COPY-UNSIGNED
           }}
         />

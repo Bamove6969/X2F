@@ -383,6 +383,11 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
           continue;
         }
         accept(t, intent.kind, `role:${intent.accountId}`);
+        // Review N5: a switch-on always follows a switch-off, which this gate may never have seen (off
+        // and on again between two syncs). Every device the person certified before it is revoked,
+        // as of the switch-on's signed issuedAt (never later than now), so a device tapped after the
+        // switch-on may be certified again.
+        if (intent.kind === 'switch-on') revokeDevicesOf(g, intent.accountId, new Date(Math.min(issuedOf(t), ctx.now().getTime())));
         if (s.removed || !INVITABLE.includes(intent.role)) continue;
         const row = rows.get(intent.accountId);
         s.role = intent.role as InvitableRole;

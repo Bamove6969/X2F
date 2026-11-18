@@ -281,7 +281,7 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
   code: string;
   work: boolean;
   device: StaffDeviceKey | null;
-  onDevice: (k: StaffDeviceKey) => void;
+  onDevice: (k: StaffDeviceKey | null) => void;
   loadDevice: (() => Promise<StaffDeviceKey>) | undefined;
   opened: OpenedChat | null;
   onOpened: (o: OpenedChat) => void;
@@ -290,6 +290,9 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
 }) {
   const [busy, setBusy] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
+  // Review N4: how many times the moderation process said this device is not certified; each one
+  // shows DeviceCard afresh at its confirm step.
+  const [refusedDevice, setRefusedDevice] = useState(0);
   const open = async () => {
     if (device === null) return;
     setBusy(true);
@@ -297,6 +300,11 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
     try {
       onOpened(await openCaseChat(await readCaseChat(code, device.deviceKeyId), device, modSigningPublic()));
     } catch (e) {
+      if (codeOf(e) === 'device-not-certified') {
+        onDevice(null);
+        setRefusedDevice((n) => n + 1);
+        return;
+      }
       // not-a-refusal: a check on what the server sent, or a fault; the refusals come through faultText
       if (e instanceof CaseChatError) setFault('This chat did not check out on this device, so nothing is shown. Tell the owner.');
       else setFault(faultText(e, 'The chat could not be opened just now. Try again.'));
@@ -310,7 +318,7 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
       <h2 className="x2f-h2">Full chat</h2>
       {opened === null ? (
         <>
-          {work ? <DeviceCard onReady={onDevice} {...(loadDevice !== undefined ? { load: loadDevice } : {})} /> : null}
+          {work ? <DeviceCard key={refusedDevice} notCertified={refusedDevice > 0} onReady={onDevice} {...(loadDevice !== undefined ? { load: loadDevice } : {})} /> : null}
           <p className="x2f-staff-hint">Opening the chat is written to the activity log.</p>
           <Button variant="secondary" disabled={!work || device === null || busy} onClick={() => void open()}>
             Open the full chat

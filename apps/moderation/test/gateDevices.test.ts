@@ -190,6 +190,48 @@ describe('the gate: revoke-device and revoking a person', () => {
     expect(w.gate.devices[h.k.deviceKeyId]!.revokedAt).not.toBeNull();
   });
 
+  it('review N5: switched off and on again between two syncs (the gate never saw the switch-off): the switch-on still revokes the devices', async () => {
+    const { w, mod } = await staffed();
+    const a = certify(mod);
+    w.api.taps.push(a.tap);
+    await sync(w);
+    expect(deviceLive(w.gate, mod.id, a.k.deviceKeyId, NOW)).not.toBeNull();
+    // Off at +30 s and on at +60 s by the API, both before the next sync at +2 min.
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }, { issuedAt: at(60_000) }));
+    // Certified again after the switch-on (a new tap of the same key), before that sync.
+    const again = certify(mod, a.k, { issuedAt: at(90_000) });
+    w.api.taps.push(again.tap);
+    await sync(w, at(2 * 60_000));
+    // The old certification was revoked as of the switch-on; the tap issued after it certifies again.
+    expect(w.gate.devices[a.k.deviceKeyId]!.certifiedAt).toBe(at(90_000).toISOString());
+    expect(deviceLive(w.gate, mod.id, a.k.deviceKeyId, at(2 * 60_000))).not.toBeNull();
+    // Another device certified before the switch-on, and never again: not live.
+    const { w: w2, mod: mod2 } = await staffed();
+    const b = certify(mod2);
+    w2.api.taps.push(b.tap);
+    await sync(w2);
+    w2.api.taps.push(tapBy(w2.owner, { kind: 'switch-on', accountId: mod2.id, role: 'mod' }, { issuedAt: at(60_000) }));
+    await sync(w2, at(2 * 60_000));
+    expect(deviceLive(w2.gate, mod2.id, b.k.deviceKeyId, at(2 * 60_000))).toBeNull();
+    expect(w2.gate.devices[b.k.deviceKeyId]!.revokedAt).toBe(at(60_000).toISOString());
+  });
+
+  it('review N8: a device tap is refused out of order when its key\'s counter is at or below the key\'s mark', async () => {
+    const { w, mod } = await staffed();
+    const first = certify(mod);
+    const second = certify(mod);
+    // The later tap (higher counter) is applied first; the older one, shown afterwards, is out of order.
+    w.api.taps.push(second.tap);
+    await sync(w);
+    const reasons: string[] = [];
+    w.api.taps.push(first.tap);
+    await sync(w, NOW, reasons);
+    expect(reasons).toContain('gate.refused.device-out-of-order');
+    expect(w.gate.usedNonces[first.tap.nonceHex]).toBe('device-refused:out-of-order');
+    expect(deviceLive(w.gate, mod.id, first.k.deviceKeyId, NOW)).toBeNull();
+    expect(deviceLive(w.gate, mod.id, second.k.deviceKeyId, NOW)).not.toBeNull();
+  });
+
   it('leaves every other kind of tap alone (unspent) for its own step', async () => {
     const { w, mod } = await staffed();
     // A set-role for someone the gate does not know yet is kept for later, never spent by the device step.

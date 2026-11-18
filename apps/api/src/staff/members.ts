@@ -218,7 +218,7 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       const target = await lockTarget(c, id);
       if (target.switchedOff) throw new ApiError(409, 'wrong-state');
       await c.query('update accounts set disabled_at = $2 where id = $1', [id, now]);
-      await c.query('update staff_members set switched_off_at = $2 where account_id = $1', [id, now]);
+      await c.query('update staff_members set switched_off_at = $2, last_switched_off_at = $2 where account_id = $1', [id, now]);
       await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.switched-off', { staffId: id });
     });
@@ -318,7 +318,7 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       const target = await lockTarget(c, id);
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'remove-staff', accountId: id }, now, { sessionId: req.auth.sessionId });
       await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
-      await c.query('update staff_members set switched_off_at = coalesce(switched_off_at, $2), removed_at = $2 where account_id = $1', [id, now]);
+      await c.query('update staff_members set switched_off_at = coalesce(switched_off_at, $2), last_switched_off_at = coalesce(switched_off_at, $2), removed_at = $2 where account_id = $1', [id, now]);
       // Removal closes the staff login for good (switch-off can be undone, so it keeps it).
       await eraseTermsSignature(c, id);
       // D-032: an open security-reset link of theirs ends with them.

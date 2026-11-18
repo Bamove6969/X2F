@@ -15,7 +15,8 @@ import { body, log, tapIdOf } from './members.js';
  * own view, for the staff site's display.
  *
  * - `GET /staff/v1/devices` → `{ accountId, devices: [{ deviceKeyId, signPublic, boxPublic, certifiedAt, expiresAt }] }`:
- *   the caller's certifications not revoked and not expired, by the used taps.
+ *   the caller's certifications not revoked and not expired, by the used taps, and (review N4) issued
+ *   after the person's last switch-off, removal or security reset, as the gate revokes them.
  * - `POST /staff/v1/devices { signPublic, boxPublic, tapId }` → 201 `{ deviceKeyId, expiresAt }`: a
  *   `certify-device` tap bound to exactly this person and these keys (id `staffDeviceKeyId`) is used,
  *   and `staff.device-certified` logged, in one transaction. 409 `device-exists` for a key id still
@@ -38,15 +39,37 @@ interface Device {
   expiresAt: string;
 }
 
+/**
+ * When the gate revoked all of a person's devices last, by this API's records (review N4): their last
+ * switch-off, their removal, or the owner's used `reset-staff-security` tap for them, whichever is
+ * latest; null if none. A certification issued at or before it is not live (the gate revokes it).
+ */
+async function devicesEndedAt(q: Queryable, accountId: string): Promise<number | null> {
+  const { rows } = await q.query<{ at: Date | null }>(
+    `select greatest(
+       (select greatest(m.last_switched_off_at, m.removed_at) from staff_members m where m.account_id::text = $1),
+       (select max(used_at) from key_taps where used_at is not null and (intent::jsonb ->> 'kind') = 'reset-staff-security' and (intent::jsonb ->> 'accountId') = $1)
+     ) as at`,
+    [accountId],
+  );
+  return rows[0]?.at == null ? null : rows[0].at.getTime();
+}
+
 /** The person's live certifications as this API's used taps show them (revocations by anyone applied). */
 export async function liveDevices(q: Queryable, accountId: string, now: Date): Promise<Device[]> {
   const { rows } = await q.query<{ intent: string }>(
     `select intent from key_taps
       where used_at is not null and (intent::jsonb ->> 'kind') in ('certify-device', 'revoke-device')
         and (intent::jsonb ->> 'accountId') = $1
-      order by used_at, id`,
+      order by used_at, (intent::jsonb ->> 'kind') = 'revoke-device', id`,
     [accountId],
   );
+  // At the same used_at, a certification before a revocation (the revoke route needs the id live, so
+  // it always follows its certification; the gate never certifies a key again at or before its
+  // revocation). Ordering by the random id alone made a revocation sometimes come first.
+  // Review N4: what the gate revoked with the person (switch-off, removal, security reset) is gone
+  // here too. Strictly after, with no clock skew: the gate revokes at its own sync, later still.
+  const ended = await devicesEndedAt(q, accountId);
   const live = new Map<string, Device>();
   for (const r of rows) {
     const i = JSON.parse(r.intent) as { kind: string; deviceKeyId: string; signPublic?: string; boxPublic?: string; issuedAt?: string };
@@ -56,6 +79,10 @@ export async function liveDevices(q: Queryable, accountId: string, now: Date): P
     }
     const at = Date.parse(i.issuedAt ?? '');
     if (!Number.isFinite(at) || typeof i.signPublic !== 'string' || typeof i.boxPublic !== 'string') continue;
+    if (ended !== null && !(at > ended)) {
+      live.delete(i.deviceKeyId);
+      continue;
+    }
     live.set(i.deviceKeyId, { deviceKeyId: i.deviceKeyId, signPublic: i.signPublic, boxPublic: i.boxPublic, certifiedAt: new Date(at).toISOString(), expiresAt: new Date(at + STAFF_DEVICE_LIFETIME_MS).toISOString() });
   }
   return [...live.values()].filter((d) => Date.parse(d.expiresAt) > now.getTime());

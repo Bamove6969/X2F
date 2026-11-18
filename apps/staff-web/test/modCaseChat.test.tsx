@@ -7,7 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { OpenedChat } from '../src/chat/reader.js';
 import { ModCase } from '../src/screens/ModCase.js';
-import { button, cleanup, click, fakeApi, field, render, settle, typeInto } from './helpers.js';
+import { button, cleanup, click, fakeApi, field, refused, render, settle, typeInto } from './helpers.js';
 import { MOD_PUB, world } from './chatWorld.js';
 
 const opened = vi.hoisted(() => [] as OpenedChat[]);
@@ -54,12 +54,12 @@ afterEach(() => {
   opened.splice(0);
 });
 
-async function screen(w: Awaited<ReturnType<typeof world>>) {
+async function screen(w: Awaited<ReturnType<typeof world>>, o: { chat?: Parameters<typeof fakeApi>[0][string] } = {}) {
   let sent = 0;
   const api = fakeApi({
     'GET /staff/v1/disputes/:code': { body: kase() },
     'GET /staff/v1/devices': { body: { accountId: 'me', devices: [{ deviceKeyId: w.device.deviceKeyId, signPublic: w.device.signPublic, boxPublic: w.device.boxPublic, certifiedAt: 'x', expiresAt: 'y' }] } },
-    'POST /staff/v1/disputes/:code/chat': { body: w.answer },
+    'POST /staff/v1/disputes/:code/chat': o.chat ?? { body: w.answer },
     'POST /staff/v1/disputes/:code/messages': () => ({ status: 201, body: { id: `m${++sent}` } }),
   });
   render(
@@ -110,5 +110,17 @@ describe('ModCase: the full chat and messages (design build task 9)', () => {
     await until(() => part('chat-lines') !== null);
     const items = [...part('chat-lines')!.querySelectorAll('li')].map((li) => li.textContent);
     expect(items).toEqual(['the buyer: I paid.', '1 message(s) missing here', 'the buyer: Here is the receipt.']);
+  });
+
+  it('review N4: a device the moderation process does not know as certified (403 device-not-certified) goes back to "Confirm this device"', async () => {
+    const w = await world();
+    await screen(w, { chat: refused(403, 'device-not-certified') });
+    await until(() => part('device-certified') !== null);
+    await click(button('Open the full chat'));
+    await until(() => part('device-uncertified') !== null);
+    expect(part('device-certified')).toBeNull();
+    expect(button('Confirm this device')).toBeDefined();
+    expect(button('Open the full chat')?.disabled).toBe(true);
+    expect(part('chat-lines')).toBeNull();
   });
 });
