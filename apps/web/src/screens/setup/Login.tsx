@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
+import { keyErrorText } from '../auth/keyErrors.js';
 import { RegisterError, SetupFrame, SetupIntro, radioProps, useSetup, type LoginMethod } from './kit.js';
 import { errorCode, registerWebAuthn, setupError, termsChanged, type SetupError } from './register.js';
 
@@ -75,7 +76,8 @@ export function Login() {
         go('');
         return;
       }
-      if (errorCode(e) === null) setError({ text: 'That did not finish. Try again, or pick another way to log in.' });
+      // The browser's own refusal says why (owner demo 13 Nov); anything else keeps the general sentence.
+      if (errorCode(e) === null) setError({ text: keyErrorText(e, pick, 'That did not finish. Try again, or pick another way to log in.') });
       else setError(setupError(e, 'X2F could not set that up. Try again, or pick another way to log in.'));
     } finally {
       setBusy(false);

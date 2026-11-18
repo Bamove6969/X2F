@@ -23,6 +23,7 @@ import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE } from '../../ui/cantDoCodes.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { keyErrorText } from '../auth/keyErrors.js';
 import { refusalText } from '../auth/refusals.js';
 import { StagedNote, reportChangesCap } from './HoldChanges.js';
 import { BURNED_CODE_COPY as BURNED } from './holdCopy.js';
@@ -85,7 +86,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       noteStaged(await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove));
       await refresh();
     } catch (e) {
-      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not add that method. Try again.'));
+      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(keyErrorText(e, kind));
     } finally {
       setBusy(false);
     }
