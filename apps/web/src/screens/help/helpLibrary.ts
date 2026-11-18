@@ -7,19 +7,27 @@
  * to sign it off. DESIGNER-REVIEW: the grouping and the order.
  *
  * Rules for this file (lead brief, 18 Nov 2026):
- * - Every answer matches the code at the base it was written on (wip/lead-land-tw 001959cc). Each
- *   entry's `sources` lists where each fact lives, as `path:line` (or `path:first-last`) from the
- *   repository root, then a few words that are on that line. apps/web/test/helpLibrary.test.ts
- *   checks that every entry has one and that each still points at those words.
+ * - Every answer matches the code it was checked against: wip/lead-train-1 ef50b6e0 (which holds
+ *   main 8e7e63d5) merged into this branch (review of 18 Nov). Each entry's `sources` lists where
+ *   each fact lives, as `path:line` (or `path:first-last`) from the repository root, then a few
+ *   words that are on that line. apps/web/test/helpLibrary.test.tsx checks that every entry has one
+ *   and that each still points at those words.
  * - An answer that names a time, a limit or a count lists it in `facts`; the same test rebuilds
  *   each fact's words from the constant in the code and fails when they differ or when an answer
- *   holds a number no fact covers.
- * - Nothing the code does not do is promised. Undecided rules (the network fee split, liens and
- *   their recovery, the per-payment-method pay windows of owner p11-29, the window to dispute a
- *   refund) are left out or say plainly that the feature is "not in the app yet" (worded so, not "not available", so
+ *   holds a number no fact covers. A number the owner can change in settings (the offer caps, the
+ *   device limit, the appeal window) is said with "normally" in front of it (review M4).
+ * - Nothing the code does not do is promised. Undecided rules (who should bear the Monero network
+ *   fee: the answers say only what payouts.ts does today, liens and their recovery, the
+ *   per-payment-method pay windows of owner p11-29, the window to dispute a refund) are left out or
+ *   say plainly that the feature is "not in the app yet" (worded so, not "not available", so
  *   copy-lint does not read an explanation as a refusal).
+ * - An answer that depends on the proof-upload build flag (VITE_X2F_PROOF_UPLOAD, proof/flag.ts)
+ *   has both answers in `proofUpload`; `libraryQuestions` picks one with the same `proofUploadOn`
+ *   the trade screens use.
  * - Plain words, 1 to 4 sentences, never "half" about fees.
  */
+
+import { proofUploadOn } from '../../proof/flag.js';
 
 export type HelpTopicId = 'getting-started' | 'trading' | 'escrow' | 'disputes' | 'safety' | 'teams' | 'privacy' | 'fees';
 
@@ -32,7 +40,11 @@ export interface LibraryTopic {
 }
 
 export interface HelpQuestion {
-  /** The deep-link anchor: /help/<topic>#<id>. Unique, lower case, hyphens. Never renamed once published. */
+  /**
+   * The question's id, unique, lower case, hyphens. Never renamed once published. Its deep link is
+   * /help/<topic>#faq-<id> (`FAQ_ANCHOR_PREFIX`, review m7); the first form, #<id>, still works
+   * (HelpLibrary.tsx `OLD_ANCHOR_REDIRECTS`).
+   */
   id: string;
   topic: HelpTopicId;
   /** COPY-UNSIGNED */
@@ -44,6 +56,20 @@ export interface HelpQuestion {
   /** The timers, limits and counts the answer names, by the keys of the fact table in apps/web/test/helpLibrary.test.ts. */
   facts?: readonly string[];
 }
+
+/** One answer with its own sources and facts: one side of a flag-dependent question. */
+export type HelpAnswer = Pick<HelpQuestion, 'a' | 'sources' | 'facts'>;
+
+/** A question whose answer follows the proof-upload flag (proof/flag.ts `proofUploadOn`). */
+export interface FlaggedQuestion extends Pick<HelpQuestion, 'id' | 'topic' | 'q'> {
+  /** COPY-UNSIGNED: `off` for a build without the upload (the default), `on` for one with it. */
+  proofUpload: { off: HelpAnswer; on: HelpAnswer };
+}
+
+type Entry = HelpQuestion | FlaggedQuestion;
+
+/** The prefix of every question's anchor, so a question id never collides with another id on the page (review m7). */
+export const FAQ_ANCHOR_PREFIX = 'faq-';
 
 /** COPY-UNSIGNED: the library's topics, in reading order. */
 export const LIBRARY_TOPICS: readonly LibraryTopic[] = [
@@ -64,7 +90,7 @@ const WEB = 'apps/web/src/screens';
 const SPEC = 'docs/public/x2f-crypto-spec.md';
 
 /** COPY-UNSIGNED: every question and answer. */
-export const QUESTIONS: readonly HelpQuestion[] = [
+const ENTRIES: readonly Entry[] = [
   // ---- Getting started ------------------------------------------------------------------------
   {
     id: 'what-is-x2f',
@@ -84,8 +110,14 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'personal-details',
     topic: 'getting-started',
     q: 'Do I need to give my name, email or phone number?',
-    a: 'No. X2F asks for no name, email or phone number. Your display name is shown to other traders, so pick one that does not identify you.',
-    sources: [`${SPEC}:15 X2F asks for no name, email or phone`, `${SPEC}:215 The display name is separate and public`],
+    a: 'X2F asks for no email or phone number. To agree to the Terms you sign your name, but a scribble or an X is fine, and the signature is stored sealed and never shown. Your display name is shown to other traders, so pick one that does not identify you.',
+    sources: [
+      `${WEB}/setup/Terms.tsx:250 sign your name`,
+      `${WEB}/setup/SignaturePad.tsx:205 A scribble or an X is fine.`,
+      'apps/api/src/termsSignature.ts:12 It is never shown to other users',
+      'apps/api/src/termsSignature.ts:29 At rest it is sealed',
+      `${SPEC}:215 The display name is separate and public`,
+    ],
   },
   {
     id: 'username-display-name',
@@ -98,8 +130,16 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'login-methods',
     topic: 'getting-started',
     q: 'Which ways can I log in?',
-    a: 'With a PGP key, a passkey, a security key or a password. You pick one when you sign up and can add others later in Settings. An authenticator app can be added as a second step after your password.',
-    sources: [`${AUTH}/methods.ts:29 PRIMARY`, `${WEB}/setup/Login.tsx:99 You can add others later in Settings`, `${AUTH}/strength.ts:25 'password', 'totp'`],
+    a: 'With a PGP key, a passkey, a security key or a password. You pick one when you sign up and can add others later in Settings. An authenticator app can be added as a second step after your password, and works only with one, so remove the app before you remove the password. Settings also refuses a removal that would leave a password with no authenticator app and no other way to log in.',
+    sources: [
+      `${AUTH}/methods.ts:29 PRIMARY`,
+      `${WEB}/setup/Login.tsx:99 You can add others later in Settings`,
+      `${AUTH}/strength.ts:25 'password', 'totp'`,
+      `${AUTH}/totp.ts:176 totp-needs-password`,
+      `${AUTH}/methods.ts:426 password-has-totp`,
+      `${AUTH}/methods.ts:436 password-alone`,
+      'apps/web/src/ui/cantDoCodes.ts:435 A password needs the authenticator app or another way to log in.',
+    ],
   },
   {
     id: 'pgp-login',
@@ -121,8 +161,12 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'passkey-or-security-key',
     topic: 'getting-started',
     q: 'What is the difference between a passkey and a security key?',
-    a: 'A passkey logs you in with your face, fingerprint or phone PIN, and Apple or Google keep it synced across your devices. A security key is a small device, like a YubiKey, that you plug in or tap.',
-    sources: [`${WEB}/setup/Login.tsx:37 Log in with your face`, `${WEB}/setup/Login.tsx:43 Log in by tapping a YubiKey`],
+    a: 'A passkey logs you in with your face, fingerprint or phone PIN, and Apple or Google keep it synced across your devices. A security key is a small device, like a YubiKey, that you plug in or tap, and it needs its PIN or fingerprint each time. A key with no PIN set is refused until you set one in the key\'s settings.',
+    sources: [
+      `${WEB}/setup/Login.tsx:37 Log in with your face`,
+      `${WEB}/setup/Login.tsx:43 Log in by tapping a YubiKey`,
+      `${AUTH}/webauthn.ts:63 Your key needs its PIN (or fingerprint) to log in. Set one in your key's settings`,
+    ],
   },
   {
     id: 'password-rules',
@@ -191,8 +235,12 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'who-can-post',
     topic: 'trading',
     q: 'Who can post an offer?',
-    a: 'Vendor accounts post offers. A vendor can have 3 buy offers and 3 sell offers at a time.',
-    sources: ['apps/web/src/session/member.ts:29 only vendor accounts post offers', 'apps/api/src/offers/routes.ts:263 OFFER_CAP_DEFAULTS'],
+    a: 'Vendor accounts post offers. A vendor can normally have 3 buy offers and 3 sell offers at a time.',
+    sources: [
+      'apps/web/src/session/member.ts:29 only vendor accounts post offers',
+      'apps/api/src/offers/routes.ts:263 OFFER_CAP_DEFAULTS',
+      'apps/api/src/offers/routes.ts:261 Owner settings override these defaults',
+    ],
     facts: ['offerCapBuy', 'offerCapSell'],
   },
   {
@@ -261,8 +309,12 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'paid-late',
     topic: 'trading',
     q: 'What if I pay after my time runs out?',
-    a: 'The trade stays open until the seller cancels it, so you can still tap "I\'ve paid". If the seller cancels after you paid, you can open a dispute straight away.',
-    sources: [`${M}:605-608 after payBy the buyer may still tap`, `${M}:489 if (by === 'buyer' && t.settling === 'auto-refund') return open();`],
+    a: 'The trade stays open until the seller cancels it, so you can still tap "I\'ve paid". If the seller cancels first, the XMR usually goes back to the seller within seconds, even if you already sent your payment. You can still open a dispute straight away, and the moderator looks at it after the refund.',
+    sources: [
+      `${M}:605-608 after payBy the buyer may still tap`,
+      `${M}:489 if (by === 'buyer' && t.settling === 'auto-refund') return open();`,
+      `${M}:484-488 Usually the refund lands anyway`,
+    ],
   },
   {
     id: 'ive-paid',
@@ -306,7 +358,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     topic: 'trading',
     q: 'How do I send my payment details?',
     a: 'In the trade chat, the payment details form asks for the details your payment method needs, then sends them to the other trader in one message.',
-    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, 'apps/web/src/chat/ChatPanel.tsx:366 PAY_DETAILS_TITLE'],
+    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, 'apps/web/src/chat/ChatPanel.tsx:365 PAY_DETAILS_TITLE'],
   },
   {
     id: 'trade-chat',
@@ -319,8 +371,28 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'payment-proof',
     topic: 'trading',
     q: 'Can I upload a screenshot of my payment?',
-    a: 'Uploading payment proof is not in the app yet. The trade screen already shows where it will go, and tapping "I\'ve paid" without proof asks you to confirm first.',
-    sources: [`${WEB}/trade/BuyerPay.tsx:374 The upload itself is Plan 5`, 'apps/web/src/api/blurCheck.ts:8 NEEDS_PLAN_5_TASK_15', `${WEB}/trade/NoProofSheet.tsx:7-9 Mark paid without proof`],
+    proofUpload: {
+      off: {
+        a: 'Uploading payment proof is not in the app yet. The trade screen already shows where it will go, and tapping "I\'ve paid" without proof asks you to confirm first.',
+        sources: [
+          'apps/web/src/proof/flag.ts:8 stays off unless the build says so',
+          `${WEB}/trade/BuyerPay.tsx:382 enabled={proofUploadOn()}`,
+          `${WEB}/proof/proofSlot.tsx:76 const live = enabled && secured`,
+          `${WEB}/trade/NoProofSheet.tsx:7-9 Mark paid without proof`,
+        ],
+      },
+      on: {
+        a: 'Yes. Once the escrow is secured, add a screenshot or photo of your payment on the trade screen. Before it is sent, your device blurs private details for you to check and removes location and device info. It goes to the other trader encrypted in the trade chat, and in a dispute the moderator can ask you for an unblurred copy.',
+        sources: [
+          `${WEB}/trade/BuyerPay.tsx:382 enabled={proofUploadOn()}`,
+          `${WEB}/proof/proofSlot.tsx:9 after the escrow is secured`,
+          `${WEB}/proof/proofSlot.tsx:48 Private details are blurred for you to check next. Location and device info are removed.`,
+          'apps/web/src/proof/upload.ts:15-16 `proof.attached` envelope through the chat engine',
+          `${WEB}/dispute/seams.tsx:99 proofUploadOn() || request === null`,
+          'apps/web/src/proof/upload.ts:359 Seal `proof.unblurred` to the moderator only',
+        ],
+      },
+    },
   },
   {
     id: 'gift-cards',
@@ -352,7 +424,12 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     topic: 'escrow',
     q: 'Who signs when the XMR moves?',
     a: 'For a normal release, the seller and the buyer sign together. The moderator\'s key only ever signs together with a trader\'s: for a buyer\'s cancel, a refund after the buyer\'s time to pay ran out, or a dispute ruling.',
-    sources: [`${SPEC}:61-68 | Release | seller | buyer |`, 'apps/moderation/src/rulings.ts:1-10 Moderator rulings'],
+    sources: [
+      "apps/web/src/escrow/policy.ts:107 release: { builder: 'seller', cosigner: 'buyer' }",
+      "apps/web/src/escrow/policy.ts:109 'auto-refund': { builder: 'seller', cosigner: 'mod' }",
+      "apps/web/src/escrow/policy.ts:110 'buyer-cancel': { builder: 'buyer', cosigner: 'mod' }",
+      'apps/moderation/src/rulings.ts:1-10 Moderator rulings',
+    ],
   },
   {
     id: 'escrow-keys-where',
@@ -440,8 +517,13 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'network-fee',
     topic: 'escrow',
     q: 'Is there a Monero network fee?',
-    a: 'Yes. Every Monero payment pays a small fee to the Monero network, and it is separate from X2F\'s 1% fee. It is paid from the escrow when the escrow pays out.',
-    sources: [`${T}/payouts.ts:7 bears the network fee`, `${SPEC}:101 the network fee is above 0`],
+    a: 'Yes. Every Monero payment pays a small fee to the Monero network, and it is separate from X2F\'s 1% fee. When the escrow pays out, the fee comes out of what the person receiving the trade\'s XMR gets: the buyer on a release, the seller on a refund or cancel.',
+    sources: [
+      `${T}/payouts.ts:7 receiving the trade's XMR and bears the network fee`,
+      `${T}/payouts.ts:80 { address: f.buyerPayout, amountAtomic: toBuyer }`,
+      `${T}/payouts.ts:92 return out([{ address: f.sellerRefund, amountAtomic: balance }]);`,
+      'packages/escrow/src/verify.ts:177 i === 0 ? p.amountAtomic - fee',
+    ],
     facts: ['feePercent'],
   },
 
@@ -464,7 +546,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'moderator-time',
     topic: 'disputes',
     q: 'How long until a moderator steps in?',
-    a: 'X2F aims for a moderator to step in within 24 hours, and it is usually sooner. The dispute screen counts the time down.',
+    a: 'X2F aims for a moderator to step in within 24 hours. The dispute screen counts the time down.',
     sources: ['packages/staff/src/dispute.ts:16 RULING_GOAL_H', `${WEB}/dispute/rules.ts:34 HOURGLASS_LINE`, `${WEB}/dispute/DisputeRoom.tsx:74-76 hourglass counting down from 24 hours`],
     facts: ['rulingGoalHours'],
   },
@@ -472,8 +554,22 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'moderator-sees',
     topic: 'disputes',
     q: 'What does the moderator see?',
-    a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there. Reading the trade\'s earlier chat is not part of the moderator\'s screens yet.',
-    sources: ['apps/staff-web/src/screens/ModCase.tsx:79-81 the traders, the payment proof, the escrow', 'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP'],
+    proofUpload: {
+      off: {
+        a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there. Reading the trade\'s earlier chat is not part of the moderator\'s screens yet.',
+        sources: ['apps/staff-web/src/screens/ModCase.tsx:79-81 the traders, the payment proof, the escrow', 'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP'],
+      },
+      on: {
+        a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there, and can request unblurred proof: a copy of your payment proof with nothing blurred, sent to the moderator only. Reading the trade\'s earlier chat is not part of the moderator\'s screens yet.',
+        sources: [
+          'apps/staff-web/src/screens/ModCase.tsx:79-81 the traders, the payment proof, the escrow',
+          'apps/staff-web/src/screens/ModCase.tsx:349 Request unblurred proof from',
+          `${WEB}/dispute/seams.tsx:99 proofUploadOn() || request === null`,
+          'apps/web/src/proof/upload.ts:359 Seal `proof.unblurred` to the moderator only',
+          'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP',
+        ],
+      },
+    },
   },
   {
     id: 'ruling-outcomes',
@@ -486,15 +582,15 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'second-approver',
     topic: 'disputes',
     q: 'Does one moderator decide alone?',
-    a: 'For most trades, yes. A ruling on a large trade also needs a senior moderator or the owner to approve it.',
+    a: 'One moderator rules, except on a large trade: its ruling also needs a senior moderator or the owner to approve it.',
     sources: ['packages/staff/src/dispute.ts:212-213 needsSecond', 'apps/api/src/staff/settingsDefaults.ts:11-12 largeTradeLimitUsd', 'packages/staff/src/dispute.ts:271-272 const canApprove'],
   },
   {
     id: 'appeal',
     topic: 'disputes',
     q: 'Can I appeal a ruling?',
-    a: 'Yes. Either side can appeal within 48 hours of the ruling. A senior moderator or the owner who took no part in the first ruling looks at it again, and aims to decide within 48 hours.',
-    sources: ['apps/api/src/staff/settingsDefaults.ts:27 appealWindowH', 'packages/staff/src/dispute.ts:384 too-late', 'packages/staff/src/dispute.ts:278-279 eligibleForAppeal', 'packages/staff/src/dispute.ts:17 APPEAL_GOAL_H'],
+    a: 'Yes. Either side can appeal, normally within 48 hours of the ruling. A senior moderator or the owner who took no part in the first ruling looks at it again, and aims to decide within 48 hours.',
+    sources: ['apps/api/src/staff/settingsDefaults.ts:27 appealWindowH', 'apps/api/src/staff/settingsDefaults.ts:15 Hours after a ruling in which either side may appeal', 'packages/staff/src/dispute.ts:384 too-late', 'packages/staff/src/dispute.ts:278-279 eligibleForAppeal', 'packages/staff/src/dispute.ts:17 APPEAL_GOAL_H'],
     facts: ['appealWindowHours', 'appealGoalHours'],
   },
   {
@@ -518,8 +614,8 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'cancel-waiting-changes',
     topic: 'safety',
     q: 'Can I stop a change that is waiting?',
-    a: 'Yes. Any of your logged-in sessions can cancel waiting changes, all at once or one by one, and a login with a PGP key, passkey or security key can apply them now. Up to 20 changes can wait at a time.',
-    sources: [`${AUTH}/hold.ts:12-14 logged-in session of the account owner cancels them`, `${AUTH}/holdChanges.ts:43 MAX_HOLD_CHANGES`],
+    a: 'Yes. Any of your logged-in sessions can cancel waiting changes, all at once or one by one, and a strong login can apply them now: a PGP key, passkey or security key, or a password with an authenticator code. Up to 20 changes can wait at a time.',
+    sources: [`${AUTH}/hold.ts:12-14 logged-in session of the account owner cancels them`, `${AUTH}/hold.ts:14 login may approve them now (G58)`, `${AUTH}/strength.ts:21-30 STRONG_COMBOS`, `${AUTH}/holdChanges.ts:43 MAX_HOLD_CHANGES`],
     facts: ['maxHoldChanges'],
   },
   {
@@ -549,16 +645,22 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'device-limit',
     topic: 'safety',
     q: 'How many devices can I be logged in on?',
-    a: 'Up to 3 at a time, unless X2F sets another number. You can also turn on "One device at a time" in Settings.',
-    sources: [`${AUTH}/approval.ts:61 DEFAULT_MAX_DEVICES`, `${AUTH}/approval.ts:8-9 One`],
+    a: 'Normally up to 3 at a time. You can also turn on "One device at a time" in Settings.',
+    sources: [`${AUTH}/approval.ts:61 DEFAULT_MAX_DEVICES`, `${AUTH}/approval.ts:120 The owner's \`max_devices\` setting`, `${AUTH}/approval.ts:8-9 One`],
     facts: ['maxDevices'],
   },
   {
     id: 'new-device-alone',
     topic: 'safety',
     q: 'I am not logged in anywhere else. Can I log in on a new device with my password?',
-    a: 'On a new device with nothing else logged in, X2F lets you in with a passkey, security key or PGP key. A password is refused there, even with an authenticator code: use your recovery code instead.',
-    sources: [`${AUTH}/approval.ts:206-208 with nothing logged in to approve it`, `${AUTH}/approval.ts:310 approval-unavailable`],
+    a: 'On a new device with nothing else logged in, X2F lets you in with a passkey, security key or PGP key. A password is refused there, even with an authenticator code, so the way in is your recovery code. Know what it costs first: a recovery-code login logs out every device and holds the account for 24 hours, cancelling trades not funded yet and pausing funded ones.',
+    sources: [
+      `${AUTH}/approval.ts:206-208 with nothing logged in to approve it`,
+      `${AUTH}/approval.ts:310 approval-unavailable`,
+      `${AUTH}/hold.ts:16-21 A recovery-code login holds the account 24 h`,
+      `${AUTH}/recovery.ts:56 RECOVERY_HOLD_MS`,
+    ],
+    facts: ['recoveryHoldHours'],
   },
   {
     id: 'remembered-device',
@@ -600,7 +702,7 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'never-asks',
     topic: 'safety',
     q: 'What will X2F never ask me for?',
-    a: 'Your PGP private key, your escrow key, your real name, your email or your phone number. X2F does not need any of them, so anyone asking for them in X2F\'s name is not X2F.',
+    a: 'Your PGP private key, your escrow key, your email or your phone number. X2F does not need any of them, so anyone asking for them in X2F\'s name is not X2F.',
     sources: [`${SPEC}:38-43 X2F never holds`, `${SPEC}:15 X2F asks for no name, email or phone`, `${WEB}/setup/Login.tsx:130 X2F never makes keys for`],
   },
 
@@ -648,31 +750,69 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'what-is-stored',
     topic: 'privacy',
     q: 'What does X2F keep about me?',
-    a: 'Your display name, your username stored only as a one-way code, your login methods (public keys, or a password kept only as a hash), your trades with their payout addresses, and your chats in encrypted form. X2F keeps no name, email or phone number, because it never asks for them.',
-    sources: [`${SPEC}:34 password hashes`, `${SPEC}:215 Stored only as HMAC-SHA-256`, `${SPEC}:15 X2F asks for no name, email or phone`],
+    a: 'Your display name, your username stored only as a one-way code, and the signature you gave for the Terms, stored sealed. Your login methods: PGP keys kept whole as you gave them, whose user IDs may hold a name and email, other public keys, or a password kept only as a hash. Your trades with their payout addresses and your chats in encrypted form, until the trade self-destructs. X2F asks for no email or phone number.',
+    sources: [
+      `${SPEC}:34 password hashes`,
+      `${SPEC}:215 Stored only as HMAC-SHA-256`,
+      'apps/api/src/termsSignature.ts:5 Stored with the account',
+      'apps/api/src/termsSignature.ts:29 At rest it is sealed',
+      `${SPEC}:211 v4 keys, which are most keys in use, are stored whole, with their user IDs, which often hold a real name and email`,
+      `${T}/retention.ts:6 An undisputed trade self-destructs`,
+      `${SPEC}:15 X2F asks for no name, email or phone`,
+    ],
+  },
+  {
+    id: 'trade-kept',
+    topic: 'privacy',
+    q: 'How long is my trade kept?',
+    a: 'An undisputed trade self-destructs 30 days after it closes: X2F deletes it whole, its chat and payout addresses included. A trade that had a dispute is kept until 90 days after the dispute closes, and nothing is deleted while a dispute is open. Once your trade has a date, the trade screen shows it. Reviews stay on profiles after their trade is gone.',
+    sources: [
+      `${T}/retention.ts:6-7 An undisputed trade self-destructs TRADE_KEEP_DAYS (30) days after it closed`,
+      `${T}/retention.ts:8-10 A trade that had a dispute is kept DISPUTE_KEEP_DAYS (90) days after its LAST dispute closed`,
+      `${T}/retention.ts:33 TRADE_KEEP_DAYS`,
+      `${T}/retention.ts:35 DISPUTE_KEEP_DAYS`,
+      'apps/api/src/retention/tradePurge.ts:24-26 deleted whole',
+      `${WEB}/trade/SelfDestruct.tsx:29 This trade self-destructs on`,
+      'apps/api/src/retention/tradePurge.ts:25 its reviews are detached (they are permanent)',
+    ],
+    facts: ['tradeKeepDays', 'tradeDisputeKeepDays'],
   },
   {
     id: 'chat-kept',
     topic: 'privacy',
     q: 'How long are chats kept?',
     a: 'A trade\'s chat is deleted 30 days after the trade closes. If the trade had a dispute, its chat is kept until 90 days after the dispute closes. A chat that never became a trade is deleted after 7 days without a message.',
-    sources: [`${T}/chat.ts:22 CHAT_AFTER_CLOSE_DAYS`, `${T}/chat.ts:24 CHAT_AFTER_DISPUTE_DAYS`, `${T}/chat.ts:20 CHAT_PRETRADE_IDLE_DAYS`, 'apps/api/src/chat/retention.ts:8 30 days after an undisputed trade closes'],
+    sources: [`${T}/chat.ts:22 CHAT_AFTER_CLOSE_DAYS`, `${T}/chat.ts:24 CHAT_AFTER_DISPUTE_DAYS`, `${T}/chat.ts:20 CHAT_PRETRADE_IDLE_DAYS`, 'apps/api/src/chat/retention.ts:9 30 days after an undisputed trade closes'],
     facts: ['chatAfterCloseDays', 'chatAfterDisputeDays', 'chatPretradeDays'],
   },
   {
     id: 'device-copy',
     topic: 'privacy',
     q: 'Does my device keep a copy of my chats?',
-    a: 'Yes, your device keeps the messages it has opened, encrypted. When X2F deletes a chat, your device erases its copy the next time it connects.',
-    sources: [`${SPEC}:168 The trader's device keeps`, 'apps/api/src/chat/retention.ts:18-19 is told 410', 'apps/web/src/chat/store.ts:10 A record is erased'],
+    a: 'Your device keeps no message text: each time you open a chat, it reads the messages from X2F again and decrypts them. It keeps the chat\'s keys and a short receipt for each message, encrypted. When X2F deletes a chat, your device erases that record the next time it checks with X2F, if that is within a year.',
+    sources: [
+      'apps/web/src/chat/engine.ts:35-36 No message text is stored on the device',
+      'apps/web/src/chat/store.ts:3-5 NEVER the text',
+      'apps/web/src/chat/store.ts:13 non-extractable AES-256-GCM CryptoKey',
+      'apps/web/src/chat/engine.ts:51-53 Erase on purge',
+      'apps/api/src/chat/retention.ts:20 is told 410',
+      'apps/api/src/chat/retention.ts:23 CHAT_PURGED_MARK_DAYS',
+    ],
+    facts: ['chatPurgedMarkYear'],
   },
   {
     id: 'addresses-kept',
     topic: 'privacy',
     q: 'How long are payout addresses kept on a trade?',
-    a: 'Until 90 days after the trade closes. Then they are erased from the trade.',
-    sources: ['apps/api/src/trades/purge.ts:5 TRADE_ADDRESS_RETENTION_MS', 'apps/api/src/trades/purge.ts:11 Nulls `buyer_payout`'],
-    facts: ['addressDays'],
+    a: 'On an undisputed trade, until the trade self-destructs 30 days after it closes, when X2F deletes the whole trade with them. On a trade that had a dispute, they are erased 90 days after the trade closes, and never while a dispute is open.',
+    sources: [
+      `${T}/retention.ts:6-7 An undisputed trade self-destructs TRADE_KEEP_DAYS (30) days after it closed`,
+      'apps/api/src/retention/tradePurge.ts:24-26 deleted whole',
+      'apps/api/src/trades/purge.ts:5 TRADE_ADDRESS_RETENTION_MS',
+      'apps/api/src/trades/purge.ts:11 Nulls `buyer_payout`',
+      'apps/api/src/trades/purge.ts:11-12 never on a',
+    ],
+    facts: ['tradeKeepDays', 'addressDays'],
   },
   {
     id: 'who-reads-chat',
@@ -685,8 +825,30 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'pgp-key-name',
     topic: 'privacy',
     q: 'Can my PGP key show my name?',
-    a: 'Yes. Most PGP keys carry a name or email, and X2F keeps your public key as you gave it. If you want to stay private, use a key made without your real name or email.',
-    sources: [`${SPEC}:211 v4 keys, which are most keys in use, are stored whole`],
+    a: 'Yes. Most PGP keys carry a name or email, and X2F keeps your public key as you gave it. If you want to stay private, use a key made without your real name or email. Your profile never shows the key or its fingerprint, and a signed record you save carries the fingerprint only if you tick it.',
+    sources: [
+      `${SPEC}:211 v4 keys, which are most keys in use, are stored whole`,
+      'apps/api/src/reputation/profile.ts:23-24 PGP fingerprint',
+      `${WEB}/profile/profileCopy.ts:83-84 Off unless you tick it.`,
+      `${WEB}/profile/profileCopy.ts:91 The copy on your profile never lists a PGP fingerprint.`,
+    ],
+  },
+  {
+    id: 'who-sees-profile',
+    topic: 'privacy',
+    q: 'Who can see my profile?',
+    a: 'Anyone signed in to X2F can open your profile at /u/ followed by your display name, except a trader you blocked. It shows when you joined and whether you are online, your completed trades, disputes won and lost, your reviews with only their month and year and never who left them, the badges you show, and "Account protected with PGP" unless you hide that badge. You can also make a signed record of your trades under Settings: it stays private unless you show it on your profile, and only a copy you save can carry your PGP fingerprint, if you tick it.',
+    sources: [
+      'apps/web/src/App.tsx:278 path="/u/:name"',
+      'apps/api/src/reputation/profile.ts:16-17 only a set-up trader (or a member of',
+      'apps/api/src/reputation/profile.ts:19-20 a trader who blocked the viewer',
+      `${WEB}/profile/Profile.tsx:9-13 Reviews show month and year`,
+      `${WEB}/profile/profileCopy.ts:32 Disputes: none`,
+      'apps/api/src/reputation/profile.ts:58-59 pgpProtected',
+      `${WEB}/profile/Record.tsx:5-7 optionally`,
+      `${WEB}/profile/profileCopy.ts:83-84 Include my PGP fingerprint`,
+      `${WEB}/profile/profileCopy.ts:91 The copy on your profile never lists a PGP fingerprint.`,
+    ],
   },
   {
     id: 'terms-signature',
@@ -717,31 +879,46 @@ export const QUESTIONS: readonly HelpQuestion[] = [
     id: 'fee-vendor-sells',
     topic: 'fees',
     q: 'How is the fee paid when the vendor sells?',
-    a: 'The vendor puts the trade amount plus 1% into the escrow. The buyer receives the full trade amount.',
-    sources: [`${T}/money.ts:125 a.poster === 'seller' ? feeAtomic`, `${T}/payouts.ts:78 const toBuyer`],
+    a: 'The vendor puts the trade amount plus 1% into the escrow. The buyer receives the trade amount less the Monero network fee, because whoever receives the trade\'s XMR pays that fee.',
+    sources: [`${T}/money.ts:125 a.poster === 'seller' ? feeAtomic`, `${T}/payouts.ts:78 const toBuyer`, `${T}/payouts.ts:6-7 bears the network fee`, 'packages/escrow/src/verify.ts:177 i === 0 ? p.amountAtomic - fee'],
     facts: ['feePercent'],
   },
   {
     id: 'fee-vendor-buys',
     topic: 'fees',
     q: 'How is the fee paid when the vendor buys?',
-    a: 'The seller puts the trade amount into the escrow. The vendor receives the trade amount minus 1%.',
-    sources: [`${T}/money.ts:125 sellerFundsAtomic`, `${T}/payouts.ts:78 f.amountAtomic - f.feeAtomic`],
+    a: 'The seller puts the trade amount into the escrow. The vendor receives the trade amount minus 1%, and less the Monero network fee, because whoever receives the trade\'s XMR pays that fee.',
+    sources: [`${T}/money.ts:125 sellerFundsAtomic`, `${T}/payouts.ts:78 f.amountAtomic - f.feeAtomic`, `${T}/payouts.ts:6-7 bears the network fee`, 'packages/escrow/src/verify.ts:177 i === 0 ? p.amountAtomic - fee'],
     facts: ['feePercent'],
   },
   {
     id: 'fee-when',
     topic: 'fees',
     q: 'When is the fee taken?',
-    a: 'When a trade completes, as the XMR leaves the escrow. A cancelled or refunded trade pays no X2F fee: everything in the escrow goes back to the seller.',
-    sources: [`${T}/payouts.ts:74-83 case 'release':`, `${T}/payouts.ts:85-92 Every refund`],
+    a: 'When a trade completes, as the XMR leaves the escrow. A cancelled or refunded trade pays no X2F fee: everything in the escrow goes back to the seller, less the Monero network fee.',
+    sources: [`${T}/payouts.ts:74-83 case 'release':`, `${T}/payouts.ts:85-92 Every refund`, `${T}/payouts.ts:6-7 bears the network fee`, 'packages/escrow/src/verify.ts:177 i === 0 ? p.amountAtomic - fee'],
   },
   {
     id: 'fee-dispute',
     topic: 'fees',
     q: 'Is there a fee when a moderator rules?',
-    a: 'If the ruling releases the XMR to the buyer, the trade completes and the vendor pays the 1%. If everything goes back to where it came from, there is no fee. While an appeal is open, the fee waits for its outcome.',
+    a: 'If the ruling releases the XMR to the buyer, the trade completes and the vendor pays the 1%. If everything goes back to where it came from, there is no X2F fee. While an appeal is open, the fee waits for its outcome.',
     sources: ['packages/staff/src/dispute.ts:309-310 release-to-buyer', 'packages/staff/src/dispute.ts:318 return \'waits\';', `${T}/payouts.ts:29-32 'dispute-buyer'`],
     facts: ['feePercent'],
   },
 ];
+
+/** Every question with the answer for a build with (`proofOn`) or without the proof upload. */
+export function libraryQuestions(proofOn: boolean): readonly HelpQuestion[] {
+  return ENTRIES.map((e): HelpQuestion => {
+    if (!('proofUpload' in e)) return e;
+    const { id, topic, q, proofUpload } = e;
+    return { id, topic, q, ...(proofOn ? proofUpload.on : proofUpload.off) };
+  });
+}
+
+/** The questions whose answer follows the proof-upload flag, with both answers (for the tests). */
+export const FLAGGED_QUESTIONS: readonly FlaggedQuestion[] = ENTRIES.filter((e): e is FlaggedQuestion => 'proofUpload' in e);
+
+/** Every question as this build answers it (proof/flag.ts `proofUploadOn`, read once at load). */
+export const QUESTIONS: readonly HelpQuestion[] = libraryQuestions(proofUploadOn());

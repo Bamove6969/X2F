@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { X2F_FEE_BPS } from '@x2f/core';
 import {
   BAND_MIN_TRADES,
@@ -21,12 +21,15 @@ import {
   MAX_CURRENCIES,
   MAX_MARGIN_BPS,
   MAX_METHODS,
+  DISPUTE_KEEP_DAYS,
   SELLER_CONFIRM_CANCEL_TIMEOUT_H,
   TIMERS,
+  TRADE_KEEP_DAYS,
   UNLOCK_CONFIRMATIONS,
 } from '@x2f/trade';
-import { LIBRARY_TOPICS, QUESTIONS } from '../src/screens/help/helpLibrary.js';
-import { LIBRARY_COPY, matches, searchWords } from '../src/screens/help/HelpLibrary.js';
+import { GIFT_CARD_COPY } from '../src/screens/giftcard/giftCardCopy.js';
+import { FLAGGED_QUESTIONS, LIBRARY_TOPICS, QUESTIONS, libraryQuestions, type HelpQuestion } from '../src/screens/help/helpLibrary.js';
+import { LIBRARY_COPY, OLD_ANCHOR_REDIRECTS, matches, questionAnchor, searchWords } from '../src/screens/help/HelpLibrary.js';
 import { HelpTopic } from '../src/screens/HelpTopic.js';
 import { fire, render } from './render.js';
 
@@ -34,18 +37,24 @@ const state = vi.hoisted(() => ({ session: { status: 'signed-out' } as unknown }
 vi.mock('../src/session/useSession.js', async (orig) => ({ ...(await orig<object>()), useSession: () => state.session }));
 afterEach(() => {
   state.session = { status: 'signed-out' };
+  vi.unstubAllEnvs();
 });
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 const source = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+/** Both answer sets: a build without the proof upload (the default) and one with it (VITE_X2F_PROOF_UPLOAD=1). */
+const VARIANTS: ReadonlyArray<readonly [string, readonly HelpQuestion[]]> = [
+  ['proof upload off', libraryQuestions(false)],
+  ['proof upload on', libraryQuestions(true)],
+];
 
 /**
  * The number a constant is set to in a source file, for the constants the web app does not import
  * (the API's, @x2f/accounts', @x2f/staff's): `NAME = 24 * 3_600_000;` gives 86400000. Only digits,
  * underscores and `*` are read, so anything cleverer fails here instead of guessing.
  */
-function constIn(file: string, name: string): number {
-  const m = new RegExp(`\\b${name}\\s*(?::[^=]+)?=\\s*([0-9_ *n]+);`).exec(source(file));
+function constIn(file: string, name: string, read: (p: string) => string = source): number {
+  const m = new RegExp(`\\b${name}\\s*(?::[^=]+)?=\\s*([0-9_ *n]+);`).exec(read(file));
   if (m === null) throw new Error(`${name} not found in ${file}`);
   return m[1]!
     .split('*')
@@ -53,8 +62,8 @@ function constIn(file: string, name: string): number {
     .reduce((a, b) => a * b, 1);
 }
 /** A key's number inside an object literal in a source file: `appealWindowH: 48,`. */
-function keyIn(file: string, key: string): number {
-  const m = new RegExp(`\\b${key}:\\s*(\\d+)`).exec(source(file));
+function keyIn(file: string, key: string, read: (p: string) => string = source): number {
+  const m = new RegExp(`\\b${key}:\\s*(\\d+)`).exec(read(file));
   if (m === null) throw new Error(`${key} not found in ${file}`);
   return Number(m[1]);
 }
@@ -62,71 +71,138 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const orList = (ns: readonly number[]) => `${ns.slice(0, -1).join(', ')} or ${ns[ns.length - 1]}`;
-const hoursList = (type: 'trader' | 'vendor') => {
-  const m = new RegExp(`${type}: \\[([0-9, ]+)\\]`).exec(source('packages/accounts/src/sessionLength.ts'));
+const hoursList = (type: 'trader' | 'vendor', read: (p: string) => string) => {
+  const m = new RegExp(`${type}: \\[([0-9, ]+)\\]`).exec(read('packages/accounts/src/sessionLength.ts'));
   if (m === null) throw new Error(`no ${type} session hours`);
   return m[1]!.split(',').map((x) => Number(x.trim()));
 };
-const blockSeconds = Number(/blockSeconds = (\d+)/.exec(source('packages/trade/src/machine.ts'))![1]);
+/** "within a year" for 365 days, else "within N days": the answer's words for the purged-mark time. */
+const withinDays = (days: number) => (days === 365 ? 'within a year' : `within ${days} days`);
+
+/** The constants the web app imports, so a test can hand in a changed one (review m4). */
+const IMPORTED = {
+  X2F_FEE_BPS,
+  BAND_MIN_TRADES,
+  CHAT_AFTER_CLOSE_DAYS,
+  CHAT_AFTER_DISPUTE_DAYS,
+  CHAT_PRETRADE_IDLE_DAYS,
+  DISPUTE_KEEP_DAYS,
+  GIFT_CARD_CHECK_MIN,
+  GIFT_CARD_MAX_AGE_DAYS,
+  GIFT_CARD_RANGE: GIFT_CARD_COPY.rangeCardOnly,
+  LAUNCH_TRADE_CAP_USD_CENTS,
+  MAX_BANDS,
+  MAX_CURRENCIES,
+  MAX_MARGIN_BPS,
+  MAX_METHODS,
+  SELLER_CONFIRM_CANCEL_TIMEOUT_H,
+  TIMERS,
+  TRADE_KEEP_DAYS,
+  UNLOCK_CONFIRMATIONS,
+};
+/** Widened, so a test may hand in a changed value of any constant. */
+type Imported = { [K in keyof typeof IMPORTED]: (typeof IMPORTED)[K] extends number ? number : (typeof IMPORTED)[K] };
 
 /**
  * Every timer, limit and count an answer may name, as the words the answer uses, rebuilt from the
  * constant in the code. A question lists the keys it uses in `facts`.
  */
-const FACTS: Record<string, string> = {
-  feePercent: `${Number(X2F_FEE_BPS) / 100}%`,
-  pgpCodeMinutes: `${constIn('apps/api/src/auth/pgp.ts', 'PGP_CHALLENGE_TTL_MS') / MIN} minutes`,
-  pgpRsaBits: `${constIn('packages/accounts/src/pgp.ts', 'MIN_RSA_BITS')} bits`,
-  passwordMin: `${constIn('packages/accounts/src/password.ts', 'PASSWORD_MIN')} characters`,
-  traderSessionHours: `${orList(hoursList('trader'))} hours`,
-  vendorSessionHours: `${orList(hoursList('vendor'))} hours`,
-  sessionPromptMinutes: `${constIn('packages/accounts/src/sessionLength.ts', 'SESSION_PROMPT_MS') / MIN} minutes`,
-  inactiveDays: `${constIn('apps/api/src/accountInactivity.ts', 'INACTIVE_MS') / DAY} days`,
-  maxCurrencies: `up to ${MAX_CURRENCIES} currencies`,
-  maxMethods: `up to ${MAX_METHODS} payment methods`,
-  offerCapBuy: `${keyIn('apps/api/src/offers/routes.ts', 'buy')} buy offers`,
-  offerCapSell: `${keyIn('apps/api/src/offers/routes.ts', 'sell')} sell offers`,
-  maxMarginPercent: `${MAX_MARGIN_BPS / 100}%`,
-  maxBands: `up to ${MAX_BANDS} bands`,
-  bandMinTrades: orList(BAND_MIN_TRADES),
-  launchCapUsd: `${(Number(LAUNCH_TRADE_CAP_USD_CENTS) / 100).toLocaleString('en-US')} US dollars`,
-  setupMinutes: `${TIMERS.setupMin} minutes`,
-  fundMinutes: `${TIMERS.fundMin} minutes`,
-  extendMinutes: `${TIMERS.extendMin} more minutes`,
-  maxExtensions: `up to ${TIMERS.maxExtensions} times`,
-  unlockConfirmations: `${UNLOCK_CONFIRMATIONS} confirmations`,
-  confirmCancelHours: `${SELLER_CONFIRM_CANCEL_TIMEOUT_H} hours`,
-  nudgeMinutes: `every ${constIn('apps/api/src/nudge/routes.ts', 'NUDGE_GAP_MS') / MIN} minutes`,
-  giftCardAgeDays: `last ${GIFT_CARD_MAX_AGE_DAYS} days`,
-  giftCardCheckMinutes: `${GIFT_CARD_CHECK_MIN} minutes`,
-  // The example card the rule itself names (packages/trade/src/giftCards.ts, G52).
-  giftCardRangeExample: /a (Visa \d+ to \d+)/.exec(source('packages/trade/src/giftCards.ts'))![1]!,
-  escrowKeys: `${/\d-of-(\d) multisig/.exec(source('docs/public/x2f-crypto-spec.md'))![1]} keys`,
-  escrowThreshold: `Any ${constIn('packages/escrow/src/monero.ts', 'THRESHOLD')} keys`,
-  checkWords: `${constIn('packages/trade/src/checkWords.ts', 'WORDS')} words`,
-  payoutWaitHours: `${constIn('apps/api/src/wallets/routes.ts', 'PAYOUT_WAIT_MS') / HOUR} hours`,
-  unlockMinutes: `about ${(UNLOCK_CONFIRMATIONS * blockSeconds) / 60} minutes`,
-  rulingGoalHours: `within ${constIn('packages/staff/src/dispute.ts', 'RULING_GOAL_H')} hours`,
-  appealWindowHours: `within ${keyIn('apps/api/src/staff/settingsDefaults.ts', 'appealWindowH')} hours of the ruling`,
-  appealGoalHours: `decide within ${constIn('packages/staff/src/dispute.ts', 'APPEAL_GOAL_H')} hours`,
-  holdHours: `${constIn('apps/api/src/auth/hold.ts', 'HOLD_MS') / HOUR} hours`,
-  maxHoldChanges: `Up to ${constIn('apps/api/src/auth/holdChanges.ts', 'MAX_HOLD_CHANGES')} changes`,
-  recoveryHoldHours: `${constIn('apps/api/src/auth/recovery.ts', 'RECOVERY_HOLD_MS') / HOUR} hours`,
-  approvalMinutes: `${constIn('apps/api/src/auth/approval.ts', 'APPROVAL_TTL_MS') / MIN} minutes`,
-  maxDevices: `Up to ${constIn('apps/api/src/auth/approval.ts', 'DEFAULT_MAX_DEVICES')} at a time`,
-  trustedDeviceDays: `${constIn('apps/api/src/auth/device.ts', 'TRUSTED_DEVICE_TTL_MS') / DAY} days`,
-  maxTeamMembers: `up to ${constIn('apps/api/src/team/perms.ts', 'MAX_TEAM_MEMBERS')} team members`,
-  inviteHours: `${constIn('apps/api/src/team/members.ts', 'INVITE_TTL_MS') / HOUR} hours`,
-  chatAfterCloseDays: `${CHAT_AFTER_CLOSE_DAYS} days after the trade closes`,
-  chatAfterDisputeDays: `${CHAT_AFTER_DISPUTE_DAYS} days after the dispute closes`,
-  chatPretradeDays: `${CHAT_PRETRADE_IDLE_DAYS} days without a message`,
-  addressDays: `${constIn('apps/api/src/trades/purge.ts', 'TRADE_ADDRESS_RETENTION_MS') / DAY} days after the trade closes`,
-};
+function buildFacts(c: Imported = IMPORTED, read: (p: string) => string = source): Record<string, string> {
+  const k = (file: string, name: string) => constIn(file, name, read);
+  const blockSeconds = Number(/blockSeconds = (\d+)/.exec(read('packages/trade/src/machine.ts'))![1]);
+  return {
+    feePercent: `${Number(c.X2F_FEE_BPS) / 100}%`,
+    pgpCodeMinutes: `${k('apps/api/src/auth/pgp.ts', 'PGP_CHALLENGE_TTL_MS') / MIN} minutes`,
+    pgpRsaBits: `${k('packages/accounts/src/pgp.ts', 'MIN_RSA_BITS')} bits`,
+    passwordMin: `${k('packages/accounts/src/password.ts', 'PASSWORD_MIN')} characters`,
+    traderSessionHours: `${orList(hoursList('trader', read))} hours`,
+    vendorSessionHours: `${orList(hoursList('vendor', read))} hours`,
+    sessionPromptMinutes: `${k('packages/accounts/src/sessionLength.ts', 'SESSION_PROMPT_MS') / MIN} minutes`,
+    inactiveDays: `${k('apps/api/src/accountInactivity.ts', 'INACTIVE_MS') / DAY} days`,
+    maxCurrencies: `up to ${c.MAX_CURRENCIES} currencies`,
+    maxMethods: `up to ${c.MAX_METHODS} payment methods`,
+    offerCapBuy: `${keyIn('apps/api/src/offers/routes.ts', 'buy', read)} buy offers`,
+    offerCapSell: `${keyIn('apps/api/src/offers/routes.ts', 'sell', read)} sell offers`,
+    maxMarginPercent: `${c.MAX_MARGIN_BPS / 100}%`,
+    maxBands: `up to ${c.MAX_BANDS} bands`,
+    bandMinTrades: orList(c.BAND_MIN_TRADES),
+    launchCapUsd: `${(Number(c.LAUNCH_TRADE_CAP_USD_CENTS) / 100).toLocaleString('en-US')} US dollars`,
+    setupMinutes: `${c.TIMERS.setupMin} minutes`,
+    fundMinutes: `${c.TIMERS.fundMin} minutes`,
+    extendMinutes: `${c.TIMERS.extendMin} more minutes`,
+    maxExtensions: `up to ${c.TIMERS.maxExtensions} times`,
+    unlockConfirmations: `${c.UNLOCK_CONFIRMATIONS} confirmations`,
+    confirmCancelHours: `${c.SELLER_CONFIRM_CANCEL_TIMEOUT_H} hours`,
+    nudgeMinutes: `every ${k('apps/api/src/nudge/routes.ts', 'NUDGE_GAP_MS') / MIN} minutes`,
+    giftCardAgeDays: `last ${c.GIFT_CARD_MAX_AGE_DAYS} days`,
+    giftCardCheckMinutes: `${c.GIFT_CARD_CHECK_MIN} minutes`,
+    // The example card the app's own gift-card words name (giftCardCopy.ts rangeCardOnly, G52).
+    giftCardRangeExample: /like a (Visa \d+ to \d+)/.exec(c.GIFT_CARD_RANGE)![1]!,
+    escrowKeys: `${k('packages/escrow/src/monero.ts', 'SIGNERS')} keys`,
+    escrowThreshold: `Any ${k('packages/escrow/src/monero.ts', 'THRESHOLD')} keys`,
+    checkWords: `${k('packages/trade/src/checkWords.ts', 'WORDS')} words`,
+    payoutWaitHours: `${k('apps/api/src/wallets/routes.ts', 'PAYOUT_WAIT_MS') / HOUR} hours`,
+    unlockMinutes: `about ${(c.UNLOCK_CONFIRMATIONS * blockSeconds) / 60} minutes`,
+    rulingGoalHours: `within ${k('packages/staff/src/dispute.ts', 'RULING_GOAL_H')} hours`,
+    appealWindowHours: `within ${keyIn('apps/api/src/staff/settingsDefaults.ts', 'appealWindowH', read)} hours of the ruling`,
+    appealGoalHours: `decide within ${k('packages/staff/src/dispute.ts', 'APPEAL_GOAL_H')} hours`,
+    holdHours: `${k('apps/api/src/auth/hold.ts', 'HOLD_MS') / HOUR} hours`,
+    maxHoldChanges: `Up to ${k('apps/api/src/auth/holdChanges.ts', 'MAX_HOLD_CHANGES')} changes`,
+    recoveryHoldHours: `${k('apps/api/src/auth/recovery.ts', 'RECOVERY_HOLD_MS') / HOUR} hours`,
+    approvalMinutes: `${k('apps/api/src/auth/approval.ts', 'APPROVAL_TTL_MS') / MIN} minutes`,
+    maxDevices: `up to ${k('apps/api/src/auth/approval.ts', 'DEFAULT_MAX_DEVICES')} at a time`,
+    trustedDeviceDays: `${k('apps/api/src/auth/device.ts', 'TRUSTED_DEVICE_TTL_MS') / DAY} days`,
+    maxTeamMembers: `up to ${k('apps/api/src/team/perms.ts', 'MAX_TEAM_MEMBERS')} team members`,
+    inviteHours: `${k('apps/api/src/team/members.ts', 'INVITE_TTL_MS') / HOUR} hours`,
+    chatAfterCloseDays: `${c.CHAT_AFTER_CLOSE_DAYS} days after the trade closes`,
+    chatAfterDisputeDays: `${c.CHAT_AFTER_DISPUTE_DAYS} days after the dispute closes`,
+    chatPretradeDays: `${c.CHAT_PRETRADE_IDLE_DAYS} days without a message`,
+    chatPurgedMarkYear: withinDays(k('apps/api/src/chat/retention.ts', 'CHAT_PURGED_MARK_DAYS')),
+    tradeKeepDays: `${c.TRADE_KEEP_DAYS} days after it closes`,
+    tradeDisputeKeepDays: `${c.DISPUTE_KEEP_DAYS} days after the dispute closes`,
+    addressDays: `${k('apps/api/src/trades/purge.ts', 'TRADE_ADDRESS_RETENTION_MS') / DAY} days after the trade closes`,
+  };
+}
+const FACTS = buildFacts();
+
+/**
+ * What the facts check finds wrong with `questions` against `facts`: a fact an answer does not say,
+ * an unknown fact, or a number no fact covers. Empty when all is well.
+ */
+function factProblems(questions: readonly HelpQuestion[], facts: Record<string, string>): string[] {
+  const problems: string[] = [];
+  for (const q of questions) {
+    // Names that hold a digit but no number: X2F and the PGP key types.
+    let rest = `${q.q}\n${q.a}`.replace(/\b(?:X2F|Ed25519|Ed448)\b/g, 'NAME');
+    for (const key of q.facts ?? []) {
+      const words = facts[key];
+      if (words === undefined) {
+        problems.push(`${q.id}: unknown fact ${key}`);
+        continue;
+      }
+      if (!rest.includes(words) && !`${q.q}\n${q.a}`.includes(words)) problems.push(`${q.id}: says "${words}" (${key})`);
+      rest = rest.split(words).join(' ');
+    }
+    // Whatever is left holds no number: a new one needs a fact rebuilt from the code above.
+    if (/\d/.test(rest)) problems.push(`${q.id}: a number with no fact`);
+    if (/\b(?:two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|thirty|forty|sixty|ninety|hundred)\b/i.test(rest)) {
+      problems.push(`${q.id}: a number in words with no fact`);
+    }
+  }
+  return problems;
+}
+
+/** `file` as it is, but with `from` replaced by `to` (the text must be there exactly once). */
+function edited(file: string, from: string, to: string): (p: string) => string {
+  const text = source(file);
+  if (text.split(from).length !== 2) throw new Error(`"${from}" is not in ${file} exactly once`);
+  return (p) => (p === file ? text.replace(from, to) : source(p));
+}
 
 describe('the help library content', () => {
-  it('holds 60 to 90 questions, each with a unique link id, in a known topic, and every topic has questions', () => {
+  it('holds 60 to 100 questions, each with a unique link id, in a known topic, and every topic has questions', () => {
     expect(QUESTIONS.length).toBeGreaterThanOrEqual(60);
-    expect(QUESTIONS.length).toBeLessThanOrEqual(90);
+    expect(QUESTIONS.length).toBeLessThanOrEqual(100);
     const ids = QUESTIONS.map((q) => q.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of ids) expect(id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
@@ -135,8 +211,8 @@ describe('the help library content', () => {
     for (const t of LIBRARY_TOPICS) expect(QUESTIONS.some((q) => q.topic === t.id), t.id).toBe(true);
   });
 
-  it('every answer has a source note, and each note still points at the words it names', () => {
-    for (const q of QUESTIONS) {
+  it.each(VARIANTS)('every answer has a source note, and each note still points at the words it names (%s)', (_name, questions) => {
+    for (const q of questions) {
       expect(q.sources.length, q.id).toBeGreaterThan(0);
       for (const s of q.sources) {
         const m = /^([\w./-]+):(\d+)(?:-(\d+))? (.+)$/.exec(s);
@@ -152,50 +228,87 @@ describe('the help library content', () => {
     }
   });
 
-  it('every timer, limit and count an answer names matches the constant in the code, and no number goes unchecked', () => {
-    for (const q of QUESTIONS) {
-      // Names that hold a digit but no number: X2F and the PGP key types.
-      let rest = `${q.q}\n${q.a}`.replace(/\b(?:X2F|Ed25519|Ed448)\b/g, 'NAME');
-      for (const key of q.facts ?? []) {
-        const words = FACTS[key];
-        expect(words, `${q.id}: unknown fact ${key}`).toBeDefined();
-        expect(rest.includes(words!) || `${q.q}\n${q.a}`.includes(words!), `${q.id}: says "${words}" (${key})`).toBe(true);
-        rest = rest.split(words!).join(' ');
-      }
-      // Whatever is left holds no number: a new one needs a fact rebuilt from the code above.
-      expect(rest, `${q.id}: a number with no fact`).not.toMatch(/\d/);
-      expect(rest, `${q.id}: a number in words with no fact`).not.toMatch(/\b(?:two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|thirty|forty|sixty|ninety)\b/i);
-    }
+  it.each(VARIANTS)('every timer, limit and count an answer names matches the constant in the code, and no number goes unchecked (%s)', (_name, questions) => {
+    expect(factProblems(questions, FACTS)).toEqual([]);
   });
 
-  it('a changed constant turns the facts check red (the check is not a copy of the answer)', () => {
-    const q = QUESTIONS.find((x) => x.id === 'more-time')!;
-    expect(q.a).toContain(FACTS.extendMinutes);
-    expect(q.a.replace(String(TIMERS.extendMin), String(TIMERS.extendMin + 1))).not.toContain(FACTS.extendMinutes);
+  // Review m4: the check is rebuilt from the code, so changing a constant (and only the constant,
+  // never an answer) turns it red. Each case hands buildFacts a changed constant, as an imported
+  // value or as a changed source file, and the same unchanged answers must then fail.
+  it.each([
+    ['an imported constant (TIMERS.extendMin 30 to 31)', () => buildFacts({ ...IMPORTED, TIMERS: { ...TIMERS, extendMin: (TIMERS.extendMin + 1) as typeof TIMERS.extendMin } }), 'more-time'],
+    ['an imported constant (TRADE_KEEP_DAYS)', () => buildFacts({ ...IMPORTED, TRADE_KEEP_DAYS: IMPORTED.TRADE_KEEP_DAYS + 1 }), 'trade-kept addresses-kept'],
+    ['a constant read from source (NUDGE_GAP_MS 15 to 20 minutes)', () => buildFacts(IMPORTED, edited('apps/api/src/nudge/routes.ts', 'NUDGE_GAP_MS = 15 * 60_000', 'NUDGE_GAP_MS = 20 * 60_000')), 'nudge'],
+    ['an owner-changeable default (appealWindowH 48 to 72)', () => buildFacts(IMPORTED, edited('apps/api/src/staff/settingsDefaults.ts', 'appealWindowH: 48', 'appealWindowH: 72')), 'appeal'],
+    ['a constant read from source (CHAT_PURGED_MARK_DAYS 365 to 400)', () => buildFacts(IMPORTED, edited('apps/api/src/chat/retention.ts', 'CHAT_PURGED_MARK_DAYS = 365', 'CHAT_PURGED_MARK_DAYS = 400')), 'device-copy'],
+  ] as const)('a changed constant turns the facts check red: %s', (_what, changed, id) => {
+    const facts = changed();
+    const problems = factProblems(QUESTIONS, facts);
+    expect(problems.length).toBeGreaterThan(0);
+    const ids = id.split(' ');
+    // Red exactly where that constant is named: every answer naming it, and no other.
+    expect([...new Set(problems.map((p) => p.split(':')[0]))].sort(), problems.join('\n')).toEqual([...ids].sort());
+    // The unchanged code still passes, so the red comes from the change alone.
+    expect(factProblems(QUESTIONS, buildFacts())).toEqual([]);
   });
 
-  it('answers are short (1 to 4 sentences), plain, never "half" about anything, and marked COPY-UNSIGNED', () => {
-    for (const q of QUESTIONS) {
+  it.each(VARIANTS)('answers are short (1 to 4 sentences), plain, never "half" about anything, and marked COPY-UNSIGNED (%s)', (_name, questions) => {
+    for (const q of questions) {
       const sentences = q.a.split(/(?<=[.?])\s+(?=[A-Z"0-9])/).filter((x) => x.trim() !== '');
       expect(sentences.length, `${q.id}: ${sentences.length} sentences`).toBeGreaterThanOrEqual(1);
       expect(sentences.length, `${q.id}: ${sentences.length} sentences`).toBeLessThanOrEqual(4);
       expect(q.q.trim().endsWith('?') || q.q.trim().endsWith('"'), `${q.id}: the question asks`).toBe(true);
       expect(q.a.trim()).toMatch(/[.]$/);
     }
-    for (const text of [...QUESTIONS.flatMap((q) => [q.q, q.a]), ...LIBRARY_TOPICS.flatMap((t) => [t.title, t.intro])]) {
+    for (const text of [...questions.flatMap((q) => [q.q, q.a]), ...LIBRARY_TOPICS.flatMap((t) => [t.title, t.intro])]) {
       expect(text).not.toMatch(/\bhalf\b/i);
     }
     expect(source('apps/web/src/screens/help/helpLibrary.ts')).toContain('COPY-UNSIGNED');
     expect(source('apps/web/src/screens/help/HelpLibrary.tsx')).toContain('COPY-UNSIGNED');
   });
 
-  it('keeps out the claims an earlier draft got wrong', () => {
-    const all = QUESTIONS.map((q) => `${q.q} ${q.a}`).join('\n');
+  it.each(VARIANTS)('keeps out the claims an earlier draft got wrong (%s)', (_name, questions) => {
+    const all = questions.map((q) => `${q.q} ${q.a}`).join('\n');
     // Members never chat (abilities.ts: every chat route stays owner-only) and there is no 45-day claim window.
     expect(all).not.toMatch(/45[- ]day/i);
     expect(QUESTIONS.find((q) => q.id === 'member-chat')!.a).toMatch(/^Not yet\./);
     // The per-payment-method pay windows are placeholders (owner p11-29): no 90 minutes, 3 hours or the like.
     expect(all).not.toMatch(/\b90 minutes\b|\b3 hours\b/);
+    // Review B1: X2F does ask for a signature at sign-up, so no answer says it keeps no name.
+    expect(all).not.toMatch(/keeps no name|asks for no name|no name, email/i);
+    // Review B2: the receiver of the trade's XMR pays the network fee, so nobody gets "the full trade amount".
+    expect(all).not.toMatch(/full trade amount/i);
+    // Review m3: no claim the code does not back.
+    expect(all).not.toMatch(/usually sooner|for most trades/i);
+    const q = (id: string) => questions.find((x) => x.id === id)!.a;
+    // Review B3: main's whole-trade delete, 30 days after an undisputed trade closes.
+    expect(q('addresses-kept')).toContain(FACTS.tradeKeepDays);
+    expect(q('trade-kept')).toContain(FACTS.tradeKeepDays);
+    // Review M4: every number the owner can change in settings is said with "normally".
+    expect(q('who-can-post')).toContain(`normally have ${FACTS.offerCapBuy}`);
+    expect(q('appeal')).toContain(`normally ${FACTS.appealWindowHours}`);
+    expect(q('device-limit')).toContain(`Normally ${FACTS.maxDevices}`);
+    // Train-1: a security key needs its PIN.
+    expect(q('passkey-or-security-key')).toMatch(/PIN/);
+  });
+
+  it('the proof-upload questions follow the flag: two answers, each with its own sources', () => {
+    expect(FLAGGED_QUESTIONS.map((q) => q.id).sort()).toEqual(['moderator-sees', 'payment-proof']);
+    for (const f of FLAGGED_QUESTIONS) {
+      expect(f.proofUpload.off.a, f.id).not.toBe(f.proofUpload.on.a);
+      expect(libraryQuestions(false).find((q) => q.id === f.id)!.a).toBe(f.proofUpload.off.a);
+      expect(libraryQuestions(true).find((q) => q.id === f.id)!.a).toBe(f.proofUpload.on.a);
+    }
+    const off = libraryQuestions(false);
+    const on = libraryQuestions(true);
+    expect(off.find((q) => q.id === 'payment-proof')!.a).toMatch(/not in the app yet/);
+    expect(on.find((q) => q.id === 'payment-proof')!.a).toMatch(/^Yes\./);
+    expect(off.find((q) => q.id === 'moderator-sees')!.a).not.toMatch(/unblurred/i);
+    expect(on.find((q) => q.id === 'moderator-sees')!.a).toMatch(/request unblurred proof/i);
+    // Both sets hold the same questions in the same order; only those two answers differ.
+    expect(on.map((q) => q.id)).toEqual(off.map((q) => q.id));
+    // This test run's build has no VITE_X2F_PROOF_UPLOAD, so QUESTIONS is the off set.
+    expect(QUESTIONS).toEqual(off);
   });
 });
 
@@ -210,9 +323,17 @@ describe('search', () => {
   });
 });
 
+/** Where the router is now (path and hash), for the old-anchor redirect. */
+const where = { now: '' };
+function Where() {
+  const l = useLocation();
+  where.now = `${l.pathname}${l.hash}`;
+  return null;
+}
 const at = (path: string) =>
   render(
     <MemoryRouter initialEntries={[path]}>
+      <Where />
       <Routes>
         <Route path="/help" element={<HelpTopic />} />
         <Route path="/help/:topic" element={<HelpTopic />} />
@@ -227,7 +348,7 @@ function type(input: HTMLInputElement, value: string) {
 }
 const shownIds = (host: HTMLElement) => [...host.querySelectorAll('[data-question]')].map((e) => e.getAttribute('data-question'));
 const click = (el: Element) => fire(el, new MouseEvent('click', { bubbles: true }));
-const toggleOf = (host: HTMLElement, id: string) => host.querySelector<HTMLButtonElement>(`[id="${id}"] button`)!;
+const toggleOf = (host: HTMLElement, id: string) => host.querySelector<HTMLButtonElement>(`[data-question="${id}"] button`)!;
 
 describe('the help page', () => {
   it('/help groups every question under its topic, h1, then an h2 per topic and an h3 per question', () => {
@@ -255,24 +376,40 @@ describe('the help page', () => {
     expect(host.querySelector('nav[aria-label="Help topics"] a[aria-current="page"]')!.getAttribute('href')).toBe('/help/fees');
   });
 
-  it('each question is a button that opens and closes its answer, a region labelled by the question', () => {
+  it('each question is a button that opens and closes its answer, a group (not a landmark) labelled by the question', () => {
     const host = at('/help/escrow');
     const button = toggleOf(host, 'how-escrow-works');
     const panel = host.querySelector<HTMLElement>(`#${CSS.escape(button.getAttribute('aria-controls')!)}`)!;
     expect(button.tagName).toBe('BUTTON');
     expect(button.getAttribute('type')).toBe('button');
     expect(button.getAttribute('aria-expanded')).toBe('false');
-    expect(panel.getAttribute('role')).toBe('region');
+    expect(panel.getAttribute('role')).toBe('group');
     expect(panel.getAttribute('aria-labelledby')).toBe(button.id);
     expect(panel.hidden).toBe(true);
     click(button);
     expect(button.getAttribute('aria-expanded')).toBe('true');
     expect(panel.hidden).toBe(false);
-    expect(panel.textContent).toContain(QUESTIONS.find((q) => q.id === 'how-escrow-works')!.a);
-    expect(panel.querySelector('a')!.getAttribute('href')).toBe('/help/escrow#how-escrow-works');
+    const q = QUESTIONS.find((x) => x.id === 'how-escrow-works')!;
+    expect(panel.textContent).toContain(q.a);
+    const link = panel.querySelector('a')!;
+    expect(link.getAttribute('href')).toBe('/help/escrow#faq-how-escrow-works');
+    // Its name starts with the words it shows and names the question, so each link is told apart.
+    expect(link.textContent).toBe(LIBRARY_COPY.link);
+    expect(link.getAttribute('aria-label')).toBe(`${LIBRARY_COPY.link}: ${q.q}`);
     click(button);
     expect(button.getAttribute('aria-expanded')).toBe('false');
     expect(panel.hidden).toBe(true);
+  });
+
+  it('review m7: no answer is a landmark, every answer link has its own name, and every anchor is prefixed', () => {
+    const host = at('/help');
+    for (const b of host.querySelectorAll<HTMLButtonElement>('[data-question] button')) click(b);
+    expect(host.querySelectorAll('[role="region"]')).toHaveLength(0);
+    const names = [...host.querySelectorAll('[data-question] a')].map((a) => a.getAttribute('aria-label'));
+    expect(names).toHaveLength(QUESTIONS.length);
+    expect(new Set(names).size).toBe(QUESTIONS.length);
+    for (const li of host.querySelectorAll('[data-question]')) expect(li.id).toBe(questionAnchor(li.getAttribute('data-question')!));
+    expect(questionAnchor('price')).toBe('faq-price');
   });
 
   it('the search box is labelled, filters questions and answers, and says how many match in a live region', () => {
@@ -300,17 +437,50 @@ describe('the help page', () => {
   });
 
   it('a deep link opens its question and moves the focus to it, on its topic page and on /help', () => {
-    const host = at('/help/fees#fee-when');
+    const host = at('/help/fees#faq-fee-when');
     const button = toggleOf(host, 'fee-when');
     expect(button.getAttribute('aria-expanded')).toBe('true');
     expect(document.activeElement).toBe(button);
     // Nothing else is open.
     expect(host.querySelectorAll('button[aria-expanded="true"]')).toHaveLength(1);
-    const all = at('/help#appeal');
+    const all = at('/help#faq-appeal');
     expect(toggleOf(all, 'appeal').getAttribute('aria-expanded')).toBe('true');
     // A link to another topic's question opens nothing here.
-    const other = at('/help/fees#appeal');
+    const other = at('/help/fees#faq-appeal');
     expect(other.querySelectorAll('button[aria-expanded="true"]')).toHaveLength(0);
+    // An anchor that is not a question opens nothing.
+    expect(at('/help#faq-nope').querySelectorAll('button[aria-expanded="true"]')).toHaveLength(0);
+  });
+
+  it('a link in the first form (#price) is rewritten to #faq-price and still opens its question', () => {
+    expect(Object.keys(OLD_ANCHOR_REDIRECTS)).toHaveLength(QUESTIONS.length);
+    for (const q of QUESTIONS) expect(OLD_ANCHOR_REDIRECTS[q.id]).toBe(`faq-${q.id}`);
+    const host = at('/help/trading#price');
+    expect(where.now).toBe('/help/trading#faq-price');
+    const button = toggleOf(host, 'price');
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(button);
+    expect(host.querySelectorAll('button[aria-expanded="true"]')).toHaveLength(1);
+    at('/help#bans');
+    expect(where.now).toBe('/help#faq-bans');
+    // Anything else in the hash is left as it is.
+    at('/help#zzqx');
+    expect(where.now).toBe('/help#zzqx');
+  });
+
+  it.each([
+    ['', 'off'],
+    ['1', 'on'],
+  ] as const)('the page shows the answers for its build: VITE_X2F_PROOF_UPLOAD=%j is the %s answer', (value, side) => {
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', value);
+    const host = at('/help/trading#faq-payment-proof');
+    const flagged = FLAGGED_QUESTIONS.find((q) => q.id === 'payment-proof')!;
+    const panel = host.querySelector('[data-question="payment-proof"] [role="group"]')!;
+    expect(panel.textContent).toContain(flagged.proofUpload[side].a);
+    const mod = at('/help/disputes#faq-moderator-sees');
+    expect(mod.querySelector('[data-question="moderator-sees"] [role="group"]')!.textContent).toContain(
+      FLAGGED_QUESTIONS.find((q) => q.id === 'moderator-sees')!.proofUpload[side].a,
+    );
   });
 
   it('logged in or out, the library is the same and nothing on it is a primary action', () => {

@@ -1,14 +1,19 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
+import { proofUploadOn } from '../../proof/flag.js';
 import { Icon } from '../../ui/icons.js';
-import { LIBRARY_TOPICS, QUESTIONS, type HelpQuestion, type HelpTopicId } from './helpLibrary.js';
+import { FAQ_ANCHOR_PREFIX, LIBRARY_TOPICS, QUESTIONS, libraryQuestions, type HelpQuestion, type HelpTopicId } from './helpLibrary.js';
 import './help.css';
 
 /*
  * The help library (owner, 18 Nov 2026): the questions in helpLibrary.ts, grouped by topic, each one
- * a disclosure (a real button with aria-expanded and aria-controls; the answer is a labelled region),
- * a search box that filters questions and answers, and deep links: /help/<topic>#<question-id> opens
- * that question and moves the focus to it. /help shows every topic; /help/<topic> shows one.
+ * a disclosure (a real button with aria-expanded and aria-controls; the answer is a group labelled
+ * by its question, not a region: up to every answer may be open, and that many landmarks would
+ * swamp the page's landmark list, review m7), a search box that filters questions and answers, and
+ * deep links: /help/<topic>#faq-<question-id> opens that question and moves the focus to it. The
+ * first form of the link, #<question-id>, is rewritten to the new one (`OLD_ANCHOR_REDIRECTS`), so
+ * published links keep working. /help shows every topic; /help/<topic> shows one. The answers
+ * follow the proof-upload flag (helpLibrary.ts `libraryQuestions`, proof/flag.ts).
  * DESIGNER-REVIEW: the layout. COPY-UNSIGNED: every string here.
  */
 
@@ -21,10 +26,23 @@ export const LIBRARY_COPY = {
   count: (n: number) => (n === 1 ? '1 question' : `${n} questions`),
   none: (query: string) => `No questions match "${query}". Try another word, or look through the topics.`,
   link: 'Link to this answer',
+  /** The link's accessible name: the visible words first, then the question, so 89 links are told apart. */
+  linkLabel: (question: string) => `Link to this answer: ${question}`,
 } as const;
 
+/** The anchor of a question on the page: its id, prefixed so it never collides with another id. */
+export const questionAnchor = (id: string): string => `${FAQ_ANCHOR_PREFIX}${id}`;
+
 /** The path of a question's own page, with its anchor. */
-export const questionHref = (q: Pick<HelpQuestion, 'id' | 'topic'>): string => `/help/${q.topic}#${q.id}`;
+export const questionHref = (q: Pick<HelpQuestion, 'id' | 'topic'>): string => `/help/${q.topic}#${questionAnchor(q.id)}`;
+
+/**
+ * The first published anchors (#price, #bans, ...) and the anchor each now has (#faq-price, ...).
+ * A link in the old form is rewritten in place, so it opens the same question.
+ */
+export const OLD_ANCHOR_REDIRECTS: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(QUESTIONS.map((q) => [q.id, questionAnchor(q.id)])),
+);
 
 /** Lower case, accents and curly quotes folded, so "I’ve" finds "I've" and "Mónero" finds "Monero". */
 function fold(s: string): string {
@@ -48,10 +66,21 @@ export function matches(q: Pick<HelpQuestion, 'q' | 'a'>, words: readonly string
   return words.every((w) => text.includes(w));
 }
 
-/** The question an address's hash names (`#id`), or null. */
-function fromHash(hash: string): HelpQuestion | null {
-  const id = decodeURIComponent(hash.replace(/^#/, ''));
-  return QUESTIONS.find((q) => q.id === id) ?? null;
+/** The hash without its `#`, decoded; '' when it does not decode. */
+function hashName(hash: string): string {
+  try {
+    return decodeURIComponent(hash.replace(/^#/, ''));
+  } catch {
+    return '';
+  }
+}
+
+/** The question an address's hash names (`#faq-<id>`), or null. */
+function fromHash(questions: readonly HelpQuestion[], hash: string): HelpQuestion | null {
+  const name = hashName(hash);
+  if (!name.startsWith(FAQ_ANCHOR_PREFIX)) return null;
+  const id = name.slice(FAQ_ANCHOR_PREFIX.length);
+  return questions.find((q) => q.id === id) ?? null;
 }
 
 function Question({ q, level, open, onToggle }: { q: HelpQuestion; level: 2 | 3; open: boolean; onToggle: () => void }) {
@@ -60,7 +89,7 @@ function Question({ q, level, open, onToggle }: { q: HelpQuestion; level: 2 | 3;
   const panelId = `${base}-a`;
   const Heading = level === 2 ? 'h2' : 'h3';
   return (
-    <li className="x2f-help__item" id={q.id} data-question={q.id}>
+    <li className="x2f-help__item" id={questionAnchor(q.id)} data-question={q.id}>
       <Heading className="x2f-help__question">
         <button type="button" id={buttonId} className="x2f-help__toggle" aria-expanded={open} aria-controls={panelId} onClick={onToggle}>
           <span>{q.q}</span>
@@ -69,10 +98,10 @@ function Question({ q, level, open, onToggle }: { q: HelpQuestion; level: 2 | 3;
           </span>
         </button>
       </Heading>
-      <div id={panelId} role="region" aria-labelledby={buttonId} className="x2f-help__answer" hidden={!open}>
+      <div id={panelId} role="group" aria-labelledby={buttonId} className="x2f-help__answer" hidden={!open}>
         <p>{q.a}</p>
         <p className="x2f-help__permalink">
-          <Link className="x2f-link" to={questionHref(q)}>
+          <Link className="x2f-link" to={questionHref(q)} aria-label={LIBRARY_COPY.linkLabel(q.q)}>
             {LIBRARY_COPY.link}
           </Link>
         </p>
@@ -86,31 +115,40 @@ function Question({ q, level, open, onToggle }: { q: HelpQuestion; level: 2 | 3;
  * null for every topic (each topic an h2, its questions h3).
  */
 export function HelpLibrary({ topic }: { topic: HelpTopicId | null }) {
-  const { hash } = useLocation();
+  const { hash, pathname, search } = useLocation();
+  const navigate = useNavigate();
+  // The answers this build gives (the proof-upload flag), read once per page.
+  const questions = useMemo(() => libraryQuestions(proofUploadOn()), []);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<ReadonlySet<string>>(() => {
-    const q = fromHash(hash);
+    const q = fromHash(questions, hash);
     return new Set(q !== null && (topic === null || q.topic === topic) ? [q.id] : []);
   });
   const searchId = useId();
   const hintId = useId();
   const words = useMemo(() => searchWords(query), [query]);
   const topics = useMemo(() => (topic === null ? LIBRARY_TOPICS : LIBRARY_TOPICS.filter((t) => t.id === topic)), [topic]);
-  const shown = useMemo(() => QUESTIONS.filter((q) => topics.some((t) => t.id === q.topic) && matches(q, words)), [topics, words]);
+  const shown = useMemo(() => questions.filter((q) => topics.some((t) => t.id === q.topic) && matches(q, words)), [questions, topics, words]);
   const focused = useRef<string | null>(null);
+
+  // A link in the first form (#price) is rewritten to its anchor now (#faq-price), in place.
+  const moved = OLD_ANCHOR_REDIRECTS[hashName(hash)];
+  useEffect(() => {
+    if (moved !== undefined) void navigate({ pathname, search, hash: `#${moved}` }, { replace: true });
+  }, [moved, navigate, pathname, search]);
 
   // A deep link (on arrival, or a hash change on this page) opens its question and brings it into view.
   useEffect(() => {
-    const q = fromHash(hash);
+    const q = fromHash(questions, hash);
     if (q === null || (topic !== null && q.topic !== topic)) return;
     setOpen((s) => (s.has(q.id) ? s : new Set([...s, q.id])));
     if (focused.current === `${hash}`) return;
     focused.current = hash;
-    const el = document.getElementById(q.id);
+    const el = document.getElementById(questionAnchor(q.id));
     const button = el?.querySelector<HTMLButtonElement>('button');
     if (typeof el?.scrollIntoView === 'function') el.scrollIntoView({ block: 'start' });
     button?.focus({ preventScroll: true });
-  }, [hash, topic]);
+  }, [questions, hash, topic]);
 
   const toggle = (id: string) =>
     setOpen((s) => {
