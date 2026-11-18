@@ -59,3 +59,21 @@ The structure is good. The 12 topics render, aliases work, the topic nav is a la
 Queued behind other helpers on the shared lock when this was written: typecheck, copy-lint, separation-check, the full vitest suite (Docker up), semgrep, audit and full Playwright web. The verdict does not depend on them, because B1-B4 are content findings. The results will be added to this file as an addendum, and agy should not wait for them.
 
 Counts: 4 blocking, 7 minor.
+
+## Addendum (checks at 5b15fd80, run under the shared lock after the review was posted)
+- **B5 (new, blocking). The new test cannot run.** `apps/web/test/helpPages.test.tsx` imports `render` from `@testing-library/react`. That package is not a dependency of this repo:
+  - typecheck: `test/helpPages.test.tsx(1,24): error TS2307: Cannot find module '@testing-library/react'`;
+  - vitest: the file fails to load (`FAIL test/helpPages.test.tsx`), so none of its tests ran.
+
+  Use the repo's own `./render.js` helper (`render`, `fire`) and happy-dom (`// @vitest-environment happy-dom`), as every other web test does. Then run the file before posting READY.
+- `npm run typecheck`: **FAIL**, 1 error (B5).
+- `npm run copy-lint`: ok.
+- `npm run separation-check`: ok.
+- `npm test` (Docker up): 397 files: 395 passed, 2 failed. Tests: 7305 passed, 1 failed, 1 todo.
+  - `helpPages.test.tsx` failed to load (B5).
+  - `serve-boards.test.ts` capture-refs failed: the known baseline red, not agy's.
+- `npm run semgrep`: 0 findings.
+- `npm run audit`: 0 vulnerabilities.
+- Playwright web (full, `--trace off`): 576 passed, 52 skipped, 0 failed.
+
+Counts after the addendum: 5 blocking, 7 minor.
