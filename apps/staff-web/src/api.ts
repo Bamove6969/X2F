@@ -294,6 +294,11 @@ export interface QueueRow {
   approval: 'not-needed' | 'needs-second' | { waitingFor: 'second-approval'; proposedBy: string | null };
   assignee: string | null;
   mine: boolean;
+  /**
+   * Plan 4 Task 12 (A6): the seller did not prove the payment a `seller-sends-xmr` ruling ordered in
+   * time; listed for senior moderators and the owner, who decide the suspension. Absent from an older API.
+   */
+  complyLapsed?: boolean;
 }
 export interface Queue {
   rows: QueueRow[];

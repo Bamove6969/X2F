@@ -9,6 +9,8 @@ import { loadWithMarkup, marketUpdated, saveWithMarkup, withMarkupHint } from '.
 import { RadioChips } from './RadioChips.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
+import { useSiteInfo } from '../../api/site.js';
+import { TradingStopped } from '../../ui/TradingStopped.js';
 
 // The SellOffers board (/sell/:methodId) and, with side="buy", the BuyOffers board (/buy/:methodId):
 // the market price line, Sort, and the offer cards, kept in the chosen order whatever order the
@@ -98,7 +100,9 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: Off
 
   const row = method.kind === 'ready' ? method.value : null;
   const now = new Date();
-  const list = offers.kind === 'ready' ? sortOffers(offers.value, sort, side) : [];
+  // Plan 4 Task 29: during the emergency stop no offer is shown (nor any Trade), only the message.
+  const { tradingPaused } = useSiteInfo();
+  const list = offers.kind === 'ready' && !tradingPaused ? sortOffers(offers.value, sort, side) : [];
   const market = price.kind === 'ready' ? price.value.centsPerXmr : null;
   const primaryId = list.find((o) => o.opensAt === undefined && o.poster.online)?.id;
   const onFirst = pick?.onFirst;
@@ -160,6 +164,7 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: Off
       </header>
 
       <main className="x2f-browse__main x2f-browse__main--cards">
+        {tradingPaused ? <TradingStopped /> : null}
         {method.kind === 'ready' && method.value === null ? <p className="x2f-browse__note">{/* not-a-refusal: a catalog fact (the method is off the list) */}This payment method is not available.</p> : null}
         {offers.kind === 'failed' ? (
           <p className="x2f-browse__note">
@@ -168,7 +173,7 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: Off
               : 'Offers could not be loaded right now. Try again in a moment.'}
           </p>
         ) : null}
-        {offers.kind === 'ready' && list.length === 0 ? <p className="x2f-browse__note">{copy.noOffers(currency)}</p> : null}
+        {offers.kind === 'ready' && !tradingPaused && list.length === 0 ? <p className="x2f-browse__note">{copy.noOffers(currency)}</p> : null}
         {list.map((o) => (
           <OfferCard
             key={o.id}
@@ -185,7 +190,7 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: Off
             {...(pick ? { pick: { pressed: o.id === pick.id, onPick: pick.onPick } } : {})}
           />
         ))}
-        {copy.offersFooter !== undefined && offers.kind === 'ready' ? <p className="x2f-browse__footer">{copy.offersFooter}</p> : null}
+        {copy.offersFooter !== undefined && offers.kind === 'ready' && !tradingPaused ? <p className="x2f-browse__footer">{copy.offersFooter}</p> : null}
       </main>
     </div>
   );

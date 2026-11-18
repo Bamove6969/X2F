@@ -6,6 +6,8 @@ import { syncNoReviewerAlert } from './appeals.js';
 import { startRetention, type RetentionJob } from '../retention.js';
 import { disputeSettings } from './settings.js';
 import { withDispute, type DisputeDeps } from './store.js';
+import { runComplyLapses, runPendingProofs } from './comply.js';
+import type { TxProofCheck } from './txProof.js';
 
 /** How often the dispute timers run (Plan 4 Task 10). */
 export const DISPUTE_TIMER_MS = 30_000;
@@ -26,12 +28,17 @@ export const DISPUTE_TIMER_MS = 30_000;
  *    after filing (switched off, removed, disabled) alerts the owner, in-app and by push, once per
  *    transition into that state (`syncNoReviewerAlert`); one that has a reviewer again is unmarked.
  *    Not counted as a change.
+ * 4. **Payment proofs (Plan 4 Task 12, A6).** A seller's proof still waiting for its confirmations
+ *    is checked again on the node (`runPendingProofs`, only with a `txProof` check); one that
+ *    reaches them applies `complied`.
+ * 5. **Comply time lapsed (A6).** A `seller-sends-xmr` ruling whose comply time passed with no proof
+ *    goes to a senior moderator or the owner (`runComplyLapses`: marked, logged, the owner alerted).
  *
  * Each dispute is its own transaction (`withDispute`); one that fails is skipped and retried on the
  * next pass, and the others still run (lead review 7 Nov). The failures are thrown together once the
  * pass is over, so the scheduler still reports them. Returns the number of disputes changed.
  */
-export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDeps['push'] }): Promise<number> {
+export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDeps['push']; txProof?: TxProofCheck }): Promise<number> {
   const now = deps.clock();
   const flags = await deps.db.query<{ since: Date | null }>('select maintenance_since as since from site_flags');
   const since = flags.rows[0]?.since ?? null;
@@ -84,6 +91,8 @@ export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDe
     }));
   }
   if (alerts > 0 && deps.push) await pushOwnerAlert({ db: deps.db, push: deps.push }, 'appeal-no-reviewer').catch(() => undefined);
+  n += await runPendingProofs(deps, failures);
+  n += await runComplyLapses(deps, failures);
   if (failures.length > 0) throw new AggregateError(failures, `dispute timers: ${failures.length} dispute(s) failed`);
   return n;
 }
@@ -103,14 +112,14 @@ async function stepOne(run: () => Promise<unknown>, failures: unknown[]): Promis
 }
 
 /** The timers as a scheduler job (the scheduler logs only its name and a count, never data). */
-export function disputeTimerJob(events?: DisputeDeps['events'], push?: OwnerAlertDeps['push']): RetentionJob {
+export function disputeTimerJob(events?: DisputeDeps['events'], push?: OwnerAlertDeps['push'], txProof?: TxProofCheck): RetentionJob {
   return {
     name: 'disputeTimers',
-    run: (db, now) => runDisputeTimers({ db, clock: () => now, ...(events ? { events } : {}), ...(push ? { push } : {}) }),
+    run: (db, now) => runDisputeTimers({ db, clock: () => now, ...(events ? { events } : {}), ...(push ? { push } : {}), ...(txProof ? { txProof } : {}) }),
   };
 }
 
 /** Starts the dispute timers every 30 seconds. Returns `stop`. */
-export function startDisputeTimers(deps: Pick<Deps, 'db' | 'clock'>, events?: DisputeDeps['events'], push?: OwnerAlertDeps['push']): () => Promise<void> {
-  return startRetention(deps, [disputeTimerJob(events, push)], DISPUTE_TIMER_MS);
+export function startDisputeTimers(deps: Pick<Deps, 'db' | 'clock' | 'txProof'>, events?: DisputeDeps['events'], push?: OwnerAlertDeps['push']): () => Promise<void> {
+  return startRetention(deps, [disputeTimerJob(events, push, deps.txProof)], DISPUTE_TIMER_MS);
 }

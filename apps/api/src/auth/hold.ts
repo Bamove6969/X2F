@@ -657,6 +657,7 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/feedback': 'a platform-feedback row only, holding nothing about the sender; no account, session, approval or security state, no obligation',
   'POST /v1/trades/:code/dispute': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/appeal': 'finishes an open trade (R42); creates no new obligation',
+  'POST /v1/trades/:code/payment-proof': "the seller's proof of a payment a ruling ordered (Plan 4 Task 12); finishes an open dispute, creates no new obligation",
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",
   'POST /v1/trades/:code/wallet': "the poster's payout wallet for an open trade, from the account's own usable wallets",
   // Plan 5 Task 10: past reputation. No login, session, approval, security or trading state: the

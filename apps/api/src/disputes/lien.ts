@@ -21,7 +21,7 @@ import { appendLog } from '../log/append.js';
  * NEEDS_REPAYMENT_TRADE: Task 25's repayment trade (an escrow trade, seller = debtor, buyer =
  * creditor, the lien's amount, no fiat leg, no fee of its own per D-063) is not built; nothing sets
  * a lien `repaid` through one yet. The seller's accepted tx proof of `seller-sends-xmr` repays a
- * lien for the XMR alone (`complied`; its route is NEEDS_TASK_12_TX_PROOF).
+ * lien for the XMR alone (`complied`, from the seller's accepted proof: disputes/comply.ts).
  * NEEDS_FEE_OWED_COLLECTION: `fees_owed` rows are written; collecting them from the debtor's next
  * settled trades (Revision 2026-10-29c: `feeOwedAtomic` in the signed terms, checked by the gate and
  * every app) is not built.

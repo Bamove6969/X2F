@@ -10,6 +10,8 @@ import type { BrowseCopy } from './SellCopy.js';
 import { SuggestMethodSheet } from './SuggestMethodSheet.js';
 import './browse.css';
 import { NewsBell } from '../../ui/NewsBell.js';
+import { TradingStopped } from '../../ui/TradingStopped.js';
+import { useSiteInfo } from '../../api/site.js';
 
 // The Main board (/sell) and, with side="buy", the BuyMain board (/buy): one card for the methods with
 // live offers in the chosen currency (a picker of them, MethodPicker.tsx; owner 2026-11-08), then every
@@ -94,6 +96,8 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
   }, [load, q, sort, side, currency, copy]);
   const [allOpen, setAllOpen] = useState(false);
   const allId = useId();
+  // Plan 4 Task 29: during the emergency stop the lists are hidden behind the maintenance message.
+  const { tradingPaused } = useSiteInfo();
 
   const sub = (m: MethodRow) =>
     m.offers > 0 ? copy.liveRow(m.offers, currency, m.bestRate === null ? null : formatMinor(m.bestRate, currency)) : copy.emptyRow(currency);
@@ -165,14 +169,15 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
       </header>
 
       <main className="x2f-browse__main">
-        {load.kind === 'failed' ? (
+        {tradingPaused ? <TradingStopped /> : null}
+        {tradingPaused ? null : load.kind === 'failed' ? (
           <p className="x2f-browse__note">
             {load.shape
               ? 'This version of X2F could not read the payment methods. Reload the page to get the latest version.'
               : 'Payment methods could not be loaded right now. Try again in a moment.'}
           </p>
         ) : null}
-        {sections.map((sec) => (
+        {(tradingPaused ? [] : sections).map((sec) => (
           <section key={sec.title} className="x2f-browse__section">
             <h2 className="x2f-browse__section-title x2f-section-title">{sec.title}</h2>
             {sec.pick ? (
@@ -225,7 +230,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
             )}
           </section>
         ))}
-        {current && q !== '' && sections.length === 0 ? (
+        {!tradingPaused && current && q !== '' && sections.length === 0 ? (
           <p className="x2f-browse__empty">
             No method called "{q}" yet. You can post an offer with a custom payment method.{' '}
             <button type="button" className="x2f-text-button" onClick={() => setSuggesting(true)}>

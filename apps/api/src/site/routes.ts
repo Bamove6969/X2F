@@ -35,6 +35,25 @@ export interface PublicSite {
   maintenance: { message: string | null; kind: MaintenanceKind; since: string; backBy: string | null } | null;
   /** The announced plan while its end is still ahead. */
   plannedMaintenance: PlannedMaintenance | null;
+  /**
+   * Plan 4 Task 29: the owner's community links (Task 8 settings, `community_matrix_url` and
+   * `community_telegram_url`; matrix.to and t.me only), for the emergency-stop message on the
+   * offer lists. Null when not set: the message leaves that link out.
+   */
+  communityLinks: CommunityLinks;
+}
+
+export interface CommunityLinks {
+  matrix: string | null;
+  telegram: string | null;
+}
+
+/** The owner's community links (no settings row reads as none set). */
+export async function readCommunityLinks(db: Queryable): Promise<CommunityLinks> {
+  const { rows } = await db.query<{ matrix: string | null; telegram: string | null }>(
+    'select community_matrix_url as matrix, community_telegram_url as telegram from settings where id = 1',
+  );
+  return { matrix: rows[0]?.matrix ?? null, telegram: rows[0]?.telegram ?? null };
 }
 
 interface FlagsRow {
@@ -75,12 +94,13 @@ export async function readSiteState(db: Queryable): Promise<SiteState> {
   };
 }
 
-export function publicSite(s: SiteState, now: Date): PublicSite {
+export function publicSite(s: SiteState, now: Date, communityLinks: CommunityLinks = { matrix: null, telegram: null }): PublicSite {
   return {
     banner: s.banner,
     tradingPaused: s.tradingPaused,
     maintenance: s.maintenance ? { message: s.maintenance.message, kind: s.maintenance.kind, since: s.maintenance.since, backBy: s.maintenance.backBy } : null,
     plannedMaintenance: s.planned !== null && Date.parse(s.planned.endsAt) > now.getTime() ? s.planned : null,
+    communityLinks,
   };
 }
 
@@ -122,7 +142,7 @@ export async function maintenanceGate(req: FastifyRequest, _reply: FastifyReply)
 }
 
 /**
- * `GET /v1/site`: `{ banner, tradingPaused, maintenance, plannedMaintenance }` for a session that passes
+ * `GET /v1/site`: `{ banner, tradingPaused, maintenance, plannedMaintenance, communityLinks }` for a session that passes
  * `requireInside`, `{ maintenance: { kind } | null, plannedMaintenance }` for anyone else (the front door;
  * lead default, owner p11-120: the announced plan is shown to everyone). It answers during maintenance
  * (`MAINTENANCE_OPEN`). Never cached. The session check never touches the session (the shell polls it).
@@ -132,6 +152,6 @@ export function siteRoutes(app: FastifyInstance): void {
     const inside = (await insideAccount(app, req, reply)) !== null;
     const state = await readSiteState(app.deps.db);
     const now = app.deps.clock();
-    return inside ? publicSite(state, now) : outsideSite(state, now);
+    return inside ? publicSite(state, now, await readCommunityLinks(app.deps.db)) : outsideSite(state, now);
   });
 }

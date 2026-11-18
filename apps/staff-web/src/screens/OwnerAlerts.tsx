@@ -21,6 +21,7 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'market-prices-resumed': 'Market prices back',
   'auto-close-capped': 'Inactive accounts: the automatic close stopped at its limit for this run',
   'dispute-refund-after-ruling': 'A refund landed after a ruling: the case needs a new ruling',
+  'dispute-comply-lapsed': 'A seller did not prove the payment a ruling ordered: the case needs a senior moderator',
   'fee-sweep-due': 'Fee wallet sweep',
   'fee-sweep-failed': 'Fee wallet sweep did not go through',
   'new-login': 'New login to the owner account',

@@ -138,7 +138,22 @@ export function ModQueue({ role }: { role: StaffRole }) {
             rowKey={(r) => r.code}
             empty="Nothing here right now."
             columns={[
-              { title: 'Trade', cell: (r) => <span data-part="queue-code">{codeText(r.code)}</span>, mono: true },
+              {
+                title: 'Trade',
+                cell: (r) => (
+                  <>
+                    <span data-part="queue-code">{codeText(r.code)}</span>
+                    {/* Plan 4 Task 12 (A6): the comply time lapsed with no proof. COPY-UNSIGNED; DESIGNER-REVIEW (no board). */}
+                    {r.complyLapsed === true ? (
+                      <span className="x2f-staff-approval" data-part="queue-comply-lapsed">
+                        {' '}
+                        Payment not proven
+                      </span>
+                    ) : null}
+                  </>
+                ),
+                mono: true,
+              },
               {
                 title: 'Amount',
                 cell: (r) => (

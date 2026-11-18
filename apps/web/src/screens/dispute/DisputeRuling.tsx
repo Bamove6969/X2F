@@ -144,7 +144,8 @@ function AppealSection({
 /**
  * The after-refund `seller-sends-xmr` proof (Plan 4 Task 15, A6/A8): the transaction ID and its
  * transaction key, 64 hex characters each, so a moderator can check the payment. Shown only with a
- * handler: no API route takes it yet (NEEDS_TASK_12_TX_PROOF). COPY-UNSIGNED; DESIGNER-REVIEW (no board).
+ * handler: the API route exists (Plan 4 Task 12, apps/api/src/disputes/comply.ts) but the screens do
+ * not pass one until they show the attested buyer address (NEEDS_TX_PROOF_WEB). COPY-UNSIGNED; DESIGNER-REVIEW (no board).
  */
 function TxProofForm({ onTxProof }: { onTxProof: (txHash: string, txKey: string) => Promise<void> }) {
   const [hash, setHash] = useState('');
@@ -214,7 +215,7 @@ export function DisputeRuling({
   dispute: DisputeView;
   serverClock: () => Date;
   onAppeal: (why: string) => Promise<void>;
-  /** The seller's proof of a `seller-sends-xmr` payment; none until the API takes it (NEEDS_TASK_12_TX_PROOF). */
+  /** The seller's proof of a `seller-sends-xmr` payment; none until the screens show the attested buyer address (NEEDS_TX_PROOF_WEB). */
   onTxProof?: (txHash: string, txKey: string) => Promise<void>;
 }) {
   const r = dispute.ruling;

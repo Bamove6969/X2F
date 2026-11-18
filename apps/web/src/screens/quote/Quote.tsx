@@ -21,6 +21,8 @@ import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
 import { WhatApplies } from './WhatApplies.js';
 import './quote.css';
+import { useSiteInfo } from '../../api/site.js';
+import { TradingStopped } from '../../ui/TradingStopped.js';
 
 // The quote screen both sides share (plan Task 18). BuyQuote (a buyer taking a sell ad) follows the
 // BuyQuote board; SellQuote (a seller taking a buy ad) has no board and mirrors its parts. There is
@@ -288,8 +290,10 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   };
 
   const noWallet = signedIn === true && wallets.kind === 'ready' && usable.length === 0;
+  // Plan 4 Task 29: no take during the emergency stop (the API refuses it too, 409 trading-paused).
+  const { tradingPaused } = useSiteInfo();
   const canTrade =
-    ok !== null && !state.busy && !blockedPoster && giftTermsOk && (signedIn === false || (signedIn === true && pickedWallet !== null));
+    !tradingPaused && ok !== null && !state.busy && !blockedPoster && giftTermsOk && (signedIn === false || (signedIn === true && pickedWallet !== null));
   /**
    * What the trade room is handed (confirmed.ts): built from this screen's own figures, the ones the
    * person sees and taps Trade on. The taker of a sell ad is the buyer; of a buy ad, the seller.
@@ -463,6 +467,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
       </Main>
 
       <footer className="x2f-quote__footer">
+        {tradingPaused ? <TradingStopped /> : null}
         {back && refusal === null ? (
           <p role="status" className="x2f-quote__help">
             You&apos;re back. Check the total, then tap Trade.

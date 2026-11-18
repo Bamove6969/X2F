@@ -76,6 +76,11 @@ export type ApiErrorCode =
   | 'wrong-party'
   | 'too-early'
   | 'too-late'
+  // Plan 4 Task 12 (A6): the seller's payment proof for a `seller-sends-xmr` ruling.
+  | 'proof-invalid'
+  | 'proof-replayed'
+  | 'proof-pending'
+  | 'node-unavailable'
   | 'no-extensions-left'
   | 'not-releasable'
   | 'total-changed'
