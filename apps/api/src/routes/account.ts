@@ -8,7 +8,7 @@ import { SIGNED_BODY_LIMIT, checkTermsSignature, sealTermsSignature } from '../t
 import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
-import { tradeCap, type Stage } from '../traders/stage.js';
+import { COMPLETED_TRADES_SQL, tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { abilitiesView } from '../team/members.js';
@@ -41,6 +41,12 @@ export interface AccountOverview {
   holdUntil: string | null;
   /** A trader's starter-limits stage (spec 2.3; plan Task 4 Revision 2026-10-26), the same as on their offers; null for staff and owner. */
   stage: Stage | null;
+  /**
+   * Plan 5 Task 6: a trader's completed trades (COMPLETED_TRADES_SQL, the count the starter limits
+   * use; public on the profile anyway), so the web can ask "How's X2F doing?" after the 1st and
+   * every 10th (`shouldAskFeedback`); null for staff and owner.
+   */
+  completedTrades: number | null;
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];
@@ -163,6 +169,12 @@ export interface MethodCounts {
   totp: boolean;
   /** Recovery codes not yet used. */
   recoveryCodes: number;
+}
+
+/** The account's completed trades, either side (COMPLETED_TRADES_SQL). */
+async function completedTrades(db: Queryable, accountId: string): Promise<number> {
+  const { rows } = await db.query<{ n: number }>(`select ${COMPLETED_TRADES_SQL}::int as n from accounts a where a.id = $1`, [accountId]);
+  return rows[0]?.n ?? 0;
 }
 
 /** Owner p4-8: the lead's waiting changes as a member's banner sees them: only the date. */
@@ -304,6 +316,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     level: row.level,
     holdUntil: held ? row.hold_until!.toISOString() : null,
     stage: row.kind === 'trader' ? (await tradeCap(deps.db, accountId, now)).stage : null,
+    completedTrades: row.kind === 'trader' ? await completedTrades(deps.db, accountId) : null,
     methods: methodTypes(counts),
     // A member logs in with two factors by the staff rule: nothing to suggest.
     hasBackup: member !== null ? true : hasBackup(counts),

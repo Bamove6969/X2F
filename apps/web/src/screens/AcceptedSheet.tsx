@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatFiat, formatXmr } from '@x2f/trade';
-import { api } from '../api/client.js';
+import { ApiCallError, api } from '../api/client.js';
 import { DEFAULT_TAG } from './walletsCopy.js';
 import { matchesRecord } from './walletRecord.js';
 import { NEW_ADDRESS } from './quote/addressCopy.js';
@@ -10,6 +10,8 @@ import { storeConfirmed, type ConfirmedTrade } from './quote/confirmed.js';
 import { Button } from '../ui/Button.js';
 import { Sheet } from '../ui/Sheet.js';
 import { StatusChip } from '../ui/StatusChip.js';
+import { RATE_FIRST, REVIEW_PENDING_CODE } from '../ui/cantDoCodes.js';
+import { RateFirst, type RateFirstLoaders } from './review/RateFirstSheet.js';
 import './accepted.css';
 
 /**
@@ -79,7 +81,7 @@ export async function postTradeWallet(code: string, walletId: string): Promise<v
   await api(`/v1/trades/${encodeURIComponent(code)}/wallet`, { method: 'POST', body: { walletId } });
 }
 
-type Phase = 'loading' | 'pick' | 'sending' | 'done';
+type Phase = 'loading' | 'pick' | 'sending' | 'rate' | 'done';
 
 /**
  * Shown to an offer's poster on a live `accepted` event: "<display name> accepted your offer".
@@ -100,6 +102,7 @@ export function AcceptedSheet({
   loadWallets = loadPosterWallets,
   loadTrade = loadAcceptedTrade,
   submit = postTradeWallet,
+  rateFirst,
 }: {
   event: Extract<LiveEvent, { type: 'accepted' }>;
   onDone: (code: string, confirmed: ConfirmedTrade) => void;
@@ -107,6 +110,8 @@ export function AcceptedSheet({
   loadWallets?: () => Promise<AcceptedWallet[]>;
   loadTrade?: (code: string) => Promise<AcceptedTradeView>;
   submit?: (code: string, walletId: string) => Promise<void>;
+  /** The rate-first content's loaders (tests). */
+  rateFirst?: RateFirstLoaders;
 }) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [wallets, setWallets] = useState<AcceptedWallet[]>([]);
@@ -159,7 +164,13 @@ export function AcceptedSheet({
     setPhase('sending');
     try {
       await submit(event.code, wallet.id);
-    } catch {
+    } catch (e) {
+      // Plan 5 Task 6, the rate-first gate (409 review-pending on the poster's wallet pick): rate
+      // or skip the trades it counts here, then the same wallet pick goes again.
+      if (e instanceof ApiCallError && e.code === REVIEW_PENDING_CODE) {
+        setPhase('rate');
+        return;
+      }
       setFailed(true);
       setPhase('pick');
       return;
@@ -174,13 +185,29 @@ export function AcceptedSheet({
 
   return (
     <Sheet open title={`${event.by} accepted your offer`} onClose={onClose}>
-      {swapped && phase !== 'done' && phase !== 'loading' ? (
+      {/* Review m6: about which wallets are offered, so not stacked on the rating (the pick is fixed then). */}
+      {swapped && phase !== 'done' && phase !== 'loading' && phase !== 'rate' ? (
         <p role="alert" className="x2f-sheet__body" data-part="accepted-address-swapped">
           {NEW_ADDRESS.mismatch}
         </p>
       ) : null}
       {phase === 'done' ? (
         <StatusChip tone="escrow" icon="shield" label="Setting up escrow" />
+      ) : phase === 'rate' ? (
+        <>
+          <h3 className="x2f-sheet__heading" data-part="rate-first-title">
+            {RATE_FIRST.title}
+          </h3>
+          <RateFirst
+            {...rateFirst}
+            onCleared={(how) => {
+              setPhase('pick');
+              // The same wallet pick goes again once a trade was rated or skipped here; the deal
+              // shown is the locked one, so nothing on it can have moved meanwhile.
+              if (how !== 'empty') void use();
+            }}
+          />
+        </>
       ) : phase === 'loading' ? null : wallets.length === 0 && !failed ? (
         <>
           <p className="x2f-sheet__body">You have no wallet ready for this trade. Add one to start.</p>

@@ -7,6 +7,8 @@ import { addressEnd } from '../../ui/addressEnd.js';
 import { BlockAction } from '../settings/BlockAction.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
+import { REVIEW_PENDING_CODE } from '../../ui/cantDoCodes.js';
+import { RateFirstSheet, type RateFirstCleared } from '../review/RateFirstSheet.js';
 import { Icon } from '../../ui/icons.js';
 import { Notice } from '../../ui/Notice.js';
 import { fetchMarket, fetchMethod, fetchOffer, fetchWallets, type PickWallet } from './api.js';
@@ -15,8 +17,8 @@ import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, dealMaxFiat, formatMinor, maxText, quote, quoteExponent, quoteRange, rangeText, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
 import { QuoteBands } from './QuoteBands.js';
-import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
-import { useQuoteKept } from './quoteKept.js';
+import { QuoteMovedError, TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
+import { readQuote, useQuoteKept } from './quoteKept.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
 import { NewAddressSheet, type NewAddressResult } from './NewAddressSheet.js';
@@ -335,6 +337,46 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
           deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: dealMaxFiat(o, ok.rate, ok.range) },
         }
       : null;
+  /** The Trade button's take, at the quote shown now (also resumed after the rate-first sheet). */
+  const startTake = () => {
+    if (!ok) return;
+    keep({ tapped: { centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents } });
+    const sent = { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents, methodId: o.methodId, currency: o.currency };
+    take({
+      quote: giftCard ? { ...sent, giftCardTerms: GIFT_CARD_TERMS_VERSION } : sent,
+      walletId: pickedWallet?.id ?? null,
+      confirmed,
+      range: ok.range,
+      resumeHref,
+    });
+  };
+  /**
+   * The rate-first sheet emptied (Plan 5 Task 6). The take goes again by itself only after a
+   * rating, only while the quote shows exactly the rate and total the person tapped Trade at (lead,
+   * 18 Nov, M1: money, so fail safe), and only when Trade itself would be on (m1: not busy, the
+   * poster not blocked, the gift-card terms ticked, the picked wallet still there). A moved quote
+   * closes the sheet with the moved-price line and takes nothing: the person checks and taps again.
+   * A gate cleared by Skip review alone takes nothing either; its stale rate-first line goes.
+   */
+  const onRateFirstCleared = (how: RateFirstCleared) => {
+    keep({ closedError: state.error });
+    if (how === 'empty') return;
+    if (how === 'skipped') {
+      keep({ error: null });
+      return;
+    }
+    const tapped = readQuote(offerId).tapped;
+    const same = ok !== null && tapped !== null && ok.rate.centsPerXmr === tapped.centsPerXmr && ok.fiatCents === tapped.fiatCents;
+    if (!same) {
+      keep({ error: new QuoteMovedError() });
+      return;
+    }
+    if (!canTrade) {
+      keep({ error: null });
+      return;
+    }
+    startTake();
+  };
   const refusal = state.error === null ? null : takeRefusal(state.error, o);
   // A refusal by a rule opens CantDoThat (with its feedback link) until closed; others stay inline.
   const cantDo = state.error === null ? null : takeCantDo(state.error);
@@ -516,7 +558,11 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             {refusal}
           </p>
         ) : null}
-        {cantDo !== null && refusal !== null ? (
+        {cantDo === REVIEW_PENDING_CODE ? (
+          // Plan 5 Task 6, the rate-first gate: rate (or skip) the trades the gate counts; after a
+          // rating the same take goes again only at the quote tapped (onRateFirstCleared).
+          <RateFirstSheet open={cantDoOpen} onCleared={onRateFirstCleared} onClose={() => keep({ closedError: state.error })} />
+        ) : cantDo !== null && refusal !== null ? (
           <CantDoThat open={cantDoOpen} title={TAKE_CANT_TITLE} body={refusal} from={cantDo} onClose={() => keep({ closedError: state.error })} />
         ) : null}
         {noWallet ? (
@@ -528,16 +574,8 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             variant="primary"
             disabled={!canTrade}
             onClick={() => {
-              if (!ok) return;
               touched();
-              const sent = { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents, methodId: o.methodId, currency: o.currency };
-              take({
-                quote: giftCard ? { ...sent, giftCardTerms: GIFT_CARD_TERMS_VERSION } : sent,
-                walletId: pickedWallet?.id ?? null,
-                confirmed,
-                range: ok.range,
-                resumeHref,
-              });
+              startTake();
             }}
           >
             Trade

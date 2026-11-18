@@ -1,7 +1,8 @@
 import { Link } from 'react-router';
 import { Released } from '../Released.js';
 import { SellerConfirm } from '../SellerConfirm.js';
-import { methodOf, type ReleaseEscrow, type ReleaseTrade } from './view.js';
+import { TradeReview } from '../../review/TradeReview.js';
+import { methodOf, publicName, type ReleaseEscrow, type ReleaseTrade } from './view.js';
 
 /**
  * Task 24's screens in the trade room (TradeRoom routes role × state; lead's plan: "Task 24:
@@ -48,7 +49,13 @@ function ChatLink({ code }: { code: string }) {
 /** SellerConfirm or Released for the room's view; nothing for a state that is not Task 24's. */
 export function ReleaseRoomScreen({ code, view, escrow, refresh, serverClock }: ReleaseRoomProps) {
   const screen = releaseScreenOf(view);
-  if (screen === 'released') return <Released trade={view} escrow={escrow} />;
+  if (screen === 'released') {
+    // Plan 5 Task 6: the rating card under Released once the trade is released (not while the
+    // buyer's device still co-signs in `settling`); TradeReview asks the API whether this side may rate.
+    const review =
+      view.state === 'released' ? <TradeReview code={code} counterparty={publicName(view.counterparty)} rated={view.role === 'buyer' ? 'seller' : 'buyer'} /> : undefined;
+    return <Released trade={view} escrow={escrow} reviewSlot={review} />;
+  }
   if (screen === 'seller-confirm') {
     return (
       <SellerConfirm

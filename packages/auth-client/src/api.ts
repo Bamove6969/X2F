@@ -225,6 +225,8 @@ export interface AccountOverview {
   holdUntil: string | null;
   /** A trader's starter-limits stage (spec 2.3), null for staff and owner. Optional: older API builds do not send it. */
   stage?: 'starter' | 'building' | 'graduated' | null;
+  /** Plan 5 Task 6: a trader's completed trades (for "How's X2F doing?"), null for staff and owner. Optional: older API builds do not send it. */
+  completedTrades?: number | null;
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];

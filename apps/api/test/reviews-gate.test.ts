@@ -325,3 +325,15 @@ describe('301 trigger (owner 2026-11-01, item 27; review m3)', () => {
     expect(sql).not.toMatch(/'day'|'week'|interval '\d+ days'/);
   });
 });
+
+describe('GET /v1/account/me completedTrades (Plan 5 Task 6: the web asks shouldAskFeedback)', () => {
+  it('counts the trader\'s completed trades, either side, the same count the starter limits use', async () => {
+    const who = await person();
+    const me = async () => ((await who.browser.get('/v1/account/me')).json() as { completedTrades: unknown }).completedTrades;
+    expect(await me()).toBe(0);
+    await released(who);
+    expect(await me()).toBe(1);
+    await released(who, 'seller');
+    expect(await me()).toBe(2);
+  });
+});
