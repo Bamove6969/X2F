@@ -8,9 +8,9 @@
 import { useEffect, useState } from 'react';
 import { methodOf } from '../../api/trade.js';
 import { registerTradeScreen, type TradeScreenProps } from '../trade/TradeRoom.js';
-import { fetchDispute, refusalText, sendAppeal, tradeFromView, type DisputeView } from './api.js';
+import { fetchDispute, proofRefusalText, refusalText, sendAppeal, sendPaymentProof, tradeFromView, type DisputeView } from './api.js';
 import { DisputeRoom } from './DisputeRoom.js';
-import { DisputeRuling } from './DisputeRuling.js';
+import { DisputeRuling, sameAmount } from './DisputeRuling.js';
 import { DoNotPay, mustNotPay } from './DoNotPay.js';
 import { disputeScreenFor } from './DisputeScreen.js';
 import './dispute.css';
@@ -19,7 +19,7 @@ import './dispute.css';
 const listFor = (role: 'buyer' | 'seller'): string => (role === 'buyer' ? '/buy' : '/sell');
 
 /** A disputed trade in the room. `undefined` while the first dispute read is on its way. */
-export function DisputeSlot({ code, view, refresh, serverClock }: TradeScreenProps) {
+export function DisputeSlot({ code, view, escrow, refresh, serverClock }: TradeScreenProps) {
   const [dispute, setDispute] = useState<DisputeView | null | undefined>(undefined);
   // Re-read the dispute whenever the room re-reads the trade (live event, POLL_MS, refresh()):
   // a moderator's join and ruling have no live event of their own yet (Plan 4).
@@ -54,6 +54,20 @@ export function DisputeSlot({ code, view, refresh, serverClock }: TradeScreenPro
             throw new Error(refusalText(err));
           }
           await refresh();
+        }}
+        // Plan 4 Task 12 (A6): the seller's payment proof. Where and how much come ONLY from the
+        // attested terms the room's escrow verified on this device (`restitution`), never the API,
+        // and only when that amount equals the trade amount the server checks against (review B1).
+        payTo={escrow.restitution != null && sameAmount(escrow.restitution.amountAtomic, trade.amountAtomic) ? escrow.restitution : null}
+        onTxProof={async (txHash, txKey) => {
+          let sent;
+          try {
+            sent = await sendPaymentProof(code, txHash, txKey);
+          } catch (err) {
+            throw new Error(proofRefusalText(err));
+          }
+          await refresh();
+          return sent;
         }}
       />
     );

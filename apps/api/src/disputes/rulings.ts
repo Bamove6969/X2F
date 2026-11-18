@@ -67,8 +67,8 @@ import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staf
  * taps itself, against the owner's pinned keys, and computes the payouts from its own records; it
  * reads the ruling, its taps and the reason through `x2f_mod_reader` (migration 211). Plan 4 Task 14:
  * its executor pays a published round-1 escrow ruling, and the dispute records the execution when
- * the watcher reports the payout (disputes/execution.ts). NEEDS_TASK_12_TX_PROOF: the seller's payment proof for `seller-sends-xmr` is not
- * built (it needs a regtest-checked `checkTxKey`).
+ * the watcher reports the payout (disputes/execution.ts). The seller's payment proof for
+ * `seller-sends-xmr` (A6) is disputes/comply.ts.
  */
 
 /** Plan 4 Task 12: a ruling's reason is at least 40 characters (and at most 108's 4000). */

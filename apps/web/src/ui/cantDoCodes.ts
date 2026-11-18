@@ -127,6 +127,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'quote-invalid': 'a staff clock-out sheet that is not this session\'s (staff app only)',
   'quote-expired': 'a staff clock-out sheet shown too long ago: it is shown again (staff app only)',
   'quote-changed': 'a staff clock-out sheet whose pay changed meanwhile: it is shown again (staff app only)',
+  // Plan 4 Task 19 (re-review 3 m1): the training case changed after the curator opened it.
+  'case-changed': 'a training case that changed after the curator opened it: reload and review again (staff app only)',
   'both-owner-keys-required': "a change to the owner's keys is tapped with both owner keys (staff app only)",
   'passkey-is-security-key': 'a staff passkey must be another device than the security key (staff app only)',
   'bad-request': 'a malformed request (a fault)',
@@ -210,6 +212,11 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wrong-party': 'the trade state machine (not this side)',
   'too-early': "the trade's own clock",
   'too-late': "the trade's own clock",
+  // Plan 4 Task 12 (A6): the seller's payment proof for a ruling.
+  'proof-invalid': 'an input check on the payment proof (the tx and key do not show the payment)',
+  'proof-replayed': 'an input check on the payment proof (that tx was already used, or predates the dispute)',
+  'proof-pending': 'a wait: the proof sent earlier is waiting for its confirmations',
+  'node-unavailable': "X2F's Monero node could not be asked (a fault; try again)",
   'not-releasable': 'the escrow is not unlocked yet (wait)',
   'total-changed': 'the trade grew (re-read and confirm)',
   'identity-exists': 'a device step already done (a fault)',
@@ -348,6 +355,8 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       return "Your account has a lien from a dispute, so it can't start trades until you pay back what the ruling says you owe."; // COPY-UNSIGNED (J-06, owner D-008: no trading until the lien is repaid)
     case 'already-waiting':
       return 'You already have a trade on this offer waiting to be funded.';
+    case 'review-pending':
+      return RATE_FIRST.inline;
     case 'offer-busy':
       // The poster's own open-trade limit; nothing says whose limit or how many (Task 5 review M6).
       return "This offer can't take more trades right now. Try again later or pick another offer.";
@@ -360,6 +369,23 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       return 'Your account cannot start this trade right now.';
   }
 }
+
+/** Plan 5 Task 6: the rate-first gate's code (409 on a take, and on the poster's wallet pick). */
+export const REVIEW_PENDING_CODE = 'review-pending' satisfies CantDoCode;
+
+/**
+ * The rate-first gate (spec 5.1; owner 2026-11-01: "submit a review or tap Skip to complete the
+ * trade and clear it"): the sheet that opens when a take or a wallet pick meets `review-pending`
+ * (RateFirstSheet.tsx), and the line left on the quote once it is closed. The title is the lead's
+ * brief's words; all COPY-UNSIGNED.
+ */
+export const RATE_FIRST = {
+  title: 'Rate your last trade to continue', // COPY-UNSIGNED (lead's brief, Plan 5 Task 6)
+  body: 'Each completed trade needs a rating, or a tap on Skip review, before your next trade starts.', // COPY-UNSIGNED
+  inline: 'Rate your last trade, or skip rating it, before you start a new one.', // COPY-UNSIGNED
+  /** Over the card while more than one trade waits. COPY-UNSIGNED */
+  count: (n: number): string => `${n} trades to rate`,
+} as const;
 
 /** What a refused chat open says (Task 20: today only 409 own-offer, a poster on their own offer). */
 export function chatCantDoText(code: CantDoCode): string {

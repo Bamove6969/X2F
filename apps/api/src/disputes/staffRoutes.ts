@@ -14,6 +14,7 @@ import { traderSummaries } from '../traders/summary.js';
 import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
 import { rulingExtras } from './rulingDrafts.js';
+import { COMPLY_LAPSED_SQL, complianceOf } from './comply.js';
 import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
@@ -276,23 +277,29 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       approval: "d.status = 'awaiting-approval'",
     }[filter];
     const current = `d.seq = (select max(x.seq) from disputes x where x.code = d.code) and d.status = any($1::text[])`;
+    // Plan 4 Task 12 (A6): a seller who let the comply time pass with no proof goes to a senior
+    // moderator or the owner, who decide the suspension; their queue lists those cases too.
+    const lapsed = isSeniorOrOwner(req.staff.role)
+      ? `(d.seq = (select max(x.seq) from disputes x where x.code = d.code) and ${COMPLY_LAPSED_SQL})`
+      : 'false';
     const { rows } = await deps.db.query<{
       code: string; incident_id: string; status: string; round: number; amount_atomic: string; usd_cents: string; limit_usd_cents: string;
       method_id: string; opened_by: string; opened_at: Date; appealed_at: Date | null; reply_due_at: Date; ruling_due_at: Date;
       first_reply_at: Date | null; assignee: string | null; assignee_name: string | null; ruling: { proposer?: string } | null; proposer_name: string | null; mine: boolean;
-      involved: string[] | null;
+      involved: string[] | null; comply_lapsed: boolean;
     }>(
       `select d.code, d.incident_id, d.status, d.round, t.amount_atomic::text as amount_atomic, d.usd_cents::text as usd_cents,
               d.limit_usd_cents::text as limit_usd_cents, t.method_id, d.opened_by, d.opened_at, ap.at as appealed_at,
               d.reply_due_at, d.ruling_due_at, d.first_reply_at, d.assignee::text as assignee, a.${PUBLIC_NAME_COLUMN} as assignee_name,
               d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine,
-              case when d.round1 is null then null else array(select jsonb_array_elements_text(d.round1->'involved')) end as involved
+              case when d.round1 is null then null else array(select jsonb_array_elements_text(d.round1->'involved')) end as involved,
+              ${COMPLY_LAPSED_SQL} as comply_lapsed
          from disputes d
          join trades t on t.code = d.code
          left join dispute_appeals ap on ap.code = d.code and ap.seq = d.seq
          left join accounts a on a.id = d.assignee
          left join accounts p on d.ruling ? 'proposer' and p.id::text = d.ruling->>'proposer'
-        where ${current} and ${where}
+        where (${current} or ${lapsed}) and ${where}
         order by case when d.first_reply_at is null then d.reply_due_at else d.ruling_due_at end, d.opened_at, d.code
         limit $2`,
       [QUEUE_STATUSES, QUEUE_MAX, me],
@@ -338,6 +345,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           assignee: r.assignee_name,
           mine: r.mine,
           noReviewer: r.status === 'appealed' && appealReviewers(candidates, r.involved ?? []).length === 0,
+          // A6: the seller did not prove the ordered payment in time (senior moderators and the owner only).
+          complyLapsed: r.comply_lapsed,
         };
       }),
       counts: { open: c.open, overdue: c.overdue, unassigned: c.unassigned, needApproval: c.need_approval },
@@ -473,6 +482,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         appealEndsAt: d.appealEndsAt?.toISOString() ?? null,
         appeal: d.appealBy !== null && d.appealedAt !== null ? { by: d.appealBy, at: d.appealedAt.toISOString() } : null,
         complyBy: d.complyBy?.toISOString() ?? null,
+        // Plan 4 Task 12 (A6): the seller's payment proof, and whether the comply time lapsed without one.
+        compliance: await complianceOf(deps.db, d),
       },
       freezes: await freezesOf(deps.db, t, code),
     };

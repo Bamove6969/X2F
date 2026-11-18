@@ -588,3 +588,8 @@
   font-family: var(--x2f-font-mono);
   font-size: 14px;
 }
+
+/* Plan 4 Task 12: the buyer address a seller-sends-xmr ruling pays, whole, wrapped at phone width. */
+.dispute-pay-address {
+  overflow-wrap: anywhere;
+}

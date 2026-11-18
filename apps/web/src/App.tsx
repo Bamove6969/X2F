@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
-import { useSite, type PlannedMaintenanceInfo, type SiteBannerInfo } from './api/site.js';
+import { SiteContext, useSite, type PlannedMaintenanceInfo, type SiteBannerInfo } from './api/site.js';
 import { TradeChatPanel } from './chat/ChatPanel.js';
 import { chatPaymentDetailsSource } from './chat/payDetailsFeed.js';
 import { emitChatLive } from './chat/live.js';
@@ -255,6 +255,8 @@ export function App() {
   if (site.maintenance !== null) return <Maintenance maintenance={site.maintenance} onRetry={refresh} />;
   return (
     // The guided tour (owner, 12 Nov 2026) draws over whichever screen it is on.
+    // Plan 4 Task 29: the site state reaches the offer lists, the quote and Post offer (the emergency stop).
+    <SiteContext.Provider value={site}>
     <TourProvider>
       <RouterBridge />
       <SessionPrompt />
@@ -327,5 +329,6 @@ export function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </TourProvider>
+    </SiteContext.Provider>
   );
 }

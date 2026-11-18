@@ -54,12 +54,14 @@ export async function seedTrade(
     minFiatCents?: bigint; maxFiatCents?: bigint;
     /** The trade's time to pay in minutes (default TIMERS.payMin, 90). */
     payWindowMin?: number;
+    /** A fixed trade code (default a fresh random one), for a test that must read the same texts every run. */
+    code?: string;
   } & Partial<TradeSides>,
 ): Promise<SeededTrade> {
   const offerId = a.offerId ?? (await seedOffer(deps, a.poster === 'seller' ? a.sellerId : a.buyerId, a.poster));
   const trade = newTrade(
     {
-      code: newTradeCode(),
+      code: a.code ?? newTradeCode(),
       offerId,
       poster: a.poster,
       sellerId: a.sellerId,

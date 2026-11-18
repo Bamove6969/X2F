@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api, setMaintenanceListener } from './client.js';
 
 /**
@@ -31,20 +31,37 @@ export interface PlannedMaintenanceInfo {
   endsAt: string;
   message: string | null;
 }
+/**
+ * Plan 4 Task 29: the owner's community links (Task 8 settings), for the emergency-stop message on the
+ * offer lists. Only https links are kept; a missing one is left out of the message.
+ */
+export interface CommunityLinks {
+  matrix: string | null;
+  telegram: string | null;
+}
 export interface SiteInfo {
   banner: SiteBannerInfo | null;
   tradingPaused: boolean;
   maintenance: SiteMaintenance | null;
   plannedMaintenance: PlannedMaintenanceInfo | null;
+  communityLinks: CommunityLinks;
 }
 
-export const SITE_OFF: SiteInfo = { banner: null, tradingPaused: false, maintenance: null, plannedMaintenance: null };
+export const SITE_OFF: SiteInfo = { banner: null, tradingPaused: false, maintenance: null, plannedMaintenance: null, communityLinks: { matrix: null, telegram: null } };
+
+/**
+ * Plan 4 Task 29: the site state for the screens under the shell (App.tsx provides `useSite`'s), so
+ * the offer lists, the quote and Post offer show the emergency stop. Outside a provider: all off.
+ */
+export const SiteContext = createContext<SiteInfo>(SITE_OFF);
+export const useSiteInfo = (): SiteInfo => useContext(SiteContext);
 /** How often the shell re-reads the site state (and, during maintenance, checks whether it is over). */
 export const SITE_POLL_MS = 60_000;
 
 const rec = (v: unknown): Record<string, unknown> | null => (v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 
 const text = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+const httpsUrl = (v: unknown): string | null => (typeof v === 'string' && /^https:\/\/[^\s]{1,190}$/.test(v) ? v : null);
 const isoTime = (v: unknown): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v) && !Number.isNaN(Date.parse(v)) ? v : null);
 
 export function parseSite(raw: unknown): SiteInfo {
@@ -52,6 +69,7 @@ export function parseSite(raw: unknown): SiteInfo {
   const b = rec(r.banner);
   const m = rec(r.maintenance);
   const p = rec(r.plannedMaintenance);
+  const c = rec(r.communityLinks);
   const startsAt = p ? isoTime(p.startsAt) : null;
   const endsAt = p ? isoTime(p.endsAt) : null;
   return {
@@ -60,6 +78,7 @@ export function parseSite(raw: unknown): SiteInfo {
     // An unknown or missing kind is unplanned: nobody announced it (owner G19: never "emergency").
     maintenance: m ? { message: text(m.message), kind: m.kind === 'planned' ? 'planned' : 'unplanned', since: isoTime(m.since), backBy: isoTime(m.backBy) } : null,
     plannedMaintenance: p && startsAt !== null && endsAt !== null ? { startsAt, endsAt, message: text(p.message) } : null,
+    communityLinks: { matrix: httpsUrl(c?.matrix), telegram: httpsUrl(c?.telegram) },
   };
 }
 

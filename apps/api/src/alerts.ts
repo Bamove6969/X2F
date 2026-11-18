@@ -66,7 +66,16 @@ export type AlertKind =
   | 'chat-notice-refused'
   // Re-review 2 m3 (lead default, owner question): a staff device was certified to read disputed
   // chats; to the owner (pushed) and to the person.
-  | 'staff-device-certified';
+  | 'staff-device-certified'
+  // Owner only (Plan 4 Task 12, A6): a seller ordered to send the XMR let the comply time pass with no
+  // proof; the case waits for a senior moderator or the owner to decide the suspension.
+  | 'dispute-comply-lapsed'
+  // Owner only (re-review m3 follow-up): the payment-proof checker gave up on a stuck wallet; once
+  // per stuck episode. After three, proofs answer 503 until the API is restarted.
+  | 'tx-proof-check-stuck'
+  // Owner only (re-review w1): the checker gave up on its third stuck wallet; every proof answers 503
+  // until the API is restarted. Once.
+  | 'tx-proof-check-stopped';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

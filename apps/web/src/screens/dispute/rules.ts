@@ -422,3 +422,11 @@ export function feeOwedLine(atomic: string): string {
 export function isTxHex(s: string): boolean {
   return /^[0-9a-f]{64}$/.test(s);
 }
+
+/**
+ * A transaction key as a wallet gives it: the main key, then one more per output when the payment
+ * went to a subaddress among other outputs (1 to 17 chunks of 64 hex, as the API's `TX_KEY`).
+ */
+export function isTxKeyHex(s: string): boolean {
+  return /^(?:[0-9a-f]{64}){1,17}$/.test(s);
+}

@@ -807,6 +807,25 @@ describe('releaseScreenOf (the slot Task 22 registers in TradeRoom)', () => {
 });
 
 describe('ReleaseRoomScreen (the trade room\'s props)', () => {
+  it('review m8: the rating card shows under Released only once the trade is released, never while the release settles', async () => {
+    answer = (c) =>
+      c.url.endsWith('/review') ? { status: 200, body: { reviewable: true, mine: null, theirs: null, skipped: false, held: false } } : { status: 200, body: { confirmations: 1, target: 10, payoutEnd: 'Qwk3Fz' } };
+    const room = (view: ReleaseTrade) =>
+      render(
+        <MemoryRouter>
+          <ReleaseRoomScreen code={view.code} view={view} escrow={escrowStub([], { phase: 'done' })} refresh={async () => undefined} serverClock={() => new Date(NOW)} wide={false} />
+        </MemoryRouter>,
+      );
+    const settling = room(trade({ role: 'buyer', poster: 'seller', fee: undefined, counterparty: who('satoshi_ghost'), state: 'settling', settling: 'release' }));
+    await flush();
+    expect(settling.host.querySelector('[data-part="review-card"]')).toBeNull();
+    expect(calls.some((c) => c.url.endsWith('/review'))).toBe(false);
+    settling.unmount();
+    const done = room(trade({ role: 'buyer', poster: 'seller', fee: undefined, counterparty: who('satoshi_ghost'), ...RELEASED }));
+    await flush();
+    expect(done.host.querySelector('[data-part="review-card"] h2')!.textContent).toBe('How was trading with satoshi_ghost?');
+  });
+
   it('the room picks ReleaseRoomScreen for each Task 24 slot, and nothing else of Task 24\'s', () => {
     const full = (over: Over) => trade(over) as TradeView;
     expect(screenFor(full({ role: 'seller', state: 'paid' }), 0)).toBe(ReleaseRoomScreen);

@@ -10,7 +10,8 @@ import { SellQuote } from '../src/screens/quote/SellQuote.js';
 import { readConfirmed } from '../src/screens/quote/confirmed.js';
 import { PENDING_TAKE_KEY, PENDING_TAKE_MS, rememberTake } from '../src/screens/quote/pendingTake.js';
 import { quotePath } from '../src/screens/quote/quoteModel.js';
-import { forgetQuotes } from '../src/screens/quote/quoteKept.js';
+import { forgetQuotes, updateQuote } from '../src/screens/quote/quoteKept.js';
+import { RATE_FIRST } from '../src/ui/cantDoCodes.js';
 import { resetCourtesy, turnCourtesyOff } from '../src/screens/quote/courtesy.js';
 import { OffersRoute } from '../src/screens/browse/OffersRoute.js';
 import { BUY_COPY } from '../src/screens/browse/BuyCopy.js';
@@ -67,6 +68,10 @@ interface Api {
   gate?: Promise<void>;
   /** The method is a gift card (J-17): the quote shows the taker's tick-box terms. */
   giftCard?: boolean;
+  /** Plan 5 Task 6: `GET /v1/reviews/pending`, one list per read (the last one repeats); unset is none. */
+  pending?: unknown[][];
+  /** The review and skip POSTs the rate-first sheet sent, by path. */
+  reviews?: string[];
   /** Owner note #6: `POST /v1/wallets` from the quote's new-address sheet; unset answers 404. */
   addWallet?: (body: Record<string, unknown>) => { status: number; json: unknown };
 }
@@ -107,6 +112,15 @@ beforeEach(() => {
       return json(r.status, r.json);
     }
     if (url.pathname === '/v1/wallets') return session.status === 'signed-in' ? json(200, stub.wallets) : json(401, { error: 'not-authenticated' });
+    if (url.pathname === '/v1/reviews/pending') {
+      const lists = stub.pending ?? [[]];
+      return json(200, { trades: lists.length > 1 ? lists.shift() : lists[0] });
+    }
+    if (/^\/v1\/trades\/[^/]+\/review(\/skip)?$/.test(url.pathname) && init?.method === 'POST') {
+      (stub.reviews ??= []).push(url.pathname);
+      return new Response(null, { status: url.pathname.endsWith('/skip') ? 204 : 201 });
+    }
+    if (/^\/v1\/trades\/[^/]+$/.test(url.pathname)) return json(200, { role: 'buyer' });
     const take = /^\/v1\/offers\/([^/]+)\/take$/.exec(url.pathname);
     if (take && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as TakeBody;
@@ -1360,5 +1374,141 @@ describe('a new address added on the quote (owner note #6; the API never swaps a
     const { host } = await open(`${BUY}&amount=412.50`);
     expect(host.querySelector<HTMLInputElement>('input[value="w-again"]')!.checked).toBe(true);
     expect(host.querySelector('[data-part="new-address-swapped"]')).toBeNull();
+  });
+});
+
+describe('the rate-first gate on the quote (Plan 5 Task 6; review 18 Nov M1, M2, m1)', () => {
+  afterEach(() => resetSyncFirst());
+  const OLD = { code: 'OLD-1', counterparty: 'bob', reviewableSince: '2026-11-01T00:00:00.000Z' };
+  /** Two usable wallets, Cake the default; the person picks Ledger. */
+  const TWO = () => WALLETS.map((w) => ({ ...w, isDefault: w.id === 'w-cake' }));
+  const sheet = () => document.querySelector<HTMLElement>('[role="dialog"]');
+  const inSheet = (text: string) => [...(sheet()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === text || b.getAttribute('aria-label') === text);
+  const tap = (el: Element) => fire(el, new MouseEvent('click', { bubbles: true }));
+
+  /** The quote at $412.50 with Ledger picked; the first take is refused 409 review-pending, later ones go through. */
+  async function refusedOnce() {
+    stub.wallets = TWO();
+    stub.pending = [[OLD], []];
+    let refused = false;
+    stub.take = (body) => {
+      if (!refused) {
+        refused = true;
+        return { status: 409, json: { error: 'review-pending' } };
+      }
+      return { status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '150000' } };
+    };
+    const r = await open(`${BUY}&amount=412.50`);
+    expect(r.host.querySelector<HTMLInputElement>('input[value="w-cake"]')!.checked).toBe(true);
+    pick(r.host, 'w-ledger');
+    await settle();
+    tap(primary(r.host));
+    await settle();
+    return r;
+  }
+  const resume = async () => {
+    await act(async () => {
+      await syncNow();
+    });
+    await settle();
+  };
+
+  it('a 409 review-pending opens the rate-first sheet with the rating for the pending trade', async () => {
+    const { host } = await refusedOnce();
+    expect(stub.takes).toHaveLength(1);
+    expect(sheet()).not.toBeNull();
+    expect(sheet()!.querySelector('h2')!.textContent).toBe('Rate your last trade to continue');
+    expect(sheet()!.querySelector('[data-part="review-card"] h2')!.textContent).toBe('How was trading with bob?');
+    expect(where(host)).toBeNull();
+  });
+
+  it('after a rating at an unchanged price, the same take goes again with the picked non-default wallet', async () => {
+    const { host } = await refusedOnce();
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.reviews).toEqual(['/v1/trades/OLD-1/review']);
+    expect(stub.takes).toHaveLength(2);
+    expect(stub.takes[0]!.walletId).toBe('w-ledger');
+    expect(stub.takes[1]).toEqual(stub.takes[0]);
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+  });
+
+  it('M1: after a rating at a moved price, nothing is taken, the sheet closes and the price-moved line asks for a fresh tap', async () => {
+    const { host } = await refusedOnce();
+    // The quote re-reads the price behind the sheet (its 60 s poll, or a resume): it moved.
+    stub.rate = '34000';
+    await resume();
+    expect(host.textContent).toContain('$340.00 / XMR');
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.reviews).toEqual(['/v1/trades/OLD-1/review']);
+    expect(stub.takes).toHaveLength(1);
+    expect(where(host)).toBeNull();
+    expect(sheet()).toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
+    expect(host.textContent).not.toContain(RATE_FIRST.inline);
+    // A fresh tap takes at the price now, with the same wallet.
+    expect(primary(host).disabled).toBe(false);
+    tap(primary(host));
+    await settle();
+    expect(stub.takes).toHaveLength(2);
+    expect(stub.takes[1]).toMatchObject({ centsPerXmr: '34000', fiatCents: '41250', walletId: 'w-ledger' });
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+  });
+
+  it('M1: a total that moved (the amount typed again behind the sheet) also takes nothing', async () => {
+    const { host } = await refusedOnce();
+    type(host, '400');
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
+  });
+
+  it('closing the sheet without rating takes nothing and leaves the rate-first line', async () => {
+    const { host } = await refusedOnce();
+    tap(inSheet('Close')!);
+    await settle();
+    expect(sheet()).toBeNull();
+    expect(stub.takes).toHaveLength(1);
+    expect(stub.reviews ?? []).toEqual([]);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(RATE_FIRST.inline);
+  });
+
+  it('Skip review alone clears the gate but takes nothing: the person taps Trade again', async () => {
+    const { host } = await refusedOnce();
+    tap(inSheet('Skip review')!);
+    await settle();
+    expect(stub.reviews).toEqual(['/v1/trades/OLD-1/review/skip']);
+    expect(stub.takes).toHaveLength(1);
+    expect(sheet()).toBeNull();
+    expect(where(host)).toBeNull();
+    expect(host.textContent).not.toContain(RATE_FIRST.inline);
+    expect(primary(host).disabled).toBe(false);
+    tap(primary(host));
+    await settle();
+    expect(stub.takes).toHaveLength(2);
+    expect(stub.takes[1]!.walletId).toBe('w-ledger');
+  });
+
+  it('m1: a picked wallet no longer usable by the time the rating is done takes nothing (Trade would be off)', async () => {
+    const { host } = await refusedOnce();
+    // The list is read again (a resume) while the sheet is up, and Ledger is no longer usable.
+    stub.wallets = TWO().map((w) => (w.id === 'w-ledger' ? { ...w, usable: false } : w));
+    await resume();
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(where(host)).toBeNull();
+  });
+
+  it('m1: a poster blocked behind the sheet takes nothing', async () => {
+    const { host } = await refusedOnce();
+    act(() => updateQuote('offer-ghost', { blockedPoster: true }));
+    await settle();
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(where(host)).toBeNull();
   });
 });

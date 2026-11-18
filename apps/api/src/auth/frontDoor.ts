@@ -181,6 +181,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/proofs/:proofId/blur-check': 'counts my own proof on one of my own trades for the blur-check sample (participants only); answers only whether to ask',
   'POST /v1/trades/:code/blur-checks/:proofId': 'my anonymous blur-check answer on one of my own trades (participants only); no data back',
   'POST /v1/trades/:code/appeal': 'appeals a ruling on one of my own trades (participants only)',
+  'POST /v1/trades/:code/payment-proof': "the seller's payment proof for a ruling on one of my own trades (the seller only); answers whether it is accepted",
   'POST /v1/trades/:code/review': 'my review of one of my own finished trades',
   'POST /v1/trades/:code/review/skip': 'skips my review of one of my own finished trades',
   'POST /v1/nudges': 'a nudge to the other party of one of my own trades; answers its state',

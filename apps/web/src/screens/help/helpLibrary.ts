@@ -138,7 +138,7 @@ const ENTRIES: readonly Entry[] = [
       `${AUTH}/totp.ts:176 totp-needs-password`,
       `${AUTH}/methods.ts:426 password-has-totp`,
       `${AUTH}/methods.ts:436 password-alone`,
-      'apps/web/src/ui/cantDoCodes.ts:435 A password needs the authenticator app or another way to log in.',
+      'apps/web/src/ui/cantDoCodes.ts:481 A password needs the authenticator app or another way to log in.',
     ],
   },
   {
@@ -358,7 +358,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'How do I send my payment details?',
     a: 'In the trade chat, the payment details form asks for the details your payment method needs, then sends them to the other trader in one message.',
-    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, 'apps/web/src/chat/ChatPanel.tsx:365 PAY_DETAILS_TITLE'],
+    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, 'apps/web/src/chat/ChatPanel.tsx:371 PAY_DETAILS_TITLE'],
   },
   {
     id: 'trade-chat',
@@ -557,16 +557,16 @@ const ENTRIES: readonly Entry[] = [
     proofUpload: {
       off: {
         a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there. Reading the trade\'s earlier chat is not part of the moderator\'s screens yet.',
-        sources: ['apps/staff-web/src/screens/ModCase.tsx:79-81 the traders, the payment proof, the escrow', 'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP'],
+        sources: ['apps/staff-web/src/screens/ModCase.tsx:86-88 the traders, the payment proof, the escrow', 'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP'],
       },
       on: {
         a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there, and can request unblurred proof: a copy of your payment proof with nothing blurred, sealed for the moderator only, though the moderator\'s screens do not open it yet. Reading the trade\'s earlier chat is not part of the moderator\'s screens yet.',
         sources: [
-          'apps/staff-web/src/screens/ModCase.tsx:79-81 the traders, the payment proof, the escrow',
-          'apps/staff-web/src/screens/ModCase.tsx:349 Request unblurred proof from',
+          'apps/staff-web/src/screens/ModCase.tsx:86-88 the traders, the payment proof, the escrow',
+          'apps/staff-web/src/screens/ModCase.tsx:442 Request unblurred proof from',
           `${WEB}/dispute/seams.tsx:99 proofUploadOn() || request === null`,
           'apps/web/src/proof/upload.ts:359 Seal `proof.unblurred` to the moderator only',
-          'apps/staff-web/src/screens/ModCase.tsx:343 NEEDS_P4_CHAT_MEMBERSHIP: the proof itself is not readable here yet',
+          'apps/staff-web/src/screens/ModCase.tsx:436 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
           'apps/staff-web/src/screens/ModCase.tsx:89-91 NEEDS_P4_CHAT_MEMBERSHIP',
         ],
       },
@@ -795,7 +795,7 @@ const ENTRIES: readonly Entry[] = [
       'apps/web/src/chat/engine.ts:35-36 No message text is stored on the device',
       'apps/web/src/chat/store.ts:3-5 NEVER the text',
       'apps/web/src/chat/store.ts:13 non-extractable AES-256-GCM CryptoKey',
-      'apps/web/src/chat/engine.ts:51-53 Erase on purge',
+      'apps/web/src/chat/engine.ts:64-66 Erase on purge',
       'apps/api/src/chat/retention.ts:20 is told 410',
       'apps/api/src/chat/retention.ts:23 CHAT_PURGED_MARK_DAYS',
     ],
@@ -840,7 +840,7 @@ const ENTRIES: readonly Entry[] = [
     q: 'Who can see my profile?',
     a: 'Anyone signed in to X2F can open your profile at /u/ followed by your display name, except a trader you blocked. It shows when you joined and whether you are online, your completed trades, your typical payment time, disputes won and lost, how much XMR you have traded if you chose to show it, your reviews with only their month and year and never who left them, the badges you show, and "Account protected with PGP" unless you hide that badge. You can also make a signed record of your trades under Settings: it stays private unless you show it on your profile, and only a copy you save can carry your PGP fingerprint, if you tick it.',
     sources: [
-      'apps/web/src/App.tsx:278 path="/u/:name"',
+      'apps/web/src/App.tsx:280 path="/u/:name"',
       'apps/api/src/reputation/profile.ts:16-17 only a set-up trader (or a member of',
       'apps/api/src/reputation/profile.ts:19-20 a trader who blocked the viewer',
       `${WEB}/profile/Profile.tsx:9-13 Reviews show month and year`,

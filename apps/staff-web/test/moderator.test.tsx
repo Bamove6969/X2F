@@ -428,6 +428,31 @@ describe('ModCase (board ModCase)', () => {
     }
   });
 
+  it('Plan 4 Task 12 (re-review m3 follow-up, RC-4 lead default): the case lists the seller\'s proofs the checker could not take, with the time', async () => {
+    const t1 = new Date(Date.now() - 30 * 60_000).toISOString();
+    const t2 = new Date(Date.now() - 90 * 60_000).toISOString();
+    const published = kase(
+      { status: 'published', afterRefund: true, assignedToYou: false },
+      {
+        publishedAt: new Date(Date.now() - 2 * H).toISOString(),
+        draft: { id: 'r1', outcome: 'seller-sends-xmr' },
+        compliance: { lapsedAt: null, proof: null, failedChecks: [{ at: t1, reason: 'busy' }, { at: t2, reason: 'node-unavailable' }] },
+      },
+    );
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: published } });
+    await open(`/disputes/${CODE}`);
+    const lines = [...document.querySelectorAll('[data-part="proof-check-failed"] li')].map((li) => li.textContent);
+    expect(lines).toEqual([`Payment proof tried at ${hhmm(t1)}, checker busy.`, `Payment proof tried at ${hhmm(t2)}, node unavailable.`]);
+
+    // None (or an older API without the field): no list.
+    for (const compliance of [{ lapsedAt: null, proof: null, failedChecks: [] }, undefined]) {
+      document.body.innerHTML = '';
+      fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: { ...published, ruling: { ...published.ruling, compliance } } } });
+      await open(`/disputes/${CODE}`);
+      expect(part('proof-check-failed')).toBeNull();
+    }
+  });
+
   it('in an appeal, a senior who took part in round 1 (mayWork false) is offered neither the approval nor Take (review M2)', async () => {
     const waiting = kase(
       { round: 2, status: 'awaiting-approval', assignedToYou: false, assignee: 'sarah.v', mayWork: false },

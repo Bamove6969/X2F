@@ -213,7 +213,7 @@ describe('GET /v1/account/me', () => {
     // The private login name is never sent, not even to its owner.
     expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
-      displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', methods: ['password'], hasBackup: false,
+      displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', completedTrades: 0, methods: ['password'], hasBackup: false,
       suggestions: ['add-authenticator', 'add-backup'], termsCurrent: true, accountHoldUntil: null, pendingChanges: null, changesWait: false, recoveryCodeToShow: false, member: null, teamHold: null,
       session: { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: at(2 * HOUR).toISOString(), canExtend: true, serverNow: now.toISOString() },
       idleReminderMinutes: null,

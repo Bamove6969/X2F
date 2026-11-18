@@ -565,6 +565,14 @@ function RulingCard({
           {`Ruling published at ${hhmm(r.publishedAt)}${r.draft !== null ? `: ${OUTCOME_LABELS[r.draft.outcome]}` : ''}.`}
         </p>
       ) : null}
+      {/* RC-4 (lead default): the seller's proofs X2F's checker could not take, so a senior deciding a lapse sees X2F's fault. COPY-UNSIGNED; DESIGNER-REVIEW (no board). */}
+      {(r.compliance?.failedChecks ?? []).length > 0 ? (
+        <ul className="x2f-staff-hint" data-part="proof-check-failed">
+          {r.compliance!.failedChecks!.map((f) => (
+            <li key={`${f.at}-${f.reason}`}>{`Payment proof tried at ${hhmm(f.at)}, ${f.reason === 'busy' ? 'checker busy' : 'node unavailable'}.`}</li>
+          ))}
+        </ul>
+      ) : null}
     </>
   );
 }

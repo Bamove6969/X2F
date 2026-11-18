@@ -35,6 +35,8 @@ import { serveStaffWeb } from './web.js';
 import { staffRevenueRoutes } from './revenue.js';
 import { staffSettingsRoutes } from './settings.js';
 import { staffSiteRoutes } from './site.js';
+import { staffLogRoutes } from './activityLog.js';
+import { staffTrainingRoutes } from './training.js';
 
 // The moderation process as the staff API sees it (Plan 4 Task 11): the API never holds a
 // moderator key (Global Constraints) and reads a chat or a proof only through it.
@@ -198,6 +200,9 @@ export async function buildStaffApi(
   staffFeeSweepRoutes(app);
   // Plan 4 Task 33 (D-041..D-045): clock-out pay, payout addresses and the owner's pay settings.
   staffPayRoutes(app);
+  // Plan 4 Task 19: the Activity log page's reads and the training library (closed cases, scrubbed).
+  staffLogRoutes(app);
+  staffTrainingRoutes(app);
   // Plan 4 Task 20: moderator performance (perf.read, the owner only, spec 6.6).
   staffPerformanceRoutes(app);
   // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.

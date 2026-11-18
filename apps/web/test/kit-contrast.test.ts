@@ -37,4 +37,28 @@ describe('token contrast', () => {
     }
     expect(low).toEqual([]);
   });
+
+  // Selection is ink, never orange (selection-ink.test). The rating card's stars and the "How's X2F
+  // doing?" moods (review.css) sit on the card's surface. WCAG 1.4.11 non-text contrast, 3:1: a
+  // filled star (ink fill) against the unfilled star's inside (the surface), the unfilled star's
+  // ink-muted outline against the surface, and the picked mood's ink border against the surface
+  // outside it, the surface-raised inside it and the line border of the moods not picked.
+  it('review stars and the picked mood stay distinguishable at 3:1, both themes', () => {
+    const low: string[] = [];
+    for (const theme of THEMES) {
+      const t = (n: string) => token(n, theme);
+      const pairs: [string, string, string][] = [
+        ['filled star ink vs surface', 'ink', 'surface'],
+        ['unfilled star outline ink-muted vs surface', 'ink-muted', 'surface'],
+        ['picked mood border ink vs surface', 'ink', 'surface'],
+        ['picked mood border ink vs surface-raised', 'ink', 'surface-raised'],
+        ['picked mood border ink vs unpicked line', 'ink', 'line'],
+      ];
+      for (const [what, a, b] of pairs) {
+        const r = contrast(t(a), t(b));
+        if (r < 3) low.push(`${theme} ${what}: ${r.toFixed(2)}`);
+      }
+    }
+    expect(low).toEqual([]);
+  });
 });

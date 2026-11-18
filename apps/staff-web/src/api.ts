@@ -417,6 +417,11 @@ export interface QueueRow {
   approval: 'not-needed' | 'needs-second' | { waitingFor: 'second-approval'; proposedBy: string | null };
   assignee: string | null;
   mine: boolean;
+  /**
+   * Plan 4 Task 12 (A6): the seller did not prove the payment a `seller-sends-xmr` ruling ordered in
+   * time; listed for senior moderators and the owner, who decide the suspension. Absent from an older API.
+   */
+  complyLapsed?: boolean;
 }
 export interface Queue {
   rows: QueueRow[];
@@ -437,6 +442,15 @@ export interface CaseRuling {
   round1?: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
   publishedAt: string | null;
   appealEndsAt: string | null;
+  /**
+   * Plan 4 Task 12 (A6): the seller's payment proof for a `seller-sends-xmr` ruling. `failedChecks`
+   * (RC-4, lead default): proofs X2F's checker could not take (503), newest first. Absent from an older API.
+   */
+  compliance?: {
+    lapsedAt: string | null;
+    proof: { txHash: string; status: 'pending' | 'accepted' | 'refused'; confirmations: number | null; submittedAt: string } | null;
+    failedChecks?: Array<{ at: string; reason: 'node-unavailable' | 'busy' }>;
+  };
 }
 export interface DisputeCase {
   code: string;
@@ -563,3 +577,115 @@ export const certifyDevice = (signPublic: string, boxPublic: string, tapId: stri
   staffApi<{ deviceKeyId: string; expiresAt: string }>('/staff/v1/devices', { method: 'POST', body: { signPublic, boxPublic, tapId } });
 export const revokeDevice = (deviceKeyId: string, tapId: string) =>
   staffApi<unknown>(`/staff/v1/devices/${encodeURIComponent(deviceKeyId)}/revoke`, { method: 'POST', body: { tapId } });
+
+// The Activity log (Plan 4 Task 19; perm log.read.cases, the chain check log.read.all)
+
+export type LogKind = 'trade' | 'dispute' | 'chat' | 'ruling' | 'account' | 'staff' | 'owner' | 'site' | 'other';
+
+export interface LogEntry {
+  id: string;
+  at: string;
+  tradeCode: string | null;
+  actor: { kind: 'staff' | 'trader' | 'system'; role: string | null; id: string | null; name: string | null };
+  action: string;
+  /** Ids, enums, amounts and setting numbers only, as the API re-checked them. */
+  detail: Record<string, unknown>;
+  /** The stored detail did not fit its action, so the API showed none of it. */
+  withheld?: true;
+}
+export interface LogPage {
+  scope: 'all' | 'cases';
+  entries: LogEntry[];
+  names: Record<string, string>;
+  next: string | null;
+}
+export interface LogQuery {
+  code?: string;
+  actor?: string;
+  kind?: LogKind | '';
+  from?: string;
+  to?: string;
+  before?: string;
+}
+export const logPage = (q: LogQuery) => {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (typeof v === 'string' && v !== '') p.set(k, v);
+  const s = p.toString();
+  return staffApi<LogPage>(`/staff/v1/log${s ? `?${s}` : ''}`);
+};
+export const logFilters = () =>
+  staffApi<{ scope: 'all' | 'cases'; actors: Array<{ id: string; name: string; role: string | null }>; kinds: LogKind[] }>('/staff/v1/log/filters');
+export interface ActiveDispute {
+  code: string;
+  method: string;
+  methodName: string;
+  xmr: string;
+  status: string;
+}
+export const activeDisputes = () => staffApi<{ items: ActiveDispute[] }>('/staff/v1/log/active-disputes');
+export interface LogIntegrity {
+  checkedAt: string;
+  chain: { ok: true; headId: string | null } | { ok: false; brokenAt: string };
+  entries: number;
+  /** When the moderation process's own check of the log failed (`site_flags.log_alarm`), or null. */
+  alarm: string | null;
+}
+export const logIntegrity = () => staffApi<LogIntegrity>('/staff/v1/log/integrity');
+
+// ---------------------------------------------------------------------------------------------
+// The training library (Plan 4 Task 19; perm training.read): closed cases, read through the anonymizer
+
+export interface ScrubbedText {
+  text: string;
+  masks: Array<{ start: number; end: number; kind: string }>;
+}
+export interface TrainingItem {
+  id: string;
+  /** The month the case closed, `YYYY-MM` (review m1: never the day). */
+  closedMonth: string;
+  method: string;
+  methodName: string;
+  /** Atomic units, rounded by the API to 2 significant figures (review m1). */
+  xmr: string;
+  outcome: string | null;
+  overturned: boolean;
+  afterRefund: boolean;
+}
+export interface TrainingCase extends TrainingItem {
+  tradeCode: string;
+  openedBy: string;
+  reason: string;
+  note: ScrubbedText | null;
+  closedAt: string;
+  rulings: Array<{ round: number; outcome: string; at: string; reason: ScrubbedText; evidence: ScrubbedText[] }>;
+  appeal: { by: string; at: string; why: ScrubbedText } | null;
+  timeline: Array<{ at: string; who: string; action: string }>;
+  chat: 'not-available';
+}
+export const trainingList = (before?: string) =>
+  staffApi<{ items: TrainingItem[]; next: string | null }>(`/staff/v1/training${before ? `?before=${encodeURIComponent(before)}` : ''}`);
+export const trainingCase = (id: string) => staffApi<TrainingCase>(`/staff/v1/training/${encodeURIComponent(id)}`);
+
+// Lead call 18 Nov (re-review): the review-first library. A curator (`training.curate`, the owner)
+// reviews each closed case pre-masked and marks it with the manual masks they add.
+/** A curator's mask: a range of a field's pre-masked text, or the whole field. */
+export type ManualMask = { field: string; start: number; end: number } | { field: string; whole: true };
+export type TrainingStatus = 'unmarked' | 'marked' | 'stale';
+export interface TrainingReviewItem extends TrainingItem {
+  status: TrainingStatus;
+}
+export interface TrainingReviewCase extends TrainingCase {
+  status: TrainingStatus;
+  /** Each text of the case pre-masked (automatic masks only), by field key, in reading order. */
+  fields: Record<string, ScrubbedText>;
+  /** The manual masks saved for the case. */
+  manual: ManualMask[];
+  /** Re-review 3 m1: the tag of the texts as loaded; the save sends it back (409 `case-changed` if they changed). */
+  reviewTag: string;
+}
+export const trainingReviewList = () => staffApi<{ items: TrainingReviewItem[] }>('/staff/v1/training/review');
+export const trainingReviewCase = (id: string) => staffApi<TrainingReviewCase>(`/staff/v1/training/review/${encodeURIComponent(id)}`);
+export const markTrainingCase = (id: string, masks: ManualMask[], reviewTag: string) =>
+  staffApi<{ id: string; status: 'marked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'PUT', body: { masks, reviewTag } });
+export const unmarkTrainingCase = (id: string) =>
+  staffApi<{ id: string; status: 'unmarked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'DELETE' });

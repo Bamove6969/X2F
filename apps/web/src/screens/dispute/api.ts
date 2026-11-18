@@ -282,6 +282,35 @@ export async function sendAppeal(code: string, why: string): Promise<DisputeView
   return parseDispute(await api(`${path(code)}/appeal`, { method: 'POST', body: { why } }));
 }
 
+/** Plan 4 Task 12 (A6): what POST /v1/trades/:code/payment-proof answers when it takes the proof. */
+export type PaymentProofStatus = 'accepted' | 'pending-confirmations';
+
+/** The seller's proof of a `seller-sends-xmr` payment (the tx hash and its key, lower-case hex). */
+export async function sendPaymentProof(code: string, txHash: string, txKey: string): Promise<PaymentProofStatus> {
+  const r = (await api(`${path(code)}/payment-proof`, { method: 'POST', body: { txHash, txKey } })) as { status?: unknown } | null;
+  if (r?.status !== 'accepted' && r?.status !== 'pending-confirmations') throw new ShapeError('status');
+  return r.status;
+}
+
+/** The user-facing line for a refused payment proof (codes from the API). COPY-UNSIGNED */
+export function proofRefusalText(err: unknown): string {
+  const code = err instanceof ApiCallError ? err.code : '';
+  switch (code) {
+    case 'proof-invalid':
+      return 'That transaction ID and key do not show this amount paid to this address. Check both and send them again.';
+    case 'proof-replayed':
+      return 'That transaction was used before, or was sent before this dispute opened. Send the proof of the payment you made for this ruling.';
+    case 'proof-pending':
+      return 'Your earlier proof is still waiting for its confirmations.';
+    case 'too-late':
+      return 'The time to send the proof has passed. A senior moderator now reviews the case.';
+    case 'node-unavailable':
+      return 'The payment could not be checked right now. Try again in a moment.';
+    default:
+      return refusalText(err);
+  }
+}
+
 /**
  * The method's name for the dispute screens: the bundled catalog's for the id (re-verify R3, as the
  * trade room's `methodOf`), never the API's method list; the id itself when the catalog has none.
