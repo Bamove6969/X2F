@@ -2,7 +2,7 @@
 // case-insensitively and through zero-width characters, never inside a longer word, and nothing of
 // the fixture's sensitive strings left in the scrubbed output.
 import { describe, expect, it } from 'vitest';
-import { MANUAL_MASK, TRADE_CODE_MASK, anonymizeCase, anonymizeText, applyManualMasks, offsetLabel, type AnonymizeNames } from '../src/index.js';
+import { MANUAL_MASK, MAX_TEXT, TRADE_CODE_MASK, anonymizeCase, anonymizeText, applyManualMasks, offsetLabel, type AnonymizeNames } from '../src/index.js';
 
 const NAMES: AnonymizeNames = { buyer: ['mira.k'], seller: ['quietfox', 'qf-login'], staff: ['dmitri_k', 'lumen.k'] };
 const BASE58 = '123456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -350,6 +350,52 @@ describe('anonymizeText: the re-review', () => {
     const grown = anonymizeText('㏂'.repeat(6000), FULL);
     expect(grown.text.endsWith('[long text]')).toBe(true);
     expect(anonymizeText('short', FULL).text).toBe('short');
+  });
+});
+
+// Re-review 3 (m2, m4, m5): one test each, red first.
+describe('anonymizeText: re-review 3', () => {
+  const FULL: AnonymizeNames = { buyer: ['mira.k', 'Mira Kowal'], seller: ['quietfox', 'Anna Maria Nowak'], staff: ['dmitri_k'] };
+  const s = (t: string, codes: readonly string[] = []) => anonymizeText(t, FULL, codes).text;
+
+  it('m2: a span starting inside the source character that ended the last one is clamped, not dropped (ß)', () => {
+    const own = 'S123-4567-89AB-CDES';
+    const out = s('S123456789ABCDEß123456789ABCDES', [own]);
+    expect(out).toBe(`${TRADE_CODE_MASK}${TRADE_CODE_MASK}`);
+    expect(out).not.toContain('123456789');
+  });
+
+  it('m4: each part of a multi-part display name on its own, in any order', () => {
+    expect(s('Mira paid late')).toBe('Buyer paid late');
+    expect(s('Kowal never answered')).toBe('Buyer never answered');
+    expect(s('Kowal Mira wrote')).toBe('Buyer Buyer wrote');
+    expect(s('Nowak and Anna and Maria')).toBe('Seller and Seller and Seller');
+    // Initials are not masked (lead call): "M." is not a name part of 3 or more letters.
+    expect(s('M. said hi')).toBe('M. said hi');
+  });
+
+  it('m4: times written 1432h or 14.32 CET', () => {
+    expect(s('at 1432h and 14.32 CET, or 9.05 UTC')).toBe('at [time] and [time] CET, or [time] UTC');
+    // A fiat amount with a currency stays.
+    expect(s('paid 14.32 EUR')).toBe('paid 14.32 EUR');
+  });
+
+  it('m4: an XMR amount with spaces around its point', () => {
+    expect(s('sent 1 . 2345 XMR and 0 , 5 xmr')).toBe('sent [amount] XMR and [amount] xmr');
+  });
+
+  it('m5: the cut at 20 000 characters never leaves part of an identifier showing', () => {
+    const pad = (n: number) => 'w'.repeat(n - 1) + ' ';
+    const straddle = (id: string, before: number) => `${pad(MAX_TEXT - before)}${id} tail`;
+    const iban = 'DE89 3704 0044 0532 0130 00';
+    const split = `${ADDR.slice(0, 47)} ${ADDR.slice(47)}`;
+    for (const [id, check] of [[iban, 'DE89'], [split, ADDR.slice(0, 20)], ['Mira | Kowal', 'Mira'], [`x ${ADDR.slice(0, 60)}`, ADDR.slice(0, 20)]] as const) {
+      for (const before of [3, 10, 30]) {
+        const out = anonymizeText(straddle(id, before), FULL).text;
+        expect(out.endsWith('[long text]'), `${check} ${before}`).toBe(true);
+        expect(out, `${check} ${before}`).not.toContain(check);
+      }
+    }
   });
 });
 
