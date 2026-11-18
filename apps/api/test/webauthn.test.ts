@@ -607,21 +607,22 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
   });
 
   it("takes a trader's security key of any model, attested or not, even one outside the snapshot (owner demo 13 Nov)", async () => {
+    // Owner, 16 Nov 2026: every security key verifies its user (PIN), so these keys do; the subject here is attestation.
     const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
     const b = await loggedIn(traderId, true);
     // A browser may pass the key's own attestation on although 'none' was asked for.
     const keys = [
-      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: 'none' }),
-      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: UNLISTED, ca } }),
-      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: NO_STATEMENT, ca } }),
-      createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: NO_STATEMENT, self: true } }),
+      createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: 'none' }),
+      createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: UNLISTED, ca } }),
+      createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: NO_STATEMENT, ca } }),
+      createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: NO_STATEMENT, self: true } }),
     ];
     for (const [i, key] of keys.entries()) {
       const r = await staffAdd(b, key, 'security-key');
       expect(r.options.attestation).toBe('none');
       expect(r.options.hints).toEqual(['security-key']);
       expect(r.options.pubKeyCredParams.map((p: { alg: number }) => p.alg)).toEqual([-8, -7, -257]);
-      expect(r.options.authenticatorSelection).toMatchObject({ authenticatorAttachment: 'cross-platform', residentKey: 'discouraged', userVerification: 'preferred' });
+      expect(r.options.authenticatorSelection).toMatchObject({ authenticatorAttachment: 'cross-platform', residentKey: 'discouraged', userVerification: 'required' });
       expect(r.res.statusCode, `key ${i}`).toBe(201);
     }
     const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
@@ -636,7 +637,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
     const trader = await loggedIn(traderId, true);
     for (const [name, att] of [['another root', { aaguid: UNLISTED, ca: otherRoot }], ['another root, allowlisted model', { aaguid: ALLOWED, ca: otherRoot }], ['expired leaf', { aaguid: ALLOWED, ca: expired }]] as const) {
-      const r = await staffAdd(trader, createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: att }), 'security-key');
+      const r = await staffAdd(trader, createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: att }), 'security-key');
       expect(r.res.statusCode, name).toBe(201);
     }
     const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
@@ -645,7 +646,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     // The retry without the statement still checks the rest: a wrong origin is still 401.
     const start = await trader.post('/v1/account/webauthn/start', { kind: 'security-key' });
     const { challengeId, options } = start.json();
-    const wrongOrigin = createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: UNLISTED, ca: otherRoot } }).register(options, 'https://evil.example');
+    const wrongOrigin = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: UNLISTED, ca: otherRoot } }).register(options, 'https://evil.example');
     const bad = await trader.post('/v1/account/webauthn/finish', { challengeId, response: wrongOrigin, label: 'Key' });
     expect(bad.statusCode).toBe(401);
     expect(errorOf(bad)).toBe('webauthn-failed');
