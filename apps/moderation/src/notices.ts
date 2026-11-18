@@ -16,7 +16,9 @@ import type { ChatNoticeCandidate, Link } from './link.js';
  * - its own view shows the trade disputed within CHAT_AFTER_DISPUTE_DAYS (`mod_dispute_seen`, from
  *   the watch list and its own escalations);
  * - it accepted no grant for the chat (`mod_chat_grants`) and signed no notice for that dispute
- *   (`mod_chat_notices`);
+ *   (`mod_chat_notices`); review N3: a notice it signed but the API never took (`posted_at` null) is
+ *   posted again, the SAME signed notice, on each pass while the API lists the dispute, and never a
+ *   second one;
  * - a dispute a trader opened is at least NOTICE_AFTER_TRADER_MS old by this process's clock, so the
  *   disputer's own grant (T1) is tried first; a system dispute gets its notice at once.
  * The dispute's seq, opening time and opener are the API's word; the API files the notice only when
@@ -49,12 +51,15 @@ export async function noticePass(d: { link: Link; db: Queryable; keystoreKey: Ui
     }
     try {
       const now = d.now();
-      const { rows } = await d.db.query<{ attestation: { channels?: { chat?: string } } | null; linked: string | null; seen: boolean; granted: boolean; noticed: boolean }>(
+      const { rows } = await d.db.query<{
+        attestation: { channels?: { chat?: string } } | null; linked: string | null; seen: boolean; granted: boolean;
+        noticed: { notice: unknown; posted: boolean } | null;
+      }>(
         `select (select attestation from signed_chats where chat = $1) as attestation,
                 (select trade from mod_chat_trade where chat = $1) as linked,
                 exists (select 1 from mod_dispute_seen where trade = $2 and last_seen_at >= $3) as seen,
                 exists (select 1 from mod_chat_grants where chat = $1) as granted,
-                exists (select 1 from mod_chat_notices where chat = $1 and dispute_seq = $4) as noticed`,
+                (select json_build_object('notice', notice, 'posted', posted_at is not null) from mod_chat_notices where chat = $1 and dispute_seq = $4) as noticed`,
         [chat, trade, new Date(now.getTime() - CHAT_AFTER_DISPUTE_DAYS * DAY_MS), it.disputeSeq],
       );
       const r = rows[0]!;
@@ -71,22 +76,39 @@ export async function noticePass(d: { link: Link; db: Queryable; keystoreKey: Ui
         d.log({ reason: 'chat-notice-not-disputed' });
         continue;
       }
-      if (r.granted || r.noticed) continue;
-      if (openedBy !== 'system' && now.getTime() - openedAt < NOTICE_AFTER_TRADER_MS) continue;
-      const mod = await loadChatIdentity(d.db, d.keystoreKey, chat);
-      if (mod === null) {
-        d.log({ reason: 'chat-notice-unattested' });
-        continue;
+      if (r.granted) continue;
+      let notice: unknown;
+      if (r.noticed !== null) {
+        // Review N3: signed before. Taken by the API: done. Not taken: the same notice again. A row
+        // with no notice (from before migration 020) is never signed a second time.
+        if (r.noticed.posted || r.noticed.notice === null) continue;
+        notice = r.noticed.notice;
+      } else {
+        if (openedBy !== 'system' && now.getTime() - openedAt < NOTICE_AFTER_TRADER_MS) continue;
+        const mod = await loadChatIdentity(d.db, d.keystoreKey, chat);
+        if (mod === null) {
+          d.log({ reason: 'chat-notice-unattested' });
+          continue;
+        }
+        const signed = await makeDisputeNotice({ chat: channel, disputeSeq: it.disputeSeq, openedAt: new Date(openedAt).toISOString(), openedBy, mod });
+        // Recorded before it is sent: a notice that reached the API is always in this process's record.
+        // If another pass recorded one first, that one is the notice (never two for one dispute).
+        const { rows: kept } = await d.db.query<{ notice: unknown }>(
+          `with i as (insert into mod_chat_notices (chat, trade, dispute_seq, issued_at, notice) values ($1, $2, $3, $4, $5)
+                      on conflict do nothing returning notice)
+           select notice from i union all select notice from mod_chat_notices where chat = $1 and dispute_seq = $3 and not exists (select 1 from i)`,
+          [chat, trade, it.disputeSeq, now, JSON.stringify(signed)],
+        );
+        if (kept[0]?.notice == null) continue;
+        notice = kept[0].notice;
       }
-      const notice = await makeDisputeNotice({ chat: channel, disputeSeq: it.disputeSeq, openedAt: new Date(openedAt).toISOString(), openedBy, mod });
-      // Recorded before it is sent: a notice that reached the API is always in this process's record.
-      await d.db.query('insert into mod_chat_notices (chat, trade, dispute_seq, issued_at) values ($1, $2, $3, $4) on conflict do nothing', [chat, trade, it.disputeSeq, now]);
       const status = await d.link.postReport({ kind: 'chat-dispute-notice', chat, notice });
       if (status !== 201) {
-        // Not counted; the row stays, so this dispute gets no second notice (the API said no).
+        // Not counted; the row stays unposted, so the next pass posts this same notice again.
         d.log({ reason: `chat-notice-report-refused-${status}` });
         continue;
       }
+      await d.db.query('update mod_chat_notices set posted_at = $3 where chat = $1 and dispute_seq = $2 and posted_at is null', [chat, it.disputeSeq, now]);
       d.log({ reason: 'chat-dispute-notice' });
       done.push(chat);
     } catch {

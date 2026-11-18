@@ -112,7 +112,7 @@ describe('the dispute notice pass (T2)', () => {
     expect(await run(link, [], new Date(NOW.getTime() + NOTICE_AFTER_TRADER_MS))).toEqual([c.chat]);
   });
 
-  it('the candidate list unavailable is logged; a notice the API refuses is logged, not counted, and not signed again', async () => {
+  it('the candidate list unavailable is logged; a notice the API refuses is logged, not counted, and never signed again: the same notice is posted again', async () => {
     const reasons: string[] = [];
     expect(await run({ pullChatNotices: async () => { throw new Error('down'); } } as unknown as Link, reasons)).toEqual([]);
     expect(reasons).toEqual(['chat-notices-unavailable']);
@@ -121,7 +121,42 @@ describe('the dispute notice pass (T2)', () => {
     const r2: string[] = [];
     expect(await run(refused, r2)).toEqual([]);
     expect(r2).toContain('chat-notice-report-refused-409');
+    // Review N3: while the API still lists it and it was never stored, the SAME signed notice goes again.
     expect(await run(refused)).toEqual([]);
-    expect(refused.reports).toHaveLength(1);
+    expect(refused.reports).toHaveLength(2);
+    expect(refused.reports[1]).toEqual(refused.reports[0]);
+  });
+
+  it('review N3: a post that fails (a throw, then a 503) is posted again, identical, on the next passes until the API answers 201; then never again', async () => {
+    const c = await attested();
+    const reports: unknown[] = [];
+    const answers: Array<number | 'throw'> = ['throw', 503, 201];
+    const link = {
+      pullChatNotices: async () => [cand(c)],
+      postReport: async (r: unknown) => {
+        reports.push(r);
+        const a = answers.shift() ?? 201;
+        if (a === 'throw') throw new Error('network');
+        return a;
+      },
+    } as unknown as Link;
+    const reasons: string[] = [];
+    expect(await run(link, reasons)).toEqual([]);
+    expect(reasons).toContain('chat-notice-failed');
+    expect(await run(link)).toEqual([]);
+    expect(await run(link)).toEqual([c.chat]);
+    expect(reports).toHaveLength(3);
+    expect(reports[1]).toEqual(reports[0]);
+    expect(reports[2]).toEqual(reports[0]);
+    // The notice read back from the record still verifies (jsonb keeps what is signed).
+    await expect(verifyDisputeNotice((reports[2] as { notice: unknown }).notice, { chat: c.channel, participants: c.participants })).resolves.toBeDefined();
+    // Stored once, with the notice and when the API took it.
+    const { rows } = await db.query<{ notice: unknown; posted_at: Date | null }>('select notice, posted_at from mod_chat_notices where chat = $1', [c.chat]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.notice).toEqual((reports[0] as { notice: unknown }).notice);
+    expect(rows[0]!.posted_at).toEqual(NOW);
+    // Posted: listed again (an API that lost it, say), nothing more is posted or signed.
+    expect(await run(link)).toEqual([]);
+    expect(reports).toHaveLength(3);
   });
 });
