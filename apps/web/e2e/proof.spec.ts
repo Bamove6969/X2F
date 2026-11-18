@@ -3,7 +3,8 @@
 // proposes the regions; the buyer takes one off and draws one of their own), and sends it. On a
 // fixtures-mode build served with the real CSP, with the real chat engine in the escrow worker and
 // page.route stand-ins for the trade, proof and chat APIs. The seller and the moderation service are
-// played here with libsodium and @x2f/protocol: the test opens what the browser posted as the
+// played here with libsodium and @x2f/protocol: the test checks the chat key record the browser makes,
+// opens what the browser posted (envelope v2 under that key, decision 16) as the
 // seller, fetches nothing but the PUT body it recorded, and decrypts it with the envelope's key.
 //
 // Proven: the PUT body is ciphertext (no image magic, no file name, octet-stream); the envelope is a
@@ -16,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { decryptProof, parseProofPayload, proofKeyFromBase64, type ProofAttachedPayload } from '@x2f/proof';
-import { open, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { openChat, openChatKeyRecord, ReplayGuard, verifyChatKeyRecord, type ChatEnvelopeV2, type ChatKeyRecord, type Identity, type Participants } from '@x2f/protocol';
 import { attestationBytes, channelFor, chatIdentityProofValid, type Attestation } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
@@ -63,7 +64,9 @@ const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, 
 
 interface World {
   puts: { url: string; headers: Record<string, string>; body: Buffer }[];
-  posted: Envelope[];
+  posted: ChatEnvelopeV2[];
+  /** The chat key record the browser made (decision 16: proof.attached is v2 under the chat key). */
+  record: () => ChatKeyRecord | null;
   announced: { url: string; body: unknown }[];
   answers: { url: string; body: unknown }[];
   seller: Identity;
@@ -77,13 +80,14 @@ async function stub(page: Page): Promise<World> {
   const seller = identity();
   const mod = identity();
   const registered: { signPublic: string; boxPublic: string; proof: string }[] = [];
-  const envelopes: { id: string; senderRole: string; envelope: Envelope; at: string }[] = [];
+  const envelopes: { id: string; senderRole: string; envelope: ChatEnvelopeV2; at: string }[] = [];
+  let record: ChatKeyRecord | null = null;
   let attestation: { attestation: Attestation; sig: string } | null = null;
   const participants = (): Participants | null => {
     const me = registered[0];
     return me ? { buyer: { signPublic: me.signPublic, boxPublic: me.boxPublic }, seller: { signPublic: seller.signPublic, boxPublic: seller.boxPublic }, mod: { signPublic: mod.signPublic, boxPublic: mod.boxPublic } } : null;
   };
-  const w: World = { puts: [], posted: [], announced: [], answers: [], seller, channel, participants };
+  const w: World = { puts: [], posted: [], record: () => record, announced: [], answers: [], seller, channel, participants };
   const at = '2026-10-28T12:00:00.000Z';
 
   await page.route(`**/v1/trades/${CODE}`, json(PAY_SECURED));
@@ -119,13 +123,28 @@ async function stub(page: Page): Promise<World> {
       attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), modKey.privateKey)) };
       return json({ ok: true, role: 'buyer' }, 201)(r);
     }
+    // The chat key record (design build task 5): the browser, first here, makes it; the stand-in
+    // checks it as the API does (signed by the attested buyer, for this chat) and keeps the first.
+    if (path === '/key' && method === 'GET') return record ? json({ record })(r) : json({ error: 'no-key' }, 404)(r);
+    if (path === '/key' && method === 'POST') {
+      if (!attestation) return json({ error: 'chat-not-ready' }, 409)(r);
+      if (record) return json({ error: 'key-exists' }, 409)(r);
+      try {
+        const rec = await verifyChatKeyRecord(r.request().postDataJSON(), { chat: channel, participants: participants()! });
+        if (rec.by !== 'buyer') return json({ error: 'bad-key-record' }, 400)(r);
+        record = rec;
+      } catch {
+        return json({ error: 'bad-key-record' }, 400)(r);
+      }
+      return json({ ok: true }, 201)(r);
+    }
     if (path === '/attestation' && method === 'GET') return attestation ? json(attestation)(r) : json({ status: 'pending' }, 202)(r);
     if (path === '/envelopes' && method === 'GET') {
       const after = BigInt(url.searchParams.get('after') ?? '0');
       return json({ envelopes: envelopes.filter((e) => BigInt(e.id) > after), more: false })(r);
     }
     if (path === '/envelopes' && method === 'POST') {
-      const env = r.request().postDataJSON() as Envelope;
+      const env = r.request().postDataJSON() as ChatEnvelopeV2;
       w.posted.push(env);
       const id = String(envelopes.length + 1);
       envelopes.push({ id, senderRole: 'buyer', envelope: env, at });
@@ -266,9 +285,12 @@ test('the buyer adds a payment proof, checks the blur and sends it: the seller d
   expect(put.body.includes(Buffer.from([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
   expect(put.body.includes(Buffer.from([0xff, 0xd8, 0xff]))).toBe(false);
 
-  // The chat: one proof.attached, which the seller opens (the key and facts only).
+  // The chat: one proof.attached, envelope v2 under the chat key (decision 16), which the seller
+  // opens with its own copy of the key (the key and facts only).
   expect(w.posted).toHaveLength(1);
-  const opened = await open(w.posted[0]!, { me: w.seller, myRole: 'seller', participants: w.participants()!, trade: w.channel, guard: new ReplayGuard(w.channel) });
+  expect(w.posted[0]!.v).toBe(2);
+  const tk = await openChatKeyRecord(w.record()!, 'seller', w.seller);
+  const opened = await openChat(w.posted[0]!, { tk, trade: w.channel, participants: w.participants()!, guard: new ReplayGuard(w.channel) });
   expect(opened.type).toBe('proof.attached');
   const p = parseProofPayload('proof.attached', opened.payload).payload as ProofAttachedPayload;
   expect(p.proofId).toBe(proofId);
