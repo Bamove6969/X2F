@@ -78,11 +78,12 @@ export interface CounterView {
 }
 
 /**
- * Applies new certify-device and revoke-device taps (the caller saves the gate). Review N8: the taps
- * are judged in each key's counter order, together with the registry taps of the same key in this
- * sync: a tap is out of order when its counter is at or below the key's mark before this sync (or
- * the counter of a device tap of the key applied just before it), or is a counter the registry
- * steps already took in this sync. Without `view`, the key's current mark.
+ * Applies new certify-device and revoke-device taps (the caller saves the gate), in the API's order
+ * (re-review 3 M1: counters are per security key, so taps of different keys are never ordered by
+ * counter). Review N8: per key, together with the registry taps of the same key in this sync: a
+ * tap is out of order when its counter is at or below that key's mark before this sync (or the
+ * counter of a device tap of the same key applied before it), or is a counter the registry steps
+ * already took from that key in this sync. Without `view`, the key's current mark.
  */
 export async function syncDevices(source: GateSource, g: GateState, ctx: GateContext, view?: CounterView): Promise<void> {
   const now = ctx.now();
@@ -113,7 +114,9 @@ export async function syncDevices(source: GateSource, g: GateState, ctx: GateCon
     }
     verified.push({ tap, c });
   }
-  verified.sort((a, b) => a.c.counter - b.c.counter);
+  // Re-review 3 M1: never sorted by counter across keys (each security key has its own counter):
+  // the API's order (finished_at, id) stands, and counter order is judged per key only, against
+  // that key's running mark below.
   /** The running mark per key in this step: the mark before the sync, raised by each device tap applied. */
   const running = new Map<string, number>();
   const outOfOrder = (accountId: string, credentialId: string, counter: number): boolean => {

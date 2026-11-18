@@ -341,6 +341,34 @@ describe('the gate: revoke-device and revoking a person', () => {
     expect(r2).toContain('gate.refused.device-before-revoke');
   });
 
+  it('re-review 3 M1: certified with one key (high counter) and revoked with another (low counter) before one sync: the revocation holds (counters are per key, never compared across keys)', async () => {
+    const { w } = await staffed();
+    // Raise key 1's counter with taps it signs (never shown to the gate).
+    for (let i = 0; i < 5; i++) tapBy(w.owner, { kind: 'set-role', accountId: `00000000-0000-4000-8000-00000000000${i}`, role: 'mod' });
+    const c = certify(w.owner);
+    w.api.taps.push(c.tap);
+    w.api.taps.push(revoke({ ...w.owner, key: w.ownerKey2 } as Person, w.owner.id, c.k.deviceKeyId, at(30_000)));
+    const reasons: string[] = [];
+    await sync(w, at(60_000), reasons);
+    expect(reasons.filter((x) => x.includes('device'))).toEqual([]);
+    expect(deviceLive(w.gate, w.owner.id, c.k.deviceKeyId, at(60_000))).toBeNull();
+    expect(w.gate.devices[c.k.deviceKeyId]!.revokedAt).toBe(at(30_000).toISOString());
+  });
+
+  it('re-review 3: revoke-device then the same key certified again 1 s later, in one sync or across two: live', async () => {
+    for (const twoSyncs of [false, true]) {
+      const { w, mod } = await staffed();
+      const a = certify(mod);
+      w.api.taps.push(a.tap);
+      await sync(w);
+      w.api.taps.push(revoke(mod, mod.id, a.k.deviceKeyId, at(10_000)));
+      if (twoSyncs) await sync(w, at(50_000));
+      w.api.taps.push(certify(mod, a.k, { issuedAt: at(11_000) }).tap);
+      await sync(w, at(120_000));
+      expect(deviceLive(w.gate, mod.id, a.k.deviceKeyId, at(120_000)), String(twoSyncs)).not.toBeNull();
+    }
+  });
+
   it('leaves every other kind of tap alone (unspent) for its own step', async () => {
     const { w, mod } = await staffed();
     // A set-role for someone the gate does not know yet is kept for later, never spent by the device step.
