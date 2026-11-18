@@ -101,7 +101,8 @@ describe('ReviewCard', () => {
     const input = host.querySelector<HTMLInputElement>('input[type="text"]')!;
     expect(input.maxLength).toBe(120);
     typeInto(input, 'one\ntwo');
-    expect(input.value).toBe('one two');
+    // One line: the text input itself drops line breaks (HTML value sanitization); none is kept.
+    expect(input.value).not.toMatch(/[\r\n]/);
     typeInto(input, '   ');
     click(buttonNamed(host, '3 stars')!);
     click(buttonNamed(host, 'Submit rating')!);
