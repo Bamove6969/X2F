@@ -45,6 +45,7 @@ export function testConfig(over: Partial<Config> = {}): Config {
     legacySecrets: true,
     jabberKeys: testRing(),
     xmpp: null,
+    trainingIdKey: new Uint8Array(randomBytes(32)),
     ...over,
   };
 }

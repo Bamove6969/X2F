@@ -2,12 +2,14 @@
 // the staff scope, the chain check and the log alarm) and the training library (closed cases read
 // through the anonymizer). The Global Constraint "entries never contain chat text, ruling reasons,
 // addresses or IP addresses" is checked on every answer, including after a row is tampered with.
+import { createHash, createHmac } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Actor } from '@x2f/staff';
 import type { Deps } from '../../src/app.js';
 import { appendLog } from '../../src/log/append.js';
+import { roundXmrAtomic, trainingId } from '../../src/staff/training.js';
 import { LOG_ACTIONS, kindOf } from '../../src/log/actions.js';
 import { seedAccount } from '../helpers/accounts.js';
 import { StaffBrowser, insertSession, seedStaff, staffApps, uniqueName } from '../helpers/staffApp.js';
@@ -224,6 +226,26 @@ describe('GET /staff/v1/log', () => {
     }
   });
 
+  it('`before` must be a safe integer: anything larger is a 400, never a 500 (review m2)', async () => {
+    for (const bad of ['9999999999999999999', '9223372036854775808', '9007199254740992', '1e3', '0x10', '-1', ' 5', '5 ']) {
+      const res = await owner.b.get(`/staff/v1/log?before=${encodeURIComponent(bad)}`);
+      expect(res.statusCode, bad).toBe(400);
+    }
+    expect((await owner.b.get('/staff/v1/log?before=9007199254740991')).statusCode).toBe(200);
+  });
+
+  it('`limit` is a plain decimal from 1 to 100 (review m3)', async () => {
+    for (const bad of ['1e2', '0x10', ' 50', '50 ', '+5', '050', '5.0', '0', '-1', '']) {
+      const res = await owner.b.get(`/staff/v1/log?limit=${encodeURIComponent(bad)}`);
+      expect(res.statusCode, JSON.stringify(bad)).toBe(400);
+    }
+  });
+
+  it('the page cap is 100: 100 is read, 101 is a 400 (review m4)', async () => {
+    expect((await owner.b.get('/staff/v1/log?limit=100')).statusCode).toBe(200);
+    expect((await owner.b.get('/staff/v1/log?limit=101')).statusCode).toBe(400);
+  });
+
   it('pages with `before`: no entry twice, none missed', async () => {
     const whole = await page(owner.b, '?limit=100');
     const seen: string[] = [];
@@ -322,7 +344,7 @@ describe('entries never show chat text, ruling reasons, addresses or IP addresse
 });
 
 describe('the training library', () => {
-  type Item = { id: string; closedOn: string; method: string; methodName: string; xmr: string; outcome: string; overturned: boolean; afterRefund: boolean };
+  type Item = { id: string; closedMonth: string; method: string; methodName: string; xmr: string; outcome: string; overturned: boolean; afterRefund: boolean };
 
   it('lists the closed cases only, by an opaque id, with day, method, amount and outcome', async () => {
     for (const who of [mod, senior, owner]) {
@@ -330,10 +352,12 @@ describe('the training library', () => {
       expect(res.statusCode, res.body).toBe(200);
       const items = (res.json() as { items: Item[] }).items;
       expect(items).toHaveLength(1);
+      // Review m1: the closing month only, and the amount rounded to 2 significant figures (1.25 XMR shows as 1.3).
       expect(items[0]).toEqual({
-        id: expect.stringMatching(/^[0-9a-f]{32}$/), closedOn: '2026-11-13', method: 'REVOLUT', methodName: 'Revolut',
-        xmr: C.trade.amountAtomic.toString(), outcome: 'release-to-buyer', overturned: false, afterRefund: false,
+        id: expect.stringMatching(/^[0-9a-f]{32}$/), closedMonth: '2026-11', method: 'REVOLUT', methodName: 'Revolut',
+        xmr: '1300000000000', outcome: 'release-to-buyer', overturned: false, afterRefund: false,
       });
+      expect(C.trade.amountAtomic).toBe(1_250_000_000_000n);
       expect(res.body).not.toContain(C.code);
       expect(res.body).not.toContain(C.code.replaceAll('-', ''));
     }
@@ -370,11 +394,50 @@ describe('the training library', () => {
     expect(c.chat).toBe('not-available');
   });
 
+  it('the opaque id is an HMAC under the training id key, not an unkeyed hash of the code (review m1)', async () => {
+    const id = ((await mod.b.get('/staff/v1/training')).json() as { items: Item[] }).items[0]!.id;
+    const unkeyed = createHash('sha256').update(`x2f-training-v1|${C.code}|1`, 'utf8').digest('hex').slice(0, 32);
+    expect(id).not.toBe(unkeyed);
+    expect(id).toBe(trainingId(deps.config.trainingIdKey, C.code, 1));
+    expect(createHmac('sha256', deps.config.trainingIdKey).update(`x2f/training-id\0${C.code}\0${1}`, 'utf8').digest('hex').slice(0, 32)).toBe(id);
+    // The key is the training id's own: no other secret of the config holds it.
+    const others = [deps.config.serverKey, ...[deps.config.passwordPeppers, deps.config.recoveryCodeKeys, deps.config.totpKeys, deps.config.loginNameKeys].flatMap((r) => [...r.keys.values()])];
+    for (const k of others) expect(Buffer.from(k).equals(Buffer.from(deps.config.trainingIdKey))).toBe(false);
+    // Paging and the case read both use the keyed id.
+    expect((await mod.b.get(`/staff/v1/training/${id}`)).statusCode).toBe(200);
+    expect((await mod.b.get(`/staff/v1/training?before=${id}`)).statusCode).toBe(200);
+    expect((await mod.b.get(`/staff/v1/training/${unkeyed}`)).statusCode).toBe(404);
+  });
+
+  it('rounds a shown amount to 2 significant figures (review m1)', () => {
+    expect(roundXmrAtomic('1250000000000')).toBe('1300000000000');
+    expect(roundXmrAtomic('1240000000000')).toBe('1200000000000');
+    expect(roundXmrAtomic('123456000000000')).toBe('120000000000000');
+    expect(roundXmrAtomic('12345678')).toBe('12000000');
+    expect(roundXmrAtomic('99500000000000')).toBe('100000000000000');
+    expect(roundXmrAtomic('7')).toBe('7');
+    expect(roundXmrAtomic('0')).toBe('0');
+  });
+
   it('an unknown or malformed id is not found; no route stores a training copy', async () => {
     expect((await mod.b.get(`/staff/v1/training/${'0'.repeat(32)}`)).statusCode).toBe(404);
     expect((await mod.b.get('/staff/v1/training/not-an-id')).statusCode).toBe(404);
     expect((await mod.b.get('/staff/v1/training?before=zz')).statusCode).toBe(400);
     expect((await owner.b.post('/staff/v1/training', { previewId: 'x', manualMasks: [] })).statusCode).toBe(404);
     expect(app.staffRoutes.filter((r) => r.url.startsWith('/staff/v1/training') && r.method !== 'GET')).toEqual([]);
+  });
+});
+
+describe('the staff-scope actor list (review m5)', () => {
+  it('an owner-only entry on a disputed trade does not put its actor in a moderator\'s actor list', async () => {
+    // A future owner-only action logged with a trade code (a clawback tied to a case).
+    await log({ actor: staffActor(owner, 'owner'), tradeCode: A.code, action: 'pay.clawback', detail: { staffId: mod.id, usdCents: '100', rulingId: 'r-a' } });
+    const m = (await mod.b.get('/staff/v1/log/filters')).json() as { actors: Array<{ id: string }> };
+    expect(m.actors.map((a) => a.id)).not.toContain(owner.id);
+    expect(m.actors.map((a) => a.id)).toEqual(expect.arrayContaining([mod.id, senior.id]));
+    const o = (await owner.b.get('/staff/v1/log/filters')).json() as { actors: Array<{ id: string }> };
+    expect(o.actors.map((a) => a.id)).toContain(owner.id);
+    // And the log itself never shows it to the moderator.
+    expect((await page(mod.b, `?code=${A.code}&limit=100`)).entries.map((e) => e.action)).not.toContain('pay.clawback');
   });
 });

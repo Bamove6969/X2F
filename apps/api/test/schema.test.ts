@@ -6,7 +6,7 @@ import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { LISTEN_OPTIONS } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
-import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
+import { DEV_TRAINING_ID_KEY, assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { assertLoginNamesTagged, tagLoginNames } from '../src/accounts.js';
 import { emptyDb, testDb } from './helpers/db.js';
@@ -637,6 +637,22 @@ describe('config', () => {
         expect.objectContaining({ message: expect.not.stringContaining(shared) }),
       );
     }
+  });
+
+  it('reads the training id key: its own 32 bytes, a development default off mainnet, required on mainnet (review m1)', () => {
+    expect(Buffer.from(loadConfig({ ...FULL_ENV, X2F_TRAINING_ID_KEY: k32(21) }).trainingIdKey)).toEqual(Buffer.alloc(32, 21));
+    expect(Buffer.from(loadConfig(FULL_ENV).trainingIdKey)).toEqual(Buffer.from(DEV_TRAINING_ID_KEY));
+    expect(Buffer.from(loadConfig({ ...FULL_ENV, X2F_MONERO_NETWORK: 'testnet' }).trainingIdKey)).toEqual(Buffer.from(DEV_TRAINING_ID_KEY));
+    expect(() => loadConfig({ ...FULL_ENV, X2F_MONERO_NETWORK: 'mainnet' })).toThrow('config: X2F_TRAINING_ID_KEY is missing');
+    expect(Buffer.from(loadConfig({ ...FULL_ENV, X2F_MONERO_NETWORK: 'mainnet', X2F_TRAINING_ID_KEY: k32(22) }).trainingIdKey)).toEqual(Buffer.alloc(32, 22));
+    for (const bad of [Buffer.alloc(16, 1).toString('base64'), 'not base64!']) {
+      expect(() => loadConfig({ ...FULL_ENV, X2F_TRAINING_ID_KEY: bad })).toThrow(
+        expect.objectContaining({ message: expect.stringMatching(/^config: X2F_TRAINING_ID_KEY is malformed/) }),
+      );
+    }
+    // Separate from X2F_SERVER_KEY and from every key ring.
+    expect(() => loadConfig({ ...FULL_ENV, X2F_TRAINING_ID_KEY: FULL_ENV.X2F_SERVER_KEY })).toThrow(/^config: X2F_TRAINING_ID_KEY .*separate/);
+    for (const fill of [1, 2, 3, 4]) expect(() => loadConfig({ ...FULL_ENV, X2F_TRAINING_ID_KEY: k32(fill) })).toThrow(/separate/);
   });
 
   it('never echoes a key ring in its error', () => {

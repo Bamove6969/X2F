@@ -61,7 +61,8 @@ export async function queryLog(
     where.push(`l.trade_code = $${args.length}`);
   }
   if (q.before !== undefined) {
-    if (!/^[1-9]\d{0,18}$/.test(q.before)) throw new RangeError('before is not an entry id');
+    // A safe integer only (review m2): a larger value would reach Postgres as an out-of-range bigint.
+    if (!/^[1-9]\d{0,15}$/.test(q.before) || !Number.isSafeInteger(Number(q.before))) throw new RangeError('before is not an entry id');
     args.push(q.before);
     where.push(`l.id < $${args.length}`);
   }

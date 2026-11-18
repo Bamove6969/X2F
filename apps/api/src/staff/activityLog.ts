@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
-import { LOG_KINDS, assertDetail, isLogAction, isLogKind, type LogKind } from '../log/actions.js';
+import { LOG_KINDS, OWNER_ONLY_PREFIXES, assertDetail, isLogAction, isLogKind, type LogKind } from '../log/actions.js';
 import { queryLog, type LogEntry } from '../log/query.js';
 import { verifyLogChain } from '../log/verify.js';
 import { getMethod } from '../methods/profiles.js';
@@ -34,7 +34,11 @@ export const LOG_PAGE = 50;
 export const LOG_LIMIT_MAX = 100;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const ID = /^[1-9]\d{0,18}$/;
+/** An entry id: a plain decimal that is a safe integer (review m2: a larger one is a 400, never Postgres's bigint error). */
+const ID = /^[1-9]\d{0,15}$/;
+const isEntryId = (s: string): boolean => ID.test(s) && Number.isSafeInteger(Number(s));
+/** A page size: a plain decimal, 1 to 999 before the cap (review m3: no `1e2`, `0x10`, spaces or a sign). */
+const LIMIT = /^[1-9][0-9]{0,2}$/;
 
 /** Detail keys that hold an account or staff id, resolved to a display name in `names`. */
 const ACCOUNT_KEYS = ['staffId', 'accountId'] as const;
@@ -124,9 +128,10 @@ export function staffLogRoutes(app: FastifyInstance): void {
     const from = s.from ? utcDay(s.from) : undefined;
     const to = s.to ? utcDay(s.to, 1) : undefined;
     if (from && to && from >= to) throw new ApiError(400, 'bad-request');
-    if (s.before !== undefined && !ID.test(s.before)) throw new ApiError(400, 'bad-request');
+    if (s.before !== undefined && !isEntryId(s.before)) throw new ApiError(400, 'bad-request');
+    if (s.limit !== undefined && !LIMIT.test(s.limit)) throw new ApiError(400, 'bad-request');
     const limit = s.limit === undefined ? LOG_PAGE : Number(s.limit);
-    if (!Number.isInteger(limit) || limit < 1 || limit > LOG_LIMIT_MAX) throw new ApiError(400, 'bad-request');
+    if (limit > LOG_LIMIT_MAX) throw new ApiError(400, 'bad-request');
 
     const db = req.server.deps.db;
     // One more than the page, to know whether an older page exists.
@@ -169,12 +174,15 @@ export function staffLogRoutes(app: FastifyInstance): void {
   app.get('/staff/v1/log/filters', { preHandler: cases, config: cfg }, async (req) => {
     const all = readsAll(req);
     const db = req.server.deps.db;
-    // The staff who appear in the reader's scope (the staff scope: on disputed trades, never the owner-only kinds).
+    // The staff who appear in the reader's scope (the staff scope: on disputed trades, never the
+    // owner-only kinds, the same clauses as queryLog's; review m5). Fixed literals from
+    // OWNER_ONLY_PREFIXES (letters and a dot), never input.
+    const notOwnerOnly = OWNER_ONLY_PREFIXES.map((p) => ` and l.action not like '${p}%'`).join('');
     const { rows } = await db.query<{ id: string; name: string; role: string | null }>(
       `select distinct on (a.id) a.id::text as id, a.${PUBLIC_NAME_COLUMN} as name, m.role
          from (select distinct l.actor_id from activity_log l
                 where l.actor_kind = 'staff' and l.actor_id is not null
-                  and ($1::boolean or (l.trade_code is not null and exists (select 1 from disputes d where d.code = l.trade_code)))) x
+                  and ($1::boolean or (l.trade_code is not null and exists (select 1 from disputes d where d.code = l.trade_code)${notOwnerOnly}))) x
          join accounts a on a.id = x.actor_id
          left join staff_members m on m.account_id = a.id
         order by a.id`,
@@ -185,6 +193,7 @@ export function staffLogRoutes(app: FastifyInstance): void {
     return { scope: all ? 'all' : 'cases', actors: rows.map((r) => ({ id: r.id, name: r.name, role: r.role })), kinds };
   });
 
+  // TODO(review m7): capped at 500 with no paging; page it once more disputes can be open at once.
   app.get('/staff/v1/log/active-disputes', { preHandler: cases, config: cfg }, async (req) => {
     const { rows } = await req.server.deps.db.query<{ code: string; method_id: string; amount_atomic: string; status: string }>(
       `select d.code, t.method_id, t.amount_atomic::text as amount_atomic, d.status
@@ -199,6 +208,8 @@ export function staffLogRoutes(app: FastifyInstance): void {
   app.get('/staff/v1/log/integrity', { preHandler: requireStaff('log.read.all'), config: { perm: 'log.read.all' } }, async (req) => {
     const deps = req.server.deps;
     const checkedAt = deps.clock();
+    // TODO(review m7): re-hashes the whole chain on every GET (owner-only); a cached result or a
+    // check from the last verified checkpoint once the log grows.
     const chain = await verifyLogChain(deps.db);
     const flags = await deps.db.query<{ log_alarm: Date | null }>('select log_alarm from site_flags limit 1');
     const count = await deps.db.query<{ n: string }>('select count(*)::text as n from activity_log');
