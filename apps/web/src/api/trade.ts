@@ -44,6 +44,8 @@ export interface TraderSummary {
   typicalMinutes: number | null;
   positivePct: number | null;
   badges: string[];
+  /** Plan 5 Task 5: how many of `badges` are Featured (New included); the rest are "+N". */
+  featuredBadges?: number;
   /** The starter-limits stage (spec 2.3, Task 4). */
   stage: 'starter' | 'building' | 'graduated';
   /** Owner Q63: the opt-in traded line's rounded-down whole XMR, or null (not shown in the trade room yet). */
