@@ -8,7 +8,7 @@ import { PUBLIC_LOGIN } from './login.js';
  * Serves the built staff app (apps/staff-web/dist) on the staff origin (Plan 4 Task 16), when
  * `X2F_STAFF_WEB_ROOT` names it: the built files, and index.html for every other GET outside
  * /staff (the client router takes it from there). Every answer already carries the staff API's
- * STAFF_CSP (Plan 3's policy without 'wasm-unsafe-eval', the relay or the node proxy),
+ * STAFF_CSP (Plan 3's policy without the relay or the node proxy; 'wasm-unsafe-eval' for libsodium only),
  * SECURITY_HEADERS and `no-store` from buildStaffApi's hooks. The routes are public (perm
  * `public-login`): the pages hold nothing until the API lets the person in.
  */

@@ -30,15 +30,26 @@ afterAll(async () => {
 });
 
 describe('the staff web app on the staff origin', () => {
-  it('serves index.html for app paths, with the staff CSP (no wasm, no relay or node proxy)', async () => {
+  it('serves index.html for app paths, with the staff CSP (no relay or node proxy)', async () => {
     for (const url of ['/', '/login', '/invite/abc_DEF-123', '/setup', '/overview/news']) {
       const res = await app.inject({ method: 'GET', url });
       expect(res.statusCode, url).toBe(200);
       expect(res.body).toContain('X2F Staff');
       expect(res.headers['content-security-policy']).toBe(STAFF_CSP);
     }
-    expect(STAFF_CSP).not.toContain('wasm-unsafe-eval');
+    // Lead call 18 Nov: 'wasm-unsafe-eval' lets libsodium compile its WebAssembly (it has no JS
+    // fallback); it permits wasm compilation only, never JS eval.
+    expect(STAFF_CSP).toContain("script-src 'self' 'wasm-unsafe-eval';");
     expect(STAFF_CSP).toContain("connect-src 'self';");
+  });
+
+  it('script-src never allows JS eval or inline script: no unsafe-eval, no unsafe-inline, nothing but self and wasm', () => {
+    const script = STAFF_CSP.split(';').map((d) => d.trim()).find((d) => d.startsWith('script-src '))!;
+    const sources = script.split(/\s+/).slice(1);
+    expect(sources).toEqual(["'self'", "'wasm-unsafe-eval'"]);
+    expect(sources).not.toContain("'unsafe-eval'");
+    expect(sources).not.toContain("'unsafe-inline'");
+    expect(STAFF_CSP).not.toMatch(/'unsafe-eval'|'unsafe-inline'/);
   });
 
   it('serves built files, and 404s missing files, dot files and unknown /staff paths', async () => {

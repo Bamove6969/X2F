@@ -21,6 +21,11 @@ export async function generateIdentity(): Promise<Identity> {
 
 const KEY_HEX = /^[0-9a-f]{64}$/;
 
+/** Resolves once libsodium is loaded (its WebAssembly compiled); rejects where it cannot load (a CSP without 'wasm-unsafe-eval'). */
+export async function cryptoReady(): Promise<void> {
+  await sodium.ready;
+}
+
 /**
  * Detached Ed25519 signature by `me` over `bytes`, as 128 lower-case hex characters: the proof
  * the API verifies against `signPublic` (the chat and trade identity proofs). The caller builds

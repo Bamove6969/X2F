@@ -49,8 +49,11 @@ export function DeviceCard({ onReady, load = () => browserChatKeys().device(), n
       } catch (e) {
         // COPY-UNSIGNED. not-a-refusal: a browser fault (no IndexedDB or WebCrypto), not a rule about the person
         const text = 'This browser cannot keep a device key. Use another browser to read chats.';
+        // COPY-UNSIGNED DESIGNER-REVIEW. Lead call 18 Nov: the crypto library itself did not load (its
+        // WebAssembly refused), a fault of its own, never "X2F could not be reached".
+        const crypto = 'This browser could not load the encryption that reads disputed chats. Reload the page; if it happens again, use another browser.';
         // The worker's own refusal is this browser's, never the network's.
-        if (live) setFault(e instanceof ChatKeyError ? text : faultText(e, text));
+        if (live) setFault(e instanceof ChatKeyError ? (e.code === 'crypto-unavailable' ? crypto : text) : faultText(e, text));
       }
     })();
     return () => {
@@ -66,7 +69,8 @@ export function DeviceCard({ onReady, load = () => browserChatKeys().device(), n
     <div className="x2f-stack" data-part="device-uncertified">
       {/* COPY-UNSIGNED */}
       <p>To read a disputed chat on this device, confirm it with your security key first.</p>
-      <Button variant="primary" onClick={() => setTapping(true)}>Confirm this device</Button>
+      {/* Lead call 18 Nov: secondary, so the case page keeps exactly one primary action (board ModCase parity). */}
+      <Button variant="secondary" onClick={() => setTapping(true)}>Confirm this device</Button>
       {tapping ? (
         <KeyTapDialog
           intent={{ kind: 'certify-device', accountId: me, deviceKeyId: key.deviceKeyId, signPublic: key.signPublic, boxPublic: key.boxPublic }}

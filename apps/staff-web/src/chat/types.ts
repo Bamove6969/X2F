@@ -75,11 +75,12 @@ export interface DevicePublic {
 /**
  * Why the worker said no: `security` (what the server sent did not check out, or a key that is not
  * the chat's), `unreadable` (a text the chat does not take), `unavailable` (this browser cannot
- * keep a device key or run the worker), `bad-record` (the stored device key does not open), `gone`
- * (no such opened chat), `fault` (anything else).
+ * keep a device key or run the worker), `crypto-unavailable` (the crypto library could not load
+ * in the worker, e.g. WebAssembly refused), `bad-record` (the stored device key does not open),
+ * `gone` (no such opened chat), `fault` (anything else).
  */
-export type ChatKeyErrorCode = 'security' | 'unreadable' | 'unavailable' | 'bad-record' | 'gone' | 'fault';
-export const CHAT_KEY_ERROR_CODES: readonly ChatKeyErrorCode[] = ['security', 'unreadable', 'unavailable', 'bad-record', 'gone', 'fault'];
+export type ChatKeyErrorCode = 'security' | 'unreadable' | 'unavailable' | 'crypto-unavailable' | 'bad-record' | 'gone' | 'fault';
+export const CHAT_KEY_ERROR_CODES: readonly ChatKeyErrorCode[] = ['security', 'unreadable', 'unavailable', 'crypto-unavailable', 'bad-record', 'gone', 'fault'];
 
 export class ChatKeyError extends Error {
   constructor(readonly code: ChatKeyErrorCode) {

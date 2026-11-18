@@ -1,3 +1,4 @@
+import { cryptoReady } from '@x2f/protocol';
 import type { AttestationKey } from '@x2f/trade';
 import { CHAT_KEY_ERROR_CODES, type CaseChatAnswer, type ChatKeyErrorCode, type ChatView, type DevicePublic, type SealedModMessage } from '../chat/types.js';
 import { DeviceKeyError, staffDeviceKey, type DeviceKeyBackend, type StaffDeviceKey } from './deviceKey.js';
@@ -31,18 +32,30 @@ export class ChatKeeper {
   readonly #backend: DeviceKeyBackend;
   readonly #modKeys: readonly AttestationKey[];
   readonly #now: () => number;
+  readonly #ready: () => Promise<void>;
   readonly #chats = new Map<string, OpenedChat>();
   #device: Promise<StaffDeviceKey> | null = null;
 
-  constructor(o: { backend: DeviceKeyBackend; modKeys: readonly AttestationKey[]; now?: () => number }) {
+  constructor(o: { backend: DeviceKeyBackend; modKeys: readonly AttestationKey[]; now?: () => number; ready?: () => Promise<void> }) {
     this.#backend = o.backend;
     this.#modKeys = o.modKeys;
     this.#now = o.now ?? Date.now;
+    this.#ready = o.ready ?? cryptoReady;
+  }
+
+  async #load(): Promise<StaffDeviceKey> {
+    // The crypto library first: where it cannot load (its WebAssembly refused), say so, distinctly.
+    try {
+      await this.#ready();
+    } catch {
+      throw new KeeperError('crypto-unavailable');
+    }
+    return staffDeviceKey(this.#backend);
   }
 
   #key(): Promise<StaffDeviceKey> {
     // Made or loaded once; a failure is tried again on the next call.
-    this.#device ??= staffDeviceKey(this.#backend).catch((e: unknown) => {
+    this.#device ??= this.#load().catch((e: unknown) => {
       this.#device = null;
       throw e;
     });

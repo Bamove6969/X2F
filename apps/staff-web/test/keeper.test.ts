@@ -72,4 +72,18 @@ describe('the chat key worker', () => {
     keeper.forgetAll();
     expect(keeper.size).toBe(0);
   });
+
+  it('lead call 18 Nov: where the crypto library cannot load (its WebAssembly refused) every call says so, distinctly', async () => {
+    const { ChatKeeper, serveChatKeeper } = await import('../src/keys/keeper.js');
+    const { connectChatKeys } = await import('../src/chat/client.js');
+    const keeper = new ChatKeeper({ backend: memory(), modKeys: [], ready: () => Promise.reject(new Error('CompileError: wasm refused')) });
+    const listeners: Array<Array<(e: { data: unknown }) => void>> = [[], []];
+    const end = (i: 0 | 1) => ({ postMessage: (m: unknown) => setTimeout(() => listeners[1 - i]!.forEach((l) => l({ data: structuredClone(m) })), 0), addEventListener: (_t: 'message', l: (e: { data: unknown }) => void) => void listeners[i]!.push(l) });
+    serveChatKeeper(keeper, end(1));
+    const keys = connectChatKeys(end(0));
+    await expect(keys.device()).rejects.toEqual(new ChatKeyError('crypto-unavailable'));
+    const { w } = await setup();
+    await expect(keys.open(w.answer)).rejects.toEqual(new ChatKeyError('crypto-unavailable'));
+  });
 });
+

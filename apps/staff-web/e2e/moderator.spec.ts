@@ -14,10 +14,11 @@
 // signed with the build's pinned moderation key (modKey.ts), the chat key is the buyer's signed key
 // record, re-wrapped to the device's box key; the message's countersign is verified by the device's
 // certified key, its freshness, request id and seq checked, it is signed as the moderator and a
-// trader opens it. The whole run is under STAFF_CSP (no 'wasm-unsafe-eval'), and must report no CSP
-// violation and no page error. FAILS on 6695ff61 (reported to the lead 18 Nov, the CSP not changed):
-// libsodium-wrappers 0.8.4 has no JS fallback (both its ESM and CJS builds embed only WebAssembly),
-// so under STAFF_CSP `sodium.ready` aborts with a WebAssembly CompileError and no device key is made.
+// trader opens it. The whole run is under STAFF_CSP and must report no CSP violation and no page
+// error. libsodium-wrappers 0.8.4 has no JS fallback (both its builds embed only WebAssembly), so
+// STAFF_CSP's script-src carries 'wasm-unsafe-eval' (lead call 18 Nov, as the trader app): wasm
+// compilation only, never 'unsafe-eval' (JS eval stays refused, checked below). The crypto runs in
+// the chat key worker (design build task 10).
 import { createHash, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, verify, type KeyObject } from 'node:crypto';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { newTradeCode } from '@x2f/core';
@@ -360,6 +361,21 @@ test('ModCase parity at 1280x1600, the code masked, on a confirmed device; no ch
   expect(calls.filter((c) => /\/chat\b/.test(c))).toEqual([]);
 });
 
+// Lead call 18 Nov: on a device not yet confirmed, "Confirm this device" is a secondary button, so the
+// page still has exactly one primary action (the parity harness checks it) and the same board copy.
+test('ModCase parity at 1280x1600 on a device not yet confirmed: one primary action; no chat is fetched', async ({ page }) => {
+  const { calls } = await stub(page);
+  await page.goto(`/disputes/${CASE.code}`);
+  await expect(page.locator('[data-screen="mod-case"]')).toBeVisible();
+  await expect(page.locator('[data-part="device-uncertified"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirm this device' })).not.toHaveAttribute('data-primary');
+  await expect(page.getByRole('button', { name: 'Open the full chat' })).toBeDisabled();
+  const failures = await parityFailures(page, 'ModCase', '1280x1600', [page.locator('h1')]);
+  expect(failures.filter((f) => !KNOWN_CASE.some((k) => k.test(f)))).toEqual([]);
+  expect(KNOWN_CASE.filter((k) => !failures.some((f) => k.test(f))).map(String)).toEqual([]);
+  expect(calls.filter((c) => /\/chat\b/.test(c))).toEqual([]);
+});
+
 /** Every CSP violation the page reports (the event, which the console line also shows), and console errors. */
 async function watchCsp(page: Page): Promise<{ violations: () => Promise<string[]>; console: string[] }> {
   const console: string[] = [];
@@ -386,10 +402,12 @@ test('design build task 9: a moderator confirms this device, opens the disputed 
   const s = await stub(page, { key });
 
   const res = await page.goto(`/disputes/${CASE.code}`);
-  expect(res?.headers()['content-security-policy']).not.toContain('wasm-unsafe-eval');
+  const policy = res?.headers()['content-security-policy'] ?? '';
+  expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval'");
+  expect(policy).not.toMatch(/'unsafe-eval'|'unsafe-inline'/);
   await expect(page.locator('[data-screen="mod-case"]')).toBeVisible();
   const openChatButton = page.getByRole('button', { name: 'Open the full chat' });
-  // A new browser: its device key is made (libsodium, in the page) and is not yet confirmed.
+  // A new browser: its device key is made (libsodium, in the chat key worker) and is not yet confirmed.
   await expect(page.locator('[data-part="device-uncertified"]')).toBeVisible();
   await expect(openChatButton).toBeDisabled();
 
@@ -432,17 +450,18 @@ test('design build task 9: a moderator confirms this device, opens the disputed 
     `POST /staff/v1/disputes/${CASE.code}/messages`,
   ]);
 
-  // All of it under a page that may not compile WebAssembly (no 'wasm-unsafe-eval'), and nothing refused on the way.
+  // Nothing refused on the way. WebAssembly may compile ('wasm-unsafe-eval'), JS eval still may not.
   expect(await csp.violations()).toEqual([]);
   expect(csp.console).toEqual([]);
   expect(foreign).toEqual([]);
-  const wasm = await page.evaluate(() =>
-    WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])).then(
-      () => 'compiled',
-      (e: unknown) => String(e),
-    ),
-  );
-  expect(wasm).toMatch(/CompileError.*(Content Security Policy|unsafe-eval)/i);
+  const evals = await page.evaluate(() => {
+    try {
+      return String(new Function('return 1')());
+    } catch (e) {
+      return String(e);
+    }
+  });
+  expect(evals).toMatch(/EvalError|Content Security Policy|unsafe-eval/i);
 });
 
 // Disputes-stack review 2026-11-16 (merge 3c63c18e): the owner's unread badge (O-040) is styled at

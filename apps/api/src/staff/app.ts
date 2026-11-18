@@ -73,12 +73,16 @@ declare module 'fastify' {
 }
 
 /**
- * The staff app's Content-Security-Policy (like Plan 3's, without the relay, node proxy or wasm):
- * sent on every response, the staff web app's pages included (Task 16).
+ * The staff app's Content-Security-Policy (like Plan 3's, without the relay or the node proxy):
+ * sent on every response, the staff web app's pages included (Task 16). Lead call 18 Nov (design
+ * build tasks 9-10): script-src carries 'wasm-unsafe-eval', as the trader app's does
+ * (apps/api/src/static/serve.ts), because libsodium-wrappers ships only as WebAssembly (no JS
+ * fallback) and staff-web's chat key worker needs it. It permits compiling WebAssembly only; it is
+ * NOT 'unsafe-eval' (no JS eval, no new Function) and NOT 'unsafe-inline'.
  */
 export const STAFF_CSP = [
   "default-src 'none'",
-  "script-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",
   "connect-src 'self'",
   "img-src 'self' data:",
   "style-src 'self'",
