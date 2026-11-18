@@ -237,6 +237,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 3 Task 20 (encrypted chat): the chat's own protocol and state, never a rule about the user.
   'chat-not-ready': 'the chat is still being secured (wait)',
   'stale-seq': 'a device step out of order (the engine re-syncs; a fault)',
+  // Plan 5 Task 15: @x2f/protocol's open() on an envelope sealed past this reader (the unblurred copy for the moderator); the chat engine keeps an `away` receipt, nothing is shown.
+  'not-for-me': 'a chat envelope addressed to someone else (the moderator); never shown',
   'wrong-channel': 'a device check (a fault)',
   'wrong-sender': 'a device check (a fault)',
   'chat-unavailable': 'the trade has no chat (cannot happen since Task 5\'s offer key; a fault)',
