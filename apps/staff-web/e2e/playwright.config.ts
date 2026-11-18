@@ -1,10 +1,13 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
+import { MOD_TEST_SIGNING_PUBLIC } from './modKey.js';
 
 /**
  * Plan 4 Task 16: the staff app's Playwright specs. The production build is served by the staff
  * API's own serveStaffWeb with STAFF_CSP and the security headers (e2e/serve.ts), on `localhost`
  * (a WebAuthn relying party cannot be an IP address). The API is stubbed per test with page.route.
+ * The build pins the e2e's own moderation signing key (modKey.ts): a production build without
+ * VITE_MOD_SIGNING_PUBLIC fails (vite.config.ts).
  */
 export const PORT = 4318;
 const repo = fileURLToPath(new URL('../../..', import.meta.url));
@@ -31,7 +34,7 @@ export default defineConfig({
     command: 'npm run build -w @x2f/staff-web && npx tsx apps/staff-web/e2e/serve.ts',
     cwd: repo,
     url: `http://localhost:${PORT}/setup`,
-    env: { X2F_E2E_PORT: String(PORT) },
+    env: { X2F_E2E_PORT: String(PORT), VITE_MOD_SIGNING_PUBLIC: MOD_TEST_SIGNING_PUBLIC },
     reuseExistingServer: false,
     timeout: 180_000,
   },
