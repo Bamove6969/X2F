@@ -460,11 +460,13 @@ export function chatRoutes(app: FastifyInstance): void {
       throw e;
     }
     if (rec.by !== role) throw new ApiError(400, 'bad-key-record');
-    const { rowCount } = await deps.db.query(
+    // Review F5: under the chat row's lock, which the dispute route takes (for share) before it
+    // decides whether a grant is required, so a record never lands between that check and its commit.
+    const { rowCount } = await locked(req, row.code, (q) => q.query(
       `insert into chat_keys (chat, tkh, created_by_role, wrap_buyer, wrap_seller, sig, created_at)
        values ($1, $2, $3, $4, $5, $6, $7) on conflict (chat) do nothing`,
       [row.code, rec.tkh, rec.by, rec.wrapBuyer, rec.wrapSeller, rec.sig, deps.clock()],
-    );
+    ));
     if (rowCount === 0) throw new ApiError(409, 'key-exists');
     for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
     return reply.code(201).send({ ok: true });

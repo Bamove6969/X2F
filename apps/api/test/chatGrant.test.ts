@@ -372,3 +372,76 @@ describe('the dispute notice (T2)', () => {
     expect({ s: res.statusCode, e: res.json().error }).toEqual({ s: 409, e: 'grant-not-needed' });
   });
 });
+
+describe('review fixes of tasks 3-6 (F2, F5, F6)', () => {
+  it('F6: a grant dated more than 1 minute ahead of the server is refused; 10 minutes back is still taken', async () => {
+    const k = await keyedTrade();
+    const res = await dispute(k, await grantOf(k, 'buyer', { at: new Date(now.getTime() + 2 * MIN) }));
+    expect({ s: res.statusCode, e: res.json().error }).toEqual({ s: 400, e: 'bad-grant' });
+    expect((await dispute(k, await grantOf(k, 'buyer', { at: new Date(now.getTime() - 9 * MIN) }))).statusCode).toBe(200);
+  });
+
+  it('F5: a key record being posted while the dispute opens (the chat row locked) still requires the grant', async () => {
+    const k = await keyedTrade({ key: false });
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      await c.query('select 1 from chats where code = $1 for update', [k.chat]);
+      const rec = await makeChatKeyRecord({ chat: k.channel, by: 'buyer', tk: k.tk, me: k.buyer, participants: k.participants });
+      await c.query(
+        'insert into chat_keys (chat, tkh, created_by_role, wrap_buyer, wrap_seller, sig, created_at) values ($1, $2, $3, $4, $5, $6, $7)',
+        [k.chat, rec.tkh, rec.by, rec.wrapBuyer, rec.wrapSeller, rec.sig, now],
+      );
+      const pending = dispute(k);
+      await new Promise((r) => setTimeout(r, 300));
+      await c.query('commit');
+      const res = await pending;
+      expect({ s: res.statusCode, e: res.json().error }).toEqual({ s: 400, e: 'grant-required' });
+    } finally {
+      c.release();
+    }
+    expect(await disputed(k.trade)).toBe('paid');
+  });
+
+  it('F2: 101 grants moderation refused never hold back a good one: the refused rows leave the queue, the good one is pulled and accepted in one pass', async () => {
+    const k = await keyedTrade();
+    const g = await grantOf(k, 'buyer');
+    expect((await dispute(k, g)).statusCode).toBe(200);
+    // 101 garbage grants on 101 copies of this chat (the queue's order is by row id, oldest first).
+    const bad: Array<{ chat: string; sig: string }> = [];
+    for (let i = 0; i < 101; i++) {
+      const chat = newTradeCode();
+      const offer = await seedOffer(k.poster.id);
+      await deps.db.query(
+        `insert into chats select (jsonb_populate_record(null::chats, to_jsonb(c) || jsonb_build_object('code', $2::text, 'trade_code', null, 'offer_id', $3::text))).* from chats c where code = $1`,
+        [k.chat, chat, offer],
+      );
+      await deps.db.query('insert into chat_keys select $2, tkh, created_by_role, wrap_buyer, wrap_seller, sig, created_at from chat_keys where chat = $1', [k.chat, chat]);
+      const sig = randomUUID().replace(/-/g, '').repeat(4);
+      await deps.db.query(
+        `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, grant_at, statement)
+         select $2, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, $3, grant_at, statement from chat_members where chat = $1`,
+        [k.chat, chat, sig],
+      );
+      bad.push({ chat, sig });
+    }
+    // The good grant was filed first; move it behind the 101 garbage rows.
+    await deps.db.query("update chat_members set id = nextval(pg_get_serial_sequence('chat_members', 'id')) where chat = $1", [k.chat]);
+    const pull = async () => ((await signedInject('GET', '/internal/v1/chat-grants')).json() as { grants: Array<{ chat: string }> }).grants.map((x) => x.chat);
+    expect(await pull()).not.toContain(k.chat);
+    // An unknown or malformed refusal marks nothing.
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-grant-refused', chat: bad[0]!.chat, grantBy: 'seller', grantSig: bad[0]!.sig, reason: 'bad' })).statusCode).toBe(404);
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-grant-refused', chat: bad[0]!.chat, grantBy: 'buyer', grantSig: bad[0]!.sig, reason: 'nope' })).statusCode).toBe(400);
+    for (const b of bad) {
+      expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-grant-refused', chat: b.chat, grantBy: 'buyer', grantSig: b.sig, reason: 'wrong-key' })).statusCode).toBe(201);
+    }
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-grant-refused', chat: bad[0]!.chat, grantBy: 'buyer', grantSig: bad[0]!.sig, reason: 'wrong-key' })).statusCode).toBe(201);
+    const pulled = await pull();
+    expect(pulled).toContain(k.chat);
+    expect(pulled.some((c) => bad.some((b) => b.chat === c))).toBe(false);
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-grant-accepted', chat: k.chat, accepted: await makeGrantAccepted({ grant: g, mod: k.mod }) })).statusCode).toBe(201);
+    // A refused grant counts as unaccepted for the counterparty's fallback.
+    const r = await deps.db.query("select refused_at is not null as refused from chat_members where chat = $1", [bad[0]!.chat]);
+    expect(r.rows).toEqual([{ refused: true }]);
+  });
+});

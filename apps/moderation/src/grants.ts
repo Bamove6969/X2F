@@ -19,6 +19,10 @@ import type { ChatGrantItem, Link } from './link.js';
  * (`mod_chat_grants`) and reports a `chat-grant-accepted` signed with the chat's moderator identity.
  * Anything that fails is logged by reason and not accepted, so the counterparty's app grants instead
  * (T1 by proxy). Nothing in a grant is believed because the API served it.
+ * Review F2: a grant that fails for good (its signatures, its wrap, a chat never attested, or, F4,
+ * a key other than the one this process already accepted for the chat) is reported back as
+ * `chat-grant-refused` naming exactly that grant, so it leaves the API's queue and can never hold an
+ * honest grant back.
  */
 export async function grantPass(d: { link: Link; db: Queryable; keystoreKey: Uint8Array; now: () => Date; log: (e: { reason: string }) => void }): Promise<string[]> {
   await sodium.ready;
@@ -30,6 +34,19 @@ export async function grantPass(d: { link: Link; db: Queryable; keystoreKey: Uin
     return [];
   }
   const done: string[] = [];
+  /** Review F2: tells the API this one grant is refused (by its side and signature), best effort. */
+  const refuse = async (chat: string, raw: unknown, reason: 'bad' | 'wrong-key' | 'unattested' | 'other-key'): Promise<void> => {
+    const g = raw as { by?: unknown; sig?: unknown } | null;
+    const grantBy = g?.by;
+    const grantSig = g?.sig;
+    if ((grantBy !== 'buyer' && grantBy !== 'seller') || typeof grantSig !== 'string' || !/^[0-9a-f]{128}$/.test(grantSig)) return;
+    try {
+      const status = await d.link.postReport({ kind: 'chat-grant-refused', chat, grantBy, grantSig, reason });
+      if (status !== 201) d.log({ reason: `chat-grant-refusal-refused-${status}` });
+    } catch {
+      d.log({ reason: 'chat-grant-refusal-failed' });
+    }
+  };
   for (const it of items) {
     const chat = typeof it.chat === 'string' ? normalizeTradeCode(it.chat) : null;
     if (chat === null) {
@@ -43,6 +60,7 @@ export async function grantPass(d: { link: Link; db: Queryable; keystoreKey: Uin
       const mod = await loadChatIdentity(d.db, d.keystoreKey, chat);
       if (!att?.participants || att.channels?.chat !== channel || mod === null) {
         d.log({ reason: 'chat-grant-unattested' });
+        await refuse(chat, it.grant, 'unattested');
         continue;
       }
       const participants = att.participants;
@@ -53,6 +71,15 @@ export async function grantPass(d: { link: Link; db: Queryable; keystoreKey: Uin
         if (grant.tkh !== record.tkh) throw new Error('tkh');
       } catch {
         d.log({ reason: 'chat-grant-bad' });
+        await refuse(chat, it.grant, 'bad');
+        continue;
+      }
+      // Review F4: one key per chat. A grant of another key than one this process already accepted
+      // for the chat is refused, whatever record the API serves with it.
+      const { rows: held } = await d.db.query<{ tkh: string }>('select distinct tkh from mod_chat_grants where chat = $1', [chat]);
+      if (held.some((h) => h.tkh !== grant.tkh)) {
+        d.log({ reason: 'chat-grant-other-key' });
+        await refuse(chat, it.grant, 'other-key');
         continue;
       }
       try {
@@ -60,6 +87,7 @@ export async function grantPass(d: { link: Link; db: Queryable; keystoreKey: Uin
         sodium.memzero(tk);
       } catch {
         d.log({ reason: 'chat-grant-wrong-key' });
+        await refuse(chat, it.grant, 'wrong-key');
         continue;
       }
       await d.db.query(

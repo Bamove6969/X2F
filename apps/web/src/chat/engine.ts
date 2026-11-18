@@ -59,7 +59,7 @@
  *   record (a block hides a chat with that same 404, and it may come back).
  */
 import type { Role } from '@x2f/core';
-import { isPlainObject, makeChatGrant, ProtocolError, ReplayGuard, verifyChatGrant, verifyDisputeNotice, verifyGrantAccepted, type ChatEnvelopeV2, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { chatKeyHash, isPlainObject, makeChatGrant, ProtocolError, ReplayGuard, verifyChatGrant, verifyDisputeNotice, verifyGrantAccepted, type ChatEnvelopeV2, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, attestationKeys, checkChatEnvelopeV2, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ChatError, chatChannel, chatKeyOf, makeChatKey, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatNoticeId } from './notices.js';
@@ -249,9 +249,16 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
   const sessions = new Map<string, { texts: Map<string, Shown>; reached: bigint | 'all' }>();
   /** Build task 5: each chat's key, in this worker's memory only (never stored on the device). */
   const keys = new Map<string, Uint8Array>();
+  /** Review F6: when this worker first saw each counterparty grant (by its signature), its own clock. */
+  const grantSeen = new Map<string, number>();
+  /** Review F7: the key's bytes are wiped before it is dropped (libsodium's memzero is a fill in JS). */
+  const forgetKey = (chat: string): void => {
+    keys.get(chat)?.fill(0);
+    keys.delete(chat);
+  };
   const erase = async (chat: string): Promise<void> => {
     sessions.delete(chat);
-    keys.delete(chat);
+    forgetKey(chat);
     await d.store.delete(chat);
   };
 
@@ -347,23 +354,37 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
    * (a 409 means the other side's came first: that one is read). A record that does not check out
    * against the attested participants and this device's copy throws ProtocolError.
    */
-  async function chatKey(rec: ChatRecord, parts: Participants): Promise<Uint8Array> {
+  /**
+   * The chat key (build task 5), pinned by its fingerprint (review F3): the tkh of the first record
+   * this device accepted or posted is saved in its ChatRecord before anything is sealed under it.
+   * After that, a record of another tkh, or none at all (404), is a security failure and the device
+   * never makes a second key: the API alone cannot change the chat's key mid-chat.
+   */
+  async function chatKey(rec: ChatRecord, parts: Participants): Promise<{ tk: Uint8Array; rec: ChatRecord }> {
     const have = keys.get(rec.chat);
-    if (have) return have;
+    if (have) return { tk: have, rec };
     const a = { channel: await chatChannel(rec.chat), role: rec.role, me: toIdentity(rec.identity), participants: parts };
+    const pin = async (tk: Uint8Array, tkh: string): Promise<{ tk: Uint8Array; rec: ChatRecord }> => {
+      if (rec.tkh !== undefined && rec.tkh !== tkh) {
+        tk.fill(0);
+        throw new ProtocolError('bad-signature', 'the chat key is not the one this device pinned');
+      }
+      const pinned = rec.tkh === tkh ? rec : { ...rec, tkh };
+      if (pinned !== rec) await d.store.save(pinned);
+      keys.set(rec.chat, tk);
+      return { tk, rec: pinned };
+    };
     let raw = await d.api.getKey(rec.chat);
     if (raw === null) {
+      if (rec.tkh !== undefined) throw new ProtocolError('bad-signature', 'the pinned chat key record is gone');
       const made = await makeChatKey(a);
-      if ((await d.api.postKey(rec.chat, made.record)) === 'ok') {
-        keys.set(rec.chat, made.tk);
-        return made.tk;
-      }
+      if ((await d.api.postKey(rec.chat, made.record)) === 'ok') return pin(made.tk, made.record.tkh);
+      made.tk.fill(0);
       raw = await d.api.getKey(rec.chat);
       if (raw === null) throw new ProtocolError('bad-signature', 'key record missing after key-exists');
     }
     const tk = await chatKeyOf(raw, a);
-    keys.set(rec.chat, tk);
-    return tk;
+    return pin(tk, await chatKeyHash(tk));
   }
 
   /**
@@ -524,7 +545,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     await d.store.save(rec);
     let tk: Uint8Array;
     try {
-      tk = await chatKey(rec, parts);
+      ({ tk, rec } = await chatKey(rec, parts));
     } catch (e) {
       // Design section 9: a key record that does not check out, or a copy that does not match its tkh.
       if (e instanceof ProtocolError || e instanceof TypeError) return { snap: snapshot(rec, view, 'failed', 'security'), rec: null, parts: null, view };
@@ -550,6 +571,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
   async function fallbackGrant(rec: ChatRecord, view: ChatApiView, parts: Participants, tk: Uint8Array): Promise<{ systemCalled: boolean }> {
     const channel = await chatChannel(rec.chat);
     const now = (d.now ?? Date.now)();
+    // Review F4: an acceptance counts only for a grant of THIS chat's key, and only when the
+    // acceptance names that same key; a grant or acceptance of any other key is unaccepted.
+    const ours = await chatKeyHash(tk);
     let theirs: ChatGrant | null = null;
     let accepted = false;
     let mineFiled = false;
@@ -564,7 +588,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       else theirs = v;
       try {
         const a = await verifyGrantAccepted(g.accepted, { chat: channel, participants: parts });
-        if (a.grantSig === v.sig && a.grantBy === v.by) accepted = true;
+        if (a.grantSig === v.sig && a.grantBy === v.by && v.tkh === ours && a.tkh === ours) accepted = true;
       } catch {
         // No acceptance, or one that does not verify: not accepted.
       }
@@ -581,7 +605,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     }
     const systemCalled = notice !== null && notice.openedBy === 'system';
     if (mineFiled || accepted) return { systemCalled };
-    const byProxy = theirs !== null && now - Date.parse(theirs.disputeAt) >= GRANT_FALLBACK_MS;
+    // Review F6: the wait runs from the earlier of the grant's signed disputeAt and when this worker
+    // first saw it, so a disputer who dates its grant ahead cannot stretch it.
+    let byProxy = false;
+    if (theirs !== null) {
+      const seen = grantSeen.get(theirs.sig) ?? now;
+      grantSeen.set(theirs.sig, seen);
+      byProxy = now - Math.min(Date.parse(theirs.disputeAt), seen) >= GRANT_FALLBACK_MS;
+    }
     if (!byProxy && notice === null) return { systemCalled };
     const mine = await makeChatGrant({ chat: channel, by: rec.role, tk, disputeAt: new Date(now).toISOString(), me: toIdentity(rec.identity), participants: parts });
     try {

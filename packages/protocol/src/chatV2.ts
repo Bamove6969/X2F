@@ -339,6 +339,12 @@ export async function openChatKeyRecord(rec: ChatKeyRecord, role: 'buyer' | 'sel
   return unwrapChatKey(me, role === 'buyer' ? rec.wrapBuyer : rec.wrapSeller, rec.tkh);
 }
 
+/**
+ * Review F9 (tasks 3-6): a grant names its chat (the channel) but neither a trade nor a dispute seq.
+ * That is safe only while a chat links to at most one trade (`linkChatToTrade … where trade_code is
+ * null`) and a trade has at most one dispute. If re-disputes or chat reuse ever come, add `trade`
+ * and `disputeSeq` under a new domain, `x2f/chat-grant/v2\0`.
+ */
 export interface ChatGrant {
   v: 1;
   chat: string;

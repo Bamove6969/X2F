@@ -1018,3 +1018,62 @@ describe('chat engine: the dispute notice (design build task 7, T2)', () => {
     expect(api.grantPosts).toHaveLength(1);
   });
 });
+
+describe('chat engine: review fixes of tasks 3-6 (F3, F4, F6)', () => {
+  it('F3: the key\'s tkh is pinned on first use; after a restart a swapped (validly signed) record is the security failure and nothing is sent', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('under the first key', parts);
+    expect((await engine().sync(chat)).phase).toBe('ready');
+    expect((await store.load(chat))!.tkh).toBe((api.key as { tkh: string }).tkh);
+    api.key = await makeChatKeyRecord({ chat: channel, by: 'seller', tk: await newChatKey(), me: seller, participants: parts });
+    const snap = await engine().sync(chat);
+    expect({ phase: snap.phase, problem: snap.problem }).toEqual({ phase: 'failed', problem: 'security' });
+    await expect(engine().send(chat, 'hi')).rejects.toMatchObject({ code: 'not-ready' });
+    expect(api.posted).toEqual([]);
+  });
+
+  it('F3: a 404 for the key record once a tkh is pinned is the security failure, and the device never makes a second key', async () => {
+    await engine().sync(chat);
+    attest();
+    expect((await engine().sync(chat)).phase).toBe('ready');
+    expect(api.keyPosts).toHaveLength(1);
+    api.key = null;
+    const snap = await engine().sync(chat);
+    expect({ phase: snap.phase, problem: snap.problem }).toEqual({ phase: 'failed', problem: 'security' });
+    expect(api.keyPosts).toHaveLength(1);
+  });
+
+  it('F4: an accepted grant of ANOTHER key (a cheating disputer\'s) does not count: this device grants the real key', async () => {
+    let clock = Date.now();
+    const e = createChatEngine({ api, store, newIdentity: async () => testIdentity(), modSigningPublic, now: () => clock });
+    await e.sync(chat);
+    const parts = attest();
+    expect((await e.sync(chat)).phase).toBe('ready');
+    api.view.disputeOpen = true;
+    const theirs = await makeChatGrant({ chat: channel, by: 'seller', tk: await newChatKey(), disputeAt: new Date(clock).toISOString(), me: seller, participants: parts });
+    api.view.grants = [{ grant: theirs, accepted: await makeGrantAccepted({ grant: theirs, mod }) }];
+    clock += GRANT_FALLBACK_MS + 1;
+    await e.sync(chat);
+    expect(api.grantPosts).toHaveLength(1);
+    const mine = await verifyChatGrant(api.grantPosts[0], { chat: channel, participants: parts });
+    expect(sodium.memcmp(await unwrapChatKey(mod, mine.wrap, mine.tkh), await tkOf(parts))).toBe(true);
+  });
+
+  it('F6: the wait runs from when this worker first saw the grant when its disputeAt is dated later', async () => {
+    const base = Date.now();
+    let clock = base;
+    const e = createChatEngine({ api, store, newIdentity: async () => testIdentity(), modSigningPublic, now: () => clock });
+    await e.sync(chat);
+    const parts = attest();
+    expect((await e.sync(chat)).phase).toBe('ready');
+    api.view.disputeOpen = true;
+    const theirs = await makeChatGrant({ chat: channel, by: 'seller', tk: await tkOf(parts), disputeAt: new Date(base + 10 * 60_000).toISOString(), me: seller, participants: parts });
+    api.view.grants = [{ grant: theirs, accepted: null }];
+    await e.sync(chat);
+    expect(api.grantPosts).toEqual([]);
+    clock = base + GRANT_FALLBACK_MS + 1;
+    await e.sync(chat);
+    expect(api.grantPosts).toHaveLength(1);
+  });
+});

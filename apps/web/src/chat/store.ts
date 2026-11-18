@@ -83,6 +83,11 @@ export interface ChatRecord {
   /** The last envelope id read past (`GET …/envelopes?after=`). */
   cursor: string;
   receipts: StoredChatReceipt[];
+  /**
+   * Review F3 (tasks 3-6): the fingerprint (tkh, public) of the chat key this device first accepted
+   * or posted. Once set, a key record of any other tkh, or none, is the `security` failure.
+   */
+  tkh?: string;
 }
 
 /**

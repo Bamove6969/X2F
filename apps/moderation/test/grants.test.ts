@@ -92,7 +92,7 @@ describe('the grant pass', () => {
     expect(dump).not.toContain(Buffer.from(c.tk).toString('hex'));
   });
 
-  it('refuses a grant whose wrap is of another key (a cheater\'s garbage), signed by a stranger, of another tkh than the record, or for a chat it never attested; nothing is reported', async () => {
+  it('refuses a grant whose wrap is of another key (a cheater\'s garbage), signed by a stranger, of another tkh than the record, or for a chat it never attested; no acceptance is reported, only the refusal of that exact grant (review F2)', async () => {
     const c = await attested();
     const stranger = await generateIdentity();
     const otherTk = await newChatKey();
@@ -108,7 +108,10 @@ describe('the grant pass', () => {
       const reasons: string[] = [];
       const link = fakeLink(() => [item]);
       expect(await run(link, reasons), why).toEqual([]);
-      expect(link.reports, why).toEqual([]);
+      const g = item.grant as { by: string; sig: string };
+      const want = { bad: 'bad', 'chat-grant-bad': 'bad', 'chat-grant-unattested': 'unattested' }[reason as 'chat-grant-bad' | 'chat-grant-unattested'];
+      // A malformed chat names no chat to refuse in: nothing is reported at all.
+      expect(link.reports, why).toEqual(reason === 'bad-chat-grant' ? [] : [{ kind: 'chat-grant-refused', chat: item.chat, grantBy: g.by, grantSig: g.sig, reason: want }]);
       expect(reasons, why).toContain(reason);
     }
     expect((await db.query('select 1 from mod_chat_grants where chat = $1', [c.chat])).rows).toEqual([]);
@@ -139,5 +142,38 @@ describe('the grant pass', () => {
     const r2: string[] = [];
     expect(await run(refused, r2)).toEqual([]);
     expect(r2).toContain('chat-grant-report-refused-400');
+  });
+});
+
+describe('review fixes of tasks 3-6 (F2, F4)', () => {
+  it('F2: 101 bad grants and then a good one in one list: each bad one is refused by name and the good one is accepted in the same pass', async () => {
+    const c = await attested();
+    const otherTk = await newChatKey();
+    const items: ChatGrantItem[] = [];
+    for (let i = 0; i < 101; i++) {
+      const g = await grant(c, { tk: otherTk });
+      items.push({ chat: c.chat, grant: { ...g, tkh: (await grant(c)).tkh }, record: c.record });
+    }
+    const good = await grant(c);
+    items.push({ chat: c.chat, grant: good, record: c.record });
+    const link = fakeLink(() => items);
+    expect(await run(link)).toEqual([c.chat]);
+    const kinds = (link.reports as Array<{ kind: string }>).map((r) => r.kind);
+    expect(kinds.filter((k) => k === 'chat-grant-refused')).toHaveLength(101);
+    expect(kinds.filter((k) => k === 'chat-grant-accepted')).toHaveLength(1);
+  });
+
+  it('F4: once a grant of one key is accepted for a chat, a grant of another key is refused (other-key), even with a matching record', async () => {
+    const c = await attested();
+    const first = await grant(c);
+    expect(await run(fakeLink(() => [{ chat: c.chat, grant: first, record: c.record }]))).toEqual([c.chat]);
+    const tk2 = await newChatKey();
+    const record2 = await makeChatKeyRecord({ chat: c.channel, by: 'seller', tk: tk2, me: c.ids.seller, participants: c.participants });
+    const second = await grant(c, { by: 'seller', tk: tk2 });
+    const reasons: string[] = [];
+    const link = fakeLink(() => [{ chat: c.chat, grant: second, record: record2 }]);
+    expect(await run(link, reasons)).toEqual([]);
+    expect(reasons).toContain('chat-grant-other-key');
+    expect(link.reports).toEqual([{ kind: 'chat-grant-refused', chat: c.chat, grantBy: 'seller', grantSig: second.sig, reason: 'other-key' }]);
   });
 });

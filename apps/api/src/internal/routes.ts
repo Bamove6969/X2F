@@ -28,7 +28,7 @@ import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { recordRulingExecution } from '../disputes/execution.js';
-import { acceptGrant, noticeCandidates, pendingGrants, storeNotice } from '../chat/grants.js';
+import { acceptGrant, noticeCandidates, pendingGrants, refuseGrant, storeNotice } from '../chat/grants.js';
 import { loadDisputeRecord } from '../disputes/store.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
@@ -668,6 +668,22 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.code(201).send({ ok: true });
   };
 
+  /**
+   * Review F2: `{ kind: 'chat-grant-refused', chat, grantBy, grantSig, reason }`: moderation refused
+   * that one grant. Only that row is marked; the grant queue then skips it (else 400 `bad-body`, 404
+   * `not-found`); a repeat is 201.
+   */
+  const chatGrantRefused = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat', 'grantBy', 'grantSig', 'reason'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const r = await refuseGrant(o.db, code, body.grantBy, body.grantSig, body.reason, o.clock?.() ?? new Date(now()));
+    if (r === 'bad') throw new Refused(400, 'bad-body');
+    if (r === 'unknown') throw new Refused(404, 'not-found');
+    log({ reason: 'internal-chat-grant-refused' });
+    return reply.code(201).send({ ok: true });
+  };
+
   const chatShredded = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind', 'chat'])) throw new Refused(400, 'bad-body');
     const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
@@ -772,6 +788,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-grant-accepted') return chatGrantAccepted(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-dispute-notice') return chatDisputeNotice(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-grant-refused') return chatGrantRefused(body, reply);
     if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
     if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
     if (isPlainObject(body) && body.kind === 'ruling-statement') return rulingStatement(body, reply);

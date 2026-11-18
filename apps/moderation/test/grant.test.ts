@@ -329,6 +329,25 @@ describe('/internal/chat/grant: the chat.read log entry', () => {
     expect(await accessRows(c.chat)).toHaveLength(1);
   });
 
+  it('review F11: two identical requests at once: exactly one passes and records one access row, the other is refused', async () => {
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const b = body(api, c, MOD);
+    const got = await Promise.all([call(deps(api), b), call(deps(api), b)]);
+    expect(got.map((g) => g.status).sort()).toEqual([403, 503]);
+    expect(got.find((g) => g.status === 403)!.error).toBe('log-entry-invalid');
+    expect(await accessRows(c.chat)).toHaveLength(1);
+  });
+
+  it('review F11: a staff member\'s own chat.read entry cannot be used for another person\'s device', async () => {
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const mine = api.entry('chat.read', c.code, MOD);
+    expect(await call(deps(api), body(api, c, SENIOR, { logEntryId: mine }))).toEqual({ status: 403, error: 'log-entry-invalid' });
+    expect(await used(mine)).toBe(false);
+    expect(await accessRows(c.chat)).toEqual([]);
+  });
+
   it('refuses an entry of another action, another trade, another or no actor, too old, or unknown', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);

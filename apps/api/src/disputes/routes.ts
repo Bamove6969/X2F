@@ -321,6 +321,13 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
       await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, { type: 'open-dispute' }, side, async (client, prev, _next, now) => {
         if (prev.dispute !== null) throw new ApiError(409, 'dispute-exists');
         if (keepGrant !== null) await keepGrant(client);
+        else {
+          // Review F5: a key record posted after the check above (the key route holds the chat row's
+          // lock while it inserts) still needs the disputer's grant.
+          await client.query('select 1 from chats where trade_code = $1 for share', [row.code]);
+          const keyed = await client.query('select 1 from chat_keys k join chats c on c.code = k.chat where c.trade_code = $1', [row.code]);
+          if (keyed.rows.length > 0) throw new ApiError(400, 'grant-required');
+        }
         // A held trade: the held account's own sessions are refused (403 recovery-hold); the
         // partner may open one (owner G7; lead hold v3 review item 5 and minor).
         await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');

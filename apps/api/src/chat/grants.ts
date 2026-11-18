@@ -28,8 +28,13 @@ import { channelFor } from '@x2f/trade';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 
-/** How far a grant's signed `disputeAt` may be from the server's clock (device clocks drift). */
+/**
+ * How far a grant's signed `disputeAt` may be from the server's clock (device clocks drift): at most
+ * 10 minutes in the past and, review F6, at most 1 minute in the future, so a disputer cannot date a
+ * grant ahead to stretch the counterparty's fallback wait.
+ */
 export const GRANT_SKEW_MS = 10 * 60_000;
+export const GRANT_AHEAD_MS = 60_000;
 
 interface Keyed {
   chat: string;
@@ -64,7 +69,8 @@ async function checkedGrant(k: Keyed, side: 'buyer' | 'seller', raw: unknown, no
     if (e instanceof ProtocolError) throw new ApiError(400, 'bad-grant');
     throw e;
   }
-  if (g.by !== side || g.tkh !== k.tkh || Math.abs(Date.parse(g.disputeAt) - now.getTime()) > GRANT_SKEW_MS) throw new ApiError(400, 'bad-grant');
+  const ahead = Date.parse(g.disputeAt) - now.getTime();
+  if (g.by !== side || g.tkh !== k.tkh || ahead < -GRANT_SKEW_MS || ahead > GRANT_AHEAD_MS) throw new ApiError(400, 'bad-grant');
   return g;
 }
 
@@ -200,7 +206,7 @@ export async function pendingGrants(q: Queryable, limit: number): Promise<Array<
   const { rows } = await q.query<{ chat: string; statement: unknown; tkh: string; created_by_role: string; wrap_buyer: string; wrap_seller: string; sig: string }>(
     `select m.chat, m.statement, k.tkh, k.created_by_role, k.wrap_buyer, k.wrap_seller, k.sig
        from chat_members m join chat_keys k on k.chat = m.chat
-      where m.member_kind = 'mod' and m.removed_at is null and m.accepted is null
+      where m.member_kind = 'mod' and m.removed_at is null and m.accepted is null and m.refused_at is null
       order by m.id limit $1`,
     [limit],
   );
@@ -213,6 +219,26 @@ export async function pendingGrants(q: Queryable, limit: number): Promise<Array<
     });
   }
   return out;
+}
+
+/** Review F2: why moderation refused a grant (its log reasons). */
+export const GRANT_REFUSALS = ['bad', 'wrong-key', 'unattested', 'other-key'] as const;
+
+/**
+ * Review F2: marks one grant refused, from moderation's signed report naming it exactly (chat, the
+ * granting side and the grant's signature), only while it is neither accepted nor already refused;
+ * a repeat for the same refused grant is 'ok', anything else 'unknown'.
+ */
+export async function refuseGrant(q: Queryable, chat: string, grantBy: unknown, grantSig: unknown, reason: unknown, now: Date): Promise<'ok' | 'bad' | 'unknown'> {
+  if ((grantBy !== 'buyer' && grantBy !== 'seller') || typeof grantSig !== 'string' || !/^[0-9a-f]{128}$/.test(grantSig) || !(GRANT_REFUSALS as readonly unknown[]).includes(reason)) return 'bad';
+  const { rowCount } = await q.query(
+    `update chat_members set refused_at = $4, refused_reason = $5
+      where chat = $1 and member_kind = 'mod' and removed_at is null and granted_by = $2 and sig = $3 and accepted is null and refused_at is null`,
+    [chat, grantBy, grantSig, now, reason],
+  );
+  if (rowCount === 1) return 'ok';
+  const same = await q.query("select 1 from chat_members where chat = $1 and member_kind = 'mod' and granted_by = $2 and sig = $3 and refused_at is not null", [chat, grantBy, grantSig]);
+  return same.rows.length > 0 ? 'ok' : 'unknown';
 }
 
 /** Stores moderation's acceptance once it verifies against the attested moderator identity and names a stored grant. */
