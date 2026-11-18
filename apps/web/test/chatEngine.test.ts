@@ -1099,6 +1099,96 @@ describe('chat engine: the unblurred copy for the moderator (Plan 5 Task 15, Rev
     expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', false]]);
   });
 
+  /** A seller-side engine with the buyer played here (as the test above). */
+  async function sellerSide(disputeOpen: boolean) {
+    api.view = { ...api.view, role: 'seller', counterparty: 'Ana', disputeOpen };
+    const e = engine();
+    await e.sync(chat);
+    const me = made[0]!;
+    const buyer = await testIdentity();
+    api.identities.buyer = { signPublic: buyer.signPublic, boxPublic: buyer.boxPublic, proof: '' };
+    const participants: Participants = { buyer: pub(buyer), seller: pub(me), mod: pub(mod) };
+    const a: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: new Date().toISOString() };
+    api.attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), modKey.privateKey)) };
+    const { parseProofPayload, sealProofEnvelope } = await import('@x2f/proof');
+    let bs = newChatState(channel);
+    const buyerSays = {
+      line: async (text: string) => {
+        const r = await sealChatMessage({ role: 'buyer', me: buyer, participants, state: bs, text });
+        bs = r.state;
+        return api.add('buyer', r.envelope);
+      },
+      /** The relay drops the buyer's next line: its seq is spent, nothing reaches the seller. */
+      dropped: () => {
+        bs = { ...bs, nextSeq: bs.nextSeq + 1 };
+      },
+      copy: async () => {
+        const id = api.add('buyer', await sealProofEnvelope(parseProofPayload('proof.unblurred', await unblurred()), { trade: channel, from: 'buyer', seq: bs.nextSeq, me: buyer, participants }));
+        bs = { ...bs, nextSeq: bs.nextSeq + 1 };
+        return id;
+      },
+    };
+    return { e, buyerSays };
+  }
+
+  it('review I1: a line the relay dropped before the copy still shows as a gap, on the sender\'s next shown line only', async () => {
+    const { e, buyerSays } = await sellerSide(true);
+    await buyerSays.line('before');
+    buyerSays.dropped();
+    await buyerSays.copy();
+    await buyerSays.line('after');
+    await buyerSays.line('then');
+    const want = [['buyer', 'before', false], ['buyer', 'after', true], ['buyer', 'then', false]];
+    expect((await e.sync(chat)).lines.map((l) => [l.from, l.text, l.gapBefore])).toEqual(want);
+    // A fresh read from the start shows the same.
+    expect((await engine().sync(chat)).lines.map((l) => [l.from, l.text, l.gapBefore])).toEqual(want);
+  });
+
+  it('review I1: the gap is carried even when the next line comes in a later sync', async () => {
+    const { e, buyerSays } = await sellerSide(true);
+    await buyerSays.line('before');
+    buyerSays.dropped();
+    await buyerSays.copy();
+    expect((await e.sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false]]);
+    await buyerSays.line('after');
+    expect((await e.sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', true]]);
+  });
+
+  it('lead call 18 Nov: outside a dispute, a moderator-only message from a trader is no receipt, and shows as a gap as before', async () => {
+    const { e, buyerSays } = await sellerSide(false);
+    await buyerSays.line('before');
+    const id = await buyerSays.copy();
+    await buyerSays.line('after');
+    const snap = await e.sync(chat);
+    expect(snap.lines.map((l) => [l.from, l.text, l.gapBefore])).toEqual([['buyer', 'before', false], ['buyer', 'after', true]]);
+    expect((await store.load(chat))!.receipts.find((r) => r.id === id)).toBeUndefined();
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', true]]);
+  });
+
+  it('lead call 18 Nov: while a dispute is open the same message is away: no line and no gap', async () => {
+    const { e, buyerSays } = await sellerSide(true);
+    await buyerSays.line('before');
+    const id = await buyerSays.copy();
+    await buyerSays.line('after');
+    expect((await e.sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['before', false], ['after', false]]);
+    expect((await store.load(chat))!.receipts.find((r) => r.id === id)).toMatchObject({ away: true });
+  });
+
+  it('review I2: the snapshot names when this side\'s own moderator-only copy reached the chat (its receipt), and never the other side\'s', async () => {
+    api.view.disputeOpen = true;
+    const e = engine();
+    expect((await e.sync(chat)).modOnlySentAt).toEqual([]);
+    attest();
+    await e.send(chat, 'before');
+    const snap = await e.sendUnblurred(chat, await unblurred());
+    expect(snap.modOnlySentAt).toHaveLength(1);
+    expect(snap.modOnlySentAt[0]).toBe((api.envelopes.at(-1) as { at: string }).at);
+    expect((await engine().sync(chat)).modOnlySentAt).toEqual(snap.modOnlySentAt);
+    const other = await sellerSide(true);
+    await other.buyerSays.copy();
+    expect((await other.e.sync(chat)).modOnlySentAt).toEqual([]);
+  });
+
   it('the worker checks the payload before the engine sees it (chat-send-unblurred)', async () => {
     const { serveChat } = await import('../src/chat/serve.js');
     const got: unknown[] = [];

@@ -24,7 +24,10 @@ import {
   putProof,
   sendProof,
   sendUnblurred,
+  UNBLURRED_POST_BACKOFF_MS,
+  UnblurredPostFailed,
 } from '../src/proof/upload.js';
+import { ChatFailed } from '../src/chat/client.js';
 import { browserProofImageDeps } from '../src/proof/browserImage.js';
 import { cleanJpeg } from '../../../packages/proof/test/fixtures.js';
 
@@ -572,5 +575,97 @@ describe('the unblurred copy for the moderator (Task 15 SendUnblurred, Review Fo
     await expect(sendUnblurred({ code: CODE, picture: pic }, { ...deps(), put: async () => { throw new Error('refused'); }, postUnblurred })).rejects.toThrow();
     expect(postUnblurred).not.toHaveBeenCalled();
     expect(pic.rgba.every((v) => v === 0)).toBe(true);
+  });
+
+  // Review I2 (18 Nov): the upload worked but posting the key did not (a 429, no answer). The copy
+  // cannot go up twice (the API holds one per request), so only the post is tried again.
+  const slowDown = () => new ChatFailed('slow-down');
+  it('review I2: a failed post after the upload is tried again with backoff; the ciphertext goes up once', async () => {
+    const pic = await prepareUnblurred(pickedFile(), deps());
+    const put = vi.fn(async () => undefined);
+    const payloads: unknown[] = [];
+    let n = 0;
+    const postUnblurred = vi.fn(async (_c: string, p: unknown) => {
+      payloads.push(p);
+      if (n++ < 2) throw slowDown();
+    });
+    const waits: number[] = [];
+    const r = await sendUnblurred({ code: CODE, picture: pic }, { ...deps(), put, postUnblurred, sleep: async (ms) => void waits.push(ms) });
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(postUnblurred).toHaveBeenCalledTimes(3);
+    expect(waits).toEqual(UNBLURRED_POST_BACKOFF_MS.slice(0, 2));
+    expect(waits[1]!).toBeGreaterThan(waits[0]!);
+    // The same payload each time (the same proof id and key).
+    expect(payloads[1]).toEqual(payloads[0]);
+    expect(payloads[2]).toEqual(payloads[0]);
+    expect((payloads[0] as { proofId: string }).proofId).toBe(r.proofId);
+    expect(pic.rgba.every((v) => v === 0)).toBe(true);
+  });
+
+  it('review I2: after a bounded number of tries, a clear error that keeps the payload in memory; its retry posts again and never uploads', async () => {
+    const pic = await prepareUnblurred(pickedFile(), deps());
+    const put = vi.fn(async () => undefined);
+    let fail = true;
+    const payloads: unknown[] = [];
+    const postUnblurred = vi.fn(async (_c: string, p: unknown) => {
+      payloads.push(p);
+      if (fail) throw slowDown();
+    });
+    const sleep = vi.fn(async () => undefined);
+    const e = await sendUnblurred({ code: CODE, picture: pic }, { ...deps(), put, postUnblurred, sleep }).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(UnblurredPostFailed);
+    expect(postUnblurred).toHaveBeenCalledTimes(UNBLURRED_POST_BACKOFF_MS.length + 1);
+    expect(sleep).toHaveBeenCalledTimes(UNBLURRED_POST_BACKOFF_MS.length);
+    const failed = e as UnblurredPostFailed;
+    expect(failed.last).toBeInstanceOf(ChatFailed);
+    // The pixels are gone: only the key and facts are kept, never the picture.
+    expect(pic.rgba.every((v) => v === 0)).toBe(true);
+    fail = false;
+    const r = await failed.retry();
+    expect(r.proofId).toBe(failed.proofId);
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(payloads.at(-1)).toEqual(payloads[0]);
+  });
+
+  it('review I2: a payload the engine refuses as malformed is not tried again with backoff', async () => {
+    const pic = await prepareUnblurred(pickedFile(), deps());
+    const postUnblurred = vi.fn(async () => {
+      throw new ChatFailed('bad-proof');
+    });
+    const sleep = vi.fn(async () => undefined);
+    await expect(sendUnblurred({ code: CODE, picture: pic }, { ...deps(), put: async () => undefined, postUnblurred, sleep })).rejects.toBeInstanceOf(UnblurredPostFailed);
+    expect(postUnblurred).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+});
+
+describe('review m1: finishProof zeroes its working buffers on the error paths', () => {
+  const pic = () => ({ rgba: original(), width: W, height: H });
+  it('the redacted copy, when the encoder throws', async () => {
+    let seen: Uint8ClampedArray | null = null;
+    await expect(finishProof(pic(), [], { encode: async (rgba) => { seen = rgba; throw new Error('no canvas'); } })).rejects.toThrow();
+    expect(seen!.every((v) => v === 0)).toBe(true);
+  });
+
+  it('the uncleaned bytes, when they cannot be cleaned', async () => {
+    const out: Uint8Array[] = [];
+    const bad = encodePng(original(), W, H, 'encoder-added').subarray(0, 40);
+    await expect(finishProof(pic(), [], { encode: async () => (out.push(new Uint8Array(bad)), out.at(-1)!) })).rejects.toThrow();
+    expect(out[0]!.every((v) => v === 0)).toBe(true);
+  });
+
+  it('the first PNG when it falls back to JPEG, and the uncleaned bytes after a clean', async () => {
+    const out: Uint8Array[] = [];
+    const jpeg = cleanJpeg();
+    const r = await finishProof(pic(), [], {
+      encode: async (_r, _w, _h, mime) => {
+        out.push(mime === 'image/png' ? new Uint8Array(5 * 1024 * 1024).fill(7) : new Uint8Array(jpeg));
+        return out.at(-1)!;
+      },
+    });
+    expect(r.mime).toBe('image/jpeg');
+    expect(out[0]!.every((v) => v === 0)).toBe(true);
+    expect(out[1]!.every((v) => v === 0)).toBe(true);
+    expect(r.bytes.some((v) => v !== 0)).toBe(true);
   });
 });
