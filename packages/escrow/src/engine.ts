@@ -28,6 +28,14 @@ export type EscrowErrorCode =
    */
   | 'bad-multisig';
 
+/**
+ * wallet2's refusal of a set in which an output marked to bear the network fee cannot bear its share
+ * (amount <= share). The amounts and the fee are the same on every attempt, so it is permanent for
+ * that set: the Monero engine reports it as `build-failed`, and the party gives up on that outcome
+ * at once (re-verify 17 Nov, N2).
+ */
+export const UNBUILDABLE = /destination amount is zero/i;
+
 /** Every daemon call (wallet sync, tx lookup, submit, building a tx) gives up after this long. */
 export const DAEMON_TIMEOUT_MS = 15_000;
 

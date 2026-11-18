@@ -10,6 +10,7 @@ import {
 import {
   DAEMON_TIMEOUT_MS,
   EscrowError,
+  UNBUILDABLE,
   type EscrowEngine,
   type EscrowSession,
   type Incoming,
@@ -392,8 +393,11 @@ export class MoneroMultisigSession implements EscrowSession {
         relay: false,
       })), 'build', 'not-ready');
     } catch (e) {
+      const why = e instanceof Error ? e.message.slice(0, 120) : 'error';
+      // A fee-bearing output below its share (UNBUILDABLE): no attempt can build this set. Nothing was signed.
+      if (UNBUILDABLE.test(why)) throw new EscrowError('build-failed', `could not build: ${why}`);
       // e.g. multisig state not yet imported: a fresh attempt can recover.
-      throw new EscrowError('not-ready', `could not build: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
+      throw new EscrowError('not-ready', `could not build: ${why}`);
     }
     if (txs.length !== 1) throw new EscrowError('build-failed', `expected 1 transaction, got ${txs.length}`);
     const txSet = txs[0]!.getTxSet()?.getMultisigTxHex();
