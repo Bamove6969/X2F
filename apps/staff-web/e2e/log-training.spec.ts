@@ -62,7 +62,7 @@ async function stub(page: Page, me: unknown): Promise<string[]> {
   return calls;
 }
 
-const TRAINING_ITEM = { id: 'b'.repeat(32), closedOn: '2026-11-13', method: 'REVOLUT', methodName: 'Revolut', xmr: '400000000000', outcome: 'refund-to-seller', overturned: false, afterRefund: false };
+const TRAINING_ITEM = { id: 'b'.repeat(32), closedMonth: '2026-11', method: 'REVOLUT', methodName: 'Revolut', xmr: '400000000000', outcome: 'refund-to-seller', overturned: false, afterRefund: false };
 const TRAINING_CASE = {
   ...TRAINING_ITEM, tradeCode: 'XXXX-XXXX-XXXX-XXXX', openedBy: 'seller', reason: 'paid', closedAt: 'T+52:00', chat: 'not-available', appeal: null,
   note: { text: 'Nothing arrived at [account].', masks: [{ start: 19, end: 28, kind: 'account' }] },

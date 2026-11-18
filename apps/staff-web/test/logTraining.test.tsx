@@ -167,7 +167,7 @@ describe('describeLog', () => {
   });
 });
 
-const ITEM = { id: 'a'.repeat(32), closedOn: '2026-11-13', method: 'REVOLUT', methodName: 'Revolut', xmr: '1250000000000', outcome: 'release-to-buyer', overturned: false, afterRefund: false };
+const ITEM = { id: 'a'.repeat(32), closedMonth: '2026-11', method: 'REVOLUT', methodName: 'Revolut', xmr: '1300000000000', outcome: 'release-to-buyer', overturned: false, afterRefund: false };
 const CASE = {
   ...ITEM,
   tradeCode: 'XXXX-XXXX-XXXX-XXXX', openedBy: 'seller', reason: 'paid', closedAt: 'T+52:00', chat: 'not-available',
@@ -186,11 +186,18 @@ describe('Training library', () => {
     });
     await open('/training');
     expect(document.querySelector('[data-screen="training"]')).not.toBeNull();
-    expect(rows('Training cases')).toEqual([['2026-11-13', 'Revolut', '1.25 XMR', 'Release to buyer', 'Read the case']]);
+    // Review m1: the closing month only, and the amount the API rounded, shown as rounded.
+    expect(rows('Training cases')).toEqual([['2026-11', 'Revolut', 'about 1.30 XMR', 'Release to buyer', 'Read the case']]);
+    // Review m6: no purge is promised before Task 23 deletes dispute records.
+    const lead = document.querySelector('[data-screen="training"] .x2f-staff-page__lead')!.textContent!;
+    expect(lead).not.toMatch(/90 days|\bdays?\b/);
+    expect(lead).toContain('Closed disputes');
     await click([...document.querySelectorAll('a')].find((a) => a.textContent === 'Read the case'));
     expect(api.calls.map((c) => c.path)).toContain(`/staff/v1/training/${ITEM.id}`);
     const page = document.querySelector('[data-screen="training-case"]')!;
     expect(page.textContent).toContain('XXXX-XXXX-XXXX-XXXX');
+    expect(page.textContent).toContain('about 1.30 XMR · closed in 2026-11 (T+52:00 after it opened)');
+    expect(page.textContent).not.toContain('2026-11-13');
     expect([...page.querySelectorAll('mark[data-mask]')].map((m) => [m.textContent, m.getAttribute('data-mask')])).toEqual([
       ['[phone]', 'phone'], ['[card]', 'card'],
     ]);

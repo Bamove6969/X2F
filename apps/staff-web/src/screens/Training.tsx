@@ -14,8 +14,8 @@ import { OUTCOME_LABELS, reasonText, xmrShort } from './modModel.js';
 
 /**
  * Plan 4 Task 19, as Revision 2026-10-29b changed it: the training library is the closed dispute
- * records themselves, read through the anonymizer (no stored copy). The list shows the closing day,
- * method, amount and outcome; a case shows the dispute's reason, the opener's note, each ruling with
+ * records themselves, read through the anonymizer (no stored copy). The list shows the closing month,
+ * method, amount (rounded by the API to 2 significant figures, review m1) and outcome; a case shows the dispute's reason, the opener's note, each ruling with
  * its reason and evidence, the appeal, and how the case ran, every text already scrubbed by the API
  * and every mask marked. NEEDS_P4_CHAT_MEMBERSHIP: the chat is not here yet.
  */
@@ -67,7 +67,8 @@ function TrainingList() {
     <section data-screen="training">
       <PageTitle title="Training library">
         <p className="x2f-staff-page__lead">
-          Closed disputes, with the traders, staff, trade code and private details taken out. Use them to learn how cases are decided. A case leaves the library when its dispute is deleted, 90 days after it closed.
+          {/* Review m6: no purge period is promised until Task 23 deletes dispute records (NEEDS_P4_TASK23). COPY-UNSIGNED */}
+          Closed disputes, with the traders, staff, trade code and private details taken out. Use them to learn how cases are decided. Amounts are rounded.
         </p>
       </PageTitle>
       {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
@@ -78,9 +79,9 @@ function TrainingList() {
           rowKey={(r) => r.id}
           empty="No closed cases yet."
           columns={[
-            { title: 'Closed', cell: (r) => r.closedOn, mono: true },
+            { title: 'Closed', cell: (r) => r.closedMonth, mono: true },
             { title: 'Method', cell: (r) => r.methodName },
-            { title: 'Amount', cell: (r) => `${xmrShort(r.xmr)} XMR`, mono: true },
+            { title: 'Amount', cell: (r) => `about ${xmrShort(r.xmr)} XMR`, mono: true },
             { title: 'Outcome', cell: (r) => `${outcomeText(r.outcome)}${r.overturned ? ' (overruled on appeal)' : ''}` },
             {
               title: 'Case',
@@ -157,7 +158,7 @@ function TrainingCaseView() {
         <div className="x2f-staff-training">
           <p className="x2f-staff-training__facts">
             <span data-mono="">{c.tradeCode}</span>
-            {` · ${c.methodName} · ${xmrShort(c.xmr)} XMR · closed ${c.closedOn} (${c.closedAt} after it opened)`}
+            {` · ${c.methodName} · about ${xmrShort(c.xmr)} XMR · closed in ${c.closedMonth} (${c.closedAt} after it opened)`}
           </p>
           <h2 className="x2f-h2">The dispute</h2>
           <p>{`${SIDE(c.openedBy)} opened it${c.afterRefund ? ' after the refund' : ''}: ${reasonText(c.openedBy, c.reason)}.`}</p>

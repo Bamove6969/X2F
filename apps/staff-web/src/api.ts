@@ -481,9 +481,11 @@ export interface ScrubbedText {
 }
 export interface TrainingItem {
   id: string;
-  closedOn: string;
+  /** The month the case closed, `YYYY-MM` (review m1: never the day). */
+  closedMonth: string;
   method: string;
   methodName: string;
+  /** Atomic units, rounded by the API to 2 significant figures (review m1). */
   xmr: string;
   outcome: string | null;
   overturned: boolean;
