@@ -82,7 +82,7 @@ export const RECORD_COPY = {
     'A copy of your X2F reputation signed with X2F’s official PGP key: your completed trades, % positive and one line per review (month, your role, the rating and phrases). It never lists amounts, payment methods, notes or who you traded with.',
   includePgp: 'Include my PGP fingerprint',
   includePgpNote: 'Your fingerprint can link this record to your PGP key and anything published with it. Off unless you tick it.',
-  download: 'Download signed record',
+  makeRecord: 'Download signed record',
   ready: 'Your record is ready.',
   save: 'Save the file',
   slowDown: (s: number) => `You can make a new record in ${s} s.`,

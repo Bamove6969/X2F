@@ -78,7 +78,7 @@ export function RecordExport({ now = () => new Date() }: { now?: () => Date }) {
         </span>
         <p className="x2f-note">{C.includePgpNote}</p>
         <Button variant="primary" aria-disabled={busy} onClick={() => void (busy ? undefined : make())} data-part="make-record">
-          {C.download}
+          {C.makeRecord}
         </Button>
         {error !== null ? (
           <p className="x2f-error" role="alert">

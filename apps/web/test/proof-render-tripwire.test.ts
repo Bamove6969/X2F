@@ -38,6 +38,33 @@ const PROOF_THUMB = 'apps/web/src/screens/proof/ProofThumb.tsx';
 const IMG_ALLOWED = [PROOF_THUMB];
 /** The receive path: the only files that may name the check or build a data: image URL. */
 const RECEIVE_PATH = ['apps/web/src/proof/receive.ts', PROOF_THUMB];
+/**
+ * Lead call (train-1 merge, 18 Nov 2026): the profile's "save record" link. Record.tsx saves the user's
+ * own signed text record (Plan 5 Task 12) and never a proof image, so it alone may hold one
+ * `data:text/plain;charset=utf-8,` URL and one `download` attribute. Any other data: type, a Blob URL, a
+ * FileReader, a second download link, or an import from proof/ or chat/ in that file still trips the wire.
+ */
+const SAVE_RECORD = 'apps/web/src/screens/profile/Record.tsx';
+const SAVE_RECORD_URL = '`data:text/plain;charset=utf-8,';
+const SAVE_RECORD_DOWNLOAD = /\bdownload=\{/g;
+/** The file's code with the save-record link's one URL prefix and one download attribute taken out (SAVE_RECORD only). */
+function withoutSaveRecord(rel: string, c: string): string {
+  if (rel !== SAVE_RECORD) return c;
+  // The first of each only: a second text/plain URL or download attribute still trips the wire.
+  return c.replace(SAVE_RECORD_URL, '`').replace(/\bdownload=\{/, '{');
+}
+/** What puts a proof's bytes on the screen or in a file by a way other than ProofThumb's redraw. */
+function byteWays(rel: string, c: string): string[] {
+  const out: string[] = [];
+  if (/createObjectURL|revokeObjectURL/.test(c)) out.push('a Blob URL');
+  if (/readAsDataURL|readAsBinaryString/.test(c)) out.push('a FileReader data URL');
+  if (/\bdownload(=|:)/.test(c)) out.push('a download link');
+  if (RECEIVE_PATH.includes(rel)) return out;
+  if (/data:image\//.test(c)) out.push('a data: image URL outside the receive path');
+  // Any string or template literal that starts "data:", so "data:" + "image/png" is caught too.
+  if (/['"`]\s*data:/i.test(c)) out.push('a data: URL outside the receive path');
+  return out;
+}
 
 function sources(dir: string): string[] {
   const out: string[] = [];
@@ -134,16 +161,34 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
   });
 
   it('no Blob URL, no FileReader data URL, no download link: the bytes have no way to the screen but the redraw', () => {
-    for (const f of files) {
-      const c = code(f);
-      expect(c, f).not.toMatch(/createObjectURL|revokeObjectURL/);
-      expect(c, f).not.toMatch(/readAsDataURL|readAsBinaryString/);
-      expect(c, f).not.toMatch(/\bdownload(=|:)/);
-      if (RECEIVE_PATH.includes(f)) continue;
-      expect(c, `${f}: a data: image URL outside the receive path`).not.toMatch(/data:image\//);
-      // Any string or template literal that starts "data:", so "data:" + "image/png" is caught too.
-      expect(c, `${f}: a data: URL outside the receive path`).not.toMatch(/['"`]\s*data:/i);
-    }
+    for (const f of files) expect(byteWays(f, withoutSaveRecord(f, code(f))), f).toEqual([]);
+  });
+
+  it("the save-record exemption is Record.tsx's one text/plain link only, and the file reaches no proof or chat code", () => {
+    expect(files).toContain(SAVE_RECORD);
+    const c = code(SAVE_RECORD);
+    expect(c.split(SAVE_RECORD_URL).length - 1, 'one text/plain data: URL').toBe(1);
+    expect(c.match(SAVE_RECORD_DOWNLOAD)?.length, 'one download attribute').toBe(1);
+    const reach = Object.keys(importsOf(moduleOf(SAVE_RECORD))).filter((s) => /(^|\/)(proof|chat)(\/|$)/.test(s));
+    expect(reach, `${SAVE_RECORD} imports proof/ or chat/ code`).toEqual([]);
+    expect(otherModuleReach(moduleOf(SAVE_RECORD), c)).toEqual([]);
+  });
+
+  it('must still trip: the exemption lets no other data: type, Blob URL or download through Record.tsx', () => {
+    const c = code(SAVE_RECORD);
+    const add = (extra: string) => byteWays(SAVE_RECORD, withoutSaveRecord(SAVE_RECORD, `${c}\n${extra}\n`));
+    expect(add('')).toEqual([]);
+    expect(add("const shot = 'data:image/png;base64,AAAA';")).toEqual(['a data: image URL outside the receive path', 'a data: URL outside the receive path']);
+    expect(add('const shot = `data:image/webp,${x}`;')).toContain('a data: image URL outside the receive path');
+    expect(add('const t = `data:text/html,${x}`;')).toEqual(['a data: URL outside the receive path']);
+    expect(add("const t = 'data:text/plain;charset=utf-8,' + x;")).toEqual(['a data: URL outside the receive path']);
+    expect(add('const u = URL.createObjectURL(blob);')).toEqual(['a Blob URL']);
+    expect(add('r.readAsDataURL(blob);')).toEqual(['a FileReader data URL']);
+    expect(add("const a = { download: 'proof.png' };")).toEqual(['a download link']);
+    expect(add('const b = <a href={h} download={n}>x</a>;')).toEqual(['a download link']);
+    expect(add('const t = `data:text/plain;charset=utf-8,${x}`;')).toEqual(['a data: URL outside the receive path']);
+    // The same file name anywhere else gets no exemption.
+    expect(byteWays('apps/web/src/screens/profile/Other.tsx', withoutSaveRecord('apps/web/src/screens/profile/Other.tsx', c))).not.toEqual([]);
   });
 
   it("ProofThumb's <img> shows showableProof's redrawn copy and nothing else", () => {
