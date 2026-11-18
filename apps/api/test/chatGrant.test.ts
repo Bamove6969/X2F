@@ -531,6 +531,17 @@ describe("a keyed chat's one v1 exception: the moderator's unblurred-proof reque
     expect(await v1Rows(k.chat)).toEqual([{ sender_role: 'buyer', seq: '0' }, { sender_role: 'buyer', seq: '2' }]);
   });
 
+  it('re-review 5 m2: two v1 posts for one request at the same time give exactly one 201 and one 400', async () => {
+    for (let round = 0; round < 3; round++) {
+      const k = await disputedKeyed();
+      await ask(k, 'buyer');
+      const [a, b] = await Promise.all([unblurred(k, 'buyer', 0), unblurred(k, 'buyer', 1)]);
+      const codes = (await Promise.all([post(k, 'buyer', a), post(k, 'buyer', b)])).map((r) => r.statusCode).sort();
+      expect({ round, codes }).toEqual({ round, codes: [201, 400] });
+      expect(await v1Rows(k.chat)).toHaveLength(1);
+    }
+  });
+
   it('a request on a dispute that has closed allows nothing', async () => {
     const k = await disputedKeyed();
     await ask(k, 'buyer');

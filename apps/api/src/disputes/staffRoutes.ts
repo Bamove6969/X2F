@@ -635,7 +635,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   });
 
   // Asks the trader named for the unblurred proof (logged; the request goes to that trader only).
-  // NEEDS_P4_CHAT_MEMBERSHIP (was NEEDS_P5_PROOF_ENVELOPE; proof storage landed, Task 14). OPEN (lead):
+  // NEEDS_P5_PROOF_ENVELOPE (proof storage landed, Task 14). OPEN (lead):
   // this asks the side the moderator names, not necessarily a side that uploaded a proof.
   app.post('/staff/v1/disputes/:code/proof-request', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
     const b = body(req, ['side']);

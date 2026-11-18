@@ -429,18 +429,15 @@ export function chatRoutes(app: FastifyInstance): void {
     // The budget is taken only for a well-formed envelope (round-2 review m5): a client bug's
     // malformed posts answer 400/413 and leave the sender's budget alone.
     req.server.budgets.chatPost.take(req.auth.accountId);
-    const now = deps.clock();
     const id = await locked(req, row.code, async (q) => {
-      const last = await q.query<{ seq: string | null }>(
-        'select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = $2',
-        [row.code, role],
-      );
-      const top = last.rows[0]?.seq;
-      if (top !== null && top !== undefined && BigInt(env.seq) <= BigInt(top)) throw new ApiError(409, 'stale-seq');
+      // Re-review 5 m1: the post's time is taken under the chat row's lock, so the stored times follow
+      // the lock order (decision 16's "no v1 since the request" compares them with proof_requested_at).
+      const now = deps.clock();
       if (v1InKeyed) {
         // Decision 16: an open dispute of this chat's trade whose moderator asked THIS side, with no
         // v1 envelope from it since the request; otherwise refused as any v1 in a keyed chat (400).
-        // Under the chat row's lock, so two posts can never both answer one request.
+        // Under the chat row's lock, so two posts can never both answer one request; before the seq
+        // check (re-review 5 m2), so the loser of two racing posts is this 400 whatever their seqs.
         const asked = row.trade_code === null ? [] : (await q.query(
           `select 1 from disputes d
             where d.code = $1 and d.status <> 'closed' and d.proof_request_side = $2
@@ -451,6 +448,12 @@ export function chatRoutes(app: FastifyInstance): void {
         )).rows;
         if (asked.length === 0) throw new ApiError(400, 'bad-request');
       }
+      const last = await q.query<{ seq: string | null }>(
+        'select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = $2',
+        [row.code, role],
+      );
+      const top = last.rows[0]?.seq;
+      if (top !== null && top !== undefined && BigInt(env.seq) <= BigInt(top)) throw new ApiError(409, 'stale-seq');
       const ins = await q.query<{ id: string }>(
         `insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ($1, $2, $3, $4, $5) returning id::text as id`,
         [row.code, role, env.seq, env, now],
