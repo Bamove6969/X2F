@@ -213,4 +213,6 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   // J-06 (migration 400; lead default): the person a lien is owed to; the dispute's own notices tell them.
   'liens.creditor_account_id': 'the person a lien is owed to: the debtor is notified (liens.debtor_account_id); the dispute tells the creditor',
   'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
+  // Plan 4 Task 19 (migration 750; lead call 18 Nov 2026): silent.
+  'training_cases.marked_by': "the curator's (owner's) stamp on a training case, not a change to that account; marking is logged as staff.training-marked",
 };
