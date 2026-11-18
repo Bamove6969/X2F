@@ -67,6 +67,25 @@ export function httpChatApi(f: typeof fetch = (u, i) => fetch(u, i)): ChatApi {
       }
       return { envelopes, more: b?.more === true };
     },
+    async getKey(chat) {
+      const res = await call(path(chat, '/key'));
+      if (res.status === 404) {
+        const b = (await res.clone().json().catch(() => null)) as { error?: unknown } | null;
+        if (b?.error === 'no-key') return null;
+      }
+      if (!res.ok) return fail(res);
+      const b = (await res.json()) as { record?: unknown } | null;
+      return b?.record ?? null;
+    },
+    async postKey(chat, record) {
+      const res = await call(path(chat, '/key'), { method: 'POST', body: JSON.stringify(record) });
+      if (res.ok) return 'ok';
+      if (res.status === 409) {
+        const b = (await res.clone().json().catch(() => null)) as { error?: unknown } | null;
+        if (b?.error === 'key-exists') return 'exists';
+      }
+      return fail(res);
+    },
     async postEnvelope(chat, envelope) {
       const res = await call(path(chat, '/envelopes'), { method: 'POST', body: JSON.stringify(envelope) });
       if (!res.ok) return fail(res);

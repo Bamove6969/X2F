@@ -1,9 +1,9 @@
 import { newTradeCode, type Role } from '@x2f/core';
-import { seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { attestationBytes, channelFor, chatIdentityProofValid, checkChatEnvelope, type Attestation, type PayDetailsPayload } from '@x2f/trade';
+import { openChat, openChatKeyRecord, ProtocolError, ReplayGuard as Guard2, seal, sealChat, verifyChatKeyRecord, makeChatKeyRecord, newChatKey, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { attestationBytes, channelFor, chatIdentityProofValid, checkChatEnvelopeV2, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { newChatState, sealChatMessage, sealPayDetails, type ChatState } from '../src/chat/chatCrypto.js';
+import { chatKeyOf, makeChatKey, newChatState, sealChatMessage, sealPayDetails, type ChatState } from '../src/chat/chatCrypto.js';
 import { ChatSendFailed, createChatEngine, type ApiEnvelope, type ChatApi, type ChatApiView, type ChatEngine } from '../src/chat/engine.js';
 import { memoryChatStore } from '../src/chat/store.js';
 
@@ -43,7 +43,21 @@ class FakeApi implements ChatApi {
   /** The API purged the chat: every route answers 410 chat-purged (or 404 for `blocked`). */
   gone: 410 | 404 | null = null;
   calls = 0;
+  /** Build task 5: the chat's signed key record (first writer wins), as `GET/POST …/key`. */
+  key: unknown = null;
+  keyPosts: unknown[] = [];
   constructor(readonly chat: string) {}
+  async getKey() {
+    this.check();
+    return this.key;
+  }
+  async postKey(_chat: string, record: unknown) {
+    this.check();
+    this.keyPosts.push(record);
+    if (this.key !== null) return 'exists' as const;
+    this.key = record;
+    return 'ok' as const;
+  }
   check(): void {
     this.calls++;
     if (this.gone) throw Object.assign(new Error(`api ${this.gone}`), { status: this.gone, code: this.gone === 410 ? 'chat-purged' : 'not-found' });
@@ -113,10 +127,23 @@ function attest(key = modKey.privateKey, extra: Partial<Attestation> = {}): Part
   return participants;
 }
 
+/**
+ * The chat key as the seller's device holds it (build task 5): from the stored record, or made by
+ * the seller when there is none yet (the seller's device came first).
+ */
+async function tkOf(parts: Participants): Promise<Uint8Array> {
+  if (api.key === null) {
+    const m = await makeChatKey({ channel, role: 'seller', me: seller, participants: parts });
+    api.key = m.record;
+    return m.tk;
+  }
+  return chatKeyOf(api.key, { channel, role: 'seller', me: seller, participants: parts });
+}
+
 let sellerState: ChatState;
-async function fromSeller(text: string, parts: Participants, senderRole = 'seller', seq?: number): Promise<Envelope> {
+async function fromSeller(text: string, parts: Participants, senderRole = 'seller', seq?: number): Promise<ChatEnvelopeV2> {
   const state = seq === undefined ? sellerState : { ...sellerState, nextSeq: seq };
-  const r = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state, text });
+  const r = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state, text, tk: await tkOf(parts) });
   sellerState = r.state;
   api.add(senderRole, r.envelope);
   return r.envelope;
@@ -196,7 +223,7 @@ describe('chat engine: device binding and the attestation', () => {
 });
 
 describe('chat engine: messages', () => {
-  it('sends a sealed message the seller and the mod identity open; the stored line is mine', async () => {
+  it('sends a sealed v2 message the seller opens with the chat key; the mod identity holds no copy of the key before a dispute grant; the stored line is mine', async () => {
     const e = engine();
     await e.sync(chat);
     const parts = attest();
@@ -204,11 +231,12 @@ describe('chat engine: messages', () => {
     expect(snap.phase).toBe('ready');
     expect(snap.lines).toEqual([{ id: '1', from: 'buyer', text: 'Sending via Zelle now', at: expect.any(String), mine: true, gapBefore: false }]);
     expect(JSON.stringify(api.posted)).not.toContain('Zelle');
-    const { open, ReplayGuard } = await import('@x2f/protocol');
-    for (const [role, me] of [['seller', seller], ['mod', mod]] as const) {
-      const o = await open(api.posted[0] as Envelope, { me, myRole: role, participants: parts, trade: channel, guard: new ReplayGuard(channel) });
-      expect(o.payload).toEqual({ text: 'Sending via Zelle now' });
-    }
+    const o = await openChat(api.posted[0], { tk: await tkOf(parts), trade: channel, participants: parts, guard: new Guard2(channel) });
+    expect(o.payload).toEqual({ text: 'Sending via Zelle now' });
+    // Design section 3: "only after a dispute" is a lock. The key record holds copies for buyer and seller only.
+    const rec = await verifyChatKeyRecord(api.key, { chat: channel, participants: parts });
+    await expect(openChatKeyRecord(rec, 'buyer', mod)).rejects.toBeInstanceOf(ProtocolError);
+    await expect(openChatKeyRecord(rec, 'seller', mod)).rejects.toBeInstanceOf(ProtocolError);
   });
 
   it("shows the seller's lines across pages, keeps them after a reload, and drops a replay", async () => {
@@ -299,7 +327,7 @@ describe('chat engine: messages', () => {
   it('a moderator line shows only while a dispute is open, and then appears in order', async () => {
     await engine().sync(chat);
     const parts = attest();
-    const m = await seal({ trade: channel, from: 'mod', seq: 0, type: 'chat.msg', payload: { text: 'Moderator here' }, to: ['buyer', 'seller', 'mod'], me: mod, participants: parts });
+    const m = await sealChat({ trade: channel, from: 'mod', seq: 0, type: 'chat.msg', payload: { text: 'Moderator here' }, tk: await tkOf(parts), me: mod });
     api.add('mod', m);
     await fromSeller('after', parts);
     const before = await engine().sync(chat);
@@ -314,7 +342,7 @@ describe('chat engine: messages', () => {
     await engine().sync(chat);
     const parts = attest();
     api.view.disputeOpen = true;
-    const m = await seal({ trade: channel, from: 'mod', seq: 0, type: 'chat.msg', payload: { text: 'x' }, to: ['buyer', 'seller', 'mod'], me: mod, participants: parts });
+    const m = await sealChat({ trade: channel, from: 'mod', seq: 0, type: 'chat.msg', payload: { text: 'x' }, tk: await tkOf(parts), me: mod });
     api.add('seller', m);
     expect((await engine().sync(chat)).lines).toEqual([]);
   });
@@ -382,7 +410,7 @@ describe('chat engine: no text on the device, and erased on purge (owner p11-10,
     const parts = attest();
     await fromSeller('pay to account A', parts, 'seller', 0);
     expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['pay to account A']);
-    const other = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: newChatState(channel), text: 'pay to account B' });
+    const other = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: newChatState(channel), text: 'pay to account B', tk: await tkOf(parts) });
     api.envelopes[0] = { ...api.envelopes[0]!, envelope: other.envelope };
     expect((await engine().sync(chat)).lines).toEqual([expect.objectContaining({ id: '1', from: 'seller', text: '', missing: true })]);
   });
@@ -413,7 +441,7 @@ describe('chat engine: no text on the device, and erased on purge (owner p11-10,
     await fromSeller('two', parts);
     await engine().sync(chat);
     // The API slips a new line (the next seq) in at id 2, below the cursor.
-    const injected = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: sellerState, text: 'send to account B' });
+    const injected = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: sellerState, text: 'send to account B', tk: await tkOf(parts) });
     api.envelopes.splice(1, 0, { id: '2', senderRole: 'seller', envelope: injected.envelope, at: null });
     // The seller's real next line (the same seq) follows past the cursor.
     await fromSeller('three', parts);
@@ -576,8 +604,8 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
   const TEXT = 'Payment details\nFull name: Jane Doe\nEmail: jane@example.ca';
 
   /** The seller's device sends a package (this device is the buyer here, as everywhere in this file). */
-  async function sellerPay(pay: PayDetailsPayload, parts: Participants): Promise<Envelope> {
-    const r = await sealPayDetails({ role: 'seller', me: seller, participants: parts, state: sellerState, pay });
+  async function sellerPay(pay: PayDetailsPayload, parts: Participants): Promise<ChatEnvelopeV2> {
+    const r = await sealPayDetails({ role: 'seller', me: seller, participants: parts, state: sellerState, pay, tk: await tkOf(parts) });
     sellerState = r.state;
     api.add('seller', r.envelope);
     return r.envelope;
@@ -592,11 +620,10 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     expect(api.posted).toHaveLength(1);
     // The one body posted: a well-formed envelope, and nothing of the package readable in it (each probe has a character base64/hex never produce).
     const wire = JSON.stringify(api.posted[0]);
-    expect(() => checkChatEnvelope(JSON.parse(wire), channel, 'buyer')).not.toThrow();
+    expect(() => checkChatEnvelopeV2(JSON.parse(wire), channel, 'buyer')).not.toThrow();
     for (const s of ['Jane Doe', 'jane@example.ca', 'Full name', 'Payment details', 'INTERAC_E_TRANSFER', '"pay"', '"text"', '"name"', '"email"']) expect(wire, s).not.toContain(s);
-    // The other side and the mod identity open the same package.
-    const { open, ReplayGuard } = await import('@x2f/protocol');
-    const o = await open(api.posted[0] as Envelope, { me: seller, myRole: 'seller', participants: parts, trade: channel, guard: new ReplayGuard(channel) });
+    // The other side opens the same package with the chat key.
+    const o = await openChat(api.posted[0], { tk: await tkOf(parts), trade: channel, participants: parts, guard: new Guard2(channel) });
     expect(o.payload).toEqual({ text: TEXT, pay: INTERAC });
   });
 
@@ -674,8 +701,8 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
   });
 
   /** A tampered seller client: an arbitrary inner payload sealed as the seller, bypassing the chat's own checks. */
-  async function sellerRaw(payload: unknown, seq: number, parts: Participants, from: Role = 'seller'): Promise<Envelope> {
-    return seal({ trade: channel, from, seq, type: 'chat.msg', payload, to: ['buyer', 'seller', 'mod'], me: from === 'mod' ? mod : seller, participants: parts });
+  async function sellerRaw(payload: unknown, seq: number, parts: Participants, from: Role = 'seller'): Promise<ChatEnvelopeV2> {
+    return sealChat({ trade: channel, from, seq, type: 'chat.msg', payload, tk: await tkOf(parts), me: from === 'mod' ? mod : seller });
   }
 
   it('review M1 (pay details): an envelope that can never become valid is skipped for good: the cursor passes it, later lines show, and the next sync fetches nothing again', async () => {
@@ -749,5 +776,113 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     await settle();
     expect(out.shift()).toEqual({ t: 'chat', id: 3, ok: false, error: 'bad-details' });
     expect(api.posted).toHaveLength(1);
+  });
+});
+
+describe('chat engine: one key per chat, envelope v2 (design build task 5)', () => {
+  it('with no key record, the first sync after attestation makes the key and posts a signed record locking it to buyer and seller', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    expect((await engine().sync(chat)).phase).toBe('ready');
+    expect(api.keyPosts).toHaveLength(1);
+    const rec = await verifyChatKeyRecord(api.key, { chat: channel, participants: parts });
+    expect(rec.by).toBe('buyer');
+    const sellerTk = await openChatKeyRecord(rec, 'seller', seller);
+    expect(sellerTk).toHaveLength(32);
+    // A later sync reuses it: no second record.
+    await engine().sync(chat);
+    expect(api.keyPosts).toHaveLength(1);
+  });
+
+  it('nothing is made or posted before the attestation (participants come only from it)', async () => {
+    await engine().sync(chat);
+    expect(api.keyPosts).toEqual([]);
+  });
+
+  it('takes the seller\'s record when the seller came first, and reads the seller\'s lines under it', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('hello from the seller', parts);
+    const snap = await engine().sync(chat);
+    expect(snap.lines.map((l) => l.text)).toEqual(['hello from the seller']);
+    expect(api.keyPosts).toEqual([]);
+  });
+
+  it('a lost race (409 key-exists) reads the record that won', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    const e = engine();
+    const getKey = api.getKey.bind(api);
+    let first = true;
+    api.getKey = async () => {
+      if (first) {
+        first = false;
+        // The seller's record lands between this device's read and its post.
+        await tkOf(parts);
+        return null;
+      }
+      return getKey();
+    };
+    await fromSeller('after the race', parts);
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['after the race']);
+    expect(api.keyPosts).toHaveLength(1);
+  });
+
+  it('a record not signed by the attested trader it names, or whose copy does not match its tkh, fails with security and nothing is read or sent', async () => {
+    for (const bad of ['stranger', 'tkh'] as const) {
+      chat = newTradeCode();
+      channel = await channelFor(chat, 'chat');
+      api = new FakeApi(chat);
+      await engine().sync(chat);
+      const parts = attest();
+      const tk = await newChatKey();
+      if (bad === 'stranger') {
+        const stranger = await testIdentity();
+        api.key = await makeChatKeyRecord({ chat: channel, by: 'seller', tk, me: stranger, participants: { ...parts, seller: pub(stranger) } });
+      } else {
+        // The seller signs a record whose buyer copy is of another key than its tkh.
+        const honest = await makeChatKeyRecord({ chat: channel, by: 'seller', tk, me: seller, participants: parts });
+        const other = await makeChatKeyRecord({ chat: channel, by: 'seller', tk: await newChatKey(), me: seller, participants: parts });
+        const body = { v: 1, chat: channel, tkh: honest.tkh, by: 'seller', wrapBuyer: other.wrapBuyer, wrapSeller: honest.wrapSeller };
+        const canon = JSON.stringify(Object.fromEntries(Object.entries(body).sort(([a], [b]) => (a < b ? -1 : 1))));
+        api.key = { ...body, sig: sodium.to_hex(sodium.crypto_sign_detached(new TextEncoder().encode(`x2f/chat-key-record/v1\0${canon}`), seller.signSecret)) };
+      }
+      const before = api.afters.length;
+      const snap = await engine().sync(chat);
+      expect({ bad, phase: snap.phase, problem: snap.problem }).toEqual({ bad, phase: 'failed', problem: 'security' });
+      expect(api.afters.length, bad).toBe(before);
+      await expect(engine().send(chat, 'hi')).rejects.toMatchObject({ code: 'not-ready' });
+      expect(api.posted, bad).toEqual([]);
+    }
+  });
+
+  it('R16 fixed: a v1 envelope (whose moderator copy a sender could leave out) is never a line, and the lines after it still show', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('v2 before', parts);
+    const v1 = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: sellerState, text: 'pay to account B' });
+    api.add('seller', v1.envelope);
+    await fromSeller('v2 after', parts);
+    const snap = await engine().sync(chat);
+    expect(snap.lines.map((l) => l.text)).toEqual(['v2 before', 'v2 after']);
+    // Decided for good: a refused receipt, so a later sync shows the same and never opens it again.
+    expect((await store.load(chat))!.receipts.find((r) => r.id === '2')).toMatchObject({ refused: true });
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['v2 before', 'v2 after']);
+  });
+
+  it('every envelope the engine posts is v2, and the chat key is never stored on the device', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await e.send(chat, 'one');
+    await e.send(chat, 'two');
+    expect(api.posted.map((p) => (p as { v: unknown }).v)).toEqual([2, 2]);
+    const tk = await tkOf(parts);
+    const hexKey = sodium.to_hex(tk);
+    const b64Key = sodium.to_base64(tk, sodium.base64_variants.ORIGINAL);
+    const stored = JSON.stringify([...store.records.values()]);
+    expect(stored).not.toContain(hexKey);
+    expect(stored).not.toContain(b64Key);
+    expect(stored).not.toContain('"wrapBuyer"');
   });
 });

@@ -45,14 +45,23 @@
  *   secured. An envelope that can never become a line (a payload that is not a chat message, a
  *   lying, malformed or mod-signed package) is passed with a receipt marked `refused`, so the
  *   counterparty cannot make every later sync re-fetch the rest of the chat (pay-details review M1).
+ * - One key per chat, envelope v2 (design-chat-membership-keys-2026-11-08, build task 5): once the
+ *   attestation checks out and before any envelope is read or sealed, the engine gets the chat key.
+ *   No record on the server: it makes the key and posts its signed record (`POST …/key`); the other
+ *   side's record won the race (409): it reads that one. A record is accepted only when signed by
+ *   the ATTESTED identity of the trader it names, for this chat, and this device's copy hashes to
+ *   its tkh; otherwise the chat fails with `security` and nothing is read or sent. The key is kept
+ *   in this worker's memory only, never stored: each worker start opens this device's copy again.
+ *   Every envelope is sealed and opened as v2 under the key; a v1 envelope is never a line here
+ *   (refused for good), so no sender can leave the moderator out of what the counterparty reads (R16).
  * - Erase on purge: when the API answers 410 `chat-purged` for a chat, its record and the lines in
  *   memory are erased; `sweep` checks every stored chat once per worker start. A 404 keeps the
  *   record (a block hides a chat with that same 404, and it may come back).
  */
 import type { Role } from '@x2f/core';
-import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { AttestationError, PayDetailsError, attestationKeys, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
-import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
+import { isPlainObject, ProtocolError, ReplayGuard, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { AttestationError, PayDetailsError, attestationKeys, checkChatEnvelopeV2, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
+import { ChatError, chatChannel, chatKeyOf, makeChatKey, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatNoticeId } from './notices.js';
 import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
 
@@ -82,6 +91,10 @@ export interface ChatApi {
   listEnvelopes(chat: string, after: string): Promise<{ envelopes: ApiEnvelope[]; more: boolean }>;
   /** Throws `{ status, code }` on a refusal. */
   postEnvelope(chat: string, envelope: unknown): Promise<string>;
+  /** Build task 5: the chat's signed key record (`GET …/key`), or null when it has none (404 no-key). */
+  getKey(chat: string): Promise<unknown | null>;
+  /** Posts this device's signed key record; 'exists' for 409 key-exists (the other side's came first). */
+  postKey(chat: string, record: unknown): Promise<'ok' | 'exists'>;
 }
 
 export type ChatPhase = 'waiting' | 'ready' | 'other-device' | 'failed';
@@ -177,9 +190,16 @@ const MAX_PAGES = 20;
 const MAX_TOTAL_PAGES = 1_000;
 const sigOf = (envelope: unknown): string | null => (isPlainObject(envelope) && typeof envelope.sig === 'string' ? envelope.sig : null);
 /** The sender and seq an envelope's header claims (its shape checked, nothing verified), or null when it is not even an envelope. */
+/** Build task 5: a v1 envelope (`v: 1`) is never a line in a v2 chat; it is refused for good. */
+const isV1 = (envelope: unknown): boolean => isPlainObject(envelope) && envelope.v === 1;
+/** A v1 envelope's claimed sender and seq, for its refused receipt (nothing verified). */
+function headerV1(envelope: unknown, channel: string): { from: Role; seq: number } | null {
+  if (!isPlainObject(envelope) || envelope.trade !== channel || typeof envelope.from !== 'string' || !ROLES_SET.has(envelope.from) || typeof envelope.seq !== 'number' || !Number.isSafeInteger(envelope.seq) || envelope.seq < 0) return null;
+  return { from: envelope.from as Role, seq: envelope.seq };
+}
 function headerOf(envelope: unknown, channel: string): { from: Role; seq: number } | null {
   try {
-    const env = checkChatEnvelope(envelope, channel);
+    const env = checkChatEnvelopeV2(envelope, channel);
     return { from: env.from, seq: env.seq };
   } catch {
     return null;
@@ -201,8 +221,11 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
    * envelope id, and how far the reads reached (`all` once a read reached the end). Memory only.
    */
   const sessions = new Map<string, { texts: Map<string, Shown>; reached: bigint | 'all' }>();
+  /** Build task 5: each chat's key, in this worker's memory only (never stored on the device). */
+  const keys = new Map<string, Uint8Array>();
   const erase = async (chat: string): Promise<void> => {
     sessions.delete(chat);
+    keys.delete(chat);
     await d.store.delete(chat);
   };
 
@@ -293,16 +316,40 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
   }
 
   /**
+   * Build task 5: the chat key. The stored record if there is one, else one made here and posted
+   * (a 409 means the other side's came first: that one is read). A record that does not check out
+   * against the attested participants and this device's copy throws ProtocolError.
+   */
+  async function chatKey(rec: ChatRecord, parts: Participants): Promise<Uint8Array> {
+    const have = keys.get(rec.chat);
+    if (have) return have;
+    const a = { channel: await chatChannel(rec.chat), role: rec.role, me: toIdentity(rec.identity), participants: parts };
+    let raw = await d.api.getKey(rec.chat);
+    if (raw === null) {
+      const made = await makeChatKey(a);
+      if ((await d.api.postKey(rec.chat, made.record)) === 'ok') {
+        keys.set(rec.chat, made.tk);
+        return made.tk;
+      }
+      raw = await d.api.getKey(rec.chat);
+      if (raw === null) throw new ProtocolError('bad-signature', 'key record missing after key-exists');
+    }
+    const tk = await chatKeyOf(raw, a);
+    keys.set(rec.chat, tk);
+    return tk;
+  }
+
+  /**
    * Re-opens a line the guard already took (its receipt), for a re-read: with a fresh guard, and
    * only for the same envelope (its signature) from the same sender and seq. Null when it is not.
    */
-  async function reopen(rec: ChatRecord, me: Identity, parts: Participants, e: ApiEnvelope, r: StoredChatReceipt, channel: string, secured: boolean): Promise<Shown | null> {
+  async function reopen(rec: ChatRecord, me: Identity, parts: Participants, e: ApiEnvelope, r: StoredChatReceipt, channel: string, secured: boolean, tk: Uint8Array): Promise<Shown | null> {
     try {
       if (e.senderRole !== r.from || (r.sig !== null && sigOf(e.envelope) !== r.sig)) return null;
       const fresh = { channel, nextSeq: 0, guard: new ReplayGuard(channel).toJSON() };
       // A moderator line it showed once (during a dispute) is shown again: the guard took it then. A
       // package only once the trade is secured (owner Q12): before that the only package receipts are held ones.
-      const o = await openChatMessage(e.envelope, { role: rec.role, me, participants: parts, state: fresh, modMayPost: true, payAllowed: secured });
+      const o = await openChatMessage(e.envelope, { role: rec.role, me, participants: parts, state: fresh, modMayPost: true, payAllowed: secured, tk });
       return o.message.from === r.from && o.message.seq === r.seq ? shownOf(o.message) : null;
     } catch {
       return null;
@@ -317,7 +364,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
    * when it stopped there with envelopes still unread. The session (the texts) is kept only once the
    * read went through (review I3): a read that throws leaves a first read to be done again.
    */
-  async function readAll(rec: ChatRecord, view: ChatApiView, parts: Participants): Promise<{ rec: ChatRecord; more: boolean }> {
+  async function readAll(rec: ChatRecord, view: ChatApiView, parts: Participants, tk: Uint8Array): Promise<{ rec: ChatRecord; more: boolean }> {
     const me = toIdentity(rec.identity);
     const channel = await chatChannel(rec.chat);
     let state: ChatState = rec.state ?? newChatState(channel);
@@ -346,7 +393,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         const receipt = known.get(e.id);
         if (receipt) {
           if (receipt.refused !== true && !shown.has(e.id)) {
-            const again = await reopen(rec, me, parts, e, receipt, channel, secured);
+            const again = await reopen(rec, me, parts, e, receipt, channel, secured, tk);
             if (again !== null) shown.set(e.id, again);
           }
           if (past && !held && cursor !== e.id) {
@@ -361,7 +408,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         let advance = true;
         try {
           if (!ROLES_SET.has(e.senderRole)) throw new ChatError('bad-message', 'unknown sender');
-          const args = { role: rec.role, me, participants: parts, state, modMayPost: view.disputeOpen };
+          const args = { role: rec.role, me, participants: parts, state, modMayPost: view.disputeOpen, tk };
           let r: Awaited<ReturnType<typeof openChatMessage>>;
           let withhold = false;
           try {
@@ -397,10 +444,10 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           // before it (the guard did not move for it). A package before the trade is secured was
           // held above. Nothing else can become valid later.
           if (err instanceof ChatError && err.code === 'mod-not-allowed') advance = false;
-          else if (err instanceof ChatError && err.code === 'bad-message') {
+          else if ((err instanceof ChatError && err.code === 'bad-message') || isV1(e.envelope)) {
             // Decided for good (pay-details review M1): a receipt marks it refused so a re-read never
             // opens it again, and the cursor passes it. The guard did not move: the sender may reuse the seq.
-            const h = headerOf(e.envelope, channel);
+            const h = headerOf(e.envelope, channel) ?? headerV1(e.envelope, channel);
             if (h !== null) {
               const m: StoredChatReceipt = { id: e.id, from: h.from, seq: h.seq, sig: sigOf(e.envelope), at: typeof e.at === 'string' ? e.at : null, gapBefore: false, refused: true };
               receipts.push(m);
@@ -423,7 +470,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     return { rec, more: unread };
   }
 
-  async function syncLocked(chat: string): Promise<{ snap: ChatSnapshot; rec: ChatRecord | null; parts: Participants | null; view: ChatApiView }> {
+  async function syncLocked(chat: string): Promise<{ snap: ChatSnapshot; rec: ChatRecord | null; parts: Participants | null; view: ChatApiView; tk?: Uint8Array }> {
     const view = await d.api.getChat(chat);
     const rec0 = await ensureIdentity(chat, view);
     if (!rec0) return { snap: snapshot(null, view, 'other-device'), rec: null, parts: null, view };
@@ -448,9 +495,17 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       throw e;
     }
     await d.store.save(rec);
-    const read = await readAll(rec, view, parts);
+    let tk: Uint8Array;
+    try {
+      tk = await chatKey(rec, parts);
+    } catch (e) {
+      // Design section 9: a key record that does not check out, or a copy that does not match its tkh.
+      if (e instanceof ProtocolError || e instanceof TypeError) return { snap: snapshot(rec, view, 'failed', 'security'), rec: null, parts: null, view };
+      throw e;
+    }
+    const read = await readAll(rec, view, parts, tk);
     rec = read.rec;
-    return { snap: snapshot(rec, view, 'ready', null, read.more), rec, parts, view };
+    return { snap: snapshot(rec, view, 'ready', null, read.more), rec, parts, view, tk };
   }
 
   /** Runs `fn`; a 410 `chat-purged` from the API on the way erases the chat here before it is rethrown. */
@@ -468,15 +523,15 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
    * refused with 'not-ready' while the API's view says the trade is not secured (owner Q12): the
    * page's closed button is not the only gate (pay-details review M2), and no seq is spent.
    */
-  function post(chat: string, make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>) => Promise<{ envelope: Envelope; state: ChatState }>, secured = false): Promise<ChatSnapshot> {
+  function post(chat: string, make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>) => Promise<{ envelope: Envelope | ChatEnvelopeV2; state: ChatState }>, secured = false): Promise<ChatSnapshot> {
     return serial(chat, () => purging(chat, async () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const s = await syncLocked(chat);
-        if (s.snap.phase !== 'ready' || !s.rec || !s.parts) throw new ChatSendFailed('not-ready');
+        if (s.snap.phase !== 'ready' || !s.rec || !s.parts || !s.tk) throw new ChatSendFailed('not-ready');
         if (secured && s.view.tradeSecuredAt === null) throw new ChatSendFailed('not-ready');
         let sealed;
         try {
-          sealed = await make({ role: s.rec.role, me: toIdentity(s.rec.identity), participants: s.parts, state: s.rec.state ?? newChatState(await chatChannel(chat)) });
+          sealed = await make({ role: s.rec.role, me: toIdentity(s.rec.identity), participants: s.parts, state: s.rec.state ?? newChatState(await chatChannel(chat)), tk: s.tk });
         } catch (e) {
           if (e instanceof ChatError && (e.code === 'bad-text' || e.code === 'too-large')) throw new ChatSendFailed(e.code);
           if (e instanceof PayDetailsError) throw new ChatSendFailed('bad-details', e);

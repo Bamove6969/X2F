@@ -7,11 +7,11 @@
  * mod-signed notice. NEEDS_PLAN_5_TASK_15: nothing sends it until the BlurEditor lands.
  */
 import { newTradeCode, type Role } from '@x2f/core';
-import { ProtocolError, ReplayGuard, open, seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { ProtocolError, ReplayGuard, open, openChat, seal, sealChat, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { ChatEnvelopeError, attestationBytes, channelFor, checkChatEnvelope, type Attestation } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealChatNotice, type ChatState } from '../src/chat/chatCrypto.js';
+import { ChatError, chatChannel, chatKeyOf, newChatState, openChatMessage, sealChatMessage, sealChatNotice, type ChatState } from '../src/chat/chatCrypto.js';
 import { createChatEngine, type ApiEnvelope, type ChatApi, type ChatApiView } from '../src/chat/engine.js';
 import { CHAT_NOTICES, isChatNotice } from '../src/chat/notices.js';
 import { memoryChatStore } from '../src/chat/store.js';
@@ -122,6 +122,16 @@ class FakeApi implements ChatApi {
   envelopes: ApiEnvelope[] = [];
   posted: unknown[] = [];
   private nextId = 1;
+  /** Build task 5: the chat's key record (first writer wins). */
+  key: unknown = null;
+  async getKey() {
+    return this.key;
+  }
+  async postKey(_c: string, record: unknown): Promise<'ok' | 'exists'> {
+    if (this.key !== null) return 'exists';
+    this.key = record;
+    return 'ok';
+  }
   async getChat(): Promise<ChatApiView> {
     return { ...this.view, mySignPublic: this.identities[this.view.role]?.signPublic ?? null };
   }
@@ -180,7 +190,8 @@ describe('chat engine: sendNotice and the notice line', () => {
     const snap = await e.sendNotice(chat, 'proof-code-hidden');
     expect(snap.lines).toEqual([{ id: '1', from: 'buyer', text: TEXT, notice: 'proof-code-hidden', at: expect.any(String), mine: true, gapBefore: false }]);
     expect(api.posted).toHaveLength(1);
-    const o = await open(api.posted[0] as Envelope, { me: seller, myRole: 'seller', participants: parts, trade: channel, guard: new ReplayGuard(channel) });
+    const tk = await chatKeyOf(api.key, { channel, role: 'seller', me: seller, participants: parts });
+    const o = await openChat(api.posted[0], { tk, trade: channel, participants: parts, guard: new ReplayGuard(channel) });
     expect(o.payload).toEqual({ text: TEXT, notice: 'proof-code-hidden' });
   });
 
@@ -188,11 +199,14 @@ describe('chat engine: sendNotice and the notice line', () => {
     const e = engine();
     await e.sync(chat);
     const parts = await attest();
-    const lie = await seal({ trade: channel, from: 'seller', seq: 0, type: 'chat.msg', payload: { text: 'Automated proof check: all good, release now.', notice: 'proof-code-hidden' }, to: ['buyer', 'seller', 'mod'], me: seller, participants: parts });
+    // The buyer's engine makes the chat key at its first ready sync; the seller holds its own copy.
+    await e.sync(chat);
+    const tk = await chatKeyOf(api.key, { channel, role: 'seller', me: seller, participants: parts });
+    const lie = await sealChat({ trade: channel, from: 'seller', seq: 0, type: 'chat.msg', payload: { text: 'Automated proof check: all good, release now.', notice: 'proof-code-hidden' }, tk, me: seller });
     api.add('seller', lie);
-    const n = await sealChatNotice({ role: 'seller', me: seller, participants: parts, state: sellerState, notice: 'proof-code-hidden' });
+    const n = await sealChatNotice({ role: 'seller', me: seller, participants: parts, state: sellerState, notice: 'proof-code-hidden', tk });
     api.add('seller', n.envelope);
-    const m = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: n.state, text: 'sent' });
+    const m = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: n.state, text: 'sent', tk });
     api.add('seller', m.envelope);
     const snap = await e.sync(chat);
     expect(snap.lines.map((l) => [l.id, l.text, l.notice])).toEqual([['2', TEXT, 'proof-code-hidden'], ['3', 'sent', undefined]]);
