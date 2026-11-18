@@ -70,7 +70,7 @@ export async function recordText(q: Queryable, accountId: string, now: Date, opt
     `Member since: ${reviewMonth(f.createdAt)}`,
     `Issued: ${now.toISOString().slice(0, 10)}`,
     `Completed trades: ${thousands(s.completedTrades)}`,
-    s.positivePct === null ? 'Positive: no rated reviews yet' : `Positive: ${s.positivePct}% of ${thousands(f.ratedReviews)} rated reviews`,
+    s.positivePct === null ? 'Positive: no rated reviews yet' : `Positive: ${s.positivePct}% of ${thousands(f.ratedReviews)} rated ${f.ratedReviews === 1 ? 'review' : 'reviews'}`,
     `Reviews: ${thousands(total)}`,
   ];
   for (const k of keys) lines.push(`PGP fingerprint: ${k.fingerprint.toUpperCase()}`);
