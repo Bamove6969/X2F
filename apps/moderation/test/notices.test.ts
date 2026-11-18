@@ -60,7 +60,10 @@ function fakeLink(items: () => ChatNoticeCandidate[], status = 201): Link & { re
   } as unknown as Link & { reports: unknown[] };
 }
 
-const run = (link: Link, reasons: string[] = [], at = NOW) => noticePass({ link, db, keystoreKey, now: () => at, log: (e) => reasons.push(e.reason) });
+/** The pass reads the API's refusal code too (`report`); a fake with only `postReport` answers without one. */
+const withReport = (link: Link): Link =>
+  (typeof (link as Partial<Link>).report === 'function' ? link : { ...link, report: async (r: unknown) => ({ status: await link.postReport(r), error: null }) }) as Link;
+const run = (link: Link, reasons: string[] = [], at = NOW) => noticePass({ link: withReport(link), db, keystoreKey, now: () => at, log: (e) => reasons.push(e.reason) });
 const cand = (c: { chat: string; trade: string }, o: Partial<ChatNoticeCandidate> = {}): ChatNoticeCandidate => ({
   chat: c.chat, trade: c.trade, disputeSeq: 1, openedAt: new Date(NOW.getTime() - 1000).toISOString(), openedBy: 'system', ...o,
 });
@@ -205,5 +208,34 @@ describe('the dispute notice pass (T2)', () => {
     await run(link);
     expect(reports.map((r) => r.kind)).toEqual(['chat-dispute-notice', 'chat-notice-stopped', 'chat-notice-stopped']);
   });
+
+  // Re-review 2 m1: the API's internal listener answers 401 for its transport check (apps/api
+  // internal/routes.ts verify): `stale` (the two clocks apart), `replay`, `bad-signature` (say during
+  // a key rotation); 408 is a timeout. Each is transient: the same notice is posted again, never stopped.
+  for (const [status, error] of [[401, 'stale'], [401, 'replay'], [401, 'bad-signature'], [408, null]] as const) {
+    it(`re-review 2 m1: a ${status}${error ? ` ${error}` : ''} is retried with the same notice, never stopped`, async () => {
+      const c = await attested();
+      const reports: Array<{ kind: string }> = [];
+      const answers = [{ status, error }, { status: 201, error: null }];
+      const link = {
+        pullChatNotices: async () => [cand(c)],
+        postReport: async () => {
+          throw new Error('the pass reads the refusal code (report)');
+        },
+        report: async (r: { kind: string }) => {
+          reports.push(r);
+          return answers.shift() ?? { status: 201, error: null };
+        },
+      } as unknown as Link;
+      const reasons: string[] = [];
+      expect(await run(link, reasons)).toEqual([]);
+      expect(reasons).toContain(`chat-notice-report-refused-${status}${error ? `-${error}` : ''}`);
+      expect(await run(link)).toEqual([c.chat]);
+      expect(reports.map((r) => r.kind)).toEqual(['chat-dispute-notice', 'chat-dispute-notice']);
+      expect(reports[1]).toEqual(reports[0]);
+      const { rows } = await db.query<{ refused_status: number | null }>('select refused_status from mod_chat_notices where chat = $1', [c.chat]);
+      expect(rows[0]!.refused_status).toBeNull();
+    });
+  }
 });
 
