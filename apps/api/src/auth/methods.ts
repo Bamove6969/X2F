@@ -407,7 +407,10 @@ async function removable(db: Queryable, config: Config, accountId: string, type:
   // Staff and the owner have no reset (R2): only keys a login challenge can go to count. A vendor's
   // G13 check below counts them too (security review 8 Nov M3: an expired key logs no one in).
   const vendor = acct.rows[0]!.account_type === 'vendor';
-  const usable = kind === 'trader' && !vendor ? null : await usablePgpIds(db, config, accountId, now);
+  // The keys usable now, for the G13 and password-alone checks (a trader's last-login check counts
+  // every stored key: it has a reset).
+  const usableNow = await usablePgpIds(db, config, accountId, now);
+  const usable = kind === 'trader' && !vendor ? null : usableNow;
   const counts = await countsOf(db, accountId);
   const after: Counts = { ...counts, usablePgp: usable?.size ?? counts.pgp };
   for (const [k, n] of Object.entries(found.less) as Array<[keyof Counts, number]>) after[k] -= n;
@@ -422,9 +425,10 @@ async function removable(db: Queryable, config: Config, accountId: string, type:
   const { rows: totp } = await db.query(EXISTS.totp, [accountId]);
   if (partnerNeededBy(found.type, totp.length > 0 ? ['totp'] : []) !== null) throw new ApiError(409, 'password-has-totp');
   // Owner, 16 Nov 2026: a password does not stand alone. What is left may not be a password with
-  // neither TOTP nor a PGP key, passkey or security key (409 `password-alone`).
+  // neither TOTP nor a PGP key, passkey or security key (409 `password-alone`). Only a PGP key
+  // usable now counts, as for G13 (lead call 18 Nov: an expired or revoked key logs no one in).
   const left: MethodType[] = [];
-  if (after.pgp > 0) left.push('pgp');
+  if (usableNow.size - (found.type === 'pgp' && usableNow.has(id) ? 1 : 0) > 0) left.push('pgp');
   if (after.passkeys > 0) left.push('passkey');
   if (after.keys > 0) left.push('security-key');
   if (after.password > 0) left.push('password');

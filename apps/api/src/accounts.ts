@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { checkLoginName, checkNames, lookAlikeKey, type AccountKind } from '@x2f/accounts';
+import { checkLoginName, checkNames, staffNameKey, type AccountKind } from '@x2f/accounts';
 import type { Deps } from './app.js';
 import { subkey, type Config } from './config.js';
 import type { Queryable } from './db/pool.js';
@@ -31,9 +31,10 @@ export async function assertNewNames(db: Queryable, displayName: unknown, loginN
     if (r.field === 'displayName') throw new ApiError(400, r.reason === 'reserved' ? 'display-name-reserved' : 'display-name-invalid');
     throw new ApiError(400, r.reason === 'same' ? 'names-same' : 'login-name-invalid');
   }
-  const folded = lookAlikeKey(r.display.key);
+  // F4, review of second-signup-r3 M2 (ported 18 Nov): punctuation is ignored too (staffNameKey).
+  const folded = staffNameKey(r.display.key);
   const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind in ('staff', 'owner')");
-  if (rows.some((s) => lookAlikeKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
+  if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
   return { displayName: r.display.name, displayKey: r.display.key, loginKey: r.login.key };
 }
 

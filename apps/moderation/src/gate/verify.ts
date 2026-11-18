@@ -111,7 +111,7 @@ export async function verifyTap(g: GateState, tap: StoredTap, ctx: GateContext):
       expectedRPID: ctx.rp.rpId,
       expectedType: 'webauthn.get',
       credential: { id: cred.credentialId, publicKey: new Uint8Array(Buffer.from(cred.publicKey, 'base64url')), counter: 0 },
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
     if (!v.verified) return { ok: false, reason: 'bad-signature' };
     counter = v.authenticationInfo.newCounter;
