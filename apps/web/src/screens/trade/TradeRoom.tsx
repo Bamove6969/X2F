@@ -108,6 +108,7 @@ import { Sheet } from '../../ui/Sheet.js';
 import { useTradeChat } from './paySeams.js';
 import { SettleWait } from './settleWait.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
+import { SelfDestructed, SelfDestructNotice, useSelfDestruct } from './SelfDestruct.js';
 import { TradeGlance } from './TradeGlance.js';
 import { CounterpartyCard } from './TradeTimeline.js';
 
@@ -380,6 +381,15 @@ function ReadyRoom({ code, ownCode, view: apiView, refresh, navState, hash }: { 
   // The dispute room lays out its own chat (follow-up); a broken trade shows only its refusal.
   const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} methodId={view.methodId} /> : null;
   const chatPane = chatPaneFor(layout, Chat !== null, view, broken);
+  // Plan 7 Task 3: the self-destruct date, and this device's copies going once it has passed.
+  const { gone } = useSelfDestruct(ownCode, view, clock, broken);
+  if (gone && !broken) {
+    return (
+      <main data-screen="trade" data-trade-state="self-destructed" data-role={view.role}>
+        <SelfDestructed />
+      </main>
+    );
+  }
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role}>
       <Panes
@@ -399,6 +409,7 @@ function ReadyRoom({ code, ownCode, view: apiView, refresh, navState, hash }: { 
             {/* D-005: File appeal on the trade's page while the ruling can still be appealed; inside a
                 disputed trade the ruling card has the appeal form itself. DESIGNER-REVIEW: placement. */}
             {!broken && view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
+            {broken ? null : <SelfDestructNotice view={view} />}
           </>
         }
         side={

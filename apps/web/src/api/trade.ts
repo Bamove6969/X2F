@@ -144,6 +144,11 @@ export interface TradeView {
    */
   sellerNudgedAt: string | null;
   nextDeadline: string | null;
+  /**
+   * Plan 7 Task 3: when the trade self-destructs on the server (30 days after it ended, or 90 days
+   * after its last dispute closed); null while it has no date. Absent from an older API.
+   */
+  deleteAt?: string | null;
   serverNow: string;
 }
 
@@ -183,6 +188,9 @@ export function parseTradeView(raw: unknown): TradeView {
   }
   if (v.funding !== null && v.funding !== undefined) amount((v.funding as Record<string, unknown>).sellerFundsAtomic, 'funding.sellerFundsAtomic');
   if (v.fee !== undefined && v.fee !== null) amount((v.fee as Record<string, unknown>).atomic, 'fee.atomic');
+  if (v.deleteAt !== undefined && v.deleteAt !== null && (typeof v.deleteAt !== 'string' || !Number.isFinite(Date.parse(v.deleteAt)))) {
+    throw new TradeShapeError('deleteAt');
+  }
   return raw as TradeView;
 }
 

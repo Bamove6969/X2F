@@ -12,6 +12,9 @@ export type AlertKind =
   | 'sessions-ended'
   | 'wallet-added'
   | 'wallet-removed'
+  // Review of wip/third-trade-wallet 17 Nov (b) M1: a one-time wallet given back when its trade ended
+  // in setup. Detail: app, label, addressEnd.
+  | 'wallet-restored'
   | 'device-key-added'
   // Task 16: new-device approval and "One device at a time".
   | 'login-approval'

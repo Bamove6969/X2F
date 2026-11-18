@@ -93,6 +93,13 @@ export interface TradeView {
   releaseClaimedAt: string | null;
   pausedAt: string | null;
   closedAt: string | null;
+  /**
+   * Plan 7 Task 3: when the trade self-destructs (retention/tradePurge.ts `tradeSelfDestruct`, the
+   * @x2f/trade rule): 30 days after it closed, or 90 days after its last dispute closed; null while
+   * it has no date (open, a dispute or appeal open, a cancel waiting for Confirm cancel). The same
+   * for both traders. The device deletes its own copies then too.
+   */
+  deleteAt: string | null;
   /** The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29); null until then. */
   cancelConfirmedAt: string | null;
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
@@ -131,6 +138,8 @@ export interface ViewContext {
   paymentInstructions?: string;
   /** See `TradeView.appealUntil`. */
   appealUntil?: Date | null;
+  /** See `TradeView.deleteAt`; absent → null. */
+  deleteAt?: Date | null;
 }
 
 /**
@@ -191,6 +200,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     releaseClaimedAt: t.state === 'settling' ? iso(t.releaseClaimedAt) : null,
     pausedAt: iso(t.pausedAt),
     closedAt: iso(t.closedAt),
+    deleteAt: iso(ctx.deleteAt ?? null),
     cancelConfirmedAt: iso(t.cancelConfirmedAt),
     cancelConfirmableAt: iso(t.cancelConfirmableAt),
     sellerNudgedAt: iso(t.sellerNudgedAt),

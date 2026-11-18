@@ -54,7 +54,8 @@ export function changeWords(c: HoldChangeSummary, names: ReadonlyMap<string, str
       return { title: 'One device at a time', before: c.on === true ? 'Off' : 'On', after: c.on === true ? 'On' : 'Off' };
     case 'wallets': {
       const n = c.wallets ?? c.addressEnds?.length ?? 0;
-      const ends = (c.addressEnds ?? []).map((e) => `…${e}`).join(', ');
+      // Owner note #6 (review M4): a staged wallet for one trade only says so. COPY-UNSIGNED
+      const ends = (c.addressEnds ?? []).map((e, i) => `…${e}${c.oneTime?.[i] === true ? ' (one trade only)' : ''}`).join(', ');
       return {
         title: 'Payout wallets',
         before: 'Your current wallets',

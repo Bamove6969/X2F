@@ -20,6 +20,7 @@ import { maxDevices } from '../auth/approval.js';
 import { changesWait, pendingSummary } from '../auth/holdChanges.js';
 import { revealDue } from '../auth/recovery.js';
 import { waits, type LoginStrength } from '../auth/strength.js';
+import { accountRating, type AccountRating } from '../auth/rating.js';
 import { gateChange, stagedReply, holdUntil, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
 import { personAccountId, requireSession, rotateSessionToken, type SessionLevel } from '../auth/sessions.js';
 
@@ -68,6 +69,13 @@ export interface AccountOverview {
    * pays the 1% fee). For a team member, the type of the account they work for.
    */
   accountType: 'trader' | 'vendor';
+  /**
+   * Owner demo note #6 (16 Nov 2026): the trader account's rating by its login methods
+   * (auth/rating.ts `accountRating`; three levels, owner 17 Nov): `high` lets the trade screen add a
+   * payout address there and then; `medium` and `weak` add them in Settings. Null for a team member (their own
+   * login is always two factors; adding wallets is the account owner's) and for staff and owner accounts.
+   */
+  securityRating: AccountRating | null;
   /**
    * Plan 2 Task 18: set when the caller is a team member (the overview is then of the account
    * they work for, with their own login methods); null for the account owner.
@@ -320,6 +328,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
       (row.terms_version === deps.config.termsVersion && (member === null || memberTerms === deps.config.termsVersion)),
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     accountType: row.account_type,
+    securityRating: member === null && row.kind === 'trader' ? accountRating(counts) : null,
     pendingChanges: member !== null ? null : await pendingSummary(deps.db, accountId),
     teamHold: member === null ? null : await teamHoldOf(deps.db, accountId),
     changesWait: member !== null ? false : await changesWait(req),

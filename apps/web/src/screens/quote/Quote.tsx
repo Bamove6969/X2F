@@ -21,6 +21,9 @@ import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
 import { useQuoteKept } from './quoteKept.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
+import { NewAddressSheet, type NewAddressResult } from './NewAddressSheet.js';
+import { NEW_ADDRESS, PAYOUT_QUESTION } from './addressCopy.js';
+import { matchesRecord } from '../walletRecord.js';
 import { WhatApplies } from './WhatApplies.js';
 import './quote.css';
 
@@ -167,11 +170,25 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const { signedIn, state, take } = useTake(offerId, refreshMarket);
   const session = useSession();
   const myName = session.status === 'signed-in' ? ((session.me as { displayName?: string }).displayName ?? null) : null;
+  // Owner demo note #6: the API's rating of the account (null when an older API sends none). Only a
+  // highly secure account (owner 17 Nov) is offered the new-address sheet; the API decides what an add does either way.
+  const rating = session.status === 'signed-in' ? (session.me.securityRating ?? null) : null;
+  const [addingAddress, setAddingAddress] = useState(false);
+  const [walletsTick, setWalletsTick] = useState(0);
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
   const { blockedPoster, closedError } = kept;
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
   const method = useLoad((signal) => fetchMethod(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
-  const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn]);
+  const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn, walletsTick]);
+  /** A new address from the sheet: the list is read again; one that works now is picked for this trade. */
+  const onNewAddress = (r: NewAddressResult) => {
+    setWalletsTick((t) => t + 1);
+    if (r.kind === 'usable') {
+      touched();
+      setPicked(r.wallet.id);
+      setAddingAddress(false);
+    }
+  };
 
   const o: QuoteOffer | null = offer.kind === 'ready' ? offer.value : null;
   const methodName = method.kind === 'ready' ? method.value.name : methodId;
@@ -183,8 +200,20 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const giftTermsOk = !giftCard || giftCardTermsComplete(giftRole, giftTicked);
   const marketNow = market.kind === 'ready' ? market.value : null;
   const q: Quote | null = o && market.kind === 'ready' ? quote({ offer: o, market: marketNow, text, unit }) : null;
-  const usable = wallets.kind === 'ready' ? wallets.value.filter((w) => w.usable) : [];
-  const pickedWallet = usable.find((w) => w.id === picked) ?? null;
+  // The addresses typed on this device (the new-address sheet, Settings → Your wallets or setup recorded
+  // them, walletRecord.ts; review 17 Nov M4: kept across a trip away and a reload). A listed wallet that
+  // names another address for a recorded id, or (re-verify N1) whose address, under any id, ends in the
+  // same last 6 characters as one typed here but differs, is not offered or picked, even as the default
+  // or from `?wallet=`. Still trusted, as on main: a wallet added on another device or before this
+  // check, and an address whose ending differs from every one typed here (the ending shown differs).
+  const swapped = (w: PickWallet) => !matchesRecord(w);
+  const listed = wallets.kind === 'ready' ? wallets.value.filter((w) => !swapped(w)) : [];
+  const addressSwapped = wallets.kind === 'ready' && wallets.value.some(swapped);
+  const usable = listed.filter((w) => w.usable);
+  // Owner, 17 Nov 2026 (overrides OD-11): until the person picks, the default wallet (the API's
+  // `isDefault`, the chosen one or the only usable saved wallet) is picked for them; they can pick
+  // another. A wallet in the URL (a trip away and back) wins. The take still names the wallet shown.
+  const pickedWallet = usable.find((w) => w.id === picked) ?? (picked === null ? (usable.find((w) => w.isDefault) ?? null) : null);
 
   // The amount, unit and wallet live in the URL, so any trip away (Terms, Add a wallet, setup)
   // comes back to the same quote.
@@ -402,15 +431,24 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
         {signedIn === true && wallets.kind === 'ready' ? (
           <WalletPicker
             legend={copy.walletLegend}
-            wallets={wallets.value}
+            wallets={listed}
             picked={pickedWallet?.id ?? null}
             onPick={(id) => {
               touched();
               setPicked(id);
             }}
             addHref={addWalletHref(false)}
+            question={copy.adSide === 'sell' ? PAYOUT_QUESTION.buy : PAYOUT_QUESTION.sell}
+            rating={rating}
+            {...(rating === 'high' ? { onAddNew: () => setAddingAddress(true) } : {})}
           />
         ) : null}
+        {addressSwapped ? (
+          <p className="x2f-quote__muted-sm" role="alert" data-part="new-address-swapped">
+            {NEW_ADDRESS.mismatch}
+          </p>
+        ) : null}
+        {addingAddress && rating === 'high' ? <NewAddressSheet onClose={() => setAddingAddress(false)} onDone={onNewAddress} /> : null}
         {signedIn === false ? (
           // Design review 8 Nov item 4: the wallet group is on the board before login too. There
           // is nothing to pick yet (the wallet comes with the account), so it says so; no radios.
