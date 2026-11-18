@@ -154,7 +154,8 @@ describe('the help library content', () => {
 
   it('every timer, limit and count an answer names matches the constant in the code, and no number goes unchecked', () => {
     for (const q of QUESTIONS) {
-      let rest = `${q.q}\n${q.a}`;
+      // Names that hold a digit but no number: X2F and the PGP key types.
+      let rest = `${q.q}\n${q.a}`.replace(/\b(?:X2F|Ed25519|Ed448)\b/g, 'NAME');
       for (const key of q.facts ?? []) {
         const words = FACTS[key];
         expect(words, `${q.id}: unknown fact ${key}`).toBeDefined();
