@@ -43,6 +43,14 @@ export const RECORD_EVERY_MS = 60_000;
 
 const ARMOR: openpgp.PartialConfig = { showComment: false, showVersion: false };
 
+/**
+ * The signature notation that names what X2F signed (review m3, lead call 18 Nov): separation from
+ * the login challenges' signatures (`purpose@x2f=login-challenge`, @x2f/accounts encryptChallenge)
+ * does not rest on the text alone. Not critical: a verifier that does not know it still verifies.
+ */
+export const RECORD_PURPOSE = 'reputation-record-v1';
+export const PURPOSE_NOTATION = 'purpose@x2f';
+
 const thousands = (n: number) => String(Math.trunc(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 /** The record's unsigned text (exported for the tests). */
@@ -88,7 +96,12 @@ export async function recordText(q: Queryable, accountId: string, now: Date, opt
 /** `text` as an OpenPGP cleartext message signed with X2F's official key. */
 export async function signRecord(signer: PgpSigner, text: string): Promise<string> {
   const message = await openpgp.createCleartextMessage({ text });
-  return openpgp.sign({ message, signingKeys: signer.key, config: ARMOR });
+  return openpgp.sign({
+    message,
+    signingKeys: signer.key,
+    signatureNotations: [{ name: PURPOSE_NOTATION, value: new TextEncoder().encode(RECORD_PURPOSE), humanReadable: true, critical: false }],
+    config: ARMOR,
+  });
 }
 
 export function recordRoutes(app: FastifyInstance): void {

@@ -15,7 +15,8 @@ import type { ImportedLine } from '../traders/tradedTotal.js';
  *
  * Behind the front door (owner, 8 Nov 2026: no free tours), so only a set-up trader (or a member of
  * one) reads it. `:name` is the PUBLIC display name, matched on `display_key`; a private login name
- * never matches. Only trader accounts have profiles (never staff, the owner or a member's login).
+ * never matches. Only live trader accounts have profiles (never staff, the owner, a member's login,
+ * or a disabled, banned or closed account: `traderIdByName`).
  * An unknown name, and a trader who blocked the viewer (traders/blocks.ts `hasBlocked`), get the
  * same 404 `not-found`; the blocker still opens the blocked person's profile.
  *
@@ -65,9 +66,16 @@ export interface TraderProfile {
   offers: number;
 }
 
-/** A trader account by its public display name, or null (unknown, or not a trader). */
+/**
+ * A live trader account by its public display name, or null: unknown, not a trader, or disabled or
+ * closed (a ban, a staff switch-off, the inactivity close: lead call 18 Nov on OQ1). Each answers
+ * exactly as an unknown name; the rows stay for moderators.
+ */
 export async function traderIdByName(q: Queryable, name: string): Promise<string | null> {
-  const { rows } = await q.query<{ id: string }>("select id from accounts where display_key = lower($1) and kind = 'trader'", [name]);
+  const { rows } = await q.query<{ id: string }>(
+    "select id from accounts where display_key = lower($1) and kind = 'trader' and disabled_at is null and closed_at is null",
+    [name],
+  );
   return rows[0]?.id ?? null;
 }
 

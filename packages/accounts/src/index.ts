@@ -29,6 +29,7 @@ export {
   STRICT_CONFIG,
   challengeText,
   encryptChallenge,
+  CHALLENGE_PURPOSE_NOTATION,
   inspectPublicKey,
   pastedRecipientStillValid,
 } from './pgp.js';

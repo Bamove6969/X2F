@@ -5,7 +5,8 @@ import type { FastifyInstance } from 'fastify';
 import * as openpgp from 'openpgp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { RECORD_HEADER } from '../src/reputation/record.js';
+import { PURPOSE_NOTATION, RECORD_HEADER, RECORD_PURPOSE } from '../src/reputation/record.js';
+import { traderProfile } from '../src/reputation/profile.js';
 import { insertReview } from '../src/reviews/store.js';
 import { traderSummaries } from '../src/traders/summary.js';
 import { makeVendor } from './helpers/accounts.js';
@@ -113,6 +114,54 @@ describe('GET /v1/traders/:name', () => {
   it('counts the live offers anyone may see', async () => {
     const p = await trader();
     const viewer = await trader();
+    await postOffer(p);
+    expect((await profile(viewer, p.displayName)).json()).toMatchObject({ offers: 1 });
+  });
+
+  // Review I2 (owner 1 Nov: during a recovery-code hold the account is offline to everyone).
+  it('during a recovery-code hold others see no presence and no offers, the account still sees its own, and nothing says why', async () => {
+    const p = await trader();
+    const viewer = await trader();
+    await postOffer(p);
+    const before = (await profile(viewer, p.displayName)).json() as { online: boolean; lastSeenAt: string | null };
+    expect(before.online).toBe(true);
+    expect(before.lastSeenAt).not.toBeNull();
+    await deps.db.query(
+      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'recovery-code', '{}')`,
+      [p.id, deps.clock(), new Date(deps.clock().getTime() + 86_400_000)],
+    );
+    const held = await profile(viewer, p.displayName);
+    expect(held.statusCode).toBe(200);
+    expect(held.json()).toMatchObject({ online: false, lastSeenAt: null, offers: 0 });
+    expect(held.body).not.toMatch(/hold|recovery|hidden/i);
+    // The account itself (as its own profile reads it) still sees its presence.
+    const own = await traderProfile(deps.db, p.id, p.id, deps.clock());
+    expect([own.online, own.lastSeenAt]).toEqual([true, before.lastSeenAt]);
+    expect(own.self).toBe(true);
+  });
+
+  // Lead call 18 Nov on OQ1: disabled (a ban, a staff switch-off) and closed accounts answer exactly as
+  // an unknown name, on the profile and on the public record.
+  it('a disabled, banned or closed account gets the same 404 as an unknown name, profile and public record', async () => {
+    const viewer = await trader();
+    const unknown = await profile(viewer, 'NoSuchTrader9');
+    const unknownRecord = await viewer.browser.get('/v1/traders/NoSuchTrader9/record');
+    for (const how of ['disabled', 'closed'] as const) {
+      const p = await trader();
+      expect((await p.browser.put('/v1/account/record/public', { on: true })).statusCode).toBe(200);
+      expect((await profile(viewer, p.displayName)).statusCode, how).toBe(200);
+      expect((await viewer.browser.get(`/v1/traders/${p.displayName}/record`)).statusCode, how).toBe(200);
+      if (how === 'disabled') await deps.db.query('update accounts set disabled_at = $2 where id = $1', [p.id, deps.clock()]);
+      else await deps.db.query(`update accounts set disabled_at = $2, closed_at = $2, closed_reason = 'inactive' where id = $1`, [p.id, deps.clock()]);
+      const gone = await profile(viewer, p.displayName);
+      expect([gone.statusCode, gone.body], how).toEqual([404, unknown.body]);
+      const goneRecord = await viewer.browser.get(`/v1/traders/${p.displayName}/record`);
+      expect([goneRecord.statusCode, goneRecord.body], how).toEqual([404, unknownRecord.body]);
+    }
+  });
+});
+
+async function postOffer(p: Who): Promise<void> {
     await makeVendor(deps, p.id);
     await deps.db.query(
       `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $3)`,
@@ -123,9 +172,7 @@ describe('GET /v1/traders/:name', () => {
       minFiatCents: '1000', maxFiatCents: '100000', minTrades: null, terms: 'Zelle only.',
     }));
     expect(posted.statusCode, posted.body).toBe(201);
-    expect((await profile(viewer, p.displayName)).json()).toMatchObject({ offers: 1 });
-  });
-});
+}
 
 describe('badge settings', () => {
   const settings = (who: Who) => who.browser.get('/v1/account/badges');
@@ -241,6 +288,37 @@ describe('the signed record (Task 12)', () => {
     setNow(new Date(deps.clock().getTime() + 61_000));
     const withPgp = await verified(((await seller.browser.get('/v1/account/record?pgp=1')).json() as { text: string }).text);
     expect(withPgp).toContain(`PGP fingerprint: ${fingerprint.toUpperCase()}`);
+  });
+
+  // Lead call 18 Nov (review m3): the record's signature names its purpose; challenges name theirs.
+  it('the record signature carries purpose@x2f=reputation-record-v1, not critical', async () => {
+    const me = await trader();
+    const armored = ((await me.browser.get('/v1/account/record')).json() as { text: string }).text;
+    const message = await openpgp.readCleartextMessage({ cleartextMessage: armored });
+    const [v] = (await openpgp.verify({ message, verificationKeys: await key(), expectSigned: true })).signatures;
+    const notes = (await v!.signature).packets[0]!.rawNotations.map((n) => ({ name: n.name, value: new TextDecoder().decode(n.value), critical: n.critical }));
+    // openpgp.js adds its own salt notation (salt@notations.openpgpjs.org); ours is the one X2F notation.
+    expect(notes.filter((n) => n.name.endsWith('@x2f'))).toEqual([{ name: PURPOSE_NOTATION, value: RECORD_PURPOSE, critical: false }]);
+    expect([PURPOSE_NOTATION, RECORD_PURPOSE]).toEqual(['purpose@x2f', 'reputation-record-v1']);
+  });
+
+  // Review I1: a block applies to the public record too, and so do the login-name and staff rules.
+  it('a public record answers a blocker, a login name and a staff name with the unknown-name 404', async () => {
+    const me = await trader();
+    const viewer = await trader();
+    const staff = await trader('staff');
+    expect((await me.browser.put('/v1/account/record/public', { on: true })).statusCode).toBe(200);
+    const unknown = await viewer.browser.get('/v1/traders/NoSuchTrader9/record');
+    expect((await viewer.browser.get(`/v1/traders/${me.displayName}/record`)).statusCode).toBe(200);
+    const byLogin = await viewer.browser.get(`/v1/traders/${me.loginName}/record`);
+    expect([byLogin.statusCode, byLogin.body]).toEqual([404, unknown.body]);
+    const byStaff = await viewer.browser.get(`/v1/traders/${staff.displayName}/record`);
+    expect([byStaff.statusCode, byStaff.body]).toEqual([404, unknown.body]);
+    expect((await me.browser.post('/v1/account/blocks', { displayName: viewer.displayName })).statusCode).toBe(204);
+    const blocked = await viewer.browser.get(`/v1/traders/${me.displayName}/record`);
+    expect([blocked.statusCode, blocked.body]).toEqual([404, unknown.body]);
+    // The blocker still reads the blocked person's profile (where Unblock is): the block is one way here.
+    expect((await profile(me, viewer.displayName)).statusCode).toBe(200);
   });
 
   it('the public copy is a 404 identical to an unknown name until shown, and never lists a fingerprint', async () => {
