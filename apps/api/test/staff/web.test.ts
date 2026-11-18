@@ -31,7 +31,8 @@ afterAll(async () => {
 
 describe('the staff web app on the staff origin', () => {
   it('serves index.html for app paths, with the staff CSP (no wasm, no relay or node proxy)', async () => {
-    for (const url of ['/', '/login', '/invite/abc_DEF-123', '/setup', '/overview/news']) {
+    // Plan 4 Task 17: the owner's Staff page is /staff (NAV_PATHS.staff), so a reload of it is the app page too.
+    for (const url of ['/', '/login', '/invite/abc_DEF-123', '/setup', '/overview/news', '/staff', '/staff?x=1', '/settings']) {
       const res = await app.inject({ method: 'GET', url });
       expect(res.statusCode, url).toBe(200);
       expect(res.body).toContain('X2F Staff');
@@ -59,6 +60,12 @@ describe('the staff web app on the staff origin', () => {
     // A percent-encoded leading dot is still a dot file (the URL parser leaves %2E followed by letters alone).
     expect((await app.inject({ method: 'GET', url: '/assets/%2Eenv.js' })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/%2Evite/manifest.json' })).statusCode).toBe(404);
+    // Only the page itself: anything under /staff is still the API's 404.
+    for (const url of ['/staff/', '/staff/v1', '/staff/anything', '/staff/v1/nothing-here', '/STAFF/v1/x']) {
+      const r = await app.inject({ method: 'GET', url });
+      expect(r.statusCode, url).toBe(404);
+      expect(r.body, url).not.toContain('X2F Staff');
+    }
     const api = await app.inject({ method: 'GET', url: '/staff/v1/nothing-here' });
     expect(api.statusCode).toBe(404);
     expect(api.body).not.toContain('X2F Staff');
