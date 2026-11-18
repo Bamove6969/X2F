@@ -214,3 +214,82 @@ Recommendation: (a). It needs no new API rule.
    Recommendation: (a) and (b).
 2. I2: retry only the chat post (engineering), or let the copy be replaced while the request
    stands (behaviour)? Recommendation: retry only the post.
+
+---
+
+# Round 2: wip/lead-proof-upload @03b12cdd (18 Nov 2026)
+
+New commits since round 1:
+- 8e071018: red tests.
+- 34597bc6: the fixes for I1, I2, m1 and m2, plus the lead's call to keep `away` only during a
+  dispute.
+- 1dfe1c01: a merge of main 708d821d (the retention promise).
+- 03b12cdd: a chat that is not ready on this device does not answer the receipt question.
+
+**Verdict: APPROVE.** I1 and I2 are fixed, the merge is clean and no test was weakened. Three new
+minors follow; none of them blocks.
+
+## Tests run (review worktree, detached at 03b12cdd, `nice -n 10`, outside the lock)
+
+- web: 16 files, **388/388 passed**. These are the round-1 set plus sessionForget.
+- api: 6 files, **167 passed and 1 todo**. These are proofs, proofUploadWire, disputes/staff,
+  blurCheck, schema and purge. The todo is the same NEEDS_P4_CHAT_MEMBERSHIP one as before.
+- auth-client flows.test: **15/15 passed**.
+- `tsc --noEmit`: apps/web and apps/api both clean.
+- Not run: the full `npm run check`, Playwright, staff-web and moderation.
+
+## Round-1 findings
+
+- **I1 fixed.** `snapshot` now walks the receipts in server order. A withheld `away` receipt's
+  `gapBefore` carries onto that sender's next shown line, even when that line arrives in a later
+  sync. Refused receipts stay out of the gap count, as before. New tests cover the dropped-line case
+  and the later-sync case.
+- **Lead call (option a).** The `away` branch now also requires `view.disputeOpen`. Outside a
+  dispute, a trader's moderator-only envelope is skipped as before, so the next line shows a gap.
+  Tests cover both sides of the rule.
+- **I2 fixed.**
+  - `sendUnblurred` now uploads once, then posts the key with a bounded backoff (four tries, about
+    13 s). After that it throws `UnblurredPostFailed`, whose `retry` posts the same payload again and
+    nothing else.
+  - The kept payload holds the key and the picture's facts, never its pixels. It lives in memory
+    only, and `forgetLocalSession` clears it.
+  - "Sent", the system card and the chip now need one of two things: this tab saw the post succeed,
+    or the chat holds this side's own `away` receipt from at or after the request
+    (`modOnlySentAt`: server times only, own side only).
+  - `sentAt` alone shows "checking", then "lost" (COPY-UNSIGNED wording, flagged as an owner
+    question). A chat that is not ready here rejects, so the card claims neither.
+- **m1 fixed.** `finishProof` zeroes the copy, the PNG it drops for JPEG, the uncleaned bytes and a
+  refused cleaned result. `sendProof` and `sendUnblurred` zero `fin.bytes` in `finally`.
+- **m2 fixed.** The chip and the new strings carry COPY-UNSIGNED.
+
+## The merge 1dfe1c01
+
+- RETENTION_JOBS keeps `purgeProofsJob` and puts main's `purgeTradesJob` after it; purge.test
+  agrees.
+- `trade_proofs.trade_code` is `on delete cascade`, so deleting a whole trade can neither fail nor
+  leave proofs behind. `proof_id_tags` (the one-time ids) is not tied to the trade, which is
+  correct.
+- schema.test lists 580, 585 and 701 in order.
+- The staff.test, purge.test and dispute-tripwires changes against main are the stack's and this
+  branch's own. Main's retention tripwires were retired on main.
+
+## No test weakened
+
+- The sendUnblurred tests removed ("sentAt alone shows Sent", "the card and chip from sentAt") are
+  replaced by tests of the stricter I2 rule.
+- The retention tripwires were removed on main when that work landed.
+- No skip, only or todo was added.
+
+## New minors (not blocking)
+
+- **n1:** the dispute-only `away` rule is applied when the envelope is read, not by when it was
+  posted. A moderator-only envelope sent before the dispute opened, and first read by the
+  counterparty's device after it opened, becomes `away`: no line and no gap. A device that read it
+  earlier showed a gap. Consider also requiring the envelope's `at` to be at or after the dispute's
+  opening, or accept this as residual.
+- **n2:** `chatUnblurredReceipts` checks `phase === 'ready'` but not `more`. If a sync stops at its
+  page cap before reaching the copy's receipt, the card can say "lost" until a later sync. Reject
+  while `more` is true, the same as not-ready.
+- **n3:** when the receipt question fails, `askUnblurredReceipt` stores nothing and nothing emits,
+  so the card stays "checking" until something else re-renders it. A retry on the dispute poll
+  would end that.
