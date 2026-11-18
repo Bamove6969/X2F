@@ -157,6 +157,13 @@ export interface EscrowStatus {
    * TradeFund sets its `funded` mark for good only from this (a 0-conf tx can be dropped).
    */
   confirmedAtomic: bigint | null;
+  /**
+   * Plan 4 Task 12 (A6), seller only: where and how much a `seller-sends-xmr` ruling's payment
+   * goes, from the moderator-attested terms this device verified in this run (`buyerPayout` and
+   * `deal.takeAmountAtomic`), never an API field. Null for the buyer and until an attestation
+   * verified (another device, or a record already forgotten after the close). Absent: null.
+   */
+  restitution?: { address: string; amountAtomic: bigint } | null;
 }
 
 export type EscrowAction =
@@ -403,6 +410,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         })(),
         receivedAtomic: this.reading?.balance ?? null,
         confirmedAtomic: this.reading?.confirmed ?? null,
+        restitution:
+          this.attested !== null && this.rec?.role === 'seller'
+            ? { address: this.attested.buyerPayout, amountAtomic: BigInt(this.attested.deal.takeAmountAtomic) }
+            : null,
       };
       const j = JSON.stringify(s, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
       if (j !== this.last) {

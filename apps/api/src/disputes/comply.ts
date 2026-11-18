@@ -37,7 +37,8 @@ import { noTxProofCheck, TX_HASH, TxProofUnavailable, type TxProofCheck, type Tx
  *   proof per dispute: another while one waits is 409 `proof-pending`.
  * - A6, the escalation (`runComplyLapses`, on the dispute timer): once `complyBy` passes with no proof
  *   accepted or waiting, the dispute is marked (`disputes.comply_lapsed_at`), logged
- *   `dispute.comply-lapsed` and the owner is alerted (`dispute-comply-lapsed`); the restitution lien
+ *   `dispute.comply-lapsed` and the owner is alerted (`dispute-comply-lapsed`, in-app and pushed to
+ *   the phone by the dispute timer); the restitution lien
  *   stays in force, and the case is listed in the staff queue for senior moderators and the owner,
  *   who decide the suspension (Task 27's ban stages: NEEDS_BANS_MERGE, not on this branch; a
  *   moderator's freeze for an ignored ruling is staffRoutes.ts `freezeAllowed`). The buyer can still

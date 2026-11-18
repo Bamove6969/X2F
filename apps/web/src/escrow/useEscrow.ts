@@ -107,6 +107,8 @@ export interface UseEscrow {
   paidRecorded: boolean;
   /** `EscrowStatus.intentKind`: the settle the user tapped on this device and that is saved, or null. */
   intentKind: SettleKind | null;
+  /** `EscrowStatus.restitution`: the seller's payment a ruling orders, from the attested terms only (absent: none). */
+  restitution?: { address: string; amountAtomic: bigint } | null;
   release(): Promise<void>;
   buildRefund(): Promise<void>;
   buyerCancel(): Promise<void>;
@@ -156,6 +158,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     confirmedAtomic: status.confirmedAtomic,
     paidRecorded: status.paidRecorded,
     intentKind: status.intentKind,
+    restitution: status.restitution ?? null,
     release: () => act({ type: 'release' }),
     buildRefund: () => act({ type: 'build-refund' }),
     buyerCancel: () => act({ type: 'buyer-cancel' }),
