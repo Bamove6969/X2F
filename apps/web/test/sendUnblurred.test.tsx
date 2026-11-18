@@ -53,7 +53,7 @@ describe('SendUnblurred', () => {
 
   it('pick, strip, send: the picture goes to the send once, then "Sent to sarah.v at" and no picker', async () => {
     const prepare = vi.fn(async () => picture());
-    const send = vi.fn(async () => ({ proofId: 'X' }));
+    const send = vi.fn(async (_a: { code: string; picture: UnblurredPicture }) => ({ proofId: 'X' }));
     const onSent = vi.fn();
     const r = render(<SendUnblurred code={CODE} request={{ username: 'sarah.v', at: ASKED, sentAt: null }} counterparty="satoshi_ghost" prepare={prepare} send={send} onSent={onSent} now={() => new Date(SENT)} />);
     pickIn(r.host);

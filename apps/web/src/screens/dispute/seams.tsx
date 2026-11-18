@@ -11,6 +11,8 @@
 // - Proofs already in the trade (Task 23's proof slot, then Plan 5): the "Zelle screenshot · Already
 //   in this trade, blurred" card and the "Your Zelle screenshot" evidence chip. None until then.
 import type { ReactNode } from 'react';
+import { proofUploadOn } from '../../proof/flag.js';
+import { SendUnblurred, UNBLURRED_SENT_CARD } from '../proof/SendUnblurred.js';
 import type { DisputeTrade, DisputeView } from './api.js';
 import { clockTime, reasonLabel } from './rules.js';
 
@@ -48,6 +50,10 @@ export function systemCardsFor(trade: DisputeTrade, d: DisputeView): { at: strin
           : `${trade.counterparty} opened a dispute`,
   });
   if (d.moderator !== null) cards.push({ at: d.moderator.joinedAt, text: `Moderator ${d.moderator.name} joined this dispute` });
+  // Plan 5 Task 15: the board's line, from the server's record of the copy (proofRequest.sentAt),
+  // which only the side that was asked ever gets.
+  const sentAt = d.proofRequest?.sentAt ?? null;
+  if (sentAt !== null) cards.push({ at: sentAt, text: UNBLURRED_SENT_CARD });
   return cards;
 }
 
@@ -81,9 +87,15 @@ export function EvidenceUpload(): ReactNode {
   );
 }
 
-/** NEEDS_PLAN_5 (Task 15 SendUnblurred) with Plan 4's proof request record: nothing until both exist. */
-export function UnblurredRequest(_p: { trade: DisputeTrade; dispute: DisputeView }): ReactNode {
-  return null;
+/**
+ * Plan 5 Task 15: SendUnblurred once the open dispute's moderator asked THIS trader (the dispute
+ * view's `proofRequest`, which the other side never gets), behind the proof-upload flag like the
+ * rest of the pipeline. The dispute screen's poll (and the live hint) brings the server's `sentAt`.
+ */
+export function UnblurredRequest({ trade, dispute }: { trade: DisputeTrade; dispute: DisputeView }): ReactNode {
+  const request = dispute.proofRequest ?? null;
+  if (!proofUploadOn() || request === null || dispute.status === 'closed') return null;
+  return <SendUnblurred code={trade.code} request={request} counterparty={trade.counterparty} />;
 }
 
 function UploadIcon() {

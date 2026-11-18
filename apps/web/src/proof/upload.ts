@@ -38,6 +38,7 @@ import {
   type ProofAttachedPayload,
   type ProofKind,
   type ProofMime,
+  type ProofUnblurredPayload,
   type Region,
   PROOF_MAX_CIPHERTEXT,
   PROOF_MAX_INPUT_BYTES,
@@ -115,17 +116,17 @@ export interface ProofImageDeps {
   ocr(rgba: Uint8ClampedArray, width: number, height: number): Promise<OcrWord[] | null>;
 }
 
-export async function prepareProof(file: Blob, keep: Keep, deps: ProofImageDeps): Promise<PreparedProof> {
+/**
+ * The picked file, read ONCE (review M3) and decoded upright: the header check, the photo time and
+ * the decode all use these bytes, so a file that changes on disk between reads cannot slip past the
+ * check, and the decoder is told the type the check found, not the file's own. The bytes are the
+ * original file, metadata included: they are zeroed on every way out (review M1). The Blob made from
+ * them is the browser's copy, like the File itself, and goes with it to GC.
+ */
+async function readPicked(file: Blob, deps: Pick<ProofImageDeps, 'decode'>): Promise<{ img: { rgba: Uint8ClampedArray; width: number; height: number }; takenAt: string | null }> {
   if (file.size === 0) throw new ProofInputError('undecodable');
   if (file.size > PROOF_MAX_INPUT_BYTES) throw new ProofInputError('too-large');
-  // The picked file is read ONCE (review M3): the header check, the photo time and the decode all
-  // use these bytes, so a file that changes on disk between reads cannot slip past the check, and
-  // the decoder is told the type the check found, not the file's own. The bytes are the original
-  // file, metadata included: they are zeroed on every way out (review M1). The Blob made from them
-  // is the browser's copy, like the File itself, and goes with it to GC.
   const bytes = new Uint8Array(await file.arrayBuffer());
-  let takenAt: string | null;
-  let img: { rgba: Uint8ClampedArray; width: number; height: number };
   try {
     if (bytes.length === 0) throw new ProofInputError('undecodable');
     if (bytes.length > PROOF_MAX_INPUT_BYTES) throw new ProofInputError('too-large');
@@ -137,15 +138,28 @@ export async function prepareProof(file: Blob, keep: Keep, deps: ProofImageDeps)
       throw new ProofInputError('undecodable');
     }
     // Before the decode: the time comes from the file's own metadata, which the decode drops.
-    takenAt = await photoTakenAt(checked);
+    const takenAt = await photoTakenAt(checked);
     try {
-      img = await deps.decode(checked, PROOF_MAX_SIDE);
+      return { img: await deps.decode(checked, PROOF_MAX_SIDE), takenAt };
     } catch {
       throw new ProofInputError('undecodable');
     }
   } finally {
     bytes.fill(0);
   }
+}
+
+/** Refuses decoded pixels of the wrong size (zeroing them first). */
+function checkedPixels(img: { rgba: Uint8ClampedArray; width: number; height: number }): void {
+  const { rgba, width, height } = img;
+  if (!(width >= 1 && height >= 1 && width <= PROOF_MAX_SIDE && height <= PROOF_MAX_SIDE) || rgba.length !== width * height * 4) {
+    rgba.fill(0);
+    throw new ProofInputError('undecodable');
+  }
+}
+
+export async function prepareProof(file: Blob, keep: Keep, deps: ProofImageDeps): Promise<PreparedProof> {
+  const { img, takenAt } = await readPicked(file, deps);
   const { rgba, width, height } = img;
   // Re-verify Z1: from here on the decoded (unblurred) pixels are ours; any failure zeroes them
   // before it is passed on, so a refused picture leaves nothing readable behind.
@@ -199,7 +213,7 @@ const SEAL_OVERHEAD = 40;
 
 /** Burn the regions into a copy, encode it afresh and clean it. Never returns uncleaned bytes. */
 export async function finishProof(
-  p: PreparedProof,
+  p: Pick<PreparedProof, 'rgba' | 'width' | 'height'>,
   regions: readonly EditorRegion[],
   deps: Pick<ProofImageDeps, 'encode'>,
 ): Promise<{ bytes: Uint8Array; mime: ProofMime; width: number; height: number; hidden: HiddenKind[] }> {
@@ -242,14 +256,17 @@ export interface ProofSendDeps extends Pick<ProofImageDeps, 'encode'> {
   put(code: string, proofId: string, kind: ProofKind, ciphertext: Uint8Array): Promise<void>;
   /** Seal `proof.attached` to buyer, seller and mod and post it in the trade's chat (chat engine). */
   postAttached(code: string, payload: ProofAttachedPayload): Promise<void>;
-  /** The blur check's `proofPosted(code, proofId, blur)` (AddProof.tsx tradeProofDeps). Its failure never fails the send. */
-  onPosted?(code: string, proofId: string, blur: BlurKind): Promise<void>;
+  /**
+   * The blur check's `proofPosted(code, proofId, blur)` (AddProof.tsx tradeProofDeps), answering
+   * whether to ask the poster (P-012/P-013). Its failure never fails the send (then no ask).
+   */
+  onPosted?(code: string, proofId: string, blur: BlurKind): Promise<{ ask: boolean } | void>;
 }
 
 export async function sendProof(
   a: { code: string; prepared: PreparedProof; regions: readonly EditorRegion[] },
   deps: ProofSendDeps,
-): Promise<{ proofId: string; blur: BlurKind; hidden: HiddenKind[] }> {
+): Promise<{ proofId: string; blur: BlurKind; hidden: HiddenKind[]; ask: boolean }> {
   const proofId = newProofId();
   const fin = await finishProof(a.prepared, a.regions, deps);
   const { ciphertext, key, sha256 } = await encryptProof(fin.bytes, { code: a.code, proofId, kind: 'proof' });
@@ -274,12 +291,64 @@ export async function sendProof(
   });
   await deps.postAttached(a.code, env.payload as ProofAttachedPayload);
   const blur = blurKindOf(a.prepared.auto, a.regions);
+  let ask = false;
   if (deps.onPosted) {
     try {
-      await deps.onPosted(a.code, proofId, blur);
+      ask = (await deps.onPosted(a.code, proofId, blur))?.ask === true;
     } catch {
       // The blur check is a survey: the proof is sent whatever happens to it.
     }
   }
-  return { proofId, blur, hidden: fin.hidden };
+  return { proofId, blur, hidden: fin.hidden, ask };
+}
+
+/**
+ * The unblurred copy a moderator asked for (Task 15 SendUnblurred, Review Focus 4): the picked file,
+ * decoded upright and scaled like a proof, no OCR and no blur. Only its pixels are kept; the caller
+ * zeroes them, and sendUnblurred does whatever happens to the send. X2F keeps no original on the
+ * device (no `localOriginals`), so the trader always picks the screenshot again.
+ */
+export interface UnblurredPicture {
+  rgba: Uint8ClampedArray;
+  width: number;
+  height: number;
+}
+
+export async function prepareUnblurred(file: Blob, deps: Pick<ProofImageDeps, 'decode'>): Promise<UnblurredPicture> {
+  const { img } = await readPicked(file, deps);
+  checkedPixels(img);
+  return { rgba: img.rgba, width: img.width, height: img.height };
+}
+
+export interface UnblurredSendDeps extends Pick<ProofImageDeps, 'encode'> {
+  put(code: string, proofId: string, kind: ProofKind, ciphertext: Uint8Array): Promise<void>;
+  /** Seal `proof.unblurred` to the moderator only and post it in the trade's chat (chat engine). */
+  postUnblurred(code: string, payload: ProofUnblurredPayload): Promise<void>;
+}
+
+/**
+ * Re-encode the picture from its pixels (no regions) and clean it (finishProof: only the image
+ * chunks or segments survive), encrypt it as kind `unblurred`, `PUT ?kind=unblurred` (the API takes
+ * it only from the side the open dispute's moderator asked), then post its key sealed to the
+ * moderator only. The pixels are zeroed on every way out: a failed send asks for the file again.
+ */
+export async function sendUnblurred(a: { code: string; picture: UnblurredPicture }, deps: UnblurredSendDeps): Promise<{ proofId: string }> {
+  try {
+    const proofId = newProofId();
+    const fin = await finishProof(a.picture, [], deps);
+    const { ciphertext, key, sha256 } = await encryptProof(fin.bytes, { code: a.code, proofId, kind: 'unblurred' });
+    fin.bytes.fill(0);
+    let keyB64: string;
+    try {
+      keyB64 = await proofKeyToBase64(key);
+    } finally {
+      key.fill(0);
+    }
+    await deps.put(a.code, proofId, 'unblurred', ciphertext);
+    const env = parseProofPayload('proof.unblurred', { proofId, key: keyB64, sha256, width: fin.width, height: fin.height, mime: fin.mime });
+    await deps.postUnblurred(a.code, env.payload as ProofUnblurredPayload);
+    return { proofId };
+  } finally {
+    a.picture.rgba.fill(0);
+  }
 }

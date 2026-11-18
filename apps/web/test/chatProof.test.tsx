@@ -298,7 +298,7 @@ describe('review M4: the upload and the receive half together', () => {
     const { payload } = await made();
     const after = ready([{ id: '9', from: 'buyer', text: '', at: null, mine: true, gapBefore: false, proof: payload }]);
     const sent: unknown[] = [];
-    setChatClient({ sync: async () => after, send: async () => after, sendPay: async () => after, sendProof: async (chat, p) => (sent.push([chat, p]), after), sendNotice: async () => after });
+    setChatClient({ sync: async () => after, send: async () => after, sendPay: async () => after, sendProof: async (chat, p) => (sent.push([chat, p]), after), sendUnblurred: async () => after , sendNotice: async () => after });
     try {
       await postProofToChat(code, payload, async () => 'CHAT1');
     } finally {
@@ -323,7 +323,7 @@ describe('review M4: the upload and the receive half together', () => {
     publishPaySnapshot(code, ready([]));
     const { payload } = await made();
     const after = ready([{ id: '3', from: 'buyer', text: '', at: null, mine: true, gapBefore: false, proof: payload }]);
-    setChatClient({ sync: async () => after, send: async () => after, sendPay: async () => after, sendProof: async () => after, sendNotice: async () => after });
+    setChatClient({ sync: async () => after, send: async () => after, sendPay: async () => after, sendProof: async () => after, sendUnblurred: async () => after , sendNotice: async () => after });
     try {
       expect(proofCheckOf(payload.proofId)).toBeUndefined();
       await postProofToChat(code, payload, async () => 'CHAT2');
@@ -347,7 +347,7 @@ describe('review M4: the upload and the receive half together', () => {
     const { payload } = await made();
     // The post was stored but the read after it failed: the engine answers its pre-post snapshot.
     const stale = ready([]);
-    setChatClient({ sync: async () => stale, send: async () => stale, sendPay: async () => stale, sendProof: async () => stale, sendNotice: async () => stale });
+    setChatClient({ sync: async () => stale, send: async () => stale, sendPay: async () => stale, sendProof: async () => stale, sendUnblurred: async () => stale , sendNotice: async () => stale });
     try {
       await postProofToChat(code, payload, async () => 'CHAT3');
       expect(latestChatSnapshot(code)).toBe(before);

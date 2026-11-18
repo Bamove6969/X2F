@@ -7,8 +7,10 @@ import { api } from './client.js';
  *
  * Proof stack: the upload calls `proofPosted` after the proof is sent (screens/proof/AddProof.tsx
  * tradeProofDeps), and the API announces only a stored proof of the caller's side.
- * NEEDS_BLUR_CHECK_SCREEN: `BlurCheck` (screens/proof/BlurCheck.tsx) is not mounted yet for
- * `pendingBlurChecks` (the uploader, and the receiver once the proof has opened): no board says where.
+ * Plan 5 Task 15: the uploader is asked at once when `proofPosted` answers `ask` (AddProof's sent
+ * screen mounts `BlurCheck`; DESIGNER-REVIEW, no board). NEEDS_BLUR_CHECK_SCREEN: the receiver's ask
+ * (`pendingBlurChecks`, once the proof has opened) and an uploader's ask missed on a reload are not
+ * mounted yet: no board says where.
  */
 export type BlurKind = 'auto' | 'manual' | 'both' | 'none';
 

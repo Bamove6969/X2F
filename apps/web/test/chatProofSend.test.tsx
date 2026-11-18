@@ -15,7 +15,7 @@ const ready = (lines: ChatSnapshot['lines']): ChatSnapshot => ({ phase: 'ready',
 const payload = (): ProofAttachedPayload =>
   ({ proofId: newProofId(), kind: 'proof', key: 'A'.repeat(43), sha256: 'a'.repeat(64), width: 4, height: 3, mime: 'image/png', hidden: [], photoTakenAt: null }) as unknown as ProofAttachedPayload;
 const client = (sendProof: () => Promise<ChatSnapshot>) =>
-  setChatClient({ sync: async () => ready([]), send: async () => ready([]), sendPay: async () => ready([]), sendProof, sendNotice: async () => ready([]) });
+  setChatClient({ sync: async () => ready([]), send: async () => ready([]), sendPay: async () => ready([]), sendProof, sendUnblurred: async () => ready([]), sendNotice: async () => ready([]) });
 
 afterEach(() => {
   setChatClient(null);

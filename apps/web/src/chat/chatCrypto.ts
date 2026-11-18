@@ -57,7 +57,7 @@ import {
 } from '@x2f/trade';
 import { CHAT_NOTICES, isChatNotice, type ChatNoticeId } from './notices.js';
 
-import { type ProofAttachedPayload, parseProofPayload, sealProofEnvelope } from '@x2f/proof';
+import { type ProofAttachedPayload, type ProofUnblurredPayload, parseProofPayload, sealProofEnvelope } from '@x2f/proof';
 
 export type ChatRole = 'buyer' | 'seller';
 export type ChatErrorCode = 'bad-text' | 'too-large' | 'bad-state' | 'bad-message' | 'mod-not-allowed';
@@ -233,6 +233,32 @@ export async function sealProofAttached(a: SealProofArgs): Promise<{ envelope: E
   if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealProofAttached: role must be buyer or seller');
   const parsed = parseProofPayload('proof.attached', a.proof);
   if (parsed.type !== 'proof.attached' || (parsed.payload.kind === 'proof' && a.role !== 'buyer')) throw new TypeError('sealProofAttached: only the buyer sends a payment proof');
+  const state = parseChatState(a.state, a.state.channel);
+  const seq = nextSeqOf(state, a.role);
+  const envelope = await sealProofEnvelope(parsed, { trade: state.channel, from: a.role, seq, me: a.me, participants: a.participants });
+  if (new TextEncoder().encode(JSON.stringify(envelope)).length > CHAT_BODY_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
+  return { envelope, state: { ...state, nextSeq: seq + 1 } };
+}
+
+export interface SealUnblurredArgs {
+  role: ChatRole;
+  me: Identity;
+  participants: Participants;
+  state: ChatState;
+  /** The `proof.unblurred` payload: the unblurred copy's key and facts, never the image. */
+  proof: ProofUnblurredPayload;
+}
+
+/**
+ * Seals a `proof.unblurred` envelope (Plan 5 Task 15, Review Focus 4) through `sealProofEnvelope`,
+ * which fixes its recipients to the moderator alone: no trader (the sender included) can open it.
+ * Under the chat's seq rules, like sealProofAttached. Throws TypeError for a role other than a
+ * trader, ProofError('bad-payload') for a malformed payload, ChatError 'too-large'.
+ */
+export async function sealProofUnblurred(a: SealUnblurredArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealProofUnblurred: role must be buyer or seller');
+  const parsed = parseProofPayload('proof.unblurred', a.proof);
+  if (parsed.type !== 'proof.unblurred') throw new TypeError('sealProofUnblurred: not an unblurred copy');
   const state = parseChatState(a.state, a.state.channel);
   const seq = nextSeqOf(state, a.role);
   const envelope = await sealProofEnvelope(parsed, { trade: state.channel, from: a.role, seq, me: a.me, participants: a.participants });

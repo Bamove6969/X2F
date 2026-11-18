@@ -12,7 +12,8 @@
  *     secured), which a client need not have;
  *   - `evidence`: either side while a dispute is open (409 wrong-state; P5-A30);
  *   - `unblurred`: only the side the open dispute's moderator asked (Plan 4's `proof_request_*` on
- *     `disputes`), one per request (409 not-requested).
+ *     `disputes`), one per request (409 not-requested); storing it sets that dispute's
+ *     `proof_request_sent_at` in the same transaction (migration 585, Task 15's "Sent to <mod>").
  *   An id ever stored before is 409 proof-exists (one-time ids, kept after a purge). Over the cap
  *   is 409 too-many-proofs: PROOF_MAX_PER_SIDE payment proofs and, apart, EVIDENCE_MAX_PER_SIDE
  *   pieces of evidence per side; an unblurred copy never counts (one per request already; lead
@@ -91,6 +92,8 @@ export function proofRoutes(app: FastifyInstance): void {
           const t = rows[0];
           if (!t) throw notFound();
           const role = t.buyer_account_id === me ? 'buyer' : 'seller';
+          /** The dispute (seq) whose request an unblurred copy answers. */
+          let unblurredFor: number | null = null;
           if (kind === 'proof') {
             if (role !== 'buyer') throw new ApiError(403, 'wrong-party');
             if (!PROOF_STATES.has(t.state)) throw new ApiError(409, 'wrong-state');
@@ -99,8 +102,8 @@ export function proofRoutes(app: FastifyInstance): void {
             if (t.state !== 'disputed' && open.rows.length === 0) throw new ApiError(409, 'wrong-state');
           } else {
             // The open dispute's request names this side, and no unblurred copy from it answers that request yet.
-            const r = await client.query(
-              `select 1 from disputes d
+            const r = await client.query<{ seq: number }>(
+              `select d.seq from disputes d
                 where d.code = $1 and d.status <> 'closed' and d.proof_request_side = $2
                   and not exists (select 1 from trade_proofs p where p.trade_code = d.code and p.uploader_role = $2
                                      and p.kind = 'unblurred' and p.created_at >= d.proof_requested_at)
@@ -108,11 +111,15 @@ export function proofRoutes(app: FastifyInstance): void {
               [code, role],
             );
             if (r.rows.length === 0) throw new ApiError(409, 'not-requested');
+            unblurredFor = r.rows[0]!.seq;
           }
           const cap = CAP[kind as StoredProofKind];
           if (cap !== null && (await countProofs(client, code, role, kind as StoredProofKind)) >= cap) throw new ApiError(409, 'too-many-proofs');
           if (!(await claimProofId(client, id, now))) throw new ApiError(409, 'proof-exists');
           await insertProof(client, { id, code, role, kind: kind as StoredProofKind, ciphertext, now });
+          // Plan 5 Task 15: the asked side's "Sent to <mod> at …" (the dispute view's proofRequest.sentAt),
+          // in this transaction, so the time exists exactly when the copy does. A time only.
+          if (unblurredFor !== null) await client.query('update disputes set proof_request_sent_at = $3 where code = $1 and seq = $2', [code, unblurredFor, now]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');

@@ -55,8 +55,8 @@
 import type { Role } from '@x2f/core';
 import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, attestationKeys, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
-import { ProofError, type ProofAttachedPayload } from '@x2f/proof';
-import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, sealProofAttached, signChatIdentity, type ChatState } from './chatCrypto.js';
+import { ProofError, type ProofAttachedPayload, type ProofUnblurredPayload } from '@x2f/proof';
+import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, sealProofAttached, sealProofUnblurred, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatNoticeId } from './notices.js';
 import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
 
@@ -162,6 +162,14 @@ export interface ChatEngine {
    */
   sendProof(chat: string, proof: ProofAttachedPayload): Promise<ChatSnapshot>;
   /**
+   * Plan 5 Task 15 (SendUnblurred): seals and posts a `proof.unblurred` (the unblurred copy's key) to
+   * the moderator only; 'not-ready' unless the trade was secured and a dispute is open (the API's own
+   * rule for the copy is the moderator's request); 'bad-proof' for a malformed payload; 'uncertain' as
+   * sendProof. No trader's device can open it, this one included: syncs keep it as an `away` receipt
+   * (no line, no gap). The image went up as ciphertext before this (proof/upload.ts sendUnblurred).
+   */
+  sendUnblurred(chat: string, proof: ProofUnblurredPayload): Promise<ChatSnapshot>;
+  /**
    * Asks the API about every chat stored on this device and erases each one it answers 410
    * `chat-purged` for; resolves with those. Any other answer (or none) keeps the record. Rejects on
    * a 401 (no live session: nothing can be told apart), so the caller tries again later.
@@ -237,7 +245,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
      * A package held until the escrow is secured (owner Q12) is not a line yet, not even a
      * placeholder; an envelope refused for good (pay-details review M1) never is.
      */
-    const withheld = (m: StoredChatReceipt): boolean => m.refused === true || ((m.heldPay === true || m.heldEvidence === true) && session?.texts.has(m.id) !== true);
+    const withheld = (m: StoredChatReceipt): boolean => m.refused === true || m.away === true || ((m.heldPay === true || m.heldEvidence === true) && session?.texts.has(m.id) !== true);
     return {
       phase,
       more,
@@ -373,7 +381,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         const past = BigInt(e.id) > start;
         const receipt = known.get(e.id);
         if (receipt) {
-          if (receipt.refused !== true && !shown.has(e.id)) {
+          if (receipt.refused !== true && receipt.away !== true && !shown.has(e.id)) {
             const again = await reopen(rec, me, parts, e, receipt, channel, secured, view.disputeOpen);
             if (again !== null) shown.set(e.id, again);
           }
@@ -427,7 +435,19 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           // before it (the guard did not move for it). A package before the trade is secured was
           // held above. Nothing else can become valid later.
           if (err instanceof ChatError && err.code === 'mod-not-allowed') advance = false;
-          else if (err instanceof ChatError && err.code === 'bad-message') {
+          else if (err instanceof ProtocolError && err.code === 'not-for-me' && (e.senderRole === 'buyer' || e.senderRole === 'seller')) {
+            // Plan 5 Task 15: signed by its trader (open checks the signature before the unwrap) but
+            // sealed past this reader: the unblurred copy for the moderator. Its seq is taken (no gap
+            // before the sender's next line); it is never a line and never opened again.
+            const h = headerOf(e.envelope, channel);
+            if (h !== null && h.from === e.senderRole) {
+              const prev = lastSeq.get(h.from);
+              const m: StoredChatReceipt = { id: e.id, from: h.from, seq: h.seq, sig: sigOf(e.envelope), at: typeof e.at === 'string' ? e.at : null, gapBefore: h.seq > (prev ?? -1) + 1, away: true };
+              lastSeq.set(m.from, Math.max(prev ?? -1, m.seq));
+              receipts.push(m);
+              known.set(m.id, m);
+            }
+          } else if (err instanceof ChatError && err.code === 'bad-message') {
             // Decided for good (pay-details review M1): a receipt marks it refused so a re-read never
             // opens it again, and the cursor passes it. The guard did not move: the sender may reuse the seq.
             const h = headerOf(e.envelope, channel);
@@ -503,13 +523,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
   function post(
     chat: string,
     make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>) => Promise<{ envelope: Envelope; state: ChatState }>,
-    { secured = false, proof = false }: { secured?: boolean; proof?: boolean } = {},
+    { secured = false, proof = false, dispute = false }: { secured?: boolean; proof?: boolean; dispute?: boolean } = {},
   ): Promise<ChatSnapshot> {
     return serial(chat, () => purging(chat, async () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const s = await syncLocked(chat);
         if (s.snap.phase !== 'ready' || !s.rec || !s.parts) throw new ChatSendFailed('not-ready');
         if (secured && s.view.tradeSecuredAt === null) throw new ChatSendFailed('not-ready');
+        if (dispute && !s.view.disputeOpen) throw new ChatSendFailed('not-ready');
         let sealed;
         try {
           sealed = await make({ role: s.rec.role, me: toIdentity(s.rec.identity), participants: s.parts, state: s.rec.state ?? newChatState(await chatChannel(chat)) });
@@ -573,6 +594,15 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           throw e;
         }
       }, { secured: true, proof: true }),
+    sendUnblurred: (chat, proof) =>
+      post(chat, async (a) => {
+        try {
+          return await sealProofUnblurred({ ...a, proof });
+        } catch (e) {
+          if (e instanceof ProofError || e instanceof TypeError) throw new ChatSendFailed('bad-proof', e);
+          throw e;
+        }
+      }, { secured: true, proof: true, dispute: true }),
     sendNotice: (chat, notice) => post(chat, (a) => sealChatNotice({ ...a, notice }), { secured: true }),
   };
 }

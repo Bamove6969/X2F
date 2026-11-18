@@ -1335,7 +1335,7 @@ describe("J-08 (S-090): the seller's packaged details fill the buyer's Send exac
       lines: [{ id: '3', from: 'seller' as const, text: 'Payment details\nEmail: jane@example.com\nName on the account: Jane Doe', pay, at: null, mine: false, gapBefore: false }],
     };
     const sync = vi.fn(async () => chatSnap);
-    setChatClient({ sync, send: vi.fn(async () => chatSnap), sendPay: vi.fn(async () => chatSnap), sendProof: vi.fn(async () => chatSnap), sendNotice: vi.fn(async () => chatSnap) });
+    setChatClient({ sync, send: vi.fn(async () => chatSnap), sendPay: vi.fn(async () => chatSnap), sendProof: vi.fn(async () => chatSnap), sendUnblurred: vi.fn(async () => chatSnap), sendNotice: vi.fn(async () => chatSnap) });
     answer = () => ({ status: 200, json: { chat: CHAT } });
     setPaymentDetailsSource(chatPaymentDetailsSource);
     try {

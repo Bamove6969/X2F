@@ -5,12 +5,13 @@
  * same-origin channel, never stored or logged, their strings not zeroable (a known residual):
  * - page to worker (proof-upload review I6): `chat-send-proof` carries a proof's own key, because the
  *   page made it and encrypted the image under it (proof/upload.ts); the worker seals it into
- *   `proof.attached` and keeps nothing;
+ *   `proof.attached` and keeps nothing; `chat-send-unblurred` the same for the moderator's unblurred
+ *   copy (Plan 5 Task 15), sealed into `proof.unblurred` to the moderator only;
  * - worker to page (proof-receive review I4): a `proof.attached` line carries its proof's key in the
  *   snapshot, so the page can fetch and decrypt that one picture (screens/proof/ChatProof.tsx). It
  *   stays in the page's memory (React state and payDetailsFeed's last snapshot).
  */
-import { ProofError, parseProofPayload, type ProofAttachedPayload } from '@x2f/proof';
+import { ProofError, parseProofPayload, type ProofAttachedPayload, type ProofUnblurredPayload } from '@x2f/proof';
 import { PayDetailsError, parsePayDetails } from '@x2f/trade';
 import { ChatSendFailed, type ChatEngine, type ChatSnapshot } from './engine.js';
 import { isChatNotice } from './notices.js';
@@ -22,6 +23,8 @@ export type ToChatWorker =
   | { t: 'chat-send-pay'; id: number; chat: string; pay: unknown }
   /** Plan 5 Task 15: a `proof.attached` payload (the proof's key); the worker checks and seals it. */
   | { t: 'chat-send-proof'; id: number; chat: string; proof: unknown }
+  /** Plan 5 Task 15: a `proof.unblurred` payload (the moderator's copy's key); checked and sealed to the moderator only. */
+  | { t: 'chat-send-unblurred'; id: number; chat: string; proof: unknown }
   /** A fixed notice (P-020): the page names it, the worker seals its own wording. */
   | { t: 'chat-send-notice'; id: number; chat: string; notice: unknown };
 
@@ -80,7 +83,7 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
   let engine: Promise<ChatEngine> | null = make();
   port.addEventListener('message', (e) => {
     const m = e.data as Partial<ToChatWorker> | null;
-    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send' && m.t !== 'chat-send-pay' && m.t !== 'chat-send-proof' && m.t !== 'chat-send-notice') || typeof m.id !== 'number') return;
+    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send' && m.t !== 'chat-send-pay' && m.t !== 'chat-send-proof' && m.t !== 'chat-send-unblurred' && m.t !== 'chat-send-notice') || typeof m.id !== 'number') return;
     const id = m.id;
     void (async () => {
       try {
@@ -99,6 +102,10 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
           // Checked here too, so that nothing but a well-formed proof payload reaches the engine.
           const parsed = parseProofPayload('proof.attached', m.proof);
           snapshot = await eng.sendProof(m.chat, parsed.payload as ProofAttachedPayload);
+        } else if (m.t === 'chat-send-unblurred') {
+          // As chat-send-proof: only a well-formed unblurred payload reaches the engine.
+          const parsed = parseProofPayload('proof.unblurred', m.proof);
+          snapshot = await eng.sendUnblurred(m.chat, parsed.payload as ProofUnblurredPayload);
         } else if (m.t === 'chat-send-notice') {
           // Only a known notice reaches the engine; anything else is a page bug, refused.
           if (!isChatNotice(m.notice)) throw new ChatSendFailed('refused');

@@ -28,7 +28,7 @@ const line = (p: ProofAttachedPayload): ChatSnapshot['lines'][number] => ({ id: 
 async function sent(code: string): Promise<ProofAttachedPayload> {
   const p = payload();
   const after = ready([line(p)]);
-  setChatClient({ sync: async () => after, send: async () => after, sendPay: async () => after, sendProof: async () => after, sendNotice: async () => after });
+  setChatClient({ sync: async () => after, send: async () => after, sendPay: async () => after, sendProof: async () => after, sendUnblurred: async () => after , sendNotice: async () => after });
   await postProofToChat(code, p, async () => 'CHAT1');
   expect(chatProofState(code)).toBe('attached');
   expect(latestChatSnapshot(code)).toBe(after);

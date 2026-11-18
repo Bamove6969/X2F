@@ -21,7 +21,7 @@ afterEach(() => {
 
 function fakeChat(): ChatClient & { sendNotice: ReturnType<typeof vi.fn> } {
   const snap = {} as never;
-  return { sync: vi.fn(async () => snap), send: vi.fn(async () => snap), sendPay: vi.fn(async () => snap), sendProof: vi.fn(async () => snap), sendNotice: vi.fn(async () => snap) };
+  return { sync: vi.fn(async () => snap), send: vi.fn(async () => snap), sendPay: vi.fn(async () => snap), sendProof: vi.fn(async () => snap), sendUnblurred: vi.fn(async () => snap), sendNotice: vi.fn(async () => snap) };
 }
 
 describe('the upload announces the sent proof to the blur check (onPosted -> proofPosted)', () => {

@@ -5,7 +5,7 @@ import { ChatFailed, chatClient, openTradeChat } from '../../chat/client.js';
 import { browserProofImageDeps } from '../../proof/browserImage.js';
 import { noteProofSent } from '../../proof/chatProof.js';
 import { hiddenByUploader, proofCodeNotice } from '../../proof/uploaderChecks.js';
-import { proofPosted } from '../../api/blurCheck.js';
+import { answerBlurCheck, proofPosted } from '../../api/blurCheck.js';
 import {
   type BlurKind,
   type EditorRegion,
@@ -19,6 +19,7 @@ import {
 } from '../../proof/upload.js';
 import { Button } from '../../ui/Button.js';
 import { Notice } from '../../ui/Notice.js';
+import { BlurCheck, type BlurCheckAnswer } from './BlurCheck.js';
 import { BlurEditor } from './BlurEditor.js';
 
 // DESIGNER-REVIEW: the states around the editor (no board). COPY-UNSIGNED unless the board's.
@@ -68,9 +69,7 @@ export function tradeProofDeps(): ProofSendDeps {
     encode: browserProofImageDeps().encode,
     put: (code, proofId, kind, ciphertext) => putProof(code, proofId, kind, ciphertext),
     postAttached: (code, payload) => postProofToChat(code, payload),
-    onPosted: async (code, proofId, blur) => {
-      await proofPosted(code, proofId, blur);
-    },
+    onPosted: (code, proofId, blur) => proofPosted(code, proofId, blur),
   };
 }
 
@@ -85,7 +84,7 @@ export async function sendCodeNotice(code: string, ownHidden: { amount: boolean;
   await chatClient().sendNotice(await openTradeChat(code), notice);
 }
 
-export async function sendTradeProof(a: SendArgs): Promise<{ proofId: string; blur: BlurKind }> {
+export async function sendTradeProof(a: SendArgs): Promise<{ proofId: string; blur: BlurKind; ask: boolean }> {
   const r = await sendProof({ code: a.code, prepared: a.prepared, regions: a.regions }, tradeProofDeps());
   try {
     await sendCodeNotice(a.code, a.ownHidden);
@@ -96,16 +95,30 @@ export async function sendTradeProof(a: SendArgs): Promise<{ proofId: string; bl
 }
 
 /** What a send that did not go through says: not sent, maybe sent (review M2), or an unusable image (M5). */
-type SendNotice = { part: 'proof-send-error' | 'proof-send-uncertain' | 'proof-send-cant-use'; text: string };
+export type ProofSendNotice = { part: 'proof-send-error' | 'proof-send-uncertain' | 'proof-send-cant-use'; text: string };
+type SendNotice = ProofSendNotice;
 
-function noticeOf(e: unknown): SendNotice {
+/** Also SendUnblurred's: the same three outcomes for the moderator's copy. */
+export function proofSendNotice(e: unknown): ProofSendNotice {
   if (e instanceof ChatFailed && e.code === 'uncertain') return { part: 'proof-send-uncertain', text: PROOF_SEND_UNCERTAIN };
   // Too large even as JPEG (finishProof): another try fails the same way, so it is not the connection.
   if (e instanceof ProofInputError) return { part: 'proof-send-cant-use', text: PROOF_CANT_USE };
   return { part: 'proof-send-error', text: PROOF_SEND_FAILED };
 }
 
-type Step = { s: 'pick'; error: string | null } | { s: 'preparing' } | { s: 'edit'; prepared: PreparedProof; busy: boolean; notice: SendNotice | null } | { s: 'sent' };
+type Step =
+  | { s: 'pick'; error: string | null }
+  | { s: 'preparing' }
+  | { s: 'edit'; prepared: PreparedProof; busy: boolean; notice: SendNotice | null }
+  /** `ask`: the blur check sampled this proof (P-012/P-013); its id goes with the answer. */
+  | { s: 'sent'; ask: string | null };
+
+/** The proof id to ask the blur check about, when the send's result says to ask. */
+function askOf(r: unknown): string | null {
+  if (typeof r !== 'object' || r === null) return null;
+  const { ask, proofId } = r as { ask?: unknown; proofId?: unknown };
+  return ask === true && typeof proofId === 'string' ? proofId : null;
+}
 
 /** Review M1: zero the unblurred pixels and drop the OCR words (their strings cannot be zeroed). */
 const drop = (p: PreparedProof): void => {
@@ -127,12 +140,15 @@ export function AddProof({
   expected,
   prepare = (file: File) => prepareProof(file, { tradeCode: expected.tradeCode, fiatCents: expected.fiatCents, exponent: expected.exponent }, browserProofImageDeps()),
   send = sendTradeProof,
+  answer = answerBlurCheck,
   onSent,
 }: {
   code: string;
   expected: ProofExpected;
   prepare?: (file: File) => Promise<PreparedProof>;
   send?: (a: SendArgs) => Promise<unknown>;
+  /** The blur check's answer route (api/blurCheck.ts answerBlurCheck). */
+  answer?: (code: string, proofId: string, a: BlurCheckAnswer) => Promise<void>;
   onSent?: () => void;
 }) {
   const inputId = useId();
@@ -176,10 +192,16 @@ export function AddProof({
   };
 
   if (step.s === 'sent') {
+    const ask = step.ask;
     return (
-      <Notice tone="plain" live="status" data-part="proof-sent">
-        {PROOF_SENT}
-      </Notice>
+      <>
+        <Notice tone="plain" live="status" data-part="proof-sent">
+          {PROOF_SENT}
+        </Notice>
+        {/* P-012/P-013 (owner Q47): asked right after the poster's own proof went, when the API sampled it.
+            DESIGNER-REVIEW: no board says where; the receiver's ask (pendingBlurChecks) is not mounted yet. */}
+        {ask !== null ? <BlurCheck onAnswer={(a) => answer(code, ask, a)} /> : null}
+      </>
     );
   }
 
@@ -205,16 +227,16 @@ export function AddProof({
             const ownHidden = hiddenByUploader(regions.filter((r) => r.source === 'manual'), prepared.amount, prepared.memo);
             sending.current = true;
             send({ code, prepared, regions, explanation, ownHidden }).then(
-              () => {
+              (r) => {
                 sending.current = false;
                 release();
                 onSent?.();
-                if (alive.current) setStep({ s: 'sent' });
+                if (alive.current) setStep({ s: 'sent', ask: askOf(r) });
               },
               (e: unknown) => {
                 sending.current = false;
                 if (!alive.current) release();
-                else setStep({ s: 'edit', prepared, busy: false, notice: noticeOf(e) });
+                else setStep({ s: 'edit', prepared, busy: false, notice: proofSendNotice(e) });
               },
             );
           }}

@@ -187,6 +187,13 @@ export function DisputeRoom({
               <DisputeIcon name="chat" size={14} />
               Trade chat
             </span>
+            {/* Plan 5 Task 15: the board's chip, once the server holds this side's copy. */}
+            {dispute.proofRequest?.sentAt ? (
+              <span className="dispute-evidence-chip">
+                <DisputeIcon name="doc" size={14} />
+                Unblurred copy · moderator only
+              </span>
+            ) : null}
           </div>
         </section>
 

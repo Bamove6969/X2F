@@ -49,3 +49,24 @@
 .x2f-blur__surface[data-drawing] .x2f-blur__region {
   pointer-events: none;
 }
+
+/* Plan 5 Task 15: SendUnblurred (DisputeRoom board, "Request from the moderator"). */
+.x2f-unblurred {
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--x2f-radius-lg);
+  border: 1px solid var(--x2f-line);
+}
+.x2f-unblurred__ask {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+.x2f-unblurred__sent {
+  margin: 0;
+  font-size: 14px;
+  color: var(--x2f-escrow);
+}
+.x2f-unblurred label.x2f-button {
+  cursor: pointer;
+}
