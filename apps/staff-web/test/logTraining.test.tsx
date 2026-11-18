@@ -206,9 +206,99 @@ describe('Training library', () => {
     expect(rows('How the case ran')).toEqual([['T+0:00', 'Seller', 'Dispute opened'], ['T+3:00', 'Moderator', 'Published the ruling']]);
   });
 
-  it('says so when there is no closed case yet', async () => {
+  it('says so when no case is in the library yet; a moderator is not offered the review', async () => {
     fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/training': { body: { items: [], next: null } } });
     await open('/training');
-    expect(rows('Training cases')).toEqual([['No closed cases yet.']]);
+    expect(rows('Training cases')).toEqual([['No training cases yet.']]);
+    expect(document.querySelector('a[href="/training/review"]')).toBeNull();
+  });
+});
+
+// Lead call 18 Nov (re-review): the library is review-first. The owner (training.curate) reviews each
+// closed case pre-masked, hides more text by selecting it or a whole text, and marks it.
+describe('Training review (curator)', () => {
+  const REVIEW = {
+    ...CASE,
+    status: 'unmarked',
+    manual: [],
+    fields: {
+      note: CASE.note,
+      'ruling.1.reason': CASE.rulings[0]!.reason,
+      'ruling.1.evidence.0': CASE.rulings[0]!.evidence[0]!,
+    },
+  };
+  const reviewApi = (over: Record<string, unknown> = {}) =>
+    fakeApi({
+      'GET /staff/v1/me': { body: OWNER },
+      'GET /staff/v1/training': { body: { items: [], next: null } },
+      'GET /staff/v1/training/review': { body: { items: [{ ...ITEM, status: 'unmarked' }, { ...ITEM, id: 'b'.repeat(32), status: 'stale' }] } },
+      [`GET /staff/v1/training/review/${ITEM.id}`]: { body: { ...REVIEW, ...over } },
+      [`PUT /staff/v1/training/review/${ITEM.id}`]: { body: { id: ITEM.id, status: 'marked' } },
+      [`DELETE /staff/v1/training/review/${ITEM.id}`]: { body: { id: ITEM.id, status: 'unmarked' } },
+    });
+
+  /** Selects `text` inside the review field `field`, as a curator dragging over it would. */
+  function select(field: string, text: string) {
+    const box = document.querySelector(`[data-field="${field}"] [data-part="field-text"]`)!;
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
+      const i = (n.textContent ?? '').indexOf(text);
+      if (i < 0) continue;
+      const r = document.createRange();
+      r.setStart(n, i);
+      r.setEnd(n, i + text.length);
+      const sel = window.getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(r);
+      return;
+    }
+    throw new Error(`no ${text} in ${field}`);
+  }
+
+  it('the owner reaches the review from the library and sees each closed case\'s status', async () => {
+    reviewApi();
+    await open('/training');
+    await click(document.querySelector('a[href="/training/review"]'));
+    expect(document.querySelector('[data-screen="training-review"]')).not.toBeNull();
+    expect(rows('Closed cases')).toEqual([
+      ['2026-11', 'Revolut', 'about 1.30 XMR', 'Release to buyer', 'Not in the library', 'Review the case'],
+      ['2026-11', 'Revolut', 'about 1.30 XMR', 'Release to buyer', 'Hidden: review the masks again', 'Review the case'],
+    ]);
+  });
+
+  it('hides a selected stretch and a whole text, then marks the case with exactly those masks', async () => {
+    const api = reviewApi();
+    await open(`/training/review/${ITEM.id}`);
+    const page = document.querySelector('[data-screen="training-review-case"]')!;
+    expect(page.querySelector('[data-field="note"]')!.textContent).toContain('Buyer never paid, call me on [phone]');
+    select('note', 'never paid');
+    await click(button('Hide the selected text', page.querySelector('[data-field="note"]')!));
+    expect([...page.querySelectorAll('[data-field="note"] mark[data-mask="manual"]')].map((m) => m.textContent)).toEqual(['never paid']);
+    await click(button('Hide this whole text', page.querySelector('[data-field="ruling.1.evidence.0"]')!));
+    // A selection that cuts into an automatic mask is refused, and nothing is added.
+    select('note', 'on [ph');
+    await click(button('Hide the selected text', page.querySelector('[data-field="note"]')!));
+    expect(page.textContent).toContain('Select whole words outside the marked details.');
+    expect(page.querySelectorAll('[data-field="note"] mark[data-mask="manual"]')).toHaveLength(1);
+    await click(button('Mark as training case'));
+    const put = api.calls.find((c) => c.method === 'PUT')!;
+    expect(put.path).toBe(`/staff/v1/training/review/${ITEM.id}`);
+    expect(put.body).toEqual({ masks: [{ field: 'note', start: 6, end: 16 }, { field: 'ruling.1.evidence.0', whole: true }] });
+    expect(page.textContent).toContain('This case is in the training library.');
+  });
+
+  it('a stale case says why it is hidden; a marked one can be unmarked', async () => {
+    const api = reviewApi({ status: 'stale', manual: [{ field: 'note', start: 6, end: 16 }] });
+    await open(`/training/review/${ITEM.id}`);
+    expect(document.querySelector('[data-part="review-status"]')!.textContent).toContain('no longer fit');
+    await click(button('Take it out of the library'));
+    expect(api.calls.some((c) => c.method === 'DELETE' && c.path === `/staff/v1/training/review/${ITEM.id}`)).toBe(true);
+    expect(document.querySelector('[data-part="review-status"]')!.textContent).toContain('not in the training library');
+  });
+
+  it('describes marking and unmarking in the log', () => {
+    const d = (action: string, detail: Record<string, unknown>) => describeLog({ action, detail, actor: { kind: 'staff', role: 'owner', id: 'o', name: 'lumen.k' } });
+    expect(d('staff.training-marked', { trainingId: 'a'.repeat(32), masks: 2 })).toBe('Marked a case for the training library (2 extra masks)');
+    expect(d('staff.training-unmarked', { trainingId: 'a'.repeat(32) })).toBe('Took a case out of the training library');
   });
 });
