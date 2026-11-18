@@ -68,6 +68,24 @@ function deps(): ReceiveDeps & { decode: ReturnType<typeof vi.fn> } {
 
 const settle = () => act(async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0)); });
 
+/**
+ * Waits until no proof on `host` is still being fetched, decrypted or checked, then lets the last
+ * effects run. A fixed count of ticks is not enough: under a full run the decrypt (off the JS
+ * thread) can take longer than any count (flake, 18 Nov), and a refusal test would then pass on a
+ * proof that was never checked. The deadline is below the test's own 5 s.
+ */
+async function checked(host: ParentNode, ms = 4000): Promise<void> {
+  const until = Date.now() + ms;
+  // One act per poll: act flushes React's queued work only when its callback ends.
+  while (host.querySelector('[data-part="proof-checking"]') !== null) {
+    if (Date.now() > until) throw new Error(`a proof was still being checked after ${ms} ms`);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+    });
+  }
+  await settle();
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
@@ -81,7 +99,7 @@ describe('ChatProof', () => {
     vi.stubGlobal('fetch', f);
     const d = deps();
     const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={d} />);
-    await settle();
+    await checked(host);
     expect(f).toHaveBeenCalledTimes(1);
     const [url, init] = (f.mock.calls as unknown as [string, RequestInit][])[0]!;
     expect(url).toBe(`/v1/trades/${CODE}/proofs/${payload.proofId}`);
@@ -101,7 +119,7 @@ describe('ChatProof', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(other.ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
     const d = deps();
     const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={d} />);
-    await settle();
+    await checked(host);
     expect(host.textContent).toContain(PROOF_REFUSED_TITLE);
     expect(host.querySelector('img')).toBeNull();
     expect(d.decode).not.toHaveBeenCalled();
@@ -112,7 +130,7 @@ describe('ChatProof', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(ev.ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
     const d = deps();
     const { host } = render(<ChatProof tradeCode={CODE} proof={{ ...ev.payload, kind: 'proof' }} deps={d} />);
-    await settle();
+    await checked(host);
     expect(host.querySelector('img')).toBeNull();
     expect(d.decode).not.toHaveBeenCalled();
   });
@@ -121,7 +139,7 @@ describe('ChatProof', () => {
     const { payload, ciphertext } = await made('proof', latin1('<svg onload=alert(1)>'));
     vi.stubGlobal('fetch', vi.fn(async () => new Response(ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
     const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
-    await settle();
+    await checked(host);
     expect(host.textContent).toContain(PROOF_REFUSED_TITLE);
     expect(host.querySelector('img')).toBeNull();
   });
@@ -130,7 +148,7 @@ describe('ChatProof', () => {
     const { payload } = await made();
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not-found' }), { status: 404 })));
     const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
-    await settle();
+    await checked(host);
     expect(host.textContent).toContain(CHAT_PROOF_GONE);
     expect(host.querySelector('img')).toBeNull();
   });
@@ -141,18 +159,18 @@ describe('review M3: ChatProof records whether the proof checked out', () => {
     const good = await made();
     vi.stubGlobal('fetch', vi.fn(async () => new Response(good.ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
     const r1 = render(<ChatProof tradeCode={CODE} proof={good.payload} deps={deps()} />);
-    await settle();
+    await checked(r1.host);
     expect(r1.host.querySelector('img')).not.toBeNull();
     expect(proofCheckOf(good.payload.proofId)).toBe('ready');
     const gone = await made();
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not-found' }), { status: 404 })));
-    render(<ChatProof tradeCode={CODE} proof={gone.payload} deps={deps()} />);
-    await settle();
+    const r2 = render(<ChatProof tradeCode={CODE} proof={gone.payload} deps={deps()} />);
+    await checked(r2.host);
     expect(proofCheckOf(gone.payload.proofId)).toBe('failed');
     const bad = await made('proof', latin1('<svg onload=alert(1)>'));
     vi.stubGlobal('fetch', vi.fn(async () => new Response(bad.ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
-    render(<ChatProof tradeCode={CODE} proof={bad.payload} deps={deps()} />);
-    await settle();
+    const r3 = render(<ChatProof tradeCode={CODE} proof={bad.payload} deps={deps()} />);
+    await checked(r3.host);
     expect(proofCheckOf(bad.payload.proofId)).toBe('failed');
     expect(proofCheckOf(newProofId())).toBeUndefined();
   });
@@ -165,7 +183,7 @@ describe('review I5: the decrypted picture is zeroed once ProofThumb has checked
       const { payload, ciphertext } = await made('proof', plain);
       vi.stubGlobal('fetch', vi.fn(async () => new Response(ciphertext as Uint8Array<ArrayBuffer>, { status: 200 })));
       const r = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
-      await settle();
+      await checked(r.host);
       if (plain === PLAIN) expect(r.host.querySelector('img')).not.toBeNull();
       else expect(r.host.textContent).toContain(PROOF_REFUSED_TITLE);
       expect(decrypted).toHaveLength(1);
@@ -183,10 +201,10 @@ describe('review M5: one fetch per proof, and a bounded read', () => {
     vi.stubGlobal('fetch', f);
     const d = deps();
     const r = render(<ChatProof tradeCode={CODE} proof={payload} deps={d} />);
-    await settle();
+    await checked(r.host);
     for (let i = 0; i < 3; i++) {
       r.rerender(<ChatProof tradeCode={CODE} proof={{ ...payload, hidden: [...payload.hidden] }} deps={d} />);
-      await settle();
+      await checked(r.host);
     }
     expect(f).toHaveBeenCalledTimes(1);
     expect(d.decode).toHaveBeenCalledTimes(1);
@@ -205,7 +223,7 @@ describe('review M5: one fetch per proof, and a bounded read', () => {
     });
     vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200, headers: { 'content-length': String(PROOF_MAX_CIPHERTEXT + 1) } })));
     const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
-    await settle();
+    await checked(host);
     expect(host.textContent).toContain(PROOF_REFUSED_TITLE);
     expect(pulled).toBeLessThanOrEqual(2);
   });
@@ -223,7 +241,7 @@ describe('review M5: one fetch per proof, and a bounded read', () => {
     });
     vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
     const { host } = render(<ChatProof tradeCode={CODE} proof={payload} deps={deps()} />);
-    await settle();
+    await checked(host);
     expect(host.textContent).toContain(PROOF_REFUSED_TITLE);
     expect(read).toBeLessThanOrEqual(PROOF_MAX_CIPHERTEXT + 3 * 65536);
   });
