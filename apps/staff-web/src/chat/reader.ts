@@ -8,14 +8,15 @@ import {
   verifyChatKeyRecord,
   type Participants,
 } from '@x2f/protocol';
-import { CHAT_MSG_TYPE, CHAT_TEXT_MAX_BYTES, channelFor, verifyAttestationSignature, type Attestation } from '@x2f/trade';
+import { CHAT_MSG_TYPE, CHAT_TEXT_MAX_BYTES, channelFor, verifyAttestationSignature, type Attestation, type AttestationKey } from '@x2f/trade';
 import { wipeIdentity, type StaffDeviceKey } from '../device/deviceKey.js';
 
 /**
  * Design build task 9 (design section 2.4 M4): the moderator's read of a disputed chat, in the staff
  * browser. The API answers ciphertext only (`POST /staff/v1/disputes/:code/chat`); here:
- * - the chat's attestation must be signed by the pinned moderation key (VITE_MOD_SIGNING_PUBLIC)
- *   and name this chat and its channel, so the API cannot swap in participants of its own;
+ * - the chat's attestation must be signed by a pinned moderation key (`attestationKeys()` of
+ *   VITE_MOD_SIGNING_PUBLIC, review N11 b: a key inside its window, as the trader app) and name this
+ *   chat and its channel, so the API cannot swap in participants of its own;
  * - the key record must be signed by the attested trader it names, for this channel, and its tkh be
  *   the one the moderation process re-wrapped, so a key the API made up is refused;
  * - the wrap is opened with this device's own box key to a key of that tkh, and every envelope is
@@ -30,6 +31,9 @@ import { wipeIdentity, type StaffDeviceKey } from '../device/deviceKey.js';
  * reader); here it runs in the page.
  */
 
+/** The most envelopes one read returns (the API's CHAT_READ_MAX): the newest ones. */
+export const CASE_CHAT_READ_MAX = 5000;
+
 export interface CaseChatAnswer {
   chat: string;
   channel: string;
@@ -39,6 +43,8 @@ export interface CaseChatAnswer {
   attestation: { attestation: unknown; sig: string } | null;
   record: unknown;
   envelopes: Array<{ id: string; senderRole: string; envelope: unknown; at: string }>;
+  /** Review N11 (f): the chat has more envelopes than one read returns; these are the newest. */
+  olderNotShown?: boolean;
 }
 
 export interface CaseChatLine {
@@ -55,12 +61,19 @@ export interface OpenedChat {
   channel: string;
   participants: Participants;
   tk: Uint8Array;
+  /** The chat key's fingerprint (review N11 c: checked again before every seal). */
+  tkh: string;
   nextSeq: number;
   lines: CaseChatLine[];
   /** Envelopes that did not verify or open (shown as a count, never as text). */
   unreadable: number;
   /** Review N2: messages missing in all (the sum of the lines' `missingBefore`, and any after the last line). */
   missing: number;
+  /**
+   * Review N11 (f): older messages are not shown (the read is cut at CASE_CHAT_READ_MAX). Believed
+   * only with exactly that many envelopes; then a sender's first line here follows no gap.
+   */
+  olderNotShown: boolean;
 }
 
 export class CaseChatError extends Error {
@@ -72,12 +85,12 @@ export class CaseChatError extends Error {
 
 const security = (): CaseChatError => new CaseChatError('security');
 
-export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, modSigningPublic: string): Promise<OpenedChat> {
+export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, modKeys: string | readonly AttestationKey[]): Promise<OpenedChat> {
   const channel = await channelFor(a.chat, 'chat');
   if (a.channel !== channel || a.attestation === null) throw security();
   const att = a.attestation.attestation as Attestation;
   try {
-    await verifyAttestationSignature(att, a.attestation.sig, modSigningPublic);
+    await verifyAttestationSignature(att, a.attestation.sig, modKeys);
   } catch {
     throw security();
   }
@@ -106,6 +119,7 @@ export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, mo
   // carried to the next line shown.
   const last = new Map<string, number>();
   let carried = 0;
+  const olderNotShown = a.olderNotShown === true && a.envelopes.length === CASE_CHAT_READ_MAX;
   for (const e of a.envelopes) {
     let o;
     try {
@@ -116,7 +130,9 @@ export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, mo
     }
     // Verified: signed by the attested `from` at this seq (the replay guard took it as newer).
     const seq = (e.envelope as { seq: number }).seq;
-    const gap = seq - ((last.get(o.from) ?? -1) + 1);
+    // A sender's first line in a cut read follows their older lines, not a gap.
+    const prev = last.get(o.from);
+    const gap = prev === undefined && olderNotShown ? 0 : seq - ((prev ?? -1) + 1);
     last.set(o.from, seq);
     missing += gap;
     carried += gap;
@@ -128,7 +144,7 @@ export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, mo
     lines.push({ id: e.id, from: o.from as CaseChatLine['from'], text: p.text, at: e.at, missingBefore: carried });
     carried = 0;
   }
-  return { chat: a.chat, channel, participants, tk, nextSeq: a.nextSeq, lines, unreadable, missing };
+  return { chat: a.chat, channel, participants, tk, tkh: a.tkh, nextSeq: a.nextSeq, lines, unreadable, missing, olderNotShown };
 }
 
 /** Wipes the chat key held for an opened chat. */
@@ -149,7 +165,7 @@ export async function sealModMessage(c: OpenedChat, text: string, device: StaffD
   if (!modTextOk(text)) throw new CaseChatError('unreadable');
   // The key must still be the chat's (never sealed under a wiped key).
   if (c.tk.every((x) => x === 0)) throw security();
-  await chatKeyHash(c.tk);
+  if ((await chatKeyHash(c.tk)) !== c.tkh) throw security();
   const body = await encryptChat({ trade: c.channel, from: 'mod', seq, type: CHAT_MSG_TYPE, payload: { text }, tk: c.tk });
   const rid = new Uint8Array(16);
   globalThis.crypto.getRandomValues(rid);

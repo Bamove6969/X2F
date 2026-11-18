@@ -6,6 +6,7 @@ import { ApiError } from '../errors.js';
 import { requireStaff } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
 import { body, log, tapIdOf } from './members.js';
+import { retireStaffCopies } from './staffCopies.js';
 
 /**
  * Chat membership design task 8 (design section 4; lead 18 Nov): a staff member's own staff-web
@@ -22,7 +23,7 @@ import { body, log, tapIdOf } from './members.js';
  *   and `staff.device-certified` logged, in one transaction. 409 `device-exists` for a key id still
  *   live, 409 `device-limit` at STAFF_DEVICE_MAX live devices (the gate enforces both itself too).
  * - `POST /staff/v1/devices/:id/revoke { tapId }` → 204: a `revoke-device` tap naming that key id;
- *   `staff.device-revoked` logged.
+ *   the device's chat key copies marked removed (review N11 e); `staff.device-revoked` logged.
  */
 
 /** Lead 18 Nov: a certification lasts 365 days; at most 3 live devices per person (the gate's own rules). */
@@ -132,6 +133,7 @@ export function staffDeviceRoutes(app: FastifyInstance): void {
       await c.query("select pg_advisory_xact_lock(hashtextextended('staff-devices/' || $1, 0))", [me]);
       if (!(await liveDevices(c, me, now)).some((d) => d.deviceKeyId === id)) throw new ApiError(404, 'not-found');
       await consumeKeyTap(c, tapId, me, { kind: 'revoke-device', accountId: me, deviceKeyId: id }, now, { sessionId: req.auth.sessionId });
+      await retireStaffCopies(c, me, id, now);
       await log(c as Parameters<typeof log>[0], req, 'staff.device-revoked', { deviceKeyId: id });
     });
     return reply.code(204).send();

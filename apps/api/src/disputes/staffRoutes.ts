@@ -185,7 +185,7 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const HEX32 = /^[0-9a-f]{32}$/;
 const HEX128 = /^[0-9a-f]{128}$/;
 const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-/** The most envelopes one read returns (a chat is small; the cap bounds one answer). */
+/** The most envelopes one read returns, the newest (a chat is small; the cap bounds one answer; review N11 f: the answer says when older ones are not shown). */
 export const CHAT_READ_MAX = 5000;
 
 export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): void {
@@ -544,10 +544,13 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       'select tkh, created_by_role, wrap_buyer, wrap_seller, sig from chat_keys where chat = $1',
       [chat],
     )).rows[0]!;
-    const { rows: envs } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
-      'select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 order by id limit $2',
-      [chat, CHAT_READ_MAX],
+    // Review N11 (f): the newest CHAT_READ_MAX envelopes, oldest first, and whether older ones exist.
+    const { rows: newest } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
+      'select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 order by id desc limit $2',
+      [chat, CHAT_READ_MAX + 1],
     );
+    const olderNotShown = newest.length > CHAT_READ_MAX;
+    const envs = newest.slice(0, CHAT_READ_MAX).reverse();
     return {
       chat,
       channel,
@@ -557,6 +560,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       attestation: att === undefined ? null : { attestation: att.attestation, sig: att.sig },
       record: { v: 1, chat: channel, tkh: k.tkh, by: k.created_by_role, wrapBuyer: k.wrap_buyer, wrapSeller: k.wrap_seller, sig: k.sig },
       envelopes: envs.map((e) => ({ id: e.id, senderRole: e.sender_role, envelope: e.envelope, at: e.created_at.toISOString() })),
+      olderNotShown,
     };
   });
 

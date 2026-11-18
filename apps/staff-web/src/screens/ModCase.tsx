@@ -1,6 +1,7 @@
 import type { KeyTapIntent, RulingOutcome, StaffRole } from '@x2f/staff';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
+import { attestationKeys } from '@x2f/trade';
 import {
   approveRuling,
   codeOf,
@@ -298,7 +299,7 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
     setBusy(true);
     setFault(null);
     try {
-      onOpened(await openCaseChat(await readCaseChat(code, device.deviceKeyId), device, modSigningPublic()));
+      onOpened(await openCaseChat(await readCaseChat(code, device.deviceKeyId), device, attestationKeys(modSigningPublic())));
     } catch (e) {
       if (codeOf(e) === 'device-not-certified') {
         onDevice(null);
@@ -326,6 +327,8 @@ function ChatCard({ code, work, device, onDevice, loadDevice, opened, onOpened, 
         </>
       ) : (
         <ol className="x2f-staff-chat" data-part="chat-lines" aria-label="Messages">
+          {/* COPY-UNSIGNED. Review N11 (f): the read returns the newest messages only. */}
+          {opened.olderNotShown ? <li data-part="chat-older">Older messages not shown.</li> : null}
           {opened.lines.map((l) => (
             <Fragment key={l.id}>
               {/* COPY-UNSIGNED. Review N2: where the server dropped or held back messages, shown where it happened. */}

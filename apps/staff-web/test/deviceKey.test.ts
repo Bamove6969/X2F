@@ -51,4 +51,12 @@ describe('the staff device key', () => {
     expect(swapped.signPublic).toBe(k.signPublic);
     await expect(swapped.identity()).rejects.toEqual(new DeviceKeyError('bad-record'));
   });
+
+  it('review N11 (d): a stored box key that is not the stored secret\'s is bad-record', async () => {
+    const b = memory();
+    await staffDeviceKey(b);
+    const other = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
+    b.rec = { ...b.rec!, boxPublic: other };
+    await expect((await staffDeviceKey(b)).identity()).rejects.toEqual(new DeviceKeyError('bad-record'));
+  });
 });

@@ -21,12 +21,13 @@ import { disputeSettings } from '../../src/disputes/settings.js';
 import { getMethod } from '../../src/methods/profiles.js';
 import { loadDispute } from '../../src/disputes/store.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
+import { CHAT_READ_MAX } from '../../src/disputes/staffRoutes.js';
 import { appealDirect, publishRuling } from '../helpers/disputes.js';
 import { seedAccount } from '../helpers/accounts.js';
 import { Browser } from '../helpers/totp.js';
 import { rolesToAbilities } from '../../src/team/abilities.js';
 import { insertOffer } from '../helpers/offers.js';
-import { STAFF_ORIGIN, StaffBrowser, insertSession, seedStaff } from '../helpers/staffApp.js';
+import { STAFF_ORIGIN, StaffBrowser, insertSession, seedStaff, seedTap } from '../helpers/staffApp.js';
 import { tradeApp } from '../helpers/tradeApp.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
@@ -136,6 +137,10 @@ async function staff(role: 'mod' | 'senior' | 'owner' | 'helper', app = staffApp
   };
   return { id: s.id, name, b, fresh };
 }
+
+/** The one owner (the database allows one), made on first use. */
+let theOwner: Awaited<ReturnType<typeof staff>> | null = null;
+const ownerOnce = async () => (theOwner ??= await staff('owner'));
 
 /** The seller's confirm window seedTrade gives every trade (its `confirmWindowMin`). */
 const CONFIRM_WINDOW_MIN = 120;
@@ -268,7 +273,7 @@ describe('the queue', () => {
   });
 
   it('NEEDS_P4_CASE_ASSIGNEE: a taken case counts as the member\'s open case; switching them off puts it back in the queue for another moderator', async () => {
-    const owner = await staff('owner');
+    const owner = await ownerOnce();
     const mod = await staff('mod');
     const other = await staff('mod');
     const { code } = await disputed();
@@ -499,6 +504,52 @@ describe('who works a case', () => {
     const bad = await mod.b.post(url(code, '/chat'), { deviceKeyId: 'e'.repeat(32) });
     expect({ status: bad.statusCode, error: errorOf(bad) }).toEqual({ status: 403, error: 'device-not-certified' });
     expect((await mod.b.post(url(code, '/chat'), {})).statusCode).toBe(400);
+  });
+
+  it('review N11 (e), design section 7: a revoked device\'s copy of the chat key is marked removed, by its revoke-device tap or with its person\'s switch-off', async () => {
+    const owner = await ownerOnce();
+    const { code, chat } = await disputed();
+    const a = await staff('mod');
+    const b = await staff('senior');
+    await a.b.post(url(code, '/take'), {});
+    for (const p of [a, b]) expect((await p.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID })).statusCode).toBe(200);
+    const removed = async () => (await deps.db.query<{ member_ref: string; removed: boolean }>(
+      "select member_ref, removed_at is not null as removed from chat_members where chat = $1 and member_kind = 'staff' order by member_ref", [chat],
+    )).rows;
+    expect((await removed()).every((r) => !r.removed)).toBe(true);
+    // a revokes the device with its own tap (the API's record of the certification, then the revoke).
+    const cert = await seedTap(deps, a.id, { kind: 'certify-device', accountId: a.id, deviceKeyId: DEVICE_KEY_ID, signPublic: DEVICE.signPublic, boxPublic: DEVICE.boxPublic });
+    await deps.db.query('update key_taps set used_at = $2 where id = $1', [cert, deps.clock()]);
+    const rv = await seedTap(deps, a.id, { kind: 'revoke-device', accountId: a.id, deviceKeyId: DEVICE_KEY_ID });
+    expect((await a.b.post(`/staff/v1/devices/${DEVICE_KEY_ID}/revoke`, { tapId: rv })).statusCode).toBe(204);
+    expect(await removed()).toEqual([
+      { member_ref: `${a.id}/${DEVICE_KEY_ID}`, removed: true },
+      { member_ref: `${b.id}/${DEVICE_KEY_ID}`, removed: false },
+    ].sort((x, y) => x.member_ref.localeCompare(y.member_ref)));
+    // b is switched off: every copy of theirs.
+    await owner.fresh();
+    expect((await owner.b.post(`/staff/v1/members/${b.id}/switch-off`, {})).statusCode).toBe(200);
+    expect((await removed()).every((r) => r.removed)).toBe(true);
+  });
+
+  it('review N11 (f): a chat longer than CHAT_READ_MAX returns its newest envelopes and says older ones are not shown', async () => {
+    const mod = await staff('mod');
+    const { code, chat } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    const short = (await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID })).json() as { olderNotShown: boolean };
+    expect(short.olderNotShown).toBe(false);
+    await deps.db.query(
+      `insert into chat_envelopes (chat, sender_role, seq, envelope, created_at)
+       select $1, 'buyer', 1000 + g, jsonb_build_object('n', g), $2 from generate_series(0, $3) g`,
+      [chat, deps.clock(), CHAT_READ_MAX],
+    );
+    const { rows } = await deps.db.query<{ id: string }>('select id::text as id from chat_envelopes where chat = $1 order by id', [chat]);
+    const res = await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
+    const a = res.json() as { olderNotShown: boolean; envelopes: Array<{ id: string }> };
+    expect(a.olderNotShown).toBe(true);
+    expect(a.envelopes).toHaveLength(CHAT_READ_MAX);
+    // The newest, oldest first.
+    expect(a.envelopes.map((e) => e.id)).toEqual(rows.slice(-CHAT_READ_MAX).map((r) => r.id));
   });
 
   it('reads are logged before any key is granted: with logging failing nothing is granted, and someone not on the case is refused first', async () => {

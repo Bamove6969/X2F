@@ -8,6 +8,7 @@ import { lockAccount, withTx } from '../auth/hold.js';
 import { PGP_BODY_LIMIT, checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge } from '../auth/pgp.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, type CredentialKind } from '../auth/webauthn.js';
 import type { Queryable } from '../db/pool.js';
+import { retireStaffCopies } from './staffCopies.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import type { RetentionJob } from '../retention.js';
@@ -274,6 +275,8 @@ export function staffInviteRoutes(app: FastifyInstance): void {
       await c.query('delete from login_approvals where account_id = $1 and used_at is null', [id]);
       await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
       await c.query('update staff_members set has_security_key = false where account_id = $1', [id]);
+      // Review N11 (e): the gate revokes their devices with the reset; their chat key copies are marked removed.
+      await retireStaffCopies(c, id, null, now);
       if (!target.switchedOff) await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.security-reset', { staffId: id, inviteId: n.inviteId });
       await addOwnerAlert(c, 'staff-security-reset', { staffId: id }, now);

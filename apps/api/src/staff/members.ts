@@ -4,6 +4,7 @@ import type pg from 'pg';
 import { lockAccount, withTx } from '../auth/hold.js';
 import { endAllSessions } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
+import { retireStaffCopies } from './staffCopies.js';
 import { ApiError } from '../errors.js';
 import { eraseTermsSignature } from '../termsSignature.js';
 import { appendLog } from '../log/append.js';
@@ -219,6 +220,8 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       if (target.switchedOff) throw new ApiError(409, 'wrong-state');
       await c.query('update accounts set disabled_at = $2 where id = $1', [id, now]);
       await c.query('update staff_members set switched_off_at = $2, last_switched_off_at = $2 where account_id = $1', [id, now]);
+      // Review N11 (e): the gate revokes their devices; their chat key copies are marked removed.
+      await retireStaffCopies(c, id, null, now);
       await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.switched-off', { staffId: id });
     });
@@ -319,6 +322,7 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'remove-staff', accountId: id }, now, { sessionId: req.auth.sessionId });
       await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
       await c.query('update staff_members set switched_off_at = coalesce(switched_off_at, $2), last_switched_off_at = coalesce(switched_off_at, $2), removed_at = $2 where account_id = $1', [id, now]);
+      await retireStaffCopies(c, id, null, now);
       // Removal closes the staff login for good (switch-off can be undone, so it keeps it).
       await eraseTermsSignature(c, id);
       // D-032: an open security-reset link of theirs ends with them.

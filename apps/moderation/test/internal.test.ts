@@ -532,6 +532,12 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
                   ($1, 'staff', $6, $2, 'staffwrap', $3, 'assigned', 'mod', $4, '', null, null)`,
           [chat, 'a'.repeat(64), 'b'.repeat(64), at, 'c'.repeat(128), `${u1}/${'d'.repeat(32)}`],
         );
+        // Review N11 (a), migration 716: the reader may see `statement` on every row, so a staff row never carries one.
+        await expect(c.query(
+          `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, grant_at, statement)
+           values ($1, 'staff', $2, $3, 'staffwrap2', $4, 'assigned', 'mod', $5, '', null, '{"s":1}')`,
+          [chat, `${u2}/${'e'.repeat(32)}`, 'a'.repeat(64), 'b'.repeat(64), at],
+        )).rejects.toMatchObject({ code: '23514' });
       } finally {
         c.release();
       }

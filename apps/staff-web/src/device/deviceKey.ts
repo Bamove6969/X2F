@@ -1,4 +1,4 @@
-import { generateIdentity, type Identity } from '@x2f/protocol';
+import { generateIdentity, identityKeysMatch, type Identity } from '@x2f/protocol';
 import { staffDeviceKeyId } from '@x2f/staff';
 
 /**
@@ -90,7 +90,13 @@ export async function staffDeviceKey(backend: DeviceKeyBackend, cr: Crypto = glo
         const signSecret = fromHex(s.signSecret);
         // The stored secrets must be the stored public key's (the last 32 bytes of an Ed25519 secret key).
         if (signSecret.length !== 64 || toHex(signSecret.subarray(32)) !== stored.signPublic) throw new DeviceKeyError('bad-record');
-        return { signPublic: stored.signPublic, boxPublic: stored.boxPublic, signSecret, boxSecret: fromHex(s.boxSecret) };
+        // Review N11 (d): and both secrets the stored public keys' (the box secret's too).
+        const id = { signPublic: stored.signPublic, boxPublic: stored.boxPublic, signSecret, boxSecret: fromHex(s.boxSecret) };
+        if (!(await identityKeysMatch(id))) {
+          wipeIdentity(id);
+          throw new DeviceKeyError('bad-record');
+        }
+        return id;
       } finally {
         plain.fill(0);
       }
