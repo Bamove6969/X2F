@@ -11,13 +11,15 @@ import { StaffList } from './screens/StaffList.js';
 import { StaffOverview } from './screens/StaffOverview.js';
 import { StaffPerformance } from './screens/StaffPerformance.js';
 import { StaffSettings } from './screens/StaffSettings.js';
+import { StaffLog } from './screens/StaffLog.js';
+import { Training } from './screens/Training.js';
 import { StaffShell } from './ui/StaffShell.js';
 
 /**
  * The staff app (Plan 4 Task 16): Login, invite acceptance and owner setup outside the shell;
  * every other path is the shell, which shows the signed-in role's pages: the owner's Overview, Staff
- * and Settings (Task 17), Disputes (Task 18), Performance (Task 20), Prices and Feedback. Pages a
- * later task builds (Task 19) show their title until then.
+ * and Settings (Task 17), Disputes (Task 18), the Training library and the Activity log (Task 19),
+ * Performance (Task 20), Prices and Feedback.
  */
 export function App() {
   return (
@@ -25,7 +27,7 @@ export function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/invite/:token" element={<Invite />} />
       <Route path="/setup" element={<OwnerSetup />} />
-      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, disputes: <Disputes />, staff: <StaffList />, performance: <StaffPerformance />, settings: <StaffSettings />, prices: <Prices />, feedback: <Feedback /> }} notifications={<OwnerAlerts />} />} />
+      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, disputes: <Disputes />, staff: <StaffList />, performance: <StaffPerformance />, settings: <StaffSettings />, prices: <Prices />, feedback: <Feedback />, training: <Training />, log: <StaffLog /> }} notifications={<OwnerAlerts />} />} />
     </Routes>
   );
 }

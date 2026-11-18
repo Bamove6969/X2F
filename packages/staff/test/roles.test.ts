@@ -27,6 +27,8 @@ const GRANTS: Record<Perm, Record<StaffRole, boolean>> = {
   'feedback.read': { owner: true, senior: true, mod: false, helper: false },
   'training.read': { owner: true, senior: true, mod: true, helper: false },
   'training.write': { owner: true, senior: false, mod: false, helper: false },
+  // Lead call 18 Nov (re-review): marking a closed case as a training case, with its masks; the owner by default.
+  'training.curate': { owner: true, senior: false, mod: false, helper: false },
   self: { owner: true, senior: true, mod: true, helper: true },
 };
 

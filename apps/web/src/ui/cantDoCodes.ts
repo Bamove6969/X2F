@@ -127,6 +127,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'quote-invalid': 'a staff clock-out sheet that is not this session\'s (staff app only)',
   'quote-expired': 'a staff clock-out sheet shown too long ago: it is shown again (staff app only)',
   'quote-changed': 'a staff clock-out sheet whose pay changed meanwhile: it is shown again (staff app only)',
+  // Plan 4 Task 19 (re-review 3 m1): the training case changed after the curator opened it.
+  'case-changed': 'a training case that changed after the curator opened it: reload and review again (staff app only)',
   'both-owner-keys-required': "a change to the owner's keys is tapped with both owner keys (staff app only)",
   'passkey-is-security-key': 'a staff passkey must be another device than the security key (staff app only)',
   'bad-request': 'a malformed request (a fault)',

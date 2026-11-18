@@ -158,4 +158,17 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER, body: { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, tapId: '00000000-0000-4000-8000-000000000000' } },
   { method: 'GET', url: '/staff/v1/pay/staff', perm: 'earnings.read', allowed: OWNER },
+  // Plan 4 Task 19: the Activity log page (the staff scope for moderators and senior moderators, all
+  // for the owner; the chain check is the owner's) and the training library (closed cases, scrubbed).
+  { method: 'GET', url: '/staff/v1/log', perm: 'log.read.cases', allowed: MODERATORS },
+  { method: 'GET', url: '/staff/v1/log/filters', perm: 'log.read.cases', allowed: MODERATORS },
+  { method: 'GET', url: '/staff/v1/log/active-disputes', perm: 'log.read.cases', allowed: MODERATORS },
+  { method: 'GET', url: '/staff/v1/log/integrity', perm: 'log.read.all', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/training', perm: 'training.read', allowed: MODERATORS },
+  { method: 'GET', url: '/staff/v1/training/:id', perm: 'training.read', allowed: MODERATORS },
+  // Lead call 18 Nov (re-review): the library is review-first; a curator marks each case.
+  { method: 'GET', url: '/staff/v1/training/review', perm: 'training.curate', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/training/review/:id', perm: 'training.curate', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/training/review/:id', perm: 'training.curate', allowed: OWNER, body: { masks: [] } },
+  { method: 'DELETE', url: '/staff/v1/training/review/:id', perm: 'training.curate', allowed: OWNER },
 ];

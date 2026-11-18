@@ -1,6 +1,8 @@
 import { normalizeTradeCode } from '@x2f/core';
 import type { Queryable } from '../db/pool.js';
-import { OWNER_ONLY_PREFIXES } from './actions.js';
+import { LOG_KINDS, OWNER_ONLY_PREFIXES, type LogKind } from './actions.js';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export interface LogEntry {
   id: string;
@@ -10,7 +12,17 @@ export interface LogEntry {
   actorRole: string | null;
   tradeCode: string | null;
   action: string;
-  detail: Record<string, unknown>;
+  /** Null when the stored text is not a JSON object (only a tampered row: the chain check finds it). */
+  detail: Record<string, unknown> | null;
+}
+
+function parseDetail(s: string): Record<string, unknown> | null {
+  try {
+    const v = JSON.parse(s) as unknown;
+    return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 export const LOG_PAGE_MAX = 200;
@@ -25,7 +37,19 @@ export const LOG_PAGE_MAX = 200;
  */
 export async function queryLog(
   db: Queryable,
-  q: { tradeCode?: string; scope: 'all' | { staffId: string }; before?: string; limit: number },
+  q: {
+    tradeCode?: string;
+    scope: 'all' | { staffId: string };
+    before?: string;
+    limit: number;
+    /** Plan 4 Task 19: who acted: a staff id, `system`, or a trader side. */
+    actor?: { staffId: string } | 'system' | 'buyer' | 'seller';
+    /** Plan 4 Task 19: one of LOG_KINDS (by action prefix). */
+    kind?: LogKind;
+    /** Plan 4 Task 19: entries at or after `from` and before `to`. */
+    from?: Date;
+    to?: Date;
+  },
 ): Promise<LogEntry[]> {
   if (!Number.isInteger(q.limit) || q.limit < 1 || q.limit > LOG_PAGE_MAX) throw new RangeError('limit out of range');
   const where: string[] = [];
@@ -37,9 +61,32 @@ export async function queryLog(
     where.push(`l.trade_code = $${args.length}`);
   }
   if (q.before !== undefined) {
-    if (!/^[1-9]\d{0,18}$/.test(q.before)) throw new RangeError('before is not an entry id');
+    // A safe integer only (review m2): a larger value would reach Postgres as an out-of-range bigint.
+    if (!/^[1-9]\d{0,15}$/.test(q.before) || !Number.isSafeInteger(Number(q.before))) throw new RangeError('before is not an entry id');
     args.push(q.before);
     where.push(`l.id < $${args.length}`);
+  }
+  if (q.actor !== undefined) {
+    if (q.actor === 'system') where.push(`l.actor_kind = 'system'`);
+    else if (q.actor === 'buyer' || q.actor === 'seller') {
+      args.push(q.actor);
+      where.push(`l.actor_kind = 'trader' and l.actor_role = $${args.length}`);
+    } else {
+      if (!UUID.test(q.actor.staffId)) throw new RangeError('actor is not a staff id');
+      args.push(q.actor.staffId);
+      where.push(`l.actor_kind = 'staff' and l.actor_id = $${args.length}::uuid`);
+    }
+  }
+  if (q.kind !== undefined) {
+    if (!Object.hasOwn(LOG_KINDS, q.kind)) throw new RangeError('unknown kind');
+    // Fixed literals from LOG_KINDS (letters and a dot), never input.
+    where.push(`(${LOG_KINDS[q.kind].prefixes.map((p) => `l.action like '${p}%'`).join(' or ')})`);
+  }
+  for (const [d, op] of [[q.from, '>='], [q.to, '<']] as const) {
+    if (d === undefined) continue;
+    if (!Number.isFinite(d.getTime())) throw new RangeError('invalid date');
+    args.push(d);
+    where.push(`l.at ${op} $${args.length}`);
   }
   if (q.scope !== 'all') {
     where.push('l.trade_code is not null');
@@ -73,6 +120,6 @@ export async function queryLog(
     actorRole: r.actor_role,
     tradeCode: r.trade_code,
     action: r.action,
-    detail: JSON.parse(r.detail) as Record<string, unknown>,
+    detail: parseDetail(r.detail),
   }));
 }

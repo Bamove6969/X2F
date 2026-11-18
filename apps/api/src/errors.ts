@@ -231,7 +231,9 @@ export type ApiErrorCode =
   // Security review S2: the clock-out pays exactly the sheet's signed quote.
   | 'quote-invalid'
   | 'quote-expired'
-  | 'quote-changed';
+  | 'quote-changed'
+  // Plan 4 Task 19, re-review 3 m1: a training case changed after the curator opened it.
+  | 'case-changed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {
