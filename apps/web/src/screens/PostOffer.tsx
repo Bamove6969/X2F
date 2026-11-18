@@ -77,6 +77,8 @@ import { useResumeSync } from '../session/syncFirst.js';
 import { useSession } from '../session/useSession.js';
 import { NOT_VENDOR_CODE, NOT_VENDOR_POST_TEXT } from '../ui/cantDoCodes.js';
 import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './settings/accountTypeCopy.js';
+import { useSiteInfo } from '../api/site.js';
+import { TradingStopped } from '../ui/TradingStopped.js';
 
 /** Re-asks the feed this often, so "right now" stays true while the form is open. */
 const PRICE_REFRESH_MS = 60_000;
@@ -204,6 +206,7 @@ function useMethods(): [Methods, () => void] {
 }
 
 function PostOfferForm() {
+  const { tradingPaused } = useSiteInfo();
   const location = useLocation();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(() => initialForm(location.search));
@@ -754,7 +757,9 @@ function PostOfferForm() {
           </p>
         ) : null}
         {refusal && cantDo !== null ? <CantDoThat title={POST_CANT_TITLE} body={refusal} from={cantDo} onClose={() => setCantDo(null)} /> : null}
-        <Button variant="primary" className="post-submit" onClick={() => void submit()} disabled={busy} aria-busy={busy}>
+        {/* Plan 4 Task 29: no new offer during the emergency stop (the API refuses it too, 409 trading-paused). */}
+        {tradingPaused ? <TradingStopped /> : null}
+        <Button variant="primary" className="post-submit" onClick={() => void submit()} disabled={busy || tradingPaused} aria-busy={busy}>
           Post offer
         </Button>
       </footer>

@@ -101,6 +101,11 @@ export const LOG_ACTIONS = {
   'ruling.final': { rulingId: 'id', round: 'number', overturned: 'bool' },
   'ruling.executed': { rulingId: 'id', txHash: 'hex64' },
   'dispute.complied': { txHash: 'hex64' },
+  // Plan 4 Task 12 (A6): the seller's payment proof waits for its confirmations, or was refused on a
+  // later check; the seller let the comply time pass with no proof (the case goes to a senior).
+  'dispute.proof-pending': { txHash: 'hex64' },
+  'dispute.proof-refused': { txHash: 'hex64' },
+  'dispute.comply-lapsed': { seq: 'number' },
   // Holds, freezes and the ban stages (Tasks 11, 12, 27; the single `account.banned` is replaced).
   'hold.placed': { accountId: 'uuid', side: 'id', kind: 'id' },
   'hold.lifted': { accountId: 'uuid', side: 'id', kind: 'id' },

@@ -157,6 +157,16 @@ export interface EscrowStatus {
    * TradeFund sets its `funded` mark for good only from this (a 0-conf tx can be dropped).
    */
   confirmedAtomic: bigint | null;
+  /**
+   * Plan 4 Task 12 (A6), seller only: where and how much a `seller-sends-xmr` ruling's payment
+   * goes: the address from the moderator-attested terms this device verified in this run
+   * (`buyerPayout`), never an API field; the amount is `amountAtomic`, this device's own accepted
+   * trade size (bound, else fixed, else the API's amount only within [take, own escrow-funded
+   * size]), so a grown trade pays the grown amount (review B1). Null for the buyer, until an
+   * attestation verified (another device, or a record already forgotten after the close), and
+   * while this device accepts no amount. Absent: null.
+   */
+  restitution?: { address: string; amountAtomic: bigint } | null;
 }
 
 export type EscrowAction =
@@ -403,6 +413,13 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         })(),
         receivedAtomic: this.reading?.balance ?? null,
         confirmedAtomic: this.reading?.confirmed ?? null,
+        // Review B1: the amount is this device's own accepted trade size (the one a release
+        // trusts), not the take amount: a grown trade's ruling payment is the grown amount. Null
+        // (no amount this device accepts) means no form.
+        restitution:
+          this.attested !== null && this.rec?.role === 'seller' && amountAtomic !== null
+            ? { address: this.attested.buyerPayout, amountAtomic }
+            : null,
       };
       const j = JSON.stringify(s, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
       if (j !== this.last) {

@@ -60,7 +60,16 @@ export type AlertKind =
   | 'staff-security-reset-finished'
   // Owner only: an appeal nobody may review (every senior moderator and the owner was involved in
   // round 1, or none is switched on); it waits in the queue until one is added (D-011, Plan 4 Task 24).
-  | 'appeal-no-reviewer';
+  | 'appeal-no-reviewer'
+  // Owner only (Plan 4 Task 12, A6): a seller ordered to send the XMR let the comply time pass with no
+  // proof; the case waits for a senior moderator or the owner to decide the suspension.
+  | 'dispute-comply-lapsed'
+  // Owner only (re-review m3 follow-up): the payment-proof checker gave up on a stuck wallet; once
+  // per stuck episode. After three, proofs answer 503 until the API is restarted.
+  | 'tx-proof-check-stuck'
+  // Owner only (re-review w1): the checker gave up on its third stuck wallet; every proof answers 503
+  // until the API is restarted. Once.
+  | 'tx-proof-check-stopped';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

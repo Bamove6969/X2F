@@ -417,6 +417,11 @@ export interface QueueRow {
   approval: 'not-needed' | 'needs-second' | { waitingFor: 'second-approval'; proposedBy: string | null };
   assignee: string | null;
   mine: boolean;
+  /**
+   * Plan 4 Task 12 (A6): the seller did not prove the payment a `seller-sends-xmr` ruling ordered in
+   * time; listed for senior moderators and the owner, who decide the suspension. Absent from an older API.
+   */
+  complyLapsed?: boolean;
 }
 export interface Queue {
   rows: QueueRow[];
@@ -437,6 +442,15 @@ export interface CaseRuling {
   round1?: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
   publishedAt: string | null;
   appealEndsAt: string | null;
+  /**
+   * Plan 4 Task 12 (A6): the seller's payment proof for a `seller-sends-xmr` ruling. `failedChecks`
+   * (RC-4, lead default): proofs X2F's checker could not take (503), newest first. Absent from an older API.
+   */
+  compliance?: {
+    lapsedAt: string | null;
+    proof: { txHash: string; status: 'pending' | 'accepted' | 'refused'; confirmations: number | null; submittedAt: string } | null;
+    failedChecks?: Array<{ at: string; reason: 'node-unavailable' | 'busy' }>;
+  };
 }
 export interface DisputeCase {
   code: string;

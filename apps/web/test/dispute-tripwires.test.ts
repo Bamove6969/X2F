@@ -88,13 +88,4 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
     expect(/feeOwed|fees_owed/.test(routes), 'the dispute view sends the owed fee: check parseDispute against it').toBe(false);
   });
-
-  it('NEEDS_TASK_12_TX_PROOF: the seller-sends-xmr proof form is shown only with a handler', () => {
-    // Plan 4 Task 15 (A6/A8): the seller sends the XMR and proves it (tx hash, tx key). No API route
-    // takes the proof yet, and the view does not carry the buyer's address, so DisputeScreen passes no
-    // onTxProof and the ruling shows the amount and the time only. When the route lands: pass
-    // onTxProof from DisputeScreen and DisputeSlot, show the buyer's address, and delete this.
-    const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
-    expect(/tx-proof|txKey|tx_key/.test(routes), 'the tx-proof route landed: wire onTxProof and the buyer address').toBe(false);
-  });
 });

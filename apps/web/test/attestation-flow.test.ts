@@ -521,6 +521,21 @@ describe('what this device signs comes from what the user confirmed, never the A
     expect(buyer.last()?.methodId).toBe('ZELLE');
   });
 
+  it('Plan 4 Task 12 (A6): the seller\'s status carries the attested buyer address and take amount to pay a ruling; the buyer\'s none; none before the attestation', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    expect(seller.last()?.restitution ?? null).toBeNull();
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    expect(await seller.status((s) => s.phase === 'ready')).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: AMOUNT } });
+    expect(await buyer.status((s) => s.phase === 'ready')).toMatchObject({ restitution: null });
+    // A view naming another address changes nothing: only the signed terms count.
+    t.state.view = { ...tradeView({ state: 'secured' }), buyerPayout: '4AttackerAddress' } as typeof t.state.view;
+    await Promise.all([t.parties.ticks('seller', 2)]);
+    expect(seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: AMOUNT });
+  });
+
   it('re-verify R1: "I\'ve paid" needs this device\'s own view to be secured; a view that says securing (no securedAt, no text) is refused', async () => {
     const t = await setup();
     const buyer = await t.mk('buyer');
@@ -1025,6 +1040,29 @@ describe('settling', () => {
       await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
       await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.cosigner === 'mod'));
       expect(t.parties.settles.find((x) => x.o.cosigner === 'mod')!.o.to).toEqual([{ address: ADDR.seller, amountAtomic: fundsFor(grown) }]);
+    });
+
+    it('Plan 4 Task 12 (B1): a grown trade\'s ruling payment is the amount this seller fixed at paid, never the take amount; a view naming another amount changes nothing', async () => {
+      const t = await paidAtMiddle();
+      expect(await t.seller.status((x) => x.restitution?.amountAtomic === middle)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: middle } });
+      for (const lie of [AMOUNT, grown, grown * 2n]) {
+        t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: lie.toString() });
+        await t.parties.ticks('seller', 2);
+        expect(t.seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: middle });
+      }
+    });
+
+    it('Plan 4 Task 12 (B1): a seller funded above the take amount, nothing fixed yet: the ruling payment is the grown amount (the API amount within [take, own size]); above its own size, no amount (no form)', async () => {
+      const t = await ready();
+      t.state.view = tradeView({ state: 'securing' });
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown);
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      expect(await t.seller.status((x) => x.restitution?.amountAtomic === grown)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: grown } });
+      expect(t.seller.last()?.restitution?.amountAtomic).not.toBe(AMOUNT);
+      // An API amount above what this device's own escrow funds grew to: no amount, so no form.
+      t.state.view = tradeView({ state: 'secured', amountAtomic: (grown + 1n).toString() });
+      expect(await t.seller.status((x) => x.restitution === null)).toMatchObject({ restitution: null });
     });
 
     it('I3 status: amountAtomic and fiatCents are the sum this device will accept: the API amount in range, the bound one once a release was handed over (even when the API grows it), the fixed one after paid', async () => {

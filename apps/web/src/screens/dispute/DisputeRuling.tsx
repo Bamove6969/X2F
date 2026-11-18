@@ -15,7 +15,7 @@ import type { DisputeTrade, DisputeView } from './api.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
 import { ModeratorTag } from './ModeratorTag.js';
-import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, feeOwedLine, isTxHex, overturnLien, rulingCopy, rulingFinal, utcDateTime } from './rules.js';
+import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, feeOwedLine, isTxHex, isTxKeyHex, overturnLien, rulingCopy, rulingFinal, utcDateTime, xmrInTextExact } from './rules.js';
 import './dispute.css';
 
 function AppealSection({
@@ -141,45 +141,69 @@ function AppealSection({
   );
 }
 
+/** Where the seller pays and how much: from the attested terms this device verified, never the API. */
+export interface PayTo {
+  address: string;
+  amountAtomic: bigint;
+}
+
+/** The attested amount equals the dispute view's trade amount (a decimal string of atomic units). */
+export function sameAmount(attested: bigint, viewAtomic: string): boolean {
+  return /^[0-9]+$/.test(viewAtomic) && BigInt(viewAtomic) === attested;
+}
+
+/** What the API answered a proof it took: proven now, or waiting for its confirmations. */
+export type ProofSent = 'accepted' | 'pending-confirmations';
+
 /**
- * The after-refund `seller-sends-xmr` proof (Plan 4 Task 15, A6/A8): the transaction ID and its
- * transaction key, 64 hex characters each, so a moderator can check the payment. Shown only with a
- * handler: no API route takes it yet (NEEDS_TASK_12_TX_PROOF). COPY-UNSIGNED; DESIGNER-REVIEW (no board).
+ * The after-refund `seller-sends-xmr` proof (Plan 4 Tasks 12 and 15, A6/A8): the exact amount and
+ * the buyer's address to pay, both from the trade's attested terms this device verified (the room's
+ * escrow, `restitution`), then the transaction ID (64 hex) and its key (64 hex, or more for a
+ * subaddress payment) so X2F can check the payment on its node. Shown only with both. COPY-UNSIGNED;
+ * DESIGNER-REVIEW (no board).
  */
-function TxProofForm({ onTxProof }: { onTxProof: (txHash: string, txKey: string) => Promise<void> }) {
+function TxProofForm({ payTo, onTxProof }: { payTo: PayTo; onTxProof: (txHash: string, txKey: string) => Promise<ProofSent> }) {
   const [hash, setHash] = useState('');
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<ProofSent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const hashId = useId();
   const keyId = useId();
   const h = hash.trim().toLowerCase();
   const k = key.trim().toLowerCase();
-  const ready = isTxHex(h) && isTxHex(k);
+  const ready = isTxHex(h) && isTxKeyHex(k);
   const send = async () => {
     if (!ready || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await onTxProof(h, k);
-      setSent(true);
+      setSent(await onTxProof(h, k));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
   };
-  if (sent) {
+  if (sent !== null) {
     return (
       <Notice tone="plain" icon="check" live="status" data-part="tx-proof-sent">
-        Proof sent. A moderator will check the payment.
+        {sent === 'accepted'
+          ? 'Payment proven. Thank you.'
+          : 'Proof sent. It counts once the payment has 10 confirmations; X2F checks it again by itself.'}
       </Notice>
     );
   }
   return (
     <section aria-label="Transfer proof" className="dispute-stack-8">
-      <h2 className="dispute-strong-15">Prove you sent it</h2>
+      <h2 className="dispute-strong-15">Send the XMR, then prove it</h2>
+      <p className="dispute-muted">
+        Send exactly <span className="dispute-ink dispute-mono" data-part="pay-amount">{xmrInTextExact(payTo.amountAtomic)} XMR</span> to the buyer&apos;s
+        address for this trade:
+      </p>
+      <p className="dispute-ink dispute-mono dispute-pay-address" data-part="pay-address">
+        {payTo.address}
+      </p>
       <p className="dispute-muted">Your wallet shows the transaction ID and the transaction key once the XMR is sent.</p>
       <label htmlFor={hashId} className="dispute-field-label">
         Transaction ID
@@ -208,14 +232,17 @@ export function DisputeRuling({
   serverClock,
   onAppeal,
   onTxProof,
+  payTo = null,
 }: {
   trade: DisputeTrade;
   methodName: string;
   dispute: DisputeView;
   serverClock: () => Date;
   onAppeal: (why: string) => Promise<void>;
-  /** The seller's proof of a `seller-sends-xmr` payment; none until the API takes it (NEEDS_TASK_12_TX_PROOF). */
-  onTxProof?: (txHash: string, txKey: string) => Promise<void>;
+  /** The seller's proof of a `seller-sends-xmr` payment (POST /v1/trades/:code/payment-proof). */
+  onTxProof?: (txHash: string, txKey: string) => Promise<ProofSent>;
+  /** Where the payment goes and how much, from the room escrow's attested terms only; without it no form. */
+  payTo?: PayTo | null;
 }) {
   const r = dispute.ruling;
   if (r === null) throw new Error('DisputeRuling needs a ruling');
@@ -223,7 +250,12 @@ export function DisputeRuling({
   const copy = rulingCopy(dispute, trade.role, trade.counterparty, trade.amountAtomic, now, trade.poster);
   const chat = `/trade/${encodeURIComponent(trade.code)}/dispute?view=chat`;
   // The ruling orders the seller to send the XMR and the proof form is wired: Send proof is the primary.
-  const proofDue = r.outcome === 'seller-sends-xmr' && trade.role === 'seller' && onTxProof !== undefined;
+  // Only with the attested address and amount: never a form that would send the seller to an address the API chose.
+  // Review B1: and only when the attested amount equals the trade amount the server checks a proof
+  // against (the dispute view's `amountAtomic`). Otherwise no form: one the server would refuse is
+  // never shown. The server's figure is only compared here, never shown as the sum to send.
+  const proofDue =
+    r.outcome === 'seller-sends-xmr' && trade.role === 'seller' && onTxProof !== undefined && payTo !== null && sameAmount(payTo.amountAtomic, trade.amountAtomic);
   return (
     <div className="dispute-screen">
       <TradeHeader
@@ -289,7 +321,7 @@ export function DisputeRuling({
             {feeOwedLine(dispute.feeOwedAtomic)}
           </Notice>
         ) : null}
-        {proofDue ? <TxProofForm onTxProof={onTxProof!} /> : null}
+        {proofDue ? <TxProofForm payTo={payTo!} onTxProof={onTxProof!} /> : null}
         <AppealSection dispute={dispute} me={trade.role} other={trade.counterparty} serverClock={serverClock} onAppeal={onAppeal} quiet={proofDue} />
         <p className="dispute-footnote">{copy.footer}</p>
       </div>

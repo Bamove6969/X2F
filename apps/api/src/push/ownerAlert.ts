@@ -17,6 +17,12 @@ import type { PushKind } from './send.js';
 export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>([
   'market-prices-paused', 'price-source-failing', 'fee-sweep-due', 'fee-sweep-failed', 'staff-security-reset', 'staff-security-reset-finished',
   'appeal-no-reviewer',
+  // Plan 4 Task 12 (A6, lead call 18 Nov): a seller let the comply time pass; a senior or the owner decides.
+  'dispute-comply-lapsed',
+  // Re-review m3 follow-up: the proof checker is stuck, so a restart happens before sellers' deadlines pass.
+  'tx-proof-check-stuck',
+  // Re-review w1: the checker stopped at its cap; only a restart brings it back.
+  'tx-proof-check-stopped',
 ]);
 
 export interface OwnerAlertDeps {
