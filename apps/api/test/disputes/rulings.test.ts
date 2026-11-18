@@ -434,22 +434,28 @@ describe('the appeal round', () => {
 describe('maintenance and the emergency stop', () => {
   // `maintenance`: the timer has marked the dispute paused. `maintenance-before-tick` (lead follow-up
   // to Q1): the site's maintenance switch is on and the timer has not run yet, so `paused_since` is unset.
+  // `locked-before-tick` (J-14 re-verify M1, 18 Nov): the seller's account is locked ("My account has
+  // been compromised", D-059) and the timer has not run yet, so `paused_since` is unset.
   async function paused<T>(how: Pause, code: string, fn: () => Promise<T>): Promise<T> {
     if (how === 'maintenance') await deps.db.query('update disputes set paused_since = $2 where code = $1', [code, at(H)]);
     else if (how === 'maintenance-before-tick') await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [at(H)]);
+    else if (how === 'locked-before-tick') {
+      await deps.db.query('insert into account_locks (account_id, ticket_id, locked_at, set_disabled) select seller_account_id, null, $2, false from trades where code = $1', [code, at(H)]);
+    }
     else await deps.db.query('update site_flags set trading_paused = true, stopped_at = $1', [at(H)]);
     try {
-      if (how === 'maintenance-before-tick') expect((await deps.db.query('select paused_since from disputes where code = $1', [code])).rows).toEqual([{ paused_since: null }]);
+      if (how === 'maintenance-before-tick' || how === 'locked-before-tick') expect((await deps.db.query('select paused_since from disputes where code = $1', [code])).rows).toEqual([{ paused_since: null }]);
       return await fn();
     } finally {
       await deps.db.query('update disputes set paused_since = null where code = $1', [code]);
+      await deps.db.query('update account_locks set unlocked_at = $2 where unlocked_at is null and account_id in (select seller_account_id from trades where code = $1)', [code, at(H)]);
       await deps.db.query('update site_flags set trading_paused = false, stopped_at = null, maintenance_since = null, maintenance_kind = null');
     }
   }
-  type Pause = 'maintenance' | 'maintenance-before-tick' | 'stop';
-  const REFUSAL = { maintenance: 'dispute-paused', 'maintenance-before-tick': 'dispute-paused', stop: 'trading-paused' } as const;
+  type Pause = 'maintenance' | 'maintenance-before-tick' | 'locked-before-tick' | 'stop';
+  const REFUSAL = { maintenance: 'dispute-paused', 'maintenance-before-tick': 'dispute-paused', 'locked-before-tick': 'dispute-paused', stop: 'trading-paused' } as const;
 
-  for (const how of ['maintenance', 'maintenance-before-tick', 'stop'] as const) {
+  for (const how of ['maintenance', 'maintenance-before-tick', 'locked-before-tick', 'stop'] as const) {
     it(`${how}: a proposal is refused with 409 ${REFUSAL[how]}, nothing is written and the tap stays unused`, async () => {
       const mod = await staff('mod');
       const { code } = await disputed();

@@ -158,6 +158,28 @@ describe('GET /internal/v1/watch', () => {
     expect((await item())?.paused).toBe(false);
   });
 
+  // J-14 re-verify M2 (18 Nov): a compromised-account lock (D-059) on either party shows the trade
+  // paused from the lock's commit on, before the timer loop writes `paused_at`, so neither the
+  // moderation executor nor the auto-refund desk signs on it; the unlock shows it again.
+  it('J-14: a trade whose buyer or seller is locked (account_locks) shows paused, before any timer pass; the unlock shows it again', async () => {
+    for (const side of ['buyer', 'seller'] as const) {
+      const t = await trade();
+      const { rows } = await deps.db.query<{ account: string }>(`select ${side}_account_id as account from trades where code = $1`, [t.code]);
+      const account = rows[0]!.account;
+      const item = async () =>
+        ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === t.code);
+      expect((await item())?.paused, side).toBe(false);
+      await deps.db.query('insert into account_locks (account_id, ticket_id, locked_at, set_disabled) values ($1, null, $2, false)', [account, NOW]);
+      try {
+        expect((await deps.db.query('select paused_at from trades where code = $1', [t.code])).rows, side).toEqual([{ paused_at: null }]);
+        expect((await item())?.paused, side).toBe(true);
+      } finally {
+        await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [account, NOW]);
+      }
+      expect((await item())?.paused, side).toBe(false);
+    }
+  });
+
   it('refuses an unsigned request', async () => {
     const res = await internal.inject({ method: 'GET', url: '/internal/v1/watch' });
     expect(res.statusCode).toBe(401);
