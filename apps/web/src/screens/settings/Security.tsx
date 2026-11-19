@@ -5,7 +5,7 @@
  * replaced the inactivity logout timer, owner 2 Nov 2026), and the alerts list. All confirm-it's-you prompts across the screen use one shared `ConfirmSheet` (via
  * `useConfirm`), so there is a single confirm UI (X-4).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
@@ -110,8 +110,13 @@ export function Security() {
 function SecurityScreen() {
   const { prove, confirmUi, open } = useConfirm();
   const session = useSession();
-  const ready = session.status === 'signed-in';
-  const member = ready && memberOf(session) !== null;
+  const known = useRef<{ ready: boolean; member: boolean }>({ ready: false, member: false });
+  if (session.status === 'signed-in') {
+    known.current = { ready: true, member: memberOf(session) !== null };
+  } else if (session.status === 'signed-out') {
+    known.current = { ready: false, member: false };
+  }
+  const { ready, member } = known.current;
 
   return (
     <ConfirmOpenProvider value={open}>

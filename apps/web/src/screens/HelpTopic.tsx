@@ -8,7 +8,7 @@ import { useSession } from '../session/useSession.js';
  * Support and Settings, linked from /login, /session-length and the welcome screen. They are on the
  * front door, so they are read both by someone who is not logged in yet and by someone who is: each
  * topic has a line for each (review 12 Nov, L4), and only a signed-in reader gets links behind the
- * door. A team member gets member-level Settings (security alerts and idle reminder), while owner-only settings remain gated.
+ * door. A team member gets member-level Settings (alarm settings and idle reminder), while owner-only settings remain gated.
  * The one help page (review L3: /help/:topic wins over a separate signed-in /help).
  * COPY-UNSIGNED and DESIGNER-REVIEW: every word here is a placeholder until the owner writes the pages.
  */

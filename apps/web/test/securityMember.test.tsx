@@ -122,4 +122,38 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
     // M1: Even after settle, owner calls were never fired for member
     expect(fetchedUrls.filter((u) => ownerUrls.includes(u))).toEqual([]);
   });
+
+  it('does not unmount Methods or PayoutWait on refreshSession() for the owner (B1)', async () => {
+    isMember = false;
+    refreshSession();
+    let host: HTMLElement = null!;
+    await act(async () => {
+      const res = render(
+        <MemoryRouter initialEntries={['/settings/security']}>
+          <Security />
+        </MemoryRouter>,
+      );
+      host = res.host;
+    });
+    await settle();
+
+    const methodsEl = host.querySelector('[data-part="methods"]');
+    const payoutEl = host.querySelector('[data-part="payout-wait"]');
+    expect(methodsEl).not.toBeNull();
+    expect(payoutEl).not.toBeNull();
+
+    // Trigger refreshSession(), which transitions useSession to loading
+    await act(async () => {
+      refreshSession();
+    });
+
+    // Sections should still remain mounted during reload (DOM identity preserved)
+    expect(host.querySelector('[data-part="methods"]')).toBe(methodsEl);
+    expect(host.querySelector('[data-part="payout-wait"]')).toBe(payoutEl);
+
+    await settle();
+
+    expect(host.querySelector('[data-part="methods"]')).toBe(methodsEl);
+    expect(host.querySelector('[data-part="payout-wait"]')).toBe(payoutEl);
+  });
 });
