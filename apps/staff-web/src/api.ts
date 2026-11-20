@@ -233,6 +233,38 @@ export const moodFeedback = (before?: string) =>
 export const formFeedback = (before?: string) => staffApi<{ items: FormItem[]; next: string | null }>(page('/staff/v1/feedback/form', before));
 
 // ---------------------------------------------------------------------------------------------
+// Past reputation (Plan 5 Task 11; perm reputation.review: the owner, senior moderators and
+// moderators; revoking reputation.revoke and the dollar figure reputation.verify: senior moderators
+// and the owner)
+
+export interface PastRepClaim {
+  id: string;
+  site: string;
+  /** The archived old profile (an https archive link, checked by the API; never fetched by X2F). */
+  url: string;
+  claimedTrades: number;
+  verifiedTrades: number | null;
+  verifiedUsdCents: number | null;
+  status: 'signed' | 'approved';
+  /** Upper case, in groups of 4. */
+  fingerprint: string;
+  keyId: string;
+  signatureValid: true;
+  displayName: string;
+  createdAt: string;
+}
+
+export const pastRepList = (status: 'signed' | 'approved') => staffApi<PastRepClaim[]>(`/staff/v1/past-rep?status=${status}`);
+export const pastRepApprove = (id: string, tradesSeen: number) =>
+  staffApi<{ id: string; status: 'approved'; verifiedTrades: number }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/approve`, { method: 'POST', body: { fingerprintSeen: true, tradesSeen } });
+export const pastRepReject = (id: string, reason: string) =>
+  staffApi<{ id: string; status: 'rejected' }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/reject`, { method: 'POST', body: { reason } });
+export const pastRepRevoke = (id: string, reason: string) =>
+  staffApi<{ id: string; status: 'revoked' }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/revoke`, { method: 'POST', body: { reason } });
+export const pastRepSetUsd = (id: string, usdCents: number | null) =>
+  staffApi<{ ok: true }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/verified-usd`, { method: 'PUT', body: { usdCents } });
+
+// ---------------------------------------------------------------------------------------------
 // News for traders (Plan 4 Task 28 on the staff API; perm site.control, the owner only)
 
 

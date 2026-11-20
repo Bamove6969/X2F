@@ -12,6 +12,8 @@ import './staff.css';
 export const NAV_LABELS: Readonly<Record<NavItem, string>> = {
   overview: 'Overview',
   disputes: 'Disputes',
+  // Plan 5 Task 11: no board places it (DESIGN: not drawn). COPY-UNSIGNED DESIGNER-REVIEW
+  'past-reputation': 'Past reputation',
   staff: 'Staff',
   performance: 'Performance',
   // Owner Q13 (J-21): the price-health page. DESIGN: not drawn (no board places it); COPY-UNSIGNED
@@ -26,6 +28,7 @@ export const NAV_LABELS: Readonly<Record<NavItem, string>> = {
 export const NAV_PATHS: Readonly<Record<NavItem, string>> = {
   overview: '/overview',
   disputes: '/disputes',
+  'past-reputation': '/past-reputation',
   staff: '/staff',
   performance: '/performance',
   prices: '/prices',

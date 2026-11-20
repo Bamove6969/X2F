@@ -2,8 +2,11 @@
 // owner sets a past-reputation claim's verified dollar figure, at most $100,000, through
 // setVerifiedPastRepUsd; the activity log records the claim and never the figure.
 import { randomBytes } from 'node:crypto';
+import dns from 'node:dns';
+import http from 'node:http';
+import https from 'node:https';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { seedAccount } from '../helpers/accounts.js';
 import { StaffBrowser, insertSession, logEntries, seedStaff, staffApps } from '../helpers/staffApp.js';
@@ -111,8 +114,10 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
   const approve = (b: StaffBrowser, id: string, body: unknown) => b.post(`/staff/v1/past-rep/${id}/approve`, body);
   const reject = (b: StaffBrowser, id: string, body: unknown) => b.post(`/staff/v1/past-rep/${id}/reject`, body);
   const revoke = (b: StaffBrowser, id: string, body: unknown) => b.post(`/staff/v1/past-rep/${id}/revoke`, body);
-  const pastrepLog = async () =>
-    (await deps.db.query<{ action: string; detail: string }>("select action, detail from activity_log where action like 'pastrep.%' and action <> 'pastrep.verified-usd-set' order by id")).rows;
+  // The decision entries about these claims (the log is append-only, so each test reads its own).
+  const pastrepLog = async (...claims: string[]) =>
+    (await deps.db.query<{ action: string; detail: string }>("select action, detail from activity_log where action like 'pastrep.%' and action <> 'pastrep.verified-usd-set' order by id")).rows
+      .filter((e) => claims.includes((JSON.parse(e.detail) as { claimId?: string }).claimId ?? ''));
 
   it('lists signed claims oldest first: the grouped fingerprint, the key id, the trader\'s display name; no key text or user ID', async () => {
     const c = await signedClaim();
@@ -159,7 +164,7 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
       expect((await approve(b, c.id, body)).statusCode, JSON.stringify(body)).toBe(400);
     }
     expect((await row(c.id)).status).toBe('signed');
-    expect(await pastrepLog()).toEqual([]);
+    expect(await pastrepLog(c.id)).toEqual([]);
   });
 
   it('approve sets approved and verified_trades; the profile\'s own counts and milestones do not move; one log entry, no link or fingerprint', async () => {
@@ -180,15 +185,14 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     const after = await traderProfile(deps.db, c.account, c.account, deps.clock());
     expect(after.stats).toEqual(before.stats);
     expect(after.badges).toEqual(before.badges);
-    const log = await pastrepLog();
+    const log = await pastrepLog(c.id);
     expect(log.map((e) => [e.action, JSON.parse(e.detail)])).toEqual([['pastrep.approved', { claimId: c.id, accountId: c.account, site: 'LocalMonero', trades: 1240 }]]);
     expect(log[0]!.detail).not.toContain('archive');
     expect(log[0]!.detail.toLowerCase()).not.toContain(r.fingerprint.slice(-16));
     // Decided once: a second approve, or a reject now, is 409 wrong-state and logs nothing.
     expect((await approve(b, c.id, { fingerprintSeen: true, tradesSeen: 1240 })).json()).toEqual({ error: 'wrong-state' });
     expect((await reject(b, c.id, { reason: 'Changed my mind about it.' })).statusCode).toBe(409);
-    expect(await pastrepLog()).toHaveLength(1);
-    await deps.db.query("delete from activity_log where action like 'pastrep.%' and action <> 'pastrep.verified-usd-set'");
+    expect(await pastrepLog(c.id)).toHaveLength(1);
   });
 
   it('reject needs a reason of at least 10 characters; it sets rejected with the reason and logs no text', async () => {
@@ -200,10 +204,9 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     const res = await reject(b, c.id, { reason: '  The archive shows another key.  ' });
     expect([res.statusCode, res.json()]).toEqual([200, { id: c.id, status: 'rejected' }]);
     expect(await row(c.id)).toMatchObject({ status: 'rejected', reason: 'The archive shows another key.', verified_trades: null });
-    const log = await pastrepLog();
+    const log = await pastrepLog(c.id);
     expect(log.map((e) => [e.action, JSON.parse(e.detail)])).toEqual([['pastrep.rejected', { claimId: c.id, accountId: c.account, site: 'Hodl-Hodl' }]]);
     expect(log[0]!.detail).not.toContain('archive');
-    await deps.db.query("delete from activity_log where action like 'pastrep.%' and action <> 'pastrep.verified-usd-set'");
   });
 
   it('revoke: a moderator is forbidden; a senior moderator revokes an approved claim, which then stops counting', async () => {
@@ -223,14 +226,13 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     // Only an approved claim is revoked; a signed one is rejected instead.
     const s = await signedClaim();
     expect((await revoke(senior, s.id, { reason: 'The archive was edited later.' })).json()).toEqual({ error: 'wrong-state' });
-    const log = await pastrepLog();
+    const log = await pastrepLog(c.id);
     expect(log.map((e) => e.action)).toEqual(['pastrep.approved', 'pastrep.revoked']);
     expect(JSON.parse(log[1]!.detail)).toEqual({ claimId: c.id, accountId: c.account, site: 'LocalMonero' });
     // The owner may revoke too.
     const c2 = await signedClaim({ site: 'Bisq' });
     await approve(senior, c2.id, { fingerprintSeen: true, tradesSeen: 5 });
     expect((await revoke(await as('owner'), c2.id, { reason: 'The archive was edited later.' })).statusCode).toBe(200);
-    await deps.db.query("delete from activity_log where action like 'pastrep.%' and action <> 'pastrep.verified-usd-set'");
   });
 
   it('J-21: after a revoke, another account can claim the same key once it proves it (the key is no longer live)', async () => {
@@ -244,7 +246,27 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
        values ($1, 'LocalMonero', 'https://web.archive.org/web/2024/x', 10, $2, $3, 'text', $3, 'signed', now())`,
       [other, fp, randomBytes(40)],
     )).resolves.toBeDefined();
-    await deps.db.query("delete from activity_log where action like 'pastrep.%' and action <> 'pastrep.verified-usd-set'");
+  });
+
+  it('P5-A20: listing, approving and revoking call no fetch, DNS lookup or http(s) request', async () => {
+    const c = await signedClaim();
+    const mod = await as('mod');
+    const senior = await as('senior');
+    const spies = [
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        throw new Error('fetch called');
+      }),
+      vi.spyOn(dns, 'lookup'), vi.spyOn(dns.promises, 'lookup'), vi.spyOn(dns, 'resolve'),
+      vi.spyOn(http, 'request'), vi.spyOn(http, 'get'), vi.spyOn(https, 'request'), vi.spyOn(https, 'get'),
+    ];
+    try {
+      expect((await mod.get('/staff/v1/past-rep')).statusCode).toBe(200);
+      expect((await approve(mod, c.id, { fingerprintSeen: true, tradesSeen: 3 })).statusCode).toBe(200);
+      expect((await revoke(senior, c.id, { reason: 'The archive was edited later.' })).statusCode).toBe(200);
+      for (const s of spies) expect(s).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it('an unknown or malformed claim id is 404 for every decision', async () => {

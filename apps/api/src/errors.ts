@@ -216,6 +216,8 @@ export type ApiErrorCode =
   | 'owner-needs-pgp'
   // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
   | 'not-live'
+  // Plan 5 Task 11 (P5-A23): a moderator approves only after ticking that the archive shows the full fingerprint.
+  | 'confirm-fingerprint'
   // Plan 5, Task 10: past reputation claims.
   | 'bad-site'
   | 'bad-url'

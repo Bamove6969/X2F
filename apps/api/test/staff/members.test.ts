@@ -652,7 +652,7 @@ describe('per-person grants (owner Q60)', () => {
   it('a senior moderator reads feedback by role (owner Q60)', async () => {
     const senior = await staffWithKeys(t, { role: 'senior' });
     expect((await senior.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
-    expect((await senior.browser.get('/staff/v1/me')).json().nav).toEqual(['disputes', 'training', 'log', 'feedback']);
+    expect((await senior.browser.get('/staff/v1/me')).json().nav).toEqual(['disputes', 'past-reputation', 'training', 'log', 'feedback']);
   });
 
   // J-21 review F5 (lead, 12 Nov): a box the role holds anyway is never a stored per-person grant,
