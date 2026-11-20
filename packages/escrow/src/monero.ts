@@ -288,7 +288,7 @@ export class MoneroMultisigSession implements EscrowSession {
     }
   }
 
-  async txKeyPays(txHash: string, txKey: string, addresses: string[]): Promise<{ inPool: boolean; received: bigint[] } | null> {
+  async txKeyPays(txHash: string, txKey: string, addresses: string[]): Promise<{ inPool: boolean; received: bigint[] } | null | 'unavailable'> {
     // As proveTx: a key that is not a reduced scalar would abort the WebAssembly.
     if (!TX_HASH.test(txHash) || !isTxKey(txKey)) return null;
     const received: bigint[] = [];
@@ -301,7 +301,10 @@ export class MoneroMultisigSession implements EscrowSession {
         received.push(c.getReceivedAmount() ?? 0n);
       } catch (e) {
         if (e instanceof EscrowError) throw e;
-        return null; // a key that does not fit, an unknown tx, or an address of another network
+        // wallet2 could not read the tx from its daemon (the web app's node proxy does not pass
+        // `/gettransactions`): nothing was checked, which is not a key that does not fit.
+        if (e instanceof Error && /failed to get transaction from daemon/i.test(e.message)) return 'unavailable';
+        return null; // a key that does not fit, or an address of another network
       }
     }
     return { inPool, received };
