@@ -33,6 +33,7 @@ import { assertNotBlocked } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type TradeCap } from '../traders/stage.js';
 import { usableWallets, useUpOneTimeWallet, type Wallet } from '../wallets/routes.js';
 import { assertWithinLaunchCap } from './launchCap.js';
+import { largestAtomicWithin, usdValue } from './capValue.js';
 import { insertTrade, loadTradeRow, rowToTrade, type TradeSides } from './store.js';
 import { roleOf } from './view.js';
 import { MARKET_PRICED, instructionsFor, loadFlex, tiersOf, type FlexMethod } from '../offers/routes.js';
@@ -165,19 +166,8 @@ function lockRate(currency: string, tier: Tier, method: FlexMethod, quoted: bigi
   return now;
 }
 
-/**
- * What the trade counts against the starter caps, in US cents: the larger of its fiat total and its
- * XMR amount valued at the live market price (lead decision 2026-10-29, Task 5 review M5), so an
- * offer priced below the market (down to −50%) cannot move more XMR inside a cap. Both convert with `usdCentsOf`
- * at the market quote, exactly as Task 4's `opensAt` converts an offer's minimum (Task 4 review
- * M8), at the market quote `q` (the take has none to value the XMR with: no value, fails closed).
- */
-function usdValue(currency: string, q: MarketQuote, amountAtomic: bigint, cents: bigint): bigint {
-  const usd = (c: bigint): bigint => (currency === 'USD' ? c : usdCentsOf(c, { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr }));
-  const total = usd(cents);
-  const market = usd(fiatCents(amountAtomic, q.price));
-  return total > market ? total : market;
-}
+// `usdValue` (what the trade counts against every cap) lives in ./capValue.ts, shared with the
+// offer list's clamp for a poster held by an account limit (Plan 4 Task 26, review B1).
 
 /**
  * The trade's growth ceiling, its `maxFiatCents` (launch-rules review F1): the largest fiat total,
@@ -200,16 +190,8 @@ function growthCeiling(
   rate: Price,
   a: { amountAtomic: bigint; totalCents: bigint; offerMaxCents: bigint },
 ): bigint {
-  const within = (x: bigint): boolean => usdValue(currency, q, x, fiatCents(x, rate)) <= LAUNCH_TRADE_CAP_USD_CENTS;
-  // The take amount is within the cap; find an amount above it, then the last one within.
-  let lo = a.amountAtomic;
-  let hi = lo * 2n;
-  while (within(hi)) [lo, hi] = [hi, hi * 2n];
-  while (hi - lo > 1n) {
-    const mid = (lo + hi) / 2n;
-    if (within(mid)) lo = mid;
-    else hi = mid;
-  }
+  // The take amount is within the cap; the last amount within (the shared bisection).
+  const lo = largestAtomicWithin(currency, q, rate, LAUNCH_TRADE_CAP_USD_CENTS, a.amountAtomic);
   const atCap = fiatCents(lo + 1n, rate) - 1n;
   const ceiling = atCap < a.offerMaxCents ? atCap : a.offerMaxCents;
   return ceiling < a.totalCents ? a.totalCents : ceiling;
@@ -243,6 +225,9 @@ async function checkStarterLimits(db: Queryable, a: { takerId: string; posterId:
     if (usd === null) throw new ApiError(409, 'price-unavailable');
     for (const [c, , own] of caps) {
       if (c.capUsdCents !== null && usd > c.capUsdCents) {
+        // Plan 4 Task 26: an account limit's cap is named to the account itself as its own limit
+        // (`account-limit`, the cap only, never why); the other side's is the same plain refusal.
+        if (own && c.byLimit) throw new ApiError(409, 'account-limit', { capUsdCents: c.capUsdCents.toString() });
         throw new ApiError(409, 'starter-limit', own ? { stage: c.stage, capUsdCents: c.capUsdCents.toString() } : {});
       }
     }

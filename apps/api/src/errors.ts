@@ -101,6 +101,8 @@ export type ApiErrorCode =
   | 'ad-busy'
   | 'price-changed'
   | 'starter-limit'
+  // Plan 4 Task 26: the caller's own account limit (a senior moderator approved it); carries the cap only.
+  | 'account-limit'
   // Owner p11-6: the launch cap on one trade's USD value (trades/launchCap.ts), at post and take.
   | 'launch-cap'
   | 'offer-busy'

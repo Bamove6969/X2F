@@ -99,6 +99,15 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     change: `update fees_owed set collected_atomic = 5 where account_id = $1`,
     where: 'account_id = $1',
   },
+  // Plan 4 Task 26 (migration 760): an approved limit, with the approved recommendation it must
+  // match (760's trigger); the other account is the senior moderator who decided it.
+  account_limits: {
+    insert: `with r as (insert into limit_recommendations (account_id, cap_usd, reason, recommended_by, created_at, status, decided_by, decided_at)
+                        values ($1, 300, repeat('x', 40), $1, now(), 'approved', $2, now()) returning id)
+             insert into account_limits (account_id, cap_usd, set_by, recommendation_id, created_at) select $1, 300, $2, id, now() from r`,
+    change: `update account_limits set until = now() + interval '1 day' where account_id = $1`,
+    where: 'account_id = $1',
+  },
   trading_holds: {
     insert: `insert into trading_holds (account_id, created_at) values ($1, now())`,
     change: `update trading_holds set lifted_at = now() + interval '1 s' where account_id = $1`,

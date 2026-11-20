@@ -21,8 +21,10 @@ const uses = (re: RegExp) => files.filter((f) => re.test(f.text)).map((f) => f.p
 // Plan 4 Task 17 (test/ownerPages.test.tsx): StaffList makes the invite token and hashes it itself
 // (inviteTokenHash) and names the person next to each account id; StaffOverview's stop and resume
 // carry no id; StaffSettings signs the numbers the fields show.
-const KEY_TAP_CALLERS: string[] = ['screens/ModCase.tsx', 'screens/StaffGrants.tsx', 'screens/StaffList.tsx', 'screens/StaffOverview.tsx', 'screens/StaffSettings.tsx', 'ui/ClockOut.tsx', 'ui/DeviceCard.tsx'];
+const KEY_TAP_CALLERS: string[] = ['screens/LimitRecommendations.tsx', 'screens/ModCase.tsx', 'screens/StaffGrants.tsx', 'screens/StaffList.tsx', 'screens/StaffOverview.tsx', 'screens/StaffSettings.tsx', 'ui/ClockOut.tsx', 'ui/DeviceCard.tsx'];
 // Chat membership design task 8: DeviceCard taps `certify-device` with every signed field labelled (X3).
+// Plan 4 Task 26: LimitRecommendations taps `account-limit` (approve or decline), every field shown; reviewed in
+// comms review-lead-p4t26-limits-2026-11-20.md (tap binding, rounds 1-3).
 
 describe('WebAuthn on the staff site (re-verify X2, X3)', () => {
   it('startAuthentication only in KeyTapDialog (the checked tap) and Login (the derived login challenge)', () => {

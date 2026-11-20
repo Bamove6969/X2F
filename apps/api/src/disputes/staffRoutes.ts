@@ -128,7 +128,7 @@ async function caseTrade(q: Queryable, code: string): Promise<CaseTrade> {
 export const actorOf = (req: FastifyRequest): Extract<Actor, { kind: 'staff' }> => ({ kind: 'staff', id: req.staff.accountId, role: req.staff.role });
 
 /** Whether this person may work the case's chat, messages, proof and freeze. */
-function mayWork(d: Dispute, req: FastifyRequest): boolean {
+export function mayWork(d: Dispute, req: FastifyRequest): boolean {
   const id = req.staff.accountId;
   if (d.round === 2 && d.round1 !== null && d.round1.involved.includes(id)) return false;
   return d.assignee === id || isSeniorOrOwner(req.staff.role);

@@ -379,6 +379,12 @@ describe('take refusals', () => {
     expect(other).not.toMatch(/your account|starter|building|graduated/i);
   });
 
+  it("Plan 4 Task 26: an account-limit refusal names the caller's own cap, never why or a stage", () => {
+    const msg = takeRefusal(new ApiCallError(409, 'account-limit', { capUsdCents: '30000', reason: 'walked away' }), SELL_AD);
+    expect(msg).toBe('Your account has a limit of $300 per trade. Try a smaller amount.');
+    expect(takeRefusal(new ApiCallError(409, 'account-limit', {}), SELL_AD)).toBe('Your account has a limit per trade. Try a smaller amount.');
+  });
+
   it('a not-enough-trades refusal counts in the singular for 1', () => {
     const one = takeRefusal(new ApiCallError(409, 'not-enough-trades', {}), { ...SELL_AD, minTrades: 1 });
     expect(one).toBe('This offer needs at least 1 completed trade.');
