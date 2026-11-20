@@ -102,3 +102,48 @@ Every card number, IBAN, email and phone number in the fixtures was covered. The
   - m-3: a result with no blocks counts as "could not check".
   - m-4: `.gz` counts as a file extension only under `/ocr/`.
   - I-1 to I-6 are accepted as described in the review.
+
+## Task 16: the smart proof card (`wip/lead-p5t13-16-ocr`)
+
+Builder's own review, 20 Nov 2026. **An independent review is still needed before landing** (the card runs OCR on an image the counterparty controls).
+
+### What the card does, and with which bytes
+
+- **Seller (SellerConfirm).** `SellerProofSlot` takes the buyer's newest `proof.attached` of kind `proof` from the chat snapshot (`proof/sellerProof.ts`; evidence, the seller's own lines and missing lines never count).
+  - It mounts `ChatProof`, still the one file that decrypts a proof (the tripwire's `DECRYPT_ALLOWED` is unchanged, and so is its import pin). `ChatProof` fetches the ciphertext, decrypts it bound to the trade code, proof id and kind, and checks its SHA-256.
+  - `ProofThumb` runs the receive check (`receiveProof`: type allowlist, header walk, size cap, metadata stripped, decode, redraw) and shows the redrawn copy.
+  - Only after that does `showableProof` hand the **redrawn PNG**, never the decrypted bytes, to `readWords` (`proof/receive.ts`). `readWords` decodes it to pixels, runs the self-hosted OCR (`proof/ocr.ts`, the same worker and assets as the buyer's blur), and zeroes the pixels.
+  - Only the OCR words come back to the page (`onWords: (words: OcrWord[] | null) => void`). A proof that fails any step is never read: the card says "We couldn't read this screenshot".
+- **The check is this device's own.** `checkProof` compares the words with the fiat total THIS device's escrow accepts (`escrow.fiatCents`, never the API's), the route's trade code, and the window from the day before `securedAt` to now by the server clock. From the buyer it uses only what check.ts already allows: `hidden` (whether the name line says "hidden") and `photoTakenAt` (it can only make the date out of range, never clear a stale one).
+- **The card informs only.** It never ticks the box or unlocks the hold. There is a unit test and an e2e for this.
+- **Moderator (ModCase).** P5-A36 option (b), the plan's default: no OCR, no `'wasm-unsafe-eval'` and no `/ocr/*` on the staff origin. The card says what to look for, from the case's own figures. The blurred image is not shown yet, because the moderator's proof reader is not built (decision 16, `NEEDS_P5_PROOF_ENVELOPE`). So nothing about how proofs reach staff-web changed.
+
+### Pinned by tests
+
+- `apps/web/test/proof-render-tripwire.test.ts`: all 65 earlier checks pass unchanged. Three new checks:
+  - `receive.ts` loads only `./ocr.js`, and `ocr.ts` loads only `tesseract.js`.
+  - Neither file has a request, storage, Blob URL or `postMessage` of its own. `ocr.ts` talks only to tesseract's own worker.
+  - `onWords` is typed as words or null in `receive.ts` and `ProofThumb.tsx`. `readWords` is named nowhere else in either app.
+- `apps/web/test/smartProofCard.test.tsx`:
+  - The board example, $400, unreadable, OCR missing and OCR throwing.
+  - A proof that does not decrypt, and one bound to another trade code: refused, and the OCR never called.
+  - The OCR gets a fresh PNG of the declared size.
+  - The closing line is there in every variant. The hold stays locked until the box is ticked.
+- `apps/web/e2e/proof-card.spec.ts` runs real decryption, the real receive check and the real worker OCR under the real page CSP. It checks:
+  - every request goes to this origin;
+  - no CSP violations and no page errors;
+  - the ciphertext is fetched once.
+
+### Accepted residuals and questions
+
+- **New input to the OCR: the counterparty's picture.** Before this task the OCR read only the trader's own screenshot. Now the seller's device reads a picture the buyer made. What limits this:
+  - Tesseract gets canvas pixels from the receive check's redraw, at most 2600 px a side, never the file the buyer sent.
+  - It runs as WebAssembly in a dedicated worker with the worker CSP: `default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'`.
+  - The model and the engine are hash-checked (Task 13).
+  - **Residual:** `connect-src 'self'` lets a worker that someone has taken over make same-origin requests with the seller's cookies. That would need a memory-safety bug in tesseract's WASM that leads to running script. The plan chose seller-side OCR knowing this ("the seller's own app runs `ocr`"). **Recommendation, not built:** narrow the worker's `connect-src` to the `/ocr/` path. That means an absolute source with a path, such as `https://<host>/ocr/`, so `serve.ts` would need to know its public origin. It would close most of this. It changes the worker CSP the plan fixes (Global Constraints), so it is the reviewer's and lead's call.
+- **A second fetch.** The card's `ChatProof` and the chat panel's each fetch and decrypt the same ciphertext once. There is no shared cache, which keeps the one-decrypting-file rule simple.
+- **Lead defaults, owner questions:**
+  - Only the newest payment proof gets a card. Earlier ones stay in the chat.
+  - While the OCR reads, the card says "Checking <buyer>'s screenshot" (COPY-UNSIGNED).
+  - The ModCase line "Look for a $1,320.00 payment with the note 7RWD-3MXE-KQ84-HN2T." is COPY-UNSIGNED.
+  - P5-A36 stays at (b).
