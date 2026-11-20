@@ -278,4 +278,31 @@ describe('Past reputation (Plan 5 Task 11)', () => {
     expect(api.calls.map((c) => c.path)).toContain('/staff/v1/past-rep?status=approved&name=Old');
     expect(names()).toEqual(['older']);
   });
+
+  // Re-review m2: Skip reaches past the first page of the queue, with the same cursor.
+  it('the queue pages too: Skip past the last claim of a page loads the next page, then wraps to the start', async () => {
+    const third = claim({ id: '66666666-6666-4666-8666-666666666666', displayName: 'page2' });
+    const api = fakeApi({
+      'GET /staff/v1/me': { body: MOD },
+      'GET /staff/v1/past-rep': (_b, path) => ({ body: path.includes('cursor=q1') ? pg([third]) : pg([claim(), SECOND], 'q1') }),
+    });
+    await open();
+    expect(part('claim-count')?.textContent).toBe('Claim 1 of 2+');
+    await click(button('Skip for now'));
+    expect(part('claim')?.textContent).toContain('wren');
+    await click(button('Skip for now'));
+    expect(api.calls.map((c) => c.path)).toContain('/staff/v1/past-rep?status=signed&cursor=q1');
+    expect(part('claim')?.textContent).toContain('page2');
+    expect(part('claim-count')?.textContent).toBe('Claim 3 of 3');
+    await click(button('Skip for now'));
+    expect(part('claim')?.textContent).toContain('rook88');
+  });
+
+  // Re-review m3: the site "Other" has no name to put in the tick.
+  it('for the site Other, the profile tick names the archived site, not "Other"', async () => {
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/past-rep': { body: pg([claim({ site: 'Other' })]) } });
+    await open();
+    const tickLabel = (part('profile-seen') as HTMLInputElement).closest('label')?.textContent;
+    expect(tickLabel).toBe("The archived page is the trader's own profile on the archived site");
+  });
 });

@@ -22,6 +22,7 @@ import { testApp } from './helpers/app.js';
 import { KEY_DATE } from './helpers/pgpKeys.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 import { rolesToAbilities } from '../src/team/abilities.js';
+import { recordBannedValues } from '../src/bans.js';
 
 const T0 = new Date('2026-11-01T12:00:00Z');
 const URL_OK = 'https://web.archive.org/web/2023/https://localmonero.co/user/olduser';
@@ -125,6 +126,20 @@ describe('pastRepChallenge', () => {
     expect(archivedOriginalHost('https://archive.is/AbCd1/x')).toBeNull();
     expect(archivedOriginalHost('https://web.archive.org/')).toBeNull();
     expect(archivedOriginalHost('https://web.archive.org/web/2023/https://web.archive.org/web/2022/https://x.co/')).toBeNull();
+    // Re-review B1: the query is never the path, and the first segment must be a real timestamp.
+    expect(archivedOriginalHost('https://archive.ph/AbCd1?x=/https://localmonero.co/')).toBeNull();
+    expect(archivedOriginalHost('https://archive.ph/AbCd1/https://localmonero.co/')).toBeNull();
+    expect(archivedOriginalHost('https://web.archive.org/web/2023?x=/https://localmonero.co/')).toBeNull();
+    expect(archivedOriginalHost('https://web.archive.org/web/latest/https://localmonero.co/')).toBeNull();
+    expect(archivedOriginalHost('https://web.archive.org/web/123456789012345/https://localmonero.co/')).toBeNull();
+    expect(archivedOriginalHost('https://web.archive.org/web/2023im_/https://localmonero.co/')).toBe('localmonero.co');
+    expect(archivedOriginalHost('https://archive.ph/20230101120000/https://agoradesk.com/u/x')).toBe('agoradesk.com');
+    expect(archivedOriginalHost('https://archive.ph/oldest/https://agoradesk.com/u/x')).toBe('agoradesk.com');
+    expect(archivedOriginalHost('https://archive.ph/2023.1.01-000000/https://agoradesk.com/u/x')).toBeNull();
+    // Re-review m4: a nested archive.today mirror names no site either (read it on the page).
+    for (const mirror of ['archive.md', 'archive.li', 'archive.vn', 'archive.fo', 'archive.ph', 'archive.is', 'archive.today']) {
+      expect(archivedOriginalHost(`https://web.archive.org/web/2023/https://${mirror}/AbCd1`), mirror).toBeNull();
+    }
   });
 
   it('the sites and archive hosts are the plan\'s lists', () => {
@@ -453,6 +468,18 @@ describe('one fingerprint, one account (P5-A24)', () => {
   // Lead call (Task 11 review M3): a staff or owner login key never backs a trader's past-reputation
   // claim. Checked only at finish, after the signature proves the key, with the ban list's answer
   // (key-unavailable), so nobody learns from it that a key belongs to staff.
+  // Lead call (re-review m1, owner question): a banned PGP key never backs a claim either, with the
+  // same answer, so key-unavailable says neither "banned" nor "a staff key".
+  it('a banned key: start succeeds, finish → 409 key-unavailable, no row', async () => {
+    const key = await gen();
+    await recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [key.fingerprint.toLowerCase()], accountId: null, now: T0 });
+    const { b } = await login();
+    const c = await start(b, key);
+    const res = await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed: await clearsign(c.text, key) });
+    expect([res.statusCode, res.json().error]).toEqual([409, 'key-unavailable']);
+    expect(await rows()).toEqual([]);
+  });
+
   it('a key that is a staff or owner login key: start succeeds, finish → 409 key-unavailable, no row', async () => {
     for (const kind of ['staff', 'owner'] as const) {
       const key = await gen();

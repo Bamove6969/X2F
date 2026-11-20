@@ -350,6 +350,52 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     expect(after.items[0]!.id).toBe(ids[ids.length - 2]);
   });
 
+  // Re-review M1: the cursor keeps the column's microseconds, so rows that differ only below a
+  // millisecond are neither skipped (newest first) nor repeated (oldest first).
+  it('M1: 150 claims a microsecond apart page completely, each once, in both orders', async () => {
+    const sites = ['LocalMonero', 'AgoraDesk', 'LocalBitcoins', 'Paxful', 'Hodl Hodl', 'Bisq', 'Other'];
+    const tag = randomBytes(3).toString('hex');
+    const reviewer = (await seedStaff(deps, { role: 'mod' })).id;
+    const want: Record<'signed' | 'approved', string[]> = { signed: [], approved: [] };
+    for (const status of ['signed', 'approved'] as const) {
+      for (let a = 0; a < 22; a++) {
+        const account = await seedAccount(deps, { loginName: `us${status[0]}${tag}${a}x`, displayName: `Us${status[0]}${tag}${String(a).padStart(2, '0')}`, kind: 'trader' });
+        for (const [i, site] of sites.entries()) {
+          const k = a * sites.length + i;
+          if (k >= 150) break;
+          // Every row in the same millisecond, k microseconds apart (as `now()` or an import writes).
+          const { rows } = await deps.db.query<{ id: string }>(
+            `insert into past_reputation (account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature_enc, status,
+               verified_trades, reviewer_id, decided_at, created_at)
+             values ($1, $2, 'https://web.archive.org/web/2023/https://example.org/u', 10, $3, $4, 'text', $4, $5,
+               case when $5 = 'approved' then 10 end, case when $5 = 'approved' then $6::uuid end,
+               case when $5 = 'approved' then timestamptz '2031-01-01 00:00:00.000Z' + $7 * interval '1 microsecond' end,
+               timestamptz '2031-01-01 00:00:00.000Z' + $7 * interval '1 microsecond') returning id`,
+            [account, site, randomBytes(20).toString('hex'), randomBytes(40), status, reviewer, k],
+          );
+          want[status].push(rows[0]!.id);
+        }
+      }
+    }
+    const mod = await as('mod');
+    for (const status of ['signed', 'approved'] as const) {
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      let pages = 0;
+      do {
+        const url = `/staff/v1/past-rep?status=${status}&name=us${status[0]}${tag}${cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`}`;
+        const res = await mod.get(url);
+        expect(res.statusCode, res.body).toBe(200);
+        const page = res.json() as { items: Array<{ id: string }>; next: string | null };
+        seen.push(...page.items.map((x) => x.id));
+        cursor = page.next;
+        pages += 1;
+      } while (cursor !== null && pages < 5);
+      expect(pages, status).toBe(2);
+      expect(seen, status).toEqual(status === 'signed' ? want.signed : [...want.approved].reverse());
+    }
+  });
+
   // Review M3 (lead call): a reviewer never approves a claim backed by one of their own login keys.
   it('M3: approving a claim whose key is one of the reviewer\'s own PGP login keys is 403 reviewer-own-key; nothing changes', async () => {
     const c = await signedClaim();
