@@ -2,10 +2,11 @@ import { newTradeCode, type Role } from '@x2f/core';
 import { makeChatGrant, makeDisputeNotice, makeGrantAccepted, unwrapChatKey, verifyChatGrant, openChat, openChatKeyRecord, ProtocolError, ReplayGuard as Guard2, seal, sealChat, verifyChatKeyRecord, makeChatKeyRecord, newChatKey, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { attestationBytes, channelFor, chatIdentityProofValid, checkChatEnvelopeV2, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { IDBFactory } from 'fake-indexeddb';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chatKeyOf, makeChatKey, newChatState, sealChatMessage, sealPayDetails, type ChatState } from '../src/chat/chatCrypto.js';
 import { ChatSendFailed, GRANT_FALLBACK_MS, createChatEngine, type ApiEnvelope, type ChatApi, type ChatApiView, type ChatEngine } from '../src/chat/engine.js';
-import { memoryChatStore } from '../src/chat/store.js';
+import { memoryChatStore, openChatStore, type ChatStore } from '../src/chat/store.js';
 
 /** A chat identity made with libsodium (apps/web makes real identities only in the escrow worker). */
 async function testIdentity(): Promise<Identity> {
@@ -280,6 +281,71 @@ describe('chat engine: prepare, the chat identity without opening the chat (gap 
     api.gone = 410;
     await expect(e.prepare(chat)).rejects.toMatchObject({ status: 410 });
     expect(store.records.has(chat)).toBe(false);
+  });
+});
+
+/**
+ * Review m1 (review-lead-fix-chat-attest-2026-11-20): two tabs are two workers over one IndexedDB
+ * store, so the per-chat queue of one engine does not keep them apart. Before the fix the slower tab
+ * saved its own identity over the one the faster tab had registered, and the device was left holding
+ * a key the API never took: `other-device` in its own chat for good.
+ */
+describe('chat engine: two tabs over one store (review m1)', () => {
+  /** Two engines (two tabs' workers) over two connections to one fake IndexedDB; B makes its identity slowly. */
+  async function twoTabs(o: { lock?: (name: string, fn: () => Promise<unknown>) => Promise<unknown> } = {}) {
+    const idb = new IDBFactory();
+    const [sa, sb] = [await openChatStore({ indexedDB: idb }), await openChatStore({ indexedDB: idb })];
+    const madeBy = { a: 0, b: 0 };
+    const tab = (s: ChatStore, name: 'a' | 'b', delay: number) =>
+      createChatEngine({
+        api,
+        store: s,
+        newIdentity: async () => {
+          madeBy[name]++;
+          const i = await testIdentity();
+          await new Promise((r) => setTimeout(r, delay));
+          return i;
+        },
+        modSigningPublic,
+        ...(o.lock ? { lock: o.lock } : {}),
+      });
+    return { a: tab(sa, 'a', 0), b: tab(sb, 'b', 40), sa, sb, madeBy };
+  }
+
+  it('without a lock (the store layer alone): the stored identity is the registered one, and both tabs go on with it', async () => {
+    const t = await twoTabs({ lock: (_n, fn) => fn() });
+    expect(await Promise.all([t.a.prepare(chat), t.b.prepare(chat)])).toEqual(['registered', 'registered']);
+    expect((await t.sa.load(chat))?.identity.signPublic).toBe(api.identities.buyer?.signPublic);
+    expect((await t.sb.load(chat))?.identity.signPublic).toBe(api.identities.buyer?.signPublic);
+    expect((await t.b.sync(chat)).phase).toBe('waiting');
+  });
+
+  it('with a per-chat lock (the first layer): the second tab finds the first one\'s identity and makes none', async () => {
+    const held = new Map<string, Promise<unknown>>();
+    const names: string[] = [];
+    const lock = (name: string, fn: () => Promise<unknown>): Promise<unknown> => {
+      names.push(name);
+      const run = (held.get(name) ?? Promise.resolve()).then(fn, fn);
+      held.set(name, run.catch(() => undefined));
+      return run;
+    };
+    const t = await twoTabs({ lock });
+    await Promise.all([t.b.prepare(chat), t.a.prepare(chat)]);
+    expect(t.madeBy.a + t.madeBy.b).toBe(1);
+    expect(names).toEqual([`x2f-chat-identity:${chat}`, `x2f-chat-identity:${chat}`]);
+    expect((await t.sa.load(chat))?.identity.signPublic).toBe(api.identities.buyer?.signPublic);
+  });
+
+  it('the lock is navigator.locks by default, one per chat', async () => {
+    const names: string[] = [];
+    vi.stubGlobal('navigator', { locks: { request: (name: string, fn: () => Promise<unknown>) => (names.push(name), fn()) } });
+    try {
+      await engine().prepare(chat);
+      await engine().sync(chat);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(names).toEqual([`x2f-chat-identity:${chat}`, `x2f-chat-identity:${chat}`]);
   });
 });
 

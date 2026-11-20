@@ -2181,6 +2181,9 @@ describe('the trade chat identity is registered when the device runs the trade (
       await until(() => t.state.identities.buyer !== undefined && reads >= 2);
       await new Promise((r) => setTimeout(r, 60));
       expect(asks).toBe(0);
+      // Review m3: the loop ended after that one read (the run itself reads no view while it waits
+      // for the attestation), never re-reading every pollMs.
+      expect(reads).toBe(2);
       await buyer.runtime.stopAll();
     }
   });
