@@ -112,6 +112,16 @@ export interface EscrowRecord {
    */
   releaseBoundAtomic?: bigint | null;
   /**
+   * Gap 2 (docs/security/growth-before-paid-2026-11-20.md): the buyer moved releaseBoundAtomic UP
+   * to a grown amount before paid (I1's only exception). Absent: never.
+   */
+  releaseRebound?: boolean;
+  /**
+   * The party refused a rebound release because it is committed to an earlier one: from then on
+   * this device shows no sum, takes no "I've paid" tap and co-signs no other release. Absent: no.
+   */
+  releaseRebindRefused?: boolean;
+  /**
    * The seller's copy of the buyer's first valid signed trade.paid, kept until this device's own
    * size reaches it (then it becomes acceptedAtomic). Its wallet may see the extra coins later.
    */

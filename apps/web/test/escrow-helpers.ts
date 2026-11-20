@@ -124,6 +124,13 @@ export class Parties {
   /** Settles resolve only when released. */
   pending: { role: Role; o: Outcome; resolve: (v: string | null) => void; reject: (e: unknown) => void }[] = [];
   committed = new Map<Role, string>();
+  /**
+   * What each role's party answers to committedBuilder() (the builder of a tx set it built or
+   * accepted, so it can no longer switch outcomes); null when absent. A role in `noCommittedBuilder`
+   * gets a party without the method (an older party: counts as committed, fail closed).
+   */
+  committedBuilders: Partial<Record<Role, Role | null>> = {};
+  noCommittedBuilder = new Set<Role>();
   /** When set for a role, that role's next ready() rejects with it (once). */
   readyError: Partial<Record<Role, unknown>> = {};
   /** When set for a role, every funds() of that role rejects with it until cleared (a dead party). */
@@ -143,7 +150,9 @@ export class Parties {
     this.calls.push({ role: args.role, args });
     // Saved like a real party's first save; a run stopped at once refuses it (no writes after stop).
     args.store.save({ v: 1, session: { v: 1, keys: 'k', cache: 'c' }, guard: { trade: args.trade, seen: {} }, seq: 1, step: 'msig.prepare:0', address: null, sent: {}, received: {}, release: null }).catch(() => undefined);
+    const committedBuilder = this.noCommittedBuilder.has(args.role) ? {} : { committedBuilder: (): Role | null => this.committedBuilders[args.role] ?? null };
     return {
+      ...committedBuilder,
       ready: async () => {
         if (this.readyError[args.role] !== undefined) {
           const e = this.readyError[args.role];
