@@ -50,6 +50,11 @@ export interface StackInfo {
    * first spec stays red on this flag until the build serves it.
    */
   buildServesMoneroWorker: boolean;
+  /**
+   * The moderation process's keystore key (base64), random per run. Test-only: modState.ts reads the
+   * moderator's sealed party state with it, so a spec can act at a protocol step (gap 4 review M1).
+   */
+  modKeystoreKey: string;
 }
 
 export interface Stack extends StackInfo {
@@ -343,6 +348,7 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
       modDatabaseUrl: pgUrl('x2f_moderation'),
       logDir,
       buildServesMoneroWorker,
+      modKeystoreKey: s.modKeystoreKey,
     };
     return { ...info, stop };
   } catch (e) {
