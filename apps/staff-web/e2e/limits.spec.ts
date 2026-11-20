@@ -113,8 +113,8 @@ test('a moderator recommends a cap from the case', async ({ page }) => {
   await expect(card).toContainText('A senior moderator or the owner decides');
   const send = card.getByRole('button', { name: 'Recommend limits' });
   await expect(send).toBeDisabled();
-  await card.getByText('harbor_lin').click();
-  await card.getByText('A cap per trade').click();
+  await card.locator('input[value="buyer"]').check();
+  await card.locator('input[value="cap"]').check();
   await card.getByLabel('Largest trade (USD)').fill('300');
   await card.getByLabel(/Reason \(staff only/).fill(REASON);
   await expect(send).toBeEnabled();
