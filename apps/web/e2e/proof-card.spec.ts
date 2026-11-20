@@ -186,6 +186,12 @@ test.describe('the smart proof card on SellerConfirm', () => {
     await page.getByRole('checkbox').check();
     await expect(page.locator('button[data-primary]')).toBeEnabled();
 
+    // The OCR ran in the self-hosted worker, from this origin only, with no CSP violation. (Checked
+    // before the parity step: the harness reads the board's own HTML, whose inline styles the page
+    // CSP reports.)
+    expect(w.requests.some((u) => u === `${BASE}/ocr/worker.min.js`)).toBe(true);
+    sameOriginOnly(w);
+
     // Board parity for the card itself: every text of the board's "Payment proof" section is on the page.
     const viewport = boardViewport('SellerConfirm');
     const [width, height] = viewport.split('x').map(Number) as [number, number];
@@ -195,10 +201,6 @@ test.describe('the smart proof card on SellerConfirm', () => {
     expect(await missingTexts(page, texts, [])).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     await expect(page.locator('[data-primary]')).toHaveCount(1);
-
-    // The OCR ran in the self-hosted worker, from this origin only.
-    expect(w.requests.some((u) => u === `${BASE}/ocr/worker.min.js`)).toBe(true);
-    sameOriginOnly(w);
   });
 
   test('$400 on the screenshot: "Shows $400.00, not $412.50" in caution, and the closing line', async ({ page, browser }) => {
