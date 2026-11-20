@@ -4,9 +4,9 @@ import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { listedOfferCount } from '../offers/routes.js';
-import { toPublicReview, type PublicReview, type ReviewRow } from '../reviews/store.js';
+import { reviewShownSql } from '../reviews/disputes.js';
+import { REVIEW_COLUMNS, toPublicReview, type PublicReview, type ReviewRow } from '../reviews/store.js';
 import { hasBlocked } from '../traders/blocks.js';
-import { reviewHeldSql } from '../traders/finalOutcome.js';
 import { traderFacts } from '../traders/summary.js';
 import type { ImportedLine } from '../traders/tradedTotal.js';
 
@@ -61,7 +61,12 @@ export interface TraderProfile {
   recordPublic: boolean;
   tradedOverXmr: number | null;
   imported: ImportedLine[];
-  reviews: PublicReview[];
+  /**
+   * Task 19: on the trader's OWN profile only (`self`), each review also carries its `id` and whether
+   * it can still be disputed (`disputable`: never disputed; one dispute per review, lead default).
+   * Nobody else ever gets a review's id.
+   */
+  reviews: (PublicReview & { id?: string; disputable?: boolean })[];
   /** Live offers anyone may see right now. */
   offers: number;
 }
@@ -96,11 +101,16 @@ function monthOf(d: Date): string {
 }
 
 /** The reviews a profile shows, newest first, and how many there are (none held by a pending appeal). */
-export async function shownReviews(q: Queryable, accountId: string, limit: number): Promise<{ count: number; latest: ReviewRow[] }> {
-  const held = reviewHeldSql('r');
+export async function shownReviews(q: Queryable, accountId: string, limit: number): Promise<{ count: number; latest: (ReviewRow & { disputed: boolean })[] }> {
+  // Task 19: a review a moderator removed shows nowhere; one under review shows with its label.
+  const shown = reviewShownSql('r');
   const [{ rows: count }, { rows: latest }] = await Promise.all([
-    q.query<{ n: string }>(`select count(*) as n from reviews r where r.subject_id = $1 and not ${held}`, [accountId]),
-    q.query<ReviewRow>(`select r.* from reviews r where r.subject_id = $1 and not ${held} order by r.created_at desc, r.id limit $2`, [accountId, limit]),
+    q.query<{ n: string }>(`select count(*) as n from reviews r where r.subject_id = $1 and ${shown}`, [accountId]),
+    q.query<ReviewRow & { disputed: boolean }>(
+      `select ${REVIEW_COLUMNS}, exists (select 1 from review_disputes d where d.review_id = r.id) as disputed
+         from reviews r where r.subject_id = $1 and ${shown} order by r.created_at desc, r.id limit $2`,
+      [accountId, limit],
+    ),
   ]);
   return { count: Number(count[0]!.n), latest };
 }
@@ -141,7 +151,7 @@ export async function traderProfile(q: Queryable, accountId: string, viewerId: s
     recordPublic: extra[0]?.record_public === true,
     tradedOverXmr: s.tradedOverXmr,
     imported: s.imported,
-    reviews: reviews.latest.map(toPublicReview),
+    reviews: reviews.latest.map((r) => (viewerId === accountId ? { ...toPublicReview(r), id: r.id, disputable: !r.disputed } : toPublicReview(r))),
     offers: hidden ? 0 : offers,
   };
 }

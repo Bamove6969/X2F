@@ -188,6 +188,7 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'nudges.to_id': 'a nudge received',
   'reviews.reviewer_id': 'a review written about a trade',
   'reviews.subject_id': 'a review received from someone else',
+  'review_disputes.decided_by': "the moderator's stamp on a review dispute, not a change to that account; decisions are logged as review.dispute-decided",
   'past_reputation.reviewer_id': 'the moderator who decided a claim (the claimant is notified)',
   'past_reputation.verified_usd_by': 'the moderator who verified a figure (the claimant is notified)',
   'past_reputation.revoked_by': 'the senior moderator or owner who revoked a claim (the claimant is notified)',

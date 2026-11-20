@@ -11,9 +11,10 @@ import {
 import type { Queryable } from '../db/pool.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { verifiedPastRepBySite } from '../pastrep/store.js';
+import { reviewCountsSql } from '../reviews/disputes.js';
 import { prefsFromRow } from '../reputation/prefs.js';
 import { importedLines, tradedOverXmr, tradedXmrSql, type ImportedLine } from './tradedTotal.js';
-import { FINAL_SALES_SQL, reviewHeldSql, rulingCountsSql } from './finalOutcome.js';
+import { FINAL_SALES_SQL, rulingCountsSql } from './finalOutcome.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, purgedSql, stageFor, type Stage, type StarterSettings } from './stage.js';
 
 /**
@@ -88,9 +89,9 @@ export function lastSeenSql(account: string, viewer: string): string {
 /**
  * SQL: the disputes `a.id` lost, by each dispute's latest ruling (Plan 5's Clean record). A release
  * to the buyer, or the seller told to send XMR or return fiat, is lost by the seller; a refund to the
- * seller is lost by the buyer. Read from the live trades until Plan 5 Task 20's running total
- * (`lost_disputes`) exists, so after the 30-day delete it can only undercount; Clean record needs 100
- * completed trades as well. A dispute whose appeal is pending counts neither way until the appeal is
+ * seller is lost by the buyer. Task 20: the live trades' rulings plus `purged_lost`, which the trade
+ * purge adds each purged trade's count to in the same transaction (701, retention/tradePurge.ts), so
+ * deleting a trade changes nothing. A dispute whose appeal is pending counts neither way until the appeal is
  * decided (R-011 / R-012, J-21 review F1; `rulingCountsSql`, shared with J-21's won count).
  */
 export const LOST_DISPUTES_SQL = `(${lostDisputesLiveSql()} + ${purgedSql('purged_lost')})`;
@@ -108,7 +109,9 @@ export function lostDisputesLiveSql(extra = ''): string {
  * SQL: the disputes `a.id` won, the mirror of LOST_DISPUTES_SQL by the same latest ruling: a release
  * to the buyer, or the seller told to send XMR or return fiat, is won by the buyer; a refund to the
  * seller is won by the seller. An after-refund "no action" ruling counts for neither side, as in
- * LOST_DISPUTES_SQL (owner question, J-21). Read from the live trades until Task 20's running totals.
+ * LOST_DISPUTES_SQL (owner question, J-21). Live plus `purged_won`, as LOST_DISPUTES_SQL. A dispute
+ * whose appeal is pending counts for neither side until the appeal is decided (`rulingCountsSql`, the
+ * same helper as the lost count: Revision 2026-10-29c, Task 20 review).
  */
 export const WON_DISPUTES_SQL = `(${wonDisputesLiveSql()} + ${purgedSql('purged_won')})`;
 
@@ -116,6 +119,7 @@ export const WON_DISPUTES_SQL = `(${wonDisputesLiveSql()} + ${purgedSql('purged_
 export function wonDisputesLiveSql(extra = ''): string {
   return `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
    where not exists (select 1 from dispute_rulings d2 where d2.code = dr.code and d2.seq = dr.seq and d2.round > dr.round)
+     and ${rulingCountsSql('dr.code', 'dr.seq')}
      and ((dr.outcome in ('release-to-buyer', 'seller-sends-xmr', 'seller-returns-fiat') and t.buyer_account_id = a.id)
        or (dr.outcome = 'refund-to-seller' and t.seller_account_id = a.id)) ${extra})`;
 }
@@ -198,7 +202,7 @@ export async function traderFacts(
        cross join lateral (
          select count(*) filter (where not r.neutral and r.stars >= $3) as positive,
                 count(*) filter (where not r.neutral and r.stars <= $4) as negative
-           from reviews r where r.subject_id = a.id and not ${reviewHeldSql('r')}
+           from reviews r where r.subject_id = a.id and ${reviewCountsSql('r')}
        ) rv
       where a.id = any($1::uuid[])`,
     [ids, viewerId, POSITIVE_MIN_STARS, NEGATIVE_MAX_STARS],
@@ -212,8 +216,9 @@ export async function traderFacts(
     const stage = stageFor(s, Number(r.completed), r.created_at, now);
     const completed = Number(r.sales);
     // % positive (P5-A2, @x2f/reputation positivePct): positive over positive plus negative, rounded
-    // down; Neutral and 3 stars count for neither. Review disputes (Task 19) are not built, so every
-    // submitted review counts, except one on hold while its trade's appeal is pending (R-011).
+    // down; Neutral and 3 stars count for neither. A review on hold while its trade's appeal is
+    // pending (R-011), one under review (an open dispute, Task 19) and one a moderator removed count
+    // for neither (reviews/disputes.ts reviewCountsSql).
     const positive = Number(r.positive);
     const rated = positive + Number(r.negative);
     const positivePct = rated === 0 ? null : Math.floor((positive * 100) / rated);

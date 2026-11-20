@@ -3,6 +3,7 @@ import type { Queryable } from '../db/pool.js';
 import { PURGE_ROLE } from '../trades/purge.js';
 import { getMethod } from '../methods/profiles.js';
 import { disputeOutcomeSql, reviewHeldSql } from '../traders/finalOutcome.js';
+import { underReviewSql } from './disputes.js';
 
 /**
  * Plan 5 Task 3: the reviews table (301_reviews.sql), Skip review (review_skips) and when a trade
@@ -62,7 +63,16 @@ export interface ReviewRow {
   note: string | null;
   method_id: string;
   created_at: Date;
+  /** Task 19: a moderator removed the review (it shows and counts nowhere; the row stays). */
+  removed: boolean;
+  /** Task 19: a moderator removed some of its comments (the stars stay). */
+  comments_removed: boolean;
+  /** Task 19: the review has an open dispute ("Under review"); computed by REVIEW_COLUMNS. */
+  under_review: boolean;
 }
+
+/** The columns a ReviewRow is read with (table alias `r`). */
+export const REVIEW_COLUMNS = `r.*, ${underReviewSql('r')} as under_review`;
 
 /**
  * What anyone may see of a review (P5-A10 as revised 2026-10-29b): stars or Neutral, the phrases,
@@ -78,6 +88,8 @@ export interface PublicReview {
   method: string;
   /** Month and year only, "Mar 2026" (UTC). */
   age: string;
+  /** Task 19: the person reviewed disputed it and a moderator has not decided yet ("Under review"). */
+  underReview: boolean;
 }
 
 export function toPublicReview(r: ReviewRow): PublicReview {
@@ -89,12 +101,13 @@ export function toPublicReview(r: ReviewRow): PublicReview {
     note: r.note,
     method: getMethod(r.method_id)?.name ?? r.method_id,
     age: reviewMonth(r.created_at),
+    underReview: r.under_review,
   };
 }
 
 /** Both sides' reviews of a trade (while its code is still on them). */
 export async function reviewsOfTrade(db: Queryable, code: string): Promise<{ buyer: ReviewRow | null; seller: ReviewRow | null }> {
-  const { rows } = await db.query<ReviewRow>('select * from reviews where trade_code = $1', [code]);
+  const { rows } = await db.query<ReviewRow>(`select ${REVIEW_COLUMNS} from reviews r where r.trade_code = $1`, [code]);
   return { buyer: rows.find((r) => r.reviewer_role === 'buyer') ?? null, seller: rows.find((r) => r.reviewer_role === 'seller') ?? null };
 }
 

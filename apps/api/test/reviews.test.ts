@@ -184,7 +184,7 @@ describe('a review shows at once (owner 2026-11-02: no blind reveal)', () => {
     expect(await view(buyer, t.code)).toEqual({
       reviewable: true,
       mine: null,
-      theirs: { neutral: false, stars: 2, phrases: ['Slow'], tradeBadges: [], note: null, method: 'Zelle', age: 'Oct 2026' },
+      theirs: { neutral: false, stars: 2, phrases: ['Slow'], tradeBadges: [], note: null, method: 'Zelle', age: 'Oct 2026', underReview: false },
       skipped: false,
       held: false,
     });
@@ -192,8 +192,8 @@ describe('a review shows at once (owner 2026-11-02: no blind reveal)', () => {
     expect((await review(buyer, t.code)).statusCode).toBe(201);
     expect(await view(buyer, t.code)).toEqual({
       reviewable: false,
-      mine: { neutral: false, stars: 5, phrases: ['Friendly'], tradeBadges: ['Smooth trade'], note: 'Smooth one', method: 'Zelle', age: 'Oct 2026' },
-      theirs: { neutral: false, stars: 2, phrases: ['Slow'], tradeBadges: [], note: null, method: 'Zelle', age: 'Oct 2026' },
+      mine: { neutral: false, stars: 5, phrases: ['Friendly'], tradeBadges: ['Smooth trade'], note: 'Smooth one', method: 'Zelle', age: 'Oct 2026', underReview: false },
+      theirs: { neutral: false, stars: 2, phrases: ['Slow'], tradeBadges: [], note: null, method: 'Zelle', age: 'Oct 2026', underReview: false },
       skipped: false,
       held: false,
     });
@@ -321,7 +321,7 @@ describe('what a review stores and shows', () => {
     for (const b of bodies.slice(0, 3)) expect(b).not.toMatch(/usd|cents|atomic|amount|fiat/i);
     for (const b of bodies.slice(0, 2)) {
       const v = JSON.parse(b) as { mine: Record<string, unknown>; theirs: Record<string, unknown> };
-      expect(Object.keys(v.mine).sort()).toEqual(['age', 'method', 'neutral', 'note', 'phrases', 'stars', 'tradeBadges']);
+      expect(Object.keys(v.mine).sort()).toEqual(['age', 'method', 'neutral', 'note', 'phrases', 'stars', 'tradeBadges', 'underReview']);
       expect(JSON.stringify([v.mine, v.theirs])).not.toContain(t.code);
       expect(JSON.stringify([v.mine, v.theirs])).not.toMatch(/T\d\d:\d\d/);
     }
@@ -340,7 +340,10 @@ describe('reviews are final (301 triggers)', () => {
     await expect(deps.db.query('update reviews set stars = 1 where trade_code = $1', [code])).rejects.toThrow(/reviews are final/);
     await expect(deps.db.query('update reviews set trade_code = null, reviewer_id = null where trade_code = $1', [code])).rejects.toThrow(/reviews are final/);
     await expect(deps.db.query('delete from reviews where trade_code = $1', [code])).rejects.toThrow(/reviews are final/);
-    await expect(deps.db.query('truncate reviews')).rejects.toThrow(/reviews are final/);
+    // Task 19's review_disputes references reviews, so a plain TRUNCATE is refused by Postgres before
+    // the trigger runs; with CASCADE it reaches the trigger, which refuses it.
+    await expect(deps.db.query('truncate reviews')).rejects.toThrow(/reviews are final|referenced in a foreign key/);
+    await expect(deps.db.query('truncate reviews cascade')).rejects.toThrow(/reviews are final/);
   });
 
   async function asPurge<T>(fn: (c: import('pg').PoolClient) => Promise<T>): Promise<T> {
