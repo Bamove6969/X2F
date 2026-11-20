@@ -20,7 +20,7 @@ export default defineConfig({
   expect: { timeout: 30_000 },
   reporter: [['list']],
   globalSetup: fileURLToPath(new URL('./regtest-setup.ts', import.meta.url)),
-  outputDir: fileURLToPath(new URL('../test-results-regtest', import.meta.url)),
+  outputDir: fileURLToPath(new URL('../../../.regtest/e2e-results', import.meta.url)),
   use: {
     colorScheme: 'dark',
     serviceWorkers: 'block',

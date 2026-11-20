@@ -132,6 +132,9 @@ export async function contextFor(browser: Browser, t: Trader, size: Size): Promi
       if (!r.url().startsWith(s.origin)) console.log(`[${who} req] ${r.method()} ${r.url().slice(0, 100)}`);
     });
     context.on('requestfailed', (r) => console.log(`[${who} reqfailed] ${r.url().slice(0, 100)} ${r.failure()?.errorText}`));
+    context.on('response', (r) => {
+      if (r.status() >= 400) console.log(`[${who} http ${r.status()}] ${r.request().method()} ${r.url().slice(0, 120)}`);
+    });
   }
   return { context, page };
 }
