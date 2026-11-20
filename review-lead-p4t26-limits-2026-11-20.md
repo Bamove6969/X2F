@@ -87,3 +87,81 @@ Not run: the branch head's full `npm run check`. The 13 Nov reviewer rule needs 
 - M2: does deciding limits make a senior "involved" for that case's appeal? The recommendation is no: log the decision without a trade code.
 - m3: may a moderator struck from a case recommend limits for its parties through the account route?
 - m5: what should the offer list show a trader held by an account limit?
+
+---
+
+## Addendum: re-review at 3685029f (one commit on bd311f60), 20 Nov 2026 10:09 BC time
+
+**Verdict: NOT APPROVED.** There is one new blocker, B1: the M1 clamp's shown maximum fails the take whenever the offer's rate is below the market. M2, m1-m4, m6 and m7 are fixed and verified. m5 is fixed.
+
+### B1. The clamped maximum fails the take at any margin below market (apps/api/src/offers/routes.ts:493-509, 540)
+
+`capInCurrency` converts the poster's US-cent cap to the card currency at the market, and `clampTiers` caps each band's fiat at that value. For an XMR band it caps the XMR amount at `atomicForFiat(capFiat, rate)`.
+
+The take counts the trade differently. `usdValue` (take.ts:175-180) takes the larger of two figures: the USD of the fiat total, and the USD of the XMR **at the market price**. When the card's rate is below the market (a negative margin), the XMR at the clamped maximum is worth more than the cap at market. The take then refuses with `starter-limit {}`, the refusal the clamp was meant to make unreachable. Buy ads below market are common, so this is not an edge case.
+
+I proved it with a temporary probe, since removed. A Graduated poster held to a $300 limit posts a sell ad in USD; the market is $330. I listed the offer as another trader, then took exactly the shown maximum at the card's rate:
+
+| Margin | Fiat band | XMR band |
+|---|---|---|
+| -5% (card max $300.00, rate $313.50) | take 409 `starter-limit` | take 409 `starter-limit` (0.9569 XMR) |
+| 0 | take 200 | take 200 |
+| +5% | take 200 | take 200 |
+
+The fix is engineering, not a product choice: compute the clamp by the take's own rule. Reuse `usdValue` and the bisection in the launch-cap growth-ceiling helper (take.ts:182-216), or clamp fiat to `min(capFiat, floor(capFiat × rate / market))` and the XMR amount to `min(atomicForFiat(capFiat, rate), atomicForFiat(capFiat, market))`. Add the negative-margin case to the offers or take test, for both a fiat band and an XMR band.
+
+A price move between listing and taking can still refuse a shown maximum. The launch cap already shares that, so it is acceptable; a comment should say so.
+
+### m8 (new). The clamp shows a limit that doesn't bind (routes.ts:513-522)
+
+`limitedPosters` clamps any poster with an active `account_limits` row to `tradeCap().capUsdCents`, even when the limit doesn't lower anything. Two examples:
+- a Starter poster with a $5,000 cap limit, or a `building` stage limit;
+- a Building poster with a $1,500 limit.
+
+Each is clamped to its stage cap ($200 or $1,000). A plain Starter or Building poster is not clamped (the test only covers Graduated). Takers can compare the two and tell that a limit exists.
+
+Fix: clamp only when the limit actually binds, that is, `byLimit` is true or the limited stage is below the earned stage. That needs `tradeCap` to expose the earned stage, or a comparison of the limited cap against `capUsdCents(s, earned)`.
+
+### Your checks
+
+- **M1, list, detail and amount search.** The list drops a card with no band left. The detail (`GET /v1/offers/:id`) gives 404 to anyone but the poster, and the poster sees the offer as posted; tests cover both. An `amount` search above the cap drops the card (`amount` is fiat minor units, compared with `capFiat`). The search shares B1, because at a negative margin it lists amounts the take refuses. The method-summary counts are unclamped: an offer wholly above the limit is still counted, though not listed. That is minor; a count that doesn't match the list could hint at a limit.
+- **M2.** Both log entries now have `tradeCode: null` and `fromCode` in the detail (limits.ts:106, 213). Nothing outside apps/api/src/staff reads `limit_recommendations`, `account_limits.recommendation_id` or the case code. The trader's refusal carries the cap only, and the trader's account page shows only its own stage. No case code reaches the trader. Deciding or recommending no longer counts as involvement in round 1.
+- **m3.** The account-id route now needs `rulings.approve`. The matrix row is updated, and matrix.test passes.
+- **m4.** `decide` locks `accounts` first, then the recommendation row. The take locks both accounts in id order and never touches `limit_recommendations`. Neither `recommend` nor `decide` locks trades, offers or `site_flags`. Decide holds one account lock and one recommendation lock, and nothing that holds the recommendation waits on an account. So there is no cycle, and a decision and a take on one account run one after the other. A decide with a wrong account id in the URL locks that account, then gets 404; no cycle either.
+- **m6.** I attacked the triggers and the composite foreign key with direct SQL in a temporary probe, since removed.
+  - Refused:
+    - a limit for a pending recommendation;
+    - a limit with a higher cap than the recommendation;
+    - a limit naming another account (the trigger refuses first; the composite foreign key backs it);
+    - a limit whose `set_by` is not the decider;
+    - raising a limit's cap;
+    - moving a limit to another account;
+    - editing a decided recommendation's cap;
+    - flipping a decided recommendation back to pending;
+    - deleting a decided recommendation that has a limit (the foreign key refuses).
+  - Still possible to any database writer, as expected for app-enforced steps (no change needed; noted for the lead):
+    - `pending` to `approved` without a tap;
+    - inserting a recommendation already `approved`;
+    - setting `account_limits.until` in the past;
+    - deleting an `account_limits` row.
+
+  The last two are lifting a limit, which still has no route (an open owner question). A delete or update trigger on `account_limits` would make lifting explicit, but the owner should decide that along with the lift route.
+- **m1, m2, m7.** The new tests are in place. Reverting `lowerStage` now fails "a stage limit never raises a stage".
+
+### Guard reverts on 3685029f (each restored afterwards)
+
+1. `lowerStage` removed: caught by limits.test.
+2. The clamp switched off (`if (false && posterCapUsdCents !== null)`): caught by the offers.test M1 test.
+3. The decided-recommendation trigger switched off (`if false`): caught by limits.test "a decided recommendation cannot change".
+
+B1 itself is not caught: no test uses a negative margin.
+
+### Tests on 3685029f
+
+Targeted vitest runs, outside the lock with `nice -n 10`:
+- @x2f/api, 6 files (staff/limits, take, staff/keyTap, staff/matrix, offers, schema): 408 of 408 passed.
+- @x2f/staff intent.test: 24 of 24 passed.
+- @x2f/staff-web limits.test.tsx: 6 of 6 passed.
+- @x2f/web quote.test: 33 of 33 passed.
+
+Not run: Playwright and the full `npm run check`. Both are still needed before APPROVED; run them once B1 and m8 are fixed.
