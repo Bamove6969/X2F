@@ -123,6 +123,16 @@ export async function contextFor(browser: Browser, t: Trader, size: Size): Promi
   const url = new URL(s.origin);
   await context.addCookies([...t.api.jar].map(([name, value]) => ({ name, value, domain: url.hostname, path: '/', secure: true, httpOnly: true, sameSite: 'Strict' as const })));
   const page = await context.newPage();
+  // X2F_E2E_DIAG=1: every console line (the escrow workers' too) and every node-proxy call, for debugging a run.
+  if (process.env.X2F_E2E_DIAG) {
+    const who = t.displayName;
+    page.on('console', (m) => console.log(`[${who} ${m.type()}] ${m.text().slice(0, 300)}`));
+    page.on('pageerror', (e) => console.log(`[${who} pageerror] ${e.message.slice(0, 300)}`));
+    context.on('request', (r) => {
+      if (!r.url().startsWith(s.origin)) console.log(`[${who} req] ${r.method()} ${r.url().slice(0, 100)}`);
+    });
+    context.on('requestfailed', (r) => console.log(`[${who} reqfailed] ${r.url().slice(0, 100)} ${r.failure()?.errorText}`));
+  }
   return { context, page };
 }
 
@@ -172,6 +182,19 @@ export async function feeWallet(): Promise<Wallet> {
     seed: s.feeWallet.seed,
     restoreHeight: 0,
   }));
+}
+
+/** The network fee a transaction paid, from the node itself (atomic). */
+export async function txFee(txHash: string): Promise<bigint> {
+  const res = await fetch(`${stack().monerod}/get_transactions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ txs_hashes: [txHash], decode_as_json: true }),
+  });
+  const body = (await res.json()) as { txs?: Array<{ as_json: string }> };
+  const tx = body.txs?.[0];
+  if (!tx) throw new Error(`the node does not have tx ${txHash}`);
+  return BigInt((JSON.parse(tx.as_json) as { rct_signatures: { txnFee: number } }).rct_signatures.txnFee);
 }
 
 /** The trade's current view as `t` sees it. */
