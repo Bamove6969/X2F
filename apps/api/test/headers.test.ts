@@ -4,12 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { MONERO_WORKER_PATH, OCR_WORKER_CSP, SERVICE_WORKER_CSP, cspFor, escrowWorkerCspFor, moneroWorkerCspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
+import { ESCROW_WORKER_FILE, MONERO_WORKER_PATH, SERVICE_WORKER_CSP, cspFor, escrowWorkerCspFor, moneroWorkerCspFor, ocrWorkerCspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
 import { testApp } from './helpers/app.js';
 
 const RELAY = 'wss://relay.x2f.test';
 const NODE = 'https://node.x2f.test';
-const WEB = ['https://x2f.test', 'https://www.x2f.test'];
+const SITE = 'https://x2f.test';
+/**
+ * Lead call 20 Nov and review M-1: the OCR worker may load scripts and fetch only under this site's
+ * /ocr/, and may start no worker of its own.
+ */
+const OCR_CSP = "default-src 'none'; script-src https://x2f.test/ocr/ 'wasm-unsafe-eval'; connect-src https://x2f.test/ocr/; worker-src 'none'";
 const CSP =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; " +
   `connect-src 'self' ${RELAY} ${NODE}; img-src 'self' data:; style-src 'self'; font-src 'self'; ` +
@@ -34,11 +39,14 @@ beforeAll(async () => {
   await mkdir(join(root, 'monero'));
   await writeFile(join(root, 'monero', 'monero.worker.js'), 'self.onmessage = () => undefined;');
   await writeFile(join(root, 'assets', 'monero-abc123.js'), 'console.log(3)');
-  // The escrow worker, as vite names it (apps/web/src/escrow/worker.ts → assets/worker-<hash>.js).
-  await writeFile(join(root, 'assets', 'worker-CzS2KofQ.js'), 'self.onmessage = () => undefined;');
-  await writeFile(join(root, 'assets', 'not-a-worker-abc.js'), 'console.log(4)');
+  // The escrow worker, as apps/web/vite.config.ts names it (assets/escrow-worker-<8-char hash>.js).
+  await writeFile(join(root, 'assets', 'escrow-worker-CzS2KofQ.js'), 'self.onmessage = () => undefined;');
+  // Vite's default worker name, and near misses: never the escrow worker's CSP.
+  await writeFile(join(root, 'assets', 'worker-CzS2KofQ.js'), 'console.log(4)');
+  await writeFile(join(root, 'assets', 'escrow-worker-CzS2Ko.js'), 'console.log(5)');
+  await writeFile(join(root, 'assets', 'x-escrow-worker-CzS2KofQ.js'), 'console.log(6)');
   ({ app } = await testApp());
-  await serveWeb(app, { root, webOrigins: WEB, relayOrigin: RELAY, nodeProxyOrigin: NODE });
+  await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] });
 });
 
 afterAll(async () => {
@@ -110,15 +118,27 @@ describe('security headers', () => {
 });
 
 describe('the OCR files (Plan 5 Task 13, Global Constraints: the worker\'s own CSP)', () => {
-  it('the policy is exactly the plan\'s: nothing but this origin, wasm allowed', () => {
-    expect(OCR_WORKER_CSP).toBe("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'");
+  it('the policy: scripts and fetches only under /ocr/ on each site origin, wasm allowed, no nested worker (lead call 20 Nov, review M-1)', () => {
+    expect(ocrWorkerCspFor({ siteOrigins: [SITE] })).toBe(OCR_CSP);
+    expect(ocrWorkerCspFor({ siteOrigins: [SITE, 'http://x2fexample.onion'] })).toBe(
+      "default-src 'none'; script-src https://x2f.test/ocr/ http://x2fexample.onion/ocr/ 'wasm-unsafe-eval'; " +
+        "connect-src https://x2f.test/ocr/ http://x2fexample.onion/ocr/; worker-src 'none'",
+    );
+    expect(ocrWorkerCspFor({ siteOrigins: [SITE] })).not.toContain("'self'");
+  });
+
+  it('refuses no site origin, a path, a non-http scheme, or anything that is not a plain exact origin (review m-1, m-4)', () => {
+    for (const bad of [[], ['https://x2f.test/'], ['https://x2f.test/ocr'], ['wss://x2f.test'], ["https://x2f.test 'unsafe-inline'"], ['https://x2f.test;'], ['https://x2f.test;sandbox'], ['https://a.test,b'], ["https://a.test'x"], ['https://*.x2f.test']]) {
+      expect(() => ocrWorkerCspFor({ siteOrigins: bad }), JSON.stringify(bad)).toThrow();
+    }
+    expect(ocrWorkerCspFor({ siteOrigins: ['http://127.0.0.1:4317'] })).toContain('connect-src http://127.0.0.1:4317/ocr/;');
   });
 
   it.each(['/ocr/worker.min.js', '/ocr/tesseract-core-simd-lstm.wasm.js', '/ocr/eng.traineddata.gz'])('%s carries the worker CSP', async (url) => {
     const res = await app.inject({ method: 'GET', url });
     expect(res.statusCode).toBe(200);
     expectBaseHeaders(res.headers);
-    expect(res.headers['content-security-policy']).toBe("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'");
+    expect(res.headers['content-security-policy']).toBe(OCR_CSP);
   });
 
   it('the model is served as gzip bytes, not as a gzip-encoded response (tesseract.js reads the magic itself)', async () => {
@@ -135,6 +155,22 @@ describe('the OCR files (Plan 5 Task 13, Global Constraints: the worker\'s own C
       expect(res.statusCode, url).toBe(404);
       expect(res.headers['content-type'], url).not.toMatch(/^text\/html/);
     }
+  });
+
+  // (app.inject normalises dot segments and backslashes before routing; those are tested on a raw socket below.)
+  it.each(['/ocr/..%2Fv1%2Fme', '/ocr/%2fx', '/ocr/a%5Cb', '/ocr/%252e%252e/x', '/OCR/%2F'])(
+    'review m-2: %s (an encoded slash or dot, a backslash) is 400 under /ocr/',
+    async (url) => {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.headers['content-type']).toMatch(/^application\/json/);
+      expect(res.headers['content-security-policy']).toBeUndefined();
+    },
+  );
+
+  it('review m-2: the real files and other paths with dots are unchanged', async () => {
+    expect((await app.inject({ method: 'GET', url: '/ocr/worker.min.js' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/u/a%2Fb' })).statusCode).not.toBe(400);
   });
 
   it('review m-4: .gz is a file only under /ocr/: a profile named alice.gz is still the app page', async () => {
@@ -163,6 +199,7 @@ describe("monero-ts's wallet worker (Gap 1: no escrow wallet could start in a br
     expect(moneroWorkerCspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(MONERO_CSP);
     // The node proxy origin is checked exactly as for the page.
     expect(() => moneroWorkerCspFor({ relayOrigin: RELAY, nodeProxyOrigin: 'http://node.x2f.test' })).toThrow(/https or wss/);
+    expect(() => moneroWorkerCspFor({ relayOrigin: RELAY, nodeProxyOrigin: 'https://node.x2f.test;sandbox' })).toThrow(/exact origin/);
   });
 
   it('is served as JavaScript with its own CSP, the base headers and revalidated on every load', async () => {
@@ -191,15 +228,24 @@ describe("monero-ts's wallet worker (Gap 1: no escrow wallet could start in a br
 describe('every worker script carries its own CSP (lead call 20 Nov: a worker takes its CSP from its own response)', () => {
   const ESCROW_CSP =
     "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-    'worker-src https://x2f.test/monero/monero.worker.js https://www.x2f.test/monero/monero.worker.js; ' +
-    `connect-src 'self' ${RELAY} ${NODE}`;
+    `worker-src ${SITE}/monero/monero.worker.js; connect-src 'self' ${RELAY} ${NODE}`;
 
   it("the escrow worker's policy (multisig and chat keys): the API on this origin, the relay, the node proxy; only monero-ts's worker may be started", () => {
-    expect(escrowWorkerCspFor({ webOrigins: WEB, relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(ESCROW_CSP);
+    expect(escrowWorkerCspFor({ siteOrigins: [SITE], relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(ESCROW_CSP);
+    expect(escrowWorkerCspFor({ siteOrigins: [SITE, 'http://x2fexample.onion'], relayOrigin: RELAY, nodeProxyOrigin: NODE })).toContain(
+      `worker-src ${SITE}/monero/monero.worker.js http://x2fexample.onion/monero/monero.worker.js;`,
+    );
+  });
+
+  it('the escrow worker file is exactly assets/escrow-worker-<8-character hash>.js (vite.config.ts names it so)', () => {
+    expect(ESCROW_WORKER_FILE.test('/srv/web/assets/escrow-worker-CzS2KofQ.js')).toBe(true);
+    for (const p of ['/srv/web/assets/worker-CzS2KofQ.js', '/srv/web/assets/escrow-worker-CzS2Ko.js', '/srv/web/assets/x-escrow-worker-CzS2KofQ.js', '/srv/web/escrow-worker-CzS2KofQ.js']) {
+      expect(ESCROW_WORKER_FILE.test(p), p).toBe(false);
+    }
   });
 
   it('the escrow worker is served with it, and keeps the long cache of a hashed asset', async () => {
-    const res = await app.inject({ method: 'GET', url: '/assets/worker-CzS2KofQ.js' });
+    const res = await app.inject({ method: 'GET', url: '/assets/escrow-worker-CzS2KofQ.js' });
     expect(res.statusCode).toBe(200);
     expectBaseHeaders(res.headers);
     expect(String(res.headers['content-type'])).toMatch(/^application\/javascript/);
@@ -207,9 +253,10 @@ describe('every worker script carries its own CSP (lead call 20 Nov: a worker ta
     expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
   });
 
-  it("only assets/worker-*.js gets it: other assets keep no CSP", async () => {
-    for (const url of ['/assets/not-a-worker-abc.js', '/assets/app-abc123.js']) {
+  it('only that file gets it: other assets, near misses included, keep no CSP', async () => {
+    for (const url of ['/assets/worker-CzS2KofQ.js', '/assets/escrow-worker-CzS2Ko.js', '/assets/x-escrow-worker-CzS2KofQ.js', '/assets/app-abc123.js']) {
       const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
       expect(res.headers['content-security-policy'], url).toBeUndefined();
     }
   });
@@ -222,19 +269,21 @@ describe('every worker script carries its own CSP (lead call 20 Nov: a worker ta
   });
 
   it("the OCR worker's and monero-ts's worker's policies stay as pinned above", async () => {
-    expect((await app.inject({ method: 'GET', url: '/ocr/worker.min.js' })).headers['content-security-policy']).toBe(OCR_WORKER_CSP);
+    expect((await app.inject({ method: 'GET', url: '/ocr/worker.min.js' })).headers['content-security-policy']).toBe(OCR_CSP);
     expect((await app.inject({ method: 'GET', url: MONERO_WORKER_PATH })).headers['content-security-policy']).toBe(
       `default-src 'none'; script-src 'wasm-unsafe-eval'; connect-src ${NODE}`,
     );
   });
 
-  it('each web origin must be an exact http(s) origin, https unless loopback or allowed', () => {
+  it('site origins pass the same checks as X2F_ORIGINS in config.ts (origins.ts plainOrigin and clearTextAllowed)', () => {
     const o = { relayOrigin: RELAY, nodeProxyOrigin: NODE };
-    for (const bad of [[], ['https://x2f.test/'], ['https://x2f.test/app'], ['wss://x2f.test'], ['http://x2f.test'], ['https://x2f.test', '*']]) {
-      expect(() => escrowWorkerCspFor({ ...o, webOrigins: bad }), JSON.stringify(bad)).toThrow(/web origin/);
+    for (const bad of [[], ['https://x2f.test/'], ['https://x2f.test/app'], ['wss://x2f.test'], ['http://x2f.test'], ['https://x2f.test', '*'], ['https://x2f.test;sandbox'], ["https://x2f.test 'unsafe-inline'"]]) {
+      expect(() => escrowWorkerCspFor({ ...o, siteOrigins: bad }), JSON.stringify(bad)).toThrow(/site origin/);
     }
-    expect(escrowWorkerCspFor({ ...o, webOrigins: ['http://127.0.0.1:4317'] })).toContain('worker-src http://127.0.0.1:4317/monero/monero.worker.js;');
-    expect(escrowWorkerCspFor({ ...o, webOrigins: ['http://x2f.test'], allowInsecureOrigins: true })).toContain('worker-src http://x2f.test/monero/monero.worker.js;');
+    expect(escrowWorkerCspFor({ ...o, siteOrigins: ['http://127.0.0.1:4317'] })).toContain('worker-src http://127.0.0.1:4317/monero/monero.worker.js;');
+    expect(escrowWorkerCspFor({ ...o, siteOrigins: ['http://x2f.test'], allowInsecureOrigins: true })).toContain('worker-src http://x2f.test/monero/monero.worker.js;');
+    // A clear-text .onion relay is still refused (lead default, owner question).
+    expect(() => escrowWorkerCspFor({ siteOrigins: [SITE], relayOrigin: 'ws://x2fexample.onion', nodeProxyOrigin: NODE })).toThrow(/https or wss/);
   });
 });
 
@@ -321,13 +370,19 @@ describe('malformed HTTP that never reaches fastify routing (clientErrorHandler)
 
   beforeAll(async () => {
     ({ app: live } = await testApp());
-    await serveWeb(live, { root, webOrigins: WEB, relayOrigin: RELAY, nodeProxyOrigin: NODE });
+    await serveWeb(live, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] });
     await live.listen({ host: '127.0.0.1', port: 0 });
     port = (live.server.address() as AddressInfo).port;
   });
 
   afterAll(async () => {
     await live.close();
+  });
+
+  it.each(['/ocr/../v1/me', '/ocr/x/../../v1/me', '/ocr/..', '/ocr/a\\..\\b', '/ocr/%2e%2e/v1/me', '/ocr/.%2E/v1/me', '/ocr/a\\b', '/ocr/..%2Fv1%2Fme', '/%6Fcr/..%2Fv1%2Fme', '/%4F%43%52/..%2Fv1', '/%ZZ/x', '/%E0%A4/x'])('review m-2, n-1: the raw path %s (not normalised by the client; the first segment decoded once) is 400', async (path) => {
+    const res = parseRaw(await rawExchange(port, `GET ${path} HTTP/1.1\r\nHost: x2f.test\r\nConnection: close\r\n\r\n`));
+    expect(res.status, path).toBe(400);
+    expectBaseHeaders(res.headers);
   });
 
   it('a well-formed raw request is answered normally (the harness works)', async () => {
@@ -406,6 +461,23 @@ describe('cspFor', () => {
     expect(cspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(CSP);
   });
 
+  it('review m-1: exactly 11 directives, one policy (no comma)', () => {
+    const csp = cspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE });
+    expect(csp.split('; ')).toHaveLength(11);
+    expect(csp.split(';')).toHaveLength(11);
+    expect(csp).not.toContain(',');
+  });
+
+  it.each(['wss://r.x2f.test;report-uri', 'wss://r.x2f.test;sandbox', 'wss://r.x2f.test,b', "wss://r.x2f.test'x", 'wss://*.x2f.test'])(
+    'review m-1: refuses %j, which URL takes as an origin, for both connect origins',
+    (bad) => {
+      expect(new URL(bad).origin === bad || bad.includes('*')).toBe(true);
+      expect(() => cspFor({ relayOrigin: bad, nodeProxyOrigin: NODE })).toThrow(/origin/);
+      const node = bad.replace('wss:', 'https:');
+      expect(() => cspFor({ relayOrigin: RELAY, nodeProxyOrigin: node })).toThrow(/origin/);
+    },
+  );
+
   it.each(['wss://relay.x2f.test/', 'wss://relay.x2f.test; script-src *', 'relay.x2f.test', 'ftp://relay.x2f.test', ''])(
     'refuses %j as an origin',
     (bad) => {
@@ -444,7 +516,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
     vi.unstubAllEnvs();
   });
 
-  const base = { X2F_WEB_ROOT: '/srv/web', X2F_ORIGINS: 'https://x2f.test', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE };
+  const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: SITE };
 
   it.each([
     ['X2F_RELAY_ORIGIN', 'ws://relay.x2f.test'],
@@ -465,9 +537,9 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
       vi.stubEnv('NODE_ENV', undefined);
       expect(webOptionsFromEnv({ ...base, X2F_RELAY_ORIGIN: value, X2F_NODE_PROXY_ORIGIN: value })).toEqual({
         root: '/srv/web',
-        webOrigins: ['https://x2f.test'],
         relayOrigin: value,
         nodeProxyOrigin: value,
+        siteOrigins: [SITE],
       });
     },
   );
@@ -479,9 +551,9 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
     expect(() => webOptionsFromEnv({ ...env, X2F_ALLOW_INSECURE_ORIGINS: 'true' })).toThrow(/https or wss/);
     expect(webOptionsFromEnv({ ...env, X2F_ALLOW_INSECURE_ORIGINS: '1' })).toEqual({
       root: '/srv/web',
-      webOrigins: ['https://x2f.test'],
       relayOrigin: 'ws://relay.x2f.test',
       nodeProxyOrigin: 'http://node.x2f.test',
+      siteOrigins: [SITE],
       allowInsecureOrigins: true,
     });
   });
@@ -497,7 +569,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
   it('serveWeb refuses a remote clear-text origin', async () => {
     const { app: other } = await testApp();
     try {
-      await expect(serveWeb(other, { root, webOrigins: WEB, relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE })).rejects.toThrow(/https or wss/);
+      await expect(serveWeb(other, { root, relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE, siteOrigins: [SITE] })).rejects.toThrow(/https or wss/);
     } finally {
       await other.close();
     }
@@ -505,17 +577,26 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
 });
 
 describe('webOptionsFromEnv', () => {
+  it.each(['X2F_RELAY_ORIGIN', 'X2F_NODE_PROXY_ORIGIN'])("review m-1: %s with ';', ',' or a quote is refused", (name) => {
+    const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: SITE };
+    const scheme = name === 'X2F_RELAY_ORIGIN' ? 'wss' : 'https';
+    for (const v of [`${scheme}://a.x2f.test;sandbox`, `${scheme}://a.x2f.test,b`, `${scheme}://a.x2f.test'x`]) {
+      expect(() => webOptionsFromEnv({ ...base, [name]: v }), v).toThrow(/origin/);
+    }
+  });
+
   it('is null without X2F_WEB_ROOT', () => {
     expect(webOptionsFromEnv({})).toBeNull();
   });
 
-  it('needs both connect origins and the web origins (X2F_ORIGINS) when the web app is served', () => {
+  it('needs both connect origins when the web app is served', () => {
     expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web' })).toThrow(/X2F_RELAY_ORIGIN/);
     expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY })).toThrow(/X2F_NODE_PROXY_ORIGIN/);
+    // Lead call 20 Nov: and the site's own origins, for the OCR worker's CSP.
     expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE })).toThrow(/X2F_ORIGINS/);
-    expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_ORIGINS: 'https://x2f.test/', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE })).toThrow(/web origin/);
     expect(
-      webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_ORIGINS: 'https://x2f.test, https://www.x2f.test', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE }),
-    ).toEqual({ root: '/srv/web', webOrigins: ['https://x2f.test', 'https://www.x2f.test'], relayOrigin: RELAY, nodeProxyOrigin: NODE });
+      webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: `${SITE}, https://x2fabcdef.example` }),
+    ).toEqual({ root: '/srv/web', relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE, 'https://x2fabcdef.example'] });
+    expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: 'https://x2f.test/ocr' })).toThrow();
   });
 });

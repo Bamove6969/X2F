@@ -19,7 +19,7 @@ export async function startFixtures(port: number, outDir = 'dist-fixtures'): Pro
     timeout: 200_000,
   });
   const server = Fastify({ logger: false, frameworkErrors, clientErrorHandler });
-  await serveWeb(server, { root: join(WEB, outDir), webOrigins: [`http://127.0.0.1:${port}`, `http://localhost:${port}`], relayOrigin: 'wss://relay.x2f.invalid', nodeProxyOrigin: 'https://node.x2f.invalid' });
+  await serveWeb(server, { root: join(WEB, outDir), relayOrigin: 'wss://relay.x2f.invalid', nodeProxyOrigin: 'https://node.x2f.invalid', siteOrigins: [`http://127.0.0.1:${port}`] });
   await server.listen({ host: '127.0.0.1', port });
   return server;
 }

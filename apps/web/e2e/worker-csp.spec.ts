@@ -14,7 +14,7 @@ const NODE = 'https://node.x2f.invalid';
 const UNLISTED = 'https://unlisted.x2f.invalid';
 
 function escrowWorkerFile(): string {
-  const files = readdirSync(`${DIST}/assets`).filter((f) => /^worker-[A-Za-z0-9_-]+\.js$/.test(f));
+  const files = readdirSync(`${DIST}/assets`).filter((f) => /^escrow-worker-[A-Za-z0-9_-]{8}\.js$/.test(f));
   expect(files).toHaveLength(1);
   return `/assets/${files[0]!}`;
 }
@@ -97,8 +97,10 @@ test.describe('worker CSPs (lead call 20 Nov)', () => {
     const monero = await request.get('/monero/monero.worker.js');
     expect(monero.headers()['content-type']).toMatch(/^application\/javascript/);
     expect(monero.headers()['content-security-policy']).toBe(`default-src 'none'; script-src 'wasm-unsafe-eval'; connect-src ${NODE}`);
+    // main's narrowed OCR worker policy (proof card): scripts and fetches only under <site>/ocr/.
+    const ocr = origins.map((o) => `${o}/ocr/`).join(' ');
     expect((await request.get('/ocr/worker.min.js')).headers()['content-security-policy']).toBe(
-      "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'",
+      `default-src 'none'; script-src ${ocr} 'wasm-unsafe-eval'; connect-src ${ocr}; worker-src 'none'`,
     );
     expect((await request.get('/sw.js')).headers()['content-security-policy']).toBe("default-src 'none'");
   });

@@ -4,7 +4,7 @@
 //   origin (`/ocr/worker.min.js`, never a blob: worker), and the worker loads its engine and the
 //   English model from `/ocr/` only (tools/copy-ocr-assets.ts copies them from the pinned packages
 //   and checks them against tools/ocr-assets.sha256). Every `/ocr/*` response carries the worker's
-//   own CSP (apps/api/src/static/serve.ts `OCR_WORKER_CSP`), so even a default that pointed at a CDN
+//   own CSP (apps/api/src/static/serve.ts `ocrWorkerCspFor`: fetches only under /ocr/), so even a default that pointed at a CDN
 //   could not be fetched; the CDN default is also dropped from the bundle (vite.config.ts).
 // - Loaded lazily: tesseract.js is a separate chunk, imported on the first proof, never at start.
 // - Cyrillic (lead 2026-11-12): English first. Only when that reads like Cyrillic in Latin look-alikes

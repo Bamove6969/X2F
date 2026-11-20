@@ -192,6 +192,59 @@ function factProblems(questions: readonly HelpQuestion[], facts: Record<string, 
   return problems;
 }
 
+/** A source note's parts: `path:line[-line] words`, or null when it is not in that form. */
+function parseNote(s: string): { path: string; first: number; last: number | undefined; words: string } | null {
+  const m = /^([\w./-]+):(\d+)(?:-(\d+))? (.+)$/.exec(s);
+  if (m === null) return null;
+  return { path: m[1]!, first: Number(m[2]), last: m[3] === undefined ? undefined : Number(m[3]), words: m[4]! };
+}
+
+/** How far a note's words may drift from its cited line(s) and still pass (lead, 20 Nov). */
+const NOTE_SLACK = 40;
+
+/**
+ * What is wrong with the questions' source notes. A note passes when its words are in its file
+ * within NOTE_SLACK lines of the cited line (or range), so adding lines to a cited file does not
+ * break this test. It warns, naming the line, when the words are only further away and are in the
+ * file exactly once. It fails when the note is malformed, the file is gone, or the words are not in
+ * the file, or are only further away and more than once (lead default: a note that cannot be told
+ * apart is a failure, not a guess).
+ */
+function noteProblems(
+  questions: readonly HelpQuestion[],
+  read: (p: string) => string = source,
+  exists: (p: string) => boolean = (p) => existsSync(join(ROOT, p)),
+): { failures: string[]; warnings: string[] } {
+  const failures: string[] = [];
+  const warnings: string[] = [];
+  for (const q of questions) {
+    for (const s of q.sources) {
+      const n = parseNote(s);
+      if (n === null) {
+        failures.push(`${q.id}: "${s}" is not "path:line[-line] words"`);
+        continue;
+      }
+      if (!exists(n.path)) {
+        failures.push(`${q.id}: ${s}: no such file`);
+        continue;
+      }
+      const to = n.last ?? n.first;
+      if (n.first < 1 || to < n.first) {
+        failures.push(`${q.id}: ${s}: the line range is backwards or below 1`);
+        continue;
+      }
+      const hits = read(n.path)
+        .split('\n')
+        .flatMap((line, i) => (line.includes(n.words) ? [i + 1] : []));
+      if (hits.length === 0) failures.push(`${q.id}: ${s}: "${n.words}" is not in the file`);
+      else if (hits.some((h) => h >= n.first - NOTE_SLACK && h <= to + NOTE_SLACK)) continue;
+      else if (hits.length === 1) warnings.push(`${q.id}: ${s}: the words are now at line ${hits[0]}; re-point the note`);
+      else failures.push(`${q.id}: ${s}: "${n.words}" is ${hits.length} times in the file, none within ${NOTE_SLACK} lines`);
+    }
+  }
+  return { failures, warnings };
+}
+
 /** `file` as it is, but with `from` replaced by `to` (the text must be there exactly once). */
 function edited(file: string, from: string, to: string): (p: string) => string {
   const text = source(file);
@@ -211,21 +264,73 @@ describe('the help library content', () => {
     for (const t of LIBRARY_TOPICS) expect(QUESTIONS.some((q) => q.topic === t.id), t.id).toBe(true);
   });
 
-  it.each(VARIANTS)('every answer has a source note, and each note still points at the words it names (%s)', (_name, questions) => {
-    for (const q of questions) {
-      expect(q.sources.length, q.id).toBeGreaterThan(0);
-      for (const s of q.sources) {
-        const m = /^([\w./-]+):(\d+)(?:-(\d+))? (.+)$/.exec(s);
-        expect(m, `${q.id}: "${s}" is not "path:line[-line] words"`).not.toBeNull();
-        const [, path, first, last, words] = m!;
-        expect(existsSync(join(ROOT, path!)), `${q.id}: ${path} exists`).toBe(true);
-        const lines = source(path!).split('\n');
-        const from = Number(first);
-        const to = last === undefined ? from : Number(last);
-        expect(from >= 1 && to >= from && to <= lines.length, `${q.id}: ${s} is inside the file`).toBe(true);
-        expect(lines.slice(from - 1, to).join('\n'), `${q.id}: ${s}`).toContain(words);
-      }
-    }
+  it.for(VARIANTS)('every answer has a source note, and each note still points at the words it names (%s)', async ([, questions], { annotate }) => {
+    for (const q of questions) expect(q.sources.length, q.id).toBeGreaterThan(0);
+    const { failures, warnings } = noteProblems(questions);
+    // A note whose words sit only somewhere else in its file still passes, but says where they are
+    // now: an annotation, which the reporter shows even on a passing test (console output is hidden).
+    for (const w of warnings) await annotate(`help library source note: ${w}`, 'warning');
+    expect(failures).toEqual([]);
+  });
+
+  // Lead, 20 Nov: a note no longer pins its exact line (every branch that added lines to a cited
+  // file broke this test), but its words must still be in the cited file. Each case edits a real
+  // cited file under a real note and checks what the note check then says.
+  describe('the source-note check', () => {
+    const note = QUESTIONS.flatMap((q) => q.sources.map((s) => ({ q, s, ...parseNote(s)! }))).find(
+      // A one-line note far enough down its file to move 20 up, whose words are in the file once.
+      (n) => n.last === undefined && n.first > 60 && source(n.path).split(n.words).length === 2,
+    )!;
+    const lines = source(note.path).split('\n');
+    const withLines = (next: string[]) => (p: string) => (p === note.path ? next.join('\n') : source(p));
+    const only = [{ ...note.q, sources: [note.s] }];
+    const at0 = note.first - 1;
+
+    it('passes the note as it is on main, with no warning', () => {
+      expect(noteProblems(only)).toEqual({ failures: [], warnings: [] });
+    });
+
+    it('red: a note whose words were deleted from its file fails', () => {
+      const gone = lines.map((l) => l.split(note.words).join(''));
+      const { failures, warnings } = noteProblems(only, withLines(gone));
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toContain('not in the file');
+      expect(warnings).toEqual([]);
+    });
+
+    it('red: a note whose file is gone fails', () => {
+      const { failures } = noteProblems(only, source, (p) => p !== note.path && existsSync(join(ROOT, p)));
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toContain('no such file');
+    });
+
+    it('green: a note whose line moved by 20 (down or up) passes with no warning', () => {
+      const down = [...lines.slice(0, at0), ...Array<string>(20).fill(''), ...lines.slice(at0)];
+      expect(noteProblems(only, withLines(down))).toEqual({ failures: [], warnings: [] });
+      // Up by 20: the 20 lines above it are gone (the words are in the file once, on the note's line).
+      const up = [...lines.slice(0, at0 - 20), ...lines.slice(at0)];
+      expect(noteProblems(only, withLines(up))).toEqual({ failures: [], warnings: [] });
+    });
+
+    it('a note moved further than 40 lines warns, naming the line, when its words are in the file once', () => {
+      const far = [...lines.slice(0, at0), ...Array<string>(41).fill(''), ...lines.slice(at0)];
+      const { failures, warnings } = noteProblems(only, withLines(far));
+      expect(failures).toEqual([]);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain(`now at line ${note.first + 41}`);
+    });
+
+    it('a note moved further than 40 lines fails when its words are in the file more than once', () => {
+      const far = [...lines.slice(0, at0), ...Array<string>(41).fill(''), ...lines.slice(at0), note.words];
+      const { failures, warnings } = noteProblems(only, withLines(far));
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toContain('2 times');
+      expect(warnings).toEqual([]);
+    });
+
+    it('a note that is not "path:line[-line] words" fails', () => {
+      expect(noteProblems([{ ...note.q, sources: ['no line here'] }]).failures).toHaveLength(1);
+    });
   });
 
   it.each(VARIANTS)('every timer, limit and count an answer names matches the constant in the code, and no number goes unchecked (%s)', (_name, questions) => {

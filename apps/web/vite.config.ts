@@ -64,6 +64,19 @@ function tesseractNoCdn(): Plugin {
   };
 }
 
+/**
+ * Lead call 20 Nov: the escrow worker (src/escrow/worker.ts: the multisig key shares, chat identity
+ * and chat keys) is emitted as exactly assets/escrow-worker-<8-character hash>.js, which
+ * apps/api/src/static/serve.ts `ESCROW_WORKER_FILE` matches to serve it with its own CSP. Any other
+ * worker gets a name that can never match it (and so no escrow CSP; test/bundle.test.ts pins that the
+ * escrow worker is the only worker built). A rename here must change serve.ts in the same commit.
+ */
+export const ESCROW_WORKER_FILE_NAMES = 'assets/escrow-worker-[hash:8].js';
+const ESCROW_WORKER_SOURCE = /[\\/]src[\\/]escrow[\\/]worker\.ts$/;
+function workerFileNames(chunk: { facadeModuleId: string | null }): string {
+  return chunk.facadeModuleId !== null && ESCROW_WORKER_SOURCE.test(chunk.facadeModuleId) ? ESCROW_WORKER_FILE_NAMES : 'assets/other-worker-[name]-[hash].js';
+}
+
 /** The only build mode that may carry fixture mode (Playwright's board fixtures); see `fixturesOn`. */
 export const FIXTURES_BUILD_MODE = 'fixtures';
 /** Where a fixtures-mode build goes, so it can never overwrite (or be deployed as) the production `dist`. */
@@ -83,8 +96,9 @@ export default defineConfig(({ command, mode }) => {
   const fixtures = fixturesOn(command, mode, env.VITE_FIXTURES);
   return {
     plugins: [react(), moneroGlue(), moneroWorker(), ocrAssets(), tesseractNoCdn()],
-    // The escrow worker (where the wallets run) is bundled with its own plugin list.
-    worker: { plugins: () => [moneroGlue()] },
+    // The escrow worker (where the wallets run) is bundled with its own plugin list, under the one
+    // file name the API gives the escrow worker's CSP (lead call 20 Nov, ESCROW_WORKER_FILE_NAMES).
+    worker: { plugins: () => [moneroGlue()], rolldownOptions: { output: { entryFileNames: workerFileNames } } },
     resolve: {
       // monero-ts pulls in Node's net and tls; the browser build gets an empty module (research §3, P3-M8).
       // and Node's `assert`, which monero-ts calls for its own checks: a working stand-in (src/assertShim.ts).

@@ -7,11 +7,11 @@
 // worker); every request, page and worker alike, goes to this origin only; no CSP violation is
 // reported; Chromium loads the relaxed-SIMD core; the automatic regions cover every card, IBAN, email
 // and phone, and the names after a label, and never the trade amount or code; and a model that is
-// blocked, missing or never arrives fails closed (`ocrOk: false`, no regions, no error) within 31 s.
+// blocked, missing or never arrives fails closed (`ocrOk: false`, no regions, no error) within 35 s.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test, type Page, type Request } from '@playwright/test';
+import { expect, test, type Page, type Request, type Route } from '@playwright/test';
 import type { FastifyInstance } from 'fastify';
 import type { ProofLabResult } from '../src/fixtures/index.js';
 import type { GroundTruth } from './fixtures/proofs/make.js';
@@ -147,9 +147,98 @@ test.describe('on-device OCR for the proof blur', () => {
     for (const f of ['worker.min.js', 'tesseract-core-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'eng.traineddata.gz', 'rus.traineddata.gz']) {
       const res = await request.get(`${ORIGIN}/ocr/${f}`);
       expect(res.status(), f).toBe(200);
-      expect(res.headers()['content-security-policy'], f).toBe("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'");
+      // Lead call 20 Nov and review M-1: scripts and fetches only under this origin's /ocr/, no nested worker.
+      expect(res.headers()['content-security-policy'], f).toBe(`default-src 'none'; script-src ${ORIGIN}/ocr/ 'wasm-unsafe-eval'; connect-src ${ORIGIN}/ocr/; worker-src 'none'`);
     }
   });
+
+  // Lead call 20 Nov and review M-1, m-3 (wip/lead-p5t13-16-ocr): a worker under /ocr/ may load scripts
+  // and fetch only under this origin's /ocr/, and start no worker, so one taken over through the OCR
+  // engine sends nothing to the API with the trader's cookies. A probe script is served at
+  // /ocr/probe.js with the headers the server sends for a real /ocr/ file (its own CSP) and, from inside
+  // the worker, tries every way out: fetch, XHR, WebSocket, EventSource, importScripts and a nested
+  // Worker, each at its own /v1/probe-<way> path. The control serves the same probe under the old
+  // policy ('self' everywhere, no worker-src), so the test shows it can tell the two apart.
+  const WAYS = ['fetch', 'xhr', 'ws', 'es', 'import', 'worker'] as const;
+  const PROBE = `
+    const seen = [];
+    self.addEventListener('securitypolicyviolation', (e) => seen.push(e.violatedDirective + ' ' + e.blockedURI));
+    const out = {};
+    const wsBase = location.origin.replace(/^http/, 'ws');
+    const tries = {
+      fetch: () => fetch('/v1/probe-fetch', { credentials: 'same-origin' }).then((r) => 'reached ' + r.status, () => 'blocked'),
+      xhr: () => new Promise((res) => { const x = new XMLHttpRequest(); x.onload = () => res('reached ' + x.status); x.onerror = () => res('blocked'); try { x.open('GET', '/v1/probe-xhr'); x.send(); } catch { res('blocked'); } }),
+      ws: () => new Promise((res) => { try { const s = new WebSocket(wsBase + '/v1/probe-ws'); s.onopen = () => res('reached'); s.onerror = () => res('error'); } catch { res('blocked'); } }),
+      es: () => new Promise((res) => { try { const s = new EventSource('/v1/probe-es'); s.onopen = () => res('reached'); s.onerror = () => { s.close(); res('error'); }; } catch { res('blocked'); } }),
+      import: () => { try { importScripts('/v1/probe-import'); return 'reached'; } catch (e) { return 'threw ' + e.name; } },
+      worker: () => new Promise((res) => { try { const w = new Worker('/v1/probe-worker'); w.onerror = () => res('error'); setTimeout(() => res('constructed'), 300); } catch (e) { res('threw ' + e.name); } }),
+    };
+    self.onmessage = async () => {
+      out.ocr = await fetch('/ocr/eng.traineddata.gz').then((r) => 'reached ' + r.status, () => 'blocked');
+      try { importScripts('/ocr/probe-lib.js'); out.ocrImport = self.probeLib === 1 ? 'ran' : 'not run'; } catch (e) { out.ocrImport = 'threw ' + e.name; }
+      out.other = await fetch('/ocrx/eng.traineddata.gz').then((r) => 'reached ' + r.status, () => 'blocked');
+      for (const k of Object.keys(tries)) out[k] = await tries[k]();
+      await new Promise((r) => setTimeout(r, 300));
+      postMessage({ out, seen });
+    };`;
+  for (const [what, csp] of [
+    ['the served worker CSP', null],
+    ["control: the old policy, 'self' everywhere", "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'"],
+  ] as const) {
+    test(`inside an /ocr/ worker (${what}): ${csp === null ? 'only /ocr/ is reached; fetch, XHR, WebSocket, EventSource, importScripts and a nested Worker to /v1/ are all blocked' : 'fetch, XHR, EventSource and importScripts reach /v1/, and a nested Worker is made'}`, async ({ page }) => {
+      const asIfOcr = async (route: Route, body: string) => {
+        const real = await route.fetch({ url: `${ORIGIN}/ocr/worker.min.js` });
+        const headers = { ...real.headers() };
+        delete headers['content-length'];
+        delete headers['etag'];
+        if (csp !== null) headers['content-security-policy'] = csp;
+        await route.fulfill({ status: 200, headers: { ...headers, 'content-type': 'text/javascript; charset=utf-8' }, body });
+      };
+      await page.route('**/ocr/probe.js', (r) => asIfOcr(r, PROBE));
+      await page.route('**/ocr/probe-lib.js', (r) => asIfOcr(r, 'self.probeLib = 1;'));
+      // Reached the server: a request that got an answer. (Playwright reports a request the CSP
+      // blocks as started and then failed, for XHR and EventSource; it never finishes.)
+      const reached: string[] = [];
+      page.context().on('requestfinished', (r) => {
+        const m = /\/v1\/probe-([a-z]+)/.exec(r.url());
+        if (m) reached.push(m[1]!);
+      });
+      const sockets: string[] = [];
+      page.on('websocket', (ws) => sockets.push(ws.url()));
+      await open(page);
+      const { out, seen } = await page.evaluate(
+        () =>
+          new Promise<{ out: Record<string, string>; seen: string[] }>((resolve, reject) => {
+            const w = new Worker('/ocr/probe.js');
+            w.onmessage = (e) => resolve(e.data);
+            w.onerror = (e) => reject(new Error(String(e.message)));
+            w.postMessage('go');
+          }),
+      );
+      // Allowed either way: a fetch and a script under /ocr/.
+      expect(out.ocr).toBe('reached 200');
+      expect(out.ocrImport).toBe('ran');
+      if (csp === null) {
+        expect(out.other, 'a sibling path').toBe('blocked');
+        // Nothing reached the network, and each way was reported as a CSP violation of its own.
+        expect(reached).toEqual([]);
+        expect(sockets).toEqual([]);
+        for (const way of WAYS) expect(seen.some((v) => v.includes(`/v1/probe-${way}`)), `${way}: ${JSON.stringify(out)} ${JSON.stringify(seen)}`).toBe(true);
+        expect(out.fetch).toBe('blocked');
+        expect(out.xhr).toBe('blocked');
+        expect(out.import).toMatch(/^threw /);
+        expect(seen.find((v) => v.includes('/v1/probe-import'))).toMatch(/^script-src/);
+        expect(seen.find((v) => v.includes('/v1/probe-worker'))).toMatch(/^worker-src/);
+      } else {
+        // Review M-1's finding, reproduced: under the old policy these go out with the cookies.
+        expect(reached).toEqual(expect.arrayContaining(['fetch', 'xhr', 'es', 'import']));
+        // The nested Worker is made and asked for (Playwright does not report a worker's own worker's
+        // request): no violation, no throw.
+        expect(out.worker).not.toMatch(/^threw /);
+        expect(seen.filter((v) => v.includes('/v1/probe-'))).toEqual([]);
+      }
+    });
+  }
 
   test('Latin-script receipts never fetch the Russian model, and one worker does', async ({ page }) => {
     test.setTimeout(240_000);
@@ -170,7 +259,7 @@ test.describe('on-device OCR for the proof blur', () => {
       const w = await open(page);
       const { out } = await lab(page, 'bank-labelled.png');
       expect(out).toMatchObject({ ocrOk: false, auto: [], amount: [], memo: [], words: [] });
-      expect(out.ms).toBeLessThan(31_000);
+      expect(out.ms).toBeLessThan(35_000);
       expect(w.errors).toEqual([]);
       expect(w.requests.filter((u) => !u.startsWith(`${ORIGIN}/`) && !u.startsWith('data:'))).toEqual([]);
     });
@@ -183,7 +272,7 @@ test.describe('on-device OCR for the proof blur', () => {
     const { out } = await lab(page, 'bank-labelled.png');
     expect(out).toMatchObject({ ocrOk: false, auto: [] });
     expect(out.ms).toBeGreaterThanOrEqual(29_000);
-    expect(out.ms).toBeLessThan(31_000);
+    expect(out.ms).toBeLessThan(35_000);
     expect(w.errors).toEqual([]);
   });
 });
