@@ -62,6 +62,11 @@ export interface EscrowRecord {
   identityCreatedAt?: number;
   /** The identity was accepted by the API (or it already held it: 409 identity-exists). */
   registered: boolean;
+  /**
+   * Regtest e2e gap 5: this device registered its identity for the trade's chat (or found nothing
+   * left to do), so a resume does not ask again (runtime `prepareChat`). Absent: not yet.
+   */
+  chatPrepared?: boolean;
   /** The attestation and its signature as last verified; re-verified on every resume. */
   attestation: { attestation: unknown; sig: string } | null;
   partyState: PartyState | null;

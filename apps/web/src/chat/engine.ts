@@ -4,7 +4,9 @@
  * ChatSnapshot of plain, already-verified lines.
  *
  * - Device binding: the first sync on a device makes the chat identity, saves it, then registers
- *   it. If the API already holds another key for this role, the chat is open on another device:
+ *   it. For a trade's chat that first step normally runs earlier, without any sync: `prepare`, which
+ *   the escrow runtime calls when the device runs the trade (regtest gap 5, chat/prepare.ts), so the
+ *   chat is attested once both devices ran the trade, whether or not anyone opened it. If the API already holds another key for this role, the chat is open on another device:
  *   the snapshot is read-only (`other-device`) and nothing is ever sealed here.
  * - Before the first open or seal, the moderation attestation is verified against the pinned
  *   moderation signing key in the chat context (`channels.chat === chatChannel(chat)`, this
@@ -213,6 +215,15 @@ export interface ChatEngine {
    */
   sendUnblurred(chat: string, proof: ProofUnblurredPayload): Promise<ChatSnapshot>;
   /**
+   * Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): the identity step of a sync alone. Makes, saves and
+   * registers this device's chat identity for the chat (as the first sync does), and reads nothing
+   * else: no attestation, no key, no envelope. The escrow runtime calls it (chat/prepare.ts) when the
+   * device runs the trade, because moderation attests a chat only once both traders registered one:
+   * without it, neither side could send before the other had opened the chat. 'other-device' when
+   * another device of the account holds the role (nothing made). A 410 erases the chat, as everywhere.
+   */
+  prepare(chat: string): Promise<'registered' | 'other-device'>;
+  /**
    * Asks the API about every chat stored on this device and erases each one it answers 410
    * `chat-purged` for; resolves with those. Any other answer (or none) keeps the record. Rejects on
    * a 401 (no live session: nothing can be told apart), so the caller tries again later.
@@ -236,6 +247,18 @@ export interface ChatEngineDeps {
   modSigningPublic: string;
   /** The device clock (ms); default Date.now(). */
   now?: () => number;
+  /**
+   * Review m1: runs `fn` holding the exclusive lock `name` across this origin's tabs (each tab has its
+   * own worker and engine over the one IndexedDB store). Default navigator.locks; where a browser has
+   * none, `fn` runs unlocked and the store's `create` alone keeps the first identity.
+   */
+  lock?: (name: string, fn: () => Promise<unknown>) => Promise<unknown>;
+}
+
+/** Review m1: navigator.locks where there is one (workers have it), else no lock. */
+function defaultLock(name: string, fn: () => Promise<unknown>): Promise<unknown> {
+  const locks = (globalThis as { navigator?: { locks?: { request(name: string, fn: () => Promise<unknown>): Promise<unknown> } } }).navigator?.locks;
+  return locks ? locks.request(name, fn) : fn();
 }
 
 const hex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
@@ -292,11 +315,19 @@ async function v1SignedBy(envelope: unknown, channel: string, parts: Participant
 }
 
 export function createChatEngine(d: ChatEngineDeps): ChatEngine {
-  /** One operation at a time per chat (posts are sent one by one, chatCrypto's contract). */
+  /**
+   * One operation at a time per chat (posts are sent one by one, chatCrypto's contract), and, across
+   * this origin's tabs, each whole operation (sync, post, prepare, grant, the sweep's read) holds the
+   * per-chat Web Lock `x2f-chat-identity:<chat>` (review m1, then the review 3 follow-up): a tab never
+   * acts on a record another tab changed under it. Taken once per operation, never inside one (a Web
+   * Lock is not re-entrant).
+   */
   const queues = new Map<string, Promise<unknown>>();
+  const lock = d.lock ?? defaultLock;
   const serial = <T>(chat: string, fn: () => Promise<T>): Promise<T> => {
     const prev = queues.get(chat) ?? Promise.resolve();
-    const next = prev.then(fn, fn);
+    const locked = (): Promise<T> => lock(`x2f-chat-identity:${chat}`, fn) as Promise<T>;
+    const next = prev.then(locked, locked);
     queues.set(chat, next.catch(() => undefined));
     return next;
   };
@@ -319,6 +350,43 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     sessions.delete(chat);
     forgetKey(chat);
     await d.store.delete(chat);
+  };
+  /**
+   * Review 3 follow-up: every save of an existing chat's record reloads the stored one and never lets
+   * what protects the chat go backwards: the identity (another one stored fails closed), `registered`,
+   * the pinned key fingerprint `tkh` (F3: kept, and another one stored fails closed) and the verified
+   * attestation (the first one kept). The rest (state, cursor, receipts) is this operation's. Returns
+   * the record as saved, which the caller goes on with. The second layer under the per-chat lock, for
+   * a browser without Web Locks.
+   */
+  const keep = async (rec: ChatRecord): Promise<ChatRecord> => {
+    const stored = await d.store.load(rec.chat);
+    // Review m1: keep() saves only over a record that exists (a new one goes through `create`), so a
+    // missing one was erased (a purge, or another tab's erase): never written back (p11-10). Thrown as
+    // the purge, so `purging` erases this worker's copy too.
+    if (stored === null) {
+      forgetKey(rec.chat);
+      throw Object.assign(new Error('chat-purged'), { status: 410, code: 'chat-purged' });
+    }
+    // Review m2: every refusal wipes this chat's key from memory first.
+    const refuse = (why: string): never => {
+      forgetKey(rec.chat);
+      throw new ProtocolError('bad-signature', why);
+    };
+    if (stored.role !== rec.role || stored.identity.signPublic !== rec.identity.signPublic || stored.identity.boxPublic !== rec.identity.boxPublic) {
+      refuse('another chat identity is stored for this chat');
+    }
+    if (stored.tkh !== undefined && rec.tkh !== undefined && stored.tkh !== rec.tkh) refuse('another chat key is pinned for this chat');
+    const tkh = stored.tkh ?? rec.tkh;
+    const merged: ChatRecord = {
+      ...rec,
+      registered: stored.registered || rec.registered,
+      attestation: stored.attestation ?? rec.attestation,
+      ...(stored.identityCreatedAt !== undefined ? { identityCreatedAt: stored.identityCreatedAt } : {}),
+      ...(tkh !== undefined ? { tkh } : {}),
+    };
+    await d.store.save(merged);
+    return merged;
   };
 
   const snapshot = (rec: ChatRecord | null, view: ChatApiView, phase: ChatPhase, problem: ChatSnapshot['problem'] = null, more = false): ChatSnapshot => {
@@ -371,14 +439,19 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     };
   };
 
-  /** Makes, saves, then registers this device's chat identity; false when another device holds the role. */
+  /**
+   * Makes, saves, then registers this device's chat identity; null when another device holds the role.
+   * Review m1, two layers against two tabs of this device making one each: it runs inside an operation
+   * holding the per-chat lock (`serial`), and a new record is saved only if none exists yet
+   * (`store.create`, one transaction); a tab that loses that goes on with the record that won.
+   */
   async function ensureIdentity(chat: string, view: ChatApiView): Promise<ChatRecord | null> {
     let rec = await d.store.load(chat);
     if (rec && rec.role !== view.role) return null;
     if (!rec) {
       if (view.mySignPublic !== null) return null;
       const me = await d.newIdentity();
-      rec = {
+      const made: ChatRecord = {
         v: 2,
         chat,
         role: view.role,
@@ -390,7 +463,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         cursor: '0',
         receipts: [],
       };
-      await d.store.save(rec);
+      if (await d.store.create(made)) rec = made;
+      else {
+        // Another tab saved one first: that one is this device's identity (it may be registered already).
+        me.signSecret.fill(0);
+        me.boxSecret.fill(0);
+        rec = await d.store.load(chat);
+        if (!rec || rec.role !== view.role) return null;
+      }
     }
     if (!rec.registered) {
       if (view.mySignPublic !== null && view.mySignPublic !== rec.identity.signPublic) return null;
@@ -403,8 +483,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           if (again.mySignPublic !== rec.identity.signPublic) return null;
         }
       }
-      rec = { ...rec, registered: true };
-      await d.store.save(rec);
+      rec = await keep({ ...rec, registered: true });
     } else if (view.mySignPublic !== null && view.mySignPublic !== rec.identity.signPublic) {
       return null;
     }
@@ -446,8 +525,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         tk.fill(0);
         throw new ProtocolError('bad-signature', 'the chat key is not the one this device pinned');
       }
-      const pinned = rec.tkh === tkh ? rec : { ...rec, tkh };
-      if (pinned !== rec) await d.store.save(pinned);
+      let pinned: ChatRecord;
+      try {
+        pinned = rec.tkh === tkh ? rec : await keep({ ...rec, tkh });
+      } catch (e) {
+        // Another tkh stored by another tab (review 3 follow-up): the security failure, the key wiped.
+        tk.fill(0);
+        throw e;
+      }
       keys.set(rec.chat, tk);
       return { tk, rec: pinned };
     };
@@ -527,8 +612,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           }
           if (past && !held && cursor !== e.id) {
             cursor = e.id;
-            rec = { ...rec, cursor };
-            await d.store.save(rec);
+            rec = await keep({ ...rec, cursor });
           }
           continue;
         }
@@ -613,8 +697,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         }
         if (!advance) held = true;
         if (!held) cursor = e.id;
-        rec = { ...rec, state, cursor, receipts: [...receipts] };
-        await d.store.save(rec);
+        rec = await keep({ ...rec, state, cursor, receipts: [...receipts] });
       }
       unread = more;
       if (!more) break;
@@ -649,7 +732,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       if (e instanceof AttestationError) return { snap: snapshot(rec0, view, 'failed', 'security'), rec: null, parts: null, view };
       throw e;
     }
-    await d.store.save(rec);
+    // Merged (review 3 follow-up): a tkh another tab pinned meanwhile comes back with it, so the key
+    // step below holds this chat to that pin.
+    rec = await keep(rec);
     let tk: Uint8Array;
     try {
       ({ tk, rec } = await chatKey(rec, parts));
@@ -767,7 +852,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           throw e;
         }
         // Saved before posting: a seq is never used twice.
-        await d.store.save({ ...s.rec, state: sealed.state });
+        await keep({ ...s.rec, state: sealed.state });
         try {
           await d.api.postEnvelope(chat, sealed.envelope);
         } catch (e) {
@@ -796,6 +881,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
 
   return {
     sync: (chat) => serial(chat, () => purging(chat, async () => (await syncLocked(chat)).snap)),
+    // Gap 5: the first step of syncLocked alone, in the same per-chat queue (so a prepare and a sync
+    // at once never make two identities).
+    prepare: (chat) => serial(chat, () => purging(chat, async () => ((await ensureIdentity(chat, await d.api.getChat(chat))) ? 'registered' : 'other-device'))),
     sweep: async () => {
       const gone: string[] = [];
       for (const chat of await d.store.list()) {

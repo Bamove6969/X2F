@@ -190,3 +190,28 @@ describe('version changes from another tab', () => {
     expect(await fresh.loadAccount()).toEqual(account);
   });
 });
+
+// Review m1: a new chat record is saved only when none exists, in one transaction, so a second tab
+// (another connection to the same database) can never replace the identity the first one made.
+describe('create: a new record only if none exists', () => {
+  it('two connections at once: exactly one creates, and the stored record is that one', async () => {
+    const idb = new IDBFactory();
+    const [a, b] = [await openChatStore({ indexedDB: idb }), await openChatStore({ indexedDB: idb })];
+    const other = { ...chatRecord(), identity: { ...chatRecord().identity, signPublic: '55'.repeat(32) } };
+    const [ra, rb] = await Promise.all([a.create(chatRecord()), b.create(other)]);
+    expect([ra, rb].filter(Boolean)).toHaveLength(1);
+    const kept = ra ? chatRecord() : other;
+    expect(await a.load(CODE)).toEqual(kept);
+    expect(await b.load(CODE)).toEqual(kept);
+    expect(await a.create(other)).toBe(false);
+    expect(await a.load(CODE)).toEqual(kept);
+  });
+
+  it('after a delete it creates again', async () => {
+    const store = await openChatStore({ indexedDB: new IDBFactory() });
+    expect(await store.create(chatRecord())).toBe(true);
+    await store.delete(CODE);
+    expect(await store.create(chatRecord())).toBe(true);
+    expect(await store.load(CODE)).toEqual(chatRecord());
+  });
+});

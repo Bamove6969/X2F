@@ -555,6 +555,50 @@ describe('POST /v1/trades/:code/chat', () => {
     expect(view).toMatchObject({ tradeCode: code, role: 'buyer' });
   });
 
+  // Lead call (20 Nov, review 2 of wip/lead-fix-chat-attest): a trade in a terminal state that has no
+  // chat gets none (409 trade-closed); a chat it already has keeps opening (history, disputes, appeals,
+  // ruling compliance and the purge path all use it).
+  it.each(['released', 'refunded', 'cancelled', 'lapsed'])('a %s trade with no chat: 409 trade-closed, and no chat is made', async (state) => {
+    const seller = await trader();
+    const buyer = await trader();
+    const offerId = await seedOffer(seller.id);
+    const code = await tradeOn(offerId, seller, buyer);
+    await deps.db.query('update trades set state = $2, closed_at = $3 where code = $1', [code, state, now]);
+    for (const who of [buyer, seller]) {
+      const r = await who.b.post(`/v1/trades/${code}/chat`, {});
+      expect(r.statusCode).toBe(409);
+      expect(r.json()).toMatchObject({ error: 'trade-closed' });
+    }
+    expect((await deps.db.query('select 1 from chats where trade_code = $1', [code])).rows).toEqual([]);
+  });
+
+  it("a closed trade's existing chat keeps opening, for both sides", async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const offerId = await seedOffer(seller.id);
+    const code = await tradeOn(offerId, seller, buyer);
+    const chat = ((await buyer.b.post(`/v1/trades/${code}/chat`, {})).json() as { chat: string }).chat;
+    await deps.db.query("update trades set state = 'released', closed_at = $2 where code = $1", [code, now]);
+    expect((await buyer.b.post(`/v1/trades/${code}/chat`, {})).json()).toEqual({ chat, role: 'buyer' });
+    expect((await seller.b.post(`/v1/trades/${code}/chat`, {})).json()).toEqual({ chat, role: 'seller' });
+  });
+
+  it("a closed trade still links the pair's pre-trade chat on its offer (a chat that exists)", async () => {
+    const o = await openChat('sell');
+    const code = await tradeOn(o.offerId, o.poster, o.taker);
+    await deps.db.query("update trades set state = 'cancelled', closed_at = $2 where code = $1", [code, now]);
+    expect((await o.taker.b.post(`/v1/trades/${code}/chat`, {})).json()).toEqual({ chat: o.chat, role: 'buyer' });
+  });
+
+  it('a disputed trade (not terminal) with no chat still gets one', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const offerId = await seedOffer(seller.id);
+    const code = await tradeOn(offerId, seller, buyer);
+    await deps.db.query("update trades set state = 'disputed' where code = $1", [code]);
+    expect((await buyer.b.post(`/v1/trades/${code}/chat`, {})).statusCode).toBe(200);
+  });
+
   it('is 404 for anyone else or an unknown code', async () => {
     // (409 chat-unavailable, a trade with no offers row, cannot happen since Task 5's trades_offer_fk.)
     const seller = await trader();

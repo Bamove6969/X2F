@@ -358,6 +358,27 @@ describe('TradeChatPanel', () => {
   });
 });
 
+// Lead call (20 Nov): the API opens no new chat for a closed trade (409 trade-closed); the panel shows an empty state, not an error or a refusal.
+describe('TradeChatPanel: a closed trade with no chat', () => {
+  it('shows "This trade has no chat." as an empty state: no alert, no CantDoThat, no sync', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'trade-closed' }), { status: 409, headers: { 'content-type': 'application/json' } })));
+    const { host } = render(
+      <MemoryRouter>
+        <TradeChatPanel code="AAAA-BBBB-CCCC-DDDD" name="Sam" />
+      </MemoryRouter>,
+    );
+    await flush();
+    await flush();
+    const section = host.querySelector('[data-chat-phase]');
+    expect(section?.getAttribute('data-chat-phase')).toBe('empty');
+    expect(host.querySelector('[data-chat-empty]')?.textContent).toBe('This trade has no chat.');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"], dialog')).toBeNull();
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(client.sync).not.toHaveBeenCalled();
+  });
+});
+
 describe('OfferChatPanel', () => {
   it('a refused open (own-offer) goes through CantDoThat with its feedback link (Plan 5 Task 21)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'own-offer' }), { status: 409, headers: { 'content-type': 'application/json' } })));

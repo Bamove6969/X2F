@@ -213,6 +213,16 @@ export interface RuntimeDeps {
    * it counts as settled elsewhere (escrow-failed). Default 5 min: the party re-checks within 60 s.
    */
   settledElsewhereMs?: number;
+  /**
+   * Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): registers this device's identity for the trade's
+   * chat (the worker passes chat/prepare.ts's, over the worker's one chat engine). Called in the
+   * background once the trade identity is registered, tried again (every `pollMs`) while it throws,
+   * and kept done in the record (`chatPrepared`). The escrow never waits on it. Without it a chat is
+   * attested only after both traders opened it. Only while the trade is open (lead call 20 Nov): each
+   * try reads the trade view first and asks nothing for a released, refunded, cancelled or lapsed
+   * trade, or one the API answers 404 or 410 (purged) for.
+   */
+  prepareChat?: (code: string) => Promise<void>;
   onStatus(code: string, s: EscrowStatus): void;
 }
 
@@ -229,6 +239,8 @@ export interface EscrowRuntime {
 }
 
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+/** Gap 5, lead call 20 Nov: the trade states in which no chat is made or registered (every terminal one). */
+const CHAT_CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled', 'lapsed'];
 /** The escrow store outlives the trade by at least this long (lead 2026-10-24). */
 export const KEEP_AFTER_CLOSE_MS = 30 * 24 * 60 * 60 * 1000;
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
@@ -363,6 +375,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private inflight: string | null = null;
     /** resumePrior handed the saved prior release to this run's party (review M2): once per run. */
     private priorHanded = false;
+    /** The settled intent (done) is set in memory and its save has not resolved yet: not shown as done. */
+    private doneUnsaved = false;
     /** Outcomes the party refused because another was already committed. */
     private refused = new Set<string>();
     private ticking: Promise<void> = Promise.resolve();
@@ -505,6 +519,33 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       this.wake?.();
     }
 
+    /**
+     * Gap 5: asks the worker to register the trade chat's identity, again every `pollMs` while the
+     * ask throws, until it is done or the run stops. Its own timer, never `sleep` (one waker, the
+     * main loop's). Marked done in memory only: the run's next save keeps it (a background save
+     * could race the run's own), and a run that ends before one simply asks again next time, which
+     * is harmless (the step is idempotent).
+     */
+    private async prepareChat(ask: (code: string) => Promise<void>): Promise<void> {
+      while (!this.stopped) {
+        try {
+          // Lead call (20 Nov): only for a trade still open. Each try reads the trade view first, and
+          // a closed trade (or one the API no longer has: 404, purged 410) is never asked for, so it
+          // never creates a chat or registers a chat identity. Nothing is marked: there is nothing to do.
+          const v = parseTradeView(await deps.api.getTrade(this.code));
+          if (!v) throw new Error('unreadable trade view');
+          if (CHAT_CLOSED.includes(v.state)) return;
+          await ask(this.code);
+          if (!this.stopped) this.rec.chatPrepared = true;
+          return;
+        } catch (e) {
+          const status = (e as { status?: unknown } | null)?.status;
+          if (status === 404 || status === 410) return;
+          await new Promise((r) => setTimeout(r, pollMs));
+        }
+      }
+    }
+
     /** Retries an API call until it answers or the run stops. */
     private async retry<T>(fn: () => Promise<T>): Promise<T | undefined> {
       while (!this.stopped) {
@@ -589,6 +630,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         this.rec.registered = true;
         await this.persist();
       }
+      // Gap 5: the trade's chat identity, in the background (never awaited: the escrow goes on).
+      if (deps.prepareChat && this.rec.chatPrepared !== true) void this.prepareChat(deps.prepareChat);
 
       this.set('verifying');
       let att = this.rec.attestation;
@@ -1009,8 +1052,13 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         async () => {
           if (this.rec.intent) {
             this.rec.intent = { ...this.rec.intent, outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner }, done: true };
+            // The 20 Nov flake: until this save resolves, no refresh (a tick's included) shows `done`,
+            // which tells the user the device's part is over while the record still says otherwise.
+            this.doneUnsaved = true;
+            const saved = await this.persist().then(() => true, () => false);
+            this.doneUnsaved = false;
             // Stopped meanwhile: the next run's party resolves the same outcome again.
-            if (!(await this.persist().then(() => true, () => false))) return;
+            if (!saved) return;
           }
           if (this.inflight === k) this.inflight = null;
           this.refresh();
@@ -1077,7 +1125,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (this.error) return this.emit();
       const i = this.rec.intent;
       if (!this.isReady) return this.set('setting-up');
-      if (i?.done) return this.set('done'); // only from this device's own settle
+      if (i?.done && !this.doneUnsaved) return this.set('done'); // only from this device's own settle, once stored
       if (this.rec.settledWithoutDevice === true) return this.set('settled-without-device');
       const active = i !== null && i.outcome !== null && (!i.auto || this.view?.state === 'settling' || this.view?.state === 'lapsed');
       this.set(active ? 'signing' : 'ready');

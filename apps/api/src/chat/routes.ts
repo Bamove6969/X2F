@@ -7,7 +7,9 @@
  * - `POST /v1/trades/:code/chat` → `{ chat, role }`: the trade's chat for its buyer or seller. The
  *   chat a take linked, else the pair's open pre-trade chat on the offer (linked now: "a take
  *   reuses the chat"), else a new one linked to the trade. 404 for anyone else; 409
- *   `chat-unavailable` when the trade's offer is not in the offers table.
+ *   `chat-unavailable` when the trade's offer is not in the offers table; 409 `trade-closed` when a
+ *   new one would be made for a trade in a terminal state (released, refunded, cancelled, lapsed:
+ *   lead call 20 Nov). A chat the trade already has keeps opening after it closes.
  * - `GET /v1/chats` → `{ chats: ChatSummary[] }`, the caller's chats, newest first.
  * - `GET /v1/chats/:chat` → `ChatView`.
  * - `POST /v1/chats/:chat/identity { signPublic, boxPublic, proof }` → 201: one per role, the role
@@ -242,8 +244,10 @@ export function chatRoutes(app: FastifyInstance): void {
       await client.query('begin');
       try {
         // The trade row is locked so two first opens (both sides at once) make one chat.
-        const { rows } = await client.query<{ offer_id: string; buyer_account_id: string; seller_account_id: string; open: boolean }>(
-          'select offer_id, buyer_account_id, seller_account_id, closed_at is null as open from trades where code = $1 for update',
+        const { rows } = await client.query<{ offer_id: string; buyer_account_id: string; seller_account_id: string; open: boolean; terminal: boolean }>(
+          `select offer_id, buyer_account_id, seller_account_id, closed_at is null as open,
+                  state in ('released', 'refunded', 'cancelled', 'lapsed') as terminal
+             from trades where code = $1 for update`,
           [code],
         );
         const t = rows[0];
@@ -254,6 +258,10 @@ export function chatRoutes(app: FastifyInstance): void {
         const linked = await client.query<{ code: string }>('select code from chats where trade_code = $1', [code]);
         let chat = linked.rows[0]?.code ?? null;
         chat ??= await linkChatToTrade(client, { offerId: t.offer_id, buyerAccountId: t.buyer_account_id, sellerAccountId: t.seller_account_id, tradeCode: code });
+        // Lead call (20 Nov, review 2 of wip/lead-fix-chat-attest): a trade in a terminal state gets no
+        // NEW chat. One it already has (linked above, or the pair's pre-trade chat) keeps opening: its
+        // history, a dispute or appeal on it, ruling compliance and the purge all use it.
+        if (chat === null && t.terminal) throw new ApiError(409, 'trade-closed');
         if (chat === null) {
           chat = newTradeCode();
           try {
