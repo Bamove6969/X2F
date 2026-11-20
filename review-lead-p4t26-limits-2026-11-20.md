@@ -165,3 +165,80 @@ Targeted vitest runs, outside the lock with `nice -n 10`:
 - @x2f/web quote.test: 33 of 33 passed.
 
 Not run: Playwright and the full `npm run check`. Both are still needed before APPROVED; run them once B1 and m8 are fixed.
+
+---
+
+## Addendum 2: round 3 at 01a5ae14 (one commit on 3685029f), 20 Nov 2026, BC time
+
+**Verdict: APPROVE (code).** B1 and m8 are fixed, and so are the method counts. The refactor leaves the take and the launch cap unchanged for unlimited accounts. Two minor points need no action before landing. One condition stands from the 13 Nov rule: the head's full `npm run check`, and the Playwright suites that cover offers and limits, must run under the lock before landing. I have not run them in this round.
+
+### The refactor against main (take and launch cap)
+
+Against 54104057, `git diff -- apps/api/src/trades/take.ts apps/api/src/trades/launchCap.ts` shows only these code changes:
+- the `capValue.js` import;
+- `usdValue` moved into trades/capValue.ts, byte for byte;
+- the `growthCeiling` bisection replaced by `largestAtomicWithin(currency, q, rate, LAUNCH_TRADE_CAP_USD_CENTS, a.amountAtomic)`;
+- the round-1 `account-limit` line.
+
+launchCap.ts is unchanged. The shared bisection is the old loop, given the same start point (`lo = amountAtomic`, `hi = 2 × lo`). It differs only when `from` is 0, which the take never passes (amounts are positive). So the take's USD value, its starter and account cap checks, the launch cap and the growth ceiling behave as on main.
+
+In the offer list, unlimited posters still get `priceFor` on their tiers as posted (it now runs after the clamp, which is a no-op for them). The per-method counts and best rates come from the same tiers and rates. The query is now grouped per offer and then aggregated: the count is still the number of distinct offers per method, and the lowest and highest rates are unchanged.
+
+### B1: fixed
+
+`clampTiers` now values a trade by the take's own rule. It uses each band's own `tierRate`, the function `lockRate` also uses, and the shared `usdValue`/`largestAtomicWithin`. For a fiat band, the top is `largestTotalWithin(rate, lo)`: the largest total whose `atomicForFiat` amount is at most `lo`, which I checked algebraically.
+
+My round-2 HTTP probe (fiat and XMR bands at -5%, 0 and +5%, taking exactly the listed maximum) now passes 6 of 6. The branch's own B1 tests also refuse one cent or one atomic unit past the maximum.
+
+### Edge-case property probe (temporary unit test, since deleted)
+
+The probe called `clampTiers` directly. Each case was a combination of one market, margin, method adjustment, cap and band unit:
+
+- **Markets:**
+  - USD at $330;
+  - JPY, KRW and VND (no minor unit; VND at 838,000,000,000 per XMR);
+  - KWD (three decimals);
+  - EUR at 1 and 7 minor units per XMR against USD at 1 and 3 cents (tiny prices);
+  - USD at 999,999,999,999 cents per XMR;
+  - EUR at 0.9 of USD.
+- **Margins:** -50%, -5%, -0.01%, 0, +0.01%, +5% and +50%.
+- **Method adjustments:** 0, -0.37% and +2.5%.
+- **Caps:** 1 cent, $1, $123.45, $300 and $5,000.
+- **Band units:** fiat and XMR.
+
+Margin and adjustment pairs that `rateFor` rejects were skipped; the take rejects them the same way.
+
+Every case passed (more than 500):
+- the top always takes by the take's rule;
+- for a fiat band, the total at the locked rate never exceeds the top (so the range check passes);
+- top + 1 never takes (the clamp is tight);
+- for an XMR band, the top equals the bisection.
+
+Band edges also hold: a band whose minimum equals the top is kept at exactly the top, one above it is dropped, and a band wholly below the cap is untouched.
+
+### m8 and the method counts: fixed
+
+`limitBinds = byLimit || stage !== earned` is the right test. A Starter poster with a $5,000 cap limit or a `building` stage limit now lists exactly like a plain Starter, and a test asserts it. The method counts leave out an offer the limit unlists, and its test covers that.
+
+### Minor points (no action needed before landing)
+
+- **m9. Best rate from a dropped band.** In `liveOfferStats` (routes.ts:873-915), a limited poster's per-offer best rate still comes from all of that method's bands, including ones the clamp dropped. The best rate a method shows can then belong to a band the viewer will not see listed. This is rare: it needs a multi-band offer, a binding limit, and the dropped band being the best-priced one.
+- **m10. A survived mutation in `largestTotalWithin`.** Dropping its `- 1n` (capValue.ts:46) survived take.test. It changes the result only when `(maxAtomic + 1) × rate` is an exact multiple of 10^12. The shipped code is correct; a one-line unit test with such a case would pin it.
+
+### Guard reverts on 01a5ae14 (each restored afterwards)
+
+1. Counting no XMR at market inside `largestAtomicWithin`: caught (the -5% B1 test and the launch-cap growth test).
+2. `limitBinds: true` always: caught (the m8 test).
+3. Not filtering the method counts: caught (the counts test).
+4. Dropping `- 1n` in `largestTotalWithin`: survived. This is m10.
+
+### Tests on 01a5ae14
+
+Targeted vitest runs, outside the lock with `nice -n 10`:
+- @x2f/api, 9 files (staff/limits, take, staff/keyTap, staff/matrix, offers, schema, methods, offerUnits, flexOffers): 496 of 496 passed.
+- @x2f/staff intent.test: 24 of 24 passed.
+- @x2f/staff-web limits.test.tsx: 6 of 6 passed.
+- @x2f/web quote.test: 33 of 33 passed.
+- `tsc -p apps/api --noEmit`: clean.
+
+Not run: the full `npm run check` and Playwright. Both are needed under the lock before landing (13 Nov rule).
