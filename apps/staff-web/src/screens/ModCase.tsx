@@ -8,6 +8,7 @@ import {
   messageTraders,
   proposeRuling,
   readCaseChat,
+  recommendLimits,
   StaffApiError,
   requestProof,
   sendBackRuling,
@@ -189,6 +190,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
           <ProofCard c={c} buyer={buyer} seller={seller} work={work} />
           <EscrowCard c={c} buyer={buyer} seller={seller} />
           {c.mayWork ? <FreezeCard c={c} buyer={buyer} seller={seller} onChange={(freezes) => setC({ ...c, freezes })} /> : null}
+          {c.mayWork ? <LimitsCard c={c} buyer={buyer} seller={seller} /> : null}
           <RulingCard c={c} proposing={proposing} approving={approving} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
         </div>
       </div>
@@ -521,6 +523,101 @@ function FreezeCard({ c, buyer, seller, onChange }: { c: DisputeCase; buyer: str
           </div>
         );
       })}
+      {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
+    </section>
+  );
+}
+
+/** Plan 4 Task 26: the API's bounds on a recommendation (apps/api staff/limits.ts). */
+const LIMIT_REASON_MIN = 40;
+const LIMIT_REASON_MAX = 2000;
+const LIMIT_CAP_USD_MAX = 1_000_000;
+
+/**
+ * Recommend limits (Plan 4 Task 26; no board): for a habitual offender or an obvious hit-and-run
+ * case, a cap on one trade or a stage the account is held to, with a reason for the decider. A
+ * senior moderator or the owner decides; a lost dispute alone never limits anyone. Whoever may work
+ * the case, open or closed. COPY-UNSIGNED, DESIGNER-REVIEW
+ */
+function LimitsCard({ c, buyer, seller }: { c: DisputeCase; buyer: string; seller: string }) {
+  const headId = useId();
+  const kindId = useId();
+  const stageId = useId();
+  const capId = useId();
+  const reasonId = useId();
+  const [side, setSide] = useState<Side | null>(null);
+  const [kind, setKind] = useState<'cap' | 'stage' | null>(null);
+  const [cap, setCap] = useState('');
+  const [stage, setStage] = useState<'starter' | 'building' | null>(null);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+
+  const capUsd = /^[1-9][0-9]{0,6}$/.test(cap.trim()) ? Number(cap.trim()) : null;
+  const what = kind === 'cap' ? (capUsd !== null && capUsd <= LIMIT_CAP_USD_MAX ? { capUsd } : null) : kind === 'stage' && stage !== null ? { stage } : null;
+  const reasonOk = reason.trim().length >= LIMIT_REASON_MIN && reason.length <= LIMIT_REASON_MAX;
+  const ready = side !== null && what !== null && reasonOk && !busy;
+
+  const send = async () => {
+    if (!ready || side === null || what === null) return;
+    setBusy(true);
+    setFault(null);
+    try {
+      await recommendLimits(c.code, { side, reason, ...what });
+      setSent(true);
+    } catch (e) {
+      // not-a-refusal: one recommendation waits per account at a time.
+      if (codeOf(e) === 'wrong-state') setFault('A recommendation for this trader already waits for a decision.');
+      else setFault(faultText(e, 'The recommendation could not be sent just now. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="x2f-card" data-part="limits">
+      <h2 className="x2f-h2" id={headId}>
+        Recommend limits
+      </h2>
+      {/* not-a-refusal: what the card is for, before any attempt */}
+      <p className="x2f-staff-hint">For a habitual offender or an obvious hit-and-run. A senior moderator or the owner decides. The trader sees only their own limit, never your reason.</p>
+      {sent ? (
+        <Notice tone="info">Sent to a senior moderator or the owner to decide.</Notice>
+      ) : (
+        <>
+          <ChoiceGroup look="tile" labelledBy={headId} options={[{ value: 'buyer', label: buyer }, { value: 'seller', label: seller }]} value={side} onChange={setSide} part="limits-side" />
+          <p className="x2f-staff-eyebrow" id={kindId}>
+            Limit
+          </p>
+          <ChoiceGroup look="tile" labelledBy={kindId} options={[{ value: 'cap', label: 'A cap per trade' }, { value: 'stage', label: 'A stage' }]} value={kind} onChange={setKind} part="limits-kind" />
+          {kind === 'cap' ? (
+            <div className="x2f-field">
+              <label className="x2f-label" htmlFor={capId}>
+                Largest trade (USD)
+              </label>
+              <input id={capId} className="x2f-input" inputMode="numeric" autoComplete="off" value={cap} onChange={(e) => setCap(e.target.value)} />
+            </div>
+          ) : null}
+          {kind === 'stage' ? (
+            <>
+              <p className="x2f-staff-eyebrow" id={stageId}>
+                Hold to
+              </p>
+              <ChoiceGroup look="tile" labelledBy={stageId} options={[{ value: 'starter', label: 'Starter limits' }, { value: 'building', label: 'Building limits' }]} value={stage} onChange={setStage} part="limits-stage" />
+            </>
+          ) : null}
+          <div className="x2f-field">
+            <label className="x2f-label" htmlFor={reasonId}>
+              Reason (staff only, at least 40 characters)
+            </label>
+            <textarea id={reasonId} className="x2f-textarea" rows={3} maxLength={LIMIT_REASON_MAX} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
+          <Button variant="secondary" disabled={!ready} onClick={() => void send()}>
+            Recommend limits
+          </Button>
+        </>
+      )}
       {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
     </section>
   );

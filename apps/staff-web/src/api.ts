@@ -495,6 +495,33 @@ export const messageTraders = (code: string, sealed: import('./chat/types.js').S
 export const readCaseChat = (code: string, deviceKeyId: string) =>
   staffApi<import('./chat/types.js').CaseChatAnswer>(casePath(code, '/chat'), { method: 'POST', body: { deviceKeyId } });
 export const requestProof = (code: string, side: Side) => staffApi<unknown>(casePath(code, '/proof-request'), { method: 'POST', body: { side } });
+// Plan 4 Task 26: recommended account limits. A cap in whole US dollars or a stage, exactly one.
+export type LimitWhat = { capUsd: number } | { stage: import('@x2f/staff').LimitStage };
+export interface LimitRecommendation {
+  id: string;
+  accountId: string;
+  displayName: string;
+  capUsd: number | null;
+  stage: import('@x2f/staff').LimitStage | null;
+  /** Staff only: the trader never sees it. */
+  reason: string;
+  /** The case it came from, or null. */
+  code: string | null;
+  recommendedBy: string;
+  /** The signed-in member recommended it, so may not decide it. */
+  mine: boolean;
+  createdAt: string;
+  currentStage: 'starter' | 'building' | 'graduated';
+  currentCapUsdCents: string | null;
+}
+export const recommendLimits = (code: string, b: { side: Side; reason: string } & LimitWhat) =>
+  staffApi<{ id: string }>(casePath(code, '/limit-recommendations'), { method: 'POST', body: b });
+export const limitRecommendations = () => staffApi<{ recommendations: LimitRecommendation[] }>('/staff/v1/limit-recommendations');
+export const decideLimits = (accountId: string, recId: string, b: { approve: boolean; tapId: string }) =>
+  staffApi<{ status: 'approved' | 'declined' }>(
+    `/staff/v1/accounts/${encodeURIComponent(accountId)}/limit-recommendations/${encodeURIComponent(recId)}/decide`,
+    { method: 'POST', body: b },
+  );
 export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
   staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });
 export const proposeRuling = (
