@@ -1640,6 +1640,31 @@ describe('resume on load (Review Focus 1)', () => {
     expect(calls[1]!.args.me.signPublic).toBe(calls[0]!.args.me.signPublic);
   });
 
+  // The flake of 20 Nov (review 3, this test's line "intent.done" under load): settle's resolution set
+  // intent.done in memory, then awaited its save, and a tick's refresh in between already showed
+  // `done`. A slow save makes it certain: `done` must never show before it is stored.
+  it('the done phase shows only once the settled intent is stored (a slow save, a tick in between)', async () => {
+    const t = await setup();
+    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await pay(buyer);
+    await seller.runtime.act(CODE, { type: 'release' });
+    await until(() => t.parties.pending.some((p) => p.role === 'seller'));
+    const save = seller.store.save.bind(seller.store);
+    seller.store.save = async (r) => {
+      if (r.intent?.done === true) await new Promise((x) => setTimeout(x, 80));
+      await save(r);
+    };
+    t.parties.pending.find((p) => p.role === 'seller')!.resolve(null);
+    await until(() => seller.last()?.phase === 'done');
+    expect((await seller.store.load(CODE))?.intent?.done).toBe(true);
+  });
+
   it('once settle resolved, a reload never calls settle again', async () => {
     const t = await setup();
     const seller = await t.mk('seller');
