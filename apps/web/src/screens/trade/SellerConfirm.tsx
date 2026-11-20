@@ -118,7 +118,7 @@ export function SellerConfirm({
   /** The device's escrow is still starting (after a reload: registering → verifying → ready). */
   const starting = ['registering', 'verifying', 'setting-up'].includes(escrow.phase);
   // Lead call (gap 4): the release is seller-built like the no-show refund, so from the tap until
-  // the buyer's device submitted it (`handedOff`) the browser asks before the page goes.
+  // the buyer's device reported it sent (`handedOff`) the browser asks before the page goes.
   useLeaveWarning(signing && !stopped && escrow.handedOff !== true);
 
   const sign = async () => {

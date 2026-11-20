@@ -107,7 +107,7 @@ export interface UseEscrow {
   paidRecorded: boolean;
   /** `EscrowStatus.intentKind`: the settle the user tapped on this device and that is saved, or null. */
   intentKind: SettleKind | null;
-  /** `EscrowStatus.handedOff`: this device's part of the settle it signs is finished; the page may close. */
+  /** `EscrowStatus.handedOff`: the co-signer reported (signed, not yet seen in a block) that it sent the settle this device signs. */
   handedOff: boolean;
   /** `EscrowStatus.restitution`: the seller's payment a ruling orders, from the attested terms only (absent: none). */
   restitution?: { address: string; amountAtomic: bigint } | null;

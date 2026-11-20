@@ -16,9 +16,10 @@
  *   it fails the seller sees why and Retry (review 2026-10-27 I1). The refund is seller-built
  *   (builder seller, co-signer mod, Task 25): the moderator can co-sign only the tx set THIS device
  *   builds, after the two have swapped fresh multisig info, so the refund waits for this device
- *   until the moderator has submitted it (`handedOff`). Until then the view says to keep the page
- *   open, and that a closed page only pauses the refund: opening the trade again on this device
- *   resumes it (gap 4, 20 Nov: the e2e saw the refund never land once the page was closed early).
+ *   until the moderator reports it sent (`handedOff`, its signed DONE). Until then the view says to
+ *   keep the page open, and that a closed page only pauses the refund: opening the trade again on
+ *   this device resumes it (gap 4, 20 Nov: the e2e saw the refund never land once the page was
+ *   closed early). The page may close once this device saw the refund in a block (`done`; review M1).
  * - **Refunded** (`refunded` as `auto-refund`): the refund's confirmations from X2F's own node;
  *   the trade is complete once it has all 10 (owner 8 Nov).
  *
@@ -330,22 +331,38 @@ function Refunding({ view, escrow }: RefundScreenProps) {
 }
 
 /**
- * Whether the seller may close the page (gap 4, 20 Nov). The refund is built by this device, so
- * until the moderator has submitted it (`handedOff`, or this device's own settle done) the page
- * must stay open; a closed page pauses the refund until the trade is opened again on this device.
- * A stopped escrow says the refund waits for it (with Try again when that may help).
- * COPY-UNSIGNED (all three lines).
+ * What the refund needs from this device (gap 4 and its security review, 20 Nov). The refund is
+ * built by this device:
+ * - `signing` (or ready) before `handedOff`: keep the page open; a closed page pauses the refund
+ *   until the trade is opened again on this device. The browser asks before leaving (stillNeeded).
+ * - `handedOff` (the moderator's signed report that it sent the refund, not yet seen in a block):
+ *   keep the page open a few minutes while it confirms (review M1 a, m2).
+ * - `done` (this device saw its own refund in a block): the page may close.
+ * - `idle` (review m6): this device does not hold the trade's escrow, so it is not needed here:
+ *   no warning, and the room's own "not on this device" line.
+ * - stopped: waiting for this device (retryable), no longer needing it (after the hand-off), or
+ *   stopped for good (an integrity error, review m5).
+ * COPY-UNSIGNED (every line here).
  */
-/** The refund still needs this device: no stopped escrow, and the moderator has not submitted it yet. */
+export const REFUND_NOT_HERE = 'This device doesn’t hold this trade’s escrow yet. If you set the trade up on another device, open it there.';
+
+/** The refund still needs this device, now: it runs here, has not stopped, and the moderator has not reported it sent. */
 function stillNeeded(escrow: RefundScreenProps['escrow']): boolean {
-  return escrow.error === null && !escrow.handedOff && escrow.phase !== 'done';
+  return escrow.error === null && escrow.phase !== 'idle' && !escrow.handedOff && escrow.phase !== 'done';
 }
 
 function HandOff({ escrow }: Pick<RefundScreenProps, 'escrow'>) {
   if (escrow.error !== null) {
+    const line = !escrow.retryable
+      ? // not-a-refusal: a device fault
+        'The escrow on this device stopped for good, so it can’t finish this refund. If the refund doesn’t reach your wallet, open a dispute.'
+      : escrow.handedOff
+        ? // not-a-refusal: a device fault
+          'The moderator has sent the refund, so it no longer needs this device. The escrow on this device stopped, so this page can’t follow it.'
+        : 'The escrow stopped on this device, so the refund is waiting for it.';
     return (
-      <div className="x2f-refund__stopped" role="alert" data-refund-escrow-stopped="">
-        <p>The escrow stopped on this device, so the refund is waiting for it.</p>
+      <div className="x2f-refund__stopped" role="alert" data-refund-escrow-stopped="" data-for-good={escrow.retryable ? undefined : ''}>
+        <p>{line}</p>
         {escrow.retryable ? (
           <Button variant="secondary" onClick={() => escrow.retry()}>
             Try again
@@ -354,10 +371,24 @@ function HandOff({ escrow }: Pick<RefundScreenProps, 'escrow'>) {
       </div>
     );
   }
-  if (!stillNeeded(escrow)) {
+  if (escrow.phase === 'idle') {
+    return (
+      <p className="x2f-keep-open" role="status" data-refund-not-here="">
+        <Icon name="info" size={16} /> {REFUND_NOT_HERE}
+      </p>
+    );
+  }
+  if (escrow.phase === 'done') {
+    return (
+      <p className="x2f-keep-open" role="status" data-refund-can-close="">
+        <Icon name="check" size={16} /> The refund is in a block. You can close this page now.
+      </p>
+    );
+  }
+  if (escrow.handedOff) {
     return (
       <p className="x2f-keep-open" role="status" data-refund-handed-off="">
-        <Icon name="check" size={16} /> This device has signed its part and the refund has been sent to the network. You can close this page now.
+        <Icon name="clock" size={16} /> The moderator has sent the refund. Keep this page open a few minutes while it confirms.
       </p>
     );
   }
@@ -376,7 +407,7 @@ function Refunded({ view, escrow }: RefundScreenProps) {
   const count = got?.confirmations ?? null;
   const done = count !== null && count >= target;
   return (
-    <div className="x2f-refund" data-screen-part="seller-refunded">
+    <div className="x2f-refund" data-screen-part="seller-refunded" data-escrow-phase={escrow.phase}>
       <Header view={view} />
       <section className="x2f-refund__body">
         <div>
@@ -395,6 +426,8 @@ function Refunded({ view, escrow }: RefundScreenProps) {
             )}
           </p>
         </section>
+        {/* Review M1: a device whose escrow stopped says so here too (a false "settled elsewhere" was invisible). */}
+        {escrow.error !== null ? <HandOff escrow={escrow} /> : null}
         <section aria-label="If the buyer paid" className="x2f-refund__card">
           <LateDispute view={view} escrow={escrow} />
         </section>

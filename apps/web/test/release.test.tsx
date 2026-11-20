@@ -754,6 +754,11 @@ describe('Released for a buyer who opens the room while the release settles (I2)
     expect(leaveAsks()).toBe(false);
     r.update(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'error', error: 'escrow-failed' }));
     expect(leaveAsks()).toBe(false);
+    // Review m7: a refusal while signing (the device can sign nothing until it clears) does not ask either.
+    r.update(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true, refusal: 'amount-changed' }));
+    expect(leaveAsks()).toBe(false);
+    r.update(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true }));
+    expect(leaveAsks()).toBe(true);
     r.unmount();
     const seller = released(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true }));
     expect(leaveAsks()).toBe(false); // the seller's own warning is SellerConfirm's

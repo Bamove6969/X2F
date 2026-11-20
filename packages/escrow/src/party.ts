@@ -165,15 +165,30 @@ export interface PartyHandle {
    */
   committedBuilder?(): Role | null;
   /**
-   * This party's own part of its current settle is finished, so the settle lands without this
-   * device from here on: the co-signer submitted the signed tx (the co-signer itself, or the builder
-   * once the co-signer's DONE for this release arrived). The builder still waits to see the tx in a
-   * block before its settle() resolves, but that only checks; nothing more is signed or sent by it.
-   * False before then, with no settle, and for a release that was exhausted or superseded. Read
-   * from the saved state (it survives a restart). A screen uses it to say when the page may close
-   * (the no-show refund is seller-built: until then the refund waits for the seller's device).
+   * This party's own part of the settle of `o` is finished, as far as this party knows: the
+   * co-signer has submitted the signed tx itself, or (for the builder) the co-signer REPORTED that it
+   * did, in a signed DONE for this release that is not yet checked on the chain (the builder checks
+   * it before its settle() resolves: `landed`). Nothing more is signed or sent by this party for it.
+   * False before then, for another outcome (review m3: tied to `o` by its digest), with no settle,
+   * and for a release that was exhausted or superseded. Read from the saved state (it survives a
+   * restart); pure, no daemon call. A screen uses it to word the wait (gap 4).
    */
-  settleSent?(): boolean;
+  settleSent?(o: Outcome): boolean;
+  /**
+   * Chain proof that `o` landed (review M1 fix b/c, 20 Nov): the hash of a tx in a block that spent
+   * this escrow and pays `o`, from this party's own wallet and daemon, or null when there is none
+   * (yet). Never anyone's word:
+   * - a tx this party submitted, or the co-signer's DONE names: this wallet shows it spending the
+   *   escrow in a block (`spentBy`) and the daemon has it (`txSeen`); and when this party built the
+   *   release and kept its tx secret key, that key proves the tx pays `o` (below).
+   * - without either, for a builder with its saved tx secret key: one of this wallet's confirmed
+   *   outgoing txs that the key proves (check_tx_key: a key fits only the tx built with it) is in a
+   *   block, spends one of this escrow's outputs and pays each of `o`'s payouts (payout 0 less at
+   *   most MAX_NETWORK_FEE, the fee).
+   * Read-only: it syncs and reads, never signs, exports, imports or sends, and works with no peer
+   * (after the relay closed the trade, like funds()). Rejects as funds() does.
+   */
+  landed?(o: Outcome): Promise<string | null>;
   /**
    * Review I3: who built the release whose tx this is, among every release of this escrow this
    * party signed or saw done (the history too), or null. The watcher names an older tx by it, never
@@ -782,6 +797,40 @@ export function runParty(a: PartyArgs): PartyHandle {
   /** The counterpart moved one attempt ahead (it refused or failed ours). Never jump further. */
   const counterpartNext = (rel: ReleaseState): boolean => state.received[exportKey(rel, rel.attempt + 1)]?.[rel.counterpart] !== undefined;
 
+  /**
+   * The tx secret key `key` (the builder's own, saved at build) proves `h` is in a block, spends
+   * one of this escrow's outputs and pays each payout of `o` (payout 0 bears the network fee, up to
+   * MAX_NETWORK_FEE). False when it does not, or the engine cannot prove (no proveTx).
+   */
+  const provenByKey = async (key: string, o: Outcome, h: string): Promise<boolean> => {
+    if (!session.proveTx || !TX_HASH.test(h)) return false;
+    const r = await bounded('prove tx', () => session.proveTx!(h, key, o.to.map((p) => p.address)));
+    if (r === null || !r.inBlock || r.spendsEscrow !== true || r.received.length !== o.to.length) return false;
+    const fee = r.feeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : r.feeAtomic;
+    return o.to.every((p, i) => r.received[i]! + (i === 0 ? fee : 0n) >= p.amountAtomic);
+  };
+  /** Review m4: a builder that kept its tx key (and an engine that proves) accepts only its own tx. */
+  const keyAllows = async (rel: ReleaseState, o: Outcome, h: string): Promise<boolean> =>
+    rel.part !== 'builder' || rel.txKey === undefined || !session.proveTx ? true : provenByKey(rel.txKey, o, h);
+
+  /** See PartyHandle.landed. Runs in the work queue. */
+  const landedNow = async (o: Outcome): Promise<string | null> => {
+    const digest = outcomeDigest(o);
+    const rel = allReleases().filter((r) => r.outcome === digest).at(-1);
+    if (!rel) return null;
+    await daemon.sync();
+    const named = [rel.txHash, state.received[doneKey(rel)]?.[rel.counterpart]?.payload.txHash].filter((h): h is string => typeof h === 'string' && TX_HASH.test(h));
+    for (const h of new Set(named)) {
+      if ((await daemon.spentBy(h)) && (await daemon.txSeen(h)) && (await keyAllows(rel, o, h))) return h;
+    }
+    if (rel.part !== 'builder' || rel.txKey === undefined || !session.outgoing) return null;
+    for (const out of await session.outgoing()) {
+      if (out.height === null || named.includes(out.txHash)) continue;
+      if (await provenByKey(rel.txKey, o, out.txHash)) return out.txHash;
+    }
+    return null;
+  };
+
   const advanceRelease = async (): Promise<void> => {
     const o = settleOutcome;
     const rel = state.release;
@@ -856,7 +905,9 @@ export function runParty(a: PartyArgs): PartyHandle {
         // the escrow empty), done once this wallet shows its outputs spent by the reported tx in a
         // block and the daemon has it too. The sync stays: `spentBy` reads the wallet's own view.
         await daemon.sync();
-        if ((await daemon.spentBy(txHash)) && (await daemon.txSeen(txHash))) {
+        // Review m4 (20 Nov): and, with this builder's own tx secret key, the tx must be the one it
+        // built for this outcome (`provenByKey`), so a co-signer cannot name another spend.
+        if ((await daemon.spentBy(txHash)) && (await daemon.txSeen(txHash)) && (await keyAllows(rel, o, txHash))) {
           rel.phase = 'done';
           rel.txHash = txHash;
           await saveState();
@@ -1310,9 +1361,9 @@ export function runParty(a: PartyArgs): PartyHandle {
       if (!r) return null;
       return r.part === 'builder' ? a.role : r.counterpart;
     },
-    settleSent() {
+    settleSent(o) {
       const rel = (state as PartyState | undefined)?.release ?? null;
-      if (!rel) return false;
+      if (!rel || rel.outcome !== outcomeDigest(o)) return false;
       if (rel.phase === 'done') return true;
       return rel.part === 'builder' && rel.phase === 'built' && state.received[doneKey(rel)]?.[rel.counterpart] !== undefined;
     },
@@ -1388,6 +1439,19 @@ export function runParty(a: PartyArgs): PartyHandle {
           try {
             await importSpendInfo(info);
             resolve();
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+    },
+    landed(o) {
+      return new Promise((resolve, reject) => {
+        chain = chain.then(async () => {
+          if (stopped) return reject(new PartyError('stopped'));
+          if (failure && (failure instanceof PartyError || !session)) return reject(failure); // as funds(): no peer needed
+          try {
+            resolve(await landedNow(o));
           } catch (e) {
             reject(e);
           }
