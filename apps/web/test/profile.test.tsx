@@ -32,8 +32,8 @@ const PROFILE: TraderProfile = {
   tradedOverXmr: null,
   imported: [],
   reviews: [
-    { neutral: false, stars: 5, phrases: ['Fast payment', 'Clear instructions'], tradeBadges: [], note: 'Paid in five minutes.', method: 'Zelle', age: 'Nov 2026' },
-    { neutral: true, stars: null, phrases: [], tradeBadges: [], note: null, method: 'Cash by mail', age: 'Oct 2026' },
+    { neutral: false, stars: 5, phrases: ['Fast payment', 'Clear instructions'], tradeBadges: [], note: 'Paid in five minutes.', method: 'Zelle', age: 'Nov 2026', underReview: false },
+    { neutral: true, stars: null, phrases: [], tradeBadges: [], note: null, method: 'Cash by mail', age: 'Oct 2026', underReview: false },
   ],
   offers: 3,
 };

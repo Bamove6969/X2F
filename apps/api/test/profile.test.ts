@@ -80,7 +80,7 @@ describe('GET /v1/traders/:name', () => {
     // New (starter) is featured first; Veteran takes the other slot by default (spec 5.4).
     expect(p.badges.featured).toEqual(['new', 'veteran-1']);
     expect(p.badges.more).toEqual(['pgp', 'security-key']);
-    expect(p.reviews).toEqual([{ neutral: false, stars: 5, phrases: ['Fast release'], tradeBadges: [], note: 'Smooth trade', method: 'Zelle', age: 'Oct 2026' }]);
+    expect(p.reviews).toEqual([{ neutral: false, stars: 5, phrases: ['Fast release'], tradeBadges: [], note: 'Smooth trade', method: 'Zelle', age: 'Oct 2026', underReview: false }]);
     // Share the bare minimum: no login name, account id, trade code, fingerprint, amount or exact
     // time other than the coarse lastSeenAt (the only ISO time in the body).
     for (const bad of [seller.loginName, seller.id, buyer.id, buyer.displayName, code, fingerprint, 'usd', 'amount', 'cancel', 'username', 'login']) {

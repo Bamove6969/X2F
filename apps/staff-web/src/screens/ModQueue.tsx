@@ -106,6 +106,10 @@ export function ModQueue({ role }: { role: StaffRole }) {
             Recommended limits
           </Link>
         ) : null}
+        {/* Plan 5 Task 19 (lead default, DESIGNER-REVIEW: no board places it). COPY-UNSIGNED */}
+        <Link className="x2f-link" to="/disputes/reviews" data-part="review-disputes-link">
+          Review disputes
+        </Link>
       </PageTitle>
       {fault !== null ? (
         <Notice tone="danger" data-part="queue-fault">

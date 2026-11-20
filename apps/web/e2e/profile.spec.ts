@@ -21,7 +21,7 @@ const profile = (name: string, self: boolean) => ({
   recordPublic: false,
   tradedOverXmr: null,
   imported: [],
-  reviews: [{ neutral: false, stars: 5, phrases: ['Fast payment'], tradeBadges: [], note: 'Smooth.', method: 'Zelle', age: 'Nov 2026' }],
+  reviews: [{ neutral: false, stars: 5, phrases: ['Fast payment'], tradeBadges: [], note: 'Smooth.', method: 'Zelle', age: 'Nov 2026', underReview: false }],
   offers: 2,
 });
 

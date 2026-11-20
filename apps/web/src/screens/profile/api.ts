@@ -14,6 +14,11 @@ export interface PublicReview {
   method: string;
   /** Month and year only, "Mar 2026". */
   age: string;
+  /** Plan 5 Task 19: disputed and not decided yet ("Under review"). */
+  underReview: boolean;
+  /** Task 19: on my own profile only, the review's id and whether I can still dispute it. */
+  id?: string;
+  disputable?: boolean;
 }
 
 export interface TraderProfile {
@@ -61,7 +66,12 @@ function fail(what: string): never {
 function parseReview(r: unknown): PublicReview {
   if (!isObj(r) || typeof r.neutral !== 'boolean' || !numOrNull(r.stars) || !strs(r.phrases) || !strs(r.tradeBadges)) fail('review');
   if (!(r.note === null || typeof r.note === 'string') || typeof r.method !== 'string' || typeof r.age !== 'string') fail('review');
-  return { neutral: r.neutral, stars: r.stars, phrases: r.phrases, tradeBadges: r.tradeBadges, note: r.note, method: r.method, age: r.age };
+  if (typeof r.underReview !== 'boolean') fail('review');
+  if (!(r.id === undefined || typeof r.id === 'string') || !(r.disputable === undefined || typeof r.disputable === 'boolean')) fail('review');
+  const out: PublicReview = { neutral: r.neutral, stars: r.stars, phrases: r.phrases, tradeBadges: r.tradeBadges, note: r.note, method: r.method, age: r.age, underReview: r.underReview };
+  if (typeof r.id === 'string') out.id = r.id;
+  if (typeof r.disputable === 'boolean') out.disputable = r.disputable;
+  return out;
 }
 
 export function parseProfile(raw: unknown): TraderProfile {
