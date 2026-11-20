@@ -336,6 +336,88 @@ describe('chat engine: two tabs over one store (review m1)', () => {
     expect((await t.sa.load(chat))?.identity.signPublic).toBe(api.identities.buyer?.signPublic);
   });
 
+  /**
+   * Review 3 follow-up (wip/lead-chat-tab-lock): tab B loaded the chat's record before tab A pinned the
+   * chat key's fingerprint (tkh, review F3), then saved that stale record. Before the fix, the save put
+   * a record with no tkh back, and the device lost F3's guard. Every save is watched here: once a tkh is
+   * stored, no later save may leave the chat without it (or with another one).
+   */
+  async function staleTab(lock: (name: string, fn: () => Promise<unknown>) => Promise<unknown>) {
+    const idb = new IDBFactory();
+    const inner = await openChatStore({ indexedDB: idb });
+    const stored: Array<string | undefined> = [];
+    const watched = (s: ChatStore): ChatStore => ({
+      ...s,
+      save: async (rec) => {
+        await s.save(rec);
+        stored.push((await inner.load(rec.chat))?.tkh);
+      },
+    });
+    const sa = watched(await openChatStore({ indexedDB: idb }));
+    const sb = watched(await openChatStore({ indexedDB: idb }));
+    const mk = (st: ChatStore, a: ChatApi) => createChatEngine({ api: a, store: st, newIdentity: testIdentity, modSigningPublic, lock });
+    await mk(sa, api).prepare(chat);
+    attest();
+    // Tab B's API answers the attestation slowly: B has loaded the record (no attestation, no tkh) and waits.
+    let bWaiting!: () => void;
+    const bLoaded = new Promise<void>((r) => (bWaiting = r));
+    const bound = (m: keyof ChatApi) => (api[m] as (...x: unknown[]) => Promise<unknown>).bind(api);
+    const slowApi = Object.fromEntries((['getChat', 'registerIdentity', 'listEnvelopes', 'postEnvelope', 'getKey', 'postKey', 'postGrant'] as const).map((m) => [m, bound(m)])) as unknown as ChatApi;
+    slowApi.getAttestation = async () => {
+      bWaiting();
+      await new Promise((r) => setTimeout(r, 60));
+      return api.getAttestation();
+    };
+    return { a: mk(sa, api), b: mk(sb, slowApi), inner, stored, bLoaded };
+  }
+  const neverBackwards = (stored: Array<string | undefined>): void => {
+    const first = stored.findIndex((t) => t !== undefined);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(stored.slice(first)).toEqual(stored.slice(first).map(() => stored[first]));
+  };
+
+  it('a stale tab never drops the pinned tkh: the record is merged on save (no lock)', async () => {
+    const t = await staleTab((_n, fn) => fn());
+    const b = t.b.sync(chat);
+    await t.bLoaded;
+    expect((await t.a.sync(chat)).phase).toBe('ready');
+    const tkh = (await t.inner.load(chat))?.tkh;
+    expect(tkh).toBeDefined();
+    await b;
+    expect((await t.inner.load(chat))?.tkh).toBe(tkh);
+    neverBackwards(t.stored);
+  });
+
+  it('a stale tab never drops the pinned tkh: the per-chat lock holds each whole sync', async () => {
+    const held = new Map<string, Promise<unknown>>();
+    const lock = (name: string, fn: () => Promise<unknown>): Promise<unknown> => {
+      const run = (held.get(name) ?? Promise.resolve()).then(fn, fn);
+      held.set(name, run.catch(() => undefined));
+      return run;
+    };
+    const t = await staleTab(lock);
+    const b = t.b.sync(chat);
+    await t.bLoaded;
+    const a = t.a.sync(chat);
+    await Promise.all([a, b]);
+    expect((await t.inner.load(chat))?.tkh).toBeDefined();
+    neverBackwards(t.stored);
+  });
+
+  it('a stale tab that the API then tells "no key" (404) makes no second key: the merged record carries the pin', async () => {
+    const t = await staleTab((_n, fn) => fn());
+    const b = t.b.sync(chat);
+    await t.bLoaded;
+    await t.a.sync(chat);
+    const posts = api.keyPosts.length;
+    // A compromised API now hides the key record from tab B.
+    const key = api.key;
+    api.key = null;
+    expect(await b).toMatchObject({ phase: 'failed', problem: 'security' });
+    expect(api.keyPosts.length).toBe(posts);
+    api.key = key;
+  });
+
   it('the lock is navigator.locks by default, one per chat', async () => {
     const names: string[] = [];
     vi.stubGlobal('navigator', { locks: { request: (name: string, fn: () => Promise<unknown>) => (names.push(name), fn()) } });
