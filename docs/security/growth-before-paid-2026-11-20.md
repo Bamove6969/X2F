@@ -63,30 +63,48 @@ The escrow party gives a second guarantee (`packages/escrow/src/party.ts`, `sett
    - nothing is fixed (`acceptedAtomic` null, `paidRefused` not set);
    - the new amount lies within [take, this device's own escrow-funded size], from its own `funds()`, never the API's word;
    - the party reports no committed outcome (`committedBuilder()` returns null; a party without the method counts as committed, failing closed).
-3. The new bound is saved before the new outcome is handed to the party (I8).
-4. The status sum is the bound, so the screen shows the new sum before an "I've paid" tap for it can pass.
-5. After paid nothing moves (I2, I3 unchanged). The seller releases only the buyer's signed amount.
-6. Refunds stay unbound (I5). A buyer who cannot pay the new total can still cancel before paid, and the whole balance goes to the seller's signed refund address.
+3. The new bound is saved before the new outcome is handed to the party, together with the bound and release outcome handed over just before it (`releasePrior`; I8, review M2).
+4. **The sum shown is the one the party took** (review M1). Until the party's settle queue has taken the rebound outcome (`PartyHandle.acceptedOutcome()`, a read-only addition in `packages/escrow`), the status sum and the "I've paid" tap stay at the prior bound. Only then does the grown sum show and the tap for it pass, and `releasePrior` is cleared (review m3). A tap at the prior amount in that window binds the release back to it. One rebind at a time.
+5. After any rebind, the tap also asks the party that it is committed to nothing (`committedBuilder()`); otherwise it is refused (review M1).
+6. After paid nothing moves (I2, I3 unchanged). The seller releases only the buyer's signed amount.
+7. Refunds stay unbound (I5). A buyer who cannot pay the new total can still cancel before paid, and the whole balance goes to the seller's signed refund address.
 
-**Residual risk.** A commit can race the check: the seller's set reaches the buyer's party between `committedBuilder()` and the queued `settle()`. The party then refuses the switch ("already signed for another outcome"), and the earlier release at the lower amount completes. That needs the seller's party to build a release without a release tap. In that case the buyer receives the lower amount before paying anything, so nobody loses coins; the seller has released early. When the party refuses the switch, the runtime sets `releaseRebindRefused`. From then on the device shows no sum, takes no "I've paid" tap and co-signs no other release (fail closed), because it no longer knows which amount the party committed to. A tap in the moment between the rebind and the party's refusal is the only gap. It needs the same misbehaving seller, and the buyer's XMR is already on its way.
+## When the party refuses the switch (reviews M1, M2, m2)
+
+A commit can race the check: the seller's set reaches the buyer's party between `committedBuilder()` and the queued `settle()`. The party then refuses the switch ("already signed for another outcome"). That needs the seller's party to build a release without a release tap (a modified seller client; an honest seller harms only itself).
+
+The runtime then does three things, whether or not "I've paid" was tapped meanwhile:
+
+1. It sets `releaseRebindRefused` and **awaits** its save before anything acts on it (review m2). A failed save stops the trade (retryable).
+2. It shows no sum, takes no "I've paid" tap and builds no other release (fail closed).
+3. It hands the saved prior release (`releasePrior.outcome`) back to the party, once per run, so the release the party is committed to can complete, also after a reload (review M2, lead call). This changes no policy: the device approved exactly that outcome through `cosignPolicy` when it first handed it over. It skips the policy on re-hand only because the escrow's balance is no longer the one that outcome was built for.
+
+Because the sum stays at the prior amount until the party takes the rebound one, a buyer who tapped in the window tapped at the prior amount, which is the amount the committed release pays.
+
+## Owner / lead question (review M3, no change made)
+
+The device's own size comes from the browser wallet's reading through X2F's node proxy (`VITE_NODE_PROXY_URL`). A wallet does not check proof of work, so a malicious daemon can serve made-up outputs that look unlocked and 10 blocks deep. Main froze the sum at `secured` (the first standing co-sign). With the rebind, an attacker holding both the API and the node proxy can raise the sum after the buyer has the payment details, up to the offer maximum. The buyer would then pay fiat for coins that are not there, and only a dispute (the moderator's own monerod) shows the truth. The API alone cannot do this.
+
+Question: is the node proxy in the same trust domain as the API for this threat model? If it is, this belongs with p11-63 and option B (no growth after `secured`), which removes it entirely. No ruling states the node proxy's trust level.
 
 ## Built (this branch)
 
-- `mayRebindUp` and `rebindRefused` in `apps/web/src/escrow/runtime.ts`.
-- New record fields `releaseRebound` and `releaseRebindRefused` in `apps/web/src/escrow/store.ts`.
-- The fake party now answers `committedBuilder` in `apps/web/test/escrow-helpers.ts`.
+- `mayRebindUp`, `effectiveBound`, `priorTaken`, `resumePrior` and `rebindRefused` in `apps/web/src/escrow/runtime.ts`.
+- Record fields `releaseRebound`, `releasePrior` and `releaseRebindRefused` in `apps/web/src/escrow/store.ts`.
+- `PartyHandle.acceptedOutcome()` in `packages/escrow/src/party.ts` (read-only; `incoming.test.ts` checks it on regtest).
+- The fake party answers `committedBuilder` and `acceptedOutcome` (with a hold) in `apps/web/test/escrow-helpers.ts`.
 - Tests in `apps/web/test/attestation-flow.test.ts`:
   - growth after the standing co-sign;
   - upward only;
   - no rebind when the party is committed or lacks the method;
   - no rebind in `settling` or in a `paid` this device never tapped;
   - a rebind the party refuses;
+  - the review's M1, M1+M2, M2 reload, m2, m3 and m6 cases;
   - the I3 status test.
-
-  The two tests that pinned the old accepted cost now pin the rebind.
+- A tripwire in `apps/web/test/dispute-tripwires.test.ts`, with `TODO(m4)` at `acceptedAmount`: when the buyer's ruling co-sign is wired, `releaseRebindRefused` must not block a buyer-favouring ruling (review m4).
 
 ## Left open
 
-- **Copy.** `amount-changed` shows "The trade's amount changed on the server after you paid" (`PaidFlowSheet.tsx`) before paid too: a downward lie, or a refused rebind. Unsigned wording would be needed for a "before you paid" variant. Owner or design call; not changed here.
-- **A shrinking escrow.** If extra coins vanish after a rebind (a reorg past 10 confirmations), the device's own size drops below the bound and the release stays refused. The buyer can still cancel before paid. This is the same as any bound above the device's size before this change.
+- **Copy (review m5, owner).** `amount-changed` shows "The trade's amount changed on the server after you paid" (`PaidFlowSheet.tsx`) before paid too: a downward lie, or a refused rebind. Unsigned wording would be needed for a "before you paid" variant. Owner or design call; not changed here.
+- **A shrinking escrow.** If extra coins vanish after a rebind (a reorg past 10 confirmations), the device's own size drops below the bound and the release stays refused. The status now shows no sum and the true state, `amount-out-of-range` (review m6). The buyer can still cancel before paid.
 - **Starter caps.** The device does not know them, so the upward limit is its own escrow-funded size and the offer maximum, as for the amount before any bound (unchanged).

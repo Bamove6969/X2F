@@ -113,12 +113,22 @@ export interface EscrowRecord {
   releaseBoundAtomic?: bigint | null;
   /**
    * Gap 2 (docs/security/growth-before-paid-2026-11-20.md): the buyer moved releaseBoundAtomic UP
-   * to a grown amount before paid (I1's only exception). Absent: never.
+   * to a grown amount before paid (I1's only exception), at least once. Never cleared: from then on
+   * the "I've paid" tap also asks the party that it is committed to nothing. Absent: never.
    */
   releaseRebound?: boolean;
   /**
+   * The bound and the release outcome handed to the party just before the latest rebind, saved in
+   * the same write as the new bound. Kept while the party has not taken the rebound outcome
+   * (review M1: the status sum and the tap stay at `boundAtomic` until then), and after a refusal
+   * (review M2: `outcome` is the release the party is committed to, handed back on every run so it
+   * can complete). Cleared once the party took the rebound outcome (review m3). Absent: none.
+   */
+  releasePrior?: { boundAtomic: bigint; outcome: NonNullable<StoredIntent['outcome']> } | null;
+  /**
    * The party refused a rebound release because it is committed to an earlier one: from then on
-   * this device shows no sum, takes no "I've paid" tap and co-signs no other release. Absent: no.
+   * this device shows no sum, takes no "I've paid" tap and builds no other release; it only hands
+   * `releasePrior.outcome` back to the party. Absent: no.
    */
   releaseRebindRefused?: boolean;
   /**

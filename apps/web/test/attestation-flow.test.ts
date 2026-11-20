@@ -5,9 +5,10 @@ import { channelFor, escrowPlan, fiatCents, instructionsSha256 } from '@x2f/trad
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Attestation } from '@x2f/trade';
 import { cosignPolicy } from '../src/escrow/policy.js';
-import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
+import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, json, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
 
 const running: Device[] = [];
+const sumTo = (o: { to: readonly { amountAtomic: bigint }[] }): bigint => o.to.reduce((a, x) => a + x.amountAtomic, 0n);
 const fiatOf = (a: bigint): bigint => fiatCents(a, { currency: 'USD', centsPerXmr: 33_000n });
 /** The buyer taps "I've paid" on its own device with the total for `amount` (the real flow, Task 23). */
 const pay = (buyer: Device, amount: bigint = AMOUNT): Promise<void> => buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(amount) });
@@ -1016,7 +1017,7 @@ describe('settling', () => {
     });
 
     /** Secured at the take amount with the standing co-sign handed over and bound, then extra coins unlock and the API grows the trade. */
-    async function boundThenGrown(over: { committed?: Role | null; noMethod?: boolean } = {}) {
+    async function boundThenGrown(over: { committed?: Role | null; noMethod?: boolean; hold?: boolean } = {}) {
       const t = await ready();
       if (over.committed !== undefined) t.parties.committedBuilders.buyer = over.committed;
       if (over.noMethod) {
@@ -1030,10 +1031,18 @@ describe('settling', () => {
       t.state.view = tradeView({ state: 'secured' });
       await until(() => t.parties.settles.some((x) => x.role === 'buyer')); // the standing co-sign, at AMOUNT
       await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === AMOUNT);
+      // Review M1: the party's queued settle() job has not taken the rebound outcome yet (or will refuse it).
+      if (over.hold) t.parties.acceptHeld.add('buyer');
       t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
       t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
       return t;
     }
+    /** The buyer's pending co-sign of a release paying the buyer `amount`. */
+    const pendingAt = (t: Awaited<ReturnType<typeof boundThenGrown>>, amount: bigint) => t.parties.pending.find((x) => x.role === 'buyer' && x.o.builder === 'seller' && x.o.to[0]!.amountAtomic === amount);
+    const refuseSwitch = (t: Awaited<ReturnType<typeof boundThenGrown>>, amount: bigint): void => {
+      t.parties.committedBuilders.buyer = 'seller';
+      pendingAt(t, amount)!.reject(new PartyError('bad-outcome', 'already signed for another outcome'));
+    };
 
     it('growth after the standing co-sign, before paid (gap 2, regtest e2e): the bound release moves UP to the grown amount, the status sum is the grown total, and "I’ve paid" for it is taken; the seller then releases the grown amount', async () => {
       const t = await boundThenGrown();
@@ -1102,11 +1111,12 @@ describe('settling', () => {
     });
 
     it('a rebind the party refuses (already signed for another outcome, a commit that raced the check): no sum is shown, "I’ve paid" is refused, amount-changed, across a reload', async () => {
-      const t = await boundThenGrown();
-      await until(() => t.parties.pending.some((x) => x.role === 'buyer' && x.o.to[0]!.amountAtomic === grown));
-      t.parties.committedBuilders.buyer = 'seller';
-      t.parties.pending.find((x) => x.role === 'buyer' && x.o.to[0]!.amountAtomic === grown)!.reject(new PartyError('bad-outcome', 'already signed for another outcome'));
+      const t = await boundThenGrown({ hold: true }); // a switch the party refuses is never taken
+      await until(() => pendingAt(t, grown) !== undefined);
+      refuseSwitch(t, grown);
       expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null, amountAtomic: null, fiatCents: null });
+      // Review m2: the flag is saved (awaited) before the prior release goes back to the party.
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseRebindRefused === true);
       await expect(pay(t.buyer, grown)).rejects.toThrow();
       await expect(pay(t.buyer, AMOUNT)).rejects.toThrow();
       expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
@@ -1115,6 +1125,113 @@ describe('settling', () => {
       await again.runtime.resumeAll();
       expect(await again.status((x) => x.refusal === 'amount-changed')).toMatchObject({ amountAtomic: null });
       await expect(again.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(grown) })).rejects.toThrow();
+    });
+
+    it('review M1: until the party has taken settle(grown), the status keeps the take amount as the sum and "I’ve paid" for the grown total is refused; once taken, the grown sum shows and the tap passes', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic).toBe(grown); // saved before the hand-over (I8)
+      await t.parties.ticks('buyer', 3);
+      expect(t.buyer.last()).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT), refusal: null });
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+      expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
+      t.parties.accept('buyer');
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null, fiatCents: fiatOf(grown) });
+      expect((await t.buyer.store.load(CODE))?.releasePrior ?? null).toBeNull(); // review m3: cleared once taken
+      await pay(t.buyer, grown);
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(grown);
+    });
+
+    it('review M1 + M2: a tap at the take amount while the rebind is still pending pays the take amount (the bound goes back); a refusal after that tap still sets the flag, and the committed release is handed back to the party', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      // The API still shows the take amount to this tap (the page's sum was the take amount).
+      t.state.view = tradeView({ state: 'secured' });
+      await pay(t.buyer, AMOUNT);
+      const rec = (await t.buyer.store.load(CODE))!;
+      expect(rec.acceptedAtomic).toBe(AMOUNT);
+      expect(rec.releaseBoundAtomic).toBe(AMOUNT);
+      const prior = rec.releasePrior!.outcome;
+      const n = t.parties.settles.length;
+      refuseSwitch(t, grown);
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ amountAtomic: null });
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseRebindRefused === true);
+      // The saved prior outcome (the one the party is committed to) goes back to the party.
+      await until(() => t.parties.settles.slice(n).some((x) => x.role === 'buyer' && json(x.o.to) === json(prior.to) && x.o.builder === prior.builder));
+    });
+
+    it('review M1: after a rebind, the tap is refused while the party reports a committed outcome', async () => {
+      const t = await boundThenGrown();
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null });
+      t.parties.committedBuilders.buyer = 'seller';
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+      expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
+      t.parties.committedBuilders.buyer = null;
+      await pay(t.buyer, grown);
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(grown);
+    });
+
+    it('review M2: reload after a refused rebind: the party is handed the committed release at the take amount again, and it completes', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      refuseSwitch(t, grown);
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseRebindRefused === true);
+      const prior = (await t.buyer.store.load(CODE))!.releasePrior!.outcome;
+      await t.buyer.runtime.stopAll();
+      t.parties.pending = t.parties.pending.filter((x) => x.role !== 'buyer');
+      const n = t.parties.settles.length;
+      const again = await t.mk('buyer', { idb: t.buyer.idb });
+      await again.runtime.resumeAll();
+      await until(() => t.parties.pending.some((x) => x.role === 'buyer'));
+      const resumed = t.parties.settles.slice(n).filter((x) => x.role === 'buyer');
+      expect(resumed.map((x) => x.o.to)).toEqual([prior.to]);
+      expect(resumed[0]!.o.to[0]!.amountAtomic).toBe(AMOUNT);
+      // The party completes it: this device's own settle is done.
+      t.parties.pending.find((x) => x.role === 'buyer')!.resolve('ab'.repeat(32));
+      await until(async () => (await again.store.load(CODE))?.intent?.done === true);
+      expect((await again.store.load(CODE))!.intent!.outcome!.to).toEqual(prior.to);
+    });
+
+    it('review m2: the refused flag is saved before anything acts on it: a save that fails stops the trade (retryable) and hands no prior release to the party', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      const save = t.buyer.store.save.bind(t.buyer.store);
+      t.buyer.store.save = async (r) => {
+        if (r.releaseRebindRefused === true) throw new Error('disk full');
+        return save(r);
+      };
+      const n = t.parties.settles.length;
+      refuseSwitch(t, grown);
+      expect(await t.buyer.status((x) => x.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: true });
+      expect(t.parties.settles.slice(n).filter((x) => x.role === 'buyer')).toEqual([]);
+      // In memory the flag already closed the tap.
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+    });
+
+    it('review m3: once the party took the rebound outcome, a later "already signed" (dust re-derived the same amount) does not set the refused flag', async () => {
+      const t = await boundThenGrown();
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null });
+      await until(async () => ((await t.buyer.store.load(CODE))?.releasePrior ?? null) === null);
+      t.parties.acceptHeld.add('buyer');
+      t.parties.funds = { balance: fundsFor(grown) + 7n, unlocked: fundsFor(grown) + 7n, incoming: [] };
+      await until(() => t.parties.pending.some((x) => x.role === 'buyer' && sumTo(x.o) === fundsFor(grown) + 7n));
+      t.parties.committedBuilders.buyer = 'seller';
+      t.parties.pending.find((x) => x.role === 'buyer' && sumTo(x.o) === fundsFor(grown) + 7n)!.reject(new PartyError('bad-outcome', 'already signed for another outcome'));
+      await t.parties.ticks('buyer', 3);
+      expect((await t.buyer.store.load(CODE))?.releaseRebindRefused ?? false).toBe(false);
+      expect(t.buyer.last()).toMatchObject({ amountAtomic: grown });
+    });
+
+    it('review m6: extra coins gone after a rebind (a deep reorg): no sum that cannot be tapped, the true state amount-out-of-range', async () => {
+      const t = await boundThenGrown();
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null });
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      expect(await t.buyer.status((x) => x.amountAtomic === null)).toMatchObject({ refusal: 'amount-out-of-range', fiatCents: null });
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+      // A refund is never bound: the buyer can still cancel.
+      await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.cosigner !== 'seller' && x.o.builder === 'buyer'));
     });
 
     it('Plan 4 Task 12 (B1): a grown trade\'s ruling payment is the amount this seller fixed at paid, never the take amount; a view naming another amount changes nothing', async () => {

@@ -135,6 +135,9 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
       wrongDone.catch(() => undefined);
       await new Promise((r) => setTimeout(r, 8000));
       expect(t.stores.mod.current()!.release!.phase).toBe('export'); // waiting for a set that never comes
+      // Growth-binding review M1: acceptedOutcome names the outcome the settle() queue took (no set yet, so the switch was taken).
+      expect(t.parties.mod.acceptedOutcome!()).toMatchObject({ to: wrong.to });
+      expect(t.parties.seller.acceptedOutcome!()).toMatchObject({ to: o.to });
       expect(Object.keys(t.stores.mod.current()!.received).some((k) => k.startsWith('release.txset'))).toBe(false);
       expect(t.stores.seller.current()!.release!.phase).toBe('export');
       // Now the moderator settles the same outcome: the seller's set is built and signed.
@@ -143,6 +146,10 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
       // Watcher revival re-verify R2: the committed outcome's builder, for the mod's own settled report.
       expect(t.parties.mod.committedBuilder!()).toBe('seller');
       expect(t.parties.seller.committedBuilder!()).toBe('seller');
+      expect(t.parties.mod.acceptedOutcome!()).toMatchObject({ to: o.to });
+      // A switch the committed party refuses leaves the taken outcome as it was.
+      await expect(t.parties.seller.settle(wrong)).rejects.toMatchObject({ code: 'bad-outcome' });
+      expect(t.parties.seller.acceptedOutcome!()).toMatchObject({ to: o.to });
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
       expect(sellerResult).toBeNull();
       await mine(node.rpcUri, 12, funderAddress);
