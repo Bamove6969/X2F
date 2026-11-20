@@ -315,11 +315,19 @@ async function v1SignedBy(envelope: unknown, channel: string, parts: Participant
 }
 
 export function createChatEngine(d: ChatEngineDeps): ChatEngine {
-  /** One operation at a time per chat (posts are sent one by one, chatCrypto's contract). */
+  /**
+   * One operation at a time per chat (posts are sent one by one, chatCrypto's contract), and, across
+   * this origin's tabs, each whole operation (sync, post, prepare, grant, the sweep's read) holds the
+   * per-chat Web Lock `x2f-chat-identity:<chat>` (review m1, then the review 3 follow-up): a tab never
+   * acts on a record another tab changed under it. Taken once per operation, never inside one (a Web
+   * Lock is not re-entrant).
+   */
   const queues = new Map<string, Promise<unknown>>();
+  const lock = d.lock ?? defaultLock;
   const serial = <T>(chat: string, fn: () => Promise<T>): Promise<T> => {
     const prev = queues.get(chat) ?? Promise.resolve();
-    const next = prev.then(fn, fn);
+    const locked = (): Promise<T> => lock(`x2f-chat-identity:${chat}`, fn) as Promise<T>;
+    const next = prev.then(locked, locked);
     queues.set(chat, next.catch(() => undefined));
     return next;
   };
@@ -342,6 +350,35 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     sessions.delete(chat);
     forgetKey(chat);
     await d.store.delete(chat);
+  };
+  /**
+   * Review 3 follow-up: every save of an existing chat's record reloads the stored one and never lets
+   * what protects the chat go backwards: the identity (another one stored fails closed), `registered`,
+   * the pinned key fingerprint `tkh` (F3: kept, and another one stored fails closed) and the verified
+   * attestation (the first one kept). The rest (state, cursor, receipts) is this operation's. Returns
+   * the record as saved, which the caller goes on with. The second layer under the per-chat lock, for
+   * a browser without Web Locks.
+   */
+  const keep = async (rec: ChatRecord): Promise<ChatRecord> => {
+    const stored = await d.store.load(rec.chat);
+    if (stored === null) {
+      await d.store.save(rec);
+      return rec;
+    }
+    if (stored.role !== rec.role || stored.identity.signPublic !== rec.identity.signPublic || stored.identity.boxPublic !== rec.identity.boxPublic) {
+      throw new ProtocolError('bad-signature', 'another chat identity is stored for this chat');
+    }
+    if (stored.tkh !== undefined && rec.tkh !== undefined && stored.tkh !== rec.tkh) throw new ProtocolError('bad-signature', 'another chat key is pinned for this chat');
+    const tkh = stored.tkh ?? rec.tkh;
+    const merged: ChatRecord = {
+      ...rec,
+      registered: stored.registered || rec.registered,
+      attestation: stored.attestation ?? rec.attestation,
+      ...(stored.identityCreatedAt !== undefined ? { identityCreatedAt: stored.identityCreatedAt } : {}),
+      ...(tkh !== undefined ? { tkh } : {}),
+    };
+    await d.store.save(merged);
+    return merged;
   };
 
   const snapshot = (rec: ChatRecord | null, view: ChatApiView, phase: ChatPhase, problem: ChatSnapshot['problem'] = null, more = false): ChatSnapshot => {
@@ -396,15 +433,11 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
 
   /**
    * Makes, saves, then registers this device's chat identity; null when another device holds the role.
-   * Review m1, two layers against two tabs of this device making one each: the whole step holds the
-   * per-chat lock `x2f-chat-identity:<chat>`, and a new record is saved only if none exists yet
+   * Review m1, two layers against two tabs of this device making one each: it runs inside an operation
+   * holding the per-chat lock (`serial`), and a new record is saved only if none exists yet
    * (`store.create`, one transaction); a tab that loses that goes on with the record that won.
    */
   async function ensureIdentity(chat: string, view: ChatApiView): Promise<ChatRecord | null> {
-    return (await (d.lock ?? defaultLock)(`x2f-chat-identity:${chat}`, () => ensureIdentityLocked(chat, view))) as ChatRecord | null;
-  }
-
-  async function ensureIdentityLocked(chat: string, view: ChatApiView): Promise<ChatRecord | null> {
     let rec = await d.store.load(chat);
     if (rec && rec.role !== view.role) return null;
     if (!rec) {
@@ -442,8 +475,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           if (again.mySignPublic !== rec.identity.signPublic) return null;
         }
       }
-      rec = { ...rec, registered: true };
-      await d.store.save(rec);
+      rec = await keep({ ...rec, registered: true });
     } else if (view.mySignPublic !== null && view.mySignPublic !== rec.identity.signPublic) {
       return null;
     }
@@ -485,8 +517,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         tk.fill(0);
         throw new ProtocolError('bad-signature', 'the chat key is not the one this device pinned');
       }
-      const pinned = rec.tkh === tkh ? rec : { ...rec, tkh };
-      if (pinned !== rec) await d.store.save(pinned);
+      let pinned: ChatRecord;
+      try {
+        pinned = rec.tkh === tkh ? rec : await keep({ ...rec, tkh });
+      } catch (e) {
+        // Another tkh stored by another tab (review 3 follow-up): the security failure, the key wiped.
+        tk.fill(0);
+        throw e;
+      }
       keys.set(rec.chat, tk);
       return { tk, rec: pinned };
     };
@@ -566,8 +604,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           }
           if (past && !held && cursor !== e.id) {
             cursor = e.id;
-            rec = { ...rec, cursor };
-            await d.store.save(rec);
+            rec = await keep({ ...rec, cursor });
           }
           continue;
         }
@@ -652,8 +689,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         }
         if (!advance) held = true;
         if (!held) cursor = e.id;
-        rec = { ...rec, state, cursor, receipts: [...receipts] };
-        await d.store.save(rec);
+        rec = await keep({ ...rec, state, cursor, receipts: [...receipts] });
       }
       unread = more;
       if (!more) break;
@@ -688,7 +724,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       if (e instanceof AttestationError) return { snap: snapshot(rec0, view, 'failed', 'security'), rec: null, parts: null, view };
       throw e;
     }
-    await d.store.save(rec);
+    // Merged (review 3 follow-up): a tkh another tab pinned meanwhile comes back with it, so the key
+    // step below holds this chat to that pin.
+    rec = await keep(rec);
     let tk: Uint8Array;
     try {
       ({ tk, rec } = await chatKey(rec, parts));
@@ -806,7 +844,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           throw e;
         }
         // Saved before posting: a seq is never used twice.
-        await d.store.save({ ...s.rec, state: sealed.state });
+        await keep({ ...s.rec, state: sealed.state });
         try {
           await d.api.postEnvelope(chat, sealed.envelope);
         } catch (e) {

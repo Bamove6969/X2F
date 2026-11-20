@@ -373,6 +373,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private last = '';
     /** The settle() call in flight, by outcome key. */
     private inflight: string | null = null;
+    /** The settled intent (done) is set in memory and its save has not resolved yet: not shown as done. */
+    private doneUnsaved = false;
     /** Outcomes the party refused because another was already committed. */
     private refused = new Set<string>();
     private ticking: Promise<void> = Promise.resolve();
@@ -961,8 +963,13 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         async () => {
           if (this.rec.intent) {
             this.rec.intent = { ...this.rec.intent, outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner }, done: true };
+            // The 20 Nov flake: until this save resolves, no refresh (a tick's included) shows `done`,
+            // which tells the user the device's part is over while the record still says otherwise.
+            this.doneUnsaved = true;
+            const saved = await this.persist().then(() => true, () => false);
+            this.doneUnsaved = false;
             // Stopped meanwhile: the next run's party resolves the same outcome again.
-            if (!(await this.persist().then(() => true, () => false))) return;
+            if (!saved) return;
           }
           if (this.inflight === k) this.inflight = null;
           this.refresh();
@@ -999,7 +1006,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (this.error) return this.emit();
       const i = this.rec.intent;
       if (!this.isReady) return this.set('setting-up');
-      if (i?.done) return this.set('done'); // only from this device's own settle
+      if (i?.done && !this.doneUnsaved) return this.set('done'); // only from this device's own settle, once stored
       if (this.rec.settledWithoutDevice === true) return this.set('settled-without-device');
       const active = i !== null && i.outcome !== null && (!i.auto || this.view?.state === 'settling' || this.view?.state === 'lapsed');
       this.set(active ? 'signing' : 'ready');
