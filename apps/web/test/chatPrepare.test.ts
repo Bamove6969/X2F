@@ -1,7 +1,7 @@
 // Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): the escrow worker registers the trade chat's identity
 // when the device runs the trade (chat/prepare.ts), so the chat is attested without anyone opening it.
 import { describe, expect, it } from 'vitest';
-import { httpOpenTradeChat } from '../src/chat/http.js';
+import { CHAT_API_TIMEOUT_MS, httpChatApi, httpOpenTradeChat } from '../src/chat/http.js';
 import { tradeChatPreparer } from '../src/chat/prepare.js';
 
 const CODE = 'K7Q2-M9XA-3PRT-W8DN';
@@ -64,5 +64,45 @@ describe('tradeChatPreparer: what the escrow runtime calls per trade', () => {
     await expect(offline(CODE)).rejects.toBeInstanceOf(TypeError);
     const noEngine = tradeChatPreparer({ openTradeChat: async () => CHAT, engine: async () => Promise.reject(new Error('no IndexedDB')) });
     await expect(noEngine(CODE)).rejects.toThrow('no IndexedDB');
+  });
+});
+
+// Review of wip/lead-chat-tab-lock, m3: every chat API call runs under the cross-tab per-chat lock, so
+// each one is bounded (as the escrow adapters' ESCROW_API_TIMEOUT_MS): a stalled fetch fails, never holds the lock.
+describe('the chat API calls are bounded (m3)', () => {
+  /** A fetch that never answers, but rejects when its signal aborts (as a browser's does). */
+  const hanging = (seen: Array<AbortSignal | undefined>): typeof fetch =>
+    ((_u: unknown, init?: RequestInit) =>
+      new Promise((_r, reject) => {
+        seen.push(init?.signal ?? undefined);
+        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+      })) as typeof fetch;
+
+  it('defaults to 15 s, the escrow adapters\' bound', () => {
+    expect(CHAT_API_TIMEOUT_MS).toBe(15_000);
+  });
+
+  it('every call of httpChatApi carries a signal and fails once the bound passes', async () => {
+    const seen: Array<AbortSignal | undefined> = [];
+    const api = httpChatApi(hanging(seen), 20);
+    const calls: Array<() => Promise<unknown>> = [
+      () => api.getChat(CHAT),
+      () => api.registerIdentity(CHAT, { signPublic: 'a', boxPublic: 'b', proof: 'c' }),
+      () => api.getAttestation(CHAT),
+      () => api.listEnvelopes(CHAT, '0'),
+      () => api.postEnvelope(CHAT, {}),
+      () => api.getKey(CHAT),
+      () => api.postKey(CHAT, {}),
+      () => api.postGrant(CHAT, {}),
+    ];
+    for (const call of calls) await expect(call()).rejects.toBeDefined();
+    expect(seen).toHaveLength(calls.length);
+    for (const sig of seen) expect(sig?.aborted).toBe(true);
+  });
+
+  it('httpOpenTradeChat is bounded too', async () => {
+    const seen: Array<AbortSignal | undefined> = [];
+    await expect(httpOpenTradeChat(hanging(seen), 20)(CODE)).rejects.toBeDefined();
+    expect(seen[0]?.aborted).toBe(true);
   });
 });

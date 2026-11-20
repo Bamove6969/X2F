@@ -418,6 +418,49 @@ describe('chat engine: two tabs over one store (review m1)', () => {
     api.key = key;
   });
 
+  // Review of wip/lead-chat-tab-lock, m1: keep() saves only over a record that exists; a missing one
+  // was erased (a purge, or another tab's erase), so the save fails as purged and never re-creates it.
+  it('a save that finds the record erased meanwhile fails as purged and never writes it back (m1)', async () => {
+    const e = createChatEngine({ api, store, newIdentity: testIdentity, modSigningPublic, lock: (_n, fn) => fn() });
+    await e.prepare(chat);
+    const parts = attest();
+    await fromSeller('one', parts);
+    // Another tab erases the chat while this sync reads its envelopes.
+    const list = api.listEnvelopes.bind(api);
+    api.listEnvelopes = async (c, after) => {
+      await store.delete(chat);
+      return list(c, after);
+    };
+    await expect(e.sync(chat)).rejects.toMatchObject({ status: 410 });
+    expect(store.records.has(chat)).toBe(false);
+  });
+
+  // m2: a keep() refusal wipes this chat's key from the worker's memory before it throws.
+  it('a save refused for another pinned tkh forgets the cached chat key (m2)', async () => {
+    const e = createChatEngine({ api, store, newIdentity: testIdentity, modSigningPublic, lock: (_n, fn) => fn() });
+    await e.prepare(chat);
+    const parts = attest();
+    await fromSeller('one', parts);
+    expect((await e.sync(chat)).phase).toBe('ready');
+    const good = (await store.load(chat))!;
+    // Another tkh appears in the store between this sync's load and its next save.
+    const list = api.listEnvelopes.bind(api);
+    api.listEnvelopes = async (c, after) => {
+      api.listEnvelopes = list;
+      await store.save({ ...(await store.load(chat))!, tkh: 'ab'.repeat(32) });
+      return list(c, after);
+    };
+    await fromSeller('two', parts);
+    await expect(e.sync(chat)).rejects.toBeInstanceOf(ProtocolError);
+    // The store is put right; the next sync must open the key again (it was not left cached).
+    await store.save(good);
+    let reads = 0;
+    const getKey = api.getKey.bind(api);
+    api.getKey = async () => (reads++, getKey());
+    await e.sync(chat);
+    expect(reads).toBe(1);
+  });
+
   it('the lock is navigator.locks by default, one per chat', async () => {
     const names: string[] = [];
     vi.stubGlobal('navigator', { locks: { request: (name: string, fn: () => Promise<unknown>) => (names.push(name), fn()) } });
