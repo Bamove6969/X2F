@@ -1,0 +1,5 @@
+# Gap 1: SHA-256 of monero-ts's prebuilt wallet worker, served unchanged at /monero/monero.worker.js.
+# Computed from the pinned npm tarball monero-ts-0.11.16.tgz (`npm pack monero-ts@0.11.16`; the
+# tarball matches package-lock.json's sha512 integrity), not from node_modules.
+# tools/copy-monero-worker.ts fails the build on any difference.
+2e53c27e4518c5e59ae9f6378550cd00c68bb0221d8ee751bd0a12cc39263c3e  monero.worker.js

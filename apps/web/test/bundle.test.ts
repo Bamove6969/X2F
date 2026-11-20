@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 
 const run = promisify(execFile);
@@ -26,13 +27,14 @@ async function build(mode: string): Promise<string> {
 
 /**
  * Our own output: index.html and everything vite built. The copied OCR files (dist/ocr/, Plan 5 Task
- * 13) are third-party code checked byte for byte against tools/ocr-assets.sha256 instead.
+ * 13) and monero-ts's wallet worker (dist/monero/) are third-party code checked byte for byte against
+ * tools/ocr-assets.sha256 and tools/monero-worker.sha256 instead.
  */
 async function bundleText(dir: string): Promise<string> {
   const files = await readdir(dir, { recursive: true, withFileTypes: true });
   const parts = await Promise.all(
     files
-      .filter((f) => f.isFile() && /\.(js|css|html)$/.test(f.name) && f.parentPath !== join(dir, 'ocr'))
+      .filter((f) => f.isFile() && /\.(js|css|html)$/.test(f.name) && f.parentPath !== join(dir, 'ocr') && f.parentPath !== join(dir, 'monero'))
       .map((f) => readFile(join(f.parentPath, f.name), 'utf8')),
   );
   return parts.join('\n');
@@ -86,6 +88,24 @@ describe('production bundle', () => {
     expect((await readdir(join(dir, 'ocr'))).sort()).toEqual(
       ['eng.traineddata.gz', 'rus.traineddata.gz', 'tesseract-core-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'worker.min.js'],
     );
+  });
+
+  // Gap 1 (the regtest e2e, demo 8 Nov): monero-ts runs every wallet in its own worker, which the
+  // production build never served, so no escrow wallet could start in a real browser.
+  it("serves monero-ts's own wallet worker at /monero/monero.worker.js, byte for byte the pinned build, never re-bundled", { timeout: 200_000 }, async () => {
+    const dir = await build('production');
+    expect(await readdir(join(dir, 'monero'))).toEqual(['monero.worker.js']);
+    const pinned = (await readFile(fileURLToPath(new URL('../../../tools/monero-worker.sha256', import.meta.url)), 'utf8'))
+      .split('\n').map((l) => /^([0-9a-f]{64}) {2}monero\.worker\.js$/.exec(l.trim())?.[1]).find((h) => h !== undefined);
+    expect(pinned).toBe('2e53c27e4518c5e59ae9f6378550cd00c68bb0221d8ee751bd0a12cc39263c3e');
+    expect(createHash('sha256').update(await readFile(join(dir, 'monero', 'monero.worker.js'))).digest('hex')).toBe(pinned);
+    // Not a second, re-bundled copy under assets/, and our own code points monero-ts at the served file.
+    const assets = await readdir(join(dir, 'assets'));
+    expect(assets.filter((f) => /monero\.worker/.test(f))).toEqual([]);
+    const escrowWorker = assets.filter((f) => /^worker-.*\.js$/.test(f));
+    expect(escrowWorker).toHaveLength(1);
+    const workerText = await readFile(join(dir, 'assets', escrowWorker[0]!), 'utf8');
+    expect(/["'`]\/monero\/monero\.worker\.js["'`]/.test(workerText), 'the escrow worker names /monero/monero.worker.js').toBe(true);
   });
 
   it('inlines nothing the CSP would block: no inline scripts or styles, no data: fonts', { timeout: 200_000 }, async () => {

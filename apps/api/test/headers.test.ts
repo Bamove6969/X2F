@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { OCR_WORKER_CSP, cspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
+import { MONERO_WORKER_PATH, OCR_WORKER_CSP, cspFor, moneroWorkerCspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
 import { testApp } from './helpers/app.js';
 
 const RELAY = 'wss://relay.x2f.test';
@@ -29,6 +29,10 @@ beforeAll(async () => {
   await writeFile(join(root, 'ocr', 'tesseract-core-simd-lstm.wasm.js'), 'var TesseractCore;');
   await writeFile(join(root, 'ocr', 'eng.traineddata.gz'), Buffer.from([0x1f, 0x8b, 0x08, 0x00, 1, 2, 3]));
   await writeFile(join(root, 'assets', 'ocr-abc123.js'), 'console.log(2)');
+  // monero-ts's own wallet worker (tools/copy-monero-worker.ts copies the real, pinned one).
+  await mkdir(join(root, 'monero'));
+  await writeFile(join(root, 'monero', 'monero.worker.js'), 'self.onmessage = () => undefined;');
+  await writeFile(join(root, 'assets', 'monero-abc123.js'), 'console.log(3)');
   ({ app } = await testApp());
   await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE });
 });
@@ -141,6 +145,42 @@ describe('the OCR files (Plan 5 Task 13, Global Constraints: the worker\'s own C
     const res = await app.inject({ method: 'GET', url: '/assets/ocr-abc123.js' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+});
+
+describe("monero-ts's wallet worker (Gap 1: no escrow wallet could start in a browser)", () => {
+  const MONERO_CSP = `default-src 'none'; script-src 'wasm-unsafe-eval'; connect-src ${NODE}`;
+
+  it('is served at /monero/monero.worker.js, the path the escrow worker gives monero-ts', () => {
+    expect(MONERO_WORKER_PATH).toBe('/monero/monero.worker.js');
+  });
+
+  it('its policy: compile its inline WebAssembly, reach the node proxy, nothing else (no scripts, no relay, not even this origin)', () => {
+    expect(moneroWorkerCspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(MONERO_CSP);
+    // The node proxy origin is checked exactly as for the page.
+    expect(() => moneroWorkerCspFor({ relayOrigin: RELAY, nodeProxyOrigin: 'http://node.x2f.test' })).toThrow(/https or wss/);
+  });
+
+  it('is served as JavaScript with its own CSP, the base headers and revalidated on every load', async () => {
+    const res = await app.inject({ method: 'GET', url: MONERO_WORKER_PATH });
+    expect(res.statusCode).toBe(200);
+    expectBaseHeaders(res.headers);
+    expect(String(res.headers['content-type'])).toMatch(/^application\/javascript/);
+    expect(res.headers['content-security-policy']).toBe(MONERO_CSP);
+    expect(res.headers['cache-control']).toBe('no-cache');
+  });
+
+  it('a missing monero file is a 404, never the app page', async () => {
+    const res = await app.inject({ method: 'GET', url: '/monero/monero.worker.js.map' });
+    expect(res.statusCode).toBe(404);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+
+  it('only the monero folder gets it: a built asset named monero-… keeps no CSP and its long cache', async () => {
+    const res = await app.inject({ method: 'GET', url: '/assets/monero-abc123.js' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+    expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
   });
 });
 

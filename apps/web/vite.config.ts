@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { copyMoneroWorker } from '../../tools/copy-monero-worker.js';
 import { copyOcrAssets } from '../../tools/copy-ocr-assets.js';
 import { moneroGlue } from './vite-monero-glue.js';
 
@@ -13,6 +14,15 @@ const assertShim = fileURLToPath(new URL('./src/assertShim.ts', import.meta.url)
  */
 function ocrAssets(): Plugin {
   return { name: 'x2f-ocr-assets', buildStart: () => copyOcrAssets() };
+}
+
+/**
+ * Gap 1: every build (and the dev server) first copies monero-ts's own prebuilt wallet worker into
+ * public/monero/, unchanged, and checks it against tools/monero-worker.sha256; a file that differs
+ * fails the build. Served at /monero/monero.worker.js (src/escrow/moneroWorker.ts).
+ */
+function moneroWorker(): Plugin {
+  return { name: 'x2f-monero-worker', buildStart: () => copyMoneroWorker() };
 }
 
 /** tesseract.js's browser defaults, whose `workerPath` is a jsdelivr URL. */
@@ -72,7 +82,7 @@ export default defineConfig(({ command, mode }) => {
   const env = { ...loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_'), ...process.env };
   const fixtures = fixturesOn(command, mode, env.VITE_FIXTURES);
   return {
-    plugins: [react(), moneroGlue(), ocrAssets(), tesseractNoCdn()],
+    plugins: [react(), moneroGlue(), moneroWorker(), ocrAssets(), tesseractNoCdn()],
     // The escrow worker (where the wallets run) is bundled with its own plugin list.
     worker: { plugins: () => [moneroGlue()] },
     resolve: {

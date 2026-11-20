@@ -126,6 +126,20 @@ export function cspFor(o: ConnectOrigins): string {
  */
 export const OCR_WORKER_CSP = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'";
 
+/** Where the web build serves monero-ts's own wallet worker (Gap 1, tools/copy-monero-worker.ts). */
+export const MONERO_WORKER_PATH = '/monero/monero.worker.js';
+
+/**
+ * The CSP on every `/monero/*` response (Gap 1). A dedicated worker takes its CSP from its own
+ * response, not from the page, so monero-ts's wallet worker (where every escrow wallet's keys live)
+ * gets this one: it may compile its inline WebAssembly and reach the node proxy, and nothing else:
+ * no script loads at all (it is one self-contained file), no relay, not even this origin.
+ */
+export function moneroWorkerCspFor(o: ConnectOrigins): string {
+  const node = origin(o.nodeProxyOrigin, 'node proxy origin', o.allowInsecureOrigins === true);
+  return ["default-src 'none'", "script-src 'wasm-unsafe-eval'", `connect-src ${node}`].join('; ');
+}
+
 /** The web settings from the environment; `null` when this process does not serve the web app. */
 export function webOptionsFromEnv(env: Record<string, string | undefined>): WebOptions | null {
   const root = env.X2F_WEB_ROOT;
@@ -196,7 +210,9 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
  */
 export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<void> {
   const csp = cspFor(o);
+  const moneroCsp = moneroWorkerCspFor(o);
   const ocrDir = join(resolve(o.root), 'ocr') + sep;
+  const moneroDir = join(resolve(o.root), 'monero') + sep;
   await app.register(async (scope) => {
     scope.addHook('onRequest', addSecurityHeaders);
     await scope.register(fastifyStatic, {
@@ -208,6 +224,9 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
         if (resolve(path).startsWith(ocrDir)) {
           // Plan 5 Task 13: the OCR worker, its engine and model get the worker's own CSP.
           void reply.header('content-security-policy', OCR_WORKER_CSP);
+        } else if (resolve(path).startsWith(moneroDir)) {
+          // Gap 1: monero-ts's wallet worker gets its own CSP; its name is fixed, so revalidated.
+          void reply.header('content-security-policy', moneroCsp).header('cache-control', 'no-cache');
         } else if (path.endsWith('.html')) {
           void reply.header('content-security-policy', csp).header('cache-control', 'no-cache');
         } else if (/[\\/]sw\.js$/.test(path) && !/[\\/]assets[\\/]/.test(path)) {
