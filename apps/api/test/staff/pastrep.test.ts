@@ -297,6 +297,8 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     const tag = randomBytes(3).toString('hex');
     const reviewer = (await seedStaff(deps, { role: 'mod' })).id;
     const ids: string[] = [];
+    // Approved in 2030 and filed in reverse, so they are the newest approvals in this file's database
+    // and the creation order is the opposite of the approval order the list must follow.
     for (let a = 0; a < 16; a++) {
       const account = await seedAccount(deps, { loginName: `bulk${tag}${a}x`, displayName: `Bulk${tag}${String(a).padStart(2, '0')}`, kind: 'trader' });
       for (const [i, site] of sites.entries()) {
@@ -305,7 +307,7 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
           `insert into past_reputation (account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature_enc, status,
              verified_trades, reviewer_id, decided_at, created_at)
            values ($1, $2, 'https://web.archive.org/web/2023/https://example.org/u', 10, $3, $4, 'text', $4, 'approved', 10, $5, $6, $7) returning id`,
-          [account, site, randomBytes(20).toString('hex'), randomBytes(40), reviewer, new Date(Date.UTC(2026, 10, 3) + k * 60_000), new Date(Date.UTC(2026, 8, 1) - k * 60_000)],
+          [account, site, randomBytes(20).toString('hex'), randomBytes(40), reviewer, new Date(Date.UTC(2030, 0, 1) + k * 60_000), new Date(Date.UTC(2026, 8, 1) - k * 60_000)],
         );
         ids.push(rows[0]!.id);
       }

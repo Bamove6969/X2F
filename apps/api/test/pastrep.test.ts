@@ -13,7 +13,7 @@ import type { Deps } from '../src/app.js';
 import { openKey } from '../src/auth/pgp.js';
 import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, startHold } from '../src/auth/hold.js';
 import { PAST_REP_FINISHES_PER_HOUR, PAST_REP_STARTS_PER_HOUR } from '../src/limits.js';
-import { PAST_REP_ARCHIVE_HOSTS, PAST_REP_SITES, pastRepChallenge } from '../src/pastrep/challenge.js';
+import { PAST_REP_ARCHIVE_HOSTS, PAST_REP_SITES, archivedOriginalHost, pastRepChallenge } from '../src/pastrep/challenge.js';
 import { PAST_REP_KEY_AAD, PAST_REP_SIG_AAD } from '../src/pastrep/routes.js';
 import { PAST_REP_SIGNING_HELP } from '../src/pastrep/help.js';
 import { verifyPastRepSignature } from '../src/pastrep/verify.js';
@@ -111,6 +111,20 @@ describe('pastRepChallenge', () => {
         'Issued: 2026-11-01T12:00:00Z',
       ].join('\n'),
     );
+  });
+
+  // Task 11 review M2: the moderator sees which site the archive copied, read from the link alone.
+  it('archivedOriginalHost names the archived page\'s host from the link, or null when the link does not say', () => {
+    expect(archivedOriginalHost(URL_OK)).toBe('localmonero.co');
+    expect(archivedOriginalHost('https://web.archive.org/web/20230101000000id_/https://www.localmonero.co/ad/1')).toBe('www.localmonero.co');
+    expect(archivedOriginalHost('https://web.archive.org/web/2023/localmonero.co/user/x')).toBe('localmonero.co');
+    expect(archivedOriginalHost('https://web.archive.org/web/2023/https://evil.example/localmonero.co')).toBe('evil.example');
+    expect(archivedOriginalHost('https://archive.ph/2023.01.01-000000/https://agoradesk.com/u/x')).toBe('agoradesk.com');
+    expect(archivedOriginalHost('https://archive.ph/newest/https://agoradesk.com/u/x')).toBe('agoradesk.com');
+    expect(archivedOriginalHost('https://archive.ph/AbCd1')).toBeNull();
+    expect(archivedOriginalHost('https://archive.is/AbCd1/x')).toBeNull();
+    expect(archivedOriginalHost('https://web.archive.org/')).toBeNull();
+    expect(archivedOriginalHost('https://web.archive.org/web/2023/https://web.archive.org/web/2022/https://x.co/')).toBeNull();
   });
 
   it('the sites and archive hosts are the plan\'s lists', () => {

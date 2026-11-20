@@ -108,3 +108,34 @@ export function checkEvidenceUrl(url: unknown): string {
   if (u.href.length > PAST_REP_URL_MAX) throw new ApiError(400, 'bad-url');
   return u.href;
 }
+
+/**
+ * Review M2 (Task 11, lead call): the host of the page an archive link archived, read from the link
+ * itself so the moderator sees which site the archive copied, not only the archive's own host.
+ * Purely syntactic, like `checkEvidenceUrl`: no lookup, no fetch. Wayback links name the original
+ * after the timestamp (`/web/<timestamp>[flags]/<original>`), as do archive.today's long forms
+ * (`/<timestamp>/<original>`, `/newest/<original>`). A short archive.today id (`/AbCd1`) does not
+ * name it: null, and the moderator reads the address on the archived page itself. The `www.` prefix
+ * is kept: the moderator compares exactly what is there.
+ */
+export function archivedOriginalHost(evidenceUrl: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(evidenceUrl);
+  } catch {
+    return null;
+  }
+  const path = u.pathname + u.search;
+  const m = u.hostname === 'web.archive.org' ? /^\/web\/[^/]+\/(.+)$/.exec(path) : /^\/[^/]+\/(.+)$/.exec(path);
+  if (!m) return null;
+  const rest = m[1]!;
+  const withScheme = /^https?:\/*/i.test(rest) ? rest.replace(/^(https?):\/*/i, '$1://') : u.hostname === 'web.archive.org' ? `https://${rest}` : null;
+  if (withScheme === null) return null;
+  try {
+    const original = new URL(withScheme);
+    const host = original.hostname.replace(/\.$/, '');
+    return host.includes('.') && !(PAST_REP_ARCHIVE_HOSTS as readonly string[]).includes(host) ? host : null;
+  } catch {
+    return null;
+  }
+}

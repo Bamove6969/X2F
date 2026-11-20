@@ -10,6 +10,7 @@
  *   400 `bad-signature`, `wrong-text`, `wrong-key` (each with `help`, PAST_REP_SIGNING_HELP),
  *   `challenge-expired` (also for an unknown id or another account's challenge); 409
  *   `challenge-used`, `fingerprint-claimed` (another account's live claim on the key), `site-claimed`.
+ *   409 `key-unavailable` when the key is a staff or owner login key (lead call, Task 11 review M3).
  *   The only route that creates a claim, and only after the signature verifies.
  * - `GET /v1/account/past-rep` → the caller's own claims; `DELETE /v1/account/past-rep/:id` → removed.
  *
@@ -189,6 +190,14 @@ export function pastRepRoutes(app: FastifyInstance): void {
         [c.fingerprint, accountId, LIVE],
       );
       if (clash.rows.length > 0) throw new ApiError(409, 'fingerprint-claimed');
+      // Lead call (Task 11 review M3): a staff or owner login key never backs a trader's claim. Asked
+      // only here, after the signature proved the key, and answered as the ban list answers, so it
+      // never tells anyone that a key is a staff member's.
+      const staffKey = await db.query(
+        "select 1 from pgp_keys k join accounts a on a.id = k.account_id where k.fingerprint = $1 and a.kind in ('staff', 'owner')",
+        [c.fingerprint],
+      );
+      if (staffKey.rows.length > 0) throw new ApiError(409, 'key-unavailable');
       if (await siteClaimed(db, accountId, c.site)) throw new ApiError(409, 'site-claimed');
       let inserted: string;
       try {
