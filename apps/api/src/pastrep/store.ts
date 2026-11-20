@@ -3,7 +3,8 @@
  * volume counts toward the traded total ONLY through it; migration 310).
  *
  * - `setVerifiedPastRepUsd` is the one writer of `verified_usd_cents`. Plan 4's moderator route calls
- *   it (tripwire NEEDS_P4_PASTREP_VERIFIED_USD); the staff perm check and the activity-log entry are
+ *   it (`PUT /staff/v1/past-rep/:id/verified-usd`, staff/pastrep.ts; its screen is staff-web's PastRep,
+ *   Plan 5 Task 11, which retired the tripwire NEEDS_P4_PASTREP_VERIFIED_USD); the staff perm check and the activity-log entry are
  *   that route's, and it passes the signed-in staff member's real role (`req.staff.role`) as the actor.
  *   Here: the actor's role must be in `PASTREP_VERIFY_ROLES` (owner 2026-11-02: senior moderators and
  *   the owner only; else `forbidden`), the account must match it (an enabled `staff` account for
@@ -75,6 +76,12 @@ export async function setVerifiedPastRepUsd(
 export const verifiedPastRepUsdSql = (account: string): string =>
   `coalesce((select sum(pr.verified_usd_cents) from past_reputation pr
      where pr.account_id = ${account} and pr.status = '${COUNTS}' and pr.verified_usd_cents is not null), 0)::bigint`;
+
+/**
+ * SQL (text): claim `alias`'s verified figure in US cents as text, or null, for a read that shows it
+ * (Task 11's staff list). Here so the column name stays in this file.
+ */
+export const verifiedUsdCentsTextSql = (alias: string): string => `${alias}.verified_usd_cents::text`;
 
 /** The sum, in US cents, of the account's APPROVED past-reputation claims with a verified figure (0 when none). */
 export async function verifiedPastRepUsdCents(q: Queryable, accountId: string): Promise<number> {

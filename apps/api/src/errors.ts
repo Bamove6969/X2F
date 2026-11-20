@@ -216,6 +216,12 @@ export type ApiErrorCode =
   | 'owner-needs-pgp'
   // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
   | 'not-live'
+  // Plan 5 Task 11 (P5-A23): a moderator approves only after ticking that the archive shows the full fingerprint.
+  | 'confirm-fingerprint'
+  // Review M2 (lead call): and that the archived page is the trader's profile on the claimed site.
+  | 'confirm-profile'
+  // Review M3 (lead call): a moderator never approves a claim backed by one of their own login keys.
+  | 'reviewer-own-key'
   // Plan 5, Task 10: past reputation claims.
   | 'bad-site'
   | 'bad-url'
