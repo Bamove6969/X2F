@@ -12,6 +12,42 @@ import { AMOUNT, buyerCancels, copiedFunding, dismissTips, FEE, fund, holdToRele
 
 const SIZES: Array<[string, Size]> = [['phone 390×844', PHONE], ['desktop 1280×800', DESKTOP]];
 
+/**
+ * A 1-minute time to pay (the method's window is fixed at take and signed into the terms the
+ * moderation attests, so it is set before the poster accepts; the set-once guard is lifted for this
+ * one update in the throwaway database).
+ */
+async function oneMinuteToPay(code: string): Promise<void> {
+  await sql('alter table trades disable trigger trades_set_once_pay_window');
+  try {
+    await sql('update trades set pay_window_min = 1 where code = $1', [code]);
+  } finally {
+    await sql('alter table trades enable trigger trades_set_once_pay_window');
+  }
+}
+
+/** Past the time to pay, the seller taps Cancel and get refund (the buyer stays silent). */
+async function cancelAndRefund(page: Page): Promise<void> {
+  await shows(page, /didn't mark the payment in time/, 3 * 60_000);
+  await page.getByRole('button', { name: 'Cancel and get refund' }).click();
+  await shows(page, /Your XMR is on its way back/);
+}
+
+/** The trade ends refunded; the seller's wallet gets everything less the network fee, the fee wallet nothing. */
+async function refundLanded(o: { buyer: Parameters<typeof untilState>[0]; seller: { wallet: Parameters<typeof receivedIn>[0] }; code: string }, funds: bigint): Promise<void> {
+  const v = await untilState(o.buyer, o.code, ['refunded']);
+  expect(v.txHash).toMatch(/^[0-9a-f]{64}$/);
+  await mine(12);
+  const network = await txFee(v.txHash!);
+  expect(await receivedIn(o.seller.wallet, v.txHash!)).toBe(funds - network);
+  const fw = await feeWallet();
+  try {
+    expect(await receivedIn(fw, v.txHash!)).toBe(0n);
+  } finally {
+    await fw.close();
+  }
+}
+
 test("the production build serves monero-ts's wallet worker (Task 12: without it no escrow wallet starts in a browser)", () => {
   // KNOWN GAP: until it does, stack.ts copies monero-ts's file in so the trade specs can run.
   expect(stack().buildServesMoneroWorker).toBe(true);
@@ -221,38 +257,37 @@ for (const [label, size] of SIZES) {
       });
     });
 
-    test("buyer no-show: past the time to pay the seller taps Cancel and get refund; the buyer stays silent with the room open; the refund lands with the seller's page closed", async ({ browser }) => {
-      // A 1-minute time to pay (the method's window is fixed at take and signed into the terms the
-      // moderation attests, so it is set before the poster accepts; the set-once guard is lifted
-      // for this one update in the throwaway database).
-      const o = await openTrade(browser, size, 'seller', {
-        beforeAccept: async (code) => {
-          await sql('alter table trades disable trigger trades_set_once_pay_window');
-          try {
-            await sql('update trades set pay_window_min = 1 where code = $1', [code]);
-          } finally {
-            await sql('alter table trades enable trigger trades_set_once_pay_window');
-          }
-        },
-      });
+    // Gap 4 (20 Nov): the no-show refund is seller-built (builder seller, co-signer mod, Task 25), so
+    // it needs the seller's device until the moderator has submitted it. The room says to keep the
+    // page open until then, and when it may close; a page closed too early pauses the refund until
+    // the trade is opened again on that device.
+    test("buyer no-show: past the time to pay the seller taps Cancel and get refund; the buyer stays silent with the room open; the room says to keep the page open, then that it may close; closed then (the whole browser profile gone), the refund lands", async ({ browser }) => {
+      const o = await openTrade(browser, size, 'seller', { beforeAccept: oneMinuteToPay });
       await inRooms(o, async () => {
         const funds = await fund(o);
-        await shows(o.sellerPage, /didn't mark the payment in time/, 3 * 60_000);
-        await o.sellerPage.getByRole('button', { name: 'Cancel and get refund' }).click();
-        await shows(o.sellerPage, /Your XMR is on its way back/);
-        await o.sellerPage.waitForTimeout(10_000);
+        await cancelAndRefund(o.sellerPage);
+        await shows(o.sellerPage, /Keep this page open while this device signs the refund/);
+        await shows(o.sellerPage, /You can close this page now/, 3 * 60_000);
+        expect((await tradeView<TradeView>(o.seller, o.code)).state).toBe('settling'); // not in a block yet: the rest needs no seller
         await o.sellerPage.context().close();
-        const v = await untilState(o.buyer, o.code, ['refunded']);
-        expect(v.txHash).toMatch(/^[0-9a-f]{64}$/);
-        await mine(12);
-        const network = await txFee(v.txHash!);
-        expect(await receivedIn(o.seller.wallet, v.txHash!)).toBe(funds - network);
-        const fw = await feeWallet();
-        try {
-          expect(await receivedIn(fw, v.txHash!)).toBe(0n);
-        } finally {
-          await fw.close();
-        }
+        await refundLanded(o, funds);
+      });
+    });
+
+    test("buyer no-show: the seller closes the page while it still says to keep it open; the refund waits; opening the trade again on the same device finishes it", async ({ browser }) => {
+      const o = await openTrade(browser, size, 'seller', { beforeAccept: oneMinuteToPay });
+      await inRooms(o, async () => {
+        const funds = await fund(o);
+        await cancelAndRefund(o.sellerPage);
+        await shows(o.sellerPage, /Keep this page open while this device signs the refund/);
+        const context = o.sellerPage.context();
+        await o.sellerPage.close(); // the tab only: the device keeps its escrow store
+        await expect(untilState(o.buyer, o.code, ['refunded'], 90_000)).rejects.toThrow(/is settling/);
+        o.sellerPage = await context.newPage();
+        await dismissTips(o.sellerPage);
+        await o.sellerPage.goto(`/trade/${o.code}`);
+        await shows(o.sellerPage, /You can close this page now|Your refund is confirming|Your XMR is back/, 3 * 60_000);
+        await refundLanded(o, funds);
       });
     });
 
