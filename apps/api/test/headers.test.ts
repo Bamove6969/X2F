@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ESCROW_WORKER_FILE, MONERO_WORKER_PATH, SERVICE_WORKER_CSP, cspFor, escrowWorkerCspFor, moneroWorkerCspFor, ocrWorkerCspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
+import { ASSET_SCRIPT_CSP, ESCROW_WORKER_FILE, MONERO_WORKER_PATH, SERVICE_WORKER_CSP, cspFor, escrowWorkerCspFor, moneroWorkerCspFor, ocrWorkerCspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
 import { testApp } from './helpers/app.js';
 
 const RELAY = 'wss://relay.x2f.test';
@@ -28,6 +28,8 @@ beforeAll(async () => {
   await mkdir(join(root, 'assets'));
   await writeFile(join(root, 'index.html'), '<!doctype html><html><body><div id="root"></div></body></html>');
   await writeFile(join(root, 'assets', 'app-abc123.js'), 'console.log(1)');
+  await writeFile(join(root, 'assets', 'app-abc123.mjs'), 'console.log(1)');
+  await writeFile(join(root, 'assets', 'app-abc123.css'), 'body{}');
   await writeFile(join(root, 'sw.js'), "self.addEventListener('push', () => undefined);");
   // Plan 5 Task 13: the self-hosted OCR files (tools/copy-ocr-assets.ts copies the real ones).
   await mkdir(join(root, 'ocr'));
@@ -93,8 +95,19 @@ describe('security headers', () => {
     },
   );
 
-  it('a built asset gets the headers, no CSP and a long cache', async () => {
-    const res = await app.inject({ method: 'GET', url: '/assets/app-abc123.js' });
+  it("a built script gets the headers, a deny-all CSP (review M-1: started as a worker, it may reach nothing) and a long cache", async () => {
+    expect(ASSET_SCRIPT_CSP).toBe("default-src 'none'");
+    for (const url of ['/assets/app-abc123.js', '/assets/app-abc123.mjs']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expectBaseHeaders(res.headers);
+      expect(res.headers['content-security-policy'], url).toBe("default-src 'none'");
+      expect(res.headers['cache-control'], url).toBe('public, max-age=31536000, immutable');
+    }
+  });
+
+  it('a built asset that is not a script gets the headers, no CSP and a long cache', async () => {
+    const res = await app.inject({ method: 'GET', url: '/assets/app-abc123.css' });
     expect(res.statusCode).toBe(200);
     expectBaseHeaders(res.headers);
     expect(res.headers['content-security-policy']).toBeUndefined();
@@ -181,10 +194,10 @@ describe('the OCR files (Plan 5 Task 13, Global Constraints: the worker\'s own C
     }
   });
 
-  it('only the ocr folder gets it: a built asset named ocr-… keeps no CSP', async () => {
+  it('only the ocr folder gets it: a built asset named ocr-… gets the deny-all script CSP (review M-1)', async () => {
     const res = await app.inject({ method: 'GET', url: '/assets/ocr-abc123.js' });
     expect(res.statusCode).toBe(200);
-    expect(res.headers['content-security-policy']).toBeUndefined();
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'");
   });
 });
 
@@ -217,10 +230,10 @@ describe("monero-ts's wallet worker (Gap 1: no escrow wallet could start in a br
     expect(res.headers['content-security-policy']).toBeUndefined();
   });
 
-  it('only the monero folder gets it: a built asset named monero-… keeps no CSP and its long cache', async () => {
+  it('only the monero folder gets it: a built asset named monero-… gets the deny-all script CSP (review M-1) and its long cache', async () => {
     const res = await app.inject({ method: 'GET', url: '/assets/monero-abc123.js' });
     expect(res.statusCode).toBe(200);
-    expect(res.headers['content-security-policy']).toBeUndefined();
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'");
     expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
   });
 });
@@ -244,20 +257,56 @@ describe('every worker script carries its own CSP (lead call 20 Nov: a worker ta
     }
   });
 
-  it('the escrow worker is served with it, and keeps the long cache of a hashed asset', async () => {
+  it('the escrow worker is served with it, revalidated on every load with an ETag like the monero worker (review m-1: its policy follows X2F_ORIGINS, which its hash does not cover)', async () => {
     const res = await app.inject({ method: 'GET', url: '/assets/escrow-worker-CzS2KofQ.js' });
     expect(res.statusCode).toBe(200);
     expectBaseHeaders(res.headers);
     expect(String(res.headers['content-type'])).toMatch(/^application\/javascript/);
     expect(res.headers['content-security-policy']).toBe(ESCROW_CSP);
-    expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    expect(res.headers['cache-control']).toBe('no-cache');
+    const etag = res.headers.etag;
+    expect(typeof etag).toBe('string');
+    const again = await app.inject({ method: 'GET', url: '/assets/escrow-worker-CzS2KofQ.js', headers: { 'if-none-match': String(etag) } });
+    expect(again.statusCode).toBe(304);
   });
 
-  it('only that file gets it: other assets, near misses included, keep no CSP', async () => {
+  it('only that file gets it: other scripts, near misses included, get the deny-all script CSP (review M-1: a renamed escrow worker fails closed)', async () => {
     for (const url of ['/assets/worker-CzS2KofQ.js', '/assets/escrow-worker-CzS2Ko.js', '/assets/x-escrow-worker-CzS2KofQ.js', '/assets/app-abc123.js']) {
       const res = await app.inject({ method: 'GET', url });
       expect(res.statusCode, url).toBe(200);
-      expect(res.headers['content-security-policy'], url).toBeUndefined();
+      expect(res.headers['content-security-policy'], url).toBe("default-src 'none'");
+      expect(res.headers['cache-control'], url).toBe('public, max-age=31536000, immutable');
+    }
+  });
+
+  it('review m-3: serveWeb refuses to start unless assets/ holds exactly one escrow worker', async () => {
+    const opts = { relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] };
+    const cases: Array<[string, string[]]> = [
+      ['none (renamed)', ['escrow-worker-CzS2Ko.js', 'worker-CzS2KofQ.js', 'app-abc123.js']],
+      ['two', ['escrow-worker-CzS2KofQ.js', 'escrow-worker-AbCdEfGh.js']],
+    ];
+    for (const [label, files] of cases) {
+      const dir = await mkdtemp(join(tmpdir(), 'x2f-web-m3-'));
+      const other = (await testApp()).app;
+      try {
+        await mkdir(join(dir, 'assets'));
+        await writeFile(join(dir, 'index.html'), '<!doctype html>');
+        for (const f of files) await writeFile(join(dir, 'assets', f), 'x');
+        await expect(serveWeb(other, { root: dir, ...opts }), label).rejects.toThrow(/exactly one escrow worker.*found/);
+      } finally {
+        await other.close();
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+    // A root with no assets folder at all (nothing built to serve as the escrow worker) still starts.
+    const bare = await mkdtemp(join(tmpdir(), 'x2f-web-m3-'));
+    const ok = (await testApp()).app;
+    try {
+      await writeFile(join(bare, 'index.html'), '<!doctype html>');
+      await expect(serveWeb(ok, { root: bare, ...opts })).resolves.toBeUndefined();
+    } finally {
+      await ok.close();
+      await rm(bare, { recursive: true, force: true });
     }
   });
 

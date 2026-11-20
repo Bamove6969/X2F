@@ -19,6 +19,13 @@ function escrowWorkerFile(): string {
   return `/assets/${files[0]!}`;
 }
 
+/** The page's entry script (review M-1 started it as a worker to get round the page's connect-src). */
+function pageEntryFile(): string {
+  const files = readdirSync(`${DIST}/assets`).filter((f) => /^index-[A-Za-z0-9_-]+\.js$/.test(f));
+  expect(files).toHaveLength(1);
+  return `/assets/${files[0]!}`;
+}
+
 interface Verdict {
   /** The CSP refused it (the worker saw a securitypolicyviolation for it). */
   refused: boolean;
@@ -103,6 +110,24 @@ test.describe('worker CSPs (lead call 20 Nov)', () => {
       `default-src 'none'; script-src ${ocr} 'wasm-unsafe-eval'; connect-src ${ocr}; worker-src 'none'`,
     );
     expect((await request.get('/sw.js')).headers()['content-security-policy']).toBe("default-src 'none'");
+    // Review M-1: every other built script is deny-all, so started as a worker it may reach nothing.
+    const others = readdirSync(`${DIST}/assets`).filter((f) => /\.m?js$/.test(f) && !/^escrow-worker-/.test(f));
+    expect(others.length).toBeGreaterThan(0);
+    for (const f of others) {
+      expect((await request.get(`/assets/${f}`)).headers()['content-security-policy'], f).toBe("default-src 'none'");
+    }
+  });
+
+  test("review M-1: a page script started as a worker cannot fetch an unlisted host (the page's own connect-src cannot be got round)", async ({ page }) => {
+    await page.goto('/');
+    const entry = pageEntryFile();
+    const w = await workerAt(page, entry, () =>
+      page.evaluate((p) => {
+        (globalThis as { __p?: unknown }).__p = new Worker(p, { type: 'module' });
+      }, entry),
+    );
+    expect(await tryIn(w, 'fetch', `${UNLISTED}/x`)).toEqual({ refused: true, directive: 'connect-src' });
+    expect(await tryIn(w, 'fetch', `${new URL(page.url()).origin}/v1/news`)).toEqual({ refused: true, directive: 'connect-src' });
   });
 
   test('inside the escrow worker, and the monero-ts worker it starts, an unlisted origin is refused', async ({ page }) => {

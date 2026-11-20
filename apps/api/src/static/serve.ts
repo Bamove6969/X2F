@@ -1,3 +1,4 @@
+import { readdir } from 'node:fs/promises';
 import type { Socket } from 'node:net';
 import { join, resolve, sep } from 'node:path';
 import { SITE_SCHEMES, clearTextAllowed, plainOrigin } from '../origins.js';
@@ -213,11 +214,40 @@ export function escrowWorkerCspFor(o: ConnectOrigins & Pick<WebOptions, 'siteOri
 export const SERVICE_WORKER_CSP = "default-src 'none'";
 
 /**
+ * Review M-1 (20 Nov): the CSP on every other script under /assets/. A `<script>` or `import` load
+ * ignores a response's CSP, so the page is unaffected; but the page's `worker-src 'self'` lets page
+ * code start any same-origin script as a dedicated worker, which takes its CSP from its own response
+ * and so ran under none (a way round the page's connect-src). Now such a worker may reach nothing,
+ * and an escrow worker that a build ever named otherwise fails closed instead of running unpoliced.
+ */
+export const ASSET_SCRIPT_CSP = "default-src 'none'";
+
+/**
  * The escrow worker's file, exactly as apps/web/vite.config.ts `ESCROW_WORKER_FILE_NAMES` emits it
  * (assets/escrow-worker-<8-character hash>.js; apps/web/test/bundle.test.ts pins both), so a rename
  * can never silently leave it without its CSP.
  */
 export const ESCROW_WORKER_FILE = /[\\/]assets[\\/]escrow-worker-[A-Za-z0-9_-]{8}\.js$/;
+
+/**
+ * Review m-3: when the build has an assets folder, it must hold exactly one file named as
+ * ESCROW_WORKER_FILE says, or serveWeb refuses to start (bundle.test pins this at build time; this
+ * catches a build or rename that slipped past it before any trader's keys run unpoliced).
+ */
+async function checkEscrowWorker(root: string): Promise<void> {
+  const assets = join(resolve(root), 'assets');
+  let names: string[];
+  try {
+    names = await readdir(assets);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+  const found = names.filter((n) => ESCROW_WORKER_FILE.test(join(assets, n)));
+  if (found.length !== 1) {
+    throw new Error(`web: ${assets} must hold exactly one escrow worker (escrow-worker-<8-character hash>.js); found ${found.length}`);
+  }
+}
 
 /** The web settings from the environment; `null` when this process does not serve the web app. */
 export function webOptionsFromEnv(env: Record<string, string | undefined>): WebOptions | null {
@@ -317,6 +347,7 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
   const ocrCsp = ocrWorkerCspFor(o);
   const moneroCsp = moneroWorkerCspFor(o);
   const escrowCsp = escrowWorkerCspFor(o);
+  await checkEscrowWorker(o.root);
   const ocrDir = join(resolve(o.root), 'ocr') + sep;
   const moneroDir = join(resolve(o.root), 'monero') + sep;
   await app.register(async (scope) => {
@@ -342,9 +373,13 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
           // The service worker (Task 19) keeps its name across releases: always revalidated.
           void reply.header('content-security-policy', SERVICE_WORKER_CSP).header('cache-control', 'no-cache');
         } else if (ESCROW_WORKER_FILE.test(path)) {
-          // The escrow worker (lead call 20 Nov): its own CSP; hashed, so the long cache.
-          void reply.header('content-security-policy', escrowCsp).header('cache-control', IMMUTABLE);
+          // The escrow worker (lead call 20 Nov): its own CSP. Review m-1: revalidated (ETag) like the
+          // monero worker, not cached for a year, since its policy follows X2F_ORIGINS, which the
+          // file's hash does not cover: a tightened policy must reach browsers that hold the file.
+          void reply.header('content-security-policy', escrowCsp).header('cache-control', 'no-cache');
         } else if (/[\\/]assets[\\/]/.test(path)) {
+          // Review M-1: any other script, started as a worker, may reach nothing (ASSET_SCRIPT_CSP).
+          if (/\.m?js$/i.test(path)) void reply.header('content-security-policy', ASSET_SCRIPT_CSP);
           void reply.header('cache-control', IMMUTABLE);
         }
       },
