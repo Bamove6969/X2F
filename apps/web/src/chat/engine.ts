@@ -247,6 +247,18 @@ export interface ChatEngineDeps {
   modSigningPublic: string;
   /** The device clock (ms); default Date.now(). */
   now?: () => number;
+  /**
+   * Review m1: runs `fn` holding the exclusive lock `name` across this origin's tabs (each tab has its
+   * own worker and engine over the one IndexedDB store). Default navigator.locks; where a browser has
+   * none, `fn` runs unlocked and the store's `create` alone keeps the first identity.
+   */
+  lock?: (name: string, fn: () => Promise<unknown>) => Promise<unknown>;
+}
+
+/** Review m1: navigator.locks where there is one (workers have it), else no lock. */
+function defaultLock(name: string, fn: () => Promise<unknown>): Promise<unknown> {
+  const locks = (globalThis as { navigator?: { locks?: { request(name: string, fn: () => Promise<unknown>): Promise<unknown> } } }).navigator?.locks;
+  return locks ? locks.request(name, fn) : fn();
 }
 
 const hex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
@@ -382,14 +394,23 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     };
   };
 
-  /** Makes, saves, then registers this device's chat identity; false when another device holds the role. */
+  /**
+   * Makes, saves, then registers this device's chat identity; null when another device holds the role.
+   * Review m1, two layers against two tabs of this device making one each: the whole step holds the
+   * per-chat lock `x2f-chat-identity:<chat>`, and a new record is saved only if none exists yet
+   * (`store.create`, one transaction); a tab that loses that goes on with the record that won.
+   */
   async function ensureIdentity(chat: string, view: ChatApiView): Promise<ChatRecord | null> {
+    return (await (d.lock ?? defaultLock)(`x2f-chat-identity:${chat}`, () => ensureIdentityLocked(chat, view))) as ChatRecord | null;
+  }
+
+  async function ensureIdentityLocked(chat: string, view: ChatApiView): Promise<ChatRecord | null> {
     let rec = await d.store.load(chat);
     if (rec && rec.role !== view.role) return null;
     if (!rec) {
       if (view.mySignPublic !== null) return null;
       const me = await d.newIdentity();
-      rec = {
+      const made: ChatRecord = {
         v: 2,
         chat,
         role: view.role,
@@ -401,7 +422,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         cursor: '0',
         receipts: [],
       };
-      await d.store.save(rec);
+      if (await d.store.create(made)) rec = made;
+      else {
+        // Another tab saved one first: that one is this device's identity (it may be registered already).
+        me.signSecret.fill(0);
+        me.boxSecret.fill(0);
+        rec = await d.store.load(chat);
+        if (!rec || rec.role !== view.role) return null;
+      }
     }
     if (!rec.registered) {
       if (view.mySignPublic !== null && view.mySignPublic !== rec.identity.signPublic) return null;

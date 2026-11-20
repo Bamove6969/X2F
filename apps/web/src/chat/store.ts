@@ -148,6 +148,12 @@ export interface ChatStore {
   /** The chat's record; a v1 record is upgraded (its text dropped) and saved back before it is returned. */
   load(chat: string): Promise<ChatRecord | null>;
   save(rec: ChatRecord): Promise<void>;
+  /**
+   * Review m1: saves `rec` only when the chat has no record yet, checked and written in one IndexedDB
+   * transaction; true when it was saved. Two tabs (two workers over one database) can each make a
+   * chat identity, and this keeps the second from replacing the first's.
+   */
+  create(rec: ChatRecord): Promise<boolean>;
   delete(chat: string): Promise<void>;
   /** Every chat code with a record on this device. */
   list(): Promise<string[]>;
@@ -266,7 +272,25 @@ export async function openChatStore(o: { indexedDB?: IDBFactory; crypto?: Crypto
     tx.objectStore(CHATS).put({ iv, ct }, rec.chat);
     await done(tx);
   };
+  const create = async (rec: ChatRecord): Promise<boolean> => {
+    const { db, key } = await conn();
+    // Encrypted first: nothing may await inside the transaction, or it would end before the write.
+    const iv = cr.getRandomValues(new Uint8Array(12));
+    const ct = await cr.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad(rec.chat) }, key, new TextEncoder().encode(JSON.stringify(rec)));
+    const tx = db.transaction(CHATS, 'readwrite');
+    const os = tx.objectStore(CHATS);
+    let created = false;
+    const count = os.count(rec.chat);
+    count.onsuccess = () => {
+      if (count.result !== 0) return;
+      os.add({ iv, ct }, rec.chat);
+      created = true;
+    };
+    await done(tx);
+    return created;
+  };
   return {
+    create,
     async load(chat) {
       const { db, key } = await conn();
       const raw = (await req(db.transaction(CHATS).objectStore(CHATS).get(chat))) as { iv?: unknown; ct?: unknown } | undefined;
@@ -348,6 +372,11 @@ export function memoryChatStore(): ChatStore & { records: Map<string, string>; a
     },
     async save(rec: ChatRecord) {
       records.set(rec.chat, JSON.stringify(rec));
+    },
+    async create(rec: ChatRecord) {
+      if (records.has(rec.chat)) return false;
+      records.set(rec.chat, JSON.stringify(rec));
+      return true;
     },
     async delete(chat: string) {
       records.delete(chat);
