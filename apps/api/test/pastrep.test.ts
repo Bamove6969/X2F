@@ -436,6 +436,28 @@ describe('storage (R16)', () => {
 });
 
 describe('one fingerprint, one account (P5-A24)', () => {
+  // Lead call (Task 11 review M3): a staff or owner login key never backs a trader's past-reputation
+  // claim. Checked only at finish, after the signature proves the key, with the ban list's answer
+  // (key-unavailable), so nobody learns from it that a key belongs to staff.
+  it('a key that is a staff or owner login key: start succeeds, finish → 409 key-unavailable, no row', async () => {
+    for (const kind of ['staff', 'owner'] as const) {
+      const key = await gen();
+      const staff = await seedAccount(deps, { loginName: `staffkey${++n}x`, kind });
+      await deps.db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, now())', [staff, key.fingerprint, Buffer.from('x')]);
+      const { b } = await login();
+      const c = await start(b, key);
+      const res = await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed: await clearsign(c.text, key) });
+      expect([res.statusCode, res.json().error], kind).toEqual([409, 'key-unavailable']);
+      expect(await rows()).toEqual([]);
+    }
+    // A trader's own login key is no staff key: it may back their claim.
+    const own = await gen();
+    const t = await login();
+    await deps.db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, now())', [t.id, own.fingerprint, Buffer.from('x')]);
+    const c = await start(t.b, own);
+    expect((await t.b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed: await clearsign(c.text, own) })).statusCode).toBe(201);
+  });
+
   it('the same fingerprint claimed by a second account: start succeeds, finish → 409 fingerprint-claimed', async () => {
     const a = await login();
     const c1 = await start(a.b, ed);
