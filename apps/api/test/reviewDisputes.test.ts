@@ -266,6 +266,63 @@ describe('the database holds the rules', () => {
     await expect(deps.db.query(`update review_disputes set status = 'removed' where review_id = $1`, [id])).rejects.toThrow(/decided once/);
   });
 
+  // Review 2026-11-20 M1 (probes P1, P5): a dispute is born open, with no decision.
+  it('a dispute cannot be inserted already decided, even with a staff decider', async () => {
+    const [seller, buyer] = [await person(), await person()];
+    const { id } = await reviewed(seller, buyer, ONE);
+    const modId = (await seedStaff(deps, { role: 'mod' })).id;
+    for (const [status, by] of [['removed', seller.id], ['comments-removed', modId], ['stands', modId]] as const) {
+      await expect(
+        deps.db.query(
+          `insert into review_disputes (review_id, reason_text, status, opened_at, decided_by, decided_at, decision_reason) values ($1, 'x', $2, now(), $3, now(), $4)`,
+          [id, status, by, DECISION],
+        ),
+        status,
+      ).rejects.toThrow(/born open/);
+    }
+    await expect(deps.db.query('update reviews set removed = true where id = $1', [id])).rejects.toThrow(/final/);
+  });
+
+  it('a decision names a staff account: a trader as decided_by is refused', async () => {
+    const [seller, buyer] = [await person(), await person()];
+    const { id } = await reviewed(seller, buyer, ONE);
+    await dispute(seller, id);
+    await expect(
+      deps.db.query(`update review_disputes set status = 'removed', decided_by = $2, decided_at = now(), decision_reason = $3 where review_id = $1`, [id, seller.id, DECISION]),
+    ).rejects.toThrow(/staff/);
+    await expect(deps.db.query('update reviews set removed = true where id = $1', [id])).rejects.toThrow(/final/);
+  });
+
+  // Review 2026-11-20 M2 (probe P2): a dispute row is the audit of its decision and the one-per-review rule.
+  it('a dispute cannot be deleted or truncated; the subject cannot dispute again', async () => {
+    const [seller, buyer] = [await person(), await person()];
+    const { id } = await reviewed(seller, buyer, ONE);
+    await dispute(seller, id);
+    const did = await disputeIdOf(id);
+    await expect(deps.db.query('delete from review_disputes where id = $1', [did])).rejects.toThrow(/kept/);
+    expect((await decide(mod, did, { outcome: 'stands', reason: DECISION })).statusCode).toBe(200);
+    await expect(deps.db.query('delete from review_disputes where id = $1', [did])).rejects.toThrow(/kept/);
+    await expect(deps.db.query('truncate review_disputes')).rejects.toThrow(/kept/);
+    expect(errorOf(await dispute(seller, id))).toBe('review-disputed');
+  });
+
+  // Review 2026-11-20 m1 (probe P5): the stars stay inside the comments-removed exception itself.
+  it('a comments-removed trim that also changes the stars, or turns the review Neutral, is refused', async () => {
+    const [seller, buyer] = [await person(), await person()];
+    const { id } = await reviewed(seller, buyer, ONE);
+    await dispute(seller, id);
+    const did = await disputeIdOf(id);
+    // The dispute is decided directly, so the review is still untrimmed when the trim is tried.
+    const modId = (await seedStaff(deps, { role: 'mod' })).id;
+    await deps.db.query(`update review_disputes set status = 'comments-removed', decided_by = $2, decided_at = now(), decision_reason = $3 where id = $1`, [did, modId, DECISION]);
+    await expect(deps.db.query('update reviews set note = null, comments_removed = true, stars = 5 where id = $1', [id])).rejects.toThrow(/final/);
+    await expect(
+      deps.db.query(`update reviews set note = null, comments_removed = true, phrases = '{}', neutral = true, stars = null where id = $1`, [id]),
+    ).rejects.toThrow(/final/);
+    await deps.db.query('update reviews set note = null, comments_removed = true where id = $1', [id]);
+    expect((await deps.db.query<{ stars: number }>('select stars from reviews where id = $1', [id])).rows[0]!.stars).toBe(1);
+  });
+
   it('an overturned trade erases its reviews and their disputes (R-011)', async () => {
     const [seller, buyer] = [await person(), await person()];
     const { id, code } = await reviewed(seller, buyer, ONE);

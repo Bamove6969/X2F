@@ -4,7 +4,7 @@ import type { Queryable } from '../db/pool.js';
 import { reviewHeldSql } from '../traders/finalOutcome.js';
 
 /**
- * Plan 5 Task 19 (Revision 2026-10-29b, owner): review disputes (317_review_disputes.sql).
+ * Plan 5 Task 19 (Revision 2026-10-29b, owner): review disputes (752_review_disputes.sql).
  *
  * The person a review is about disputes it with a free-text reason. While the dispute is open the
  * review shows "Under review" and counts in no figure (% positive, Trusted, the other badges, the
@@ -131,7 +131,7 @@ export type DecideResult = 'ok' | 'not-found' | 'decided' | 'bad-removal';
 
 /**
  * Decides dispute `id`, in the caller's transaction: the dispute row first (locked), then the review
- * as the outcome says (317's reviews_final trigger allows exactly these writes once the dispute says
+ * as the outcome says (752's reviews_final trigger allows exactly these writes once the dispute says
  * so). `removal` is required for `comments-removed` and must remove something the review has.
  */
 export async function decideReviewDispute(

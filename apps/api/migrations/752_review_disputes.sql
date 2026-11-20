@@ -1,4 +1,4 @@
--- Plan 5 Task 19 (Revision 2026-10-29b, owner): review disputes. The person a review is about can
+-- Plan 5 Task 19 (numbered 752, after every branch's migrations: review 2026-11-20 B1; Revision 2026-10-29b, owner): review disputes. The person a review is about can
 -- dispute it with a required free-text reason (no reason list for now); from that moment it shows
 -- "Under review" and counts in no figure (lead default, benefit of the doubt) until a moderator
 -- (perm reputation.review) decides one of the owner's three outcomes:
@@ -59,6 +59,66 @@ create trigger review_disputes_decide_once
   before update on review_disputes
   for each row execute function review_disputes_decide_once();
 
+-- Review 2026-11-20 M1: a dispute is born open, with no decision (else a row inserted already
+-- `removed` would let the reviews_final exceptions below act on a decision nobody made).
+create function review_disputes_born_open() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if new.status <> 'open' or new.decided_by is not null or new.decided_at is not null or new.decision_reason is not null then
+    raise exception 'a review dispute is born open' using errcode = 'integrity_constraint_violation';
+  end if;
+  return new;
+end
+$$;
+
+create trigger review_disputes_born_open
+  before insert on review_disputes
+  for each row execute function review_disputes_born_open();
+
+-- Review 2026-11-20 M1: whoever decides is a staff member (a staff or owner account), never a trader.
+create function review_disputes_staff_decides() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if new.decided_by is not null
+     and not exists (select 1 from public.accounts a where a.id = new.decided_by and a.kind in ('staff', 'owner')) then
+    raise exception 'a review dispute is decided by staff' using errcode = 'integrity_constraint_violation';
+  end if;
+  return new;
+end
+$$;
+
+create trigger review_disputes_staff_decides
+  before update on review_disputes
+  for each row execute function review_disputes_staff_decides();
+
+-- Review 2026-11-20 M2: a dispute row is kept (the audit of its decision, and what makes one dispute
+-- per review hold). DELETE is refused for every role, except the cascade from its review's own delete
+-- (R-011's erase of an overturned trade's reviews, as x2f_purge): that review row is already gone
+-- when the cascade reaches here. TRUNCATE is refused always.
+create function review_disputes_kept() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if tg_op = 'DELETE' and not exists (select 1 from public.reviews r where r.id = old.review_id) then
+    return old;
+  end if;
+  raise exception 'review disputes are kept' using errcode = 'integrity_constraint_violation';
+end
+$$;
+
+create trigger review_disputes_kept
+  before delete on review_disputes
+  for each row execute function review_disputes_kept();
+
+create trigger review_disputes_kept_truncate
+  before truncate on review_disputes
+  for each statement execute function review_disputes_kept();
+
 -- The x2f_purge role deletes reviews (R-011 erase); the cascade to review_disputes runs as the
 -- constraint's owner, so it needs no grant here.
 
@@ -70,6 +130,9 @@ create trigger review_disputes_decide_once
 --      and trade badges may each lose items (never gain or reorder one), at least one thing goes, the
 --      stars and everything else stay, and the review's dispute is decided `comments-removed`.
 --    The dispute row is written first, in the same transaction (apps/api/src/reviews/disputes.ts).
+--    Known limit (review 2026-11-20 m2): the trigger cannot tell WHICH comments the moderator chose;
+--    once a comments-removed decision exists it accepts any non-empty trim. The API writes exactly
+--    the moderator's choice; the choice itself is not stored on the dispute row.
 create or replace function reviews_final() returns trigger
   language plpgsql
   set search_path = pg_catalog
