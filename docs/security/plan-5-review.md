@@ -138,7 +138,7 @@ Builder's own review, 20 Nov 2026. **An independent review is still needed befor
 
 - **New input to the OCR: the counterparty's picture.** Before this task the OCR read only the trader's own screenshot. Now the seller's device reads a picture the buyer made. What limits this:
   - Tesseract gets canvas pixels from the receive check's redraw, at most 2600 px a side, never the file the buyer sent.
-  - It runs as WebAssembly in a dedicated worker with the worker CSP: `default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src https://<site>/ocr/` (narrowed from `'self'` by the lead's call of 20 Nov, below).
+  - It runs as WebAssembly in a dedicated worker with the worker CSP: `default-src 'none'; script-src https://<site>/ocr/ 'wasm-unsafe-eval'; connect-src https://<site>/ocr/; worker-src 'none'` (narrowed from `'self'` by the lead's call of 20 Nov and review M-1, below).
   - The model and the engine are hash-checked (Task 13).
   - **Closed by the lead's call of 20 Nov:** the worker CSP's `connect-src` was `'self'`, which let a worker taken over through a memory bug in tesseract's WASM reach the API with the trader's cookies. It is now this site's `/ocr/` path on each of its origins (`ocrWorkerCspFor`, from `X2F_ORIGINS`, which the API already requires): `connect-src https://<site>/ocr/`. A site origin must be a plain `https` origin (or `http` on loopback) of host-name characters only, because `URL` takes a host such as `x2f.test;`, and a `;` would end the directive. CSP drops the path after a redirect, and nothing under `/ocr/` redirects. `apps/web/e2e/proof-ocr.spec.ts` proves it in Chromium. A probe served at `/ocr/probe.js`, with the server's own `/ocr/` headers, fetches from inside the worker: `/ocr/eng.traineddata.gz` is reached, while `/v1/account/me` and `/ocrx/...` are blocked and reported as `connect-src` violations. The same probe under the old `'self'` reaches `/v1/`, which shows the test can tell the two apart. The real OCR still runs (proof-ocr, proof-card).
   - **Pre-existing, not changed here:** `cspFor` builds the page CSP from `X2F_RELAY_ORIGIN` and `X2F_NODE_PROXY_ORIGIN` with the same `URL` check, so an operator value such as `wss://relay.x;` would put a `;` into the page policy. These are operator settings, not user input. A host-character check like the one above would close it.
@@ -148,3 +148,21 @@ Builder's own review, 20 Nov 2026. **An independent review is still needed befor
   - While the OCR reads, the card says "Checking <buyer>'s screenshot" (COPY-UNSIGNED).
   - The ModCase line "Look for a $1,320.00 payment with the note 7RWD-3MXE-KQ84-HN2T." is COPY-UNSIGNED.
   - P5-A36 stays at (b).
+
+### Review follow-ups (comms review-lead-p5t13-16-ocr-2026-11-20.md)
+
+- **M-1 (fixed).** The worker CSP is now `default-src 'none'; script-src <site>/ocr/ … 'wasm-unsafe-eval'; connect-src <site>/ocr/ …; worker-src 'none'`. Under the old `script-src 'self'`, `importScripts('/v1/…')` and `new Worker('/v1/…')` still sent cookie-bearing GETs. tesseract's worker only runs `importScripts` on its core under `/ocr/`. The worker's own script is checked against the page's `worker-src 'self'`.
+- **m-3 (fixed).** The e2e probe in proof-ocr.spec.ts tries fetch, XHR, WebSocket, EventSource, `importScripts` and a nested Worker, each at its own `/v1/probe-<way>` path. Under the served CSP:
+  - none reaches the network (checked both with the browser context's request log and its WebSocket log);
+  - each is reported as its own violation (`script-src` for `importScripts`, `worker-src` for the Worker);
+  - a fetch and an `importScripts` under `/ocr/` still work, and so does the real OCR.
+
+  The control repeats the probe under the old policy, where fetch, XHR, `importScripts` and the Worker do reach `/v1/`. That reproduces the M-1 finding.
+- **m-1 and m-4 (fixed).** `apps/api/src/origins.ts` `plainOrigin` is the one check for every exact origin taken from the settings:
+  - `X2F_ORIGINS` in config.ts, and the OCR worker CSP;
+  - `X2F_RELAY_ORIGIN` and `X2F_NODE_PROXY_ORIGIN` (page CSP), with their clear-text rule unchanged.
+
+  It refuses `;`, `,`, `'`, `*`, spaces and paths. `cspFor` also refuses to return a policy that is not exactly 11 directives or that contains a comma.
+
+  One change in behaviour: a site origin is checked exactly as config.ts checks it, so the OCR worker CSP now accepts an `http:` onion origin (config already did, and the earlier loopback-only rule would have refused one at startup).
+- **m-2 (fixed).** `serveWeb` answers 400 to any `/ocr/` path whose raw request line contains `%2F`, `%2E`, `%5C`, `%25`, `..` or a backslash (`badOcrPath`). This is tested on a raw socket, because `app.inject` normalises dot segments. docs/dev-setup.md now says a reverse proxy must pass `/ocr/` with the raw URI and must not decode or normalise it.

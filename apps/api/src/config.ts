@@ -1,5 +1,6 @@
 import { createECDH, createHash, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { constants, readFileSync, statSync } from 'node:fs';
+import { SITE_SCHEMES, plainOrigin } from './origins.js';
 import { access, stat } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { parseFxSources, type FxSourceName } from './price/fx.js';
@@ -112,16 +113,9 @@ function required(env: Env, name: string): string {
 
 function parseOrigins(raw: string): string[] {
   const list = raw.split(',').map((s) => s.trim());
+  // Review m-4: the same plain-origin check as the OCR worker CSP (origins.ts).
   for (const o of list) {
-    let url: URL;
-    try {
-      url = new URL(o);
-    } catch {
-      throw malformed('X2F_ORIGINS', 'each entry must be an exact origin such as https://example.org');
-    }
-    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.origin !== o) {
-      throw malformed('X2F_ORIGINS', 'each entry must be an exact origin such as https://example.org');
-    }
+    if (plainOrigin(o, SITE_SCHEMES) === null) throw malformed('X2F_ORIGINS', 'each entry must be an exact origin such as https://example.org');
   }
   return list;
 }

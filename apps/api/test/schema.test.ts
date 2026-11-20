@@ -558,6 +558,10 @@ describe('config', () => {
     ['X2F_MONERO_NETWORK', 'regtest'],
     ['X2F_ORIGINS', 'https://x2f.test/'],
     ['X2F_ORIGINS', 'x2f.test'],
+    // Review m-4: the same plain-origin check as the OCR worker CSP (one helper).
+    ['X2F_ORIGINS', 'https://x2f.test;sandbox'],
+    ['X2F_ORIGINS', "https://x2f.test'x"],
+    ['X2F_ORIGINS', 'https://*.x2f.test'],
     ['DATABASE_URL', 'mysql://x'],
     ['X2F_VAPID_PUBLIC', Buffer.alloc(65, 4).toString('base64')],
     ['X2F_VAPID_PUBLIC', Buffer.concat([Buffer.from([2]), Buffer.alloc(64, 9)]).toString('base64url')],
