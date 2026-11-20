@@ -49,9 +49,13 @@ export const DEFAULTS = { timeoutMs: 20_000, maxBodyBytes: 1024 * 1024, maxInFli
  * Removed after review: `get_block_count`/`getblockcount` (only MoneroDaemonRpc.getHeight; txSeen's
  * getTx does not use it), `getlastblockheader` (monero-ts 0.11.16 never calls it) and
  * `get_output_histogram` (expensive on the node, only a fallback). Dropped by the lead (2026-10-21,
- * least privilege): json_rpc `getblockheaderbyheight` and `/gettransactions`, wallet2's names for the
- * plan's `get_block_header_by_height` and `/get_transactions` on fallback paths the wallet test never
- * reaches.
+ * least privilege): json_rpc `getblockheaderbyheight`, wallet2's name for the plan's
+ * `get_block_header_by_height` on a fallback path the wallet test never reaches.
+ *   - `/gettransactions` (back, lead 2026-11-20): wallet2's check_tx_key reads the tx here (monerod
+ *     serves it with the same handler as `/get_transactions`, already allowed). The escrow builder
+ *     proves its own release by its tx key (security review of the no-show refund, M1 and m4); in
+ *     the browser that runs only through this proxy. It was dropped on 21 Oct only because nothing
+ *     reached it. Pinned by test/wallet.test.ts (a wallet's check_tx_key through the proxy).
  */
 
 /** json_rpc methods a wallet may call. */
@@ -83,6 +87,7 @@ export const BIN_PATHS: readonly string[] = [
 /** JSON paths, re-serialised after parsing. */
 export const JSON_PATHS: readonly string[] = [
   '/get_transactions',
+  '/gettransactions',
   '/sendrawtransaction',
   '/get_height',
   '/get_info',

@@ -126,7 +126,7 @@ describe('node proxy: forwarding', () => {
       '/getblocks.bin', '/getblocks_by_height.bin', '/gethashes.bin', '/get_o_indexes.bin', '/getouts.bin', '/get_outs.bin',
       '/get_transaction_pool_hashes.bin', '/get_output_distribution.bin',
     ];
-    const plain = ['/get_transactions', '/sendrawtransaction', '/get_height', '/get_info', '/is_key_image_spent', '/get_transaction_pool'];
+    const plain = ['/get_transactions', '/gettransactions', '/sendrawtransaction', '/get_height', '/get_info', '/is_key_image_spent', '/get_transaction_pool'];
     for (const p of bin) {
       const r = await app.inject({ method: 'POST', url: p, headers: { 'content-type': 'application/octet-stream' }, payload: Buffer.from([1, 2]) });
       expect(r.statusCode, p).toBe(200);

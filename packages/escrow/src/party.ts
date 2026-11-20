@@ -806,7 +806,7 @@ export function runParty(a: PartyArgs): PartyHandle {
    * daemon through a client that cannot send in the web bundle). False when the engine cannot.
    */
   const keyProof = async (key: string, o: Outcome, h: string): Promise<boolean | 'unavailable'> => {
-    if (!session.txKeyPays) return 'unavailable';
+    if (!session.txKeyPays) return false;
     if (!TX_HASH.test(h)) return false;
     const r = await bounded('check tx key', () => session.txKeyPays!(h, key, o.to.map((p) => p.address)));
     if (r === 'unavailable') return 'unavailable';
@@ -815,15 +815,14 @@ export function runParty(a: PartyArgs): PartyHandle {
   };
   const provenByKey = async (key: string, o: Outcome, h: string): Promise<boolean> => (await keyProof(key, o, h)) === true;
   /**
-   * Review m4: a builder that kept its tx key accepts only its own tx where the key can be checked.
-   * Where it cannot (no engine support, or the web app's daemon connection: 'unavailable'), the
-   * named tx is taken on spentBy + txSeen alone, as before (lead question: the node proxy's
-   * `/gettransactions`). A key that is checked and does not fit is refused.
+   * Review m4: a builder that kept its tx key accepts only its own tx: the key must be checked and
+   * fit. A read that failed or was refused ('unavailable') is never taken as proof: the step waits
+   * and checks again on the next tick. Only an engine with no key check at all (test doubles)
+   * takes the named tx on spentBy + txSeen alone, as before.
    */
   const keyAllows = async (rel: ReleaseState, o: Outcome, h: string): Promise<boolean> => {
-    if (rel.part !== 'builder' || rel.txKey === undefined) return true;
-    const p = await keyProof(rel.txKey, o, h);
-    return p === true || p === 'unavailable';
+    if (rel.part !== 'builder' || rel.txKey === undefined || !session.txKeyPays) return true;
+    return (await keyProof(rel.txKey, o, h)) === true;
   };
 
   /** See PartyHandle.landed. Runs in the work queue. */
