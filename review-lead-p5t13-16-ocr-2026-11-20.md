@@ -143,3 +143,75 @@ Independent security review of Plan 5 Task 13 (the rest of the OCR pipeline) and
 - vitest: 448 files, 8454 tests passed.
 - semgrep: 113 rules, 0 findings.
 - `npm audit --omit=dev`: 0 vulnerabilities.
+
+---
+
+## Addendum: re-review at b00a1bd4 (one commit on 6c7b8d9b), 20 Nov 2026, 10:10 to 11:40 BC
+
+**Verdict: APPROVE.** All five follow-ups are fixed. One small gap is left in the m-2 server guard (n-1 below). It matters only behind a decoding proxy, which docs/dev-setup.md now forbids, so it does not block landing.
+
+### The follow-ups
+
+- **M-1: fixed.** The worker CSP (`serve.ts`, `ocrWorkerCspFor`) is now `default-src 'none'; script-src <site>/ocr/ 'wasm-unsafe-eval'; connect-src <site>/ocr/; worker-src 'none'`. I re-ran my own probe inside an `/ocr/` worker under the served CSP (Chromium 1243):
+  - `importScripts('/v1/…')` and `importScripts('/ocr/../v1/…')` were blocked as `script-src-elem` violations.
+  - `new Worker('/v1/…')` and `new Worker('/ocr/…')` were blocked as `worker-src` violations.
+  - WebSocket to `/v1/ws` and fetch to `/ocr/%2e%2e/v1/…` were blocked as `connect-src` violations.
+  - Nothing reached `/v1/` on the network.
+
+  The real OCR still works under `worker-src 'none'` (all proof-ocr and proof-card specs pass).
+- **m-1 / m-4: fixed.**
+  - `apps/api/src/origins.ts` `plainOrigin` is now the one check, used by `origin()` in serve.ts (relay and node proxy) and by config.ts (X2F_ORIGINS).
+  - I tested edge cases. Refused: `;sandbox`, `,b`, `'x`, `*.`, uppercase, a default port (`:443`), a trailing newline, an out-of-range port, `a..test`, a non-canonical IPv6. Accepted: `[::1]`, `xn--` hosts.
+  - The 11-directive, no-comma assert in `cspFor` is a working second layer: with `plainOrigin` removed from `origin()`, the tests still fail.
+- **m-2: fixed for the paths it names.** A raw-socket probe of serveWeb gave 400 for `/ocr/..%2Fv1%2Fme` and `/OCR/..%2Fv1`. dev-setup.md now carries the proxy rule (`proxy_pass` with no URI part). See n-1.
+- **m-3: fixed.** The spec's six-way probe has a working control: in my guard revert of `script-src` back to `'self'`, headers.test fails and the probe's assertions would too.
+
+### Behaviour change: http origins in the worker CSP
+
+`ocrWorkerCspFor` now accepts exactly what config.ts accepts for X2F_ORIGINS. **Any** `http:` host passes, not only `.onion`: `plainOrigin('http://evil.example')` returns the origin, and the review record's wording ("an http onion origin") is narrower than the code.
+
+I judge this acceptable:
+- X2F_ORIGINS is operator configuration, and config already accepted remote http for the API's own origin checks.
+- A CSP `http://host/ocr/` source only widens to that same host, because the scheme can only upgrade to https.
+- An https page's worker cannot load http subresources anyway (mixed content).
+- A site actually served over remote http is exposed everywhere, not just in OCR.
+
+Optional, for the lead (a behaviour choice, so not mine to make): config.ts could require X2F_ALLOW_INSECURE_ORIGINS=1 for a remote http site origin, as it already does for the relay and node proxy.
+
+### n-1 (minor, new): `badOcrPath` misses a percent-encoded `/ocr` prefix
+
+- **Where:** `apps/api/src/static/serve.ts:227`.
+- **Problem:** Chromium percent-decodes path segments when it matches a CSP path. So `/%6Fcr/..%2Fv1%2Faccount%2Fme` **passes** the worker CSP, and the probe saw it go out to the network. But `badOcrPath` only checks raw paths starting with `/ocr`, so this one is not refused: serveWeb answered 200 with index.html.
+- **Impact:** This server is still safe, because it never resolves `%2F` (I re-checked: index.html, not the API). Behind a decoding proxy, which the docs now forbid, it would map to `/v1/account/me`. `/ocr%2F..%2Fv1` is not an issue: it stays a single segment and does not match `/ocr/`.
+- **Fix:** Decode the first raw segment once (an undecodable one is refused) and apply the same rule whenever it equals `ocr`. Add `/%6Fcr/..%2Fv1%2Fme` and `/o%63r/x/..%2F..` to the raw-socket test at headers.test.ts:273.
+
+### The two 30 s timeout tests (proof-ocr.spec.ts:255-266 "model blocked", :268-278 "never arrives")
+
+- These tests come from main (9c679c9a) and this branch did not change them. Both run into the 30 s OCR deadline: an aborted model makes tesseract stall, so it ends on the timeout too.
+- I measured `out.ms` 3 times for each case (hang and abort) under the lock: 30,038 to 30,046 ms. That is 954 ms of headroom under the `< 31_000` bound and about 1 s over the `>= 29_000` bound.
+- The measured span covers `prepareProof`'s decode before the timer starts, the timer itself, and the teardown after it. On a 4-core box shared by several helpers, a main-thread stall or a late timer of about 1 s is rare but possible. I have not seen it fail.
+- **Recommendation (pure test engineering):** widen the upper bound to `< 35_000` and keep `>= 29_000`. The upper bound is there to show the deadline fires at all; a 5 s margin still proves that and stops load-dependent reds. If a tight bound is wanted, measure from the OCR call rather than from before the decode.
+
+### Guard reverts at b00a1bd4 (each restored)
+
+| # | Revert | Result (headers.test + schema.test, 192 tests) |
+|---|--------|------|
+| N1 | worker `script-src` back to `'self'` | 4 failed |
+| N2 | drop `worker-src 'none'` | 5 failed |
+| N3 | disable the `badOcrPath` 400 hook | 13 failed |
+| N4 | `origin()` back to the URL-only check (the 11-directive assert left in) | 7 failed |
+| N5 | config.ts X2F_ORIGINS back to the URL-only check | 3 failed |
+
+### Tests run at b00a1bd4
+
+- **vitest** (nice, outside the lock):
+  - @x2f/api headers.test + schema.test: 192/192.
+  - @x2f/web proof-render-tripwire + smartProofCard: 83/83.
+- **`tsc -p apps/api`:** clean.
+- **Playwright** (under the lock, 11:10 to 11:35 BC, `X2F_CHROMIUM_PATH=/opt/pw-browsers/chromium`): 24/24 passed.
+  - proof-ocr: 8 (including the new six-way probe and its control).
+  - proof-card: 4.
+  - proof-pipeline: 4.
+  - proof: 1.
+  - My temporary probe and the 6 timing runs: 7. The probe file and its fixture build were deleted afterwards and not committed.
+- **Full `npm run check`:** not re-run for this one commit. It passed at 6c7b8d9b, and b00a1bd4 touches only apps/api (serve.ts, config.ts, the new origins.ts), their tests, one e2e spec and docs. The lead should run it at the landing head as usual.
