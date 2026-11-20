@@ -3,7 +3,7 @@
 Reviewer: independent security review helper, 20 Nov 2026 (BC time, UTC-7).
 Scope: the no-show refund fix (gap 4). That covers `PartyHandle.settleSent()` (packages/escrow/src/party.ts), `EscrowStatus.handedOff` (apps/web/src/escrow/runtime.ts), the `HandOff` copy in SellerRefund.tsx, and the e2e branch wip/lead-fix-noshow-refund-e2e at 47b2fee5. The e2e branch's fix commit 4728cd17 has the same content as 831698d3.
 
-## Verdict: NOT APPROVED YET. No blockers and no funds at risk. One Major (M1) must be dealt with before landing.
+## Verdict: NOT APPROVED YET. No blockers and no funds at risk at either head. M1 must be dealt with before landing; d56526d3 adds minors only (m6, m7).
 
 The fix does its main job. The seller is told to keep the page open while the seller-built refund still needs this device. `settleSent()` and `handedOff` are pure reads: they sign nothing, send nothing and change nothing. No path to funds changes: release, ruling, lapse or refund-after-dispute.
 
