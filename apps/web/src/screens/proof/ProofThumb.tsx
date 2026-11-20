@@ -4,9 +4,9 @@
 // check (`showableProof`: header walk, size cap, decode, redraw on a fresh canvas) and shows only
 // the redrawn copy. A proof that fails any step is never shown: the user sees a refusal instead.
 import { useEffect, useRef, useState } from 'react';
-import type { ReceiveDeclared, ReceiveDeps } from '@x2f/proof';
+import type { OcrWord, ReceiveDeclared } from '@x2f/proof';
 import { Notice } from '../../ui/Notice.js';
-import { type ShownProof, showableProof } from '../../proof/receive.js';
+import { type ShowDeps, type ShownProof, showableProof } from '../../proof/receive.js';
 import './proof.css';
 
 // COPY-UNSIGNED (job J-22: the receiving device's refusal of a broken proof image)
@@ -25,22 +25,31 @@ export function ProofThumb({
   alt,
   deps,
   onChecked,
+  onWords,
 }: {
   bytes: Uint8Array;
   declared: ReceiveDeclared;
   alt: string;
-  deps?: ReceiveDeps;
+  deps?: ShowDeps;
   /** The check's verdict (shown or refused), for the proof state (ChatProof, review M3). */
   onChecked?: (ok: boolean) => void;
+  /**
+   * Plan 5 Task 16 (the seller's smart proof card): this device's OCR of the redrawn copy, words only;
+   * null when they cannot be read or the proof is refused. Read when the effect runs.
+   */
+  onWords?: (words: OcrWord[] | null) => void;
 }) {
   const [state, setState] = useState<State>({ kind: 'checking' });
   const { mime, width, height } = declared;
   const report = useRef(onChecked);
   report.current = onChecked;
+  const words = useRef(onWords);
+  words.current = onWords;
   useEffect(() => {
     let live = true;
     setState({ kind: 'checking' });
-    showableProof(bytes, { mime, width, height }, deps).then(
+    const read = words.current === undefined ? undefined : (w: OcrWord[] | null) => live && words.current?.(w);
+    showableProof(bytes, { mime, width, height }, deps, read).then(
       (proof) => {
         if (!live) return;
         setState({ kind: 'shown', proof });
@@ -51,6 +60,7 @@ export function ProofThumb({
         if (!live) return;
         setState({ kind: 'refused' });
         report.current?.(false);
+        words.current?.(null);
       },
     );
     return () => {
