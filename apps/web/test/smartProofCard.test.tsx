@@ -79,7 +79,7 @@ function deps(words: OcrWord[] | null | 'throw' | 'none'): Deps {
     render: async () => png(4, 3),
     read,
   } as Deps;
-  if (words !== 'none') d.readWords = read as unknown as Deps['readWords'];
+  if (words !== 'none') d.readWords = read as unknown as NonNullable<Deps['readWords']>;
   return d;
 }
 

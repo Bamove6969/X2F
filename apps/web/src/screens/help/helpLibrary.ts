@@ -557,17 +557,17 @@ const ENTRIES: readonly Entry[] = [
     proofUpload: {
       off: {
         a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there. The moderator can also open the trade\'s full chat, on a confirmed staff device.',
-        sources: ['apps/staff-web/src/screens/ModCase.tsx:86-88 the traders, the payment proof, the escrow', 'apps/staff-web/src/screens/ModCase.tsx:95-96 "Open the full chat" asks the API for the chat key re-wrapped to this'],
+        sources: ['apps/staff-web/src/screens/ModCase.tsx:87-89 the traders, the payment proof, the escrow', 'apps/staff-web/src/screens/ModCase.tsx:96-97 "Open the full chat" asks the API for the chat key re-wrapped to this'],
       },
       on: {
         a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there, and can request unblurred proof: a copy of your payment proof with nothing blurred, sealed for the moderator only, though the moderator\'s screens do not open it yet. The moderator can also open the trade\'s full chat, on a confirmed staff device.',
         sources: [
-          'apps/staff-web/src/screens/ModCase.tsx:86-88 the traders, the payment proof, the escrow',
-          'apps/staff-web/src/screens/ModCase.tsx:442 Request unblurred proof from',
+          'apps/staff-web/src/screens/ModCase.tsx:87-89 the traders, the payment proof, the escrow',
+          'apps/staff-web/src/screens/ModCase.tsx:444 Request unblurred proof from',
           `${WEB}/dispute/seams.tsx:99 proofUploadOn() || request === null`,
           'apps/web/src/proof/upload.ts:359 Seal `proof.unblurred` to the moderator only',
-          'apps/staff-web/src/screens/ModCase.tsx:436 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
-          'apps/staff-web/src/screens/ModCase.tsx:95-96 "Open the full chat" asks the API for the chat key re-wrapped to this',
+          'apps/staff-web/src/screens/ModCase.tsx:437 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
+          'apps/staff-web/src/screens/ModCase.tsx:96-97 "Open the full chat" asks the API for the chat key re-wrapped to this',
         ],
       },
     },
@@ -824,7 +824,7 @@ const ENTRIES: readonly Entry[] = [
       `${SPEC}:166 can decrypt a chat only after a trader's app has granted it TK`,
       'apps/web/src/chat/engine.ts:51 One key per chat, envelope v2',
       "apps/web/src/chat/engine.ts:191 this trader's signed grant of the chat key to the chat's",
-      'apps/staff-web/src/screens/ModCase.tsx:95-96 "Open the full chat" asks the API for the chat key re-wrapped to this',
+      'apps/staff-web/src/screens/ModCase.tsx:96-97 "Open the full chat" asks the API for the chat key re-wrapped to this',
     ],
   },
   {

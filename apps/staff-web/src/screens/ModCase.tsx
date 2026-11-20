@@ -47,6 +47,7 @@ import {
 } from './modModel.js';
 import { takeable } from './ModQueue.js';
 import '../ui/staff.css';
+import { ProofLookFor } from '../ui/ProofCard.js';
 
 const isApprover = (role: StaffRole) => role === 'senior' || role === 'owner';
 const nameOf = (t: CaseTrader | null, side: Side) => t?.displayName ?? (side === 'buyer' ? 'the buyer' : 'the seller');
@@ -436,6 +437,7 @@ function ProofCard({ c, buyer, seller, work }: { c: DisputeCase; buyer: string; 
       {/* NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet. COPY-UNSIGNED */}
       {/* not-a-refusal: an explanation: viewing the proof is not built yet */}
       <p className="x2f-staff-hint">The proof can't be viewed here yet. You can still ask a trader for the unblurred copy.</p>
+      <ProofLookFor fiatCents={c.escrow.fiatCents} currency={c.escrow.currency} code={codeText(c.code)} />
       {work && asked === null ? (
         <div className="x2f-stack" data-part="proof-actions">
           <Button variant="secondary" onClick={() => void ask('buyer')}>
