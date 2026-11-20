@@ -558,6 +558,10 @@ describe('config', () => {
     ['X2F_MONERO_NETWORK', 'regtest'],
     ['X2F_ORIGINS', 'https://x2f.test/'],
     ['X2F_ORIGINS', 'x2f.test'],
+    // Review m-4: the same plain-origin check as the OCR worker CSP (one helper).
+    ['X2F_ORIGINS', 'https://x2f.test;sandbox'],
+    ['X2F_ORIGINS', "https://x2f.test'x"],
+    ['X2F_ORIGINS', 'https://*.x2f.test'],
     ['DATABASE_URL', 'mysql://x'],
     ['X2F_VAPID_PUBLIC', Buffer.alloc(65, 4).toString('base64')],
     ['X2F_VAPID_PUBLIC', Buffer.concat([Buffer.from([2]), Buffer.alloc(64, 9)]).toString('base64url')],
@@ -567,6 +571,19 @@ describe('config', () => {
     ['X2F_VAPID_PUBLIC', (() => { const e = createECDH('prime256v1'); e.generateKeys(); return e.getPublicKey().toString('base64url'); })()],
   ])('refuses malformed %s', (name, value) => {
     expect(() => loadConfig({ ...FULL_ENV, [name]: value })).toThrow(name);
+  });
+
+  // Lead call (re-review 27aaab28): a remote clear-text site origin needs X2F_ALLOW_INSECURE_ORIGINS=1,
+  // as the relay and node proxy origins do; loopback and .onion stay allowed.
+  it('X2F_ORIGINS: a remote http origin needs X2F_ALLOW_INSECURE_ORIGINS=1; loopback and .onion do not', () => {
+    for (const o of ['http://x2f.test', 'https://x2f.test,http://10.0.0.5:8080']) {
+      expect(() => loadConfig({ ...FULL_ENV, X2F_ORIGINS: o }), o).toThrow('X2F_ORIGINS');
+      expect(() => loadConfig({ ...FULL_ENV, X2F_ORIGINS: o, X2F_ALLOW_INSECURE_ORIGINS: 'true' }), o).toThrow('X2F_ORIGINS');
+      expect(loadConfig({ ...FULL_ENV, X2F_ORIGINS: o, X2F_ALLOW_INSECURE_ORIGINS: '1' }).origins, o).toEqual(o.split(','));
+    }
+    for (const o of ['http://127.0.0.1:4317', 'http://localhost:4317', 'http://[::1]:4317', 'https://x2f.test,http://x2fexample.onion']) {
+      expect(loadConfig({ ...FULL_ENV, X2F_ORIGINS: o }).origins, o).toEqual(o.split(','));
+    }
   });
 
   it('never echoes a secret value in its error', () => {

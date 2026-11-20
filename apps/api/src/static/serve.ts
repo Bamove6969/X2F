@@ -1,5 +1,6 @@
 import type { Socket } from 'node:net';
 import { join, resolve, sep } from 'node:path';
+import { SITE_SCHEMES, plainOrigin } from '../origins.js';
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -64,6 +65,11 @@ export interface WebOptions {
   /** The node proxy's exact origin, e.g. https://node.example.org. */
   nodeProxyOrigin: string;
   /**
+   * This site's own exact origins (X2F_ORIGINS), e.g. https://x2f.example.org. The OCR worker may
+   * fetch only under each one's /ocr/ (lead call 20 Nov, `ocrWorkerCspFor`).
+   */
+  siteOrigins: readonly string[];
+  /**
    * Allows an http: or ws: origin on a host other than loopback (X2F_ALLOW_INSECURE_ORIGINS=1).
    * Off by default: only a loopback host may be reached in clear text.
    */
@@ -77,17 +83,15 @@ const SECURE_SCHEMES = new Set(['https:', 'wss:']);
 /** Hosts that never leave this machine, as `URL.hostname` spells them. */
 export const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost']);
 
-/** An exact origin, so nothing else can ride into the policy. */
+/**
+ * An exact origin with a plain host (origins.ts `plainOrigin`, review m-1), so nothing else can ride
+ * into the policy: no `;`, `,`, `'`, `*` or space.
+ */
 function origin(value: string, name: string, allowInsecure: boolean): string {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
+  if (plainOrigin(value, CONNECT_SCHEMES) === null) {
     throw new Error(`web: ${name} must be an exact origin such as wss://relay.example.org`);
   }
-  if (!CONNECT_SCHEMES.has(url.protocol) || url.origin !== value) {
-    throw new Error(`web: ${name} must be an exact origin such as wss://relay.example.org`);
-  }
+  const url = new URL(value);
   // Decided by host, not by NODE_ENV (which nothing sets): the browser may connect in clear text
   // only to this machine, unless the operator opts in with X2F_ALLOW_INSECURE_ORIGINS=1.
   // A future .onion relay or node proxy (http:/ws: over Tor) will need its own deliberate
@@ -103,7 +107,7 @@ export function cspFor(o: ConnectOrigins): string {
   const insecure = o.allowInsecureOrigins === true;
   const relay = origin(o.relayOrigin, 'relay origin', insecure);
   const node = origin(o.nodeProxyOrigin, 'node proxy origin', insecure);
-  return [
+  const csp = [
     "default-src 'none'",
     "script-src 'self' 'wasm-unsafe-eval'",
     "worker-src 'self'",
@@ -116,6 +120,9 @@ export function cspFor(o: ConnectOrigins): string {
     "form-action 'self'",
     "frame-ancestors 'none'",
   ].join('; ');
+  // Review m-1: one policy of exactly these 11 directives, whatever the settings held.
+  if (csp.split(';').length !== 11 || csp.includes(',')) throw new Error('web: the page CSP did not come out as 11 directives');
+  return csp;
 }
 
 /**
@@ -123,8 +130,27 @@ export function cspFor(o: ConnectOrigins): string {
  * its CSP from its own response, not from the page, so the OCR worker gets this one: it may load
  * scripts and compile WebAssembly from this origin and fetch from this origin, nothing else (so even
  * a CDN default inside tesseract.js could not be reached).
+ *
+ * Lead call 20 Nov (the Task 16 review): connect-src is not 'self' but this site's /ocr/ path on each
+ * of its origins (a source with a path: the worker's fetches of its model match it, a fetch to /v1/
+ * does not), so a worker taken over through the OCR engine, which now reads a picture the counterparty
+ * made, cannot reach the API with the trader's cookies. CSP ignores the path after a redirect, and
+ * nothing under /ocr/ redirects (static files only). Review M-1: script-src is narrowed the same way
+ * (importScripts and a nested Worker send cookie-bearing GETs too; tesseract's worker only
+ * importScripts its core from /ocr/), and worker-src 'none' (it starts no worker). The worker's own
+ * script is checked against the page's worker-src 'self'. Tested in apps/web/e2e/proof-ocr.spec.ts.
  */
-export const OCR_WORKER_CSP = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'";
+export function ocrWorkerCspFor(o: Pick<WebOptions, 'siteOrigins'>): string {
+  if (!Array.isArray(o.siteOrigins) || o.siteOrigins.length === 0) throw new Error('web: the site origins (X2F_ORIGINS) are needed for the OCR worker CSP');
+  // Review m-4: exactly what config.ts accepts for X2F_ORIGINS (the same helper), so a site origin
+  // the API runs with never fails here, and an onion's http: origin gets its /ocr/ too.
+  const sources = o.siteOrigins.map((v) => {
+    if (plainOrigin(v, SITE_SCHEMES) === null) throw new Error('web: a site origin (X2F_ORIGINS) must be an exact origin such as https://x2f.example');
+    return `${v}/ocr/`;
+  });
+  const ocr = sources.join(' ');
+  return `default-src 'none'; script-src ${ocr} 'wasm-unsafe-eval'; connect-src ${ocr}; worker-src 'none'`;
+}
 
 /** The web settings from the environment; `null` when this process does not serve the web app. */
 export function webOptionsFromEnv(env: Record<string, string | undefined>): WebOptions | null {
@@ -137,9 +163,11 @@ export function webOptionsFromEnv(env: Record<string, string | undefined>): WebO
   };
   const relayOrigin = need('X2F_RELAY_ORIGIN');
   const nodeProxyOrigin = need('X2F_NODE_PROXY_ORIGIN');
+  const siteOrigins = need('X2F_ORIGINS').split(',').map((v) => v.trim());
   const allowInsecureOrigins = env.X2F_ALLOW_INSECURE_ORIGINS === '1';
-  const o: WebOptions = { root, relayOrigin, nodeProxyOrigin, ...(allowInsecureOrigins ? { allowInsecureOrigins } : {}) };
+  const o: WebOptions = { root, relayOrigin, nodeProxyOrigin, siteOrigins, ...(allowInsecureOrigins ? { allowInsecureOrigins } : {}) };
   cspFor(o);
+  ocrWorkerCspFor(o);
   return o;
 }
 
@@ -190,15 +218,41 @@ export function isApiOrFilePath(url: string, apiSegment = 'v1'): boolean {
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 
 /**
+ * Review m-2: under /ocr/ (its first segment `ocr` in any case and encoding; the only path the OCR worker may reach, `ocrWorkerCspFor`) a raw path with
+ * an encoded slash, dot or backslash, a `%25`, a `..` or a backslash is refused. The browser leaves
+ * `/ocr/..%2Fv1%2Fx` as it is and the CSP allows it; this server never resolves it, but a front
+ * proxy that decodes or normalises could turn it into /v1/x. Read from the raw request line, since
+ * an injected request is normalised before routing.
+ */
+export function badOcrPath(rawUrl: string): boolean {
+  const path = (rawUrl.split('?', 1)[0] ?? '').toLowerCase();
+  // Re-review n-1: the first segment decoded once (`/%6Fcr/` is /ocr/ to a proxy that decodes), and
+  // a first segment that does not decode is refused outright.
+  const first = path.replace(/^\/+/, '').split('/', 1)[0] ?? '';
+  let name: string;
+  try {
+    name = decodeURIComponent(first).toLowerCase();
+  } catch {
+    return true;
+  }
+  if (name !== 'ocr') return false;
+  return /%2f|%2e|%5c|%25|\\|\.\./.test(path);
+}
+
+/**
  * Serves the built web app on this origin: hashed files from `root`, and index.html for every
  * other GET outside /v1 (the client router takes it from there). HTML carries the CSP; every
  * response carries SECURITY_HEADERS.
  */
 export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<void> {
   const csp = cspFor(o);
+  const ocrCsp = ocrWorkerCspFor(o);
   const ocrDir = join(resolve(o.root), 'ocr') + sep;
   await app.register(async (scope) => {
     scope.addHook('onRequest', addSecurityHeaders);
+    scope.addHook('onRequest', async (req, reply) => {
+      if (badOcrPath(req.raw.url ?? '')) return reply.code(400).send({ error: 'bad-request' });
+    });
     await scope.register(fastifyStatic, {
       root: o.root,
       wildcard: false, // one route per built file; the catch-all below handles the rest
@@ -207,7 +261,7 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
       setHeaders(reply, path) {
         if (resolve(path).startsWith(ocrDir)) {
           // Plan 5 Task 13: the OCR worker, its engine and model get the worker's own CSP.
-          void reply.header('content-security-policy', OCR_WORKER_CSP);
+          void reply.header('content-security-policy', ocrCsp);
         } else if (path.endsWith('.html')) {
           void reply.header('content-security-policy', csp).header('cache-control', 'no-cache');
         } else if (/[\\/]sw\.js$/.test(path) && !/[\\/]assets[\\/]/.test(path)) {

@@ -4,11 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { OCR_WORKER_CSP, cspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
+import { cspFor, ocrWorkerCspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
 import { testApp } from './helpers/app.js';
 
 const RELAY = 'wss://relay.x2f.test';
 const NODE = 'https://node.x2f.test';
+const SITE = 'https://x2f.test';
+/**
+ * Lead call 20 Nov and review M-1: the OCR worker may load scripts and fetch only under this site's
+ * /ocr/, and may start no worker of its own.
+ */
+const OCR_CSP = "default-src 'none'; script-src https://x2f.test/ocr/ 'wasm-unsafe-eval'; connect-src https://x2f.test/ocr/; worker-src 'none'";
 const CSP =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; " +
   `connect-src 'self' ${RELAY} ${NODE}; img-src 'self' data:; style-src 'self'; font-src 'self'; ` +
@@ -30,7 +36,7 @@ beforeAll(async () => {
   await writeFile(join(root, 'ocr', 'eng.traineddata.gz'), Buffer.from([0x1f, 0x8b, 0x08, 0x00, 1, 2, 3]));
   await writeFile(join(root, 'assets', 'ocr-abc123.js'), 'console.log(2)');
   ({ app } = await testApp());
-  await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE });
+  await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] });
 });
 
 afterAll(async () => {
@@ -102,15 +108,27 @@ describe('security headers', () => {
 });
 
 describe('the OCR files (Plan 5 Task 13, Global Constraints: the worker\'s own CSP)', () => {
-  it('the policy is exactly the plan\'s: nothing but this origin, wasm allowed', () => {
-    expect(OCR_WORKER_CSP).toBe("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'");
+  it('the policy: scripts and fetches only under /ocr/ on each site origin, wasm allowed, no nested worker (lead call 20 Nov, review M-1)', () => {
+    expect(ocrWorkerCspFor({ siteOrigins: [SITE] })).toBe(OCR_CSP);
+    expect(ocrWorkerCspFor({ siteOrigins: [SITE, 'http://x2fexample.onion'] })).toBe(
+      "default-src 'none'; script-src https://x2f.test/ocr/ http://x2fexample.onion/ocr/ 'wasm-unsafe-eval'; " +
+        "connect-src https://x2f.test/ocr/ http://x2fexample.onion/ocr/; worker-src 'none'",
+    );
+    expect(ocrWorkerCspFor({ siteOrigins: [SITE] })).not.toContain("'self'");
+  });
+
+  it('refuses no site origin, a path, a non-http scheme, or anything that is not a plain exact origin (review m-1, m-4)', () => {
+    for (const bad of [[], ['https://x2f.test/'], ['https://x2f.test/ocr'], ['wss://x2f.test'], ["https://x2f.test 'unsafe-inline'"], ['https://x2f.test;'], ['https://x2f.test;sandbox'], ['https://a.test,b'], ["https://a.test'x"], ['https://*.x2f.test']]) {
+      expect(() => ocrWorkerCspFor({ siteOrigins: bad }), JSON.stringify(bad)).toThrow();
+    }
+    expect(ocrWorkerCspFor({ siteOrigins: ['http://127.0.0.1:4317'] })).toContain('connect-src http://127.0.0.1:4317/ocr/;');
   });
 
   it.each(['/ocr/worker.min.js', '/ocr/tesseract-core-simd-lstm.wasm.js', '/ocr/eng.traineddata.gz'])('%s carries the worker CSP', async (url) => {
     const res = await app.inject({ method: 'GET', url });
     expect(res.statusCode).toBe(200);
     expectBaseHeaders(res.headers);
-    expect(res.headers['content-security-policy']).toBe("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'");
+    expect(res.headers['content-security-policy']).toBe(OCR_CSP);
   });
 
   it('the model is served as gzip bytes, not as a gzip-encoded response (tesseract.js reads the magic itself)', async () => {
@@ -127,6 +145,22 @@ describe('the OCR files (Plan 5 Task 13, Global Constraints: the worker\'s own C
       expect(res.statusCode, url).toBe(404);
       expect(res.headers['content-type'], url).not.toMatch(/^text\/html/);
     }
+  });
+
+  // (app.inject normalises dot segments and backslashes before routing; those are tested on a raw socket below.)
+  it.each(['/ocr/..%2Fv1%2Fme', '/ocr/%2fx', '/ocr/a%5Cb', '/ocr/%252e%252e/x', '/OCR/%2F'])(
+    'review m-2: %s (an encoded slash or dot, a backslash) is 400 under /ocr/',
+    async (url) => {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.headers['content-type']).toMatch(/^application\/json/);
+      expect(res.headers['content-security-policy']).toBeUndefined();
+    },
+  );
+
+  it('review m-2: the real files and other paths with dots are unchanged', async () => {
+    expect((await app.inject({ method: 'GET', url: '/ocr/worker.min.js' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/u/a%2Fb' })).statusCode).not.toBe(400);
   });
 
   it('review m-4: .gz is a file only under /ocr/: a profile named alice.gz is still the app page', async () => {
@@ -227,13 +261,19 @@ describe('malformed HTTP that never reaches fastify routing (clientErrorHandler)
 
   beforeAll(async () => {
     ({ app: live } = await testApp());
-    await serveWeb(live, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE });
+    await serveWeb(live, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] });
     await live.listen({ host: '127.0.0.1', port: 0 });
     port = (live.server.address() as AddressInfo).port;
   });
 
   afterAll(async () => {
     await live.close();
+  });
+
+  it.each(['/ocr/../v1/me', '/ocr/x/../../v1/me', '/ocr/..', '/ocr/a\\..\\b', '/ocr/%2e%2e/v1/me', '/ocr/.%2E/v1/me', '/ocr/a\\b', '/ocr/..%2Fv1%2Fme', '/%6Fcr/..%2Fv1%2Fme', '/%4F%43%52/..%2Fv1', '/%ZZ/x', '/%E0%A4/x'])('review m-2, n-1: the raw path %s (not normalised by the client; the first segment decoded once) is 400', async (path) => {
+    const res = parseRaw(await rawExchange(port, `GET ${path} HTTP/1.1\r\nHost: x2f.test\r\nConnection: close\r\n\r\n`));
+    expect(res.status, path).toBe(400);
+    expectBaseHeaders(res.headers);
   });
 
   it('a well-formed raw request is answered normally (the harness works)', async () => {
@@ -312,6 +352,23 @@ describe('cspFor', () => {
     expect(cspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(CSP);
   });
 
+  it('review m-1: exactly 11 directives, one policy (no comma)', () => {
+    const csp = cspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE });
+    expect(csp.split('; ')).toHaveLength(11);
+    expect(csp.split(';')).toHaveLength(11);
+    expect(csp).not.toContain(',');
+  });
+
+  it.each(['wss://r.x2f.test;report-uri', 'wss://r.x2f.test;sandbox', 'wss://r.x2f.test,b', "wss://r.x2f.test'x", 'wss://*.x2f.test'])(
+    'review m-1: refuses %j, which URL takes as an origin, for both connect origins',
+    (bad) => {
+      expect(new URL(bad).origin === bad || bad.includes('*')).toBe(true);
+      expect(() => cspFor({ relayOrigin: bad, nodeProxyOrigin: NODE })).toThrow(/origin/);
+      const node = bad.replace('wss:', 'https:');
+      expect(() => cspFor({ relayOrigin: RELAY, nodeProxyOrigin: node })).toThrow(/origin/);
+    },
+  );
+
   it.each(['wss://relay.x2f.test/', 'wss://relay.x2f.test; script-src *', 'relay.x2f.test', 'ftp://relay.x2f.test', ''])(
     'refuses %j as an origin',
     (bad) => {
@@ -350,7 +407,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
     vi.unstubAllEnvs();
   });
 
-  const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE };
+  const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: SITE };
 
   it.each([
     ['X2F_RELAY_ORIGIN', 'ws://relay.x2f.test'],
@@ -373,6 +430,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
         root: '/srv/web',
         relayOrigin: value,
         nodeProxyOrigin: value,
+        siteOrigins: [SITE],
       });
     },
   );
@@ -386,6 +444,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
       root: '/srv/web',
       relayOrigin: 'ws://relay.x2f.test',
       nodeProxyOrigin: 'http://node.x2f.test',
+      siteOrigins: [SITE],
       allowInsecureOrigins: true,
     });
   });
@@ -401,7 +460,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
   it('serveWeb refuses a remote clear-text origin', async () => {
     const { app: other } = await testApp();
     try {
-      await expect(serveWeb(other, { root, relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE })).rejects.toThrow(/https or wss/);
+      await expect(serveWeb(other, { root, relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE, siteOrigins: [SITE] })).rejects.toThrow(/https or wss/);
     } finally {
       await other.close();
     }
@@ -409,6 +468,14 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
 });
 
 describe('webOptionsFromEnv', () => {
+  it.each(['X2F_RELAY_ORIGIN', 'X2F_NODE_PROXY_ORIGIN'])("review m-1: %s with ';', ',' or a quote is refused", (name) => {
+    const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: SITE };
+    const scheme = name === 'X2F_RELAY_ORIGIN' ? 'wss' : 'https';
+    for (const v of [`${scheme}://a.x2f.test;sandbox`, `${scheme}://a.x2f.test,b`, `${scheme}://a.x2f.test'x`]) {
+      expect(() => webOptionsFromEnv({ ...base, [name]: v }), v).toThrow(/origin/);
+    }
+  });
+
   it('is null without X2F_WEB_ROOT', () => {
     expect(webOptionsFromEnv({})).toBeNull();
   });
@@ -416,8 +483,11 @@ describe('webOptionsFromEnv', () => {
   it('needs both connect origins when the web app is served', () => {
     expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web' })).toThrow(/X2F_RELAY_ORIGIN/);
     expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY })).toThrow(/X2F_NODE_PROXY_ORIGIN/);
+    // Lead call 20 Nov: and the site's own origins, for the OCR worker's CSP.
+    expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE })).toThrow(/X2F_ORIGINS/);
     expect(
-      webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE }),
-    ).toEqual({ root: '/srv/web', relayOrigin: RELAY, nodeProxyOrigin: NODE });
+      webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: `${SITE}, https://x2fabcdef.example` }),
+    ).toEqual({ root: '/srv/web', relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE, 'https://x2fabcdef.example'] });
+    expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: 'https://x2f.test/ocr' })).toThrow();
   });
 });

@@ -186,6 +186,10 @@ describe('ModCase (board ModCase)', () => {
     expect(text('escrow')).toContain('4.000000 XMR locked');
     expect(text('escrow')).toContain('10 confirmations');
     expect(button('Request unblurred proof from harbor_lin')).toBeDefined();
+    // Plan 5 Task 16, P5-A36 (b) (lead default): what the moderator looks for on the proof, from the
+    // case's own figures, and no automatic check (no OCR on the staff origin).
+    expect(text('proof-look-for')).toBe('Look for a $1,320.00 payment with the note 7RWD-3MXE-KQ84-HN2T.');
+    expect(text('proof')).not.toMatch(/the right amount|We checked/);
     // Design build task 9: the chat opens only on a confirmed device (this test browser keeps no device
     // key: no IndexedDB), and nothing asks for it until the moderator opens it.
     const chat = part('chat')!;
