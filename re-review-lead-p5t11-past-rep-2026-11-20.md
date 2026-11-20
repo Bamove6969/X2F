@@ -115,3 +115,52 @@ Not run: Playwright (`apps/staff-web/e2e/pastrep.spec.ts`), and the full suite (
 
 1. m1: should a banned PGP key be refused for past-rep claims too? Recommended yes; it also makes `key-unavailable` ambiguous.
 2. Still open from round 1 (m5 there): the revoke reason minimum, the 500-character cap, `tradesSeen <= claimed`, and moderators seeing the verified dollar figure.
+
+## Addendum, round 3: 41d5b732, verdict given for 0c5dc3d3 (09:50 BC time)
+
+**Verdict: APPROVE for 0c5dc3d3, once runner G's full suite is green.** No B or M items are left open.
+- 0c5dc3d3 changes one line on top of 41d5b732. It re-points the help-library login-methods note from `cantDoCodes.ts:481` to `:485`, which is where `PASSWORD_ALONE_MESSAGE` actually sits. `apps/web/test/helpLibrary.test.tsx` passes on 0c5dc3d3 (27 passed).
+
+### Round-2 items
+
+- **B1 (host spoof): fixed** (`apps/api/src/pastrep/challenge.ts`).
+  - The helper now reads the path only and requires a strict timestamp segment.
+  - I re-ran 33 links against `checkEvidenceUrl` and then `archivedOriginalHost`, and all 33 gave the expected answer. They include:
+    - every round-2 spoof: `archive.ph/<id>?x=/https://…`, `archive.ph/<id>/https://…`, `web/2023?x=/…`;
+    - `newest?x=/…`;
+    - bad timestamps: `x2023`, `*`, `2023id_x`, and an encoded `?`;
+    - userinfo either way, Unicode hosts (shown as punycode), and encoded schemes.
+  - The genuine Wayback and archive.today forms still name their host.
+- **m4 (archive mirrors): fixed.** A nested archive.today mirror, archive.org or Wayback link gives null.
+- **M1 (cursor precision): fixed.** The cursor is Postgres's own microsecond text and is passed back as text. The 150-row probe is now a test that runs in both orders.
+- **m1 (banned keys, lead call): fixed.** `assertKeyNotBanned` runs after the signature check. Banned keys and staff or owner login keys both answer 409 `key-unavailable`, so the answer says neither which nor why.
+- **m2 (queue paging): fixed.** Skip past the last claim of a page loads the next page, then wraps to the start.
+- **m3 (copy): fixed.** For Other the tick says "…own profile on the archived site" (COPY-UNSIGNED).
+
+### Tests (targeted, `nice -n 10`, outside the lock)
+
+- On 41d5b732:
+  - `@x2f/api`: `staff/pastrep`, `matrix`, `login`, `members`, `pastrep`, `pastrepVerifiedUsd`, `schema`: 7 files, 402 passed, 1 todo.
+  - `@x2f/staff` roles: 94 passed.
+  - `@x2f/staff-web`: `pastRep` and `shell`: 28 passed.
+  - `tsc` for api and staff-web, and copy-lint: clean.
+- On 0c5dc3d3: `@x2f/web` `helpLibrary.test.tsx`: 27 passed.
+- Not run: Playwright, and the full suite (runner G has it).
+
+### Guards removed (each change reverted)
+
+| Change | Result |
+|---|---|
+| drop the timestamp check | 1 failed |
+| drop the archive-family check | 1 failed |
+| drop `assertKeyNotBanned` | 1 failed |
+| millisecond cursor again | 2 failed |
+| Skip never pages | 1 failed |
+| the Other copy branch | 1 failed |
+| read `u.search` again | **0 failed** (see m) |
+
+**m (non-blocking): the path-only read has no test of its own.** Reading `u.search` again breaks no test, because the timestamp check already refuses every query-borne spoof I could build. It is a second layer; a test that a valid timestamp plus a query names no other host would pin it, for example:
+- `https://archive.ph/newest/x?y=/https://localmonero.co/` gives null;
+- `https://web.archive.org/web/2023/a?b=/https://localmonero.co/` must not give localmonero.co.
+
+**Open owner questions carried forward:** the revoke reason minimum, the 500-character cap, `tradesSeen <= claimed`, and moderators seeing the verified dollar figure.
