@@ -228,3 +228,124 @@ Ten of 12 reverts are caught. The two survivors are guarded upstream (m1).
 - Regtest e2e `-g "surplus"` (`trade.e2e.spec.ts`), under the lock, in a scratch worktree with
   3bf0b254 + origin/wip/lead-p3t31-regtest-e2e (0dc70076) merged, not pushed: **4 passed** (surplus at funding and surplus after secured, at phone 390x844 and desktop 1280x800; 7.2 min). The rebind works end to end on a real party: the grown amount is swept to the buyer less 1% and the network fee.
 - Full `npm run check`: not run (the verdict is not APPROVED).
+
+---
+
+# Addendum: re-review at c5d260da (20 Nov 2026)
+
+c5d260da is one commit on top of 3bf0b254. It adds `PartyHandle.acceptedOutcome()`, the
+`releasePrior` field, `effectiveBound` / `priorTaken` / `resumePrior`, an awaited refused flag, m6
+and the m4 tripwire.
+
+## Verdict: APPROVE (M1 and M2 fixed; three minor follow-ups, none blocking; M3 and m5 stay owner questions)
+
+### M1: fixed
+
+- The status sum and the tap use `effectiveBound()` (`runtime.ts:876-881`). That is the prior bound
+  until `acceptedOutcome()` names the rebound outcome (`priorTaken`, `runtime.ts:884-891`).
+- After any rebind, the tap also needs `committedBuilder() === null` (`runtime.ts:1460-1461`).
+- `rebindRefused` no longer depends on `paidSeen` (`runtime.ts:1037-1055`).
+
+Why the window is closed: in `party.ts`, `settleOutcome` is set inside the `run()` job only after
+the switch check passes (`party.ts:1301`). Every later `advance()` calls
+`beginRelease(settleOutcome)` before `advanceRelease()`. So once `acceptedOutcome()` names A', the
+party can no longer commit to the prior outcome. Until then, the page offers only A. A tap at A
+while the party is committed is refused. A tap at A while the party's commit is still queued pays
+A, which is exactly what a committed release pays.
+
+I re-ran my probe against the real code path:
+- Party held (A' not taken), then committed to A.
+- Status sum A. The tap at A' was refused, and the tap at A was refused (committed).
+- Then came the refusal: flag set, sum null, `amount-changed`, and the prior A handed back.
+- Second probe (API back at A, uncommitted): the tap at A, then the party takes A'. Bound A,
+  accepted A, prior cleared, and the next settle re-derives at A. There is no underpay path.
+
+### M2: fixed
+
+After the refusal, `resumePrior` hands `releasePrior.outcome` to the party once per run. My probe
+showed `["1250000000000/buyer"]` after a reload. Once that release resolves and the trade closes:
+phase `done`, no error.
+
+### The cosignPolicy bypass (`settle(o, approvedPrior = true)`, `runtime.ts:991-1001`, only from `resumePrior`, `runtime.ts:900-906`)
+
+- **Reachability.** The only caller is `resumePrior`. It needs `releaseRebindRefused === true`, and
+  that is set only in `rebindRefused`, after a party "already signed for another outcome" refusal
+  while `releasePrior` is set. So the bypass runs only against a party that has just said it is
+  committed. A committed party switches to nothing but its own committed digest
+  (`party.ts:1094-1097`, `:1287`). Handing it anything else gets "already signed" again: refused,
+  added to `refused`, no effect.
+- **What it can hand.** `releasePrior.outcome` is `r.intent.outcome` at the moment of the rebind
+  (`runtime.ts:1251`). That is written only at `runtime.ts:1266`, from `outcomeFor` (which runs
+  `cosignPolicy` against this device's own funds, attested addresses and deal), or at
+  `runtime.ts:1006` from a settle that had itself passed the policy. `mayRebindUp` requires
+  `intent.kind === 'release'`, a non-null outcome and no pending prior. Before paid, I1 keeps every
+  release outcome at the bound amount. So the outcome is a release this device approved at the
+  bound A: seller builds, buyer co-signs, the buyer's own signed payout address. `resumePrior` also
+  forces `kind: 'release'` and copies only `to/builder/cosigner`.
+- **Worst case.** The party's commit was lifted by `nextAttempt` (a co-sign failed before signing),
+  and the handed-back A becomes the party's target again. That pays the buyer A, an amount this
+  device approved. Only a seller who builds it can make it happen, and an honest seller builds a
+  release only from the buyer's signed `trade.paid`. Nothing in this path can pay the buyer less
+  than a sum it showed or let the buyer tap.
+- **Planting, staleness, cross-trade.** The whole `EscrowRecord` is AES-GCM encrypted with the
+  device key, and the AAD binds `x2f-escrow/v1\0store\0code` (`store.ts:299,343,352`). Neither the
+  API nor the relay can write it. A record moved to another trade code fails to decrypt. Planting
+  needs script in the origin, which already owns the wallet keys. Staleness: a prior is set only at
+  a rebind, only one is pending at a time, and it is cleared once taken. After a refusal it is kept,
+  on purpose, as the outcome the party is committed to.
+
+### `acceptedOutcome()` is read-only
+
+`party.ts:1311-1314` returns a copy of the in-memory `settleOutcome` (spread, with `to` copied
+element by element). It mutates nothing, saves nothing and sends nothing. It is null after a
+restart until a `settle()` is taken. That only delays `priorTaken`, which fails closed: the sum
+stays at the prior amount. `incoming.test.ts` (regtest) checks it on the real party, including that
+a refused switch leaves it unchanged.
+
+### New minor items (none blocking)
+
+- **m7. Nothing tests the one-rebind-at-a-time guard** (`runtime.ts:860-861`). Reverting it leaves all
+  137 attestation-flow tests green. Without it, a second growth before the party took the first
+  rebind would overwrite `releasePrior` with an outcome the party never took. After a refusal, the
+  device would then hand back the wrong outcome (refused again, so M2 stalls), and the status would
+  show the untaken sum. Add a test: two growths with the party held, and assert the prior and the
+  sum stay at A.
+- **m8. `releasePrior.outcome` is the intent's outcome, not necessarily the one the party took.**
+  If `settle()` skipped the last re-derived outcome (in flight, refused, policy at hand-over), the
+  prior can differ from the party's committed digest. It is still policy-approved at the bound, so
+  this is safe, but the M2 hand-back would then be refused and the stall returns in that sub-case.
+  The note's wording "approved exactly that outcome ... when it first handed it over" is slightly
+  stronger than the code. Suggestion: rebind only when `key(acceptedOutcome()) ===
+  key(intent.outcome)`, which costs one more tick. Another narrow case is a malicious seller plus a
+  reload plus a balance change (committed to A' at the old balance, prior not yet cleared). The same
+  check covers it.
+- **m9. `rebindRefused` now trips on any refused seller-built, buyer-co-signed outcome while a
+  prior is pending** (the key match was dropped, `runtime.ts:1040-1042`), for example a
+  lapse-refund. That fails closed (no sum, no tap, prior handed back). I note it so it stays
+  deliberate.
+
+### Guard reverts on the new code (attestation-flow, 137 tests)
+
+| # | Guard reverted | Result |
+|---|---|---|
+| n1 | `resumePrior` without the refused-flag condition | caught (M1+M2) |
+| n2 | `priorTaken` clears on any taken outcome (no key match) | caught (2) |
+| n3 | the tap without `partyUncommitted()` after a rebind | caught |
+| n4 | `effectiveBound` ignores the prior | caught (2) |
+| n5 | one rebind at a time | **survived** (m7) |
+| n6 | `resumePrior` hands nothing | caught (2: M1+M2, M2 reload) |
+| n7 | the hand-back goes through `cosignPolicy` (bypass off) | caught (2) |
+| n8 | a tap at the prior amount does not bind back | caught |
+
+### Tests run at c5d260da
+
+- Targeted vitest outside the lock with nice (apps/web): attestation-flow, escrow-store,
+  useEscrow, tradeRoomEscrow, escrowView, policy, dispute, disputeSlot, dispute-tripwires:
+  **9 files, 287 tests, all passed.**
+- `tsc --noEmit` for apps/web and packages/escrow: clean.
+- Probes (temporary test copy, deleted): as above.
+- Under the lock, scratch worktree c5d260da + origin/wip/lead-p3t31-regtest-e2e merged, not pushed:
+  - `packages/escrow/test/incoming.test.ts` (regtest): **1 file, 4 tests, all passed** (it includes the new acceptedOutcome checks on the real party).
+  - e2e `trade.e2e -g "surplus"`: **4 passed** (surplus at funding and surplus after secured, phone and desktop; 6.8 min).
+- Full `npm run check`: not run. The common brief asks a reviewer to run it before APPROVED, and
+  this job named only the suites above. The lead should run it (or have it run) before landing.
