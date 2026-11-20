@@ -39,6 +39,7 @@ import { ApiCallError } from '../../api/client.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
+import { useLeaveWarning } from '../../ui/useLeaveWarning.js';
 import { useConfirmations } from './release/seams.js';
 import { extendSteps, refundResume, refundRun, startedRefundRun, type RefundFlowDeps, type Steps } from './refundFlow.js';
 import { canExtend, canRequestRefund } from './refundRules.js';
@@ -275,6 +276,8 @@ function Refunding({ view, escrow }: RefundScreenProps) {
   const [pending, setPending] = useState<'none' | 'running' | 'failed'>('none');
   // This page's own Cancel run (still running, failed, or done: then a no-op), else the resume run.
   const runFor = (): Steps => startedRefundRun(view.code, deps) ?? refundResume(view.code, deps);
+  // The browser asks before the page goes while this device is still needed (lead call, gap 4).
+  useLeaveWarning(stillNeeded(escrow));
 
   const resume = async (run: Steps) => {
     setPending('running');
@@ -333,6 +336,11 @@ function Refunding({ view, escrow }: RefundScreenProps) {
  * A stopped escrow says the refund waits for it (with Try again when that may help).
  * COPY-UNSIGNED (all three lines).
  */
+/** The refund still needs this device: no stopped escrow, and the moderator has not submitted it yet. */
+function stillNeeded(escrow: RefundScreenProps['escrow']): boolean {
+  return escrow.error === null && !escrow.handedOff && escrow.phase !== 'done';
+}
+
 function HandOff({ escrow }: Pick<RefundScreenProps, 'escrow'>) {
   if (escrow.error !== null) {
     return (
@@ -346,7 +354,7 @@ function HandOff({ escrow }: Pick<RefundScreenProps, 'escrow'>) {
       </div>
     );
   }
-  if (escrow.handedOff || escrow.phase === 'done') {
+  if (!stillNeeded(escrow)) {
     return (
       <p className="x2f-keep-open" role="status" data-refund-handed-off="">
         <Icon name="check" size={16} /> This device has signed its part and the refund has been sent to the network. You can close this page now.

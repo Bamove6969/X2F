@@ -439,6 +439,41 @@ describe("SellerRefund after the cancel (owner 8 Nov: the refund starts at once)
     expect(stuck.button('Try again')).toBeNull();
   });
 
+  // Lead call (gap 4): the browser asks before the page goes while the refund still needs this device.
+  it("leaving the page asks first (beforeunload) between the tap and handedOff; not once the moderator submitted it, not on a stopped escrow, and not after the view is gone", async () => {
+    const leave = () => {
+      const e = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    const { escrow } = escrowFake();
+    const signing = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'signing', handedOff: false } });
+    await settle();
+    expect(leave()).toBe(true);
+    signing.rerender(
+      <MemoryRouter>
+        <SellerRefund code={BOARD.code} view={sellerRequestedView()} escrow={{ ...escrow, phase: 'signing', handedOff: true }} refresh={vi.fn(async () => undefined)} serverClock={clockAt(SERVER_NOW)} wide={false} />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(leave()).toBe(false);
+    signing.unmount();
+    const stopped = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'error', error: 'escrow-failed', handedOff: false } });
+    await settle();
+    expect(leave()).toBe(false);
+    stopped.unmount();
+    const waiting = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'signing', handedOff: false } });
+    await settle();
+    expect(leave()).toBe(true);
+    waiting.unmount();
+    expect(leave()).toBe(false);
+    // The window-ended view (before the tap) never asks.
+    const before = mount(sellerView());
+    await settle();
+    expect(leave()).toBe(false);
+    before.unmount();
+  });
+
   it('refunded: counts the refund confirmations from the API, and the trade is complete at 10', async () => {
     const path = `/v1/trades/${encodeURIComponent(BOARD.code)}/confirmations`;
     answers[path] = [{ status: 200, body: { confirmations: 4, target: 10 } }];

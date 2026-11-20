@@ -7,6 +7,7 @@ import { Countdown } from '../../ui/Countdown.js';
 import { HoldButton } from '../../ui/HoldButton.js';
 import { Icon } from '../../ui/icons.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
+import { useLeaveWarning } from '../../ui/useLeaveWarning.js';
 import { clearReleaseAsked, markReleaseAsked, releaseAsked } from './release/marker.js';
 import { ReleaseWarning } from './ReleaseWarning.js';
 import { setWarned, warned } from './warned.js';
@@ -116,6 +117,9 @@ export function SellerConfirm({
   const notHere = escrow.phase === 'idle';
   /** The device's escrow is still starting (after a reload: registering → verifying → ready). */
   const starting = ['registering', 'verifying', 'setting-up'].includes(escrow.phase);
+  // Lead call (gap 4): the release is seller-built like the no-show refund, so from the tap until
+  // the buyer's device submitted it (`handedOff`) the browser asks before the page goes.
+  useLeaveWarning(signing && !stopped && escrow.handedOff !== true);
 
   const sign = async () => {
     asked.current = true;
