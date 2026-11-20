@@ -2158,6 +2158,49 @@ describe('the trade chat identity is registered when the device runs the trade (
     expect(asks).toBe(1);
   });
 
+  // Lead call (20 Nov): only for a trade still open. A closed trade never creates a chat or registers a chat identity.
+  it.each(['released', 'refunded', 'cancelled', 'lapsed'])('a %s trade is never asked for, though its trade identity registers', async (state) => {
+    let asks = 0;
+    const t = await setup({ view: tradeView({ state }) });
+    const buyer = await t.mk('buyer', { prepareChat: async () => void asks++ });
+    await buyer.runtime.start(CODE);
+    await until(() => t.state.identities.buyer !== undefined);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(asks).toBe(0);
+  });
+
+  it('a trade gone from the API (404, or purged: 410) is never asked for', async () => {
+    for (const status of [404, 410]) {
+      let asks = 0;
+      let reads = 0;
+      const t = await setup();
+      const api = t.api.forRole('buyer');
+      const gone = { ...api, getTrade: async (code: string) => (++reads > 1 ? Promise.reject(Object.assign(new Error(`api ${status}`), { status, code: 'not-found' })) : api.getTrade(code)) };
+      const buyer = await t.mk('buyer', { api: gone, prepareChat: async () => void asks++ });
+      await buyer.runtime.start(CODE);
+      await until(() => t.state.identities.buyer !== undefined && reads >= 2);
+      await new Promise((r) => setTimeout(r, 60));
+      expect(asks).toBe(0);
+      await buyer.runtime.stopAll();
+    }
+  });
+
+  it('a trade that closes while the ask is being retried is not asked for again', async () => {
+    let asks = 0;
+    const t = await setup();
+    const buyer = await t.mk('buyer', {
+      prepareChat: async () => {
+        asks++;
+        t.state.view = { ...t.state.view, state: 'lapsed' };
+        throw Object.assign(new Error('api 503'), { status: 503 });
+      },
+    });
+    await buyer.runtime.start(CODE);
+    await until(() => asks === 1);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(asks).toBe(1);
+  });
+
   it('never asked when the trade identity is refused (409 identity-conflict) or the start is not confirmed', async () => {
     let asks = 0;
     const prepareChat = async (): Promise<void> => void asks++;
