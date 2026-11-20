@@ -109,7 +109,7 @@ test.describe('worker CSPs (lead call 20 Nov)', () => {
     const escrowPath = escrowWorkerFile();
     const escrow = await workerAt(page, escrowPath, () =>
       page.evaluate((p) => {
-        (globalThis as { __w?: Worker }).__w = new Worker(p, { type: 'module', name: 'x2f-escrow' });
+        (globalThis as { __w?: unknown }).__w = new Worker(p, { type: 'module', name: 'x2f-escrow' });
       }, escrowPath),
     );
 
@@ -124,7 +124,7 @@ test.describe('worker CSPs (lead call 20 Nov)', () => {
 
     const monero = await workerAt(page, '/monero/monero.worker.js', () =>
       escrow.evaluate(() => {
-        (globalThis as { __m?: Worker }).__m = new Worker('/monero/monero.worker.js');
+        (globalThis as { __m?: unknown }).__m = new Worker('/monero/monero.worker.js');
       }),
     );
     // monero-ts's worker: the node proxy only, not even this origin.
@@ -138,7 +138,7 @@ test.describe('worker CSPs (lead call 20 Nov)', () => {
     const origin = new URL(page.url()).origin;
     const ocr = await workerAt(page, '/ocr/worker.min.js', () =>
       page.evaluate(() => {
-        (globalThis as { __o?: Worker }).__o = new Worker('/ocr/worker.min.js');
+        (globalThis as { __o?: unknown }).__o = new Worker('/ocr/worker.min.js');
       }),
     );
     expect(await tryIn(ocr, 'fetch', `${UNLISTED}/x`)).toEqual({ refused: true, directive: 'connect-src' });
