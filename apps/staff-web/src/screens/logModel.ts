@@ -142,6 +142,9 @@ function sentence(
     case 'fee.owed': return `An account owes the 1% fee: ${xmr(d.amountAtomic) || 'the fee'}`;
     case 'limits.recommended': return `Recommended account limits${typeof d.capUsd === 'number' ? ` of ${num(d.capUsd)} USD` : ''}`;
     case 'limits.decided': return d.approved === true ? 'Approved the recommended limits' : 'Turned down the recommended limits';
+    // COPY-UNSIGNED (Plan 5 Task 19).
+    case 'review.disputed': return 'A trader disputed a review of them';
+    case 'review.dispute-decided': return d.outcome === 'removed' ? 'Removed a disputed review' : d.outcome === 'comments-removed' ? 'Removed some comments of a disputed review' : 'Let a disputed review stand';
     case 'pastrep.verified-usd-set': return d.cleared === true ? 'Cleared a past-reputation dollar figure' : 'Set a past-reputation dollar figure';
     // Staff (owner only).
     case 'staff.invite-created': return `Created an invite link for a new ${ROLE_WORDS[str(d.role)] ?? 'staff member'}`;
