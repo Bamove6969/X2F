@@ -4,6 +4,8 @@ import { normalizeTradeCode } from '@x2f/core';
 import {
   BAN_REASON_CODES,
   ISSUED_AT_KINDS,
+  KEY_TAP_KINDS,
+  LIMIT_STAGES,
   hasIssuedAt,
   inviteTokenHash,
   ownerSetupChallenge,
@@ -267,5 +269,20 @@ describe('staff device certification intents (chat membership design task 8)', (
     const revoke = stampIssuedAt({ kind: 'revoke-device', accountId: 'a1', deviceKeyId: id }, at);
     expect(hex(tapChallenge(certify, nonce))).not.toBe(hex(tapChallenge(revoke, nonce)));
     expect(() => tapChallenge({ kind: 'revoke-device', accountId: 'a1', deviceKeyId: id }, nonce)).toThrow(TypeError);
+  });
+});
+
+describe('account-limit intents (Plan 4 Task 26)', () => {
+  test('a decision on recommended limits binds the recommendation, the account, approve or decline, and what it sets', () => {
+    expect(KEY_TAP_KINDS).toContain('account-limit');
+    expect(LIMIT_STAGES).toEqual(['starter', 'building']);
+    expect(hasIssuedAt('account-limit')).toBe(false);
+    const nonce = new Uint8Array(16).fill(9);
+    const base = { kind: 'account-limit', recId: 'r1', accountId: 'a1', approve: true, capUsd: 300, stage: null } as const;
+    const yes = hex(tapChallenge(base, nonce));
+    expect(hex(tapChallenge({ ...base, approve: false }, nonce))).not.toBe(yes);
+    expect(hex(tapChallenge({ ...base, capUsd: 301 }, nonce))).not.toBe(yes);
+    expect(hex(tapChallenge({ ...base, capUsd: null, stage: 'starter' }, nonce))).not.toBe(yes);
+    expect(hex(tapChallenge({ ...base, recId: 'r2' }, nonce))).not.toBe(yes);
   });
 });

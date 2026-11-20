@@ -25,6 +25,7 @@ export {
   ESCROW_OUTCOMES,
   ISSUED_AT_KINDS,
   KEY_TAP_KINDS,
+  LIMIT_STAGES,
   hasIssuedAt,
   inviteTokenHash,
   ownerSetupChallenge,
@@ -40,6 +41,7 @@ export {
   type BanReasonCode,
   type EscrowOutcome,
   type KeyTapIntent,
+  type LimitStage,
   type RulingOutcome,
 } from './intent.js';
 export {
