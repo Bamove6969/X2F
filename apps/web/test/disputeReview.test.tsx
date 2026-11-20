@@ -150,3 +150,4 @@ describe('Dispute (my own profile)', () => {
     expect(other.host.querySelector('textarea')).toBeNull();
   });
 });
+
