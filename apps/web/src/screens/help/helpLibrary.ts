@@ -11,7 +11,9 @@
  *   main 8e7e63d5) merged into this branch (review of 18 Nov). Each entry's `sources` lists where
  *   each fact lives, as `path:line` (or `path:first-last`) from the repository root, then a few
  *   words that are on that line. apps/web/test/helpLibrary.test.tsx checks that every entry has one
- *   and that each still points at those words.
+ *   and that its words are still in that file within 40 lines of the cited line (lead, 20 Nov: so
+ *   adding lines to a cited file does not break it). Words that moved further but are in the file
+ *   once only warn, naming the line to re-point the note to; words gone from the file fail.
  * - An answer that names a time, a limit or a count lists it in `facts`; the same test rebuilds
  *   each fact's words from the constant in the code and fails when they differ or when an answer
  *   holds a number no fact covers. A number the owner can change in settings (the offer caps, the
