@@ -102,3 +102,67 @@ Every card number, IBAN, email and phone number in the fixtures was covered. The
   - m-3: a result with no blocks counts as "could not check".
   - m-4: `.gz` counts as a file extension only under `/ocr/`.
   - I-1 to I-6 are accepted as described in the review.
+
+## Task 16: the smart proof card (`wip/lead-p5t13-16-ocr`)
+
+Builder's own review, 20 Nov 2026. **An independent review is still needed before landing** (the card runs OCR on an image the counterparty controls).
+
+### What the card does, and with which bytes
+
+- **Seller (SellerConfirm).** `SellerProofSlot` takes the buyer's newest `proof.attached` of kind `proof` from the chat snapshot (`proof/sellerProof.ts`; evidence, the seller's own lines and missing lines never count).
+  - It mounts `ChatProof`, still the one file that decrypts a proof (the tripwire's `DECRYPT_ALLOWED` is unchanged, and so is its import pin). `ChatProof` fetches the ciphertext, decrypts it bound to the trade code, proof id and kind, and checks its SHA-256.
+  - `ProofThumb` runs the receive check (`receiveProof`: type allowlist, header walk, size cap, metadata stripped, decode, redraw) and shows the redrawn copy.
+  - Only after that does `showableProof` hand the **redrawn PNG**, never the decrypted bytes, to `readWords` (`proof/receive.ts`). `readWords` decodes it to pixels, runs the self-hosted OCR (`proof/ocr.ts`, the same worker and assets as the buyer's blur), and zeroes the pixels.
+  - Only the OCR words come back to the page (`onWords: (words: OcrWord[] | null) => void`). A proof that fails any step is never read: the card says "We couldn't read this screenshot".
+- **The check is this device's own.** `checkProof` compares the words with the fiat total THIS device's escrow accepts (`escrow.fiatCents`, never the API's), the route's trade code, and the window from the day before `securedAt` to now by the server clock. From the buyer it uses only what check.ts already allows: `hidden` (whether the name line says "hidden") and `photoTakenAt` (it can only make the date out of range, never clear a stale one).
+- **The card informs only.** It never ticks the box or unlocks the hold. There is a unit test and an e2e for this.
+- **Moderator (ModCase).** P5-A36 option (b), the plan's default: no OCR, no `'wasm-unsafe-eval'` and no `/ocr/*` on the staff origin. The card says what to look for, from the case's own figures. The blurred image is not shown yet, because the moderator's proof reader is not built (decision 16, `NEEDS_P5_PROOF_ENVELOPE`). So nothing about how proofs reach staff-web changed.
+
+### Pinned by tests
+
+- `apps/web/test/proof-render-tripwire.test.ts`: all 65 earlier checks pass unchanged. Three new checks:
+  - `receive.ts` loads only `./ocr.js`, and `ocr.ts` loads only `tesseract.js`.
+  - Neither file has a request, storage, Blob URL or `postMessage` of its own. `ocr.ts` talks only to tesseract's own worker.
+  - `onWords` is typed as words or null in `receive.ts` and `ProofThumb.tsx`. `readWords` is named nowhere else in either app.
+- `apps/web/test/smartProofCard.test.tsx`:
+  - The board example, $400, unreadable, OCR missing and OCR throwing.
+  - A proof that does not decrypt, and one bound to another trade code: refused, and the OCR never called.
+  - The OCR gets a fresh PNG of the declared size.
+  - The closing line is there in every variant. The hold stays locked until the box is ticked.
+- `apps/web/e2e/proof-card.spec.ts` runs real decryption, the real receive check and the real worker OCR under the real page CSP. It checks:
+  - every request goes to this origin;
+  - no CSP violations and no page errors;
+  - the ciphertext is fetched once.
+
+### Accepted residuals and questions
+
+- **New input to the OCR: the counterparty's picture.** Before this task the OCR read only the trader's own screenshot. Now the seller's device reads a picture the buyer made. What limits this:
+  - Tesseract gets canvas pixels from the receive check's redraw, at most 2600 px a side, never the file the buyer sent.
+  - It runs as WebAssembly in a dedicated worker with the worker CSP: `default-src 'none'; script-src https://<site>/ocr/ 'wasm-unsafe-eval'; connect-src https://<site>/ocr/; worker-src 'none'` (narrowed from `'self'` by the lead's call of 20 Nov and review M-1, below).
+  - The model and the engine are hash-checked (Task 13).
+  - **Closed by the lead's call of 20 Nov:** the worker CSP's `connect-src` was `'self'`, which let a worker taken over through a memory bug in tesseract's WASM reach the API with the trader's cookies. It is now this site's `/ocr/` path on each of its origins (`ocrWorkerCspFor`, from `X2F_ORIGINS`, which the API already requires): `connect-src https://<site>/ocr/`. A site origin must be a plain `https` origin (or `http` on loopback) of host-name characters only, because `URL` takes a host such as `x2f.test;`, and a `;` would end the directive. CSP drops the path after a redirect, and nothing under `/ocr/` redirects. `apps/web/e2e/proof-ocr.spec.ts` proves it in Chromium. A probe served at `/ocr/probe.js`, with the server's own `/ocr/` headers, fetches from inside the worker: `/ocr/eng.traineddata.gz` is reached, while `/v1/account/me` and `/ocrx/...` are blocked and reported as `connect-src` violations. The same probe under the old `'self'` reaches `/v1/`, which shows the test can tell the two apart. The real OCR still runs (proof-ocr, proof-card).
+  - **Pre-existing, not changed here:** `cspFor` builds the page CSP from `X2F_RELAY_ORIGIN` and `X2F_NODE_PROXY_ORIGIN` with the same `URL` check, so an operator value such as `wss://relay.x;` would put a `;` into the page policy. These are operator settings, not user input. A host-character check like the one above would close it.
+- **A second fetch.** The card's `ChatProof` and the chat panel's each fetch and decrypt the same ciphertext once. There is no shared cache, which keeps the one-decrypting-file rule simple.
+- **Lead defaults, owner questions:**
+  - Only the newest payment proof gets a card. Earlier ones stay in the chat.
+  - While the OCR reads, the card says "Checking <buyer>'s screenshot" (COPY-UNSIGNED).
+  - The ModCase line "Look for a $1,320.00 payment with the note 7RWD-3MXE-KQ84-HN2T." is COPY-UNSIGNED.
+  - P5-A36 stays at (b).
+
+### Review follow-ups (comms review-lead-p5t13-16-ocr-2026-11-20.md)
+
+- **M-1 (fixed).** The worker CSP is now `default-src 'none'; script-src <site>/ocr/ … 'wasm-unsafe-eval'; connect-src <site>/ocr/ …; worker-src 'none'`. Under the old `script-src 'self'`, `importScripts('/v1/…')` and `new Worker('/v1/…')` still sent cookie-bearing GETs. tesseract's worker only runs `importScripts` on its core under `/ocr/`. The worker's own script is checked against the page's `worker-src 'self'`.
+- **m-3 (fixed).** The e2e probe in proof-ocr.spec.ts tries fetch, XHR, WebSocket, EventSource, `importScripts` and a nested Worker, each at its own `/v1/probe-<way>` path. Under the served CSP:
+  - none reaches the network (checked both with the browser context's request log and its WebSocket log);
+  - each is reported as its own violation (`script-src` for `importScripts`, `worker-src` for the Worker);
+  - a fetch and an `importScripts` under `/ocr/` still work, and so does the real OCR.
+
+  The control repeats the probe under the old policy, where fetch, XHR, `importScripts` and the Worker do reach `/v1/`. That reproduces the M-1 finding.
+- **m-1 and m-4 (fixed).** `apps/api/src/origins.ts` `plainOrigin` is the one check for every exact origin taken from the settings:
+  - `X2F_ORIGINS` in config.ts, and the OCR worker CSP;
+  - `X2F_RELAY_ORIGIN` and `X2F_NODE_PROXY_ORIGIN` (page CSP), with their clear-text rule unchanged.
+
+  It refuses `;`, `,`, `'`, `*`, spaces and paths. `cspFor` also refuses to return a policy that is not exactly 11 directives or that contains a comma.
+
+  One change in behaviour: a site origin is checked exactly as config.ts checks it, so the OCR worker CSP now accepts an `http:` onion origin (config already did, and the earlier loopback-only rule would have refused one at startup).
+- **m-2 (fixed).** `serveWeb` answers 400 to any `/ocr/` path whose raw request line contains `%2F`, `%2E`, `%5C`, `%25`, `..` or a backslash (`badOcrPath`). This is tested on a raw socket, because `app.inject` normalises dot segments. docs/dev-setup.md now says a reverse proxy must pass `/ocr/` with the raw URI and must not decode or normalise it.

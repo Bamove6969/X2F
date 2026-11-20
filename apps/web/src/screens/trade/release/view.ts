@@ -26,6 +26,7 @@ export type ReleaseTrade = Pick<
   | 'txHash'
   | 'confirmBy'
   | 'serverNow'
+  | 'securedAt'
 >;
 
 /** The payment method as the trade header shows it: Task 22's `methodOf`. */

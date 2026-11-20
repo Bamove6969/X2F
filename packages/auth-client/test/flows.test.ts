@@ -35,7 +35,7 @@ const LABEL = 'Browser on Linux';
  * and the events route; Task 8: the identity and attestation routes; Task 19: live events, Web
  * Push (its final-alert receipt route is gone with the final alert: trade-rules, owner 8 Nov p6-1); Task 24: the release confirmations; Task 26: nudges, nudge settings
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
- * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
+ * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 19: the review dispute, apps/web/src/screens/review/api.ts; Plan 5 Task 10: the four past-reputation routes;
  * Plan 5 Tasks 5 and 12: the profile, badge settings and the signed record, apps/web/src/screens/profile/api.ts;
  * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
  * Post an offer in apps/web/src/screens/post/api.ts; D-016: the account's own freezes, read by
@@ -107,6 +107,7 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/nudges',
   'POST /v1/offers',
   'POST /v1/offers/:id/take',
+  'POST /v1/reviews/:id/dispute',
   'POST /v1/trades/:code/appeal',
   'POST /v1/trades/:code/blur-checks/:proofId',
   'POST /v1/trades/:code/chat',

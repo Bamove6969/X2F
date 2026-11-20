@@ -120,6 +120,9 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/performance/:id/weeks', perm: 'perf.read', allowed: OWNER },
   // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
   { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
+  // Plan 5 Task 19: review disputes, moderators and up (a helper is refused).
+  { method: 'GET', url: '/staff/v1/review-disputes', perm: 'reputation.review', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/review-disputes/:id/decide', perm: 'reputation.review', allowed: MODERATORS, body: { outcome: 'stands', reason: 'The review is fair and on topic.' } },
   // Plan 5 Task 11: moderators review past-reputation claims; senior moderators and the owner revoke
   // (a sample uuid is no claim: 404 past the guard).
   { method: 'GET', url: '/staff/v1/past-rep', perm: 'reputation.review', allowed: MODERATORS },

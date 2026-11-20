@@ -816,3 +816,42 @@ describe('the decrypt rules themselves (re-verify V-M1, V-M2)', () => {
     expect(sendsOut(code('apps/web/src/screens/proof/ChatProof.tsx'), programOf('apps/web/src/screens/proof/ChatProof.tsx'))).toEqual([]);
   });
 });
+
+/**
+ * Plan 5 Task 16 (the seller's smart proof card): the seller's device reads the words on the proof
+ * with its own OCR. The OCR reads only the receive check's redrawn copy, on the receive path
+ * (receive.ts `browserReadWords` -> proof/ocr.ts, the self-hosted worker), and only words come back to
+ * the page (`onWords`). These pin that path so a later change cannot turn it into a way out.
+ */
+describe('Task 16: the OCR of a received proof stays on the receive path and gives back words only', () => {
+  const RECEIVE = 'apps/web/src/proof/receive.ts';
+  const OCR = 'apps/web/src/proof/ocr.ts';
+  const OUT = /\bfetch\s*\(|\bsendBeacon\b|\bWebSocket\b|\bEventSource\b|\bXMLHttpRequest\b|\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|\bcaches\b|createObjectURL|\bopen\s*\(/;
+
+  it('receive.ts loads only the OCR module, and sends nothing out of the page', () => {
+    const c = code(RECEIVE);
+    const m = moduleOf(RECEIVE);
+    expect(m.dynamicImports.map((d) => c.slice(d.moduleRequest.start, d.moduleRequest.end))).toEqual(["'./ocr.js'"]);
+    expect(Object.keys(importsOf(m))).toEqual(['@x2f/proof']);
+    expect(c).not.toMatch(OUT);
+    expect(c).not.toMatch(/\bpostMessage\b/);
+  });
+
+  it("showableProof's onWords takes OCR words or null, nothing else; the reader is named only on the receive path", () => {
+    expect(code(RECEIVE)).toMatch(/onWords\?: \(words: OcrWord\[\] \| null\) => void/);
+    expect(code(PROOF_THUMB)).toMatch(/onWords\?: \(words: OcrWord\[\] \| null\) => void/);
+    for (const f of files) {
+      if (f === RECEIVE) continue;
+      expect(code(f), `${f}: readWords (the OCR of a received proof) belongs to receive.ts`).not.toMatch(/\breadWords\b|\bbrowserReadWords\b/);
+    }
+  });
+
+  it('the OCR module talks only to its own worker: no request, storage or other channel of its own, and loads only tesseract.js', () => {
+    const c = code(OCR);
+    const m = moduleOf(OCR);
+    expect(m.dynamicImports.map((d) => c.slice(d.moduleRequest.start, d.moduleRequest.end))).toEqual(["'tesseract.js'"]);
+    expect(Object.keys(importsOf(m))).toEqual(['@x2f/proof']);
+    expect(c).not.toMatch(OUT);
+    expect(c).not.toMatch(/\bpostMessage\b/);
+  });
+});

@@ -70,3 +70,63 @@
 .x2f-unblurred label.x2f-button {
   cursor: pointer;
 }
+
+/* Plan 5 Task 16: the smart proof card on SellerConfirm (board SellerConfirm, "Payment proof"). */
+.x2f-smart-proof {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+.x2f-smart-proof__row {
+  display: flex;
+  gap: 12px;
+}
+.x2f-smart-proof__thumb {
+  width: 96px;
+  flex-shrink: 0;
+}
+.x2f-smart-proof__thumb .x2f-chat-proof {
+  margin: 0;
+}
+.x2f-smart-proof__thumb .x2f-chat-proof__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.x2f-smart-proof__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+}
+.x2f-smart-proof__head {
+  font-weight: 600;
+  color: var(--x2f-ink);
+}
+.x2f-smart-proof__line {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  line-height: 18px;
+  color: var(--x2f-caution);
+}
+.x2f-smart-proof__line[data-tone='escrow'] {
+  color: var(--x2f-escrow);
+}
+.x2f-smart-proof__line svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.x2f-smart-proof__closing {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}

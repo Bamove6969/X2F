@@ -21,7 +21,9 @@ import { displayNameOf, useSession } from '../../session/useSession.js';
 import { Avatar } from '../../ui/Avatar.js';
 import { BadgeChips, badgesFromApi } from '../../ui/Badges.js';
 import { Button } from '../../ui/Button.js';
+import { UNDER_REVIEW_LABEL } from '@x2f/reputation';
 import { BlockAction } from '../settings/BlockAction.js';
+import { DISPUTE_COPY } from '../review/copy.js';
 import { fetchProfile, type PublicReview, type TraderProfile } from './api.js';
 import { PROFILE_COPY as C } from './profileCopy.js';
 import '../screens.css';
@@ -63,15 +65,27 @@ function Stars({ review }: { review: PublicReview }) {
 function Review({ review }: { review: PublicReview }) {
   const words = [...review.phrases, ...review.tradeBadges];
   return (
-    <li className="x2f-profile__review" data-part="review">
+    <li className="x2f-profile__review" data-part="review" data-under-review={review.underReview ? 'true' : undefined}>
       <span className="x2f-profile__review-top">
         <Stars review={review} />
         <span className="x2f-note">
           {review.age} · {review.method}
         </span>
       </span>
+      {/* Task 19 (owner 2026-10-29b): a disputed review shows "Under review" at once, to everyone. */}
+      {review.underReview ? (
+        <span className="x2f-note" data-part="under-review">
+          {UNDER_REVIEW_LABEL}
+        </span>
+      ) : null}
       {words.length > 0 ? <span className="x2f-profile__phrases">{words.join(' · ')}</span> : null}
       {review.note !== null ? <span className="x2f-profile__note">{review.note}</span> : null}
+      {/* Task 19: only on my own profile (the API sends an id only there), once per review. */}
+      {review.id !== undefined && review.disputable === true ? (
+        <Link className="x2f-link x2f-profile__link" to={`/profile/reviews/${encodeURIComponent(review.id)}/dispute`} data-part="dispute-review">
+          {DISPUTE_COPY.dispute}
+        </Link>
+      ) : null}
     </li>
   );
 }

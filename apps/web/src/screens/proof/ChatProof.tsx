@@ -86,12 +86,28 @@ type State = { s: 'loading' } | { s: 'ready'; bytes: Uint8Array } | { s: 'gone' 
  * is shown only through ProofThumb (the receive check). A proof that does not decrypt or check out
  * is the refusal; one the server no longer has says so.
  */
-export function ChatProof({ tradeCode, proof, deps }: { tradeCode: string; proof: ProofAttachedPayload; deps?: ReceiveDeps }) {
+export function ChatProof({
+  tradeCode,
+  proof,
+  deps,
+  onWords,
+}: {
+  tradeCode: string;
+  proof: ProofAttachedPayload;
+  deps?: ReceiveDeps;
+  /**
+   * Plan 5 Task 16 (the seller's smart proof card): ProofThumb's OCR of its redrawn copy, words only.
+   * Null when the proof cannot be fetched, decrypted, checked or read. Read when called.
+   */
+  onWords?: Parameters<typeof ProofThumb>[0]['onWords'];
+}) {
   const [state, setState] = useState<State>({ s: 'loading' });
   const { proofId, sha256 } = proof;
   // The rest of the payload is read when the effect runs, not as a dependency.
   const latest = useRef(proof);
   latest.current = proof;
+  const words = useRef(onWords);
+  words.current = onWords;
   /** The decrypted picture while ProofThumb checks it; zeroed once it has (review I5) or when this goes. */
   const plain = useRef<Uint8Array | null>(null);
   const wipe = () => {
@@ -117,6 +133,7 @@ export function ChatProof({ tradeCode, proof, deps }: { tradeCode: string; proof
         if (!live) return;
         setState({ s: e instanceof ProofGone ? 'gone' : 'refused' });
         noteProofChecked(proofId, false);
+        words.current?.(null);
       },
     );
     return () => {
@@ -152,6 +169,7 @@ export function ChatProof({ tradeCode, proof, deps }: { tradeCode: string; proof
             wipe();
           }}
           {...(deps ? { deps } : {})}
+          {...(onWords ? { onWords } : {})}
         />
       )}
     </figure>
