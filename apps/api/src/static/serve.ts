@@ -59,6 +59,12 @@ export function clientErrorHandler(err: NodeJS.ErrnoException, socket: Socket): 
 export interface WebOptions {
   /** The built web app (apps/web/dist). */
   root: string;
+  /**
+   * The exact origins the web app is served on (X2F_ORIGINS, as the API's Origin check uses), e.g.
+   * https://x2f.example.org. The escrow worker's worker-src names monero-ts's worker on each by full
+   * URL: 'self' cannot carry a path.
+   */
+  webOrigins: readonly string[];
   /** The relay's exact origin, e.g. wss://relay.example.org. */
   relayOrigin: string;
   /** The node proxy's exact origin, e.g. https://node.example.org. */
@@ -96,6 +102,23 @@ function origin(value: string, name: string, allowInsecure: boolean): string {
     throw new Error(`web: ${name} must use https or wss (http and ws only for 127.0.0.1, [::1] or localhost)`);
   }
   return value;
+}
+
+/** The web origins, each an exact http(s) origin (https unless loopback or allowed). */
+function webOriginsOf(o: Pick<WebOptions, 'webOrigins' | 'allowInsecureOrigins'>): string[] {
+  if (o.webOrigins.length === 0) throw new Error('web: at least one web origin is needed (X2F_ORIGINS)');
+  return o.webOrigins.map((v) => {
+    let url: URL | null = null;
+    try {
+      url = new URL(v);
+    } catch {
+      // fall through
+    }
+    if (url === null || (url.protocol !== 'https:' && url.protocol !== 'http:') || url.origin !== v) {
+      throw new Error('web: each web origin must be an exact origin such as https://x2f.example.org');
+    }
+    return origin(v, 'web origin', o.allowInsecureOrigins === true);
+  });
 }
 
 /** The Content-Security-Policy for HTML responses (Global Constraints). */
@@ -140,6 +163,39 @@ export function moneroWorkerCspFor(o: ConnectOrigins): string {
   return ["default-src 'none'", "script-src 'wasm-unsafe-eval'", `connect-src ${node}`].join('; ');
 }
 
+/**
+ * The CSP on the escrow worker (`assets/worker-<hash>.js`, apps/web/src/escrow/worker.ts; lead call
+ * 20 Nov), where every trader's multisig key shares, chat identity and chat keys live. A dedicated
+ * worker takes its CSP from its own response, so without this it ran under no policy at all. What it
+ * really reaches (read from the code, proved by the regtest e2e):
+ * - connect-src 'self': the API (escrow, chat and news under /v1, all relative URLs);
+ * - the relay (escrow signals and the multisig rounds, wsTransport over VITE_RELAY_URL);
+ * - the node proxy (MoneroMultisigEngine's fee and tx reads, and in-process wallets' daemon calls);
+ * - script-src 'self' 'wasm-unsafe-eval': libsodium's and monero-ts's WebAssembly, never JS eval;
+ * - worker-src: only monero-ts's own wallet worker, by full URL on each web origin.
+ */
+export function escrowWorkerCspFor(o: ConnectOrigins & Pick<WebOptions, 'webOrigins'>): string {
+  const insecure = o.allowInsecureOrigins === true;
+  const relay = origin(o.relayOrigin, 'relay origin', insecure);
+  const node = origin(o.nodeProxyOrigin, 'node proxy origin', insecure);
+  const workers = webOriginsOf(o).map((w) => `${w}${MONERO_WORKER_PATH}`);
+  return [
+    "default-src 'none'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    `worker-src ${workers.join(' ')}`,
+    `connect-src 'self' ${relay} ${node}`,
+  ].join('; ');
+}
+
+/**
+ * The CSP on the service worker (/sw.js, Task 19): it shows a notification, posts the kind to open
+ * windows and opens or focuses the site, none of which CSP governs; it fetches and loads nothing.
+ */
+export const SERVICE_WORKER_CSP = "default-src 'none'";
+
+/** The escrow worker as vite names it: assets/worker-<hash>.js (its source is src/escrow/worker.ts). */
+const ESCROW_WORKER_FILE = /[\\/]assets[\\/]worker-[A-Za-z0-9_-]+\.js$/;
+
 /** The web settings from the environment; `null` when this process does not serve the web app. */
 export function webOptionsFromEnv(env: Record<string, string | undefined>): WebOptions | null {
   const root = env.X2F_WEB_ROOT;
@@ -151,9 +207,11 @@ export function webOptionsFromEnv(env: Record<string, string | undefined>): WebO
   };
   const relayOrigin = need('X2F_RELAY_ORIGIN');
   const nodeProxyOrigin = need('X2F_NODE_PROXY_ORIGIN');
+  const webOrigins = need('X2F_ORIGINS').split(',').map((s) => s.trim());
   const allowInsecureOrigins = env.X2F_ALLOW_INSECURE_ORIGINS === '1';
-  const o: WebOptions = { root, relayOrigin, nodeProxyOrigin, ...(allowInsecureOrigins ? { allowInsecureOrigins } : {}) };
+  const o: WebOptions = { root, webOrigins, relayOrigin, nodeProxyOrigin, ...(allowInsecureOrigins ? { allowInsecureOrigins } : {}) };
   cspFor(o);
+  escrowWorkerCspFor(o);
   return o;
 }
 
@@ -211,6 +269,7 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
 export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<void> {
   const csp = cspFor(o);
   const moneroCsp = moneroWorkerCspFor(o);
+  const escrowCsp = escrowWorkerCspFor(o);
   const ocrDir = join(resolve(o.root), 'ocr') + sep;
   const moneroDir = join(resolve(o.root), 'monero') + sep;
   await app.register(async (scope) => {
@@ -231,7 +290,10 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
           void reply.header('content-security-policy', csp).header('cache-control', 'no-cache');
         } else if (/[\\/]sw\.js$/.test(path) && !/[\\/]assets[\\/]/.test(path)) {
           // The service worker (Task 19) keeps its name across releases: always revalidated.
-          void reply.header('cache-control', 'no-cache');
+          void reply.header('content-security-policy', SERVICE_WORKER_CSP).header('cache-control', 'no-cache');
+        } else if (ESCROW_WORKER_FILE.test(path)) {
+          // The escrow worker (lead call 20 Nov): its own CSP; hashed, so the long cache.
+          void reply.header('content-security-policy', escrowCsp).header('cache-control', IMMUTABLE);
         } else if (/[\\/]assets[\\/]/.test(path)) {
           void reply.header('cache-control', IMMUTABLE);
         }
