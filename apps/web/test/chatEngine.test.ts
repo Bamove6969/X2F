@@ -228,6 +228,61 @@ describe('chat engine: device binding and the attestation', () => {
   });
 });
 
+/**
+ * Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): a trade's chat is attested only once BOTH traders
+ * registered a chat identity, and before this fix a device registered one only when its chat was
+ * opened. So the buyer's proof could not be sent until the seller had opened the chat. `prepare`
+ * is the identity step of a sync alone, run by the escrow runtime when the device runs the trade.
+ */
+describe('chat engine: prepare, the chat identity without opening the chat (gap 5)', () => {
+  it('makes, saves and registers the identity, and reads nothing else: no attestation, no key, no envelope', async () => {
+    const reads: string[] = [];
+    for (const m of ['getAttestation', 'getKey', 'postKey', 'listEnvelopes', 'postEnvelope', 'postGrant'] as const) {
+      const f = (api[m] as (...a: unknown[]) => Promise<unknown>).bind(api);
+      (api as unknown as Record<string, unknown>)[m] = async (...a: unknown[]) => (reads.push(m), f(...a));
+    }
+    expect(await engine().prepare(chat)).toBe('registered');
+    expect(made).toHaveLength(1);
+    expect(api.identities.buyer?.signPublic).toBe(made[0]!.signPublic);
+    expect(await store.load(chat)).toMatchObject({ registered: true, role: 'buyer', attestation: null, cursor: '0', receipts: [] });
+    expect(reads).toEqual([]);
+  });
+
+  it('is idempotent, and the chat opened later goes on with that same identity', async () => {
+    const e = engine();
+    await e.prepare(chat);
+    await e.prepare(chat);
+    expect(made).toHaveLength(1);
+    expect((await e.sync(chat)).phase).toBe('waiting');
+    expect(made).toHaveLength(1);
+    const parts = attest();
+    await fromSeller('hello', parts);
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['hello']);
+  });
+
+  it('a prepare and a sync at once make one identity (one operation at a time per chat)', async () => {
+    const e = engine();
+    await Promise.all([e.prepare(chat), e.sync(chat), e.prepare(chat)]);
+    expect(made).toHaveLength(1);
+    expect((await store.load(chat))?.identity.signPublic).toBe(api.identities.buyer?.signPublic);
+  });
+
+  it('another device of the account holds the role: other-device, nothing made or registered', async () => {
+    api.view.mySignPublic = (await testIdentity()).signPublic;
+    expect(await engine().prepare(chat)).toBe('other-device');
+    expect(made).toHaveLength(0);
+    expect(api.identities.buyer).toBeUndefined();
+  });
+
+  it('410 chat-purged erases the record, as every chat call does', async () => {
+    const e = engine();
+    await e.prepare(chat);
+    api.gone = 410;
+    await expect(e.prepare(chat)).rejects.toMatchObject({ status: 410 });
+    expect(store.records.has(chat)).toBe(false);
+  });
+});
+
 describe('chat engine: messages', () => {
   it('sends a sealed v2 message the seller opens with the chat key; the mod identity holds no copy of the key before a dispute grant; the stored line is mine', async () => {
     const e = engine();

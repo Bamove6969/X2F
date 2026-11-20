@@ -305,6 +305,8 @@ export async function device(
     /** The device clock (ms). */
     now?: () => number;
     settledElsewhereMs?: number;
+    /** Gap 5: the trade chat's identity step (the worker's chat/prepare.ts). */
+    prepareChat?: (code: string) => Promise<void>;
   },
 ): Promise<Device> {
   const idb = o.idb ?? new IDBFactory();
@@ -343,6 +345,7 @@ export async function device(
     pollMs: 5,
     ...(o.now ? { now: o.now } : {}),
     ...(o.settledElsewhereMs !== undefined ? { settledElsewhereMs: o.settledElsewhereMs } : {}),
+    ...(o.prepareChat ? { prepareChat: o.prepareChat } : {}),
     onStatus: (_c, s) => onStatus(s),
   });
   const rawStart = runtime.start.bind(runtime);
