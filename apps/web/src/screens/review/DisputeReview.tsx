@@ -130,7 +130,7 @@ export function DisputeReview({ send = disputeReview }: { send?: (id: string, re
           </Button>
         </form>
       ) : null}
-      <Link className="x2f-link" to="/profile" data-part="dispute-back">
+      <Link className="x2f-button x2f-button--secondary" to="/profile" data-part="dispute-back">
         {C.cancel}
       </Link>
     </main>
