@@ -35,8 +35,10 @@ async function tryIn(w: Worker, kind: 'fetch' | 'ws' | 'worker', url: string): P
     async ([k, u]) => {
       const seen: string[] = [];
       const onViolation = (e: Event) => {
+        // blockedURI (the spec's name; Chromium has no blockedURL here): the URL, or only its origin.
         const v = e as SecurityPolicyViolationEvent;
-        if (v.blockedURL.startsWith(u.replace(/\/$/, '')) || u.startsWith(v.blockedURL)) seen.push(v.effectiveDirective);
+        const b = v.blockedURI;
+        if (b !== '' && (b.startsWith(u.replace(/\/$/, '')) || u.startsWith(b))) seen.push(v.effectiveDirective);
       };
       self.addEventListener('securitypolicyviolation', onViolation);
       try {
