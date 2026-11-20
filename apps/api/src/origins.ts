@@ -26,3 +26,17 @@ export function plainOrigin(value: string, schemes: ReadonlySet<string>): string
 
 /** The schemes of the site's own origins (X2F_ORIGINS). */
 export const SITE_SCHEMES: ReadonlySet<string> = new Set(['https:', 'http:']);
+
+/** Hosts that never leave this machine, as `URL.hostname` spells them. */
+const LOOPBACK: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost']);
+
+/**
+ * Lead call (re-review 27aaab28): a site origin in clear text is allowed on this machine and on a
+ * Tor onion service; anywhere else only with the operator's opt-in (X2F_ALLOW_INSECURE_ORIGINS=1),
+ * as for the relay and node proxy origins.
+ */
+export function clearTextAllowed(origin: string, allowInsecure: boolean): boolean {
+  const url = new URL(origin);
+  if (url.protocol !== 'http:' && url.protocol !== 'ws:') return true;
+  return allowInsecure || LOOPBACK.has(url.hostname) || url.hostname.endsWith('.onion');
+}

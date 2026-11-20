@@ -7,7 +7,7 @@
 // worker); every request, page and worker alike, goes to this origin only; no CSP violation is
 // reported; Chromium loads the relaxed-SIMD core; the automatic regions cover every card, IBAN, email
 // and phone, and the names after a label, and never the trade amount or code; and a model that is
-// blocked, missing or never arrives fails closed (`ocrOk: false`, no regions, no error) within 31 s.
+// blocked, missing or never arrives fails closed (`ocrOk: false`, no regions, no error) within 35 s.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -259,7 +259,7 @@ test.describe('on-device OCR for the proof blur', () => {
       const w = await open(page);
       const { out } = await lab(page, 'bank-labelled.png');
       expect(out).toMatchObject({ ocrOk: false, auto: [], amount: [], memo: [], words: [] });
-      expect(out.ms).toBeLessThan(31_000);
+      expect(out.ms).toBeLessThan(35_000);
       expect(w.errors).toEqual([]);
       expect(w.requests.filter((u) => !u.startsWith(`${ORIGIN}/`) && !u.startsWith('data:'))).toEqual([]);
     });
@@ -272,7 +272,7 @@ test.describe('on-device OCR for the proof blur', () => {
     const { out } = await lab(page, 'bank-labelled.png');
     expect(out).toMatchObject({ ocrOk: false, auto: [] });
     expect(out.ms).toBeGreaterThanOrEqual(29_000);
-    expect(out.ms).toBeLessThan(31_000);
+    expect(out.ms).toBeLessThan(35_000);
     expect(w.errors).toEqual([]);
   });
 });

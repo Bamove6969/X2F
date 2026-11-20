@@ -573,6 +573,19 @@ describe('config', () => {
     expect(() => loadConfig({ ...FULL_ENV, [name]: value })).toThrow(name);
   });
 
+  // Lead call (re-review 27aaab28): a remote clear-text site origin needs X2F_ALLOW_INSECURE_ORIGINS=1,
+  // as the relay and node proxy origins do; loopback and .onion stay allowed.
+  it('X2F_ORIGINS: a remote http origin needs X2F_ALLOW_INSECURE_ORIGINS=1; loopback and .onion do not', () => {
+    for (const o of ['http://x2f.test', 'https://x2f.test,http://10.0.0.5:8080']) {
+      expect(() => loadConfig({ ...FULL_ENV, X2F_ORIGINS: o }), o).toThrow('X2F_ORIGINS');
+      expect(() => loadConfig({ ...FULL_ENV, X2F_ORIGINS: o, X2F_ALLOW_INSECURE_ORIGINS: 'true' }), o).toThrow('X2F_ORIGINS');
+      expect(loadConfig({ ...FULL_ENV, X2F_ORIGINS: o, X2F_ALLOW_INSECURE_ORIGINS: '1' }).origins, o).toEqual(o.split(','));
+    }
+    for (const o of ['http://127.0.0.1:4317', 'http://localhost:4317', 'http://[::1]:4317', 'https://x2f.test,http://x2fexample.onion']) {
+      expect(loadConfig({ ...FULL_ENV, X2F_ORIGINS: o }).origins, o).toEqual(o.split(','));
+    }
+  });
+
   it('never echoes a secret value in its error', () => {
     const secret = 'postgres-password-zz9';
     expect(() => loadConfig({ ...FULL_ENV, DATABASE_URL: `mysql://u:${secret}@h/x` })).toThrow(

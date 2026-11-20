@@ -270,7 +270,7 @@ describe('malformed HTTP that never reaches fastify routing (clientErrorHandler)
     await live.close();
   });
 
-  it.each(['/ocr/../v1/me', '/ocr/x/../../v1/me', '/ocr/..', '/ocr/a\\..\\b', '/ocr/%2e%2e/v1/me', '/ocr/.%2E/v1/me', '/ocr/a\\b', '/ocr/..%2Fv1%2Fme'])('review m-2: the raw path %s (not normalised by the client) is 400', async (path) => {
+  it.each(['/ocr/../v1/me', '/ocr/x/../../v1/me', '/ocr/..', '/ocr/a\\..\\b', '/ocr/%2e%2e/v1/me', '/ocr/.%2E/v1/me', '/ocr/a\\b', '/ocr/..%2Fv1%2Fme', '/%6Fcr/..%2Fv1%2Fme', '/%4F%43%52/..%2Fv1', '/%ZZ/x', '/%E0%A4/x'])('review m-2, n-1: the raw path %s (not normalised by the client; the first segment decoded once) is 400', async (path) => {
     const res = parseRaw(await rawExchange(port, `GET ${path} HTTP/1.1\r\nHost: x2f.test\r\nConnection: close\r\n\r\n`));
     expect(res.status, path).toBe(400);
     expectBaseHeaders(res.headers);

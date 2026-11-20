@@ -218,7 +218,7 @@ export function isApiOrFilePath(url: string, apiSegment = 'v1'): boolean {
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 
 /**
- * Review m-2: under /ocr/ (the only path the OCR worker may reach, `ocrWorkerCspFor`) a raw path with
+ * Review m-2: under /ocr/ (its first segment `ocr` in any case and encoding; the only path the OCR worker may reach, `ocrWorkerCspFor`) a raw path with
  * an encoded slash, dot or backslash, a `%25`, a `..` or a backslash is refused. The browser leaves
  * `/ocr/..%2Fv1%2Fx` as it is and the CSP allows it; this server never resolves it, but a front
  * proxy that decodes or normalises could turn it into /v1/x. Read from the raw request line, since
@@ -226,7 +226,16 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
  */
 export function badOcrPath(rawUrl: string): boolean {
   const path = (rawUrl.split('?', 1)[0] ?? '').toLowerCase();
-  if (path !== '/ocr' && !path.startsWith('/ocr/')) return false;
+  // Re-review n-1: the first segment decoded once (`/%6Fcr/` is /ocr/ to a proxy that decodes), and
+  // a first segment that does not decode is refused outright.
+  const first = path.replace(/^\/+/, '').split('/', 1)[0] ?? '';
+  let name: string;
+  try {
+    name = decodeURIComponent(first).toLowerCase();
+  } catch {
+    return true;
+  }
+  if (name !== 'ocr') return false;
   return /%2f|%2e|%5c|%25|\\|\.\./.test(path);
 }
 
