@@ -63,4 +63,6 @@ It matters a little, but not for this branch.
 
 In one loaded run, `attestation-flow` › "once settle resolved, a reload never calls settle again" failed once, at line 1657 (`intent.done` not yet saved when the phase reads `done`). It did not reproduce in 6 more runs, 3 of them under the same load. It is likely a pre-existing timing flake in the persist after `done`; not traced to this branch's background prepare loop. Worth the runner watching.
 
-Not run: the full `npm run check`, regtest and Playwright. The API's chat.test (the four terminal states) was read but not run here.
+| api: chat (incl. the four terminal states, existing chat, pre-trade link, disputed) | 1 | 61 passed |
+
+Not run: the full `npm run check`, regtest and Playwright.
