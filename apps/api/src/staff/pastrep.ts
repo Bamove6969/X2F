@@ -94,17 +94,23 @@ export interface StaffPastRepPage {
 
 /** The longest display-name filter (spec 6.1 names are far shorter). */
 const NAME_FILTER_MAX = 64;
-const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+/** A cursor's time: UTC to the microsecond, as the column holds it (re-review M1). */
+const CURSOR_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 const LIKE_SPECIAL = /[\\%_]/g;
 
-/** A list cursor: the last item's sort time and id (`<ISO time>~<uuid>`), or 400. */
-function cursorOf(raw: unknown): { at: Date; id: string } | null {
+/**
+ * A list cursor: the last item's sort time to the microsecond and its id
+ * (`2026-11-02T12:00:00.123456Z~<uuid>`), or 400. Re-review M1: the time is Postgres's own text of
+ * the column (never a JS Date, which keeps only milliseconds), passed back as text, so rows that
+ * differ below a millisecond are neither skipped nor repeated.
+ */
+function cursorOf(raw: unknown): { at: string; id: string } | null {
   if (raw === undefined) return null;
   const [at, id, ...more] = typeof raw === 'string' ? raw.split('~') : [];
-  if (more.length > 0 || at === undefined || id === undefined || !ISO.test(at) || !UUID.test(id) || Number.isNaN(Date.parse(at))) {
+  if (more.length > 0 || at === undefined || id === undefined || !CURSOR_TIME.test(at) || !UUID.test(id) || Number.isNaN(Date.parse(at))) {
     throw new ApiError(400, 'bad-request', { field: 'cursor' });
   }
-  return { at: new Date(at), id: id.toLowerCase() };
+  return { at, id: id.toLowerCase() };
 }
 
 /** The activity log's form of a site: an `id` value, so a space becomes '-' ("Hodl Hodl" → "Hodl-Hodl"). */
@@ -183,10 +189,11 @@ function staffPastRepReviewRoutes(app: FastifyInstance): void {
     const after = queue ? `(${sortAt}, pr.id) > ($3::timestamptz, $4::uuid)` : `(${sortAt}, pr.id) < ($3::timestamptz, $4::uuid)`;
     const { rows } = await req.server.deps.db.query<{
       id: string; site: string; evidence_url: string; claimed_trades: number; verified_trades: number | null; cents: string | null;
-      status: 'signed' | 'approved'; fingerprint: string; display_name: string; created_at: Date; sort_at: Date;
+      status: 'signed' | 'approved'; fingerprint: string; display_name: string; created_at: Date; sort_text: string;
     }>(
       `select pr.id, pr.site, pr.evidence_url, pr.claimed_trades, pr.verified_trades, ${verifiedUsdCentsTextSql('pr')} as cents,
-              pr.status, pr.fingerprint, a.display_name, pr.created_at, ${sortAt} as sort_at
+              pr.status, pr.fingerprint, a.display_name, pr.created_at,
+              to_char(${sortAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as sort_text
          from past_reputation pr join accounts a on a.id = pr.account_id
         where pr.status = $1 and ($3::timestamptz is null or ${after})
           and ($5::text is null or a.display_key like $5 || '%')
@@ -203,7 +210,7 @@ function staffPastRepReviewRoutes(app: FastifyInstance): void {
         fingerprint: groupFingerprint(r.fingerprint), keyId: r.fingerprint.slice(-16).toUpperCase(), signatureValid: true as const,
         displayName: r.display_name, createdAt: r.created_at.toISOString(), originalHost: archivedOriginalHost(r.evidence_url),
       })),
-      next: more && last !== undefined ? `${last.sort_at.toISOString()}~${last.id}` : null,
+      next: more && last !== undefined ? `${last.sort_text}~${last.id}` : null,
     };
   });
 

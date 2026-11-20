@@ -54,7 +54,8 @@ export function PastRep() {
   const me = useMe();
   const senior = me?.role === 'senior' || me?.role === 'owner';
   const [queue, setQueue] = useState<PastRepClaim[] | null>(null);
-  const [queueMore, setQueueMore] = useState(false);
+  // Re-review m2: the queue's next page, so Skip reaches past the first page.
+  const [queueNext, setQueueNext] = useState<string | null>(null);
   const [approved, setApproved] = useState<PastRepPage | null>(null);
   // Review M1: the approved list's trader-name search, as typed and as last asked of the API.
   const [nameText, setNameText] = useState('');
@@ -67,9 +68,23 @@ export function PastRep() {
   const load = useCallback(async () => {
     const [q, a] = await Promise.all([pastRepList('signed'), senior ? pastRepList('approved', { name }) : Promise.resolve(null)]);
     setQueue(q.items);
-    setQueueMore(q.next !== null);
+    setQueueNext(q.next);
     setApproved(a);
   }, [senior, name]);
+
+  /** Skip: the next claim; past the last one loaded, the queue's next page; past the end, the first. */
+  const skip = async (index: number, length: number) => {
+    if (index + 1 < length) return setAt(index + 1);
+    if (queueNext === null) return setAt(0);
+    try {
+      const p = await pastRepList('signed', { cursor: queueNext });
+      setQueue((q) => [...(q ?? []), ...p.items]);
+      setQueueNext(p.next);
+      setAt(p.items.length > 0 ? index + 1 : 0);
+    } catch (e) {
+      setFault(faultText(e, 'X2F could not load more claims just now. Try again.'));
+    }
+  };
 
   const moreApproved = async () => {
     if (approved?.next == null) return;
@@ -142,14 +157,14 @@ export function PastRep() {
         <>
           <p className="x2f-staff-hint" data-part="claim-count">
             Claim {index + 1} of {queue.length}
-            {queueMore ? '+' : ''}
+            {queueNext !== null ? '+' : ''}
           </p>
           <WaitingClaim
             key={current.id}
             claim={current}
             canSetFigure={senior}
             act={act}
-            onSkip={() => setAt((index + 1) % queue.length)}
+            onSkip={() => void skip(index, queue.length)}
           />
         </>
       )}
@@ -305,7 +320,8 @@ function WaitingClaim({ claim, canSetFigure, act, onSkip }: { claim: PastRepClai
       </label>
       <label className="x2f-check">
         <input type="checkbox" data-part="profile-seen" checked={profileSeen} onChange={(e) => setProfileSeen(e.target.checked)} />
-        <span>The archived page is the trader's profile on {claim.site}</span>
+        {/* Re-review m3: "Other" names no site, so the tick says which page it means. */}
+        <span>{claim.site === 'Other' ? "The archived page is the trader's own profile on the archived site" : `The archived page is the trader's profile on ${claim.site}`}</span>
       </label>
       <div className="x2f-field">
         <label className="x2f-label" htmlFor={tradesId}>
