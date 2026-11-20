@@ -55,6 +55,7 @@ function trade(over: Over = {}): ReleaseTrade {
     settling: null,
     txHash: null,
     confirmBy: '2026-10-25T13:52:00.000Z',
+    securedAt: '2026-10-25T11:30:00.000Z',
     serverNow: NOW,
     ...rest,
   };

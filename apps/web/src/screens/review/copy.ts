@@ -56,3 +56,32 @@ export const FEEDBACK_COPY = {
   // COPY-UNSIGNED
   retry: 'Try again',
 } as const;
+
+// Plan 5 Task 19: disputing a review of me (no board). "Dispute" and "Under review" are the spec's
+// words (5.1, Revision 2026-10-29b); every other line is COPY-UNSIGNED.
+export const DISPUTE_COPY = {
+  // Spec 5.1.
+  dispute: 'Dispute',
+  // COPY-UNSIGNED
+  title: 'Dispute a review',
+  // COPY-UNSIGNED
+  intro: 'A moderator reads your reason and decides whether the review stands, loses some of its comments, or is removed. Until then it shows "Under review" and does not count in your stats.',
+  // COPY-UNSIGNED
+  reason: 'Why should this review be looked at?',
+  // COPY-UNSIGNED
+  reasonHint: 'For example: it is revenge for a dispute, it is from a competitor, or it shares personal details.',
+  // COPY-UNSIGNED
+  send: 'Send to a moderator',
+  // COPY-UNSIGNED
+  cancel: 'Back to my profile',
+  // COPY-UNSIGNED
+  sent: 'Sent. The review shows "Under review" until a moderator decides.',
+  // COPY-UNSIGNED (a stale screen: the review was already disputed)
+  already: 'This review has already been disputed.',
+  // COPY-UNSIGNED (unknown id, someone else's review, or one that was removed or is on hold)
+  missing: 'There is no review to dispute here.',
+  // COPY-UNSIGNED
+  failed: 'That did not work. Try again.',
+  // COPY-UNSIGNED
+  loading: 'Loading…',
+} as const;

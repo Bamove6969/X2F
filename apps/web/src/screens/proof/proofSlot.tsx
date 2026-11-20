@@ -9,7 +9,7 @@ import type { PreparedProof } from '../../proof/upload.js';
 export const PROOF_AFTER_SECURED = 'Add your proof here after the escrow is secured.';
 
 /** The app keeps fiat in cents (`fiatCents`), so a proof's amount has 2 decimals. */
-const FIAT_EXPONENT = 2;
+export const FIAT_EXPONENT = 2;
 const DAY_MS = 86_400_000;
 
 /**

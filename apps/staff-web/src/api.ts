@@ -233,6 +233,38 @@ export const moodFeedback = (before?: string) =>
 export const formFeedback = (before?: string) => staffApi<{ items: FormItem[]; next: string | null }>(page('/staff/v1/feedback/form', before));
 
 // ---------------------------------------------------------------------------------------------
+// Review disputes (Plan 5 Task 19 on the staff API; perm reputation.review: moderators and up)
+
+export type ReviewDisputeOutcome = 'stands' | 'comments-removed' | 'removed';
+
+/** An open review dispute: the review and the subject's reason, never either trader's name. */
+export interface ReviewDisputeItem {
+  id: string;
+  openedAt: string;
+  reason: string;
+  review: {
+    neutral: boolean;
+    stars: number | null;
+    phrases: string[];
+    tradeBadges: string[];
+    note: string | null;
+    method: string;
+    age: string;
+    reviewerRole: 'buyer' | 'seller';
+  };
+  /** While the trade still exists; null once it was deleted (30 days after it ended). */
+  tradeCode: string | null;
+}
+
+export const reviewDisputes = (after?: string) =>
+  staffApi<{ items: ReviewDisputeItem[]; next: string | null }>(after === undefined ? '/staff/v1/review-disputes' : `/staff/v1/review-disputes?after=${encodeURIComponent(after)}`);
+
+export const decideReviewDispute = (
+  id: string,
+  body: { outcome: ReviewDisputeOutcome; reason: string; remove?: { note: boolean; phrases: string[]; tradeBadges: string[] } },
+) => staffApi<{ ok: true }>(`/staff/v1/review-disputes/${encodeURIComponent(id)}/decide`, { method: 'POST', body });
+
+// ---------------------------------------------------------------------------------------------
 // Past reputation (Plan 5 Task 11; perm reputation.review: the owner, senior moderators and
 // moderators; revoking reputation.revoke and the dollar figure reputation.verify: senior moderators
 // and the owner)
@@ -540,6 +572,33 @@ export const messageTraders = (code: string, sealed: import('./chat/types.js').S
 export const readCaseChat = (code: string, deviceKeyId: string) =>
   staffApi<import('./chat/types.js').CaseChatAnswer>(casePath(code, '/chat'), { method: 'POST', body: { deviceKeyId } });
 export const requestProof = (code: string, side: Side) => staffApi<unknown>(casePath(code, '/proof-request'), { method: 'POST', body: { side } });
+// Plan 4 Task 26: recommended account limits. A cap in whole US dollars or a stage, exactly one.
+export type LimitWhat = { capUsd: number } | { stage: import('@x2f/staff').LimitStage };
+export interface LimitRecommendation {
+  id: string;
+  accountId: string;
+  displayName: string;
+  capUsd: number | null;
+  stage: import('@x2f/staff').LimitStage | null;
+  /** Staff only: the trader never sees it. */
+  reason: string;
+  /** The case it came from, or null. */
+  code: string | null;
+  recommendedBy: string;
+  /** The signed-in member recommended it, so may not decide it. */
+  mine: boolean;
+  createdAt: string;
+  currentStage: 'starter' | 'building' | 'graduated';
+  currentCapUsdCents: string | null;
+}
+export const recommendLimits = (code: string, b: { side: Side; reason: string } & LimitWhat) =>
+  staffApi<{ id: string }>(casePath(code, '/limit-recommendations'), { method: 'POST', body: b });
+export const limitRecommendations = () => staffApi<{ recommendations: LimitRecommendation[] }>('/staff/v1/limit-recommendations');
+export const decideLimits = (accountId: string, recId: string, b: { approve: boolean; tapId: string }) =>
+  staffApi<{ status: 'approved' | 'declined' }>(
+    `/staff/v1/accounts/${encodeURIComponent(accountId)}/limit-recommendations/${encodeURIComponent(recId)}/decide`,
+    { method: 'POST', body: b },
+  );
 export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
   staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });
 export const proposeRuling = (

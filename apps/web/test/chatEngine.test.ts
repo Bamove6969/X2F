@@ -2,10 +2,11 @@ import { newTradeCode, type Role } from '@x2f/core';
 import { makeChatGrant, makeDisputeNotice, makeGrantAccepted, unwrapChatKey, verifyChatGrant, openChat, openChatKeyRecord, ProtocolError, ReplayGuard as Guard2, seal, sealChat, verifyChatKeyRecord, makeChatKeyRecord, newChatKey, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { attestationBytes, channelFor, chatIdentityProofValid, checkChatEnvelopeV2, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { IDBFactory } from 'fake-indexeddb';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chatKeyOf, makeChatKey, newChatState, sealChatMessage, sealPayDetails, type ChatState } from '../src/chat/chatCrypto.js';
 import { ChatSendFailed, GRANT_FALLBACK_MS, createChatEngine, type ApiEnvelope, type ChatApi, type ChatApiView, type ChatEngine } from '../src/chat/engine.js';
-import { memoryChatStore } from '../src/chat/store.js';
+import { memoryChatStore, openChatStore, type ChatStore } from '../src/chat/store.js';
 
 /** A chat identity made with libsodium (apps/web makes real identities only in the escrow worker). */
 async function testIdentity(): Promise<Identity> {
@@ -225,6 +226,251 @@ describe('chat engine: device binding and the attestation', () => {
     await engine().sync(chat);
     api.refused = true;
     expect(await engine().sync(chat)).toMatchObject({ phase: 'failed', problem: 'refused' });
+  });
+});
+
+/**
+ * Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): a trade's chat is attested only once BOTH traders
+ * registered a chat identity, and before this fix a device registered one only when its chat was
+ * opened. So the buyer's proof could not be sent until the seller had opened the chat. `prepare`
+ * is the identity step of a sync alone, run by the escrow runtime when the device runs the trade.
+ */
+describe('chat engine: prepare, the chat identity without opening the chat (gap 5)', () => {
+  it('makes, saves and registers the identity, and reads nothing else: no attestation, no key, no envelope', async () => {
+    const reads: string[] = [];
+    for (const m of ['getAttestation', 'getKey', 'postKey', 'listEnvelopes', 'postEnvelope', 'postGrant'] as const) {
+      const f = (api[m] as (...a: unknown[]) => Promise<unknown>).bind(api);
+      (api as unknown as Record<string, unknown>)[m] = async (...a: unknown[]) => (reads.push(m), f(...a));
+    }
+    expect(await engine().prepare(chat)).toBe('registered');
+    expect(made).toHaveLength(1);
+    expect(api.identities.buyer?.signPublic).toBe(made[0]!.signPublic);
+    expect(await store.load(chat)).toMatchObject({ registered: true, role: 'buyer', attestation: null, cursor: '0', receipts: [] });
+    expect(reads).toEqual([]);
+  });
+
+  it('is idempotent, and the chat opened later goes on with that same identity', async () => {
+    const e = engine();
+    await e.prepare(chat);
+    await e.prepare(chat);
+    expect(made).toHaveLength(1);
+    expect((await e.sync(chat)).phase).toBe('waiting');
+    expect(made).toHaveLength(1);
+    const parts = attest();
+    await fromSeller('hello', parts);
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['hello']);
+  });
+
+  it('a prepare and a sync at once make one identity (one operation at a time per chat)', async () => {
+    const e = engine();
+    await Promise.all([e.prepare(chat), e.sync(chat), e.prepare(chat)]);
+    expect(made).toHaveLength(1);
+    expect((await store.load(chat))?.identity.signPublic).toBe(api.identities.buyer?.signPublic);
+  });
+
+  it('another device of the account holds the role: other-device, nothing made or registered', async () => {
+    api.view.mySignPublic = (await testIdentity()).signPublic;
+    expect(await engine().prepare(chat)).toBe('other-device');
+    expect(made).toHaveLength(0);
+    expect(api.identities.buyer).toBeUndefined();
+  });
+
+  it('410 chat-purged erases the record, as every chat call does', async () => {
+    const e = engine();
+    await e.prepare(chat);
+    api.gone = 410;
+    await expect(e.prepare(chat)).rejects.toMatchObject({ status: 410 });
+    expect(store.records.has(chat)).toBe(false);
+  });
+});
+
+/**
+ * Review m1 (review-lead-fix-chat-attest-2026-11-20): two tabs are two workers over one IndexedDB
+ * store, so the per-chat queue of one engine does not keep them apart. Before the fix the slower tab
+ * saved its own identity over the one the faster tab had registered, and the device was left holding
+ * a key the API never took: `other-device` in its own chat for good.
+ */
+describe('chat engine: two tabs over one store (review m1)', () => {
+  /** Two engines (two tabs' workers) over two connections to one fake IndexedDB; B makes its identity slowly. */
+  async function twoTabs(o: { lock?: (name: string, fn: () => Promise<unknown>) => Promise<unknown> } = {}) {
+    const idb = new IDBFactory();
+    const [sa, sb] = [await openChatStore({ indexedDB: idb }), await openChatStore({ indexedDB: idb })];
+    const madeBy = { a: 0, b: 0 };
+    const tab = (s: ChatStore, name: 'a' | 'b', delay: number) =>
+      createChatEngine({
+        api,
+        store: s,
+        newIdentity: async () => {
+          madeBy[name]++;
+          const i = await testIdentity();
+          await new Promise((r) => setTimeout(r, delay));
+          return i;
+        },
+        modSigningPublic,
+        ...(o.lock ? { lock: o.lock } : {}),
+      });
+    return { a: tab(sa, 'a', 0), b: tab(sb, 'b', 40), sa, sb, madeBy };
+  }
+
+  it('without a lock (the store layer alone): the stored identity is the registered one, and both tabs go on with it', async () => {
+    const t = await twoTabs({ lock: (_n, fn) => fn() });
+    expect(await Promise.all([t.a.prepare(chat), t.b.prepare(chat)])).toEqual(['registered', 'registered']);
+    expect((await t.sa.load(chat))?.identity.signPublic).toBe(api.identities.buyer?.signPublic);
+    expect((await t.sb.load(chat))?.identity.signPublic).toBe(api.identities.buyer?.signPublic);
+    expect((await t.b.sync(chat)).phase).toBe('waiting');
+  });
+
+  it('with a per-chat lock (the first layer): the second tab finds the first one\'s identity and makes none', async () => {
+    const held = new Map<string, Promise<unknown>>();
+    const names: string[] = [];
+    const lock = (name: string, fn: () => Promise<unknown>): Promise<unknown> => {
+      names.push(name);
+      const run = (held.get(name) ?? Promise.resolve()).then(fn, fn);
+      held.set(name, run.catch(() => undefined));
+      return run;
+    };
+    const t = await twoTabs({ lock });
+    await Promise.all([t.b.prepare(chat), t.a.prepare(chat)]);
+    expect(t.madeBy.a + t.madeBy.b).toBe(1);
+    expect(names).toEqual([`x2f-chat-identity:${chat}`, `x2f-chat-identity:${chat}`]);
+    expect((await t.sa.load(chat))?.identity.signPublic).toBe(api.identities.buyer?.signPublic);
+  });
+
+  /**
+   * Review 3 follow-up (wip/lead-chat-tab-lock): tab B loaded the chat's record before tab A pinned the
+   * chat key's fingerprint (tkh, review F3), then saved that stale record. Before the fix, the save put
+   * a record with no tkh back, and the device lost F3's guard. Every save is watched here: once a tkh is
+   * stored, no later save may leave the chat without it (or with another one).
+   */
+  async function staleTab(lock: (name: string, fn: () => Promise<unknown>) => Promise<unknown>) {
+    const idb = new IDBFactory();
+    const inner = await openChatStore({ indexedDB: idb });
+    const stored: Array<string | undefined> = [];
+    const watched = (s: ChatStore): ChatStore => ({
+      ...s,
+      save: async (rec) => {
+        await s.save(rec);
+        stored.push((await inner.load(rec.chat))?.tkh);
+      },
+    });
+    const sa = watched(await openChatStore({ indexedDB: idb }));
+    const sb = watched(await openChatStore({ indexedDB: idb }));
+    const mk = (st: ChatStore, a: ChatApi) => createChatEngine({ api: a, store: st, newIdentity: testIdentity, modSigningPublic, lock });
+    await mk(sa, api).prepare(chat);
+    attest();
+    // Tab B's API answers the attestation slowly: B has loaded the record (no attestation, no tkh) and waits.
+    let bWaiting!: () => void;
+    const bLoaded = new Promise<void>((r) => (bWaiting = r));
+    const bound = (m: keyof ChatApi) => (api[m] as (...x: unknown[]) => Promise<unknown>).bind(api);
+    const slowApi = Object.fromEntries((['getChat', 'registerIdentity', 'listEnvelopes', 'postEnvelope', 'getKey', 'postKey', 'postGrant'] as const).map((m) => [m, bound(m)])) as unknown as ChatApi;
+    slowApi.getAttestation = async () => {
+      bWaiting();
+      await new Promise((r) => setTimeout(r, 60));
+      return api.getAttestation();
+    };
+    return { a: mk(sa, api), b: mk(sb, slowApi), inner, stored, bLoaded };
+  }
+  const neverBackwards = (stored: Array<string | undefined>): void => {
+    const first = stored.findIndex((t) => t !== undefined);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(stored.slice(first)).toEqual(stored.slice(first).map(() => stored[first]));
+  };
+
+  it('a stale tab never drops the pinned tkh: the record is merged on save (no lock)', async () => {
+    const t = await staleTab((_n, fn) => fn());
+    const b = t.b.sync(chat);
+    await t.bLoaded;
+    expect((await t.a.sync(chat)).phase).toBe('ready');
+    const tkh = (await t.inner.load(chat))?.tkh;
+    expect(tkh).toBeDefined();
+    await b;
+    expect((await t.inner.load(chat))?.tkh).toBe(tkh);
+    neverBackwards(t.stored);
+  });
+
+  it('a stale tab never drops the pinned tkh: the per-chat lock holds each whole sync', async () => {
+    const held = new Map<string, Promise<unknown>>();
+    const lock = (name: string, fn: () => Promise<unknown>): Promise<unknown> => {
+      const run = (held.get(name) ?? Promise.resolve()).then(fn, fn);
+      held.set(name, run.catch(() => undefined));
+      return run;
+    };
+    const t = await staleTab(lock);
+    const b = t.b.sync(chat);
+    await t.bLoaded;
+    const a = t.a.sync(chat);
+    await Promise.all([a, b]);
+    expect((await t.inner.load(chat))?.tkh).toBeDefined();
+    neverBackwards(t.stored);
+  });
+
+  it('a stale tab that the API then tells "no key" (404) makes no second key: the merged record carries the pin', async () => {
+    const t = await staleTab((_n, fn) => fn());
+    const b = t.b.sync(chat);
+    await t.bLoaded;
+    await t.a.sync(chat);
+    const posts = api.keyPosts.length;
+    // A compromised API now hides the key record from tab B.
+    const key = api.key;
+    api.key = null;
+    expect(await b).toMatchObject({ phase: 'failed', problem: 'security' });
+    expect(api.keyPosts.length).toBe(posts);
+    api.key = key;
+  });
+
+  // Review of wip/lead-chat-tab-lock, m1: keep() saves only over a record that exists; a missing one
+  // was erased (a purge, or another tab's erase), so the save fails as purged and never re-creates it.
+  it('a save that finds the record erased meanwhile fails as purged and never writes it back (m1)', async () => {
+    const e = createChatEngine({ api, store, newIdentity: testIdentity, modSigningPublic, lock: (_n, fn) => fn() });
+    await e.prepare(chat);
+    const parts = attest();
+    await fromSeller('one', parts);
+    // Another tab erases the chat while this sync reads its envelopes.
+    const list = api.listEnvelopes.bind(api);
+    api.listEnvelopes = async (c, after) => {
+      await store.delete(chat);
+      return list(c, after);
+    };
+    await expect(e.sync(chat)).rejects.toMatchObject({ status: 410 });
+    expect(store.records.has(chat)).toBe(false);
+  });
+
+  // m2: a keep() refusal wipes this chat's key from the worker's memory before it throws.
+  it('a save refused for another pinned tkh forgets the cached chat key (m2)', async () => {
+    const e = createChatEngine({ api, store, newIdentity: testIdentity, modSigningPublic, lock: (_n, fn) => fn() });
+    await e.prepare(chat);
+    const parts = attest();
+    await fromSeller('one', parts);
+    expect((await e.sync(chat)).phase).toBe('ready');
+    const good = (await store.load(chat))!;
+    // Another tkh appears in the store between this sync's load and its next save.
+    const list = api.listEnvelopes.bind(api);
+    api.listEnvelopes = async (c, after) => {
+      api.listEnvelopes = list;
+      await store.save({ ...(await store.load(chat))!, tkh: 'ab'.repeat(32) });
+      return list(c, after);
+    };
+    await fromSeller('two', parts);
+    await expect(e.sync(chat)).rejects.toBeInstanceOf(ProtocolError);
+    // The store is put right; the next sync must open the key again (it was not left cached).
+    await store.save(good);
+    let reads = 0;
+    const getKey = api.getKey.bind(api);
+    api.getKey = async () => (reads++, getKey());
+    await e.sync(chat);
+    expect(reads).toBe(1);
+  });
+
+  it('the lock is navigator.locks by default, one per chat', async () => {
+    const names: string[] = [];
+    vi.stubGlobal('navigator', { locks: { request: (name: string, fn: () => Promise<unknown>) => (names.push(name), fn()) } });
+    try {
+      await engine().prepare(chat);
+      await engine().sync(chat);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(names).toEqual([`x2f-chat-identity:${chat}`, `x2f-chat-identity:${chat}`]);
   });
 });
 
@@ -525,7 +771,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
   it('review M3: sweeps the stored chats for purged ones when the worker starts, before any chat message, and once', async () => {
     const { serveChat } = await import('../src/chat/serve.js');
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: async () => (sweeps++, []) };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, prepare: async () => ({}) as never, sweep: async () => (sweeps++, []) };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -553,7 +799,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
       async () => [],
     ];
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, prepare: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -1201,7 +1447,7 @@ describe('chat engine: the payment proof (Plan 5 Task 15)', () => {
   it('the worker checks the payload before the engine sees it (chat-send-proof)', async () => {
     const { serveChat } = await import('../src/chat/serve.js');
     const got: unknown[] = [];
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async (_c: string, p: unknown) => (got.push(p), {} as never), sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: async () => [] };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async (_c: string, p: unknown) => (got.push(p), {} as never), sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, prepare: async () => ({}) as never, sweep: async () => [] };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -1532,7 +1778,7 @@ describe('chat engine: the unblurred copy for the moderator (Plan 5 Task 15, Rev
   it('the worker checks the payload before the engine sees it (chat-send-unblurred)', async () => {
     const { serveChat } = await import('../src/chat/serve.js');
     const got: unknown[] = [];
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async (_c: string, p: unknown) => (got.push(p), {} as never), sendNotice: async () => ({}) as never, grant: async () => ({}) as never, sweep: async () => [] };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async (_c: string, p: unknown) => (got.push(p), {} as never), sendNotice: async () => ({}) as never, grant: async () => ({}) as never, prepare: async () => ({}) as never, sweep: async () => [] };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);

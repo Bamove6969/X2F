@@ -6,6 +6,7 @@ import { faultText } from '../refusals.js';
 import { Button, Notice } from '../ui/kit.js';
 import { PageTitle } from '../ui/StaffShell.js';
 import { Table } from '../ui/Table.js';
+import { isLimitDecider } from './LimitRecommendations.js';
 import { approvalText, codeText, deadline, limitText, span, usdText, xmrShort } from './modModel.js';
 import '../ui/staff.css';
 
@@ -99,6 +100,16 @@ export function ModQueue({ role }: { role: StaffRole }) {
         <Button variant="primary" disabled={busy} onClick={() => void next()}>
           Take next case
         </Button>
+        {/* Plan 4 Task 26 (no board; a lead default): where a senior moderator or the owner decides recommended limits. COPY-UNSIGNED */}
+        {isLimitDecider(role) ? (
+          <Link className="x2f-link" to="/disputes/limits">
+            Recommended limits
+          </Link>
+        ) : null}
+        {/* Plan 5 Task 19 (lead default, DESIGNER-REVIEW: no board places it). COPY-UNSIGNED */}
+        <Link className="x2f-link" to="/disputes/reviews" data-part="review-disputes-link">
+          Review disputes
+        </Link>
       </PageTitle>
       {fault !== null ? (
         <Notice tone="danger" data-part="queue-fault">

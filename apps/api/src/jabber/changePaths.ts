@@ -118,6 +118,14 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     bookkeeping: {},
   },
   {
+    // Plan 4 Task 26 (migration 760): an approved account limit is a change to the account, like a
+    // lien or a freeze (lead default, owner p11-119 pattern; owner may change). The notice never
+    // carries the staff-only reason, which lives on the recommendation.
+    table: 'account_limits', accountColumn: 'account_id', ops: ALL,
+    changes: ['id', 'account_id', 'cap_usd', 'stage', 'until', 'set_by', 'recommendation_id', 'created_at'],
+    bookkeeping: {},
+  },
+  {
     table: 'trading_holds', accountColumn: 'account_id', ops: ALL,
     // 208's freeze columns (kind, reason, side, who placed or lifted it, the dispute) are changes like the
     // rest of a hold (lead default, owner p11-119).
@@ -188,6 +196,11 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'nudges.to_id': 'a nudge received',
   'reviews.reviewer_id': 'a review written about a trade',
   'reviews.subject_id': 'a review received from someone else',
+  'limit_recommendations.account_id': 'a recommendation waiting for a senior moderator (staff only, Task 26); an approved one notifies through account_limits',
+  'limit_recommendations.recommended_by': 'the staff member who recommended limits, not a change to their account',
+  'limit_recommendations.decided_by': 'the senior moderator or owner who decided a recommendation, not a change to their account',
+  'account_limits.set_by': 'the senior moderator or owner who approved the limit (the limited account is notified)',
+  'review_disputes.decided_by': "the moderator's stamp on a review dispute, not a change to that account; decisions are logged as review.dispute-decided",
   'past_reputation.reviewer_id': 'the moderator who decided a claim (the claimant is notified)',
   'past_reputation.verified_usd_by': 'the moderator who verified a figure (the claimant is notified)',
   'past_reputation.revoked_by': 'the senior moderator or owner who revoked a claim (the claimant is notified)',

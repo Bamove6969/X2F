@@ -130,8 +130,8 @@ export const LOG_ACTIONS = {
   'lien.repaid': { lienId: 'id', repaymentCode: 'id' },
   'fee.owed': { accountId: 'uuid', amountAtomic: 'amount' },
   // Recommended account limits (Task 26).
-  'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id' },
-  'limits.decided': { recId: 'id', approved: 'bool' },
+  'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id', fromCode: 'id' },
+  'limits.decided': { recId: 'id', approved: 'bool', fromCode: 'id' },
   // Staff management (Task 7) and per-person grants (Task 30).
   'staff.invite-created': { inviteId: 'id', role: 'id' },
   'staff.invite-cancelled': { inviteId: 'id' },
@@ -174,6 +174,10 @@ export const LOG_ACTIONS = {
   // Past reputation (Plan 5 Task 10, owner 2026-11-02): a senior moderator or the owner sets or
   // clears a claim's verified dollar figure. The figure itself is never logged.
   'pastrep.verified-usd-set': { claimId: 'uuid', cleared: 'bool' },
+  // Review disputes (Plan 5 Task 19): the dispute id and the outcome only, never the trader's reason,
+  // the moderator's reason, the review's text or its trade.
+  'review.disputed': { disputeId: 'uuid' },
+  'review.dispute-decided': { disputeId: 'uuid', outcome: 'id' },
   // Plan 5 Task 11: a moderator's decision on a claim. The claim, its trader and its site (spaces as
   // '-'), and on approval the trades the moderator saw; never the evidence link, the fingerprint or
   // the reason text.
@@ -228,7 +232,7 @@ export const LOG_KINDS = {
   dispute: { prefixes: ['dispute.', 'case.'], ownerOnly: false },
   chat: { prefixes: ['chat.', 'proof.'], ownerOnly: false },
   ruling: { prefixes: ['ruling.', 'appeal.'], ownerOnly: false },
-  account: { prefixes: ['hold.', 'account.', 'lien.', 'fee.', 'limits.', 'pastrep.'], ownerOnly: false },
+  account: { prefixes: ['hold.', 'account.', 'lien.', 'fee.', 'limits.', 'pastrep.', 'review.'], ownerOnly: false },
   staff: { prefixes: ['staff.', 'shift.', 'pay.'], ownerOnly: true },
   owner: { prefixes: ['owner.', 'settings.', 'treasury.'], ownerOnly: true },
   site: { prefixes: ['site.', 'news.'], ownerOnly: true },
