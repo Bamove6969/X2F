@@ -7,6 +7,8 @@
  */
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import type { MoneroWalletFull } from 'monero-ts';
+import { generateIdentity, signProof } from '../../../packages/protocol/src/identity.js';
+import { identityProofBytes } from '../../../packages/trade/src/attestation.js';
 import { codeOf, contextFor, DESKTOP, feeWallet, funder, mine, pay, PHONE, signUp, sql, stack, tradeView, txFee, type Size, type Trader } from './regtestKit.js';
 
 const XMR = 1_000_000_000_000n;
@@ -24,6 +26,7 @@ const offer = (side: 'sell' | 'buy') => ({
 
 interface TradeView {
   state: string;
+  releasable: boolean;
   amountAtomic: string;
   funding: { sellerFundsAtomic: string; escrowAddress: string | null } | null;
   txHash: string | null;
@@ -48,7 +51,7 @@ async function dismissTips(page: Page): Promise<void> {
  * The poster posts an offer; the taker browses, taps Trade on it, types 0.2 XMR and taps Trade;
  * the poster picks a wallet on the accepted-offer sheet. Ends with the seller asked to fund.
  */
-async function openTrade(browser: Browser, size: Size, taker: 'seller' | 'buyer'): Promise<Open> {
+async function openTrade(browser: Browser, size: Size, taker: 'seller' | 'buyer', o: { buyerPage?: (page: Page) => Promise<void> } = {}): Promise<Open> {
   void funder(); // mined and synced while the trade is set up
   const poster = await signUp(taker === 'seller' ? 'buyer' : 'seller', { vendor: true });
   await poster.api.ok('POST', '/v1/offers', offer(taker === 'seller' ? 'buy' : 'sell'));
@@ -57,6 +60,7 @@ async function openTrade(browser: Browser, size: Size, taker: 'seller' | 'buyer'
   const t = await contextFor(browser, takerT, size);
   await dismissTips(p.page);
   await dismissTips(t.page);
+  await o.buyerPage?.(taker === 'seller' ? p.page : t.page);
   await p.page.goto('/sell');
   // The taker sells to a buy ad on /sell, buys from a sell ad on /buy.
   await t.page.goto(`/${taker === 'seller' ? 'sell' : 'buy'}/ZELLE?currency=USD`);
@@ -154,6 +158,8 @@ async function fund(o: Open, extra = 0n): Promise<bigint> {
   await mine(12);
   await shows(o.sellerPage, /ESCROW SECURED/);
   await shows(o.buyerPage, /ESCROW SECURED/);
+  // The seller's room never offers a cancel of its own (Revision 2026-10-29b; proto review P2).
+  await expect(o.sellerPage.getByRole('button', { name: /cancel/i })).toHaveCount(0);
   return asked.atomic;
 }
 
@@ -201,6 +207,12 @@ async function receivedIn(w: MoneroWalletFull, txHash: string): Promise<bigint> 
 async function incomingTxs(w: MoneroWalletFull): Promise<Set<string>> {
   await w.sync();
   return new Set((await w.getIncomingTransfers({} as never)).map((t) => t.getTx().getHash()!));
+}
+
+/** The buyer's Cancel trade, then Cancel trade on the "Cancelling is likely final" sheet. */
+async function buyerCancels(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Cancel trade' }).click();
+  await page.locator('.x2f-sheet-layer').getByRole('button', { name: 'Cancel trade' }).click();
 }
 
 const SIZES: Array<[string, Size]> = [['phone 390×844', PHONE], ['desktop 1280×800', DESKTOP]];
@@ -286,6 +298,160 @@ for (const [label, size] of SIZES) {
         await mine(12);
         const fresh = [...(await incomingTxs(o.buyer.wallet))].filter((h) => !before.has(h));
         expect(fresh).toEqual([v.txHash]);
+      });
+    });
+
+    // "Extra XMR replaces surplus to the ad poster" (plan Revision, Tasks 1, 2, 7, 9, 10, 12, 31):
+    // extra coins before "I've paid" grow the trade; with a buyer poster the new amount is all
+    // the escrow holds, and the fee is 1% of it.
+    test('surplus at funding: the taker seller overpays a buyer ad by 0.0001 XMR; the trade grows to it, the buyer pays the grown total and receives it less 1% and the network fee; the fee wallet exactly 1%', async ({ browser }) => {
+      const o = await openTrade(browser, size, 'seller');
+      await inRooms(o, async () => {
+        const extra = XMR / 10_000n;
+        await fund(o, extra);
+        const grown = AMOUNT + extra;
+        await expect.poll(async () => BigInt((await tradeView<TradeView>(o.seller, o.code)).amountAtomic), { timeout: LONG }).toBe(grown);
+        await shows(o.buyerPage, /Trade grew to 0\.200100 XMR, you now pay \$40\.02/);
+        await markPaid(o.buyerPage);
+        await holdToRelease(o.sellerPage);
+        await shows(o.sellerPage, /RELEASED/, LONG, { mining: true });
+        const v = await untilState(o.seller, o.code, ['released']);
+        await mine(12);
+        const network = await txFee(v.txHash!);
+        expect(await receivedIn(o.buyer.wallet, v.txHash!)).toBe(grown - grown / 100n - network);
+        const fw = await feeWallet();
+        try {
+          expect(await receivedIn(fw, v.txHash!)).toBe(grown / 100n);
+        } finally {
+          await fw.close();
+        }
+      });
+    });
+
+    test('surplus after secured: extra coins hold the release until they have 12 blocks, then everything is swept to the buyer', async ({ browser }) => {
+      const o = await openTrade(browser, size, 'seller');
+      await inRooms(o, async () => {
+        const extra = XMR / 10_000n;
+        await fund(o);
+        expect((await tradeView<TradeView>(o.seller, o.code)).releasable).toBe(true);
+        await pay((await tradeView<TradeView>(o.seller, o.code)).funding?.escrowAddress ?? (await sql<{ escrow_address: string }>('select escrow_address from trades where code = $1', [o.code]))[0]!.escrow_address, extra);
+        await mine(1);
+        await expect.poll(async () => (await tradeView<TradeView>(o.seller, o.code)).releasable, { timeout: LONG }).toBe(false);
+        await mine(12);
+        await expect.poll(async () => (await tradeView<TradeView>(o.seller, o.code)).releasable, { timeout: LONG }).toBe(true);
+        const grown = AMOUNT + extra;
+        await expect.poll(async () => BigInt((await tradeView<TradeView>(o.seller, o.code)).amountAtomic), { timeout: LONG }).toBe(grown);
+        await markPaid(o.buyerPage);
+        await holdToRelease(o.sellerPage);
+        await shows(o.sellerPage, /RELEASED/, LONG, { mining: true });
+        const v = await untilState(o.seller, o.code, ['released']);
+        await mine(12);
+        const network = await txFee(v.txHash!);
+        expect(await receivedIn(o.buyer.wallet, v.txHash!)).toBe(grown - grown / 100n - network);
+      });
+    });
+
+    test("mutual cancel after funding: the seller's proposal, the buyer's Accept; the XMR goes back to the seller with no fee output", async ({ browser }) => {
+      const o = await openTrade(browser, size, 'seller');
+      await inRooms(o, async () => {
+        const funds = await fund(o);
+        // No room offers the seller a Propose cancel any more (proto review P2), so the proposal
+        // is the seller's own API call; the buyer answers it in the room.
+        await o.seller.api.ok('POST', `/v1/trades/${o.code}/events`, { type: 'propose-cancel' });
+        await o.buyerPage.reload();
+        await o.buyerPage.getByRole('button', { name: 'Accept' }).click();
+        const v = await untilState(o.seller, o.code, ['refunded', 'cancelled']);
+        expect(v.txHash).toMatch(/^[0-9a-f]{64}$/);
+        await mine(12);
+        const network = await txFee(v.txHash!);
+        expect(await receivedIn(o.seller.wallet, v.txHash!)).toBe(funds - network);
+        const fw = await feeWallet();
+        try {
+          expect(await receivedIn(fw, v.txHash!)).toBe(0n);
+        } finally {
+          await fw.close();
+        }
+      });
+    });
+
+    test("buyer cancel before I've paid: the seller's refund address gets the balance less the network fee with the seller's page closed; Confirm cancel waits for 10 confirmations", async ({ browser }) => {
+      const o = await openTrade(browser, size, 'seller');
+      await inRooms(o, async () => {
+        const funds = await fund(o);
+        await o.sellerPage.context().close();
+        await buyerCancels(o.buyerPage);
+        const v = await untilState(o.buyer, o.code, ['refunded', 'cancelled']);
+        expect(v.txHash).toMatch(/^[0-9a-f]{64}$/);
+        const network = await txFee(v.txHash!);
+        expect(await receivedIn(o.seller.wallet, v.txHash!)).toBe(funds - network);
+        const fw = await feeWallet();
+        try {
+          expect(await receivedIn(fw, v.txHash!)).toBe(0n);
+        } finally {
+          await fw.close();
+        }
+        // The seller comes back: Confirm cancel is greyed out until the return has 10 confirmations.
+        const back = await contextFor(browser, o.seller, size);
+        o.sellerPage = back.page;
+        const close = o.close;
+        o.close = async () => {
+          await back.context.close();
+          await close();
+        };
+        await dismissTips(back.page);
+        await back.page.goto(`/trade/${o.code}`);
+        const confirm = back.page.getByRole('button', { name: 'Confirm cancel' });
+        await expect(confirm).toBeVisible({ timeout: LONG });
+        await mine(12);
+        await expect(confirm).toBeEnabled({ timeout: LONG });
+        await shows(back.page, /Your input is needed to cancel this trade/);
+        await confirm.click();
+        // Confirmed: the trade stays refunded, with the seller's confirmation recorded.
+        await expect.poll(async () => (await tradeView<{ cancelConfirmedAt: string | null }>(o.seller, o.code)).cancelConfirmedAt, { timeout: 2 * 60_000 }).not.toBeNull();
+        await expect(confirm).toHaveCount(0);
+      });
+    });
+
+    test("buyer cancel ignored by the seller: the trade closes as cancelled 48 h after Confirm cancel became available", async ({ browser }) => {
+      const o = await openTrade(browser, size, 'seller');
+      await inRooms(o, async () => {
+        await fund(o);
+        await buyerCancels(o.buyerPage);
+        await untilState(o.buyer, o.code, ['refunded']);
+        await mine(12);
+        await expect.poll(async () => (await sql('select cancel_confirmable_at from trades where code = $1', [o.code]))[0]!.cancel_confirmable_at, { timeout: LONG }).not.toBeNull();
+        // The clock 48 h on: the API's timer loop closes it (cancel-timeout records the confirmation).
+        await sql("update trades set cancel_confirmable_at = now() - interval '48 hours 1 second' where code = $1", [o.code]);
+        await expect.poll(async () => (await tradeView<{ cancelConfirmedAt: string | null }>(o.seller, o.code)).cancelConfirmedAt, { timeout: 3 * 60_000 }).not.toBeNull();
+      });
+    });
+
+    test("swapped participants: the API holds another key as the buyer's; the buyer's room says Security check failed, the seller is never asked to fund and no check words match", async ({ browser }) => {
+      // Stands in for an API that swaps the buyer's identity: the buyer's registration reaches it
+      // carrying another key pair (with a valid proof for this trade and role).
+      const o = await openTrade(browser, size, 'seller', {
+        buyerPage: async (page) => {
+          await page.context().route('**/v1/trades/*/identity', async (route) => {
+            if (route.request().method() !== 'POST') return route.continue();
+            const code = decodeURIComponent(/\/v1\/trades\/([^/]+)\/identity/.exec(route.request().url())![1]!);
+            const other = await generateIdentity();
+            const proof = await signProof(other, identityProofBytes(code, 'buyer', other.signPublic, other.boxPublic));
+            await route.continue({ postData: JSON.stringify({ signPublic: other.signPublic, boxPublic: other.boxPublic, proof }) });
+          });
+        },
+      });
+      await inRooms(o, async () => {
+        await shows(o.buyerPage, /Security check failed/);
+        await expect(o.buyerPage.getByRole('button', { name: /Copy address/ })).toHaveCount(0);
+        // The escrow cannot be set up with a buyer key the buyer's device does not hold: the
+        // seller is never asked to fund, and no check words on the two screens ever match.
+        const words = async (page: Page) => (await page.locator('[data-escrow-check] li').allInnerTexts()).join(' ');
+        for (let i = 0; i < 12; i++) {
+          await expect(o.sellerPage.getByRole('button', { name: 'Copy address' })).toHaveCount(0);
+          const [sw, bw] = [await words(o.sellerPage), await words(o.buyerPage)];
+          if (sw !== '' && bw !== '') expect(sw).not.toBe(bw);
+          await o.sellerPage.waitForTimeout(5000);
+        }
       });
     });
 
