@@ -213,6 +213,14 @@ export interface RuntimeDeps {
    * it counts as settled elsewhere (escrow-failed). Default 5 min: the party re-checks within 60 s.
    */
   settledElsewhereMs?: number;
+  /**
+   * Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): registers this device's identity for the trade's
+   * chat (the worker passes chat/prepare.ts's, over the worker's one chat engine). Called in the
+   * background once the trade identity is registered, tried again (every `pollMs`) while it throws,
+   * and kept done in the record (`chatPrepared`). The escrow never waits on it. Without it a chat is
+   * attested only after both traders opened it.
+   */
+  prepareChat?: (code: string) => Promise<void>;
   onStatus(code: string, s: EscrowStatus): void;
 }
 
@@ -495,6 +503,25 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       this.wake?.();
     }
 
+    /**
+     * Gap 5: asks the worker to register the trade chat's identity, again every `pollMs` while the
+     * ask throws, until it is done or the run stops. Its own timer, never `sleep` (one waker, the
+     * main loop's). Marked done in memory only: the run's next save keeps it (a background save
+     * could race the run's own), and a run that ends before one simply asks again next time, which
+     * is harmless (the step is idempotent).
+     */
+    private async prepareChat(ask: (code: string) => Promise<void>): Promise<void> {
+      while (!this.stopped) {
+        try {
+          await ask(this.code);
+          if (!this.stopped) this.rec.chatPrepared = true;
+          return;
+        } catch {
+          await new Promise((r) => setTimeout(r, pollMs));
+        }
+      }
+    }
+
     /** Retries an API call until it answers or the run stops. */
     private async retry<T>(fn: () => Promise<T>): Promise<T | undefined> {
       while (!this.stopped) {
@@ -579,6 +606,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         this.rec.registered = true;
         await this.persist();
       }
+      // Gap 5: the trade's chat identity, in the background (never awaited: the escrow goes on).
+      if (deps.prepareChat && this.rec.chatPrepared !== true) void this.prepareChat(deps.prepareChat);
 
       this.set('verifying');
       let att = this.rec.attestation;

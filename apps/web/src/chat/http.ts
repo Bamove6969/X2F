@@ -107,3 +107,24 @@ export function httpChatApi(f: typeof fetch = (u, i) => fetch(u, i)): ChatApi {
     },
   };
 }
+
+/**
+ * Regtest e2e gap 5: `POST /v1/trades/:code/chat` over the worker's own same-origin fetch (the page's
+ * `openTradeChat` in client.ts is the same call through the page's api()). Answers the trade's chat
+ * code; a refusal is thrown with its status and code, an answer without a code as a 502.
+ */
+export function httpOpenTradeChat(f: typeof fetch = (u, i) => fetch(u, i)): (code: string) => Promise<string> {
+  return async (code) => {
+    const res = await f(`/v1/trades/${encodeURIComponent(code)}/chat`, {
+      method: 'POST',
+      body: '{}',
+      credentials: 'same-origin',
+      redirect: 'error',
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+    });
+    const b = (await res.json().catch(() => null)) as { chat?: unknown; error?: unknown } | null;
+    if (!res.ok) throw Object.assign(new Error(`api ${res.status}`), { status: res.status, code: typeof b?.error === 'string' ? b.error : 'internal' });
+    if (typeof b?.chat !== 'string') throw Object.assign(new Error('bad trade chat answer'), { status: 502, code: 'internal' });
+    return b.chat;
+  };
+}

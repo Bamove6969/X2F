@@ -4,7 +4,9 @@
  * ChatSnapshot of plain, already-verified lines.
  *
  * - Device binding: the first sync on a device makes the chat identity, saves it, then registers
- *   it. If the API already holds another key for this role, the chat is open on another device:
+ *   it. For a trade's chat that first step normally runs earlier, without any sync: `prepare`, which
+ *   the escrow runtime calls when the device runs the trade (regtest gap 5, chat/prepare.ts), so the
+ *   chat is attested once both devices ran the trade, whether or not anyone opened it. If the API already holds another key for this role, the chat is open on another device:
  *   the snapshot is read-only (`other-device`) and nothing is ever sealed here.
  * - Before the first open or seal, the moderation attestation is verified against the pinned
  *   moderation signing key in the chat context (`channels.chat === chatChannel(chat)`, this
@@ -212,6 +214,15 @@ export interface ChatEngine {
    * (no line, no gap of its own; review I1: a gap before it shows on the sender's next line). The image went up as ciphertext before this (proof/upload.ts sendUnblurred).
    */
   sendUnblurred(chat: string, proof: ProofUnblurredPayload): Promise<ChatSnapshot>;
+  /**
+   * Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): the identity step of a sync alone. Makes, saves and
+   * registers this device's chat identity for the chat (as the first sync does), and reads nothing
+   * else: no attestation, no key, no envelope. The escrow runtime calls it (chat/prepare.ts) when the
+   * device runs the trade, because moderation attests a chat only once both traders registered one:
+   * without it, neither side could send before the other had opened the chat. 'other-device' when
+   * another device of the account holds the role (nothing made). A 410 erases the chat, as everywhere.
+   */
+  prepare(chat: string): Promise<'registered' | 'other-device'>;
   /**
    * Asks the API about every chat stored on this device and erases each one it answers 410
    * `chat-purged` for; resolves with those. Any other answer (or none) keeps the record. Rejects on
@@ -796,6 +807,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
 
   return {
     sync: (chat) => serial(chat, () => purging(chat, async () => (await syncLocked(chat)).snap)),
+    // Gap 5: the first step of syncLocked alone, in the same per-chat queue (so a prepare and a sync
+    // at once never make two identities).
+    prepare: (chat) => serial(chat, () => purging(chat, async () => ((await ensureIdentity(chat, await d.api.getChat(chat))) ? 'registered' : 'other-device'))),
     sweep: async () => {
       const gone: string[] = [];
       for (const chat of await d.store.list()) {
