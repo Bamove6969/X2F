@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { EscrowDots } from '../../ui/EscrowDots.js';
 import { ExternalLink } from '../../ui/ExternalLink.js';
 import { Icon } from '../../ui/icons.js';
+import { useLeaveWarning } from '../../ui/useLeaveWarning.js';
 import { useConfirmations } from './release/seams.js';
 import { ESCROW_STOPPED, amounts, isTxHash, publicName, refusalCopy, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
@@ -37,6 +38,8 @@ export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; e
   const buyer = trade.role === 'buyer';
   const cosigned = settled || escrow.phase === 'done' || escrow.phase === 'settled-without-device';
   const problem = cosigned ? null : escrow.phase === 'error' || escrow.error !== null ? ESCROW_STOPPED : escrow.refusal !== null ? refusalCopy(escrow.refusal, other) : null;
+  // Lead call (gap 4): while the buyer's device co-signs (it submits the release), the browser asks before the page goes.
+  useLeaveWarning(buyer && !cosigned && problem === null && escrow.phase === 'signing' && escrow.handedOff !== true);
   const target = live?.target ?? 10;
   const count = live?.confirmations ?? null;
   const shown = count === null ? null : Math.min(count, target);
