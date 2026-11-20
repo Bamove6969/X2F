@@ -33,6 +33,26 @@ async function cancelAndRefund(page: Page): Promise<void> {
   await shows(page, /Your XMR is on its way back/);
 }
 
+/**
+ * The seller's room says the page may close: "You can close this page now" (the refund in a block,
+ * the room still settling) or, once the API has moved on, the refunded room with this device done.
+ * A block comes every 5 s meanwhile.
+ */
+async function mayClose(page: Page): Promise<void> {
+  const until = Date.now() + 3 * 60_000;
+  let next = 0;
+  for (;;) {
+    if (/You can close this page now/.test(await page.evaluate(() => document.body.innerText))) return;
+    if ((await page.locator('[data-screen-part="seller-refunded"][data-escrow-phase="done"]').count()) > 0) return;
+    if (Date.now() > until) throw new Error(`${page.url()} never said the page may close`);
+    if (Date.now() >= next) {
+      await mine(1);
+      next = Date.now() + 5000;
+    }
+    await page.waitForTimeout(500);
+  }
+}
+
 /** The trade ends refunded; the seller's wallet gets everything less the network fee, the fee wallet nothing. */
 async function refundLanded(o: { buyer: Parameters<typeof untilState>[0]; seller: { wallet: Parameters<typeof receivedIn>[0] }; code: string }, funds: bigint): Promise<void> {
   const v = await untilState(o.buyer, o.code, ['refunded']);
@@ -258,18 +278,53 @@ for (const [label, size] of SIZES) {
     });
 
     // Gap 4 (20 Nov): the no-show refund is seller-built (builder seller, co-signer mod, Task 25), so
-    // it needs the seller's device until the moderator has submitted it. The room says to keep the
-    // page open until then, and when it may close; a page closed too early pauses the refund until
-    // the trade is opened again on that device.
-    test("buyer no-show: past the time to pay the seller taps Cancel and get refund; the buyer stays silent with the room open; the room says to keep the page open, then that it may close; closed then (the whole browser profile gone), the refund lands", async ({ browser }) => {
+    // it needs the seller's device until the moderator has sent it, and the page may close once the
+    // device saw it in a block (security review M1 a). A page closed earlier pauses the refund
+    // until the trade is opened again on that device.
+    test("buyer no-show: past the time to pay the seller taps Cancel and get refund; the buyer stays silent with the room open; the room says to keep the page open, that the moderator sent it, then (in a block) that it may close; closed then (the whole browser profile gone), the refund lands", async ({ browser }) => {
       const o = await openTrade(browser, size, 'seller', { beforeAccept: oneMinuteToPay });
       await inRooms(o, async () => {
         const funds = await fund(o);
         await cancelAndRefund(o.sellerPage);
         await shows(o.sellerPage, /Keep this page open while this device signs the refund/);
-        await shows(o.sellerPage, /You can close this page now/, 3 * 60_000);
-        expect((await tradeView<TradeView>(o.seller, o.code)).state).toBe('settling'); // not in a block yet: the rest needs no seller
+        // No block yet: the moderator's report alone never says the page may close.
+        await shows(o.sellerPage, /The moderator has sent the refund\. Keep this page open a few minutes while it confirms\./, 3 * 60_000);
+        expect(await o.sellerPage.evaluate(() => document.body.innerText)).not.toMatch(/You can close this page/);
+        await mayClose(o.sellerPage);
         await o.sellerPage.context().close();
+        await refundLanded(o, funds);
+      });
+    });
+
+    // Security review M1: the seller closes the tab once the moderator reported the refund sent, the
+    // trade closes without the seller (its relay channels with it), and the seller opens the trade
+    // again later: the device proves its own refund landed and ends done, never "settled elsewhere"
+    // (an integrity failure), also past the 5-minute settled-elsewhere grace.
+    test("buyer no-show: the seller closes the tab once the moderator sent the refund; the trade closes; reopened later, the room shows the refund done, never an escrow failure", async ({ browser }) => {
+      const o = await openTrade(browser, size, 'seller', { beforeAccept: oneMinuteToPay });
+      await inRooms(o, async () => {
+        const funds = await fund(o);
+        await cancelAndRefund(o.sellerPage);
+        await shows(o.sellerPage, /The moderator has sent the refund\./, 3 * 60_000);
+        const context = o.sellerPage.context();
+        await o.sellerPage.close(); // the tab only: the device keeps its escrow store
+        await untilState(o.buyer, o.code, ['refunded']);
+        await mine(2);
+        await new Promise((r) => setTimeout(r, 20_000)); // the watcher closes the trade's relay channels
+        o.sellerPage = await context.newPage();
+        await dismissTips(o.sellerPage);
+        await o.sellerPage.goto(`/trade/${o.code}`);
+        const room = o.sellerPage.locator('[data-screen-part="seller-refunded"]');
+        await expect(room).toBeVisible({ timeout: 60_000 });
+        await expect(room).toHaveAttribute('data-escrow-phase', 'done', { timeout: 3 * 60_000 });
+        // Past the settled-elsewhere grace (5 min), blocks coming: still done, nothing stopped.
+        const until = Date.now() + 6 * 60_000;
+        while (Date.now() < until) {
+          await mine(1);
+          expect(await o.sellerPage.locator('[data-refund-escrow-stopped]').count()).toBe(0);
+          await expect(room).toHaveAttribute('data-escrow-phase', 'done');
+          await o.sellerPage.waitForTimeout(10_000);
+        }
         await refundLanded(o, funds);
       });
     });
@@ -286,7 +341,7 @@ for (const [label, size] of SIZES) {
         o.sellerPage = await context.newPage();
         await dismissTips(o.sellerPage);
         await o.sellerPage.goto(`/trade/${o.code}`);
-        await shows(o.sellerPage, /You can close this page now|Your refund is confirming|Your XMR is back/, 3 * 60_000);
+        await mayClose(o.sellerPage);
         await refundLanded(o, funds);
       });
     });
