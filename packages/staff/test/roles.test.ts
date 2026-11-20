@@ -22,6 +22,8 @@ const GRANTS: Record<Perm, Record<StaffRole, boolean>> = {
   'reputation.review': { owner: true, senior: true, mod: true, helper: false },
   // Owner 2026-11-02: only senior moderators and the owner enter a verified past-rep figure.
   'reputation.verify': { owner: true, senior: true, mod: false, helper: false },
+  // Plan 5 Task 11: revoking an approved past-reputation claim, senior moderators and the owner only.
+  'reputation.revoke': { owner: true, senior: true, mod: false, helper: false },
   'tickets.handle': { owner: true, senior: false, mod: false, helper: false },
   // Owner Q60 (6 Nov): senior moderators always; moderators and helpers only by grant.
   'feedback.read': { owner: true, senior: true, mod: false, helper: false },
@@ -79,7 +81,7 @@ describe('can', () => {
 
 describe('NAV', () => {
   test('owner sees the boards\' seven, plus feedback (Plan 5 Task 4) and Prices (owner Q13, J-21)', () => {
-    expect(NAV.owner).toEqual(['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings']);
+    expect(NAV.owner).toEqual(['overview', 'disputes', 'past-reputation', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings']);
   });
   test('J-21: every menu item needs a perm its role holds; Prices is the price-health data (stats.read)', () => {
     for (const role of STAFF_ROLES) {
@@ -87,16 +89,18 @@ describe('NAV', () => {
     }
     expect(NAV_PERM.prices).toBe('stats.read');
     expect(NAV_PERM.feedback).toBe('feedback.read');
+    expect(NAV_PERM['past-reputation']).toBe('reputation.review');
   });
+  // Plan 5 Task 11: Past reputation, after Disputes (no board places it: a lead default).
   test('senior and mod', () => {
-    expect(NAV.mod).toEqual(['disputes', 'training', 'log']);
-    expect(NAV.senior).toEqual(['disputes', 'training', 'log', 'feedback']);
+    expect(NAV.mod).toEqual(['disputes', 'past-reputation', 'training', 'log']);
+    expect(NAV.senior).toEqual(['disputes', 'past-reputation', 'training', 'log', 'feedback']);
   });
   test('owner Q60: a feedback grant adds Feedback to a moderator\'s or helper\'s menu, once', () => {
-    expect(navFor('mod', ['feedback.read'])).toEqual(['disputes', 'training', 'log', 'feedback']);
+    expect(navFor('mod', ['feedback.read'])).toEqual(['disputes', 'past-reputation', 'training', 'log', 'feedback']);
     expect(navFor('helper', ['feedback.read'])).toEqual(['feedback']);
-    expect(navFor('mod', ['tickets.handle'])).toEqual(['disputes', 'training', 'log']);
-    expect(navFor('senior', ['feedback.read'])).toEqual(['disputes', 'training', 'log', 'feedback']);
+    expect(navFor('mod', ['tickets.handle'])).toEqual(['disputes', 'past-reputation', 'training', 'log']);
+    expect(navFor('senior', ['feedback.read'])).toEqual(['disputes', 'past-reputation', 'training', 'log', 'feedback']);
   });
   test('helper sees nothing', () => {
     expect(NAV.helper).toEqual([]);

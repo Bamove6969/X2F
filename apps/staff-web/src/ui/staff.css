@@ -1028,3 +1028,37 @@
   color: var(--x2f-ink-muted);
   font-family: var(--x2f-font-mono);
 }
+
+/* Plan 5 Task 11: the Past reputation page (no board, DESIGNER-REVIEW). The fingerprint is the one
+   thing a moderator compares with the archive: large mono, groups of 4, wrapping between groups. */
+.x2f-staff-fingerprint {
+  margin: 0;
+  font-family: var(--x2f-font-mono);
+  font-size: 22px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  word-spacing: 0.3em;
+  overflow-wrap: anywhere;
+}
+
+.x2f-staff-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px var(--x2f-space-4);
+  margin: 0;
+}
+
+.x2f-staff-facts dt {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-facts dd {
+  margin: 0;
+}
+
+/* Review M2: the evidence link in full, wrapping anywhere (an archive link is long). */
+.x2f-staff-url {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

@@ -31,6 +31,8 @@ export const STAFF_REFUSALS = {
   'owner-needs-two-keys': 'The owner account needs two security keys. Register the spare key to finish.',
   'owner-needs-pgp': 'The owner account needs a PGP key. Add it to finish.',
   forbidden: 'Your role does not include this page.',
+  // Plan 5 Task 11 (review M3, lead call): a claim backed by one of the reviewer's own login keys.
+  'reviewer-own-key': 'This claim uses one of your own login keys, so another moderator needs to review it.',
 } as const satisfies Record<string, string>;
 
 export type StaffRefusal = keyof typeof STAFF_REFUSALS;

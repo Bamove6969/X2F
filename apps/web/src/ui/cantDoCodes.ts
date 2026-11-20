@@ -133,6 +133,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'case-changed': 'a training case that changed after the curator opened it: reload and review again (staff app only)',
   'both-owner-keys-required': "a change to the owner's keys is tapped with both owner keys (staff app only)",
   'passkey-is-security-key': 'a staff passkey must be another device than the security key (staff app only)',
+  // Plan 5 Task 11 (P5-A23): the moderator's fingerprint tick box on the past-reputation page.
+  'confirm-fingerprint': 'an input check: the moderator must tick that the archive shows the fingerprint (staff app only)',
+  'confirm-profile': "an input check: the moderator must tick that the archive is the trader's profile on the site (staff app only)",
+  'reviewer-own-key': "a moderator's approval of a claim backed by their own login key (staff app only; the staff app shows it with CantDoThat)",
   'bad-request': 'a malformed request (a fault)',
   // Hold model v3: the drafts submitted are not the ones there are (another tab changed them): reload and review again.
   'changes-changed': 'a state conflict: the list changed since it was reviewed',
