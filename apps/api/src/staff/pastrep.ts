@@ -4,7 +4,7 @@ import { withTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { archivedOriginalHost, groupFingerprint } from '../pastrep/challenge.js';
-import { MAX_VERIFIED_USD_CENTS, setVerifiedPastRepUsd } from '../pastrep/store.js';
+import { MAX_VERIFIED_USD_CENTS, setVerifiedPastRepUsd, verifiedUsdCentsTextSql } from '../pastrep/store.js';
 import { requireStaff } from './guard.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -185,7 +185,7 @@ function staffPastRepReviewRoutes(app: FastifyInstance): void {
       id: string; site: string; evidence_url: string; claimed_trades: number; verified_trades: number | null; cents: string | null;
       status: 'signed' | 'approved'; fingerprint: string; display_name: string; created_at: Date; sort_at: Date;
     }>(
-      `select pr.id, pr.site, pr.evidence_url, pr.claimed_trades, pr.verified_trades, pr.verified_usd_cents::text as cents,
+      `select pr.id, pr.site, pr.evidence_url, pr.claimed_trades, pr.verified_trades, ${verifiedUsdCentsTextSql('pr')} as cents,
               pr.status, pr.fingerprint, a.display_name, pr.created_at, ${sortAt} as sort_at
          from past_reputation pr join accounts a on a.id = pr.account_id
         where pr.status = $1 and ($3::timestamptz is null or ${after})

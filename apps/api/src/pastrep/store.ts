@@ -77,6 +77,12 @@ export const verifiedPastRepUsdSql = (account: string): string =>
   `coalesce((select sum(pr.verified_usd_cents) from past_reputation pr
      where pr.account_id = ${account} and pr.status = '${COUNTS}' and pr.verified_usd_cents is not null), 0)::bigint`;
 
+/**
+ * SQL (text): claim `alias`'s verified figure in US cents as text, or null, for a read that shows it
+ * (Task 11's staff list). Here so the column name stays in this file.
+ */
+export const verifiedUsdCentsTextSql = (alias: string): string => `${alias}.verified_usd_cents::text`;
+
 /** The sum, in US cents, of the account's APPROVED past-reputation claims with a verified figure (0 when none). */
 export async function verifiedPastRepUsdCents(q: Queryable, accountId: string): Promise<number> {
   const { rows } = await q.query<{ total: string }>(`select ${verifiedPastRepUsdSql('$1::uuid')}::text as total`, [accountId]);

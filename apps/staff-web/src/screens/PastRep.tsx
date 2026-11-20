@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from 'react';
-import { codeOf, pastRepApprove, pastRepList, pastRepReject, pastRepRevoke, pastRepSetUsd, type PastRepClaim } from '../api.js';
+import { codeOf, pastRepApprove, pastRepList, pastRepReject, pastRepRevoke, pastRepSetUsd, type PastRepClaim, type PastRepPage } from '../api.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, EmptyState, ExternalLink, Notice } from '../ui/kit.js';
 import { PageTitle, useMe } from '../ui/StaffShell.js';
@@ -54,17 +54,32 @@ export function PastRep() {
   const me = useMe();
   const senior = me?.role === 'senior' || me?.role === 'owner';
   const [queue, setQueue] = useState<PastRepClaim[] | null>(null);
-  const [approved, setApproved] = useState<PastRepClaim[] | null>(null);
+  const [queueMore, setQueueMore] = useState(false);
+  const [approved, setApproved] = useState<PastRepPage | null>(null);
+  // Review M1: the approved list's trader-name search, as typed and as last asked of the API.
+  const [nameText, setNameText] = useState('');
+  const [name, setName] = useState('');
   const [at, setAt] = useState(0);
   const [fault, setFault] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ code: StaffRefusal; text: string } | null>(null);
   const [openApproved, setOpenApproved] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [q, a] = await Promise.all([pastRepList('signed'), senior ? pastRepList('approved') : Promise.resolve(null)]);
-    setQueue(q);
+    const [q, a] = await Promise.all([pastRepList('signed'), senior ? pastRepList('approved', { name }) : Promise.resolve(null)]);
+    setQueue(q.items);
+    setQueueMore(q.next !== null);
     setApproved(a);
-  }, [senior]);
+  }, [senior, name]);
+
+  const moreApproved = async () => {
+    if (approved?.next == null) return;
+    try {
+      const p = await pastRepList('approved', { cursor: approved.next, name });
+      setApproved({ items: [...approved.items, ...p.items], next: p.next });
+    } catch (e) {
+      setFault(faultText(e, 'X2F could not load more claims just now. Try again.'));
+    }
+  };
 
   useEffect(() => {
     let live = true;
@@ -90,7 +105,7 @@ export function PastRep() {
       const code = codeOf(e);
       // not-a-refusal: the claim was decided (or revoked) by someone else meanwhile, a state conflict; the list reloads.
       if (code === 'wrong-state' || code === 'not-found' || code === 'not-live') {
-        setFault('Another moderator already decided this claim. The list is up to date again.');
+        setFault('This claim changed meanwhile. The list is up to date again.');
       } else {
         setFault(faultText(e, 'X2F could not save that just now. Try again.'));
         return false;
@@ -102,7 +117,8 @@ export function PastRep() {
 
   const current = queue !== null && queue.length > 0 ? queue[Math.min(at, queue.length - 1)]! : null;
   const index = queue !== null && queue.length > 0 ? Math.min(at, queue.length - 1) : 0;
-  const shownApproved = approved?.find((c) => c.id === openApproved) ?? null;
+  const shownApproved = approved?.items.find((c) => c.id === openApproved) ?? null;
+  const searchId = useId();
 
   return (
     <section data-screen="past-rep">
@@ -126,6 +142,7 @@ export function PastRep() {
         <>
           <p className="x2f-staff-hint" data-part="claim-count">
             Claim {index + 1} of {queue.length}
+            {queueMore ? '+' : ''}
           </p>
           <WaitingClaim
             key={current.id}
@@ -139,9 +156,26 @@ export function PastRep() {
       {senior && approved !== null ? (
         <div data-part="approved-claims" className="x2f-stack">
           <h2 className="x2f-h2">Approved claims</h2>
+          <p className="x2f-staff-hint">Newest approval first.</p>
+          <form
+            className="x2f-field"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setOpenApproved(null);
+              setName(nameText.trim());
+            }}
+          >
+            <label className="x2f-label" htmlFor={searchId}>
+              Trader name
+            </label>
+            <input id={searchId} className="x2f-input" value={nameText} maxLength={64} onChange={(e) => setNameText(e.target.value)} />
+            <Button variant="secondary" type="submit">
+              Search
+            </Button>
+          </form>
           <Table
             label="Approved claims"
-            rows={approved}
+            rows={approved.items}
             rowKey={(r) => r.id}
             empty="No approved claims."
             columns={[
@@ -159,6 +193,11 @@ export function PastRep() {
               },
             ]}
           />
+          {approved.next !== null ? (
+            <Button variant="secondary" onClick={() => void moreApproved()}>
+              Show more approved claims
+            </Button>
+          ) : null}
           {shownApproved !== null ? (
             <ApprovedClaim
               key={shownApproved.id}
@@ -200,6 +239,13 @@ function ClaimFacts({ claim }: { claim: PastRepClaim }) {
       <p data-part="evidence-link">
         <ExternalLink href={claim.url}>Open the archived profile</ExternalLink>
       </p>
+      {/* Review M2 (lead call): the whole link as plain text, so the moderator reads where it goes. */}
+      <p className="x2f-mono x2f-staff-url" data-part="evidence-url">
+        {claim.url}
+      </p>
+      <p data-part="original-host">
+        {claim.originalHost !== null ? `Archived site: ${claim.originalHost}` : "The link doesn't name the archived site. Read the address on the archived page."}
+      </p>
       <p className="x2f-staff-hint" data-part="evidence-note">
         {EVIDENCE_NOTE}
       </p>
@@ -235,6 +281,7 @@ function WaitingClaim({ claim, canSetFigure, act, onSkip }: { claim: PastRepClai
   const tradesId = useId();
   const reasonId = useId();
   const [seen, setSeen] = useState(false);
+  const [profileSeen, setProfileSeen] = useState(false);
   const [trades, setTrades] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -256,6 +303,10 @@ function WaitingClaim({ claim, canSetFigure, act, onSkip }: { claim: PastRepClai
         <input type="checkbox" data-part="fingerprint-seen" checked={seen} onChange={(e) => setSeen(e.target.checked)} />
         <span>The archived page shows this exact full fingerprint</span>
       </label>
+      <label className="x2f-check">
+        <input type="checkbox" data-part="profile-seen" checked={profileSeen} onChange={(e) => setProfileSeen(e.target.checked)} />
+        <span>The archived page is the trader's profile on {claim.site}</span>
+      </label>
       <div className="x2f-field">
         <label className="x2f-label" htmlFor={tradesId}>
           Trades shown on the archived page
@@ -264,7 +315,7 @@ function WaitingClaim({ claim, canSetFigure, act, onSkip }: { claim: PastRepClai
         {/* not-a-refusal: the field's hint, saying what it takes. */}
         <p className="x2f-staff-hint">At most the {count(claim.claimedTrades)} the trader claimed.</p>
       </div>
-      <Button variant="primary" disabled={busy || !seen || !tradesOk} onClick={() => void run(() => pastRepApprove(claim.id, n))}>
+      <Button variant="primary" disabled={busy || !seen || !profileSeen || !tradesOk} onClick={() => void run(() => pastRepApprove(claim.id, n))}>
         Approve
       </Button>
       <div className="x2f-field">

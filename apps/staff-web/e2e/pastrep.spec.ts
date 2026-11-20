@@ -3,7 +3,7 @@
 // page.route in the shapes of apps/api/src/staff/pastrep.ts. The evidence link opens the archive in
 // a new tab with no referrer and no opener (the archive never learns the staff site, and cannot
 // reach back into it); the page itself never requests the archive. Approve needs the fingerprint
-// tick and the trades shown (P5-A23) and sends exactly those.
+// tick, the profile tick (review M2) and the trades shown (P5-A23) and sends exactly those.
 import { expect, test, type Page, type Request, type Route } from '@playwright/test';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -13,7 +13,7 @@ const ARCHIVE = 'https://web.archive.org/web/2023/https://localmonero.co/user/ro
 const CLAIM = {
   id: '11111111-1111-4111-8111-111111111111', site: 'LocalMonero', url: ARCHIVE, claimedTrades: 1300, verifiedTrades: null, verifiedUsdCents: null,
   status: 'signed', fingerprint: 'A1B2 C3D4 E5F6 0718 293A 4B5C 6D7E 8F90 1234 5678', keyId: '6D7E8F9012345678', signatureValid: true,
-  displayName: 'rook88', createdAt: '2026-11-01T10:00:00.000Z',
+  displayName: 'rook88', createdAt: '2026-11-01T10:00:00.000Z', originalHost: 'localmonero.co',
 };
 
 async function stub(page: Page, posts: Array<{ path: string; body: unknown }>): Promise<void> {
@@ -22,7 +22,7 @@ async function stub(page: Page, posts: Array<{ path: string; body: unknown }>): 
     const req = route.request();
     const path = new URL(req.url()).pathname;
     if (path === '/staff/v1/me') return json(ME)(route);
-    if (path === '/staff/v1/past-rep' && req.method() === 'GET') return json(queue)(route);
+    if (path === '/staff/v1/past-rep' && req.method() === 'GET') return json({ items: queue, next: null })(route);
     if (req.method() === 'POST' && path === `/staff/v1/past-rep/${CLAIM.id}/approve`) {
       posts.push({ path, body: req.postDataJSON() });
       queue = [];
@@ -50,6 +50,9 @@ test('a moderator checks the archive in a new tab (no referrer, no opener) and a
   await expect(page.locator('nav[aria-label="Staff"] a[data-nav="past-reputation"]')).toHaveText('Past reputation');
   await expect(page.locator('[data-part="fingerprint"]')).toHaveText(CLAIM.fingerprint);
   await expect(page.locator('[data-part="evidence-note"]')).toHaveText('Opens the archive in your browser. X2F never fetches it.');
+  // Review M2: the full link as text and the archived site's host.
+  await expect(page.locator('[data-part="evidence-url"]')).toHaveText(ARCHIVE);
+  await expect(page.locator('[data-part="original-host"]')).toHaveText('Archived site: localmonero.co');
   expect(archive).toHaveLength(0);
 
   const link = page.locator('[data-part="evidence-link"] a');
@@ -68,12 +71,16 @@ test('a moderator checks the archive in a new tab (no referrer, no opener) and a
 
   const approve = page.getByRole('button', { name: 'Approve' });
   await expect(approve).toBeDisabled();
-  await page.getByLabel('The archived page shows this exact full fingerprint').check();
+  // Review m1: the trades filled, no tick: still off; one tick of two: still off.
   await page.getByLabel('Trades shown on the archived page').fill('1240');
+  await expect(approve).toBeDisabled();
+  await page.getByLabel('The archived page shows this exact full fingerprint').check();
+  await expect(approve).toBeDisabled();
+  await page.getByLabel("The archived page is the trader's profile on LocalMonero").check();
   await expect(approve).toBeEnabled();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await approve.click();
   await expect(page.locator('[data-part="no-claims"]')).toBeVisible();
-  expect(posts).toEqual([{ path: `/staff/v1/past-rep/${CLAIM.id}/approve`, body: { fingerprintSeen: true, tradesSeen: 1240 } }]);
+  expect(posts).toEqual([{ path: `/staff/v1/past-rep/${CLAIM.id}/approve`, body: { fingerprintSeen: true, profileSeen: true, tradesSeen: 1240 } }]);
   expect(violations).toEqual([]);
 });

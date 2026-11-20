@@ -252,11 +252,24 @@ export interface PastRepClaim {
   signatureValid: true;
   displayName: string;
   createdAt: string;
+  /** Review M2: the host of the page the archive copied, from the link itself; null when it does not say. */
+  originalHost: string | null;
 }
 
-export const pastRepList = (status: 'signed' | 'approved') => staffApi<PastRepClaim[]>(`/staff/v1/past-rep?status=${status}`);
+/** One page of claims (review M1): `next` is the cursor of the following page, null after the last. */
+export interface PastRepPage {
+  items: PastRepClaim[];
+  next: string | null;
+}
+
+export const pastRepList = (status: 'signed' | 'approved', o: { cursor?: string; name?: string } = {}) => {
+  const q = [`status=${status}`];
+  if (o.cursor !== undefined) q.push(`cursor=${encodeURIComponent(o.cursor)}`);
+  if (o.name !== undefined && o.name.trim() !== '') q.push(`name=${encodeURIComponent(o.name.trim())}`);
+  return staffApi<PastRepPage>(`/staff/v1/past-rep?${q.join('&')}`);
+};
 export const pastRepApprove = (id: string, tradesSeen: number) =>
-  staffApi<{ id: string; status: 'approved'; verifiedTrades: number }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/approve`, { method: 'POST', body: { fingerprintSeen: true, tradesSeen } });
+  staffApi<{ id: string; status: 'approved'; verifiedTrades: number }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/approve`, { method: 'POST', body: { fingerprintSeen: true, profileSeen: true, tradesSeen } });
 export const pastRepReject = (id: string, reason: string) =>
   staffApi<{ id: string; status: 'rejected' }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/reject`, { method: 'POST', body: { reason } });
 export const pastRepRevoke = (id: string, reason: string) =>

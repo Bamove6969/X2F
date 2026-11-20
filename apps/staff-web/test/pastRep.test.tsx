@@ -32,8 +32,11 @@ const claim = (o: Partial<PastRepClaim> = {}): PastRepClaim => ({
   signatureValid: true,
   displayName: 'rook88',
   createdAt: '2026-11-01T10:00:00.000Z',
+  originalHost: 'localmonero.co',
   ...o,
 });
+/** One page of the list as the API answers it (review M1). */
+const pg = (items: PastRepClaim[], next: string | null = null) => ({ items, next });
 const SECOND = claim({ id: '22222222-2222-4222-8222-222222222222', site: 'Bisq', displayName: 'wren', claimedTrades: 40 });
 
 async function open() {
@@ -46,10 +49,17 @@ async function open() {
 }
 const part = (p: string) => document.querySelector(`[data-part="${p}"]`);
 const approveButton = () => button('Approve')!;
+const FINGERPRINT_TICK = 'The archived page shows this exact full fingerprint';
+const PROFILE_TICK = "The archived page is the trader's profile on";
+/** Both ticks (P5-A23 and review M2). */
+async function tickBoth() {
+  await tick(field(FINGERPRINT_TICK));
+  await tick(field(PROFILE_TICK));
+}
 
 describe('Past reputation (Plan 5 Task 11)', () => {
   it("is in a moderator's menu; shows one claim at a time, the archive link in a new tab with no referrer, the fingerprint in groups of 4", async () => {
-    const api = fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/past-rep': { body: [claim(), SECOND] } });
+    const api = fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/past-rep': { body: pg([claim(), SECOND]) } });
     await open();
     expect([...document.querySelectorAll('nav[aria-label="Staff"] a')].map((a) => a.textContent)).toContain('Past reputation');
     expect(document.querySelector('[data-screen="past-rep"]')).not.toBeNull();
@@ -65,6 +75,11 @@ describe('Past reputation (Plan 5 Task 11)', () => {
     expect(link?.getAttribute('target')).toBe('_blank');
     expect(link?.getAttribute('rel')?.split(' ')).toEqual(expect.arrayContaining(['noreferrer', 'noopener']));
     expect(part('evidence-note')?.textContent).toBe('Opens the archive in your browser. X2F never fetches it.');
+    // Review M2: the full link as plain text, and the host of the page the archive copied.
+    expect(part('evidence-url')?.textContent).toBe(claim().url);
+    expect(part('evidence-url')?.querySelector('a')).toBeNull();
+    expect(part('original-host')?.textContent).toBe('Archived site: localmonero.co');
+    expect(field(PROFILE_TICK).closest('label')?.textContent).toBe("The archived page is the trader's profile on LocalMonero");
     expect(part('fingerprint')?.textContent).toBe('A1B2 C3D4 E5F6 0718 293A 4B5C 6D7E 8F90 1234 5678');
     expect(part('fingerprint')?.className).toContain('x2f-mono');
     expect(part('verified-usd')).toBeNull();
@@ -76,35 +91,44 @@ describe('Past reputation (Plan 5 Task 11)', () => {
   it('P5-A23: Approve waits for the fingerprint tick and the trades shown; it sends both, then the next claim shows', async () => {
     const api = fakeApi({
       'GET /staff/v1/me': { body: MOD },
-      'GET /staff/v1/past-rep': { body: [claim(), SECOND] },
+      'GET /staff/v1/past-rep': { body: pg([claim(), SECOND]) },
       'POST /staff/v1/past-rep/:id/approve': { body: { id: claim().id, status: 'approved', verifiedTrades: 1240 } },
     });
     await open();
     expect(approveButton().disabled).toBe(true);
-    await tick(field('The archived page shows this exact full fingerprint'));
+    // Review m1: trades filled, no tick: still off; one tick of two: still off.
+    typeInto(field('Trades shown on the archived page'), '1240');
+    await settle();
     expect(approveButton().disabled).toBe(true);
+    await tick(field(FINGERPRINT_TICK));
+    expect(approveButton().disabled).toBe(true);
+    await tick(field(FINGERPRINT_TICK));
+    await tick(field(PROFILE_TICK));
+    expect(approveButton().disabled).toBe(true);
+    await tick(field(FINGERPRINT_TICK));
     typeInto(field('Trades shown on the archived page'), '0');
     await settle();
     expect(approveButton().disabled).toBe(true);
     typeInto(field('Trades shown on the archived page'), '1240');
     await settle();
     expect(approveButton().disabled).toBe(false);
-    api.set('GET /staff/v1/past-rep', { body: [SECOND] });
+    api.set('GET /staff/v1/past-rep', { body: pg([SECOND]) });
     await click(approveButton());
     const sent = api.calls.find((c) => c.method === 'POST' && c.path.endsWith('/approve'));
     expect(sent?.path).toBe(`/staff/v1/past-rep/${claim().id}/approve`);
-    expect(sent?.body).toEqual({ fingerprintSeen: true, tradesSeen: 1240 });
+    expect(sent?.body).toEqual({ fingerprintSeen: true, profileSeen: true, tradesSeen: 1240 });
     expect(part('claim')?.textContent).toContain('wren');
     expect(part('claim-count')?.textContent).toBe('Claim 1 of 1');
     // The next claim starts unticked and empty.
-    expect((field('The archived page shows this exact full fingerprint') as HTMLInputElement).checked).toBe(false);
+    expect((field(FINGERPRINT_TICK) as HTMLInputElement).checked).toBe(false);
+    expect((field(PROFILE_TICK) as HTMLInputElement).checked).toBe(false);
     expect(approveButton().disabled).toBe(true);
   });
 
   it('Reject needs a reason of 10 characters or more, and sends it; Skip shows the next claim without deciding', async () => {
     const api = fakeApi({
       'GET /staff/v1/me': { body: MOD },
-      'GET /staff/v1/past-rep': { body: [claim(), SECOND] },
+      'GET /staff/v1/past-rep': { body: pg([claim(), SECOND]) },
       'POST /staff/v1/past-rep/:id/reject': { body: { id: claim().id, status: 'rejected' } },
     });
     await open();
@@ -119,7 +143,7 @@ describe('Past reputation (Plan 5 Task 11)', () => {
     expect(button('Reject')!.disabled).toBe(true);
     typeInto(field('Reason for rejecting'), 'The archive shows another key.');
     await settle();
-    api.set('GET /staff/v1/past-rep', { body: [SECOND] });
+    api.set('GET /staff/v1/past-rep', { body: pg([SECOND]) });
     await click(button('Reject'));
     const sent = api.calls.find((c) => c.method === 'POST' && c.path.endsWith('/reject'));
     expect(sent?.body).toEqual({ reason: 'The archive shows another key.' });
@@ -127,25 +151,48 @@ describe('Past reputation (Plan 5 Task 11)', () => {
     expect(api.calls.some((c) => c.path.endsWith('/approve'))).toBe(false);
   });
 
+  it('review M3: a claim backed by the reviewer\'s own login key is refused with the can\'t-do-that dialog', async () => {
+    fakeApi({
+      'GET /staff/v1/me': { body: MOD },
+      'GET /staff/v1/past-rep': { body: pg([claim()]) },
+      'POST /staff/v1/past-rep/:id/approve': refused(403, 'reviewer-own-key'),
+    });
+    await open();
+    await tickBoth();
+    typeInto(field('Trades shown on the archived page'), '1240');
+    await settle();
+    await click(approveButton());
+    expect(document.body.textContent).toContain('This claim uses one of your own login keys, so another moderator needs to review it.');
+    expect(part('claim')).not.toBeNull();
+  });
+
+  it('a link that does not name the archived site says to read the address on the archived page', async () => {
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/past-rep': { body: pg([claim({ url: 'https://archive.ph/AbCd1', originalHost: null })]) } });
+    await open();
+    expect(part('evidence-url')?.textContent).toBe('https://archive.ph/AbCd1');
+    expect(part('original-host')?.textContent).toBe("The link doesn't name the archived site. Read the address on the archived page.");
+  });
+
   it('a claim another moderator decided first: the fault shows and the list reloads', async () => {
     const api = fakeApi({
       'GET /staff/v1/me': { body: MOD },
-      'GET /staff/v1/past-rep': { body: [claim()] },
+      'GET /staff/v1/past-rep': { body: pg([claim()]) },
       'POST /staff/v1/past-rep/:id/approve': refused(409, 'wrong-state'),
     });
     await open();
-    await tick(field('The archived page shows this exact full fingerprint'));
+    await tickBoth();
     typeInto(field('Trades shown on the archived page'), '1240');
     await settle();
-    api.set('GET /staff/v1/past-rep', { body: [] });
+    api.set('GET /staff/v1/past-rep', { body: pg([]) });
     await click(approveButton());
-    expect(document.querySelector('[data-part="past-rep-fault"]')?.textContent).toContain('already decided');
+    // Review m2: neutral words (the trader may have removed it, a senior revoked it).
+    expect(document.querySelector('[data-part="past-rep-fault"]')?.textContent).toBe('This claim changed meanwhile. The list is up to date again.');
     expect(part('claim')).toBeNull();
     expect(part('no-claims')?.textContent).toContain('No claims are waiting');
   });
 
   it('an empty queue says so, with no primary action', async () => {
-    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/past-rep': { body: [] } });
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/past-rep': { body: pg([]) } });
     await open();
     expect(part('no-claims')?.textContent).toContain('No claims are waiting');
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(0);
@@ -155,7 +202,7 @@ describe('Past reputation (Plan 5 Task 11)', () => {
     const approved = claim({ id: '33333333-3333-4333-8333-333333333333', status: 'approved', verifiedTrades: 900, displayName: 'kestrel', verifiedUsdCents: 1_250_000 });
     const api = fakeApi({
       'GET /staff/v1/me': { body: SENIOR },
-      'GET /staff/v1/past-rep': (_b, path) => ({ body: path.includes('status=approved') ? [approved] : [claim()] }),
+      'GET /staff/v1/past-rep': (_b, path) => ({ body: path.includes('status=approved') ? pg([approved]) : pg([claim()]) }),
       'POST /staff/v1/past-rep/:id/revoke': { body: { id: approved.id, status: 'revoked' } },
       'PUT /staff/v1/past-rep/:id/verified-usd': { body: { ok: true } },
     });
@@ -163,6 +210,7 @@ describe('Past reputation (Plan 5 Task 11)', () => {
     expect(api.calls.map((c) => c.path)).toContain('/staff/v1/past-rep?status=approved');
     const rows = [...document.querySelectorAll('table[aria-label="Approved claims"] tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
     expect(rows[0]!.slice(0, 4)).toEqual(['kestrel', 'LocalMonero', '900', '$12,500']);
+    expect(button('Show more approved claims')).toBeUndefined();
     // The figure on the waiting claim (entered before approval counts nothing until approved).
     const usd = field('Verified dollar figure (US$)', part('claim')!);
     typeInto(usd, '4,000.50');
@@ -177,7 +225,7 @@ describe('Past reputation (Plan 5 Task 11)', () => {
     expect(button('Revoke', panel)!.disabled).toBe(true);
     typeInto(field('Reason for revoking', panel), 'The archive was edited later.');
     await settle();
-    api.set('GET /staff/v1/past-rep', (_b, path) => ({ body: path.includes('status=approved') ? [] : [claim()] }));
+    api.set('GET /staff/v1/past-rep', (_b, path) => ({ body: path.includes('status=approved') ? pg([]) : pg([claim()]) }));
     await click(button('Revoke', panel));
     expect(api.calls.find((c) => c.path.endsWith('/revoke'))?.body).toEqual({ reason: 'The archive was edited later.' });
     expect(part('approved-claim')).toBeNull();
@@ -188,7 +236,7 @@ describe('Past reputation (Plan 5 Task 11)', () => {
   it('a figure that is not a dollar amount is never sent; a cleared field clears the figure', async () => {
     const api = fakeApi({
       'GET /staff/v1/me': { body: SENIOR },
-      'GET /staff/v1/past-rep': (_b, path) => ({ body: path.includes('status=approved') ? [] : [claim({ verifiedUsdCents: 500 })] }),
+      'GET /staff/v1/past-rep': (_b, path) => ({ body: path.includes('status=approved') ? pg([]) : pg([claim({ verifiedUsdCents: 500 })]) }),
       'PUT /staff/v1/past-rep/:id/verified-usd': { body: { ok: true } },
     });
     await open();
@@ -203,5 +251,31 @@ describe('Past reputation (Plan 5 Task 11)', () => {
     await settle();
     await click(button('Save figure', part('claim')!));
     expect(api.calls.find((c) => c.method === 'PUT')?.body).toEqual({ usdCents: null });
+  });
+
+  it('review M1: the approved claims page with Show more, and a trader-name search asks the API', async () => {
+    const a1 = claim({ id: '44444444-4444-4444-8444-444444444444', status: 'approved', verifiedTrades: 5, displayName: 'newest' });
+    const a2 = claim({ id: '55555555-5555-4555-8555-555555555555', status: 'approved', verifiedTrades: 6, displayName: 'older' });
+    const api = fakeApi({
+      'GET /staff/v1/me': { body: SENIOR },
+      'GET /staff/v1/past-rep': (_b, path) => {
+        if (!path.includes('status=approved')) return { body: pg([]) };
+        if (path.includes('cursor=c1')) return { body: pg([a2]) };
+        if (path.includes('name=')) return { body: pg([a2]) };
+        return { body: pg([a1], 'c1') };
+      },
+    });
+    await open();
+    const names = () => [...document.querySelectorAll('table[aria-label="Approved claims"] tbody tr')].map((tr) => tr.querySelector('td')?.textContent);
+    expect(names()).toEqual(['newest']);
+    await click(button('Show more approved claims'));
+    expect(api.calls.map((c) => c.path)).toContain('/staff/v1/past-rep?status=approved&cursor=c1');
+    expect(names()).toEqual(['newest', 'older']);
+    expect(button('Show more approved claims')).toBeUndefined();
+    typeInto(field('Trader name'), 'Old');
+    await settle();
+    await click(button('Search'));
+    expect(api.calls.map((c) => c.path)).toContain('/staff/v1/past-rep?status=approved&name=Old');
+    expect(names()).toEqual(['older']);
   });
 });

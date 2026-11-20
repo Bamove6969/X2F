@@ -1055,3 +1055,10 @@
 .x2f-staff-facts dd {
   margin: 0;
 }
+
+/* Review M2: the evidence link in full, wrapping anywhere (an archive link is long). */
+.x2f-staff-url {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
