@@ -51,7 +51,7 @@ async function dismissTips(page: Page): Promise<void> {
  * The poster posts an offer; the taker browses, taps Trade on it, types 0.2 XMR and taps Trade;
  * the poster picks a wallet on the accepted-offer sheet. Ends with the seller asked to fund.
  */
-async function openTrade(browser: Browser, size: Size, taker: 'seller' | 'buyer', o: { buyerPage?: (page: Page) => Promise<void> } = {}): Promise<Open> {
+async function openTrade(browser: Browser, size: Size, taker: 'seller' | 'buyer', o: { buyerPage?: (page: Page) => Promise<void>; beforeAccept?: (code: string) => Promise<void> } = {}): Promise<Open> {
   void funder(); // mined and synced while the trade is set up
   const poster = await signUp(taker === 'seller' ? 'buyer' : 'seller', { vendor: true });
   await poster.api.ok('POST', '/v1/offers', offer(taker === 'seller' ? 'buy' : 'sell'));
@@ -78,6 +78,7 @@ async function openTrade(browser: Browser, size: Size, taker: 'seller' | 'buyer'
   if (!(await trade.isEnabled())) console.log(`quote (${taker}):\n${await t.page.evaluate(() => document.body.innerText)}\n${await t.page.evaluate(() => [...document.querySelectorAll('input')].map((i) => `${i.type}:${i.name}:${i.checked}:${i.value}`).join(' | '))}`);
   await trade.click();
   await t.page.waitForURL(/\/trade\//);
+  await o.beforeAccept?.(codeOf(t.page));
   const use = p.page.getByRole('button', { name: 'Use this wallet' });
   await expect(use).toBeVisible({ timeout: 60_000 });
   await p.page.locator('input[type=radio][name=accepted-wallet]').first().check();
@@ -423,6 +424,41 @@ for (const [label, size] of SIZES) {
         // The clock 48 h on: the API's timer loop closes it (cancel-timeout records the confirmation).
         await sql("update trades set cancel_confirmable_at = now() - interval '48 hours 1 second' where code = $1", [o.code]);
         await expect.poll(async () => (await tradeView<{ cancelConfirmedAt: string | null }>(o.seller, o.code)).cancelConfirmedAt, { timeout: 3 * 60_000 }).not.toBeNull();
+      });
+    });
+
+    test("buyer no-show: past the time to pay the seller taps Cancel and get refund; the buyer stays silent with the room open; the refund lands with the seller's page closed", async ({ browser }) => {
+      // A 1-minute time to pay (the method's window is fixed at take and signed into the terms the
+      // moderation attests, so it is set before the poster accepts; the set-once guard is lifted
+      // for this one update in the throwaway database).
+      const o = await openTrade(browser, size, 'seller', {
+        beforeAccept: async (code) => {
+          await sql('alter table trades disable trigger trades_set_once_pay_window');
+          try {
+            await sql('update trades set pay_window_min = 1 where code = $1', [code]);
+          } finally {
+            await sql('alter table trades enable trigger trades_set_once_pay_window');
+          }
+        },
+      });
+      await inRooms(o, async () => {
+        const funds = await fund(o);
+        await shows(o.sellerPage, /didn't mark the payment in time/, 3 * 60_000);
+        await o.sellerPage.getByRole('button', { name: 'Cancel and get refund' }).click();
+        await shows(o.sellerPage, /Your XMR is on its way back/);
+        await o.sellerPage.waitForTimeout(10_000);
+        await o.sellerPage.context().close();
+        const v = await untilState(o.buyer, o.code, ['refunded']);
+        expect(v.txHash).toMatch(/^[0-9a-f]{64}$/);
+        await mine(12);
+        const network = await txFee(v.txHash!);
+        expect(await receivedIn(o.seller.wallet, v.txHash!)).toBe(funds - network);
+        const fw = await feeWallet();
+        try {
+          expect(await receivedIn(fw, v.txHash!)).toBe(0n);
+        } finally {
+          await fw.close();
+        }
       });
     });
 
