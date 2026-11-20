@@ -143,3 +143,63 @@ M-1 is a pre-existing way to escape the **page** CSP. This branch is the natural
 ## Owner questions
 
 - None from me. The builder already lists the lead default for clear-text .onion relay and node proxy origins as an owner question. The fixes for M-1 and m-1 to m-3 are engineering only.
+
+---
+
+## Addendum: f110c322 (`git diff bd4e62dc f110c322`), 20 Nov 2026, about 15:40 to 16:55 BC
+
+**Verdict: APPROVE.** M-1, m-1 and m-3 are fixed. One small gap is left (n-1): it does not touch today's build and is a few lines to close. m-2 stays open, as the lead said.
+
+### What holds
+
+- **Deny-all on the other asset scripts (M-1).** `ASSET_SCRIPT_CSP` (`default-src 'none'`) is set on every `/assets/*.js` or `.mjs` file other than the escrow worker. In the production build those are the 5 page chunks; the rest of `assets/` is CSS and fonts.
+  - **URL variants.** serveWeb picks the CSP from the resolved file, not the URL, so `?x`, `ind%65x-…`, `/%61ssets/…` and `escrow%2Dworker-…` all get the right policy. `%2e/`, `./` and uppercase variants are 404.
+  - **A renamed escrow worker** inside `assets/` falls into the deny-all branch, so its wallets would fail at once (fails closed). The new worker-csp case passes: a page chunk started as a worker cannot fetch an unlisted host.
+- **No-cache and ETag (m-1): the CSP cannot go stale.**
+  - In a raw-socket probe, a conditional request with a matching ETag got a 304 carrying the new CSP. The ETag is size plus mtime, so a settings change alone leaves it unchanged, and `setHeaders` still runs on a 304.
+  - Browser probe (Chromium 1243, a temporary spec, not committed):
+    1. Load the escrow worker from a server with relay `wss://a.x2f.invalid`.
+    2. Restart the server with relay `wss://b.x2f.invalid` and reload.
+    3. The worker was revalidated with a 304 and enforced the **new** policy: `a` refused, `b` allowed.
+- **`checkEscrowWorker` fails closed (m-3).** It refuses to start when:
+  - there is no escrow worker (revert R3 is caught);
+  - there are two;
+  - `assets` is a file (ENOTDIR is re-thrown). There is no test for this case yet (n-2).
+
+  Note for deployment: a deploy that keeps the previous release's hashed assets next to the new ones has two escrow workers, so the server will not start. That fails closed, but it belongs in the deploy notes.
+- **A root with no `assets/` folder.** This is acceptable as "no app": index.html loads everything from `/assets/`, so nothing can start an escrow worker. This suits test roots and API-only use. What is left is n-1.
+
+### n-1 (minor): scripts outside `/assets/` still get no CSP
+
+- **Where:** `serve.ts`, the `setHeaders` chain.
+- **Problem:** `.js`/`.mjs` files anywhere other than `/assets/`, `/ocr/`, `/monero/` and `/sw.js` match no branch and get no CSP. Probe: a root with no `assets/` started, and `/escrow-worker-AAAAAAAA.js` and `/other.mjs` at the root were served as JavaScript with no CSP.
+- **Exposure today:** none. The build's root holds only index.html and sw.js.
+- **When it would matter:** a future `public/*.js`, or a changed `build.assetsDir` (then there is no `assets/`, `checkEscrowWorker` returns early, and every script, the escrow worker included, is served with no policy).
+- **Fix:**
+  - Add a final `else if (/\.m?js$/i.test(path))` with `ASSET_SCRIPT_CSP`, so any script not matched earlier is deny-all.
+  - Optionally, have `checkEscrowWorker` require `assets/` whenever `index.html` exists.
+
+### n-2 (minor): the re-throw of non-ENOENT errors is untested
+
+Revert R5 below (ignore every readdir error) passes the tests. Add a case where `assets` is a file and expect start-up to be refused.
+
+### Guard reverts at f110c322 (headers.test, 129 tests; each restored)
+
+| # | Revert | Result |
+|---|--------|--------|
+| R1 | no deny-all on other asset scripts | 4 failed |
+| R2 | escrow worker back to the year-long `immutable` cache | 1 failed |
+| R3 | zero escrow workers accepted (`> 1`) | 1 failed |
+| R4 | `.mjs` dropped from the deny-all match | 1 failed |
+| R5 | readdir errors other than ENOENT ignored | **0 failed** (n-2) |
+
+### Tests run at f110c322
+
+- **vitest** (nice, outside the lock):
+  - @x2f/api headers + schema: 211/211.
+  - @x2f/web monero-worker + bundle: 11/11.
+- **`tsc -p apps/api`:** clean.
+- **worker-csp.spec under the lock:** 4/4 on a clean tree.
+  - An earlier run of it together with my 304 probe also passed 5/5. It overlapped in time with my guard-revert edits, so I re-ran worker-csp.spec alone.
+  - The 304 probe's request log (a plain 200, then a conditional request answered 304) shows the `no-cache` path was the one in force during it.
+- **Full set:** the lead's cloud runner.
