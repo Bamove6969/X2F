@@ -229,6 +229,11 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 5 Task 3: reviews.
   'not-reviewable': 'the trade cannot be rated (its state: not released, or a dispute not yet over)',
   'review-exists': 'already rated (a double submit)',
+  // Plan 5 Task 19: review disputes. The Dispute button shows only on a review that can still be
+  // disputed, so each is a race or a stale screen, never X2F's rule refusing the user.
+  'not-disputable': 'the review was removed or is on hold (its state)',
+  'review-disputed': 'already disputed (a double submit or a stale screen)',
+  'dispute-decided': 'a moderator already decided this review dispute (staff only)',
   'bad-shape': 'an input check on the review form',
   'bad-stars': 'an input check on the review form',
   'bad-phrase': 'an input check on the review form',

@@ -50,6 +50,14 @@ export async function postSkip(code: string): Promise<void> {
   await api(`${tradePath(code)}/skip`, { method: 'POST', body: {} });
 }
 
+/**
+ * Plan 5 Task 19: `POST /v1/reviews/:id/dispute { reason }` → 201. Only the person the review is
+ * about; the review shows "Under review" until a moderator decides.
+ */
+export async function disputeReview(id: string, reason: string): Promise<void> {
+  await api(`/v1/reviews/${encodeURIComponent(id)}/dispute`, { method: 'POST', body: { reason } });
+}
+
 /** `GET /v1/reviews/pending`: the trades this trader must rate or skip first, oldest first. */
 export async function fetchPendingReviews(signal?: AbortSignal): Promise<PendingReview[]> {
   const r = await api<{ trades?: unknown }>('/v1/reviews/pending', signal ? { signal } : {});

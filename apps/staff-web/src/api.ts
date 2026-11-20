@@ -233,6 +233,38 @@ export const moodFeedback = (before?: string) =>
 export const formFeedback = (before?: string) => staffApi<{ items: FormItem[]; next: string | null }>(page('/staff/v1/feedback/form', before));
 
 // ---------------------------------------------------------------------------------------------
+// Review disputes (Plan 5 Task 19 on the staff API; perm reputation.review: moderators and up)
+
+export type ReviewDisputeOutcome = 'stands' | 'comments-removed' | 'removed';
+
+/** An open review dispute: the review and the subject's reason, never either trader's name. */
+export interface ReviewDisputeItem {
+  id: string;
+  openedAt: string;
+  reason: string;
+  review: {
+    neutral: boolean;
+    stars: number | null;
+    phrases: string[];
+    tradeBadges: string[];
+    note: string | null;
+    method: string;
+    age: string;
+    reviewerRole: 'buyer' | 'seller';
+  };
+  /** While the trade still exists; null once it was deleted (30 days after it ended). */
+  tradeCode: string | null;
+}
+
+export const reviewDisputes = (after?: string) =>
+  staffApi<{ items: ReviewDisputeItem[]; next: string | null }>(after === undefined ? '/staff/v1/review-disputes' : `/staff/v1/review-disputes?after=${encodeURIComponent(after)}`);
+
+export const decideReviewDispute = (
+  id: string,
+  body: { outcome: ReviewDisputeOutcome; reason: string; remove?: { note: boolean; phrases: string[]; tradeBadges: string[] } },
+) => staffApi<{ ok: true }>(`/staff/v1/review-disputes/${encodeURIComponent(id)}/decide`, { method: 'POST', body });
+
+// ---------------------------------------------------------------------------------------------
 // News for traders (Plan 4 Task 28 on the staff API; perm site.control, the owner only)
 
 
