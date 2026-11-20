@@ -93,6 +93,7 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
     confirmedAtomic: null,
     paidRecorded: false,
     intentKind: null,
+    handedOff: false,
     error: null,
     retryable: false,
     refusal: null,

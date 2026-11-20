@@ -107,6 +107,8 @@ export interface UseEscrow {
   paidRecorded: boolean;
   /** `EscrowStatus.intentKind`: the settle the user tapped on this device and that is saved, or null. */
   intentKind: SettleKind | null;
+  /** `EscrowStatus.handedOff`: this device's part of the settle it signs is finished; the page may close. */
+  handedOff: boolean;
   /** `EscrowStatus.restitution`: the seller's payment a ruling orders, from the attested terms only (absent: none). */
   restitution?: { address: string; amountAtomic: bigint } | null;
   release(): Promise<void>;
@@ -123,7 +125,7 @@ export interface UseEscrow {
   signal(type: Exclude<UserSignal, 'trade.paid'>): Promise<void>;
 }
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, methodId: null, paymentInstructions: null, instructionsMismatch: false, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, methodId: null, paymentInstructions: null, instructionsMismatch: false, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null, handedOff: false };
 
 /**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
@@ -158,6 +160,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     confirmedAtomic: status.confirmedAtomic,
     paidRecorded: status.paidRecorded,
     intentKind: status.intentKind,
+    handedOff: status.handedOff,
     restitution: status.restitution ?? null,
     release: () => act({ type: 'release' }),
     buildRefund: () => act({ type: 'build-refund' }),

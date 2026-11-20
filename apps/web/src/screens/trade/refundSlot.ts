@@ -29,8 +29,10 @@ export type RefundSignal = Exclude<UserSignal, 'trade.paid'>;
  * `payoutsFor('auto-refund')`, builder seller, cosigner mod, once the view is settling as
  * `auto-refund`, the seller's cancel), and `amountAtomic`, the trade amount this device accepts
  * (`EscrowStatus.amountAtomic`), shown in place of the API's amount when the device has one.
+ * `handedOff`, `phase`, `error`, `retryable` and `retry`: whether this device's part of the refund is done (the refund
+ * view says to keep the page open until then; gap 4, 20 Nov).
  */
-export type RefundEscrow = Pick<UseEscrow, 'buildRefund' | 'signal' | 'amountAtomic'>;
+export type RefundEscrow = Pick<UseEscrow, 'buildRefund' | 'signal' | 'amountAtomic' | 'handedOff' | 'phase' | 'error' | 'retryable' | 'retry'>;
 
 /** Task 22's `TradeScreenProps` with the narrower escrow. */
 export type RefundScreenProps = Omit<TradeScreenProps, 'escrow'> & { escrow: RefundEscrow };

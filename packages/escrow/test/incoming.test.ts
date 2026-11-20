@@ -161,6 +161,39 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
     }
   });
 
+  // Gap 4 (20 Nov): the no-show refund is seller-built, so the seller's page must stay open until
+  // its part is finished; settleSent() says when (the co-signer's DONE arrived), before any block.
+  it("settleSent(): false until the co-signer submitted the seller-built refund; then true on both, before the tx is in a block (the builder's settle() still waits for the block)", async () => {
+    const t = await kit.newTrade();
+    const escrow = await ready(t);
+    await pay(escrow, XMR);
+    await mine(node.rpcUri, 12, funderAddress);
+    const refund = await newTestWallet(node.rpcUri);
+    try {
+      for (const r of ROLES) expect(t.parties[r].settleSent!()).toBe(false); // no settle at all
+      const o: Outcome = { kind: 'release', to: [{ address: await refund.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'mod' };
+      let sellerSettled = false;
+      const sellerDone = t.parties.seller.settle(o).then((v) => {
+        sellerSettled = true;
+        return v;
+      });
+      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('export');
+      expect(t.parties.seller.settleSent!()).toBe(false); // the moderator has not exported: nothing built yet
+      // No block is mined from here until the seller's part is finished.
+      const hash = await t.parties.mod.settle(o);
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(t.parties.mod.settleSent!()).toBe(true);
+      await expect.poll(() => t.parties.seller.settleSent!(), { timeout: 60_000 }).toBe(true);
+      expect(t.stores.seller.current()!.release!.phase).toBe('built');
+      expect(sellerSettled).toBe(false);
+      expect(t.parties.buyer.settleSent!()).toBe(false); // not a party to this settle
+      await minedWhile(node.rpcUri, funderAddress, sellerDone);
+      expect(t.parties.seller.settleSent!()).toBe(true);
+    } finally {
+      await refund.close();
+    }
+  });
+
   it('a late surplus before signing: both re-derive, and the sweep pays it to the poster after it unlocks', async () => {
     const t = await kit.newTrade();
     const escrow = await ready(t);

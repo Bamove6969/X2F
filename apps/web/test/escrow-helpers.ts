@@ -124,6 +124,8 @@ export class Parties {
   /** Settles resolve only when released. */
   pending: { role: Role; o: Outcome; resolve: (v: string | null) => void; reject: (e: unknown) => void }[] = [];
   committed = new Map<Role, string>();
+  /** Per role, what the party's settleSent() answers (its part of the settle is finished; gap 4). */
+  sent: Partial<Record<Role, boolean>> = {};
   /** When set for a role, that role's next ready() rejects with it (once). */
   readyError: Partial<Record<Role, unknown>> = {};
   /** When set for a role, every funds() of that role rejects with it until cleared (a dead party). */
@@ -160,6 +162,7 @@ export class Parties {
         if (closed !== undefined) return Promise.reject(new TransportClosedError(closed));
         return new Promise((resolve, reject) => this.pending.push({ role: args.role, o, resolve, reject }));
       },
+      settleSent: () => this.sent[args.role] === true,
       // The runtime never calls these: the escrow party sends its post-release info to the mod itself (Task 9 I/O).
       spendInfo: async () => {
         throw new Error('not used by the runtime');

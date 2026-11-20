@@ -1466,6 +1466,43 @@ describe('settling', () => {
     expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic).toBe(AMOUNT);
   });
 
+  // Gap 4 (20 Nov): the seller's refund view says when the page may close by `handedOff`.
+  it("the seller's refund: handedOff only once the party says its part is finished (the moderator submitted it), while the phase is still signing; never before", async () => {
+    const t = await ready();
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
+    await t.seller.runtime.act(CODE, { type: 'build-refund' });
+    await until(() => t.parties.settles.some((x) => x.role === 'seller'));
+    expect(t.parties.settles.find((x) => x.role === 'seller')!.o).toMatchObject({ builder: 'seller', cosigner: 'mod' });
+    await until(() => t.seller.last()?.phase === 'signing');
+    expect(t.seller.last()?.handedOff).toBe(false);
+    expect(t.seller.last()?.keepOpen).toBe(true);
+    await t.parties.ticks('seller', 2);
+    expect(t.seller.last()?.handedOff).toBe(false); // the party has not said so: still needed
+    t.parties.sent.seller = true;
+    await until(() => t.seller.last()?.handedOff === true);
+    expect(t.seller.last()?.phase).toBe('signing'); // in no block yet: the settle itself is not done
+    for (const p of t.parties.pending.filter((x) => x.role === 'seller')) p.resolve(null);
+    await until(() => t.seller.last()?.phase === 'done');
+    expect(t.seller.last()?.handedOff).toBe(true);
+  });
+
+  it('handedOff is false with no settle under way, whatever the party says, and false on an error', async () => {
+    const t = await ready();
+    t.parties.sent.seller = true;
+    t.parties.sent.buyer = true;
+    await t.parties.ticks('seller', 2);
+    expect(t.seller.last()?.phase).toBe('ready');
+    expect(t.seller.last()?.handedOff).toBe(false);
+    expect(t.buyer.last()?.handedOff).toBe(false);
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
+    await until(() => t.seller.last()?.handedOff === true); // the runtime's own auto-refund intent, settled by the party
+    t.parties.fundsError.seller = new Error('wallet gone');
+    await until(() => t.seller.last()?.phase === 'error');
+    expect(t.seller.last()?.handedOff).toBe(false);
+  });
+
   it('lapsed with funds: the seller builds the lapse refund automatically and the buyer co-signs it', async () => {
     const t = await ready();
     const part = 400_000_000_000n;

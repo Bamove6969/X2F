@@ -13,7 +13,12 @@
  * - **Refund in progress** (`settling` as `auto-refund`): the refund is being signed and sent. A
  *   run this page started and did not finish (the signal or the tx set) is resumed here on mount;
  *   after a reload the view sends the signal and asks for the tx set again (`refundResume`). When
- *   it fails the seller sees why and Retry (review 2026-10-27 I1).
+ *   it fails the seller sees why and Retry (review 2026-10-27 I1). The refund is seller-built
+ *   (builder seller, co-signer mod, Task 25): the moderator can co-sign only the tx set THIS device
+ *   builds, after the two have swapped fresh multisig info, so the refund waits for this device
+ *   until the moderator has submitted it (`handedOff`). Until then the view says to keep the page
+ *   open, and that a closed page only pauses the refund: opening the trade again on this device
+ *   resumes it (gap 4, 20 Nov: the e2e saw the refund never land once the page was closed early).
  * - **Refunded** (`refunded` as `auto-refund`): the refund's confirmations from X2F's own node;
  *   the trade is complete once it has all 10 (owner 8 Nov).
  *
@@ -39,6 +44,7 @@ import { extendSteps, refundResume, refundRun, startedRefundRun, type RefundFlow
 import { canExtend, canRequestRefund } from './refundRules.js';
 import { methodOf, publicName, type RefundScreenProps, type RefundSignal } from './refundSlot.js';
 import { postTradeEvent, TRY_AGAIN, useServerNow } from './refundUi.js';
+import './trade.css';
 import './refund.css';
 
 const NUDGE_SENT = 'Nudge sent.';
@@ -297,6 +303,7 @@ function Refunding({ view, escrow }: RefundScreenProps) {
             You cancelled after the time to pay. The refund of your <Xmr atomic={view.receivedAtomic} /> to your wallet has started. The trade is
             complete once it has <Num>10</Num> confirmations.
           </p>
+          <HandOff escrow={escrow} />
         </section>
         <section aria-label="How the refund works" className="x2f-refund__card">
           <h2 className="x2f-refund__card-title">
@@ -316,6 +323,41 @@ function Refunding({ view, escrow }: RefundScreenProps) {
         </footer>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Whether the seller may close the page (gap 4, 20 Nov). The refund is built by this device, so
+ * until the moderator has submitted it (`handedOff`, or this device's own settle done) the page
+ * must stay open; a closed page pauses the refund until the trade is opened again on this device.
+ * A stopped escrow says the refund waits for it (with Try again when that may help).
+ * COPY-UNSIGNED (all three lines).
+ */
+function HandOff({ escrow }: Pick<RefundScreenProps, 'escrow'>) {
+  if (escrow.error !== null) {
+    return (
+      <div className="x2f-refund__stopped" role="alert" data-refund-escrow-stopped="">
+        <p>The escrow stopped on this device, so the refund is waiting for it.</p>
+        {escrow.retryable ? (
+          <Button variant="secondary" onClick={() => escrow.retry()}>
+            Try again
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+  if (escrow.handedOff || escrow.phase === 'done') {
+    return (
+      <p className="x2f-keep-open" role="status" data-refund-handed-off="">
+        <Icon name="check" size={16} /> This device has signed its part and the refund has been sent to the network. You can close this page now.
+      </p>
+    );
+  }
+  return (
+    <p className="x2f-keep-open" role="status" data-keep-open="">
+      <Icon name="info" size={16} /> Keep this page open while this device signs the refund. If you close it, the refund waits until you open this trade
+      again on this device.
+    </p>
   );
 }
 
