@@ -64,6 +64,11 @@ export interface WebOptions {
   /** The node proxy's exact origin, e.g. https://node.example.org. */
   nodeProxyOrigin: string;
   /**
+   * This site's own exact origins (X2F_ORIGINS), e.g. https://x2f.example.org. The OCR worker may
+   * fetch only under each one's /ocr/ (lead call 20 Nov, `ocrWorkerCspFor`).
+   */
+  siteOrigins: readonly string[];
+  /**
    * Allows an http: or ws: origin on a host other than loopback (X2F_ALLOW_INSECURE_ORIGINS=1).
    * Off by default: only a loopback host may be reached in clear text.
    */
@@ -123,8 +128,26 @@ export function cspFor(o: ConnectOrigins): string {
  * its CSP from its own response, not from the page, so the OCR worker gets this one: it may load
  * scripts and compile WebAssembly from this origin and fetch from this origin, nothing else (so even
  * a CDN default inside tesseract.js could not be reached).
+ *
+ * Lead call 20 Nov (the Task 16 review): connect-src is not 'self' but this site's /ocr/ path on each
+ * of its origins (a source with a path: the worker's fetches of its model match it, a fetch to /v1/
+ * does not), so a worker taken over through the OCR engine, which now reads a picture the counterparty
+ * made, cannot reach the API with the trader's cookies. CSP ignores the path after a redirect, and
+ * nothing under /ocr/ redirects (static files only). Tested in apps/web/e2e/proof-ocr.spec.ts.
  */
-export const OCR_WORKER_CSP = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'";
+export function ocrWorkerCspFor(o: Pick<WebOptions, 'siteOrigins' | 'allowInsecureOrigins'>): string {
+  const insecure = o.allowInsecureOrigins === true;
+  if (!Array.isArray(o.siteOrigins) || o.siteOrigins.length === 0) throw new Error('web: the site origins (X2F_ORIGINS) are needed for the OCR worker CSP');
+  const sources = o.siteOrigins.map((v) => {
+    const at = origin(v, 'site origin', insecure);
+    if (!at.startsWith('https:') && !at.startsWith('http:')) throw new Error('web: a site origin must be https (or http on loopback)');
+    // Only host-name characters: URL accepts a host such as `x2f.test;`, and a `;` or a space would
+    // end the directive or add a source, so `/ocr/` would no longer narrow anything.
+    if (!/^https?:\/\/(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[::1\])(?::\d{1,5})?$/.test(at)) throw new Error('web: a site origin must be a plain https origin such as https://x2f.example');
+    return `${at}/ocr/`;
+  });
+  return `default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src ${sources.join(' ')}`;
+}
 
 /** The web settings from the environment; `null` when this process does not serve the web app. */
 export function webOptionsFromEnv(env: Record<string, string | undefined>): WebOptions | null {
@@ -137,9 +160,11 @@ export function webOptionsFromEnv(env: Record<string, string | undefined>): WebO
   };
   const relayOrigin = need('X2F_RELAY_ORIGIN');
   const nodeProxyOrigin = need('X2F_NODE_PROXY_ORIGIN');
+  const siteOrigins = need('X2F_ORIGINS').split(',').map((v) => v.trim());
   const allowInsecureOrigins = env.X2F_ALLOW_INSECURE_ORIGINS === '1';
-  const o: WebOptions = { root, relayOrigin, nodeProxyOrigin, ...(allowInsecureOrigins ? { allowInsecureOrigins } : {}) };
+  const o: WebOptions = { root, relayOrigin, nodeProxyOrigin, siteOrigins, ...(allowInsecureOrigins ? { allowInsecureOrigins } : {}) };
   cspFor(o);
+  ocrWorkerCspFor(o);
   return o;
 }
 
@@ -196,6 +221,7 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
  */
 export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<void> {
   const csp = cspFor(o);
+  const ocrCsp = ocrWorkerCspFor(o);
   const ocrDir = join(resolve(o.root), 'ocr') + sep;
   await app.register(async (scope) => {
     scope.addHook('onRequest', addSecurityHeaders);
@@ -207,7 +233,7 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
       setHeaders(reply, path) {
         if (resolve(path).startsWith(ocrDir)) {
           // Plan 5 Task 13: the OCR worker, its engine and model get the worker's own CSP.
-          void reply.header('content-security-policy', OCR_WORKER_CSP);
+          void reply.header('content-security-policy', ocrCsp);
         } else if (path.endsWith('.html')) {
           void reply.header('content-security-policy', csp).header('cache-control', 'no-cache');
         } else if (/[\\/]sw\.js$/.test(path) && !/[\\/]assets[\\/]/.test(path)) {

@@ -147,9 +147,60 @@ test.describe('on-device OCR for the proof blur', () => {
     for (const f of ['worker.min.js', 'tesseract-core-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'eng.traineddata.gz', 'rus.traineddata.gz']) {
       const res = await request.get(`${ORIGIN}/ocr/${f}`);
       expect(res.status(), f).toBe(200);
-      expect(res.headers()['content-security-policy'], f).toBe("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'");
+      // Lead call 20 Nov: fetches only under this origin's /ocr/.
+      expect(res.headers()['content-security-policy'], f).toBe(`default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src ${ORIGIN}/ocr/`);
     }
   });
+
+  // Lead call 20 Nov (Plan 5 Task 16 review): the worker CSP's connect-src is this origin's /ocr/ path
+  // only, so a worker taken over through the OCR engine cannot reach the API with the trader's cookies.
+  // A probe script is served at /ocr/probe.js with the headers the server sends for a real /ocr/ file
+  // (its own CSP), and fetches from inside the worker. The control serves the same probe under the old
+  // `connect-src 'self'`, so the test shows it can tell the two apart.
+  for (const [what, csp] of [
+    ['the served worker CSP', null],
+    ["control: the old connect-src 'self'", "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'"],
+  ] as const) {
+    test(`inside an /ocr/ worker (${what}): a fetch under /ocr/ ${csp === null ? 'is allowed and one to /v1/ is blocked' : 'and one to /v1/ both go through'}`, async ({ page }) => {
+      const probe = `
+        const seen = [];
+        self.addEventListener('securitypolicyviolation', (e) => seen.push(e.violatedDirective + ' ' + e.blockedURI));
+        const go = (u) => fetch(u, { credentials: 'same-origin' }).then((r) => 'reached ' + r.status, () => 'blocked');
+        self.onmessage = async () => {
+          const ocr = await go('/ocr/eng.traineddata.gz');
+          const v1 = await go('/v1/account/me');
+          const other = await go('/ocrx/eng.traineddata.gz');
+          await new Promise((r) => setTimeout(r, 50));
+          postMessage({ ocr, v1, other, seen });
+        };`;
+      await page.route('**/ocr/probe.js', async (route) => {
+        const real = await route.fetch({ url: `${ORIGIN}/ocr/worker.min.js` });
+        const headers = { ...real.headers() };
+        delete headers['content-length'];
+        delete headers['etag'];
+        if (csp !== null) headers['content-security-policy'] = csp;
+        await route.fulfill({ status: 200, headers: { ...headers, 'content-type': 'text/javascript; charset=utf-8' }, body: probe });
+      });
+      await open(page);
+      const out = await page.evaluate(
+        () =>
+          new Promise<{ ocr: string; v1: string; other: string; seen: string[] }>((resolve, reject) => {
+            const w = new Worker('/ocr/probe.js');
+            w.onmessage = (e) => resolve(e.data);
+            w.onerror = (e) => reject(new Error(String(e.message)));
+            w.postMessage('go');
+          }),
+      );
+      expect(out.ocr).toBe('reached 200');
+      if (csp === null) {
+        expect(out.v1).toBe('blocked');
+        expect(out.other).toBe('blocked');
+        expect(out.seen.some((v) => v.startsWith('connect-src') && v.includes('/v1/account/me'))).toBe(true);
+      } else {
+        expect(out.v1).toMatch(/^reached /);
+      }
+    });
+  }
 
   test('Latin-script receipts never fetch the Russian model, and one worker does', async ({ page }) => {
     test.setTimeout(240_000);
