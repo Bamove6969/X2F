@@ -137,7 +137,7 @@ describe('staff login with login hours', () => {
     const me = await b.get('/staff/v1/me');
     expect(me.statusCode).toBe(200);
     // The 2-hour idle limit (14:00) comes before the end of the window (17:00).
-    expect(me.json()).toEqual({ displayName: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
+    expect(me.json()).toEqual({ displayName: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
   });
 
   it('refuses the same login 1 minute after the window closes, only after the key verifies', async () => {
@@ -265,7 +265,7 @@ describe('staff login with login hours', () => {
     expect((await fullLogin(b, o.id, o.loginName, key)).json()).toEqual({ status: 'ok' });
     const me = (await b.get('/staff/v1/me')).json();
     expect(me.role).toBe('owner');
-    expect(me.nav).toEqual(['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings']);
+    expect(me.nav).toEqual(['overview', 'disputes', 'past-reputation', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings']);
   });
 
   it('refuses a switched-off staff member at login and on every request', async () => {

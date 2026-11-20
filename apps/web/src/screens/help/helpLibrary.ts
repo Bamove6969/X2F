@@ -138,7 +138,7 @@ const ENTRIES: readonly Entry[] = [
       `${AUTH}/totp.ts:176 totp-needs-password`,
       `${AUTH}/methods.ts:426 password-has-totp`,
       `${AUTH}/methods.ts:436 password-alone`,
-      'apps/web/src/ui/cantDoCodes.ts:481 A password needs the authenticator app or another way to log in.',
+      'apps/web/src/ui/cantDoCodes.ts:485 A password needs the authenticator app or another way to log in.',
     ],
   },
   {

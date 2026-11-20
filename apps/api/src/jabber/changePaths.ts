@@ -149,6 +149,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     changes: [
       'id', 'account_id', 'site', 'evidence_url', 'claimed_trades', 'fingerprint', 'key_enc', 'challenge_text', 'signature_enc', 'status',
       'verified_trades', 'reviewer_id', 'decided_at', 'reason', 'created_at', 'verified_usd_cents', 'verified_usd_by', 'verified_usd_at',
+      // Migration 751 (Task 11 review m3): who revoked an approved claim, and when.
+      'revoked_by', 'revoked_at',
     ],
     bookkeeping: {},
   },
@@ -188,6 +190,7 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'reviews.subject_id': 'a review received from someone else',
   'past_reputation.reviewer_id': 'the moderator who decided a claim (the claimant is notified)',
   'past_reputation.verified_usd_by': 'the moderator who verified a figure (the claimant is notified)',
+  'past_reputation.revoked_by': 'the senior moderator or owner who revoked a claim (the claimant is notified)',
   'account_traded_totals.account_id': 'running totals kept by finished trades',
   'staff_members.account_id': 'staff records (staff and owner accounts have no Jabber set-up)',
   'staff_invites.created_by': 'staff records',

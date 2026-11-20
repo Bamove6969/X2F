@@ -15,6 +15,8 @@ export { CantDoThat } from '../../../web/src/ui/CantDoThat.js';
 export { ChoiceGroup, type ChoiceOption } from '../../../web/src/ui/Choice.js';
 export { Countdown, formatRemaining } from '../../../web/src/ui/Countdown.js';
 export { EmptyState } from '../../../web/src/ui/EmptyState.js';
+// Plan 5 Task 11: the past-reputation evidence link (a new tab, no referrer, no opener; https only).
+export { ExternalLink } from '../../../web/src/ui/ExternalLink.js';
 export { Icon, type IconName } from '../../../web/src/ui/icons.js';
 export { Notice } from '../../../web/src/ui/Notice.js';
 export { Sheet } from '../../../web/src/ui/Sheet.js';
