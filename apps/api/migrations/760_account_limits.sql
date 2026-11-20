@@ -67,3 +67,9 @@ begin
 end $$;
 create trigger account_limits_match_recommendation before insert or update on account_limits
   for each row execute function account_limits_match_recommendation();
+
+-- Owner rule p5-7: an approved limit is a change to the account, so it sends the account's Jabber
+-- notice like a lien or a freeze (lead default, owner p11-119 pattern; owner may change). A pending
+-- recommendation is staff-only and sends nothing (apps/api/src/jabber/changePaths.ts).
+create trigger jabber_note_change after insert or update or delete on account_limits for each row
+  execute function jabber_note_change('account_id');
