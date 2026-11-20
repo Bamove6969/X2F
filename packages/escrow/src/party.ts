@@ -182,9 +182,9 @@ export interface PartyHandle {
    *   escrow in a block (`spentBy`) and the daemon has it (`txSeen`); and when this party built the
    *   release and kept its tx secret key, that key proves the tx pays `o` (below).
    * - without either, for a builder with its saved tx secret key: one of this wallet's confirmed
-   *   outgoing txs that the key proves (check_tx_key: a key fits only the tx built with it) is in a
-   *   block, spends one of this escrow's outputs and pays each of `o`'s payouts (payout 0 less at
-   *   most MAX_NETWORK_FEE, the fee).
+   *   outgoing txs (spentBy + txSeen: it spent this escrow in a block) that the key fits
+   *   (check_tx_key: a key fits only the tx built with it) and that pays each of `o`'s payouts
+   *   (payout 0 less at most MAX_NETWORK_FEE, the fee).
    * Read-only: it syncs and reads, never signs, exports, imports or sends, and works with no peer
    * (after the relay closed the trade, like funds()). Rejects as funds() does.
    */
@@ -798,20 +798,22 @@ export function runParty(a: PartyArgs): PartyHandle {
   const counterpartNext = (rel: ReleaseState): boolean => state.received[exportKey(rel, rel.attempt + 1)]?.[rel.counterpart] !== undefined;
 
   /**
-   * The tx secret key `key` (the builder's own, saved at build) proves `h` is in a block, spends
-   * one of this escrow's outputs and pays each payout of `o` (payout 0 bears the network fee, up to
-   * MAX_NETWORK_FEE). False when it does not, or the engine cannot prove (no proveTx).
+   * The tx secret key `key` (the builder's own, saved at build) fits `h` and `h` pays each payout
+   * of `o` (payout 0 bears the network fee, up to MAX_NETWORK_FEE), out of the pool. A key fits only
+   * the tx built with it, so this names "the tx this builder built"; the callers pair it with
+   * `spentBy` + `txSeen` (this wallet's escrow spent by `h` in a block, and the daemon has it).
+   * Through the wallet's own daemon connection only (txKeyPays, not proveTx: that one reads the
+   * daemon through a client that cannot send in the web bundle). False when the engine cannot.
    */
   const provenByKey = async (key: string, o: Outcome, h: string): Promise<boolean> => {
-    if (!session.proveTx || !TX_HASH.test(h)) return false;
-    const r = await bounded('prove tx', () => session.proveTx!(h, key, o.to.map((p) => p.address)));
-    if (r === null || !r.inBlock || r.spendsEscrow !== true || r.received.length !== o.to.length) return false;
-    const fee = r.feeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : r.feeAtomic;
-    return o.to.every((p, i) => r.received[i]! + (i === 0 ? fee : 0n) >= p.amountAtomic);
+    if (!session.txKeyPays || !TX_HASH.test(h)) return false;
+    const r = await bounded('check tx key', () => session.txKeyPays!(h, key, o.to.map((p) => p.address)));
+    if (r === null || r.inPool || r.received.length !== o.to.length) return false;
+    return o.to.every((p, i) => r.received[i]! + (i === 0 ? MAX_NETWORK_FEE : 0n) >= p.amountAtomic);
   };
-  /** Review m4: a builder that kept its tx key (and an engine that proves) accepts only its own tx. */
+  /** Review m4: a builder that kept its tx key (and an engine that checks keys) accepts only its own tx. */
   const keyAllows = async (rel: ReleaseState, o: Outcome, h: string): Promise<boolean> =>
-    rel.part !== 'builder' || rel.txKey === undefined || !session.proveTx ? true : provenByKey(rel.txKey, o, h);
+    rel.part !== 'builder' || rel.txKey === undefined || !session.txKeyPays ? true : provenByKey(rel.txKey, o, h);
 
   /** See PartyHandle.landed. Runs in the work queue. */
   const landedNow = async (o: Outcome): Promise<string | null> => {
@@ -826,7 +828,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (rel.part !== 'builder' || rel.txKey === undefined || !session.outgoing) return null;
     for (const out of await session.outgoing()) {
       if (out.height === null || named.includes(out.txHash)) continue;
-      if (await provenByKey(rel.txKey, o, out.txHash)) return out.txHash;
+      if ((await daemon.spentBy(out.txHash)) && (await daemon.txSeen(out.txHash)) && (await provenByKey(rel.txKey, o, out.txHash))) return out.txHash;
     }
     return null;
   };

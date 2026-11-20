@@ -288,6 +288,25 @@ export class MoneroMultisigSession implements EscrowSession {
     }
   }
 
+  async txKeyPays(txHash: string, txKey: string, addresses: string[]): Promise<{ inPool: boolean; received: bigint[] } | null> {
+    // As proveTx: a key that is not a reduced scalar would abort the WebAssembly.
+    if (!TX_HASH.test(txHash) || !isTxKey(txKey)) return null;
+    const received: bigint[] = [];
+    let inPool = false;
+    for (const address of addresses) {
+      try {
+        const c = await timed(this.wallet.checkTxKey(txHash, txKey, address), 'check tx key');
+        if (c.getIsGood() !== true) return null;
+        if (c.getInTxPool() === true) inPool = true;
+        received.push(c.getReceivedAmount() ?? 0n);
+      } catch (e) {
+        if (e instanceof EscrowError) throw e;
+        return null; // a key that does not fit, an unknown tx, or an address of another network
+      }
+    }
+    return { inPool, received };
+  }
+
   async proveTx(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[]; spendsEscrow: boolean } | null> {
     // A key that is not a reduced scalar aborts monero-ts's WebAssembly (an assertion in
     // generate_key_derivation), which breaks every later wallet call: refuse it here. Every chunk of

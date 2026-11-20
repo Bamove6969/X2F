@@ -108,6 +108,14 @@ export interface EscrowSession {
    * engine). Optional for test doubles.
    */
   proveTx?(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[]; spendsEscrow: boolean } | null>;
+  /**
+   * With a tx's secret key, what each address received (monero check_tx_key, through this wallet's
+   * own daemon connection only, so it works in the web bundle too) and whether the tx is still in
+   * the pool. Null when the key does not fit the tx or the tx is unknown. Unlike proveTx it says
+   * nothing about the inputs: the caller pairs it with spentBy (this wallet's own view of the
+   * escrow spent by that tx in a block). Review M1/m4 (20 Nov). Optional for test doubles.
+   */
+  txKeyPays?(txHash: string, txKey: string, addresses: string[]): Promise<{ inPool: boolean; received: bigint[] } | null>;
   exportState(): Promise<string>;
   /** Import every peer's state in one call; importing them separately leaves stale data. */
   importState(peers: string[]): Promise<void>;
