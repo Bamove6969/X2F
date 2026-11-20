@@ -64,9 +64,9 @@ export interface ReviewRow {
   method_id: string;
   created_at: Date;
   /** Task 19: a moderator removed the review (it shows and counts nowhere; the row stays). */
-  removed_at: Date | null;
+  removed: boolean;
   /** Task 19: a moderator removed some of its comments (the stars stay). */
-  comments_removed_at: Date | null;
+  comments_removed: boolean;
   /** Task 19: the review has an open dispute ("Under review"); computed by REVIEW_COLUMNS. */
   under_review: boolean;
 }

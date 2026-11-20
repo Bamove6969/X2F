@@ -27,7 +27,7 @@ export type DisputeOutcome = (typeof DISPUTE_OUTCOMES)[number];
  * SQL (boolean): the review (alias `r`) shows to others: not removed by a moderator and not on hold
  * by a pending appeal (R-011, `reviewHeldSql`). An "Under review" one still shows, with its label.
  */
-export const reviewShownSql = (r: string): string => `(${r}.removed_at is null and not ${reviewHeldSql(r)})`;
+export const reviewShownSql = (r: string): string => `(not ${r}.removed and not ${reviewHeldSql(r)})`;
 
 /** SQL (boolean): the review (alias `r`) has an open dispute: it shows "Under review". */
 export const underReviewSql = (r: string): string =>
@@ -87,7 +87,7 @@ export interface StaffReviewDispute {
   tradeCode: string | null;
 }
 
-/** One page of open disputes (`PAGE` of them), oldest first; `after` is the last one's `openedAt_id`. */
+/** One page of open disputes (STAFF_PAGE of them), oldest first; `after` is the last one's `openedAt_id`. */
 export const STAFF_PAGE = 50;
 
 export async function listOpenReviewDisputes(q: Queryable, after?: { openedAt: Date; id: string }): Promise<StaffReviewDispute[]> {
@@ -166,11 +166,11 @@ export async function decideReviewDispute(
     [id, o.outcome, o.by, now, o.reason],
   );
   if (o.outcome === 'removed') {
-    await q.query('update reviews set removed_at = $2 where id = $1', [d.review_id, now]);
+    await q.query('update reviews set removed = true where id = $1', [d.review_id]);
   } else if (kept !== null) {
     await q.query(
-      'update reviews set note = $2, phrases = $3, trade_badges = $4, comments_removed_at = $5 where id = $1',
-      [d.review_id, kept.note, kept.phrases, kept.tradeBadges, now],
+      'update reviews set note = $2, phrases = $3, trade_badges = $4, comments_removed = true where id = $1',
+      [d.review_id, kept.note, kept.phrases, kept.tradeBadges],
     );
   }
   return { result: 'ok', reviewId: d.review_id };

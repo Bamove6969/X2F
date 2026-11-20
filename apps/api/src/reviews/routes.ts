@@ -155,7 +155,7 @@ export function reviewRoutes(app: FastifyInstance): void {
     const theirs = held ? null : reviews[other(side)];
     // Task 19: a review a moderator removed shows to nobody, its writer included (it still means
     // this side has reviewed: `reviewable` stays false).
-    const shown = (r: ReviewRow | null) => (r === null || r.removed_at !== null ? null : toPublicReview(r));
+    const shown = (r: ReviewRow | null) => (r === null || r.removed ? null : toPublicReview(r));
     return {
       reviewable: since !== null && mine === null && !skipped,
       mine: shown(mine),

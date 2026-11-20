@@ -4,14 +4,17 @@
 -- (perm reputation.review) decides one of the owner's three outcomes:
 --   - stands: the review counts again, as it was;
 --   - comments-removed: the moderator removes the note, some phrases or some trade badges; the stars stay;
---   - removed: the review no longer shows or counts anywhere. Its row is kept, with `removed_at`, so
---     the decision can be checked (plan Task 19).
+--   - removed: the review no longer shows or counts anywhere. Its row is kept, marked `removed`, so
+--     the decision can be checked (plan Task 19: "removed_at"; a flag here, see below).
 --
--- 1. reviews gains the two marks. 301's reviews_final trigger is replaced below so the API may set
+-- 1. reviews gains the two marks. They are flags, not times (the plan's `removed_at`): `created_at`
+--    stays the review's only time column, so nothing on a review can be lined up with its trade once
+--    the trade is gone (Revision 2026-10-29b; reviews.test.ts pins it). The decision's time is on the
+--    dispute row (`decided_at`). 301's reviews_final trigger is replaced below so the API may set
 --    them, and only as a decided dispute says.
 alter table reviews
-  add column removed_at timestamptz,
-  add column comments_removed_at timestamptz;
+  add column removed boolean not null default false,
+  add column comments_removed boolean not null default false;
 
 -- 2. review_disputes: no trade code, no account name, so it survives the 30-day trade delete with its
 --    review (reviews are permanent; 301 has no foreign key to trades). It goes only with its review
@@ -61,9 +64,9 @@ create trigger review_disputes_decide_once
 
 -- 3. reviews_final, as 301 wrote it, plus the moderator's two writes (any role but x2f_purge, which
 --    keeps exactly its 301 allowance):
---    - remove: removed_at from null to a time, nothing else changed, and the review's dispute is
+--    - remove: `removed` from false to true, nothing else changed, and the review's dispute is
 --      decided `removed`;
---    - remove comments: comments_removed_at from null to a time; the note may become null, the phrases
+--    - remove comments: `comments_removed` from false to true; the note may become null, the phrases
 --      and trade badges may each lose items (never gain or reorder one), at least one thing goes, the
 --      stars and everything else stay, and the review's dispute is decided `comments-removed`.
 --    The dispute row is written first, in the same transaction (apps/api/src/reviews/disputes.ts).
@@ -88,14 +91,14 @@ begin
     raise exception 'reviews are final' using errcode = 'integrity_constraint_violation';
   end if;
   if tg_op = 'UPDATE' then
-    if old.removed_at is null and new.removed_at is not null
-       and (to_jsonb(new) - 'removed_at') = (to_jsonb(old) - 'removed_at')
+    if not old.removed and new.removed
+       and (to_jsonb(new) - 'removed') = (to_jsonb(old) - 'removed')
        and exists (select 1 from public.review_disputes d where d.review_id = old.id and d.status = 'removed') then
       return new;
     end if;
-    rest_old := to_jsonb(old) - 'note' - 'phrases' - 'trade_badges' - 'comments_removed_at';
-    rest_new := to_jsonb(new) - 'note' - 'phrases' - 'trade_badges' - 'comments_removed_at';
-    if old.comments_removed_at is null and new.comments_removed_at is not null and old.removed_at is null
+    rest_old := to_jsonb(old) - 'note' - 'phrases' - 'trade_badges' - 'comments_removed';
+    rest_new := to_jsonb(new) - 'note' - 'phrases' - 'trade_badges' - 'comments_removed';
+    if not old.comments_removed and new.comments_removed and not old.removed
        and rest_new = rest_old
        and (new.note is null or new.note = old.note)
        and new.phrases <@ old.phrases and new.trade_badges <@ old.trade_badges

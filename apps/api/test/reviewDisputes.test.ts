@@ -207,8 +207,8 @@ describe('the moderator (staff API, perm reputation.review)', () => {
     expect(p.stats).toMatchObject({ positivePct: 100, ratedReviews: 1, reviewCount: 1 });
     expect(p.reviews).toHaveLength(1);
     expect(JSON.stringify(p)).not.toContain('Never again');
-    const { rows } = await deps.db.query<{ removed_at: Date | null; stars: number }>('select removed_at, stars from reviews where id = $1', [bad.id]);
-    expect(rows[0]!.removed_at).not.toBeNull();
+    const { rows } = await deps.db.query<{ removed: boolean; stars: number }>('select removed, stars from reviews where id = $1', [bad.id]);
+    expect(rows[0]!.removed).toBe(true);
     expect(rows[0]!.stars).toBe(1);
     const again = await decide(mod, did, { outcome: 'stands', reason: DECISION });
     expect(again.statusCode).toBe(409);
@@ -253,14 +253,14 @@ describe('the database holds the rules', () => {
   it('a review cannot be removed or have comments removed without a decided dispute saying so; reviews stay final otherwise', async () => {
     const [seller, buyer] = [await person(), await person()];
     const { id } = await reviewed(seller, buyer, ONE);
-    await expect(deps.db.query('update reviews set removed_at = now() where id = $1', [id])).rejects.toThrow(/final/);
-    await expect(deps.db.query(`update reviews set note = null, comments_removed_at = now() where id = $1`, [id])).rejects.toThrow(/final/);
+    await expect(deps.db.query('update reviews set removed = true where id = $1', [id])).rejects.toThrow(/final/);
+    await expect(deps.db.query(`update reviews set note = null, comments_removed = true where id = $1`, [id])).rejects.toThrow(/final/);
     await dispute(seller, id);
     // Open is not decided.
-    await expect(deps.db.query('update reviews set removed_at = now() where id = $1', [id])).rejects.toThrow(/final/);
+    await expect(deps.db.query('update reviews set removed = true where id = $1', [id])).rejects.toThrow(/final/);
     await decide(mod, await disputeIdOf(id), { outcome: 'comments-removed', reason: DECISION, remove: { note: true } });
     // Comments-removed never allows a removal, nor raising the stars or adding a phrase.
-    await expect(deps.db.query('update reviews set removed_at = now() where id = $1', [id])).rejects.toThrow(/final/);
+    await expect(deps.db.query('update reviews set removed = true where id = $1', [id])).rejects.toThrow(/final/);
     await expect(deps.db.query('update reviews set stars = 5 where id = $1', [id])).rejects.toThrow(/final/);
     await expect(deps.db.query(`update reviews set phrases = '{Friendly}' where id = $1`, [id])).rejects.toThrow(/final/);
     await expect(deps.db.query(`update review_disputes set status = 'removed' where review_id = $1`, [id])).rejects.toThrow(/decided once/);
