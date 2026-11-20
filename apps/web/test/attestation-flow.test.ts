@@ -2175,7 +2175,7 @@ describe('the trade chat identity is registered when the device runs the trade (
       let reads = 0;
       const t = await setup();
       const api = t.api.forRole('buyer');
-      const gone = { ...api, getTrade: async (code: string) => (++reads > 1 ? Promise.reject(Object.assign(new Error(`api ${status}`), { status, code: 'not-found' })) : api.getTrade(code)) };
+      const gone = { ...api, getTrade: async () => (++reads > 1 ? Promise.reject(Object.assign(new Error(`api ${status}`), { status, code: 'not-found' })) : api.getTrade()) };
       const buyer = await t.mk('buyer', { api: gone, prepareChat: async () => void asks++ });
       await buyer.runtime.start(CODE);
       await until(() => t.state.identities.buyer !== undefined && reads >= 2);

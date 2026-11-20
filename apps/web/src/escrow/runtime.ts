@@ -218,7 +218,9 @@ export interface RuntimeDeps {
    * chat (the worker passes chat/prepare.ts's, over the worker's one chat engine). Called in the
    * background once the trade identity is registered, tried again (every `pollMs`) while it throws,
    * and kept done in the record (`chatPrepared`). The escrow never waits on it. Without it a chat is
-   * attested only after both traders opened it.
+   * attested only after both traders opened it. Only while the trade is open (lead call 20 Nov): each
+   * try reads the trade view first and asks nothing for a released, refunded, cancelled or lapsed
+   * trade, or one the API answers 404 or 410 (purged) for.
    */
   prepareChat?: (code: string) => Promise<void>;
   onStatus(code: string, s: EscrowStatus): void;
@@ -237,6 +239,8 @@ export interface EscrowRuntime {
 }
 
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+/** Gap 5, lead call 20 Nov: the trade states in which no chat is made or registered (every terminal one). */
+const CHAT_CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled', 'lapsed'];
 /** The escrow store outlives the trade by at least this long (lead 2026-10-24). */
 export const KEEP_AFTER_CLOSE_MS = 30 * 24 * 60 * 60 * 1000;
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
@@ -513,10 +517,18 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private async prepareChat(ask: (code: string) => Promise<void>): Promise<void> {
       while (!this.stopped) {
         try {
+          // Lead call (20 Nov): only for a trade still open. Each try reads the trade view first, and
+          // a closed trade (or one the API no longer has: 404, purged 410) is never asked for, so it
+          // never creates a chat or registers a chat identity. Nothing is marked: there is nothing to do.
+          const v = parseTradeView(await deps.api.getTrade(this.code));
+          if (!v) throw new Error('unreadable trade view');
+          if (CHAT_CLOSED.includes(v.state)) return;
           await ask(this.code);
           if (!this.stopped) this.rec.chatPrepared = true;
           return;
-        } catch {
+        } catch (e) {
+          const status = (e as { status?: unknown } | null)?.status;
+          if (status === 404 || status === 410) return;
           await new Promise((r) => setTimeout(r, pollMs));
         }
       }
