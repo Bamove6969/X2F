@@ -442,7 +442,8 @@ describe('sendProof: PRIVACY, the unblurred picture never leaves the device', ()
     expect(Buffer.from(body.subarray(0, 8)).equals(Buffer.from(SIG))).toBe(false);
     expect(has(body, new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
     expect(has(body, secretRun)).toBe(false);
-    expect(has(body, new TextEncoder().encode('GPS'))).toBe(false);
+    // Ciphertext is random, so a 3-byte search hits by chance now and then; look for the whole metadata string here and for 'GPS' in the plaintext below.
+    expect(has(body, new TextEncoder().encode(FILE_META))).toBe(false);
 
     // The envelope: the key and the facts, never the image or the source file.
     expect(posted).toHaveLength(1);
@@ -545,7 +546,8 @@ describe('the unblurred copy for the moderator (Task 15 SendUnblurred, Review Fo
     expect(new Headers(req.init.headers).get('content-type')).toBe('application/octet-stream');
     const body = req.init.body as Uint8Array;
     expect(has(body, new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
-    expect(has(body, new TextEncoder().encode('GPS'))).toBe(false);
+    // Ciphertext is random, so a 3-byte search hits by chance now and then; look for the whole metadata string here and for 'GPS' in the plaintext below.
+    expect(has(body, new TextEncoder().encode(FILE_META))).toBe(false);
     expect(has(body, fileBytes.subarray(fileBytes.length - 64))).toBe(false);
 
     // The payload is exactly proof.unblurred's (no kind, no hidden list, no photo time).
@@ -562,6 +564,7 @@ describe('the unblurred copy for the moderator (Task 15 SendUnblurred, Review Fo
     const d = decodePng(plain);
     expect(d.types).toEqual(['IHDR', 'IDAT', 'IEND']);
     expect(has(plain, new TextEncoder().encode('encoder-added'))).toBe(false);
+    expect(has(plain, new TextEncoder().encode('GPS'))).toBe(false);
     expect(Buffer.from(d.rgba).equals(Buffer.from(original()))).toBe(true);
     // Bound to its kind: it never opens as a payment proof.
     await expect(decryptProof(body, key, { code: CODE, proofId: r.proofId, kind: 'proof', sha256: payload.sha256 })).rejects.toThrow();

@@ -1640,6 +1640,31 @@ describe('resume on load (Review Focus 1)', () => {
     expect(calls[1]!.args.me.signPublic).toBe(calls[0]!.args.me.signPublic);
   });
 
+  // The flake of 20 Nov (review 3, this test's line "intent.done" under load): settle's resolution set
+  // intent.done in memory, then awaited its save, and a tick's refresh in between already showed
+  // `done`. A slow save makes it certain: `done` must never show before it is stored.
+  it('the done phase shows only once the settled intent is stored (a slow save, a tick in between)', async () => {
+    const t = await setup();
+    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await pay(buyer);
+    await seller.runtime.act(CODE, { type: 'release' });
+    await until(() => t.parties.pending.some((p) => p.role === 'seller'));
+    const save = seller.store.save.bind(seller.store);
+    seller.store.save = async (r) => {
+      if (r.intent?.done === true) await new Promise((x) => setTimeout(x, 80));
+      await save(r);
+    };
+    t.parties.pending.find((p) => p.role === 'seller')!.resolve(null);
+    await until(() => seller.last()?.phase === 'done');
+    expect((await seller.store.load(CODE))?.intent?.done).toBe(true);
+  });
+
   it('once settle resolved, a reload never calls settle again', async () => {
     const t = await setup();
     const seller = await t.mk('seller');
@@ -2095,5 +2120,127 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     delete t.parties.relayClosed.seller;
     await t.seller.runtime.retry(CODE);
     expect(await t.seller.status((s) => s.phase === 'signing')).toMatchObject({ error: null });
+  });
+});
+
+/**
+ * Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): the trade chat is attested only once both traders
+ * registered a chat identity. The runtime now asks the worker to register this device's (the
+ * `prepareChat` dep, chat/prepare.ts) as soon as its trade identity is registered, so neither side
+ * has to open the chat first.
+ */
+describe('the trade chat identity is registered when the device runs the trade (gap 5)', () => {
+  it('each device asks once its trade identity is registered, before any attestation exists', async () => {
+    const t = await setup();
+    const asked: Array<{ code: string; registered: boolean }> = [];
+    // Only the seller runs: no attestation can be made, yet its chat identity is asked for.
+    const seller = await t.mk('seller', { prepareChat: async (code) => void asked.push({ code, registered: t.state.identities.seller !== undefined }) });
+    await seller.runtime.start(CODE);
+    await until(() => asked.length === 1);
+    expect(asked).toEqual([{ code: CODE, registered: true }]);
+    expect(seller.last()?.phase).toBe('verifying');
+    const buyerAsked: string[] = [];
+    const buyer = await t.mk('buyer', { prepareChat: async (code) => void buyerAsked.push(code) });
+    await buyer.runtime.start(CODE);
+    await until(() => buyer.last()?.phase === 'ready' && seller.last()?.phase === 'ready');
+    expect(buyerAsked).toEqual([CODE]);
+    expect(asked).toHaveLength(1);
+  });
+
+  it('a failing ask is tried again, and the escrow never waits on it', async () => {
+    const t = await setup();
+    let tries = 0;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const buyer = await t.mk('buyer', {
+      prepareChat: async () => {
+        tries++;
+        if (tries < 3) throw Object.assign(new Error('api 503'), { status: 503 });
+        await held;
+      },
+    });
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(() => buyer.last()?.phase === 'ready' && seller.last()?.phase === 'ready');
+    await until(() => tries === 3);
+    release();
+  });
+
+  it('done once is kept in the record: a resume does not ask again', async () => {
+    const t = await setup();
+    let asks = 0;
+    const prepareChat = async (): Promise<void> => void asks++;
+    const buyer = await t.mk('buyer', { prepareChat });
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => (await buyer.store.load(CODE))?.chatPrepared === true);
+    await buyer.runtime.stopAll();
+    const again = await t.mk('buyer', { idb: buyer.idb, prepareChat });
+    await again.runtime.resumeAll();
+    await again.status((s) => s.phase === 'ready');
+    expect(asks).toBe(1);
+  });
+
+  // Lead call (20 Nov): only for a trade still open. A closed trade never creates a chat or registers a chat identity.
+  it.each(['released', 'refunded', 'cancelled', 'lapsed'])('a %s trade is never asked for, though its trade identity registers', async (state) => {
+    let asks = 0;
+    const t = await setup({ view: tradeView({ state }) });
+    const buyer = await t.mk('buyer', { prepareChat: async () => void asks++ });
+    await buyer.runtime.start(CODE);
+    await until(() => t.state.identities.buyer !== undefined);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(asks).toBe(0);
+  });
+
+  it('a trade gone from the API (404, or purged: 410) is never asked for', async () => {
+    for (const status of [404, 410]) {
+      let asks = 0;
+      let reads = 0;
+      const t = await setup();
+      const api = t.api.forRole('buyer');
+      const gone = { ...api, getTrade: async () => (++reads > 1 ? Promise.reject(Object.assign(new Error(`api ${status}`), { status, code: 'not-found' })) : api.getTrade()) };
+      const buyer = await t.mk('buyer', { api: gone, prepareChat: async () => void asks++ });
+      await buyer.runtime.start(CODE);
+      await until(() => t.state.identities.buyer !== undefined && reads >= 2);
+      await new Promise((r) => setTimeout(r, 60));
+      expect(asks).toBe(0);
+      // Review m3: the loop ended after that one read (the run itself reads no view while it waits
+      // for the attestation), never re-reading every pollMs.
+      expect(reads).toBe(2);
+      await buyer.runtime.stopAll();
+    }
+  });
+
+  it('a trade that closes while the ask is being retried is not asked for again', async () => {
+    let asks = 0;
+    const t = await setup();
+    const buyer = await t.mk('buyer', {
+      prepareChat: async () => {
+        asks++;
+        t.state.view = { ...t.state.view, state: 'lapsed' };
+        throw Object.assign(new Error('api 503'), { status: 503 });
+      },
+    });
+    await buyer.runtime.start(CODE);
+    await until(() => asks === 1);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(asks).toBe(1);
+  });
+
+  it('never asked when the trade identity is refused (409 identity-conflict) or the start is not confirmed', async () => {
+    let asks = 0;
+    const prepareChat = async (): Promise<void> => void asks++;
+    const t = await setup({ refuse: { identity: 'identity-conflict' } });
+    const buyer = await t.mk('buyer', { prepareChat });
+    await buyer.runtime.start(CODE);
+    await until(() => buyer.last()?.phase === 'error');
+    const t2 = await setup();
+    const lone = await t2.mk('seller', { prepareChat });
+    await lone.rawStart(CODE);
+    await until(() => lone.last()?.error === 'not-confirmed');
+    await new Promise((r) => setTimeout(r, 30));
+    expect(asks).toBe(0);
   });
 });
