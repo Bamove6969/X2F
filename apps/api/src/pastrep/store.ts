@@ -3,7 +3,8 @@
  * volume counts toward the traded total ONLY through it; migration 310).
  *
  * - `setVerifiedPastRepUsd` is the one writer of `verified_usd_cents`. Plan 4's moderator route calls
- *   it (tripwire NEEDS_P4_PASTREP_VERIFIED_USD); the staff perm check and the activity-log entry are
+ *   it (`PUT /staff/v1/past-rep/:id/verified-usd`, staff/pastrep.ts; its screen is staff-web's PastRep,
+ *   Plan 5 Task 11, which retired the tripwire NEEDS_P4_PASTREP_VERIFIED_USD); the staff perm check and the activity-log entry are
  *   that route's, and it passes the signed-in staff member's real role (`req.staff.role`) as the actor.
  *   Here: the actor's role must be in `PASTREP_VERIFY_ROLES` (owner 2026-11-02: senior moderators and
  *   the owner only; else `forbidden`), the account must match it (an enabled `staff` account for
