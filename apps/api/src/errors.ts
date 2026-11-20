@@ -101,6 +101,8 @@ export type ApiErrorCode =
   | 'ad-busy'
   | 'price-changed'
   | 'starter-limit'
+  // Plan 4 Task 26: the caller's own account limit (a senior moderator approved it); carries the cap only.
+  | 'account-limit'
   // Owner p11-6: the launch cap on one trade's USD value (trades/launchCap.ts), at post and take.
   | 'launch-cap'
   | 'offer-busy'
@@ -158,6 +160,10 @@ export type ApiErrorCode =
   | 'comment-too-long'
   | 'comment-bad-character'
   | 'review-exists'
+  // Plan 5, Task 19: review disputes (reviews/routes.ts, staff/reviewDisputes.ts).
+  | 'not-disputable'
+  | 'review-disputed'
+  | 'dispute-decided'
   // Plan 5, Task 14: proof storage (proofs/routes.ts); its 409 too-many-proofs is declared above (blur check).
   | 'proof-exists'
   | 'not-requested'

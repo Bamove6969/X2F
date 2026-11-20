@@ -1,0 +1,179 @@
+-- Plan 5 Task 19 (numbered 752, after every branch's migrations: review 2026-11-20 B1; Revision 2026-10-29b, owner): review disputes. The person a review is about can
+-- dispute it with a required free-text reason (no reason list for now); from that moment it shows
+-- "Under review" and counts in no figure (lead default, benefit of the doubt) until a moderator
+-- (perm reputation.review) decides one of the owner's three outcomes:
+--   - stands: the review counts again, as it was;
+--   - comments-removed: the moderator removes the note, some phrases or some trade badges; the stars stay;
+--   - removed: the review no longer shows or counts anywhere. Its row is kept, marked `removed`, so
+--     the decision can be checked (plan Task 19: "removed_at"; a flag here, see below).
+--
+-- 1. reviews gains the two marks. They are flags, not times (the plan's `removed_at`): `created_at`
+--    stays the review's only time column, so nothing on a review can be lined up with its trade once
+--    the trade is gone (Revision 2026-10-29b; reviews.test.ts pins it). The decision's time is on the
+--    dispute row (`decided_at`). 301's reviews_final trigger is replaced below so the API may set
+--    them, and only as a decided dispute says.
+alter table reviews
+  add column removed boolean not null default false,
+  add column comments_removed boolean not null default false;
+
+-- 2. review_disputes: no trade code, no account name, so it survives the 30-day trade delete with its
+--    review (reviews are permanent; 301 has no foreign key to trades). It goes only with its review
+--    (an overturned trade's reviews are erased, R-011, and their disputes with them).
+--    - reason_text: the subject's words (<= 1000). Shown to moderators only, never logged (plan
+--      Task 19: "each step is logged without the note text").
+--    - decision_reason: the moderator's reason (>= 20 characters, plan Task 19), moderators only.
+--    - Lead default, owner question: ONE dispute per review, ever (unique review_id), not only one open
+--      one. Otherwise a review a moderator let stand could be disputed again at once and be back
+--      "Under review" for as long as the subject keeps disputing it.
+create table review_disputes (
+  id uuid primary key default gen_random_uuid(),
+  review_id uuid not null unique references reviews (id) on delete cascade,
+  reason_text text not null check (char_length(reason_text) between 1 and 1000),
+  status text not null default 'open' check (status in ('open', 'stands', 'comments-removed', 'removed')),
+  opened_at timestamptz not null,
+  decided_by uuid references accounts (id),
+  decided_at timestamptz,
+  decision_reason text check (decision_reason is null or char_length(decision_reason) between 20 and 1000),
+  check ((status = 'open') = (decided_at is null)),
+  check ((decided_at is null) = (decided_by is null)),
+  check ((decided_at is null) = (decision_reason is null))
+);
+
+create index review_disputes_open on review_disputes (opened_at, id) where status = 'open';
+
+-- A decision is final: an open dispute may be decided once; a decided one never changes.
+create function review_disputes_decide_once() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if old.status <> 'open' or new.status = 'open'
+     or new.id <> old.id or new.review_id <> old.review_id or new.reason_text <> old.reason_text or new.opened_at <> old.opened_at then
+    raise exception 'a review dispute is decided once' using errcode = 'integrity_constraint_violation';
+  end if;
+  return new;
+end
+$$;
+
+create trigger review_disputes_decide_once
+  before update on review_disputes
+  for each row execute function review_disputes_decide_once();
+
+-- Review 2026-11-20 M1: a dispute is born open, with no decision (else a row inserted already
+-- `removed` would let the reviews_final exceptions below act on a decision nobody made).
+create function review_disputes_born_open() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if new.status <> 'open' or new.decided_by is not null or new.decided_at is not null or new.decision_reason is not null then
+    raise exception 'a review dispute is born open' using errcode = 'integrity_constraint_violation';
+  end if;
+  return new;
+end
+$$;
+
+create trigger review_disputes_born_open
+  before insert on review_disputes
+  for each row execute function review_disputes_born_open();
+
+-- Review 2026-11-20 M1: whoever decides is a staff member (a staff or owner account), never a trader.
+create function review_disputes_staff_decides() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if new.decided_by is not null
+     and not exists (select 1 from public.accounts a where a.id = new.decided_by and a.kind in ('staff', 'owner')) then
+    raise exception 'a review dispute is decided by staff' using errcode = 'integrity_constraint_violation';
+  end if;
+  return new;
+end
+$$;
+
+create trigger review_disputes_staff_decides
+  before update on review_disputes
+  for each row execute function review_disputes_staff_decides();
+
+-- Review 2026-11-20 M2: a dispute row is kept (the audit of its decision, and what makes one dispute
+-- per review hold). DELETE is refused for every role, except the cascade from its review's own delete
+-- (R-011's erase of an overturned trade's reviews, as x2f_purge): that review row is already gone
+-- when the cascade reaches here. TRUNCATE is refused always.
+create function review_disputes_kept() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  if tg_op = 'DELETE' and not exists (select 1 from public.reviews r where r.id = old.review_id) then
+    return old;
+  end if;
+  raise exception 'review disputes are kept' using errcode = 'integrity_constraint_violation';
+end
+$$;
+
+create trigger review_disputes_kept
+  before delete on review_disputes
+  for each row execute function review_disputes_kept();
+
+create trigger review_disputes_kept_truncate
+  before truncate on review_disputes
+  for each statement execute function review_disputes_kept();
+
+-- The x2f_purge role deletes reviews (R-011 erase); the cascade to review_disputes runs as the
+-- constraint's owner, so it needs no grant here.
+
+-- 3. reviews_final, as 301 wrote it, plus the moderator's two writes (any role but x2f_purge, which
+--    keeps exactly its 301 allowance):
+--    - remove: `removed` from false to true, nothing else changed, and the review's dispute is
+--      decided `removed`;
+--    - remove comments: `comments_removed` from false to true; the note may become null, the phrases
+--      and trade badges may each lose items (never gain or reorder one), at least one thing goes, the
+--      stars and everything else stay, and the review's dispute is decided `comments-removed`.
+--    The dispute row is written first, in the same transaction (apps/api/src/reviews/disputes.ts).
+--    Known limit (review 2026-11-20 m2): the trigger cannot tell WHICH comments the moderator chose;
+--    once a comments-removed decision exists it accepts any non-empty trim. The API writes exactly
+--    the moderator's choice; the choice itself is not stored on the dispute row.
+create or replace function reviews_final() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+declare
+  rest_old jsonb;
+  rest_new jsonb;
+begin
+  if current_user = 'x2f_purge' then
+    if tg_op = 'DELETE' then
+      return old;
+    end if;
+    if old.trade_code is not null and new.trade_code is null and new.reviewer_id is null
+       and new.created_at = date_trunc('month', old.created_at, 'UTC')
+       and (to_jsonb(new) - 'trade_code' - 'reviewer_id' - 'created_at')
+         = (to_jsonb(old) - 'trade_code' - 'reviewer_id' - 'created_at') then
+      return new;
+    end if;
+    raise exception 'reviews are final' using errcode = 'integrity_constraint_violation';
+  end if;
+  if tg_op = 'UPDATE' then
+    if not old.removed and new.removed
+       and (to_jsonb(new) - 'removed') = (to_jsonb(old) - 'removed')
+       and exists (select 1 from public.review_disputes d where d.review_id = old.id and d.status = 'removed') then
+      return new;
+    end if;
+    rest_old := to_jsonb(old) - 'note' - 'phrases' - 'trade_badges' - 'comments_removed';
+    rest_new := to_jsonb(new) - 'note' - 'phrases' - 'trade_badges' - 'comments_removed';
+    if not old.comments_removed and new.comments_removed and not old.removed
+       and rest_new = rest_old
+       and (new.note is null or new.note = old.note)
+       and new.phrases <@ old.phrases and new.trade_badges <@ old.trade_badges
+       and new.phrases = array(select p from unnest(old.phrases) with ordinality u (p, i) where p = any (new.phrases) order by i)
+       and new.trade_badges = array(select b from unnest(old.trade_badges) with ordinality u (b, i) where b = any (new.trade_badges) order by i)
+       and ((old.note is not null and new.note is null)
+         or cardinality(new.phrases) < cardinality(old.phrases)
+         or cardinality(new.trade_badges) < cardinality(old.trade_badges))
+       and exists (select 1 from public.review_disputes d where d.review_id = old.id and d.status = 'comments-removed') then
+      return new;
+    end if;
+  end if;
+  raise exception 'reviews are final' using errcode = 'integrity_constraint_violation';
+end
+$$;

@@ -20,6 +20,8 @@ export const LAUNCH_CAP_TEXT = `$${(LAUNCH_TRADE_CAP_USD_CENTS / 100n).toLocaleS
 export const CANT_DO_CODES = [
   // Plan 3 Task 5 (take; on the main line since 2026-10-29).
   'starter-limit',
+  // Plan 4 Task 26: the account's own limit, approved by a senior moderator (the cap only, never why).
+  'account-limit',
   'not-enough-trades',
   'own-offer',
   'already-waiting',
@@ -233,6 +235,11 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 5 Task 3: reviews.
   'not-reviewable': 'the trade cannot be rated (its state: not released, or a dispute not yet over)',
   'review-exists': 'already rated (a double submit)',
+  // Plan 5 Task 19: review disputes. The Dispute button shows only on a review that can still be
+  // disputed, so each is a race or a stale screen, never X2F's rule refusing the user.
+  'not-disputable': 'the review was removed or is on hold (its state)',
+  'review-disputed': 'already disputed (a double submit or a stale screen)',
+  'dispute-decided': 'a moderator already decided this review dispute (staff only)',
   'bad-shape': 'an input check on the review form',
   'bad-stars': 'an input check on the review form',
   'bad-phrase': 'an input check on the review form',
@@ -346,6 +353,9 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       if (o.stageName === null) return 'This trade is above a trading limit right now. Try a smaller amount or another offer.';
       if (o.maxOpen !== null) return `Your account is on ${o.stageName} limits: at most ${o.maxOpen} open ${o.maxOpen === 1 ? 'trade' : 'trades'} at once. Finish one first.`;
       return `Your account is on ${o.stageName} limits${o.capText === null ? '' : ` up to ${o.capText} per trade`}. Try a smaller amount.`;
+    case 'account-limit':
+      // COPY-UNSIGNED (Plan 4 Task 26: the trader sees their own cap only, never the reason).
+      return `Your account has a limit${o.capText === null ? '' : ` of ${o.capText}`} per trade. Try a smaller amount.`;
     case 'launch-cap':
       // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
       return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Try a smaller amount.`;

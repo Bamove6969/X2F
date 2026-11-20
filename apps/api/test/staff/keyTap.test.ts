@@ -212,6 +212,24 @@ describe('startKeyTap', () => {
     expect(parseKeyTapIntent(RULING)).toEqual(RULING);
     expect(parseKeyTapIntent({ ...RULING, code: 'abcdefghjkmnpqrs' })).toEqual(RULING);
   });
+
+  it('Task 26: an account-limit decision names exactly one of a whole-dollar cap and a stage; only a decider may tap it', () => {
+    const rec = '0d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
+    const acct = '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';
+    const ok = { kind: 'account-limit', recId: rec.toUpperCase(), accountId: acct, approve: true, capUsd: 300, stage: null };
+    expect(parseKeyTapIntent(ok)).toEqual({ ...ok, recId: rec });
+    expect(parseKeyTapIntent({ ...ok, capUsd: null, stage: 'building' })).toMatchObject({ capUsd: null, stage: 'building' });
+    for (const bad of [
+      { ...ok, capUsd: null },
+      { ...ok, stage: 'starter' },
+      { ...ok, capUsd: 1.5 },
+      { ...ok, capUsd: null, stage: 'graduated' },
+      { ...ok, approve: 'yes' },
+      { ...ok, recId: 'x' },
+      { ...ok, extra: 1 },
+    ]) expect(() => parseKeyTapIntent(bad), JSON.stringify(bad)).toThrow(ApiError);
+    expect(tapPermOf(parseKeyTapIntent(ok))).toBe('rulings.approve');
+  });
 });
 
 describe('finishKeyTap and consumeKeyTap', () => {

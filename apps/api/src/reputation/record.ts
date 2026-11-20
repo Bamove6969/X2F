@@ -6,7 +6,7 @@ import type { PgpSigner } from '../auth/pgp.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { reviewHeldSql } from '../traders/finalOutcome.js';
+import { reviewCountsSql } from '../reviews/disputes.js';
 import { traderFacts } from '../traders/summary.js';
 import { setRecordPublic } from './prefs.js';
 import { hasBlocked } from '../traders/blocks.js';
@@ -58,12 +58,14 @@ export async function recordText(q: Queryable, accountId: string, now: Date, opt
   const f = (await traderFacts(q, [accountId], now, accountId)).get(accountId);
   if (!f) throw new ApiError(404, 'not-found');
   const s = f.summary;
-  const held = reviewHeldSql('r');
+  // Task 19 (lead default, owner question): the signed record lists only reviews that count: none a
+  // moderator removed, none under review (X2F signs it, so it never vouches for a disputed review).
+  const counts = reviewCountsSql('r');
   const [{ rows: count }, { rows: reviews }, { rows: keys }] = await Promise.all([
-    q.query<{ n: string }>(`select count(*) as n from reviews r where r.subject_id = $1 and not ${held}`, [accountId]),
+    q.query<{ n: string }>(`select count(*) as n from reviews r where r.subject_id = $1 and ${counts}`, [accountId]),
     q.query<{ reviewer_role: 'buyer' | 'seller'; neutral: boolean; stars: number | null; phrases: string[]; created_at: Date }>(
       `select r.reviewer_role, r.neutral, r.stars, r.phrases, r.created_at from reviews r
-        where r.subject_id = $1 and not ${held} order by r.created_at desc, r.id limit $2`,
+        where r.subject_id = $1 and ${counts} order by r.created_at desc, r.id limit $2`,
       [accountId, RECORD_MAX_LINES],
     ),
     opts.fingerprints

@@ -45,6 +45,13 @@ export type AccountAction =
 type Invitable = Exclude<StaffRole, 'owner'>;
 
 /**
+ * Plan 4 Task 26: the stages a recommended account limit can hold an account to (the two with a
+ * cap; Graduated is no limit).
+ */
+export const LIMIT_STAGES = ['starter', 'building'] as const;
+export type LimitStage = (typeof LIMIT_STAGES)[number];
+
+/**
  * Lead call on mod-gate review P4 (12 Nov): the owner registry kinds the moderation gate orders
  * carry `issuedAt`, the API's own start time of the tap (`startKeyTap` stamps it; a client never
  * sends it), as an ISO UTC time with milliseconds. Signed with the rest of the intent, so the gate
@@ -111,6 +118,10 @@ export type KeyTapIntent =
       seniorLargeTradeBp: number | null;
       largeTradeThresholdUsd: number | null;
     }
+  // Plan 4 Task 26: a senior moderator's or the owner's decision on a moderator's recommended
+  // account limits, bound to the recommendation and to what it would set (a cap in whole US dollars
+  // or a stage; exactly one is non-null).
+  | { kind: 'account-limit'; recId: string; accountId: string; approve: boolean; capUsd: number | null; stage: LimitStage | null }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -152,6 +163,7 @@ export const KEY_TAP_KINDS = [
   'pay-settings',
   'certify-device',
   'revoke-device',
+  'account-limit',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

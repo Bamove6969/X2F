@@ -15,6 +15,7 @@ import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { BadgeSettings } from './screens/profile/BadgeSettings.js';
 import { MyProfile, TraderProfileRoute } from './screens/profile/Profile.js';
+import { DisputeReview } from './screens/review/DisputeReview.js';
 import { PublicRecord, RecordExport } from './screens/profile/Record.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
@@ -302,6 +303,8 @@ export function App() {
             <Route path="/settings/account-type" element={<AccountType />} />
             {/* Plan 5 Task 12: badge visibility and the signed reputation record. */}
             <Route path="/settings/badges" element={<BadgeSettings />} />
+            {/* Plan 5 Task 19: dispute a review of me (from my own profile). */}
+            <Route path="/profile/reviews/:id/dispute" element={<DisputeReview />} />
             <Route path="/settings/record" element={<RecordExport />} />
             <Route path="/u/:name/record" element={<PublicRecord />} />
             <Route path="/news" element={<News />} />

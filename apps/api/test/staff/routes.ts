@@ -120,6 +120,9 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/performance/:id/weeks', perm: 'perf.read', allowed: OWNER },
   // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
   { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
+  // Plan 5 Task 19: review disputes, moderators and up (a helper is refused).
+  { method: 'GET', url: '/staff/v1/review-disputes', perm: 'reputation.review', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/review-disputes/:id/decide', perm: 'reputation.review', allowed: MODERATORS, body: { outcome: 'stands', reason: 'The review is fair and on topic.' } },
   // Plan 5 Task 11: moderators review past-reputation claims; senior moderators and the owner revoke
   // (a sample uuid is no claim: 404 past the guard).
   { method: 'GET', url: '/staff/v1/past-rep', perm: 'reputation.review', allowed: MODERATORS },
@@ -129,6 +132,11 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Lead hold v3 review (owner G35): a recovery-code hold extended or ended by staff, logged.
   { method: 'POST', url: '/staff/v1/accounts/:id/hold/extend', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   { method: 'POST', url: '/staff/v1/accounts/:id/hold/end', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
+  // Plan 4 Task 26: recommended account limits (bodies valid in shape; an unknown account or case: 404).
+  { method: 'POST', url: '/staff/v1/accounts/:id/limit-recommendations', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { capUsd: 300, reason: 'x'.repeat(40) } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/limit-recommendations', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', capUsd: 300, reason: 'x'.repeat(40) } },
+  { method: 'GET', url: '/staff/v1/limit-recommendations', perm: 'rulings.approve', allowed: ['owner', 'senior'] },
+  { method: 'POST', url: '/staff/v1/accounts/:id/limit-recommendations/:recId/decide', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { approve: true, tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
   // Owner Q60: senior moderators by role, moderators and helpers by grant.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },

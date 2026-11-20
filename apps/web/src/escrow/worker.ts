@@ -13,8 +13,9 @@ import { httpEscrowApi } from './adapters.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowAction, type EscrowRuntime, type EscrowStatus, type RuntimeDeps } from './runtime.js';
 import { openEscrowStore } from './store.js';
 import { createAckKeeper } from '../chat/ack.js';
-import { createChatEngine } from '../chat/engine.js';
-import { httpChatApi } from '../chat/http.js';
+import { createChatEngine, type ChatEngine } from '../chat/engine.js';
+import { httpChatApi, httpOpenTradeChat } from '../chat/http.js';
+import { tradeChatPreparer } from '../chat/prepare.js';
 import { chatConfig, serveChat, type ChatPort } from '../chat/serve.js';
 import { serveChatKeys, type ChatKeysPort } from '../chat/serveKeys.js';
 import { openChatStore, type ChatStore } from '../chat/store.js';
@@ -143,15 +144,23 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
     chatStore.catch(() => (chatStore = null));
     return chatStore;
   };
-  serveChat(globalThis as unknown as ChatPort, async () =>
-    createChatEngine({
-      api: httpChatApi(),
-      store: await sharedChatStore(),
-      newIdentity: generateIdentity,
-      // Named, never the whole env object (see below): only this one key is inlined.
-      ...chatConfig({ VITE_MOD_SIGNING_PUBLIC: import.meta.env.VITE_MOD_SIGNING_PUBLIC as string | undefined }),
-    }),
-  );
+  // One chat engine for the page's chat messages and the escrow runtime's gap-5 step (prepareChat),
+  // so both go through its one per-chat queue: two engines over one store could each make an
+  // identity for the same chat. One that fails to start is made again on the next use.
+  let chatEngine: Promise<ChatEngine> | null = null;
+  const sharedChatEngine = (): Promise<ChatEngine> => {
+    chatEngine ??= (async () =>
+      createChatEngine({
+        api: httpChatApi(),
+        store: await sharedChatStore(),
+        newIdentity: generateIdentity,
+        // Named, never the whole env object (see below): only this one key is inlined.
+        ...chatConfig({ VITE_MOD_SIGNING_PUBLIC: import.meta.env.VITE_MOD_SIGNING_PUBLIC as string | undefined }),
+      }))();
+    chatEngine.catch(() => (chatEngine = null));
+    return chatEngine;
+  };
+  serveChat(globalThis as unknown as ChatPort, sharedChatEngine);
   // J-23 groundwork: the account chat key keeper (chat/ack.ts); keys never leave this worker.
   serveChatKeys(globalThis as unknown as ChatKeysPort, async () => createAckKeeper({ store: await sharedChatStore(), newBoxKeyPair: generateBoxKeyPair }));
   serveEscrow(globalThis as unknown as Port, async (onStatus) => {
@@ -172,6 +181,8 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
       newIdentity: generateIdentity,
       runParty,
       transport: wsTransport,
+      // Gap 5: the trade chat's identity is registered when this device runs the trade.
+      prepareChat: tradeChatPreparer({ openTradeChat: httpOpenTradeChat(), engine: sharedChatEngine }),
       onStatus,
     });
   });

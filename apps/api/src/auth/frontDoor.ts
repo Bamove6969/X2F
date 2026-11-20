@@ -184,6 +184,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/payment-proof': "the seller's payment proof for a ruling on one of my own trades (the seller only); answers whether it is accepted",
   'POST /v1/trades/:code/review': 'my review of one of my own finished trades',
   'POST /v1/trades/:code/review/skip': 'skips my review of one of my own finished trades',
+  // Plan 5 Task 19.
+  'POST /v1/reviews/:id/dispute': 'my dispute of a review about me (only the subject; anyone else gets the unknown-id 404)',
   'POST /v1/nudges': 'a nudge to the other party of one of my own trades; answers its state',
   'POST /v1/chats': 'opens my own pre-trade chat on a listed offer; answers its code and my role',
   'POST /v1/chats/:chat/identity': 'my chat identity key for one of my own chats',

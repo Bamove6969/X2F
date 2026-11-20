@@ -529,6 +529,8 @@ type Resolved =
   | { kind: 'loading' }
   | { kind: 'ready'; chat: string }
   | { kind: 'failed'; message: string }
+  // Lead call (20 Nov): a closed trade that never had a chat (409 trade-closed). Not an error.
+  | { kind: 'empty' }
   // A rule of X2F's (Plan 5 Task 21): shown in CantDoThat, then only the notice stays.
   | { kind: 'refused'; code: CantDoCode };
 
@@ -545,6 +547,11 @@ function useResolvedChat(open: () => Promise<string>, key: string): Resolved {
       .catch((e: unknown) => {
         if (!live) return;
         const code = e instanceof ApiCallError ? e.code : null;
+        // Before the CantDoThat codes: 'trade-closed' is one of them, but here it is not a refusal.
+        if (code === 'trade-closed') {
+          setR({ kind: 'empty' });
+          return;
+        }
         if (isCantDoCode(code)) {
           setR({ kind: 'refused', code });
           return;
@@ -568,9 +575,16 @@ function Resolving({ r, name, tradeCode, dispute, pay }: { r: Resolved; name: st
   const [closed, setClosed] = useState(false);
   if (r.kind === 'ready') return <ChatPanel chat={r.chat} name={name} tradeCode={tradeCode} dispute={dispute} pay={pay} />;
   return (
-    <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={r.kind === 'loading' ? 'loading' : 'failed'}>
+    <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={r.kind === 'loading' || r.kind === 'empty' ? r.kind : 'failed'}>
       <p className="x2f-chat__notice">{CHAT_NOTICE}</p>
-      {r.kind === 'loading' ? (
+      {r.kind === 'empty' ? (
+        <div className="x2f-chat__statusbox" role="status">
+          {/* COPY-UNSIGNED (lead call 20 Nov): the closed trade's empty chat, not a refusal. not-a-refusal */}
+          <p className="x2f-chat__status" data-chat-empty="">
+            This trade has no chat.
+          </p>
+        </div>
+      ) : r.kind === 'loading' ? (
         <div className="x2f-chat__statusbox" role="status">
           <p className="x2f-chat__status">Opening the chat…</p>
         </div>
