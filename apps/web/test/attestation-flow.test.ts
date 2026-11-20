@@ -1160,6 +1160,51 @@ describe('settling', () => {
       await until(() => t.parties.settles.slice(n).some((x) => x.role === 'buyer' && json(x.o.to) === json(prior.to) && x.o.builder === prior.builder));
     });
 
+    it('review m7: two growths while the party has not taken the first rebind: no second rebind, the prior and the sum stay at the take amount', async () => {
+      const grown2 = 1_400_000_000_000n;
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      const prior = (await t.buyer.store.load(CODE))!.releasePrior!;
+      expect(prior.boundAtomic).toBe(AMOUNT);
+      // More extra coins unlock and the API grows the trade again, before the party took the first rebind.
+      t.parties.funds = { balance: fundsFor(grown2), unlocked: fundsFor(grown2), incoming: [] };
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown2.toString() });
+      await until(async () => (await t.buyer.store.load(CODE))?.sizeAtomic === grown2);
+      await t.parties.ticks('buyer', 4);
+      const rec = (await t.buyer.store.load(CODE))!;
+      expect(rec.releaseBoundAtomic).toBe(grown);
+      expect(json(rec.releasePrior)).toBe(json(prior));
+      expect(t.parties.settles.some((x) => x.role === 'buyer' && x.o.to[0]!.amountAtomic === grown2)).toBe(false);
+      expect(t.buyer.last()).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) });
+      await expect(pay(t.buyer, grown2)).rejects.toThrow();
+    });
+
+    it('review m8: a rebind waits until the party took the outcome the device last handed it, so the saved prior is the one the party holds', async () => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === AMOUNT);
+      await until(() => t.parties.accepted.buyer != null);
+      // Extra coins unlock while the API still shows the take amount: the device re-derives the
+      // release at the new balance, but the party's queue has not taken it yet.
+      t.parties.acceptHeld.add('buyer');
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer' && sumTo(x.o) === fundsFor(grown) && x.o.to[0]!.amountAtomic === AMOUNT));
+      const handed = t.parties.settles.filter((x) => x.role === 'buyer').at(-1)!.o;
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      await t.parties.ticks('buyer', 4);
+      let rec = (await t.buyer.store.load(CODE))!;
+      expect(rec.releaseBoundAtomic).toBe(AMOUNT); // no rebind yet
+      expect(rec.releasePrior ?? null).toBeNull();
+      expect(t.buyer.last()).toMatchObject({ amountAtomic: AMOUNT });
+      // The party takes the re-derived release: now the rebind happens, with exactly that outcome saved.
+      t.parties.accept('buyer');
+      t.parties.acceptHeld.add('buyer');
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === grown);
+      rec = (await t.buyer.store.load(CODE))!;
+      expect(json(rec.releasePrior!.outcome)).toBe(json({ to: handed.to, builder: handed.builder, cosigner: handed.cosigner }));
+    });
+
     it('review M1: after a rebind, the tap is refused while the party reports a committed outcome', async () => {
       const t = await boundThenGrown();
       expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null });

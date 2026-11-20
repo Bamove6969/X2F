@@ -860,7 +860,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // One rebind at a time (review M1): the next waits until the party took this one.
       if ((r.releasePrior ?? null) !== null || r.intent?.kind !== 'release' || !r.intent.outcome) return false;
       if (next <= bound || next < r.deal.takeAmountAtomic || next > r.sizeAtomic) return false;
-      return this.partyUncommitted() && typeof this.party?.acceptedOutcome === 'function';
+      // Review m8: only once the party's queue took the outcome this device last handed it, so the
+      // saved prior is exactly the outcome the party holds (and the only one it can be committed to).
+      // Overlaps the one-at-a-time guard above on purpose (review m7: either alone stops a second rebind).
+      const taken = this.party?.acceptedOutcome?.call(this.party) ?? null;
+      if (taken === null || key(taken) !== key(r.intent.outcome)) return false;
+      return this.partyUncommitted();
     }
 
     /** The party reports no committed outcome. A party without `committedBuilder` counts as committed (fail closed). */
@@ -1039,6 +1044,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // Only while a rebind is still untaken (releasePrior set, review m3), whether or not "I've
       // paid" was tapped meanwhile (review M1: a tap at the prior amount must still see the refusal).
       if (r.role !== 'buyer' || (r.releasePrior ?? null) === null || r.releaseRebindRefused === true) return;
+      // Review m9, deliberate: ANY refused seller-built, buyer-co-signed outcome while a prior is
+      // pending trips the flag (a lapse refund too), not only the rebound release. It fails closed:
+      // no sum, no tap, and the prior goes back to the party.
       if (o.builder !== 'seller' || o.cosigner !== 'buyer') return;
       r.releaseRebindRefused = true;
       this.refusal = 'amount-changed';

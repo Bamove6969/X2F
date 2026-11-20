@@ -64,7 +64,7 @@ The escrow party gives a second guarantee (`packages/escrow/src/party.ts`, `sett
    - the new amount lies within [take, this device's own escrow-funded size], from its own `funds()`, never the API's word;
    - the party reports no committed outcome (`committedBuilder()` returns null; a party without the method counts as committed, failing closed).
 3. The new bound is saved before the new outcome is handed to the party, together with the bound and release outcome handed over just before it (`releasePrior`; I8, review M2).
-4. **The sum shown is the one the party took** (review M1). Until the party's settle queue has taken the rebound outcome (`PartyHandle.acceptedOutcome()`, a read-only addition in `packages/escrow`), the status sum and the "I've paid" tap stay at the prior bound. Only then does the grown sum show and the tap for it pass, and `releasePrior` is cleared (review m3). A tap at the prior amount in that window binds the release back to it. One rebind at a time.
+4. **The sum shown is the one the party took** (review M1). Until the party's settle queue has taken the rebound outcome (`PartyHandle.acceptedOutcome()`, a read-only addition in `packages/escrow`), the status sum and the "I've paid" tap stay at the prior bound. Only then does the grown sum show and the tap for it pass, and `releasePrior` is cleared (review m3). A tap at the prior amount in that window binds the release back to it. One rebind at a time (review m7), and a rebind starts only once the party's queue has taken the outcome the device last handed it (`key(acceptedOutcome()) === key(intent.outcome)`, review m8). So the saved `releasePrior.outcome` is always the outcome the party holds.
 5. After any rebind, the tap also asks the party that it is committed to nothing (`committedBuilder()`); otherwise it is refused (review M1).
 6. After paid nothing moves (I2, I3 unchanged). The seller releases only the buyer's signed amount.
 7. Refunds stay unbound (I5). A buyer who cannot pay the new total can still cancel before paid, and the whole balance goes to the seller's signed refund address.
@@ -73,11 +73,11 @@ The escrow party gives a second guarantee (`packages/escrow/src/party.ts`, `sett
 
 A commit can race the check: the seller's set reaches the buyer's party between `committedBuilder()` and the queued `settle()`. The party then refuses the switch ("already signed for another outcome"). That needs the seller's party to build a release without a release tap (a modified seller client; an honest seller harms only itself).
 
-The runtime then does three things, whether or not "I've paid" was tapped meanwhile:
+The runtime then does three things, whether or not "I've paid" was tapped meanwhile. It does them for any refused seller-built, buyer-co-signed outcome while a prior is pending, a lapse refund included (review m9, deliberate: it fails closed):
 
 1. It sets `releaseRebindRefused` and **awaits** its save before anything acts on it (review m2). A failed save stops the trade (retryable).
 2. It shows no sum, takes no "I've paid" tap and builds no other release (fail closed).
-3. It hands the saved prior release (`releasePrior.outcome`) back to the party, once per run, so the release the party is committed to can complete, also after a reload (review M2, lead call). This changes no policy: the device approved exactly that outcome through `cosignPolicy` when it first handed it over. It skips the policy on re-hand only because the escrow's balance is no longer the one that outcome was built for.
+3. It hands the saved prior release (`releasePrior.outcome`) back to the party, once per run, so the release the party is committed to can complete, also after a reload (review M2, lead call). This changes no policy. The prior is the outcome the party had taken when the rebind started (review m8), and the device approved it through `cosignPolicy` when it handed it over. It skips the policy on re-hand only because the escrow's balance is no longer the one that outcome was built for.
 
 Because the sum stays at the prior amount until the party takes the rebound one, a buyer who tapped in the window tapped at the prior amount, which is the amount the committed release pays.
 
