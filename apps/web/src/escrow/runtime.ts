@@ -144,11 +144,11 @@ export interface EscrowStatus {
    */
   intentKind: SettleKind | null;
   /**
-   * This device's part of the settle it is signing is finished (PartyHandle.settleSent): the
-   * co-signer submitted the signed tx, so the settle lands without this device from here on (it
-   * only waits to see the tx in a block). False with no settle under way, or before then. The
-   * seller's refund view says when the page may close by it: the no-show refund is seller-built,
-   * so until then it waits for this device (gap 4, 20 Nov).
+   * This device's part of the settle it is signing is finished as far as it knows
+   * (PartyHandle.settleSent for the stored outcome): the co-signer submitted the signed tx, by its
+   * own signed report (DONE) when this device built it, not yet checked on the chain. False with no
+   * settle under way, or before then. The seller's refund view words the wait by it (gap 4, 20 Nov);
+   * "you can close" waits for `phase` done (the device's own settle seen in a block).
    */
   handedOff: boolean;
   /**
@@ -423,7 +423,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           if (this.error) return false;
           const i = (this.rec as EscrowRecord | undefined)?.intent ?? null;
           if (i === null || i.outcome === null) return false;
-          return i.done || this.party?.settleSent?.() === true;
+          return i.done || this.party?.settleSent?.(this.fromStored(i.outcome)) === true;
         })(),
         receivedAtomic: this.reading?.balance ?? null,
         confirmedAtomic: this.reading?.confirmed ?? null,
@@ -1204,11 +1204,26 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         changed = true;
       }
       const emptyInBlock = f.balance === 0n && f.unlocked === 0n && f.incoming.every((x) => x.confirmations > 0);
-      const ownDone = r.intent?.done === true;
-      const ownOpen = r.intent !== null && r.intent.outcome !== null && !r.intent.done;
+      let ownDone = r.intent?.done === true;
+      let ownOpen = r.intent !== null && r.intent.outcome !== null && !r.intent.done;
       // Fail closed: every sign of coins counts, and a record without the field is unknown.
       const coins = r.fundedSeen === true || r.intent?.outcome != null || r.paidSeen === true || (r.acceptedAtomic ?? null) !== null || f.balance > 0n || f.incoming.length > 0;
       const neverFunded = r.fundedSeen === false && !coins;
+      // Review M1 (20 Nov): an own settle still open when the trade closed (the device was closed
+      // before it saw the tx in a block, and the closed trade's relay no longer brings the DONE, nor
+      // does cosignPolicy hand a closed trade's outcome to the party) is done once the party proves
+      // from the chain that THIS outcome landed (PartyHandle.landed); only an emptying it cannot
+      // prove counts as settled elsewhere below. Nothing is signed or sent for it.
+      if (emptyInBlock && ownOpen && !this.error && this.party?.landed) {
+        const proven = await this.party.landed(this.fromStored(r.intent!.outcome!)).catch(() => null);
+        if (proven !== null && r.intent !== null && r.intent.outcome !== null && !r.intent.done) {
+          r.intent = { ...r.intent, done: true };
+          this.emptiedWhileSettling = null;
+          ownDone = true;
+          ownOpen = false;
+          changed = true;
+        }
+      }
       if (emptyInBlock && ownDone && r.settleSeenAt == null) {
         r.settleSeenAt = t;
         changed = true;

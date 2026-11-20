@@ -126,6 +126,9 @@ export class Parties {
   committed = new Map<Role, string>();
   /** Per role, what the party's settleSent() answers (its part of the settle is finished; gap 4). */
   sent: Partial<Record<Role, boolean>> = {};
+  /** Per role, the tx hash landed(o) proves (review M1), else null; and every outcome it was asked about. */
+  landedFor: Partial<Record<Role, string | null>> = {};
+  landedAsked: { role: Role; o: Outcome }[] = [];
   /** When set for a role, that role's next ready() rejects with it (once). */
   readyError: Partial<Record<Role, unknown>> = {};
   /** When set for a role, every funds() of that role rejects with it until cleared (a dead party). */
@@ -163,6 +166,10 @@ export class Parties {
         return new Promise((resolve, reject) => this.pending.push({ role: args.role, o, resolve, reject }));
       },
       settleSent: () => this.sent[args.role] === true,
+      landed: async (o) => {
+        this.landedAsked.push({ role: args.role, o });
+        return this.landedFor[args.role] ?? null;
+      },
       // The runtime never calls these: the escrow party sends its post-release info to the mod itself (Task 9 I/O).
       spendInfo: async () => {
         throw new Error('not used by the runtime');

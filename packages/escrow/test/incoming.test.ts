@@ -161,36 +161,56 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
     }
   });
 
-  // Gap 4 (20 Nov): the no-show refund is seller-built, so the seller's page must stay open until
-  // its part is finished; settleSent() says when (the co-signer's DONE arrived), before any block.
-  it("settleSent(): false until the co-signer submitted the seller-built refund; then true on both, before the tx is in a block (the builder's settle() still waits for the block)", async () => {
+  // Gap 4 (20 Nov) and its review (M1, m1, m3, m4): settleSent(o) goes true on the moderator's DONE
+  // only (never in 'built' before it), and landed(o) proves from the chain that the seller-built
+  // refund is in a block: by the builder's own tx key when no DONE ever reaches it, after a restart
+  // too; a DONE is accepted only once the same key proves the tx it names.
+  it("settleSent(o) and landed(o) for a seller-built refund: false in 'built' until DONE; proven by the builder's tx key with the DONE held back, also after a restart; DONE then accepted", async () => {
     const t = await kit.newTrade();
     const escrow = await ready(t);
     await pay(escrow, XMR);
     await mine(node.rpcUri, 12, funderAddress);
-    const refund = await newTestWallet(node.rpcUri);
+    const [refund, other] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
     try {
-      for (const r of ROLES) expect(t.parties[r].settleSent!()).toBe(false); // no settle at all
       const o: Outcome = { kind: 'release', to: [{ address: await refund.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'mod' };
-      let sellerSettled = false;
-      const sellerDone = t.parties.seller.settle(o).then((v) => {
-        sellerSettled = true;
-        return v;
-      });
+      const elsewhere: Outcome = { ...o, to: [{ address: await other.getPrimaryAddress(), amountAtomic: XMR }] };
+      for (const r of ROLES) expect(t.parties[r].settleSent!(o)).toBe(false); // no settle at all
+      expect(await t.parties.seller.landed!(o)).toBeNull();
+      // The moderator's DONE never leaves (every frame it sends once its release is done is dropped).
+      t.taps.mod.dropSend = () => t.stores.mod.current()?.release?.phase === 'done';
+      const sellerDone = t.parties.seller.settle(o);
+      sellerDone.catch(() => undefined);
       await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('export');
-      expect(t.parties.seller.settleSent!()).toBe(false); // the moderator has not exported: nothing built yet
-      // No block is mined from here until the seller's part is finished.
+      expect(t.parties.seller.settleSent!(o)).toBe(false);
+      // No block is mined until the moderator has submitted it.
       const hash = await t.parties.mod.settle(o);
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
-      expect(t.parties.mod.settleSent!()).toBe(true);
-      await expect.poll(() => t.parties.seller.settleSent!(), { timeout: 60_000 }).toBe(true);
-      expect(t.stores.seller.current()!.release!.phase).toBe('built');
-      expect(sellerSettled).toBe(false);
-      expect(t.parties.buyer.settleSent!()).toBe(false); // not a party to this settle
-      await minedWhile(node.rpcUri, funderAddress, sellerDone);
-      expect(t.parties.seller.settleSent!()).toBe(true);
+      expect(t.parties.mod.settleSent!(o)).toBe(true);
+      expect(t.parties.mod.settleSent!(elsewhere)).toBe(false); // m3: tied to the outcome
+      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('built');
+      await new Promise((r) => setTimeout(r, 3000)); // resends come and go; the DONE is held
+      // m1: built, but no DONE: still needed.
+      expect(t.parties.seller.settleSent!(o)).toBe(false);
+      expect(Object.keys(t.stores.seller.current()!.received).some((k) => k.startsWith('release.done'))).toBe(false);
+      expect(await t.parties.seller.landed!(o)).toBeNull(); // in the pool only
+      await mine(node.rpcUri, 2, funderAddress);
+      // M1 fix c.2: the builder's own tx key proves its set landed, with nobody's word.
+      await expect.poll(() => t.parties.seller.landed!(o), { timeout: 60_000, interval: 1000 }).toBe(hash);
+      expect(await t.parties.seller.landed!(elsewhere)).toBeNull();
+      // The seller's device closes and comes back with no DONE (as after the trade closed).
+      await t.parties.seller.stop();
+      const back = kit.startParty(t, 'seller');
+      await expect.poll(() => back.party.landed!(o), { timeout: 60_000, interval: 1000 }).toBe(hash);
+      // m4: the DONE now arrives; the builder accepts it once its key proves the named tx.
+      t.taps.mod.dropSend = () => false;
+      const [result] = await minedWhile(node.rpcUri, funderAddress, Promise.all([back.party.settle(o)]));
+      expect(result).toBeNull();
+      expect(t.stores.seller.current()!.release!).toMatchObject({ phase: 'done', txHash: hash });
+      expect(back.party.settleSent!(o)).toBe(true);
+      expect(await back.party.landed!(o)).toBe(hash);
     } finally {
       await refund.close();
+      await other.close();
     }
   });
 

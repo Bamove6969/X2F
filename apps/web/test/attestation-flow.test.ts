@@ -1729,6 +1729,110 @@ describe('resume on load (Review Focus 1)', () => {
   });
 });
 
+// Security review 20 Nov, M1: a builder that was closed before it saw its own settle in a block (for
+// the seller, after "the moderator has sent the refund") and comes back once the trade has closed.
+// The closed trade's relay no longer brings the DONE and cosignPolicy hands a closed trade's
+// outcome to no party, so only the party's chain proof (landed) can tell "my tx landed" from
+// "settled elsewhere". Every builder-returns-after-close flow: no-show refund, seller-built
+// release, lapse refund, buyer cancel.
+describe('review M1: a builder that comes back after the trade closed', () => {
+  const emptied = () => ({ balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] });
+  type Flow = { name: string; builder: 'seller' | 'buyer'; closed: Record<string, unknown>; tap: (t: Awaited<ReturnType<typeof setup>> & { buyer: Device; seller: Device }) => Promise<void> };
+  const FLOWS: Flow[] = [
+    {
+      name: 'no-show refund (seller-built, the moderator co-signs)',
+      builder: 'seller',
+      closed: { state: 'refunded', settling: 'auto-refund' },
+      tap: async (t) => {
+        t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
+        await t.seller.runtime.act(CODE, { type: 'build-refund' });
+      },
+    },
+    {
+      name: 'release (seller-built, the buyer co-signs)',
+      builder: 'seller',
+      closed: { state: 'released', paidAt: '2026-10-23T12:30:00.000Z' },
+      tap: async (t) => {
+        t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+        await pay(t.buyer);
+        await t.seller.runtime.act(CODE, { type: 'release' });
+      },
+    },
+    {
+      name: 'lapse refund (seller-built, the buyer co-signs)',
+      builder: 'seller',
+      closed: { state: 'refunded', settling: 'lapse-refund' },
+      tap: async (t) => {
+        t.state.view = tradeView({ state: 'lapsed' });
+      },
+    },
+    {
+      name: 'buyer cancel (buyer-built, the moderator co-signs)',
+      builder: 'buyer',
+      closed: { state: 'refunded', settling: 'buyer-cancel' },
+      tap: async (t) => {
+        t.state.view = tradeView({ state: 'secured' });
+        await until(() => t.parties.settles.some((s) => s.role === 'buyer')); // the standing release co-sign
+        await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
+      },
+    },
+  ];
+
+  /** The builder settles (its settle never resolves here), its device closes, the trade closes and empties, and the device comes back. */
+  async function returnsAfterClose(f: Flow, landed: string | null) {
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
+    const t = await setup();
+    const opts = { now: () => clock, settledElsewhereMs: 60_000 };
+    const seller = await t.mk('seller', opts);
+    const buyer = await t.mk('buyer', opts);
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    const all = { ...t, seller, buyer };
+    await f.tap(all);
+    await until(() => t.parties.pending.some((p) => p.role === f.builder && p.o.builder === f.builder));
+    const built = t.parties.pending.filter((p) => p.role === f.builder && p.o.builder === f.builder).at(-1)!.o;
+    const dev = f.builder === 'seller' ? seller : buyer;
+    await dev.status((s) => s.phase === 'signing');
+    await dev.runtime.stopAll(); // closed before it saw its tx in a block
+    t.state.view = tradeView(f.closed);
+    t.parties.funds = emptied();
+    t.parties.landedFor[f.builder] = landed;
+    const again = await t.mk(f.builder, { ...opts, idb: dev.idb });
+    await again.runtime.resumeAll();
+    return { ...all, again, built, advance: (ms: number) => (clock += ms) };
+  }
+
+  for (const f of FLOWS) {
+    it(`${f.name}: the party proves its outcome landed, so the device ends done (settleSeenAt set), never escrow-failed`, async () => {
+      const t = await returnsAfterClose(f, 'a'.repeat(64));
+      await until(async () => (await t.again.store.load(CODE))?.settleSeenAt != null);
+      expect((await t.again.store.load(CODE))?.intent?.done).toBe(true);
+      expect(t.again.last()?.phase).toBe('done');
+      // The proof was asked for exactly the outcome this device built, and nothing new was handed to the party.
+      const asked = t.parties.landedAsked.filter((x) => x.role === f.builder);
+      expect(asked.length).toBeGreaterThan(0);
+      for (const x of asked) expect(x.o).toEqual(t.built);
+      const settlesBefore = t.parties.settles.length;
+      t.advance(10 * 60_000);
+      await t.parties.ticks(f.builder, 3);
+      expect(t.again.statuses.some((s) => s.phase === 'error')).toBe(false);
+      expect((await t.again.store.load(CODE))?.failed ?? null).toBeNull();
+      expect(t.parties.settles.length).toBe(settlesBefore);
+    });
+
+    it(`${f.name}: with no proof the emptying still counts as settled elsewhere (escrow-failed after the grace)`, async () => {
+      const t = await returnsAfterClose(f, null);
+      await t.parties.ticks(f.builder, 3);
+      expect(t.again.last()?.phase).not.toBe('error'); // not yet: the grace runs
+      t.advance(60_000);
+      expect(await t.again.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+      expect((await t.again.store.load(CODE))?.intent?.done).toBe(false);
+    });
+  }
+});
+
 describe('after the trade closes: the escrow store is kept for 30 days or until this device saw its settle confirmed, whichever is later', () => {
   const DAY = 24 * 60 * 60 * 1000;
   const empty = (confirmations = 12) => ({ balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations, unlocked: confirmations >= 10 }] });
