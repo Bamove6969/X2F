@@ -805,15 +805,26 @@ export function runParty(a: PartyArgs): PartyHandle {
    * Through the wallet's own daemon connection only (txKeyPays, not proveTx: that one reads the
    * daemon through a client that cannot send in the web bundle). False when the engine cannot.
    */
-  const provenByKey = async (key: string, o: Outcome, h: string): Promise<boolean> => {
-    if (!session.txKeyPays || !TX_HASH.test(h)) return false;
+  const keyProof = async (key: string, o: Outcome, h: string): Promise<boolean | 'unavailable'> => {
+    if (!session.txKeyPays) return 'unavailable';
+    if (!TX_HASH.test(h)) return false;
     const r = await bounded('check tx key', () => session.txKeyPays!(h, key, o.to.map((p) => p.address)));
+    if (r === 'unavailable') return 'unavailable';
     if (r === null || r.inPool || r.received.length !== o.to.length) return false;
     return o.to.every((p, i) => r.received[i]! + (i === 0 ? MAX_NETWORK_FEE : 0n) >= p.amountAtomic);
   };
-  /** Review m4: a builder that kept its tx key (and an engine that checks keys) accepts only its own tx. */
-  const keyAllows = async (rel: ReleaseState, o: Outcome, h: string): Promise<boolean> =>
-    rel.part !== 'builder' || rel.txKey === undefined || !session.txKeyPays ? true : provenByKey(rel.txKey, o, h);
+  const provenByKey = async (key: string, o: Outcome, h: string): Promise<boolean> => (await keyProof(key, o, h)) === true;
+  /**
+   * Review m4: a builder that kept its tx key accepts only its own tx where the key can be checked.
+   * Where it cannot (no engine support, or the web app's daemon connection: 'unavailable'), the
+   * named tx is taken on spentBy + txSeen alone, as before (lead question: the node proxy's
+   * `/gettransactions`). A key that is checked and does not fit is refused.
+   */
+  const keyAllows = async (rel: ReleaseState, o: Outcome, h: string): Promise<boolean> => {
+    if (rel.part !== 'builder' || rel.txKey === undefined) return true;
+    const p = await keyProof(rel.txKey, o, h);
+    return p === true || p === 'unavailable';
+  };
 
   /** See PartyHandle.landed. Runs in the work queue. */
   const landedNow = async (o: Outcome): Promise<string | null> => {
