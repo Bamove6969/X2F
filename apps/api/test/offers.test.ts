@@ -629,6 +629,37 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     expect((await p.browser.get(`/v1/offers/${above}?currency=USD`)).json()).toMatchObject({ minFiatCents: '50000', maxFiatCents: '90000' });
   });
 
+  it('Plan 4 Task 26 (review m8): a limit that does not lower the cap is not shown: such a Starter looks like any Starter', async () => {
+    const plain = await poster();
+    const big = await poster();
+    await approvedLimit(deps, big.id, { capUsd: 5000 });
+    const held = await poster();
+    await approvedLimit(deps, held.id, { stage: 'building' });
+    const ids = [await post(plain, { currency: 'USD', side: 'buy' }), await post(big, { currency: 'USD', side: 'buy' }), await post(held, { currency: 'USD', side: 'buy' })];
+    const cards = await list('side=buy&method=ZELLE&currency=USD');
+    const shape = (id: string) => {
+      const c = cards.find((x) => x.id === id)!;
+      return { min: c.minFiatCents, max: c.maxFiatCents, tiers: (c.tiers as Array<{ min: string; max: string }>).map((t) => [t.min, t.max]) };
+    };
+    expect(shape(ids[1]!)).toEqual(shape(ids[0]!));
+    expect(shape(ids[2]!)).toEqual(shape(ids[0]!));
+    expect(shape(ids[0]!)).toEqual({ min: '5000', max: '200000', tiers: [['5000', '200000']] });
+  });
+
+  it('Plan 4 Task 26 (review): the method counts leave out an offer its poster\'s limit unlists', async () => {
+    const cur = 'THB';
+    const count = async () =>
+      ((await viewer.get(`/v1/methods?side=buy&currency=${cur}`)).json() as { live: { id: string; offers: number }[] }).live.find((m) => m.id === 'ZELLE')?.offers ?? 0;
+    const p = await poster();
+    await history(p.id, { days: 31, completed: 20 });
+    // THB 35 per USD: a $100 limit is ฿3,500; the offer starts at ฿5,000.
+    await post(p, { currency: cur, side: 'buy', minFiatCents: '500000', maxFiatCents: '900000' });
+    expect(await count()).toBe(1);
+    await approvedLimit(deps, p.id, { capUsd: 100 });
+    expect(await count()).toBe(0);
+    expect((await list(`side=buy&method=ZELLE&currency=${cur}`)).length).toBe(0);
+  });
+
   it('Plan 4 Task 26 (review m5): the "Opens at" hint never promises a stage an account limit blocks', async () => {
     const p = await poster();
     const mid = await post(p, { currency: 'USD', minFiatCents: '50000', maxFiatCents: '90000', side: 'buy' });

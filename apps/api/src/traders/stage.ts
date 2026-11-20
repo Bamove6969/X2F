@@ -111,6 +111,8 @@ export interface TradeCap {
    * lowest cap and the lowest stage among them); null when it has none.
    */
   limit: { capUsdCents: bigint | null; stage: 'starter' | 'building' | null } | null;
+  /** Task 26 (review m8): the limit lowers this account's cap or stage below what it earned. */
+  limitBinds: boolean;
 }
 
 const STAGE_ORDER: readonly Stage[] = ['starter', 'building', 'graduated'];
@@ -171,7 +173,7 @@ export async function tradeCap(db: Queryable, accountId: string, now: Date, sett
   const limitCap = r.limit_cap === null ? null : BigInt(r.limit_cap) * 100n;
   const byLimit = limitCap !== null && (stageCap === null || limitCap < stageCap);
   const limit = limitCap === null && r.limit_stage === null ? null : { capUsdCents: limitCap, stage: r.limit_stage as 'starter' | 'building' | null };
-  return { stage, capUsdCents: byLimit ? limitCap : stageCap, maxOpen: stage === 'starter' ? s.starterMaxOpenTrades : null, byLimit, limit };
+  return { stage, capUsdCents: byLimit ? limitCap : stageCap, maxOpen: stage === 'starter' ? s.starterMaxOpenTrades : null, byLimit, limit, limitBinds: byLimit || stage !== earned };
 }
 
 /**

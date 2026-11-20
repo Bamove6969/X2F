@@ -142,7 +142,7 @@ describe('deciding recommended limits (Task 26)', () => {
     const res = await decide(senior, acct, recId, true, { capUsd: 300 });
     expect([res.statusCode, res.json()]).toEqual([200, { status: 'approved' }]);
     const cap = await tradeCap(deps.db, acct, deps.clock());
-    expect(cap).toEqual({ stage: 'graduated', capUsdCents: 30_000n, maxOpen: null, byLimit: true, limit: { capUsdCents: 30_000n, stage: null } });
+    expect(cap).toEqual({ stage: 'graduated', capUsdCents: 30_000n, maxOpen: null, byLimit: true, limit: { capUsdCents: 30_000n, stage: null }, limitBinds: true });
     expect((await logEntries(deps, 'limits.decided')).map((e) => JSON.parse(e.detail))).toContainEqual({ recId, approved: true });
     const row = (await deps.db.query('select account_id, cap_usd, stage, until, set_by from account_limits where recommendation_id = $1', [recId])).rows;
     expect(row).toEqual([{ account_id: acct, cap_usd: 300, stage: null, until: null, set_by: senior.id }]);
@@ -156,7 +156,7 @@ describe('deciding recommended limits (Task 26)', () => {
     const acct = await seedAccount(deps, { loginName: `ls${randomUUID().slice(0, 8)}` });
     const recId = await recommend(recommender.b, acct, { capUsd: 5000 });
     expect((await decide(owner, acct, recId, true, { capUsd: 5000 })).statusCode).toBe(200);
-    expect(await tradeCap(deps.db, acct, deps.clock())).toEqual({ stage: 'starter', capUsdCents: 20_000n, maxOpen: 3, byLimit: false, limit: { capUsdCents: 500_000n, stage: null } });
+    expect(await tradeCap(deps.db, acct, deps.clock())).toEqual({ stage: 'starter', capUsdCents: 20_000n, maxOpen: 3, byLimit: false, limit: { capUsdCents: 500_000n, stage: null }, limitBinds: false });
   });
 
   it('an approved stage holds the account to that stage', async () => {
@@ -165,7 +165,7 @@ describe('deciding recommended limits (Task 26)', () => {
     const acct = await graduated();
     const recId = await recommend(recommender.b, acct, { stage: 'starter' });
     expect((await decide(owner, acct, recId, true, { stage: 'starter' })).statusCode).toBe(200);
-    expect(await tradeCap(deps.db, acct, deps.clock())).toEqual({ stage: 'starter', capUsdCents: 20_000n, maxOpen: 3, byLimit: false, limit: { capUsdCents: null, stage: 'starter' } });
+    expect(await tradeCap(deps.db, acct, deps.clock())).toEqual({ stage: 'starter', capUsdCents: 20_000n, maxOpen: 3, byLimit: false, limit: { capUsdCents: null, stage: 'starter' }, limitBinds: true });
   });
 
   it('a stage limit never raises a stage: a Starter account held to Building stays Starter (review m1)', async () => {
@@ -174,7 +174,7 @@ describe('deciding recommended limits (Task 26)', () => {
     const acct = await seedAccount(deps, { loginName: `lb${randomUUID().slice(0, 8)}` });
     const recId = await recommend(recommender.b, acct, { stage: 'building' });
     expect((await decide(owner, acct, recId, true, { stage: 'building' })).statusCode).toBe(200);
-    expect(await tradeCap(deps.db, acct, deps.clock())).toEqual({ stage: 'starter', capUsdCents: 20_000n, maxOpen: 3, byLimit: false, limit: { capUsdCents: null, stage: 'building' } });
+    expect(await tradeCap(deps.db, acct, deps.clock())).toEqual({ stage: 'starter', capUsdCents: 20_000n, maxOpen: 3, byLimit: false, limit: { capUsdCents: null, stage: 'building' }, limitBinds: false });
   });
 
   it('a declined recommendation sets nothing', async () => {
@@ -320,7 +320,7 @@ describe('a lost dispute alone changes nothing (R38, Task 26)', () => {
     const t = await driveTo(deps, trade, 'secured');
     await deps.db.query(`update trades set state = 'refunded', dispute_by = 'buyer', dispute_at = $2, closed_at = $2 where code = $1`, [t.code, deps.clock()]);
     expect(await tradeCap(deps.db, buyer.id, deps.clock())).toEqual(before);
-    expect(before).toEqual({ stage: 'graduated', capUsdCents: null, maxOpen: null, byLimit: false, limit: null });
+    expect(before).toEqual({ stage: 'graduated', capUsdCents: null, maxOpen: null, byLimit: false, limit: null, limitBinds: false });
     expect((await deps.db.query('select 1 from account_limits where account_id = $1', [buyer.id])).rows).toEqual([]);
   });
 });

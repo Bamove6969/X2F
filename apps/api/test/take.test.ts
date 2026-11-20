@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { GIFT_CARD_TERMS_VERSION, LAUNCH_TRADE_CAP_USD_CENTS, fiatCents, rateFor } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, LAUNCH_TRADE_CAP_USD_CENTS, atomicForFiat, fiatCents, rateFor } from '@x2f/trade';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -514,6 +514,38 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
   });
 
   const limit = (accountId: string, l: Parameters<typeof approvedLimit>[2]) => approvedLimit(deps, accountId, l);
+
+  // Review B1: the listed maximum of a poster held by an account limit is what the take allows, by
+  // the take's own rule (the larger of the fiat total and the XMR at the market), at any margin.
+  for (const marginBps of [-500, 0, 500]) {
+    it(`a limited poster's listed maximum takes, and one past it refuses, at a ${marginBps / 100}% margin (Task 26, review B1)`, async () => {
+      const poster = await person();
+      await limit(poster.id, { capUsd: 300 });
+      const fiatOffer = await postOffer(poster, { pricing: { mode: 'market', marginBps } });
+      const xmrOffer = await postOffer(poster, { pricing: { mode: 'market', marginBps }, amountUnit: 'xmr', minFiatCents: undefined, maxFiatCents: undefined, minAtomic: (XMR / 100n).toString(), maxAtomic: (10n * XMR).toString() });
+      const viewer = await person();
+      const listed = (await viewer.browser.get('/v1/offers?side=sell&method=ZELLE&currency=USD')).json() as Array<{ id: string; rate: string; maxFiatCents: string; maxAtomic: string }>;
+      const fiatCard = listed.find((c) => c.id === fiatOffer)!;
+      const xmrCard = listed.find((c) => c.id === xmrOffer)!;
+      // The fiat band: a take of exactly the listed total, and one cent past it.
+      {
+        const rate = BigInt(fiatCard.rate);
+        const max = BigInt(fiatCard.maxFiatCents);
+        expect(max).toBeLessThanOrEqual(30_000n);
+        const buyer = await person();
+        expect(refusal(await take(buyer, fiatOffer, body(buyer, atomicForFiat(max + 1n, { currency: 'USD', centsPerXmr: rate }), rate)))).toEqual({ status: 409, error: 'starter-limit' });
+        await taken(buyer, fiatOffer, body(buyer, atomicForFiat(max, { currency: 'USD', centsPerXmr: rate }), rate));
+      }
+      // The XMR band: exactly the listed amount, and one atomic unit past it.
+      {
+        const rate = BigInt(xmrCard.rate);
+        const max = BigInt(xmrCard.maxAtomic);
+        const buyer = await person();
+        expect(refusal(await take(buyer, xmrOffer, body(buyer, max + 1n, rate)))).toEqual({ status: 409, error: 'starter-limit' });
+        await taken(buyer, xmrOffer, body(buyer, max, rate));
+      }
+    });
+  }
 
   it('an account limit holds a Graduated taker to its cap, named as their own account limit (Task 26)', async () => {
     const seller = await person();
