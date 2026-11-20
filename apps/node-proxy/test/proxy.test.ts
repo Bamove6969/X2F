@@ -348,7 +348,8 @@ describe('node proxy: refusals (fail closed)', () => {
       '/daemon/json_rpc', '/json_rpc/', '/JSON_RPC', '/stop_daemon', '/start_mining', '/stop_mining', '/mining_status',
       '/set_log_level', '/get_peer_list', '/out_peers', '/update', '/send_raw_transaction', '/get_blocks_by_height.bin',
       '/', '/%2fjson_rpc', '//json_rpc',
-      '/gettransactions', // dropped by the lead, 2026-10-21: no wallet evidence, least privilege
+      // '/gettransactions' is allowed again (lead, 2026-11-20: wallet2's check_tx_key), pinned in
+      // 'forwards every allowlisted path at the root' and test/wallet.test.ts.
     ];
     // (Dot segments are resolved by the test client before routing; the forwarded path is a constant anyway.)
     for (const p of paths) {
