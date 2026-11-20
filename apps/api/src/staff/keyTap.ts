@@ -9,6 +9,7 @@ import {
   stampIssuedAt,
   tapChallenge,
   GRANTABLE_PERMS,
+  LIMIT_STAGES,
   type AccountAction,
   type KeyTapIntent,
   type Perm,
@@ -457,6 +458,22 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         largeTradeThresholdUsd: opt('largeTradeThresholdUsd'),
       };
     }
+    case 'account-limit': {
+      // Task 26: exactly one of a whole-dollar cap and a stage.
+      exactKeys(r, ['kind', 'recId', 'accountId', 'approve', 'capUsd', 'stage']);
+      if (typeof r.approve !== 'boolean') throw badRequest();
+      const capUsd = r.capUsd === null ? null : amount(r, 'capUsd', { integer: true });
+      const stage = r.stage === null ? null : oneOf(r, 'stage', LIMIT_STAGES);
+      if ((capUsd === null) === (stage === null)) throw badRequest();
+      return {
+        kind: 'account-limit',
+        recId: match(r, 'recId', UUID).toLowerCase(),
+        accountId: match(r, 'accountId', UUID).toLowerCase(),
+        approve: r.approve,
+        capUsd,
+        stage,
+      };
+    }
     case 'ruling': {
       exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256', 'round1Id']);
       const code = typeof r.code === 'string' ? normalizeTradeCode(r.code) : null;
@@ -499,6 +516,9 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
   switch (i.kind) {
     case 'ruling':
       return i.step === 'approve' ? 'rulings.approve' : 'disputes.handle';
+    // Task 26: deciding recommended account limits (a senior moderator or the owner).
+    case 'account-limit':
+      return 'rulings.approve';
     case 'emergency-stop':
     case 'resume-trading':
       return 'site.control';

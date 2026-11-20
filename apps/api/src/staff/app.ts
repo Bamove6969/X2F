@@ -26,6 +26,7 @@ import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffHoldRoutes } from './holds.js';
+import { staffLimitRoutes } from './limits.js';
 import { staffPastRepRoutes } from './pastrep.js';
 import { staffPayRoutes } from './pay.js';
 import { staffPerformanceRoutes } from './performance.js';
@@ -184,6 +185,8 @@ export async function buildStaffApi(
   // Plan 5 Task 10 (owner 2026-11-02): a claim's verified dollar figure (senior moderators and the owner).
   staffPastRepRoutes(app);
   staffHoldRoutes(app);
+  // Plan 4 Task 26: account limits a moderator recommends and a senior moderator or the owner decides.
+  staffLimitRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
   // Plan 4 Task 11: the moderator's queue, case, logged chat access, messages, proof and freeze.

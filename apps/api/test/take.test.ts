@@ -512,6 +512,46 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     await taken(buyer, offer, eur((XMR * 18_000n) / 29_700n));
   });
 
+  // Plan 4 Task 26: an approved account limit (a senior moderator's decision on a recommendation).
+  async function limit(accountId: string, l: { capUsd: number } | { stage: 'starter' | 'building' }): Promise<void> {
+    const staff = await seedAccount(deps, { loginName: `st${Math.random().toString(36).slice(2, 12)}`, kind: 'staff' });
+    const senior = await seedAccount(deps, { loginName: `ss${Math.random().toString(36).slice(2, 12)}`, kind: 'staff' });
+    const capUsd = 'capUsd' in l ? l.capUsd : null;
+    const stage = 'stage' in l ? l.stage : null;
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into limit_recommendations (account_id, cap_usd, stage, reason, recommended_by, created_at, status, decided_by, decided_at)
+       values ($1, $2, $3, $4, $5, $6, 'approved', $7, $6) returning id`,
+      [accountId, capUsd, stage, 'x'.repeat(40), staff, deps.clock(), senior],
+    );
+    await deps.db.query(
+      'insert into account_limits (account_id, cap_usd, stage, set_by, recommendation_id, created_at) values ($1, $2, $3, $4, $5, $6)',
+      [accountId, capUsd, stage, senior, rows[0]!.id, deps.clock()],
+    );
+  }
+
+  it('an account limit holds a Graduated taker to its cap, named as their own account limit (Task 26)', async () => {
+    const seller = await person();
+    const buyer = await person('graduated');
+    await limit(buyer.id, { capUsd: 300 });
+    const offer = await postOffer(seller);
+    // $330 is over the $300 limit; $297 is within it.
+    expect(refusal(await take(buyer, offer, body(buyer, XMR)))).toEqual({ status: 409, error: 'account-limit', capUsdCents: '30000' });
+    await taken(buyer, offer, body(buyer, (XMR * 9n) / 10n));
+  });
+
+  it("a stage limit holds the taker to that stage's limits; the poster's limit refuses without naming it (Task 26)", async () => {
+    const seller = await person();
+    const buyer = await person('graduated');
+    await limit(buyer.id, { stage: 'starter' });
+    const offer = await postOffer(seller);
+    expect(refusal(await take(buyer, offer, body(buyer, XMR)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
+    const poster = await person('graduated');
+    await limit(poster.id, { capUsd: 100 });
+    const theirs = await postOffer(poster);
+    const taker = await person('graduated');
+    expect(refusal(await take(taker, theirs, body(taker, XMR)))).toEqual({ status: 409, error: 'starter-limit' });
+  });
+
   it('a Starter account has at most 3 open trades, counted as either side', async () => {
     const buyer = await person('starter');
     for (let i = 0; i < 3; i++) {

@@ -243,6 +243,9 @@ async function checkStarterLimits(db: Queryable, a: { takerId: string; posterId:
     if (usd === null) throw new ApiError(409, 'price-unavailable');
     for (const [c, , own] of caps) {
       if (c.capUsdCents !== null && usd > c.capUsdCents) {
+        // Plan 4 Task 26: an account limit's cap is named to the account itself as its own limit
+        // (`account-limit`, the cap only, never why); the other side's is the same plain refusal.
+        if (own && c.byLimit) throw new ApiError(409, 'account-limit', { capUsdCents: c.capUsdCents.toString() });
         throw new ApiError(409, 'starter-limit', own ? { stage: c.stage, capUsdCents: c.capUsdCents.toString() } : {});
       }
     }
