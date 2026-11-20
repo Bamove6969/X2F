@@ -108,3 +108,48 @@ export function checkEvidenceUrl(url: unknown): string {
   if (u.href.length > PAST_REP_URL_MAX) throw new ApiError(400, 'bad-url');
   return u.href;
 }
+
+/** Wayback's timestamp segment: up to 14 digits, with an optional mode flag (`id_`, `im_`, …). */
+const WAYBACK_STAMP = /^\d{1,14}(?:[a-z]{2}_)?$/;
+/** archive.today's timestamp segment: `2023.01.01-120000`, `20230101120000`, `newest` or `oldest`. */
+const ARCHIVE_TODAY_STAMP = /^(?:\d{4}\.\d{2}\.\d{2}-\d{6}|\d{14}|newest|oldest)$/;
+/**
+ * Re-review m4: archive.today and its mirrors. A link that archives one of them (or Wayback) names
+ * no site of its own: null, read the address on the archived page.
+ */
+const ARCHIVE_FAMILY = ['web.archive.org', 'archive.org', 'archive.ph', 'archive.today', 'archive.is', 'archive.md', 'archive.li', 'archive.vn', 'archive.fo'];
+
+/**
+ * Review M2 (Task 11, lead call): the host of the page an archive link archived, read from the link
+ * itself so the moderator sees which site the archive copied, not only the archive's own host.
+ * Purely syntactic, like `checkEvidenceUrl`: no lookup, no fetch.
+ *
+ * Re-review B1: only the path is read (never the query or the fragment, which the archive ignores),
+ * and only after a real timestamp segment, the forms under which the archive serves the original:
+ * Wayback `/web/<WAYBACK_STAMP>/<original>`, archive.today `/<ARCHIVE_TODAY_STAMP>/<original>`.
+ * Anything else, a short archive.today id (`/AbCd1`, `/AbCd1/https://…`) included, is null: the
+ * archive's answer for that path is not known from the link, so the moderator reads the address on
+ * the archived page itself. The original must carry its own `http(s)://` (Wayback also takes a
+ * bare host). The `www.` prefix is kept: the moderator compares exactly what is there.
+ */
+export function archivedOriginalHost(evidenceUrl: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(evidenceUrl);
+  } catch {
+    return null;
+  }
+  const wayback = u.hostname === 'web.archive.org';
+  const m = wayback ? /^\/web\/([^/]+)\/(.+)$/.exec(u.pathname) : /^\/([^/]+)\/(.+)$/.exec(u.pathname);
+  if (!m) return null;
+  if (!(wayback ? WAYBACK_STAMP : ARCHIVE_TODAY_STAMP).test(m[1]!)) return null;
+  const rest = m[2]!;
+  const withScheme = /^https?:\/*/i.test(rest) ? rest.replace(/^(https?):\/*/i, '$1://') : wayback ? `https://${rest}` : null;
+  if (withScheme === null) return null;
+  try {
+    const host = new URL(withScheme).hostname.replace(/\.$/, '');
+    return host.includes('.') && !ARCHIVE_FAMILY.includes(host) ? host : null;
+  } catch {
+    return null;
+  }
+}

@@ -178,6 +178,12 @@ export const LOG_ACTIONS = {
   // the moderator's reason, the review's text or its trade.
   'review.disputed': { disputeId: 'uuid' },
   'review.dispute-decided': { disputeId: 'uuid', outcome: 'id' },
+  // Plan 5 Task 11: a moderator's decision on a claim. The claim, its trader and its site (spaces as
+  // '-'), and on approval the trades the moderator saw; never the evidence link, the fingerprint or
+  // the reason text.
+  'pastrep.approved': { claimId: 'uuid', accountId: 'uuid', site: 'id', trades: 'number' },
+  'pastrep.rejected': { claimId: 'uuid', accountId: 'uuid', site: 'id' },
+  'pastrep.revoked': { claimId: 'uuid', accountId: 'uuid', site: 'id' },
   // The owner (Task 6).
   'owner.setup-completed': {},
   'owner.key-added': { credentialId: 'id' },

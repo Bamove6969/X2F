@@ -10,6 +10,8 @@
  *   400 `bad-signature`, `wrong-text`, `wrong-key` (each with `help`, PAST_REP_SIGNING_HELP),
  *   `challenge-expired` (also for an unknown id or another account's challenge); 409
  *   `challenge-used`, `fingerprint-claimed` (another account's live claim on the key), `site-claimed`.
+ *   409 `key-unavailable` when the key is on the ban list or is a staff or owner login key (lead calls,
+ *   Task 11 review M3 and re-review m1).
  *   The only route that creates a claim, and only after the signature verifies.
  * - `GET /v1/account/past-rep` → the caller's own claims; `DELETE /v1/account/past-rep/:id` → removed.
  *
@@ -35,6 +37,7 @@ import { holdInTx, holdRefusal, requireLiveSessionInTx, requireNotHeld, settleOf
 import { requestOrigin } from '../auth/origin.js';
 import { PGP_BODY_LIMIT, openKey, sealKey, storableKey } from '../auth/pgp.js';
 import { requireSession } from '../auth/sessions.js';
+import { assertKeyNotBanned } from '../bans.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { PAST_REP_CHALLENGE_MINUTES, checkEvidenceUrl, checkSite, pastRepChallenge, pastRepNonce } from './challenge.js';
@@ -189,6 +192,17 @@ export function pastRepRoutes(app: FastifyInstance): void {
         [c.fingerprint, accountId, LIVE],
       );
       if (clash.rows.length > 0) throw new ApiError(409, 'fingerprint-claimed');
+      // Lead calls (Task 11 review M3, re-review m1): neither a key on the ban list nor a staff or
+      // owner login key backs a trader's claim. Both are asked only here, after the signature proved
+      // the key, and both answer 409 key-unavailable, so the answer says neither which nor why. A key
+      // that becomes a staff login key after its claim was filed is not caught here; the reviewer's
+      // own key is (`reviewer-own-key`, staff/pastrep.ts), any other staff member's is not.
+      await assertKeyNotBanned(db, deps.config, armored);
+      const staffKey = await db.query(
+        "select 1 from pgp_keys k join accounts a on a.id = k.account_id where k.fingerprint = $1 and a.kind in ('staff', 'owner')",
+        [c.fingerprint],
+      );
+      if (staffKey.rows.length > 0) throw new ApiError(409, 'key-unavailable');
       if (await siteClaimed(db, accountId, c.site)) throw new ApiError(409, 'site-claimed');
       let inserted: string;
       try {
