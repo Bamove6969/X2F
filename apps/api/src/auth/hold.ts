@@ -653,6 +653,8 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // Plan 5 Task 3 (reviews), classified at its merge with Tasks 16-17.
   'POST /v1/trades/:code/review': "a participant's one review of their own finished trade (a reviews row only); no account, session, approval or security state, no new obligation",
   'POST /v1/trades/:code/review/skip': "a participant's Skip review of their own finished trade (a review_skips row only); no account, session, approval or security state, no new obligation",
+  // Plan 5 Task 19: a dispute of a review about the caller.
+  'POST /v1/reviews/:id/dispute': "the subject's one dispute of a review about them (a review_disputes row only; the review shows Under review); no account, session, approval or security state, no obligation",
   // C12b (owner 2026-11-01/02): the opt-in "traded to date" profile line.
   'PUT /v1/account/profile/traded-total': "the caller's own profile display preference (one accounts column); no session, approval or security state, no obligation",
   // Plan 5 Tasks 5 and 12: badge visibility and showing the signed record (one badge_prefs row).
