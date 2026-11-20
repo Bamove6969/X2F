@@ -899,7 +899,20 @@ export function liveOfferStats(deps: Pick<Deps, 'db' | 'prices' | 'clock'>): Liv
         const tiers = f === undefined ? null : tiersOf(f, currency);
         if (method === undefined || tiers === null) continue;
         const forMethod = tiers.filter((t) => t.methodIds === null || t.methodIds.includes(r.method_id));
-        if (forMethod.length === 0 || clampTiers(r.amount_unit, forMethod, currency, method, deps.prices, cap) === null) continue;
+        const left = forMethod.length === 0 ? null : clampTiers(r.amount_unit, forMethod, currency, method, deps.prices, cap);
+        if (left === null) continue;
+        // Review m9: the best rate only from the bands the limit leaves.
+        const price = deps.prices.current(currency);
+        const rates = price === null ? [] : left.map((t) => tierRate(currency, t, method, price)?.centsPerXmr ?? null).filter((x): x is bigint => x !== null);
+        if (rates.length > 0) {
+          let lo = rates[0]!;
+          let hi = rates[0]!;
+          for (const x of rates) {
+            if (x < lo) lo = x;
+            if (x > hi) hi = x;
+          }
+          [r.lo, r.hi] = [lo.toString(), hi.toString()];
+        }
       }
       const m = byMethod.get(r.method_id) ?? { offers: 0, lo: null, hi: null };
       m.offers += 1;

@@ -660,6 +660,30 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     expect((await list(`side=buy&method=ZELLE&currency=${cur}`)).length).toBe(0);
   });
 
+  it('Plan 4 Task 26 (review m9): a limited poster\'s best rate in the method counts comes only from bands the limit leaves', async () => {
+    const cur = 'MXN';
+    const zelle = async () =>
+      ((await viewer.get(`/v1/methods?side=buy&currency=${cur}`)).json() as { live: { id: string; offers: number; bestRate: string | null }[] }).live.find((m) => m.id === 'ZELLE');
+    const p = await poster();
+    await history(p.id, { days: 31, completed: 20 });
+    // MXN 18 per USD. A buy ad pays the seller, so the best is the highest: the big band at +5%,
+    // the small band at -5%. A $50 limit (MXN 900) leaves only the small band.
+    const res = await p.browser.post('/v1/offers', {
+      side: 'buy',
+      currencies: [{ currency: cur, bands: [
+        { min: '100', max: '1500', marginBps: -500, minTrades: null },
+        { min: '1501', max: '9000', marginBps: 500, minTrades: null },
+      ] }],
+      methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: '' }],
+      terms: '',
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const market = (33_000n * 18n).toString();
+    expect((await zelle())?.bestRate).toBe(((BigInt(market) * 10_500n) / 10_000n).toString());
+    await approvedLimit(deps, p.id, { capUsd: 50 });
+    expect(await zelle()).toMatchObject({ offers: 1, bestRate: ((BigInt(market) * 9_500n) / 10_000n).toString() });
+  });
+
   it('Plan 4 Task 26 (review m5): the "Opens at" hint never promises a stage an account limit blocks', async () => {
     const p = await poster();
     const mid = await post(p, { currency: 'USD', minFiatCents: '50000', maxFiatCents: '90000', side: 'buy' });
