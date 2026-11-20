@@ -124,7 +124,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/accounts/:id/hold/extend', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   { method: 'POST', url: '/staff/v1/accounts/:id/hold/end', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   // Plan 4 Task 26: recommended account limits (bodies valid in shape; an unknown account or case: 404).
-  { method: 'POST', url: '/staff/v1/accounts/:id/limit-recommendations', perm: 'disputes.handle', allowed: MODERATORS, body: { capUsd: 300, reason: 'x'.repeat(40) } },
+  { method: 'POST', url: '/staff/v1/accounts/:id/limit-recommendations', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { capUsd: 300, reason: 'x'.repeat(40) } },
   { method: 'POST', url: '/staff/v1/disputes/:code/limit-recommendations', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', capUsd: 300, reason: 'x'.repeat(40) } },
   { method: 'GET', url: '/staff/v1/limit-recommendations', perm: 'rulings.approve', allowed: ['owner', 'senior'] },
   { method: 'POST', url: '/staff/v1/accounts/:id/limit-recommendations/:recId/decide', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { approve: true, tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },

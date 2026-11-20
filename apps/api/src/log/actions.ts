@@ -130,8 +130,8 @@ export const LOG_ACTIONS = {
   'lien.repaid': { lienId: 'id', repaymentCode: 'id' },
   'fee.owed': { accountId: 'uuid', amountAtomic: 'amount' },
   // Recommended account limits (Task 26).
-  'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id' },
-  'limits.decided': { recId: 'id', approved: 'bool' },
+  'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id', fromCode: 'id' },
+  'limits.decided': { recId: 'id', approved: 'bool', fromCode: 'id' },
   // Staff management (Task 7) and per-person grants (Task 30).
   'staff.invite-created': { inviteId: 'id', role: 'id' },
   'staff.invite-cancelled': { inviteId: 'id' },

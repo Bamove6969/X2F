@@ -21,7 +21,9 @@ create table limit_recommendations (
   decided_at timestamptz,
   check ((cap_usd is null) <> (stage is null)),
   check ((status = 'pending') = (decided_by is null) and (decided_by is null) = (decided_at is null)),
-  check (decided_by is null or decided_by <> recommended_by)
+  check (decided_by is null or decided_by <> recommended_by),
+  -- Review m6: `account_limits` names its recommendation together with the account.
+  unique (id, account_id)
 );
 -- One recommendation waits per account at a time (lead default).
 create unique index limit_recommendations_one_pending on limit_recommendations (account_id) where status = 'pending';
@@ -34,8 +36,34 @@ create table account_limits (
   -- Lead default, owner question: no end time is set yet (null = until lifted), and no route lifts one yet.
   until timestamptz,
   set_by uuid not null references accounts (id),
-  recommendation_id uuid not null unique references limit_recommendations (id),
+  recommendation_id uuid not null unique,
   created_at timestamptz not null,
-  check ((cap_usd is null) <> (stage is null))
+  check ((cap_usd is null) <> (stage is null)),
+  foreign key (recommendation_id, account_id) references limit_recommendations (id, account_id)
 );
 create index account_limits_account on account_limits (account_id);
+
+-- Review m6: a decided recommendation never changes (its decision is the record), and a limit
+-- exists only for an approved recommendation, with exactly its cap or stage.
+create function limit_recommendations_decided_fixed() returns trigger language plpgsql as $$
+begin
+  if old.status <> 'pending' then
+    raise exception 'limit_recommendations: a decided recommendation cannot change' using errcode = 'check_violation';
+  end if;
+  return new;
+end $$;
+create trigger limit_recommendations_decided_fixed before update on limit_recommendations
+  for each row execute function limit_recommendations_decided_fixed();
+
+create function account_limits_match_recommendation() returns trigger language plpgsql as $$
+declare r limit_recommendations%rowtype;
+begin
+  select * into r from limit_recommendations where id = new.recommendation_id;
+  if not found or r.status <> 'approved' or r.account_id <> new.account_id
+     or r.cap_usd is distinct from new.cap_usd or r.stage is distinct from new.stage or r.decided_by <> new.set_by then
+    raise exception 'account_limits: the limit must match its approved recommendation' using errcode = 'check_violation';
+  end if;
+  return new;
+end $$;
+create trigger account_limits_match_recommendation before insert or update on account_limits
+  for each row execute function account_limits_match_recommendation();

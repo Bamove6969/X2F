@@ -106,6 +106,11 @@ export interface TradeCap {
   maxOpen: number | null;
   /** Task 26: `capUsdCents` is an account limit's cap, below what the stage alone allows. */
   byLimit: boolean;
+  /**
+   * Task 26: the account's approved limits that still apply, whether or not they bind today (the
+   * lowest cap and the lowest stage among them); null when it has none.
+   */
+  limit: { capUsdCents: bigint | null; stage: 'starter' | 'building' | null } | null;
 }
 
 const STAGE_ORDER: readonly Stage[] = ['starter', 'building', 'graduated'];
@@ -165,7 +170,8 @@ export async function tradeCap(db: Queryable, accountId: string, now: Date, sett
   const stageCap = capUsdCents(s, stage);
   const limitCap = r.limit_cap === null ? null : BigInt(r.limit_cap) * 100n;
   const byLimit = limitCap !== null && (stageCap === null || limitCap < stageCap);
-  return { stage, capUsdCents: byLimit ? limitCap : stageCap, maxOpen: stage === 'starter' ? s.starterMaxOpenTrades : null, byLimit };
+  const limit = limitCap === null && r.limit_stage === null ? null : { capUsdCents: limitCap, stage: r.limit_stage as 'starter' | 'building' | null };
+  return { stage, capUsdCents: byLimit ? limitCap : stageCap, maxOpen: stage === 'starter' ? s.starterMaxOpenTrades : null, byLimit, limit };
 }
 
 /**

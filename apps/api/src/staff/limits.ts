@@ -6,7 +6,7 @@ import { loadDispute } from '../disputes/store.js';
 import { actorOf, body, codeOf, mayWork } from '../disputes/staffRoutes.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
-import { tradeCap, type Stage } from '../traders/stage.js';
+import { loadStarterSettings, tradeCap, type Stage } from '../traders/stage.js';
 import { consumeKeyTap } from './keyTap.js';
 import { requireStaff } from './guard.js';
 
@@ -19,7 +19,7 @@ import { requireStaff } from './guard.js';
  * is never sent to the trader and never written to the activity log (which holds ids only).
  *
  * - `POST /staff/v1/accounts/:id/limit-recommendations { capUsd | stage, reason }` (perm
- *   `disputes.handle`) → 201 `{ id }`. `capUsd` a whole number of US dollars (1 to 1,000,000);
+ *   `rulings.approve`: a senior moderator or the owner, review m3) → 201 `{ id }`. `capUsd` a whole number of US dollars (1 to 1,000,000);
  *   `stage` 'starter' or 'building'; exactly one. `reason` at least 40 characters once trimmed (400
  *   `reason-too-short`), at most 2000. 404 for anything but a trader account; 409 `wrong-state` while
  *   another recommendation for the account waits (one at a time, lead default).
@@ -27,7 +27,8 @@ import { requireStaff } from './guard.js';
  *   `disputes.handle`): the same from a case (ModCase "Recommend limits"), naming the buyer or the
  *   seller, so a moderator never needs an account id. Whoever may work the case (its assignee, a
  *   senior moderator or the owner; never someone involved in round 1 of an appeal) → else 403
- *   `forbidden-case`. The log entry is on the case.
+ *   `forbidden-case`. The log entries name the case in their detail (`fromCode`), never as their
+ *   trade code, so neither the recommender nor the decider becomes involved in it (review M2).
  * - `GET /staff/v1/limit-recommendations` (perm `rulings.approve`) → the waiting ones, oldest first,
  *   with the reason, for the decider.
  * - `POST /staff/v1/accounts/:id/limit-recommendations/:recId/decide { approve, tapId }` (perm
@@ -100,7 +101,9 @@ async function recommend(
       [accountId, l.capUsd, l.stage, l.reason, code, me.id, now],
     );
     const id = rows[0]!.id;
-    await appendLog(c, { at: now, actor: me, tradeCode: code, action: 'limits.recommended', detail: { recId: id, accountId, ...limitDetail(l) } });
+    // Review M2 (lead call): never on the case's trade code, so recommending makes nobody involved
+    // in its appeal (R37); the case is in the detail.
+    await appendLog(c, { at: now, actor: me, tradeCode: null, action: 'limits.recommended', detail: { recId: id, accountId, ...limitDetail(l), ...(code === null ? {} : { fromCode: code }) } });
     return { id };
   });
 }
@@ -109,7 +112,9 @@ export function staffLimitRoutes(app: FastifyInstance): void {
   const handle = { config: { perm: 'disputes.handle' as const }, preHandler: requireStaff('disputes.handle') };
   const approve = { config: { perm: 'rulings.approve' as const }, preHandler: requireStaff('rulings.approve') };
 
-  app.post('/staff/v1/accounts/:id/limit-recommendations', handle, async (req, reply) => {
+  // Review m3 (lead call): by account id only a senior moderator or the owner; a moderator
+  // recommends from a case they may work.
+  app.post('/staff/v1/accounts/:id/limit-recommendations', approve, async (req, reply) => {
     const accountId = idParam(req, 'id');
     const l = parseLimit(body(req, ['capUsd', 'stage', 'reason'], ['reason']));
     return reply.code(201).send(await recommend(req, accountId, l, null));
@@ -136,6 +141,8 @@ export function staffLimitRoutes(app: FastifyInstance): void {
   app.get('/staff/v1/limit-recommendations', approve, async (req) => {
     const { db, clock } = req.server.deps;
     const now = clock();
+    // Review m7: the starter settings once per list.
+    const settings = await loadStarterSettings(db);
     const { rows } = await db.query<{
       id: string; account_id: string; display_name: string; cap_usd: number | null; stage: LimitStage | null; reason: string;
       from_code: string | null; recommended_by: string; by_name: string; created_at: Date;
@@ -150,7 +157,7 @@ export function staffLimitRoutes(app: FastifyInstance): void {
     );
     const recommendations = [];
     for (const r of rows) {
-      const cap = await tradeCap(db, r.account_id, now);
+      const cap = await tradeCap(db, r.account_id, now, settings);
       recommendations.push({
         id: r.id,
         accountId: r.account_id,
@@ -181,6 +188,9 @@ export function staffLimitRoutes(app: FastifyInstance): void {
     const now = clock();
     const me = actorOf(req);
     return withTx(db, async (c: pg.PoolClient) => {
+      // Review m4: the account row first, as the take locks it, so a take and a decision on one
+      // account run strictly one after the other.
+      await c.query('select id from accounts where id = $1 for update', [accountId]);
       const { rows } = await c.query<{ account_id: string; cap_usd: number | null; stage: LimitStage | null; from_code: string | null; recommended_by: string; status: string }>(
         'select account_id, cap_usd, stage, from_code, recommended_by, status from limit_recommendations where id = $1 for update',
         [recId],
@@ -199,7 +209,8 @@ export function staffLimitRoutes(app: FastifyInstance): void {
           [accountId, r.cap_usd, r.stage, me.id, recId, now],
         );
       }
-      await appendLog(c, { at: now, actor: me, tradeCode: r.from_code, action: 'limits.decided', detail: { recId, approved } });
+      // Review M2 (lead call): deciding a party's limits is not involvement in the case (R37).
+      await appendLog(c, { at: now, actor: me, tradeCode: null, action: 'limits.decided', detail: { recId, approved, ...(r.from_code === null ? {} : { fromCode: r.from_code }) } });
       return { status: approved ? ('approved' as const) : ('declined' as const) };
     });
   });

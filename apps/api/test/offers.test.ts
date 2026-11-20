@@ -10,6 +10,7 @@ import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { seedReviews, seedTrade } from './helpers/trades.js';
 import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
+import { approvedLimit } from './helpers/limits.js';
 
 // Plan 3 Task 4: offers. Real Postgres (one database per file), a fake market so each test sets
 // the price feed up or down.
@@ -601,6 +602,51 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     const { code } = await seedTrade(deps, { sellerId: s.id, buyerId: b.id, poster: 'seller' });
     const v = (await b.browser.get(`/v1/trades/${code}`)).json() as { counterparty: Record<string, unknown> };
     expect(v.counterparty).toMatchObject({ displayName: s.displayName, stage: 'graduated', completedTrades: 20 });
+  });
+
+  it('Plan 4 Task 26 (review M1): a poster held by an account limit lists each band up to that limit; a band wholly above it is not listed', async () => {
+    const p = await poster();
+    await history(p.id, { days: 31, completed: 20 });
+    await approvedLimit(deps, p.id, { capUsd: 300 });
+    // $50 to $2,000, and $500 to $900.
+    const open = await post(p, { currency: 'USD', side: 'buy', minFiatCents: '5000', maxFiatCents: '200000' });
+    const above = await post(p, { currency: 'USD', side: 'buy', minFiatCents: '50000', maxFiatCents: '90000' });
+    const cards = await list('side=buy&method=ZELLE&currency=USD');
+    const card = cards.find((c) => c.id === open)!;
+    expect(card).toMatchObject({ minFiatCents: '5000', maxFiatCents: '30000' });
+    expect((card.tiers as Array<{ min: string; max: string }>).map((t) => [t.min, t.max])).toEqual([['5000', '30000']]);
+    expect(cards.find((c) => c.id === above)).toBeUndefined();
+    const detail = await viewer.get(`/v1/offers/${open}?currency=USD`);
+    expect(detail.json()).toMatchObject({ maxFiatCents: '30000' });
+    expect((await viewer.get(`/v1/offers/${above}?currency=USD`)).statusCode).toBe(404);
+    // In another currency the limit is converted at the market: $300 is €270.
+    const eur = await post(await poster(), { currency: 'EUR', side: 'buy', minFiatCents: '5000', maxFiatCents: '100000' });
+    const eurPoster = (await deps.db.query<{ account_id: string }>('select account_id from offers where id = $1', [eur])).rows[0]!.account_id;
+    await history(eurPoster, { days: 31, completed: 20 });
+    await approvedLimit(deps, eurPoster, { capUsd: 300 });
+    expect((await list('side=buy&method=ZELLE&currency=EUR')).find((c) => c.id === eur)).toMatchObject({ maxFiatCents: '27000' });
+    // The poster's own view is the offer as posted.
+    expect((await p.browser.get(`/v1/offers/${above}?currency=USD`)).json()).toMatchObject({ minFiatCents: '50000', maxFiatCents: '90000' });
+  });
+
+  it('Plan 4 Task 26 (review m5): the "Opens at" hint never promises a stage an account limit blocks', async () => {
+    const p = await poster();
+    const mid = await post(p, { currency: 'USD', minFiatCents: '50000', maxFiatCents: '90000', side: 'buy' });
+    const big = await post(p, { currency: 'USD', minFiatCents: '150000', maxFiatCents: '300000', side: 'buy' });
+    const q = 'side=buy&method=ZELLE&currency=USD';
+    const opens = async (who: Browser) => {
+      const cards = await list(q, who);
+      return Object.fromEntries([mid, big].map((id) => [id, cards.find((c) => c.id === id)?.opensAt ?? '-']));
+    };
+    const heldStarter = await trader();
+    await approvedLimit(deps, heldStarter.id, { stage: 'starter' });
+    expect(await opens(heldStarter.browser)).toEqual({ [mid]: '-', [big]: '-' });
+    const heldBuilding = await trader();
+    await approvedLimit(deps, heldBuilding.id, { stage: 'building' });
+    expect(await opens(heldBuilding.browser)).toEqual({ [mid]: 'building', [big]: '-' });
+    const capped = await trader();
+    await approvedLimit(deps, capped.id, { capUsd: 600 });
+    expect(await opens(capped.browser)).toEqual({ [mid]: 'building', [big]: '-' });
   });
 
   it("marks offers above a signed-in viewer's cap with the stage that opens them (opensAt)", async () => {

@@ -42,7 +42,7 @@ import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
 import { offerLaunchCapRefusal, throwLaunchCapRefusal } from '../trades/launchCap.js';
 import { blockedEitherWaySql } from '../traders/blocks.js';
-import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
+import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf, type StarterSettings, type TradeCap } from '../traders/stage.js';
 import { hasPendingReview, pendingReviewSql } from '../reviews/gate.js';
 import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
 import { usableWallets } from '../wallets/routes.js';
@@ -481,12 +481,66 @@ function minFiatAt(unit: AmountUnit, tiers: readonly Tier[], currency: string, r
 
 const copyTier = (t: Tier): Tier => ({ ...t, methodIds: t.methodIds === null ? null : [...t.methodIds] });
 
+/**
+ * Plan 4 Task 26, review M1 (lead call): a poster held by an account limit lists each band only up
+ * to that limit, converted to the card's currency at the market (rounded down, so the take's
+ * rounded-up USD check always passes at the shown maximum); a band wholly above it is dropped. Null
+ * when no band is left (the offer is not listed in this currency). An XMR band is measured at the
+ * card's rate; without a rate it is left as it is (the take fails closed with no price).
+ * Lead default, owner question: the clamped maximum is visible, so a taker can see the poster can't
+ * take more than it, though never why.
+ */
+function clampTiers(unit: AmountUnit, tiers: readonly Tier[], currency: string, rate: bigint | null, capFiat: bigint): Tier[] | null {
+  let cap = capFiat;
+  if (unit === 'xmr') {
+    if (rate === null) return [...tiers];
+    cap = atomicForFiat(capFiat, { currency, centsPerXmr: rate });
+  }
+  const out = tiers.filter((t) => BigInt(t.min) <= cap).map((t) => (BigInt(t.max) > cap ? { ...t, max: cap.toString() } : t));
+  return out.length > 0 ? out : null;
+}
+
+/** A US-cent cap in `currency`'s minor units at the market quote, rounded down; null without a quote. */
+function capInCurrency(capUsdCents: bigint, q: { centsPerXmr: bigint; usdCentsPerXmr: bigint } | null): bigint | null {
+  if (q === null || q.usdCentsPerXmr <= 0n) return null;
+  return (capUsdCents * q.centsPerXmr) / q.usdCentsPerXmr;
+}
+
+/**
+ * The posters among `ids` whose own cap is set by an account limit (Task 26): their cap in US
+ * cents. A poster with no account limit is not clamped (a stage's own cap is public on the card).
+ */
+async function limitedPosters(db: Queryable, ids: readonly string[], now: Date, settings: StarterSettings): Promise<Map<string, bigint>> {
+  const out = new Map<string, bigint>();
+  const { rows } = await db.query<{ account_id: string }>(
+    'select distinct account_id from account_limits where account_id = any($1) and (until is null or until > $2)',
+    [[...new Set(ids)], now],
+  );
+  for (const r of rows) {
+    const c = await tradeCap(db, r.account_id, now, settings);
+    if (c.capUsdCents !== null) out.set(r.account_id, c.capUsdCents);
+  }
+  return out;
+}
+
 function toCard(
   r: OfferRow, poster: TraderSummary, flex: Flex, currency: string, method: FlexMethod, amount: bigint | null,
-  prices: MarketPrices, methods: CardMethod[], completed: number | null,
-): OfferCard {
-  const tiers = tiersOf(flex, currency)!;
-  const { rate, pricing } = priceFor(r.side, r.amount_unit, tiers, currency, method, amount, prices, completed);
+  prices: MarketPrices, methods: CardMethod[], completed: number | null, posterCapUsdCents: bigint | null = null,
+): OfferCard | null {
+  const posted = tiersOf(flex, currency)!;
+  const { rate, pricing } = priceFor(r.side, r.amount_unit, posted, currency, method, amount, prices, completed);
+  let tiers: readonly Tier[] = posted;
+  if (posterCapUsdCents !== null) {
+    const q = prices.quote(currency);
+    const capFiat = capInCurrency(posterCapUsdCents, q === null ? null : { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr });
+    if (capFiat !== null) {
+      const clamped = clampTiers(r.amount_unit, posted, currency, rate, capFiat);
+      if (clamped === null) return null;
+      // An amount asked for above the poster's limit: this offer can't take it.
+      if (amount !== null && amount > capFiat) return null;
+      tiers = clamped;
+    }
+  }
   const card: OfferCard = {
     id: r.id,
     poster,
@@ -832,9 +886,17 @@ export function liveOfferStats(deps: Pick<Deps, 'db' | 'prices' | 'clock'>): Liv
   };
 }
 
+/** Whether an account limit keeps the account from a trade of `usdCents` even at stage `at` (Task 26). */
+function limitBlocks(cap: TradeCap, at: 'building' | 'graduated', usdCents: bigint): boolean {
+  const l = cap.limit;
+  if (l === null) return false;
+  if (l.stage !== null && (l.stage === 'starter' || at === 'graduated')) return true;
+  return l.capUsdCents !== null && usdCents > l.capUsdCents;
+}
+
 /** Adds `opensAt` to each card above the viewer's cap (Revision 2026-10-24), from the card's currency and smallest trade. */
-async function markOpensAt(deps: Deps, viewerId: string, rows: readonly OfferRow[], flex: Map<string, Flex>, cards: OfferCard[]): Promise<void> {
-  const settings = await loadStarterSettings(deps.db);
+async function markOpensAt(deps: Deps, viewerId: string, rows: readonly OfferRow[], flex: Map<string, Flex>, cards: OfferCard[], given?: StarterSettings): Promise<void> {
+  const settings = given ?? (await loadStarterSettings(deps.db));
   const cap = await tradeCap(deps.db, viewerId, deps.clock(), settings);
   if (cap.capUsdCents === null) return;
   rows.forEach((r, i) => {
@@ -848,7 +910,8 @@ async function markOpensAt(deps: Deps, viewerId: string, rows: readonly OfferRow
     if (min === null) return;
     const usd = usdCentsOf(min, { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr });
     const at = opensAt(settings, cap.stage, usd);
-    if (at !== undefined) cards[i]!.opensAt = at;
+    // Review m5 (lead call): never promise a stage the viewer's account limit blocks; say nothing.
+    if (at !== undefined && !limitBlocks(cap, at, usd)) cards[i]!.opensAt = at;
   });
 }
 
@@ -1052,12 +1115,21 @@ export function offerRoutes(app: FastifyInstance): void {
     const role = side === 'sell' ? 'seller' : 'buyer';
     const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now, viewerId, undefined, new Map(rows.map((r) => [r.account_id, role])));
     const flex = await loadFlex(deps.db, rows.map((r) => r.id));
-    const cards = rows.map((r) => {
+    // Review m7: the starter settings once per list. Review M1: posters held by an account limit.
+    const settings = await loadStarterSettings(deps.db);
+    const caps = await limitedPosters(deps.db, rows.map((r) => r.account_id), now, settings);
+    const listed: OfferRow[] = [];
+    const cards: OfferCard[] = [];
+    for (const r of rows) {
       const f = flex.get(r.id)!;
-      return toCard(r, posters.get(r.account_id)!, f, currency, f.methods.find((x) => x.methodId === method)!, amount, deps.prices, publicMethods(f, currency), completed);
-    });
+      const own = r.account_id === viewerId;
+      const card = toCard(r, posters.get(r.account_id)!, f, currency, f.methods.find((x) => x.methodId === method)!, amount, deps.prices, publicMethods(f, currency), completed, own ? null : (caps.get(r.account_id) ?? null));
+      if (card === null) continue;
+      listed.push(r);
+      cards.push(card);
+    }
     if (viewerId !== null) {
-      await markOpensAt(deps, viewerId, rows, flex, cards);
+      await markOpensAt(deps, viewerId, listed, flex, cards, settings);
       for (const c of cards) c.viewerTrades = completed;
     }
     return cards;
@@ -1099,8 +1171,12 @@ export function offerRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     const poster = (await traderSummaries(deps.db, [r.account_id], now, viewerId, undefined, new Map([[r.account_id, r.side === 'sell' ? 'seller' : 'buyer']]))).get(r.account_id)!;
     // Review M5: the poster's own view prices every band; anyone else, the bands they qualify for.
-    const card = toCard(r, poster, f, currency, method, amount, deps.prices, shown, mine ? null : await viewerCompleted(deps.db, viewerId));
-    if (viewerId !== null && !mine) await markOpensAt(deps, viewerId, [r], new Map([[r.id, f]]), [card]);
+    const settings = await loadStarterSettings(deps.db);
+    const posterCap = mine ? null : ((await limitedPosters(deps.db, [r.account_id], now, settings)).get(r.account_id) ?? null);
+    const card = toCard(r, poster, f, currency, method, amount, deps.prices, shown, mine ? null : await viewerCompleted(deps.db, viewerId), posterCap);
+    // Review M1: an offer wholly above its poster's account limit is not listed, here as in the list.
+    if (card === null) throw new ApiError(404, 'not-found');
+    if (viewerId !== null && !mine) await markOpensAt(deps, viewerId, [r], new Map([[r.id, f]]), [card], settings);
     return { ...card, side: r.side, methodId, terms: r.terms, status: r.status };
   });
 
