@@ -301,8 +301,8 @@ export class MoneroMultisigSession implements EscrowSession {
         received.push(c.getReceivedAmount() ?? 0n);
       } catch (e) {
         if (e instanceof EscrowError) throw e;
-        // wallet2 could not read the tx from its daemon (the web app's node proxy does not pass
-        // `/gettransactions`): nothing was checked, which is not a key that does not fit.
+        // wallet2 could not read the tx from its daemon (a network error or a refused read): nothing
+        // was checked; the caller never counts this as proven (and does not take it as a bad key).
         if (e instanceof Error && /failed to get transaction from daemon/i.test(e.message)) return 'unavailable';
         return null; // a key that does not fit, or an address of another network
       }
