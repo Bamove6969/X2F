@@ -63,6 +63,7 @@ export const RUNTIME_FAILED: EscrowStatus = {
   confirmedAtomic: null,
   paidRecorded: false,
   intentKind: null,
+  handedOff: false,
 };
 
 /** Answers the page's messages with `runtime` (made once `makeRuntime` resolves). */

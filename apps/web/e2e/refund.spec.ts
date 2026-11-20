@@ -210,6 +210,9 @@ test('Cancel & get refund sends exactly one event, one signal and one tx set; th
   await button(page, 'Cancel and get refund').dblclick();
   await expect(page.getByText('Refund in progress', { exact: true })).toBeVisible();
   await expect(page.getByText('You cancelled after the time to pay.', { exact: false })).toBeVisible();
+  // Gap 4: the refund is seller-built, so the page says to keep it open while this device signs.
+  await expect(page.locator('[data-keep-open]')).toHaveText(/Keep this page open while this device signs the refund\. If you close it, the refund waits until you open this trade again on this device\./);
+  await expect(page.locator('[data-keep-open]')).toBeInViewport();
   await expect(page.getByRole('timer')).toHaveCount(0);
   expect(s.posted).toEqual([{ type: 'request-refund' }]);
   expect(await escrowCalls(page)).toEqual(['signal:trade.refund-request', 'build-refund']);

@@ -165,6 +165,16 @@ export interface PartyHandle {
    */
   committedBuilder?(): Role | null;
   /**
+   * This party's own part of its current settle is finished, so the settle lands without this
+   * device from here on: the co-signer submitted the signed tx (the co-signer itself, or the builder
+   * once the co-signer's DONE for this release arrived). The builder still waits to see the tx in a
+   * block before its settle() resolves, but that only checks; nothing more is signed or sent by it.
+   * False before then, with no settle, and for a release that was exhausted or superseded. Read
+   * from the saved state (it survives a restart). A screen uses it to say when the page may close
+   * (the no-show refund is seller-built: until then the refund waits for the seller's device).
+   */
+  settleSent?(): boolean;
+  /**
    * Review I3: who built the release whose tx this is, among every release of this escrow this
    * party signed or saw done (the history too), or null. The watcher names an older tx by it, never
    * by the current release's builder.
@@ -1299,6 +1309,12 @@ export function runParty(a: PartyArgs): PartyHandle {
       const r = allReleases().find((x) => x.txHash === txHash && (x.phase === 'signed' || x.phase === 'done' || x.phase === 'superseded'));
       if (!r) return null;
       return r.part === 'builder' ? a.role : r.counterpart;
+    },
+    settleSent() {
+      const rel = (state as PartyState | undefined)?.release ?? null;
+      if (!rel) return false;
+      if (rel.phase === 'done') return true;
+      return rel.part === 'builder' && rel.phase === 'built' && state.received[doneKey(rel)]?.[rel.counterpart] !== undefined;
     },
     committedBuilder() {
       const rel = state.release;

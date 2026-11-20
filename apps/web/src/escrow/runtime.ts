@@ -144,6 +144,14 @@ export interface EscrowStatus {
    */
   intentKind: SettleKind | null;
   /**
+   * This device's part of the settle it is signing is finished (PartyHandle.settleSent): the
+   * co-signer submitted the signed tx, so the settle lands without this device from here on (it
+   * only waits to see the tx in a block). False with no settle under way, or before then. The
+   * seller's refund view says when the page may close by it: the no-show refund is seller-built,
+   * so until then it waits for this device (gap 4, 20 Nov).
+   */
+  handedOff: boolean;
+  /**
    * The escrow `balance` exactly as this device's party read it with `funds()` on the last tick
    * (the wallet's own figure), or null until the first reading. Before any settlement it is what
    * has arrived; after one it falls to what is left.
@@ -410,6 +418,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         intentKind: (() => {
           const i = (this.rec as EscrowRecord | undefined)?.intent ?? null;
           return i !== null && !i.auto ? i.kind : null;
+        })(),
+        handedOff: (() => {
+          if (this.error) return false;
+          const i = (this.rec as EscrowRecord | undefined)?.intent ?? null;
+          if (i === null || i.outcome === null) return false;
+          return i.done || this.party?.settleSent?.() === true;
         })(),
         receivedAtomic: this.reading?.balance ?? null,
         confirmedAtomic: this.reading?.confirmed ?? null,

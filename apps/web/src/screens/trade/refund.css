@@ -155,6 +155,19 @@
   color: var(--x2f-ink-muted);
 }
 
+/* Gap 4: the escrow stopped while the refund still needs this device. */
+.x2f-refund__stopped {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x2f-space-2);
+  color: var(--x2f-danger);
+}
+
+.x2f-refund__stopped p {
+  margin: 0;
+}
+
 .x2f-refund__timer {
   display: flex;
   flex-direction: column;
