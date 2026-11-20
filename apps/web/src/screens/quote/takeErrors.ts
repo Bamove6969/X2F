@@ -53,7 +53,7 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
   if (e instanceof QuoteMovedError) return PRICE_MOVED;
   if (!(e instanceof ApiCallError)) return GENERIC;
   if (isCantDoCode(e.code)) {
-    // Only a starter-limit refusal carries a stage and a cap; for the rest both read as null.
+    // Only a starter-limit refusal carries a stage and a cap (an account-limit one a cap, Plan 4 Task 26); for the rest both read as null.
     const stage = ownStage(e.extra);
     const cap = capCents(e.extra);
     return takeCantDoText(e.code, { stageName: stage === null ? null : STAGE_NAMES[stage], capText: cap === null ? null : fiatWhole(cap, 'USD'), maxOpen: maxOpen(e.extra), minTrades: offer.minTrades });
