@@ -27,10 +27,23 @@ export function parseChatView(v: unknown): ChatApiView | null {
   };
 }
 
-export function httpChatApi(f: typeof fetch = (u, i) => fetch(u, i)): ChatApi {
+/**
+ * Review m3 (wip/lead-chat-tab-lock): the longest one chat API call may take (headers and body). Each
+ * call runs while its operation holds the cross-tab per-chat Web Lock, so a stalled one must fail and
+ * free it, never hold every tab's chat (and the escrow's prepare) for minutes. The escrow adapters' bound.
+ */
+export const CHAT_API_TIMEOUT_MS = 15_000;
+
+export function httpChatApi(f: typeof fetch = (u, i) => fetch(u, i), timeoutMs = CHAT_API_TIMEOUT_MS): ChatApi {
   const path = (chat: string, rest = ''): string => `/v1/chats/${encodeURIComponent(chat)}${rest}`;
   const call = (url: string, init: RequestInit = {}): Promise<Response> =>
-    f(url, { ...init, credentials: 'same-origin', redirect: 'error', headers: { accept: 'application/json', ...(init.body ? { 'content-type': 'application/json' } : {}) } });
+    f(url, {
+      ...init,
+      credentials: 'same-origin',
+      redirect: 'error',
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { accept: 'application/json', ...(init.body ? { 'content-type': 'application/json' } : {}) },
+    });
   const fail = async (res: Response): Promise<never> => {
     const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
     throw Object.assign(new Error(`api ${res.status}`), { status: res.status, code: typeof body?.error === 'string' ? body.error : 'internal' });
@@ -113,13 +126,14 @@ export function httpChatApi(f: typeof fetch = (u, i) => fetch(u, i)): ChatApi {
  * `openTradeChat` in client.ts is the same call through the page's api()). Answers the trade's chat
  * code; a refusal is thrown with its status and code, an answer without a code as a 502.
  */
-export function httpOpenTradeChat(f: typeof fetch = (u, i) => fetch(u, i)): (code: string) => Promise<string> {
+export function httpOpenTradeChat(f: typeof fetch = (u, i) => fetch(u, i), timeoutMs = CHAT_API_TIMEOUT_MS): (code: string) => Promise<string> {
   return async (code) => {
     const res = await f(`/v1/trades/${encodeURIComponent(code)}/chat`, {
       method: 'POST',
       body: '{}',
       credentials: 'same-origin',
       redirect: 'error',
+      signal: AbortSignal.timeout(timeoutMs),
       headers: { accept: 'application/json', 'content-type': 'application/json' },
     });
     const b = (await res.json().catch(() => null)) as { chat?: unknown; error?: unknown } | null;

@@ -361,14 +361,22 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
    */
   const keep = async (rec: ChatRecord): Promise<ChatRecord> => {
     const stored = await d.store.load(rec.chat);
+    // Review m1: keep() saves only over a record that exists (a new one goes through `create`), so a
+    // missing one was erased (a purge, or another tab's erase): never written back (p11-10). Thrown as
+    // the purge, so `purging` erases this worker's copy too.
     if (stored === null) {
-      await d.store.save(rec);
-      return rec;
+      forgetKey(rec.chat);
+      throw Object.assign(new Error('chat-purged'), { status: 410, code: 'chat-purged' });
     }
+    // Review m2: every refusal wipes this chat's key from memory first.
+    const refuse = (why: string): never => {
+      forgetKey(rec.chat);
+      throw new ProtocolError('bad-signature', why);
+    };
     if (stored.role !== rec.role || stored.identity.signPublic !== rec.identity.signPublic || stored.identity.boxPublic !== rec.identity.boxPublic) {
-      throw new ProtocolError('bad-signature', 'another chat identity is stored for this chat');
+      refuse('another chat identity is stored for this chat');
     }
-    if (stored.tkh !== undefined && rec.tkh !== undefined && stored.tkh !== rec.tkh) throw new ProtocolError('bad-signature', 'another chat key is pinned for this chat');
+    if (stored.tkh !== undefined && rec.tkh !== undefined && stored.tkh !== rec.tkh) refuse('another chat key is pinned for this chat');
     const tkh = stored.tkh ?? rec.tkh;
     const merged: ChatRecord = {
       ...rec,
