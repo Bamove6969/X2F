@@ -68,4 +68,25 @@ The escrow party gives a second guarantee (`packages/escrow/src/party.ts`, `sett
 5. After paid nothing moves (I2, I3 unchanged). The seller releases only the buyer's signed amount.
 6. Refunds stay unbound (I5). A buyer who cannot pay the new total can still cancel before paid, and the whole balance goes to the seller's signed refund address.
 
-**Residual risk.** A commit can race the check: the seller's set reaches the buyer's party between `committedBuilder()` and the queued `settle()`. The party then refuses the switch ("already signed for another outcome"), and the earlier release at the lower amount completes. That needs the seller's party to build a release without a release tap. In that case the buyer receives the lower amount before paying anything, so nobody loses coins; the seller has released early. If the switch is refused, the runtime puts the bound back to the committed amount.
+**Residual risk.** A commit can race the check: the seller's set reaches the buyer's party between `committedBuilder()` and the queued `settle()`. The party then refuses the switch ("already signed for another outcome"), and the earlier release at the lower amount completes. That needs the seller's party to build a release without a release tap. In that case the buyer receives the lower amount before paying anything, so nobody loses coins; the seller has released early. When the party refuses the switch, the runtime sets `releaseRebindRefused`. From then on the device shows no sum, takes no "I've paid" tap and co-signs no other release (fail closed), because it no longer knows which amount the party committed to. A tap in the moment between the rebind and the party's refusal is the only gap. It needs the same misbehaving seller, and the buyer's XMR is already on its way.
+
+## Built (this branch)
+
+- `mayRebindUp` and `rebindRefused` in `apps/web/src/escrow/runtime.ts`.
+- New record fields `releaseRebound` and `releaseRebindRefused` in `apps/web/src/escrow/store.ts`.
+- The fake party now answers `committedBuilder` in `apps/web/test/escrow-helpers.ts`.
+- Tests in `apps/web/test/attestation-flow.test.ts`:
+  - growth after the standing co-sign;
+  - upward only;
+  - no rebind when the party is committed or lacks the method;
+  - no rebind in `settling` or in a `paid` this device never tapped;
+  - a rebind the party refuses;
+  - the I3 status test.
+
+  The two tests that pinned the old accepted cost now pin the rebind.
+
+## Left open
+
+- **Copy.** `amount-changed` shows "The trade's amount changed on the server after you paid" (`PaidFlowSheet.tsx`) before paid too: a downward lie, or a refused rebind. Unsigned wording would be needed for a "before you paid" variant. Owner or design call; not changed here.
+- **A shrinking escrow.** If extra coins vanish after a rebind (a reorg past 10 confirmations), the device's own size drops below the bound and the release stays refused. The buyer can still cancel before paid. This is the same as any bound above the device's size before this change.
+- **Starter caps.** The device does not know them, so the upward limit is its own escrow-funded size and the offer maximum, as for the amount before any bound (unchanged).
