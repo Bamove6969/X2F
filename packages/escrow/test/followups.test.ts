@@ -201,6 +201,39 @@ describe('Plan 1 follow-ups on regtest', () => {
     }
   });
 
+  it("re-review n-f1: a builder whose set the co-signer refused drops that attempt's fee with its key when it follows to the next attempt, then settles", async () => {
+    // The buyer's first check of the seller's set refuses it (a retryable payout-mismatch): the buyer
+    // moves to attempt 2 and the seller, which built and stored attempt 1's key and fee, follows.
+    const refusing = faultyEngine(engine, { checkRelease: (n) => n === 1 }, () => new EscrowError('payout-mismatch', 'injected refusal'));
+    const t = await kit.newTrade({ buyer: { engine: refusing } });
+    await readyAndFund(t);
+    const dest = await newTestWallet(node.rpcUri);
+    const saves: { attempt: number; phase: string; txKey?: string; txFee?: string }[] = [];
+    t.stores.seller.onSave = (x) => {
+      if (x.release) saves.push(structuredClone(x.release) as (typeof saves)[number]);
+    };
+    try {
+      const o: Outcome = { kind: 'release', to: [{ address: await dest.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'buyer' };
+      const [b, s] = await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.buyer.settle(o), t.parties.seller.settle(o)]));
+      expect(b).toMatch(/^[0-9a-f]{64}$/);
+      expect(s).toBeNull();
+      expect(refusing.calls.checkRelease).toBeGreaterThanOrEqual(2);
+      // Attempt 1 was built with its key and fee stored ...
+      const built1 = saves.find((r) => r.attempt === 1 && r.phase === 'built');
+      expect(built1?.txKey).toMatch(/^[0-9a-f]{64}$/);
+      expect(built1?.txFee).toMatch(/^[1-9][0-9]*$/);
+      // ... and the first save of attempt 2 (nextAttempt's) holds neither.
+      const next = saves.find((r) => r.attempt === 2);
+      expect(next).toMatchObject({ phase: 'waiting-funds' });
+      expect(next!.txKey).toBeUndefined();
+      expect(next!.txFee).toBeUndefined();
+      expect(t.stores.seller.current()!.release!.phase).toBe('done');
+    } finally {
+      t.stores.seller.onSave = undefined;
+      await dest.close();
+    }
+  });
+
   it('a co-signer committed to a set signs it with the bound it checked, even once the node gives no fee estimate (review M3)', async () => {
     const t = await kit.newTrade();
     await readyAndFund(t);
