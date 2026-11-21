@@ -775,6 +775,10 @@ describe('watchShowsEmpty', () => {
     const late = step({ state: closed, apiState: 'released', f: funds([inc(HASH_A, 100n, 50), inc(LATE, 7n, 5)]), spend: sweep(100n, 20) }).state;
     expect(late.lateReported).toEqual([LATE]);
     expect(watchShowsEmpty(late)).toBe(false);
+    // The escalation confirmed (the dispute was seen) and the trade closed again, channels long
+    // closed: the late coin is still unswept, so still not empty.
+    expect(late.channelsClosed).toBe(true);
+    expect(watchShowsEmpty({ ...late, escalationPending: false })).toBe(false);
     const ruled = step({ state: { ...late, escalationPending: false }, apiState: 'released', f: funds([inc(HASH_A, 100n, 50), inc(LATE, 7n, 25)]), spend: sweep(7n, 12, B2) }).state;
     expect(ruled.sweepTxs).toEqual([SETTLE, B2]);
     expect(watchShowsEmpty(ruled)).toBe(true);
