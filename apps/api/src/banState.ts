@@ -122,6 +122,12 @@ async function unfinishedChat(db: Queryable, accountId: string, raw: unknown): P
  *   watch, D-016). As a trade's own routes, for that unfinished trade only: its blur checks
  *   (P-012/P-013: the asks, the announce and the answer) and its proofs (Plan 5 Task 14: the upload
  *   and the read).
+ * - Bans onto main (lead default, 21 Nov, the same rule and the same scopes as lead call 1): the
+ *   room's routes main gained after bans. For an unfinished trade only: its signed ruling statement
+ *   (Haveno review finding 2, read by the escrow runtime) and the seller's payment proof for a
+ *   ruling (Plan 4 Task 12, A6: what finishes a `seller-sends-xmr` dispute). For such a trade's
+ *   chat only: the chat key record, read and posted (chat membership design task 4), and the
+ *   fallback grant to the moderator (task 6).
  *
  * NEEDS_TRADES_LIST: lead call 1 also lets `GET /v1/trades` (D-005, wip/lead-trades-list, not on
  * main) through while anything is unfinished, AND has that list return only the unfinished trades
@@ -156,8 +162,13 @@ const TRADE: readonly RegExp[] = [
   /^POST \/v1\/trades\/:code\/blur-checks\/:proofId$/,
   /^POST \/v1\/trades\/:code\/proofs\/:(id|proofId)\/blur-check$/,
   /^(GET|PUT) \/v1\/trades\/:code\/proofs\/:id$/,
+  /^GET \/v1\/trades\/:code\/ruling-statement$/,
+  /^POST \/v1\/trades\/:code\/payment-proof$/,
 ];
-const CHAT: readonly RegExp[] = [/^GET \/v1\/chats\/:chat(\/(attestation|envelopes))?$/, /^POST \/v1\/chats\/:chat\/(envelopes|identity)$/];
+const CHAT: readonly RegExp[] = [
+  /^GET \/v1\/chats\/:chat(\/(attestation|envelopes|key))?$/,
+  /^POST \/v1\/chats\/:chat\/(envelopes|identity|key|grant)$/,
+];
 const NUDGE = 'POST /v1/nudges';
 
 export interface GatedRequest {

@@ -488,6 +488,55 @@ describe('a site ban and the trade room\'s later routes (batch 10a, lead call 1)
     expect(isBanned(none), `nothing unfinished: ${none.body}`).toBe(true);
   });
 
+  // Bans onto main (lead default, 21 Nov): main's trade-room routes that came after bans, scoped
+  // as lead call 1 scoped the others: the chat key record and the fallback grant (chat membership
+  // design tasks 4 and 6) for an unfinished trade's chat only; the signed ruling statement
+  // (Haveno review finding 2) and the seller's payment proof for a ruling (Plan 4 Task 12, A6) for
+  // an unfinished trade only.
+  it('main\'s later room routes: the chat key and grant on an unfinished trade\'s chat, the ruling statement and the payment proof on an unfinished trade; 403 banned anywhere else', async () => {
+    const { id, open, closed, disputed, theirs, me } = await bannedWithTrades();
+    const other = (await t.deps.db.query<{ buyer: string }>('select buyer_account_id::text as buyer from trades where code = $1', [open.code])).rows[0]!.buyer;
+    const chatOf = async (code: string, trade: { offerId: string }, sellerId: string, buyerId: string) =>
+      insertChat({ offerId: trade.offerId, buyerId, sellerId, tradeCode: code });
+    const openChat = await chatOf(open.code, open.trade, id, other);
+    const disputedChat = await chatOf(disputed.code, disputed.trade, other, id);
+    const closedChat = await chatOf(closed.code, closed.trade, id, other);
+    const offerChat = await insertChat({ offerId: await seedOffer(t.deps, id, 'seller'), buyerId: other, sellerId: id, tradeCode: null });
+    const chatRoutes = (chat: string) => [
+      ['GET', `/v1/chats/${chat}/key`, undefined],
+      ['POST', `/v1/chats/${chat}/key`, {}],
+      ['POST', `/v1/chats/${chat}/grant`, {}],
+    ] as const;
+    const tradeRoutes2 = (code: string) => [
+      ['GET', `/v1/trades/${code}/ruling-statement`, undefined],
+      ['POST', `/v1/trades/${code}/payment-proof`, {}],
+    ] as const;
+    for (const chat of [openChat, disputedChat]) {
+      for (const [method, url, body] of chatRoutes(chat)) {
+        const res = await me(method, url, body);
+        expect(isBanned(res), `${method} ${url} ${res.body}`).toBe(false);
+      }
+    }
+    for (const code of [open.code, disputed.code]) {
+      for (const [method, url, body] of tradeRoutes2(code)) {
+        const res = await me(method, url, body);
+        expect(isBanned(res), `${method} ${url} ${res.body}`).toBe(false);
+      }
+    }
+    for (const chat of [closedChat, offerChat]) {
+      for (const [method, url, body] of chatRoutes(chat)) {
+        const res = await me(method, url, body);
+        expect(isBanned(res), `${method} ${url} ${res.body}`).toBe(true);
+      }
+    }
+    for (const code of [closed.code, theirs.code, newTradeCode()]) {
+      for (const [method, url, body] of tradeRoutes2(code)) {
+        const res = await me(method, url, body);
+        expect(isBanned(res), `${method} ${url} ${res.body}`).toBe(true);
+      }
+    }
+  });
+
   it('offers, posting and taking stay 403 banned with an open trade', async () => {
     const { me } = await bannedWithTrades();
     const offerId = await seedOffer(t.deps, await trader(), 'seller');
