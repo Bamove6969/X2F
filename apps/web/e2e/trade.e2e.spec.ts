@@ -6,6 +6,7 @@
  * receiving wallet itself.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { feeFor } from '@x2f/core';
 import { foreignIdentityRegistration } from '../../../tools/regtest/e2e/foreignIdentity.js';
 import { modHoldsSellerSet } from '../../../tools/regtest/e2e/modState.js';
 import { contextFor, DESKTOP, feeWallet, mine, pay, PHONE, sql, stack, tradeView, txFee, type Size } from './regtestKit.js';
@@ -173,17 +174,17 @@ for (const [label, size] of SIZES) {
         const v = await untilState(o.seller, o.code, ['released']);
         await mine(12);
         const network = await txFee(v.txHash!);
-        expect(await receivedIn(o.buyer.wallet, v.txHash!)).toBe(grown - grown / 100n - network);
+        expect(await receivedIn(o.buyer.wallet, v.txHash!)).toBe(grown - feeFor(grown) - network);
         const fw = await feeWallet();
         try {
-          expect(await receivedIn(fw, v.txHash!)).toBe(grown / 100n);
+          expect(await receivedIn(fw, v.txHash!)).toBe(feeFor(grown));
         } finally {
           await fw.close();
         }
       });
     });
 
-    test('surplus after secured: extra coins hold the release until they have 12 blocks, then everything is swept to the buyer', async ({ browser }) => {
+    test('surplus after secured: extra coins hold the release until they have 12 blocks, then everything is swept to the buyer less 1% of the grown amount and the network fee; the fee wallet exactly 1% of the grown amount', async ({ browser }) => {
       const o = await openTrade(browser, size, 'seller');
       await inRooms(o, async () => {
         const extra = XMR / 10_000n;
@@ -202,16 +203,18 @@ for (const [label, size] of SIZES) {
         const v = await untilState(o.seller, o.code, ['released']);
         await mine(12);
         const network = await txFee(v.txHash!);
-        expect(await receivedIn(o.buyer.wallet, v.txHash!)).toBe(grown - grown / 100n - network);
+        // The fee output is always feeFor(amount) of the grown amount (packages/trade payouts.ts).
+        expect(await receivedIn(o.buyer.wallet, v.txHash!)).toBe(grown - feeFor(grown) - network);
+        const fw = await feeWallet();
+        try {
+          expect(await receivedIn(fw, v.txHash!)).toBe(feeFor(grown));
+        } finally {
+          await fw.close();
+        }
       });
     });
 
     test("mutual cancel after funding: the seller's proposal, the buyer's Accept; the XMR goes back to the seller with no fee output", async ({ browser }) => {
-      // KNOWN GAP 3 (Plan 3 Task 31): a mutual cancel after funding never completes; the trade stays
-      // settling, so untilState below throws "settling, not refunded/cancelled". The fix waits on an
-      // owner decision. test.fail() keeps the suite green meanwhile; once the gap is fixed this spec
-      // passes, Playwright reports it as an unexpected pass, and the marker must be removed.
-      test.fail(true, 'gap 3: mutual cancel after funding stays settling (owner decision pending)');
       const o = await openTrade(browser, size, 'seller');
       await inRooms(o, async () => {
         const funds = await fund(o);
@@ -220,6 +223,18 @@ for (const [label, size] of SIZES) {
         await o.seller.api.ok('POST', `/v1/trades/${o.code}/events`, { type: 'propose-cancel' });
         await o.buyerPage.reload();
         await o.buyerPage.getByRole('button', { name: 'Accept' }).click();
+        // Both sides accepted: the trade settles as a mutual cancel (machine.ts keeps `settling`
+        // set to the kind once the trade closes, so a fast close still passes this).
+        await expect.poll(async () => {
+          const t = await tradeView<TradeView>(o.seller, o.code);
+          return `${t.state} ${t.settling}`;
+        }, { timeout: LONG }).toMatch(/^(settling|refunded|cancelled) mutual-cancel$/);
+        // KNOWN GAP 3 (Plan 3 Task 31): a mutual cancel after funding never completes; the trade
+        // stays settling, so untilState below throws "settling, not refunded/cancelled". The fix
+        // waits on an owner decision. The marker covers only this wait and what follows it: a break
+        // in any step above is a real failure. Once the gap is fixed this spec passes, Playwright
+        // reports it as an unexpected pass, and the marker must be removed.
+        test.fail(true, 'gap 3: mutual cancel after funding stays settling (owner decision pending)');
         const v = await untilState(o.seller, o.code, ['refunded', 'cancelled']);
         expect(v.txHash).toMatch(/^[0-9a-f]{64}$/);
         await mine(12);
@@ -272,17 +287,30 @@ for (const [label, size] of SIZES) {
       });
     });
 
-    test("buyer cancel ignored by the seller: the trade closes as cancelled 48 h after Confirm cancel became available", async ({ browser }) => {
+    test("buyer cancel ignored by the seller: the seller's wallet gets the balance less the network fee, the fee wallet nothing; 48 h after Confirm cancel became available the trade stays refunded with the seller's confirmation recorded", async ({ browser }) => {
       const o = await openTrade(browser, size, 'seller');
       await inRooms(o, async () => {
-        await fund(o);
+        const funds = await fund(o);
         await buyerCancels(o.buyerPage);
-        await untilState(o.buyer, o.code, ['refunded']);
+        const v = await untilState(o.buyer, o.code, ['refunded']);
+        expect(v.txHash).toMatch(/^[0-9a-f]{64}$/);
         await mine(12);
+        const network = await txFee(v.txHash!);
+        expect(await receivedIn(o.seller.wallet, v.txHash!)).toBe(funds - network);
+        const fw = await feeWallet();
+        try {
+          expect(await receivedIn(fw, v.txHash!)).toBe(0n);
+        } finally {
+          await fw.close();
+        }
         await expect.poll(async () => (await sql('select cancel_confirmable_at from trades where code = $1', [o.code]))[0]!.cancel_confirmable_at, { timeout: LONG }).not.toBeNull();
         // The clock 48 h on: the API's timer loop closes it (cancel-timeout records the confirmation).
         await sql("update trades set cancel_confirmable_at = now() - interval '48 hours 1 second' where code = $1", [o.code]);
         await expect.poll(async () => (await tradeView<{ cancelConfirmedAt: string | null }>(o.seller, o.code)).cancelConfirmedAt, { timeout: 3 * 60_000 }).not.toBeNull();
+        // machine.ts (cancel-timeout, confirm-cancel): the confirmation is recorded on the refunded trade; it never becomes cancelled.
+        const after = await tradeView<TradeView>(o.seller, o.code);
+        expect(after.state).toBe('refunded');
+        expect(after.txHash).toBe(v.txHash);
       });
     });
 
@@ -410,13 +438,19 @@ for (const [label, size] of SIZES) {
       await inRooms(o, async () => {
         await shows(o.buyerPage, /Security check failed/);
         await expect(o.buyerPage.getByRole('button', { name: /Copy address/ })).toHaveCount(0);
-        // The escrow cannot be set up with a buyer key the buyer's device does not hold: the
-        // seller is never asked to fund, and no check words on the two screens ever match.
+        // The escrow cannot be set up with a buyer key the buyer's device does not hold: the trade
+        // never gets an escrow address, the seller is never asked to fund, and no check words on the
+        // two screens ever match. The words come only from a finished escrow's address
+        // (escrow/runtime.ts, escrowCheckWords), so with none they never render on either screen:
+        // words shown on either side would mean an escrow was set up after all, and fail here.
         const words = async (page: Page) => (await page.locator('[data-escrow-check] li').allInnerTexts()).join(' ');
         for (let i = 0; i < 12; i++) {
+          expect((await tradeView<TradeView>(o.seller, o.code)).funding?.escrowAddress ?? null).toBeNull();
+          expect((await sql<{ escrow_address: string | null }>('select escrow_address from trades where code = $1', [o.code]))[0]!.escrow_address).toBeNull();
           await expect(o.sellerPage.getByRole('button', { name: 'Copy address' })).toHaveCount(0);
           const [sw, bw] = [await words(o.sellerPage), await words(o.buyerPage)];
           if (sw !== '' && bw !== '') expect(sw).not.toBe(bw);
+          expect({ seller: sw, buyer: bw }).toEqual({ seller: '', buyer: '' });
           await o.sellerPage.waitForTimeout(5000);
         }
       });

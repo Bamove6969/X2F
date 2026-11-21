@@ -168,13 +168,6 @@ export async function pay(address: string, atomic: bigint): Promise<string> {
   return tx.getHash()!;
 }
 
-/** What `w` has received in total (confirmed and in the pool), in atomic units. */
-export async function received(w: Wallet): Promise<bigint> {
-  await w.sync();
-  const transfers = await w.getIncomingTransfers({});
-  return transfers.reduce((sum, t) => sum + t.getAmount(), 0n);
-}
-
 /** The fee wallet, restored from its seed as a view-and-spend wallet on the stack's node. */
 export async function feeWallet(): Promise<Wallet> {
   const s = stack();
