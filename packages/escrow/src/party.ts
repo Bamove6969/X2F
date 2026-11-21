@@ -190,6 +190,14 @@ export interface PartyHandle {
    */
   landed?(o: Outcome): Promise<string | null>;
   /**
+   * The outcome this party's settle() queue has taken as the one it works toward (a later settle()
+   * replaced the earlier one, or this was the first), or null. Read-only and in memory: it changes
+   * only inside the party's work queue, once a settle() job passed the switch check, so an app can
+   * tell a switch the party accepted from one still queued (or refused: the earlier outcome then
+   * stays). The web runtime shows a rebound sum only once this names it (growth-binding review M1).
+   */
+  acceptedOutcome?(): Outcome | null;
+  /**
    * Review I3: who built the release whose tx this is, among every release of this escrow this
    * party signed or saw done (the history too), or null. The watcher names an older tx by it, never
    * by the current release's builder.
@@ -1384,6 +1392,10 @@ export function runParty(a: PartyArgs): PartyHandle {
       if (!rel || rel.outcome !== outcomeDigest(o)) return false;
       if (rel.phase === 'done') return true;
       return rel.part === 'builder' && rel.phase === 'built' && state.received[doneKey(rel)]?.[rel.counterpart] !== undefined;
+    },
+    acceptedOutcome() {
+      const o = settleOutcome;
+      return o === null ? null : { ...o, to: o.to.map((p) => ({ ...p })) };
     },
     committedBuilder() {
       const rel = state.release;

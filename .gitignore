@@ -17,3 +17,5 @@ design/x2f-app/support.js
 
 # Plan 5 Task 13: the self-hosted OCR files, copied and checked at build (tools/copy-ocr-assets.ts)
 apps/web/public/ocr/
+# Gap 1: monero-ts's own wallet worker, copied and checked at build (tools/copy-monero-worker.ts)
+apps/web/public/monero/
