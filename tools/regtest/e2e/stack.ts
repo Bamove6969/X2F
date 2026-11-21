@@ -25,6 +25,7 @@ import * as openpgp from 'openpgp';
 import pg from 'pg';
 import { migrate } from '../../../apps/api/src/db/migrate.js';
 import { TERMS_TEXT_VERSION } from '../../../apps/web/src/screens/setup/termsText.js';
+import { verifyOcrAssets } from '../../copy-ocr-assets.js';
 import { startRegtest, type Regtest } from '../regtest.js';
 
 export const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
@@ -387,6 +388,11 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
       },
     });
 
+    // Plan 5 Task 17: the smart proof card reads the buyer's screenshot with the self-hosted OCR
+    // under /ocr/ (Task 13). The build copies those files (vite.config.ts `ocrAssets`); the copy the
+    // API serves must be exactly the pinned set (tools/ocr-assets.sha256), checked here once.
+    await verifyOcrAssets(join(webDist, 'ocr'));
+
     // ── services ──
     procs.push(startTs(logDir, 'relay', 'apps/relay/src/main.ts', {
       RELAY_MOD_SIGNING_PUBLIC: s.modSigningPublic, RELAY_HOST: HOST, RELAY_PORT: String(ports.relay), RELAY_ADMIN_HOST: HOST, RELAY_ADMIN_PORT: String(ports.relayAdmin),
@@ -428,6 +434,15 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
       FX_SOURCES: 'coinbase',
     }, [fileURLToPath(new URL('./fixed-prices.mjs', import.meta.url))]));
     await waitFor('the API', async () => (await fetch(`${origin}/v1/site`)).status < 500, procs);
+    // ...and served with the OCR worker's own CSP (static/serve.ts `ocrWorkerCspFor`), or the card
+    // could only ever say it could not read the screenshot.
+    for (const file of ['worker.min.js', 'eng.traineddata.gz']) {
+      const r = await fetch(`${origin}/ocr/${file}`);
+      await r.arrayBuffer();
+      if (!r.ok || !(r.headers.get('content-security-policy') ?? '').includes(`connect-src ${origin}/ocr/`)) {
+        throw new Error(`stack: /ocr/${file} is not served with the OCR worker CSP (${r.status})`);
+      }
+    }
     await waitFor('the node proxy', async () => (await fetch(`${proxyUrl}/get_info`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{}' })).ok, procs);
 
     procs.push(startTs(logDir, 'moderation', 'apps/moderation/src/main.ts', {

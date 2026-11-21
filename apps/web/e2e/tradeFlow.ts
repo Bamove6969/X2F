@@ -45,11 +45,17 @@ export async function dismissTips(page: Page): Promise<void> {
 /**
  * The poster posts an offer; the taker browses, taps Trade on it, types 0.2 XMR and taps Trade;
  * the poster picks a wallet on the accepted-offer sheet. Ends with the seller asked to fund.
+ * With `poster`, that trader's own live offer (`offer(...)` on the matching side) is used instead.
  */
-export async function openTrade(browser: Browser, size: Size, taker: 'seller' | 'buyer', o: { buyerPage?: (page: Page) => Promise<void>; beforeAccept?: (code: string) => Promise<void> } = {}): Promise<Open> {
+export async function openTrade(
+  browser: Browser,
+  size: Size,
+  taker: 'seller' | 'buyer',
+  o: { buyerPage?: (page: Page) => Promise<void>; beforeAccept?: (code: string) => Promise<void>; poster?: Trader } = {},
+): Promise<Open> {
   void funder(); // mined and synced while the trade is set up
-  const poster = await signUp(taker === 'seller' ? 'buyer' : 'seller', { vendor: true });
-  await poster.api.ok('POST', '/v1/offers', offer(taker === 'seller' ? 'buy' : 'sell'));
+  const poster = o.poster ?? (await signUp(taker === 'seller' ? 'buyer' : 'seller', { vendor: true }));
+  if (!o.poster) await poster.api.ok('POST', '/v1/offers', offer(taker === 'seller' ? 'buy' : 'sell'));
   const takerT = await signUp(taker);
   const p = await contextFor(browser, poster, size);
   const t = await contextFor(browser, takerT, size);
