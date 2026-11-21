@@ -340,8 +340,8 @@ function Refunding({ view, escrow }: RefundScreenProps) {
  * - `done` (this device saw its own refund in a block): the page may close.
  * - `idle` (review m6): this device does not hold the trade's escrow, so it is not needed here:
  *   no warning, and the room's own "not on this device" line.
- * - stopped: waiting for this device (retryable), no longer needing it (after the hand-off), or
- *   stopped for good (an integrity error, review m5).
+ * - stopped: waiting for this device (retryable), or stopped for good (an integrity error, review
+ *   m5).
  * COPY-UNSIGNED (every line here).
  */
 export const REFUND_NOT_HERE = 'This device doesn’t hold this trade’s escrow yet. If you set the trade up on another device, open it there.';
@@ -353,13 +353,12 @@ function stillNeeded(escrow: RefundScreenProps['escrow']): boolean {
 
 function HandOff({ escrow }: Pick<RefundScreenProps, 'escrow'>) {
   if (escrow.error !== null) {
+    // (No "after the hand-off" line: the runtime reports handedOff false whenever the escrow has
+    // stopped, so this device cannot tell; review n1, 21 Nov.)
     const line = !escrow.retryable
       ? // not-a-refusal: a device fault
         'The escrow on this device stopped for good, so it can’t finish this refund. If the refund doesn’t reach your wallet, open a dispute.'
-      : escrow.handedOff
-        ? // not-a-refusal: a device fault
-          'The moderator has sent the refund, so it no longer needs this device. The escrow on this device stopped, so this page can’t follow it.'
-        : 'The escrow stopped on this device, so the refund is waiting for it.';
+      : 'The escrow stopped on this device, so the refund is waiting for it.';
     return (
       <div className="x2f-refund__stopped" role="alert" data-refund-escrow-stopped="" data-for-good={escrow.retryable ? undefined : ''}>
         <p>{line}</p>

@@ -288,7 +288,7 @@ export class MoneroMultisigSession implements EscrowSession {
     }
   }
 
-  async txKeyPays(txHash: string, txKey: string, addresses: string[]): Promise<{ inPool: boolean; received: bigint[] } | null | 'unavailable'> {
+  async txKeyPays(txHash: string, txKey: string, addresses: string[]): Promise<{ inPool: boolean; received: bigint[]; feeAtomic: bigint } | null | 'unavailable'> {
     // As proveTx: a key that is not a reduced scalar would abort the WebAssembly.
     if (!TX_HASH.test(txHash) || !isTxKey(txKey)) return null;
     const received: bigint[] = [];
@@ -307,7 +307,49 @@ export class MoneroMultisigSession implements EscrowSession {
         return null; // a key that does not fit, or an address of another network
       }
     }
-    return { inPool, received };
+    const feeAtomic = await this.txFee(txHash);
+    if (feeAtomic === 'unavailable') return 'unavailable';
+    if (feeAtomic === null) return null;
+    return { inPool, received, feeAtomic };
+  }
+
+  /**
+   * Review N-m1 (21 Nov): the tx's own network fee (rct_signatures.txnFee), from monerod's
+   * `/get_transactions` read with a plain fetch as txStatus does. Null when the daemon does not have
+   * the tx or the answer has no fee; 'unavailable' when the daemon could not be read.
+   */
+  private async txFee(txHash: string): Promise<bigint | null | 'unavailable'> {
+    let body: unknown;
+    try {
+      body = await timed(
+        (async () => {
+          const res = await fetch(`${this.daemonUri.replace(/\/+$/, '')}/get_transactions`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ txs_hashes: [txHash], decode_as_json: true, prune: true }),
+          });
+          if (!res.ok) throw new Error(`http ${res.status}`);
+          return res.json() as Promise<unknown>;
+        })(),
+        'tx fee',
+      );
+    } catch (e) {
+      if (e instanceof EscrowError && e.code !== 'daemon-unavailable') throw e;
+      return 'unavailable';
+    }
+    const txs = (body as { txs?: unknown }).txs;
+    if (!Array.isArray(txs) || txs.length !== 1) return null;
+    const entry = txs[0] as { tx_hash?: unknown; as_json?: unknown };
+    if (entry.tx_hash !== txHash || typeof entry.as_json !== 'string') return null;
+    let fee: unknown;
+    try {
+      // The fee is a small integer; a fee too big for a double is no valid release fee anyway.
+      fee = (JSON.parse(entry.as_json) as { rct_signatures?: { txnFee?: unknown } }).rct_signatures?.txnFee;
+    } catch {
+      return null;
+    }
+    if (typeof fee !== 'number' || !Number.isSafeInteger(fee) || fee < 0) return null;
+    return BigInt(fee);
   }
 
   async proveTx(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[]; spendsEscrow: boolean } | null> {

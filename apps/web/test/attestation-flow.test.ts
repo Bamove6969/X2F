@@ -2067,7 +2067,7 @@ describe('review M1: a builder that comes back after the trade closed', () => {
   ];
 
   /** The builder settles (its settle never resolves here), its device closes, the trade closes and empties, and the device comes back. */
-  async function returnsAfterClose(f: Flow, landed: string | null) {
+  async function returnsAfterClose(f: Flow, landed: string | null, who: 'seller' | 'buyer' = f.builder) {
     let clock = Date.parse('2026-10-24T12:00:00.000Z');
     const t = await setup();
     const opts = { now: () => clock, settledElsewhereMs: 60_000 };
@@ -2079,18 +2079,45 @@ describe('review M1: a builder that comes back after the trade closed', () => {
     t.parties.funds = funded();
     const all = { ...t, seller, buyer };
     await f.tap(all);
-    await until(() => t.parties.pending.some((p) => p.role === f.builder && p.o.builder === f.builder));
-    const built = t.parties.pending.filter((p) => p.role === f.builder && p.o.builder === f.builder).at(-1)!.o;
-    const dev = f.builder === 'seller' ? seller : buyer;
-    await dev.status((s) => s.phase === 'signing');
+    await until(() => t.parties.pending.some((p) => p.role === who && p.o.builder === f.builder));
+    const built = t.parties.pending.filter((p) => p.role === who && p.o.builder === f.builder).at(-1)!.o;
+    const dev = who === 'seller' ? seller : buyer;
+    // A co-signer's standing release co-sign shows 'ready' until the API settles; its outcome is saved all the same.
+    await dev.status((s) => s.phase === 'signing' || (who !== f.builder && s.phase === 'ready'));
+    await until(async () => (await dev.store.load(CODE))?.intent?.outcome != null);
     await dev.runtime.stopAll(); // closed before it saw its tx in a block
     t.state.view = tradeView(f.closed);
     t.parties.funds = emptied();
-    t.parties.landedFor[f.builder] = landed;
-    const again = await t.mk(f.builder, { ...opts, idb: dev.idb });
+    t.parties.landedFor[who] = landed;
+    const again = await t.mk(who, { ...opts, idb: dev.idb });
     await again.runtime.resumeAll();
     return { ...all, again, built, advance: (ms: number) => (clock += ms) };
   }
+
+  // Review N-M1 (21 Nov): a co-signer (the buyer of a seller-built release) whose party has no proof
+  // of its own (a DONE from the builder is never its proof) still raises the alarm after the grace.
+  it('a co-signer (the buyer of a release) back after the trade closed with no proof from its party: escrow-failed after the grace, never done', async () => {
+    const t = await returnsAfterClose(FLOWS[1]!, null, 'buyer');
+    await t.parties.ticks('buyer', 3);
+    expect(t.parties.landedAsked.some((x) => x.role === 'buyer')).toBe(true);
+    expect(t.again.last()?.phase).not.toBe('done');
+    t.advance(60_000);
+    expect(await t.again.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+    expect((await t.again.store.load(CODE))?.intent?.done).toBe(false);
+  });
+
+  // Review N-m2 (W8): a landed() that rejects (a daemon that cannot answer) is never proof.
+  it('a landed() that rejects is never proof: the emptying still counts as settled elsewhere after the grace', async () => {
+    const t = await returnsAfterClose(FLOWS[0]!, null);
+    t.parties.landedFn = () => {
+      throw new Error('daemon-unavailable');
+    };
+    await t.parties.ticks('seller', 3);
+    expect(t.again.last()?.phase).not.toBe('done');
+    t.advance(60_000);
+    expect(await t.again.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+    expect((await t.again.store.load(CODE))?.intent?.done).toBe(false);
+  });
 
   for (const f of FLOWS) {
     it(`${f.name}: the party proves its outcome landed, so the device ends done (settleSeenAt set), never escrow-failed`, async () => {

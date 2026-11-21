@@ -113,12 +113,13 @@ export interface EscrowSession {
    * own daemon connection only, so it works in the web bundle too) and whether the tx is still in
    * the pool. Null when the key does not fit the tx or the tx is unknown. Unlike proveTx it says
    * nothing about the inputs: the caller pairs it with spentBy (this wallet's own view of the
-   * escrow spent by that tx in a block). Review M1/m4 (20 Nov). 'unavailable' when wallet2 could not
+   * escrow spent by that tx in a block). `feeAtomic` is the tx's own network fee, from the daemon's
+   * copy of the tx (review N-m1: payout 0 may be short by exactly that). Review M1/m4 (20 Nov). 'unavailable' when wallet2 could not
    * read the tx from its daemon (a network error, or a node proxy that refused the read): nothing was
    * checked, and the caller never counts it as proven. In the web app the read goes through the
    * node proxy's `/gettransactions` (allowed again, lead 2026-11-20). Optional for test doubles.
    */
-  txKeyPays?(txHash: string, txKey: string, addresses: string[]): Promise<{ inPool: boolean; received: bigint[] } | null | 'unavailable'>;
+  txKeyPays?(txHash: string, txKey: string, addresses: string[]): Promise<{ inPool: boolean; received: bigint[]; feeAtomic: bigint } | null | 'unavailable'>;
   exportState(): Promise<string>;
   /** Import every peer's state in one call; importing them separately leaves stale data. */
   importState(peers: string[]): Promise<void>;
