@@ -93,12 +93,30 @@ export function opensAt(s: StarterSettings, stage: Stage, usdCents: bigint): 'bu
 }
 
 export interface TradeCap {
+  /**
+   * The stage the account's own limits follow: its earned stage, or lower when an approved account
+   * limit holds it to a stage (Plan 4 Task 26). What others see of it (the New badge, summary.ts)
+   * stays the earned stage, so a limit is never shown to anyone but the account itself (lead
+   * default, owner question).
+   */
   stage: Stage;
-  /** The largest single trade, US cents; null on Graduated. */
+  /** The largest single trade, US cents: the lower of the stage's cap and an account limit's; null for none. */
   capUsdCents: bigint | null;
   /** How many trades may be open at once; null when the stage has no such limit. */
   maxOpen: number | null;
+  /** Task 26: `capUsdCents` is an account limit's cap, below what the stage alone allows. */
+  byLimit: boolean;
+  /**
+   * Task 26: the account's approved limits that still apply, whether or not they bind today (the
+   * lowest cap and the lowest stage among them); null when it has none.
+   */
+  limit: { capUsdCents: bigint | null; stage: 'starter' | 'building' | null } | null;
+  /** Task 26 (review m8): the limit lowers this account's cap or stage below what it earned. */
+  limitBinds: boolean;
 }
+
+const STAGE_ORDER: readonly Stage[] = ['starter', 'building', 'graduated'];
+const lowerStage = (a: Stage, b: Stage): Stage => (STAGE_ORDER.indexOf(a) <= STAGE_ORDER.indexOf(b) ? a : b);
 
 /**
  * SQL: an account's completed trades, either side: released trades, plus refunded trades whose
@@ -107,24 +125,55 @@ export interface TradeCap {
  * (no seller-side kind yet), so such a trade ends `refunded` with `dispute_by` set; a released
  * trade whose late deposit was escalated and refunded ends the same way and still counts.
  */
-export const COMPLETED_TRADES_SQL = `(select count(*) from trades t
+export const COMPLETED_TRADES_SQL = `(${completedTradesLiveSql()} + ${purgedSql('purged_completed')})`;
+
+/**
+ * COMPLETED_TRADES_SQL's live part alone (no purged total), with `extra` added to its WHERE (the
+ * trade alias is `t`): the whole-trade purge reads one trade's own share with `and t.code = $n`.
+ */
+export function completedTradesLiveSql(extra = ''): string {
+  return `(select count(*) from trades t
    where (t.state = 'released' or (t.state = 'refunded' and t.dispute_by is not null))
-     and (t.buyer_account_id = a.id or t.seller_account_id = a.id))`;
+     and (t.buyer_account_id = a.id or t.seller_account_id = a.id) ${extra})`;
+}
+
+/**
+ * SQL (bigint): what Plan 7's whole-trade purge moved out of the live trades into account `a.id`'s
+ * running total `column` (701, retention/tradePurge.ts), 0 for an account with none. Every count
+ * read from the live trades adds its own column back, so a profile and a stage are the same before
+ * and after a trade is deleted. `column` is a constant name, never input.
+ */
+export function purgedSql(column: 'purged_completed' | 'purged_sales' | 'purged_won' | 'purged_lost'): string {
+  return `coalesce((select pt.${column} from account_traded_totals pt where pt.account_id = a.id), 0)`;
+}
 
 /**
  * The plan's shared helper `tradeCap(deps, accountId, now)` (Revision 2026-10-24), for Task 5's
- * take and anything else that checks a trade against the caps. Throws for an unknown account.
+ * take and anything else that checks a trade against the caps. Plan 4 Task 26: an approved account
+ * limit lowers it (the lower of the stage's cap and the limit's; a stage limit holds the account to
+ * that stage). A lost dispute alone never does (R38). Throws for an unknown account.
  */
 export async function tradeCap(db: Queryable, accountId: string, now: Date, settings?: StarterSettings): Promise<TradeCap> {
   const s = settings ?? (await loadStarterSettings(db));
-  const { rows } = await db.query<{ created_at: Date; completed: string }>(
-    `select a.created_at, ${COMPLETED_TRADES_SQL} as completed from accounts a where a.id = $1`,
-    [accountId],
+  // Task 26: the account's approved limits that still apply (no end, or an end after now).
+  const { rows } = await db.query<{ created_at: Date; completed: string; limit_cap: number | null; limit_stage: Stage | null }>(
+    `select a.created_at, ${COMPLETED_TRADES_SQL} as completed,
+            (select min(l.cap_usd) from account_limits l where l.account_id = a.id and (l.until is null or l.until > $2)) as limit_cap,
+            (select l.stage from account_limits l
+              where l.account_id = a.id and l.stage is not null and (l.until is null or l.until > $2)
+              order by case l.stage when 'starter' then 0 else 1 end limit 1) as limit_stage
+       from accounts a where a.id = $1`,
+    [accountId, now],
   );
   const r = rows[0];
   if (!r) throw new Error('account missing');
-  const stage = stageFor(s, Number(r.completed), r.created_at, now);
-  return { stage, capUsdCents: capUsdCents(s, stage), maxOpen: stage === 'starter' ? s.starterMaxOpenTrades : null };
+  const earned = stageFor(s, Number(r.completed), r.created_at, now);
+  const stage = r.limit_stage === null ? earned : lowerStage(earned, r.limit_stage);
+  const stageCap = capUsdCents(s, stage);
+  const limitCap = r.limit_cap === null ? null : BigInt(r.limit_cap) * 100n;
+  const byLimit = limitCap !== null && (stageCap === null || limitCap < stageCap);
+  const limit = limitCap === null && r.limit_stage === null ? null : { capUsdCents: limitCap, stage: r.limit_stage as 'starter' | 'building' | null };
+  return { stage, capUsdCents: byLimit ? limitCap : stageCap, maxOpen: stage === 'starter' ? s.starterMaxOpenTrades : null, byLimit, limit, limitBinds: byLimit || stage !== earned };
 }
 
 /**

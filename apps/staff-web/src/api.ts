@@ -121,7 +121,7 @@ export interface PgpChallenge {
 }
 
 export const keyLoginStart = (b: { loginName: string } | { pendingId: string }) =>
-  staffApi<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON }>('/staff/v1/login/security-key/start', { method: 'POST', body: b });
+  staffApi<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON; loginNonce?: string }>('/staff/v1/login/security-key/start', { method: 'POST', body: b });
 export const keyLoginFinish = (b: { challengeId: string; response: AuthenticationResponseJSON; pendingId?: string }) =>
   staffApi<LoginResult>('/staff/v1/login/security-key/finish', { method: 'POST', body: { ...b, deviceLabel: deviceLabel() } });
 export const pgpLoginStart = (b: { key: string; pendingId?: string }) => staffApi<PgpChallenge>('/staff/v1/login/pgp/start', { method: 'POST', body: b });
@@ -132,7 +132,7 @@ export const pgpLoginFinish = (b: { challengeId: string; code: string }) =>
 // Key taps (Task 5): every tapped action first proves a security-key tap bound to its intent.
 
 export const tapStart = (intent: KeyTapIntent) =>
-  staffApi<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON }>('/staff/v1/taps/start', { method: 'POST', body: intent });
+  staffApi<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON; nonce: string; issuedAt: string | null }>('/staff/v1/taps/start', { method: 'POST', body: intent });
 export const tapFinish = (tapId: string, response: AuthenticationResponseJSON) =>
   staffApi<{ tapId: string }>(`/staff/v1/taps/${encodeURIComponent(tapId)}/finish`, { method: 'POST', body: { response } });
 
@@ -160,7 +160,7 @@ const fetchProbe = () => staffApi<unknown>('/staff/v1/setup/finish', { method: '
 export const setupCode = (code: string) => staffApi<{ ok: true; expiresAt: string }>('/staff/v1/setup/code', { method: 'POST', body: { code } });
 export const setupAccount = (b: { displayName: string; loginName: string }) => staffApi<{ ok: true }>('/staff/v1/setup/account', { method: 'POST', body: b });
 export const setupKeyStart = () =>
-  staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
+  staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON; setupNonce?: string }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
 export const setupKeyFinish = (b: { challengeId: string; response: RegistrationResponseJSON; label?: string }) =>
   staffApi<{ keys: number }>('/staff/v1/setup/key/finish', { method: 'POST', body: b });
 export const setupPgpStart = (publicKey: string) => staffApi<PgpChallenge>('/staff/v1/setup/pgp/start', { method: 'POST', body: { publicKey } });
@@ -233,6 +233,83 @@ export const moodFeedback = (before?: string) =>
 export const formFeedback = (before?: string) => staffApi<{ items: FormItem[]; next: string | null }>(page('/staff/v1/feedback/form', before));
 
 // ---------------------------------------------------------------------------------------------
+// Review disputes (Plan 5 Task 19 on the staff API; perm reputation.review: moderators and up)
+
+export type ReviewDisputeOutcome = 'stands' | 'comments-removed' | 'removed';
+
+/** An open review dispute: the review and the subject's reason, never either trader's name. */
+export interface ReviewDisputeItem {
+  id: string;
+  openedAt: string;
+  reason: string;
+  review: {
+    neutral: boolean;
+    stars: number | null;
+    phrases: string[];
+    tradeBadges: string[];
+    note: string | null;
+    method: string;
+    age: string;
+    reviewerRole: 'buyer' | 'seller';
+  };
+  /** While the trade still exists; null once it was deleted (30 days after it ended). */
+  tradeCode: string | null;
+}
+
+export const reviewDisputes = (after?: string) =>
+  staffApi<{ items: ReviewDisputeItem[]; next: string | null }>(after === undefined ? '/staff/v1/review-disputes' : `/staff/v1/review-disputes?after=${encodeURIComponent(after)}`);
+
+export const decideReviewDispute = (
+  id: string,
+  body: { outcome: ReviewDisputeOutcome; reason: string; remove?: { note: boolean; phrases: string[]; tradeBadges: string[] } },
+) => staffApi<{ ok: true }>(`/staff/v1/review-disputes/${encodeURIComponent(id)}/decide`, { method: 'POST', body });
+
+// ---------------------------------------------------------------------------------------------
+// Past reputation (Plan 5 Task 11; perm reputation.review: the owner, senior moderators and
+// moderators; revoking reputation.revoke and the dollar figure reputation.verify: senior moderators
+// and the owner)
+
+export interface PastRepClaim {
+  id: string;
+  site: string;
+  /** The archived old profile (an https archive link, checked by the API; never fetched by X2F). */
+  url: string;
+  claimedTrades: number;
+  verifiedTrades: number | null;
+  verifiedUsdCents: number | null;
+  status: 'signed' | 'approved';
+  /** Upper case, in groups of 4. */
+  fingerprint: string;
+  keyId: string;
+  signatureValid: true;
+  displayName: string;
+  createdAt: string;
+  /** Review M2: the host of the page the archive copied, from the link itself; null when it does not say. */
+  originalHost: string | null;
+}
+
+/** One page of claims (review M1): `next` is the cursor of the following page, null after the last. */
+export interface PastRepPage {
+  items: PastRepClaim[];
+  next: string | null;
+}
+
+export const pastRepList = (status: 'signed' | 'approved', o: { cursor?: string; name?: string } = {}) => {
+  const q = [`status=${status}`];
+  if (o.cursor !== undefined) q.push(`cursor=${encodeURIComponent(o.cursor)}`);
+  if (o.name !== undefined && o.name.trim() !== '') q.push(`name=${encodeURIComponent(o.name.trim())}`);
+  return staffApi<PastRepPage>(`/staff/v1/past-rep?${q.join('&')}`);
+};
+export const pastRepApprove = (id: string, tradesSeen: number) =>
+  staffApi<{ id: string; status: 'approved'; verifiedTrades: number }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/approve`, { method: 'POST', body: { fingerprintSeen: true, profileSeen: true, tradesSeen } });
+export const pastRepReject = (id: string, reason: string) =>
+  staffApi<{ id: string; status: 'rejected' }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/reject`, { method: 'POST', body: { reason } });
+export const pastRepRevoke = (id: string, reason: string) =>
+  staffApi<{ id: string; status: 'revoked' }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/revoke`, { method: 'POST', body: { reason } });
+export const pastRepSetUsd = (id: string, usdCents: number | null) =>
+  staffApi<{ ok: true }>(`/staff/v1/past-rep/${encodeURIComponent(id)}/verified-usd`, { method: 'PUT', body: { usdCents } });
+
+// ---------------------------------------------------------------------------------------------
 // News for traders (Plan 4 Task 28 on the staff API; perm site.control, the owner only)
 
 
@@ -255,6 +332,51 @@ export interface PriceHealth {
 export const priceHealth = () => staffApi<PriceHealth>('/staff/v1/price-health');
 
 // ---------------------------------------------------------------------------------------------
+// Moderator performance (Plan 4 Task 20; perm perf.read, the owner only, spec 6.6), from
+// apps/api/src/staff/performance.ts. Staff names, roles and numbers only: no trader data.
+
+export type PerformancePeriod = '30d' | '90d' | 'all';
+
+export interface PerformanceFigures {
+  cases: number;
+  firstReplyMin: number | null;
+  rulingMin: number | null;
+  overturned: number;
+  withinDeadlinePct: number | null;
+  open: number;
+  payableCases: number;
+  settledWithinGoalPct: number | null;
+  settledWithinDeadlinePct: number | null;
+  appeals: number;
+  appealsWithinGoalPct: number | null;
+}
+
+export interface PerformancePerson extends PerformanceFigures {
+  id: string;
+  name: string;
+  role: StaffRole;
+}
+
+export interface Performance {
+  period: PerformancePeriod;
+  firstResponseH: number;
+  people: PerformancePerson[];
+}
+
+export interface PerformanceWeeks {
+  id: string;
+  name: string;
+  role: StaffRole;
+  firstResponseH: number;
+  from: string;
+  summary: PerformanceFigures;
+  weeks: { weekOf: string; start: string; cases: number; firstReplyMin: number | null }[];
+}
+
+export const getPerformance = (period: PerformancePeriod) => staffApi<Performance>(`/staff/v1/performance?period=${period}`);
+export const getPerformanceWeeks = (id: string) => staffApi<PerformanceWeeks>(`/staff/v1/performance/${encodeURIComponent(id)}/weeks`);
+
+// ---------------------------------------------------------------------------------------------
 // Staff members (Plan 4 Task 7; perm staff.manage, the owner only) and their per-person
 // checkboxes (owner Q60, J-21: PUT …/grants with a `set-grants` tap bound to the exact sorted list).
 
@@ -265,12 +387,229 @@ export interface Member {
   role: StaffRole;
   status: 'active' | 'switched-off' | 'waiting';
   grants: GrantablePerm[];
+  hours: LoginHours;
+  joinedAt: string | null;
+  lastActiveAt: string | null;
+  openCases: number;
+  /** An invite's expiry (null for a member). */
+  expiresAt: string | null;
+  /** The login methods a moderator or senior moderator still lacks (owner G3, as D-070 changed it). */
+  missingMethods: Array<'security-key' | 'pgp' | 'passkey'>;
 }
+const memberPath = (accountId: string, rest = '') => `/staff/v1/members/${encodeURIComponent(accountId)}${rest}`;
 export const members = () => staffApi<{ members: Member[] }>('/staff/v1/members');
 export const setGrants = (accountId: string, grants: GrantablePerm[], tapId: string) =>
-  staffApi<{ grants: GrantablePerm[] }>(`/staff/v1/members/${encodeURIComponent(accountId)}/grants`, { method: 'PUT', body: { grants, tapId } });
+  staffApi<{ grants: GrantablePerm[] }>(memberPath(accountId, '/grants'), { method: 'PUT', body: { grants, tapId } });
+/** Plan 4 Task 7: at once, no tap (it only removes power); the API ends their sessions. */
+export const switchOff = (accountId: string) => staffApi<{ status: 'switched-off' }>(memberPath(accountId, '/switch-off'), { method: 'POST', body: {} });
+/** A `switch-on` tap bound to the person and their current role. */
+export const switchOn = (accountId: string, tapId: string) => staffApi<{ status: 'active' }>(memberPath(accountId, '/switch-on'), { method: 'POST', body: { tapId } });
+export const setHours = (accountId: string, hours: LoginHours) => staffApi<{ hours: LoginHours }>(memberPath(accountId, '/hours'), { method: 'PUT', body: { hours } });
+/** A `set-role` tap bound to the person and the new role. */
+export const setRole = (accountId: string, role: InviteRole, tapId: string) => staffApi<{ role: InviteRole }>(memberPath(accountId, '/role'), { method: 'PUT', body: { role, tapId } });
+/** A `remove-staff` tap bound to the person (owner G4). */
+export const removeMember = (accountId: string, tapId: string) => staffApi<unknown>(memberPath(accountId, ''), { method: 'DELETE', body: { tapId } });
+/**
+ * A new invite (Task 7): this browser makes the invite id, the token (32 random bytes, base64url)
+ * and the expiry, because the owner's `create-invite` tap is bound to the token's hash before the
+ * invite exists. The link is shown once; the token is never stored by the API.
+ */
+export const createInvite = (b: { role: InviteRole; hours: LoginHours; inviteId: string; token: string; expiresAt: string; tapId: string }) =>
+  staffApi<{ inviteId: string; link: string; expiresAt: string }>('/staff/v1/invites', { method: 'POST', body: b });
+export const cancelInvite = (inviteId: string) => staffApi<unknown>(`/staff/v1/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' });
 
 // ---------------------------------------------------------------------------------------------
+// Settings (Plan 4 Task 8; perm settings.write) and pay settings (Task 33; tap `pay-settings`)
+
+export interface RulingSettings {
+  largeTradeLimitUsd: number;
+  firstResponseH: number;
+  appealWindowH: number;
+}
+export const settings = () => staffApi<RulingSettings & Record<string, unknown>>('/staff/v1/settings');
+/** `tapId` is required when the limit or the appeal window changes (a `settings` tap of the values after it). */
+export const putSettings = (change: Partial<RulingSettings>, tapId?: string) =>
+  staffApi<RulingSettings>('/staff/v1/settings', { method: 'PUT', body: tapId === undefined ? change : { ...change, tapId } });
+
+export interface PaySettings {
+  modDisputeUsdCents: number | null;
+  seniorDisputeUsdCents: number | null;
+  seniorLargeTradeBp: number | null;
+  largeTradeThresholdUsd: number | null;
+}
+export const paySettings = () => staffApi<PaySettings>('/staff/v1/pay/settings');
+export const putPaySettings = (next: PaySettings, tapId: string) => staffApi<PaySettings>('/staff/v1/pay/settings', { method: 'PUT', body: { ...next, tapId } });
+
+// ---------------------------------------------------------------------------------------------
+// Site controls (Plan 4 Task 8; perm site.control) and the owner's revenue (Task 32; earnings.read)
+
+export type MaintenanceKind = 'planned' | 'unplanned';
+export interface StaffSite {
+  tradingPaused: boolean;
+  stoppedAt: string | null;
+  banner: { text: string; kind: 'info' | 'warning' } | null;
+  maintenance: { since: string; message: string | null; kind: MaintenanceKind; backBy: string | null } | null;
+  planned: { startsAt: string; endsAt: string; message: string | null } | null;
+  /** When the moderation process's daily activity-log check first failed (Task 14), or null. */
+  logAlarm: string | null;
+}
+export const site = () => staffApi<StaffSite>('/staff/v1/site');
+export const stopTrading = (tapId: string) => staffApi<StaffSite>('/staff/v1/site/stop', { method: 'POST', body: { tapId } });
+export const resumeTrading = (tapId: string) => staffApi<StaffSite>('/staff/v1/site/resume', { method: 'POST', body: { tapId } });
+export const setBanner = (text: string, kind: 'info' | 'warning') => staffApi<StaffSite>('/staff/v1/site/banner', { method: 'PUT', body: { text, kind } });
+export const removeBanner = () => staffApi<unknown>('/staff/v1/site/banner', { method: 'DELETE' });
+export const setMaintenance = (b: { on: true; kind: MaintenanceKind; message: string | null } | { on: false }) =>
+  staffApi<StaffSite>('/staff/v1/site/maintenance', { method: 'PUT', body: b });
+
+export interface RevenueBucket {
+  period: string;
+  trades: number;
+  totalAtomic: string;
+  usdEstimateCents: string;
+}
+export const revenue = (q: { by: 'day' | 'month'; from: string; to: string }) =>
+  staffApi<{ buckets: RevenueBucket[]; total: RevenueBucket }>(`/staff/v1/revenue?by=${q.by}&from=${q.from}&to=${q.to}`);
+
+// ---------------------------------------------------------------------------------------------
+// Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)
+
+export type DisputeStatus = 'open' | 'awaiting-approval' | 'published' | 'appealed' | 'final' | 'complying' | 'closed';
+export interface QueueRow {
+  code: string;
+  incidentId: string;
+  status: DisputeStatus;
+  round: 1 | 2;
+  /** The trade's XMR, atomic units. */
+  xmr: string;
+  /** Dollars, "412.50". */
+  usd: string;
+  method: string;
+  /** The catalog's display name (data/payment-methods.json, sent by the staff API), never shown as the raw id. */
+  methodName: string;
+  openedBy: 'buyer' | 'seller' | 'system';
+  waitingMs: number;
+  replyDueAt: string;
+  rulingDueAt: string;
+  deadlineTone: 'due' | 'overdue' | 'replied';
+  approval: 'not-needed' | 'needs-second' | { waitingFor: 'second-approval'; proposedBy: string | null };
+  assignee: string | null;
+  mine: boolean;
+  /**
+   * Plan 4 Task 12 (A6): the seller did not prove the payment a `seller-sends-xmr` ruling ordered in
+   * time; listed for senior moderators and the owner, who decide the suspension. Absent from an older API.
+   */
+  complyLapsed?: boolean;
+}
+export interface Queue {
+  rows: QueueRow[];
+  counts: { open: number; overdue: number; unassigned: number; needApproval: number };
+  settings: { firstResponseH: number; largeTradeLimitUsd: number };
+}
+
+export interface CaseTrader {
+  displayName: string;
+  completedTrades: number;
+  positivePct: number | null;
+}
+export interface CaseRuling {
+  proposal: { rulingId: string; reason: string; evidence: string[]; proposer: string; proposedAt: string } | null;
+  sentBack: { rulingId: string; note: string | null; at: string } | null;
+  draft: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
+  /** Round 1's ruling once there is an appeal (the API's `round1`): a round-2 tap names its id. */
+  round1?: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
+  publishedAt: string | null;
+  appealEndsAt: string | null;
+  /**
+   * Plan 4 Task 12 (A6): the seller's payment proof for a `seller-sends-xmr` ruling. `failedChecks`
+   * (RC-4, lead default): proofs X2F's checker could not take (503), newest first. Absent from an older API.
+   */
+  compliance?: {
+    lapsedAt: string | null;
+    proof: { txHash: string; status: 'pending' | 'accepted' | 'refused'; confirmations: number | null; submittedAt: string } | null;
+    failedChecks?: Array<{ at: string; reason: 'node-unavailable' | 'busy' }>;
+  };
+}
+export interface DisputeCase {
+  code: string;
+  incidentId: string;
+  status: DisputeStatus;
+  round: 1 | 2;
+  openedBy: 'buyer' | 'seller' | 'system';
+  reason: string;
+  note: string;
+  afterRefund: boolean;
+  openedAt: string;
+  replyDueAt: string;
+  rulingDueAt: string;
+  firstReplyAt: string | null;
+  usd: string;
+  overLimit: boolean;
+  /** The large-trade limit the dispute snapshotted when it opened, whole dollars. */
+  limitUsd: number;
+  assignee: string | null;
+  assignedToYou: boolean;
+  proposedByYou: boolean;
+  mayWork: boolean;
+  traders: { buyer: CaseTrader | null; seller: CaseTrader | null };
+  escrow: { state: string; amountAtomic: string; methodId: string; methodName: string; currency: string; centsPerXmr: string; fiatCents: string; confirmations: number };
+  ruling: CaseRuling;
+  freezes: { buyer: boolean; seller: boolean };
+}
+export type Side = 'buyer' | 'seller';
+
+const casePath = (code: string, rest = '') => `/staff/v1/disputes/${encodeURIComponent(code)}${rest}`;
+
+export const disputeQueue = () => staffApi<Queue>('/staff/v1/disputes?filter=all');
+export const takeNext = () => staffApi<{ code: string | null }>('/staff/v1/disputes/next', { method: 'POST', body: {} });
+export const takeCase = (code: string) => staffApi<{ code: string }>(casePath(code, '/take'), { method: 'POST', body: {} });
+export const disputeCase = (code: string) => staffApi<DisputeCase>(casePath(code));
+/**
+ * Design build task 9: a moderator message, sealed under the chat key and countersigned by this
+ * device in the chat key worker (keys/reader.ts `sealModMessage`); the API never sees its text.
+ */
+export const messageTraders = (code: string, sealed: import('./chat/types.js').SealedModMessage) => staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: sealed });
+/** Design build task 9: the moderator's read: the chat key re-wrapped to this device, and the chat's ciphertext. Logged (`chat.read`). */
+export const readCaseChat = (code: string, deviceKeyId: string) =>
+  staffApi<import('./chat/types.js').CaseChatAnswer>(casePath(code, '/chat'), { method: 'POST', body: { deviceKeyId } });
+export const requestProof = (code: string, side: Side) => staffApi<unknown>(casePath(code, '/proof-request'), { method: 'POST', body: { side } });
+// Plan 4 Task 26: recommended account limits. A cap in whole US dollars or a stage, exactly one.
+export type LimitWhat = { capUsd: number } | { stage: import('@x2f/staff').LimitStage };
+export interface LimitRecommendation {
+  id: string;
+  accountId: string;
+  displayName: string;
+  capUsd: number | null;
+  stage: import('@x2f/staff').LimitStage | null;
+  /** Staff only: the trader never sees it. */
+  reason: string;
+  /** The case it came from, or null. */
+  code: string | null;
+  recommendedBy: string;
+  /** The signed-in member recommended it, so may not decide it. */
+  mine: boolean;
+  createdAt: string;
+  currentStage: 'starter' | 'building' | 'graduated';
+  currentCapUsdCents: string | null;
+}
+export const recommendLimits = (code: string, b: { side: Side; reason: string } & LimitWhat) =>
+  staffApi<{ id: string }>(casePath(code, '/limit-recommendations'), { method: 'POST', body: b });
+export const limitRecommendations = () => staffApi<{ recommendations: LimitRecommendation[] }>('/staff/v1/limit-recommendations');
+export const decideLimits = (accountId: string, recId: string, b: { approve: boolean; tapId: string }) =>
+  staffApi<{ status: 'approved' | 'declined' }>(
+    `/staff/v1/accounts/${encodeURIComponent(accountId)}/limit-recommendations/${encodeURIComponent(recId)}/decide`,
+    { method: 'POST', body: b },
+  );
+export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
+  staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });
+export const proposeRuling = (
+  code: string,
+  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string },
+) => staffApi<{ code: string; ruling: CaseRuling }>(casePath(code, '/rulings'), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
+export const approveRuling = (code: string, rulingId: string, tapId: string) =>
+  staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/approve`), { method: 'POST', body: { tapId } });
+export const sendBackRuling = (code: string, rulingId: string, note: string) =>
+  staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/send-back`), { method: 'POST', body: { note } });
+
 // Pay at clock-out (Plan 4 Task 33, D-041..D-045; perm self: one's own pay only)
 
 export interface PayoutAddress {
@@ -325,3 +664,132 @@ export const ownerAlerts = (before?: string) =>
   staffApi<{ items: OwnerAlert[]; unread: number; next: string | null }>(page('/staff/v1/owner/alerts', before));
 export const markOwnerAlertRead = (id: string) => staffApi<unknown>(`/staff/v1/owner/alerts/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} });
 export const markAllOwnerAlertsRead = () => staffApi<unknown>('/staff/v1/owner/alerts/read-all', { method: 'POST', body: {} });
+
+// ---------------------------------------------------------------------------------------------
+// Chat membership design task 8: one's own staff device keys (perm self)
+
+export interface CertifiedDevice {
+  deviceKeyId: string;
+  signPublic: string;
+  boxPublic: string;
+  certifiedAt: string;
+  expiresAt: string;
+}
+export const myDevices = () => staffApi<{ accountId: string; devices: CertifiedDevice[] }>('/staff/v1/devices');
+/** Certifies this browser's device key; `tapId` is a tap of intent `certify-device` for exactly these keys. */
+export const certifyDevice = (signPublic: string, boxPublic: string, tapId: string) =>
+  staffApi<{ deviceKeyId: string; expiresAt: string }>('/staff/v1/devices', { method: 'POST', body: { signPublic, boxPublic, tapId } });
+export const revokeDevice = (deviceKeyId: string, tapId: string) =>
+  staffApi<unknown>(`/staff/v1/devices/${encodeURIComponent(deviceKeyId)}/revoke`, { method: 'POST', body: { tapId } });
+
+// The Activity log (Plan 4 Task 19; perm log.read.cases, the chain check log.read.all)
+
+export type LogKind = 'trade' | 'dispute' | 'chat' | 'ruling' | 'account' | 'staff' | 'owner' | 'site' | 'other';
+
+export interface LogEntry {
+  id: string;
+  at: string;
+  tradeCode: string | null;
+  actor: { kind: 'staff' | 'trader' | 'system'; role: string | null; id: string | null; name: string | null };
+  action: string;
+  /** Ids, enums, amounts and setting numbers only, as the API re-checked them. */
+  detail: Record<string, unknown>;
+  /** The stored detail did not fit its action, so the API showed none of it. */
+  withheld?: true;
+}
+export interface LogPage {
+  scope: 'all' | 'cases';
+  entries: LogEntry[];
+  names: Record<string, string>;
+  next: string | null;
+}
+export interface LogQuery {
+  code?: string;
+  actor?: string;
+  kind?: LogKind | '';
+  from?: string;
+  to?: string;
+  before?: string;
+}
+export const logPage = (q: LogQuery) => {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (typeof v === 'string' && v !== '') p.set(k, v);
+  const s = p.toString();
+  return staffApi<LogPage>(`/staff/v1/log${s ? `?${s}` : ''}`);
+};
+export const logFilters = () =>
+  staffApi<{ scope: 'all' | 'cases'; actors: Array<{ id: string; name: string; role: string | null }>; kinds: LogKind[] }>('/staff/v1/log/filters');
+export interface ActiveDispute {
+  code: string;
+  method: string;
+  methodName: string;
+  xmr: string;
+  status: string;
+}
+export const activeDisputes = () => staffApi<{ items: ActiveDispute[] }>('/staff/v1/log/active-disputes');
+export interface LogIntegrity {
+  checkedAt: string;
+  chain: { ok: true; headId: string | null } | { ok: false; brokenAt: string };
+  entries: number;
+  /** When the moderation process's own check of the log failed (`site_flags.log_alarm`), or null. */
+  alarm: string | null;
+}
+export const logIntegrity = () => staffApi<LogIntegrity>('/staff/v1/log/integrity');
+
+// ---------------------------------------------------------------------------------------------
+// The training library (Plan 4 Task 19; perm training.read): closed cases, read through the anonymizer
+
+export interface ScrubbedText {
+  text: string;
+  masks: Array<{ start: number; end: number; kind: string }>;
+}
+export interface TrainingItem {
+  id: string;
+  /** The month the case closed, `YYYY-MM` (review m1: never the day). */
+  closedMonth: string;
+  method: string;
+  methodName: string;
+  /** Atomic units, rounded by the API to 2 significant figures (review m1). */
+  xmr: string;
+  outcome: string | null;
+  overturned: boolean;
+  afterRefund: boolean;
+}
+export interface TrainingCase extends TrainingItem {
+  tradeCode: string;
+  openedBy: string;
+  reason: string;
+  note: ScrubbedText | null;
+  closedAt: string;
+  rulings: Array<{ round: number; outcome: string; at: string; reason: ScrubbedText; evidence: ScrubbedText[] }>;
+  appeal: { by: string; at: string; why: ScrubbedText } | null;
+  timeline: Array<{ at: string; who: string; action: string }>;
+  chat: 'not-available';
+}
+export const trainingList = (before?: string) =>
+  staffApi<{ items: TrainingItem[]; next: string | null }>(`/staff/v1/training${before ? `?before=${encodeURIComponent(before)}` : ''}`);
+export const trainingCase = (id: string) => staffApi<TrainingCase>(`/staff/v1/training/${encodeURIComponent(id)}`);
+
+// Lead call 18 Nov (re-review): the review-first library. A curator (`training.curate`, the owner)
+// reviews each closed case pre-masked and marks it with the manual masks they add.
+/** A curator's mask: a range of a field's pre-masked text, or the whole field. */
+export type ManualMask = { field: string; start: number; end: number } | { field: string; whole: true };
+export type TrainingStatus = 'unmarked' | 'marked' | 'stale';
+export interface TrainingReviewItem extends TrainingItem {
+  status: TrainingStatus;
+}
+export interface TrainingReviewCase extends TrainingCase {
+  status: TrainingStatus;
+  /** Each text of the case pre-masked (automatic masks only), by field key, in reading order. */
+  fields: Record<string, ScrubbedText>;
+  /** The manual masks saved for the case. */
+  manual: ManualMask[];
+  /** Re-review 3 m1: the tag of the texts as loaded; the save sends it back (409 `case-changed` if they changed). */
+  reviewTag: string;
+}
+export const trainingReviewList = () => staffApi<{ items: TrainingReviewItem[] }>('/staff/v1/training/review');
+export const trainingReviewCase = (id: string) => staffApi<TrainingReviewCase>(`/staff/v1/training/review/${encodeURIComponent(id)}`);
+export const markTrainingCase = (id: string, masks: ManualMask[], reviewTag: string) =>
+  staffApi<{ id: string; status: 'marked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'PUT', body: { masks, reviewTag } });
+export const unmarkTrainingCase = (id: string) =>
+  staffApi<{ id: string; status: 'unmarked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'DELETE' });

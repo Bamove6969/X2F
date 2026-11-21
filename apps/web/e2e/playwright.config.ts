@@ -10,6 +10,8 @@ const executablePath = process.env.X2F_CHROMIUM_PATH;
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
+  // The end-to-end trades on regtest run with playwright.regtest.config.ts (they need the whole stack).
+  testIgnore: '*.e2e.spec.ts',
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,

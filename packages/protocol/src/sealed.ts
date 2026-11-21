@@ -79,3 +79,92 @@ export async function openSealed(recipient: BoxKeyPair, sealed: Uint8Array): Pro
     throw new ProtocolError('not-for-me', 'sealed box does not open with this key');
   }
 }
+
+/**
+ * A recipient whose X25519 secret never leaves it (review lead-mod-chat B1: a staff device's
+ * non-extractable WebCrypto key): it gives only the shared secret X25519(its secret, `ephemeral`),
+ * as `subtle.deriveBits({ name: 'X25519', public }, key, 256)` does.
+ */
+export interface BoxOpener {
+  /** 64 lower-case hex characters. */
+  boxPublic: string;
+  sharedWith(ephemeralPublic: Uint8Array): Promise<Uint8Array>;
+}
+
+const SIGMA = [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574];
+const rotl = (v: number, c: number): number => ((v << c) | (v >>> (32 - c))) >>> 0;
+const le32 = (b: Uint8Array, i: number): number => (b[i]! | (b[i + 1]! << 8) | (b[i + 2]! << 16) | (b[i + 3]! << 24)) >>> 0;
+
+/**
+ * HSalsa20 (the core of `crypto_box_beforenm` and XSalsa20's key step): 32-byte key, 16-byte input
+ * (zeros for crypto_box), 32-byte output. Not in the standard libsodium-wrappers build, so here;
+ * checked against `crypto_box_beforenm` (test/sealedWebCrypto.test.ts).
+ */
+export function hsalsa20(key: Uint8Array, input: Uint8Array = new Uint8Array(16)): Uint8Array {
+  if (!(key instanceof Uint8Array) || key.length !== 32 || !(input instanceof Uint8Array) || input.length !== 16) throw new TypeError('hsalsa20: a 32-byte key and a 16-byte input');
+  const x = new Uint32Array(16);
+  x[0] = SIGMA[0]!; x[5] = SIGMA[1]!; x[10] = SIGMA[2]!; x[15] = SIGMA[3]!;
+  for (let i = 0; i < 4; i++) {
+    x[1 + i] = le32(key, 4 * i);
+    x[11 + i] = le32(key, 16 + 4 * i);
+    x[6 + i] = le32(input, 4 * i);
+  }
+  const qr = (a: number, b: number, c: number, d: number): void => {
+    x[b] = x[b]! ^ rotl((x[a]! + x[d]!) >>> 0, 7);
+    x[c] = x[c]! ^ rotl((x[b]! + x[a]!) >>> 0, 9);
+    x[d] = x[d]! ^ rotl((x[c]! + x[b]!) >>> 0, 13);
+    x[a] = x[a]! ^ rotl((x[d]! + x[c]!) >>> 0, 18);
+  };
+  for (let r = 0; r < 20; r += 2) {
+    qr(0, 4, 8, 12); qr(5, 9, 13, 1); qr(10, 14, 2, 6); qr(15, 3, 7, 11);
+    qr(0, 1, 2, 3); qr(5, 6, 7, 4); qr(10, 11, 8, 9); qr(15, 12, 13, 14);
+  }
+  const out = new Uint8Array(32);
+  [0, 5, 10, 15, 6, 7, 8, 9].forEach((w, i) => {
+    const v = x[w]!;
+    out[4 * i] = v & 0xff; out[4 * i + 1] = (v >>> 8) & 0xff; out[4 * i + 2] = (v >>> 16) & 0xff; out[4 * i + 3] = v >>> 24;
+  });
+  x.fill(0);
+  return out;
+}
+
+/**
+ * Opens a box sealed to `recipient` (`crypto_box_seal`) the way `crypto_box_seal_open` does, from the
+ * X25519 shared secret only: epk = the box's first 32 bytes; nonce = blake2b-24(epk || pk);
+ * k = HSalsa20(X25519(sk, epk), 0^16); then XSalsa20-Poly1305 (`crypto_secretbox_open_easy`). The
+ * shared secret and k are zeroed. `ProtocolError('not-for-me')` for any box this key does not open.
+ */
+export async function openSealedWith(recipient: BoxOpener, sealed: Uint8Array): Promise<Uint8Array> {
+  await sodium.ready;
+  if (!(sealed instanceof Uint8Array)) throw new TypeError('openSealedWith: sealed must be a Uint8Array');
+  const pub = publicKeyOf(recipient?.boxPublic, 'openSealedWith');
+  if (typeof recipient.sharedWith !== 'function') throw new TypeError('openSealedWith: no sharedWith');
+  if (sealed.length < sodium.crypto_box_SEALBYTES) throw new ProtocolError('not-for-me', 'sealed box too short');
+  const epk = sealed.slice(0, sodium.crypto_box_PUBLICKEYBYTES);
+  let shared: Uint8Array;
+  try {
+    shared = await recipient.sharedWith(epk);
+  } catch {
+    throw new ProtocolError('not-for-me', 'sealed box does not open with this key');
+  }
+  let k: Uint8Array | null = null;
+  try {
+    // An all-zero shared secret (a low-order ephemeral key) opens nothing, as libsodium refuses it.
+    // Re-review 2 m4: checked in constant time (an OR over every byte, as sodium_is_zero), never by
+    // an early exit that would time where the first non-zero byte of a secret is.
+    if (!(shared instanceof Uint8Array) || shared.length !== 32) throw new ProtocolError('not-for-me', 'sealed box does not open with this key');
+    let z = 0;
+    for (const b of shared) z |= b;
+    if (z === 0) throw new ProtocolError('not-for-me', 'sealed box does not open with this key');
+    k = hsalsa20(shared);
+    const nonce = sodium.crypto_generichash(sodium.crypto_box_NONCEBYTES, new Uint8Array([...epk, ...pub]), null);
+    try {
+      return sodium.crypto_secretbox_open_easy(sealed.subarray(sodium.crypto_box_PUBLICKEYBYTES), nonce, k);
+    } catch {
+      throw new ProtocolError('not-for-me', 'sealed box does not open with this key');
+    }
+  } finally {
+    if (shared instanceof Uint8Array) shared.fill(0);
+    k?.fill(0);
+  }
+}

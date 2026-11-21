@@ -55,6 +55,7 @@ function trade(over: Over = {}): ReleaseTrade {
     settling: null,
     txHash: null,
     confirmBy: '2026-10-25T13:52:00.000Z',
+    securedAt: '2026-10-25T11:30:00.000Z',
     serverNow: NOW,
     ...rest,
   };
@@ -354,6 +355,24 @@ describe('SellerConfirm', () => {
     expect(s.escrow.release).not.toHaveBeenCalled();
   });
 
+  it('leaving the page asks first (beforeunload) while this device signs the release, until handedOff; never before the tap, once signed, or on a stopped escrow (lead call, gap 4)', () => {
+    const before = sellerConfirm(trade());
+    expect(leaveAsks()).toBe(false);
+    before.unmount();
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true, handedOff: false }));
+    expect(leaveAsks()).toBe(true);
+    s.update(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true, handedOff: true }));
+    expect(leaveAsks()).toBe(false);
+    s.update(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'done' }));
+    expect(leaveAsks()).toBe(false);
+    s.update(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'error', error: 'escrow-failed' }));
+    expect(leaveAsks()).toBe(false);
+    s.update(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true }));
+    expect(leaveAsks()).toBe(true);
+    s.unmount();
+    expect(leaveAsks()).toBe(false);
+  });
+
   it('a remount in settling with a ready device signs the release again, once, when THIS device asked (I1: reload after the POST)', async () => {
     markReleaseAsked('K7M2-9QXA-4FTR-8WPN');
     const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }));
@@ -591,6 +610,13 @@ describe('SellerConfirm', () => {
   });
 });
 
+/** A beforeunload as the browser sends it on close or reload: true when the page asked to stay (lead call, gap 4). */
+function leaveAsks(): boolean {
+  const e = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(e);
+  return e.defaultPrevented;
+}
+
 function released(t: ReleaseTrade, escrow: ReleaseEscrow = escrowStub([], { phase: 'done' })) {
   const ui = (tr: ReleaseTrade, e: ReleaseEscrow) => (
     <MemoryRouter>
@@ -722,6 +748,24 @@ describe('Released for a buyer who opens the room while the release settles (I2)
     expect(r.text()).not.toContain('is yours');
   });
 
+  it("leaving the page asks first (beforeunload) while the buyer's device co-signs; not once co-signed, or on a stopped escrow (lead call, gap 4)", () => {
+    const r = released(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true }));
+    expect(leaveAsks()).toBe(true);
+    r.update(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'done' }));
+    expect(leaveAsks()).toBe(false);
+    r.update(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'error', error: 'escrow-failed' }));
+    expect(leaveAsks()).toBe(false);
+    // Review m7: a refusal while signing (the device can sign nothing until it clears) does not ask either.
+    r.update(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true, refusal: 'amount-changed' }));
+    expect(leaveAsks()).toBe(false);
+    r.update(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true }));
+    expect(leaveAsks()).toBe(true);
+    r.unmount();
+    const seller = released(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true }));
+    expect(leaveAsks()).toBe(false); // the seller's own warning is SellerConfirm's
+    seller.unmount();
+  });
+
   it('in settling with no device amount, names no amount: the API\'s is the fallback only once released (round 2 Minor 1)', () => {
     const r = released(trade({ ...BUYER, state: 'settling', settling: 'release', amountAtomic: '9990000000000' }), escrowStub([], { phase: 'setting-up', amountAtomic: null, fiatCents: null }));
     expect(r.host.querySelector('h1')!.textContent).toBe('satoshi_ghost released the XMR to you');
@@ -807,6 +851,25 @@ describe('releaseScreenOf (the slot Task 22 registers in TradeRoom)', () => {
 });
 
 describe('ReleaseRoomScreen (the trade room\'s props)', () => {
+  it('review m8: the rating card shows under Released only once the trade is released, never while the release settles', async () => {
+    answer = (c) =>
+      c.url.endsWith('/review') ? { status: 200, body: { reviewable: true, mine: null, theirs: null, skipped: false, held: false } } : { status: 200, body: { confirmations: 1, target: 10, payoutEnd: 'Qwk3Fz' } };
+    const room = (view: ReleaseTrade) =>
+      render(
+        <MemoryRouter>
+          <ReleaseRoomScreen code={view.code} view={view} escrow={escrowStub([], { phase: 'done' })} refresh={async () => undefined} serverClock={() => new Date(NOW)} wide={false} />
+        </MemoryRouter>,
+      );
+    const settling = room(trade({ role: 'buyer', poster: 'seller', fee: undefined, counterparty: who('satoshi_ghost'), state: 'settling', settling: 'release' }));
+    await flush();
+    expect(settling.host.querySelector('[data-part="review-card"]')).toBeNull();
+    expect(calls.some((c) => c.url.endsWith('/review'))).toBe(false);
+    settling.unmount();
+    const done = room(trade({ role: 'buyer', poster: 'seller', fee: undefined, counterparty: who('satoshi_ghost'), ...RELEASED }));
+    await flush();
+    expect(done.host.querySelector('[data-part="review-card"] h2')!.textContent).toBe('How was trading with satoshi_ghost?');
+  });
+
   it('the room picks ReleaseRoomScreen for each Task 24 slot, and nothing else of Task 24\'s', () => {
     const full = (over: Over) => trade(over) as TradeView;
     expect(screenFor(full({ role: 'seller', state: 'paid' }), 0)).toBe(ReleaseRoomScreen);

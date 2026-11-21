@@ -8,7 +8,7 @@ import { ProtocolError, seal, type Envelope, type Identity, type Participants } 
 import { ChatEnvelopeError, channelFor } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, type ChatState } from '../src/chat/chatCrypto.js';
+import { ChatError, chatChannel, makeChatKey, newChatState, openChatMessage, sealChatMessage, type ChatState } from '../src/chat/chatCrypto.js';
 
 const SEED = 0x57454221; // "WEB!"
 const ALL: readonly Role[] = ['buyer', 'seller', 'mod'];
@@ -150,6 +150,20 @@ describe('forged sender and recipient set', () => {
     const env = await seal({ trade: channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'x' }, to: ['buyer', 'seller'], me: ids.buyer, participants });
     expect(await codeOf(read(env))).toBe('ok');
     expect(await codeOf(openChatMessage(env, { role: 'mod', me: ids.mod, participants, state: newChatState(channel) }))).toBe('not-for-me');
+  });
+
+  it('R16 flipped (design build task 5): under envelope v2 a message the counterparty can read always opens for a later member with the chat key', async () => {
+    // The engine is v2 only (v1 above stays the weakness of v1 alone). There is one ciphertext under
+    // the chat key: no per-recipient slot a sender could fill with random bytes.
+    const { tk } = await makeChatKey({ channel, role: 'buyer', me: ids.buyer, participants });
+    const { envelope } = await sealChatMessage({ role: 'buyer', me: ids.buyer, participants, state: newChatState(channel), text: 'send to account B', tk });
+    const counterparty = await openChatMessage(envelope, { role: 'seller', me: ids.seller, participants, state: newChatState(channel), tk });
+    // A later member (the moderator, once granted the key at a dispute) reads exactly the same text.
+    const later = await openChatMessage(envelope, { role: 'mod', me: ids.mod, participants, state: newChatState(channel), tk });
+    expect(later.message.text).toBe(counterparty.message.text);
+    // A message sealed under some other key opens for nobody holding the chat key, the counterparty included.
+    const { envelope: other } = await sealChatMessage({ role: 'buyer', me: ids.buyer, participants, state: newChatState(channel), text: 'x', tk: (await makeChatKey({ channel, role: 'buyer', me: ids.buyer, participants })).tk });
+    expect(await codeOf(openChatMessage(other, { role: 'seller', me: ids.seller, participants, state: newChatState(channel), tk }))).toBe('bad-signature');
   });
 });
 

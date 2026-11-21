@@ -16,6 +16,7 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
   role: 'buyer',
   counterparty: 'Sam',
   disputeOpen: false,
+  systemCalled: false,
   paySecured: true,
   lines: [],
   more: false,
@@ -23,12 +24,7 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
 });
 
 let current: ChatSnapshot;
-let client: {
-  sync: ReturnType<typeof vi.fn<ChatClient['sync']>>;
-  send: ReturnType<typeof vi.fn<ChatClient['send']>>;
-  sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>>;
-  sendNotice: ReturnType<typeof vi.fn<ChatClient['sendNotice']>>;
-};
+let client: { sync: ReturnType<typeof vi.fn<ChatClient['sync']>>; send: ReturnType<typeof vi.fn<ChatClient['send']>>; sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>>; sendProof: ReturnType<typeof vi.fn<ChatClient['sendProof']>>; sendUnblurred: ReturnType<typeof vi.fn<ChatClient['sendUnblurred']>>; sendNotice: ReturnType<typeof vi.fn<ChatClient['sendNotice']>> };
 
 const flush = async (): Promise<void> => {
   await act(async () => {
@@ -38,7 +34,7 @@ const flush = async (): Promise<void> => {
 
 beforeEach(() => {
   current = snap();
-  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current), sendNotice: vi.fn(async () => current) };
+  client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current), sendProof: vi.fn(async () => current), sendUnblurred: vi.fn(async () => current), sendNotice: vi.fn(async () => current) };
   setChatClient(client);
 });
 
@@ -126,6 +122,17 @@ describe('ChatPanel', () => {
     expect(items).toEqual([`Sam: ${MISSING_LINE} Sent 6 Nov 2026, 15:00 UTC.`, 'You: Paid']);
     expect(host.querySelector('li[data-missing] time')?.getAttribute('dateTime')).toBe('2026-11-06T15:00:00.000Z');
     expect(host.querySelectorAll('li[data-missing]')).toHaveLength(1);
+  });
+
+  it('design build task 7 (T2): the system\'s dispute shows "A moderator has been called by the system" only when the engine says so', async () => {
+    current = snap({ disputeOpen: true });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    expect(host.querySelector('[data-system="system-dispute"]')).toBeNull();
+    current = snap({ disputeOpen: true, systemCalled: true });
+    const again = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    expect(again.host.querySelector('[data-system="system-dispute"]')?.textContent).toBe('A moderator has been called by the system.');
   });
 
   it('outside the dispute room a moderator line reads "Moderator", with no badge, and the panel says a dispute is open', async () => {
@@ -266,6 +273,32 @@ describe('ChatPanel', () => {
     expect(client.sync.mock.calls.length).toBe(2);
   });
 
+  it('a sync slower than the waiting poll still lands: a poll never starts while one is in flight (it runs once after), so no result is discarded for ever', async () => {
+    vi.useFakeTimers();
+    const line = { id: '1', from: 'seller' as const, text: 'Hello', at: null, mine: false, gapBefore: false };
+    let inFlight = 0;
+    let most = 0;
+    // A slow device: every sync takes longer than CHAT_POLL_MS.waiting (3 s).
+    client.sync.mockImplementation(
+      () =>
+        new Promise((r) => {
+          most = Math.max(most, ++inFlight);
+          setTimeout(() => {
+            inFlight--;
+            r(snap({ lines: [line] }));
+          }, 4_000);
+        }),
+    );
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    for (let t = 0; t < 20; t++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+    }
+    expect([...host.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Sam: Hello']);
+    expect(most).toBe(1);
+  });
+
   it('a rate-limited send says to wait', async () => {
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
     await flush();
@@ -347,6 +380,27 @@ describe('TradeChatPanel', () => {
     await flush();
     await flush();
     expect(host.querySelector('[role="alert"]')?.textContent).toBe('This trade has no chat.');
+    expect(client.sync).not.toHaveBeenCalled();
+  });
+});
+
+// Lead call (20 Nov): the API opens no new chat for a closed trade (409 trade-closed); the panel shows an empty state, not an error or a refusal.
+describe('TradeChatPanel: a closed trade with no chat', () => {
+  it('shows "This trade has no chat." as an empty state: no alert, no CantDoThat, no sync', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'trade-closed' }), { status: 409, headers: { 'content-type': 'application/json' } })));
+    const { host } = render(
+      <MemoryRouter>
+        <TradeChatPanel code="AAAA-BBBB-CCCC-DDDD" name="Sam" />
+      </MemoryRouter>,
+    );
+    await flush();
+    await flush();
+    const section = host.querySelector('[data-chat-phase]');
+    expect(section?.getAttribute('data-chat-phase')).toBe('empty');
+    expect(host.querySelector('[data-chat-empty]')?.textContent).toBe('This trade has no chat.');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"], dialog')).toBeNull();
+    expect(host.querySelector('textarea')).toBeNull();
     expect(client.sync).not.toHaveBeenCalled();
   });
 });
@@ -586,5 +640,32 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     await flush();
     expect(host.querySelector('[data-chat-announce]')?.textContent).toBe(`Sam: ${TEXT}`);
     expect(host.textContent).not.toContain('DE00999');
+  });
+});
+
+describe('ChatPanel: one sync in flight (review rev-small-fu, 21 Nov)', () => {
+  const said = (id: string, text: string) => ({ id, from: 'seller' as const, text, at: null, mine: false, gapBefore: false });
+  let pending: Array<(s: ChatSnapshot) => void>;
+
+  beforeEach(() => {
+    pending = [];
+    client.sync = vi.fn(() => new Promise<ChatSnapshot>((res) => pending.push(res)));
+  });
+
+  it('live events during an in-flight sync coalesce into exactly one sync after it, whose result shows', async () => {
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    act(() => emitChatLive(CHAT));
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(client.sync).toHaveBeenCalledTimes(1);
+    pending[0]!(snap({ lines: [said('1', 'old')] }));
+    await flush();
+    // The live events asked for another sync while the first was out (ChatPanel's `again.current = true`).
+    expect(client.sync).toHaveBeenCalledTimes(2);
+    pending[1]!(snap({ lines: [said('1', 'old'), said('2', 'new')] }));
+    await flush();
+    expect(client.sync).toHaveBeenCalledTimes(2);
+    expect([...host.querySelectorAll('li')].map((l) => l.textContent)).toEqual(['Sam: old', 'Sam: new']);
   });
 });

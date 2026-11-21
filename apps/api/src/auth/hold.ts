@@ -643,22 +643,34 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // Plan 3 Task 20 (encrypted chat), classified at its landing next to Tasks 16-17.
   'POST /v1/chats': 'social: opens a pre-trade chat row on an offer; no account, session, approval or security state, no obligation',
   'POST /v1/chats/:chat/envelopes': 'an encrypted chat line in a chat the caller is in; no account, session, approval or security state',
+  'POST /v1/chats/:chat/key': "the signed key record of a chat the caller is in (wraps only); no account, session, approval or security state",
+  'POST /v1/chats/:chat/grant': "the caller's fallback grant of a disputed trade's chat key to the moderator (a wrap only); no account, session, approval or security state, no new obligation",
   'POST /v1/chats/:chat/identity': "the caller's chat identity key for one chat; no account, session, approval or security state",
   'POST /v1/trades/:code/chat': "a participant's chat for an open trade (R42: finishing open trades stays allowed); no new obligation",
+  // Plan 5 Task 14.
+  'PUT /v1/trades/:code/proofs/:id': "a participant's proof ciphertext for their own trade (R42: finishing open trades stays allowed); no account, session, approval or security state, no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
   // Plan 5 Task 3 (reviews), classified at its merge with Tasks 16-17.
   'POST /v1/trades/:code/review': "a participant's one review of their own finished trade (a reviews row only); no account, session, approval or security state, no new obligation",
   'POST /v1/trades/:code/review/skip': "a participant's Skip review of their own finished trade (a review_skips row only); no account, session, approval or security state, no new obligation",
+  // Plan 5 Task 19: a dispute of a review about the caller.
+  'POST /v1/reviews/:id/dispute': "the subject's one dispute of a review about them (a review_disputes row only; the review shows Under review); no account, session, approval or security state, no obligation",
   // C12b (owner 2026-11-01/02): the opt-in "traded to date" profile line.
   'PUT /v1/account/profile/traded-total': "the caller's own profile display preference (one accounts column); no session, approval or security state, no obligation",
+  // Plan 5 Tasks 5 and 12: badge visibility and showing the signed record (one badge_prefs row).
+  'PUT /v1/account/badges': "the caller's own badge visibility (a badge_prefs row only; badges are earned, never set); no session, approval or security state, no obligation",
+  'PUT /v1/account/record/public': "the caller's own record-on-profile preference (a badge_prefs column only); no session, approval or security state, no obligation",
   // Owner Q75 (6 Nov 2026): the idle reminder.
   'PUT /v1/account/idle-reminder': "the person's own reminder preference (one accounts column of their login); never ends or extends a session; no approval or security state, no obligation",
   // Plan 5 Task 4 (platform feedback), classified at its merge with Tasks 16-17.
   'POST /v1/feedback': 'a platform-feedback row only, holding nothing about the sender; no account, session, approval or security state, no obligation',
   'POST /v1/trades/:code/dispute': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/appeal': 'finishes an open trade (R42); creates no new obligation',
+  'POST /v1/trades/:code/payment-proof': "the seller's proof of a payment a ruling ordered (Plan 4 Task 12); finishes an open dispute, creates no new obligation",
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",
   'POST /v1/trades/:code/wallet': "the poster's payout wallet for an open trade, from the account's own usable wallets",
+  // Owner 17 Nov 2026 (note #6 Q1): the default payout wallet is only what the trade screen picks first.
+  'PUT /v1/wallets/:id/default': "which of the account's own saved wallets the trade screen picks first; changes no address, wait or security state, and every take still names its wallet",
   // Plan 5 Task 10: past reputation. No login, session, approval, security or trading state: the
   // caller's own claim rows only (a moderator approves before anything shows).
   'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",
@@ -703,6 +715,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   'POST /v1/offers/:id/take',
   'POST /v1/wallets',
   'DELETE /v1/wallets/:id',
+  // Owner 17 Nov 2026 (note #6 Q1): choosing the default payout wallet, a wallet write like the others.
+  'PUT /v1/wallets/:id/default',
   'POST /v1/account/approvals/:id',
   // Plan 2 Task 18 (owner 2026-10-30): every team change waits out a hold; they also check it
   // under the account lock (team/members.ts `ownerWriteGate`).

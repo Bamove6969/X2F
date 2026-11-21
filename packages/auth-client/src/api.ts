@@ -41,6 +41,8 @@ export interface HoldChangeSummary {
   wallets?: number;
   /** Wallets: each new address's last 6 characters. Optional: older API builds do not send it. */
   addressEnds?: string[];
+  /** Wallets (owner note #6): for each, in order, whether it is for one trade only. Absent from older API builds. */
+  oneTime?: boolean[];
   on?: boolean;
   memberId?: string;
   roles?: string[];
@@ -223,6 +225,8 @@ export interface AccountOverview {
   holdUntil: string | null;
   /** A trader's starter-limits stage (spec 2.3), null for staff and owner. Optional: older API builds do not send it. */
   stage?: 'starter' | 'building' | 'graduated' | null;
+  /** Plan 5 Task 6: a trader's completed trades (for "How's X2F doing?"), null for staff and owner. Optional: older API builds do not send it. */
+  completedTrades?: number | null;
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];
@@ -265,7 +269,18 @@ export interface AccountOverview {
    * send it (read it with `isVendor`).
    */
   accountType?: AccountType;
+  /**
+   * Owner demo note #6 (16 Nov 2026) and his answers of 17 Nov: the trader account's rating by its
+   * login methods, decided by the API alone (apps/api/src/auth/rating.ts). `high` (a passkey, security
+   * key or PGP key, with or without a password) may add a payout address on the trade screen; `medium`
+   * (a password with the authenticator app) and `weak` (a password alone) add them in Settings. Null for
+   * team members, staff and owner. Optional: older API builds do not send it (read it as not high).
+   */
+  securityRating?: SecurityRating | null;
 }
+
+/** Owner demo note #6: an account's rating by the login methods it holds. */
+export type SecurityRating = 'weak' | 'medium' | 'high';
 
 /** Owner 2 Nov 2026: Trader and Vendor accounts. */
 export type AccountType = 'trader' | 'vendor';
@@ -363,6 +378,21 @@ export interface Wallet {
   addressEnd: string;
   usableFrom: string;
   usable: boolean;
+  /**
+   * Owner demo note #6: for one trade only; the trade that uses it removes it from the list. Optional:
+   * older API builds do not send it (saved for future trades).
+   */
+  oneTime?: boolean;
+  /**
+   * Owner, 17 Nov 2026: the default the trade screen picks first (the chosen one, else the only usable
+   * saved wallet). Optional: older API builds do not send it (no default).
+   */
+  isDefault?: boolean;
+  /**
+   * Review 17 Nov (b) M1: the code of the trade, still in setup, that used up this one-time wallet; it
+   * is listed (never usable) so it can be removed before it comes back. Absent or null: an open wallet.
+   */
+  inUseByTrade?: string | null;
 }
 
 /** One wallet of an add (the fields the person fills in). */
@@ -370,6 +400,8 @@ export interface WalletDraft {
   app: WalletApp;
   label: string;
   address: string;
+  /** Owner demo note #6: true for one trade only; absent or false saves it for future trades. */
+  oneTime?: boolean;
 }
 
 /**
@@ -614,6 +646,12 @@ export interface AuthApi {
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
   /** Owner p5-7: `Staged` (202) from a login with just a username and password: the wallet stays until it applies. */
   removeWallet(id: string): Promise<Staged | undefined>;
+  /**
+   * Owner, 17 Nov 2026 (note #6 Q1): makes an open saved wallet the default the trade screen picks
+   * first (`PUT /v1/wallets/:id/default`, 204). 409 `wallet-one-time` for a one-time wallet,
+   * 409 `wallet-not-ready` for a wallet still in its wait (review 17 Nov M1).
+   */
+  setDefaultWallet(id: string): Promise<void>;
   // Session length (owner, 2 Nov 2026). Full trader sessions only. Never staged (lead reading of
   // owner p11-26: a hold holds only the security changes made; see routes/account.ts).
   /** This session's length: before it is chosen, from the login; after, shorter applies now, longer from the next extend. */
@@ -810,6 +848,9 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     addWallets: (b) => post('/v1/wallets', b),
     getWalletRule: () => get('/v1/wallets/rule'),
     removeWallet: (id) => stagedOrDone(call('DELETE', `/v1/wallets/${seg(id)}`)),
+    setDefaultWallet: async (id) => {
+      await call('PUT', `/v1/wallets/${seg(id)}/default`, {});
+    },
     setSessionLength: (b) => call('PUT', '/v1/account/session/length', b),
     extendSession: (b) => post('/v1/account/session/extend', b),
     setIdleReminder: (b) => call('PUT', '/v1/account/idle-reminder', b),

@@ -19,6 +19,7 @@ import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
+import { ACTIVE_LIEN_SQL, hasActiveLien } from '../disputes/lien.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -30,8 +31,9 @@ import { assertNoPendingReview, hasPendingReview } from '../reviews/gate.js';
 import type { MarketPrices, MarketQuote } from '../price/market.js';
 import { assertNotBlocked } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type TradeCap } from '../traders/stage.js';
-import { usableWallets, type Wallet } from '../wallets/routes.js';
+import { usableWallets, useUpOneTimeWallet, type Wallet } from '../wallets/routes.js';
 import { assertWithinLaunchCap } from './launchCap.js';
+import { largestAtomicWithin, usdValue } from './capValue.js';
 import { insertTrade, loadTradeRow, rowToTrade, type TradeSides } from './store.js';
 import { roleOf } from './view.js';
 import { MARKET_PRICED, instructionsFor, loadFlex, tiersOf, type FlexMethod } from '../offers/routes.js';
@@ -138,13 +140,14 @@ interface OfferRow {
   /** The unit every band is in (migration 324; one per offer). */
   amount_unit: 'xmr' | 'fiat';
   status: 'live' | 'paused' | 'removed';
-  /** The poster may be seen: a trader, not disabled, with no trading hold and no recovery-code hold (Task 4's LISTED). */
+  /** The poster may be seen: a trader, not disabled, with no trading hold, no active lien and no recovery-code hold (Task 4's LISTED). */
   poster_ok: boolean;
 }
 
 const OFFER_SQL = `select o.account_id, o.side, o.amount_unit, o.status,
     (a.kind = 'trader' and a.disabled_at is null
       and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+      and not ${ACTIVE_LIEN_SQL('o.account_id')}
       and not ${recoveryHoldHidesSql('o.account_id')}) as poster_ok
   from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`;
 
@@ -163,19 +166,8 @@ function lockRate(currency: string, tier: Tier, method: FlexMethod, quoted: bigi
   return now;
 }
 
-/**
- * What the trade counts against the starter caps, in US cents: the larger of its fiat total and its
- * XMR amount valued at the live market price (lead decision 2026-10-29, Task 5 review M5), so an
- * offer priced below the market (down to −50%) cannot move more XMR inside a cap. Both convert with `usdCentsOf`
- * at the market quote, exactly as Task 4's `opensAt` converts an offer's minimum (Task 4 review
- * M8), at the market quote `q` (the take has none to value the XMR with: no value, fails closed).
- */
-function usdValue(currency: string, q: MarketQuote, amountAtomic: bigint, cents: bigint): bigint {
-  const usd = (c: bigint): bigint => (currency === 'USD' ? c : usdCentsOf(c, { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr }));
-  const total = usd(cents);
-  const market = usd(fiatCents(amountAtomic, q.price));
-  return total > market ? total : market;
-}
+// `usdValue` (what the trade counts against every cap) lives in ./capValue.ts, shared with the
+// offer list's clamp for a poster held by an account limit (Plan 4 Task 26, review B1).
 
 /**
  * The trade's growth ceiling, its `maxFiatCents` (launch-rules review F1): the largest fiat total,
@@ -198,16 +190,8 @@ function growthCeiling(
   rate: Price,
   a: { amountAtomic: bigint; totalCents: bigint; offerMaxCents: bigint },
 ): bigint {
-  const within = (x: bigint): boolean => usdValue(currency, q, x, fiatCents(x, rate)) <= LAUNCH_TRADE_CAP_USD_CENTS;
-  // The take amount is within the cap; find an amount above it, then the last one within.
-  let lo = a.amountAtomic;
-  let hi = lo * 2n;
-  while (within(hi)) [lo, hi] = [hi, hi * 2n];
-  while (hi - lo > 1n) {
-    const mid = (lo + hi) / 2n;
-    if (within(mid)) lo = mid;
-    else hi = mid;
-  }
+  // The take amount is within the cap; the last amount within (the shared bisection).
+  const lo = largestAtomicWithin(currency, q, rate, LAUNCH_TRADE_CAP_USD_CENTS, a.amountAtomic);
   const atCap = fiatCents(lo + 1n, rate) - 1n;
   const ceiling = atCap < a.offerMaxCents ? atCap : a.offerMaxCents;
   return ceiling < a.totalCents ? a.totalCents : ceiling;
@@ -241,6 +225,9 @@ async function checkStarterLimits(db: Queryable, a: { takerId: string; posterId:
     if (usd === null) throw new ApiError(409, 'price-unavailable');
     for (const [c, , own] of caps) {
       if (c.capUsdCents !== null && usd > c.capUsdCents) {
+        // Plan 4 Task 26: an account limit's cap is named to the account itself as its own limit
+        // (`account-limit`, the cap only, never why); the other side's is the same plain refusal.
+        if (own && c.byLimit) throw new ApiError(409, 'account-limit', { capUsdCents: c.capUsdCents.toString() });
         throw new ApiError(409, 'starter-limit', own ? { stage: c.stage, capUsdCents: c.capUsdCents.toString() } : {});
       }
     }
@@ -329,15 +316,18 @@ export function takeRoutes(app: FastifyInstance): void {
       if (posterId === takerId) throw new ApiError(409, 'own-offer');
       const now = deps.clock();
       const flags = (
-        await c.query<{ paused: boolean | null; held: boolean }>(
+        await c.query<{ paused: boolean | null; held: boolean; lien: boolean }>(
           `select (select trading_paused from site_flags for share) as paused,
-                  exists (select 1 from trading_holds where account_id = $1 and lifted_at is null) as held`,
+                  exists (select 1 from trading_holds where account_id = $1 and lifted_at is null) as held,
+                  ${ACTIVE_LIEN_SQL('$1::uuid')} as lien`,
           [takerId],
         )
       ).rows[0]!;
       // No site_flags row fails closed.
       if (flags.paused !== false) throw new ApiError(409, 'trading-paused');
       if (flags.held) throw new ApiError(409, 'trading-hold');
+      // Task 25 (J-06): an active lien takes away every trading privilege until it is repaid.
+      if (flags.lien) throw new ApiError(409, 'lien');
       // Plan 5 Task 3, the rate-first gate (spec 5.1, P5-A4), for both sides, under the account locks
       // above (a review submitted meanwhile is seen at the next take). The taker's own pending review
       // is named (409 `review-pending`); the poster's is the generic `offer-busy`, so a taker learns
@@ -423,6 +413,8 @@ export function takeRoutes(app: FastifyInstance): void {
         if (refusal) throw refusal;
         throw e;
       }
+      // Owner demo note #6: a one-time wallet is for this trade only (under the taker's account lock above).
+      await useUpOneTimeWallet(c, takerId, wallet.id, t.code, now);
       // "A take reuses the chat" (Task 20): the pair's open pre-trade chat on this offer becomes the trade's.
       await linkChatToTrade(c, { offerId: id, buyerAccountId: t.buyerId, sellerAccountId: t.sellerId, tradeCode: t.code });
       // Task 18: a team member's take is in the account owner's audit log, in this transaction
@@ -472,6 +464,7 @@ export function takeRoutes(app: FastifyInstance): void {
       await c.query('select id from accounts where id = $1 for update', [me]);
       const held = await c.query('select 1 from trading_holds where account_id = $1 and lifted_at is null', [me]);
       if ((held.rowCount ?? 0) > 0) throw new ApiError(409, 'trading-hold');
+      if (await hasActiveLien(c, me)) throw new ApiError(409, 'lien');
       // Plan 5 Task 3: the poster rates their last trade before setting up a new one (P5-A4).
       await assertNoPendingReview(c, me, now);
       await c.query('select id from wallets where id = $1 and account_id = $2 for share', [walletId, me]);
@@ -490,6 +483,8 @@ export function takeRoutes(app: FastifyInstance): void {
               [code, me, w.address],
             );
       if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
+      // Owner demo note #6: a one-time wallet is for this trade only (under the poster's account lock above).
+      await useUpOneTimeWallet(c, me, w.id, code, now);
       await auditMember(c, req.auth, { action: 'trade-wallet-set', tradeCode: code, detail: { walletId } }, now);
     });
     return reply.code(204).send();

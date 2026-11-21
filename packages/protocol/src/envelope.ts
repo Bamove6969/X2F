@@ -96,7 +96,8 @@ const toB64 = (b: Uint8Array): string => sodium.to_base64(b, sodium.base64_varia
 
 // ── Padding ─────────────────────────────────────────────────────────────
 
-function pad(data: Uint8Array): Uint8Array {
+/** @internal shared with chatV2.ts, unchanged for v1. */
+export function pad(data: Uint8Array): Uint8Array {
   if (data.length + 1 > MAX_PADDED) throw new ProtocolError('too-large', 'Plaintext too large');
   const bucket = BUCKETS.find((b) => b >= data.length + 1) ?? MAX_PADDED;
   const out = new Uint8Array(bucket);
@@ -105,7 +106,8 @@ function pad(data: Uint8Array): Uint8Array {
   return out;
 }
 
-function unpad(data: Uint8Array): Uint8Array {
+/** @internal shared with chatV2.ts, unchanged for v1. */
+export function unpad(data: Uint8Array): Uint8Array {
   if (!(BUCKETS as readonly number[]).includes(data.length)) throw bad('Invalid plaintext: bad padding');
   let i = data.length - 1;
   while (i >= 0 && data[i] === 0) i--;
@@ -117,7 +119,8 @@ function unpad(data: Uint8Array): Uint8Array {
 
 // ── Strict decoding (every failure is ProtocolError naming the field only) ──
 
-function hexField(v: unknown, len: number, field: string): Uint8Array {
+/** @internal shared with chatV2.ts, unchanged for v1. */
+export function hexField(v: unknown, len: number, field: string): Uint8Array {
   if (typeof v !== 'string' || v.length !== len * 2 || !LOWER_HEX.test(v)) {
     throw bad(`Invalid ${field}: expected ${len} bytes lower-case hex`);
   }
@@ -128,7 +131,8 @@ function hexField(v: unknown, len: number, field: string): Uint8Array {
   }
 }
 
-function b64Field(v: unknown, okLen: (n: number) => boolean, maxChars: number, field: string): Uint8Array {
+/** @internal shared with chatV2.ts, unchanged for v1. */
+export function b64Field(v: unknown, okLen: (n: number) => boolean, maxChars: number, field: string): Uint8Array {
   if (typeof v !== 'string' || v.length > maxChars || !CANONICAL_B64.test(v)) throw bad(`Invalid ${field}: bad base64`);
   let bytes: Uint8Array;
   try {
@@ -143,7 +147,8 @@ function b64Field(v: unknown, okLen: (n: number) => boolean, maxChars: number, f
 }
 
 /** Validate a participant's hex keys and that boxPublic is the X25519 conversion of signPublic. */
-function participantKeys(p: unknown, field: string): { sign: Uint8Array; box: Uint8Array } {
+/** @internal shared with chatV2.ts, unchanged for v1. */
+export function participantKeys(p: unknown, field: string): { sign: Uint8Array; box: Uint8Array } {
   if (!isPlainObject(p)) throw bad(`Invalid ${field}`);
   const sign = hexField(p['signPublic'], sodium.crypto_sign_PUBLICKEYBYTES, `${field}.signPublic`);
   const box = hexField(p['boxPublic'], sodium.crypto_box_PUBLICKEYBYTES, `${field}.boxPublic`);
@@ -177,7 +182,8 @@ function signedMessage(u: Unsigned): Uint8Array {
 // ── seal ────────────────────────────────────────────────────────────────
 
 /** Two roles sharing a signPublic or boxPublic would let one key speak for both. */
-function assertDistinctKeys(participants: Partial<Participants>, where: string): void {
+/** @internal shared with chatV2.ts, unchanged for v1. */
+export function assertDistinctKeys(participants: Partial<Participants>, where: string): void {
   const sign = new Set<string>();
   const box = new Set<string>();
   for (const role of ROLES) {
@@ -298,7 +304,8 @@ const CT_MAX_CHARS = b64Len(MAX_PADDED + MAC_LEN);
  * used). Accessors, non-enumerable or symbol keys, extra or missing keys are rejected. Any
  * exception (e.g. from a Proxy trap) becomes bad-signature. Only the snapshot is used after.
  */
-function snapshot(o: unknown, keys: readonly string[], field: string): Record<string, unknown> {
+/** @internal shared with chatV2.ts, unchanged for v1. */
+export function snapshot(o: unknown, keys: readonly string[], field: string): Record<string, unknown> {
   try {
     if (typeof o !== 'object' || o === null || Array.isArray(o)) throw new Error('not an object');
     const proto = Object.getPrototypeOf(o) as unknown;
@@ -360,7 +367,8 @@ function checkShape(e: unknown): Snapshot {
 }
 
 /** Parse the decrypted plaintext; it must be exactly the canonical text seal would produce. */
-function parsePlaintext(padded: Uint8Array): Omit<Opened, 'from'> {
+/** @internal shared with chatV2.ts, unchanged for v1. */
+export function parsePlaintext(padded: Uint8Array): Omit<Opened, 'from'> {
   const text = utf8Decoder.decode(unpad(padded));
   const parsed = JSON.parse(text) as unknown;
   if (!isPlainObject(parsed) || !hasExactKeys(parsed, INNER_KEYS) || typeof parsed['type'] !== 'string') {

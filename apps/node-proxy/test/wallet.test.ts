@@ -104,6 +104,21 @@ describe('node proxy with monero-ts wallets on a restricted regtest node', () =>
     await bob.sync();
     expect((await bob.getTxs({ hash }))[0]?.getIsConfirmed()).toBe(true);
 
+    // The escrow builder's tx-key proof (lead 2026-11-20, review M1/m4): wallet2's check_tx_key reads
+    // the tx through the proxy (`/gettransactions`) and proves what an address received; a key that
+    // does not fit is refused, never "good".
+    const txKey = await alice.getTxKey(hash);
+    const checked = await bob.checkTxKey(hash, txKey, bobAddress);
+    expect(checked.getIsGood()).toBe(true);
+    expect(checked.getInTxPool()).toBe(false);
+    expect(checked.getReceivedAmount()).toBe(XMR);
+    const other = await alice.createTx({ accountIndex: 0, address: bobAddress, amount: XMR / 2n, relay: true });
+    await mine(node.rpcUri, 1, aliceAddress);
+    const wrongKey = await alice.getTxKey(other.getHash());
+    const wrong = await bob.checkTxKey(hash, wrongKey, bobAddress).then((c) => ({ good: c.getIsGood(), received: c.getReceivedAmount() }), () => null);
+    expect(wrong === null || wrong.received === 0n).toBe(true);
+    expect(calls.some((c) => c.call === '/gettransactions' && c.status === 200)).toBe(true);
+
     // The one preflight above is the only answer that may be other than 200 (review L4).
     const preflight = (c: (typeof calls)[number]): boolean => c.method === 'OPTIONS' && c.call === '/get_transactions' && c.status === 204;
     expect(calls.filter(preflight)).toHaveLength(1);

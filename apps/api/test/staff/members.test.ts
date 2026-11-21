@@ -141,6 +141,25 @@ describe('invites', () => {
     expect(start.json().options.challenge).toBe(Buffer.from(inviteRegistrationChallenge(inv.tokenHash)).toString('base64url'));
   });
 
+  it('keeps the attested key registration for the moderation gate, and no passkey registration (Task 13)', async () => {
+    const inv = await createInvite('mod');
+    const s = await signUp(inv.token, { passkey: true });
+    expect(s.finish.statusCode, s.finish.body).toBe(201);
+    const id = await accountOf(s.loginName);
+    const { rows } = await t.deps.db.query<{ kind: string; invite_id: string; response: { id: string; rawId: string; type: string; clientExtensionResults: object; response: Record<string, string> } }>(
+      `select w.kind, r.invite_id, r.response from staff_key_registrations r join webauthn_credentials w on w.credential_id = r.credential_id
+        where w.account_id = $1`,
+      [id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe('security-key');
+    expect(rows[0]!.invite_id).toBe(inv.inviteId);
+    expect(rows[0]!.response.id).toBe(s.key.credentialId);
+    // Only what verification read: the attestation and the client data, nothing else the client sent.
+    expect(Object.keys(rows[0]!.response.response).sort()).toEqual(['attestationObject', 'clientDataJSON']);
+    expect(Object.keys(rows[0]!.response).sort()).toEqual(['clientExtensionResults', 'id', 'rawId', 'response', 'type']);
+  });
+
   it('a link is invalid after 24 hours, and once cancelled', async () => {
     const late = await createInvite('helper');
     t.setNow(new Date(MON_NOON.getTime() + 24 * HOUR));
@@ -356,6 +375,31 @@ describe('invites', () => {
     expect(errorOf(await bad({ token: 'short' }))).toBe('bad-request');
     expect(errorOf(await bad({ expiresAt: new Date(MON_NOON.getTime() + 25 * HOUR).toISOString() }))).toBe('bad-request');
     expect(errorOf(await bad({ expiresAt: new Date(MON_NOON.getTime() - 1).toISOString() }))).toBe('bad-request');
+  });
+});
+
+describe('a staff name that looks like an existing trader or member (review lead-signup-rules-main M1)', () => {
+  it('is refused at invite accept with 400 display-name-reserved, in either direction of punctuation and look-alikes; the invite stays open', async () => {
+    // A day earlier: the owner's tap starts here stay out of the later tests' 10-minute window (in memory).
+    t.setNow(new Date(MON_NOON.getTime() - 2 * 86_400_000));
+    const tag = Date.now().toString(36).slice(-5);
+    const trader = await seedAccount(t.deps, { loginName: `trlogin${tag}`, displayName: `Mira_${tag}` });
+    await t.deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+       values ($1, $2, lower($2), '{offers-see}', $3, $3)`,
+      [trader, `Ren_${tag}`, new Date(MON_NOON.getTime() + 86_400_000)],
+    );
+    const inv = await createInvite('mod');
+    const b = invitee();
+    const pick = (displayName: string) => b.post(acceptUrl(inv.token, '/account'), { displayName, loginName: loginName(), ...signed() });
+    for (const name of [`Mira.${tag}`, `M1ra${tag}`, `ren-${tag}`, `Re-n${tag}`]) {
+      const res = await pick(name);
+      expect({ name, status: res.statusCode, error: errorOf(res) }).toEqual({ name, status: 400, error: 'display-name-reserved' });
+    }
+    expect((await t.deps.db.query('select account_id from staff_invites where id = $1', [inv.inviteId])).rows).toEqual([{ account_id: null }]);
+    // A name unlike both still works.
+    const ok = await pick(`Lark_${tag}`);
+    expect(ok.statusCode, ok.body).toBe(201);
   });
 });
 
@@ -608,7 +652,7 @@ describe('per-person grants (owner Q60)', () => {
   it('a senior moderator reads feedback by role (owner Q60)', async () => {
     const senior = await staffWithKeys(t, { role: 'senior' });
     expect((await senior.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
-    expect((await senior.browser.get('/staff/v1/me')).json().nav).toEqual(['disputes', 'training', 'log', 'feedback']);
+    expect((await senior.browser.get('/staff/v1/me')).json().nav).toEqual(['disputes', 'past-reputation', 'training', 'log', 'feedback']);
   });
 
   // J-21 review F5 (lead, 12 Nov): a box the role holds anyway is never a stored per-person grant,
@@ -677,10 +721,15 @@ describe('Task 7 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
   const migrations = (): string => readdirSync(`${ROOT}apps/api/migrations`).map((f) => readFileSync(`${ROOT}apps/api/migrations/${f}`, 'utf8')).join('\n');
 
-  it('NEEDS_P4_MODERATION_REVOKE: switch-off tells the moderation process', () => {
-    // When Task 13's gate lands (apps/moderation/src/gate): give ModerationClient a revoke call and
-    // make `switchOff` call it after the commit (revocation needs no signature).
-    expect(existsSync(`${ROOT}apps/moderation/src/gate`), 'the ruling gate landed: notify it on switch-off (see this test)').toBe(false);
+  it('Task 13: the ruling gate reads switch-off and removal itself, before every ruling it checks', () => {
+    // Revocation needs no signature, and the gate does not wait to be told: `syncRegistry` reads
+    // `staff_members.switched_off_at` / `removed_at` through the read-only role on each sync, and
+    // `gateCheck` syncs before every `authorizeRuling` (apps/moderation/src/gate). Nothing for
+    // `switchOff` to call.
+    const registry = readFileSync(`${ROOT}apps/moderation/src/gate/registry.ts`, 'utf8');
+    expect(registry).toMatch(/switched_off_at/);
+    expect(registry).toMatch(/removed_at/);
+    expect(readFileSync(`${ROOT}apps/moderation/src/gate/check.ts`, 'utf8')).toMatch(/await syncRegistry\([^)]*\);[\s\S]*authorizeRuling\(/);
   });
 
   it('NEEDS_P4_TASK16: the staff web invite page signs the Terms before it names the account', () => {

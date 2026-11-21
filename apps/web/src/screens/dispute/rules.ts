@@ -327,10 +327,11 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
     destination = { app, end: r.destination.addressEnd.slice(-4) };
   }
   const loser = loserOf(r.outcome);
-  // The board's line, true today and neutral on how long: nothing deletes dispute records yet, and
-  // the keep time after the dispute closes is pending the owner's Plan 7 Q1 (Plan 4 Task 23 builds
-  // the purge); change this line with it. The lost-dispute clause is the board's; a lost dispute
-  // still counts as a completed trade and drops no stage (owner 2026-10-29). COPY-UNSIGNED (pending Q1)
+  // The board's line, true and neutral on how long: dispute records live exactly as long as the
+  // trade (Plan 4 Task 23 / Plan 7 Task 2: the whole trade goes 90 days after its last dispute
+  // closes, owner p11-11), and the trade room shows that date (SelfDestruct.tsx). The lost-dispute
+  // clause is the board's; a lost dispute still counts as a completed trade and drops no stage
+  // (owner 2026-10-29), and it stays on the profile after the purge (701 purged_lost). COPY-UNSIGNED
   let footer = 'This ruling and its evidence are kept with the trade.';
   if (loser !== null) footer += loser === me ? ' It appears on your profile as a lost dispute.' : ` It appears on ${nameOf(otherSide)}'s profile as a lost dispute.`;
   return { label, title, destination, footer };
@@ -344,9 +345,10 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
 export function overturnLien(outcome: RulingView['outcome'], me: Party, other: string): string {
   const receiver = paidSide(outcome);
   if (receiver === null) return '';
+  // Review O2 (J-06): the lien is the trade's XMR (owner D-006), on a buyer's ad more than the payout. COPY-UNSIGNED
   // not-a-refusal: what an overturned ruling would mean, explained before any appeal (board DisputeRuling)
-  if (receiver === me) return " If an appeal overturns the ruling, you get a lien. You can't trade until you pay the XMR back.";
-  return ` If an appeal overturns the ruling, ${other} gets a lien until they pay the XMR back.`; // COPY-UNSIGNED
+  if (receiver === me) return " If an appeal overturns the ruling, you get a lien. You can't trade until you pay the trade's XMR back.";
+  return ` If an appeal overturns the ruling, ${other} gets a lien until they pay the trade's XMR back.`; // COPY-UNSIGNED
 }
 
 /**
@@ -367,8 +369,8 @@ export function appealSentText(d: DisputeView, me: Party, other: string): string
     receiver === null
       ? ''
       : receiver === me
-        ? ' If they overturn the ruling, you get a lien until you pay the XMR back.' // COPY-UNSIGNED (review I1)
-        : ' If they overturn the ruling, the other trader gets a lien until they pay the XMR back.'; // COPY-UNSIGNED (review I1)
+        ? " If they overturn the ruling, you get a lien until you pay the trade's XMR back." // COPY-UNSIGNED (review I1)
+        : " If they overturn the ruling, the other trader gets a lien until they pay the trade's XMR back."; // COPY-UNSIGNED (review I1)
   return `${who} A second moderator will look at it.${lien}`;
 }
 
@@ -419,4 +421,12 @@ export function feeOwedLine(atomic: string): string {
 /** A Monero transaction ID or transaction key: 64 lowercase hex characters. */
 export function isTxHex(s: string): boolean {
   return /^[0-9a-f]{64}$/.test(s);
+}
+
+/**
+ * A transaction key as a wallet gives it: the main key, then one more per output when the payment
+ * went to a subaddress among other outputs (1 to 17 chunks of 64 hex, as the API's `TX_KEY`).
+ */
+export function isTxKeyHex(s: string): boolean {
+  return /^(?:[0-9a-f]{64}){1,17}$/.test(s);
 }

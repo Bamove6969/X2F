@@ -3,10 +3,29 @@ import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@
 import { buildRelay, type Relay } from '@x2f/relay';
 import type { MoneroWalletFull } from 'monero-ts';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { MoneroMultisigEngine, type Outcome, type PartyHandle, type Payout } from '../src/index.js';
+import { seal } from '@x2f/protocol';
+import { MoneroMultisigEngine, type EscrowEngine, type EscrowSession, type Outcome, type PartyHandle, type Payout } from '../src/index.js';
 import { minedWhile, partyKit, spyEngine, type Trade } from './harness.js';
 
 const engine = new MoneroMultisigEngine({ network: 'regtest' });
+
+/** An engine whose sessions answer some methods differently (the rest pass through). */
+function overriding(inner: EscrowEngine, over: (s: EscrowSession) => Partial<EscrowSession>): EscrowEngine {
+  const wrap = (s: EscrowSession): EscrowSession => {
+    const o = over(s) as Record<string, unknown>;
+    return new Proxy(s, {
+      get(t, key, r) {
+        if (typeof key === 'string' && key in o) return o[key];
+        const v = Reflect.get(t, key, r) as unknown;
+        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+      },
+    });
+  };
+  return {
+    create: async (a: Parameters<EscrowEngine['create']>[0]) => wrap(await inner.create(a)),
+    resume: async (saved: Parameters<EscrowEngine['resume']>[0], a: Parameters<EscrowEngine['resume']>[1]) => wrap(await inner.resume(saved, a)),
+  } as EscrowEngine;
+}
 const XMR = 1_000_000_000_000n;
 const MAX_NET_FEE = XMR / 100n;
 
@@ -135,6 +154,9 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
       wrongDone.catch(() => undefined);
       await new Promise((r) => setTimeout(r, 8000));
       expect(t.stores.mod.current()!.release!.phase).toBe('export'); // waiting for a set that never comes
+      // Growth-binding review M1: acceptedOutcome names the outcome the settle() queue took (no set yet, so the switch was taken).
+      expect(t.parties.mod.acceptedOutcome!()).toMatchObject({ to: wrong.to });
+      expect(t.parties.seller.acceptedOutcome!()).toMatchObject({ to: o.to });
       expect(Object.keys(t.stores.mod.current()!.received).some((k) => k.startsWith('release.txset'))).toBe(false);
       expect(t.stores.seller.current()!.release!.phase).toBe('export');
       // Now the moderator settles the same outcome: the seller's set is built and signed.
@@ -143,6 +165,10 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
       // Watcher revival re-verify R2: the committed outcome's builder, for the mod's own settled report.
       expect(t.parties.mod.committedBuilder!()).toBe('seller');
       expect(t.parties.seller.committedBuilder!()).toBe('seller');
+      expect(t.parties.mod.acceptedOutcome!()).toMatchObject({ to: o.to });
+      // A switch the committed party refuses leaves the taken outcome as it was.
+      await expect(t.parties.seller.settle(wrong)).rejects.toMatchObject({ code: 'bad-outcome' });
+      expect(t.parties.seller.acceptedOutcome!()).toMatchObject({ to: o.to });
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
       expect(sellerResult).toBeNull();
       await mine(node.rpcUri, 12, funderAddress);
@@ -158,6 +184,295 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
     } finally {
       await refund.close();
       await other.close();
+    }
+  });
+
+  // Gap 4 (20 Nov) and its review (M1, m1, m3, m4): settleSent(o) goes true on the moderator's DONE
+  // only (never in 'built' before it), and landed(o) proves from the chain that the seller-built
+  // refund is in a block: by the builder's own tx key when no DONE ever reaches it, after a restart
+  // too; a DONE is accepted only once the same key proves the tx it names.
+  it("settleSent(o) and landed(o) for a seller-built refund: false in 'built' until DONE; proven by the builder's tx key with the DONE held back, also after a restart; DONE then accepted", async () => {
+    const t = await kit.newTrade();
+    const escrow = await ready(t);
+    await pay(escrow, XMR);
+    await mine(node.rpcUri, 12, funderAddress);
+    const [refund, other] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
+    try {
+      const o: Outcome = { kind: 'release', to: [{ address: await refund.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'mod' };
+      const elsewhere: Outcome = { ...o, to: [{ address: await other.getPrimaryAddress(), amountAtomic: XMR }] };
+      for (const r of ROLES) expect(t.parties[r].settleSent!(o)).toBe(false); // no settle at all
+      expect(await t.parties.seller.landed!(o)).toBeNull();
+      // The moderator's DONE never leaves (every frame it sends once its release is done is dropped).
+      t.taps.mod.dropSend = () => t.stores.mod.current()?.release?.phase === 'done';
+      const sellerDone = t.parties.seller.settle(o);
+      sellerDone.catch(() => undefined);
+      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('export');
+      expect(t.parties.seller.settleSent!(o)).toBe(false);
+      // No block is mined until the moderator has submitted it.
+      const hash = await t.parties.mod.settle(o);
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(t.parties.mod.settleSent!(o)).toBe(true);
+      expect(t.parties.mod.settleSent!(elsewhere)).toBe(false); // m3: tied to the outcome
+      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('built');
+      // Review r-m1: the builder saved its tx's own fee from buildRelease, next to its tx key.
+      const savedFee = t.stores.seller.current()!.release!.txFee;
+      expect(savedFee).toMatch(/^[1-9][0-9]*$/);
+      expect(BigInt(savedFee!)).toBeLessThanOrEqual(XMR / 100n);
+      await new Promise((r) => setTimeout(r, 3000)); // resends come and go; the DONE is held
+      // m1: built, but no DONE: still needed.
+      expect(t.parties.seller.settleSent!(o)).toBe(false);
+      expect(Object.keys(t.stores.seller.current()!.received).some((k) => k.startsWith('release.done'))).toBe(false);
+      expect(await t.parties.seller.landed!(o)).toBeNull(); // in the pool only
+      await mine(node.rpcUri, 2, funderAddress);
+      // M1 fix c.2: the builder's own tx key proves its set landed, with nobody's word.
+      await expect.poll(() => t.parties.seller.landed!(o), { timeout: 60_000, interval: 1000 }).toBe(hash);
+      expect(await t.parties.seller.landed!(elsewhere)).toBeNull();
+      // The seller's device closes and comes back with no DONE (as after the trade closed).
+      await t.parties.seller.stop();
+      const back = kit.startParty(t, 'seller');
+      await expect.poll(() => back.party.landed!(o), { timeout: 60_000, interval: 1000 }).toBe(hash);
+      // m4: the DONE now arrives; the builder accepts it once its key proves the named tx.
+      t.taps.mod.dropSend = () => false;
+      const [result] = await minedWhile(node.rpcUri, funderAddress, Promise.all([back.party.settle(o)]));
+      expect(result).toBeNull();
+      expect(t.stores.seller.current()!.release!).toMatchObject({ phase: 'done', txHash: hash });
+      expect(back.party.settleSent!(o)).toBe(true);
+      expect(await back.party.landed!(o)).toBe(hash);
+    } finally {
+      await refund.close();
+      await other.close();
+    }
+  });
+
+  // Review m4 (lead 20 Nov): a DONE whose tx the builder's own key does not fit is refused. The
+  // moderator and the buyer spend the escrow elsewhere (2-of-3, by design), and a DONE signed by the
+  // moderator names that tx for the seller's refund: the seller's wallet does see it spend the escrow
+  // in a block, but its tx key for the refund it built does not fit, so it never counts as done.
+  it("m4: a moderator's DONE naming another spend of the escrow is refused by the builder's tx key (never done, landed() null)", async () => {
+    const keySpy = spyEngine(engine);
+    const t = await kit.newTrade({ seller: { engine: keySpy } });
+    const escrow = await ready(t);
+    await pay(escrow, XMR);
+    await mine(node.rpcUri, 12, funderAddress);
+    const [refund, other] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
+    try {
+      const a: Outcome = { kind: 'release', to: [{ address: await refund.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'mod' };
+      const b: Outcome = { kind: 'release', to: [{ address: await other.getPrimaryAddress(), amountAtomic: XMR }], builder: 'buyer', cosigner: 'mod' };
+      // The seller's built set never reaches the moderator.
+      t.taps.seller.dropSend = () => t.stores.seller.current()?.release?.phase === 'built';
+      const sellerA = t.parties.seller.settle(a);
+      sellerA.catch(() => undefined);
+      const modA = t.parties.mod.settle(a);
+      modA.catch(() => undefined);
+      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('built');
+      // The moderator switches to the buyer-built outcome (it never committed to a) and the two settle it.
+      const [modB] = await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.mod.settle(b), t.parties.buyer.settle(b)]));
+      expect(modB).toMatch(/^[0-9a-f]{64}$/);
+      await mine(node.rpcUri, 2, funderAddress);
+      // A DONE for a, signed by the moderator, naming b's tx.
+      // Review N-m2 (E4): b now sits unnamed in the seller's outgoing view; without a DONE, landed()
+      // takes an outgoing tx only when the seller's own tx key proves it pays a.
+      expect(await t.parties.seller.landed!(a)).toBeNull();
+      const tag = t.stores.seller.current()!.release!.outcome.slice(0, 16);
+      const key = `release.done:${tag}.0`;
+      t.taps.seller.inject(await seal({ trade: t.code, from: 'mod', seq: 1_000_000, type: 'release.done', payload: { key, txHash: modB! }, to: ['seller'], me: t.ids.mod, participants: t.participants }));
+      await expect.poll(() => t.stores.seller.current()!.received[key]?.mod !== undefined, { timeout: 30_000 }).toBe(true);
+      // The key check ran (spentBy and txSeen held for b) and refused it, block after block.
+      await expect.poll(() => keySpy.calls.txKeyPays ?? 0, { timeout: 60_000, interval: 1000 }).toBeGreaterThan(0);
+      for (let i = 0; i < 3; i++) {
+        await mine(node.rpcUri, 1, funderAddress);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      expect(t.stores.seller.current()!.release!.phase).toBe('built');
+      expect(await t.parties.seller.landed!(a)).toBeNull();
+      expect(await t.parties.seller.landed!(b)).toBeNull(); // not this party's release
+    } finally {
+      await refund.close();
+      await other.close();
+    }
+  });
+
+  // Gap 4 e2e (21 Nov): the seller taps before the moderator arms the refund, so the seller's first
+  // export reaches a moderator with no release yet and is ignored there. The builder sends its saved
+  // export again with its tx set, so the moderator co-signs at once, not after the seller's resend
+  // timer (here set to ten minutes: without the resend this test times out).
+  it("the builder's export ignored by a co-signer that had no release yet goes again with the tx set: the moderator co-signs without waiting for a resend", async () => {
+    const t = await kit.newTrade({ seller: { resendMs: 600_000, resendMaxMs: 600_000 } });
+    const escrow = await ready(t);
+    await pay(escrow, XMR);
+    await mine(node.rpcUri, 12, funderAddress);
+    const refund = await newTestWallet(node.rpcUri);
+    try {
+      const o: Outcome = { kind: 'release', to: [{ address: await refund.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'mod' };
+      const sellerDone = t.parties.seller.settle(o);
+      sellerDone.catch(() => undefined);
+      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('export');
+      await expect.poll(() => kit.ignoredBy.mod.includes('not-current-release'), { timeout: 30_000 }).toBe(true);
+      const hash = await Promise.race([
+        t.parties.mod.settle(o),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the moderator waited for a resend')), 90_000)),
+      ]);
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      // (The seller's own settle is not awaited: its party also ticks at resendMs, so it would
+      // check for the block only ten minutes later.)
+    } finally {
+      await refund.close();
+    }
+  });
+
+  // Review N-M1 (21 Nov, probe P1): only a co-signer sends a DONE. The buyer co-signs a seller-built
+  // release a; the seller and the moderator spend the escrow elsewhere (b, 2-of-3) and the seller
+  // sends the buyer a signed DONE for a naming b. The buyer's wallet sees b spend the escrow. The DONE
+  // is dropped (never stored), and landed(a) stays null: the device's settled-elsewhere alarm stands.
+  it("N-M1: a DONE from the builder is dropped by the co-signer and never its proof (landed() null although its wallet sees the other spend)", async () => {
+    let target: string | null = null;
+    const t = await kit.newTrade({
+      buyer: { engine: overriding(engine, (s) => ({ spentBy: async (h: string) => (h === target ? true : s.spentBy(h)) })) },
+    });
+    const escrow = await ready(t);
+    await pay(escrow, XMR);
+    await mine(node.rpcUri, 12, funderAddress);
+    const [buyerW, other] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
+    try {
+      const a: Outcome = { kind: 'release', to: [{ address: await buyerW.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'buyer' };
+      const b: Outcome = { kind: 'release', to: [{ address: await other.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'mod' };
+      const buyerA = t.parties.buyer.settle(a);
+      buyerA.catch(() => undefined);
+      await expect.poll(() => t.stores.buyer.current()?.release?.phase, { timeout: 60_000 }).toBe('export');
+      const sb = t.parties.seller.settle(b);
+      sb.catch(() => undefined);
+      const modB = await minedWhile(node.rpcUri, funderAddress, t.parties.mod.settle(b));
+      await mine(node.rpcUri, 2, funderAddress);
+      target = modB;
+      expect(await t.parties.buyer.landed!(a)).toBeNull();
+      const tag = t.stores.buyer.current()!.release!.outcome.slice(0, 16);
+      const key = `release.done:${tag}.0`;
+      t.taps.buyer.inject(await seal({ trade: t.code, from: 'seller', seq: 1_000_000, type: 'release.done', payload: { key, txHash: modB! }, to: ['buyer'], me: t.ids.seller, participants: t.participants }));
+      await expect.poll(() => kit.ignoredBy.buyer.includes('done-from-builder'), { timeout: 30_000 }).toBe(true);
+      expect(t.stores.buyer.current()!.received[key]).toBeUndefined();
+      expect(await t.parties.buyer.landed!(a)).toBeNull();
+      expect(t.parties.buyer.settleSent!(a)).toBe(false);
+    } finally {
+      await buyerW.close();
+      await other.close();
+    }
+  });
+
+  // Review N-m1 (21 Nov, probe P2): on a dust refund (at or under MAX_NETWORK_FEE) the fee allowance
+  // alone proved nothing (check_tx_key answers 0 for a key of another tx). Every payout must receive
+  // something, and payout 0 may be short only by the tx's own fee.
+  it("N-m1: dust: a moderator's DONE naming another spend is refused (every payout must receive; payout 0 short only by the tx's own fee)", async () => {
+    const DUST = XMR / 200n; // 0.005 XMR
+    const t = await kit.newTrade();
+    const escrow = await ready(t);
+    await pay(escrow, DUST);
+    await mine(node.rpcUri, 12, funderAddress);
+    const [refund, other] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
+    try {
+      const a: Outcome = { kind: 'release', to: [{ address: await refund.getPrimaryAddress(), amountAtomic: DUST }], builder: 'seller', cosigner: 'mod' };
+      const b: Outcome = { kind: 'release', to: [{ address: await other.getPrimaryAddress(), amountAtomic: DUST }], builder: 'buyer', cosigner: 'mod' };
+      t.taps.seller.dropSend = () => t.stores.seller.current()?.release?.phase === 'built';
+      const sellerA = t.parties.seller.settle(a);
+      sellerA.catch(() => undefined);
+      const modA = t.parties.mod.settle(a);
+      modA.catch(() => undefined);
+      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('built');
+      const [modB] = await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.mod.settle(b), t.parties.buyer.settle(b)]));
+      await mine(node.rpcUri, 2, funderAddress);
+      expect(await t.parties.seller.landed!(a)).toBeNull();
+      const tag = t.stores.seller.current()!.release!.outcome.slice(0, 16);
+      const key = `release.done:${tag}.0`;
+      t.taps.seller.inject(await seal({ trade: t.code, from: 'mod', seq: 1_000_000, type: 'release.done', payload: { key, txHash: modB! }, to: ['seller'], me: t.ids.mod, participants: t.participants }));
+      await expect.poll(() => t.stores.seller.current()!.received[key]?.mod !== undefined, { timeout: 30_000 }).toBe(true);
+      for (let i = 0; i < 4; i++) {
+        await mine(node.rpcUri, 1, funderAddress);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      expect(await t.parties.seller.landed!(a)).toBeNull();
+      expect(t.stores.seller.current()!.release!.phase).toBe('built');
+    } finally {
+      await refund.close();
+      await other.close();
+    }
+  });
+
+  // Review N-m2 (E2): a key read that failed or was refused ('unavailable') is never proof. The
+  // seller's key check answers 'unavailable': its DONE is not accepted and landed() is null; once
+  // the check answers again, both go through.
+  it("N-m2: 'unavailable' from the key check is never proof: no done and no landed() until the check answers", async () => {
+    let down = true;
+    const t = await kit.newTrade({
+      seller: { engine: overriding(engine, (s) => ({ txKeyPays: async (h: string, k: string, addrs: string[]) => (down ? 'unavailable' : s.txKeyPays!(h, k, addrs)) })) },
+    });
+    const escrow = await ready(t);
+    await pay(escrow, XMR);
+    await mine(node.rpcUri, 12, funderAddress);
+    const refund = await newTestWallet(node.rpcUri);
+    try {
+      const o: Outcome = { kind: 'release', to: [{ address: await refund.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'mod' };
+      let sellerSettled = false;
+      const sellerDone = t.parties.seller.settle(o).then((v) => {
+        sellerSettled = true;
+        return v;
+      });
+      sellerDone.catch(() => undefined);
+      const hash = await t.parties.mod.settle(o);
+      await expect.poll(() => t.parties.seller.settleSent!(o), { timeout: 60_000 }).toBe(true); // the DONE is here
+      for (let i = 0; i < 4; i++) {
+        await mine(node.rpcUri, 1, funderAddress);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      expect(t.stores.seller.current()!.release!.phase).toBe('built');
+      expect(sellerSettled).toBe(false);
+      expect(await t.parties.seller.landed!(o)).toBeNull();
+      down = false;
+      await minedWhile(node.rpcUri, funderAddress, sellerDone);
+      expect(t.stores.seller.current()!.release!).toMatchObject({ phase: 'done', txHash: hash });
+      expect(await t.parties.seller.landed!(o)).toBe(hash);
+    } finally {
+      await refund.close();
+    }
+  });
+
+  // Review r-m2 (21 Nov): a fee above MAX_NETWORK_FEE is never an allowance. The builder has no
+  // stored fee (state from before r-m1: buildRelease gives none here), so the key check takes the
+  // fee txKeyPays reports, which says more than MAX_NETWORK_FEE: the DONE is refused and landed()
+  // stays null, although the tx is the builder's own and the key fits.
+  it("r-m2: a reported fee above MAX_NETWORK_FEE is refused: no done, landed() null", async () => {
+    const t = await kit.newTrade({
+      seller: {
+        engine: overriding(engine, (s) => ({
+          buildRelease: async (p: Payout[]) => {
+            const { feeAtomic: _fee, ...rest } = await s.buildRelease(p);
+            return rest;
+          },
+          txKeyPays: async (h: string, k: string, addrs: string[]) => {
+            const r = await s.txKeyPays!(h, k, addrs);
+            return r === null || r === 'unavailable' ? r : { ...r, feeAtomic: XMR / 100n + 1n };
+          },
+        })),
+      },
+    });
+    const escrow = await ready(t);
+    await pay(escrow, XMR);
+    await mine(node.rpcUri, 12, funderAddress);
+    const refund = await newTestWallet(node.rpcUri);
+    try {
+      const o: Outcome = { kind: 'release', to: [{ address: await refund.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'mod' };
+      const sellerDone = t.parties.seller.settle(o);
+      sellerDone.catch(() => undefined);
+      const hash = await t.parties.mod.settle(o);
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      await expect.poll(() => t.parties.seller.settleSent!(o), { timeout: 60_000 }).toBe(true); // the DONE is here
+      expect(t.stores.seller.current()!.release!.txFee).toBeUndefined();
+      for (let i = 0; i < 4; i++) {
+        await mine(node.rpcUri, 1, funderAddress);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      expect(t.stores.seller.current()!.release!.phase).toBe('built');
+      expect(await t.parties.seller.landed!(o)).toBeNull();
+    } finally {
+      await refund.close();
     }
   });
 

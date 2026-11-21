@@ -100,6 +100,25 @@ async function fullLogin(b: StaffBrowser, accountId: string, loginName: string, 
   });
 }
 
+// Re-verify round 3, X2 (lead call): the staff login's challenge is derived, never chosen.
+describe('the staff login challenge is the staff site\'s own domain (X2)', () => {
+  it('answers a login nonce; the challenge is sha256("x2f-staff-login-v1\\n" + nonce); a tampered challenge row is refused', async () => {
+    const { staffLoginChallenge } = await import('@x2f/staff');
+    const s = await seedStaff(deps, { role: 'mod' });
+    const key = await addKey(s.id);
+    const b = new StaffBrowser(app);
+    const start = (await b.post('/staff/v1/login/security-key/start', { loginName: s.loginName })).json();
+    expect(start.loginNonce).toMatch(/^[0-9a-f]{64}$/);
+    expect(start.options.challenge).toBe(Buffer.from(staffLoginChallenge(start.loginNonce)).toString('base64url'));
+    // A database that swaps the stored challenge (for a tap's, say) gets no login.
+    await deps.db.query(`update challenges set webauthn_challenge = $2 where id = $1`, [start.challengeId, Buffer.alloc(32, 7).toString('base64url')]);
+    const opts = { ...start.options, challenge: Buffer.alloc(32, 7).toString('base64url') };
+    const res = await b.post('/staff/v1/login/security-key/finish', { challengeId: start.challengeId, response: key.authenticate(opts, STAFF_ORIGIN), deviceLabel: 'Desk' });
+    expect(res.statusCode).toBe(400);
+    expect(errorOf(res)).toBe('challenge-expired');
+  });
+});
+
 describe('staff login with login hours', () => {
   it('logs a staff member in with a security key inside their hours, on the staff cookie only', async () => {
     const s = await seedStaff(deps, { role: 'mod', hours: OFFICE });
@@ -118,7 +137,7 @@ describe('staff login with login hours', () => {
     const me = await b.get('/staff/v1/me');
     expect(me.statusCode).toBe(200);
     // The 2-hour idle limit (14:00) comes before the end of the window (17:00).
-    expect(me.json()).toEqual({ displayName: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
+    expect(me.json()).toEqual({ displayName: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
   });
 
   it('refuses the same login 1 minute after the window closes, only after the key verifies', async () => {
@@ -246,7 +265,7 @@ describe('staff login with login hours', () => {
     expect((await fullLogin(b, o.id, o.loginName, key)).json()).toEqual({ status: 'ok' });
     const me = (await b.get('/staff/v1/me')).json();
     expect(me.role).toBe('owner');
-    expect(me.nav).toEqual(['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings']);
+    expect(me.nav).toEqual(['overview', 'disputes', 'past-reputation', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings']);
   });
 
   it('refuses a switched-off staff member at login and on every request', async () => {

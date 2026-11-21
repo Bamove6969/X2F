@@ -7,6 +7,20 @@ import { STAGE_NAMES, fiatWhole, type QuoteOffer } from './quoteModel.js';
 
 const GENERIC = 'The trade could not start. Try again.';
 
+/** A moved price: the quote shows the new total and waits for a fresh tap. */
+export const PRICE_MOVED = 'The price moved. Check the new total and tap Trade again.';
+
+/**
+ * Review 18 Nov M1 (lead): after the rate-first sheet, the rate or the total on the quote is no
+ * longer the one the person tapped Trade at, so nothing was taken. Shown as a moved price.
+ */
+export class QuoteMovedError extends Error {
+  constructor() {
+    super('the quote moved since the Trade tap');
+    this.name = 'QuoteMovedError';
+  }
+}
+
 /** The caller's own stage from a starter-limit refusal: only the two stages that have a cap. */
 function ownStage(extra: Record<string, unknown>): 'starter' | 'building' | null {
   return extra.stage === 'starter' || extra.stage === 'building' ? extra.stage : null;
@@ -36,9 +50,10 @@ export const TAKE_CANT_TITLE = CANT_DO_TITLE.take;
 
 /** The words for a refused take: a rule refusal from the text map (shown in CantDoThat), else inline. */
 export function takeRefusal(e: unknown, offer: QuoteOffer): string {
+  if (e instanceof QuoteMovedError) return PRICE_MOVED;
   if (!(e instanceof ApiCallError)) return GENERIC;
   if (isCantDoCode(e.code)) {
-    // Only a starter-limit refusal carries a stage and a cap; for the rest both read as null.
+    // Only a starter-limit refusal carries a stage and a cap (an account-limit one a cap, Plan 4 Task 26); for the rest both read as null.
     const stage = ownStage(e.extra);
     const cap = capCents(e.extra);
     return takeCantDoText(e.code, { stageName: stage === null ? null : STAGE_NAMES[stage], capText: cap === null ? null : fiatWhole(cap, 'USD'), maxOpen: maxOpen(e.extra), minTrades: offer.minTrades });
@@ -52,7 +67,7 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
       return 'Price unavailable right now';
     case 'price-changed':
       // The quote re-fetches the price when it sees this refusal (Quote.tsx), so the total is fresh.
-      return 'The price moved. Check the new total and tap Trade again.';
+      return PRICE_MOVED;
     case 'method-unavailable':
       // not-a-refusal: a catalog fact (the method is off the list), see NOT_REFUSAL_CODES
       return 'This payment method is not available.';

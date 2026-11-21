@@ -2,6 +2,8 @@
 // app (Plan 4): roles and permissions, login hours, key-tap intents and the dispute state machine.
 // No I/O; it runs in the browser too.
 export { canonicalJson } from './canonical.js';
+// The trade code as `tapChallenge` reads a ruling's (the staff site compares a case's code with its address, review X3-1).
+export { normalizeTradeCode } from '@x2f/core';
 export { sha256 } from './sha256.js';
 export {
   GRANTABLE_PERMS,
@@ -21,15 +23,25 @@ export {
   AFTER_REFUND_OUTCOMES,
   BAN_REASON_CODES,
   ESCROW_OUTCOMES,
+  ISSUED_AT_KINDS,
   KEY_TAP_KINDS,
+  LIMIT_STAGES,
+  hasIssuedAt,
+  inviteTokenHash,
+  ownerSetupChallenge,
+  staffLoginChallenge,
+  stampIssuedAt,
+  evidenceSha256,
   inviteRegistrationChallenge,
   keyCheckCode,
   tapChallenge,
+  staffDeviceKeyId,
   type AccountAction,
   type AfterRefundOutcome,
   type BanReasonCode,
   type EscrowOutcome,
   type KeyTapIntent,
+  type LimitStage,
   type RulingOutcome,
 } from './intent.js';
 export {
@@ -68,3 +80,44 @@ export {
   type BanTermError,
 } from './banRules.js';
 export { INCIDENT_ALPHABET, INCIDENT_ID_LENGTH, incidentCheckChar, isIncidentId, normalizeIncidentId } from './incident.js';
+export {
+  lienCreditor,
+  lienSteps,
+  type LienCause,
+  type LienFacts,
+  type LienRef,
+  type LienSide,
+  type LienStatus,
+  type LienStep,
+} from './lien.js';
+export {
+  MANUAL_MASK,
+  MAX_TEXT,
+  TRADE_CODE_MASK,
+  anonymizeCase,
+  anonymizeText,
+  applyManualMasks,
+  offsetLabel,
+  type AnonymizeNames,
+  type CaseMessage,
+  type Mask,
+  type MaskKind,
+  type Scrubbed,
+  type TrainingBody,
+  type TrainingMessage,
+} from './anonymize.js';
+// Plan 4 Task 20: the moderator performance maths.
+export {
+  CHART_WEEKS,
+  PERIODS,
+  chartStart,
+  median,
+  periodStart,
+  personMetrics,
+  weekStart,
+  weekly,
+  type CaseRow,
+  type Period,
+  type PersonMetrics,
+  type WeekMetrics,
+} from './metrics.js';

@@ -101,6 +101,11 @@ export const LOG_ACTIONS = {
   'ruling.final': { rulingId: 'id', round: 'number', overturned: 'bool' },
   'ruling.executed': { rulingId: 'id', txHash: 'hex64' },
   'dispute.complied': { txHash: 'hex64' },
+  // Plan 4 Task 12 (A6): the seller's payment proof waits for its confirmations, or was refused on a
+  // later check; the seller let the comply time pass with no proof (the case goes to a senior).
+  'dispute.proof-pending': { txHash: 'hex64' },
+  'dispute.proof-refused': { txHash: 'hex64' },
+  'dispute.comply-lapsed': { seq: 'number' },
   // Holds, freezes and the ban stages (Tasks 11, 12, 27; the single `account.banned` is replaced).
   'hold.placed': { accountId: 'uuid', side: 'id', kind: 'id' },
   'hold.lifted': { accountId: 'uuid', side: 'id', kind: 'id' },
@@ -125,14 +130,17 @@ export const LOG_ACTIONS = {
   'lien.repaid': { lienId: 'id', repaymentCode: 'id' },
   'fee.owed': { accountId: 'uuid', amountAtomic: 'amount' },
   // Recommended account limits (Task 26).
-  'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id' },
-  'limits.decided': { recId: 'id', approved: 'bool' },
+  'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id', fromCode: 'id' },
+  'limits.decided': { recId: 'id', approved: 'bool', fromCode: 'id' },
   // Staff management (Task 7) and per-person grants (Task 30).
   'staff.invite-created': { inviteId: 'id', role: 'id' },
   'staff.invite-cancelled': { inviteId: 'id' },
   'staff.joined': { staffId: 'uuid', role: 'id' },
   'staff.switched-off': { staffId: 'uuid' },
   'staff.switched-on': { staffId: 'uuid', role: 'id' },
+  // The training library's curation (Task 19, lead call 18 Nov): a case marked with its masks, or unmarked.
+  'staff.training-marked': { trainingId: 'id', masks: 'number' },
+  'staff.training-unmarked': { trainingId: 'id' },
   'staff.removed': { staffId: 'uuid' },
   // D-032 (owner G60): the owner reset a staff member's security; the link was used.
   'staff.security-reset': { staffId: 'uuid', inviteId: 'id' },
@@ -145,6 +153,9 @@ export const LOG_ACTIONS = {
   // one of their sessions on the staff site (the method kind only: never a fingerprint or a label).
   'staff.method-added': { method: 'id' },
   'staff.method-removed': { method: 'id' },
+  // Chat membership design task 8: one's own staff device key certified or revoked (its id only).
+  'staff.device-certified': { deviceKeyId: 'id' },
+  'staff.device-revoked': { deviceKeyId: 'id' },
   'staff.session-ended': {},
   // Lead review 7 Nov M1: silencing actions on the staff site.
   // Owner-alerts review OA2: which kind of alert was hidden (one), or how many (all at once); never its detail.
@@ -163,6 +174,16 @@ export const LOG_ACTIONS = {
   // Past reputation (Plan 5 Task 10, owner 2026-11-02): a senior moderator or the owner sets or
   // clears a claim's verified dollar figure. The figure itself is never logged.
   'pastrep.verified-usd-set': { claimId: 'uuid', cleared: 'bool' },
+  // Review disputes (Plan 5 Task 19): the dispute id and the outcome only, never the trader's reason,
+  // the moderator's reason, the review's text or its trade.
+  'review.disputed': { disputeId: 'uuid' },
+  'review.dispute-decided': { disputeId: 'uuid', outcome: 'id' },
+  // Plan 5 Task 11: a moderator's decision on a claim. The claim, its trader and its site (spaces as
+  // '-'), and on approval the trades the moderator saw; never the evidence link, the fingerprint or
+  // the reason text.
+  'pastrep.approved': { claimId: 'uuid', accountId: 'uuid', site: 'id', trades: 'number' },
+  'pastrep.rejected': { claimId: 'uuid', accountId: 'uuid', site: 'id' },
+  'pastrep.revoked': { claimId: 'uuid', accountId: 'uuid', site: 'id' },
   // The owner (Task 6).
   'owner.setup-completed': {},
   'owner.key-added': { credentialId: 'id' },
@@ -200,6 +221,36 @@ export type LogAction = keyof typeof LOG_ACTIONS;
 
 /** Action prefixes that the staff log scope never shows (Task 3; Task 33's pay and shifts too). */
 export const OWNER_ONLY_PREFIXES = ['staff.', 'settings.', 'owner.', 'site.', 'shift.', 'pay.', 'news.', 'treasury.'] as const;
+
+/**
+ * Plan 4 Task 19: the Activity log page's "kind" filter. Each action belongs to exactly one kind,
+ * by its prefix (log.test.ts pins that every action has one). Kinds made only of owner-only
+ * prefixes are the owner's (`ownerOnly`), never offered or matched in the staff scope.
+ */
+export const LOG_KINDS = {
+  trade: { prefixes: ['trade.'], ownerOnly: false },
+  dispute: { prefixes: ['dispute.', 'case.'], ownerOnly: false },
+  chat: { prefixes: ['chat.', 'proof.'], ownerOnly: false },
+  ruling: { prefixes: ['ruling.', 'appeal.'], ownerOnly: false },
+  account: { prefixes: ['hold.', 'account.', 'lien.', 'fee.', 'limits.', 'pastrep.', 'review.'], ownerOnly: false },
+  staff: { prefixes: ['staff.', 'shift.', 'pay.'], ownerOnly: true },
+  owner: { prefixes: ['owner.', 'settings.', 'treasury.'], ownerOnly: true },
+  site: { prefixes: ['site.', 'news.'], ownerOnly: true },
+  other: { prefixes: ['ticket.', 'training.', 'feedback.', 'log.'], ownerOnly: false },
+} as const satisfies Record<string, { prefixes: readonly string[]; ownerOnly: boolean }>;
+export type LogKind = keyof typeof LOG_KINDS;
+
+export function isLogKind(k: unknown): k is LogKind {
+  return typeof k === 'string' && Object.hasOwn(LOG_KINDS, k);
+}
+
+/** The kind an action belongs to, or undefined (log.test.ts: never for a known action). */
+export function kindOf(action: string): LogKind | undefined {
+  for (const [k, v] of Object.entries(LOG_KINDS) as Array<[LogKind, (typeof LOG_KINDS)[LogKind]]>) {
+    if (v.prefixes.some((p) => action.startsWith(p))) return k;
+  }
+  return undefined;
+}
 
 export class LogDetailError extends Error {
   constructor(message: string) {

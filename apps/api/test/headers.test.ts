@@ -4,11 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
+import { ASSET_SCRIPT_CSP, ESCROW_WORKER_FILE, MONERO_WORKER_PATH, SERVICE_WORKER_CSP, cspFor, escrowWorkerCspFor, moneroWorkerCspFor, ocrWorkerCspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
 import { testApp } from './helpers/app.js';
 
 const RELAY = 'wss://relay.x2f.test';
 const NODE = 'https://node.x2f.test';
+const SITE = 'https://x2f.test';
+/**
+ * Lead call 20 Nov and review M-1: the OCR worker may load scripts and fetch only under this site's
+ * /ocr/, and may start no worker of its own.
+ */
+const OCR_CSP = "default-src 'none'; script-src https://x2f.test/ocr/ 'wasm-unsafe-eval'; connect-src https://x2f.test/ocr/; worker-src 'none'";
 const CSP =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; " +
   `connect-src 'self' ${RELAY} ${NODE}; img-src 'self' data:; style-src 'self'; font-src 'self'; ` +
@@ -22,9 +28,43 @@ beforeAll(async () => {
   await mkdir(join(root, 'assets'));
   await writeFile(join(root, 'index.html'), '<!doctype html><html><body><div id="root"></div></body></html>');
   await writeFile(join(root, 'assets', 'app-abc123.js'), 'console.log(1)');
+  await writeFile(join(root, 'assets', 'app-abc123.mjs'), 'console.log(1)');
+  await writeFile(join(root, 'assets', 'app-abc123.css'), 'body{}');
   await writeFile(join(root, 'sw.js'), "self.addEventListener('push', () => undefined);");
+  // Plan 5 Task 13: the self-hosted OCR files (tools/copy-ocr-assets.ts copies the real ones).
+  await mkdir(join(root, 'ocr'));
+  await writeFile(join(root, 'ocr', 'worker.min.js'), 'self.onmessage = () => undefined;');
+  await writeFile(join(root, 'ocr', 'tesseract-core-simd-lstm.wasm.js'), 'var TesseractCore;');
+  await writeFile(join(root, 'ocr', 'eng.traineddata.gz'), Buffer.from([0x1f, 0x8b, 0x08, 0x00, 1, 2, 3]));
+  await writeFile(join(root, 'assets', 'ocr-abc123.js'), 'console.log(2)');
+  // monero-ts's own wallet worker (tools/copy-monero-worker.ts copies the real, pinned one).
+  await mkdir(join(root, 'monero'));
+  await writeFile(join(root, 'monero', 'monero.worker.js'), 'self.onmessage = () => undefined;');
+  await writeFile(join(root, 'assets', 'monero-abc123.js'), 'console.log(3)');
+  // The escrow worker, as apps/web/vite.config.ts names it (assets/escrow-worker-<8-char hash>.js).
+  await writeFile(join(root, 'assets', 'escrow-worker-CzS2KofQ.js'), 'self.onmessage = () => undefined;');
+  // Vite's default worker name, and near misses: never the escrow worker's CSP.
+  await writeFile(join(root, 'assets', 'worker-CzS2KofQ.js'), 'console.log(4)');
+  await writeFile(join(root, 'assets', 'escrow-worker-CzS2Ko.js'), 'console.log(5)');
+  await writeFile(join(root, 'assets', 'x-escrow-worker-CzS2KofQ.js'), 'console.log(6)');
+  // Re-review n-1: scripts outside /assets/, /ocr/, /monero/ and /sw.js (a future public/*.js), and
+  // a file that is not a script there.
+  await writeFile(join(root, 'escrow-worker-AAAAAAAA.js'), 'console.log(7)');
+  await writeFile(join(root, 'other.mjs'), 'console.log(8)');
+  await writeFile(join(root, 'UPPER.JS'), 'console.log(9)');
+  await mkdir(join(root, 'js'));
+  await writeFile(join(root, 'js', 'extra.js'), 'console.log(10)');
+  await writeFile(join(root, 'notes.txt'), 'User-agent: *');
+  // Addendum 2 n-3: `mime` serves .es and .ecma as application/ecmascript (a JavaScript MIME type,
+  // so startable as a worker); and the subresources a page loads (a font, an image).
+  await writeFile(join(root, 'z.es'), 'console.log(11)');
+  await writeFile(join(root, 'z.ecma'), 'console.log(12)');
+  await writeFile(join(root, 'assets', 'z-abc123.es'), 'console.log(13)');
+  await writeFile(join(root, 'assets', 'font-abc123.woff2'), Buffer.from('wOF2fake'));
+  await writeFile(join(root, 'assets', 'logo-abc123.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  await writeFile(join(root, 'apple-touch-icon.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   ({ app } = await testApp());
-  await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE });
+  await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] });
 });
 
 afterAll(async () => {
@@ -71,12 +111,53 @@ describe('security headers', () => {
     },
   );
 
-  it('a built asset gets the headers, no CSP and a long cache', async () => {
-    const res = await app.inject({ method: 'GET', url: '/assets/app-abc123.js' });
-    expect(res.statusCode).toBe(200);
-    expectBaseHeaders(res.headers);
-    expect(res.headers['content-security-policy']).toBeUndefined();
-    expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+  it("a built script gets the headers, a deny-all CSP (review M-1: started as a worker, it may reach nothing) and a long cache", async () => {
+    expect(ASSET_SCRIPT_CSP).toBe("default-src 'none'");
+    for (const url of ['/assets/app-abc123.js', '/assets/app-abc123.mjs']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expectBaseHeaders(res.headers);
+      expect(res.headers['content-security-policy'], url).toBe("default-src 'none'");
+      expect(res.headers['cache-control'], url).toBe('public, max-age=31536000, immutable');
+    }
+  });
+
+  it('re-review n-1: a script anywhere outside /assets/, /ocr/, /monero/ and /sw.js gets the deny-all CSP too', async () => {
+    for (const url of ['/escrow-worker-AAAAAAAA.js', '/other.mjs', '/UPPER.JS', '/js/extra.js', '/js/%65xtra.js', '/other.mjs?x=1']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expectBaseHeaders(res.headers);
+      expect(res.headers['content-security-policy'], url).toBe(ASSET_SCRIPT_CSP);
+    }
+  });
+
+  it('addendum 2 n-3: .es and .ecma (served as application/ecmascript, startable as a worker) get the deny-all CSP', async () => {
+    for (const url of ['/z.es', '/z.ecma', '/assets/z-abc123.es']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(String(res.headers['content-type']), url).toMatch(/^application\/ecmascript/);
+      expectBaseHeaders(res.headers);
+      expect(res.headers['content-security-policy'], url).toBe(ASSET_SCRIPT_CSP);
+    }
+  });
+
+  it('addendum 2 n-3: every other static file gets the deny-all CSP too, keyed on nothing (a subresource ignores it); built ones keep the long cache', async () => {
+    const files: ReadonlyArray<readonly [string, RegExp, string | undefined]> = [
+      ['/assets/app-abc123.css', /^text\/css/, 'public, max-age=31536000, immutable'],
+      ['/assets/font-abc123.woff2', /^font\/woff2/, 'public, max-age=31536000, immutable'],
+      ['/assets/logo-abc123.svg', /^image\/svg\+xml/, 'public, max-age=31536000, immutable'],
+      ['/apple-touch-icon.png', /^image\/png/, undefined],
+      ['/notes.txt', /^text\/plain/, undefined],
+    ];
+    for (const [url, type, cache] of files) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(String(res.headers['content-type']), url).toMatch(type);
+      expectBaseHeaders(res.headers);
+      expect(res.headers['content-security-policy'], url).toBe(ASSET_SCRIPT_CSP);
+      if (cache !== undefined) expect(res.headers['cache-control'], url).toBe(cache);
+      else expect(res.headers['cache-control'], url).not.toBe('public, max-age=31536000, immutable');
+    }
   });
 
   it('the service worker is served from this origin at /sw.js, revalidated on every load (Task 19)', async () => {
@@ -92,6 +173,247 @@ describe('security headers', () => {
     expect(res.statusCode).toBe(404);
     expectBaseHeaders(res.headers);
     expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+});
+
+describe('the OCR files (Plan 5 Task 13, Global Constraints: the worker\'s own CSP)', () => {
+  it('the policy: scripts and fetches only under /ocr/ on each site origin, wasm allowed, no nested worker (lead call 20 Nov, review M-1)', () => {
+    expect(ocrWorkerCspFor({ siteOrigins: [SITE] })).toBe(OCR_CSP);
+    expect(ocrWorkerCspFor({ siteOrigins: [SITE, 'http://x2fexample.onion'] })).toBe(
+      "default-src 'none'; script-src https://x2f.test/ocr/ http://x2fexample.onion/ocr/ 'wasm-unsafe-eval'; " +
+        "connect-src https://x2f.test/ocr/ http://x2fexample.onion/ocr/; worker-src 'none'",
+    );
+    expect(ocrWorkerCspFor({ siteOrigins: [SITE] })).not.toContain("'self'");
+  });
+
+  it('refuses no site origin, a path, a non-http scheme, or anything that is not a plain exact origin (review m-1, m-4)', () => {
+    for (const bad of [[], ['https://x2f.test/'], ['https://x2f.test/ocr'], ['wss://x2f.test'], ["https://x2f.test 'unsafe-inline'"], ['https://x2f.test;'], ['https://x2f.test;sandbox'], ['https://a.test,b'], ["https://a.test'x"], ['https://*.x2f.test']]) {
+      expect(() => ocrWorkerCspFor({ siteOrigins: bad }), JSON.stringify(bad)).toThrow();
+    }
+    expect(ocrWorkerCspFor({ siteOrigins: ['http://127.0.0.1:4317'] })).toContain('connect-src http://127.0.0.1:4317/ocr/;');
+  });
+
+  it.each(['/ocr/worker.min.js', '/ocr/tesseract-core-simd-lstm.wasm.js', '/ocr/eng.traineddata.gz'])('%s carries the worker CSP', async (url) => {
+    const res = await app.inject({ method: 'GET', url });
+    expect(res.statusCode).toBe(200);
+    expectBaseHeaders(res.headers);
+    expect(res.headers['content-security-policy']).toBe(OCR_CSP);
+  });
+
+  it('the model is served as gzip bytes, not as a gzip-encoded response (tesseract.js reads the magic itself)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/ocr/eng.traineddata.gz', headers: { 'accept-encoding': 'gzip, br' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('application/gzip');
+    expect(res.headers['content-encoding']).toBeUndefined();
+    expect([...res.rawPayload.subarray(0, 2)]).toEqual([0x1f, 0x8b]);
+  });
+
+  it('a missing OCR file is a 404, never the app page (so a missing model fails OCR, not parses HTML)', async () => {
+    for (const url of ['/ocr/missing.gz', '/ocr/tesseract-core-relaxedsimd-lstm.wasm.js']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(404);
+      expect(res.headers['content-type'], url).not.toMatch(/^text\/html/);
+    }
+  });
+
+  // (app.inject normalises dot segments and backslashes before routing; those are tested on a raw socket below.)
+  it.each(['/ocr/..%2Fv1%2Fme', '/ocr/%2fx', '/ocr/a%5Cb', '/ocr/%252e%252e/x', '/OCR/%2F'])(
+    'review m-2: %s (an encoded slash or dot, a backslash) is 400 under /ocr/',
+    async (url) => {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.headers['content-type']).toMatch(/^application\/json/);
+      expect(res.headers['content-security-policy']).toBeUndefined();
+    },
+  );
+
+  it('review m-2: the real files and other paths with dots are unchanged', async () => {
+    expect((await app.inject({ method: 'GET', url: '/ocr/worker.min.js' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/u/a%2Fb' })).statusCode).not.toBe(400);
+  });
+
+  it('review m-4: .gz is a file only under /ocr/: a profile named alice.gz is still the app page', async () => {
+    for (const url of ['/u/alice.gz', '/u/backup.gz']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.headers['content-type'], url).toMatch(/^text\/html/);
+    }
+  });
+
+  it('only the ocr folder gets it: a built asset named ocr-… gets the deny-all script CSP (review M-1)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/assets/ocr-abc123.js' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'");
+  });
+});
+
+describe("monero-ts's wallet worker (Gap 1: no escrow wallet could start in a browser)", () => {
+  const MONERO_CSP = `default-src 'none'; script-src 'wasm-unsafe-eval'; connect-src ${NODE}`;
+
+  it('is served at /monero/monero.worker.js, the path the escrow worker gives monero-ts', () => {
+    expect(MONERO_WORKER_PATH).toBe('/monero/monero.worker.js');
+  });
+
+  it('its policy: compile its inline WebAssembly, reach the node proxy, nothing else (no scripts, no relay, not even this origin)', () => {
+    expect(moneroWorkerCspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(MONERO_CSP);
+    // The node proxy origin is checked exactly as for the page.
+    expect(() => moneroWorkerCspFor({ relayOrigin: RELAY, nodeProxyOrigin: 'http://node.x2f.test' })).toThrow(/https or wss/);
+    expect(() => moneroWorkerCspFor({ relayOrigin: RELAY, nodeProxyOrigin: 'https://node.x2f.test;sandbox' })).toThrow(/exact origin/);
+  });
+
+  it('is served as JavaScript with its own CSP, the base headers and revalidated on every load', async () => {
+    const res = await app.inject({ method: 'GET', url: MONERO_WORKER_PATH });
+    expect(res.statusCode).toBe(200);
+    expectBaseHeaders(res.headers);
+    expect(String(res.headers['content-type'])).toMatch(/^application\/javascript/);
+    expect(res.headers['content-security-policy']).toBe(MONERO_CSP);
+    expect(res.headers['cache-control']).toBe('no-cache');
+  });
+
+  it('a missing monero file is a 404, never the app page', async () => {
+    const res = await app.inject({ method: 'GET', url: '/monero/monero.worker.js.map' });
+    expect(res.statusCode).toBe(404);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+
+  it('only the monero folder gets it: a built asset named monero-… gets the deny-all script CSP (review M-1) and its long cache', async () => {
+    const res = await app.inject({ method: 'GET', url: '/assets/monero-abc123.js' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'");
+    expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+  });
+});
+
+describe('every worker script carries its own CSP (lead call 20 Nov: a worker takes its CSP from its own response)', () => {
+  // Review m-2: no script loads ('wasm-unsafe-eval' only, no 'self'), and on this origin only /v1/.
+  const ESCROW_CSP =
+    "default-src 'none'; script-src 'wasm-unsafe-eval'; " +
+    `worker-src ${SITE}/monero/monero.worker.js; connect-src ${SITE}/v1/ ${RELAY} ${NODE}`;
+
+  it("the escrow worker's policy (multisig and chat keys): the API under /v1/ on each site origin, the relay, the node proxy; no script loads; only monero-ts's worker may be started", () => {
+    expect(escrowWorkerCspFor({ siteOrigins: [SITE], relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(ESCROW_CSP);
+    expect(escrowWorkerCspFor({ siteOrigins: [SITE, 'http://x2fexample.onion'], relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(
+      "default-src 'none'; script-src 'wasm-unsafe-eval'; " +
+        `worker-src ${SITE}/monero/monero.worker.js http://x2fexample.onion/monero/monero.worker.js; ` +
+        `connect-src ${SITE}/v1/ http://x2fexample.onion/v1/ ${RELAY} ${NODE}`,
+    );
+    expect(ESCROW_CSP).not.toContain("'self'");
+  });
+
+  it('the escrow worker file is exactly assets/escrow-worker-<8-character hash>.js (vite.config.ts names it so)', () => {
+    expect(ESCROW_WORKER_FILE.test('/srv/web/assets/escrow-worker-CzS2KofQ.js')).toBe(true);
+    for (const p of ['/srv/web/assets/worker-CzS2KofQ.js', '/srv/web/assets/escrow-worker-CzS2Ko.js', '/srv/web/assets/x-escrow-worker-CzS2KofQ.js', '/srv/web/escrow-worker-CzS2KofQ.js']) {
+      expect(ESCROW_WORKER_FILE.test(p), p).toBe(false);
+    }
+  });
+
+  it('the escrow worker is served with it, revalidated on every load with an ETag like the monero worker (review m-1: its policy follows X2F_ORIGINS, which its hash does not cover)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/assets/escrow-worker-CzS2KofQ.js' });
+    expect(res.statusCode).toBe(200);
+    expectBaseHeaders(res.headers);
+    expect(String(res.headers['content-type'])).toMatch(/^application\/javascript/);
+    expect(res.headers['content-security-policy']).toBe(ESCROW_CSP);
+    expect(res.headers['cache-control']).toBe('no-cache');
+    const etag = res.headers.etag;
+    expect(typeof etag).toBe('string');
+    const again = await app.inject({ method: 'GET', url: '/assets/escrow-worker-CzS2KofQ.js', headers: { 'if-none-match': String(etag) } });
+    expect(again.statusCode).toBe(304);
+  });
+
+  it('only that file gets it: other scripts, near misses included, get the deny-all script CSP (review M-1: a renamed escrow worker fails closed)', async () => {
+    for (const url of ['/assets/worker-CzS2KofQ.js', '/assets/escrow-worker-CzS2Ko.js', '/assets/x-escrow-worker-CzS2KofQ.js', '/assets/app-abc123.js']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.headers['content-security-policy'], url).toBe("default-src 'none'");
+      expect(res.headers['cache-control'], url).toBe('public, max-age=31536000, immutable');
+    }
+  });
+
+  it('review m-3: serveWeb refuses to start unless assets/ holds exactly one escrow worker', async () => {
+    const opts = { relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] };
+    const cases: Array<[string, string[]]> = [
+      ['none (renamed)', ['escrow-worker-CzS2Ko.js', 'worker-CzS2KofQ.js', 'app-abc123.js']],
+      ['two', ['escrow-worker-CzS2KofQ.js', 'escrow-worker-AbCdEfGh.js']],
+    ];
+    for (const [label, files] of cases) {
+      const dir = await mkdtemp(join(tmpdir(), 'x2f-web-m3-'));
+      const other = (await testApp()).app;
+      try {
+        await mkdir(join(dir, 'assets'));
+        await writeFile(join(dir, 'index.html'), '<!doctype html>');
+        for (const f of files) await writeFile(join(dir, 'assets', f), 'x');
+        await expect(serveWeb(other, { root: dir, ...opts }), label).rejects.toThrow(/exactly one escrow worker.*found/);
+      } finally {
+        await other.close();
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+    // A root with no app page and no assets folder (nothing built, e.g. API-only use) still starts.
+    const bare = await mkdtemp(join(tmpdir(), 'x2f-web-m3-'));
+    const ok = (await testApp()).app;
+    try {
+      await writeFile(join(bare, 'robots.txt'), 'User-agent: *');
+      await expect(serveWeb(ok, { root: bare, ...opts })).resolves.toBeUndefined();
+    } finally {
+      await ok.close();
+      await rm(bare, { recursive: true, force: true });
+    }
+  });
+
+  it('re-review n-1: serveWeb refuses to start when index.html exists but assets/ does not (a changed build.assetsDir cannot skip the check)', async () => {
+    const opts = { relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] };
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-web-n1-'));
+    const other = (await testApp()).app;
+    try {
+      await writeFile(join(dir, 'index.html'), '<!doctype html>');
+      await mkdir(join(dir, 'static'));
+      await writeFile(join(dir, 'static', 'escrow-worker-CzS2KofQ.js'), 'x');
+      await expect(serveWeb(other, { root: dir, ...opts })).rejects.toThrow(/index\.html but no assets folder/);
+    } finally {
+      await other.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('re-review n-2: serveWeb refuses to start when assets/ cannot be read for any reason but ENOENT (here: it is a file)', async () => {
+    const opts = { relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] };
+    for (const withPage of [true, false]) {
+      const dir = await mkdtemp(join(tmpdir(), 'x2f-web-n2-'));
+      const other = (await testApp()).app;
+      try {
+        if (withPage) await writeFile(join(dir, 'index.html'), '<!doctype html>');
+        await writeFile(join(dir, 'assets'), 'not a folder');
+        await expect(serveWeb(other, { root: dir, ...opts }), `index.html: ${withPage}`).rejects.toThrow(/ENOTDIR/);
+      } finally {
+        await other.close();
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('the service worker (push only, no request) may do nothing that CSP governs', async () => {
+    expect(SERVICE_WORKER_CSP).toBe("default-src 'none'");
+    const res = await app.inject({ method: 'GET', url: '/sw.js' });
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'");
+    expect(res.headers['cache-control']).toBe('no-cache');
+  });
+
+  it("the OCR worker's and monero-ts's worker's policies stay as pinned above", async () => {
+    expect((await app.inject({ method: 'GET', url: '/ocr/worker.min.js' })).headers['content-security-policy']).toBe(OCR_CSP);
+    expect((await app.inject({ method: 'GET', url: MONERO_WORKER_PATH })).headers['content-security-policy']).toBe(
+      `default-src 'none'; script-src 'wasm-unsafe-eval'; connect-src ${NODE}`,
+    );
+  });
+
+  it('site origins pass the same checks as X2F_ORIGINS in config.ts (origins.ts plainOrigin and clearTextAllowed)', () => {
+    const o = { relayOrigin: RELAY, nodeProxyOrigin: NODE };
+    for (const bad of [[], ['https://x2f.test/'], ['https://x2f.test/app'], ['wss://x2f.test'], ['http://x2f.test'], ['https://x2f.test', '*'], ['https://x2f.test;sandbox'], ["https://x2f.test 'unsafe-inline'"]]) {
+      expect(() => escrowWorkerCspFor({ ...o, siteOrigins: bad }), JSON.stringify(bad)).toThrow(/site origin/);
+    }
+    expect(escrowWorkerCspFor({ ...o, siteOrigins: ['http://127.0.0.1:4317'] })).toContain('worker-src http://127.0.0.1:4317/monero/monero.worker.js;');
+    expect(escrowWorkerCspFor({ ...o, siteOrigins: ['http://x2f.test'], allowInsecureOrigins: true })).toContain('worker-src http://x2f.test/monero/monero.worker.js;');
+    // A clear-text .onion relay is still refused (lead default, owner question).
+    expect(() => escrowWorkerCspFor({ siteOrigins: [SITE], relayOrigin: 'ws://x2fexample.onion', nodeProxyOrigin: NODE })).toThrow(/https or wss/);
   });
 });
 
@@ -178,13 +500,19 @@ describe('malformed HTTP that never reaches fastify routing (clientErrorHandler)
 
   beforeAll(async () => {
     ({ app: live } = await testApp());
-    await serveWeb(live, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE });
+    await serveWeb(live, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] });
     await live.listen({ host: '127.0.0.1', port: 0 });
     port = (live.server.address() as AddressInfo).port;
   });
 
   afterAll(async () => {
     await live.close();
+  });
+
+  it.each(['/ocr/../v1/me', '/ocr/x/../../v1/me', '/ocr/..', '/ocr/a\\..\\b', '/ocr/%2e%2e/v1/me', '/ocr/.%2E/v1/me', '/ocr/a\\b', '/ocr/..%2Fv1%2Fme', '/%6Fcr/..%2Fv1%2Fme', '/%4F%43%52/..%2Fv1', '/%ZZ/x', '/%E0%A4/x'])('review m-2, n-1: the raw path %s (not normalised by the client; the first segment decoded once) is 400', async (path) => {
+    const res = parseRaw(await rawExchange(port, `GET ${path} HTTP/1.1\r\nHost: x2f.test\r\nConnection: close\r\n\r\n`));
+    expect(res.status, path).toBe(400);
+    expectBaseHeaders(res.headers);
   });
 
   it('a well-formed raw request is answered normally (the harness works)', async () => {
@@ -263,6 +591,23 @@ describe('cspFor', () => {
     expect(cspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(CSP);
   });
 
+  it('review m-1: exactly 11 directives, one policy (no comma)', () => {
+    const csp = cspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE });
+    expect(csp.split('; ')).toHaveLength(11);
+    expect(csp.split(';')).toHaveLength(11);
+    expect(csp).not.toContain(',');
+  });
+
+  it.each(['wss://r.x2f.test;report-uri', 'wss://r.x2f.test;sandbox', 'wss://r.x2f.test,b', "wss://r.x2f.test'x", 'wss://*.x2f.test'])(
+    'review m-1: refuses %j, which URL takes as an origin, for both connect origins',
+    (bad) => {
+      expect(new URL(bad).origin === bad || bad.includes('*')).toBe(true);
+      expect(() => cspFor({ relayOrigin: bad, nodeProxyOrigin: NODE })).toThrow(/origin/);
+      const node = bad.replace('wss:', 'https:');
+      expect(() => cspFor({ relayOrigin: RELAY, nodeProxyOrigin: node })).toThrow(/origin/);
+    },
+  );
+
   it.each(['wss://relay.x2f.test/', 'wss://relay.x2f.test; script-src *', 'relay.x2f.test', 'ftp://relay.x2f.test', ''])(
     'refuses %j as an origin',
     (bad) => {
@@ -301,7 +646,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
     vi.unstubAllEnvs();
   });
 
-  const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE };
+  const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: SITE };
 
   it.each([
     ['X2F_RELAY_ORIGIN', 'ws://relay.x2f.test'],
@@ -324,6 +669,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
         root: '/srv/web',
         relayOrigin: value,
         nodeProxyOrigin: value,
+        siteOrigins: [SITE],
       });
     },
   );
@@ -337,6 +683,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
       root: '/srv/web',
       relayOrigin: 'ws://relay.x2f.test',
       nodeProxyOrigin: 'http://node.x2f.test',
+      siteOrigins: [SITE],
       allowInsecureOrigins: true,
     });
   });
@@ -352,7 +699,7 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
   it('serveWeb refuses a remote clear-text origin', async () => {
     const { app: other } = await testApp();
     try {
-      await expect(serveWeb(other, { root, relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE })).rejects.toThrow(/https or wss/);
+      await expect(serveWeb(other, { root, relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE, siteOrigins: [SITE] })).rejects.toThrow(/https or wss/);
     } finally {
       await other.close();
     }
@@ -360,6 +707,14 @@ describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
 });
 
 describe('webOptionsFromEnv', () => {
+  it.each(['X2F_RELAY_ORIGIN', 'X2F_NODE_PROXY_ORIGIN'])("review m-1: %s with ';', ',' or a quote is refused", (name) => {
+    const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: SITE };
+    const scheme = name === 'X2F_RELAY_ORIGIN' ? 'wss' : 'https';
+    for (const v of [`${scheme}://a.x2f.test;sandbox`, `${scheme}://a.x2f.test,b`, `${scheme}://a.x2f.test'x`]) {
+      expect(() => webOptionsFromEnv({ ...base, [name]: v }), v).toThrow(/origin/);
+    }
+  });
+
   it('is null without X2F_WEB_ROOT', () => {
     expect(webOptionsFromEnv({})).toBeNull();
   });
@@ -367,8 +722,11 @@ describe('webOptionsFromEnv', () => {
   it('needs both connect origins when the web app is served', () => {
     expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web' })).toThrow(/X2F_RELAY_ORIGIN/);
     expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY })).toThrow(/X2F_NODE_PROXY_ORIGIN/);
+    // Lead call 20 Nov: and the site's own origins, for the OCR worker's CSP.
+    expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE })).toThrow(/X2F_ORIGINS/);
     expect(
-      webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE }),
-    ).toEqual({ root: '/srv/web', relayOrigin: RELAY, nodeProxyOrigin: NODE });
+      webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: `${SITE}, https://x2fabcdef.example` }),
+    ).toEqual({ root: '/srv/web', relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE, 'https://x2fabcdef.example'] });
+    expect(() => webOptionsFromEnv({ X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE, X2F_ORIGINS: 'https://x2f.test/ocr' })).toThrow();
   });
 });

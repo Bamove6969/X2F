@@ -4,6 +4,7 @@
 // - GET|POST /v1/trades/:code/dispute, POST /v1/trades/:code/appeal: apps/api/src/disputes/routes.ts;
 // The method is named from the bundled catalog by id (disputeMethodName), never from the API.
 import { api, ApiCallError } from '../../api/client.js';
+import { chatClient, openTradeChat } from '../../chat/client.js';
 import { getTrade, methodOf, publicName, type TradeView } from '../../api/trade.js';
 import { catalogMethodName } from '../../methods/catalogNames.js';
 
@@ -55,8 +56,12 @@ export interface DisputeView {
    * traders at the top of the trade (where and how is design's: DESIGNER-REVIEW). Absent from an older view.
    */
   incidentId?: string | null;
-  /** Plan 4 Task 11: the moderator asked THIS trader for the unblurred proof (who, when). */
-  proofRequest?: { username: string; at: string } | null;
+  /**
+   * Plan 4 Task 11: the moderator asked THIS trader for the unblurred proof (who, when). `sentAt`
+   * (Plan 5 Task 15): when this trader's copy answering it was stored, from the server's record; null
+   * until then (and in an older view).
+   */
+  proofRequest?: { username: string; at: string; sentAt: string | null } | null;
   /** 'system' when the trade was escalated (late funds after it ended, a lapse nobody refunded). */
   openedBy: Party | 'system';
   reason: DisputeReason;
@@ -203,7 +208,7 @@ export function parseDispute(v: unknown): DisputeView {
     }),
     proofRequest: later(d.proofRequest, (v) => {
       const p = rec(v, 'proofRequest');
-      return { username: str(p.username, 'proofRequest.username'), at: iso(p.at, 'proofRequest.at') };
+      return { username: str(p.username, 'proofRequest.username'), at: iso(p.at, 'proofRequest.at'), sentAt: later(p.sentAt, (v) => iso(v, 'proofRequest.sentAt')) };
     }),
     openedBy: oneOf(d.openedBy, ['buyer', 'seller', 'system'] as const, 'openedBy'),
     reason: oneOf(d.reason, ['paid', 'silent', 'terms', 'other', 'escalated'] as const, 'reason'),
@@ -254,12 +259,56 @@ export async function fetchDispute(code: string, signal?: AbortSignal): Promise<
   }
 }
 
-export async function openDispute(code: string, reason: Reason, note: string): Promise<DisputeView> {
-  return parseDispute(await api(`${path(code)}/dispute`, { method: 'POST', body: { reason, note } }));
+/**
+ * Opens the dispute. Design build task 6: once the trade's chat has a key, the API needs this
+ * trader's signed grant of it to the moderator (400 grant-required); the escrow worker makes it and
+ * the request is sent once more with it. A chat with no key needs none.
+ */
+export async function openDispute(code: string, reason: Reason, note: string, d: { chatOf?: (code: string) => Promise<string>; grant?: (chat: string, disputeAt: string) => Promise<unknown> } = {}): Promise<DisputeView> {
+  try {
+    return parseDispute(await api(`${path(code)}/dispute`, { method: 'POST', body: { reason, note } }));
+  } catch (err) {
+    if (!(err instanceof ApiCallError) || err.status !== 400 || err.code !== 'grant-required') throw err;
+  }
+  const chat = await (d.chatOf ?? openTradeChat)(code);
+  const c = d.grant === undefined ? chatClient() : null;
+  const make = d.grant ?? (c?.grant === undefined ? undefined : c.grant.bind(c));
+  if (make === undefined) throw new ApiCallError(400, 'grant-required');
+  const grant = await make(chat, new Date().toISOString());
+  return parseDispute(await api(`${path(code)}/dispute`, { method: 'POST', body: { reason, note, grant } }));
 }
 
 export async function sendAppeal(code: string, why: string): Promise<DisputeView> {
   return parseDispute(await api(`${path(code)}/appeal`, { method: 'POST', body: { why } }));
+}
+
+/** Plan 4 Task 12 (A6): what POST /v1/trades/:code/payment-proof answers when it takes the proof. */
+export type PaymentProofStatus = 'accepted' | 'pending-confirmations';
+
+/** The seller's proof of a `seller-sends-xmr` payment (the tx hash and its key, lower-case hex). */
+export async function sendPaymentProof(code: string, txHash: string, txKey: string): Promise<PaymentProofStatus> {
+  const r = (await api(`${path(code)}/payment-proof`, { method: 'POST', body: { txHash, txKey } })) as { status?: unknown } | null;
+  if (r?.status !== 'accepted' && r?.status !== 'pending-confirmations') throw new ShapeError('status');
+  return r.status;
+}
+
+/** The user-facing line for a refused payment proof (codes from the API). COPY-UNSIGNED */
+export function proofRefusalText(err: unknown): string {
+  const code = err instanceof ApiCallError ? err.code : '';
+  switch (code) {
+    case 'proof-invalid':
+      return 'That transaction ID and key do not show this amount paid to this address. Check both and send them again.';
+    case 'proof-replayed':
+      return 'That transaction was used before, or was sent before this dispute opened. Send the proof of the payment you made for this ruling.';
+    case 'proof-pending':
+      return 'Your earlier proof is still waiting for its confirmations.';
+    case 'too-late':
+      return 'The time to send the proof has passed. A senior moderator now reviews the case.';
+    case 'node-unavailable':
+      return 'The payment could not be checked right now. Try again in a moment.';
+    default:
+      return refusalText(err);
+  }
 }
 
 /**

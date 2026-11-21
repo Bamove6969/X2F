@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import sodium from 'libsodium-wrappers';
-import { generateIdentity, joinMessage, signProof } from '../src/index.js';
+import { generateIdentity, identityKeysMatch, joinMessage, signProof } from '../src/index.js';
 
 describe('generateIdentity', () => {
   it('Ed25519 signing keys with derived X25519 box keys', async () => {
@@ -67,5 +67,19 @@ describe('joinMessage', () => {
     expect(() => joinMessage('A', 'admin' as 'buyer', c)).toThrow(TypeError);
     expect(() => joinMessage('A\0', 'buyer', c)).toThrow(TypeError);
     expect(() => joinMessage('A', 'buyer', `${c}\0`)).toThrow(TypeError);
+  });
+});
+
+describe('identityKeysMatch (review lead-mod-chat N11 d)', () => {
+  it('true only when both secrets are the public keys\' own', async () => {
+    const a = await generateIdentity();
+    const b = await generateIdentity();
+    expect(await identityKeysMatch(a)).toBe(true);
+    expect(await identityKeysMatch({ ...a, boxPublic: b.boxPublic })).toBe(false);
+    expect(await identityKeysMatch({ ...a, boxSecret: b.boxSecret })).toBe(false);
+    expect(await identityKeysMatch({ ...a, signPublic: b.signPublic })).toBe(false);
+    // A secret key whose seed is another key's, with this public half pasted on.
+    expect(await identityKeysMatch({ ...a, signSecret: new Uint8Array([...b.signSecret.subarray(0, 32), ...a.signSecret.subarray(32)]) })).toBe(false);
+    expect(await identityKeysMatch({ ...a, boxSecret: new Uint8Array(31) })).toBe(false);
   });
 });

@@ -1,19 +1,34 @@
 export { CHANNEL_KINDS, channelFor, type ChannelKind } from './channels.js';
 export {
+  ATTESTATION_CLOCK_SKEW_MS,
   AttestationError,
   attestationBytes,
+  attestationKeys,
   identityProofBytes,
   identityProofValid,
   instructionsMatch,
   instructionsSha256,
   isAttestedTerms,
   verifyAttestation,
+  verifyAttestationSignature,
   type Attestation,
   type AttestationErrorCode,
+  type AttestationKey,
   type AttestationSelf,
   type AttestedTerms,
   type ConfirmedDeal,
 } from './attestation.js';
+export {
+  isRulingStatement,
+  rulingStatementBytes,
+  rulingStatementValid,
+  signRulingStatement,
+  verifyRulingStatement,
+  type RulingStatement,
+  type RulingStatementCheck,
+  type RulingStatementExpect,
+  type RulingStatementRefusal,
+} from './rulingStatement.js';
 export { escrowCheckWords } from './checkWords.js';
 export { WORDLIST } from './wordlist.js';
 export {
@@ -43,7 +58,7 @@ export {
   type Pricing,
   type Side,
 } from './money.js';
-export { SETTLE_KINDS, payoutsFor, sweepMinimums, type PayoutFacts, type RulingKind, type SettleKind } from './payouts.js';
+export { RULING_KINDS, SETTLE_KINDS, isRulingKind, payoutsFor, sweepMinimums, type PayoutFacts, type RulingKind, type SettleKind } from './payouts.js';
 export { moneroUri } from './moneroUri.js';
 export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export { LAUNCH_TRADE_CAP_USD_CENTS } from './limits.js';
@@ -83,6 +98,14 @@ export {
   type WatchState,
   type WatchStepResult,
 } from './watch.js';
+export {
+  DISPUTE_KEEP_DAYS,
+  TRADE_KEEP_DAYS,
+  refundDisputeWindowEndsAt,
+  tradeDeleteAt,
+  tradeDeleteDue,
+  type RetentionFacts,
+} from './retention.js';
 export { modPartyArgs, modPartyPlan, type ModPartyArgs, type ModPartyFacts, type ModPartyPlan } from './modParty.js';
 export {
   CHAT_AFTER_CLOSE_DAYS,
@@ -93,6 +116,8 @@ export {
   CHAT_TEXT_MAX_BYTES,
   ChatEnvelopeError,
   chatIdentityProofBytes,
+  checkChatEnvelopeV2,
+  type ChatEnvelopeV2Shape,
   chatIdentityProofValid,
   chatPurgeDue,
   checkChatEnvelope,

@@ -9,6 +9,7 @@ import { EventBus } from '../events/bus.js';
 import { newBudgets } from '../limits.js';
 import { addSecurityHeaders } from '../static/serve.js';
 import type { ModerationClient } from '../disputes/moderationClient.js';
+import { staffRulingRoutes } from '../disputes/rulings.js';
 import { staffDisputeRoutes } from '../disputes/staffRoutes.js';
 import type { appendLog } from '../log/append.js';
 import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
@@ -17,6 +18,7 @@ import { staffMemberRoutes } from './members.js';
 import { ownerKeyRoutes } from './ownerKeys.js';
 import { staffOwnerAlertRoutes } from './ownerAlerts.js';
 import { keyTapRoutes } from './keyTap.js';
+import { staffDeviceRoutes } from './devices.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
@@ -24,14 +26,19 @@ import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffHoldRoutes } from './holds.js';
+import { staffLimitRoutes } from './limits.js';
 import { staffPastRepRoutes } from './pastrep.js';
+import { staffReviewDisputeRoutes } from './reviewDisputes.js';
 import { staffPayRoutes } from './pay.js';
+import { staffPerformanceRoutes } from './performance.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
 import { ownerSetupRoutes } from './ownerSetup.js';
 import { serveStaffWeb } from './web.js';
 import { staffRevenueRoutes } from './revenue.js';
 import { staffSettingsRoutes } from './settings.js';
 import { staffSiteRoutes } from './site.js';
+import { staffLogRoutes } from './activityLog.js';
+import { staffTrainingRoutes } from './training.js';
 
 // The moderation process as the staff API sees it (Plan 4 Task 11): the API never holds a
 // moderator key (Global Constraints) and reads a chat or a proof only through it.
@@ -71,12 +78,18 @@ declare module 'fastify' {
 }
 
 /**
- * The staff app's Content-Security-Policy (like Plan 3's, without the relay, node proxy or wasm):
- * sent on every response, the staff web app's pages included (Task 16).
+ * The staff app's Content-Security-Policy (like Plan 3's, without the relay or the node proxy):
+ * sent on every response, the staff web app's pages included (Task 16). Lead call 18 Nov (design
+ * build tasks 9-10): script-src carries 'wasm-unsafe-eval', as the trader app's does
+ * (apps/api/src/static/serve.ts), because libsodium-wrappers ships only as WebAssembly (no JS
+ * fallback) and staff-web's chat key worker needs it. It permits compiling WebAssembly only; it is
+ * NOT 'unsafe-eval' (no JS eval, no new Function) and NOT 'unsafe-inline'. Re-review m6: an explicit
+ * worker-src 'self' (as the trader app's), so a later script-src change can never widen workers.
  */
 export const STAFF_CSP = [
   "default-src 'none'",
-  "script-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",
+  "worker-src 'self'",
   "connect-src 'self'",
   "img-src 'self' data:",
   "style-src 'self'",
@@ -144,6 +157,8 @@ export async function buildStaffApi(
   await staffLoginRoutes(app);
   // Lead re-review 6 Nov items 1-2: one's own login methods, sessions, alerts and push.
   staffAccountRoutes(app);
+  // Chat membership design task 8: one's own staff device keys.
+  staffDeviceRoutes(app);
   // Plan 4 Task 5: security-key taps, used by every tapped action (Tasks 7, 8, 12).
   keyTapRoutes(app, {
     guard: requireStaff('self'),
@@ -170,7 +185,10 @@ export async function buildStaffApi(
   staffPriceHealthRoutes(app);
   // Plan 5 Task 10 (owner 2026-11-02): a claim's verified dollar figure (senior moderators and the owner).
   staffPastRepRoutes(app);
+  staffReviewDisputeRoutes(app);
   staffHoldRoutes(app);
+  // Plan 4 Task 26: account limits a moderator recommends and a senior moderator or the owner decides.
+  staffLimitRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
   // Plan 4 Task 11: the moderator's queue, case, logged chat access, messages, proof and freeze.
@@ -179,12 +197,19 @@ export async function buildStaffApi(
     ...(deps.traderEvents ? { traderEvents: deps.traderEvents } : {}),
     ...(deps.appendLog ? { appendLog: deps.appendLog } : {}),
   });
+  // Plan 4 Task 12: rulings (propose, approve, send back) and the appeal's eligible reviewers.
+  staffRulingRoutes(app, deps.traderEvents ? { traderEvents: deps.traderEvents } : {});
   // Plan 4 Task 32: the owner's revenue totals from the internal revenue ledger (earnings.read).
   staffRevenueRoutes(app);
   // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
   staffFeeSweepRoutes(app);
   // Plan 4 Task 33 (D-041..D-045): clock-out pay, payout addresses and the owner's pay settings.
   staffPayRoutes(app);
+  // Plan 4 Task 19: the Activity log page's reads and the training library (closed cases, scrubbed).
+  staffLogRoutes(app);
+  staffTrainingRoutes(app);
+  // Plan 4 Task 20: moderator performance (perf.read, the owner only, spec 6.6).
+  staffPerformanceRoutes(app);
   // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.
   if (deps.staffWebRoot !== undefined) await serveStaffWeb(app, deps.staffWebRoot);
 

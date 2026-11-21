@@ -2,12 +2,14 @@ import { TIMERS } from '@x2f/trade';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { purgeExpired } from '../src/auth/challenges.js';
+import { purgeProofsJob } from '../src/proofs/store.js';
 import { purgeChatsJob } from '../src/chat/retention.js';
 import { purgeFeedbackForm } from '../src/feedback/form.js';
 import { purgeBlurChecks } from '../src/proof/blurCheck.js';
 import { purgeFeedback } from '../src/feedback/mood.js';
 import { purgeNudges } from '../src/nudge/routes.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
+import { purgeTradesJob } from '../src/retention/tradePurge.js';
 import { purgeJabberPending } from '../src/jabber/retention.js';
 import { PREKEY_RECORD_RETENTION_MS, purgeJabberPreKeys } from '../src/jabber/prekeys.js';
 import { applyEvent } from '../src/trades/store.js';
@@ -154,7 +156,7 @@ describe('trade_events is append-only', () => {
 
 describe('retention scheduler jobs (X-12)', () => {
   it('runs every purge in order (purgeJabberPending, purgeJabberPreKeys and purgeChatKeyEnvelopes last of them, J-23 review F5), then closeInactiveAccounts (owner answer Q77)', () => {
-    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts]);
+    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeProofsJob, purgeTradesJob, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts]);
     expect(purgeTradeAddressesJob.name).toBe('purgeTradeAddresses');
   });
 

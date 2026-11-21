@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { LogDetailError, assertDetail } from '../src/log/actions.js';
 import { appendLog, chainHash } from '../src/log/append.js';
-import { queryLog } from '../src/log/query.js';
+import { CHAT_READ_VISIBILITY, queryLog } from '../src/log/query.js';
 import { verifyLogChain } from '../src/log/verify.js';
 import { applyEvent } from '../src/trades/store.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -319,5 +319,31 @@ describe('queryLog', () => {
     const all = await queryLog(deps.db, { tradeCode: disputed.code, scope: 'all', limit: 200 });
     expect(all.map((e) => e.action)).toContain('settings.changed');
     expect(all.map((e) => e.action)).toContain('staff.switched-off');
+  });
+
+  it('OWNER p12-11: the owner sees every chat.read entry, a senior those on their cases, a moderator only their own', async () => {
+    expect(CHAT_READ_VISIBILITY).toEqual({ owner: 'all', senior: 'own-cases', mod: 'own', helper: 'own' });
+    const t1 = await trade();
+    const t2 = await trade();
+    const senior: Actor = { kind: 'staff', id: randomUUID(), role: 'senior' };
+    const other: Actor = { kind: 'staff', id: randomUUID(), role: 'mod' };
+    for (const t of [t1, t2]) {
+      await deps.db.query(
+        "insert into disputes (code, seq, opened_by, reason, opened_at, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents) values ($1, 1, 'buyer', 'paid', $2, $2, $2, 0, 100000)",
+        [t.code, now],
+      );
+    }
+    // The senior is on t1 (they acted on it); t2 is the other moderator's alone.
+    await append(deps.db, { actor: senior, tradeCode: t1.code, action: 'case.opened' });
+    for (const [who, t] of [[mod, t1], [other, t1], [other, t2], [senior, t1]] as const) await append(deps.db, { actor: who, tradeCode: t.code, action: 'chat.read' });
+    const reads = (es: Awaited<ReturnType<typeof queryLog>>) => es.filter((e) => e.action === 'chat.read' && (e.tradeCode === t1.code || e.tradeCode === t2.code)).map((e) => `${e.actorId === mod.id ? 'mod' : e.actorId === other.id ? 'other' : 'senior'}@${e.tradeCode === t1.code ? 't1' : 't2'}`).sort();
+    const id = (a: Actor) => (a.kind === 'staff' ? a.id : '');
+    expect(reads(await queryLog(deps.db, { scope: 'all', limit: 200 }))).toEqual(['mod@t1', 'other@t1', 'other@t2', 'senior@t1']);
+    expect(reads(await queryLog(deps.db, { scope: { staffId: id(senior), role: 'senior' }, limit: 200 }))).toEqual(['mod@t1', 'other@t1', 'senior@t1']);
+    expect(reads(await queryLog(deps.db, { scope: { staffId: id(mod), role: 'mod' }, limit: 200 }))).toEqual(['mod@t1']);
+    // No role given: the narrowest view.
+    expect(reads(await queryLog(deps.db, { scope: { staffId: id(other) }, limit: 200 }))).toEqual(['other@t1', 'other@t2']);
+    // The other entries on the case are unchanged for the moderator.
+    expect((await queryLog(deps.db, { tradeCode: t1.code, scope: { staffId: id(mod), role: 'mod' }, limit: 200 })).map((e) => e.action)).toContain('case.opened');
   });
 });

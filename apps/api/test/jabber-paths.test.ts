@@ -87,6 +87,27 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     change: `update account_holds set hold_until = now() + interval '2 days' where account_id = $1`,
     where: 'account_id = $1',
   },
+  // J-06 (migration 400): never deleted, so no delete path (CHANGE_TABLES ops).
+  liens: {
+    insert: `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
+             values ($1, $2, 1, gen_random_uuid()::text, 1, 1, 'restitution', now(), now())`,
+    change: `update liens set status = 'suspended', changed_at = now() + interval '1 s' where debtor_account_id = $1`,
+    where: 'debtor_account_id = $1',
+  },
+  fees_owed: {
+    insert: `insert into fees_owed (account_id, amount_atomic, from_code, dispute_seq, created_at) values ($1, 10, gen_random_uuid()::text, 1, now())`,
+    change: `update fees_owed set collected_atomic = 5 where account_id = $1`,
+    where: 'account_id = $1',
+  },
+  // Plan 4 Task 26 (migration 760): an approved limit, with the approved recommendation it must
+  // match (760's trigger); the other account is the senior moderator who decided it.
+  account_limits: {
+    insert: `with r as (insert into limit_recommendations (account_id, cap_usd, reason, recommended_by, created_at, status, decided_by, decided_at)
+                        values ($1, 300, repeat('x', 40), $1, now(), 'approved', $2, now()) returning id)
+             insert into account_limits (account_id, cap_usd, set_by, recommendation_id, created_at) select $1, 300, $2, id, now() from r`,
+    change: `update account_limits set until = now() + interval '1 day' where account_id = $1`,
+    where: 'account_id = $1',
+  },
   trading_holds: {
     insert: `insert into trading_holds (account_id, created_at) values ($1, now())`,
     change: `update trading_holds set lifted_at = now() + interval '1 s' where account_id = $1`,
@@ -105,6 +126,15 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
   banned_identifiers: {
     insert: `insert into banned_identifiers (kind, tag_key_id, tag, account_id, banned_at) values ('display-name', 1, decode('${randomBytes(32).toString('hex')}', 'hex'), $1, now())`,
     change: `update banned_identifiers set banned_at = now() + interval '1 s' where account_id = $1`,
+    where: 'account_id = $1',
+  },
+  // Plan 5 Tasks 5 and 12 (migration 303): badge visibility and the record on the profile. The
+  // account's deletion cascades the row (notified there), so no delete path (CHANGE_TABLES ops).
+  // One row per account and never deleted, so the closing re-insert below is a no-op (`on conflict`).
+  badge_prefs: {
+    insert: `insert into badge_prefs (account_id, updated_at) values ($1, now()) on conflict (account_id) do nothing`,
+    change: `update badge_prefs set portable_public = true, updated_at = now() + interval '1 s' where account_id = $1`,
+    bookkeeping: `update badge_prefs set updated_at = now() + interval '2 s' where account_id = $1`,
     where: 'account_id = $1',
   },
   past_reputation: {
@@ -172,6 +202,7 @@ describe('the change paths are complete against the schema', () => {
 
 describe('each change path queues exactly one notice per transaction', () => {
   for (const [table, f] of Object.entries(FIXTURES)) {
+    const deletes = CHANGE_TABLES.find((t) => t.table === table)?.ops.includes('delete') ?? true;
     it(`${table}: insert, change and delete each queue one notice; bookkeeping queues none`, async () => {
       const a = await account();
       const other = await account();
@@ -184,8 +215,11 @@ describe('each change path queues exactly one notice per transaction', () => {
         await db.query(f.bookkeeping, [a]);
         expect(await notices(a), 'bookkeeping').toBe(2);
       }
-      await db.query(`delete from ${table} where ${f.where}`, [a]);
-      expect(await notices(a), 'delete').toBe(3);
+      // A table that is never deleted from (its ops have no delete) has no delete path to check.
+      if (deletes) {
+        await db.query(`delete from ${table} where ${f.where}`, [a]);
+        expect(await notices(a), 'delete').toBe(3);
+      }
       // The other account named in the row (the blocked person) is never told.
       await withJabber(other);
       await db.query(f.insert, f.insert.includes('$2') ? [a, other] : [a]);

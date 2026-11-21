@@ -1,21 +1,22 @@
 // Plan 4 Task 11: the moderation process's internal API. It listens only on a Unix socket; every
 // request carries an HMAC over method, path, body and time (30 s); every call names the activity-log
 // entry the API wrote for it, which must match, be fresh (60 s), be unused, and belong to a trade
-// whose current dispute is not closed. NEEDS_P4_CHAT_MEMBERSHIP: there is no chat read here (no
-// `/internal/chat/read`) and no proof read (no `/internal/proof/read`, review 8 Nov I-1): both
-// would hand plaintext to the API. The per-trade key-membership design (owner p11-2,
-// design-chat-membership-keys-2026-11-08) re-wraps the keys to the staff device instead.
-// NEEDS_P4_MOD_COUNTERSIGN (review 8 Nov I-2, lead): `/internal/chat/send` lets a compromised API
-// seal text as the moderator, so it is registered only with X2F_DEV_MOD_CHAT=1, never in
-// production, until build task 9 makes it a countersign.
+// whose current dispute is not closed. Design build task 9 (landed): no chat or proof text passes
+// through here. The moderator's read is the chat key re-wrapped to a certified staff device
+// (`/internal/chat/grant`, grant.test.ts), and the moderator's message (`/internal/chat/send`) is
+// ciphertext a certified staff device on the case sealed and countersigned (x2f/mod-countersign/v1),
+// which this process only signs as the moderator. NEEDS_P5_PROOF_ENVELOPE: the unblurred proof's key
+// re-wrap (design 2.4 step 5) is not built, so there is still no proof read.
 import { createHmac, randomBytes } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newTradeCode } from '@x2f/core';
-import { generateIdentity, open, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_TS_HEADER } from '@x2f/trade';
+import { encryptChat, generateIdentity, makeModCountersign, newChatKey, openChat, ReplayGuard, type ChatEnvelopeV2, type Identity, type Participants } from '@x2f/protocol';
+import sodium from 'libsodium-wrappers';
+import { CHAT_MSG_TYPE, channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_TS_HEADER } from '@x2f/trade';
+import { deviceKeyIdOf, type DeviceCertificates, type StaffDirectory } from '../src/internal/grant.js';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { saveChatIdentity } from '../src/keystore.js';
@@ -53,14 +54,14 @@ afterAll(async () => {
 
 /** The API's tables as the moderation process reads them, in memory. */
 class FakeApi implements ApiView {
-  log = new Map<string, { id: string; at: Date; action: string; tradeCode: string | null }>();
+  log = new Map<string, { id: string; at: Date; action: string; tradeCode: string | null; actorKind: string; actorId: string | null }>();
   disputes = new Map<string, string>();
   chats = new Map<string, string>();
   // One counter for the file: the moderation database (and its used entries) is shared by every test.
   private static next = 1;
-  entry(action: string, code: string | null, at = NOW): string {
+  entry(action: string, code: string | null, at = NOW, actorId: string = STAFF): string {
     const id = String(FakeApi.next++);
-    this.log.set(id, { id, at, action, tradeCode: code });
+    this.log.set(id, { id, at, action, tradeCode: code, actorKind: 'staff', actorId });
     return id;
   }
   async logEntry(id: string) {
@@ -69,10 +70,29 @@ class FakeApi implements ApiView {
   async disputeStatus(code: string) {
     return this.disputes.get(code) ?? null;
   }
+  async disputeAssignee() {
+    return STAFF;
+  }
   async chatOf(code: string) {
     return this.chats.get(code) ?? null;
   }
+  async modGrant() {
+    return null;
+  }
 }
+
+/** The assigned moderator as the gate knows them, and their certified staff device. */
+const STAFF = '00000000-0000-4000-8000-0000000000aa';
+const OTHER = '00000000-0000-4000-8000-0000000000bb';
+let DEVICE_ID: Identity;
+let DEVICE: string;
+beforeAll(async () => {
+  await sodium.ready;
+  DEVICE_ID = await generateIdentity();
+  DEVICE = deviceKeyIdOf(sodium.from_hex(DEVICE_ID.signPublic));
+});
+const STAFF_DIR: StaffDirectory = { standing: async (id) => (id === STAFF || id === OTHER ? { kind: 'staff', role: 'mod' } : null) };
+const DEVICES: DeviceCertificates = { device: async (who, key) => (who === STAFF && key === DEVICE ? { signPublic: DEVICE_ID.signPublic, boxPublic: DEVICE_ID.boxPublic } : null) };
 
 interface Case {
   code: string;
@@ -80,6 +100,8 @@ interface Case {
   channel: string;
   ids: Record<'buyer' | 'seller' | 'mod', Identity>;
   participants: Participants;
+  /** The chat key as the traders and the staff device hold it (this process never needs it to send). */
+  tk: Uint8Array;
 }
 
 /** A disputed trade with its chat attested by this process (identity sealed, signed_chats row). */
@@ -93,10 +115,27 @@ async function disputedCase(api: FakeApi, status = 'open'): Promise<Case> {
   await db.query('insert into signed_chats (chat, attestation, sig) values ($1, $2, $3)', [
     chat, { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: NOW.toISOString() }, 'aa',
   ]);
+  await db.query('insert into mod_dispute_seen (trade, first_seen_at, last_seen_at) values ($1, $2, $2)', [code, NOW]);
   api.disputes.set(code, status);
   api.chats.set(code, chat);
-  return { code, chat, channel, ids, participants };
+  return { code, chat, channel, ids, participants, tk: await newChatKey() };
 }
+
+/**
+ * A countersigned moderator message as staff-web makes it: sealed under the chat key as `from:
+ * 'mod'` at `seq`, countersigned by the certified device key. `o` overrides any wire field.
+ */
+async function sendBody(api: FakeApi, c: Case, seq: number, o: { text?: string; me?: Identity; issuedAt?: string; requestId?: string; logEntryId?: string; staff?: string } & Record<string, unknown> = {}) {
+  const body = await encryptChat({ trade: c.channel, from: 'mod', seq, type: CHAT_MSG_TYPE, payload: { text: o.text ?? 'Moderator here.' }, tk: c.tk });
+  const cs = await makeModCountersign({ body, requestId: o.requestId ?? randomBytes(16).toString('hex'), issuedAt: o.issuedAt ?? NOW.toISOString(), me: o.me ?? DEVICE_ID });
+  const { text: _t, me: _m, issuedAt: _i, requestId: _r, logEntryId, staff, ...rest } = o;
+  return {
+    code: c.code, logEntryId: logEntryId ?? api.entry(REQUESTED, c.code), staffAccountId: staff ?? STAFF, deviceKeyId: DEVICE,
+    seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig, ...rest,
+  };
+}
+/** The chat's next moderator seq as this process holds it. */
+const nextSeq = async (chat: string) => Number((await db.query<{ n: string }>('select coalesce((select next_seq from mod_chat_seq where chat = $1), 0)::text as n', [chat])).rows[0]!.n);
 
 const SEND = '/internal/chat/send';
 /** The entry the API commits before it asks for a message (review 8 Nov M-2). */
@@ -109,9 +148,9 @@ const OPENED = 'proof.unblurred-opened';
  */
 const GID = process.getgid!() === 0 ? 65_534 : process.getgid!();
 
-/** Dev deps: the moderator's message route is on (X2F_DEV_MOD_CHAT=1); production has it off. */
+/** Production deps: the gate's staff directory and certified devices (stand-ins). */
 function deps(api: ApiView, o: Partial<InternalDeps> = {}): InternalDeps {
-  return { secret: SECRET, api, db, keystoreKey, now: () => NOW, devModChat: true, ...o };
+  return { secret: SECRET, api, db, keystoreKey, now: () => NOW, staff: STAFF_DIR, devices: DEVICES, ...o };
 }
 
 /** A directory this process owns, mode 0750 (as /run/x2f-mod in a deployment). */
@@ -177,30 +216,32 @@ describe('authentication', () => {
   it('refuses a missing or wrong HMAC, a changed body, and a time more than 30 s off, with 401', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
-    const body = () => ({ code: c.code, logEntryId: api.entry(REQUESTED, c.code), text: 'Hi' });
     const d = deps(api);
     for (const o of [{ noMac: true }, { secret: new Uint8Array(randomBytes(32)) }, { tamper: true }, { ts: NOW.getTime() - 31_000 }, { ts: NOW.getTime() + 31_000 }]) {
-      const res = await call(d, SEND, body(), o);
+      const res = await call(d, SEND, await sendBody(api, c, 0), o);
       expect({ o, status: res.status, error: res.json().error }).toEqual({ o, status: 401, error: 'unauthorized' });
     }
-    expect((await call(d, SEND, body(), { ts: NOW.getTime() - 29_000 })).status).toBe(200);
+    expect((await call(d, SEND, await sendBody(api, c, 0), { ts: NOW.getTime() - 29_000 })).status).toBe(200);
   });
 
-  it('answers only its one POST path', async () => {
+  it('answers only its two POST paths, with exactly their fields', async () => {
     const api = new FakeApi();
+    const c = await disputedCase(api);
     const d = deps(api);
     expect((await call(d, SEND, {}, { method: 'GET' })).status).toBe(404);
     expect((await call(d, '/internal/nothing', {})).status).toBe(404);
-    expect((await call(d, SEND, { code: 'nope', logEntryId: '1', text: 'Hi' })).status).toBe(400);
-    expect((await call(d, SEND, { code: newTradeCode(), logEntryId: '1', text: 'Hi', extra: 1 })).status).toBe(400);
-    expect((await call(d, SEND, { code: newTradeCode(), logEntryId: '1' })).status).toBe(400);
+    const good = await sendBody(api, c, 0);
+    expect((await call(d, SEND, { ...good, code: 'nope' })).status).toBe(400);
+    expect((await call(d, SEND, { ...good, extra: 1 })).status).toBe(400);
+    const { sig: _s, ...noSig } = good;
+    expect((await call(d, SEND, noSig)).status).toBe(400);
+    expect((await call(d, SEND, { ...good, seq: -1 })).status).toBe(400);
   });
 
-  it('NEEDS_P4_CHAT_MEMBERSHIP: has no proof read either, even for a signed call naming a fresh proof.unblurred-opened entry', async () => {
-    // Review 8 Nov I-1: `/internal/proof/read` sent the unblurred image to the API, the same
-    // plaintext-through-the-API gap as the chat read. The design (2.4 step 5) re-wraps the proof key
-    // to the staff device key instead; build it from that design, then replace this test. Plan 5
-    // must not wire a proof source into this process's internal API.
+  it('NEEDS_P5_PROOF_ENVELOPE: has no proof read, even for a signed call naming a fresh proof.unblurred-opened entry', async () => {
+    // Review 8 Nov I-1: `/internal/proof/read` sent the unblurred image to the API. The design (2.4
+    // step 5) re-wraps the proof key to the staff device key instead; that re-wrap is not built (no
+    // proof.unblurred upload exists yet). Plan 5 must not wire a proof source into this process.
     const api = new FakeApi();
     const c = await disputedCase(api);
     const id = api.entry(OPENED, c.code);
@@ -211,38 +252,29 @@ describe('authentication', () => {
     expect(src).not.toMatch(/'\/internal\/proof\/read'|ProofSource|\.unblurred\(/);
   });
 
-  it('NEEDS_P4_MOD_COUNTERSIGN: no message route unless X2F_DEV_MOD_CHAT=1 (never in production)', async () => {
-    // Review 8 Nov I-2 (lead): this route seals any text the API names as the moderator, so a
-    // compromised API could post "Moderator: release now" into a live trade. Until build task 9
-    // makes it a countersign (text signed by a certified staff device key on the case), it is off.
+  it('landed (was NEEDS_P4_MOD_COUNTERSIGN): the message route is on in production and takes only a countersigned ciphertext, never text', async () => {
+    // Review 8 Nov I-2: the old route sealed any text the API named. Now a plaintext body is refused
+    // before anything is read, and there is no dev switch left.
     const api = new FakeApi();
     const c = await disputedCase(api);
     const id = api.entry(REQUESTED, c.code);
-    for (const o of [{}, { devModChat: false }]) {
-      const d = deps(api, o);
-      if (!('devModChat' in o)) delete (d as { devModChat?: boolean }).devModChat;
-      const res = await call(d, SEND, { code: c.code, logEntryId: id, text: 'Seller, release now.' });
-      expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'not-found' });
-    }
-    expect((await db.query('select 1 from used_log_entries where id = $1', [id])).rows).toEqual([]);
-  });
-
-  it('NEEDS_P4_CHAT_MEMBERSHIP: has no chat read, even for a signed call naming a fresh chat.read entry', async () => {
-    // The moderator's chat read is NOT built: the key-membership design (owner p11-2) replaces
-    // this process opening the chat and handing plaintext to the API. Build it from that design
-    // (design-chat-membership-keys-2026-11-08 in the comms folder), then replace this test.
-    const api = new FakeApi();
-    const c = await disputedCase(api);
-    const d = deps(api);
-    const id = api.entry('chat.read', c.code);
-    const res = await call(d, '/internal/chat/read', { code: c.code, logEntryId: id });
-    expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'not-found' });
-    // Nothing was used up.
+    const res = await call(deps(api), SEND, { code: c.code, logEntryId: id, text: 'Seller, release now.' });
+    expect({ status: res.status, error: res.json().error }).toEqual({ status: 400, error: 'bad-request' });
     expect((await db.query('select 1 from used_log_entries where id = $1', [id])).rows).toEqual([]);
     const src = await readFile(new URL('../src/internal/server.ts', import.meta.url), 'utf8');
-    expect(src).not.toMatch(/'\/internal\/chat\/read'|readChat|envelopes\(/);
-    const chatSrc = await readFile(new URL('../src/internal/chat.ts', import.meta.url), 'utf8');
-    expect(chatSrc).not.toMatch(/\bopen\(/);
+    expect(src).not.toMatch(/devModChat|X2F_DEV_MOD_CHAT|NEEDS_P4_MOD_COUNTERSIGN|checkModText|\bseal\(/);
+  });
+
+  it('landed (was NEEDS_P4_CHAT_MEMBERSHIP): no chat read returns text; the read is the grant (a re-wrap), and this process never opens a chat', async () => {
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const id = api.entry('chat.read', c.code);
+    const res = await call(deps(api), '/internal/chat/read', { code: c.code, logEntryId: id });
+    expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'not-found' });
+    expect((await db.query('select 1 from used_log_entries where id = $1', [id])).rows).toEqual([]);
+    const src = await readFile(new URL('../src/internal/server.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/'\/internal\/chat\/read'|readChat|openChat|NEEDS_P4_CHAT_MEMBERSHIP/);
+    expect(src).toMatch(/'\/internal\/chat\/grant'/);
   });
 
   it('listens on a Unix socket only: mode 0660, its own group, in a directory this process owns (review 8 Nov I-3)', async () => {
@@ -293,13 +325,13 @@ describe('authentication', () => {
 });
 
 describe('the log entry each call names', () => {
-  it('refuses an entry that is used, older than 60 s, from another trade, of another action, or unknown', async () => {
+  it('refuses an entry that is used, older than 60 s, from another trade, of another action or person, or unknown', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
     const other = await disputedCase(api);
     const d = deps(api);
     const used = api.entry(REQUESTED, c.code);
-    expect((await call(d, SEND, { code: c.code, logEntryId: used, text: 'Hi' })).status).toBe(200);
+    expect((await call(d, SEND, await sendBody(api, c, 0, { logEntryId: used }))).status).toBe(200);
     const cases = {
       used,
       old: api.entry(REQUESTED, c.code, new Date(NOW.getTime() - 61_000)),
@@ -309,81 +341,147 @@ describe('the log entry each call names', () => {
       opened: api.entry(OPENED, c.code),
       chatRead: api.entry('chat.read', c.code),
       noTrade: api.entry(REQUESTED, null),
+      otherPerson: api.entry(REQUESTED, c.code, NOW, OTHER),
       unknown: '999999',
     };
     for (const [why, id] of Object.entries(cases)) {
-      const res = await call(d, SEND, { code: c.code, logEntryId: id, text: 'Hi' });
+      const res = await call(d, SEND, await sendBody(api, c, 1, { logEntryId: id }));
       expect({ why, status: res.status, error: res.json().error }).toEqual({ why, status: 403, error: 'log-entry-invalid' });
     }
     // 59 s old is still fresh.
-    expect((await call(d, SEND, { code: c.code, logEntryId: api.entry(REQUESTED, c.code, new Date(NOW.getTime() - 59_000)), text: 'Hi' })).status).toBe(200);
+    expect((await call(d, SEND, await sendBody(api, c, 1, { logEntryId: api.entry(REQUESTED, c.code, new Date(NOW.getTime() - 59_000)) }))).status).toBe(200);
   });
 
   it('refuses a fresh entry when the trade has no dispute, or its dispute is closed', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
     const d = deps(api);
-    const sendBody = () => ({ code: c.code, logEntryId: api.entry(REQUESTED, c.code), text: 'Hi' });
     api.disputes.delete(c.code);
-    let res = await call(d, SEND, sendBody());
-    expect({ status: res.status, error: res.json().error }).toEqual({ status: 403, error: 'log-entry-invalid' });
+    let res = await call(d, SEND, await sendBody(api, c, 0));
+    expect({ status: res.status, error: res.json().error }).toEqual({ status: 403, error: 'not-disputed' });
     api.disputes.set(c.code, 'closed');
-    res = await call(d, SEND, sendBody());
-    expect({ status: res.status, error: res.json().error }).toEqual({ status: 403, error: 'log-entry-invalid' });
-    for (const s of ['open', 'awaiting-approval', 'published', 'appealed', 'final', 'complying']) {
-      api.disputes.set(c.code, s);
-      expect((await call(d, SEND, sendBody())).status, s).toBe(200);
+    res = await call(d, SEND, await sendBody(api, c, 0));
+    expect({ status: res.status, error: res.json().error }).toEqual({ status: 403, error: 'not-disputed' });
+    let seq = 0;
+    for (const st of ['open', 'awaiting-approval', 'published', 'appealed', 'final', 'complying']) {
+      api.disputes.set(c.code, st);
+      expect((await call(d, SEND, await sendBody(api, c, seq++))).status, st).toBe(200);
     }
   });
 
-  it('a refused call does not use up its entry; an accepted one does, even when it then finds no chat', async () => {
+  it('a refused call uses nothing: a chat this process never attested leaves the entry unused', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
-    api.chats.delete(c.code);
+    api.chats.set(c.code, newTradeCode());
     const d = deps(api);
     const id = api.entry(REQUESTED, c.code);
-    const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: id, text: 'Hi' });
+    const res = await call(d, SEND, await sendBody(api, c, 0, { logEntryId: id }));
     expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'no-chat' });
-    expect((await call(d, '/internal/chat/send', { code: c.code, logEntryId: id, text: 'Hi' })).json().error).toBe('log-entry-invalid');
+    expect((await db.query('select 1 from used_log_entries where id = $1', [id])).rows).toEqual([]);
   });
 });
 
-describe('the moderator\'s message', () => {
-  it('sends as the moderator: one envelope that opens for buyer and seller, with a rising seq', async () => {
+describe('the moderator\'s message: a countersign (build task 9, x2f/mod-countersign/v1)', () => {
+  it('signs as the moderator what the staff device sealed: v2 envelopes both traders open under the chat key, with a rising seq, recorded as sends', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
     const d = deps(api);
-    const envs: Envelope[] = [];
-    for (const text of ['First.', 'Second.']) {
-      const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry(REQUESTED, c.code), text });
+    const envs: ChatEnvelopeV2[] = [];
+    for (const [i, text] of ['First.', 'Second.'].entries()) {
+      const res = await call(d, SEND, await sendBody(api, c, i, { text }));
       expect(res.status).toBe(200);
-      envs.push(res.json().envelope as Envelope);
+      envs.push(res.json().envelope as ChatEnvelopeV2);
     }
-    expect(envs.map((e) => [e.from, e.trade, e.seq])).toEqual([['mod', c.channel, 0], ['mod', c.channel, 1]]);
-    for (const role of ['buyer', 'seller'] as const) {
-      const guard = new ReplayGuard(c.channel);
-      const got = [];
-      for (const e of envs) got.push(await open(e, { me: c.ids[role], myRole: role, participants: c.participants, trade: c.channel, guard }));
-      expect(got).toEqual([
-        { from: 'mod', type: 'chat.msg', payload: { text: 'First.' } },
-        { from: 'mod', type: 'chat.msg', payload: { text: 'Second.' } },
-      ]);
-    }
+    expect(envs.map((e) => [e.v, e.from, e.trade, e.seq])).toEqual([[2, 'mod', c.channel, 0], [2, 'mod', c.channel, 1]]);
+    const guard = new ReplayGuard(c.channel);
+    const got = [];
+    for (const e of envs) got.push(await openChat(e, { tk: c.tk, trade: c.channel, participants: c.participants, guard }));
+    expect(got).toEqual([
+      { from: 'mod', type: 'chat.msg', payload: { text: 'First.' } },
+      { from: 'mod', type: 'chat.msg', payload: { text: 'Second.' } },
+    ]);
+    const { rows } = await db.query<{ action: string; staff_id: string; device_key_id: string }>('select action, staff_id::text, device_key_id from mod_chat_access where chat = $1 order by log_entry_id', [c.chat]);
+    expect(rows).toEqual([0, 1].map(() => ({ action: 'send', staff_id: STAFF, device_key_id: DEVICE })));
   });
 
-  it('refuses a bad text, and a chat this process never attested', async () => {
+  it('refuses a countersign by any other key, for other words than the ciphertext sent, a used requestId, an issuedAt over 5 minutes old or a minute ahead, and a seq that is not next; nothing is taken', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
     const d = deps(api);
-    for (const b of [{ text: '' }, { text: '  ' }, { text: 'x'.repeat(2001) }, { text: 'é'.repeat(1001) }, { text: 5 }, { text: 'bell\u0007' }]) {
-      const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry(REQUESTED, c.code), ...b });
-      expect(res.status, JSON.stringify(b)).toBe(400);
+    const stranger = await generateIdentity();
+    const ok = await sendBody(api, c, 0, { requestId: 'e'.repeat(32) });
+    const otherWords = await sendBody(api, c, 0);
+    const cases: Array<[string, Record<string, unknown>, number, string]> = [
+      ['another key', await sendBody(api, c, 0, { me: stranger }), 400, 'bad-countersign'],
+      ['ciphertext swapped after signing', { ...otherWords, ct: ok.ct, nonce: ok.nonce }, 400, 'bad-countersign'],
+      ['too old', await sendBody(api, c, 0, { issuedAt: new Date(NOW.getTime() - 5 * 60_000 - 1).toISOString() }), 403, 'stale-countersign'],
+      ['ahead', await sendBody(api, c, 0, { issuedAt: new Date(NOW.getTime() + 61_000).toISOString() }), 403, 'stale-countersign'],
+      ['not the next seq', await sendBody(api, c, 3), 409, 'stale-seq'],
+      ['someone not on the case', await sendBody(api, c, 0, { staff: OTHER, logEntryId: api.entry(REQUESTED, c.code, NOW, OTHER) }), 403, 'not-on-case'],
+      ['a device key not certified to them', await sendBody(api, c, 0, { deviceKeyId: 'f'.repeat(32) }), 403, 'device-not-certified'],
+    ];
+    for (const [why, b, status, error] of cases) {
+      const res = await call(d, SEND, b);
+      expect({ why, status: res.status, error: res.json().error }, why).toEqual({ why, status, error });
+      expect((await db.query('select 1 from used_log_entries where id = $1', [b.logEntryId])).rows, why).toEqual([]);
     }
-    const unattested = newTradeCode();
-    api.disputes.set(unattested, 'open');
-    api.chats.set(unattested, newTradeCode());
-    const res = await call(d, '/internal/chat/send', { code: unattested, logEntryId: api.entry(REQUESTED, unattested), text: 'Hi' });
-    expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'no-chat' });
+    expect((await call(d, SEND, await sendBody(api, c, 3))).json().nextSeq).toBe(0);
+    expect(await nextSeq(c.chat)).toBe(0);
+    expect((await call(d, SEND, ok)).status).toBe(200);
+    // The same requestId again, even in a fresh request for the next seq: refused, nothing taken.
+    const again = await sendBody(api, c, 1, { requestId: 'e'.repeat(32) });
+    const res = await call(d, SEND, again);
+    expect({ status: res.status, error: res.json().error }).toEqual({ status: 403, error: 'replayed' });
+    expect((await db.query('select 1 from used_log_entries where id = $1', [again.logEntryId])).rows).toEqual([]);
+    expect(await nextSeq(c.chat)).toBe(1);
+  });
+
+  it('review N6: a countersign refused once it verified (a seq that is not next) is spent: shown again once the seq catches up, it is refused as replayed', async () => {
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const d = deps(api);
+    // Told a nextSeq one too high, the device sealed seq 1 while the chat is at 0.
+    const early = await sendBody(api, c, 1, { text: 'Said once.' });
+    const r1 = await call(d, SEND, early);
+    expect({ status: r1.status, error: r1.json().error, nextSeq: r1.json().nextSeq }).toEqual({ status: 409, error: 'stale-seq', nextSeq: 0 });
+    expect((await call(d, SEND, await sendBody(api, c, 0))).status).toBe(200);
+    // The held countersign, with a fresh log entry, now that seq 1 is next: refused, nothing taken.
+    const replay = { ...early, logEntryId: api.entry(REQUESTED, c.code) };
+    const r2 = await call(d, SEND, replay);
+    expect({ status: r2.status, error: r2.json().error }).toEqual({ status: 403, error: 'replayed' });
+    expect((await db.query('select 1 from used_log_entries where id = $1', [replay.logEntryId])).rows).toEqual([]);
+    expect(await nextSeq(c.chat)).toBe(1);
+  });
+
+  it('review N7: a nonce swapped after the device signed is refused (bad-countersign); nothing is signed or taken', async () => {
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const d = deps(api);
+    const a = await sendBody(api, c, 0);
+    const other = await sendBody(api, c, 0);
+    const swapped = { ...a, nonce: other.nonce };
+    const res = await call(d, SEND, swapped);
+    expect({ status: res.status, error: res.json().error }).toEqual({ status: 400, error: 'bad-countersign' });
+    expect((await db.query('select 1 from used_log_entries where id = $1', [swapped.logEntryId])).rows).toEqual([]);
+    expect(await nextSeq(c.chat)).toBe(0);
+  });
+
+  it('two identical sends at once: exactly one is signed', async () => {
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const b = await sendBody(api, c, 0);
+    const got = await Promise.all([call(deps(api), SEND, b), call(deps(api), SEND, b)]);
+    expect(got.map((g) => g.status).sort()).toEqual([200, 403]);
+    expect(await nextSeq(c.chat)).toBe(1);
+  });
+
+  it('with no gate, every send is refused before anything is read', async () => {
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const d = deps(api);
+    delete (d as { staff?: StaffDirectory }).staff;
+    const b = await sendBody(api, c, 0);
+    expect((await call(d, SEND, b)).json().error).toBe('gate-unavailable');
   });
 });
 
@@ -397,11 +495,15 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
     try {
       const dir = new URL('../../api/migrations/', import.meta.url);
       const { readdir } = await import('node:fs/promises');
-      for (const f of (await readdir(dir)).filter((n) => /^\d{3}_[a-z0-9_]+\.sql$/.test(n)).sort()) {
-        await owner.query(await readFile(new URL(f, dir), 'utf8'));
-      }
       const login = `modr_${randomBytes(4).toString('hex')}`;
-      await owner.query(`create role ${login} login password '${pass}' in role x2f_mod_reader`);
+      // One run of the API's migrations at a time on this cluster (their roles: apiSchema.ts).
+      const { withApiSchemaLock } = await import('./apiSchema.js');
+      await withApiSchemaLock(async () => {
+        for (const f of (await readdir(dir)).filter((n) => /^\d{3}_[a-z0-9_]+\.sql$/.test(n)).sort()) {
+          await owner.query(await readFile(new URL(f, dir), 'utf8'));
+        }
+        await owner.query(`create role ${login} login password '${pass}' in role x2f_mod_reader`);
+      });
       const code = newTradeCode();
       const chat = newTradeCode();
       const at = '2026-11-02T12:00:00.000Z';
@@ -423,9 +525,23 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
              values ($1, $2, 'buyer', 'paid', '', $3, false, $4, $5, $3, $3, 0, 100000)`,
             [code, seq, at, status, status === 'closed' ? at : null],
           );
+          await c.query('update disputes set assignee = $3 where code = $1 and seq = $2', [code, seq, seq === 2 ? u2 : u1]);
         }
         await c.query(`insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at) values ($1, $2, $3, $4, $5, $6)`, [chat, u1, u1, u2, code, at]);
         await c.query(`insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ($1, 'buyer', 0, '{"a":1}', $2), ($1, 'mod', 0, '{"b":2}', $2)`, [chat, at]);
+        // Design build task 9 (migration 714): a moderator grant row, and a staff row with its own wrap.
+        await c.query(
+          `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, grant_at, statement)
+           values ($1, 'mod', 'mod', $2, 'modwrap', $3, 'dispute', 'buyer', $4, $5, $4, '{"g":1}'),
+                  ($1, 'staff', $6, $2, 'staffwrap', $3, 'assigned', 'mod', $4, '', null, null)`,
+          [chat, 'a'.repeat(64), 'b'.repeat(64), at, 'c'.repeat(128), `${u1}/${'d'.repeat(32)}`],
+        );
+        // Review N11 (a), migration 716: the reader may see `statement` on every row, so a staff row never carries one.
+        await expect(c.query(
+          `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, grant_at, statement)
+           values ($1, 'staff', $2, $3, 'staffwrap2', $4, 'assigned', 'mod', $5, '', null, '{"s":1}')`,
+          [chat, `${u2}/${'e'.repeat(32)}`, 'a'.repeat(64), 'b'.repeat(64), at],
+        )).rejects.toMatchObject({ code: '23514' });
       } finally {
         c.release();
       }
@@ -433,18 +549,30 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
       const u = new URL(admin);
       reader = new pg.Pool({ connectionString: `postgres://${login}:${pass}@${u.host}/${name}`, max: 1 });
       const view = pgApiView(reader);
-      expect(await view.logEntry('1')).toEqual({ id: '1', at: new Date(at), action: 'chat.read', tradeCode: code });
+      expect(await view.logEntry('1')).toEqual({ id: '1', at: new Date(at), action: 'chat.read', tradeCode: code, actorKind: 'system', actorId: null });
       expect(await view.logEntry('2')).toBeNull();
       // The current dispute is the highest seq.
       expect(await view.disputeStatus(code)).toBe('appealed');
       expect(await view.disputeStatus(newTradeCode())).toBeNull();
+      // Design task 9 groundwork (migration 710): the current dispute's assignee, nothing else new.
+      expect(await view.disputeAssignee(code)).toBe('00000000-0000-4000-8000-000000000002');
+      expect(await view.disputeAssignee(newTradeCode())).toBeNull();
       expect(await view.chatOf(code)).toBe(chat);
       expect(await view.chatOf(newTradeCode())).toBeNull();
-      // NEEDS_P4_CHAT_MEMBERSHIP: no chat read yet, so the reader cannot read a chat's envelopes.
+      // Design build task 9: the moderator grant's signed statement, by side and signature, and nothing else of chat_members.
+      expect(await view.modGrant(chat, 'buyer', 'c'.repeat(128))).toEqual({ g: 1 });
+      expect(await view.modGrant(chat, 'seller', 'c'.repeat(128))).toBeNull();
+      await expect(reader.query('select wrap from chat_members')).rejects.toMatchObject({ code: '42501' });
+      await expect(reader.query('select member_ref from chat_members')).rejects.toMatchObject({ code: '42501' });
+      // The chat is read only by re-wrap (staff-web decrypts): the reader never reads a chat's envelopes.
       await expect(reader.query('select envelope from chat_envelopes')).rejects.toMatchObject({ code: '42501' });
       // Nothing else is readable to the reader role.
       await expect(reader.query('select * from accounts')).rejects.toMatchObject({ code: '42501' });
-      await expect(reader.query('select detail from activity_log')).rejects.toMatchObject({ code: '42501' });
+      // Plan 4 Task 14 (migration 212, reviewed widening): the reader reads every column the log's
+      // chain hashes, so this process recomputes the chain itself for its checkpoints. The log holds
+      // ids, enums, codes and amounts only (Task 3). It still writes nothing.
+      await expect(reader.query('select detail, prev_hash, hash from activity_log')).resolves.toBeDefined();
+      await expect(reader.query("update activity_log set detail = '{}'")).rejects.toMatchObject({ code: '42501' });
       await expect(reader.query('select note from disputes')).rejects.toMatchObject({ code: '42501' });
       await expect(reader.query(`insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ('x', 'mod', 0, '{}', now())`)).rejects.toMatchObject({ code: '42501' });
     } finally {
@@ -460,7 +588,7 @@ describe('internalFromEnv', () => {
     expect(internalFromEnv({})).toBeNull();
     const secret = Buffer.from(SECRET).toString('base64');
     const base = { MOD_INTERNAL_SOCKET: '/run/x2f-mod/mod.sock', MOD_INTERNAL_SOCKET_GID: '991', MOD_INTERNAL_SECRET: secret, MOD_API_READER_DATABASE_URL: 'postgres://r@db/x2f' };
-    expect(internalFromEnv(base)).toEqual({ socketPath: '/run/x2f-mod/mod.sock', gid: 991, secret: SECRET, apiReaderUrl: 'postgres://r@db/x2f', devModChat: false });
+    expect(internalFromEnv(base)).toEqual({ socketPath: '/run/x2f-mod/mod.sock', gid: 991, secret: SECRET, apiReaderUrl: 'postgres://r@db/x2f' });
     for (const [env, name] of [
       [{ ...base, MOD_INTERNAL_SOCKET: 'mod.sock' }, 'MOD_INTERNAL_SOCKET'],
       [{ ...base, MOD_INTERNAL_SECRET: undefined }, 'MOD_INTERNAL_SECRET'],
@@ -476,16 +604,12 @@ describe('internalFromEnv', () => {
     }
   });
 
-  it('NEEDS_P4_MOD_COUNTERSIGN: X2F_DEV_MOD_CHAT=1 turns the message route on, and only when NODE_ENV is exactly development or test', async () => {
+  it('landed (was NEEDS_P4_MOD_COUNTERSIGN): the dev switch X2F_DEV_MOD_CHAT is gone, and a stale one is refused, never silently ignored', async () => {
     const { internalFromEnv } = await import('../src/main.js');
     const base = { MOD_INTERNAL_SOCKET: '/run/x2f-mod/mod.sock', MOD_INTERNAL_SOCKET_GID: '991', MOD_INTERNAL_SECRET: Buffer.from(SECRET).toString('base64'), MOD_API_READER_DATABASE_URL: 'x' };
-    expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: 'test' })?.devModChat).toBe(true);
-    expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: 'development' })?.devModChat).toBe(true);
-    // R-1 (re-verify 8 Nov): unset or any other NODE_ENV refuses the flag
-    for (const ne of [undefined, '', 'staging', 'Development', 'prod']) expect(() => internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: ne }), String(ne)).toThrow('X2F_DEV_MOD_CHAT');
-    expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '' })?.devModChat).toBe(false);
-    expect(internalFromEnv({ ...base, NODE_ENV: 'production' })?.devModChat).toBe(false);
-    expect(() => internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: 'production' })).toThrow('X2F_DEV_MOD_CHAT');
-    for (const v of ['true', 'yes', '0', '2']) expect(() => internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: v }), v).toThrow('X2F_DEV_MOD_CHAT');
+    for (const v of ['1', 'true']) for (const ne of ['test', 'development', 'production']) expect(() => internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: v, NODE_ENV: ne })).toThrow('X2F_DEV_MOD_CHAT');
+    expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '' })).not.toBeNull();
+    const src = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/devModChat|NEEDS_P4_MOD_COUNTERSIGN/);
   });
 });

@@ -16,6 +16,7 @@ import { EscrowError, PartyError, TransportClosedError, type EscrowEngine, type 
 import type { Identity, Participants } from '@x2f/protocol';
 import {
   AttestationError,
+  attestationKeys,
   channelFor,
   escrowCheckWords,
   fiatCents,
@@ -143,6 +144,14 @@ export interface EscrowStatus {
    */
   intentKind: SettleKind | null;
   /**
+   * This device's part of the settle it is signing is finished as far as it knows
+   * (PartyHandle.settleSent for the stored outcome): the co-signer submitted the signed tx, by its
+   * own signed report (DONE) when this device built it, not yet checked on the chain. False with no
+   * settle under way, or before then. The seller's refund view words the wait by it (gap 4, 20 Nov);
+   * "you can close" waits for `phase` done (the device's own settle seen in a block).
+   */
+  handedOff: boolean;
+  /**
    * The escrow `balance` exactly as this device's party read it with `funds()` on the last tick
    * (the wallet's own figure), or null until the first reading. Before any settlement it is what
    * has arrived; after one it falls to what is left.
@@ -156,6 +165,16 @@ export interface EscrowStatus {
    * TradeFund sets its `funded` mark for good only from this (a 0-conf tx can be dropped).
    */
   confirmedAtomic: bigint | null;
+  /**
+   * Plan 4 Task 12 (A6), seller only: where and how much a `seller-sends-xmr` ruling's payment
+   * goes: the address from the moderator-attested terms this device verified in this run
+   * (`buyerPayout`), never an API field; the amount is `amountAtomic`, this device's own accepted
+   * trade size (bound, else fixed, else the API's amount only within [take, own escrow-funded
+   * size]), so a grown trade pays the grown amount (review B1). Null for the buyer, until an
+   * attestation verified (another device, or a record already forgotten after the close), and
+   * while this device accepts no amount. Absent: null.
+   */
+  restitution?: { address: string; amountAtomic: bigint } | null;
 }
 
 export type EscrowAction =
@@ -202,6 +221,16 @@ export interface RuntimeDeps {
    * it counts as settled elsewhere (escrow-failed). Default 5 min: the party re-checks within 60 s.
    */
   settledElsewhereMs?: number;
+  /**
+   * Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): registers this device's identity for the trade's
+   * chat (the worker passes chat/prepare.ts's, over the worker's one chat engine). Called in the
+   * background once the trade identity is registered, tried again (every `pollMs`) while it throws,
+   * and kept done in the record (`chatPrepared`). The escrow never waits on it. Without it a chat is
+   * attested only after both traders opened it. Only while the trade is open (lead call 20 Nov): each
+   * try reads the trade view first and asks nothing for a released, refunded, cancelled or lapsed
+   * trade, or one the API answers 404 or 410 (purged) for.
+   */
+  prepareChat?: (code: string) => Promise<void>;
   onStatus(code: string, s: EscrowStatus): void;
 }
 
@@ -218,6 +247,8 @@ export interface EscrowRuntime {
 }
 
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+/** Gap 5, lead call 20 Nov: the trade states in which no chat is made or registered (every terminal one). */
+const CHAT_CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled', 'lapsed'];
 /** The escrow store outlives the trade by at least this long (lead 2026-10-24). */
 export const KEEP_AFTER_CLOSE_MS = 30 * 24 * 60 * 60 * 1000;
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
@@ -350,6 +381,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private last = '';
     /** The settle() call in flight, by outcome key. */
     private inflight: string | null = null;
+    /** resumePrior handed the saved prior release to this run's party (review M2): once per run. */
+    private priorHanded = false;
+    /** The settled intent (done) is set in memory and its save has not resolved yet: not shown as done. */
+    private doneUnsaved = false;
     /** Outcomes the party refused because another was already committed. */
     private refused = new Set<string>();
     private ticking: Promise<void> = Promise.resolve();
@@ -400,8 +435,21 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           const i = (this.rec as EscrowRecord | undefined)?.intent ?? null;
           return i !== null && !i.auto ? i.kind : null;
         })(),
+        handedOff: (() => {
+          if (this.error) return false;
+          const i = (this.rec as EscrowRecord | undefined)?.intent ?? null;
+          if (i === null || i.outcome === null) return false;
+          return i.done || this.party?.settleSent?.(this.fromStored(i.outcome)) === true;
+        })(),
         receivedAtomic: this.reading?.balance ?? null,
         confirmedAtomic: this.reading?.confirmed ?? null,
+        // Review B1: the amount is this device's own accepted trade size (the one a release
+        // trusts), not the take amount: a grown trade's ruling payment is the grown amount. Null
+        // (no amount this device accepts) means no form.
+        restitution:
+          this.attested !== null && this.rec?.role === 'seller' && amountAtomic !== null
+            ? { address: this.attested.buyerPayout, amountAtomic }
+            : null,
       };
       const j = JSON.stringify(s, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
       if (j !== this.last) {
@@ -419,8 +467,16 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private deviceAcceptedAmount(): bigint | null {
       const r = this.rec as EscrowRecord | undefined;
       if (!r) return null;
-      const bound = r.releaseBoundAtomic ?? null;
-      if (bound !== null) return bound;
+      // A rebind the party refused: it is committed to an earlier release whose amount this device
+      // no longer knows, so no sum is shown and no tap is taken (gap 2, growth-before-paid note).
+      if (r.releaseRebindRefused === true) return null;
+      const bound = this.effectiveBound();
+      if (bound !== null) {
+        // Review m6: a bound above this buyer's own escrow-funded size (the extra coins went, a deep
+        // reorg) is a sum no tap can pass before paid: show none (the refusal says out of range).
+        if (r.role === 'buyer' && (r.acceptedAtomic ?? null) === null && bound > r.sizeAtomic) return null;
+        return bound;
+      }
       const fixed = r.acceptedAtomic ?? null;
       if (fixed !== null) return fixed;
       const v = this.view;
@@ -477,6 +533,33 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       this.wake?.();
     }
 
+    /**
+     * Gap 5: asks the worker to register the trade chat's identity, again every `pollMs` while the
+     * ask throws, until it is done or the run stops. Its own timer, never `sleep` (one waker, the
+     * main loop's). Marked done in memory only: the run's next save keeps it (a background save
+     * could race the run's own), and a run that ends before one simply asks again next time, which
+     * is harmless (the step is idempotent).
+     */
+    private async prepareChat(ask: (code: string) => Promise<void>): Promise<void> {
+      while (!this.stopped) {
+        try {
+          // Lead call (20 Nov): only for a trade still open. Each try reads the trade view first, and
+          // a closed trade (or one the API no longer has: 404, purged 410) is never asked for, so it
+          // never creates a chat or registers a chat identity. Nothing is marked: there is nothing to do.
+          const v = parseTradeView(await deps.api.getTrade(this.code));
+          if (!v) throw new Error('unreadable trade view');
+          if (CHAT_CLOSED.includes(v.state)) return;
+          await ask(this.code);
+          if (!this.stopped) this.rec.chatPrepared = true;
+          return;
+        } catch (e) {
+          const status = (e as { status?: unknown } | null)?.status;
+          if (status === 404 || status === 410) return;
+          await new Promise((r) => setTimeout(r, pollMs));
+        }
+      }
+    }
+
     /** Retries an API call until it answers or the run stops. */
     private async retry<T>(fn: () => Promise<T>): Promise<T | undefined> {
       while (!this.stopped) {
@@ -521,6 +604,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           code: this.code,
           role: c.role,
           identity: { signPublic: id.signPublic, boxPublic: id.boxPublic, signSecret: id.signSecret, boxSecret: id.boxSecret },
+          identityCreatedAt: now(),
           registered: false,
           attestation: null,
           partyState: null,
@@ -560,6 +644,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         this.rec.registered = true;
         await this.persist();
       }
+      // Gap 5: the trade's chat identity, in the background (never awaited: the escrow goes on).
+      if (deps.prepareChat && this.rec.chatPrepared !== true) void this.prepareChat(deps.prepareChat);
 
       this.set('verifying');
       let att = this.rec.attestation;
@@ -594,7 +680,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const view0 = await this.retry(async () => {
         const v = parseTradeView(await deps.api.getTrade(this.code));
         if (!v) throw new Error('unreadable trade view');
-        return { payWindowMin: v.payWindowMin, methodId: v.methodId };
+        return { payWindowMin: v.payWindowMin, methodId: v.methodId, takenAt: v.takenAt };
       });
       if (view0 === undefined || this.stopped) return;
       const shown = view0.payWindowMin;
@@ -603,18 +689,27 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const pinned = this.rec.payWindowMin ?? null;
       if (pinned !== null && pinned !== shown) return this.fail('deal-mismatch');
       try {
+        // The built-in key list (review F5: one key today). `issuedAt` must not be in this device's
+        // future, nor older than the identity this device made for the trade (review M1: a time
+        // only this device knows; a record from before it was kept has none), nor older than the
+        // trade's take time when the (unsigned) view shows one, an extra check only.
         await verifyAttestation(
           att.attestation as Attestation,
           att.sig,
-          deps.config.modSigningPublic,
+          attestationKeys(deps.config.modSigningPublic),
           {
             trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress,
             payWindowMin: shown,
             methodId: view0.methodId,
+            now: now(),
+            identityCreatedAt: this.rec.identityCreatedAt ?? null,
+            ...(view0.takenAt !== null ? { takenAt: view0.takenAt } : {}),
           },
         );
       } catch (e) {
-        // stop: no terms, no party, no funding address
+        // stop: no terms, no party, no funding address. A time refusal (`bad-time`) may be this
+        // device's clock: not kept as an integrity failure, found again on the next start.
+        if (e instanceof AttestationError && e.code === 'bad-time') return this.fail('escrow-failed');
         this.fail(e instanceof AttestationError && e.code === 'wrong-terms' ? 'deal-mismatch' : 'participants-mismatch');
         return;
       }
@@ -762,10 +857,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     // I1 Release binding. A release is signed for one amount only: the amount of the FIRST release
     //    this device handed to its party (releaseBoundAtomic, saved before the hand-over, never
     //    cleared by an intent change). A release for another amount is refused ('amount-changed'),
-    //    and so is an "I've paid" tap for another amount. Refunds ignore it. Accepted cost: a real
-    //    top-up after the first hand-over cannot be paid for (follow-up in docs/coordination.md).
-    //    Tests: "a release handed over before paid binds its amount" (incl. reload), "I1: ... flips
-    //    secured, lapsed, secured with a lower amount".
+    //    and so is an "I've paid" tap for another amount. Refunds ignore it. One exception, upward
+    //    only (gap 2, docs/security/growth-before-paid-2026-11-20.md): a buyer in `secured` that
+    //    knows nothing of paid and has fixed nothing moves the bound UP to a grown amount within
+    //    [take, its own size] while its party reports no committed outcome (`mayRebindUp`). A
+    //    switch the party then refuses ('already signed for another outcome') sets
+    //    releaseRebindRefused: no sum, no tap, no release from this device. Tests: "growth after
+    //    the standing co-sign", "the rebind is upward only", "no rebind when", "no rebind outside
+    //    secured", "a rebind the party refuses", "I1: ... flips secured, lapsed, secured with a
+    //    lower amount".
     // I2 Paid fixes the amount (acceptedAtomic). Buyer: only at its own tap, to the API amount if
     //    it lies in [take, this device's size], its fiat at the locked rate equals the total the
     //    buyer confirmed, and it equals any bound release; saved before trade.paid leaves. Seller:
@@ -800,6 +900,74 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     //    intent before trade.cancel leaves", "AAD binding" (escrow-store.test.ts).
 
     /**
+     * I1's upward exception (gap 2, docs/security/growth-before-paid-2026-11-20.md): a buyer's
+     * standing co-sign may move from `bound` up to `next` only while the trade may still grow on
+     * this device (its own view is `secured`, it knows nothing of paid, nothing is fixed or
+     * refused), `next` lies within [take, this device's own escrow-funded size], and the party
+     * says it is committed to no outcome. A party without `committedBuilder` counts as committed
+     * (fail closed). Never downward: a lying API cannot short a buyer who paid the shown sum.
+     */
+    private mayRebindUp(v: EscrowTradeView, bound: bigint, next: bigint): boolean {
+      const r = this.rec;
+      // Review m1: acceptedAmount() is the primary check of the paid and size limits (it returns null
+      // for a buyer that knows of paid, and caps at sizeAtomic); these repeat them on purpose, so a
+      // later change to acceptedAmount cannot widen the rebind.
+      if (r.role !== 'buyer' || v.state !== 'secured' || r.paidSeen || v.paidAt !== null) return false;
+      if ((r.acceptedAtomic ?? null) !== null || r.paidRefused === true || r.releaseRebindRefused === true) return false;
+      // One rebind at a time (review M1): the next waits until the party took this one.
+      if ((r.releasePrior ?? null) !== null || r.intent?.kind !== 'release' || !r.intent.outcome) return false;
+      if (next <= bound || next < r.deal.takeAmountAtomic || next > r.sizeAtomic) return false;
+      // Review m8: only once the party's queue took the outcome this device last handed it, so the
+      // saved prior is exactly the outcome the party holds (and the only one it can be committed to).
+      // Overlaps the one-at-a-time guard above on purpose (review m7: either alone stops a second rebind).
+      const taken = this.party?.acceptedOutcome?.call(this.party) ?? null;
+      if (taken === null || key(taken) !== key(r.intent.outcome)) return false;
+      return this.partyUncommitted();
+    }
+
+    /** The party reports no committed outcome. A party without `committedBuilder` counts as committed (fail closed). */
+    private partyUncommitted(): boolean {
+      const committed = this.party?.committedBuilder;
+      return typeof committed === 'function' && committed.call(this.party) === null;
+    }
+
+    /**
+     * The release bound the status and the tap use: the bound before the latest rebind while the
+     * party has not taken the rebound outcome yet (review M1), else releaseBoundAtomic.
+     */
+    private effectiveBound(): bigint | null {
+      const r = this.rec;
+      const prior = r.releasePrior ?? null;
+      if (prior !== null && r.releaseRebindRefused !== true) return prior.boundAtomic;
+      return r.releaseBoundAtomic ?? null;
+    }
+
+    /** Review M1/m3: the party took the rebound outcome (its queue switched to it): the prior is no longer needed. True when cleared now. */
+    private priorTaken(): boolean {
+      const r = this.rec;
+      if ((r.releasePrior ?? null) === null || r.releaseRebindRefused === true || !r.intent?.outcome) return false;
+      const taken = this.party?.acceptedOutcome?.call(this.party) ?? null;
+      if (taken === null || key(taken) !== key(r.intent.outcome)) return false;
+      r.releasePrior = null;
+      return true;
+    }
+
+    /**
+     * Review M2: after a refused rebind, hand the saved prior release back to the party once per
+     * run, so the release it is committed to can complete (a reload otherwise never resumes it).
+     * It skips cosignPolicy on purpose: this device approved exactly this outcome through the policy
+     * when it first handed it over, and saved it before the rebind; the balance it was built for is
+     * no longer the escrow's, so the policy's balance check cannot pass again.
+     */
+    private resumePrior(): void {
+      const r = this.rec;
+      const prior = r.releasePrior ?? null;
+      if (r.releaseRebindRefused !== true || prior === null || this.priorHanded) return;
+      this.priorHanded = true;
+      this.settle({ kind: 'release', to: prior.outcome.to, builder: prior.outcome.builder, cosigner: prior.outcome.cosigner }, true);
+    }
+
+    /**
      * The trade's size for a release (I1-I4): the fixed amount if there is one (the view must
      * equal it); otherwise, only for a buyer before paid, the API's amount within [take, this
      * device's size] (growth may stop lower, at the offer maximum or a starter cap the device does
@@ -807,7 +975,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
      */
     private acceptedAmount(v: EscrowTradeView): bigint | null {
       const r = this.rec;
-      if (r.paidRefused === true) return null;
+      // TODO(m4): when the buyer's ruling co-sign (a moderator-built set) is wired through
+      // context(), decide on purpose whether releaseRebindRefused (and paidRefused) may block it: a
+      // buyer-favouring ruling must not be refused here (test/dispute-tripwires.test.ts).
+      if (r.paidRefused === true || r.releaseRebindRefused === true) return null;
       const fixed = r.acceptedAtomic ?? null;
       if (fixed !== null) return v.amountAtomic === fixed ? fixed : null;
       // Fail closed (I1, I7): the seller releases only the amount the buyer's signed trade.paid
@@ -871,7 +1042,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (this.acceptedAmount(v) !== null) return null;
       const r = this.rec;
       if (r.paidRefused === true) return 'paid-amount-refused';
-      if ((r.acceptedAtomic ?? null) !== null) return 'amount-changed';
+      if ((r.acceptedAtomic ?? null) !== null || r.releaseRebindRefused === true) return 'amount-changed';
       if (r.role === 'seller' && (r.paidPending ?? null) !== null) return 'paid-amount-waiting';
       if (r.role === 'seller') return r.paidSeen || r.intent?.kind === 'release' ? 'amount-unknown' : null; // nothing to release yet
       if (r.paidSeen) return 'amount-unknown';
@@ -879,21 +1050,29 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     /** The one place the app calls settle(): cosignPolicy over exactly what the party will pay. */
-    private settle(o: Outcome): void {
+    private settle(o: Outcome, approvedPrior = false): void {
       const k = key(o);
       if (this.error || !this.party || this.inflight === k || this.refused.has(k) || this.exhausted.has(k)) return;
       // The party pays only when the balance equals the payouts' sum, so that is the balance the policy checks.
-      const refundAddress = this.rec.role === 'seller' ? this.rec.ownAddress : this.rec.theirAddress;
-      const refundShaped = o.to.length === 1 && o.to[0]!.address === refundAddress;
-      const ctx = this.context(sumOf(o.to), refundShaped);
-      if (!ctx || !cosignPolicy(ctx, o)) return;
+      // `approvedPrior` only from resumePrior (review M2): an outcome the policy passed when it was first handed over.
+      if (!approvedPrior) {
+        const refundAddress = this.rec.role === 'seller' ? this.rec.ownAddress : this.rec.theirAddress;
+        const refundShaped = o.to.length === 1 && o.to[0]!.address === refundAddress;
+        const ctx = this.context(sumOf(o.to), refundShaped);
+        if (!ctx || !cosignPolicy(ctx, o)) return;
+      }
       this.inflight = k;
       this.party.settle(o).then(
         async () => {
           if (this.rec.intent) {
             this.rec.intent = { ...this.rec.intent, outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner }, done: true };
+            // The 20 Nov flake: until this save resolves, no refresh (a tick's included) shows `done`,
+            // which tells the user the device's part is over while the record still says otherwise.
+            this.doneUnsaved = true;
+            const saved = await this.persist().then(() => true, () => false);
+            this.doneUnsaved = false;
             // Stopped meanwhile: the next run's party resolves the same outcome again.
-            if (!(await this.persist().then(() => true, () => false))) return;
+            if (!saved) return;
           }
           if (this.inflight === k) this.inflight = null;
           this.refresh();
@@ -901,8 +1080,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         (e: unknown) => {
           if (this.inflight === k) this.inflight = null;
           if (e instanceof PartyError && e.code === 'bad-outcome') {
-            if (/already signed/.test(e.message)) this.refused.add(k);
-            else if (/used up/.test(e.message)) {
+            if (/already signed/.test(e.message)) {
+              this.refused.add(k);
+              void this.rebindRefused(o);
+            } else if (/used up/.test(e.message)) {
               this.exhausted.add(k);
               this.refusal = 'attempts-exhausted';
               this.emit();
@@ -913,6 +1094,34 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           this.partyFailed(e);
         },
       );
+    }
+
+    /**
+     * Gap 2: the party refused a release this buyer rebound upward, because it is committed to an
+     * earlier one (a commit that raced `mayRebindUp`). That earlier release goes on in the party;
+     * this device no longer knows its amount, so it shows no sum and takes no tap (fail closed).
+     */
+    private async rebindRefused(o: Outcome): Promise<void> {
+      const r = this.rec;
+      // Only while a rebind is still untaken (releasePrior set, review m3), whether or not "I've
+      // paid" was tapped meanwhile (review M1: a tap at the prior amount must still see the refusal).
+      if (r.role !== 'buyer' || (r.releasePrior ?? null) === null || r.releaseRebindRefused === true) return;
+      // Review m9, deliberate: ANY refused seller-built, buyer-co-signed outcome while a prior is
+      // pending trips the flag (a lapse refund too), not only the rebound release. It fails closed:
+      // no sum, no tap, and the prior goes back to the party.
+      if (o.builder !== 'seller' || o.cosigner !== 'buyer') return;
+      r.releaseRebindRefused = true;
+      this.refusal = 'amount-changed';
+      // Review m2: saved before the status shows it; a failed save stops the trade (retryable), and
+      // the next run's party refuses the rebound release again.
+      try {
+        await this.persist();
+      } catch (e) {
+        if (!this.stopped) this.fail('escrow-failed');
+        return;
+      }
+      this.emit();
+      this.resumePrior();
     }
 
     /** A ready() or settle() rejection: the relay's close is judged by tick; anything else stops the trade. */
@@ -930,7 +1139,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (this.error) return this.emit();
       const i = this.rec.intent;
       if (!this.isReady) return this.set('setting-up');
-      if (i?.done) return this.set('done'); // only from this device's own settle
+      if (i?.done && !this.doneUnsaved) return this.set('done'); // only from this device's own settle, once stored
       if (this.rec.settledWithoutDevice === true) return this.set('settled-without-device');
       const active = i !== null && i.outcome !== null && (!i.auto || this.view?.state === 'settling' || this.view?.state === 'lapsed');
       this.set(active ? 'signing' : 'ready');
@@ -1079,6 +1288,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         }
       }
       if (this.fixPending()) changed = true;
+      if (this.priorTaken()) changed = true;
+      this.resumePrior();
       // An amount this device does not accept is refused visibly (never silently) until it fits.
       this.refusal = this.refusalFor(v) ?? (r.intent?.outcome && this.exhausted.has(key(r.intent.outcome)) ? 'attempts-exhausted' : null);
       // A tapped choice holds while the view supports it (or once it settled); otherwise the
@@ -1104,9 +1315,17 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         // amount is refused, whatever the intents did in between.
         if (o && ctx && i.kind === 'release') {
           const bound = r.releaseBoundAtomic ?? null;
-          if (bound !== null && ctx.deal.amountAtomic !== bound) {
+          if (bound !== null && ctx.deal.amountAtomic !== bound && this.mayRebindUp(v, bound, ctx.deal.amountAtomic)) {
+            // Gap 2: growth before paid moves the bound up; saved below, with the prior bound and
+            // outcome, before the party gets the new outcome (I8, review M2).
+            r.releasePrior = { boundAtomic: bound, outcome: r.intent!.outcome! };
+            r.releaseBoundAtomic = ctx.deal.amountAtomic;
+            r.releaseRebound = true;
+            changed = true;
+          } else if (bound !== null && ctx.deal.amountAtomic !== bound) {
             o = null;
-            this.refusal = 'amount-changed';
+            // Review m6: a bound above this device's own size is out of range, not a changed amount.
+            this.refusal = r.role === 'buyer' && (r.acceptedAtomic ?? null) === null && bound > r.sizeAtomic ? 'amount-out-of-range' : 'amount-changed';
           } else if (bound === null) {
             r.releaseBoundAtomic = ctx.deal.amountAtomic;
             changed = true;
@@ -1162,11 +1381,39 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         changed = true;
       }
       const emptyInBlock = f.balance === 0n && f.unlocked === 0n && f.incoming.every((x) => x.confirmations > 0);
-      const ownDone = r.intent?.done === true;
-      const ownOpen = r.intent !== null && r.intent.outcome !== null && !r.intent.done;
+      let ownDone = r.intent?.done === true;
+      let ownOpen = r.intent !== null && r.intent.outcome !== null && !r.intent.done;
       // Fail closed: every sign of coins counts, and a record without the field is unknown.
       const coins = r.fundedSeen === true || r.intent?.outcome != null || r.paidSeen === true || (r.acceptedAtomic ?? null) !== null || f.balance > 0n || f.incoming.length > 0;
       const neverFunded = r.fundedSeen === false && !coins;
+      // Review M1 (20 Nov): an own settle still open when the trade closed (the device was closed
+      // before it saw the tx in a block, and the closed trade's relay no longer brings the DONE, nor
+      // does cosignPolicy hand a closed trade's outcome to the party) is done once the party proves
+      // from the chain that THIS outcome landed (PartyHandle.landed); only an emptying it cannot
+      // prove counts as settled elsewhere below. Nothing is signed or sent for it.
+      if (emptyInBlock && ownOpen && !this.error && this.party?.landed) {
+        // After a refused rebind (gap 2) the party is committed to the saved prior release, which
+        // resumePrior hands back: that outcome is the one that can have landed, so it is asked too
+        // and, when proven, recorded as the settled outcome (as settle() does when it resolves).
+        const prior = r.releaseRebindRefused === true ? (r.releasePrior?.outcome ?? null) : null;
+        const candidates = [r.intent!.outcome!, ...(prior !== null ? [prior] : [])];
+        let proven: string | null = null;
+        let landedAs: (typeof candidates)[number] | null = null;
+        for (const c of candidates) {
+          proven = await this.party.landed(this.fromStored(c)).catch(() => null);
+          if (proven !== null) {
+            landedAs = c;
+            break;
+          }
+        }
+        if (proven !== null && landedAs !== null && r.intent !== null && r.intent.outcome !== null && !r.intent.done) {
+          r.intent = { ...r.intent, outcome: landedAs, done: true };
+          this.emptiedWhileSettling = null;
+          ownDone = true;
+          ownOpen = false;
+          changed = true;
+        }
+      }
       if (emptyInBlock && ownDone && r.settleSeenAt == null) {
         r.settleSeenAt = t;
         changed = true;
@@ -1228,7 +1475,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // failed one) stores a tap whose message never left. A field changed by someone else
       // meanwhile is left alone. Once a save succeeds the tap is committed: a later failed save
       // (after its message left) undoes nothing.
-      const snap = () => ({ intent: r.intent, paidSeen: r.paidSeen, acceptedAtomic: r.acceptedAtomic ?? null });
+      const snap = () => ({ intent: r.intent, paidSeen: r.paidSeen, acceptedAtomic: r.acceptedAtomic ?? null, releaseBoundAtomic: r.releaseBoundAtomic ?? null });
       let saved: ReturnType<typeof snap> | null = null; // taken right before the tap changes the record
       const save = async (): Promise<void> => {
         const mine = snap();
@@ -1239,6 +1486,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           if (r.intent === mine.intent) r.intent = saved.intent;
           if (r.paidSeen === mine.paidSeen) r.paidSeen = saved.paidSeen;
           if ((r.acceptedAtomic ?? null) === mine.acceptedAtomic) r.acceptedAtomic = saved.acceptedAtomic;
+          if ((r.releaseBoundAtomic ?? null) === mine.releaseBoundAtomic) r.releaseBoundAtomic = saved.releaseBoundAtomic;
           this.persist().catch(() => undefined);
           this.emit();
           throw e;
@@ -1303,13 +1551,20 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
             throw new Error('escrow: the total does not match the trade amount');
           }
           // I1: a release already handed over is bound to its amount; paying for another is refused.
-          const bound = r.releaseBoundAtomic ?? null;
+          // Review M1: while the party has not taken a rebound release, the bound is the prior one.
+          const bound = this.effectiveBound();
           if (bound !== null && bound !== amount) throw new Error('escrow: a release for another amount is already under way');
+          if (r.releaseRebindRefused === true) throw new Error('escrow: a release for another amount is already under way');
+          // Review M1: after any rebind, the party must also say it is committed to nothing.
+          if (r.releaseRebound === true && !this.partyUncommitted()) throw new Error('escrow: a release for another amount is already under way');
           if (!this.signals) throw new Error('escrow: the signals channel is not running yet');
           const signals = this.signals;
           saved = snap();
           this.fixAmount(amount);
           r.paidSeen = true;
+          // A tap at the prior amount while the rebind is untaken binds the release back to it (the
+          // prior stays saved until the party takes the re-derived outcome, or for a refusal).
+          if ((r.releasePrior ?? null) !== null) r.releaseBoundAtomic = amount; // not refused: the tap threw above
           // No cancel after "I've paid" (Task 39 review I2): a cancel tapped earlier and not yet
           // settled is dropped here, so this device never goes on signing it in `paid`.
           if (r.intent && !r.intent.done && (r.intent.kind === 'buyer-cancel' || r.intent.kind === 'mutual-cancel')) r.intent = null;

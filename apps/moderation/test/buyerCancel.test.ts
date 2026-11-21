@@ -5,13 +5,12 @@ import { fiatCents } from '@x2f/trade';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { REFUND_UNVERIFIED_MS } from '../src/autoRefund.js';
 import { buyerCancelStep } from '../src/buyerCancel.js';
-import { verifyRuling } from '../src/rulings.js';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fromJson, toJson } from '../src/shadow.js';
 import { NO_DESK_FACTS, sweepKindAgrees, type DeskRecord } from '../src/desk.js';
 import {
   acked,
   DEAL,
-  drained,
   ESCROW,
   fakeNetwork,
   FUNDS,
@@ -88,7 +87,10 @@ describe('the buyer-cancel refund', () => {
     await signal(l, l.seller, 'trade.cancel', {});
     const stranger = { role: 'buyer' as const, id: await generateIdentity(), seq: 50 };
     await signal(l, stranger, 'trade.cancel', {});
-    await drained();
+    // Refused frames are never acked, so wait for both refusals themselves: logging one is the last
+    // thing the desk does with that frame (desk.ts onFrame); drained()'s fixed 50 ms can run out under load.
+    await expect.poll(() => m.logs).toContain('signal-malformed');
+    await expect.poll(() => m.logs).toContain('signal-bad-signature');
     await m.handle.watch();
     expect(m.logs).toContain('signal-malformed');
     expect(m.logs).toContain('signal-bad-signature');
@@ -588,9 +590,28 @@ describe('buyerCancelStep (pure)', () => {
 });
 
 describe('rulings', () => {
-  it('verifyRuling refuses every input in Plan 3', () => {
-    for (const r of [undefined, null, {}, { ok: true }, 'ruling', 1, [], { kind: 'release', to: [{ address: TERMS.buyerPayout, amountAtomic: FUNDS }], sig: 'aa' }]) {
-      expect(verifyRuling(r)).toBe(false);
+  it('the ruling gate only decides: nothing in it calls settle (the executor, execute.ts, does)', () => {
+    // Plan 4 Task 13 replaced Plan 3's refuse-everything `verifyRuling` with the gate (gate.test.ts).
+    // Task 14's executor (execute.ts) is the one place a ruling reaches `settle`: the gate only answers.
+    // Review M3: every file under gate/ and cli/, recursively. With the comments stripped, none calls
+    // or names `.settle`, none imports anything from @x2f/escrow but types, and none imports the party,
+    // the desk, the watcher or the service (where a PartyHandle comes from).
+    const files = (rel: string): string[] =>
+      readdirSync(new URL(rel, import.meta.url), { recursive: true, withFileTypes: true })
+        .filter((e) => e.isFile() && /\.ts$/.test(e.name))
+        .map((e) => `${e.parentPath}/${e.name}`);
+    const all = [...files('../src/gate/'), ...files('../src/cli/')];
+    expect(all.length).toBeGreaterThan(5);
+    for (const f of all) {
+      const code = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+      expect(code, f).not.toMatch(/\bsettle\s*\(|\.settle\b|PartyHandle/);
+      for (const m of code.matchAll(/^\s*import\s+(type\s+)?[^;]*?from\s+'([^']+)'/gm)) {
+        if (m[2] === '@x2f/escrow') expect(m[1], `${f}: ${m[0]}`).toBeDefined();
+        expect(m[2], f).not.toMatch(/(^|\/)(party|desk|watcher|main|autoRefund|buyerCancel)\.js$/);
+      }
+      expect(code, f).not.toMatch(/import\(\s*'[^']*(party|desk|watcher|main)\.js'/);
+      // Re-verify: a dynamic import of the escrow package is caught too.
+      expect(code, f).not.toMatch(/import\(\s*['"`]@x2f\/escrow/);
     }
   });
 });
@@ -605,7 +626,9 @@ describe('a lost device (spec 9)', () => {
     // (and any mutual cancel it would co-sign) cannot be from the attested buyer.
     const reborn = { role: 'buyer' as const, id: await generateIdentity(), seq: 0 };
     await signal(l, reborn, 'trade.cancel', {});
-    await drained();
+    // Wait until the desk has refused it (never acked; the log is its last step), so the checks below
+    // see the frame handled rather than not yet read.
+    await expect.poll(() => m.logs).toContain('signal-bad-signature');
     await m.handle.watch();
     expect((await record(l.code)).cancelSeen).toBe(false);
     expect(l.party.settles).toEqual([]);

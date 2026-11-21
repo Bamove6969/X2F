@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto';
 import { inviteRegistrationChallenge, keyCheckCode } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { assertNewNames, assertTermsAccepted, createAccount } from '../accounts.js';
+import { assertNewNames, assertStaffNameUnlike, assertTermsAccepted, createAccount } from '../accounts.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { lockAccount, withTx } from '../auth/hold.js';
 import { PGP_BODY_LIMIT, checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge } from '../auth/pgp.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, type CredentialKind } from '../auth/webauthn.js';
 import type { Queryable } from '../db/pool.js';
+import { retireStaffCopies } from './staffCopies.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import type { RetentionJob } from '../retention.js';
@@ -110,6 +111,21 @@ async function lockInvite(c: Queryable, req: FastifyRequest, accountId: string):
   if (i.account_id !== accountId) throw invalid();
   await lockAccount(c, accountId);
   return i;
+}
+
+/**
+ * Only the fields of a registration response that verification read (Task 13 re-verifies them):
+ * called after `verifyWebAuthnRegistrationOnly` succeeded, so they are there and are strings.
+ */
+function registrationFields(response: unknown): Record<string, unknown> {
+  const r = response as { id: string; rawId: string; response: { clientDataJSON: string; attestationObject: string } };
+  return {
+    id: r.id,
+    rawId: r.rawId,
+    type: 'public-key',
+    clientExtensionResults: {},
+    response: { clientDataJSON: r.response.clientDataJSON, attestationObject: r.response.attestationObject },
+  };
 }
 
 function str(b: Record<string, unknown>, key: string): string {
@@ -259,6 +275,8 @@ export function staffInviteRoutes(app: FastifyInstance): void {
       await c.query('delete from login_approvals where account_id = $1 and used_at is null', [id]);
       await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
       await c.query('update staff_members set has_security_key = false where account_id = $1', [id]);
+      // Review N11 (e): the gate revokes their devices with the reset; their chat key copies are marked removed.
+      await retireStaffCopies(c, id, null, now);
       if (!target.switchedOff) await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.security-reset', { staffId: id, inviteId: n.inviteId });
       await addOwnerAlert(c, 'staff-security-reset', { staffId: id }, now);
@@ -311,6 +329,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const b = body(req);
     const terms = assertTermsAccepted(deps, b.acceptedTerms, b.termsSignature);
     const names = await assertNewNames(deps.db, b.displayName, b.loginName);
+    await assertStaffNameUnlike(deps.db, names.displayKey);
     const now = deps.clock();
     await withTx(deps.db, async (c) => {
       const i = await openInvite(c, tokenOf(req), now, true);
@@ -344,11 +363,20 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const cred = await verifyWebAuthnRegistrationOnly(deps, accountId, b.response, inviteRegistrationChallenge(i.token_hash), {
       kind, ...(label !== undefined ? { label } : {}),
     });
-    await withTx(deps.db, async (c) => {
-      await lockInvite(c, req, accountId);
-      await cred.store(c);
-    });
     const attestedKey = cred.kind === 'security-key' && cred.attested;
+    await withTx(deps.db, async (c) => {
+      const locked = await lockInvite(c, req, accountId);
+      await cred.store(c);
+      // Plan 4 Task 13: the moderation gate verifies this registration again itself (with its
+      // attestation, against the owner's `create-invite` tap for this token hash), so the fields
+      // verification read are kept with the key (migration 211).
+      if (attestedKey) {
+        await c.query(
+          `insert into staff_key_registrations (credential_id, invite_id, response, created_at) values ($1, $2, $3, $4)`,
+          [Buffer.from(cred.credentialId, 'base64url'), locked.id, JSON.stringify(registrationFields(b.response)), deps.clock()],
+        );
+      }
+    });
     return reply.code(201).send({ kind: cred.kind, keyCheckCode: attestedKey ? keyCheckCode(cred.publicKey) : null });
   });
 

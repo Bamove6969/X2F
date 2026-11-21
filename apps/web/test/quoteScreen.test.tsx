@@ -10,7 +10,8 @@ import { SellQuote } from '../src/screens/quote/SellQuote.js';
 import { readConfirmed } from '../src/screens/quote/confirmed.js';
 import { PENDING_TAKE_KEY, PENDING_TAKE_MS, rememberTake } from '../src/screens/quote/pendingTake.js';
 import { quotePath } from '../src/screens/quote/quoteModel.js';
-import { forgetQuotes } from '../src/screens/quote/quoteKept.js';
+import { forgetQuotes, updateQuote } from '../src/screens/quote/quoteKept.js';
+import { RATE_FIRST } from '../src/ui/cantDoCodes.js';
 import { resetCourtesy, turnCourtesyOff } from '../src/screens/quote/courtesy.js';
 import { OffersRoute } from '../src/screens/browse/OffersRoute.js';
 import { BUY_COPY } from '../src/screens/browse/BuyCopy.js';
@@ -18,10 +19,11 @@ import { SELL_COPY } from '../src/screens/browse/SellCopy.js';
 import { resetSyncFirst, syncNow } from '../src/session/syncFirst.js';
 import { fire, render } from './render.js';
 import { BLUR_CHECK_LINE } from '../src/screens/quote/tradeTerms.js';
+import { forgetTypedAddresses } from '../src/screens/walletRecord.js';
 
-const session = vi.hoisted(() => ({ status: 'signed-in' as 'signed-in' | 'signed-out' | 'loading' }));
+const session = vi.hoisted(() => ({ status: 'signed-in' as 'signed-in' | 'signed-out' | 'loading', me: {} as Record<string, unknown> }));
 vi.mock('../src/session/useSession.js', () => ({
-  useSession: () => (session.status === 'signed-in' ? { status: 'signed-in', me: {} } : { status: session.status }),
+  useSession: () => (session.status === 'signed-in' ? { status: 'signed-in', me: session.me } : { status: session.status }),
 }));
 
 const poster = (displayName: string) => ({
@@ -66,6 +68,12 @@ interface Api {
   gate?: Promise<void>;
   /** The method is a gift card (J-17): the quote shows the taker's tick-box terms. */
   giftCard?: boolean;
+  /** Plan 5 Task 6: `GET /v1/reviews/pending`, one list per read (the last one repeats); unset is none. */
+  pending?: unknown[][];
+  /** The review and skip POSTs the rate-first sheet sent, by path. */
+  reviews?: string[];
+  /** Owner note #6: `POST /v1/wallets` from the quote's new-address sheet; unset answers 404. */
+  addWallet?: (body: Record<string, unknown>) => { status: number; json: unknown };
 }
 
 let stub: Api;
@@ -82,6 +90,7 @@ beforeEach(() => {
   turnCourtesyOff();
   arrivedState = null;
   session.status = 'signed-in';
+  session.me = {};
   stub = {
     offers: [GHOST, ABOVE, MIRA],
     price: 'ok',
@@ -98,7 +107,20 @@ beforeEach(() => {
       const currency = url.searchParams.get('currency');
       return stub.price === 'ok' ? json(200, { currency, centsPerXmr: stub.rate, exponent: 2, at: '2026-10-24T00:00:00.000Z', usdCentsPerXmr: stub.rate }) : json(503, { error: 'price-unavailable' });
     }
+    if (url.pathname === '/v1/wallets' && init?.method === 'POST') {
+      const r = stub.addWallet?.(JSON.parse(String(init.body)) as Record<string, unknown>) ?? { status: 404, json: { error: 'not-found' } };
+      return json(r.status, r.json);
+    }
     if (url.pathname === '/v1/wallets') return session.status === 'signed-in' ? json(200, stub.wallets) : json(401, { error: 'not-authenticated' });
+    if (url.pathname === '/v1/reviews/pending') {
+      const lists = stub.pending ?? [[]];
+      return json(200, { trades: lists.length > 1 ? lists.shift() : lists[0] });
+    }
+    if (/^\/v1\/trades\/[^/]+\/review(\/skip)?$/.test(url.pathname) && init?.method === 'POST') {
+      (stub.reviews ??= []).push(url.pathname);
+      return new Response(null, { status: url.pathname.endsWith('/skip') ? 204 : 201 });
+    }
+    if (/^\/v1\/trades\/[^/]+$/.test(url.pathname)) return json(200, { role: 'buyer' });
     const take = /^\/v1\/offers\/([^/]+)\/take$/.exec(url.pathname);
     if (take && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as TakeBody;
@@ -1062,11 +1084,11 @@ describe('What applies to you on the quote (j31a section 1)', () => {
     expect(card().querySelector('h2')?.textContent).toBe('What applies to you');
     expect(card().textContent).toContain("You're buying from a sell ad · information only");
     const heads = [...card().querySelectorAll('h3')].map((h) => [h.textContent, h.nextElementSibling?.textContent]);
-    // The board's 13 "What affects you" lines: the lead's placeholder (p9-8) now ships as
-    // tradeTerms.ts BLUR_CHECK_LINE (P-012/P-013, proof-check, batch 9).
+    // The board's 13 "What affects you" lines less its placeholder: BLUR_CHECK_LINE waits behind the
+    // proof-upload flag (off here) until BlurCheck is mounted and the wording signed (stack review S-M2).
     expect(heads).toEqual([
       ['Your responsibilities', '7'],
-      ['What affects you', '13'],
+      ['What affects you', '12'],
       ['Your options', '5'],
     ]);
     expect(shown()).toEqual([
@@ -1074,13 +1096,13 @@ describe('What applies to you on the quote (j31a section 1)', () => {
       "Amounts can be shown with or without the vendor's markup.",
       "Opened trades with several people to see who answers first? Close the others once you've picked one, so they aren't left waiting.",
     ]);
-    const toggle = [...card().querySelectorAll('button')].find((b) => b.textContent === 'Show all 25')!;
+    const toggle = [...card().querySelectorAll('button')].find((b) => b.textContent === 'Show all 24')!;
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     fire(toggle, new MouseEvent('click', { bubbles: true }));
     expect(toggle.textContent).toBe('Show less');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(shown()).toHaveLength(25);
-    expect(shown()).toContain(BLUR_CHECK_LINE);
+    expect(shown()).toHaveLength(24);
+    expect(shown()).not.toContain(BLUR_CHECK_LINE);
     expect(shown()).toContain('Seller gone quiet? Nudge them: it often brings them back and saves starting over. Optional, at most once every 15 minutes.');
     expect(card().textContent).not.toContain('[lead writes the wording]');
     // A taker sees no X2F fee line.
@@ -1092,7 +1114,7 @@ describe('What applies to you on the quote (j31a section 1)', () => {
   it('SellQuote shows the seller-taker list, with the buyer nudge and no fee line', async () => {
     await open(quotePath('buy', 'ZELLE', 'offer-mira', 'USD'));
     expect(card().textContent).toContain("You're selling to a buy ad · information only");
-    fire([...card().querySelectorAll('button')].find((b) => b.textContent === 'Show all 22')!, new MouseEvent('click', { bubbles: true }));
+    fire([...card().querySelectorAll('button')].find((b) => b.textContent === 'Show all 21')!, new MouseEvent('click', { bubbles: true }));
     expect(shown()).toContain('Buyer gone quiet? Nudge them: it often brings them back and saves starting over. Optional, at most once every 15 minutes.');
     expect(shown()).toContain('Fund the escrow in full.');
     expect(card().textContent).not.toMatch(/X2F fee|1%/);
@@ -1188,5 +1210,325 @@ describe('C-021 review S1: the offers and their quote read again on resume', () 
     expect(host.textContent).toContain('This offer is no longer listed.');
     down();
     expect(await resume()).toBe('stale');
+  });
+});
+
+describe('a new address added on the quote (owner note #6; the API never swaps an address the device did not show)', () => {
+  const TYPED = `4${'T'.repeat(88)}TYPED1`;
+  const OTHER = `4${'X'.repeat(88)}OTHER1`;
+  const added = (address: string) => ({
+    id: 'w-new', app: 'other', label: 'Rent', address, addressEnd: address.slice(-6), usableFrom: '2026-10-01T00:00:00.000Z', usable: true, oneTime: true, isDefault: false,
+  });
+
+  function typeInto(selector: string, value: string): void {
+    const input = document.querySelector<HTMLInputElement>(selector)!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    act(() => {
+      setter.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+  const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text)!;
+
+  beforeEach(() => {
+    localStorage.clear();
+    forgetTypedAddresses();
+  });
+
+  async function addOnQuote(answered: string, listed: string) {
+    session.me = { securityRating: 'high' };
+    stub.addWallet = () => {
+      stub.wallets = [...WALLETS, added(listed)];
+      return { status: 201, json: added(answered) };
+    };
+    const r = await open(`${BUY}&amount=412.50`);
+    fire(r.host.querySelector('[data-part="add-new-address"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    typeInto('#new-address-label', 'Rent');
+    typeInto('#new-address-address', TYPED);
+    fire(button('Save address'), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    await settle();
+    return r;
+  }
+
+  it('the address typed is the one picked, shown and recorded as the device\'s own', async () => {
+    const { host } = await addOnQuote(TYPED, TYPED);
+    expect(host.querySelector<HTMLInputElement>('input[value="w-new"]')!.checked).toBe(true);
+    expect(host.textContent).toContain('…TYPED1');
+    expect(host.querySelector('[data-part="new-address-swapped"]')).toBeNull();
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]!.walletId).toBe('w-new');
+    expect((readConfirmed('K7M2-9QXA-4FTR-8WPN') as { ownAddress: string }).ownAddress).toBe(TYPED);
+  });
+
+  it('an API answer naming another address is refused in the sheet: nothing is picked', async () => {
+    const { host } = await addOnQuote(OTHER, OTHER);
+    const alert = [...document.querySelectorAll('[role="alert"]')].find((a) => a.textContent?.includes('different address'));
+    expect(alert).toBeDefined();
+    expect(host.querySelectorAll('input[name="wallet"]:checked')).toHaveLength(0);
+    expect(primary(host).disabled).toBe(true);
+    expect(stub.takes).toHaveLength(0);
+  });
+
+  it('a list read again that names another address for the new wallet: it is not offered or picked, and the quote says so', async () => {
+    const { host } = await addOnQuote(TYPED, OTHER);
+    expect(host.querySelector('input[value="w-new"]')).toBeNull();
+    expect(host.querySelectorAll('input[name="wallet"]:checked')).toHaveLength(0);
+    expect(host.textContent).not.toContain('OTHER1');
+    expect(host.querySelector('[data-part="new-address-swapped"]')!.textContent).toContain('different address');
+    expect(primary(host).disabled).toBe(true);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(0);
+  });
+
+  it('review 17 Nov M4: after a trip away, a fresh quote with ?wallet=<id> still refuses a list naming another address for it', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    expect(first.host.querySelector<HTMLInputElement>('input[value="w-new"]')!.checked).toBe(true);
+    first.unmount();
+    // The quote comes back from the URL (Terms, setup, a reload); the API now lists another address.
+    stub.wallets = [...WALLETS, added(OTHER)];
+    const { host } = await open(`${BUY}&amount=412.50&wallet=w-new`);
+    expect(host.querySelector('input[value="w-new"]')).toBeNull();
+    expect(host.querySelectorAll('input[name="wallet"]:checked')).toHaveLength(0);
+    expect(host.textContent).not.toContain('OTHER1');
+    expect(host.querySelector('[data-part="new-address-swapped"]')!.textContent).toContain('different address');
+    expect(primary(host).disabled).toBe(true);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(0);
+  });
+
+  it('review 17 Nov M4: the same address listed after a trip away is picked and taken; the record never goes to the API', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    first.unmount();
+    const { host } = await open(`${BUY}&amount=412.50&wallet=w-new`);
+    expect(host.querySelector<HTMLInputElement>('input[value="w-new"]')!.checked).toBe(true);
+    expect(host.querySelector('[data-part="new-address-swapped"]')).toBeNull();
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]!.walletId).toBe('w-new');
+    expect((readConfirmed('K7M2-9QXA-4FTR-8WPN') as { ownAddress: string }).ownAddress).toBe(TYPED);
+    // Only the add itself carries the typed address; no other request does (no URL, no body).
+    const carrying = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.filter(([input, init]) => `${String(input)} ${typeof init?.body === 'string' ? init.body : ''}`.includes(TYPED))
+      .map(([input, init]) => `${init?.method ?? 'GET'} ${new URL(String(input), 'http://x2f.test').pathname}`);
+    expect(carrying).toEqual(['POST /v1/wallets']);
+  });
+
+  // Re-verify 17 Nov N1: the record is by id, and the API chooses ids. A list that drops the recorded
+  // wallet and names a new id whose address ends like the typed one (ground offline) is a swap too.
+  const LOOKALIKE = `4${'Z'.repeat(88)}TYPED1`;
+  const lookalike = () => ({ ...added(LOOKALIKE), id: 'w-evil', isDefault: true });
+  async function expectLookalikeRefused(path: string) {
+    const { host } = await open(path);
+    expect(host.querySelector('input[value="w-evil"]')).toBeNull();
+    expect(host.querySelectorAll('input[name="wallet"]:checked')).toHaveLength(0);
+    expect(host.querySelector('[data-part="new-address-swapped"]')!.textContent).toContain('different address');
+    expect(primary(host).disabled).toBe(true);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(0);
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toBeNull();
+  }
+
+  it('re-verify N1: a fresh quote (no ?wallet=) refuses a new id whose address ends like the one typed here, even as the default', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    first.unmount();
+    stub.wallets = [...WALLETS, lookalike()];
+    await expectLookalikeRefused(`${BUY}&amount=412.50`);
+  });
+
+  it('re-verify N1: the same with ?wallet=<new id>', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    first.unmount();
+    stub.wallets = [...WALLETS, lookalike()];
+    await expectLookalikeRefused(`${BUY}&amount=412.50&wallet=w-evil`);
+  });
+
+  it('re-verify N1 (O3): an add staged for review (202) is recorded by address, so a look-alike listed later is refused', async () => {
+    session.me = { securityRating: 'high' };
+    stub.addWallet = () => ({ status: 202, json: { status: 'staged', changeId: 'c-1' } });
+    const r = await open(`${BUY}&amount=412.50`);
+    fire(r.host.querySelector('[data-part="add-new-address"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    typeInto('#new-address-label', 'Rent');
+    typeInto('#new-address-address', TYPED);
+    fire(button('Save address'), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    await settle();
+    expect(document.querySelector('[data-part="new-address-staged"]')).not.toBeNull();
+    r.unmount();
+    // Applied later under Account changes, under an id this device never saw; the API lists a look-alike.
+    stub.wallets = [...WALLETS, lookalike()];
+    await expectLookalikeRefused(`${BUY}&amount=412.50`);
+  });
+
+  it('re-verify N1: a new id listing exactly the address typed here is offered and picked as before', async () => {
+    const first = await addOnQuote(TYPED, TYPED);
+    first.unmount();
+    stub.wallets = [...WALLETS, { ...added(TYPED), id: 'w-again', isDefault: true }];
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(host.querySelector<HTMLInputElement>('input[value="w-again"]')!.checked).toBe(true);
+    expect(host.querySelector('[data-part="new-address-swapped"]')).toBeNull();
+  });
+});
+
+describe('the rate-first gate on the quote (Plan 5 Task 6; review 18 Nov M1, M2, m1)', () => {
+  afterEach(() => resetSyncFirst());
+  const OLD = { code: 'OLD-1', counterparty: 'bob', reviewableSince: '2026-11-01T00:00:00.000Z' };
+  /** Two usable wallets, Cake the default; the person picks Ledger. */
+  const TWO = () => WALLETS.map((w) => ({ ...w, isDefault: w.id === 'w-cake' }));
+  const sheet = () => document.querySelector<HTMLElement>('[role="dialog"]');
+  const inSheet = (text: string) => [...(sheet()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === text || b.getAttribute('aria-label') === text);
+  const tap = (el: Element) => fire(el, new MouseEvent('click', { bubbles: true }));
+
+  /** The quote at $412.50 with Ledger picked; the first take is refused 409 review-pending, later ones go through. */
+  async function refusedOnce() {
+    stub.wallets = TWO();
+    stub.pending = [[OLD], []];
+    let refused = false;
+    stub.take = (body) => {
+      if (!refused) {
+        refused = true;
+        return { status: 409, json: { error: 'review-pending' } };
+      }
+      return { status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '150000' } };
+    };
+    const r = await open(`${BUY}&amount=412.50`);
+    expect(r.host.querySelector<HTMLInputElement>('input[value="w-cake"]')!.checked).toBe(true);
+    pick(r.host, 'w-ledger');
+    await settle();
+    tap(primary(r.host));
+    await settle();
+    return r;
+  }
+  const resume = async () => {
+    await act(async () => {
+      await syncNow();
+    });
+    await settle();
+  };
+
+  it('a 409 review-pending opens the rate-first sheet with the rating for the pending trade', async () => {
+    const { host } = await refusedOnce();
+    expect(stub.takes).toHaveLength(1);
+    expect(sheet()).not.toBeNull();
+    expect(sheet()!.querySelector('h2')!.textContent).toBe('Rate your last trade to continue');
+    expect(sheet()!.querySelector('[data-part="review-card"] h2')!.textContent).toBe('How was trading with bob?');
+    expect(where(host)).toBeNull();
+  });
+
+  it('after a rating at an unchanged price, the same take goes again with the picked non-default wallet', async () => {
+    const { host } = await refusedOnce();
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.reviews).toEqual(['/v1/trades/OLD-1/review']);
+    expect(stub.takes).toHaveLength(2);
+    expect(stub.takes[0]!.walletId).toBe('w-ledger');
+    expect(stub.takes[1]).toEqual(stub.takes[0]);
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+  });
+
+  it('M1: after a rating at a moved price, nothing is taken, the sheet closes and the price-moved line asks for a fresh tap', async () => {
+    const { host } = await refusedOnce();
+    // The quote re-reads the price behind the sheet (its 60 s poll, or a resume): it moved.
+    stub.rate = '34000';
+    await resume();
+    expect(host.textContent).toContain('$340.00 / XMR');
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.reviews).toEqual(['/v1/trades/OLD-1/review']);
+    expect(stub.takes).toHaveLength(1);
+    expect(where(host)).toBeNull();
+    expect(sheet()).toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
+    expect(host.textContent).not.toContain(RATE_FIRST.inline);
+    // A fresh tap takes at the price now, with the same wallet.
+    expect(primary(host).disabled).toBe(false);
+    tap(primary(host));
+    await settle();
+    expect(stub.takes).toHaveLength(2);
+    expect(stub.takes[1]).toMatchObject({ centsPerXmr: '34000', fiatCents: '41250', walletId: 'w-ledger' });
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+  });
+
+  it('M1: a total that moved (the amount typed again behind the sheet) also takes nothing', async () => {
+    const { host } = await refusedOnce();
+    type(host, '400');
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
+  });
+
+  it('closing the sheet without rating takes nothing and leaves the rate-first line', async () => {
+    const { host } = await refusedOnce();
+    tap(inSheet('Close')!);
+    await settle();
+    expect(sheet()).toBeNull();
+    expect(stub.takes).toHaveLength(1);
+    expect(stub.reviews ?? []).toEqual([]);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(RATE_FIRST.inline);
+  });
+
+  it('Skip review alone clears the gate but takes nothing: the person taps Trade again', async () => {
+    const { host } = await refusedOnce();
+    tap(inSheet('Skip review')!);
+    await settle();
+    expect(stub.reviews).toEqual(['/v1/trades/OLD-1/review/skip']);
+    expect(stub.takes).toHaveLength(1);
+    expect(sheet()).toBeNull();
+    expect(where(host)).toBeNull();
+    expect(host.textContent).not.toContain(RATE_FIRST.inline);
+    expect(primary(host).disabled).toBe(false);
+    tap(primary(host));
+    await settle();
+    expect(stub.takes).toHaveLength(2);
+    expect(stub.takes[1]!.walletId).toBe('w-ledger');
+  });
+
+  it("re-review n1: a gate that refuses with an empty pending list ('empty') takes nothing again, so it cannot loop", async () => {
+    stub.wallets = TWO();
+    // Rated in another tab: the gate still refuses this take, but the list it is read for is empty.
+    stub.pending = [[]];
+    stub.take = () => ({ status: 409, json: { error: 'review-pending' } });
+    const { host } = await open(`${BUY}&amount=412.50`);
+    pick(host, 'w-ledger');
+    await settle();
+    tap(primary(host));
+    await settle();
+    await settle();
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(stub.reviews ?? []).toEqual([]);
+    expect(sheet()).toBeNull();
+    expect(where(host)).toBeNull();
+    // The refusal stays on the screen: the person decides whether to tap Trade again.
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(RATE_FIRST.inline);
+  });
+
+  it('m1: a picked wallet no longer usable by the time the rating is done takes nothing (Trade would be off)', async () => {
+    const { host } = await refusedOnce();
+    // The list is read again (a resume) while the sheet is up, and Ledger is no longer usable.
+    stub.wallets = TWO().map((w) => (w.id === 'w-ledger' ? { ...w, usable: false } : w));
+    await resume();
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(where(host)).toBeNull();
+  });
+
+  it('m1: a poster blocked behind the sheet takes nothing', async () => {
+    const { host } = await refusedOnce();
+    act(() => updateQuote('offer-ghost', { blockedPoster: true }));
+    await settle();
+    tap(inSheet('Neutral, skip details')!);
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(where(host)).toBeNull();
   });
 });

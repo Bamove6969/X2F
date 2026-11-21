@@ -30,15 +30,29 @@ afterAll(async () => {
 });
 
 describe('the staff web app on the staff origin', () => {
-  it('serves index.html for app paths, with the staff CSP (no wasm, no relay or node proxy)', async () => {
-    for (const url of ['/', '/login', '/invite/abc_DEF-123', '/setup', '/overview/news']) {
+  it('serves index.html for app paths, with the staff CSP (no relay or node proxy)', async () => {
+    // Plan 4 Task 17: the owner's Staff page is /staff (NAV_PATHS.staff), so a reload of it is the app page too.
+    for (const url of ['/', '/login', '/invite/abc_DEF-123', '/setup', '/overview/news', '/staff', '/staff?x=1', '/settings']) {
       const res = await app.inject({ method: 'GET', url });
       expect(res.statusCode, url).toBe(200);
       expect(res.body).toContain('X2F Staff');
       expect(res.headers['content-security-policy']).toBe(STAFF_CSP);
     }
-    expect(STAFF_CSP).not.toContain('wasm-unsafe-eval');
+    // Lead call 18 Nov: 'wasm-unsafe-eval' lets libsodium compile its WebAssembly (it has no JS
+    // fallback); it permits wasm compilation only, never JS eval.
+    expect(STAFF_CSP).toContain("script-src 'self' 'wasm-unsafe-eval';");
+    // Re-review m6: workers only from this origin, whatever script-src becomes.
+    expect(STAFF_CSP).toContain("worker-src 'self';");
     expect(STAFF_CSP).toContain("connect-src 'self';");
+  });
+
+  it('script-src never allows JS eval or inline script: no unsafe-eval, no unsafe-inline, nothing but self and wasm', () => {
+    const script = STAFF_CSP.split(';').map((d) => d.trim()).find((d) => d.startsWith('script-src '))!;
+    const sources = script.split(/\s+/).slice(1);
+    expect(sources).toEqual(["'self'", "'wasm-unsafe-eval'"]);
+    expect(sources).not.toContain("'unsafe-eval'");
+    expect(sources).not.toContain("'unsafe-inline'");
+    expect(STAFF_CSP).not.toMatch(/'unsafe-eval'|'unsafe-inline'/);
   });
 
   it('serves built files, and 404s missing files, dot files and unknown /staff paths', async () => {
@@ -59,6 +73,12 @@ describe('the staff web app on the staff origin', () => {
     // A percent-encoded leading dot is still a dot file (the URL parser leaves %2E followed by letters alone).
     expect((await app.inject({ method: 'GET', url: '/assets/%2Eenv.js' })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/%2Evite/manifest.json' })).statusCode).toBe(404);
+    // Only the page itself: anything under /staff is still the API's 404.
+    for (const url of ['/staff/', '/staff/v1', '/staff/anything', '/staff/v1/nothing-here', '/STAFF/v1/x']) {
+      const r = await app.inject({ method: 'GET', url });
+      expect(r.statusCode, url).toBe(404);
+      expect(r.body, url).not.toContain('X2F Staff');
+    }
     const api = await app.inject({ method: 'GET', url: '/staff/v1/nothing-here' });
     expect(api.statusCode).toBe(404);
     expect(api.body).not.toContain('X2F Staff');

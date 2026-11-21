@@ -29,6 +29,23 @@ export interface Wallet {
   usableFrom: Date;
   /** `usableFrom <= now`: false while the 24-hour wait of a password-confirmed wallet runs. */
   usable: boolean;
+  /**
+   * Owner demo note #6 (migration 620): for one trade only. Listed until a trade uses it, then
+   * removed by `useUpOneTimeWallet` in that trade's transaction; false: saved for future trades.
+   */
+  oneTime: boolean;
+  /**
+   * Owner, 17 Nov 2026 (note #6 Q1): the default the trade screen picks first (`effectiveDefault`):
+   * the saved wallet the person chose, else their only usable saved wallet, else none. Only a
+   * preselection: the take still names a wallet.
+   */
+  isDefault: boolean;
+  /**
+   * Review of wip/third-trade-wallet 17 Nov (b), M1: the code of the trade, still in setup, that used
+   * up this one-time wallet (it comes back if that trade ends in setup). Such a wallet is listed so its
+   * owner can see and remove it, but it is not usable. Null for every open wallet.
+   */
+  inUseByTrade: string | null;
 }
 
 interface WalletRow {
@@ -37,26 +54,57 @@ interface WalletRow {
   label: string;
   address: string;
   usable_from: Date;
+  one_time: boolean;
+  is_default: boolean;
 }
 
 function toWallet(r: WalletRow, now: Date): Wallet {
   return {
     id: r.id, app: r.app, label: r.label, address: r.address, addressEnd: addressEnd(r.address),
-    usableFrom: r.usable_from, usable: r.usable_from.getTime() <= now.getTime(),
+    usableFrom: r.usable_from, usable: r.usable_from.getTime() <= now.getTime(), oneTime: r.one_time, isDefault: false,
+    inUseByTrade: null,
   };
 }
 
 const toJson = (w: Wallet) => ({ ...w, usableFrom: w.usableFrom.toISOString() });
 
-const WALLET_COLUMNS = 'id, app, label, address, usable_from';
+const WALLET_COLUMNS = 'id, app, label, address, usable_from, one_time, is_default';
 
-/** The account's open (not removed) wallets, oldest first. */
+/**
+ * Owner, 17 Nov 2026 (note #6 Q1): which of the account's open wallets is the default. "If they only
+ * have one wallet saved then that's the default. If they have multiple they can choose to have one as
+ * the default": the open wallet the person chose (`is_default`, never a one-time wallet), else the only
+ * usable saved wallet, else none (several saved and none chosen, or the chosen one removed).
+ */
+export function effectiveDefault(rows: readonly WalletRow[], now: Date): string | null {
+  const chosen = rows.find((r) => r.is_default && !r.one_time);
+  if (chosen) return chosen.id;
+  const saved = rows.filter((r) => !r.one_time && r.usable_from.getTime() <= now.getTime());
+  return saved.length === 1 ? saved[0]!.id : null;
+}
+
+/**
+ * The account's open (not removed) wallets, oldest first, the default marked. Review 17 Nov (b), M1:
+ * with them, each one-time wallet a trade still in `setup` used up, as in use by that trade (not
+ * usable, never the default), so its owner sees it and can remove it before it can come back.
+ */
 async function openWallets(db: Queryable, accountId: string, now: Date): Promise<Wallet[]> {
-  const { rows } = await db.query<WalletRow>(
-    `select ${WALLET_COLUMNS} from wallets where account_id = $1 and removed_at is null order by created_at, id`,
+  const { rows } = await db.query<WalletRow & { in_use_by: string | null }>(
+    `select ${WALLET_COLUMNS.split(', ').map((c) => `w.${c}`).join(', ')},
+            case when w.removed_at is not null then w.used_by_trade end as in_use_by
+       from wallets w
+      where w.account_id = $1
+        and (w.removed_at is null
+             or (w.used_by_trade is not null and exists (select 1 from trades t where t.code = w.used_by_trade and t.state = 'setup')))
+      order by w.created_at, w.id`,
     [accountId],
   );
-  return rows.map((r) => toWallet(r, now));
+  const def = effectiveDefault(rows.filter((r) => r.in_use_by === null), now);
+  return rows.map((r) =>
+    r.in_use_by === null
+      ? { ...toWallet(r, now), isDefault: r.id === def }
+      : { ...toWallet(r, now), usable: false, inUseByTrade: r.in_use_by },
+  );
 }
 
 /** The wallets that may receive a payout now (open and past any wait). Plan 3 calls this when a buyer picks one. */
@@ -88,6 +136,11 @@ export interface WalletItem {
   label: string;
   /** Trimmed: exactly the address that is confirmed and stored. */
   address: string;
+  /**
+   * Owner demo note #6: for one trade only (`Wallet.oneTime`). Absent in a change staged before
+   * migration 620, which then applies as saved for future trades.
+   */
+  oneTime?: boolean;
 }
 
 /**
@@ -113,16 +166,20 @@ function bodyOf(req: FastifyRequest): Record<string, unknown> {
 // characters): never part of a label shown back in lists and alerts.
 const CONTROL = /[\p{Cc}\p{Cf}]/u;
 
-/** `app` from the list, `label` 1-40 characters once trimmed, `address` a string (checked later). */
-function checkItemShape(raw: unknown): { app: WalletApp; label: string; address: string } {
+/**
+ * `app` from the list, `label` 1-40 characters once trimmed, `address` a string (checked later),
+ * `oneTime` absent or a boolean (owner demo note #6; absent is saved for future trades).
+ */
+function checkItemShape(raw: unknown): WalletItem & { oneTime: boolean } {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new ApiError(400, 'bad-request');
-  const { app, label, address } = raw as Record<string, unknown>;
+  const { app, label, address, oneTime } = raw as Record<string, unknown>;
   if (typeof app !== 'string' || !(WALLET_APPS as readonly string[]).includes(app)) throw new ApiError(400, 'bad-request');
   if (typeof label !== 'string' || typeof address !== 'string') throw new ApiError(400, 'bad-request');
+  if (oneTime !== undefined && typeof oneTime !== 'boolean') throw new ApiError(400, 'bad-request');
   const cleanLabel = label.trim();
   const labelLength = [...cleanLabel].length;
   if (labelLength < 1 || labelLength > LABEL_MAX || CONTROL.test(cleanLabel)) throw new ApiError(400, 'bad-request');
-  return { app: app as WalletApp, label: cleanLabel, address: address.trim() };
+  return { app: app as WalletApp, label: cleanLabel, address: address.trim(), oneTime: oneTime === true };
 }
 
 /**
@@ -138,10 +195,10 @@ const checkWalletInput: preHandlerAsyncHookHandler = async function (req) {
   const deps = req.server.deps;
   const body = bodyOf(req);
   const batch = Object.hasOwn(body, 'wallets');
-  let shapes: Array<{ app: WalletApp; label: string; address: string }>;
+  let shapes: Array<WalletItem & { oneTime: boolean }>;
   if (batch) {
     const list = body.wallets;
-    if (['app', 'label', 'address'].some((k) => Object.hasOwn(body, k))) throw new ApiError(400, 'bad-request');
+    if (['app', 'label', 'address', 'oneTime'].some((k) => Object.hasOwn(body, k))) throw new ApiError(400, 'bad-request');
     if (!Array.isArray(list) || list.length < 1 || list.length > MAX_WALLET_BATCH) throw new ApiError(400, 'bad-request');
     shapes = list.map(checkItemShape);
     if (new Set(shapes.map((s) => s.address)).size !== shapes.length) throw new ApiError(400, 'bad-request');
@@ -217,9 +274,9 @@ async function insertWallets(
     let inserted: WalletRow;
     try {
       const res = await db.query<WalletRow>(
-        `insert into wallets (account_id, app, label, address, created_at, usable_from)
-         values ($1, $2, $3, $4, $5, $6) returning ${WALLET_COLUMNS}`,
-        [accountId, item.app, item.label, item.address, now, usableFrom],
+        `insert into wallets (account_id, app, label, address, created_at, usable_from, one_time)
+         values ($1, $2, $3, $4, $5, $6, $7) returning ${WALLET_COLUMNS}`,
+        [accountId, item.app, item.label, item.address, now, usableFrom, item.oneTime === true],
       );
       inserted = res.rows[0]!;
     } catch (e) {
@@ -355,6 +412,59 @@ export async function walletRule(db: Queryable, accountId: string): Promise<Wall
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * Owner demo note #6: a one-time wallet is used up by the trade that uses it. Called in the take's
+ * (or the poster's wallet route's) transaction, after the trade's address is written and under the
+ * account lock those routes hold, so a second trade can never pick it: it is marked removed and is
+ * never listed or usable again. No in-app alert (the person chose this when adding it); the Jabber
+ * change notice still goes out, from the `wallets` row trigger on `removed_at` (jabber/changePaths.ts),
+ * and that is intended. A saved wallet is left as it is. The trade keeps its own copy of the address;
+ * nothing here touches the trade.
+ */
+export async function useUpOneTimeWallet(db: Queryable, accountId: string, walletId: string, tradeCode: string, now: Date): Promise<void> {
+  // `used_by_trade` (migration 640): the trade that used it, so that trade ending in setup gives it back.
+  await db.query(
+    'update wallets set removed_at = $3, used_by_trade = $4 where id = $1 and account_id = $2 and one_time and removed_at is null',
+    [walletId, accountId, now, tradeCode],
+  );
+}
+
+/**
+ * Owner, 17 Nov 2026 (note #6 Q10: "they have the option of reusing the wallet over again, but by no
+ * means do they have to"): the one-time wallets trade `tradeCode` used up are open again, still
+ * one-time, with their address and wait as they were. Called by the trade store (trades/store.ts
+ * `applyEvent`) in the transaction that closes a trade straight from `setup` with nothing funded, after
+ * the trade row lock; it takes the lock of each account that has a wallet to give back (in id order),
+ * so it serialises with any take, add or wallet route of that account. It never creates an address, never touches
+ * `had_wallet` or any wait, and never restores a wallet whose removal applied meanwhile (that removal
+ * cleared `used_by_trade`, `applyWalletRemoval`), nor one whose address is open again on the account
+ * (re-added meanwhile) or was purged.
+ */
+export async function restoreOneTimeWallets(db: Queryable, tradeCode: string, accountIds: readonly string[], now: Date): Promise<number> {
+  // Review 17 Nov (b), B2: `applyEvent` already locked both parties in id order right after the trade
+  // row (before the cancel route's own account lock), so this lock is re-entrant there and cannot
+  // close a cycle with a take; it stays for any other caller.
+  const owners = await db.query<{ account_id: string }>(
+    'select distinct account_id from wallets where used_by_trade = $1 and account_id = any($2)',
+    [tradeCode, [...accountIds]],
+  );
+  if (owners.rows.length === 0) return 0;
+  await db.query('select id from accounts where id = any($1) order by id for update', [owners.rows.map((r) => r.account_id)]);
+  const { rows } = await db.query<{ account_id: string; app: WalletApp; label: string; address: string }>(
+    `update wallets w set removed_at = null, used_by_trade = null
+      where w.used_by_trade = $1 and w.account_id = any($2) and w.one_time and w.removed_at is not null and w.address is not null
+        and not exists (select 1 from wallets o where o.account_id = w.account_id and o.address = w.address and o.removed_at is null)
+      returning w.account_id, w.app, w.label, w.address`,
+    [tradeCode, [...accountIds]],
+  );
+  // Review 17 Nov (b), M1: the return is told in the app too (the Jabber notice already goes out from
+  // the wallets trigger), with display details only, never the whole address.
+  for (const r of rows) {
+    await addAlert(db, r.account_id, 'wallet-restored', { app: r.app, label: r.label, addressEnd: addressEnd(r.address) }, now);
+  }
+  return rows.length;
+}
+
+/**
  * The removal write (the route's, or a waiting one applied 24 h after a username-and-password
  * session submitted it): the wallet is marked removed (a wallet still waiting to be usable is
  * cancelled with it) and alert `wallet-removed` carries display details only: the app, the label
@@ -362,6 +472,18 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * already (a waiting removal is then dropped).
  */
 export async function applyWalletRemoval(db: Queryable, accountId: string, walletId: string, now: Date): Promise<void> {
+  // Owner note #6 Q10: a one-time wallet a trade is using (used up, `used_by_trade` set) is removed
+  // for good: it will not come back if that trade ends in setup. The removal is done, with its alert.
+  const used = await db.query<{ app: WalletApp; label: string; address: string }>(
+    `update wallets set used_by_trade = null where id = $1 and account_id = $2 and used_by_trade is not null
+     returning app, label, address`,
+    [walletId, accountId],
+  );
+  if (used.rows[0]) {
+    const u = used.rows[0];
+    await addAlert(db, accountId, 'wallet-removed', { app: u.app, label: u.label, addressEnd: addressEnd(u.address) }, now);
+    return;
+  }
   const { rows } = await db.query<{ app: WalletApp; label: string; address: string }>(
     `update wallets set removed_at = $3 where id = $1 and account_id = $2 and removed_at is null
      returning app, label, address`,
@@ -386,8 +508,10 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
   const held = await withTx(deps.db, async (client) => {
     // Review round 4: the removing session must still be live where it writes.
     await requireLiveSessionInTx(client, req.auth, now);
+    // Review 17 Nov (b), M1: a one-time wallet a trade used up (`used_by_trade` set) can be removed
+    // too, so it never comes back (`applyWalletRemoval` clears `used_by_trade`, with its alert).
     const { rows } = await client.query<{ label: string; address: string }>(
-      'select label, address from wallets where id = $1 and account_id = $2 and removed_at is null',
+      'select label, address from wallets where id = $1 and account_id = $2 and (removed_at is null or (used_by_trade is not null and address is not null))',
       [id, req.auth.accountId],
     );
     const w = rows[0];
@@ -401,8 +525,41 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
- * `GET /v1/wallets`, `GET /v1/wallets/rule`, `POST /v1/wallets` (one wallet or a batch) and
- * `DELETE /v1/wallets/:id`. (The opt-in `PUT /v1/account/security/payout-wait` was retired
+ * `PUT /v1/wallets/:id/default` (owner, 17 Nov 2026, note #6 Q1): the account owner chooses which open
+ * saved wallet the trade screen picks first. 404 `not-found` for a wallet that is not the account's or
+ * not open (removed, used up by a trade, or a staged add, which has no wallet yet); 409 `wallet-one-time`
+ * for a one-time wallet; 409 `wallet-not-ready` for a wallet still in its wait (review 17 Nov M1: a
+ * stolen session must not silently pre-arm an address that has not yet passed the wait meant to let
+ * the user notice it; the same `usable_from <= now` rule as the take's `pickWallet`). Under the
+ * account row lock, so one default per account (the partial unique index of migration 630 backs it).
+ * It changes no address, no wait and nothing a take accepts (any usable wallet may still be named), so
+ * it is not staged; the hold still blocks it, as every wallet write. (Whether it should also send an
+ * in-app alert is owner question Q12, still open.)
+ */
+async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
+  const deps = req.server.deps;
+  const { id } = req.params as { id: string };
+  if (!UUID.test(id)) throw new ApiError(404, 'not-found');
+  const now = deps.clock();
+  await withTx(deps.db, async (client) => {
+    await client.query('select 1 from accounts where id = $1 for update', [req.auth.accountId]);
+    const { rows } = await client.query<{ one_time: boolean; usable_from: Date }>(
+      'select one_time, usable_from from wallets where id = $1 and account_id = $2 and removed_at is null',
+      [id, req.auth.accountId],
+    );
+    const w = rows[0];
+    if (!w) throw new ApiError(404, 'not-found');
+    if (w.one_time) throw new ApiError(409, 'wallet-one-time');
+    if (w.usable_from.getTime() > now.getTime()) throw new ApiError(409, 'wallet-not-ready');
+    await client.query('update wallets set is_default = false where account_id = $1 and is_default and id <> $2', [req.auth.accountId, id]);
+    await client.query('update wallets set is_default = true where id = $1 and not is_default', [id]);
+  });
+  return reply.code(204).send();
+}
+
+/**
+ * `GET /v1/wallets`, `GET /v1/wallets/rule`, `POST /v1/wallets` (one wallet or a batch),
+ * `PUT /v1/wallets/:id/default` and `DELETE /v1/wallets/:id`. (The opt-in `PUT /v1/account/security/payout-wait` was retired
  * 2026-10-23.) Full trader sessions only (R3: staff and owner accounts never hold payout wallets).
  */
 export function walletRoutes(app: FastifyInstance): void {
@@ -435,4 +592,5 @@ export function walletRoutes(app: FastifyInstance): void {
     addHandler,
   );
   app.delete('/v1/wallets/:id', { preHandler: [session, requireNotHeld] }, removeHandler);
+  app.put('/v1/wallets/:id/default', { preHandler: [session, requireNotHeld] }, defaultHandler);
 }

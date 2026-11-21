@@ -42,6 +42,12 @@ export type ApiErrorCode =
   | 'counterparty-unavailable'
   | 'method-not-allowed'
   | 'last-login-method'
+  // Owner, 16 Nov 2026: the authenticator app goes only with a password (@x2f/accounts
+  // METHOD_PARTNERS): no TOTP enrolment without a password, no password removal while TOTP is on.
+  | 'totp-needs-password'
+  | 'password-has-totp'
+  // Owner, 16 Nov 2026: a password does not stand alone (TOTP or a PGP key, passkey or security key with it).
+  | 'password-alone'
   | 'webauthn-failed'
   | 'security-key-limit'
   | 'origin-refused'
@@ -66,6 +72,8 @@ export type ApiErrorCode =
   | 'method-unavailable'
   | 'no-wallet'
   | 'trading-hold'
+  // Plan 4 Task 25 (J-06): an active lien from a dispute; the debtor cannot trade until it is repaid.
+  | 'lien'
   | 'trading-paused'
   | 'too-many-offers'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
@@ -74,6 +82,11 @@ export type ApiErrorCode =
   | 'wrong-party'
   | 'too-early'
   | 'too-late'
+  // Plan 4 Task 12 (A6): the seller's payment proof for a `seller-sends-xmr` ruling.
+  | 'proof-invalid'
+  | 'proof-replayed'
+  | 'proof-pending'
+  | 'node-unavailable'
   | 'no-extensions-left'
   | 'not-releasable'
   | 'total-changed'
@@ -82,10 +95,14 @@ export type ApiErrorCode =
   | 'out-of-range'
   | 'not-enough-trades'
   | 'wallet-not-ready'
+  // Owner 17 Nov 2026 (note #6 Q1): a one-time wallet cannot be made the default.
+  | 'wallet-one-time'
   | 'already-waiting'
   | 'ad-busy'
   | 'price-changed'
   | 'starter-limit'
+  // Plan 4 Task 26: the caller's own account limit (a senior moderator approved it); carries the cap only.
+  | 'account-limit'
   // Owner p11-6: the launch cap on one trade's USD value (trades/launchCap.ts), at post and take.
   | 'launch-cap'
   | 'offer-busy'
@@ -106,6 +123,27 @@ export type ApiErrorCode =
   | 'stale-seq'
   | 'wrong-channel'
   | 'wrong-sender'
+  // Design build task 4 (chat membership keys): the signed key record.
+  | 'bad-key-record'
+  | 'key-exists'
+  // Chat membership design task 9: the moderator's read (a re-wrap) and countersigned message, as the moderation process refuses them.
+  | 'device-not-certified'
+  | 'not-on-case'
+  | 'not-disputed'
+  | 'no-grant'
+  | 'replayed'
+  | 'stale-countersign'
+  | 'bad-countersign'
+  | 'gate-unavailable'
+  // Chat membership design task 8: staff device certification.
+  | 'device-exists'
+  | 'device-limit'
+  | 'no-key'
+  | 'chat-keyed'
+  // Design build task 6: the dispute grant.
+  | 'grant-required'
+  | 'bad-grant'
+  | 'grant-not-needed'
   | 'chat-unavailable'
   // Design 2026-11-08 section 5: a chat purged under the caller (its member mark); the device erases its copy.
   | 'chat-purged'
@@ -122,7 +160,17 @@ export type ApiErrorCode =
   | 'comment-too-long'
   | 'comment-bad-character'
   | 'review-exists'
+  // Plan 5, Task 19: review disputes (reviews/routes.ts, staff/reviewDisputes.ts).
+  | 'not-disputable'
+  | 'review-disputed'
+  | 'dispute-decided'
+  // Plan 5, Task 14: proof storage (proofs/routes.ts); its 409 too-many-proofs is declared above (blur check).
+  | 'proof-exists'
+  | 'not-requested'
   | 'review-pending'
+  // Plan 5 Task 5: @x2f/reputation's BadgeError codes (badge settings), answered as 400.
+  | 'new-is-fixed'
+  | 'not-earned'
   // Plan 5, Task 3: @x2f/reputation's ReviewError codes, answered as 400 (reviews/routes.ts checks
   // at compile time that every ReviewErrorCode is listed here).
   | 'bad-shape'
@@ -174,6 +222,12 @@ export type ApiErrorCode =
   | 'owner-needs-pgp'
   // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
   | 'not-live'
+  // Plan 5 Task 11 (P5-A23): a moderator approves only after ticking that the archive shows the full fingerprint.
+  | 'confirm-fingerprint'
+  // Review M2 (lead call): and that the archived page is the trader's profile on the claimed site.
+  | 'confirm-profile'
+  // Review M3 (lead call): a moderator never approves a claim backed by one of their own login keys.
+  | 'reviewer-own-key'
   // Plan 5, Task 10: past reputation claims.
   | 'bad-site'
   | 'bad-url'
@@ -187,7 +241,13 @@ export type ApiErrorCode =
   // moderator or the owner), or involved in round 1 of an appealed case; `freeze-not-allowed`: the
   // party has not ignored the dispute or the ruling; the moderation process's own answers.
   | 'forbidden-case'
+  // Plan 4 Task 12 (J-06): the ruling routes.
+  | 'reason-too-short'
+  | 'same-person'
+  | 'account-action-unavailable'
   | 'freeze-not-allowed'
+  // Lead call Q1: a ruling while maintenance pauses the dispute.
+  | 'dispute-paused'
   | 'no-chat'
   | 'no-proof'
   | 'moderation-unavailable'
@@ -204,7 +264,9 @@ export type ApiErrorCode =
   // Security review S2: the clock-out pays exactly the sheet's signed quote.
   | 'quote-invalid'
   | 'quote-expired'
-  | 'quote-changed';
+  | 'quote-changed'
+  // Plan 4 Task 19, re-review 3 m1: a training case changed after the curator opened it.
+  | 'case-changed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

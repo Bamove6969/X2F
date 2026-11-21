@@ -1,5 +1,5 @@
 import type { NavItem } from '@x2f/staff';
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { codeOf, logout, me as fetchMe, ownerAlerts, serverNow, setSessionEndListener, type Me } from '../api.js';
 import { AlertsCountContext } from './alertsCount.js';
@@ -12,6 +12,8 @@ import './staff.css';
 export const NAV_LABELS: Readonly<Record<NavItem, string>> = {
   overview: 'Overview',
   disputes: 'Disputes',
+  // Plan 5 Task 11: no board places it (DESIGN: not drawn). COPY-UNSIGNED DESIGNER-REVIEW
+  'past-reputation': 'Past reputation',
   staff: 'Staff',
   performance: 'Performance',
   // Owner Q13 (J-21): the price-health page. DESIGN: not drawn (no board places it); COPY-UNSIGNED
@@ -26,6 +28,7 @@ export const NAV_LABELS: Readonly<Record<NavItem, string>> = {
 export const NAV_PATHS: Readonly<Record<NavItem, string>> = {
   overview: '/overview',
   disputes: '/disputes',
+  'past-reputation': '/past-reputation',
   staff: '/staff',
   performance: '/performance',
   prices: '/prices',
@@ -34,6 +37,13 @@ export const NAV_PATHS: Readonly<Record<NavItem, string>> = {
   feedback: '/feedback',
   settings: '/settings',
 };
+
+/**
+ * The signed-in staff member as the shell last read `GET /staff/v1/me`, for the pages inside it
+ * (review mod-screens I3: a page reads the role here instead of asking the API again).
+ */
+const MeContext = createContext<Me | null>(null);
+export const useMe = (): Me | null => useContext(MeContext);
 
 /** The countdown shows when the session ends this soon (Plan 4 Task 16). */
 export const COUNTDOWN_FROM_MS = 10 * 60_000;
@@ -117,7 +127,7 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
     <div className="x2f-staff" data-shell="staff">
       <aside className="x2f-staff__rail">
         <p className="x2f-staff__brand">
-          <span className="x2f-wordmark">X2F</span>
+          <span className="x2f-wordmark">X2F</span>{' '}
           <span className="x2f-staff__brand-tag">Staff</span>
         </p>
         <nav aria-label="Staff" className="x2f-staff__nav">
@@ -147,7 +157,10 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
               <p className="x2f-staff__countdown" data-part="clock-out-reminder">
                 Clock out at the end of your shift to be paid. Logging out or closing the app does not pay.
               </p>
-              <Button variant="primary" data-part="clock-out-button" onClick={() => setClockingOut(true)}>
+              {/* The rail is the shell's chrome, never a page's primary action (exactly one data-primary
+                  per screen, the page's own; as apps/web's tab bar carries none). No board places
+                  Clock out (NEEDS_DESIGN_CLOCK_OUT), so it is the outlined button. DESIGN: emphasis */}
+              <Button variant="secondary" data-part="clock-out-button" onClick={() => setClockingOut(true)}>
                 Clock out
               </Button>
             </>
@@ -168,23 +181,25 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
         />
       ) : null}
       <main className="x2f-staff__main">
-        <Routes>
-          <Route index element={first ? <Navigate to={NAV_PATHS[first]} replace /> : <NothingForRole />} />
-          {who.nav.map((item) => (
-            <Route key={item} path={`${NAV_PATHS[item]}/*`} element={pages[item] ?? <PageTitle title={NAV_LABELS[item]} />} />
-          ))}
-          <Route
-            path="/notifications"
-            element={
-              who.role === 'owner' && notifications !== undefined ? (
-                <AlertsCountContext.Provider value={{ unread, refresh: () => setAlertsTick((n) => n + 1) }}>{notifications}</AlertsCountContext.Provider>
-              ) : (
-                <NothingForRole />
-              )
-            }
-          />
-          <Route path="*" element={<NothingForRole />} />
-        </Routes>
+        <MeContext.Provider value={who}>
+          <Routes>
+            <Route index element={first ? <Navigate to={NAV_PATHS[first]} replace /> : <NothingForRole />} />
+            {who.nav.map((item) => (
+              <Route key={item} path={`${NAV_PATHS[item]}/*`} element={pages[item] ?? <PageTitle title={NAV_LABELS[item]} />} />
+            ))}
+            <Route
+              path="/notifications"
+              element={
+                who.role === 'owner' && notifications !== undefined ? (
+                  <AlertsCountContext.Provider value={{ unread, refresh: () => setAlertsTick((n) => n + 1) }}>{notifications}</AlertsCountContext.Provider>
+                ) : (
+                  <NothingForRole />
+                )
+              }
+            />
+            <Route path="*" element={<NothingForRole />} />
+          </Routes>
+        </MeContext.Provider>
       </main>
     </div>
   );

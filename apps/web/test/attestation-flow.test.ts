@@ -1,13 +1,14 @@
-import { ROLES } from '@x2f/core';
+import { ROLES, type Role } from '@x2f/core';
 import { EscrowError, PartyError, TransportClosedError } from '@x2f/escrow';
 import { open, ReplayGuard, seal, type Participants } from '@x2f/protocol';
 import { channelFor, escrowPlan, fiatCents, instructionsSha256 } from '@x2f/trade';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Attestation } from '@x2f/trade';
 import { cosignPolicy } from '../src/escrow/policy.js';
-import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
+import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, json, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
 
 const running: Device[] = [];
+const sumTo = (o: { to: readonly { amountAtomic: bigint }[] }): bigint => o.to.reduce((a, x) => a + x.amountAtomic, 0n);
 const fiatOf = (a: bigint): bigint => fiatCents(a, { currency: 'USD', centsPerXmr: 33_000n });
 /** The buyer taps "I've paid" on its own device with the total for `amount` (the real flow, Task 23). */
 const pay = (buyer: Device, amount: bigint = AMOUNT): Promise<void> => buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(amount) });
@@ -126,8 +127,74 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     }
   });
 
+  // Review multisig-vs-RetoSwap F5 (12 Nov): issuedAt is checked against the device clock and the
+  // view's take time. A time refusal may be this device's clock, so it is retryable and never kept.
+  // Review lead-escrow-harden M1 (16 Nov): the lower bound is the time this device made its
+  // identity (kept in its record), not the API's unsigned takenAt, which a lying API leaves out.
   it.each([
-    ['another deal (offer maximum)', (a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, deal: { ...a.terms!.deal, maxFiatCents: '90000' } } })],
+    ['issued after the trade was taken: accepted', { takenAt: '2026-10-23T11:00:00.000Z' }, {}, Date.parse('2026-10-24T12:00:00Z'), null],
+    ['issued before the trade was taken (older than the trade)', { takenAt: '2026-10-24T12:30:00.000Z' }, {}, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+    ['issued a day in this device’s future', {}, { issuedAt: '2026-10-23T12:00:00.000Z' }, Date.parse('2026-10-22T12:00:00Z'), 'escrow-failed'],
+    ['a take time the view cannot read', { takenAt: 'yesterday' }, {}, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+    ['issued before this device made its identity (backdated), the view without takenAt', {}, { issuedAt: '2026-10-23T12:00:00.000Z' }, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+    ['issued before this device made its identity (backdated), takenAt backdated too', { takenAt: '2026-10-23T11:00:00.000Z' }, { issuedAt: '2026-10-23T12:00:00.000Z' }, Date.parse('2026-10-24T12:00:00Z'), 'escrow-failed'],
+  ] as const)('issuedAt %s', async (_n, viewOver, apiOver, clock, error) => {
+    const t = await setup({ view: tradeView(viewOver), ...apiOver });
+    const buyer = await t.mk('buyer', { now: () => clock });
+    const seller = await t.mk('seller', { now: () => clock });
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    if (error === null) {
+      await until(() => t.parties.calls.some((c) => c.role === 'buyer'));
+      expect(buyer.last()?.error ?? null).toBeNull();
+      return;
+    }
+    expect(await buyer.status((s) => s.phase === 'error')).toMatchObject({ error, retryable: true });
+    expect(t.parties.calls).toEqual([]);
+    expect((await buyer.store.load(CODE))?.failed ?? null).toBeNull();
+    expect((await buyer.store.load(CODE))?.attestation ?? null).toBeNull();
+  });
+
+  it('the record keeps the device time its identity was made, and the attestation is checked against it on every start', async () => {
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
+    const t = await setup();
+    const buyer = await t.mk('buyer', { now: () => clock });
+    const seller = await t.mk('seller', { now: () => clock });
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(() => t.parties.calls.some((c) => c.role === 'buyer'));
+    expect((await buyer.store.load(CODE))?.identityCreatedAt).toBe(Date.parse('2026-10-24T12:00:00.000Z'));
+    await buyer.runtime.stop(CODE);
+    // A later start, a month on: the stored attestation still verifies against the stored time.
+    clock += 30 * 24 * 60 * 60_000;
+    const again = await t.mk('buyer', { idb: buyer.idb, now: () => clock });
+    const before = t.parties.calls.filter((c) => c.role === 'buyer').length;
+    await again.runtime.start(CODE);
+    await until(() => t.parties.calls.filter((c) => c.role === 'buyer').length > before);
+    expect(again.last()?.error ?? null).toBeNull();
+  });
+
+  it('a record written before the identity time was kept still verifies with today\'s unbounded key', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(() => t.parties.calls.some((c) => c.role === 'buyer'));
+    await buyer.runtime.stop(CODE);
+    const rec = (await buyer.store.load(CODE))! as unknown as Record<string, unknown>;
+    delete rec.identityCreatedAt;
+    await buyer.store.save(rec as never);
+    expect(await buyer.store.load(CODE)).not.toHaveProperty('identityCreatedAt');
+    const again = await t.mk('buyer', { idb: buyer.idb });
+    const before = t.parties.calls.filter((c) => c.role === 'buyer').length;
+    await again.runtime.start(CODE);
+    await until(() => t.parties.calls.filter((c) => c.role === 'buyer').length > before);
+    expect(again.last()?.error ?? null).toBeNull();
+  });
+
+  it.each([
+    ['another deal (offer maximum)',(a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, deal: { ...a.terms!.deal, maxFiatCents: '90000' } } })],
     ['another take amount', (a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, deal: { ...a.terms!.deal, takeAmountAtomic: '1' } } })],
     ['another payout address for this buyer', (a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, buyerPayout: '4AttackerAddress' } })],
   ])('the moderator attests %s: deal-mismatch, runParty never called', async (_n, tamper) => {
@@ -453,6 +520,21 @@ describe('what this device signs comes from what the user confirmed, never the A
     t.state.view = tradeView({ state: 'secured', paymentInstructions: INSTRUCTIONS, methodId: 'PAYPAL' });
     await until(() => buyer.last()?.refusal === 'view-mismatch');
     expect(buyer.last()?.methodId).toBe('ZELLE');
+  });
+
+  it('Plan 4 Task 12 (A6): the seller\'s status carries the attested buyer address and take amount to pay a ruling; the buyer\'s none; none before the attestation', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    expect(seller.last()?.restitution ?? null).toBeNull();
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    expect(await seller.status((s) => s.phase === 'ready')).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: AMOUNT } });
+    expect(await buyer.status((s) => s.phase === 'ready')).toMatchObject({ restitution: null });
+    // A view naming another address changes nothing: only the signed terms count.
+    t.state.view = { ...tradeView({ state: 'secured' }), buyerPayout: '4AttackerAddress' } as typeof t.state.view;
+    await Promise.all([t.parties.ticks('seller', 2)]);
+    expect(seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: AMOUNT });
   });
 
   it('re-verify R1: "I\'ve paid" needs this device\'s own view to be secured; a view that says securing (no securedAt, no text) is refused', async () => {
@@ -934,34 +1016,316 @@ describe('settling', () => {
       expect(await t.seller.status(() => true)).toMatchObject({ paidRecorded: false });
     });
 
-    it('a release handed over before paid binds its amount: another amount is refused at the tap and for any release', async () => {
+    /** Secured at the take amount with the standing co-sign handed over and bound, then extra coins unlock and the API grows the trade. */
+    async function boundThenGrown(over: { committed?: Role | null; noMethod?: boolean; hold?: boolean } = {}) {
       const t = await ready();
+      if (over.committed !== undefined) t.parties.committedBuilders.buyer = over.committed;
+      if (over.noMethod) {
+        t.parties.noCommittedBuilder.add('buyer');
+        await t.buyer.runtime.stopAll(); // a new run builds the party without the method
+        const again = await t.mk('buyer', { idb: t.buyer.idb });
+        await again.runtime.resumeAll();
+        t.buyer = again;
+      }
       t.parties.funds = funded();
       t.state.view = tradeView({ state: 'secured' });
       await until(() => t.parties.settles.some((x) => x.role === 'buyer')); // the standing co-sign, at AMOUNT
       await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === AMOUNT);
-      // Extra coins grow the trade and the API follows; the bound release does not move.
+      // Review M1: the party's queued settle() job has not taken the rebound outcome yet (or will refuse it).
+      if (over.hold) t.parties.acceptHeld.add('buyer');
       t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
       t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
-      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null });
+      return t;
+    }
+    /** The buyer's pending co-sign of a release paying the buyer `amount`. */
+    const pendingAt = (t: Awaited<ReturnType<typeof boundThenGrown>>, amount: bigint) => t.parties.pending.find((x) => x.role === 'buyer' && x.o.builder === 'seller' && x.o.to[0]!.amountAtomic === amount);
+    const refuseSwitch = (t: Awaited<ReturnType<typeof boundThenGrown>>, amount: bigint): void => {
+      t.parties.committedBuilders.buyer = 'seller';
+      pendingAt(t, amount)!.reject(new PartyError('bad-outcome', 'already signed for another outcome'));
+    };
+
+    it('growth after the standing co-sign, before paid (gap 2, regtest e2e): the bound release moves UP to the grown amount, the status sum is the grown total, and "I’ve paid" for it is taken; the seller then releases the grown amount', async () => {
+      const t = await boundThenGrown();
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null, error: null, fiatCents: fiatOf(grown) });
+      expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic).toBe(grown);
+      // The new bound was saved before the new outcome reached the party (I8), and the co-sign follows the grown amount.
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.to[0]!.amountAtomic === grown));
+      await pay(t.buyer, grown);
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(grown);
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: grown.toString() });
+      await until(async () => (await t.seller.store.load(CODE))?.acceptedAtomic === grown);
+      await t.seller.runtime.act(CODE, { type: 'release' });
+      await until(() => t.parties.settles.some((x) => x.role === 'seller'));
+      expect(t.parties.settles.find((x) => x.role === 'seller')!.o.to[0]).toEqual({ address: ADDR.buyer, amountAtomic: grown });
+    });
+
+    it('the rebind is upward only: once bound at the grown amount, an API that lowers it again is refused (amount-changed), at the tap too, and the bound survives a reload', async () => {
+      const t = await boundThenGrown();
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === grown);
+      t.state.view = tradeView({ state: 'secured', amountAtomic: middle.toString() });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null, amountAtomic: grown });
       await t.parties.ticks('buyer', 3);
-      expect(t.parties.settles.filter((x) => x.role === 'buyer').every((x) => x.o.to[0]!.amountAtomic === AMOUNT)).toBe(true);
-      await expect(pay(t.buyer, grown)).rejects.toThrow();
-      expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
-      // The binding survives a reload.
+      expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic).toBe(grown);
+      expect(t.parties.settles.filter((x) => x.role === 'buyer').at(-1)!.o.to[0]!.amountAtomic).toBe(grown);
+      await expect(pay(t.buyer, middle)).rejects.toThrow();
       await t.buyer.runtime.stopAll();
       const again = await t.mk('buyer', { idb: t.buyer.idb });
       await again.runtime.resumeAll();
       expect(await again.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null });
-      await expect(again.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(grown) })).rejects.toThrow();
-      t.buyer = again;
+      await expect(again.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(middle) })).rejects.toThrow();
+      expect((await again.store.load(CODE))?.releaseBoundAtomic).toBe(grown);
+    });
+
+    it.each([
+      ['the party reports a committed outcome', { committed: 'seller' as Role }],
+      ['the party cannot say whether it is committed (no committedBuilder: fail closed)', { noMethod: true }],
+    ])('no rebind when %s: the release stays bound at the take amount, amount-changed, the grown tap refused; a refund is not bound', async (_n, over) => {
+      const t = await boundThenGrown(over);
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null, amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) });
+      await t.parties.ticks('buyer', 3);
+      expect(t.parties.settles.filter((x) => x.role === 'buyer').every((x) => x.o.to[0]!.amountAtomic === AMOUNT)).toBe(true);
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+      expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
+      expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic).toBe(AMOUNT);
       // A refund is not bound: the buyer can still cancel, paying the whole balance to the seller.
       await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
       await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.cosigner === 'mod'));
       expect(t.parties.settles.find((x) => x.o.cosigner === 'mod')!.o.to).toEqual([{ address: ADDR.seller, amountAtomic: fundsFor(grown) }]);
     });
 
-    it('I3 status: amountAtomic and fiatCents are the sum this device will accept: the API amount in range, the bound one once a release was handed over (even when the API grows it), the fixed one after paid', async () => {
+    it.each([
+      ['settling (a release under way)', { state: 'settling', settling: 'release' }],
+      ['paid on the API (this device never tapped)', { state: 'paid', paidAt }],
+    ])('no rebind outside secured before paid: %s keeps the bound at the take amount', async (_n, at) => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === AMOUNT);
+      // The device's own size grows while the API still shows the take amount, so only the state can stop the rebind.
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(async () => (await t.buyer.store.load(CODE))?.sizeAtomic === grown);
+      t.state.view = tradeView({ ...at, amountAtomic: grown.toString() });
+      await t.parties.ticks('buyer', 4);
+      expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic).toBe(AMOUNT);
+      expect(t.parties.settles.filter((x) => x.role === 'buyer').every((x) => x.o.to[0]!.amountAtomic === AMOUNT)).toBe(true);
+    });
+
+    it('a rebind the party refuses (already signed for another outcome, a commit that raced the check): no sum is shown, "I’ve paid" is refused, amount-changed, across a reload', async () => {
+      const t = await boundThenGrown({ hold: true }); // a switch the party refuses is never taken
+      await until(() => pendingAt(t, grown) !== undefined);
+      refuseSwitch(t, grown);
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null, amountAtomic: null, fiatCents: null });
+      // Review m2: the flag is saved (awaited) before the prior release goes back to the party.
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseRebindRefused === true);
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+      await expect(pay(t.buyer, AMOUNT)).rejects.toThrow();
+      expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
+      await t.buyer.runtime.stopAll();
+      const again = await t.mk('buyer', { idb: t.buyer.idb });
+      await again.runtime.resumeAll();
+      expect(await again.status((x) => x.refusal === 'amount-changed')).toMatchObject({ amountAtomic: null });
+      await expect(again.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(grown) })).rejects.toThrow();
+    });
+
+    // Gap 4 review M1 with gap 2 (merge of main 7060191b): after a refused rebind the party is
+    // committed to the saved prior release (resumePrior hands it back). A buyer device closed before
+    // it saw that release done, and back after the trade closed, must prove THAT outcome landed.
+    it('after a refused rebind, a device back after the trade closed proves the prior release landed: done with that outcome, never escrow-failed', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      refuseSwitch(t, grown);
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseRebindRefused === true);
+      const prior = (await t.buyer.store.load(CODE))!.releasePrior!.outcome;
+      await t.buyer.runtime.stopAll();
+      t.state.view = tradeView({ state: 'released', paidAt });
+      t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+      t.parties.landedFn = (role, o) => (role === 'buyer' && json(o.to) === json(prior.to) && o.builder === prior.builder ? 'b'.repeat(64) : null);
+      const again = await t.mk('buyer', { idb: t.buyer.idb });
+      await again.runtime.resumeAll();
+      await until(async () => (await again.store.load(CODE))?.intent?.done === true);
+      const rec = (await again.store.load(CODE))!;
+      expect(json(rec.intent!.outcome!.to)).toBe(json(prior.to));
+      expect(rec.settleSeenAt).not.toBeNull();
+      expect(again.last()?.phase).toBe('done');
+      expect(again.statuses.some((s) => s.phase === 'error')).toBe(false);
+    });
+
+    it('review M1: until the party has taken settle(grown), the status keeps the take amount as the sum and "I’ve paid" for the grown total is refused; once taken, the grown sum shows and the tap passes', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic).toBe(grown); // saved before the hand-over (I8)
+      await t.parties.ticks('buyer', 3);
+      expect(t.buyer.last()).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT), refusal: null });
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+      expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
+      t.parties.accept('buyer');
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null, fiatCents: fiatOf(grown) });
+      expect((await t.buyer.store.load(CODE))?.releasePrior ?? null).toBeNull(); // review m3: cleared once taken
+      await pay(t.buyer, grown);
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(grown);
+    });
+
+    it('review M1 + M2: a tap at the take amount while the rebind is still pending pays the take amount (the bound goes back); a refusal after that tap still sets the flag, and the committed release is handed back to the party', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      // The API still shows the take amount to this tap (the page's sum was the take amount).
+      t.state.view = tradeView({ state: 'secured' });
+      await pay(t.buyer, AMOUNT);
+      const rec = (await t.buyer.store.load(CODE))!;
+      expect(rec.acceptedAtomic).toBe(AMOUNT);
+      expect(rec.releaseBoundAtomic).toBe(AMOUNT);
+      const prior = rec.releasePrior!.outcome;
+      const n = t.parties.settles.length;
+      refuseSwitch(t, grown);
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ amountAtomic: null });
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseRebindRefused === true);
+      // The saved prior outcome (the one the party is committed to) goes back to the party.
+      await until(() => t.parties.settles.slice(n).some((x) => x.role === 'buyer' && json(x.o.to) === json(prior.to) && x.o.builder === prior.builder));
+    });
+
+    it('review m7: two growths while the party has not taken the first rebind: no second rebind, the prior and the sum stay at the take amount', async () => {
+      const grown2 = 1_400_000_000_000n;
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      const prior = (await t.buyer.store.load(CODE))!.releasePrior!;
+      expect(prior.boundAtomic).toBe(AMOUNT);
+      // More extra coins unlock and the API grows the trade again, before the party took the first rebind.
+      t.parties.funds = { balance: fundsFor(grown2), unlocked: fundsFor(grown2), incoming: [] };
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown2.toString() });
+      await until(async () => (await t.buyer.store.load(CODE))?.sizeAtomic === grown2);
+      await t.parties.ticks('buyer', 4);
+      const rec = (await t.buyer.store.load(CODE))!;
+      expect(rec.releaseBoundAtomic).toBe(grown);
+      expect(json(rec.releasePrior)).toBe(json(prior));
+      expect(t.parties.settles.some((x) => x.role === 'buyer' && x.o.to[0]!.amountAtomic === grown2)).toBe(false);
+      expect(t.buyer.last()).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) });
+      await expect(pay(t.buyer, grown2)).rejects.toThrow();
+    });
+
+    it('review m8: a rebind waits until the party took the outcome the device last handed it, so the saved prior is the one the party holds', async () => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === AMOUNT);
+      await until(() => t.parties.accepted.buyer != null);
+      // Extra coins unlock while the API still shows the take amount: the device re-derives the
+      // release at the new balance, but the party's queue has not taken it yet.
+      t.parties.acceptHeld.add('buyer');
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer' && sumTo(x.o) === fundsFor(grown) && x.o.to[0]!.amountAtomic === AMOUNT));
+      const handed = t.parties.settles.filter((x) => x.role === 'buyer').at(-1)!.o;
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      await t.parties.ticks('buyer', 4);
+      let rec = (await t.buyer.store.load(CODE))!;
+      expect(rec.releaseBoundAtomic).toBe(AMOUNT); // no rebind yet
+      expect(rec.releasePrior ?? null).toBeNull();
+      expect(t.buyer.last()).toMatchObject({ amountAtomic: AMOUNT });
+      // The party takes the re-derived release: now the rebind happens, with exactly that outcome saved.
+      t.parties.accept('buyer');
+      t.parties.acceptHeld.add('buyer');
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === grown);
+      rec = (await t.buyer.store.load(CODE))!;
+      expect(json(rec.releasePrior!.outcome)).toBe(json({ to: handed.to, builder: handed.builder, cosigner: handed.cosigner }));
+    });
+
+    it('review M1: after a rebind, the tap is refused while the party reports a committed outcome', async () => {
+      const t = await boundThenGrown();
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null });
+      t.parties.committedBuilders.buyer = 'seller';
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+      expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
+      t.parties.committedBuilders.buyer = null;
+      await pay(t.buyer, grown);
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(grown);
+    });
+
+    it('review M2: reload after a refused rebind: the party is handed the committed release at the take amount again, and it completes', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      refuseSwitch(t, grown);
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseRebindRefused === true);
+      const prior = (await t.buyer.store.load(CODE))!.releasePrior!.outcome;
+      await t.buyer.runtime.stopAll();
+      t.parties.pending = t.parties.pending.filter((x) => x.role !== 'buyer');
+      const n = t.parties.settles.length;
+      const again = await t.mk('buyer', { idb: t.buyer.idb });
+      await again.runtime.resumeAll();
+      await until(() => t.parties.pending.some((x) => x.role === 'buyer'));
+      const resumed = t.parties.settles.slice(n).filter((x) => x.role === 'buyer');
+      expect(resumed.map((x) => x.o.to)).toEqual([prior.to]);
+      expect(resumed[0]!.o.to[0]!.amountAtomic).toBe(AMOUNT);
+      // The party completes it: this device's own settle is done.
+      t.parties.pending.find((x) => x.role === 'buyer')!.resolve('ab'.repeat(32));
+      await until(async () => (await again.store.load(CODE))?.intent?.done === true);
+      expect((await again.store.load(CODE))!.intent!.outcome!.to).toEqual(prior.to);
+    });
+
+    it('review m2: the refused flag is saved before anything acts on it: a save that fails stops the trade (retryable) and hands no prior release to the party', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      const save = t.buyer.store.save.bind(t.buyer.store);
+      t.buyer.store.save = async (r) => {
+        if (r.releaseRebindRefused === true) throw new Error('disk full');
+        return save(r);
+      };
+      const n = t.parties.settles.length;
+      refuseSwitch(t, grown);
+      expect(await t.buyer.status((x) => x.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: true });
+      expect(t.parties.settles.slice(n).filter((x) => x.role === 'buyer')).toEqual([]);
+      // In memory the flag already closed the tap.
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+    });
+
+    it('review m3: once the party took the rebound outcome, a later "already signed" (dust re-derived the same amount) does not set the refused flag', async () => {
+      const t = await boundThenGrown();
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null });
+      await until(async () => ((await t.buyer.store.load(CODE))?.releasePrior ?? null) === null);
+      t.parties.acceptHeld.add('buyer');
+      t.parties.funds = { balance: fundsFor(grown) + 7n, unlocked: fundsFor(grown) + 7n, incoming: [] };
+      await until(() => t.parties.pending.some((x) => x.role === 'buyer' && sumTo(x.o) === fundsFor(grown) + 7n));
+      t.parties.committedBuilders.buyer = 'seller';
+      t.parties.pending.find((x) => x.role === 'buyer' && sumTo(x.o) === fundsFor(grown) + 7n)!.reject(new PartyError('bad-outcome', 'already signed for another outcome'));
+      await t.parties.ticks('buyer', 3);
+      expect((await t.buyer.store.load(CODE))?.releaseRebindRefused ?? false).toBe(false);
+      expect(t.buyer.last()).toMatchObject({ amountAtomic: grown });
+    });
+
+    it('review m6: extra coins gone after a rebind (a deep reorg): no sum that cannot be tapped, the true state amount-out-of-range', async () => {
+      const t = await boundThenGrown();
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null });
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      expect(await t.buyer.status((x) => x.amountAtomic === null)).toMatchObject({ refusal: 'amount-out-of-range', fiatCents: null });
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+      // A refund is never bound: the buyer can still cancel.
+      await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.cosigner !== 'seller' && x.o.builder === 'buyer'));
+    });
+
+    it('Plan 4 Task 12 (B1): a grown trade\'s ruling payment is the amount this seller fixed at paid, never the take amount; a view naming another amount changes nothing', async () => {
+      const t = await paidAtMiddle();
+      expect(await t.seller.status((x) => x.restitution?.amountAtomic === middle)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: middle } });
+      for (const lie of [AMOUNT, grown, grown * 2n]) {
+        t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: lie.toString() });
+        await t.parties.ticks('seller', 2);
+        expect(t.seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: middle });
+      }
+    });
+
+    it('Plan 4 Task 12 (B1): a seller funded above the take amount, nothing fixed yet: the ruling payment is the grown amount (the API amount within [take, own size]); above its own size, no amount (no form)', async () => {
+      const t = await ready();
+      t.state.view = tradeView({ state: 'securing' });
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown);
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      expect(await t.seller.status((x) => x.restitution?.amountAtomic === grown)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: grown } });
+      expect(t.seller.last()?.restitution?.amountAtomic).not.toBe(AMOUNT);
+      // An API amount above what this device's own escrow funds grew to: no amount, so no form.
+      t.state.view = tradeView({ state: 'secured', amountAtomic: (grown + 1n).toString() });
+      expect(await t.seller.status((x) => x.restitution === null)).toMatchObject({ restitution: null });
+    });
+
+    it('I3 status: amountAtomic and fiatCents are the sum this device will accept: the API amount in range, the bound one once a release was handed over (moved up by growth before paid, never down), the fixed one after paid', async () => {
       const t = await ready();
       expect(await t.buyer.status((x) => x.phase === 'ready')).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) }); // the API amount, in range
       // The API shows an amount above this device's own size: nothing this device accepts (and nothing to show as the sum).
@@ -971,20 +1335,23 @@ describe('settling', () => {
       t.parties.funds = funded();
       t.state.view = tradeView({ state: 'secured' });
       await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === AMOUNT);
-      // Extra coins grow the trade and the API follows: the status keeps the bound amount, the only one the device will release for.
+      // Extra coins grow the trade and the API follows, before paid: the bound moves up and the status shows the grown sum (gap 2).
       t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
       t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
-      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) });
-      await expect(pay(t.buyer, grown)).rejects.toThrow(); // the page never offered the grown sum
+      expect(await t.buyer.status((x) => x.amountAtomic === grown)).toMatchObject({ refusal: null, fiatCents: fiatOf(grown) });
       // The seller has fixed nothing yet: its status follows the API amount within its own range.
       await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown);
       expect(await t.seller.status((x) => x.amountAtomic === grown)).toMatchObject({ fiatCents: fiatOf(grown) });
-      // The API shows the take amount again and the buyer pays it: both sides now carry the fixed amount.
+      // The API shows the take amount again: the bound never moves down, so the status keeps the grown sum.
       t.state.view = tradeView({ state: 'secured' });
-      await pay(t.buyer);
-      expect(await t.buyer.status((x) => x.refusal === null)).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) });
-      await until(async () => (await t.seller.store.load(CODE))?.acceptedAtomic === AMOUNT);
-      expect(await t.seller.status((x) => x.amountAtomic === AMOUNT)).toMatchObject({ fiatCents: fiatOf(AMOUNT) });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ amountAtomic: grown, fiatCents: fiatOf(grown) });
+      await expect(pay(t.buyer)).rejects.toThrow();
+      // The API shows the grown amount and the buyer pays it: both sides now carry the fixed amount.
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      await pay(t.buyer, grown);
+      expect(await t.buyer.status((x) => x.refusal === null)).toMatchObject({ amountAtomic: grown, fiatCents: fiatOf(grown) });
+      await until(async () => (await t.seller.store.load(CODE))?.acceptedAtomic === grown);
+      expect(await t.seller.status((x) => x.amountAtomic === grown)).toMatchObject({ fiatCents: fiatOf(grown) });
     });
 
     it('I1: a release bound at its first hand-over stays bound when the API flips secured, lapsed, secured with a lower amount', async () => {
@@ -1362,6 +1729,43 @@ describe('settling', () => {
     expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic).toBe(AMOUNT);
   });
 
+  // Gap 4 (20 Nov): the seller's refund view says when the page may close by `handedOff`.
+  it("the seller's refund: handedOff only once the party says its part is finished (the moderator submitted it), while the phase is still signing; never before", async () => {
+    const t = await ready();
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
+    await t.seller.runtime.act(CODE, { type: 'build-refund' });
+    await until(() => t.parties.settles.some((x) => x.role === 'seller'));
+    expect(t.parties.settles.find((x) => x.role === 'seller')!.o).toMatchObject({ builder: 'seller', cosigner: 'mod' });
+    await until(() => t.seller.last()?.phase === 'signing');
+    expect(t.seller.last()?.handedOff).toBe(false);
+    expect(t.seller.last()?.keepOpen).toBe(true);
+    await t.parties.ticks('seller', 2);
+    expect(t.seller.last()?.handedOff).toBe(false); // the party has not said so: still needed
+    t.parties.sent.seller = true;
+    await until(() => t.seller.last()?.handedOff === true);
+    expect(t.seller.last()?.phase).toBe('signing'); // in no block yet: the settle itself is not done
+    for (const p of t.parties.pending.filter((x) => x.role === 'seller')) p.resolve(null);
+    await until(() => t.seller.last()?.phase === 'done');
+    expect(t.seller.last()?.handedOff).toBe(true);
+  });
+
+  it('handedOff is false with no settle under way, whatever the party says, and false on an error', async () => {
+    const t = await ready();
+    t.parties.sent.seller = true;
+    t.parties.sent.buyer = true;
+    await t.parties.ticks('seller', 2);
+    expect(t.seller.last()?.phase).toBe('ready');
+    expect(t.seller.last()?.handedOff).toBe(false);
+    expect(t.buyer.last()?.handedOff).toBe(false);
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
+    await until(() => t.seller.last()?.handedOff === true); // the runtime's own auto-refund intent, settled by the party
+    t.parties.fundsError.seller = new Error('wallet gone');
+    await until(() => t.seller.last()?.phase === 'error');
+    expect(t.seller.last()?.handedOff).toBe(false);
+  });
+
   it('lapsed with funds: the seller builds the lapse refund automatically and the buyer co-signs it', async () => {
     const t = await ready();
     const part = 400_000_000_000n;
@@ -1536,6 +1940,31 @@ describe('resume on load (Review Focus 1)', () => {
     expect(calls[1]!.args.me.signPublic).toBe(calls[0]!.args.me.signPublic);
   });
 
+  // The flake of 20 Nov (review 3, this test's line "intent.done" under load): settle's resolution set
+  // intent.done in memory, then awaited its save, and a tick's refresh in between already showed
+  // `done`. A slow save makes it certain: `done` must never show before it is stored.
+  it('the done phase shows only once the settled intent is stored (a slow save, a tick in between)', async () => {
+    const t = await setup();
+    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await pay(buyer);
+    await seller.runtime.act(CODE, { type: 'release' });
+    await until(() => t.parties.pending.some((p) => p.role === 'seller'));
+    const save = seller.store.save.bind(seller.store);
+    seller.store.save = async (r) => {
+      if (r.intent?.done === true) await new Promise((x) => setTimeout(x, 80));
+      await save(r);
+    };
+    t.parties.pending.find((p) => p.role === 'seller')!.resolve(null);
+    await until(() => seller.last()?.phase === 'done');
+    expect((await seller.store.load(CODE))?.intent?.done).toBe(true);
+  });
+
   it('once settle resolved, a reload never calls settle again', async () => {
     const t = await setup();
     const seller = await t.mk('seller');
@@ -1586,6 +2015,137 @@ describe('resume on load (Review Focus 1)', () => {
     await tab1.runtime.stopAll();
     await until(() => tab2.last()?.phase === 'ready');
   });
+});
+
+// Security review 20 Nov, M1: a builder that was closed before it saw its own settle in a block (for
+// the seller, after "the moderator has sent the refund") and comes back once the trade has closed.
+// The closed trade's relay no longer brings the DONE and cosignPolicy hands a closed trade's
+// outcome to no party, so only the party's chain proof (landed) can tell "my tx landed" from
+// "settled elsewhere". Every builder-returns-after-close flow: no-show refund, seller-built
+// release, lapse refund, buyer cancel.
+describe('review M1: a builder that comes back after the trade closed', () => {
+  const emptied = () => ({ balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] });
+  type Flow = { name: string; builder: 'seller' | 'buyer'; closed: Record<string, unknown>; tap: (t: Awaited<ReturnType<typeof setup>> & { buyer: Device; seller: Device }) => Promise<void> };
+  const FLOWS: Flow[] = [
+    {
+      name: 'no-show refund (seller-built, the moderator co-signs)',
+      builder: 'seller',
+      closed: { state: 'refunded', settling: 'auto-refund' },
+      tap: async (t) => {
+        t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
+        await t.seller.runtime.act(CODE, { type: 'build-refund' });
+      },
+    },
+    {
+      name: 'release (seller-built, the buyer co-signs)',
+      builder: 'seller',
+      closed: { state: 'released', paidAt: '2026-10-23T12:30:00.000Z' },
+      tap: async (t) => {
+        t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+        await pay(t.buyer);
+        await t.seller.runtime.act(CODE, { type: 'release' });
+      },
+    },
+    {
+      name: 'lapse refund (seller-built, the buyer co-signs)',
+      builder: 'seller',
+      closed: { state: 'refunded', settling: 'lapse-refund' },
+      tap: async (t) => {
+        t.state.view = tradeView({ state: 'lapsed' });
+      },
+    },
+    {
+      name: 'buyer cancel (buyer-built, the moderator co-signs)',
+      builder: 'buyer',
+      closed: { state: 'refunded', settling: 'buyer-cancel' },
+      tap: async (t) => {
+        t.state.view = tradeView({ state: 'secured' });
+        await until(() => t.parties.settles.some((s) => s.role === 'buyer')); // the standing release co-sign
+        await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
+      },
+    },
+  ];
+
+  /** The builder settles (its settle never resolves here), its device closes, the trade closes and empties, and the device comes back. */
+  async function returnsAfterClose(f: Flow, landed: string | null, who: 'seller' | 'buyer' = f.builder) {
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
+    const t = await setup();
+    const opts = { now: () => clock, settledElsewhereMs: 60_000 };
+    const seller = await t.mk('seller', opts);
+    const buyer = await t.mk('buyer', opts);
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    const all = { ...t, seller, buyer };
+    await f.tap(all);
+    await until(() => t.parties.pending.some((p) => p.role === who && p.o.builder === f.builder));
+    const built = t.parties.pending.filter((p) => p.role === who && p.o.builder === f.builder).at(-1)!.o;
+    const dev = who === 'seller' ? seller : buyer;
+    // A co-signer's standing release co-sign shows 'ready' until the API settles; its outcome is saved all the same.
+    await dev.status((s) => s.phase === 'signing' || (who !== f.builder && s.phase === 'ready'));
+    await until(async () => (await dev.store.load(CODE))?.intent?.outcome != null);
+    await dev.runtime.stopAll(); // closed before it saw its tx in a block
+    t.state.view = tradeView(f.closed);
+    t.parties.funds = emptied();
+    t.parties.landedFor[who] = landed;
+    const again = await t.mk(who, { ...opts, idb: dev.idb });
+    await again.runtime.resumeAll();
+    return { ...all, again, built, advance: (ms: number) => (clock += ms) };
+  }
+
+  // Review N-M1 (21 Nov): a co-signer (the buyer of a seller-built release) whose party has no proof
+  // of its own (a DONE from the builder is never its proof) still raises the alarm after the grace.
+  it('a co-signer (the buyer of a release) back after the trade closed with no proof from its party: escrow-failed after the grace, never done', async () => {
+    const t = await returnsAfterClose(FLOWS[1]!, null, 'buyer');
+    await t.parties.ticks('buyer', 3);
+    expect(t.parties.landedAsked.some((x) => x.role === 'buyer')).toBe(true);
+    expect(t.again.last()?.phase).not.toBe('done');
+    t.advance(60_000);
+    expect(await t.again.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+    expect((await t.again.store.load(CODE))?.intent?.done).toBe(false);
+  });
+
+  // Review N-m2 (W8): a landed() that rejects (a daemon that cannot answer) is never proof.
+  it('a landed() that rejects is never proof: the emptying still counts as settled elsewhere after the grace', async () => {
+    const t = await returnsAfterClose(FLOWS[0]!, null);
+    t.parties.landedFn = () => {
+      throw new Error('daemon-unavailable');
+    };
+    await t.parties.ticks('seller', 3);
+    expect(t.again.last()?.phase).not.toBe('done');
+    t.advance(60_000);
+    expect(await t.again.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+    expect((await t.again.store.load(CODE))?.intent?.done).toBe(false);
+  });
+
+  for (const f of FLOWS) {
+    it(`${f.name}: the party proves its outcome landed, so the device ends done (settleSeenAt set), never escrow-failed`, async () => {
+      const t = await returnsAfterClose(f, 'a'.repeat(64));
+      await until(async () => (await t.again.store.load(CODE))?.settleSeenAt != null);
+      expect((await t.again.store.load(CODE))?.intent?.done).toBe(true);
+      expect(t.again.last()?.phase).toBe('done');
+      // The proof was asked for exactly the outcome this device built, and nothing new was handed to the party.
+      const asked = t.parties.landedAsked.filter((x) => x.role === f.builder);
+      expect(asked.length).toBeGreaterThan(0);
+      for (const x of asked) expect(x.o).toEqual(t.built);
+      const settlesBefore = t.parties.settles.length;
+      t.advance(10 * 60_000);
+      await t.parties.ticks(f.builder, 3);
+      expect(t.again.statuses.some((s) => s.phase === 'error')).toBe(false);
+      expect((await t.again.store.load(CODE))?.failed ?? null).toBeNull();
+      expect(t.parties.settles.length).toBe(settlesBefore);
+    });
+
+    it(`${f.name}: with no proof the emptying still counts as settled elsewhere (escrow-failed after the grace)`, async () => {
+      const t = await returnsAfterClose(f, null);
+      await t.parties.ticks(f.builder, 3);
+      expect(t.again.last()?.phase).not.toBe('error'); // not yet: the grace runs
+      t.advance(60_000);
+      expect(await t.again.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+      expect((await t.again.store.load(CODE))?.intent?.done).toBe(false);
+    });
+  }
 });
 
 describe('after the trade closes: the escrow store is kept for 30 days or until this device saw its settle confirmed, whichever is later', () => {
@@ -1991,5 +2551,127 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     delete t.parties.relayClosed.seller;
     await t.seller.runtime.retry(CODE);
     expect(await t.seller.status((s) => s.phase === 'signing')).toMatchObject({ error: null });
+  });
+});
+
+/**
+ * Regtest e2e gap 5 (Plan 5 Tasks 15 and 20): the trade chat is attested only once both traders
+ * registered a chat identity. The runtime now asks the worker to register this device's (the
+ * `prepareChat` dep, chat/prepare.ts) as soon as its trade identity is registered, so neither side
+ * has to open the chat first.
+ */
+describe('the trade chat identity is registered when the device runs the trade (gap 5)', () => {
+  it('each device asks once its trade identity is registered, before any attestation exists', async () => {
+    const t = await setup();
+    const asked: Array<{ code: string; registered: boolean }> = [];
+    // Only the seller runs: no attestation can be made, yet its chat identity is asked for.
+    const seller = await t.mk('seller', { prepareChat: async (code) => void asked.push({ code, registered: t.state.identities.seller !== undefined }) });
+    await seller.runtime.start(CODE);
+    await until(() => asked.length === 1);
+    expect(asked).toEqual([{ code: CODE, registered: true }]);
+    expect(seller.last()?.phase).toBe('verifying');
+    const buyerAsked: string[] = [];
+    const buyer = await t.mk('buyer', { prepareChat: async (code) => void buyerAsked.push(code) });
+    await buyer.runtime.start(CODE);
+    await until(() => buyer.last()?.phase === 'ready' && seller.last()?.phase === 'ready');
+    expect(buyerAsked).toEqual([CODE]);
+    expect(asked).toHaveLength(1);
+  });
+
+  it('a failing ask is tried again, and the escrow never waits on it', async () => {
+    const t = await setup();
+    let tries = 0;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const buyer = await t.mk('buyer', {
+      prepareChat: async () => {
+        tries++;
+        if (tries < 3) throw Object.assign(new Error('api 503'), { status: 503 });
+        await held;
+      },
+    });
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(() => buyer.last()?.phase === 'ready' && seller.last()?.phase === 'ready');
+    await until(() => tries === 3);
+    release();
+  });
+
+  it('done once is kept in the record: a resume does not ask again', async () => {
+    const t = await setup();
+    let asks = 0;
+    const prepareChat = async (): Promise<void> => void asks++;
+    const buyer = await t.mk('buyer', { prepareChat });
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => (await buyer.store.load(CODE))?.chatPrepared === true);
+    await buyer.runtime.stopAll();
+    const again = await t.mk('buyer', { idb: buyer.idb, prepareChat });
+    await again.runtime.resumeAll();
+    await again.status((s) => s.phase === 'ready');
+    expect(asks).toBe(1);
+  });
+
+  // Lead call (20 Nov): only for a trade still open. A closed trade never creates a chat or registers a chat identity.
+  it.each(['released', 'refunded', 'cancelled', 'lapsed'])('a %s trade is never asked for, though its trade identity registers', async (state) => {
+    let asks = 0;
+    const t = await setup({ view: tradeView({ state }) });
+    const buyer = await t.mk('buyer', { prepareChat: async () => void asks++ });
+    await buyer.runtime.start(CODE);
+    await until(() => t.state.identities.buyer !== undefined);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(asks).toBe(0);
+  });
+
+  it('a trade gone from the API (404, or purged: 410) is never asked for', async () => {
+    for (const status of [404, 410]) {
+      let asks = 0;
+      let reads = 0;
+      const t = await setup();
+      const api = t.api.forRole('buyer');
+      const gone = { ...api, getTrade: async () => (++reads > 1 ? Promise.reject(Object.assign(new Error(`api ${status}`), { status, code: 'not-found' })) : api.getTrade()) };
+      const buyer = await t.mk('buyer', { api: gone, prepareChat: async () => void asks++ });
+      await buyer.runtime.start(CODE);
+      await until(() => t.state.identities.buyer !== undefined && reads >= 2);
+      await new Promise((r) => setTimeout(r, 60));
+      expect(asks).toBe(0);
+      // Review m3: the loop ended after that one read (the run itself reads no view while it waits
+      // for the attestation), never re-reading every pollMs.
+      expect(reads).toBe(2);
+      await buyer.runtime.stopAll();
+    }
+  });
+
+  it('a trade that closes while the ask is being retried is not asked for again', async () => {
+    let asks = 0;
+    const t = await setup();
+    const buyer = await t.mk('buyer', {
+      prepareChat: async () => {
+        asks++;
+        t.state.view = { ...t.state.view, state: 'lapsed' };
+        throw Object.assign(new Error('api 503'), { status: 503 });
+      },
+    });
+    await buyer.runtime.start(CODE);
+    await until(() => asks === 1);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(asks).toBe(1);
+  });
+
+  it('never asked when the trade identity is refused (409 identity-conflict) or the start is not confirmed', async () => {
+    let asks = 0;
+    const prepareChat = async (): Promise<void> => void asks++;
+    const t = await setup({ refuse: { identity: 'identity-conflict' } });
+    const buyer = await t.mk('buyer', { prepareChat });
+    await buyer.runtime.start(CODE);
+    await until(() => buyer.last()?.phase === 'error');
+    const t2 = await setup();
+    const lone = await t2.mk('seller', { prepareChat });
+    await lone.rawStart(CODE);
+    await until(() => lone.last()?.error === 'not-confirmed');
+    await new Promise((r) => setTimeout(r, 30));
+    expect(asks).toBe(0);
   });
 });

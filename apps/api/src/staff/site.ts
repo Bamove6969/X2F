@@ -3,6 +3,7 @@ import type pg from 'pg';
 import { withTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
+import type { Queryable } from '../db/pool.js';
 import type { LogAction } from '../log/actions.js';
 import { MAINTENANCE_KINDS, readSiteState, type SiteState } from '../site/routes.js';
 import { requireStaff } from './guard.js';
@@ -51,9 +52,25 @@ function futureTime(v: unknown, after: Date, field: string): Date {
 }
 
 /**
+ * The site state as the owner's staff pages see it: the trader-side state plus `logAlarm`, the time
+ * the moderation process's daily activity-log check first failed (`site_flags.log_alarm`, Task 14),
+ * or null. StaffOverview shows its card only when it is set (Task 17). Never on `GET /v1/site`.
+ */
+export interface StaffSiteState extends SiteState {
+  logAlarm: string | null;
+}
+
+export async function readStaffSiteState(db: Queryable): Promise<StaffSiteState> {
+  const state = await readSiteState(db);
+  const { rows } = await db.query<{ log_alarm: Date | null }>('select log_alarm from site_flags');
+  return { ...state, logAlarm: rows[0]?.log_alarm?.toISOString() ?? null };
+}
+
+/**
  * Plan 4 Task 8, the site controls (perm `site.control`, the owner), each change logged in its own
  * transaction (the log entry last):
- * - `GET /staff/v1/site` → the full state (the staff Settings page; builder addition).
+ * - `GET /staff/v1/site` → the full state with `logAlarm` (`StaffSiteState`; builder addition). Every
+ *   staff site answer below is that same state.
  * - `POST /staff/v1/site/stop { tapId }` (tap intent `emergency-stop`): `trading_paused` on and
  *   `stopped_at`. Plan 3 then refuses new offers and takes with `trading-paused`; existing trades go on.
  * - `POST /staff/v1/site/resume { tapId }` (tap intent `resume-trading`).
@@ -85,7 +102,7 @@ export function staffSiteRoutes(app: FastifyInstance): void {
     appendLog(c, { at: req.server.deps.clock(), actor: { kind: 'staff', id: req.staff.accountId, role: req.staff.role }, tradeCode: null, action, detail });
   const tx = <T>(req: FastifyRequest, fn: (c: pg.PoolClient) => Promise<T>) => withTx(req.server.deps.db, fn);
 
-  app.get('/staff/v1/site', opts, async (req): Promise<SiteState> => readSiteState(req.server.deps.db));
+  app.get('/staff/v1/site', opts, async (req): Promise<StaffSiteState> => readStaffSiteState(req.server.deps.db));
 
   for (const which of ['stop', 'resume'] as const) {
     app.post(`/staff/v1/site/${which}`, opts, async (req) => {
@@ -100,7 +117,7 @@ export function staffSiteRoutes(app: FastifyInstance): void {
             ? await c.query('update site_flags set trading_paused = true, stopped_at = $1 where not trading_paused', [now])
             : await c.query('update site_flags set trading_paused = false, stopped_at = null where trading_paused');
         if (rowCount) await log(c, req, which === 'stop' ? 'site.stopped' : 'site.resumed');
-        return readSiteState(c);
+        return readStaffSiteState(c);
       });
     });
   }
@@ -124,7 +141,7 @@ export function staffSiteRoutes(app: FastifyInstance): void {
     return tx(req, async (c) => {
       await c.query('update site_flags set banner_text = $1, banner_kind = $2', [text, b.kind]);
       await log(c, req, 'site.banner-set', { kind: b.kind });
-      return readSiteState(c);
+      return readStaffSiteState(c);
     });
   });
 
@@ -148,7 +165,7 @@ export function staffSiteRoutes(app: FastifyInstance): void {
             where maintenance_since is not null`,
         );
         if (rowCount) await log(c, req, 'site.maintenance-off');
-        return readSiteState(c);
+        return readStaffSiteState(c);
       });
     }
     // Owner G19 (7 Nov): no default kind; the staff member says which (an emergency is internal).
@@ -174,7 +191,7 @@ export function staffSiteRoutes(app: FastifyInstance): void {
         [now, message ?? (fromPlan ? (plan?.planned_message ?? null) : null), kind, backBy ?? planEnd, fromPlan],
       );
       if (rows[0]?.was !== true) await log(c, req, 'site.maintenance-on', { kind });
-      return readSiteState(c);
+      return readStaffSiteState(c);
     });
   });
 
@@ -187,7 +204,7 @@ export function staffSiteRoutes(app: FastifyInstance): void {
     return tx(req, async (c) => {
       await c.query('update site_flags set planned_start = $1, planned_end = $2, planned_message = $3', [startsAt, endsAt, message]);
       await log(c, req, 'site.maintenance-planned', { startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() });
-      return readSiteState(c);
+      return readStaffSiteState(c);
     });
   });
 

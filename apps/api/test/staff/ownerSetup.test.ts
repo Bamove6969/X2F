@@ -183,7 +183,44 @@ describe('the pending owner account', () => {
   });
 });
 
+describe('an owner name that looks like an existing trader or member (review lead-signup-rules-main M1)', () => {
+  it('is refused with 400 display-name-reserved and creates no owner; an unlike name works', async () => {
+    const { app, deps } = await fresh();
+    const { seedAccount } = await import('../helpers/accounts.js');
+    const trader = await seedAccount(deps, { loginName: 'trader-login', displayName: 'Mira_K7' });
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+       values ($1, 'Ren_Q7', 'ren_q7', '{offers-see}', $2, $2)`,
+      [trader, new Date(T0.getTime() + HOUR)],
+    );
+    const code = (await ensureSetupCode(deps))!;
+    const b = new StaffBrowser(app);
+    expect((await enterCode(b, code)).statusCode).toBe(200);
+    for (const displayName of ['Mira.K7', 'M1ra-k7', 'ren.q7', 'Re_nQ7']) {
+      const res = await b.post('/staff/v1/setup/account', { displayName, loginName: 'owner-login' });
+      expect({ displayName, status: res.statusCode, error: errorOf(res) }).toEqual({ displayName, status: 400, error: 'display-name-reserved' });
+    }
+    expect((await deps.db.query("select 1 from accounts where kind = 'owner'")).rows).toHaveLength(0);
+    const ok = await b.post('/staff/v1/setup/account', { displayName: 'lumen.k', loginName: 'owner-login' });
+    expect(ok.statusCode, ok.body).toBe(201);
+  });
+});
+
 describe('keys and finish', () => {
+  it('the setup key\'s challenge is the staff site\'s own domain: sha256("x2f-owner-setup-v1\\n" + nonce) (re-verify X2)', async () => {
+    const { ownerSetupChallenge } = await import('@x2f/staff');
+    const { app, deps } = await fresh();
+    const b = await begin(app, deps);
+    const start = (await b.post('/staff/v1/setup/key/start', {})).json();
+    expect(start.setupNonce).toMatch(/^[0-9a-f]{64}$/);
+    expect(start.options.challenge).toBe(Buffer.from(ownerSetupChallenge(start.setupNonce)).toString('base64url'));
+    await deps.db.query('update challenges set webauthn_challenge = $2 where id = $1', [start.challengeId, Buffer.alloc(32, 7).toString('base64url')]);
+    const res = await b.post('/staff/v1/setup/key/finish', {
+      challengeId: start.challengeId, response: key().register({ ...start.options, challenge: Buffer.alloc(32, 7).toString('base64url') }, STAFF_ORIGIN), label: 'Main key',
+    });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 400, error: 'challenge-expired' });
+  });
+
   it('accepts attested security keys only (method-not-allowed otherwise)', async () => {
     const { app, deps } = await fresh();
     const b = await begin(app, deps);

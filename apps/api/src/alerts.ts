@@ -12,6 +12,9 @@ export type AlertKind =
   | 'sessions-ended'
   | 'wallet-added'
   | 'wallet-removed'
+  // Review of wip/third-trade-wallet 17 Nov (b) M1: a one-time wallet given back when its trade ended
+  // in setup. Detail: app, label, addressEnd.
+  | 'wallet-restored'
   | 'device-key-added'
   // Task 16: new-device approval and "One device at a time".
   | 'login-approval'
@@ -46,6 +49,9 @@ export type AlertKind =
   // Owner only: a seller's cancel refund landed after an escrow ruling was proposed or published
   // on the buyer's dispute; the case needs a person to re-rule (re-verify 43fbbb2f, R-I1).
   | 'dispute-refund-after-ruling'
+  // Owner only: a ruling's payout was seen on chain after the case was closed (security review
+  // 2026-11-12 I7); the trade stays disputed and needs a person.
+  | 'ruling-payout-dispute-closed'
   // Owner only: the fee wallet's sweep to the cold wallet (B-006, Plan 4 Task 9).
   | 'fee-sweep-due'
   | 'fee-sweep-failed'
@@ -54,7 +60,22 @@ export type AlertKind =
   | 'staff-security-reset-finished'
   // Owner only: an appeal nobody may review (every senior moderator and the owner was involved in
   // round 1, or none is switched on); it waits in the queue until one is added (D-011, Plan 4 Task 24).
-  | 'appeal-no-reviewer';
+  | 'appeal-no-reviewer'
+  // Owner only (re-review lead-mod-chat m5): the moderation service's dispute notice for a chat was
+  // refused by this API for good (a 4xx other than 409/429); that dispute's chat gets no notice (T2).
+  | 'chat-notice-refused'
+  // Re-review 2 m3 (lead default, owner question): a staff device was certified to read disputed
+  // chats; to the owner (pushed) and to the person.
+  | 'staff-device-certified'
+  // Owner only (Plan 4 Task 12, A6): a seller ordered to send the XMR let the comply time pass with no
+  // proof; the case waits for a senior moderator or the owner to decide the suspension.
+  | 'dispute-comply-lapsed'
+  // Owner only (re-review m3 follow-up): the payment-proof checker gave up on a stuck wallet; once
+  // per stuck episode. After three, proofs answer 503 until the API is restarted.
+  | 'tx-proof-check-stuck'
+  // Owner only (re-review w1): the checker gave up on its third stuck wallet; every proof answers 503
+  // until the API is restarted. Once.
+  | 'tx-proof-check-stopped';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

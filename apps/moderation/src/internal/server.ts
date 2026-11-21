@@ -2,42 +2,59 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { chmod, chown, lstat, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import sodium from 'libsodium-wrappers';
 import { normalizeTradeCode } from '@x2f/core';
-import type { Participants } from '@x2f/protocol';
-import { channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_MAX_SKEW_MS, MOD_INTERNAL_TS_HEADER, modInternalMacInput } from '@x2f/trade';
+import { ProtocolError, signChatEnvelope, unwrapChatKey, verifyChatGrant, verifyModCountersign, wrapChatKey, type ChatEnvelopeV2Body, type Participants } from '@x2f/protocol';
+import { CHAT_AFTER_DISPUTE_DAYS, channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_MAX_SKEW_MS, MOD_INTERNAL_TS_HEADER, modInternalMacInput } from '@x2f/trade';
+import type pg from 'pg';
 import { loadChatIdentity, type Queryable } from '../keystore.js';
 import type { ApiView } from './apiView.js';
-import { ChatTextError, checkModText, sealModMessage } from './chat.js';
+import { DEVICE_KEY_ID, NO_CERTIFIED_DEVICES, OWNER_NEEDS_DISPUTE, onCase, type DeviceCertificates, type StaffDirectory } from './grant.js';
 
 export type { ApiView } from './apiView.js';
 
 /**
- * The moderation process's internal API (Plan 4 Task 11). It listens ONLY on a Unix socket
- * (`MOD_INTERNAL_SOCKET`, mode 0660, group `MOD_INTERNAL_SOCKET_GID`, in a directory this process
- * owns); there is no TCP listener.
+ * The moderation process's internal API (Plan 4 Task 11; design-chat-membership-keys-2026-11-08
+ * build task 9). It listens ONLY on a Unix socket (`MOD_INTERNAL_SOCKET`, mode 0660, group
+ * `MOD_INTERNAL_SOCKET_GID`, in a directory this process owns); there is no TCP listener. No chat
+ * text ever passes through it: the moderator's read is the chat key re-wrapped to a certified staff
+ * device, which decrypts in staff-web, and the moderator's message is ciphertext that device sealed
+ * and countersigned.
  *
- * - NEEDS_P4_CHAT_MEMBERSHIP: there is NO chat read (the plan's `POST /internal/chat/read`, which
- *   opened the chat here and handed plaintext to the API). The moderator's read waits for the
- *   per-trade key-membership design (owner p11-2; design-chat-membership-keys-2026-11-08, build task 9:
- *   `/internal/chat/grant` replaces it, no plaintext to the API), and the
- *   API reader role cannot read envelopes until then (migration 208).
- * - NEEDS_P4_CHAT_MEMBERSHIP: there is NO proof read either (review 8 Nov I-1: the plan's
- *   `POST /internal/proof/read` sent the unblurred image to the API). The design (2.4 step 5)
- *   re-wraps the proof key to the staff device key; Plan 5 must not add a proof source here.
- * - NEEDS_P4_MOD_COUNTERSIGN: `POST /internal/chat/send {code, logEntryId, text}` → `{ envelope }`,
- *   sealed by the chat's moderator identity to buyer, seller and the moderator; the API stores it.
- *   It seals whatever text the API names, so a compromised API could write as the moderator
- *   (review 8 Nov I-2). Lead: it is registered only when `devModChat` is on (X2F_DEV_MOD_CHAT=1,
- *   refused with NODE_ENV=production) until build task 9 makes it a countersign (text signed by a
- *   certified staff device key that this process's own records show on the case).
+ * Both routes take `{code, logEntryId, staffAccountId, deviceKeyId, ...}` and check, in this order,
+ * refusing at the first that fails:
+ * 1. the HMAC (401), then the body's shape (400);
+ * 2. the ruling gate is present (503 `gate-unavailable`);
+ * 3. the named API activity-log entry, read from the API's database (never taken from the request),
+ *    has this route's action (`chat.read` for a grant, `chat.message-requested` for a send), is of
+ *    this trade, at most 60 s old (30 s of skew), never used, and its actor is a staff member, exactly
+ *    the one named (403 `log-entry-invalid`);
+ * 4. the trade's current dispute is not closed AND this process itself saw it disputed within
+ *    CHAT_AFTER_DISPUTE_DAYS (`mod_dispute_seen`), the owner included (OWNER p12-1) (403 `not-disputed`);
+ * 5. the person, as the gate knows them, is the assigned moderator, a senior or the owner (OWNER
+ *    p12-4); a helper never (403 `not-on-case`);
+ * 6. the device key id is certified to them and live at this process's clock (403 `device-not-certified`);
+ * 7. the chat is one this process attested (404 `no-chat`).
+ *
+ * - `POST /internal/chat/grant` → 200 `{ wrap, tkh, boxPublic, nextSeq }`: then the accepted trader
+ *   grant this process recorded (`mod_chat_grants`) is read back from the API, verified again against
+ *   the attested traders and this process's recorded signature and tkh (409 `no-grant`), its wrap is
+ *   opened with the chat's sealed moderator identity to a key of that tkh, re-wrapped to the device's
+ *   certified box key (`crypto_box_seal`), and the key wiped. Only then, in one statement, the entry
+ *   is used up and a `mod_chat_access` row (`grant`) written (a replay finds the entry used).
+ * - `POST /internal/chat/send` (+ `seq, nonce, ct, ctSha256, requestId, issuedAt, sig`) → 200 `{ envelope }`:
+ *   the countersign (x2f/mod-countersign/v1, lead 18 Nov) must verify by the device's certified
+ *   signing key over this exact message (400 `bad-countersign`), its issuedAt be at most 5 minutes
+ *   old and 1 minute ahead (403 `stale-countersign`), its requestId never seen (403 `replayed`; review
+ *   N6: the requestId of a countersign that verified is taken at once, so one refused for any later
+ *   reason is spent), and `seq` this chat's next moderator seq (409 `stale-seq`, with `nextSeq`). The
+ *   countersign binds the nonce too (review N7). Then, in one transaction,
+ *   the entry is used, the seq taken and a `mod_chat_access` row (`send`) written;
+ *   then the envelope is signed as `from: 'mod'` with the chat's moderator identity. This process
+ *   never decrypts it: it signs only what a staff device on the case sealed and signed.
  *
  * Every request carries `X-X2F-Internal` (hex HMAC-SHA-256 under MOD_INTERNAL_SECRET of
  * `modInternalMacInput`) and `X-X2F-Internal-Ts` within 30 s of this process's clock; else 401.
- * Then each call is refused (403 `log-entry-invalid`) unless the API activity-log entry it names,
- * read from the API's database (never taken from the request), has this path's action
- * (`chat.message-requested`) and this trade, was written within the last 60 s, has never been used,
- * and the trade's current dispute exists and is not closed. The entry is marked used only once all
- * of that holds, so a message is sealed only for an act the log already holds.
  */
 export interface InternalDeps {
   /** MOD_INTERNAL_SECRET: 32 bytes, shared with the API only. */
@@ -45,32 +62,38 @@ export interface InternalDeps {
   /** The API's database, read-only (`x2f_mod_reader`). */
   api: ApiView;
   /** The moderation database (keystore, signed chats, used entries, the moderator's seq). */
-  db: Queryable;
+  db: Queryable & { connect(): Promise<pg.PoolClient> };
   keystoreKey: Uint8Array;
   now?: () => Date;
-  /**
-   * NEEDS_P4_MOD_COUNTERSIGN: registers `/internal/chat/send` (dev only, X2F_DEV_MOD_CHAT=1;
-   * `internalFromEnv` refuses it with NODE_ENV=production). Off or omitted: every path is 404.
-   */
-  devModChat?: boolean;
+  /** The ruling gate's view of staff (`gateStaffDirectory`). Omitted (no gate): every call is refused. */
+  staff?: StaffDirectory;
+  /** Live certified staff device keys (`gateDevices`, design task 8). Omitted: none. */
+  devices?: DeviceCertificates;
 }
 
 /** How old the named log entry may be. */
 export const LOG_ENTRY_MAX_AGE_MS = 60_000;
-const BODY_MAX = 64 * 1024;
+/** Lead 18 Nov: a countersign older than 5 minutes is refused. Builder's call: 1 minute ahead at most. */
+export const COUNTERSIGN_MAX_AGE_MS = 5 * 60_000;
+export const COUNTERSIGN_MAX_AHEAD_MS = 60_000;
+const BODY_MAX = 256 * 1024;
 const LOG_ID = /^[1-9][0-9]{0,18}$/;
 const TS = /^[0-9]{1,16}$/;
 const MAC = /^[0-9a-f]{64}$/;
 
+const CASE_KEYS = ['code', 'logEntryId', 'staffAccountId', 'deviceKeyId'] as const;
 const ROUTES = {
+  // The API commits one `chat.read` per read, with the staff member as its actor (lead 18 Nov: the
+  // activity log until the per-trade audit, design task 12; `mod_chat_access` is authoritative).
+  '/internal/chat/grant': { action: 'chat.read', keys: [...CASE_KEYS] },
   // The API commits `chat.message-requested` before asking, and `chat.message-sent {envelopeId}`
-  // once it stored the envelope (review 8 Nov M-2); only the first authorises a seal.
-  '/internal/chat/send': { action: 'chat.message-requested', keys: ['code', 'logEntryId', 'text'] },
+  // once it stored the envelope (review 8 Nov M-2); only the first authorises a send.
+  '/internal/chat/send': { action: 'chat.message-requested', keys: [...CASE_KEYS, 'seq', 'nonce', 'ct', 'ctSha256', 'requestId', 'issuedAt', 'sig'] },
 } as const;
 type RoutePath = keyof typeof ROUTES;
 
 class Refusal extends Error {
-  constructor(readonly status: number, readonly code: string) {
+  constructor(readonly status: number, readonly code: string, readonly extra: Record<string, unknown> = {}) {
     super(code);
   }
 }
@@ -113,7 +136,18 @@ function authentic(d: InternalDeps, req: IncomingMessage, path: string, body: st
   return timingSafeEqual(want, Buffer.from(mac, 'hex'));
 }
 
-function parse(path: RoutePath, body: string): { code: string; logEntryId: string; text: string } {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DAY_MS = 86_400_000;
+
+interface Parsed {
+  code: string;
+  logEntryId: string;
+  staffId: string;
+  deviceKeyId: string;
+  o: Record<string, unknown>;
+}
+
+function parse(path: RoutePath, body: string): Parsed {
   let v: unknown;
   try {
     v = JSON.parse(body);
@@ -126,27 +160,8 @@ function parse(path: RoutePath, body: string): { code: string; logEntryId: strin
   if (Object.keys(o).length !== keys.length || !keys.every((k) => Object.hasOwn(o, k))) throw new Refusal(400, 'bad-request');
   const code = typeof o.code === 'string' ? normalizeTradeCode(o.code) : null;
   if (code === null || typeof o.logEntryId !== 'string' || !LOG_ID.test(o.logEntryId)) throw new Refusal(400, 'bad-request');
-  try {
-    return { code, logEntryId: o.logEntryId, text: checkModText(o.text) };
-  } catch {
-    throw new Refusal(400, 'bad-request');
-  }
-}
-
-/** Checks the named log entry and the trade's dispute, then marks the entry used (once only). */
-async function useEntry(d: InternalDeps, path: RoutePath, code: string, id: string, now: Date): Promise<void> {
-  const invalid = new Refusal(403, 'log-entry-invalid');
-  const e = await d.api.logEntry(id);
-  if (e === null || e.action !== ROUTES[path].action || e.tradeCode === null || normalizeTradeCode(e.tradeCode) !== code) throw invalid;
-  const age = now.getTime() - e.at.getTime();
-  if (age > LOG_ENTRY_MAX_AGE_MS || age < -MOD_INTERNAL_MAX_SKEW_MS) throw invalid;
-  const status = await d.api.disputeStatus(code);
-  if (status === null || status === 'closed') throw invalid;
-  const { rowCount } = await d.db.query(
-    'insert into used_log_entries (id, action, trade) values ($1, $2, $3) on conflict (id) do nothing',
-    [id, e.action, code],
-  );
-  if (rowCount !== 1) throw invalid;
+  if (typeof o.staffAccountId !== 'string' || !UUID.test(o.staffAccountId) || typeof o.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(o.deviceKeyId)) throw new Refusal(400, 'bad-request');
+  return { code, logEntryId: o.logEntryId, staffId: o.staffAccountId, deviceKeyId: o.deviceKeyId, o };
 }
 
 /** The trade's chat as this process attested it: its channel, the moderator identity and the participants it signed. */
@@ -164,9 +179,145 @@ async function attestedChat(d: InternalDeps, code: string) {
   return { chat, channel, mod, participants: att.participants };
 }
 
+/** Checks 2-7 of the header, in order; nothing is used or recorded here. */
+async function caseChecks(d: InternalDeps, path: RoutePath, b: Parsed, now: Date) {
+  const staff = d.staff;
+  if (staff === undefined) throw new Refusal(503, 'gate-unavailable');
+  const invalid = new Refusal(403, 'log-entry-invalid');
+  const e = await d.api.logEntry(b.logEntryId);
+  if (e === null || e.action !== ROUTES[path].action || e.tradeCode === null || normalizeTradeCode(e.tradeCode) !== b.code) throw invalid;
+  const age = now.getTime() - e.at.getTime();
+  if (age > LOG_ENTRY_MAX_AGE_MS || age < -MOD_INTERNAL_MAX_SKEW_MS) throw invalid;
+  if ((await d.db.query('select 1 from used_log_entries where id = $1', [b.logEntryId])).rows.length > 0) throw invalid;
+  // The log must name this person as the one acting: a staff actor, exactly this account.
+  if (e.actorKind !== 'staff' || e.actorId === null || e.actorId.toLowerCase() !== b.staffId) throw invalid;
+  let who;
+  try {
+    who = await staff.standing(b.staffId);
+  } catch {
+    throw new Refusal(503, 'gate-unavailable');
+  }
+  const status = await d.api.disputeStatus(b.code);
+  const { rows: seen } = await d.db.query('select 1 from mod_dispute_seen where trade = $1 and last_seen_at >= $2', [
+    b.code, new Date(now.getTime() - CHAT_AFTER_DISPUTE_DAYS * DAY_MS),
+  ]);
+  const disputed = status !== null && status !== 'closed' && seen.length > 0;
+  if (!disputed && (who?.kind !== 'owner' || OWNER_NEEDS_DISPUTE)) throw new Refusal(403, 'not-disputed');
+  if (!onCase(who, b.staffId, await d.api.disputeAssignee(b.code))) throw new Refusal(403, 'not-on-case');
+  let device;
+  try {
+    device = await (d.devices ?? NO_CERTIFIED_DEVICES).device(b.staffId, b.deviceKeyId, now);
+  } catch {
+    throw new Refusal(503, 'gate-unavailable');
+  }
+  if (device === null) throw new Refusal(403, 'device-not-certified');
+  const c = await attestedChat(d, b.code);
+  return { e, device, c };
+}
+
+/** The chat's next moderator seq (envelope v2 is single-use per seq). */
+async function nextSeqOf(d: InternalDeps, chat: string): Promise<number> {
+  const { rows } = await d.db.query<{ next_seq: string }>('select next_seq::text from mod_chat_seq where chat = $1', [chat]);
+  return rows[0] === undefined ? 0 : Number(rows[0].next_seq);
+}
+
+/** `/internal/chat/grant` (design build task 9): every check, the re-wrap, then the use and the record together. */
+async function grant(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse): Promise<void> {
+  const { e, device, c } = await caseChecks(d, '/internal/chat/grant', b, now);
+  // The trader grant this process accepted (one key per chat, review F4), read back and checked again.
+  const { rows } = await d.db.query<{ grant_by: string; grant_sig: string; tkh: string }>(
+    'select grant_by, grant_sig, tkh from mod_chat_grants where chat = $1 order by accepted_at, grant_by',
+    [c.chat],
+  );
+  let wrap: string | null = null;
+  let tkh = '';
+  for (const g of rows) {
+    const statement = await d.api.modGrant(c.chat, g.grant_by, g.grant_sig);
+    if (statement === null) continue;
+    try {
+      const v = await verifyChatGrant(statement, { chat: c.channel, participants: c.participants });
+      if (v.sig !== g.grant_sig || v.by !== g.grant_by || v.tkh !== g.tkh) continue;
+      const tk = await unwrapChatKey({ boxPublic: c.mod.boxPublic, boxSecret: c.mod.boxSecret }, v.wrap, g.tkh);
+      try {
+        wrap = await wrapChatKey(device.boxPublic, tk);
+      } finally {
+        sodium.memzero(tk);
+      }
+      tkh = g.tkh;
+      break;
+    } catch (err) {
+      if (err instanceof ProtocolError || err instanceof TypeError) continue;
+      throw err;
+    }
+  }
+  if (wrap === null) throw new Refusal(409, 'no-grant');
+  // One statement: the entry is used up and the access recorded together, or neither (a replay finds the entry used).
+  const { rowCount } = await d.db.query(
+    `with u as (insert into used_log_entries (id, action, trade) values ($1, $2, $3) on conflict (id) do nothing returning id)
+     insert into mod_chat_access (chat, trade, at, staff_id, device_key_id, log_entry_id, action)
+     select $4, $3, $5, $6, $7, id, 'grant' from u`,
+    [b.logEntryId, e.action, b.code, c.chat, now, b.staffId, b.deviceKeyId],
+  );
+  if (rowCount !== 1) throw new Refusal(403, 'log-entry-invalid');
+  answer(res, 200, { wrap, tkh, boxPublic: device.boxPublic, nextSeq: await nextSeqOf(d, c.chat) });
+}
+
+/** `/internal/chat/send` (design build task 9, the countersign): every check, then the use, the request id, the seq and the record in one transaction. */
+async function send(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse): Promise<void> {
+  const o = b.o;
+  if (typeof o.seq !== 'number' || !Number.isSafeInteger(o.seq) || o.seq < 0 || typeof o.nonce !== 'string' || typeof o.ct !== 'string') throw new Refusal(400, 'bad-request');
+  const { e, device, c } = await caseChecks(d, '/internal/chat/send', b, now);
+  const body: ChatEnvelopeV2Body = { v: 2, trade: c.channel, from: 'mod', seq: o.seq, nonce: o.nonce, ct: o.ct };
+  let cs;
+  try {
+    // By the device's CERTIFIED signing key (the gate's record), over this channel, seq and ciphertext.
+    cs = await verifyModCountersign({ chat: c.channel, seq: o.seq, nonce: o.nonce, ctSha256: o.ctSha256, requestId: o.requestId, issuedAt: o.issuedAt, sig: o.sig }, { body, signPublic: device.signPublic });
+  } catch (err) {
+    if (err instanceof ProtocolError || err instanceof TypeError) throw new Refusal(400, 'bad-countersign');
+    throw err;
+  }
+  // Review N6: a countersign that verified is spent at once, in its own committed statement, before
+  // any later check can refuse it (freshness, the seq): one refused for a seq that is not next can
+  // never be shown again once the seq catches up. Staff-web seals a retry with a new requestId.
+  const fresh = await d.db.query('insert into mod_countersign_requests (request_id, chat, at) values ($1, $2, $3) on conflict (request_id) do nothing', [cs.requestId, c.chat, now]);
+  if (fresh.rowCount !== 1) throw new Refusal(403, 'replayed');
+  const age = now.getTime() - Date.parse(cs.issuedAt);
+  if (age > COUNTERSIGN_MAX_AGE_MS || age < -COUNTERSIGN_MAX_AHEAD_MS) throw new Refusal(403, 'stale-countersign');
+  // Signed only once everything is taken, so a refused send signs nothing; checked before it is taken.
+  let envelope;
+  try {
+    envelope = await signChatEnvelope(body, c.mod);
+  } catch (err) {
+    if (err instanceof ProtocolError || err instanceof TypeError) throw new Refusal(400, 'bad-request');
+    throw err;
+  }
+  const client = await d.db.connect();
+  try {
+    await client.query('begin');
+    const used = await client.query('insert into used_log_entries (id, action, trade) values ($1, $2, $3) on conflict (id) do nothing', [b.logEntryId, e.action, b.code]);
+    if (used.rowCount !== 1) throw new Refusal(403, 'log-entry-invalid');
+    await client.query('insert into mod_chat_seq (chat, next_seq) values ($1, 0) on conflict (chat) do nothing', [c.chat]);
+    const { rows } = await client.query<{ next_seq: string }>('select next_seq::text from mod_chat_seq where chat = $1 for update', [c.chat]);
+    const next = Number(rows[0]!.next_seq);
+    if (o.seq !== next) throw new Refusal(409, 'stale-seq', { nextSeq: next });
+    await client.query('update mod_chat_seq set next_seq = next_seq + 1 where chat = $1', [c.chat]);
+    await client.query(
+      `insert into mod_chat_access (chat, trade, at, staff_id, device_key_id, log_entry_id, action) values ($1, $2, $3, $4, $5, $6, 'send')`,
+      [c.chat, b.code, now, b.staffId, b.deviceKeyId, b.logEntryId],
+    );
+    await client.query('commit');
+  } catch (err) {
+    await client.query('rollback').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+  answer(res, 200, { envelope });
+}
+
 async function handle(d: InternalDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const path = (req.url ?? '') as RoutePath;
-  if (req.method !== 'POST' || !Object.hasOwn(ROUTES, path) || d.devModChat !== true) {
+  if (req.method !== 'POST' || !Object.hasOwn(ROUTES, path)) {
     // Drain and refuse without reading anything else.
     req.resume();
     answer(res, 404, { error: 'not-found' });
@@ -176,21 +327,8 @@ async function handle(d: InternalDeps, req: IncomingMessage, res: ServerResponse
   const now = (d.now ?? (() => new Date()))();
   if (!authentic(d, req, path, body, now)) throw new Refusal(401, 'unauthorized');
   const b = parse(path, body);
-  await useEntry(d, path, b.code, b.logEntryId, now);
-  const c = await attestedChat(d, b.code);
-  // A seq is taken before sealing and never reused (a message the API failed to store is a gap).
-  const { rows } = await d.db.query<{ seq: string }>(
-    `insert into mod_chat_seq (chat, next_seq) values ($1, 1)
-     on conflict (chat) do update set next_seq = mod_chat_seq.next_seq + 1 returning (next_seq - 1)::text as seq`,
-    [c.chat],
-  );
-  try {
-    const envelope = await sealModMessage({ channel: c.channel, seq: Number(rows[0]!.seq), mod: c.mod, participants: c.participants, text: b.text });
-    answer(res, 200, { envelope });
-  } catch (e) {
-    if (e instanceof ChatTextError) throw new Refusal(400, 'too-large');
-    throw e;
-  }
+  if (path === '/internal/chat/grant') return grant(d, b, now, res);
+  return send(d, b, now, res);
 }
 
 /** The request handler (exported for tests); errors answer with a code only, never a detail. */
@@ -201,7 +339,7 @@ export function internalHandler(d: InternalDeps): (req: IncomingMessage, res: Se
         res.destroy();
         return;
       }
-      if (e instanceof Refusal) answer(res, e.status, { error: e.code });
+      if (e instanceof Refusal) answer(res, e.status, { error: e.code, ...e.extra });
       else answer(res, 500, { error: 'internal' });
     });
   };

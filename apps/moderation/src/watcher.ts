@@ -9,13 +9,16 @@ import {
   type SettleKind,
   type EscrowFunds,
   type ModPartyArgs,
+  type RulingKind,
   type SpendEvidence,
+  type Trade,
   type TradeState,
   type WatchReport,
   type WatchState,
 } from '@x2f/trade';
 import type pg from 'pg';
 import { NO_DESK_FACTS, sweepKindAgrees, WATCH_FRESH_MS, type Desk } from './desk.js';
+import type { DeskArmed } from './execute.js';
 import type { Link, WatchItem } from './link.js';
 
 /**
@@ -47,6 +50,18 @@ export interface WatcherOptions {
    * party runs. Absent: no desk (Task 9's tests).
    */
   openDesk?: (a: ModPartyArgs) => Promise<Desk>;
+  /**
+   * Plan 4 Task 14 (R-M2): the kind of the ruling payout the executor recorded for this trade, or
+   * null. Non-null also means a payout is recorded: the desk then hands nothing (review M5).
+   */
+  rulingKind?: (code: string) => RulingKind | null;
+  /**
+   * Plan 4 Task 14: the ruling executor's pass for this trade, after the desk's, with the same
+   * accepted facts (the trade's party, the API item read for this pass, the funds the party read),
+   * this service's own args, the desk's shadow trade and its armed refund (review M5). Absent: no
+   * rulings are executed.
+   */
+  executeRuling?: (s: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null; deskArmed: DeskArmed; escrowAddress: string | null }) => Promise<unknown>;
 }
 
 export interface Watcher {
@@ -259,8 +274,21 @@ async function proven(o: Outgoing, f: Funds, ctx: SweepContext): Promise<boolean
   return false;
 }
 
+/**
+ * The kind of a sweep this service's own party signed, by who built it (re-verify R2: the builder
+ * names it): the buyer-built cancel, the seller-built auto-refund, or (Plan 4 Task 14, R-M2) a
+ * mod-built ruling payout, whose kind only the ruling executor's record gives (`rulingKind`); null
+ * when nothing names it (the API then refuses `settle-kind-unknown` and the watcher backs off).
+ */
+export function ownSweepKind(builder: string | null, rulingKind: RulingKind | null): SettleKind | RulingKind | null {
+  if (builder === 'buyer') return 'buyer-cancel';
+  if (builder === 'seller') return 'auto-refund';
+  if (builder === 'mod') return rulingKind;
+  return null;
+}
+
 /** `settledKind`: the kind a `settled` report counted the sweep for (security review 7 Nov, finding 3). */
-const reportBody = (trade: string, r: WatchReport, settledKind: SettleKind | null): Record<string, unknown> => {
+const reportBody = (trade: string, r: WatchReport, settledKind: SettleKind | RulingKind | null): Record<string, unknown> => {
   if (r.kind === 'chain') {
     return { kind: 'chain', trade, receivedAtomic: r.receivedAtomic.toString(), unlockedAtomic: r.unlockedAtomic.toString(), confirmations: r.confirmations };
   }
@@ -357,7 +385,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
   };
 
   /** Posts the reports in order; true only when every one was accepted. */
-  const post = async (code: string, reports: WatchReport[], settledKind: SettleKind | null): Promise<boolean> => {
+  const post = async (code: string, reports: WatchReport[], settledKind: SettleKind | RulingKind | null): Promise<boolean> => {
     for (const r of reports) {
       const res = await o.link.report(reportBody(code, r, settledKind));
       if (accepted(res)) continue;
@@ -431,9 +459,14 @@ export function createWatcher(o: WatcherOptions): Watcher {
     // names it; the armed kind can differ, R4-M2), else this desk's armed refund, else the API's
     // kind as just read. The API refuses it (409 settle-kind-changed) when the trade no longer names that kind.
     const own = spend !== null && (f.ownTxs ?? []).includes(spend.txHash);
-    const builder = own ? (handle.committedBuilder?.() ?? null) : null;
-    const signedKind: SettleKind | null = builder === 'buyer' ? 'buyer-cancel' : builder === 'seller' ? 'auto-refund' : null;
-    const settledKind = own ? (signedKind ?? deskNow?.record().armed?.kind ?? item.settleKind) : settleKind;
+    // Review I3 (late-funds step 1): the tx's own release's builder (an older release of this escrow
+    // may be named while a later one is committed), else the committed one (a party without builderOf).
+    const builder = own ? (handle.builderOf ? handle.builderOf(spend.txHash) : (handle.committedBuilder?.() ?? null)) : null;
+    // Plan 4 Task 14 (R-M2): a mod-built sweep is a ruling's payout, named by the executor's own record.
+    const signedKind = ownSweepKind(builder, builder === 'mod' ? (o.rulingKind?.(row.trade) ?? null) : null);
+    // Review M4: a mod-built sweep is named by the executor's record or by nothing (the API then
+    // refuses settle-kind-unknown and the watcher backs off), never by the desk or the API.
+    const settledKind = own ? (builder === 'mod' ? signedKind : (signedKind ?? deskNow?.record().armed?.kind ?? item.settleKind)) : settleKind;
     if (!(await post(row.trade, step.reports, settledKind))) return true;
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
     await ensureDesk(args);
@@ -450,8 +483,23 @@ export function createWatcher(o: WatcherOptions): Watcher {
           funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked },
           apiAt: fresh.at,
           refresh: () => freshItem(row.trade, unlisted),
+          rulingRecorded: (o.rulingKind?.(row.trade) ?? null) !== null,
         })
         .catch(() => o.log({ reason: 'desk-step-failed' }));
+    }
+    if (o.executeRuling) {
+      await o
+        .executeRuling({
+          code: row.trade,
+          handle,
+          api: item,
+          funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked },
+          args,
+          shadow: desks.get(row.trade)?.record().shadow ?? null,
+          deskArmed: desks.get(row.trade)?.record().armed ?? null,
+          escrowAddress: row.escrow_address,
+        })
+        .catch(() => o.log({ reason: 'ruling-step-failed' }));
     }
     if (step.closeChannels) {
       for (const kind of ['escrow', 'signals'] as const) {

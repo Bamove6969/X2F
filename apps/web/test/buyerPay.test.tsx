@@ -93,6 +93,7 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
     confirmedAtomic: null,
     paidRecorded: false,
     intentKind: null,
+    handedOff: false,
     error: null,
     retryable: false,
     refusal: null,
@@ -342,6 +343,35 @@ describe('"Do not show me this warning again" on I\'ve paid (owner 8 Nov p7-2; p
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'refresh']);
     expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+  });
+});
+
+// Proof-upload review point 4 (lead 2026-11-12): no proof before the trade is secured (the engine
+// and the API refuse it), so with the flag on the slot stays the board's disabled slot while the
+// escrow is securing, with a line saying when it opens; it goes live from secured.
+describe('the payment proof slot waits for securing (flag on)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    setProofSource(null);
+  });
+
+  it('securing: disabled, with the not-yet line; secured: the live picker', async () => {
+    const { PROOF_AFTER_SECURED } = await import('../src/screens/proof/proofSlot.js');
+    vi.stubEnv('VITE_X2F_PROOF_UPLOAD', '1');
+    for (const wide of [false, true]) {
+      const securing = mount(props({ wide }));
+      const input = document.body.querySelector<HTMLInputElement>('section[aria-label="Payment proof"] input[type="file"]');
+      expect(input, `securing wide=${wide}`).not.toBeNull();
+      expect(input!.disabled, `securing wide=${wide}`).toBe(true);
+      expect(typeof PROOF_AFTER_SECURED).toBe('string');
+      expect(text()).toContain(PROOF_AFTER_SECURED);
+      securing.unmount();
+      const secured = mount(props({ wide, view: tradeView(SECURED) }));
+      const live = document.body.querySelector<HTMLInputElement>('section[aria-label="Payment proof"] input[type="file"]');
+      expect(live!.disabled, `secured wide=${wide}`).toBe(false);
+      expect(text()).not.toContain(PROOF_AFTER_SECURED);
+      secured.unmount();
+    }
   });
 });
 
@@ -1306,7 +1336,7 @@ describe("J-08 (S-090): the seller's packaged details fill the buyer's Send exac
       lines: [{ id: '3', from: 'seller' as const, text: 'Payment details\nEmail: jane@example.com\nName on the account: Jane Doe', pay, at: null, mine: false, gapBefore: false }],
     };
     const sync = vi.fn(async () => chatSnap);
-    setChatClient({ sync, send: vi.fn(async () => chatSnap), sendPay: vi.fn(async () => chatSnap), sendNotice: vi.fn(async () => chatSnap) });
+    setChatClient({ sync, send: vi.fn(async () => chatSnap), sendPay: vi.fn(async () => chatSnap), sendProof: vi.fn(async () => chatSnap), sendUnblurred: vi.fn(async () => chatSnap), sendNotice: vi.fn(async () => chatSnap) });
     answer = () => ({ status: 200, json: { chat: CHAT } });
     setPaymentDetailsSource(chatPaymentDetailsSource);
     try {

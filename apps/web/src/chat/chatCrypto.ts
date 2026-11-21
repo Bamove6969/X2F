@@ -25,6 +25,17 @@
  *   that the caller persists: after sealing and BEFORE posting (a seq is never reused), and after
  *   opening and BEFORE showing the message (a reload never shows a replay).
  *
+ * Envelope v2 (design-chat-membership-keys-2026-11-08 section 2.3, build task 5): passed the chat's
+ * key `tk`, every seal and open here uses @x2f/protocol's sealChat/openChat instead: one ciphertext
+ * under the chat key, which every member opens, so a sender can no longer leave the moderator out
+ * (R16). The message rules above are the same for both. `makeChatKey` makes the chat key and its
+ * signed record (the first trader device after attestation); `chatKeyOf` checks a stored record
+ * against the ATTESTED participants (never the API's word) and opens this trader's own copy,
+ * pinned to the record's tkh. The engine is v2 only, but for decision 16's one exception: the
+ * moderator-only `proof.unblurred` (sealProofUnblurred) stays v1; v1 also stays here for its own
+ * tests and the signals channel's code. `proof.attached` is v2 under the chat key (sealProofAttached
+ * with `tk`).
+ *
  * Identities are made elsewhere and passed in: in apps/web only the escrow worker may name the
  * protocol's identity maker (separation check, lead answer 2026-10-24).
  */
@@ -34,9 +45,17 @@ import {
   hasExactKeys,
   isPlainObject,
   isValidSeq,
+  makeChatKeyRecord,
+  newChatKey,
   open,
+  openChat,
+  openChatKeyRecord,
   seal,
+  sealChat,
   signProof,
+  verifyChatKeyRecord,
+  type ChatEnvelopeV2,
+  type ChatKeyRecord,
   type Envelope,
   type Identity,
   type Participants,
@@ -50,12 +69,15 @@ import {
   channelFor,
   chatIdentityProofBytes,
   checkChatEnvelope,
+  checkChatEnvelopeV2,
   parsePayDetails,
   payTextMatches,
   renderPayDetailsText,
   type PayDetailsPayload,
 } from '@x2f/trade';
 import { CHAT_NOTICES, isChatNotice, type ChatNoticeId } from './notices.js';
+
+import { PROOF_RECIPIENTS, type ProofAttachedPayload, type ProofUnblurredPayload, parseProofPayload, sealProofEnvelope } from '@x2f/proof';
 
 export type ChatRole = 'buyer' | 'seller';
 export type ChatErrorCode = 'bad-text' | 'too-large' | 'bad-state' | 'bad-message' | 'mod-not-allowed';
@@ -87,6 +109,12 @@ export interface ChatMessage {
   text: string;
   /** The payee's packaged payment details (J-08), checked; absent on a plain line. */
   pay?: PayDetailsPayload;
+  /**
+   * NEEDS_PROOF_RECEIVE: a `proof.attached` (Plan 5 Task 8): the proof's key and facts, checked by
+   * parseProofPayload and the kind rules below; `text` is empty. The picture is fetched and
+   * decrypted by the page (proof/chatProof.ts) and shown only through ProofThumb.
+   */
+  proof?: ProofAttachedPayload;
   /** A fixed notice (P-020); `text` is then this reader's own wording of it (CHAT_NOTICES). */
   notice?: ChatNoticeId;
 }
@@ -169,6 +197,8 @@ export interface SealChatArgs {
   participants: Participants;
   state: ChatState;
   text: string;
+  /** The chat key: seal envelope v2 under it (build task 5). Absent: envelope v1. */
+  tk?: Uint8Array;
 }
 
 /**
@@ -179,9 +209,14 @@ export interface SealChatArgs {
  * identity's latest seq, even one sent from an earlier session), and send one post at a time,
  * sealing the next only after the previous post was answered.
  */
-export async function sealChatMessage(a: SealChatArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+/** What a seal returns: v2 when given the chat key, v1 when not, either when the caller cannot tell. */
+export type SealedEnvelope<A> = undefined extends (A extends { tk?: infer K } ? K : undefined)
+  ? (Uint8Array extends (A extends { tk?: infer K } ? K : undefined) ? Envelope | ChatEnvelopeV2 : Envelope)
+  : ChatEnvelopeV2;
+
+export async function sealChatMessage<A extends SealChatArgs>(a: A): Promise<{ envelope: SealedEnvelope<A>; state: ChatState }> {
   if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealChatMessage: role must be buyer or seller');
-  return sealInner(a, { text: checkChatText(a.text) });
+  return sealInner(a, { text: checkChatText(a.text) }) as Promise<{ envelope: SealedEnvelope<A>; state: ChatState }>;
 }
 
 export interface SealPayArgs {
@@ -191,6 +226,7 @@ export interface SealPayArgs {
   state: ChatState;
   /** The boxes as the composer packaged them; checked here again (parsePayDetails) before sealing. */
   pay: PayDetailsPayload;
+  tk?: Uint8Array;
 }
 
 /**
@@ -199,11 +235,81 @@ export interface SealPayArgs {
  * PayDetailsError for a bad package (by box), ChatError 'bad-text' for hidden characters in a box
  * or 'too-large'.
  */
-export async function sealPayDetails(a: SealPayArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+export async function sealPayDetails<A extends SealPayArgs>(a: A): Promise<{ envelope: SealedEnvelope<A>; state: ChatState }> {
   if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealPayDetails: role must be buyer or seller');
   const pay = parsePayDetails(a.pay);
   const text = checkChatText(renderPayDetailsText(pay));
-  return sealInner(a, { text, pay });
+  return sealInner(a, { text, pay }) as Promise<{ envelope: SealedEnvelope<A>; state: ChatState }>;
+}
+
+export interface SealProofArgs {
+  role: ChatRole;
+  me: Identity;
+  participants: Participants;
+  state: ChatState;
+  /** The `proof.attached` payload: the proof's key and facts, never the image (Plan 5 Task 15). */
+  proof: ProofAttachedPayload;
+  /** Decision 16 item 1: the chat key. Given, the proof is an envelope v2 under it, as any line. */
+  tk?: Uint8Array;
+}
+
+/**
+ * Seals a `proof.attached` envelope (Plan 5 Task 8 `sealProofEnvelope`, to buyer, seller and mod:
+ * the recipients come from the type) under the chat's seq rules, like sealChatMessage. A payment
+ * proof (`kind: 'proof'`) is the buyer's only; evidence is either trader's. Throws TypeError for
+ * another role, ProofError('bad-payload') for a malformed payload, ChatError 'too-large'.
+ */
+export async function sealProofAttached<A extends SealProofArgs>(a: A): Promise<{ envelope: SealedEnvelope<A>; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealProofAttached: role must be buyer or seller');
+  const parsed = parseProofPayload('proof.attached', a.proof);
+  if (parsed.type !== 'proof.attached' || (parsed.payload.kind === 'proof' && a.role !== 'buyer')) throw new TypeError('sealProofAttached: only the buyer sends a payment proof');
+  const state = parseChatState(a.state, a.state.channel);
+  const seq = nextSeqOf(state, a.role);
+  // Decision 16 item 1: under the chat key every member reads it, exactly PROOF_RECIPIENTS' buyer,
+  // seller and mod for proof.attached (fail closed should that list ever change). The payload is the
+  // one parseProofPayload returned, so every @x2f/proof check above still decides what is sealed.
+  if (a.tk !== undefined && PROOF_RECIPIENTS['proof.attached'].join() !== 'buyer,seller,mod') throw new TypeError('sealProofAttached: proof.attached must reach every member');
+  const envelope = a.tk !== undefined
+    ? await sealChat({ trade: state.channel, from: a.role, seq, type: parsed.type, payload: parsed.payload, tk: a.tk, me: a.me })
+    : await sealProofEnvelope(parsed, { trade: state.channel, from: a.role, seq, me: a.me, participants: a.participants });
+  if (new TextEncoder().encode(JSON.stringify(envelope)).length > CHAT_BODY_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
+  return { envelope: envelope as SealedEnvelope<A>, state: { ...state, nextSeq: seq + 1 } };
+}
+
+export interface SealUnblurredArgs {
+  role: ChatRole;
+  me: Identity;
+  participants: Participants;
+  state: ChatState;
+  /** The `proof.unblurred` payload: the unblurred copy's key and facts, never the image. */
+  proof: ProofUnblurredPayload;
+}
+
+/**
+ * Seals a `proof.unblurred` envelope (Plan 5 Task 15, Review Focus 4) through `sealProofEnvelope`,
+ * which fixes its recipients to the moderator alone: no trader (the sender included) can open it.
+ * Always envelope v1, never under the chat key (every member holds it): decision 16, the one v1
+ * envelope a keyed chat takes, once per moderator request.
+ * Under the chat's seq rules, like sealProofAttached. Throws TypeError for a role other than a
+ * trader, ProofError('bad-payload') for a malformed payload, ChatError 'too-large'.
+ */
+export async function sealProofUnblurred(a: SealUnblurredArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealProofUnblurred: role must be buyer or seller');
+  const parsed = parseProofPayload('proof.unblurred', a.proof);
+  if (parsed.type !== 'proof.unblurred') throw new TypeError('sealProofUnblurred: not an unblurred copy');
+  const state = parseChatState(a.state, a.state.channel);
+  const seq = nextSeqOf(state, a.role);
+  const envelope = await sealProofEnvelope(parsed, { trade: state.channel, from: a.role, seq, me: a.me, participants: a.participants });
+  if (new TextEncoder().encode(JSON.stringify(envelope)).length > CHAT_BODY_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
+  return { envelope, state: { ...state, nextSeq: seq + 1 } };
+}
+
+/** The seq to seal with: never one this device has already seen from itself (see sealInner). */
+function nextSeqOf(state: ChatState, role: ChatRole): number {
+  const seenOwn = state.guard.seen[role];
+  const seq = seenOwn !== undefined && seenOwn >= state.nextSeq ? seenOwn + 1 : state.nextSeq;
+  if (!Number.isSafeInteger(seq + 1)) throw new ChatError('bad-state', 'Sequence exhausted');
+  return seq;
 }
 
 export interface SealNoticeArgs {
@@ -212,19 +318,20 @@ export interface SealNoticeArgs {
   participants: Participants;
   state: ChatState;
   notice: ChatNoticeId;
+  tk?: Uint8Array;
 }
 
 /**
  * Seals a fixed notice (P-020): `{ text, notice }` with the notice's own wording, under the same
  * rules as sealChatMessage. Throws TypeError for an unknown notice or a role other than a trader.
  */
-export async function sealChatNotice(a: SealNoticeArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+export async function sealChatNotice<A extends SealNoticeArgs>(a: A): Promise<{ envelope: SealedEnvelope<A>; state: ChatState }> {
   if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealChatNotice: role must be buyer or seller');
   if (!isChatNotice(a.notice)) throw new TypeError('sealChatNotice: unknown notice');
-  return sealInner(a, { text: checkChatText(CHAT_NOTICES[a.notice]), notice: a.notice });
+  return sealInner(a, { text: checkChatText(CHAT_NOTICES[a.notice]), notice: a.notice }) as Promise<{ envelope: SealedEnvelope<A>; state: ChatState }>;
 }
 
-async function sealInner(a: Omit<SealChatArgs, 'text'>, payload: { text: string; pay?: PayDetailsPayload; notice?: ChatNoticeId }): Promise<{ envelope: Envelope; state: ChatState }> {
+async function sealInner(a: Omit<SealChatArgs, 'text'>, payload: { text: string; pay?: PayDetailsPayload; notice?: ChatNoticeId }): Promise<{ envelope: Envelope | ChatEnvelopeV2; state: ChatState }> {
   if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealChatMessage: role must be buyer or seller');
   const state = parseChatState(a.state, a.state.channel);
   // Never reuse a seq this device has already seen from itself (e.g. a counter restored from an
@@ -232,16 +339,18 @@ async function sealInner(a: Omit<SealChatArgs, 'text'>, payload: { text: string;
   const seenOwn = state.guard.seen[a.role];
   const seq = seenOwn !== undefined && seenOwn >= state.nextSeq ? seenOwn + 1 : state.nextSeq;
   if (!Number.isSafeInteger(seq + 1)) throw new ChatError('bad-state', 'Sequence exhausted');
-  const envelope = await seal({
-    trade: state.channel,
-    from: a.role,
-    seq,
-    type: CHAT_MSG_TYPE,
-    payload,
-    to: ALL,
-    me: a.me,
-    participants: a.participants,
-  });
+  const envelope = a.tk !== undefined
+    ? await sealChat({ trade: state.channel, from: a.role, seq, type: CHAT_MSG_TYPE, payload, tk: a.tk, me: a.me })
+    : await seal({
+      trade: state.channel,
+      from: a.role,
+      seq,
+      type: CHAT_MSG_TYPE,
+      payload,
+      to: ALL,
+      me: a.me,
+      participants: a.participants,
+    });
   // Belt and braces: CHAT_TEXT_MAX_BYTES is derived so this always holds.
   if (new TextEncoder().encode(JSON.stringify(envelope)).length > CHAT_BODY_MAX_BYTES) {
     throw new ChatError('too-large', 'Message is too long');
@@ -268,6 +377,14 @@ export interface OpenChatArgs {
    * not move, so the same envelope opens once the trade is secured.
    */
   payAllowed?: boolean;
+  /** The chat key: open envelope v2 under it, and nothing else (build task 5). Absent: envelope v1. */
+  tk?: Uint8Array;
+  /**
+   * Accept dispute evidence (`proof.attached` kind 'evidence'). Default false: evidence belongs to
+   * an open dispute only (P5-A30), so the engine sets it from the API's `disputeOpen`. When false,
+   * evidence is refused with ChatError('bad-message') for good.
+   */
+  evidenceAllowed?: boolean;
 }
 
 /**
@@ -285,21 +402,37 @@ export interface OpenChatArgs {
  */
 export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{ message: ChatMessage; state: ChatState }> {
   const state = parseChatState(a.state, a.state.channel);
-  const env = checkChatEnvelope(body, state.channel);
+  const env = a.tk !== undefined ? checkChatEnvelopeV2(body, state.channel) : checkChatEnvelope(body, state.channel);
   const guard = ReplayGuard.from(state.guard);
-  const opened = await open(env, {
-    me: a.me,
-    myRole: a.role,
-    participants: a.participants,
-    trade: state.channel,
-    guard,
-    allowSelf: true,
-  });
+  const opened = a.tk !== undefined
+    ? await openChat(env, { tk: a.tk, trade: state.channel, participants: a.participants, guard })
+    : await open(env, {
+      me: a.me,
+      myRole: a.role,
+      participants: a.participants,
+      trade: state.channel,
+      guard,
+      allowSelf: true,
+    });
   if (opened.from === 'mod' && a.modMayPost !== true) {
     throw new ChatError('mod-not-allowed', 'Moderator messages are shown only in a dispute');
   }
   const p = opened.payload;
   const notChat = (): ChatError => new ChatError('bad-message', 'Not a chat message');
+  if (opened.type === 'proof.attached') {
+    let proof: ProofAttachedPayload;
+    try {
+      const parsed = parseProofPayload(opened.type, p);
+      if (parsed.type !== 'proof.attached') throw notChat();
+      proof = parsed.payload;
+    } catch {
+      throw notChat();
+    }
+    // The payment proof is the buyer's only; evidence a trader's, only while a dispute is open.
+    if (proof.kind === 'proof' && opened.from !== 'buyer') throw notChat();
+    if (proof.kind === 'evidence' && (opened.from === 'mod' || a.evidenceAllowed !== true)) throw notChat();
+    return { message: { from: opened.from, seq: env.seq, text: '', proof }, state: { ...state, guard: guard.toJSON() } };
+  }
   if (opened.type !== CHAT_MSG_TYPE || typeof p !== 'object' || p === null || Array.isArray(p) || !Object.prototype.hasOwnProperty.call(p, 'text')) throw notChat();
   const keys = Object.keys(p);
   const packaged = keys.length === 2 && Object.prototype.hasOwnProperty.call(p, 'pay');
@@ -337,4 +470,25 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
     message.pay = pay;
   }
   return { message, state: { ...state, guard: guard.toJSON() } };
+}
+
+/**
+ * Build task 5: makes the chat key and the signed record this trader posts (`POST …/key`). The key
+ * is returned for this worker's memory only; the device never stores it (it opens its own copy of
+ * the record again on the next start).
+ */
+export async function makeChatKey(a: { channel: string; role: ChatRole; me: Identity; participants: Participants }): Promise<{ tk: Uint8Array; record: ChatKeyRecord }> {
+  const tk = await newChatKey();
+  return { tk, record: await makeChatKeyRecord({ chat: a.channel, by: a.role, tk, me: a.me, participants: a.participants }) };
+}
+
+/**
+ * Build task 5: the chat key from a stored record. The record must be signed by the attested
+ * identity of the trader it names, for this chat's channel, and this trader's copy must hash to its
+ * tkh. Any failure is a ProtocolError: the engine then shows the `security` failure, and the chat
+ * never starts (design section 9: a creator handing out a key that does not match tkh).
+ */
+export async function chatKeyOf(raw: unknown, a: { channel: string; role: ChatRole; me: Identity; participants: Participants }): Promise<Uint8Array> {
+  const rec = await verifyChatKeyRecord(raw, { chat: a.channel, participants: a.participants });
+  return openChatKeyRecord(rec, a.role, a.me);
 }

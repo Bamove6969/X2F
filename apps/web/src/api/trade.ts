@@ -44,6 +44,8 @@ export interface TraderSummary {
   typicalMinutes: number | null;
   positivePct: number | null;
   badges: string[];
+  /** Plan 5 Task 5: how many of `badges` are Featured (New included); the rest are "+N". */
+  featuredBadges?: number;
   /** The starter-limits stage (spec 2.3, Task 4). */
   stage: 'starter' | 'building' | 'graduated';
   /** Owner Q63: the opt-in traded line's rounded-down whole XMR, or null (not shown in the trade room yet). */
@@ -144,6 +146,11 @@ export interface TradeView {
    */
   sellerNudgedAt: string | null;
   nextDeadline: string | null;
+  /**
+   * Plan 7 Task 3: when the trade self-destructs on the server (30 days after it ended, or 90 days
+   * after its last dispute closed); null while it has no date. Absent from an older API.
+   */
+  deleteAt?: string | null;
   serverNow: string;
 }
 
@@ -183,6 +190,9 @@ export function parseTradeView(raw: unknown): TradeView {
   }
   if (v.funding !== null && v.funding !== undefined) amount((v.funding as Record<string, unknown>).sellerFundsAtomic, 'funding.sellerFundsAtomic');
   if (v.fee !== undefined && v.fee !== null) amount((v.fee as Record<string, unknown>).atomic, 'fee.atomic');
+  if (v.deleteAt !== undefined && v.deleteAt !== null && (typeof v.deleteAt !== 'string' || !Number.isFinite(Date.parse(v.deleteAt)))) {
+    throw new TradeShapeError('deleteAt');
+  }
   return raw as TradeView;
 }
 

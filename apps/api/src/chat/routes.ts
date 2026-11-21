@@ -7,7 +7,9 @@
  * - `POST /v1/trades/:code/chat` → `{ chat, role }`: the trade's chat for its buyer or seller. The
  *   chat a take linked, else the pair's open pre-trade chat on the offer (linked now: "a take
  *   reuses the chat"), else a new one linked to the trade. 404 for anyone else; 409
- *   `chat-unavailable` when the trade's offer is not in the offers table.
+ *   `chat-unavailable` when the trade's offer is not in the offers table; 409 `trade-closed` when a
+ *   new one would be made for a trade in a terminal state (released, refunded, cancelled, lapsed:
+ *   lead call 20 Nov). A chat the trade already has keeps opening after it closes.
  * - `GET /v1/chats` → `{ chats: ChatSummary[] }`, the caller's chats, newest first.
  * - `GET /v1/chats/:chat` → `ChatView`.
  * - `POST /v1/chats/:chat/identity { signPublic, boxPublic, proof }` → 201: one per role, the role
@@ -16,6 +18,19 @@
  * - `POST /v1/chats/:chat/envelopes` (an `Envelope`, at most 16 KiB, 413 above) → 201 `{ id }`.
  *   `checkChatEnvelope(body, channelFor(chat, 'chat'), sessionRole)`; the stored `sender_role` is
  *   the session's role (Revision 2026-10-28). A seq not above that sender's last is 409 `stale-seq`.
+ * - `POST /v1/chats/:chat/key` (the creator's signed key record, design build task 4) → 201; once the
+ *   chat is attested, by either trader for their own role (`by`), verified against the registered
+ *   chat identities (400 `bad-key-record`). First writer wins: a second record is 409 `key-exists`
+ *   and the device then reads the stored one. `GET /v1/chats/:chat/key` → `{ record }`, or 404 `no-key`.
+ *   Once a chat has a key record it takes only envelope v2 (`checkChatEnvelopeV2`); before, only v1.
+ *   One exception (decision 16, lead call 18 Nov): the side an open dispute's moderator asked for an
+ *   unblurred proof may post exactly ONE v1 envelope per request (the moderator-only
+ *   `proof.unblurred`, which the shared chat key cannot carry). The API cannot see a v1 envelope's
+ *   type or recipients (both are sealed), so it checks what it can: an open dispute of the chat's
+ *   trade whose request names the sender's side, and no v1 envelope from that side since the request.
+ *   The API cannot open any wrap: it stores and serves them.
+ * - `POST /v1/chats/:chat/grant` (build task 6): the counterparty's fallback grant to the moderator
+ *   (chat/grants.ts); the chat view lists every grant and its acceptance (`grants`).
  * - `GET /v1/chats/:chat/envelopes?after=<id>` → `{ envelopes: [{ id, senderRole, envelope, at }], more }`.
  *
  * Write budgets per account (review M7, limits.ts): a new pre-trade chat takes from
@@ -36,13 +51,16 @@
  * may need it, so it stays usable until the trade closes (lead decision 2026-10-29).
  */
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
-import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope } from '@x2f/trade';
+import { isPlainObject, ProtocolError, verifyChatKeyRecord } from '@x2f/protocol';
+import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope, checkChatEnvelopeV2 } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
+import { ACTIVE_LIEN_SQL } from '../disputes/lien.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { purgedTagSql } from './retention.js';
+import { chatGrants, chatNotice, fallbackGrant } from './grants.js';
 import { MARKET_PRICED } from '../offers/routes.js';
 import { assertNotBlocked, blockedEitherWaySql } from '../traders/blocks.js';
 import { traderSummaries, type TraderSummary } from '../traders/summary.js';
@@ -69,6 +87,16 @@ export interface ChatView {
   tradeSecuredAt: string | null;
   /** The moderation service's attestation is ready. */
   attested: boolean;
+  /**
+   * Design build task 6: the trader grants of the chat key to the moderator, each signed grant with
+   * the moderator's signed acceptance (null until moderation opened it). Every device verifies both.
+   */
+  grants: Array<{ grant: unknown; accepted: unknown | null }>;
+  /**
+   * Design build task 7 (T2): the moderator's signed dispute notice for the trade's current open
+   * dispute, or null. A device grants on it only when it verifies AND `disputeOpen` is true.
+   */
+  notice: unknown | null;
   /**
    * The signing key registered for the caller's own role, or null: a device that holds no chat
    * identity, or another key, knows the chat is open on another device (read-only).
@@ -98,10 +126,11 @@ const CHAT_LIST_LIMIT = 200;
 /**
  * An offer anyone may see (Task 4's LISTED): market-priced (an offer stored as fixed before the
  * owner's market-only rule is not found, offers/routes.ts MARKET_PRICED), live, and its poster
- * neither disabled nor on hold (a trading hold or a recovery-code hold).
+ * neither disabled nor on hold (a trading hold, an active lien or a recovery-code hold).
  */
 const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+  and not ${ACTIVE_LIEN_SQL('o.account_id')}
   and not ${recoveryHoldHidesSql('o.account_id')}`;
 
 interface ChatRow {
@@ -215,8 +244,10 @@ export function chatRoutes(app: FastifyInstance): void {
       await client.query('begin');
       try {
         // The trade row is locked so two first opens (both sides at once) make one chat.
-        const { rows } = await client.query<{ offer_id: string; buyer_account_id: string; seller_account_id: string; open: boolean }>(
-          'select offer_id, buyer_account_id, seller_account_id, closed_at is null as open from trades where code = $1 for update',
+        const { rows } = await client.query<{ offer_id: string; buyer_account_id: string; seller_account_id: string; open: boolean; terminal: boolean }>(
+          `select offer_id, buyer_account_id, seller_account_id, closed_at is null as open,
+                  state in ('released', 'refunded', 'cancelled', 'lapsed') as terminal
+             from trades where code = $1 for update`,
           [code],
         );
         const t = rows[0];
@@ -227,6 +258,10 @@ export function chatRoutes(app: FastifyInstance): void {
         const linked = await client.query<{ code: string }>('select code from chats where trade_code = $1', [code]);
         let chat = linked.rows[0]?.code ?? null;
         chat ??= await linkChatToTrade(client, { offerId: t.offer_id, buyerAccountId: t.buyer_account_id, sellerAccountId: t.seller_account_id, tradeCode: code });
+        // Lead call (20 Nov, review 2 of wip/lead-fix-chat-attest): a trade in a terminal state gets no
+        // NEW chat. One it already has (linked above, or the pair's pre-trade chat) keeps opening: its
+        // history, a dispute or appeal on it, ruling compliance and the purge all use it.
+        if (chat === null && t.terminal) throw new ApiError(409, 'trade-closed');
         if (chat === null) {
           chat = newTradeCode();
           try {
@@ -340,6 +375,8 @@ export function chatRoutes(app: FastifyInstance): void {
       disputeOpen: facts.rows[0]!.disputed,
       tradeSecuredAt: facts.rows[0]!.secured_at?.toISOString() ?? null,
       attested: facts.rows[0]!.attested,
+      grants: await chatGrants(deps.db, row.code),
+      notice: await chatNotice(deps.db, row.code, row.trade_code),
       mySignPublic: facts.rows[0]!.mine,
       createdAt: row.created_at.toISOString(),
       lastMessageAt: row.last_message_at?.toISOString() ?? null,
@@ -383,9 +420,14 @@ export function chatRoutes(app: FastifyInstance): void {
     const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
     const ready = await deps.db.query('select 1 from chat_attestations where chat = $1', [row.code]);
     if (ready.rows.length === 0) throw new ApiError(409, 'chat-not-ready');
+    // Design build task 4: a chat with a key record takes only envelope v2 (one ciphertext under its
+    // key, nothing a sender can leave out for the moderator, R16); one without takes only v1.
+    const keyed = (await deps.db.query('select 1 from chat_keys where chat = $1', [row.code])).rows.length > 0;
+    // Decision 16: in a keyed chat, a v1 body is only ever the answer to a moderator's request (checked under the lock below).
+    const v1InKeyed = keyed && isPlainObject(req.body) && req.body.v === 1;
     let env;
     try {
-      env = checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);
+      env = keyed && !v1InKeyed ? checkChatEnvelopeV2(req.body, await channelFor(row.code, 'chat'), role) : checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);
     } catch (e) {
       if (!(e instanceof ChatEnvelopeError)) throw e;
       if (e.code === 'too-large') throw new ApiError(413, 'bad-request');
@@ -395,8 +437,25 @@ export function chatRoutes(app: FastifyInstance): void {
     // The budget is taken only for a well-formed envelope (round-2 review m5): a client bug's
     // malformed posts answer 400/413 and leave the sender's budget alone.
     req.server.budgets.chatPost.take(req.auth.accountId);
-    const now = deps.clock();
     const id = await locked(req, row.code, async (q) => {
+      // Re-review 5 m1: the post's time is taken under the chat row's lock, so the stored times follow
+      // the lock order (decision 16's "no v1 since the request" compares them with proof_requested_at).
+      const now = deps.clock();
+      if (v1InKeyed) {
+        // Decision 16: an open dispute of this chat's trade whose moderator asked THIS side, with no
+        // v1 envelope from it since the request; otherwise refused as any v1 in a keyed chat (400).
+        // Under the chat row's lock, so two posts can never both answer one request; before the seq
+        // check (re-review 5 m2), so the loser of two racing posts is this 400 whatever their seqs.
+        const asked = row.trade_code === null ? [] : (await q.query(
+          `select 1 from disputes d
+            where d.code = $1 and d.status <> 'closed' and d.proof_request_side = $2
+              and not exists (select 1 from chat_envelopes e where e.chat = $3 and e.sender_role = $2
+                                 and e.envelope->>'v' = '1' and e.created_at >= d.proof_requested_at)
+            limit 1`,
+          [row.trade_code, role, row.code],
+        )).rows;
+        if (asked.length === 0) throw new ApiError(400, 'bad-request');
+      }
       const last = await q.query<{ seq: string | null }>(
         'select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = $2',
         [row.code, role],
@@ -412,6 +471,57 @@ export function chatRoutes(app: FastifyInstance): void {
     });
     for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
     return reply.code(201).send({ id });
+  });
+
+  app.post('/v1/chats/:chat/key', { preHandler: requireTrader }, async (req, reply) => {
+    const deps = req.server.deps;
+    const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const ready = await deps.db.query('select 1 from chat_attestations where chat = $1', [row.code]);
+    if (ready.rows.length === 0) throw new ApiError(409, 'chat-not-ready');
+    const ids = await deps.db.query<{ role: 'buyer' | 'seller'; sign_public: string; box_public: string }>(
+      'select role, sign_public, box_public from chat_identities where chat = $1',
+      [row.code],
+    );
+    const participants: Partial<Record<'buyer' | 'seller', { signPublic: string; boxPublic: string }>> = {};
+    for (const r of ids.rows) participants[r.role] = { signPublic: r.sign_public, boxPublic: r.box_public };
+    let rec;
+    try {
+      rec = await verifyChatKeyRecord(req.body, { chat: await channelFor(row.code, 'chat'), participants });
+    } catch (e) {
+      if (e instanceof ProtocolError) throw new ApiError(400, 'bad-key-record');
+      throw e;
+    }
+    if (rec.by !== role) throw new ApiError(400, 'bad-key-record');
+    // Review F5: under the chat row's lock, which the dispute route takes (for share) before it
+    // decides whether a grant is required, so a record never lands between that check and its commit.
+    const { rowCount } = await locked(req, row.code, (q) => q.query(
+      `insert into chat_keys (chat, tkh, created_by_role, wrap_buyer, wrap_seller, sig, created_at)
+       values ($1, $2, $3, $4, $5, $6, $7) on conflict (chat) do nothing`,
+      [row.code, rec.tkh, rec.by, rec.wrapBuyer, rec.wrapSeller, rec.sig, deps.clock()],
+    ));
+    if (rowCount === 0) throw new ApiError(409, 'key-exists');
+    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
+    return reply.code(201).send({ ok: true });
+  });
+
+  // Design build task 6: the counterparty's fallback grant (chat/grants.ts).
+  app.post('/v1/chats/:chat/grant', { preHandler: requireTrader }, async (req, reply) => {
+    const deps = req.server.deps;
+    const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    await locked(req, row.code, (q) => fallbackGrant(q, row.code, row.trade_code, role, req.body, deps.clock()));
+    return reply.code(201).send({ ok: true });
+  });
+
+  app.get('/v1/chats/:chat/key', { preHandler: requireTrader }, async (req) => {
+    const deps = req.server.deps;
+    const { row } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const { rows } = await deps.db.query<{ tkh: string; created_by_role: string; wrap_buyer: string; wrap_seller: string; sig: string }>(
+      'select tkh, created_by_role, wrap_buyer, wrap_seller, sig from chat_keys where chat = $1',
+      [row.code],
+    );
+    const k = rows[0];
+    if (!k) throw new ApiError(404, 'no-key');
+    return { record: { v: 1, chat: await channelFor(row.code, 'chat'), tkh: k.tkh, by: k.created_by_role, wrapBuyer: k.wrap_buyer, wrapSeller: k.wrap_seller, sig: k.sig } };
   });
 
   app.get('/v1/chats/:chat/envelopes', { preHandler: requireTrader }, async (req) => {

@@ -64,8 +64,21 @@ describe('PreKeySignalMessage', () => {
     const m = encodePreKeyMessage({ registrationId: 1234, preKeyId: 77, signedPreKeyId: 300, baseKey, identityKey, message });
     expect(hex(m)).toBe(`33${'28d209'}${'084d'}${'30ac02'}${'1221'}05${hex(baseKey)}${'1a21'}05${hex(identityKey)}${'2204'}deadbeef`);
     expect(parsePreKeyMessage(m)).toEqual({ registrationId: 1234, preKeyId: 77, signedPreKeyId: 300, baseKey, identityKey, message });
+    // Without a preKeyId, field 1 is absent: the exact bytes, not a search for '084d', which random
+    // keys hold about once in 530 runs (the flake of 18 Nov).
     const without = encodePreKeyMessage({ registrationId: 1, signedPreKeyId: 2, baseKey, identityKey, message });
-    expect(hex(without)).not.toContain('084d');
+    expect(hex(without)).toBe(`33${'2801'}${'3002'}${'1221'}05${hex(baseKey)}${'1a21'}05${hex(identityKey)}${'2204'}deadbeef`);
+    expect(parsePreKeyMessage(without)).toEqual({ registrationId: 1, signedPreKeyId: 2, baseKey, identityKey, message });
+    expect(parsePreKeyMessage(without).preKeyId).toBeUndefined();
+  });
+
+  it('keys that hold the bytes of a preKeyId field (08 4d) do not make one appear', () => {
+    const baseKey = Buffer.alloc(32, 0x08);
+    baseKey[1] = 0x4d;
+    const identityKey = Buffer.from('084d'.repeat(16), 'hex');
+    const message = Buffer.from('deadbeef', 'hex');
+    const without = encodePreKeyMessage({ registrationId: 1, signedPreKeyId: 2, baseKey, identityKey, message });
+    expect(hex(without)).toBe(`33${'2801'}${'3002'}${'1221'}05${hex(baseKey)}${'1a21'}05${hex(identityKey)}${'2204'}deadbeef`);
     expect(parsePreKeyMessage(without)).toEqual({ registrationId: 1, signedPreKeyId: 2, baseKey, identityKey, message });
     expect(parsePreKeyMessage(without).preKeyId).toBeUndefined();
   });

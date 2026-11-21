@@ -1,6 +1,6 @@
 export { ProtocolError, type ProtocolErrorCode } from './errors.js';
-export { generateIdentity, signProof, type Identity } from './identity.js';
-export { SEALED_OVERHEAD, generateBoxKeyPair, openSealed, sealTo, type BoxKeyPair } from './sealed.js';
+export { cryptoReady, deviceKeysMatch, generateIdentity, identityKeysMatch, signProof, type Identity } from './identity.js';
+export { SEALED_OVERHEAD, generateBoxKeyPair, hsalsa20, openSealed, openSealedWith, sealTo, type BoxKeyPair, type BoxOpener } from './sealed.js';
 export { ReplayGuard, type ReplayGuardJSON } from './replay.js';
 export { joinMessage } from './join.js';
 export {
@@ -16,3 +16,40 @@ export {
 } from './envelope.js';
 export { canonicalJson } from './payload.js';
 export { hasExactKeys, isPlainObject, isValidSeq } from './roles.js';
+export {
+  CHAT_ENVELOPE_V2_KEYS,
+  CHAT_GRANT_KEYS,
+  CHAT_KEY_BYTES,
+  CHAT_KEY_RECORD_KEYS,
+  DISPUTE_NOTICE_KEYS,
+  GRANT_ACCEPTED_KEYS,
+  makeGrantAccepted,
+  verifyGrantAccepted,
+  type GrantAccepted,
+  chatKeyHash,
+  makeChatGrant,
+  makeChatKeyRecord,
+  makeDisputeNotice,
+  newChatKey,
+  openChat,
+  openChatKeyRecord,
+  sealChat,
+  encryptChat,
+  signChatEnvelope,
+  makeModCountersign,
+  verifyModCountersign,
+  type ChatEnvelopeV2Body,
+  type ModCountersign,
+  type Signer,
+  unwrapChatKey,
+  verifyChatGrant,
+  verifyChatKeyRecord,
+  verifyDisputeNotice,
+  wrapChatKey,
+  type ChatEnvelopeV2,
+  type ChatGrant,
+  type ChatKeyRecord,
+  type DisputeNotice,
+  type OpenChatArgs,
+  type SealChatArgs,
+} from './chatV2.js';

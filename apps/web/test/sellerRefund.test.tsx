@@ -391,6 +391,117 @@ describe("SellerRefund after the cancel (owner 8 Nov: the refund starts at once)
     expect(button('Cancel and get refund')).toBeNull();
   });
 
+  // Gap 4 (20 Nov, the regtest e2e): the refund is seller-built, so it waits for this device until
+  // the moderator has submitted it. The view must say so, and say when the page may close.
+  it('refund in progress, this device still signing: says to keep the page open, and that a closed page waits until the trade is opened again on this device', async () => {
+    const { escrow } = escrowFake();
+    const { host } = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'signing', handedOff: false } });
+    await settle();
+    const keep = host.querySelector('[data-keep-open]');
+    expect(keep?.getAttribute('role')).toBe('status');
+    expect(keep?.textContent?.trim()).toBe('Keep this page open while this device signs the refund. If you close it, the refund waits until you open this trade again on this device.');
+    expect(host.querySelector('[data-refund-handed-off]')).toBeNull();
+    expect(host.textContent).not.toContain('You can close this page');
+  });
+
+  // Review m6: idle means this device does not hold the trade's escrow (a second device): it is not
+  // needed here, so no keep-open line and no leave warning (SellerConfirm's "not on this device").
+  it('refund in progress on a device that does not run the escrow (idle): says to open it on the device it was set up on, never to keep this page open', async () => {
+    const { host } = mount(sellerRequestedView());
+    await settle();
+    expect(host.querySelector('[data-refund-not-here]')?.textContent?.trim()).toBe('This device doesn’t hold this trade’s escrow yet. If you set the trade up on another device, open it there.');
+    expect(host.querySelector('[data-keep-open]')).toBeNull();
+    expect(host.querySelector('[data-refund-can-close]')).toBeNull();
+  });
+
+  // Review M1 a and m2: the moderator's DONE is its report, not a block; "can close" waits for this
+  // device's own settle in a block (phase done), so a closed page never meets the after-close rule unproven.
+  it("refund in progress, the moderator reported it sent (handedOff) but not yet in a block: keep the page open a few minutes; only phase done says the page may close", async () => {
+    const { escrow } = escrowFake();
+    const { host } = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'signing', handedOff: true } });
+    await settle();
+    expect(host.querySelector('[data-refund-handed-off]')?.textContent?.trim()).toBe('The moderator has sent the refund. Keep this page open a few minutes while it confirms.');
+    expect(host.querySelector('[data-keep-open]')).toBeNull();
+    expect(host.textContent).not.toContain('You can close this page');
+    expect(host.textContent).not.toContain('sent to the network');
+    const done = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'done', handedOff: true } });
+    await settle();
+    expect(done.host.querySelector('[data-refund-can-close]')?.textContent?.trim()).toBe('The refund is in a block. You can close this page now.');
+    expect(done.host.querySelector('[data-refund-handed-off]')).toBeNull();
+    expect(done.host.querySelector('[data-keep-open]')).toBeNull();
+  });
+
+  // Review m5: a stopped escrow says which: waiting for this device, no longer needing it, or stopped for good.
+  it('refund in progress with the escrow stopped on this device: waiting (Try again), or stopped for good (an integrity error, no Try again)', async () => {
+    const { escrow } = escrowFake();
+    const retry = vi.fn();
+    const m = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'error', error: 'escrow-failed', retryable: true, retry, handedOff: false } });
+    await settle();
+    expect(m.host.querySelector('[data-keep-open]')).toBeNull();
+    expect(m.host.querySelector('[data-refund-can-close]')).toBeNull();
+    expect(m.host.querySelector('[data-refund-escrow-stopped]')?.textContent).toBe('The escrow stopped on this device, so the refund is waiting for it.Try again');
+    fire(m.button('Try again')!, new MouseEvent('click', { bubbles: true }));
+    expect(retry).toHaveBeenCalledTimes(1);
+    const stuck = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'error', error: 'escrow-failed', retryable: false, handedOff: false } });
+    await settle();
+    expect(stuck.host.querySelector('[data-refund-escrow-stopped]')?.hasAttribute('data-for-good')).toBe(true);
+    expect(stuck.host.querySelector('[data-refund-escrow-stopped] p')?.textContent).toBe('The escrow on this device stopped for good, so it can’t finish this refund. If the refund doesn’t reach your wallet, open a dispute.');
+    expect(stuck.host.textContent).not.toContain('waiting');
+    expect(stuck.button('Try again')).toBeNull();
+  });
+
+  it("leaving the page asks first (beforeunload) between the tap and handedOff; not once the moderator submitted it, not on a stopped escrow, and not after the view is gone", async () => {
+    const leave = () => {
+      const e = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    const { escrow } = escrowFake();
+    const signing = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'signing', handedOff: false } });
+    await settle();
+    expect(leave()).toBe(true);
+    signing.rerender(
+      <MemoryRouter>
+        <SellerRefund code={BOARD.code} view={sellerRequestedView()} escrow={{ ...escrow, phase: 'signing', handedOff: true }} refresh={vi.fn(async () => undefined)} serverClock={clockAt(SERVER_NOW)} wide={false} />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(leave()).toBe(false);
+    signing.unmount();
+    const stopped = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'error', error: 'escrow-failed', handedOff: false } });
+    await settle();
+    expect(leave()).toBe(false);
+    stopped.unmount();
+    const waiting = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'signing', handedOff: false } });
+    await settle();
+    expect(leave()).toBe(true);
+    waiting.unmount();
+    expect(leave()).toBe(false);
+    // A device that does not run the escrow (idle, review m6) never asks.
+    const notHere = mount(sellerRequestedView());
+    await settle();
+    expect(leave()).toBe(false);
+    notHere.unmount();
+    // The window-ended view (before the tap) never asks.
+    const before = mount(sellerView());
+    await settle();
+    expect(leave()).toBe(false);
+    before.unmount();
+  });
+
+  it('refunded: a device whose escrow stopped says so (review M1: it was silent there); a done device says nothing more', async () => {
+    const { escrow } = escrowFake();
+    const stuck = mount(sellerRefundedView(), { escrow: { ...escrow, phase: 'error', error: 'escrow-failed', retryable: false, handedOff: false } });
+    await settle();
+    expect(stuck.host.querySelector('[data-refund-escrow-stopped]')?.hasAttribute('data-for-good')).toBe(true);
+    expect(stuck.host.querySelector('[data-screen-part="seller-refunded"]')?.getAttribute('data-escrow-phase')).toBe('error');
+    const done = mount(sellerRefundedView(), { escrow: { ...escrow, phase: 'done', handedOff: true } });
+    await settle();
+    expect(done.host.querySelector('[data-refund-escrow-stopped]')).toBeNull();
+    expect(done.host.querySelector('[data-keep-open], [data-refund-handed-off]')).toBeNull();
+    expect(done.host.querySelector('[data-screen-part="seller-refunded"]')?.getAttribute('data-escrow-phase')).toBe('done');
+  });
+
   it('refunded: counts the refund confirmations from the API, and the trade is complete at 10', async () => {
     const path = `/v1/trades/${encodeURIComponent(BOARD.code)}/confirmations`;
     answers[path] = [{ status: 200, body: { confirmations: 4, target: 10 } }];

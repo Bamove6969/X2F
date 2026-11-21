@@ -10,6 +10,7 @@ import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { seedReviews, seedTrade } from './helpers/trades.js';
 import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
+import { approvedLimit } from './helpers/limits.js';
 
 // Plan 3 Task 4: offers. Real Postgres (one database per file), a fake market so each test sets
 // the price feed up or down.
@@ -100,6 +101,17 @@ async function poster(): Promise<Who> {
   return t;
 }
 
+/** An active lien on `debtorId` from a dispute (J-06, migration 400), owed to a fresh account; returns its id. */
+async function placeLien(debtorId: string): Promise<string> {
+  const creditor = await trader();
+  const { rows } = await deps.db.query<{ id: string }>(
+    `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
+     values ($1, $2, 1000, gen_random_uuid()::text, 1, 1, 'restitution', $3, $3) returning id::text`,
+    [debtorId, creditor.id, deps.clock()],
+  );
+  return rows[0]!.id;
+}
+
 /** Tests share one database: most use a currency of their own to keep their lists apart. */
 const BODY = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 50 },
@@ -154,7 +166,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
         poster: {
           displayName: p.displayName, completedTrades: 0, online: true, lastSeenAt: deps.clock().toISOString(),
           // A starter carries New (spec 5.4; traderTrust.test.ts has the rest of the trust row).
-          typicalMinutes: null, positivePct: null, badges: ['new'], stage: 'starter', tradedOverXmr: null, imported: [], disputes: { won: 0, lost: 0 },
+          typicalMinutes: null, positivePct: null, badges: ['new'], featuredBadges: 1, stage: 'starter', tradedOverXmr: null, imported: [], disputes: { won: 0, lost: 0 },
         },
         rate: null,
         pricing: { mode: 'market', marginBps: 50 },
@@ -285,6 +297,19 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     } finally {
       await deps.db.query('update site_flags set trading_paused = false');
     }
+  });
+
+  it('an account with an active lien cannot post or relist (409 lien); a suspended one can (J-06, owner D-008)', async () => {
+    const p = await poster();
+    const id = await post(p, { currency: 'NZD' });
+    await p.browser.patch(`/v1/offers/${id}`, { status: 'paused' });
+    const lienId = await placeLien(p.id);
+    const res = await p.browser.post('/v1/offers', flexBody(BODY));
+    expect({ status: res.statusCode, body: res.json() }).toEqual({ status: 409, body: { error: 'lien' } });
+    expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'live' })).json()).toEqual({ error: 'lien' });
+    await deps.db.query(`update liens set status = 'suspended', changed_at = $2 where id = $1`, [lienId, deps.clock()]);
+    expect((await p.browser.post('/v1/offers', flexBody(BODY))).statusCode).toBe(201);
+    expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'live' })).json()).toEqual({ id, status: 'live' });
   });
 
   it('no usable wallet → 409 no-wallet, also with one waiting (24-hour) wallet only', async () => {
@@ -516,6 +541,20 @@ describe('who is listed', () => {
     expect((await list('side=sell&method=ZELLE&currency=CHF')).map((c) => c.id)).toEqual([keep]);
   });
 
+  it('hides the live offers of a poster with an active lien; they come back by themselves once it is no longer active (J-06)', async () => {
+    const owing = await poster();
+    const ok = await poster();
+    const theirs = await post(owing, { currency: 'SGD' });
+    const keep = await post(ok, { currency: 'SGD' });
+    const lienId = await placeLien(owing.id);
+    expect((await list('side=sell&method=ZELLE&currency=SGD')).map((c) => c.id)).toEqual([keep]);
+    // Their own list says why.
+    const mine = (await owing.browser.get('/v1/account/offers')).json() as { id: string; hidden?: string }[];
+    expect(mine.find((o) => o.id === theirs)?.hidden).toBe('lien');
+    await deps.db.query(`update liens set status = 'void', changed_at = $2, lifted_at = $2 where id = $1`, [lienId, deps.clock()]);
+    expect((await list('side=sell&method=ZELLE&currency=SGD')).map((c) => c.id).sort()).toEqual([keep, theirs].sort());
+  });
+
   it('/v1/methods counts live offers from the offers table, with the best rate', async () => {
     const p = await poster();
     // SEK market 330000: +5% = 346500, +2% = 336600, −50% = 165000, +9% = 359700.
@@ -563,6 +602,106 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     const { code } = await seedTrade(deps, { sellerId: s.id, buyerId: b.id, poster: 'seller' });
     const v = (await b.browser.get(`/v1/trades/${code}`)).json() as { counterparty: Record<string, unknown> };
     expect(v.counterparty).toMatchObject({ displayName: s.displayName, stage: 'graduated', completedTrades: 20 });
+  });
+
+  it('Plan 4 Task 26 (review M1): a poster held by an account limit lists each band up to that limit; a band wholly above it is not listed', async () => {
+    const p = await poster();
+    await history(p.id, { days: 31, completed: 20 });
+    await approvedLimit(deps, p.id, { capUsd: 300 });
+    // $50 to $2,000, and $500 to $900.
+    const open = await post(p, { currency: 'USD', side: 'buy', minFiatCents: '5000', maxFiatCents: '200000' });
+    const above = await post(p, { currency: 'USD', side: 'buy', minFiatCents: '50000', maxFiatCents: '90000' });
+    const cards = await list('side=buy&method=ZELLE&currency=USD');
+    const card = cards.find((c) => c.id === open)!;
+    expect(card).toMatchObject({ minFiatCents: '5000', maxFiatCents: '30000' });
+    expect((card.tiers as Array<{ min: string; max: string }>).map((t) => [t.min, t.max])).toEqual([['5000', '30000']]);
+    expect(cards.find((c) => c.id === above)).toBeUndefined();
+    const detail = await viewer.get(`/v1/offers/${open}?currency=USD`);
+    expect(detail.json()).toMatchObject({ maxFiatCents: '30000' });
+    expect((await viewer.get(`/v1/offers/${above}?currency=USD`)).statusCode).toBe(404);
+    // In another currency the limit is converted at the market: $300 is €270.
+    const eur = await post(await poster(), { currency: 'EUR', side: 'buy', minFiatCents: '5000', maxFiatCents: '100000' });
+    const eurPoster = (await deps.db.query<{ account_id: string }>('select account_id from offers where id = $1', [eur])).rows[0]!.account_id;
+    await history(eurPoster, { days: 31, completed: 20 });
+    await approvedLimit(deps, eurPoster, { capUsd: 300 });
+    expect((await list('side=buy&method=ZELLE&currency=EUR')).find((c) => c.id === eur)).toMatchObject({ maxFiatCents: '27000' });
+    // The poster's own view is the offer as posted.
+    expect((await p.browser.get(`/v1/offers/${above}?currency=USD`)).json()).toMatchObject({ minFiatCents: '50000', maxFiatCents: '90000' });
+  });
+
+  it('Plan 4 Task 26 (review m8): a limit that does not lower the cap is not shown: such a Starter looks like any Starter', async () => {
+    const plain = await poster();
+    const big = await poster();
+    await approvedLimit(deps, big.id, { capUsd: 5000 });
+    const held = await poster();
+    await approvedLimit(deps, held.id, { stage: 'building' });
+    const ids = [await post(plain, { currency: 'USD', side: 'buy' }), await post(big, { currency: 'USD', side: 'buy' }), await post(held, { currency: 'USD', side: 'buy' })];
+    const cards = await list('side=buy&method=ZELLE&currency=USD');
+    const shape = (id: string) => {
+      const c = cards.find((x) => x.id === id)!;
+      return { min: c.minFiatCents, max: c.maxFiatCents, tiers: (c.tiers as Array<{ min: string; max: string }>).map((t) => [t.min, t.max]) };
+    };
+    expect(shape(ids[1]!)).toEqual(shape(ids[0]!));
+    expect(shape(ids[2]!)).toEqual(shape(ids[0]!));
+    expect(shape(ids[0]!)).toEqual({ min: '5000', max: '200000', tiers: [['5000', '200000']] });
+  });
+
+  it('Plan 4 Task 26 (review): the method counts leave out an offer its poster\'s limit unlists', async () => {
+    const cur = 'THB';
+    const count = async () =>
+      ((await viewer.get(`/v1/methods?side=buy&currency=${cur}`)).json() as { live: { id: string; offers: number }[] }).live.find((m) => m.id === 'ZELLE')?.offers ?? 0;
+    const p = await poster();
+    await history(p.id, { days: 31, completed: 20 });
+    // THB 35 per USD: a $100 limit is ฿3,500; the offer starts at ฿5,000.
+    await post(p, { currency: cur, side: 'buy', minFiatCents: '500000', maxFiatCents: '900000' });
+    expect(await count()).toBe(1);
+    await approvedLimit(deps, p.id, { capUsd: 100 });
+    expect(await count()).toBe(0);
+    expect((await list(`side=buy&method=ZELLE&currency=${cur}`)).length).toBe(0);
+  });
+
+  it('Plan 4 Task 26 (review m9): a limited poster\'s best rate in the method counts comes only from bands the limit leaves', async () => {
+    const cur = 'MXN';
+    const zelle = async () =>
+      ((await viewer.get(`/v1/methods?side=buy&currency=${cur}`)).json() as { live: { id: string; offers: number; bestRate: string | null }[] }).live.find((m) => m.id === 'ZELLE');
+    const p = await poster();
+    await history(p.id, { days: 31, completed: 20 });
+    // MXN 18 per USD. A buy ad pays the seller, so the best is the highest: the big band at +5%,
+    // the small band at -5%. A $50 limit (MXN 900) leaves only the small band.
+    const res = await p.browser.post('/v1/offers', {
+      side: 'buy',
+      currencies: [{ currency: cur, bands: [
+        { min: '100', max: '1500', marginBps: -500, minTrades: null },
+        { min: '1501', max: '9000', marginBps: 500, minTrades: null },
+      ] }],
+      methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: '' }],
+      terms: '',
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const market = (33_000n * 18n).toString();
+    expect((await zelle())?.bestRate).toBe(((BigInt(market) * 10_500n) / 10_000n).toString());
+    await approvedLimit(deps, p.id, { capUsd: 50 });
+    expect(await zelle()).toMatchObject({ offers: 1, bestRate: ((BigInt(market) * 9_500n) / 10_000n).toString() });
+  });
+
+  it('Plan 4 Task 26 (review m5): the "Opens at" hint never promises a stage an account limit blocks', async () => {
+    const p = await poster();
+    const mid = await post(p, { currency: 'USD', minFiatCents: '50000', maxFiatCents: '90000', side: 'buy' });
+    const big = await post(p, { currency: 'USD', minFiatCents: '150000', maxFiatCents: '300000', side: 'buy' });
+    const q = 'side=buy&method=ZELLE&currency=USD';
+    const opens = async (who: Browser) => {
+      const cards = await list(q, who);
+      return Object.fromEntries([mid, big].map((id) => [id, cards.find((c) => c.id === id)?.opensAt ?? '-']));
+    };
+    const heldStarter = await trader();
+    await approvedLimit(deps, heldStarter.id, { stage: 'starter' });
+    expect(await opens(heldStarter.browser)).toEqual({ [mid]: '-', [big]: '-' });
+    const heldBuilding = await trader();
+    await approvedLimit(deps, heldBuilding.id, { stage: 'building' });
+    expect(await opens(heldBuilding.browser)).toEqual({ [mid]: 'building', [big]: '-' });
+    const capped = await trader();
+    await approvedLimit(deps, capped.id, { capUsd: 600 });
+    expect(await opens(capped.browser)).toEqual({ [mid]: 'building', [big]: '-' });
   });
 
   it("marks offers above a signed-in viewer's cap with the stage that opens them (opensAt)", async () => {

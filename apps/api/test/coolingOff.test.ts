@@ -16,6 +16,7 @@ import { OWNER_WARNINGS } from '../src/routes/account.js';
 import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { APPROVAL_DECISION_BUCKET, SECURITY_CHANGE_BUCKET } from '../src/limits.js';
 import { hashPassword } from '../src/auth/password.js';
+import { insertPgpKey } from '../src/auth/pgp.js';
 import { PUSH_SUBSCRIPTION_CAP } from '../src/push/send.js';
 import { STRONG_COMBOS, loginStrength } from '../src/auth/strength.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
@@ -540,9 +541,15 @@ describe('C1: a weak session cannot add a method and use it to skip the approval
 });
 
 describe("C2: a weak session's changes touch nothing before their date", () => {
-  /** A password trader with a passkey added in the set-up window; returns the passkey and the ids. */
+  /**
+   * A password trader with a passkey added in the set-up window; returns the passkey and the ids.
+   * Owner, 16 Nov 2026: a password never stands alone, so the trader also holds a PGP key (removing
+   * the passkey would otherwise leave the password alone, 409 `password-alone`).
+   */
   async function withPasskey() {
     const t = await passwordTrader();
+    const pgp = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: t.id, fingerprint: pgp.fingerprint, armored: pgp.publicKey, now });
     const ownerKey = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await onboarding(deps, t.id, new Date(now.getTime() + HOUR));
     expect((await addPasskey(deps, t.b, t.id, ownerKey)).statusCode).toBe(201);
@@ -567,7 +574,7 @@ describe("C2: a weak session's changes touch nothing before their date", () => {
     }
     // Accepting the Terms is not a security change: it applies (lead decision 2026-10-30).
     expect((await b.post('/v1/account/terms', { version: TERMS, signature: SIG })).statusCode).toBe(204);
-    expect((await methodsOf(b)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
+    expect((await methodsOf(b)).map((m) => m.type).sort()).toEqual(['passkey', 'password', 'pgp']);
     expect((await submit(b, ids)).json()).toMatchObject({ status: 'queued', count: 4 });
 
     // The owner logs in with the passkey held before the submission: in; the waiting changes stay for

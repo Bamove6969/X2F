@@ -1,6 +1,7 @@
 import type { Outcome, Payout } from '@x2f/escrow';
-import { escrowPlan, payoutsFor, type RulingKind, type SettleKind, type TradeState } from '@x2f/trade';
-import { describe, expect, it } from 'vitest';
+import { escrowPlan, payoutsFor, rulingStatementBytes, type RulingKind, type RulingStatement, type SettleKind, type TradeState } from '@x2f/trade';
+import sodium from 'libsodium-wrappers';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext } from '../src/escrow/policy.js';
 
 const BUYER = '4BuyerPayoutAddress';
@@ -9,10 +10,35 @@ const FEE = '4FeeWalletAddress';
 const ATTACKER = '4SomeoneElse';
 const AMOUNT = 1_250_000_000_000n;
 
-function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance?: bigint; state?: TradeState; paidAt?: string | null; settling?: string | null } = {}): PolicyContext {
+const CODE = 'AB12-CD34-EF56-GH78';
+const ESCROW = '5EscrowMultisigAddress';
+let mod: { publicKey: Uint8Array; privateKey: Uint8Array };
+beforeAll(async () => {
+  await sodium.ready;
+  mod = sodium.crypto_sign_keypair();
+});
+
+/**
+ * Haveno review 2026-11-12, finding 2: the moderation service's signed ruling statement for this
+ * trade and escrow, paying `to` (default: this side's ruling set worked out on this device).
+ */
+function statementFor(c: Omit<PolicyContext, 'ruling'>, o: { to?: Payout[]; winner?: 'buyer' | 'seller'; over?: Partial<RulingStatement>; key?: Uint8Array } = {}): NonNullable<PolicyContext['ruling']> {
+  const winner = o.winner ?? c.role;
+  const to = o.to ?? expected(winner === 'buyer' ? 'dispute-buyer' : 'dispute-seller', c as PolicyContext);
+  const statement: RulingStatement = {
+    v: 1, trade: CODE, escrowAddress: ESCROW, round: 1, rulingId: '7f0c1f9e-0000-4000-8000-000000000001',
+    outcome: winner === 'buyer' ? 'release-to-buyer' : 'refund-to-seller', winner,
+    payouts: to.map((p) => ({ address: p.address, amountAtomic: p.amountAtomic.toString() })), issuedAt: '2026-11-12T10:00:00.000Z', ...o.over,
+  };
+  const sig = sodium.to_hex(sodium.crypto_sign_detached(rulingStatementBytes(statement), o.key ?? mod.privateKey));
+  return { code: CODE, escrowAddress: ESCROW, modSigningPublic: sodium.to_hex(mod.publicKey), statement, sig };
+}
+
+/** A context; while disputed it carries this side's verified ruling statement unless `ruling` says otherwise. */
+function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance?: bigint; state?: TradeState; paidAt?: string | null; settling?: string | null; ruling?: PolicyContext['ruling'] } = {}): PolicyContext {
   const poster = o.poster ?? 'seller';
   const { sellerFundsAtomic } = escrowPlan({ amountAtomic: AMOUNT, poster });
-  return {
+  const c: PolicyContext = {
     role,
     own: role === 'buyer' ? { payout: BUYER } : { refund: SELLER },
     balance: o.balance ?? sellerFundsAtomic,
@@ -20,6 +46,8 @@ function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance
     deal: { poster, amountAtomic: AMOUNT },
     signedTerms: { payout: BUYER, refund: SELLER },
   };
+  if (o.ruling !== undefined) return { ...c, ruling: o.ruling };
+  return c.trade.state === 'disputed' ? { ...c, ruling: statementFor(c) } : c;
 }
 
 function expected(kind: SettleKind | RulingKind, c: PolicyContext): Payout[] {
@@ -147,6 +175,53 @@ describe('cosignPolicy: the shapes each side may settle', () => {
       expect(cosignPolicy(ctx('buyer', { state }), out(expected('dispute-buyer', ctx('buyer', { state })), 'mod', 'buyer')), state).toBe(false);
       expect(cosignPolicy(ctx('seller', { state }), out(expected('dispute-seller', ctx('seller', { state })), 'mod', 'seller')), state).toBe(false);
     }
+  });
+
+  // Haveno review 2026-11-12, finding 2 (lead call): the API's unsigned "disputed" is not enough.
+  it.each(['buyer', 'seller'] as const)('the %s co-signs a ruling set only against the moderator\'s verified statement, never on the API\'s "disputed" alone', (role) => {
+    const kind = role === 'buyer' ? 'dispute-buyer' : 'dispute-seller';
+    const base = ctx(role, { state: 'disputed', ruling: null });
+    const o = out(expected(kind, base), 'mod', role);
+    expect(cosignPolicy(base, o)).toBe(false);
+    const { ruling: _none, ...noField } = base;
+    expect(cosignPolicy(noField, o)).toBe(false);
+    expect(cosignPolicy({ ...base, ruling: statementFor(base) }, o)).toBe(true);
+  });
+
+  it.each(['buyer', 'seller'] as const)('%s: a forged ruling (another key, or changed after signing) is refused', (role) => {
+    const base = ctx(role, { state: 'disputed', ruling: null });
+    const o = out(expected(role === 'buyer' ? 'dispute-buyer' : 'dispute-seller', base), 'mod', role);
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { key: sodium.crypto_sign_keypair().privateKey }) }, o)).toBe(false);
+    const good = statementFor(base);
+    expect(cosignPolicy({ ...base, ruling: { ...good, statement: { ...(good.statement as RulingStatement), issuedAt: '2026-11-13T10:00:00.000Z' } } }, o)).toBe(false);
+    // The key the statement names must be the pinned one (this device's build config), never one the API gives.
+    expect(cosignPolicy({ ...base, ruling: { ...good, modSigningPublic: sodium.to_hex(sodium.crypto_sign_keypair().publicKey) } }, o)).toBe(false);
+  });
+
+  it.each(['buyer', 'seller'] as const)('%s: a ruling replayed from another trade, or for another escrow, is refused', (role) => {
+    const base = ctx(role, { state: 'disputed', ruling: null });
+    const o = out(expected(role === 'buyer' ? 'dispute-buyer' : 'dispute-seller', base), 'mod', role);
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { over: { trade: 'ZZ12-CD34-EF56-GH78' } }) }, o)).toBe(false);
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { over: { escrowAddress: '5AnotherEscrow' } }) }, o)).toBe(false);
+  });
+
+  it.each(['buyer', 'seller'] as const)('%s: a stale round (a round-2 statement) is refused: only round 1 pays', (role) => {
+    const base = ctx(role, { state: 'disputed', ruling: null });
+    const o = out(expected(role === 'buyer' ? 'dispute-buyer' : 'dispute-seller', base), 'mod', role);
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { over: { round: 2 } }) }, o)).toBe(false);
+  });
+
+  it.each(['buyer', 'seller'] as const)('%s: an altered payout is refused: the statement and the set must both equal this device\'s own', (role) => {
+    const kind = role === 'buyer' ? 'dispute-buyer' : 'dispute-seller';
+    const base = ctx(role, { state: 'disputed', ruling: null });
+    const mine = expected(kind, base);
+    const o = out(mine, 'mod', role);
+    // A statement paying one atomic unit less to this side.
+    const shaved = mine.map((p, i) => (i === 0 ? { ...p, amountAtomic: p.amountAtomic - 1n } : p));
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { to: shaved }) }, o)).toBe(false);
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { to: shaved }) }, out(shaved, 'mod', role))).toBe(false);
+    // A statement naming the other side the winner.
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { winner: role === 'buyer' ? 'seller' : 'buyer', to: mine }) }, o)).toBe(false);
   });
 
   it('a late surplus is re-derived: the outcome for the new balance is allowed, the old one is not', () => {

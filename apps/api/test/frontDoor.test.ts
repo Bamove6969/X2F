@@ -74,6 +74,7 @@ async function staleTermsBrowser(): Promise<Browser> {
 }
 
 const MISSING_OFFER = '00000000-0000-4000-8000-000000000000';
+const MISSING_TRADER = 'NoSuchTrader9';
 
 // Each marketplace read, and what a signed-in, set-up trader gets.
 const READS: { url: string; inside: number }[] = [
@@ -83,12 +84,15 @@ const READS: { url: string; inside: number }[] = [
   { url: `/v1/offers/${MISSING_OFFER}`, inside: 404 },
   { url: '/v1/price?currency=USD', inside: 200 },
   { url: '/v1/news', inside: 200 },
+  // Plan 5 Tasks 5 and 12: a trader's profile and their public signed record (404: no such name).
+  { url: `/v1/traders/${MISSING_TRADER}`, inside: 404 },
+  { url: `/v1/traders/${MISSING_TRADER}/record`, inside: 404 },
 ];
 
-/** `GET /v1/offers/:id` for `/v1/offers/<uuid>?x`: the route a READS url names. */
+/** `GET /v1/offers/:id` for `/v1/offers/<uuid>?x` (`:name` for a trader): the route a READS url names. */
 function routeOf(url: string): string {
   const path = url.split('?')[0]!;
-  return `GET ${path.replace(MISSING_OFFER, ':id')}`;
+  return `GET ${path.replace(MISSING_OFFER, ':id').replace(MISSING_TRADER, ':name')}`;
 }
 
 describe('the route list', () => {
@@ -274,7 +278,7 @@ describe('GET /v1/site on both sides of the door', () => {
       expect((await (await recoveryBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
 
       const t = await trader();
-      expect((await t.browser.get('/v1/site')).json()).toEqual({ banner: { text: 'Upgrade at noon', kind: 'info' }, tradingPaused: true, maintenance: null, plannedMaintenance: null });
+      expect((await t.browser.get('/v1/site')).json()).toEqual({ banner: { text: 'Upgrade at noon', kind: 'info' }, tradingPaused: true, maintenance: null, plannedMaintenance: null, communityLinks: { matrix: null, telegram: null } });
     } finally {
       await deps.db.query(`update site_flags set banner_text = null, banner_kind = null, trading_paused = false`);
     }

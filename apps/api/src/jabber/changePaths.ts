@@ -75,7 +75,12 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
   },
   {
     table: 'wallets', accountColumn: 'account_id', ops: ALL,
-    changes: ['id', 'account_id', 'app', 'label', 'created_at', 'usable_from', 'removed_at'],
+    // one_time (620, owner demo note #6) is set once with the wallet and never updated: a change if it
+    // ever were. A one-time wallet used up by a trade sets removed_at, a change that notifies like a removal.
+    // is_default (630, owner 17 Nov): the person's choice of default payout wallet, a change.
+    // used_by_trade (640, owner Q10): the trade that used up a one-time wallet. Set and cleared with
+    // removed_at (use-up, restore), a change either way; cleared alone by a removal, which notifies too.
+    changes: ['id', 'account_id', 'app', 'label', 'created_at', 'usable_from', 'removed_at', 'one_time', 'is_default', 'used_by_trade'],
     bookkeeping: { address: "nulled by the purge 90 days after removal (the removal notified)" },
   },
   {
@@ -98,6 +103,29 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     bookkeeping: {},
   },
   {
+    // J-06 (migration 400): a lien on the account and a 1% it owes are changes to it, like a freeze
+    // (lead default, owner p11-119 pattern; owner may change). Neither is ever deleted (400's guards).
+    table: 'liens', accountColumn: 'debtor_account_id', ops: ['insert', 'update'],
+    changes: [
+      'id', 'debtor_account_id', 'creditor_account_id', 'amount_atomic', 'fee_atomic', 'from_code', 'dispute_seq', 'round', 'cause',
+      'status', 'created_at', 'changed_at', 'lifted_at', 'repayment_code',
+    ],
+    bookkeeping: {},
+  },
+  {
+    table: 'fees_owed', accountColumn: 'account_id', ops: ['insert', 'update'],
+    changes: ['id', 'account_id', 'amount_atomic', 'from_code', 'dispute_seq', 'created_at', 'collected_atomic', 'settled_at'],
+    bookkeeping: {},
+  },
+  {
+    // Plan 4 Task 26 (migration 760): an approved account limit is a change to the account, like a
+    // lien or a freeze (lead default, owner p11-119 pattern; owner may change). The notice never
+    // carries the staff-only reason, which lives on the recommendation.
+    table: 'account_limits', accountColumn: 'account_id', ops: ALL,
+    changes: ['id', 'account_id', 'cap_usd', 'stage', 'until', 'set_by', 'recommendation_id', 'created_at'],
+    bookkeeping: {},
+  },
+  {
     table: 'trading_holds', accountColumn: 'account_id', ops: ALL,
     // 208's freeze columns (kind, reason, side, who placed or lifted it, the dispute) are changes like the
     // rest of a hold (lead default, owner p11-119).
@@ -116,10 +144,21 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     bookkeeping: {},
   },
   {
+    // Plan 5 Tasks 5 and 12 (migration 303, trigger in 702; lead call, owner p5-7): which earned
+    // badges the profile shows, and publishing the signed record on it, are changes to the account,
+    // like show_traded_total. One row per account, never deleted except by the account's deletion,
+    // which cascades (notified there), so the trigger watches inserts and updates.
+    table: 'badge_prefs', accountColumn: 'account_id', ops: ['insert', 'update'],
+    changes: ['account_id', 'chosen', 'levels', 'featured_order', 'portable_public'],
+    bookkeeping: { updated_at: "set with every save; the save's other columns notify" },
+  },
+  {
     table: 'past_reputation', accountColumn: 'account_id', ops: ALL,
     changes: [
       'id', 'account_id', 'site', 'evidence_url', 'claimed_trades', 'fingerprint', 'key_enc', 'challenge_text', 'signature_enc', 'status',
       'verified_trades', 'reviewer_id', 'decided_at', 'reason', 'created_at', 'verified_usd_cents', 'verified_usd_by', 'verified_usd_at',
+      // Migration 751 (Task 11 review m3): who revoked an approved claim, and when.
+      'revoked_by', 'revoked_at',
     ],
     bookkeeping: {},
   },
@@ -157,8 +196,14 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'nudges.to_id': 'a nudge received',
   'reviews.reviewer_id': 'a review written about a trade',
   'reviews.subject_id': 'a review received from someone else',
+  'limit_recommendations.account_id': 'a recommendation waiting for a senior moderator (staff only, Task 26); an approved one notifies through account_limits',
+  'limit_recommendations.recommended_by': 'the staff member who recommended limits, not a change to their account',
+  'limit_recommendations.decided_by': 'the senior moderator or owner who decided a recommendation, not a change to their account',
+  'account_limits.set_by': 'the senior moderator or owner who approved the limit (the limited account is notified)',
+  'review_disputes.decided_by': "the moderator's stamp on a review dispute, not a change to that account; decisions are logged as review.dispute-decided",
   'past_reputation.reviewer_id': 'the moderator who decided a claim (the claimant is notified)',
   'past_reputation.verified_usd_by': 'the moderator who verified a figure (the claimant is notified)',
+  'past_reputation.revoked_by': 'the senior moderator or owner who revoked a claim (the claimant is notified)',
   'account_traded_totals.account_id': 'running totals kept by finished trades',
   'staff_members.account_id': 'staff records (staff and owner accounts have no Jabber set-up)',
   'staff_invites.created_by': 'staff records',
@@ -181,5 +226,9 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'feedback_form.account_id': 'feedback sent to X2F',
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
   // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
+  // J-06 (migration 400; lead default): the person a lien is owed to; the dispute's own notices tell them.
+  'liens.creditor_account_id': 'the person a lien is owed to: the debtor is notified (liens.debtor_account_id); the dispute tells the creditor',
   'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
+  // Plan 4 Task 19 (migration 750; lead call 18 Nov 2026): silent.
+  'training_cases.marked_by': "the curator's (owner's) stamp on a training case, not a change to that account; marking is logged as staff.training-marked",
 };

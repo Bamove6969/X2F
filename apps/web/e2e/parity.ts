@@ -83,6 +83,12 @@ const PRICE_WORDING = 'Design final call (10 Nov 2026), ui/margin.ts: an offer w
 const FLEX_BOARD_PENDING = 'J-16 flex offers; board recapture pending (design)';
 
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
+  Review: [
+    {
+      text: 'Shown to them only after they rate you too.',
+      why: 'Owner 2 Nov 2026 (R-007): no blind reveal, a review shows once submitted, so the card says "Shown on their profile as soon as you submit it." (COPY-UNSIGNED, Plan 5 Task 6; lead question).',
+    },
+  ],
   BuyOffers: [
     { text: '$0.10 above market', why: 'Owner Q1 (6 Nov): every offer is the market +/- %, so the card reads "0.03% above market" (ui/margin.ts), never a fixed amount over it.' },
     ...['$50 – $1,500Releases in ~8 min', '$100 – $3,000Releases in ~20 min', '$20 – $400Releases in ~30 min'].map((text) => ({ text, why: AD_CARD_V142 })),

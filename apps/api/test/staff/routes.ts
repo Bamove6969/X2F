@@ -45,6 +45,10 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/account/pgp/start', perm: 'self', allowed: EVERY_ROLE, body: {} },
   { method: 'POST', url: '/staff/v1/account/pgp/finish', perm: 'self', allowed: EVERY_ROLE, body: {} },
   { method: 'DELETE', url: '/staff/v1/account/methods/:type/:id', perm: 'self', allowed: EVERY_ROLE },
+  // Chat membership design task 8: one's own staff device keys (a bad body stops at validation).
+  { method: 'GET', url: '/staff/v1/devices', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/devices', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'POST', url: '/staff/v1/devices/:id/revoke', perm: 'self', allowed: EVERY_ROLE, body: {} },
   { method: 'GET', url: '/staff/v1/account/sessions', perm: 'self', allowed: EVERY_ROLE },
   { method: 'DELETE', url: '/staff/v1/account/sessions/:id', perm: 'self', allowed: EVERY_ROLE },
   { method: 'GET', url: '/staff/v1/account/alerts', perm: 'self', allowed: EVERY_ROLE },
@@ -111,11 +115,28 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER },
   // Owner Q13 (6 Nov): the owner's Price health, moved from the trader API.
   { method: 'GET', url: '/staff/v1/price-health', perm: 'stats.read', allowed: OWNER },
+  // Plan 4 Task 20: moderator performance (spec 6.6, owner only: a senior or a mod gets forbidden).
+  { method: 'GET', url: '/staff/v1/performance', perm: 'perf.read', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/performance/:id/weeks', perm: 'perf.read', allowed: OWNER },
   // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
   { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
+  // Plan 5 Task 19: review disputes, moderators and up (a helper is refused).
+  { method: 'GET', url: '/staff/v1/review-disputes', perm: 'reputation.review', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/review-disputes/:id/decide', perm: 'reputation.review', allowed: MODERATORS, body: { outcome: 'stands', reason: 'The review is fair and on topic.' } },
+  // Plan 5 Task 11: moderators review past-reputation claims; senior moderators and the owner revoke
+  // (a sample uuid is no claim: 404 past the guard).
+  { method: 'GET', url: '/staff/v1/past-rep', perm: 'reputation.review', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/past-rep/:id/approve', perm: 'reputation.review', allowed: MODERATORS, body: { fingerprintSeen: true, profileSeen: true, tradesSeen: 1 } },
+  { method: 'POST', url: '/staff/v1/past-rep/:id/reject', perm: 'reputation.review', allowed: MODERATORS, body: { reason: 'The archive shows another key.' } },
+  { method: 'POST', url: '/staff/v1/past-rep/:id/revoke', perm: 'reputation.revoke', allowed: ['owner', 'senior'], body: { reason: 'The archive was edited later.' } },
   // Lead hold v3 review (owner G35): a recovery-code hold extended or ended by staff, logged.
   { method: 'POST', url: '/staff/v1/accounts/:id/hold/extend', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   { method: 'POST', url: '/staff/v1/accounts/:id/hold/end', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
+  // Plan 4 Task 26: recommended account limits (bodies valid in shape; an unknown account or case: 404).
+  { method: 'POST', url: '/staff/v1/accounts/:id/limit-recommendations', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { capUsd: 300, reason: 'x'.repeat(40) } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/limit-recommendations', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', capUsd: 300, reason: 'x'.repeat(40) } },
+  { method: 'GET', url: '/staff/v1/limit-recommendations', perm: 'rulings.approve', allowed: ['owner', 'senior'] },
+  { method: 'POST', url: '/staff/v1/accounts/:id/limit-recommendations/:recId/decide', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { approve: true, tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
   // Owner Q60: senior moderators by role, moderators and helpers by grant.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
@@ -129,8 +150,15 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/disputes/:code/take', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
   { method: 'GET', url: '/staff/v1/disputes/:code', perm: 'disputes.handle', allowed: MODERATORS },
   { method: 'POST', url: '/staff/v1/disputes/:code/messages', perm: 'disputes.handle', allowed: MODERATORS, body: { text: 'Hello' } },
+  // Design build task 9: the moderator's read (a re-wrap to the certified device; a bad body stops at validation).
+  { method: 'POST', url: '/staff/v1/disputes/:code/chat', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
   { method: 'POST', url: '/staff/v1/disputes/:code/proof-request', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'buyer' } },
   { method: 'POST', url: '/staff/v1/disputes/:code/freeze', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', on: true, reason: 'no-reply' } },
+  // Task 12: rulings. Bodies are valid in shape, so the allowed roles reach the handler (an unknown case: 404).
+  { method: 'POST', url: '/staff/v1/disputes/:code/rulings', perm: 'disputes.handle', allowed: MODERATORS,
+    body: { rulingId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f', outcome: 'release-to-buyer', accountAction: { kind: 'none' }, reason: 'x'.repeat(40), evidence: [], tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/approve', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/send-back', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { note: 'Look again.' } },
   { method: 'POST', url: '/staff/v1/freezes/:id/lift', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
   // Plan 4 Task 24 (D-011): who may review an appeal; the owner only (review M1, lead call 12 Nov).
   { method: 'GET', url: '/staff/v1/disputes/:code/appeal-reviewers', perm: 'staff.manage', allowed: OWNER },
@@ -150,4 +178,17 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER, body: { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, tapId: '00000000-0000-4000-8000-000000000000' } },
   { method: 'GET', url: '/staff/v1/pay/staff', perm: 'earnings.read', allowed: OWNER },
+  // Plan 4 Task 19: the Activity log page (the staff scope for moderators and senior moderators, all
+  // for the owner; the chain check is the owner's) and the training library (closed cases, scrubbed).
+  { method: 'GET', url: '/staff/v1/log', perm: 'log.read.cases', allowed: MODERATORS },
+  { method: 'GET', url: '/staff/v1/log/filters', perm: 'log.read.cases', allowed: MODERATORS },
+  { method: 'GET', url: '/staff/v1/log/active-disputes', perm: 'log.read.cases', allowed: MODERATORS },
+  { method: 'GET', url: '/staff/v1/log/integrity', perm: 'log.read.all', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/training', perm: 'training.read', allowed: MODERATORS },
+  { method: 'GET', url: '/staff/v1/training/:id', perm: 'training.read', allowed: MODERATORS },
+  // Lead call 18 Nov (re-review): the library is review-first; a curator marks each case.
+  { method: 'GET', url: '/staff/v1/training/review', perm: 'training.curate', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/training/review/:id', perm: 'training.curate', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/training/review/:id', perm: 'training.curate', allowed: OWNER, body: { masks: [] } },
+  { method: 'DELETE', url: '/staff/v1/training/review/:id', perm: 'training.curate', allowed: OWNER },
 ];

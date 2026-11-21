@@ -102,7 +102,7 @@ describe('the chat mod identity', () => {
     expect(report!.attestation.terms).toBeUndefined();
     for (const [role, t] of [['buyer', buyer], ['seller', seller]] as const) {
       await expect(
-        verifyAttestation(report!.attestation, report!.sig, modSign.public, { trade: chat, role, signPublic: t.id.signPublic, boxPublic: t.id.boxPublic, context: 'chat' }),
+        verifyAttestation(report!.attestation, report!.sig, modSign.public, { trade: chat, role, signPublic: t.id.signPublic, boxPublic: t.id.boxPublic, context: 'chat', identityCreatedAt: NOW.getTime() }),
       ).resolves.toBeUndefined();
     }
     // The mod identity is kept sealed, so a moderator can read the chat once a dispute opens.

@@ -20,7 +20,7 @@ import {
 import sodium from 'libsodium-wrappers';
 import pg from 'pg';
 import { expect, inject } from 'vitest';
-import { startModeration, type Fetch, type ModerationHandle, type WorkItem } from '../src/main.js';
+import { startModeration, type Fetch, type ModerationDeps, type ModerationHandle, type WorkItem } from '../src/main.js';
 import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 
 export const API = 'http://api-internal.test';
@@ -241,7 +241,11 @@ export interface Mod {
 
 /** `deskFails.on`: every desk open fails while set (review M2: the watcher retries it). */
 /** `logs`: where the log goes (to read it when the start is refused). */
-export async function moderation(ctx: Ctx, fetch: Fetch, opts: { deskFails?: { on: boolean }; logs?: string[]; watchIntervalMs?: number; lockHeld?: () => Promise<boolean> } = {}): Promise<Mod> {
+export async function moderation(
+  ctx: Ctx,
+  fetch: Fetch,
+  opts: { deskFails?: { on: boolean }; logs?: string[]; watchIntervalMs?: number; lockHeld?: () => Promise<boolean>; rulings?: ModerationDeps['rulings']; gate?: ModerationDeps['gate'] } = {},
+): Promise<Mod> {
   const parties = new Map<string, FakeParty>();
   const transports = new Map<string, FakeTransport>();
   const started: ModPartyArgs[] = [];
@@ -264,6 +268,8 @@ export async function moderation(ctx: Ctx, fetch: Fetch, opts: { deskFails?: { o
       intervalMs: 0,
       watchIntervalMs: opts.watchIntervalMs ?? 0,
       ...(opts.lockHeld ? { lockHeld: opts.lockHeld } : {}),
+      ...(opts.rulings ? { rulings: opts.rulings } : {}),
+      ...(opts.gate ? { gate: opts.gate } : {}),
       log: (e) => logs.push(e.reason),
       startParty: async (a) => {
         started.push(a);

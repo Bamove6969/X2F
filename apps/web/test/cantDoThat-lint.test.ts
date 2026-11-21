@@ -151,7 +151,18 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 66 -> 67 (owner demo notes 12 Nov 2026): sessionCopy.ts's askHint, the owner's own words ("If you
     // are unable to confirm your identity at that time, your account will be logged out ..."), a hint
     // shown before the session ends; nothing was refused.
-    expect(notARefusal).toBeLessThanOrEqual(67);
+    // 67 -> 68 (Plan 5 Task 15, proof upload): proof/upload.ts's PROOF_CANT_USE ("This image can't be
+    // used. Try a screenshot."), an input check on the picked image (Review Focus 2); another can be picked.
+    // 68 -> 69 (NEEDS_PROOF_RECEIVE): screens/proof/ChatProof.tsx's CHAT_PROOF_GONE ("This proof is no
+    // longer stored."), a note in place of a proof past its retention, not a rule the user ran into.
+    // 69 -> 70 (Plan 5 Task 12, wip/lead-profile; train-1 merge, the proof upload's +2 and the profile's
+    // +1 summed on 67): the BadgeSettings board's standing footer "The New badge always shows
+    // while you have it and can't be hidden." (profile/profileCopy.ts), on every visit; New's row has
+    // no controls, so nothing is ever tried and refused.
+    // 70 -> 71 (gap 4 no-show refund, review m5 and n1, 21 Nov 2026): SellerRefund.tsx's stopped-escrow
+    // status line "stopped for good, so it can't finish this refund", a device fault reported to the
+    // seller; the seller tried nothing and nothing was refused. (A second line was unreachable and removed.)
+    expect(notARefusal).toBeLessThanOrEqual(71);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

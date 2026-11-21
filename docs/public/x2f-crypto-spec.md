@@ -158,24 +158,24 @@ Each trader has a **separate chat identity per chat and role**, made on the devi
 - **Opening order.** A reader checks, in order: exact shape and canonical encodings, signature, unwrap, `kh`, decryption, canonical plaintext, and finally replay. The replay check keeps a strictly increasing `seq` per sender and is committed only after everything else succeeds.
 - **What the API checks.** The API checks only the shape, the channel and that `from` matches the session's role. It cannot check signatures or content.
 
-### 4.3 Who can read what, and when (today)
+### 4.3 Who can read what, and when
 
-Every chat message is sealed to **buyer, seller and the chat's moderator identity, from the first message**. The moderator identity's secret key sits in the moderation service's database, encrypted under `MOD_KEYSTORE_KEY`.
+Updated 18 Nov 2026 for the chat membership keys (4.4) and the device retention change. Each chat has one key, TK, made on a trader's device. At first TK is stored only as wraps to the buyer and the seller; after a grant (4.4) it is also stored as wraps to the moderation service and to each certified staff device that reads. Every chat message is an envelope v2 under TK. Once a chat has a key, the API takes no v1 chat message except the unblurred proof copy a moderator asks for (below, lead decision 16), and no trader's app opens one.
 
 - **The network, the relay, and anyone with only the API database:** cannot read chats.
-- **The moderation service (or anyone holding its database and `MOD_KEYSTORE_KEY`):** can decrypt every chat, disputed or not.
-- **"A moderator reads only after a dispute" is today a rule, not a lock.** It is enforced by staff procedure and by the activity log, not by cryptography. The API lets the moderator *post* only while a dispute is open, but that does not limit *reading*.
-- **Device copies.** The trader's device keeps its chat identity and the messages it has opened in IndexedDB (`x2f-chat`), wrapped by a non-extractable AES-256-GCM key. Erasing that local record when a chat is purged is not wired yet.
+- **The moderation service:** can decrypt a chat only after a trader's app has granted it TK, which happens when a dispute opens (4.4). It holds nothing that opens an undisputed chat. The one exception is the unblurred copy of a payment proof that a moderator asks a trader for during a dispute: the app seals that copy to the moderation service's key alone, never under TK (lead decision 16, `docs/security/chat-membership-lead-decisions-2026-11-18.md`).
+- **"A moderator reads only after a dispute" is enforced by the key**, not only by staff procedure: before a grant, no X2F server holds TK. Every grant and every staff read is logged.
+- **Device copies.** The trader's device keeps its chat identity and its read receipts in IndexedDB (`x2f-chat`), wrapped by a non-extractable AES-256-GCM key. It keeps no message text and never TK. Its record is erased when the API reports the chat purged.
 
 ### 4.4 Planned: per-trade membership keys
 
-This is the design note of 2026-11-08. **None of it is on `main`.**
+This is the design note of 2026-11-08. **Built** with the chat membership branch (`wip/lead-mod-chat`, with tests; the builder's and the lead's calls are in `docs/security/chat-membership-lead-decisions-2026-11-18.md`).
 
 - Each chat gets one random key TK, made on a trader's device. TK is stored only as `crypto_box_seal` wraps, one per member. At the start the only members are the buyer and the seller.
 - Messages become envelope v2: `crypto_aead_xchacha20poly1305_ietf` under TK, with the channel, sender and seq as associated data, Ed25519-signed. TK's fingerprint `tkh` is checked once per chat.
 - **The moderation service receives a wrap of TK only when a trader's own app grants it.** That happens on the trader's own signed dispute request, or on a moderation-signed dispute notice that the API also confirms.
 - Moderation then re-wraps TK to the assigned moderator's staff device key, which that person's security key has certified. Every grant and read is logged, including in an access record that the API cannot write.
-- Once this is built, "only after a dispute" is enforced by cryptography for undisputed chats. A backup of an undisputed chat would then hold nothing X2F can open.
+- So "only after a dispute" is enforced by cryptography for undisputed chats. A backup of an undisputed chat holds nothing X2F can open.
 
 Known limits of the design:
 

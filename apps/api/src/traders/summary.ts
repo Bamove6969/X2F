@@ -5,13 +5,17 @@ import {
   earnedBadges,
   resolveVisibility,
   typicalMinutes,
+  type BadgeId,
+  type BadgePrefs,
 } from '@x2f/reputation';
 import type { Queryable } from '../db/pool.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { verifiedPastRepBySite } from '../pastrep/store.js';
+import { reviewCountsSql } from '../reviews/disputes.js';
+import { prefsFromRow } from '../reputation/prefs.js';
 import { importedLines, tradedOverXmr, tradedXmrSql, type ImportedLine } from './tradedTotal.js';
-import { FINAL_SALES_SQL, reviewHeldSql, rulingCountsSql } from './finalOutcome.js';
-import { COMPLETED_TRADES_SQL, loadStarterSettings, stageFor, type Stage, type StarterSettings } from './stage.js';
+import { FINAL_SALES_SQL, rulingCountsSql } from './finalOutcome.js';
+import { COMPLETED_TRADES_SQL, loadStarterSettings, purgedSql, stageFor, type Stage, type StarterSettings } from './stage.js';
 
 /**
  * A trader as anyone else sees them (plan Task 4): on offer cards (`GET /v1/offers`), the
@@ -30,7 +34,13 @@ export interface TraderSummary {
   lastSeenAt: string | null;
   typicalMinutes: number | null;
   positivePct: number | null;
+  /**
+   * The badges shown, Featured first, then the "+N" list (Plan 5 Task 5): earned from records on
+   * every read, in the trader's own visibility (badge_prefs); Hidden ones are left out.
+   */
   badges: string[];
+  /** How many of `badges` are Featured (New included while it shows); the rest are the "+N" list. */
+  featuredBadges: number;
   /** The starter-limits stage (spec 2.3; plan Task 4 Revision 2026-10-26): the New badge shows until 'graduated'. */
   stage: Stage;
   /**
@@ -79,27 +89,58 @@ export function lastSeenSql(account: string, viewer: string): string {
 /**
  * SQL: the disputes `a.id` lost, by each dispute's latest ruling (Plan 5's Clean record). A release
  * to the buyer, or the seller told to send XMR or return fiat, is lost by the seller; a refund to the
- * seller is lost by the buyer. Read from the live trades until Plan 5 Task 20's running total
- * (`lost_disputes`) exists, so after the 30-day delete it can only undercount; Clean record needs 100
- * completed trades as well. A dispute whose appeal is pending counts neither way until the appeal is
+ * seller is lost by the buyer. Task 20: the live trades' rulings plus `purged_lost`, which the trade
+ * purge adds each purged trade's count to in the same transaction (701, retention/tradePurge.ts), so
+ * deleting a trade changes nothing. A dispute whose appeal is pending counts neither way until the appeal is
  * decided (R-011 / R-012, J-21 review F1; `rulingCountsSql`, shared with J-21's won count).
  */
-export const LOST_DISPUTES_SQL = `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
+export const LOST_DISPUTES_SQL = `(${lostDisputesLiveSql()} + ${purgedSql('purged_lost')})`;
+
+/** LOST_DISPUTES_SQL's live part alone, with `extra` added to its WHERE (trade alias `t`; see completedTradesLiveSql). */
+export function lostDisputesLiveSql(extra = ''): string {
+  return `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
    where not exists (select 1 from dispute_rulings d2 where d2.code = dr.code and d2.seq = dr.seq and d2.round > dr.round)
      and ${rulingCountsSql('dr.code', 'dr.seq')}
      and ((dr.outcome in ('release-to-buyer', 'seller-sends-xmr', 'seller-returns-fiat') and t.seller_account_id = a.id)
-       or (dr.outcome = 'refund-to-seller' and t.buyer_account_id = a.id)))`;
+       or (dr.outcome = 'refund-to-seller' and t.buyer_account_id = a.id)) ${extra})`;
+}
 
 /**
  * SQL: the disputes `a.id` won, the mirror of LOST_DISPUTES_SQL by the same latest ruling: a release
  * to the buyer, or the seller told to send XMR or return fiat, is won by the buyer; a refund to the
  * seller is won by the seller. An after-refund "no action" ruling counts for neither side, as in
- * LOST_DISPUTES_SQL (owner question, J-21). Read from the live trades until Task 20's running totals.
+ * LOST_DISPUTES_SQL (owner question, J-21). Live plus `purged_won`, as LOST_DISPUTES_SQL. A dispute
+ * whose appeal is pending counts for neither side until the appeal is decided (`rulingCountsSql`, the
+ * same helper as the lost count: Revision 2026-10-29c, Task 20 review).
  */
-const WON_DISPUTES_SQL = `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
+export const WON_DISPUTES_SQL = `(${wonDisputesLiveSql()} + ${purgedSql('purged_won')})`;
+
+/** WON_DISPUTES_SQL's live part alone, with `extra` added to its WHERE (trade alias `t`; see completedTradesLiveSql). */
+export function wonDisputesLiveSql(extra = ''): string {
+  return `(select count(*) from dispute_rulings dr join trades t on t.code = dr.code
    where not exists (select 1 from dispute_rulings d2 where d2.code = dr.code and d2.seq = dr.seq and d2.round > dr.round)
+     and ${rulingCountsSql('dr.code', 'dr.seq')}
      and ((dr.outcome in ('release-to-buyer', 'seller-sends-xmr', 'seller-returns-fiat') and t.buyer_account_id = a.id)
-       or (dr.outcome = 'refund-to-seller' and t.seller_account_id = a.id)))`;
+       or (dr.outcome = 'refund-to-seller' and t.seller_account_id = a.id)) ${extra})`;
+}
+
+/**
+ * Everything the profile and badge settings need beside the summary (Plan 5 Task 5), from the same
+ * single query: never returned as is.
+ */
+export interface TraderFacts {
+  summary: TraderSummary;
+  /** Every earned badge, Hidden ones included (the owner's own settings list them). */
+  earned: BadgeId[];
+  prefs: BadgePrefs;
+  shown: { featured: BadgeId[]; more: BadgeId[] };
+  createdAt: Date;
+  /** Released trades plus settled disputes whoever won, as the badges count them. */
+  completedTrades: number;
+  lostDisputes: number;
+  /** Positive and negative reviews behind `positivePct`. */
+  ratedReviews: number;
+}
 
 /** A trader's side, for the typical time a card shows: a seller's release time, a buyer's payment time. */
 export type SummaryRole = 'buyer' | 'seller';
@@ -119,7 +160,20 @@ export async function traderSummaries(
   settings?: StarterSettings,
   roles?: ReadonlyMap<string, SummaryRole>,
 ): Promise<Map<string, TraderSummary>> {
-  const out = new Map<string, TraderSummary>();
+  const facts = await traderFacts(q, accountIds, now, viewerId, settings, roles);
+  return new Map([...facts].map(([id, f]) => [id, f.summary]));
+}
+
+/** `traderSummaries` with the facts behind each summary (one query for any number of accounts). */
+export async function traderFacts(
+  q: Queryable,
+  accountIds: readonly string[],
+  now: Date,
+  viewerId: string | null,
+  settings?: StarterSettings,
+  roles?: ReadonlyMap<string, SummaryRole>,
+): Promise<Map<string, TraderFacts>> {
+  const out = new Map<string, TraderFacts>();
   const ids = [...new Set(accountIds)];
   if (ids.length === 0) return out;
   const s = settings ?? (await loadStarterSettings(q));
@@ -127,6 +181,7 @@ export async function traderSummaries(
   const { rows } = await q.query<{
     id: string; name: string; created_at: Date; completed: string; sales: string; fast: number; last_seen: Date | null; show_traded: boolean; traded: string;
     positive: string; negative: string; pay: number[] | null; release: number[] | null; pgp: boolean; security_key: boolean; lost: string; won: string;
+    bp_chosen: boolean | null; bp_levels: unknown; bp_order: string[] | null;
   }>(
     `select a.id, a.${PUBLIC_NAME_COLUMN} as name, a.created_at,
             ${COMPLETED_TRADES_SQL} as completed,
@@ -140,12 +195,14 @@ export async function traderSummaries(
             exists (select 1 from pgp_keys k where k.account_id = a.id) as pgp,
             exists (select 1 from webauthn_credentials w where w.account_id = a.id and w.kind = 'security-key') as security_key,
             ${LOST_DISPUTES_SQL} as lost,
-            ${WON_DISPUTES_SQL} as won
+            ${WON_DISPUTES_SQL} as won,
+            bp.chosen as bp_chosen, bp.levels as bp_levels, bp.featured_order as bp_order
        from accounts a
+       left join badge_prefs bp on bp.account_id = a.id
        cross join lateral (
          select count(*) filter (where not r.neutral and r.stars >= $3) as positive,
                 count(*) filter (where not r.neutral and r.stars <= $4) as negative
-           from reviews r where r.subject_id = a.id and not ${reviewHeldSql('r')}
+           from reviews r where r.subject_id = a.id and ${reviewCountsSql('r')}
        ) rv
       where a.id = any($1::uuid[])`,
     [ids, viewerId, POSITIVE_MIN_STARS, NEGATIVE_MAX_STARS],
@@ -159,8 +216,9 @@ export async function traderSummaries(
     const stage = stageFor(s, Number(r.completed), r.created_at, now);
     const completed = Number(r.sales);
     // % positive (P5-A2, @x2f/reputation positivePct): positive over positive plus negative, rounded
-    // down; Neutral and 3 stars count for neither. Review disputes (Task 19) are not built, so every
-    // submitted review counts, except one on hold while its trade's appeal is pending (R-011).
+    // down; Neutral and 3 stars count for neither. A review on hold while its trade's appeal is
+    // pending (R-011), one under review (an open dispute, Task 19) and one a moderator removed count
+    // for neither (reviews/disputes.ts reviewCountsSql).
     const positive = Number(r.positive);
     const rated = positive + Number(r.negative);
     const positivePct = rated === 0 ? null : Math.floor((positive * 100) / rated);
@@ -177,10 +235,9 @@ export async function traderSummaries(
         ratedReviews: rated,
         // Fast (R-042): 30 payments sent in under half the time to pay (traders/actionTimes.ts countFastPayment).
         fastPayments: r.fast,
-        // NEEDS_TASK_20_LOST_DISPUTES (review 2, M1): Clean record reads lost disputes from the live
-        // trades, so once the 30-day trade delete runs it would undercount and claim "no lost disputes"
-        // falsely. The Plan 7 trade purge must not land before Task 20's `lost_disputes` running total
-        // replaces LOST_DISPUTES_SQL (or Clean record is withheld). docs/coordination.md records this.
+        // Review 2, M1 (was NEEDS_TASK_20_LOST_DISPUTES): Clean record reads the lost disputes of the
+        // live trades plus those the Plan 7 trade purge moved into `purged_lost` (701), so deleting a
+        // trade never makes it claim "no lost disputes" falsely.
         lostDisputes: Number(r.lost),
         accountCreatedAt: r.created_at,
         hasPgp: r.pgp,
@@ -190,10 +247,12 @@ export async function traderSummaries(
       },
       now,
     );
-    // No badge settings exist yet (Plan 5 Task 5), so the spec 5.4 defaults apply: New first, then
-    // Trusted, a trade milestone, Fast, Veteran in the featured slots, every other earned badge after.
-    const shown = resolveVisibility(earned, { chosen: false, levels: {}, order: [] });
-    out.set(r.id, {
+    // The trader's own visibility (Plan 5 Task 5, badge_prefs); before a first choice the spec 5.4
+    // defaults: New first, then Trusted, a trade milestone, Fast, Veteran in the featured slots,
+    // every other earned badge after. New always shows; Hidden badges are in neither list.
+    const prefs = prefsFromRow({ chosen: r.bp_chosen, levels: r.bp_levels, featured_order: r.bp_order });
+    const shown = resolveVisibility(earned, prefs);
+    const summary: TraderSummary = {
       displayName: r.name,
       completedTrades: completed,
       online: r.last_seen !== null && r.last_seen.getTime() >= since,
@@ -202,11 +261,13 @@ export async function traderSummaries(
       typicalMinutes: typical,
       positivePct,
       badges: [...shown.featured, ...shown.more],
+      featuredBadges: shown.featured.length,
       stage,
       tradedOverXmr: tradedOverXmr(r.show_traded, r.traded),
       imported: r.show_traded ? importedLines(sites.get(r.id)) : [],
       disputes: { won: Number(r.won), lost: Number(r.lost) },
-    });
+    };
+    out.set(r.id, { summary, earned, prefs, shown, createdAt: r.created_at, completedTrades: completed, lostDisputes: Number(r.lost), ratedReviews: rated });
   }
   return out;
 }

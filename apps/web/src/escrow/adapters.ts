@@ -43,6 +43,11 @@ export interface EscrowTradeView {
   /** The payment method chosen at take, as the view shows it, or null when it has none; the attested `deal.methodId` must equal it (runtime.ts). */
   methodId: string | null;
   /**
+   * When the trade was taken, as the view shows it (an ISO time), or null when it has none. The
+   * attestation must not be older than it (review multisig-vs-RetoSwap F5, runtime.ts, `bad-time`).
+   */
+  takenAt: string | null;
+  /**
    * The payment instructions locked at take, as the (unsigned) view shows them: null before the
    * escrow is secured, '' when the offer gave none. Never shown as such: runtime.ts passes them on
    * (`EscrowStatus.paymentInstructions`) only when they hash to the attested
@@ -107,6 +112,7 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
     payWindowMin:
       typeof v.payWindowMin === 'number' && Number.isSafeInteger(v.payWindowMin) && v.payWindowMin >= 1 && v.payWindowMin <= MAX_PAY_WINDOW_MIN ? v.payWindowMin : null,
     methodId: typeof v.methodId === 'string' && v.methodId.length > 0 ? v.methodId : null,
+    takenAt: typeof v.takenAt === 'string' ? v.takenAt : null,
     paymentInstructions: instructionsText(v.paymentInstructions),
     instructionsMalformed: v.paymentInstructions !== undefined && v.paymentInstructions !== null && instructionsText(v.paymentInstructions) === null,
     securedSeen: typeof v.securedAt === 'string',
@@ -154,6 +160,14 @@ export function httpEscrowApi(f: typeof fetch = (u, i) => fetch(u, i), timeoutMs
         if (b?.error === 'identity-exists') return;
       }
       await fail(res);
+    },
+    /** Haveno review finding 2: GET /v1/trades/:code/ruling-statement; null while it answers 204. */
+    async getRulingStatement(code: string): Promise<{ statement: unknown; sig: unknown } | null> {
+      const res = await call(path(code, '/ruling-statement'));
+      if (res.status === 204) return null;
+      if (!res.ok) return fail(res);
+      const b = (await res.json()) as { statement?: unknown; sig?: unknown } | null;
+      return { statement: b?.statement, sig: b?.sig };
     },
     async getAttestation(code: string): Promise<{ attestation: unknown; sig: unknown } | null> {
       const res = await call(path(code, '/attestation'));

@@ -7,7 +7,7 @@ import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { usdText, xmrText } from '../src/ui/ClockOut.js';
-import { button, click, fakeApi, render, settle, typeInto } from './helpers.js';
+import { button, click, fakeApi, honestTapStart, render, settle, typeInto } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
@@ -81,7 +81,7 @@ describe('the clock-out sheet', () => {
     const api = fakeApi({
       'GET /staff/v1/me': { body: me('senior') },
       'GET /staff/v1/pay/clock-out': () => ({ body: sheet(added ? { addresses: [...sheet().addresses, { id: 'a3', address: A3, addedAt: '2026-11-03T00:00:00.000Z' }] } : {}) }),
-      'POST /staff/v1/taps/start': { body: { tapId: 't1', options: { challenge: 'abc' } } },
+      'POST /staff/v1/taps/start': honestTapStart('t1'),
       'POST /staff/v1/taps/:id/finish': { body: { tapId: 't1' } },
       'POST /staff/v1/pay/addresses': () => {
         added = true;
@@ -93,6 +93,10 @@ describe('the clock-out sheet', () => {
     typeInto(document.querySelector('[data-part="clock-out-addresses"] input.x2f-input'), A3);
     await settle();
     await click(button('Add this address'));
+    // X3 (merged from main with batch 9): the dialog shows the whole address the key signs, and the
+    // challenge is checked here against the intent and nonce (X1, honestTapStart answers properly).
+    const shown = [...document.querySelectorAll('[data-part="key-tap-intent"] dt')].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]);
+    expect(shown).toEqual([['kind', 'payout-address'], ['address', A3]]);
     await click(button('Tap security key'));
     expect(api.calls.find((c) => c.path === '/staff/v1/taps/start')?.body).toEqual({ kind: 'payout-address', address: A3 });
     expect(api.calls.find((c) => c.path === '/staff/v1/pay/addresses')?.body).toEqual({ address: A3, tapId: 't1' });

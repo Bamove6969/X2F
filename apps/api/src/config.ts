@@ -1,5 +1,6 @@
-import { createECDH, hkdfSync, timingSafeEqual } from 'node:crypto';
+import { createECDH, createHash, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { constants, readFileSync, statSync } from 'node:fs';
+import { SITE_SCHEMES, clearTextAllowed, plainOrigin } from './origins.js';
 import { access, stat } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { parseFxSources, type FxSourceName } from './price/fx.js';
@@ -46,7 +47,20 @@ export interface Config {
   jabberKeys: Keyring | null;
   /** X2F's own sending account (`X2F_XMPP_*`). GAP: the production account and server are not set up yet. */
   xmpp: XmppConfig | null;
+  /**
+   * Plan 4 Task 19 (review m1): the key of the training library's opaque case id (HMAC-SHA-256 of
+   * the trade code and dispute seq, `trainingId`), `X2F_TRAINING_ID_KEY` (or `_FILE`): base64 of 32
+   * random bytes, its own key (never shared with another secret). Unset, a fixed development key
+   * (`DEV_TRAINING_ID_KEY`) on stagenet and testnet; required on mainnet.
+   */
+  trainingIdKey: Uint8Array;
 }
+
+/**
+ * The development training id key (review m1): public, so only for stagenet and testnet. With it
+ * anyone holding a trade code can compute its training id, which is all the key prevents.
+ */
+export const DEV_TRAINING_ID_KEY: Uint8Array = new Uint8Array(createHash('sha256').update('x2f/dev-training-id-key (public, never for mainnet)').digest());
 
 /**
  * X2F's Jabber sending account. The connection is through a SOCKS5 proxy (Tor) only, then direct
@@ -97,17 +111,13 @@ function required(env: Env, name: string): string {
   return v;
 }
 
-function parseOrigins(raw: string): string[] {
+function parseOrigins(raw: string, allowInsecure: boolean): string[] {
   const list = raw.split(',').map((s) => s.trim());
+  // Review m-4: the same plain-origin check as the OCR worker CSP (origins.ts).
   for (const o of list) {
-    let url: URL;
-    try {
-      url = new URL(o);
-    } catch {
-      throw malformed('X2F_ORIGINS', 'each entry must be an exact origin such as https://example.org');
-    }
-    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.origin !== o) {
-      throw malformed('X2F_ORIGINS', 'each entry must be an exact origin such as https://example.org');
+    if (plainOrigin(o, SITE_SCHEMES) === null) throw malformed('X2F_ORIGINS', 'each entry must be an exact origin such as https://example.org');
+    if (!clearTextAllowed(o, allowInsecure)) {
+      throw malformed('X2F_ORIGINS', 'http only for 127.0.0.1, [::1], localhost or a .onion host, unless X2F_ALLOW_INSECURE_ORIGINS=1');
     }
   }
   return list;
@@ -183,6 +193,26 @@ function parseKeyring(name: string, raw: string): Keyring {
   return { current, keys };
 }
 
+/**
+ * `X2F_TRAINING_ID_KEY` (or `X2F_TRAINING_ID_KEY_FILE`, as for the key rings): base64 of 32 random
+ * bytes. Unset: the development key, except on mainnet, where it is required and may not be the
+ * development key.
+ */
+function parseTrainingIdKey(env: Env, network: Config['moneroNetwork']): Uint8Array {
+  const name = 'X2F_TRAINING_ID_KEY';
+  if (!env[name] && !env[`${name}_FILE`]) {
+    if (network === 'mainnet') throw missing(name);
+    return DEV_TRAINING_ID_KEY;
+  }
+  const raw = ringSource(env, name).trim();
+  if (!BASE64.test(raw)) throw malformed(name, 'base64 of 32 random bytes');
+  const key = new Uint8Array(Buffer.from(raw, 'base64'));
+  if (key.length !== 32) throw malformed(name, 'base64 of 32 random bytes');
+  // Re-review m4: a copied stagenet setting must not put the public key on mainnet.
+  if (network === 'mainnet' && timingSafeEqual(key, DEV_TRAINING_ID_KEY)) throw malformed(name, 'the public development key is refused on mainnet');
+  return key;
+}
+
 /** The key rings and `serverKey` must not share a key: each secret protects one thing only. */
 function assertSeparate(serverKey: Uint8Array, rings: Array<[string, Keyring]>): void {
   const seen: Uint8Array[] = [serverKey];
@@ -199,7 +229,7 @@ function assertSeparate(serverKey: Uint8Array, rings: Array<[string, Keyring]>):
 /** Reads the API's settings; throws naming the first missing or malformed variable. */
 export function loadConfig(env: Env): Config {
   const siteName = env.X2F_SITE_NAME || 'X2F';
-  const origins = parseOrigins(required(env, 'X2F_ORIGINS'));
+  const origins = parseOrigins(required(env, 'X2F_ORIGINS'), env.X2F_ALLOW_INSECURE_ORIGINS === '1');
 
   const rpId = required(env, 'X2F_RP_ID');
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(rpId)) {
@@ -245,7 +275,9 @@ export function loadConfig(env: Env): Config {
   const jabberKeys = hasRing('X2F_JABBER_KEYS') ? parseKeyring('X2F_JABBER_KEYS', ringSource(env, 'X2F_JABBER_KEYS')) : null;
   const xmpp = parseXmpp(env);
   if (xmpp !== null && jabberKeys === null) throw missing('X2F_JABBER_KEYS');
+  const trainingIdKey = parseTrainingIdKey(env, moneroNetwork);
   assertSeparate(serverKey, [
+    ['X2F_TRAINING_ID_KEY', { current: 1, keys: new Map([[1, trainingIdKey]]) }],
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
     ['X2F_LOGIN_NAME_KEYS', loginNameKeys], ...(jabberKeys ? [['X2F_JABBER_KEYS', jabberKeys] as [string, Keyring]] : []),
   ]);
@@ -265,7 +297,7 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp,
+    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp, trainingIdKey,
   };
 }
 

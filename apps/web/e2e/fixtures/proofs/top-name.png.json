@@ -1,0 +1,53 @@
+{
+  "file": "top-name.png",
+  "name": "top-name",
+  "width": 760,
+  "height": 422,
+  "keep": {
+    "tradeCode": "K7M2-9QXA-4FTR-8WPN",
+    "fiatCents": "41250",
+    "exponent": 2
+  },
+  "marks": [
+    {
+      "kind": "name",
+      "text": "Rowan Ellis",
+      "x0": 239,
+      "y0": 98,
+      "x1": 521,
+      "y1": 149
+    },
+    {
+      "kind": "email",
+      "text": "rowan.ellis@example.net",
+      "x0": 216,
+      "y0": 167,
+      "x1": 544,
+      "y1": 197
+    },
+    {
+      "kind": "amount",
+      "text": "$412.50",
+      "x0": 252,
+      "y0": 213,
+      "x1": 508,
+      "y1": 278
+    },
+    {
+      "kind": "code",
+      "text": "K7M2-9QXA-4FTR-8WPN",
+      "x0": 267,
+      "y0": 294,
+      "x1": 581,
+      "y1": 324
+    },
+    {
+      "kind": "phone",
+      "text": "+1 202 555 0147",
+      "x0": 266,
+      "y0": 338,
+      "x1": 494,
+      "y1": 368
+    }
+  ]
+}

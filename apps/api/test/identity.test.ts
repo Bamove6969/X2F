@@ -19,7 +19,7 @@ import { buildInternalListener } from '../src/internal/routes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
-import { RATE, seedTrade, type SeededTrade } from './helpers/trades.js';
+import { RATE, fakeAddress, seedTrade, type SeededTrade } from './helpers/trades.js';
 
 const IDENTITY_DOMAIN = 'x2f/trade-identity/v1\0';
 
@@ -112,6 +112,9 @@ function identityFor(
 }
 
 const sha256Hex = (s: string): string => createHash('sha256').update(s).digest('hex');
+
+/** The same string with its last character changed to a different base58 character, never equal to the input. */
+const differ = (s: string): string => `${s.slice(0, -1)}${s.endsWith('X') ? 'Y' : 'X'}`;
 
 /** A moderation-signed request to the internal listener. `sign=false` omits the signature. */
 async function signedInject(
@@ -277,7 +280,7 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     await expect(
       verifyAttestation(payload.attestation, payload.sig, modSign.public, {
         trade: code, role: 'buyer', signPublic: buyerId.id.signPublic, boxPublic: buyerId.id.boxPublic,
-        deal: dealOf(termsByCode.get(code)!), ownAddress: termsByCode.get(code)!.buyerPayout,
+        deal: dealOf(termsByCode.get(code)!), ownAddress: termsByCode.get(code)!.buyerPayout, identityCreatedAt: now.getTime(),
       }),
     ).resolves.toBeUndefined();
   });
@@ -417,7 +420,11 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
   });
 
   it('stores no attestation whose terms differ from the trade record (409 terms-mismatch) or that has no terms (400)', async () => {
-    const { code, buyer, seller } = await freshTrade();
+    // Both addresses end in 'X' on purpose: the old mutation (last character replaced by 'X') left such
+    // an address unchanged, so the "mismatched" terms equalled the real ones about 1 run in 32 and the
+    // server rightly stored them (201). `differ` always changes the last character.
+    const endsInX = () => `${fakeAddress().slice(0, -1)}X`;
+    const { code, buyer, seller } = await freshTrade({ buyerPayout: endsInX(), sellerRefund: endsInX() });
     const buyerId = identityFor(code, 'buyer');
     const sellerId = identityFor(code, 'seller');
     await buyer.b.post(`/v1/trades/${code}/identity`, buyerId.body);
@@ -441,8 +448,8 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
       return signedInject('POST', '/internal/v1/reports', { kind: 'attestation', attestation, sig });
     };
     for (const terms of [
-      { ...real, buyerPayout: `${real.buyerPayout.slice(0, -1)}X` },
-      { ...real, sellerRefund: `${real.sellerRefund.slice(0, -1)}X` },
+      { ...real, buyerPayout: differ(real.buyerPayout) },
+      { ...real, sellerRefund: differ(real.sellerRefund) },
       { ...real, deal: { ...real.deal, poster: 'buyer' } },
       { ...real, deal: { ...real.deal, takeAmountAtomic: '1' } },
       { ...real, deal: { ...real.deal, currency: 'EUR' } },
@@ -452,6 +459,8 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
       { ...real, deal: { ...real.deal, methodId: 'PAYPAL' } },
       { ...real, deal: { ...real.deal, instructionsSha256: sha256Hex('Zelle to thief@example.test') } },
     ]) {
+      // Each case must really differ from the record, or a 201 here would be the test's fault, not the server's.
+      expect(terms).not.toEqual(real);
       const res = await post(terms);
       expect(res.statusCode).toBe(409);
       expect(res.json()).toMatchObject({ error: 'terms-mismatch' });

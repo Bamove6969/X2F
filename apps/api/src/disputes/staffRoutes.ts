@@ -1,6 +1,6 @@
 import { normalizeTradeCode } from '@x2f/core';
 import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, appealReviewers, applyDispute, markSeen, normalizeIncidentId, type Actor, type Dispute } from '@x2f/staff';
-import { CHAT_TEXT_MAX_BYTES, ChatEnvelopeError, channelFor, checkChatEnvelope } from '@x2f/trade';
+import { ChatEnvelopeError, channelFor, checkChatEnvelopeV2 } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
@@ -9,9 +9,12 @@ import type { EventBus, LiveEvent } from '../events/bus.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { appendLog } from '../log/append.js';
 import { requireStaff } from '../staff/guard.js';
+import { getMethod } from '../methods/profiles.js';
 import { traderSummaries } from '../traders/summary.js';
 import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
+import { rulingExtras } from './rulingDrafts.js';
+import { COMPLY_LAPSED_SQL, complianceOf } from './comply.js';
 import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
@@ -20,18 +23,19 @@ import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
  * Plan 4 Task 11: the moderator's queue and case view, messages to both traders, the
  * unblurred-proof request, and the freeze. Every route needs `disputes.handle`.
  *
- * - NEEDS_P4_CHAT_MEMBERSHIP: the unblurred proof is not read through this API either (review
- *   8 Nov I-1): no `POST /staff/v1/disputes/:code/proof`. The design re-wraps the proof key to the
- *   staff device key (2.4 step 5), and staff-web decrypts.
- * - NEEDS_P4_MOD_COUNTERSIGN: `…/messages` works only against a dev moderation process
- *   (X2F_DEV_MOD_CHAT=1); a production one does not register `/internal/chat/send` (review 8 Nov
- *   I-2, a compromised API could otherwise seal text as the moderator), and the route answers 502.
- *
- * - NEEDS_P4_CHAT_MEMBERSHIP: the moderator's chat READ is not built and its route is not
- *   registered. The plan's `POST /staff/v1/disputes/:code/chat` had the moderation process open the
- *   chat and hand plaintext to this API, so a compromised API could read every disputed chat. Build
- *   task 9 of design-chat-membership-keys-2026-11-08 (a grant to certified staff device keys,
- *   staff-web decrypts) replaces it; nothing here returns chat text.
+ * - NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is not read through this API (review 8 Nov I-1): no
+ *   `POST /staff/v1/disputes/:code/proof`. The design re-wraps the proof key to the staff device key
+ *   (2.4 step 5), and staff-web decrypts; not built (no unblurred proof exists yet).
+ * - Design build task 9: the moderator's chat READ is `POST /staff/v1/disputes/:code/chat
+ *   {deviceKeyId}`: a `chat.read` entry is committed first (the staff member as its actor), then the
+ *   moderation process re-wraps the chat key to that person's certified staff device, which only it
+ *   opens; this API files that copy (`chat_members`, a 'staff' row) and returns it with the chat's
+ *   ciphertext, its attestation and its key record. Staff-web verifies and decrypts. Nothing here
+ *   ever holds chat text or a chat key.
+ * - The moderator's MESSAGE (`…/messages`) is ciphertext the staff device sealed under the chat key
+ *   and countersigned (x2f/mod-countersign/v1); the moderation process checks the countersign by the
+ *   certified device key and signs the v2 envelope as the moderator (review 8 Nov I-2: this API
+ *   cannot write as the moderator).
  * - Nothing the moderator sends leaves the moderation process unless the API has first COMMITTED
  *   an activity-log entry for it (`chat.message-requested`) and named it in the call; the
  *   moderation process checks that entry in the database itself. A log that cannot be written means
@@ -86,7 +90,7 @@ interface CaseTrade {
   taken_at: Date;
 }
 
-function body(req: FastifyRequest, keys: readonly string[], required: readonly string[] = keys): Record<string, unknown> {
+export function body(req: FastifyRequest, keys: readonly string[], required: readonly string[] = keys): Record<string, unknown> {
   const b = req.body;
   if (b === null || typeof b !== 'object' || Array.isArray(b)) throw new ApiError(400, 'bad-request');
   const o = b as Record<string, unknown>;
@@ -98,7 +102,7 @@ const isSide = (v: unknown): v is Side => v === 'buyer' || v === 'seller';
 const isSeniorOrOwner = (role: string) => role === 'senior' || role === 'owner';
 
 /** The trade code a `:code` names: a trade code, or a dispute's incident ID (G37, as a trader quotes it). */
-async function codeOf(q: Queryable, req: FastifyRequest): Promise<string> {
+export async function codeOf(q: Queryable, req: FastifyRequest): Promise<string> {
   const raw = (req.params as { code?: unknown }).code;
   if (typeof raw !== 'string') throw new ApiError(404, 'not-found');
   const code = normalizeTradeCode(raw);
@@ -121,14 +125,17 @@ async function caseTrade(q: Queryable, code: string): Promise<CaseTrade> {
   return rows[0];
 }
 
-const actorOf = (req: FastifyRequest): Extract<Actor, { kind: 'staff' }> => ({ kind: 'staff', id: req.staff.accountId, role: req.staff.role });
+export const actorOf = (req: FastifyRequest): Extract<Actor, { kind: 'staff' }> => ({ kind: 'staff', id: req.staff.accountId, role: req.staff.role });
 
 /** Whether this person may work the case's chat, messages, proof and freeze. */
-function mayWork(d: Dispute, req: FastifyRequest): boolean {
+export function mayWork(d: Dispute, req: FastifyRequest): boolean {
   const id = req.staff.accountId;
   if (d.round === 2 && d.round1 !== null && d.round1.involved.includes(id)) return false;
   return d.assignee === id || isSeniorOrOwner(req.staff.role);
 }
+
+/** A method's display name from the one catalog (`getMethod`), or its id when the catalog has none. */
+const methodName = (id: string): string => getMethod(id)?.name ?? id;
 
 /** "412.50": whole cents as dollars. */
 function usd(cents: bigint): string {
@@ -137,7 +144,7 @@ function usd(cents: bigint): string {
   return `${neg ? '-' : ''}${a / 100n}.${(a % 100n).toString().padStart(2, '0')}`;
 }
 
-function ruleError(err: unknown): never {
+export function ruleError(err: unknown): never {
   if (err instanceof DisputeRuleError) {
     if (err.code === 'not-eligible' || err.code === 'wrong-party') throw new ApiError(403, 'forbidden-case');
     throw new ApiError(409, 'wrong-state');
@@ -145,17 +152,42 @@ function ruleError(err: unknown): never {
   throw err;
 }
 
-const MOD_CODES = new Set<ApiErrorCode>(['no-chat', 'moderation-unavailable']);
+/**
+ * The moderation process's refusals the staff app is told (design build task 9), with this API's
+ * status. Anything else, a refused log entry included (the API's own fault), is 502.
+ */
+const MOD_CODES: ReadonlyMap<string, number> = new Map<ApiErrorCode, number>([
+  ['no-chat', 404],
+  ['moderation-unavailable', 503],
+  ['gate-unavailable', 503],
+  ['device-not-certified', 403],
+  ['not-on-case', 403],
+  ['not-disputed', 409],
+  ['no-grant', 409],
+  ['stale-seq', 409],
+  ['replayed', 409],
+  ['stale-countersign', 409],
+  ['bad-countersign', 400],
+]);
 
-/** A moderation refusal as the staff app sees it. A refused log entry is the API's own fault: 502. */
+/** A moderation refusal as the staff app sees it. */
 function moderationError(err: unknown): never {
   if (err instanceof ModerationError) {
-    const code = err.code as ApiErrorCode;
-    if (MOD_CODES.has(code)) throw new ApiError(code === 'moderation-unavailable' ? 503 : 404, code);
+    const status = MOD_CODES.get(err.code);
+    if (status !== undefined) throw new ApiError(status, err.code as ApiErrorCode, err.code === 'stale-seq' && err.nextSeq !== null ? { nextSeq: err.nextSeq } : undefined);
     throw new ApiError(502, 'moderation-unavailable');
   }
   throw err;
 }
+
+const DEVICE_KEY_ID = /^[0-9a-f]{32}$/;
+const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
+const HEX64 = /^[0-9a-f]{64}$/;
+const HEX32 = /^[0-9a-f]{32}$/;
+const HEX128 = /^[0-9a-f]{128}$/;
+const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+/** The most envelopes one read returns, the newest (a chat is small; the cap bounds one answer; review N11 f: the answer says when older ones are not shown). */
+export const CHAT_READ_MAX = 5000;
 
 export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): void {
   const guard = requireStaff('disputes.handle');
@@ -186,7 +218,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   async function logged(
     req: FastifyRequest,
     code: string,
-    action: 'chat.message-requested' | 'proof.unblurred-requested',
+    action: 'chat.message-requested' | 'proof.unblurred-requested' | 'chat.read',
     detail: object,
     check: (d: Dispute) => void,
   ): Promise<string> {
@@ -245,23 +277,29 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       approval: "d.status = 'awaiting-approval'",
     }[filter];
     const current = `d.seq = (select max(x.seq) from disputes x where x.code = d.code) and d.status = any($1::text[])`;
+    // Plan 4 Task 12 (A6): a seller who let the comply time pass with no proof goes to a senior
+    // moderator or the owner, who decide the suspension; their queue lists those cases too.
+    const lapsed = isSeniorOrOwner(req.staff.role)
+      ? `(d.seq = (select max(x.seq) from disputes x where x.code = d.code) and ${COMPLY_LAPSED_SQL})`
+      : 'false';
     const { rows } = await deps.db.query<{
       code: string; incident_id: string; status: string; round: number; amount_atomic: string; usd_cents: string; limit_usd_cents: string;
       method_id: string; opened_by: string; opened_at: Date; appealed_at: Date | null; reply_due_at: Date; ruling_due_at: Date;
       first_reply_at: Date | null; assignee: string | null; assignee_name: string | null; ruling: { proposer?: string } | null; proposer_name: string | null; mine: boolean;
-      involved: string[] | null;
+      involved: string[] | null; comply_lapsed: boolean;
     }>(
       `select d.code, d.incident_id, d.status, d.round, t.amount_atomic::text as amount_atomic, d.usd_cents::text as usd_cents,
               d.limit_usd_cents::text as limit_usd_cents, t.method_id, d.opened_by, d.opened_at, ap.at as appealed_at,
               d.reply_due_at, d.ruling_due_at, d.first_reply_at, d.assignee::text as assignee, a.${PUBLIC_NAME_COLUMN} as assignee_name,
               d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine,
-              case when d.round1 is null then null else array(select jsonb_array_elements_text(d.round1->'involved')) end as involved
+              case when d.round1 is null then null else array(select jsonb_array_elements_text(d.round1->'involved')) end as involved,
+              ${COMPLY_LAPSED_SQL} as comply_lapsed
          from disputes d
          join trades t on t.code = d.code
          left join dispute_appeals ap on ap.code = d.code and ap.seq = d.seq
          left join accounts a on a.id = d.assignee
          left join accounts p on d.ruling ? 'proposer' and p.id::text = d.ruling->>'proposer'
-        where ${current} and ${where}
+        where (${current} or ${lapsed}) and ${where}
         order by case when d.first_reply_at is null then d.reply_due_at else d.ruling_due_at end, d.opened_at, d.code
         limit $2`,
       [QUEUE_STATUSES, QUEUE_MAX, me],
@@ -277,7 +315,10 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const c = counts.rows[0]!;
     // D-011: an untaken appeal nobody may review is marked, so the owner sees which case waits.
     const candidates = rows.some((r) => r.status === 'appealed') ? await reviewerCandidates(deps.db) : [];
+    // Plan 4 Task 18 (ModQueue): the header's first-reply time and the footer's large-trade limit.
+    const settings = await disputeSettings(deps.db);
     return {
+      settings: { firstResponseH: settings.firstResponseH, largeTradeLimitUsd: settings.largeTradeLimitUsd },
       rows: rows.map((r) => {
         const usdCents = BigInt(r.usd_cents);
         const approval = r.status === 'awaiting-approval'
@@ -293,6 +334,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           xmr: r.amount_atomic,
           usd: usd(usdCents),
           method: r.method_id,
+          // The catalog's name (data/payment-methods.json, as the trader API's /v1/methods), else the id.
+          methodName: methodName(r.method_id),
           openedBy: r.opened_by,
           waitingMs: Math.max(0, now.getTime() - since.getTime()),
           replyDueAt: r.reply_due_at.toISOString(),
@@ -302,6 +345,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           assignee: r.assignee_name,
           mine: r.mine,
           noReviewer: r.status === 'appealed' && appealReviewers(candidates, r.involved ?? []).length === 0,
+          // A6: the seller did not prove the ordered payment in time (senior moderators and the owner only).
+          complyLapsed: r.comply_lapsed,
         };
       }),
       counts: { open: c.open, overdue: c.overdue, unassigned: c.unassigned, needApproval: c.need_approval },
@@ -405,8 +450,13 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       firstReplyAt: d.firstReplyAt?.toISOString() ?? null,
       usd: usd(d.usdCents),
       overLimit: d.usdCents >= d.limitUsdCents,
+      // Plan 4 Task 18 (ModCase): the large-trade limit this dispute snapshotted when it opened, whole dollars.
+      limitUsd: Number(d.limitUsdCents / 100n),
       assignee: x.assignee_name,
       assignedToYou: d.assignee === me.id,
+      // Plan 4 Task 18 (ModCase): the waiting proposal is the viewer's own, so staff-web never
+      // offers its proposer the approval (the route refuses it too: 409 `same-person`).
+      proposedByYou: d.status === 'awaiting-approval' && d.ruling?.proposer === me.id,
       taken: tk ? { by: tk.name, at: tk.at.toISOString(), openedAt: tk.opened_at?.toISOString() ?? null } : null,
       mayWork: mayWork(d, req),
       moderator: r.moderatorName !== null && r.moderatorJoinedAt !== null ? { name: r.moderatorName, joinedAt: r.moderatorJoinedAt.toISOString() } : null,
@@ -416,6 +466,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         state: t.state,
         amountAtomic: t.amount_atomic,
         methodId: t.method_id,
+        methodName: methodName(t.method_id),
         currency: t.locked_currency,
         centsPerXmr: t.locked_cents_per_xmr,
         fiatCents: t.fiat_cents,
@@ -423,12 +474,16 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         takenAt: t.taken_at.toISOString(),
       },
       ruling: {
+        // Task 12: the waiting proposal's reason and evidence (staff-only) and the latest send-back.
+        ...(await rulingExtras(deps.db, code)),
         draft: d.ruling,
         round1: d.round1,
         publishedAt: d.publishedAt?.toISOString() ?? null,
         appealEndsAt: d.appealEndsAt?.toISOString() ?? null,
         appeal: d.appealBy !== null && d.appealedAt !== null ? { by: d.appealBy, at: d.appealedAt.toISOString() } : null,
         complyBy: d.complyBy?.toISOString() ?? null,
+        // Plan 4 Task 12 (A6): the seller's payment proof, and whether the comply time lapsed without one.
+        compliance: await complianceOf(deps.db, d),
       },
       freezes: await freezesOf(deps.db, t, code),
     };
@@ -456,8 +511,69 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     return { reviewers: reviewers.map((s) => ({ name: s.name })), waiting: await appealWaiting(db, d) };
   });
 
-  // NEEDS_P4_CHAT_MEMBERSHIP: no `POST /staff/v1/disputes/:code/chat` here on purpose (see the top
-  // of this file; design-chat-membership-keys-2026-11-08, build task 9).
+  /** The trade's chat and its channel, keyed (envelope v2), or 404 `no-chat` / 409 `no-key`. */
+  async function keyedChat(db: Queryable, code: string): Promise<{ chat: string; channel: string }> {
+    const chat = (await db.query<{ code: string }>('select code from chats where trade_code = $1', [code])).rows[0]?.code;
+    if (chat === undefined) throw new ApiError(404, 'no-chat');
+    if ((await db.query('select 1 from chat_keys where chat = $1', [chat])).rows.length === 0) throw new ApiError(409, 'no-key');
+    return { chat, channel: await channelFor(chat, 'chat') };
+  }
+
+  /**
+   * Design build task 9: the moderator's read. `{ deviceKeyId }` names the caller's certified staff
+   * device. The `chat.read` entry is committed first; the moderation process then checks it, the
+   * person, the case, the dispute and the device itself, and re-wraps the chat key to that device.
+   * The answer is ciphertext only: the wrap (only that device opens it), the chat's attestation (the
+   * device checks it against the pinned moderation key), its key record and its envelopes.
+   */
+  app.post('/staff/v1/disputes/:code/chat', { preHandler: guard, config: cfg }, async (req) => {
+    const b = body(req, ['deviceKeyId']);
+    if (typeof b.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(b.deviceKeyId)) throw new ApiError(400, 'bad-request');
+    const deviceKeyId = b.deviceKeyId;
+    const deps = req.server.deps;
+    const code = await codeOf(deps.db, req);
+    await caseTrade(deps.db, code);
+    const { chat, channel } = await keyedChat(deps.db, code);
+    const logEntryId = await logged(req, code, 'chat.read', {}, workable(req));
+    let g: { wrap: string; tkh: string; boxPublic: string; nextSeq: number };
+    try {
+      g = await o.moderation.chatGrant({ code, logEntryId, staffAccountId: req.staff.accountId, deviceKeyId });
+    } catch (err) {
+      moderationError(err);
+    }
+    if (!HEX64.test(g.tkh) || !HEX64.test(g.boxPublic) || !B64.test(g.wrap)) throw new ApiError(502, 'moderation-unavailable');
+    // Design 2.2: the staff member's locked copy, filed against the chat (the API cannot open it).
+    await deps.db.query(
+      `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, log_entry_id)
+       values ($1, 'staff', $2, $3, $4, $5, 'assigned', 'mod', $6, '', $7)
+       on conflict (chat, member_ref, granted_by) where removed_at is null
+       do update set box_public = excluded.box_public, wrap = excluded.wrap, tkh = excluded.tkh, granted_at = excluded.granted_at, log_entry_id = excluded.log_entry_id`,
+      [chat, `${req.staff.accountId}/${deviceKeyId}`, g.boxPublic, g.wrap, g.tkh, deps.clock(), logEntryId],
+    );
+    const att = (await deps.db.query<{ attestation: unknown; sig: string }>('select attestation, sig from chat_attestations where chat = $1', [chat])).rows[0];
+    const k = (await deps.db.query<{ tkh: string; created_by_role: string; wrap_buyer: string; wrap_seller: string; sig: string }>(
+      'select tkh, created_by_role, wrap_buyer, wrap_seller, sig from chat_keys where chat = $1',
+      [chat],
+    )).rows[0]!;
+    // Review N11 (f): the newest CHAT_READ_MAX envelopes, oldest first, and whether older ones exist.
+    const { rows: newest } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
+      'select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 order by id desc limit $2',
+      [chat, CHAT_READ_MAX + 1],
+    );
+    const olderNotShown = newest.length > CHAT_READ_MAX;
+    const envs = newest.slice(0, CHAT_READ_MAX).reverse();
+    return {
+      chat,
+      channel,
+      wrap: g.wrap,
+      tkh: g.tkh,
+      nextSeq: g.nextSeq,
+      attestation: att === undefined ? null : { attestation: att.attestation, sig: att.sig },
+      record: { v: 1, chat: channel, tkh: k.tkh, by: k.created_by_role, wrapBuyer: k.wrap_buyer, wrapSeller: k.wrap_seller, sig: k.sig },
+      envelopes: envs.map((e) => ({ id: e.id, senderRole: e.sender_role, envelope: e.envelope, at: e.created_at.toISOString() })),
+      olderNotShown,
+    };
+  });
 
   /**
    * The first time each moderator writes to the traders, both are told who joined (a system card
@@ -478,34 +594,40 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     }
   }
 
-  // A message to both traders: logged, sealed by the moderation process, stored as the chat's mod
-  // envelope, and the dispute's reply (the first one stops the first-reply clock).
+  // A message to both traders (design build task 9): sealed under the chat key and countersigned by
+  // the caller's certified staff device, logged, signed as the moderator by the moderation process,
+  // stored as the chat's mod envelope, and the dispute's reply (the first one stops the first-reply clock).
   app.post('/staff/v1/disputes/:code/messages', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
-    const b = body(req, ['text']);
-    const text = b.text;
-    if (typeof text !== 'string' || text.trim() === '' || text.length > MOD_MESSAGE_MAX || CONTROL.test(text)
-      || new TextEncoder().encode(text).length > CHAT_TEXT_MAX_BYTES) {
+    const b = body(req, ['deviceKeyId', 'seq', 'nonce', 'ct', 'ctSha256', 'requestId', 'issuedAt', 'sig']);
+    if (typeof b.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(b.deviceKeyId) || typeof b.seq !== 'number' || !Number.isSafeInteger(b.seq) || b.seq < 0
+      || typeof b.nonce !== 'string' || !B64.test(b.nonce) || typeof b.ct !== 'string' || !B64.test(b.ct) || b.ct.length > 90_000
+      || typeof b.ctSha256 !== 'string' || !HEX64.test(b.ctSha256) || typeof b.requestId !== 'string' || !HEX32.test(b.requestId)
+      || typeof b.issuedAt !== 'string' || !ISO_MS.test(b.issuedAt) || typeof b.sig !== 'string' || !HEX128.test(b.sig)) {
       throw new ApiError(400, 'bad-request');
     }
+    const sealed = { seq: b.seq, nonce: b.nonce, ct: b.ct, ctSha256: b.ctSha256, requestId: b.requestId, issuedAt: b.issuedAt, sig: b.sig };
+    const deviceKeyId = b.deviceKeyId;
     const deps = req.server.deps;
     const code = await codeOf(deps.db, req);
     const t = await caseTrade(deps.db, code);
-    const chat = (await deps.db.query<{ code: string }>('select code from chats where trade_code = $1', [code])).rows[0]?.code;
-    if (chat === undefined) throw new ApiError(404, 'no-chat');
+    const { chat, channel } = await keyedChat(deps.db, code);
     const logEntryId = await logged(req, code, 'chat.message-requested', {}, workable(req));
     let envelope: unknown;
     try {
-      ({ envelope } = await o.moderation.chatSend({ code, logEntryId, text }));
+      ({ envelope } = await o.moderation.chatSend({ code, logEntryId, staffAccountId: req.staff.accountId, deviceKeyId, ...sealed }));
     } catch (err) {
       moderationError(err);
     }
     let env;
     try {
-      env = checkChatEnvelope(envelope, await channelFor(chat, 'chat'), 'mod');
+      env = checkChatEnvelopeV2(envelope, channel, 'mod');
     } catch (err) {
       if (err instanceof ChatEnvelopeError) throw new ApiError(502, 'moderation-unavailable');
       throw err;
     }
+    // Exactly the ciphertext the staff device sealed, nothing the moderation process changed.
+    const e = env as { seq: number; nonce: string; ct: string };
+    if (e.seq !== sealed.seq || e.nonce !== sealed.nonce || e.ct !== sealed.ct) throw new ApiError(502, 'moderation-unavailable');
     const me = actorOf(req);
     let id = '';
     try {
@@ -524,7 +646,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   });
 
   // Asks the trader named for the unblurred proof (logged; the request goes to that trader only).
-  // NEEDS_P5_PROOF_ENVELOPE: once the proof package lands, ask the trader who uploaded the proof.
+  // NEEDS_P5_PROOF_ENVELOPE (proof storage landed, Task 14). OPEN (lead):
+  // this asks the side the moderator names, not necessarily a side that uploaded a proof.
   app.post('/staff/v1/disputes/:code/proof-request', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
     const b = body(req, ['side']);
     if (!isSide(b.side)) throw new ApiError(400, 'bad-request');
@@ -533,9 +656,10 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const code = await codeOf(deps.db, req);
     const t = await caseTrade(deps.db, code);
     await logged(req, code, 'proof.unblurred-requested', { side }, workable(req));
-    // The trader named sees the request in the dispute view too (the live event is only a hint).
+    // The trader named sees the request in the dispute view too (the live event is only a hint). A new
+    // request clears the time the last unblurred copy went (Plan 5 Task 15, migration 585).
     await deps.db.query(
-      `update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = $4
+      `update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = $4, proof_request_sent_at = null
         where code = $1 and seq = (select max(seq) from disputes where code = $1)`,
       [code, side, deps.clock(), req.staff.displayName],
     );
@@ -543,7 +667,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     return reply.code(204).send();
   });
 
-  // NEEDS_P4_CHAT_MEMBERSHIP: no `POST /staff/v1/disputes/:code/proof` here on purpose (review 8 Nov
+  // NEEDS_P5_PROOF_ENVELOPE: no `POST /staff/v1/disputes/:code/proof` here on purpose (review 8 Nov
   // I-1: it relayed the unblurred image through this API; the design re-wraps the proof key to the
   // staff device key instead).
 

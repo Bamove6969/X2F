@@ -47,7 +47,8 @@ export type BadgeKey = keyof typeof BADGE_SET;
 export function badgeFromApi(id: string): BadgeDef | null {
   const alias: Record<string, BadgeKey> = { 'security-key': 'hw', 'clean-record': 'clean' };
   const m = /^trades-(\d+)$/.exec(id);
-  const key = (m ? `m${m[1]}` : (alias[id] ?? id)) as BadgeKey;
+  // The API earns Veteran by step (veteran-1, -3, -5: @x2f/reputation P5-A12); the kit has one Veteran.
+  const key = (m ? `m${m[1]}` : /^veteran-\d+$/.test(id) ? 'veteran' : (alias[id] ?? id)) as BadgeKey;
   return Object.hasOwn(BADGE_SET, key) ? BADGE_SET[key] : null;
 }
 

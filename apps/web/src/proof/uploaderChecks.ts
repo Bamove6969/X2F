@@ -11,7 +11,7 @@
 //   (optional, lead default pending owner p11-141; the explanation goes nowhere yet).
 // - `hidden.amount` / `hidden.memo` -> <ProofHiddenByYou> beside the preview; posting still allowed.
 // - P-020: with the proof, `proofCodeNotice(hidden)` -> `chatClient().sendNotice(chat, notice)` in
-//   the trade's chat when not null (NEEDS_PLAN_5_TASK_15: nothing calls it until the BlurEditor lands).
+//   the trade's chat when not null (AddProof.tsx sendCodeNotice, after the proof is sent; proof stack).
 // The seller's card (Task 16) runs its own check on the blurred image and trusts none of this.
 import { type Box, type OcrWord, type ProofCheck, type ProofExpected, amountBoxes, checkProof, codeBoxes } from '@x2f/proof';
 import type { ChatNoticeId } from '../chat/notices.js';

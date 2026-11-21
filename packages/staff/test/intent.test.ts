@@ -3,11 +3,21 @@ import { describe, expect, test } from 'vitest';
 import { normalizeTradeCode } from '@x2f/core';
 import {
   BAN_REASON_CODES,
+  ISSUED_AT_KINDS,
+  KEY_TAP_KINDS,
+  LIMIT_STAGES,
+  hasIssuedAt,
+  inviteTokenHash,
+  ownerSetupChallenge,
+  staffLoginChallenge,
+  stampIssuedAt,
   canonicalJson,
+  evidenceSha256,
   inviteRegistrationChallenge,
   keyCheckCode,
   sha256,
   tapChallenge,
+  staffDeviceKeyId,
   type KeyTapIntent,
 } from '@x2f/staff';
 
@@ -76,13 +86,23 @@ const ruling: KeyTapIntent = {
   accountAction: { kind: 'none' },
   amountAtomic: '1250000000000',
   reasonSha256: 'a'.repeat(64),
+  evidenceSha256: 'c'.repeat(64),
+  round1Id: null,
 };
 const nonce = new Uint8Array(32).fill(7);
+const AT = new Date('2026-11-12T12:00:00.000Z');
 
 describe('tapChallenge', () => {
   test('is SHA-256 of the labelled canonical intent and the nonce', () => {
     const expected = nodeSha(`x2f-keytap-v1\n${canonicalJson(ruling)}\n${hex(nonce)}`);
     expect(hex(tapChallenge(ruling, nonce))).toBe(expected);
+  });
+
+  test('a round-2 ruling binds the round-1 ruling it reviews; round 1 binds none (mod-gate review B2)', () => {
+    expect(() => tapChallenge({ ...ruling, round: 2 }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, round: 2, round1Id: 'not-a-uuid' }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' }, nonce)).not.toThrow();
   });
 
   test('is the same for the same intent with keys in another order', () => {
@@ -96,7 +116,8 @@ describe('tapChallenge', () => {
       { ...ruling, step: 'approve' },
       { ...ruling, rulingId: '7d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e50' },
       { ...ruling, code: 'K7M2-9QXA-4FTR-8WPM' },
-      { ...ruling, round: 2 },
+      { ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e5f' },
+      { ...ruling, round: 2, round1Id: '0d1f6c4e-3a5b-4c2d-9e8f-0a1b2c3d4e50' },
       { ...ruling, outcome: 'refund-to-seller' },
       { ...ruling, accountAction: { kind: 'site-ban', until: '2027-01-01T00:00:00.000Z', reasonCode: 'terms' } },
       { ...ruling, accountAction: { kind: 'site-ban', until: null, reasonCode: 'terms' } },
@@ -104,6 +125,7 @@ describe('tapChallenge', () => {
       { ...ruling, accountAction: { kind: 'trade-ban', until: null, reasonCode: 'abuse' } },
       { ...ruling, amountAtomic: '1250000000001' },
       { ...ruling, reasonSha256: 'b'.repeat(64) },
+      { ...ruling, evidenceSha256: 'd'.repeat(64) },
     ];
     const seen = new Set([base]);
     for (const v of variants) seen.add(hex(tapChallenge(v, nonce)));
@@ -138,8 +160,24 @@ describe('tapChallenge', () => {
       { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 },
       ruling,
       { ...ruling, outcome: 'seller-sends-xmr' },
-    ];
+    ].map((i) => stampIssuedAt(i as KeyTapIntent, AT));
     expect(new Set(all.map((i) => hex(tapChallenge(i, nonce)))).size).toBe(all.length);
+  });
+
+  test('an owner registry intent carries its signed issuedAt; any other carries none (lead call on mod-gate P4)', () => {
+    for (const kind of ISSUED_AT_KINDS) expect(hasIssuedAt(kind)).toBe(true);
+    expect(hasIssuedAt('ruling')).toBe(false);
+    expect(hasIssuedAt('fee-sweep')).toBe(false);
+    // Lead call on the D-032 reset gap: the gate orders the owner's tapped reset like the other registry taps.
+    expect(hasIssuedAt('reset-staff-security')).toBe(true);
+    const stop: KeyTapIntent = { kind: 'emergency-stop' };
+    expect(stampIssuedAt(stop, AT)).toEqual({ kind: 'emergency-stop', issuedAt: AT.toISOString() });
+    expect(stampIssuedAt(ruling, AT)).toEqual(ruling);
+    expect(() => tapChallenge(stop, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...stop, issuedAt: '2026-11-12T12:00:00Z' }, nonce)).toThrow(TypeError);
+    expect(() => tapChallenge({ ...ruling, issuedAt: AT.toISOString() } as unknown as KeyTapIntent, nonce)).toThrow(TypeError);
+    // Signed: another issuedAt is another challenge.
+    expect(hex(tapChallenge(stampIssuedAt(stop, AT), nonce))).not.toBe(hex(tapChallenge(stampIssuedAt(stop, new Date(AT.getTime() + 1)), nonce)));
   });
 
   test('the ban reasons are the lead default list', () => {
@@ -169,5 +207,82 @@ describe('inviteRegistrationChallenge', () => {
   test('is SHA-256 of the labelled token hash', () => {
     const th = 'e'.repeat(64);
     expect(hex(inviteRegistrationChallenge(th))).toBe(nodeSha(`x2f-invite-v1\n${th}`));
+  });
+});
+
+describe('evidenceSha256 (review mod-screens M1: the ruling tap binds the evidence lines)', () => {
+  test('is SHA-256 of the UTF-8 canonical JSON array of the lines, in order', () => {
+    const lines = ['The trade chat', 'Bank statement: “paid” 08:51', '日本語 ✓'];
+    expect(evidenceSha256(lines)).toBe(nodeSha(canonicalJson(lines)));
+    expect(evidenceSha256(lines)).toBe(nodeSha(JSON.stringify(lines)));
+    expect(evidenceSha256([])).toBe(nodeSha('[]'));
+  });
+
+  test('changes with the order, the split and the text of the lines', () => {
+    const seen = new Set([
+      evidenceSha256(['a', 'b']),
+      evidenceSha256(['b', 'a']),
+      evidenceSha256(['a,b']),
+      evidenceSha256(['a', 'b ']),
+      evidenceSha256(['a']),
+      evidenceSha256([]),
+    ]);
+    expect(seen.size).toBe(6);
+  });
+});
+
+// Re-verify round 3, X2 (lead call): every WebAuthn ceremony on the staff site has its own domain,
+// derived by the staff site itself, so no login or setup assertion can ever be a tap's.
+describe('staff-site challenge domains (X2)', () => {
+  const N = 'ab'.repeat(32);
+  test('the login and the owner-setup challenges are SHA-256 of their own prefix and the nonce', () => {
+    expect(hex(staffLoginChallenge(N))).toBe(nodeSha(`x2f-staff-login-v1\n${N}`));
+    expect(hex(ownerSetupChallenge(N))).toBe(nodeSha(`x2f-owner-setup-v1\n${N}`));
+    expect(inviteTokenHash('tok_1')).toBe(nodeSha('tok_1'));
+    expect(hex(inviteRegistrationChallenge(inviteTokenHash('tok_1')))).toBe(nodeSha(`x2f-invite-v1\n${nodeSha('tok_1')}`));
+  });
+  test('a malformed nonce is refused', () => {
+    for (const bad of ['', 'AB'.repeat(32), 'ab'.repeat(31), `${'ab'.repeat(32)}0`, 'zz'.repeat(32)]) {
+      expect(() => staffLoginChallenge(bad), bad).toThrow(TypeError);
+      expect(() => ownerSetupChallenge(bad), bad).toThrow(TypeError);
+    }
+  });
+  test('no domain can collide with a tap: the preimages differ in their first line', () => {
+    expect(hex(staffLoginChallenge(N))).not.toBe(hex(ownerSetupChallenge(N)));
+    expect(hex(staffLoginChallenge(N))).not.toBe(hex(tapChallenge(stampIssuedAt({ kind: 'emergency-stop' }, AT), new Uint8Array(32).fill(0xab))));
+  });
+});
+
+
+describe('staff device certification intents (chat membership design task 8)', () => {
+  test('certify-device and revoke-device carry the signed issuedAt, and the device key id is SHA-256 of the signing key, first 32 hex', () => {
+    const sign = 'ab'.repeat(32);
+    const id = staffDeviceKeyId(sign);
+    expect(id).toBe(createHash('sha256').update(Buffer.from(sign, 'hex')).digest('hex').slice(0, 32));
+    expect(() => staffDeviceKeyId(sign.toUpperCase())).toThrow(TypeError);
+    expect(() => staffDeviceKeyId(sign.slice(2))).toThrow(TypeError);
+    expect(hasIssuedAt('certify-device')).toBe(true);
+    expect(hasIssuedAt('revoke-device')).toBe(true);
+    const nonce = new Uint8Array(16).fill(7);
+    const at = new Date('2026-11-18T12:00:00.000Z');
+    const certify = stampIssuedAt({ kind: 'certify-device', accountId: 'a1', deviceKeyId: id, signPublic: sign, boxPublic: 'cd'.repeat(32) }, at);
+    const revoke = stampIssuedAt({ kind: 'revoke-device', accountId: 'a1', deviceKeyId: id }, at);
+    expect(hex(tapChallenge(certify, nonce))).not.toBe(hex(tapChallenge(revoke, nonce)));
+    expect(() => tapChallenge({ kind: 'revoke-device', accountId: 'a1', deviceKeyId: id }, nonce)).toThrow(TypeError);
+  });
+});
+
+describe('account-limit intents (Plan 4 Task 26)', () => {
+  test('a decision on recommended limits binds the recommendation, the account, approve or decline, and what it sets', () => {
+    expect(KEY_TAP_KINDS).toContain('account-limit');
+    expect(LIMIT_STAGES).toEqual(['starter', 'building']);
+    expect(hasIssuedAt('account-limit')).toBe(false);
+    const nonce = new Uint8Array(16).fill(9);
+    const base = { kind: 'account-limit', recId: 'r1', accountId: 'a1', approve: true, capUsd: 300, stage: null } as const;
+    const yes = hex(tapChallenge(base, nonce));
+    expect(hex(tapChallenge({ ...base, approve: false }, nonce))).not.toBe(yes);
+    expect(hex(tapChallenge({ ...base, capUsd: 301 }, nonce))).not.toBe(yes);
+    expect(hex(tapChallenge({ ...base, capUsd: null, stage: 'starter' }, nonce))).not.toBe(yes);
+    expect(hex(tapChallenge({ ...base, recId: 'r2' }, nonce))).not.toBe(yes);
   });
 });

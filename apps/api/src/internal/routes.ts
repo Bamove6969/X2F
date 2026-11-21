@@ -7,21 +7,29 @@ import {
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
   isAttestedTerms,
+  isRulingKind,
+  isRulingStatement,
+  rulingStatementBytes,
   SETTLE_KINDS,
   settleKindFor,
   TradeRuleError,
   type Attestation,
   type AttestedTerms,
+  type RulingKind,
   type SettleKind,
   type TradeEvent,
   type TradeState,
 } from '@x2f/trade';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import { canonicalJson } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
+import { recordRulingExecution } from '../disputes/execution.js';
+import { acceptGrant, noticeCandidates, pendingGrants, refuseGrant, storeNotice } from '../chat/grants.js';
+import { loadDisputeRecord } from '../disputes/store.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
 /**
@@ -240,12 +248,38 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * trade store as `system`. The state machine's refusal is 409 with its rule code, so a repeated
    * report is refused `wrong-state` and the watcher counts it as done.
    */
+  /**
+   * Security review 2026-11-12 I7: a ruling's payout seen after its case was closed (by a senior's
+   * close). The coins moved but the trade stays disputed and the watcher backs off, so the owner is
+   * alerted, once per trade (the case row locked, so two reports never alert twice).
+   */
+  const raiseClosedCase = async (x: { code: string; txHash: string }): Promise<void> => {
+    const c = await o.db.connect();
+    try {
+      await c.query('begin');
+      const { rows } = await c.query<{ seq: number }>(
+        'select seq from disputes where code = $1 and seq = (select max(seq) from disputes where code = $1) for update',
+        [x.code],
+      );
+      const seen = await c.query("select 1 from alerts where kind = 'ruling-payout-dispute-closed' and detail->>'trade' = $1 limit 1", [x.code]);
+      if (rows[0] !== undefined && seen.rows.length === 0) {
+        await addOwnerAlert(c, 'ruling-payout-dispute-closed', { trade: x.code, seq: rows[0].seq, txHash: x.txHash }, o.clock?.() ?? new Date(now()));
+      }
+      await c.query('commit');
+    } catch (e) {
+      await c.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      c.release();
+    }
+  };
+
   const watcherReport = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
     if (code === null) throw new Refused(400, 'bad-body');
     let event: TradeEvent | null = null;
-    /** `settled`: the kind the watcher counted the sweep for (security review 7 Nov, finding 3). */
-    let claimedKind: SettleKind | null = null;
+    /** `settled`: the kind the watcher counted the sweep for (security review 7 Nov, finding 3), or a ruling's (R-M2). */
+    let claimedKind: SettleKind | RulingKind | null = null;
     switch (body.kind) {
       case 'setup-done':
         if (!keysAre(body, ['kind', 'trade', 'escrowAddress']) || typeof body.escrowAddress !== 'string' || !/^[0-9A-Za-z]{1,128}$/.test(body.escrowAddress)) break;
@@ -261,8 +295,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       }
       case 'settled':
         if (!keysAre(body, ['kind', 'trade', 'txHash', 'settleKind']) || typeof body.txHash !== 'string' || !TX_HASH.test(body.txHash)) break;
-        if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind)) break;
-        claimedKind = body.settleKind as SettleKind | null;
+        if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind) && !isRulingKind(body.settleKind)) break;
+        claimedKind = body.settleKind as SettleKind | RulingKind | null;
         event = { type: 'settled', kind: 'release', txHash: body.txHash }; // kind set below from the trade
         break;
       case 'late-funds':
@@ -289,7 +323,32 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     // a signing window that reverted and a new settlement started in between is refused, never
     // recorded as the other kind.
     let within: Parameters<typeof applyEvent>[4];
-    if (event.type === 'settled') {
+    /** Review I7: a ruling payout's trade and tx, raised to the owner if its case turns out closed. */
+    let closedCase: { code: string; txHash: string } | null = null;
+    if (event.type === 'settled' && isRulingKind(claimedKind)) {
+      // Plan 4 Task 14 (R-M2): the moderation process executed a round-1 escrow ruling and its watcher
+      // saw the mod-built sweep. Never named by the trade alone: only a disputed trade whose published
+      // round-1 escrow ruling pays exactly this way (checked again under the dispute's row lock).
+      const t = await loadTrade(o.db, code);
+      const closedAs = claimedKind === 'dispute-buyer' ? 'released' : 'refunded';
+      // The same report again (the watcher retries until a pass is saved) changes nothing.
+      if (t !== null && t.state === closedAs && t.txHash === body.txHash && t.settling === null) {
+        log({ reason: 'internal-settled' });
+        return reply.code(201).send({ ok: true });
+      }
+      if (t === null || t.state !== 'disputed') {
+        if (t !== null && (t.state === 'released' || t.state === 'refunded')) throw new Refused(409, 'wrong-state');
+        throw new Refused(409, 'settle-kind-unknown');
+      }
+      const kind = claimedKind;
+      const txHash = body.txHash as string;
+      event = { type: 'settled', kind, txHash };
+      within = async (c, _prev, _next, at) => {
+        const r = await recordRulingExecution(c, code, kind, txHash, at);
+        if (r !== 'ok') throw new Refused(409, r);
+      };
+      closedCase = { code, txHash };
+    } else if (event.type === 'settled') {
       const t = await loadTrade(o.db, code);
       const kind = t ? settleKindFor(t) : null;
       if (kind === null || claimedKind === null) throw new Refused(409, 'settle-kind-unknown');
@@ -308,8 +367,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         // `resolveFinal` close a `release-to-buyer` case with nothing owed, so it is left as it is
         // (it waits for an execution that cannot come, and never closes) and raised for staff to
         // re-rule with `seller-sends-xmr`: logged on the case and the owner alerted.
-        // NEEDS_PLAN_4_RULING_PAYOUT (R-M2): a ruling's own payout must report its own kind
-        // (`RulingKind`), never `auto-refund`, before ruling execution lands; see machine.ts `settled`.
+        // R-M2 (Plan 4 Task 14): a ruling's own payout reports its own kind (`RulingKind`, the branch
+        // above), never `auto-refund`; machine.ts `settled` refuses a ruling kind once txHash is set.
         if (prev.state === 'disputed' && next.state === 'disputed' && prev.txHash === null && next.txHash !== null) {
           const { rows } = await c.query<{ seq: number; status: string }>(
             `select seq, status from disputes
@@ -331,6 +390,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     try {
       await applyEvent({ db: o.db, clock: o.clock ?? (() => new Date(now())), ...(o.publish ? { publish: o.publish } : {}) }, code, event, 'system', within);
     } catch (e) {
+      // Review I7: the payout's transaction rolled back; the owner is told once, in its own transaction.
+      if (e instanceof Refused && e.reason === 'dispute-closed' && closedCase !== null) await raiseClosedCase(closedCase).catch(() => log({ reason: 'internal-dispute-closed-alert-failed' }));
       if (e instanceof TradeRuleError) throw new Refused(409, e.code);
       if (e instanceof ApiError && e.status === 404) throw new Refused(404, 'not-found');
       if (e instanceof RangeError) throw new Refused(400, 'bad-body');
@@ -458,6 +519,19 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // before it shreds; this list is only the trigger. Never-served orders first, then the least
   // recently served (review M4): orders moderation holds move to the back instead of keeping the
   // ones behind them waiting.
+  // ── Dispute grants (design-chat-membership-keys section 3 T1, build task 6) ──────────────
+  // The trader grants of a chat key to the moderator that moderation has not accepted yet, each
+  // with its chat's key record (moderation checks the grant's wrap against the record's tkh).
+  app.get('/internal/v1/chat-grants', guard('/internal/v1/chat-grants', async (_req, reply) => {
+    return reply.send({ grants: await pendingGrants(o.db, o.workLimit ?? WORK_LIMIT) });
+  }));
+
+  // ── Dispute notices (design-chat-membership-keys section 3 T2, build task 7) ─────────────
+  // Keyed chats of disputed trades with no accepted grant and no notice for the current dispute.
+  app.get('/internal/v1/chat-notices', guard('/internal/v1/chat-notices', async (_req, reply) => {
+    return reply.send({ candidates: await noticeCandidates(o.db, o.workLimit ?? WORK_LIMIT) });
+  }));
+
   app.get('/internal/v1/chat-shred', guard('/internal/v1/chat-shred', async (_req, reply) => {
     const { rows } = await o.db.query<{ chat: string; trade_code: string | null; purged_at: Date }>(
       `with picked as (
@@ -477,12 +551,166 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * `{ kind: 'chat-shredded', chat }`: the moderation service destroyed its copy of the chat's keys.
    * The order is removed; a repeat (or a chat with no order) is still 201, so the report is idempotent.
    */
+  /**
+   * Plan 4 Task 14: the moderation process's log checkpoint `{ id, hash }` (the head it recorded in
+   * its own sealed gate store). Logged as `log.checkpoint` only when that row still has that hash
+   * (else 409 `checkpoint-mismatch`, nothing written): the log then shows every checkpoint the
+   * moderation process holds, and an API that rewrote the row cannot have it logged.
+   */
+  const logCheckpoint = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'id', 'hash']) || typeof body.id !== 'string' || !/^[1-9][0-9]{0,18}$/.test(body.id) || typeof body.hash !== 'string' || !TX_HASH.test(body.hash)) {
+      throw new Refused(400, 'bad-body');
+    }
+    const id = body.id;
+    const hash = body.hash;
+    const client = await o.db.connect();
+    try {
+      await client.query('begin');
+      const { rows } = await client.query<{ hash: Buffer }>('select hash from activity_log where id = $1', [id]);
+      if (rows[0] === undefined || rows[0].hash.toString('hex') !== hash) {
+        await client.query('rollback');
+        throw new Refused(409, 'checkpoint-mismatch');
+      }
+      await appendLog(client, { at: o.clock?.() ?? new Date(now()), actor: { kind: 'system' }, tradeCode: null, action: 'log.checkpoint', detail: { id, hash } });
+      await client.query('commit');
+    } catch (e) {
+      await client.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+    log({ reason: 'internal-log-checkpoint' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /**
+   * RetoSwap/Haveno review 2026-11-12, finding 2 (lead call): `{ kind: 'ruling-statement', trade,
+   * statement, sig }`, the moderation process's signed statement of the payout it worked out for a
+   * round-1 escrow ruling its gate authorised. The traders' devices verify it themselves before they
+   * co-sign (the API's word is never enough); the API keeps it for them only when it is signed by
+   * MOD_SIGNING_PUBLIC (`bad-statement`), for this trade (`wrong-trade`), round 1, a trade still
+   * disputed (`wrong-state`) whose escrow address it names (`wrong-escrow`), and the trade's
+   * published round-1 escrow ruling with that outcome (`stale-ruling`). The first statement stays:
+   * the same one again is 201, any other (an altered payout) 409 `statement-conflict`.
+   */
+  const rulingStatement = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'trade', 'statement', 'sig'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const s = body.statement;
+    const sig = body.sig;
+    if (!isRulingStatement(s) || typeof sig !== 'string' || !/^[0-9a-f]{128}$/.test(sig)) throw new Refused(400, 'bad-statement');
+    let sigOk = false;
+    try {
+      sigOk = sodium.crypto_sign_verify_detached(sodium.from_hex(sig), rulingStatementBytes(s), modKey);
+    } catch {
+      sigOk = false;
+    }
+    if (!sigOk || s.round !== 1) throw new Refused(400, 'bad-statement');
+    if (normalizeTradeCode(s.trade) !== code) throw new Refused(400, 'wrong-trade');
+    const t = await loadTrade(o.db, code);
+    if (t === null) throw new Refused(404, 'not-found');
+    if (t.state !== 'disputed') throw new Refused(409, 'wrong-state');
+    if (t.escrowAddress === null || t.escrowAddress !== s.escrowAddress) throw new Refused(409, 'wrong-escrow');
+    const rec = await loadDisputeRecord(o.db, code);
+    const d = rec?.dispute ?? null;
+    const paid = d === null ? null : d.round === 1 ? d.ruling : d.round1;
+    if (d === null || paid === null || d.afterRefund || d.publishedAt === null || paid.id !== s.rulingId || paid.outcome !== s.outcome) {
+      throw new Refused(409, 'stale-ruling');
+    }
+    await o.db.query('insert into ruling_statements (code, statement, sig, created_at) values ($1, $2, $3, now()) on conflict (code) do nothing', [code, s, sig]);
+    const { rows } = await o.db.query<{ statement: unknown; sig: string }>('select statement, sig from ruling_statements where code = $1', [code]);
+    const kept = rows[0];
+    if (kept === undefined || kept.sig !== sig || canonicalJson(kept.statement) !== canonicalJson(s)) throw new Refused(409, 'statement-conflict');
+    log({ reason: 'internal-ruling-statement' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /** Plan 4 Task 14: the moderation process's daily verification failed: `site_flags.log_alarm` (the first time stays). */
+  const logAlarm = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind'])) throw new Refused(400, 'bad-body');
+    await o.db.query('update site_flags set log_alarm = coalesce(log_alarm, $1)', [o.clock?.() ?? new Date(now())]);
+    log({ reason: 'internal-log-alarm' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /**
+   * `{ kind: 'chat-grant-accepted', chat, accepted }` (build task 6): moderation opened one grant's
+   * wrap to the chat's key. Stored only when signed by the chat's attested moderator identity and
+   * naming a stored grant (else 400 `bad-acceptance`, 404 `not-found`); a repeat is 201.
+   */
+  const chatGrantAccepted = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat', 'accepted'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const r = await acceptGrant(o.db, code, body.accepted, o.clock?.() ?? new Date(now()));
+    if (r === 'bad') throw new Refused(400, 'bad-acceptance');
+    if (r === 'unknown') throw new Refused(404, 'not-found');
+    log({ reason: 'internal-chat-grant-accepted' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /**
+   * `{ kind: 'chat-dispute-notice', chat, notice }` (build task 7): moderation's signed T2 notice.
+   * Stored only when signed by the chat's attested moderator identity and naming the linked trade's
+   * current open dispute exactly (else 400 `bad-notice`, 404 `not-found`, 409 `not-disputed`); a
+   * repeat is 201.
+   */
+  const chatDisputeNotice = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat', 'notice'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const r = await storeNotice(o.db, code, body.notice, o.clock?.() ?? new Date(now()));
+    if (r === 'bad') throw new Refused(400, 'bad-notice');
+    if (r === 'unknown') throw new Refused(404, 'not-found');
+    if (r === 'not-disputed') throw new Refused(409, 'not-disputed');
+    log({ reason: 'internal-chat-dispute-notice' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /**
+   * Review F2: `{ kind: 'chat-grant-refused', chat, grantBy, grantSig, reason }`: moderation refused
+   * that one grant. Only that row is marked; the grant queue then skips it (else 400 `bad-body`, 404
+   * `not-found`); a repeat is 201.
+   */
+  const chatGrantRefused = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat', 'grantBy', 'grantSig', 'reason'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const r = await refuseGrant(o.db, code, body.grantBy, body.grantSig, body.reason, o.clock?.() ?? new Date(now()));
+    if (r === 'bad') throw new Refused(400, 'bad-body');
+    if (r === 'unknown') throw new Refused(404, 'not-found');
+    log({ reason: 'internal-chat-grant-refused' });
+    return reply.code(201).send({ ok: true });
+  };
+
   const chatShredded = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind', 'chat'])) throw new Refused(400, 'bad-body');
     const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
     if (code === null) throw new Refused(400, 'bad-body');
     await o.db.query('delete from chat_shred_orders where chat = $1', [code]);
     log({ reason: 'internal-chat-shredded' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /**
+   * `{ kind: 'chat-notice-stopped', chat, disputeSeq, status }` (re-review m5): the moderation
+   * service stopped re-posting a dispute notice this API refused for good. One owner alert.
+   */
+  const chatNoticeStopped = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat', 'disputeSeq', 'status'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    const seq = body.disputeSeq;
+    const status = body.status;
+    if (code === null || typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 1 || typeof status !== 'number' || !Number.isInteger(status) || status < 400 || status > 499) {
+      throw new Refused(400, 'bad-body');
+    }
+    await addOwnerAlert(o.db, 'chat-notice-refused', {
+      chat: code, disputeSeq: seq, status,
+      // COPY-UNSIGNED
+      message: 'A disputed chat could not get its moderator notice: moderators may not be able to read it. Check the dispute.',
+    }, o.clock?.() ?? new Date(now()));
+    log({ reason: 'internal-chat-notice-stopped' });
     return reply.code(201).send({ ok: true });
   };
 
@@ -579,6 +807,13 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-refused') return refuseChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-grant-accepted') return chatGrantAccepted(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-dispute-notice') return chatDisputeNotice(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-notice-stopped') return chatNoticeStopped(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-grant-refused') return chatGrantRefused(body, reply);
+    if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
+    if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
+    if (isPlainObject(body) && body.kind === 'ruling-statement') return rulingStatement(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;

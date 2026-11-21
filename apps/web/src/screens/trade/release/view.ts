@@ -26,6 +26,7 @@ export type ReleaseTrade = Pick<
   | 'txHash'
   | 'confirmBy'
   | 'serverNow'
+  | 'securedAt'
 >;
 
 /** The payment method as the trade header shows it: Task 22's `methodOf`. */
@@ -40,7 +41,7 @@ export { methodOf, publicName };
  * `cosignPolicy`); `phase` says whether THIS device has signed; `amountAtomic`/`fiatCents` are
  * the amount this device accepts, the only sum the screens show (review 2026-10-27, I3).
  */
-export type ReleaseEscrow = Pick<UseEscrow, 'release' | 'phase' | 'error' | 'refusal' | 'keepOpen' | 'amountAtomic' | 'fiatCents'>;
+export type ReleaseEscrow = Pick<UseEscrow, 'release' | 'phase' | 'error' | 'refusal' | 'keepOpen' | 'amountAtomic' | 'fiatCents'> & Partial<Pick<UseEscrow, 'handedOff'>>;
 
 /** What `GET /v1/trades/:code/confirmations` answers (apps/api/src/trades/routes.ts). */
 export interface Confirmations {

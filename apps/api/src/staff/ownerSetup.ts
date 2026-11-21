@@ -1,9 +1,9 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { normalizeLoginCode } from '@x2f/accounts';
-import { keyCheckCode } from '@x2f/staff';
+import { keyCheckCode, ownerSetupChallenge } from '@x2f/staff';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { assertNewNames, createAccount } from '../accounts.js';
+import { assertNewNames, assertStaffNameUnlike, createAccount } from '../accounts.js';
 import type { Deps } from '../app.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { COOKIE_ATTRS, ensureDeviceCookie } from '../auth/device.js';
@@ -204,6 +204,7 @@ export function ownerSetupRoutes(app: FastifyInstance): void {
       await c.query('update challenges set account_id = null where id = $1', [s.id]);
       await c.query("delete from accounts where kind = 'owner' and disabled_at is not null");
       const names = await assertNewNames(c, b.displayName, b.loginName);
+      await assertStaffNameUnlike(c, names.displayKey);
       const ownerId = await createAccount(c, deps.config, { ...names, kind: 'owner', termsVersion: null, now });
       await c.query('update accounts set disabled_at = $2 where id = $1', [ownerId, now]);
       await c.query('update challenges set account_id = $2 where id = $1', [s.id, ownerId]);
@@ -217,14 +218,16 @@ export function ownerSetupRoutes(app: FastifyInstance): void {
     const kind = body(req).kind ?? 'security-key';
     if (kind !== 'security-key' && kind !== 'passkey') throw new ApiError(400, 'bad-request');
     // An owner passkey is refused here (`registrationOptionsFor`, 403 method-not-allowed).
-    const options = await webauthnRegistrationOptions(deps, ownerId, { kind });
+    // Re-verify round 3, X2: the challenge is the staff site's own domain, derived from this nonce.
+    const setupNonce = randomBytes(32).toString('hex');
+    const options = await webauthnRegistrationOptions(deps, ownerId, { kind, challenge: ownerSetupChallenge(setupNonce) });
     const now = deps.clock();
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into challenges (account_id, purpose, method, webauthn_challenge, payload, created_at, expires_at)
        values ($1, 'owner-setup-key', 'security-key', $2, $3, $4, $5) returning id`,
-      [ownerId, options.challenge, JSON.stringify({ setupId }), now, new Date(now.getTime() + WEBAUTHN_TTL_MS)],
+      [ownerId, options.challenge, JSON.stringify({ setupId, setupNonce }), now, new Date(now.getTime() + WEBAUTHN_TTL_MS)],
     );
-    return { challengeId: rows[0]!.id, options };
+    return { challengeId: rows[0]!.id, options, setupNonce };
   });
 
   app.post('/staff/v1/setup/key/finish', { config: PUBLIC_SETUP }, async (req, reply) => {
@@ -234,6 +237,10 @@ export function ownerSetupRoutes(app: FastifyInstance): void {
     const label = b.label === undefined ? undefined : str(b, 'label');
     const ch = await consumeChallenge(deps.db, str(b, 'challengeId'), deps.clock());
     if (!ch || ch.purpose !== 'owner-setup-key' || ch.webauthn_challenge === null || ch.account_id !== ownerId || ch.payload.setupId !== setupId) {
+      throw new ApiError(400, 'challenge-expired');
+    }
+    const n = ch.payload.setupNonce;
+    if (typeof n !== 'string' || !/^[0-9a-f]{64}$/.test(n) || ch.webauthn_challenge !== Buffer.from(ownerSetupChallenge(n)).toString('base64url')) {
       throw new ApiError(400, 'challenge-expired');
     }
     // Attested security keys only: an unattested one is 403 method-not-allowed (R1, P2-I5).

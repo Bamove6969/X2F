@@ -20,11 +20,12 @@ import {
 } from './engine.js';
 import { fromBase64, toBase64 } from './base64.js';
 import { useFetchForInProcessWallets } from './inProcessHttp.js';
-import { checkPayouts, checkTxSet, sumPayouts, type DescribedTx } from './verify.js';
+import { checkPayouts, checkTxSet, feeCeiling, parseFeeEstimate, sumPayouts, type DescribedTx, type FeeEstimate } from './verify.js';
 
 export type EscrowNetwork = 'regtest' | 'stagenet' | 'mainnet';
 
 const THRESHOLD = 2;
+const SIGNERS = 3;
 
 const TX_HASH = /^[0-9a-f]{64}$/;
 
@@ -81,6 +82,53 @@ function absoluteRing(offsets: readonly (number | bigint)[]): bigint[] {
     out.push(at);
   }
   return out;
+}
+
+const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+/** Monero base58: 8-byte blocks of 11 characters; a short last block of n characters holds DECODED[n] bytes. */
+const DECODED = [0, -1, 1, 2, -1, 3, 4, 5, -1, 6, 7, 8];
+
+function base58Decode(s: string): Uint8Array | null {
+  const out: number[] = [];
+  for (let i = 0; i < s.length; i += 11) {
+    const block = s.slice(i, i + 11);
+    const n = DECODED[block.length] ?? -1;
+    if (n < 0) return null;
+    let v = 0n;
+    for (const c of block) {
+      const d = BASE58.indexOf(c);
+      if (d < 0) return null;
+      v = v * 58n + BigInt(d);
+    }
+    if (v >> BigInt(8 * n) !== 0n) return null; // overflows its block
+    const bytes: number[] = [];
+    for (let k = 0; k < n; k++) {
+      bytes.unshift(Number(v & 0xffn));
+      v >>= 8n;
+    }
+    out.push(...bytes);
+  }
+  return Uint8Array.from(out);
+}
+
+/** wallet2's first multisig kex message (prepare_multisig): this magic, then base58 of 128 bytes. */
+const KEX_ROUND1 = 'MultisigxV2R1';
+
+/**
+ * The signer key a round-1 kex message (prepare_multisig) names, as lower-case hex; null for
+ * anything else. wallet2 lays the message out as msg privkey (32) | signing pubkey (32) |
+ * signature (64). The signing pubkey is the signer's base key in the multisig: wallet2 derives it
+ * from the wallet's spend secret (blinded with a hash), so it is not the public spend key, but the
+ * same wallet always names the same one. Only its shape is read here; wallet2 checks the
+ * signature in makeMultisig.
+ */
+export function kexSignerKey(message: string): string | null {
+  if (typeof message !== 'string' || !message.startsWith(KEX_ROUND1)) return null;
+  const raw = base58Decode(message.slice(KEX_ROUND1.length));
+  if (!raw || raw.length !== 128) return null;
+  let hex = '';
+  for (const b of raw.subarray(32, 64)) hex += b.toString(16).padStart(2, '0');
+  return hex;
 }
 
 function walletConfig(network: EscrowNetwork, daemonUri: string, password: string): MoneroWalletConfig {
@@ -141,7 +189,21 @@ export class MoneroMultisigSession implements EscrowSession {
     return this.wallet.prepareMultisig();
   }
 
-  make(peers: string[]): Promise<string> {
+  /**
+   * Review multisig-vs-RetoSwap F3 (12 Nov): exactly two peers, whose round-1 messages name signer
+   * keys distinct from each other and from this wallet's own, or EscrowError('bad-multisig') before
+   * the wallet becomes multisig (so no escrow address ever comes of it). wallet2 refuses duplicate
+   * signers too; this does not rely on it.
+   */
+  async make(peers: string[]): Promise<string> {
+    if (!Array.isArray(peers) || peers.length !== SIGNERS - 1) throw new EscrowError('bad-multisig', `expected ${SIGNERS - 1} peers, got ${Array.isArray(peers) ? peers.length : 0}`);
+    const keys = peers.map(kexSignerKey);
+    if (keys.some((k) => k === null)) throw new EscrowError('bad-multisig', 'a peer setup message is not a round-1 kex message');
+    // This wallet's own signer key, from its own round-1 message: get_multisig_first_kex_msg is
+    // const and deterministic in the key it names, so asking again changes nothing.
+    const own = kexSignerKey(await this.wallet.prepareMultisig());
+    if (own === null) throw new EscrowError('bad-multisig', 'this wallet gives no round-1 kex message');
+    if (new Set([own, ...keys]).size !== SIGNERS) throw new EscrowError('bad-multisig', 'two signers share a key');
     return this.wallet.makeMultisig(peers, THRESHOLD, this.password);
   }
 
@@ -151,8 +213,16 @@ export class MoneroMultisigSession implements EscrowSession {
     return { hex: result.getMultisigHex() ?? '', ready };
   }
 
+  /**
+   * Review F3: the address only of a finished wallet that is exactly a 2-of-3 multisig; any other
+   * shape is EscrowError('bad-multisig') and its address is never read, so never shown.
+   */
   async address(): Promise<string> {
-    if (!(await this.wallet.getMultisigInfo()).getIsReady()) throw new EscrowError('not-ready');
+    const info = await this.wallet.getMultisigInfo();
+    if (!info.getIsReady()) throw new EscrowError('not-ready');
+    if (info.getIsMultisig() !== true || info.getThreshold() !== THRESHOLD || info.getNumParticipants() !== SIGNERS) {
+      throw new EscrowError('bad-multisig', `not a ${THRESHOLD}-of-${SIGNERS} multisig wallet`);
+    }
     return this.wallet.getPrimaryAddress();
   }
 
@@ -216,6 +286,72 @@ export class MoneroMultisigSession implements EscrowSession {
     } catch {
       return null; // "No tx secret key is stored for this tx"
     }
+  }
+
+  async txKeyPays(txHash: string, txKey: string, addresses: string[], knownFeeAtomic?: bigint): Promise<{ inPool: boolean; received: bigint[]; feeAtomic: bigint } | null | 'unavailable'> {
+    // As proveTx: a key that is not a reduced scalar would abort the WebAssembly.
+    if (!TX_HASH.test(txHash) || !isTxKey(txKey)) return null;
+    const received: bigint[] = [];
+    let inPool = false;
+    for (const address of addresses) {
+      try {
+        const c = await timed(this.wallet.checkTxKey(txHash, txKey, address), 'check tx key');
+        if (c.getIsGood() !== true) return null;
+        if (c.getInTxPool() === true) inPool = true;
+        received.push(c.getReceivedAmount() ?? 0n);
+      } catch (e) {
+        if (e instanceof EscrowError) throw e;
+        // wallet2 could not read the tx from its daemon (a network error or a refused read): nothing
+        // was checked; the caller never counts this as proven (and does not take it as a bad key).
+        if (e instanceof Error && /failed to get transaction from daemon/i.test(e.message)) return 'unavailable';
+        return null; // a key that does not fit, or an address of another network
+      }
+    }
+    // Review r-m1: the builder's own fee from buildRelease when it saved one; the daemon's copy of
+    // the tx only for saved state from before that (no stored fee).
+    const feeAtomic = knownFeeAtomic ?? (await this.txFee(txHash));
+    if (feeAtomic === 'unavailable') return 'unavailable';
+    if (feeAtomic === null) return null;
+    return { inPool, received, feeAtomic };
+  }
+
+  /**
+   * Review N-m1 (21 Nov): the tx's own network fee (rct_signatures.txnFee), from monerod's
+   * `/get_transactions` read with a plain fetch as txStatus does. Null when the daemon does not have
+   * the tx or the answer has no fee; 'unavailable' when the daemon could not be read.
+   */
+  private async txFee(txHash: string): Promise<bigint | null | 'unavailable'> {
+    let body: unknown;
+    try {
+      body = await timed(
+        (async () => {
+          const res = await fetch(`${this.daemonUri.replace(/\/+$/, '')}/get_transactions`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ txs_hashes: [txHash], decode_as_json: true, prune: true }),
+          });
+          if (!res.ok) throw new Error(`http ${res.status}`);
+          return res.json() as Promise<unknown>;
+        })(),
+        'tx fee',
+      );
+    } catch (e) {
+      if (e instanceof EscrowError && e.code !== 'daemon-unavailable') throw e;
+      return 'unavailable';
+    }
+    const txs = (body as { txs?: unknown }).txs;
+    if (!Array.isArray(txs) || txs.length !== 1) return null;
+    const entry = txs[0] as { tx_hash?: unknown; as_json?: unknown };
+    if (entry.tx_hash !== txHash || typeof entry.as_json !== 'string') return null;
+    let fee: unknown;
+    try {
+      // The fee is a small integer; a fee too big for a double is no valid release fee anyway.
+      fee = (JSON.parse(entry.as_json) as { rct_signatures?: { txnFee?: unknown } }).rct_signatures?.txnFee;
+    } catch {
+      return null;
+    }
+    if (typeof fee !== 'number' || !Number.isSafeInteger(fee) || fee < 0) return null;
+    return BigInt(fee);
   }
 
   async proveTx(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[]; spendsEscrow: boolean } | null> {
@@ -325,21 +461,74 @@ export class MoneroMultisigSession implements EscrowSession {
     const decoded = (await this.wallet.describeMultisigTxSet(txSet)).getTxs().map(describe);
     checkTxSet(decoded, payouts, balance);
     const txKey = txs[0]!.getKey();
-    return { txSet, payouts: decoded.flatMap((tx) => tx.destinations), ...(typeof txKey === 'string' && TX_KEY.test(txKey) ? { txKey } : {}) };
+    // Review r-m1: the tx's network fee as built (it is fixed in the tx; signing does not change it).
+    const fee = txs[0]!.getFee();
+    return {
+      txSet,
+      payouts: decoded.flatMap((tx) => tx.destinations),
+      ...(typeof txKey === 'string' && TX_KEY.test(txKey) ? { txKey } : {}),
+      ...(typeof fee === 'bigint' && fee >= 0n ? { feeAtomic: fee } : {}),
+    };
   }
 
-  async checkRelease(txSet: string, expected: Payout[]): Promise<void> {
+  /**
+   * The co-signer's check. The network fee is bounded by feeCeiling (review F4): a multiple of the
+   * daemon's normal-priority fee for the tx's estimated weight, never above 0.01 XMR. The sweep
+   * spends every output the escrow holds (inputs = the balance), and nothing else ever spends them,
+   * so the count of the escrow's outputs is the input count (an upper bound at worst, which only
+   * raises the bound); outputs are the payouts, at least 2 (wallet2 adds a dummy to a 1-output tx).
+   * Resolves with the bound it checked against. With `maxFee` (the bound of an earlier check of
+   * the same set, review M3) the daemon is not asked: that bound is used, under MAX_NETWORK_FEE.
+   */
+  async checkRelease(txSet: string, expected: Payout[], maxFee?: bigint): Promise<bigint> {
     let txs: DescribedTx[];
     try {
       txs = (await this.wallet.describeMultisigTxSet(txSet)).getTxs().map(describe);
     } catch {
       throw new EscrowError('payout-mismatch', 'tx set could not be decoded');
     }
-    checkTxSet(txs, expected, await this.sweepableBalance());
+    const balance = await this.sweepableBalance();
+    let bound = maxFee;
+    if (bound === undefined) {
+      const inputs = Math.max(1, (await this.wallet.getOutputs({ accountIndex: 0 })).length);
+      const outputs = Math.max(2, txs[0]?.destinations.length ?? 0);
+      bound = feeCeiling(await this.feeEstimate(), inputs, outputs);
+    }
+    checkTxSet(txs, expected, balance, bound);
+    return bound;
   }
 
-  async signRelease(txSet: string, expected: Payout[]): Promise<{ signedHex: string; txHash: string }> {
-    await this.checkRelease(txSet, expected);
+  /**
+   * monerod's json_rpc `get_fee_estimate` (10 grace blocks, as wallet2 asks), read with a plain
+   * `fetch` like txStatus (the node proxy allows it). No answer, or no usable one, is
+   * EscrowError('daemon-unavailable'): the check runs again later, it never passes without a bound.
+   */
+  private async feeEstimate(): Promise<FeeEstimate> {
+    let body: unknown;
+    try {
+      body = await timed((async () => {
+        const res = await fetch(`${this.daemonUri.replace(/\/+$/, '')}/json_rpc`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: '0', method: 'get_fee_estimate', params: { grace_blocks: 10 } }),
+          signal: AbortSignal.timeout(DAEMON_TIMEOUT_MS),
+          redirect: 'error',
+          credentials: 'omit',
+          cache: 'no-store',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return (await res.json()) as unknown;
+      })(), 'fee estimate');
+    } catch (e) {
+      if (e instanceof EscrowError) throw e;
+      throw new EscrowError('daemon-unavailable', `fee estimate failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
+    }
+    return parseFeeEstimate(body);
+  }
+
+  async signRelease(txSet: string, expected: Payout[], maxFee?: bigint): Promise<{ signedHex: string; txHash: string }> {
+    // Review M3: the co-signer passes the bound of its first check, so this re-check is offline.
+    await this.checkRelease(txSet, expected, maxFee);
     // Sign the exact hex that was checked; never re-fetch or rebuild it. In monero v0.18,
     // signing rebuilds the tx from the same construction data that describe decoded and
     // compares it with the stored tx, so what was checked is what gets signed.

@@ -460,12 +460,12 @@ describe('DisputeRuling appeal form', () => {
     const text = host.textContent ?? '';
     expect(text).toContain('Goes to Cake Wallet, address ending …k3Fz.');
     expect(text).not.toMatch(/Sent to|already moved/);
-    expect(text).toContain('(48 h). An appeal goes to a senior moderator or the owner who hasn\'t seen this case. If an appeal overturns the ruling, you get a lien. You can\'t trade until you pay the XMR back.');
+    expect(text).toContain('(48 h). An appeal goes to a senior moderator or the owner who hasn\'t seen this case. If an appeal overturns the ruling, you get a lien. You can\'t trade until you pay the trade\'s XMR back.');
     expect(text).not.toMatch(/window closes/);
     // The losing side reads that the lien would fall on the other trader.
     const seller = trade({ role: 'seller', counterparty: 'mira.k', state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const r2 = render(inRouter(<DisputeRuling trade={seller} methodName="Zelle" dispute={ruled()} serverClock={at(500)} onAppeal={async () => undefined} />));
-    expect(r2.host.textContent).toContain('If an appeal overturns the ruling, mira.k gets a lien until they pay the XMR back.');
+    expect(r2.host.textContent).toContain('If an appeal overturns the ruling, mira.k gets a lien until they pay the trade\'s XMR back.');
     expect(r2.host.textContent).not.toMatch(/window closes|address ending/);
   });
 
@@ -473,11 +473,11 @@ describe('DisputeRuling appeal form', () => {
     const seller = trade({ role: 'seller', counterparty: 'mira.k', state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const appealed = ruled({}, { status: 'appealed', appeal: { by: 'seller', at: iso(450) } });
     const { host } = render(inRouter(<DisputeRuling trade={seller} methodName="Zelle" dispute={appealed} serverClock={at(500)} onAppeal={async () => undefined} />));
-    expect(host.textContent).toContain('Appeal sent. A second moderator will look at it. If they overturn the ruling, the other trader gets a lien until they pay the XMR back.');
+    expect(host.textContent).toContain('Appeal sent. A second moderator will look at it. If they overturn the ruling, the other trader gets a lien until they pay the trade\'s XMR back.');
     expect(host.textContent).not.toMatch(/stays locked|already moved/);
     const buyer = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const r2 = render(inRouter(<DisputeRuling trade={buyer} methodName="Zelle" dispute={appealed} serverClock={at(500)} onAppeal={async () => undefined} />));
-    expect(r2.host.textContent).toContain('satoshi_ghost appealed. A second moderator will look at it. If they overturn the ruling, you get a lien until you pay the XMR back.');
+    expect(r2.host.textContent).toContain('satoshi_ghost appealed. A second moderator will look at it. If they overturn the ruling, you get a lien until you pay the trade\'s XMR back.');
     expect(r2.host.textContent).not.toMatch(/already moved/);
   });
 
@@ -606,7 +606,7 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(not.host.textContent).not.toContain('owe the 1% fee');
   });
 
-  it('seller-sends-xmr: the seller reads the amount and the time to send it; the tx-proof form needs a 64-hex hash and key', async () => {
+  it('seller-sends-xmr: the seller reads the amount and the time to send it; the tx-proof form shows the attested address and amount (only when it equals the dispute view\'s amount) and needs a 64-hex hash and a 1-17 chunk key', async () => {
     const t = trade({ role: 'seller', counterparty: 'mira.k', state: 'refunded', dispute: { by: 'buyer', at: iso(130) } });
     const d = { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true, status: 'final' as const }), complyBy: iso(2000) };
     const plain = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
@@ -614,12 +614,25 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     // Design X5: "D Mon YYYY, HH:MM UTC" in mono.
     expect(plain.host.textContent).toContain(`Send it by ${utcDateTime(new Date(T0 + 2000 * MIN))}.`);
     expect(utcDateTime(new Date('2026-11-06T15:00:00Z'))).toBe('6 Nov 2026, 15:00 UTC');
-    // No proof route yet (NEEDS_TASK_12_TX_PROOF): no form without a handler.
+    // No handler, or no attested address and amount: no form (never an address the API chose).
     expect(plain.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+    const noTerms = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={async () => 'accepted'} />));
+    expect(noTerms.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
 
-    const onTxProof = vi.fn(async () => undefined);
-    const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
+    // Review B1 (lead 18 Nov, a spec change): the attested terms say 1.3 XMR but the dispute view's
+    // trade is 1.25. The server checks a proof against its own amount, so a form for 1.3 would be
+    // refused (or a 1.25 payment would pay what this device never accepted): no form at all, and the
+    // server's 1.25 is never shown as the amount to send.
+    const mismatch = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={async () => 'accepted'} payTo={{ address: '4AttestedBuyerAddressXyz', amountAtomic: 1_300_000_000_000n }} />));
+    expect(mismatch.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+    expect(mismatch.host.querySelector('[data-part="pay-amount"]')).toBeNull();
+    // The attested terms and the dispute view agree on 1.25 XMR: the form shows the attested address and amount.
+    const payTo = { address: '4AttestedBuyerAddressXyz', amountAtomic: 1_250_000_000_000n };
+    const onTxProof = vi.fn(async () => 'pending-confirmations' as const);
+    const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} payTo={payTo} />));
     const form = host.querySelector('[aria-label="Transfer proof"]')!;
+    expect(form.querySelector('[data-part="pay-address"]')!.textContent).toBe('4AttestedBuyerAddressXyz');
+    expect(form.querySelector('[data-part="pay-amount"]')!.textContent).toBe('1.250000 XMR');
     const [hash, key] = [...form.querySelectorAll<HTMLInputElement>('input')];
     const type = (el: HTMLInputElement, v: string) =>
       act(() => {
@@ -632,14 +645,20 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(send().disabled).toBe(true);
     type(key!, 'g'.repeat(64));
     expect(send().disabled).toBe(true);
-    type(key!, ` ${'B'.repeat(64)} `);
+    // A subaddress payment's key: the main key and one per output, up to 17 chunks.
+    type(key!, 'b'.repeat(64 * 18));
+    expect(send().disabled).toBe(true);
+    type(key!, 'b'.repeat(64 * 17));
+    expect(send().disabled).toBe(false);
+    type(key!, ` ${'B'.repeat(128)} `);
     expect(send().disabled).toBe(false);
     await act(async () => {
       send().click();
     });
-    expect(onTxProof).toHaveBeenCalledWith('a'.repeat(64), 'b'.repeat(64));
+    expect(onTxProof).toHaveBeenCalledWith('a'.repeat(64), 'b'.repeat(128));
+    expect(host.querySelector('[data-part="tx-proof-sent"]')!.textContent).toContain('10 confirmations');
     // The buyer only reads what the seller must do.
-    const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
+    const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} payTo={payTo} />));
     expect(buyer.host.textContent).toContain('satoshi_ghost must send you 1.250000 XMR');
     expect(buyer.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
   });

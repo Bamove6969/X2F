@@ -143,9 +143,13 @@ test('parity with DisputeRoom at 390x844', async ({ page }) => {
 test('parity with DisputeRuling at 390x844', async ({ page }) => {
   await stub(page, { trade: disputed('buyer', T('14:32')), dispute: disputeView({ status: 'ruled', ruling: RULING, serverNow: T('14:32') }) });
   await open(page);
-  await expectParity(page, 'DisputeRuling', { primary: false });
+  // expectParity reads the page once, as it is. The screen renders only after both GETs (the trade,
+  // then its dispute) have answered, so wait for the ruling itself first: under load the parity read
+  // ran on the still-empty <main> and found none of the board's copy.
+  await expect(page.getByRole('region', { name: 'Ruling' })).toBeVisible();
   // The appeal countdown's board texts are KNOWN_EXCEPTIONS (a mask cannot stand for "47 h 58 min"); its shape:
   await expect(page.locator('.dispute-window-open')).toHaveText(/^Open · \d+ h \d+ min left$/);
+  await expectParity(page, 'DisputeRuling', { primary: false });
 });
 
 // --- Behaviour ----------------------------------------------------------------------------------
@@ -262,7 +266,7 @@ test('DisputeRuling: the ruling card, the destination ending, evidence and the a
   // Review fix 2: an overturn means a lien on the XMR's receiver. C11 review I1: nothing has moved the
   // XMR yet (NEEDS_PLAN_4_RULING_PAYOUT), so the line does not say it has.
   await expect(
-    page.getByText('Appeal sent. A second moderator will look at it. If they overturn the ruling, the other trader gets a lien until they pay the XMR back.'),
+    page.getByText('Appeal sent. A second moderator will look at it. If they overturn the ruling, the other trader gets a lien until they pay the trade\'s XMR back.'),
   ).toBeVisible();
   await expect(page.getByText('stays locked', { exact: false })).toHaveCount(0);
   await expect(page.getByText('already moved', { exact: false })).toHaveCount(0);

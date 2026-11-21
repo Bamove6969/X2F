@@ -7,6 +7,8 @@ import { addressEnd } from '../../ui/addressEnd.js';
 import { BlockAction } from '../settings/BlockAction.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
+import { REVIEW_PENDING_CODE } from '../../ui/cantDoCodes.js';
+import { RateFirstSheet, type RateFirstCleared } from '../review/RateFirstSheet.js';
 import { Icon } from '../../ui/icons.js';
 import { Notice } from '../../ui/Notice.js';
 import { fetchMarket, fetchMethod, fetchOffer, fetchWallets, type PickWallet } from './api.js';
@@ -15,12 +17,17 @@ import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, dealMaxFiat, formatMinor, maxText, quote, quoteExponent, quoteRange, rangeText, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
 import { QuoteBands } from './QuoteBands.js';
-import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
-import { useQuoteKept } from './quoteKept.js';
+import { QuoteMovedError, TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
+import { readQuote, useQuoteKept } from './quoteKept.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
+import { NewAddressSheet, type NewAddressResult } from './NewAddressSheet.js';
+import { NEW_ADDRESS, PAYOUT_QUESTION } from './addressCopy.js';
+import { matchesRecord } from '../walletRecord.js';
 import { WhatApplies } from './WhatApplies.js';
 import './quote.css';
+import { useSiteInfo } from '../../api/site.js';
+import { TradingStopped } from '../../ui/TradingStopped.js';
 
 // The quote screen both sides share (plan Task 18). BuyQuote (a buyer taking a sell ad) follows the
 // BuyQuote board; SellQuote (a seller taking a buy ad) has no board and mirrors its parts. There is
@@ -165,11 +172,25 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const { signedIn, state, take } = useTake(offerId, refreshMarket);
   const session = useSession();
   const myName = session.status === 'signed-in' ? ((session.me as { displayName?: string }).displayName ?? null) : null;
+  // Owner demo note #6: the API's rating of the account (null when an older API sends none). Only a
+  // highly secure account (owner 17 Nov) is offered the new-address sheet; the API decides what an add does either way.
+  const rating = session.status === 'signed-in' ? (session.me.securityRating ?? null) : null;
+  const [addingAddress, setAddingAddress] = useState(false);
+  const [walletsTick, setWalletsTick] = useState(0);
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
   const { blockedPoster, closedError } = kept;
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
   const method = useLoad((signal) => fetchMethod(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
-  const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn]);
+  const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn, walletsTick]);
+  /** A new address from the sheet: the list is read again; one that works now is picked for this trade. */
+  const onNewAddress = (r: NewAddressResult) => {
+    setWalletsTick((t) => t + 1);
+    if (r.kind === 'usable') {
+      touched();
+      setPicked(r.wallet.id);
+      setAddingAddress(false);
+    }
+  };
 
   const o: QuoteOffer | null = offer.kind === 'ready' ? offer.value : null;
   const methodName = method.kind === 'ready' ? method.value.name : methodId;
@@ -181,8 +202,20 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const giftTermsOk = !giftCard || giftCardTermsComplete(giftRole, giftTicked);
   const marketNow = market.kind === 'ready' ? market.value : null;
   const q: Quote | null = o && market.kind === 'ready' ? quote({ offer: o, market: marketNow, text, unit }) : null;
-  const usable = wallets.kind === 'ready' ? wallets.value.filter((w) => w.usable) : [];
-  const pickedWallet = usable.find((w) => w.id === picked) ?? null;
+  // The addresses typed on this device (the new-address sheet, Settings → Your wallets or setup recorded
+  // them, walletRecord.ts; review 17 Nov M4: kept across a trip away and a reload). A listed wallet that
+  // names another address for a recorded id, or (re-verify N1) whose address, under any id, ends in the
+  // same last 6 characters as one typed here but differs, is not offered or picked, even as the default
+  // or from `?wallet=`. Still trusted, as on main: a wallet added on another device or before this
+  // check, and an address whose ending differs from every one typed here (the ending shown differs).
+  const swapped = (w: PickWallet) => !matchesRecord(w);
+  const listed = wallets.kind === 'ready' ? wallets.value.filter((w) => !swapped(w)) : [];
+  const addressSwapped = wallets.kind === 'ready' && wallets.value.some(swapped);
+  const usable = listed.filter((w) => w.usable);
+  // Owner, 17 Nov 2026 (overrides OD-11): until the person picks, the default wallet (the API's
+  // `isDefault`, the chosen one or the only usable saved wallet) is picked for them; they can pick
+  // another. A wallet in the URL (a trip away and back) wins. The take still names the wallet shown.
+  const pickedWallet = usable.find((w) => w.id === picked) ?? (picked === null ? (usable.find((w) => w.isDefault) ?? null) : null);
 
   // The amount, unit and wallet live in the URL, so any trip away (Terms, Add a wallet, setup)
   // comes back to the same quote.
@@ -288,8 +321,10 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   };
 
   const noWallet = signedIn === true && wallets.kind === 'ready' && usable.length === 0;
+  // Plan 4 Task 29: no take during the emergency stop (the API refuses it too, 409 trading-paused).
+  const { tradingPaused } = useSiteInfo();
   const canTrade =
-    ok !== null && !state.busy && !blockedPoster && giftTermsOk && (signedIn === false || (signedIn === true && pickedWallet !== null));
+    !tradingPaused && ok !== null && !state.busy && !blockedPoster && giftTermsOk && (signedIn === false || (signedIn === true && pickedWallet !== null));
   /**
    * What the trade room is handed (confirmed.ts): built from this screen's own figures, the ones the
    * person sees and taps Trade on. The taker of a sell ad is the buyer; of a buy ad, the seller.
@@ -302,6 +337,46 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
           deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: dealMaxFiat(o, ok.rate, ok.range) },
         }
       : null;
+  /** The Trade button's take, at the quote shown now (also resumed after the rate-first sheet). */
+  const startTake = () => {
+    if (!ok) return;
+    keep({ tapped: { centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents } });
+    const sent = { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents, methodId: o.methodId, currency: o.currency };
+    take({
+      quote: giftCard ? { ...sent, giftCardTerms: GIFT_CARD_TERMS_VERSION } : sent,
+      walletId: pickedWallet?.id ?? null,
+      confirmed,
+      range: ok.range,
+      resumeHref,
+    });
+  };
+  /**
+   * The rate-first sheet emptied (Plan 5 Task 6). The take goes again by itself only after a
+   * rating, only while the quote shows exactly the rate and total the person tapped Trade at (lead,
+   * 18 Nov, M1: money, so fail safe), and only when Trade itself would be on (m1: not busy, the
+   * poster not blocked, the gift-card terms ticked, the picked wallet still there). A moved quote
+   * closes the sheet with the moved-price line and takes nothing: the person checks and taps again.
+   * A gate cleared by Skip review alone takes nothing either; its stale rate-first line goes.
+   */
+  const onRateFirstCleared = (how: RateFirstCleared) => {
+    keep({ closedError: state.error });
+    if (how === 'empty') return;
+    if (how === 'skipped') {
+      keep({ error: null });
+      return;
+    }
+    const tapped = readQuote(offerId).tapped;
+    const same = ok !== null && tapped !== null && ok.rate.centsPerXmr === tapped.centsPerXmr && ok.fiatCents === tapped.fiatCents;
+    if (!same) {
+      keep({ error: new QuoteMovedError() });
+      return;
+    }
+    if (!canTrade) {
+      keep({ error: null });
+      return;
+    }
+    startTake();
+  };
   const refusal = state.error === null ? null : takeRefusal(state.error, o);
   // A refusal by a rule opens CantDoThat (with its feedback link) until closed; others stay inline.
   const cantDo = state.error === null ? null : takeCantDo(state.error);
@@ -388,15 +463,24 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
         {signedIn === true && wallets.kind === 'ready' ? (
           <WalletPicker
             legend={copy.walletLegend}
-            wallets={wallets.value}
+            wallets={listed}
             picked={pickedWallet?.id ?? null}
             onPick={(id) => {
               touched();
               setPicked(id);
             }}
             addHref={addWalletHref(false)}
+            question={copy.adSide === 'sell' ? PAYOUT_QUESTION.buy : PAYOUT_QUESTION.sell}
+            rating={rating}
+            {...(rating === 'high' ? { onAddNew: () => setAddingAddress(true) } : {})}
           />
         ) : null}
+        {addressSwapped ? (
+          <p className="x2f-quote__muted-sm" role="alert" data-part="new-address-swapped">
+            {NEW_ADDRESS.mismatch}
+          </p>
+        ) : null}
+        {addingAddress && rating === 'high' ? <NewAddressSheet onClose={() => setAddingAddress(false)} onDone={onNewAddress} /> : null}
         {signedIn === false ? (
           // Design review 8 Nov item 4: the wallet group is on the board before login too. There
           // is nothing to pick yet (the wallet comes with the account), so it says so; no radios.
@@ -463,6 +547,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
       </Main>
 
       <footer className="x2f-quote__footer">
+        {tradingPaused ? <TradingStopped /> : null}
         {back && refusal === null ? (
           <p role="status" className="x2f-quote__help">
             You&apos;re back. Check the total, then tap Trade.
@@ -473,7 +558,11 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             {refusal}
           </p>
         ) : null}
-        {cantDo !== null && refusal !== null ? (
+        {cantDo === REVIEW_PENDING_CODE ? (
+          // Plan 5 Task 6, the rate-first gate: rate (or skip) the trades the gate counts; after a
+          // rating the same take goes again only at the quote tapped (onRateFirstCleared).
+          <RateFirstSheet open={cantDoOpen} onCleared={onRateFirstCleared} onClose={() => keep({ closedError: state.error })} />
+        ) : cantDo !== null && refusal !== null ? (
           <CantDoThat open={cantDoOpen} title={TAKE_CANT_TITLE} body={refusal} from={cantDo} onClose={() => keep({ closedError: state.error })} />
         ) : null}
         {noWallet ? (
@@ -485,16 +574,8 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             variant="primary"
             disabled={!canTrade}
             onClick={() => {
-              if (!ok) return;
               touched();
-              const sent = { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents, methodId: o.methodId, currency: o.currency };
-              take({
-                quote: giftCard ? { ...sent, giftCardTerms: GIFT_CARD_TERMS_VERSION } : sent,
-                walletId: pickedWallet?.id ?? null,
-                confirmed,
-                range: ok.range,
-                resumeHref,
-              });
+              startTake();
             }}
           >
             Trade

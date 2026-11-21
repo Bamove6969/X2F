@@ -58,6 +58,18 @@ export interface StoredChatReceipt {
    */
   heldPay?: true;
   /**
+   * Plan 5 Task 15: an authentic envelope from a trader that is sealed past this reader (signature
+   * checked, then 'not-for-me' at the unwrap): only the unblurred copy for the moderator is ever sent
+   * so. Its seq is taken, so the sender's next line shows no gap, but it is never a line, not even
+   * a placeholder, and it is never opened again.
+   */
+  away?: true;
+  /**
+   * Dispute evidence taken while the API's view had no open dispute (proof-receive review M2): held
+   * like `heldPay`, shown (decrypted again) once a dispute is open. Never set on another line.
+   */
+  heldEvidence?: true;
+  /**
    * An envelope that can never become a line (pay-details review M1): a payload that is not a chat
    * message, a package whose text is not the rendering of its boxes, a malformed or mod-signed
    * package. The cursor passed it and a re-read never opens it again; the guard did not move for it
@@ -71,12 +83,23 @@ export interface ChatRecord {
   chat: string;
   role: 'buyer' | 'seller';
   identity: { signPublic: string; boxPublic: string; signSecret: string; boxSecret: string };
+  /**
+   * Device clock (ms) when this device made `identity`, saved with it before it is registered
+   * (review lead-escrow-harden M1): the chat attestation naming it may not be older. Absent in
+   * records written before the field (no lower bound, accepted only with today's unbounded key).
+   */
+  identityCreatedAt?: number;
   registered: boolean;
   attestation: { attestation: unknown; sig: string } | null;
   state: ChatState | null;
   /** The last envelope id read past (`GET …/envelopes?after=`). */
   cursor: string;
   receipts: StoredChatReceipt[];
+  /**
+   * Review F3 (tasks 3-6): the fingerprint (tkh, public) of the chat key this device first accepted
+   * or posted. Once set, a key record of any other tkh, or none, is the `security` failure.
+   */
+  tkh?: string;
 }
 
 /**
@@ -125,6 +148,12 @@ export interface ChatStore {
   /** The chat's record; a v1 record is upgraded (its text dropped) and saved back before it is returned. */
   load(chat: string): Promise<ChatRecord | null>;
   save(rec: ChatRecord): Promise<void>;
+  /**
+   * Review m1: saves `rec` only when the chat has no record yet, checked and written in one IndexedDB
+   * transaction; true when it was saved. Two tabs (two workers over one database) can each make a
+   * chat identity, and this keeps the second from replacing the first's.
+   */
+  create(rec: ChatRecord): Promise<boolean>;
   delete(chat: string): Promise<void>;
   /** Every chat code with a record on this device. */
   list(): Promise<string[]>;
@@ -243,7 +272,25 @@ export async function openChatStore(o: { indexedDB?: IDBFactory; crypto?: Crypto
     tx.objectStore(CHATS).put({ iv, ct }, rec.chat);
     await done(tx);
   };
+  const create = async (rec: ChatRecord): Promise<boolean> => {
+    const { db, key } = await conn();
+    // Encrypted first: nothing may await inside the transaction, or it would end before the write.
+    const iv = cr.getRandomValues(new Uint8Array(12));
+    const ct = await cr.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad(rec.chat) }, key, new TextEncoder().encode(JSON.stringify(rec)));
+    const tx = db.transaction(CHATS, 'readwrite');
+    const os = tx.objectStore(CHATS);
+    let created = false;
+    const count = os.count(rec.chat);
+    count.onsuccess = () => {
+      if (count.result !== 0) return;
+      os.add({ iv, ct }, rec.chat);
+      created = true;
+    };
+    await done(tx);
+    return created;
+  };
   return {
+    create,
     async load(chat) {
       const { db, key } = await conn();
       const raw = (await req(db.transaction(CHATS).objectStore(CHATS).get(chat))) as { iv?: unknown; ct?: unknown } | undefined;
@@ -325,6 +372,11 @@ export function memoryChatStore(): ChatStore & { records: Map<string, string>; a
     },
     async save(rec: ChatRecord) {
       records.set(rec.chat, JSON.stringify(rec));
+    },
+    async create(rec: ChatRecord) {
+      if (records.has(rec.chat)) return false;
+      records.set(rec.chat, JSON.stringify(rec));
+      return true;
     },
     async delete(chat: string) {
       records.delete(chat);

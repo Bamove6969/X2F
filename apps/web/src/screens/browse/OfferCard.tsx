@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { Link, useInRouterContext } from 'react-router';
 import { BadgePill } from '../../ui/BadgePill.js';
 import { Button } from '../../ui/Button.js';
 import { Icon, type IconName } from '../../ui/icons.js';
@@ -44,8 +45,27 @@ const BADGES: Record<string, BadgeInfo> = {
   ),
 };
 
-/** Featured badges on a card (spec 5.4): at most 2; the rest are behind "+N". */
+/**
+ * Featured badges on a card (spec 5.4): at most 2; the rest are behind "+N". The trader chooses
+ * which (Plan 5 Task 5): the API sends how many of its list are Featured, New included.
+ */
 const FEATURED = 2;
+
+function featuredOf(offer: Offer): number {
+  const n = offer.poster.featuredBadges;
+  return n === undefined || !Number.isInteger(n) || n < 0 ? FEATURED : Math.min(n, FEATURED);
+}
+
+/** The poster's name, linking to their profile (Plan 5 Task 12) wherever the card is in the app's router. */
+function PosterName({ name }: { name: string }) {
+  const routed = useInRouterContext();
+  if (!routed) return <span data-username>{name}</span>;
+  return (
+    <Link className="x2f-offer__profile" to={`/u/${encodeURIComponent(name)}`} data-username>
+      {name}
+    </Link>
+  );
+}
 
 /** The poster's badges in order: New first while the API says they are not Graduated (it is always featured). */
 function badgesOf(offer: Offer): BadgeInfo[] {
@@ -139,7 +159,7 @@ function Badges({ offer }: { offer: Offer }) {
   const open = pinned || hover;
   const all = badgesOf(offer);
   if (all.length === 0) return null;
-  const featured = all.slice(0, FEATURED);
+  const featured = all.slice(0, featuredOf(offer));
   const more = all.length - featured.length;
   return (
     <span className="x2f-offer__badges">
@@ -280,7 +300,7 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
         <div className="x2f-offer__who">
           <span className="x2f-offer__name">
             <span className="x2f-offer__dot" data-online={offer.poster.online} aria-hidden="true" />
-            <span data-username>{name}</span>
+            <PosterName name={name} />
           </span>
           <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
           {offer.poster.tradedOverXmr !== null ? <span className="x2f-offer__sub">{tradedLine(offer.poster.tradedOverXmr)}</span> : null}

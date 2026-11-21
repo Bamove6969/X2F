@@ -1,7 +1,9 @@
+import { grantPass } from './grants.js';
+import { noticePass } from './notices.js';
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import type { PartyHandle, Transport } from '@x2f/escrow';
-import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs } from '@x2f/trade';
+import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs, type Trade } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
@@ -10,6 +12,11 @@ import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Li
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
 import { openDesk } from './desk.js';
 import { createWatcher } from './watcher.js';
+import type { DeskArmed, RulingExecutor } from './execute.js';
+import { startCheckpoints, type CheckpointOptions } from './checkpoint.js';
+import { recordedTerms, type GateContext, type RecordedTerms } from './gate/verify.js';
+import type { GateSource } from './gate/registry.js';
+import type { GateStore } from './gate/store.js';
 
 /**
  * The shred pass's own clock (design 2026-11-08 section 5): no purge the API may make comes sooner
@@ -62,7 +69,9 @@ export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './part
 export { autoRefundStep, REFUND_UNVERIFIED_MS, type AutoRefundInputs, type AutoRefundStep } from './autoRefund.js';
 export { buyerCancelStep, type BuyerCancelInputs, type BuyerCancelStep } from './buyerCancel.js';
 export { openDesk, type Desk, type DeskRecord, type DeskStep } from './desk.js';
-export { verifyRuling } from './rulings.js';
+export { CHECKPOINT_INTERVAL_MS, startCheckpoints, VERIFY_EVERY_MS, type CheckpointOptions, type Checkpoints } from './checkpoint.js';
+export { rulingExecutor, type RulingExecutor, type RulingExecutorOptions, type RulingSource, type RulingStepInput, type RulingStepResult } from './execute.js';
+export * from './gate/index.js';
 export { newShadow } from './shadow.js';
 export { readSignal, sealAck, termsMatch, type ModSignal } from './signals.js';
 export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_BACKOFF_MS, type SweepContext, type Watcher } from './watcher.js';
@@ -126,6 +135,30 @@ export interface ModerationDeps {
   intervalMs?: number;
   /** Reasons only, never keys, codes or addresses. */
   log?: (e: { reason: string }) => void;
+  /**
+   * Plan 4 Task 14: the ruling executor (`rulingExecutor` on the gate's store), run for every trade
+   * each watcher pass. Absent (no gate configured): no ruling is ever settled.
+   */
+  rulings?: Pick<RulingExecutor, 'step' | 'kindFor'>;
+  /**
+   * Plan 4 Task 14: the activity log's checkpoints (`startCheckpoints`), on the gate's store and the
+   * API database's read-only role; reported over this service's own signed link. Absent: none.
+   */
+  checkpoints?: Pick<CheckpointOptions, 'store' | 'reader'> & Partial<Pick<CheckpointOptions, 'intervalMs' | 'verifyEveryMs'>>;
+  /**
+   * Security review 2026-11-12 M1: the ruling gate (its store, its registry sync, the executor and
+   * the checkpoints), made only once this process holds the instance lock, so a refused second
+   * process never opens or saves gate.bin. Its `rulings` and `checkpoints` stand for the two above;
+   * `stop` runs before the lock is released. A factory that throws refuses the start.
+   */
+  gate?: () => Promise<GateRun>;
+}
+
+/** What `ModerationDeps.gate` starts (security review 2026-11-12 M1). */
+export interface GateRun {
+  rulings?: ModerationDeps['rulings'];
+  checkpoints?: ModerationDeps['checkpoints'];
+  stop(): Promise<void>;
 }
 
 export interface ModerationHandle {
@@ -138,6 +171,10 @@ export interface ModerationHandle {
    * the chats whose keys are gone here and whose shred the API recorded this pass.
    */
   shredTick(): Promise<string[]>;
+  /** One pass over the API's unaccepted dispute grants (design build task 6); resolves with the chats accepted. */
+  grantTick(): Promise<string[]>;
+  /** One pass signing dispute notices (design build task 7, T2); resolves with the chats noticed. */
+  noticeTick(): Promise<string[]>;
   /** One chain-watcher pass (Task 9). */
   watch(): Promise<void>;
   /** Stops the loops, then every running moderator party. */
@@ -222,6 +259,34 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   };
   const onLockError = (): void => loseLock();
   lock.on('error', onLockError);
+  // The lock is Postgres's until the session that took it has ended on the server. A lost lock's
+  // client hears of it first (a terminated backend sends its FATAL before it exits and frees its
+  // locks; a destroyed client only starts closing), so `stop` waits for the connection's end
+  // before it resolves, and a new process started on `lockLost` finds the lock free.
+  let lockEnded = false;
+  let onLockEnd!: () => void;
+  const lockEnd = new Promise<void>((resolve) => {
+    onLockEnd = () => {
+      lockEnded = true;
+      resolve();
+    };
+  });
+  lock.once('end', onLockEnd);
+  // Security review 2026-11-12 M1: the gate starts only now that the lock is held.
+  let gate: GateRun | null = null;
+  if (deps.gate) {
+    try {
+      gate = await deps.gate();
+    } catch (e) {
+      lock.off('error', onLockError);
+      lock.off('end', onLockEnd);
+      await lock.query('select pg_advisory_unlock($1)', [MOD_INSTANCE_LOCK]).catch(() => undefined);
+      lock.release();
+      throw e;
+    }
+  }
+  const rulingsDep = gate?.rulings ?? deps.rulings;
+  const checkpointsDep = gate?.checkpoints ?? deps.checkpoints;
   const lockHeld = deps.lockHeld ?? (() => instanceLockHeld(lock));
   const rawLink: Link = createLink({
     apiInternalUrl: o.apiInternalUrl,
@@ -232,6 +297,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   });
   // The shred pass's own facts (recordingLink): every watch list read and every escalation report.
   const link: Link = recordingLink(rawLink, o.db, now);
+  const checkpoints = checkpointsDep ? startCheckpoints({ ...checkpointsDep, link, now, log }) : null;
   let io: PartyIO | undefined = deps.partyIO;
   const startParty =
     deps.startParty ??
@@ -262,6 +328,27 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
               link,
               now,
               log,
+            }),
+        }
+      : {}),
+    ...(rulingsDep
+      ? {
+          rulingKind: (code: string) => rulingsDep.kindFor(code),
+          executeRuling: (x: { code: string; handle: PartyHandle; api: WatchItem; funds: { balance: bigint; unlocked: bigint }; args: ModPartyArgs; shadow: Trade | null; deskArmed: DeskArmed; escrowAddress: string | null }) =>
+            rulingsDep.step({
+              code: x.code,
+              handle: x.handle,
+              api: x.api,
+              funds: x.funds,
+              recorded: recordedFor(x.args, x.shadow, log),
+              deskArmed: x.deskArmed,
+              escrowAddress: x.escrowAddress,
+              // Haveno finding 2: the signed ruling statement goes to the API over this service's signed link.
+              announce: async (r) => {
+                const res = await link.report({ kind: 'ruling-statement', trade: x.code, statement: r.statement, sig: r.sig });
+                if (res.status !== 201 && res.status !== 200) log({ reason: `ruling-statement-refused-${res.status}` });
+                return res.status === 201 || res.status === 200;
+              },
             }),
         }
       : {}),
@@ -496,6 +583,11 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           await client.query('delete from mod_chat_identities where chat = $1', [chat]);
           await client.query('delete from signed_chats where chat = $1', [chat]);
           await client.query('delete from mod_chat_trade where chat = $1', [chat]);
+          // Design section 5: this process's own staff-access record for the chat (design task 9 groundwork).
+          await client.query('delete from mod_chat_access where chat = $1', [chat]);
+          await client.query('delete from mod_chat_grants where chat = $1', [chat]);
+          await client.query('delete from mod_chat_notices where chat = $1', [chat]);
+          await client.query('delete from mod_countersign_requests where chat = $1', [chat]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');
@@ -517,6 +609,9 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     return done;
   };
 
+  const grantTick = (): Promise<string[]> => grantPass({ link, db: o.db, keystoreKey: o.keystoreKey, now, log });
+  const noticeTick = (): Promise<string[]> => noticePass({ link, db: o.db, keystoreKey: o.keystoreKey, now, log });
+
   const intervalMs = deps.intervalMs ?? 5_000;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -528,6 +623,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     running = tick()
       .then(chatTick)
       .then(shredTick)
+      .then(grantTick)
+      .then(noticeTick)
       .catch(() => log({ reason: 'work-pass-failed' }))
       .finally(() => {
         if (!stopped) timer = setTimeout(loop, intervalMs);
@@ -561,10 +658,24 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       await running.catch(() => undefined);
       await watching.catch(() => undefined);
       await watcher.stop();
+      await checkpoints?.stop();
+      // The gate's sync stops (and saves) while this process still holds the lock (review M1).
+      await gate?.stop().catch(() => log({ reason: 'gate-stop-failed' }));
       if (!lost) await lock.query('select pg_advisory_unlock($1)', [MOD_INSTANCE_LOCK]).catch(() => undefined);
       lock.off('error', onLockError);
-      // A lost connection is destroyed, never handed back to the pool.
+      // A lost connection is destroyed, never handed back to the pool, and waited for until it has
+      // ended (bounded: a half-open one that never answers is cut after LOCK_CHECK_TIMEOUT_MS; its
+      // server session then ends on keepalive, and a new process waits for the lock meanwhile).
       lock.release(lost ? true : undefined);
+      if (lost && !lockEnded) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const cut = new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, LOCK_CHECK_TIMEOUT_MS);
+        });
+        await Promise.race([lockEnd, cut]);
+        clearTimeout(timer);
+      }
+      lock.off('end', onLockEnd);
     })());
   stopForLoss = stop;
 
@@ -572,6 +683,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     tick,
     chatTick,
     shredTick,
+    grantTick,
+    noticeTick,
     // Through the watcher's own queue: never a pass alongside the loop's (finding 2).
     watch: () => watcher.tick(),
     stop,
@@ -681,6 +794,25 @@ async function shredHold(db: pg.Pool, chat: string, trade: string | null, watch:
  * identity and participants (`mod_party_state`), the R27 wallet password (`mod_wallet_secrets`)
  * and the terms it signed (`signed_terms`). Never from the API. Null when any is missing.
  */
+/**
+ * Plan 4 Task 14: the terms the gate checks a ruling against, from this service's own records only:
+ * the attested terms in the trade's party args and the desk's shadow trade (fed by its own watcher
+ * and signals). Null, logged, when there is no shadow or it is not the attested deal (review I3).
+ */
+export function recordedFor(args: ModPartyArgs, shadow: Trade | null, log: (e: { reason: string }) => void): RecordedTerms | null {
+  if (shadow === null) return null;
+  try {
+    return recordedTerms({
+      terms: args.terms,
+      trade: { amountAtomic: shadow.amountAtomic, feeAtomic: shadow.feeAtomic, sellerFundsAtomic: shadow.sellerFundsAtomic, poster: shadow.poster },
+      feeWallet: args.feeWallet,
+    });
+  } catch {
+    log({ reason: 'ruling-terms-unavailable' });
+    return null;
+  }
+}
+
 async function partyArgsFor(o: ModerationOptions, code: string): Promise<ModPartyArgs | null> {
   const party = await loadParty<SealedParty>(o.db, o.keystoreKey, code);
   const { rows } = await o.db.query<{ attestation: Attestation }>('select attestation from signed_terms where trade = $1 and posted_at is not null', [code]);
@@ -718,27 +850,25 @@ function envString(env: Record<string, string | undefined>, name: string): strin
  * internal API does not start. Set, it needs `MOD_INTERNAL_SOCKET_GID` (the numeric id of the
  * dedicated group the API's user is in, never 0; review 8 Nov I-3), `MOD_INTERNAL_SECRET` (base64 of
  * 32 bytes, shared with the API only) and `MOD_API_READER_DATABASE_URL` (the API's database as a
- * member of the read-only role `x2f_mod_reader`, migration 208). NEEDS_P4_MOD_COUNTERSIGN:
- * `X2F_DEV_MOD_CHAT=1` turns on the moderator's message route (dev only; accepted only with
- * NODE_ENV=development or test, any other value or unset refuses it; review 8 Nov I-2, R-1). Errors name the variable, never the value.
+ * member of the read-only role `x2f_mod_reader`, migration 208). Design build task 9: the
+ * moderator's message is a countersign now, so the old dev-only switch `X2F_DEV_MOD_CHAT` is gone
+ * and refused if still set (a stale setting is told, never silently ignored). Errors name the
+ * variable, never the value.
  */
 export function internalFromEnv(
   env: Record<string, string | undefined>,
-): { socketPath: string; gid: number; secret: Uint8Array; apiReaderUrl: string; devModChat: boolean } | null {
+): { socketPath: string; gid: number; secret: Uint8Array; apiReaderUrl: string } | null {
   const socketPath = env.MOD_INTERNAL_SOCKET;
   if (socketPath === undefined || socketPath === '') return null;
   if (!socketPath.startsWith('/')) throw new Error('moderation: MOD_INTERNAL_SOCKET is malformed (an absolute Unix socket path)');
   const gidText = env.MOD_INTERNAL_SOCKET_GID ?? '';
   if (!/^[1-9][0-9]{0,9}$/.test(gidText)) throw new Error('moderation: MOD_INTERNAL_SOCKET_GID is malformed (the dedicated group\'s numeric id, not 0)');
-  const dev = env.X2F_DEV_MOD_CHAT ?? '';
-  if (dev !== '' && dev !== '1') throw new Error('moderation: X2F_DEV_MOD_CHAT is malformed (1 or unset)');
-  if (dev === '1' && env.NODE_ENV !== 'development' && env.NODE_ENV !== 'test') throw new Error('moderation: X2F_DEV_MOD_CHAT is accepted only with NODE_ENV=development or test (review 8 Nov I-2, R-1)');
+  if ((env.X2F_DEV_MOD_CHAT ?? '') !== '') throw new Error('moderation: X2F_DEV_MOD_CHAT is no longer used (the moderator\'s message is countersigned by a staff device); unset it');
   return {
     socketPath,
     gid: Number(gidText),
     secret: envBytes(env, 'MOD_INTERNAL_SECRET', 32),
     apiReaderUrl: envString(env, 'MOD_API_READER_DATABASE_URL'),
-    devModChat: dev === '1',
   };
 }
 
@@ -746,6 +876,27 @@ function envNetwork(env: Record<string, string | undefined>): ModerationOptions[
   const v = envString(env, 'MONERO_NETWORK');
   if (v !== 'regtest' && v !== 'stagenet' && v !== 'mainnet') throw new Error('moderation: MONERO_NETWORK must be regtest, stagenet or mainnet');
   return v;
+}
+
+/**
+ * Plan 4 Task 13: the ruling gate's settings. `MOD_STATE_DIR` (an absolute path) unset: no gate
+ * runs, and nothing is ever co-signed for a ruling. Set, it needs the staff site's relying party
+ * (`MOD_STAFF_ORIGIN`, an https origin, and `MOD_STAFF_RP_ID`), the FIDO metadata snapshot
+ * (`MOD_FIDO_MDS_DIR`) and the read-only API role (`MOD_API_READER_DATABASE_URL`).
+ */
+export function gateFromEnv(
+  env: Record<string, string | undefined>,
+): { stateDir: string; origin: string; rpId: string; mdsDir: string; apiReaderUrl: string } | null {
+  const stateDir = env.MOD_STATE_DIR;
+  if (stateDir === undefined || stateDir === '') return null;
+  if (!stateDir.startsWith('/')) throw new Error('moderation: MOD_STATE_DIR is malformed (an absolute path)');
+  const origin = envString(env, 'MOD_STAFF_ORIGIN');
+  if (!/^https:\/\/[a-z0-9.-]+(:[0-9]{1,5})?$/.test(origin)) throw new Error('moderation: MOD_STAFF_ORIGIN is malformed (https://host)');
+  const rpId = envString(env, 'MOD_STAFF_RP_ID');
+  if (!/^[a-z0-9.-]+$/.test(rpId) || !(new URL(origin).hostname === rpId || new URL(origin).hostname.endsWith(`.${rpId}`))) {
+    throw new Error('moderation: MOD_STAFF_RP_ID is malformed (the staff origin\'s host or a parent domain)');
+  }
+  return { stateDir, origin, rpId, mdsDir: envString(env, 'MOD_FIDO_MDS_DIR'), apiReaderUrl: envString(env, 'MOD_API_READER_DATABASE_URL') };
 }
 
 // `tsx apps/moderation/src/main.ts`: the moderation process. Its one listener is the internal Unix socket (Plan 4 Task 11), and only when MOD_INTERNAL_SOCKET is set.
@@ -756,6 +907,16 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   const db = new pgMod.Pool({ connectionString: envString(env, 'MOD_DATABASE_URL'), max: 5, keepAlive: true });
   db.on('error', () => process.stderr.write('{"level":50,"msg":"moderation database idle client error"}\n'));
   await migrateModeration(db);
+  // Plan 4 Tasks 13-14: the ruling gate keeps its registry in step with the owner's taps, and the
+  // ruling executor (execute.ts) settles each published round-1 escrow ruling exactly as the gate
+  // authorises it. Without MOD_STATE_DIR there is no gate and no ruling is ever co-signed.
+  const gateConfig = gateFromEnv(env);
+  // Security review 2026-11-12 M1: the gate is a factory startModeration runs only once it holds the
+  // instance lock; a refused second process never opens, syncs or saves gate.bin.
+  let gateReader: pg.Pool | null = null;
+  let gateParts: { store: GateStore; source: GateSource; ctx: GateContext } | null = null;
+  // Both the attestations and the gate's ruling statements (Haveno finding 2) are signed with it.
+  const signingSecret = envBytes(env, 'MOD_SIGNING_SECRET', 64);
   let handle: ModerationHandle;
   try {
     handle = await startModeration(
@@ -765,16 +926,55 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       daemonUri: envString(env, 'MONERO_DAEMON_URI'),
       db,
       keystoreKey: envBytes(env, 'MOD_KEYSTORE_KEY', 32),
-      signingSecret: envBytes(env, 'MOD_SIGNING_SECRET', 64),
+      signingSecret,
       feeWallet: envString(env, 'X2F_FEE_WALLET'),
       relayUrl: envString(env, 'RELAY_URL'),
       network: envNetwork(env),
     },
-    { log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) },
+    {
+      log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`),
+      ...(gateConfig
+        ? {
+            gate: async () => {
+              const { fileGateAttestation, openGateStore, pgGateSource, startGateSync } = await import('./gate/index.js');
+              const { rulingExecutor } = await import('./execute.js');
+              const attestation = fileGateAttestation(gateConfig.mdsDir);
+              await attestation.init();
+              // Re-verify, M1 residual: the store holds MOD_STATE_DIR/gate.lock for its life (a successor on this host waits for it).
+              const store = await openGateStore(gateConfig.stateDir, envBytes(env, 'MOD_KEYSTORE_KEY', 32), { lock: true });
+              if (store.state.ownerAccountId === null) process.stderr.write('{"level":40,"msg":"ruling gate: owner not pinned (npm run pin-owner -w @x2f/moderation)"}\n');
+              // Review M3: a locked or stalled table fails the reader's query instead of stopping the checkpoint loop for good.
+              const reader = new pgMod.Pool({ connectionString: gateConfig.apiReaderUrl, max: 2, statement_timeout: 30_000 });
+              reader.on('error', () => process.stderr.write('{"level":50,"msg":"gate reader idle client error"}\n'));
+              gateReader = reader;
+              const gateCtx = {
+                rp: { origins: [gateConfig.origin], rpId: gateConfig.rpId },
+                attestation,
+                now: () => new Date(),
+                log: (e: { reason: string }) => process.stderr.write(`${JSON.stringify({ level: 40, msg: e.reason })}\n`),
+              };
+              const source = pgGateSource(reader);
+              const sync = startGateSync(store, source, gateCtx);
+              // Review F8: the internal server asks this same gate who is staff and which devices are certified.
+              gateParts = { store, source, ctx: gateCtx };
+              const rulings = rulingExecutor({ store, source, ctx: gateCtx, signingSecret, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
+              return {
+                rulings,
+                checkpoints: { store, reader },
+                stop: async () => {
+                  await sync.stop();
+                  await store.close();
+                },
+              };
+            },
+          }
+        : {}),
+    },
     );
   } catch (e) {
     // A refused start (another process holds the instance lock, finding 2) or bad settings: exit non-zero.
     process.stderr.write(`${JSON.stringify({ level: 50, msg: e instanceof Error ? e.message : 'moderation: start failed' })}\n`);
+    await (gateReader as pg.Pool | null)?.end().catch(() => undefined);
     await db.end().catch(() => undefined);
     process.exit(1);
   }
@@ -784,6 +984,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   if (internal) {
     const { pgApiView } = await import('./internal/apiView.js');
     const { startInternalServer } = await import('./internal/server.js');
+    const { gateInternalDeps } = await import('./internal/gateDeps.js');
     apiReader = new pgMod.Pool({ connectionString: internal.apiReaderUrl, max: 2 });
     apiReader.on('error', () => process.stderr.write('{"level":50,"msg":"api reader idle client error"}\n'));
     server = await startInternalServer({ path: internal.socketPath, gid: internal.gid }, {
@@ -791,18 +992,21 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       api: pgApiView(apiReader),
       db,
       keystoreKey: envBytes(env, 'MOD_KEYSTORE_KEY', 32),
-      devModChat: internal.devModChat,
+      ...(gateParts !== null ? gateInternalDeps(gateParts) : {}),
     });
   }
   const shutdown = async () => {
     await server?.close();
+    // Stops the gate's sync (review M1: inside the stop, before the lock goes), then its reader.
     await handle.stop();
+    await (gateReader as pg.Pool | null)?.end();
     await apiReader?.end();
     await db.end();
   };
   // Re-verify R3: a lost instance lock ends the process non-zero (the service already stopped), so a
   // supervisor restarts it and the new process waits for the lock.
   void handle.lockLost.then(async () => {
+    await (gateReader as pg.Pool | null)?.end().catch(() => undefined);
     await server?.close().catch(() => undefined);
     await apiReader?.end().catch(() => undefined);
     await db.end().catch(() => undefined);

@@ -1,4 +1,6 @@
 import sodium from 'libsodium-wrappers';
+import type { Signer } from './chatV2.js';
+import type { BoxOpener } from './sealed.js';
 
 /** Hex public keys; Ed25519 signing keys with X25519 box keys derived from them. */
 export interface Identity {
@@ -21,6 +23,11 @@ export async function generateIdentity(): Promise<Identity> {
 
 const KEY_HEX = /^[0-9a-f]{64}$/;
 
+/** Resolves once libsodium is loaded (its WebAssembly compiled); rejects where it cannot load (a CSP without 'wasm-unsafe-eval'). */
+export async function cryptoReady(): Promise<void> {
+  await sodium.ready;
+}
+
 /**
  * Detached Ed25519 signature by `me` over `bytes`, as 128 lower-case hex characters: the proof
  * the API verifies against `signPublic` (the chat and trade identity proofs). The caller builds
@@ -40,4 +47,54 @@ export async function signProof(me: Identity, bytes: Uint8Array): Promise<string
     throw new TypeError('signProof: signSecret does not match signPublic');
   }
   return sodium.to_hex(sodium.crypto_sign_detached(bytes, signSecret));
+}
+
+/**
+ * Whether an identity's secrets are its public keys' (review lead-mod-chat N11 d): the Ed25519 secret
+ * key's seed and its public half both give `signPublic`, and the X25519 box secret times the base point is `boxPublic`.
+ * For a stored identity opened from storage, before it is used.
+ */
+export async function identityKeysMatch(me: Identity): Promise<boolean> {
+  await sodium.ready;
+  const { signPublic, boxPublic, signSecret, boxSecret } = me;
+  if (typeof signPublic !== 'string' || !KEY_HEX.test(signPublic) || typeof boxPublic !== 'string' || !KEY_HEX.test(boxPublic)) return false;
+  if (!(signSecret instanceof Uint8Array) || signSecret.length !== sodium.crypto_sign_SECRETKEYBYTES) return false;
+  if (!(boxSecret instanceof Uint8Array) || boxSecret.length !== sodium.crypto_box_SECRETKEYBYTES) return false;
+  // The public key derived from the seed (the first 32 bytes), and the copy the secret key carries.
+  const kp = sodium.crypto_sign_seed_keypair(signSecret.subarray(0, 32));
+  const box = sodium.crypto_scalarmult_base(boxSecret);
+  try {
+    const pk = sodium.from_hex(signPublic);
+    return sodium.memcmp(kp.publicKey, pk) && sodium.memcmp(signSecret.subarray(32), pk) && sodium.memcmp(box, sodium.from_hex(boxPublic));
+  } finally {
+    sodium.memzero(kp.privateKey);
+    sodium.memzero(box);
+  }
+}
+
+/**
+ * Whether keys that never leave their holder (review lead-mod-chat B1: non-extractable WebCrypto
+ * keys) are `signPublic`'s and `boxPublic`'s: the signer's signature over a fresh challenge verifies
+ * by signPublic, and the opener's X25519 with a fresh ephemeral key equals the ephemeral secret
+ * times boxPublic. Throws whatever the signer or opener throws (a browser without the algorithm).
+ */
+export async function deviceKeysMatch(signer: Signer, opener: BoxOpener): Promise<boolean> {
+  await sodium.ready;
+  if (typeof signer?.signPublic !== 'string' || !KEY_HEX.test(signer.signPublic) || typeof opener?.boxPublic !== 'string' || !KEY_HEX.test(opener.boxPublic)) return false;
+  const challenge = sodium.randombytes_buf(32);
+  const sig = await signer.sign(challenge);
+  if (!(sig instanceof Uint8Array) || sig.length !== sodium.crypto_sign_BYTES || !sodium.crypto_sign_verify_detached(sig, challenge, sodium.from_hex(signer.signPublic))) return false;
+  const e = sodium.crypto_box_keypair();
+  const theirs = await opener.sharedWith(e.publicKey);
+  let ours: Uint8Array | null = null;
+  try {
+    ours = sodium.crypto_scalarmult(e.privateKey, sodium.from_hex(opener.boxPublic));
+    return theirs instanceof Uint8Array && theirs.length === 32 && sodium.memcmp(theirs, ours);
+  } catch {
+    return false;
+  } finally {
+    sodium.memzero(e.privateKey);
+    ours?.fill(0);
+    if (theirs instanceof Uint8Array) theirs.fill(0);
+  }
 }

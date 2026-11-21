@@ -1,29 +1,33 @@
 // Plan 4 Task 11: the moderator's queue and case view, messages to the parties, the
-// unblurred-proof request, and the freeze. The moderator's chat READ is not built: the chat key
-// design (design-chat-membership-keys-2026-11-08, build task 9) replaces the plan's plaintext read
-// through the API, so no staff route returns chat text (NEEDS_P4_CHAT_MEMBERSHIP below). Owner 2026-11-02 (binding): a dispute
+// unblurred-proof request, and the freeze. Design build task 9 (landed): the moderator's chat READ is
+// the chat key re-wrapped by the moderation process to the staff member's certified device (no
+// staff route ever returns chat text), and the moderator's MESSAGE is ciphertext that device sealed
+// and countersigned, which the moderation process signs as the moderator. Owner 2026-11-02 (binding): a dispute
 // alone never blocks trading; a moderator freezes an account only as a separate later action, when
 // a party ignores the dispute (~48 h with no reply) or ignores a ruling, and the freeze has no end
 // time: a moderator lifts it once the person has done what the dispute asks.
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { open, ReplayGuard, seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { chatKeyHash, encryptChat, makeModCountersign, newChatKey, openChat, ReplayGuard, signChatEnvelope, unwrapChatKey, wrapChatKey, type ChatEnvelopeV2, type Identity, type Participants } from '@x2f/protocol';
 import { channelFor } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { isIncidentId } from '@x2f/staff';
-import { ModerationError, NO_MODERATION } from '../../src/disputes/moderationClient.js';
+import { ModerationError, NO_MODERATION, type ModCaseCall, type ModCountersigned } from '../../src/disputes/moderationClient.js';
+import { disputeSettings } from '../../src/disputes/settings.js';
+import { getMethod } from '../../src/methods/profiles.js';
 import { loadDispute } from '../../src/disputes/store.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
+import { CHAT_READ_MAX } from '../../src/disputes/staffRoutes.js';
 import { appealDirect, publishRuling } from '../helpers/disputes.js';
 import { seedAccount } from '../helpers/accounts.js';
 import { Browser } from '../helpers/totp.js';
 import { rolesToAbilities } from '../../src/team/abilities.js';
 import { insertOffer } from '../helpers/offers.js';
-import { STAFF_ORIGIN, StaffBrowser, insertSession, seedStaff } from '../helpers/staffApp.js';
+import { STAFF_ORIGIN, StaffBrowser, insertSession, seedStaff, seedTap } from '../helpers/staffApp.js';
 import { tradeApp } from '../helpers/tradeApp.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
@@ -55,7 +59,13 @@ interface ChatSetup {
   ids: Record<'buyer' | 'seller' | 'mod', Identity>;
   participants: Participants;
   seq: number;
+  /** The chat key (design task 5): the stand-in holds it to re-wrap; a real moderation process opens it from the grant. */
+  tk: Uint8Array;
 }
+
+/** The staff member's certified device (staff-web's key), as the stand-in's gate would know it. */
+let DEVICE: Identity;
+const DEVICE_KEY_ID = 'd'.repeat(32);
 
 /**
  * The moderation process as the API sees it. Every call first checks that the API wrote and
@@ -73,18 +83,24 @@ class FakeModeration implements ModerationClient {
     if (rows[0]?.action !== action || rows[0]?.trade_code !== code) throw new ModerationError(403, 'log-entry-invalid');
   }
 
-  async chatSend(a: { code: string; logEntryId: string; text: string }) {
+  async chatGrant(a: ModCaseCall) {
+    await this.logged(a.logEntryId, 'chat.read', a.code);
+    this.calls.push({ op: 'grant', code: a.code, logEntryId: a.logEntryId });
+    const c = this.chats.get(a.code);
+    if (!c) throw new ModerationError(404, 'no-chat');
+    if (a.deviceKeyId !== DEVICE_KEY_ID) throw new ModerationError(403, 'device-not-certified');
+    return { wrap: await wrapChatKey(DEVICE.boxPublic, c.tk), tkh: (await deps.db.query<{ tkh: string }>('select tkh from chat_keys where chat = $1', [c.chat])).rows[0]!.tkh, boxPublic: DEVICE.boxPublic, nextSeq: c.seq };
+  }
+
+  async chatSend(a: ModCaseCall & ModCountersigned) {
     // Review 8 Nov M-2: the API asks under `chat.message-requested`; `chat.message-sent` comes after.
     await this.logged(a.logEntryId, 'chat.message-requested', a.code);
     this.calls.push({ op: 'send', code: a.code, logEntryId: a.logEntryId });
     const c = this.chats.get(a.code);
     if (!c) throw new ModerationError(404, 'no-chat');
-    const envelope = await seal({
-      trade: c.channel, from: 'mod', seq: c.seq++, type: 'chat.msg',
-      payload: { text: a.text },
-      to: ['buyer', 'seller', 'mod'], me: c.ids.mod, participants: c.participants,
-    });
-    return { envelope };
+    if (a.seq !== c.seq) throw new ModerationError(409, 'stale-seq', c.seq);
+    c.seq++;
+    return { envelope: await signChatEnvelope({ v: 2, trade: c.channel, from: 'mod', seq: a.seq, nonce: a.nonce, ct: a.ct }, c.ids.mod) };
   }
 }
 
@@ -100,6 +116,7 @@ beforeAll(async () => {
   ({ app: trader, deps, setNow } = t);
   newTrader = t.trader;
   moderation = new FakeModeration(deps.db);
+  DEVICE = await keyPair();
   staffApp = await buildStaffApi({ ...deps, staffOrigin: STAFF_ORIGIN, moderation, traderEvents: trader.events });
 });
 afterAll(async () => {
@@ -121,6 +138,10 @@ async function staff(role: 'mod' | 'senior' | 'owner' | 'helper', app = staffApp
   return { id: s.id, name, b, fresh };
 }
 
+/** The one owner (the database allows one), made on first use. */
+let theOwner: Awaited<ReturnType<typeof staff>> | null = null;
+const ownerOnce = async () => (theOwner ??= await staff('owner'));
+
 /** The seller's confirm window seedTrade gives every trade (its `confirmWindowMin`). */
 const CONFIRM_WINDOW_MIN = 120;
 
@@ -130,11 +151,11 @@ const CONFIRM_WINDOW_MIN = 120;
  * lets the buyer open a dispute only after "I've paid" and the method's full wait, so `at` is the
  * first moment the dispute may open.
  */
-async function disputed(at = START, pair?: { seller: Awaited<ReturnType<typeof newTrader>>; buyer: Awaited<ReturnType<typeof newTrader>> }) {
+async function disputed(at = START, o: { methodId?: string; seller?: Awaited<ReturnType<typeof newTrader>>; buyer?: Awaited<ReturnType<typeof newTrader>> } = {}) {
   setNow(new Date(at.getTime() - CONFIRM_WINDOW_MIN * MIN));
-  const seller = pair?.seller ?? (await newTrader());
-  const buyer = pair?.buyer ?? (await newTrader());
-  const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+  const seller = o.seller ?? (await newTrader());
+  const buyer = o.buyer ?? (await newTrader());
+  const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', ...(o.methodId ? { methodId: o.methodId } : {}) });
   expect(trade.confirmWindowMin).toBe(CONFIRM_WINDOW_MIN);
   const t = await driveTo(deps, trade, 'paid');
   expect(t.confirmBy).toEqual(at);
@@ -147,8 +168,26 @@ async function disputed(at = START, pair?: { seller: Awaited<ReturnType<typeof n
   const chat = (opened.json() as { chat: string }).chat;
   const ids = { buyer: await keyPair(), seller: await keyPair(), mod: await keyPair() };
   const participants = Object.fromEntries((['buyer', 'seller', 'mod'] as const).map((r) => [r, { signPublic: ids[r].signPublic, boxPublic: ids[r].boxPublic }])) as Participants;
-  moderation.chats.set(t.code, { chat, channel: await channelFor(chat, 'chat'), ids, participants, seq: 0 });
+  // The chat's key record (design task 4), filed directly: these routes only need it to exist.
+  const tk = await newChatKey();
+  await deps.db.query(
+    `insert into chat_keys (chat, tkh, created_by_role, wrap_buyer, wrap_seller, sig, created_at) values ($1, $2, 'buyer', 'AAAA', 'AAAA', $3, now())`,
+    [chat, await chatKeyHash(tk), 'a'.repeat(128)],
+  );
+  await deps.db.query('insert into chat_attestations (chat, attestation, sig) values ($1, $2, $3) on conflict do nothing', [chat, { v: 1, trade: chat, participants }, 'aa']);
+  moderation.chats.set(t.code, { chat, channel: await channelFor(chat, 'chat'), ids, participants, seq: 0, tk });
   return { seller, buyer, code: t.code, chat };
+}
+
+/**
+ * A moderator message as staff-web sends it (design build task 9): sealed under the chat key as
+ * `from: 'mod'` at the chat's next moderator seq, countersigned by the staff device key.
+ */
+async function msg(code: string, text: string, o: { seq?: number } = {}) {
+  const c = moderation.chats.get(code)!;
+  const body = await encryptChat({ trade: c.channel, from: 'mod', seq: o.seq ?? c.seq, type: 'chat.msg', payload: { text }, tk: c.tk });
+  const cs = await makeModCountersign({ body, requestId: randomUUID().replace(/-/g, ''), issuedAt: new Date(deps.clock().getTime()).toISOString(), me: DEVICE });
+  return { deviceKeyId: DEVICE_KEY_ID, seq: body.seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig };
 }
 
 const url = (code: string, tail = '') => `/staff/v1/disputes/${code}${tail}`;
@@ -196,6 +235,11 @@ describe('the queue', () => {
     expect(body.counts.overdue).toBeGreaterThanOrEqual(1);
     expect(body.counts.unassigned).toBeGreaterThanOrEqual(2);
     expect(body.counts).toHaveProperty('needApproval');
+    // Plan 4 Task 18 (ModQueue): the header's reply time and the footer's large-trade limit.
+    expect((all.json() as { settings: unknown }).settings).toEqual({
+      firstResponseH: (await disputeSettings(deps.db)).firstResponseH,
+      largeTradeLimitUsd: (await disputeSettings(deps.db)).largeTradeLimitUsd,
+    });
 
     // `next` takes the unassigned dispute due first (here: b or an older one from another test).
     const next = await mod.b.post('/staff/v1/disputes/next', {});
@@ -229,7 +273,7 @@ describe('the queue', () => {
   });
 
   it('NEEDS_P4_CASE_ASSIGNEE: a taken case counts as the member\'s open case; switching them off puts it back in the queue for another moderator', async () => {
-    const owner = await staff('owner');
+    const owner = await ownerOnce();
     const mod = await staff('mod');
     const other = await staff('mod');
     const { code } = await disputed();
@@ -249,13 +293,31 @@ describe('the queue', () => {
     const mod = await staff('mod');
     const { seller, buyer, code } = await disputed();
     await mod.b.post(url(code, '/take'), {});
-    await mod.b.post(url(code, '/messages'), { text: 'Hello' });
+    await mod.b.post(url(code, '/messages'), await msg(code, 'Hello'));
     expect(await activeFreezes(seller.id)).toEqual([]);
     expect(await activeFreezes(buyer.id)).toEqual([]);
   });
 });
 
 describe('the case view', () => {
+  it('names the payment method from the catalog (data/payment-methods.json), and gives the id where the catalog has none', async () => {
+    const { code } = await disputed();
+    const mod = await staff('mod');
+    const first = await mod.b.get(url(code));
+    expect(first.statusCode, first.body).toBe(200);
+    // The trade helper seeds `zelle`, which is not a catalog id: the id is shown as it is.
+    expect(((await mod.b.get(url(code))).json() as { escrow: { methodName: string } }).escrow.methodName).toBe('zelle');
+    // A trade's deal never changes, so the catalog case is its own dispute, on the catalog's id.
+    const named = (await disputed(START, { methodId: 'ZELLE' })).code;
+    await mod.fresh();
+    const v = (await mod.b.get(url(named))).json() as { escrow: { methodId: string; methodName: string } };
+    expect(v.escrow).toMatchObject({ methodId: 'ZELLE', methodName: getMethod('ZELLE')!.name });
+    expect(getMethod('ZELLE')!.name).toBe('Zelle');
+    const q = (await mod.b.get('/staff/v1/disputes?filter=all')).json() as { rows: Array<{ code: string; method: string; methodName: string }> };
+    expect(q.rows.find((r) => r.code === named)).toMatchObject({ method: 'ZELLE', methodName: 'Zelle' });
+    expect(q.rows.find((r) => r.code === code)).toMatchObject({ method: 'zelle', methodName: 'zelle' });
+  });
+
   it('shows the header, both traders, the escrow and the ruling state; logs case.opened once per person; returns no chat', async () => {
     const mod = await staff('mod');
     const { code, seller } = await disputed();
@@ -328,11 +390,28 @@ describe('who works a case', () => {
     const { code } = await disputed();
     await mod.b.post(url(code, '/take'), {});
     for (const route of ['/messages', '/proof-request', '/freeze']) {
-      const res = await stranger.b.post(url(code, route), route === '/messages' ? { text: 'Hello' } : route === '/proof-request' ? { side: 'buyer' } : route === '/freeze' ? { side: 'seller', on: true, reason: 'no-reply' } : {});
+      const res = await stranger.b.post(url(code, route), route === '/messages' ? await msg(code, 'Hello') : route === '/proof-request' ? { side: 'buyer' } : route === '/freeze' ? { side: 'seller', on: true, reason: 'no-reply' } : {});
       expect({ route, status: res.statusCode, error: errorOf(res) }).toEqual({ route, status: 403, error: 'forbidden-case' });
     }
-    expect((await mod.b.post(url(code, '/messages'), { text: 'One.' })).statusCode).toBe(201);
-    expect((await senior.b.post(url(code, '/messages'), { text: 'Two.' })).statusCode).toBe(201);
+    expect((await mod.b.post(url(code, '/messages'), await msg(code, 'One.'))).statusCode).toBe(201);
+    expect((await senior.b.post(url(code, '/messages'), await msg(code, 'Two.'))).statusCode).toBe(201);
+  });
+
+  it('landed (was NEEDS_P4_MOD_COUNTERSIGN): a chat with no key record takes no moderator message (409 no-key), and a text body is refused before anything is logged', async () => {
+    const mod = await staff('mod');
+    const { code, chat } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    const before = moderation.calls.length;
+    let res = await mod.b.post(url(code, '/messages'), { text: 'Seller, release now.' });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 400, error: 'bad-request' });
+    const body = await msg(code, 'Hello');
+    await deps.db.query('delete from chat_keys where chat = $1', [chat]);
+    res = await mod.b.post(url(code, '/messages'), body);
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'no-key' });
+    expect(moderation.calls.length).toBe(before);
+    expect((await logOf(code)).filter((e) => e.action === 'chat.message-requested')).toEqual([]);
+    const src = await (await import('node:fs/promises')).readFile(new URL('../../src/disputes/staffRoutes.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/NEEDS_P4_MOD_COUNTERSIGN|NEEDS_P4_CHAT_MEMBERSHIP|X2F_DEV_MOD_CHAT|chat-keyed/);
   });
 
   it('with logging failing, no message is sealed and the moderation process is never asked', async () => {
@@ -348,7 +427,7 @@ describe('who works a case', () => {
       // Assign directly: the take route logs too.
       await deps.db.query('update disputes set assignee = $2 where code = $1', [code, mod.id]);
       const before = moderation.calls.length;
-      const res = await mod.b.post(url(code, '/messages'), { text: 'Hello' });
+      const res = await mod.b.post(url(code, '/messages'), await msg(code, 'Hello'));
       expect(res.statusCode).toBe(500);
       expect(moderation.calls.length).toBe(before);
     } finally {
@@ -364,11 +443,11 @@ describe('who works a case', () => {
     const sb = stream(buyer.id);
     const ss = stream(seller.id);
     try {
-      await mod.b.post(url(code, '/messages'), { text: 'One.' });
-      await mod.b.post(url(code, '/messages'), { text: 'Two.' });
+      await mod.b.post(url(code, '/messages'), await msg(code, 'One.'));
+      await mod.b.post(url(code, '/messages'), await msg(code, 'Two.'));
       for (const s of [sb, ss]) expect(eventsOf(s.frames, 'moderator-joined')).toEqual([{ type: 'moderator-joined', code, username: mod.name }]);
-      await senior.b.post(url(code, '/messages'), { text: 'Three.' });
-      await senior.b.post(url(code, '/messages'), { text: 'Four.' });
+      await senior.b.post(url(code, '/messages'), await msg(code, 'Three.'));
+      await senior.b.post(url(code, '/messages'), await msg(code, 'Four.'));
       expect(eventsOf(sb.frames, 'moderator-joined')).toEqual([
         { type: 'moderator-joined', code, username: mod.name },
         { type: 'moderator-joined', code, username: senior.name },
@@ -391,28 +470,112 @@ describe('who works a case', () => {
     // The appeal makes everyone seen on round 1 involved (R37): the senior took and opened it.
     await appealDirect(deps, code, 'seller');
     expect((await loadDispute(deps.db, code))!.round1!.involved).toContain(senior.id);
-    const res = await senior.b.post(url(code, '/messages'), { text: 'Hello' });
+    const res = await senior.b.post(url(code, '/messages'), await msg(code, 'Hello'));
     expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 403, error: 'forbidden-case' });
     const fresh = await staff('senior');
-    expect((await fresh.b.post(url(code, '/messages'), { text: 'Hello' })).statusCode).toBe(201);
+    expect((await fresh.b.post(url(code, '/messages'), await msg(code, 'Hello'))).statusCode).toBe(201);
   });
 
-  it('NEEDS_P4_CHAT_MEMBERSHIP: no staff route reads the chat (design build task 9)', async () => {
-    // The plan's `POST /staff/v1/disputes/:code/chat` (one logged chat.read per read, plaintext from
-    // the moderation process through the API) is NOT registered: a compromised API could read every
-    // disputed chat. Build task 9 of design-chat-membership-keys-2026-11-08 replaces it with a grant
-    // to certified staff device keys; build that, then replace this test and the it.todo below.
+  it('landed (was NEEDS_P4_CHAT_MEMBERSHIP): the read commits one chat.read per read before the moderation process re-wraps the key to the device; the answer is ciphertext only', async () => {
     const mod = await staff('mod');
-    const { code } = await disputed();
+    const { code, chat } = await disputed();
     await mod.b.post(url(code, '/take'), {});
-    const res = await mod.b.post(url(code, '/chat'), {});
-    expect(res.statusCode).toBe(404);
-    expect((await logOf(code)).filter((e) => e.action === 'chat.read')).toEqual([]);
-    const routes = staffApp.printRoutes({ commonPrefix: false });
-    expect(routes).not.toMatch(/chat\b/);
+    await mod.b.post(url(code, '/messages'), await msg(code, 'Before the read.'));
+    const res = await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
+    expect(res.statusCode, res.body).toBe(200);
+    const a = res.json() as { chat: string; channel: string; wrap: string; tkh: string; nextSeq: number; attestation: unknown; record: { tkh: string }; envelopes: Array<{ senderRole: string; envelope: ChatEnvelopeV2 }> };
+    const c = moderation.chats.get(code)!;
+    const tkh = await chatKeyHash(c.tk);
+    expect({ chat: a.chat, channel: a.channel, nextSeq: a.nextSeq, tkh: a.tkh, recordTkh: a.record.tkh }).toEqual({ chat, channel: c.channel, nextSeq: 1, tkh, recordTkh: tkh });
+    // Only the device's own key opens the wrap, to the chat's key.
+    expect(sodium.memcmp(await unwrapChatKey(DEVICE, a.wrap, tkh), c.tk)).toBe(true);
+    await expect(unwrapChatKey(c.ids.buyer, a.wrap, tkh)).rejects.toBeDefined();
+    const mine = a.envelopes.filter((e) => e.senderRole === 'mod');
+    expect(await openChat(mine[0]!.envelope, { tk: c.tk, trade: c.channel, participants: c.participants, guard: new ReplayGuard(c.channel) })).toEqual({ from: 'mod', type: 'chat.msg', payload: { text: 'Before the read.' } });
+    expect(JSON.stringify(a)).not.toContain('Before the read.');
+    // One chat.read per read, the staff member as its actor, committed before the grant was asked.
+    const reads = (await logOf(code)).filter((e) => e.action === 'chat.read');
+    expect(reads.map((e) => [e.actor_kind, e.actor_id])).toEqual([['staff', mod.id]]);
+    expect(moderation.calls.filter((x) => x.op === 'grant').map((x) => x.logEntryId)).toEqual([reads[0]!.id]);
+    // The staff member's copy is filed against the chat (the API cannot open it).
+    const { rows } = await deps.db.query("select member_ref, trigger, log_entry_id::text as entry from chat_members where chat = $1 and member_kind = 'staff'", [chat]);
+    expect(rows).toEqual([{ member_ref: `${mod.id}/${DEVICE_KEY_ID}`, trigger: 'assigned', entry: reads[0]!.id }]);
+    // A device the moderation process does not know as certified: refused, the read still logged.
+    const bad = await mod.b.post(url(code, '/chat'), { deviceKeyId: 'e'.repeat(32) });
+    expect({ status: bad.statusCode, error: errorOf(bad) }).toEqual({ status: 403, error: 'device-not-certified' });
+    expect((await mod.b.post(url(code, '/chat'), {})).statusCode).toBe(400);
   });
 
-  it.todo('NEEDS_P4_CHAT_MEMBERSHIP: reads are logged, one chat.read per read before any key is granted; with logging failing nothing is granted');
+  it('review N11 (e), design section 7: a revoked device\'s copy of the chat key is marked removed, by its revoke-device tap or with its person\'s switch-off', async () => {
+    const owner = await ownerOnce();
+    const { code, chat } = await disputed();
+    const a = await staff('mod');
+    const b = await staff('senior');
+    await a.b.post(url(code, '/take'), {});
+    for (const p of [a, b]) expect((await p.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID })).statusCode).toBe(200);
+    const removed = async () => (await deps.db.query<{ member_ref: string; removed: boolean }>(
+      "select member_ref, removed_at is not null as removed from chat_members where chat = $1 and member_kind = 'staff' order by member_ref", [chat],
+    )).rows;
+    expect((await removed()).every((r) => !r.removed)).toBe(true);
+    // a revokes the device with its own tap (the API's record of the certification, then the revoke).
+    const cert = await seedTap(deps, a.id, { kind: 'certify-device', accountId: a.id, deviceKeyId: DEVICE_KEY_ID, signPublic: DEVICE.signPublic, boxPublic: DEVICE.boxPublic });
+    await deps.db.query('update key_taps set used_at = $2 where id = $1', [cert, deps.clock()]);
+    const rv = await seedTap(deps, a.id, { kind: 'revoke-device', accountId: a.id, deviceKeyId: DEVICE_KEY_ID });
+    expect((await a.b.post(`/staff/v1/devices/${DEVICE_KEY_ID}/revoke`, { tapId: rv })).statusCode).toBe(204);
+    expect(await removed()).toEqual([
+      { member_ref: `${a.id}/${DEVICE_KEY_ID}`, removed: true },
+      { member_ref: `${b.id}/${DEVICE_KEY_ID}`, removed: false },
+    ].sort((x, y) => x.member_ref.localeCompare(y.member_ref)));
+    // b is switched off: every copy of theirs.
+    await owner.fresh();
+    expect((await owner.b.post(`/staff/v1/members/${b.id}/switch-off`, {})).statusCode).toBe(200);
+    expect((await removed()).every((r) => r.removed)).toBe(true);
+  });
+
+  it('review N11 (f): a chat longer than CHAT_READ_MAX returns its newest envelopes and says older ones are not shown', async () => {
+    const mod = await staff('mod');
+    const { code, chat } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    const short = (await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID })).json() as { olderNotShown: boolean };
+    expect(short.olderNotShown).toBe(false);
+    await deps.db.query(
+      `insert into chat_envelopes (chat, sender_role, seq, envelope, created_at)
+       select $1, 'buyer', 1000 + g, jsonb_build_object('n', g), $2 from generate_series(0, $3) g`,
+      [chat, deps.clock(), CHAT_READ_MAX],
+    );
+    const { rows } = await deps.db.query<{ id: string }>('select id::text as id from chat_envelopes where chat = $1 order by id', [chat]);
+    const res = await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
+    const a = res.json() as { olderNotShown: boolean; envelopes: Array<{ id: string }> };
+    expect(a.olderNotShown).toBe(true);
+    expect(a.envelopes).toHaveLength(CHAT_READ_MAX);
+    // The newest, oldest first.
+    expect(a.envelopes.map((e) => e.id)).toEqual(rows.slice(-CHAT_READ_MAX).map((r) => r.id));
+  });
+
+  it('reads are logged before any key is granted: with logging failing nothing is granted, and someone not on the case is refused first', async () => {
+    const broken = await buildStaffApi({
+      ...deps, staffOrigin: STAFF_ORIGIN, moderation, traderEvents: trader.events,
+      appendLog: async () => {
+        throw new Error('log down');
+      },
+    });
+    try {
+      const mod = await staff('mod', broken);
+      const { code } = await disputed();
+      await deps.db.query('update disputes set assignee = $2 where code = $1', [code, mod.id]);
+      const before = moderation.calls.length;
+      expect((await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID })).statusCode).toBe(500);
+      expect(moderation.calls.length).toBe(before);
+    } finally {
+      await broken.close();
+    }
+    const stranger = await staff('mod');
+    const { code } = await disputed();
+    await (await staff('mod')).b.post(url(code, '/take'), {});
+    const res = await stranger.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 403, error: 'forbidden-case' });
+    expect((await logOf(code)).filter((e) => e.action === 'chat.read')).toEqual([]);
+  });
 });
 
 describe('messages to the parties', () => {
@@ -422,7 +585,7 @@ describe('messages to the parties', () => {
     await mod.b.post(url(code, '/take'), {});
     const sb = stream(buyer.id);
     try {
-      const res = await mod.b.post(url(code, '/messages'), { text: 'Please upload your bank statement.' });
+      const res = await mod.b.post(url(code, '/messages'), await msg(code, 'Please upload your bank statement.'));
       expect(res.statusCode, res.body).toBe(201);
       expect(eventsOf(sb.frames, 'chat')).toEqual([{ type: 'chat', chat }]);
     } finally {
@@ -439,27 +602,30 @@ describe('messages to the parties', () => {
     expect((await loadDispute(deps.db, code))!.firstReplyAt).toEqual(START);
 
     const c = moderation.chats.get(code)!;
-    for (const [who, role] of [[buyer, 'buyer'], [seller, 'seller']] as const) {
+    for (const who of [buyer, seller]) {
       const got = await who.browser.get(`/v1/chats/${chat}/envelopes?after=0`);
       expect(got.statusCode, got.body).toBe(200);
-      const list = (got.json() as { envelopes: { senderRole: string; envelope: Envelope }[] }).envelopes.filter((e) => e.senderRole === 'mod');
+      const list = (got.json() as { envelopes: { senderRole: string; envelope: ChatEnvelopeV2 }[] }).envelopes.filter((e) => e.senderRole === 'mod');
       expect(list).toHaveLength(1);
-      const opened = await open(list[0]!.envelope, { me: c.ids[role], myRole: role, participants: c.participants, trade: c.channel, guard: new ReplayGuard(c.channel) });
+      const opened = await openChat(list[0]!.envelope, { tk: c.tk, trade: c.channel, participants: c.participants, guard: new ReplayGuard(c.channel) });
       // The trader app's chat contract (chatCrypto: payload exactly { text }); the badge comes from
       // the verified sender `mod` and the server's moderator name, never from the payload.
       expect(opened).toEqual({ from: 'mod', type: 'chat.msg', payload: { text: 'Please upload your bank statement.' } });
     }
   });
 
-  it('refuses an empty or too long text, and a closed dispute', async () => {
+  it('refuses a malformed sealed message, a stale seq (with the next one), and a closed dispute', async () => {
     const mod = await staff('mod');
     const { code } = await disputed();
     await mod.b.post(url(code, '/take'), {});
-    for (const text of ['', '   ', 'x'.repeat(2001), 5, 'bell\u0007']) {
-      expect((await mod.b.post(url(code, '/messages'), { text })).statusCode).toBe(400);
+    const good = await msg(code, 'Hello');
+    for (const bad of [{ ...good, seq: -1 }, { ...good, ct: '' }, { ...good, sig: 'x' }, { ...good, requestId: 'r' }, { ...good, issuedAt: 'today' }, { ...good, extra: 1 }, { text: 'Hello' }]) {
+      expect((await mod.b.post(url(code, '/messages'), bad)).statusCode, JSON.stringify(bad).slice(0, 60)).toBe(400);
     }
+    const stale = await mod.b.post(url(code, '/messages'), await msg(code, 'Hello', { seq: 5 }));
+    expect({ status: stale.statusCode, error: errorOf(stale), next: (stale.json() as { nextSeq?: number }).nextSeq }).toEqual({ status: 409, error: 'stale-seq', next: 0 });
     await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [code, START]);
-    const res = await mod.b.post(url(code, '/messages'), { text: 'Hello' });
+    const res = await mod.b.post(url(code, '/messages'), await msg(code, 'Hello'));
     expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'wrong-state' });
   });
 });
@@ -484,7 +650,7 @@ describe('the unblurred proof', () => {
     expect((await mod.b.post(url(code, '/proof-request'), { side: 'mod' })).statusCode).toBe(400);
   });
 
-  it('NEEDS_P4_CHAT_MEMBERSHIP: no staff route reads the unblurred proof through the API (review 8 Nov I-1)', async () => {
+  it('NEEDS_P5_PROOF_ENVELOPE: no staff route reads the unblurred proof through the API (review 8 Nov I-1)', async () => {
     // The plan's `POST /staff/v1/disputes/:code/proof` relayed the unblurred image from the
     // moderation process through this API: the same plaintext gap as the chat read. The design
     // (2.4 step 5) re-wraps the proof key to the staff device key instead; build that, then replace
@@ -810,6 +976,8 @@ describe('G37: incident IDs and taking a case', () => {
     const v = (await mod.b.get(url(code))).json() as Record<string, unknown>;
     expect(v).toMatchObject({
       assignee: mod.name, assignedToYou: true, mayWork: true,
+      // Plan 4 Task 18 (ModCase "Above the 1,000 USD limit"): the limit the dispute snapshotted when it opened.
+      limitUsd: Number((await loadDispute(deps.db, code))!.limitUsdCents / 100n),
       taken: { by: mod.name, at: START.toISOString(), openedAt: new Date(START.getTime() + 7 * MIN).toISOString() },
     });
     const other = await staff('mod');
@@ -833,7 +1001,7 @@ describe('a frozen party still works the disputed trade (G7, G33)', () => {
     // The chat is attested (stood in here); the seller's message goes through.
     const c = moderation.chats.get(code)!;
     await deps.db.query('insert into chat_attestations (chat, attestation, sig) values ($1, $2, $3) on conflict do nothing', [chat, { v: 1 }, 'aa']);
-    const envelope = await seal({ trade: c.channel, from: 'seller', seq: 0, type: 'chat.msg', payload: { text: 'Here is more context.' }, to: ['buyer', 'seller', 'mod'], me: c.ids.seller, participants: c.participants });
+    const envelope = await signChatEnvelope(await encryptChat({ trade: c.channel, from: 'seller', seq: 0, type: 'chat.msg', payload: { text: 'Here is more context.' }, tk: c.tk }), c.ids.seller);
     const posted = await seller.browser.post(`/v1/chats/${chat}/envelopes`, envelope);
     expect(posted.statusCode, posted.body).toBe(201);
     setNow(START);
@@ -849,8 +1017,20 @@ describe('the proof request in the trader view', () => {
     expect((await mod.b.post(url(code, '/proof-request'), { side: 'buyer' })).statusCode).toBe(204);
     const asBuyer = (await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown };
     const asSeller = (await seller.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown };
-    expect(asBuyer.proofRequest).toEqual({ username: mod.name, at: START.toISOString() });
+    expect(asBuyer.proofRequest).toEqual({ username: mod.name, at: START.toISOString(), sentAt: null });
     expect(asSeller.proofRequest).toBeNull();
+  });
+
+  it('Plan 5 Task 15: a new request clears the time the last unblurred copy went (sentAt)', async () => {
+    const mod = await staff('mod');
+    const { code, buyer } = await disputed();
+    await mod.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    // As if the buyer had answered an earlier request (proofs.test.ts drives the upload itself).
+    await deps.db.query('update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = $4, proof_request_sent_at = $3 where code = $1', [code, 'buyer', START, mod.name]);
+    expect(((await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: { sentAt: unknown } }).proofRequest.sentAt).toBe(START.toISOString());
+    expect((await mod.b.post(url(code, '/proof-request'), { side: 'buyer' })).statusCode).toBe(204);
+    expect(((await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown }).proofRequest).toEqual({ username: mod.name, at: START.toISOString(), sentAt: null });
   });
 });
 
@@ -882,7 +1062,7 @@ describe('more on messages and the queue', () => {
       const { code } = await disputed();
       await mod.fresh();
       await mod.b.post(url(code, '/take'), {});
-      const res = await mod.b.post(url(code, '/messages'), { text: 'Hello' });
+      const res = await mod.b.post(url(code, '/messages'), await msg(code, 'Hello'));
       expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 503, error: 'moderation-unavailable' });
       // The request is logged; nothing was sent, so no `chat.message-sent` (review 8 Nov M-2).
       expect((await logOf(code)).filter((e) => e.action === 'chat.message-requested')).toHaveLength(1);
@@ -903,17 +1083,19 @@ describe('more on messages and the queue', () => {
       moderation.chatSend = async (a) => {
         await realSend(a);
         const c = moderation.chats.get(code)!;
-        return { envelope: await seal({ trade: c.channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'x' }, to: ['buyer', 'seller', 'mod'], me: c.ids.buyer, participants: c.participants }) };
+        const body = await encryptChat({ trade: c.channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'x' }, tk: c.tk });
+        return { envelope: await signChatEnvelope(body, c.ids.buyer) };
       };
-      const res = await mod.b.post(url(code, '/messages'), { text: 'Hello' });
+      const res = await mod.b.post(url(code, '/messages'), await msg(code, 'Hello'));
       expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 502, error: 'moderation-unavailable' });
     } finally {
       moderation.chatSend = realSend;
     }
-    expect((await mod.b.post(url(code, '/messages'), { text: 'One.' })).statusCode).toBe(201);
+    expect((await mod.b.post(url(code, '/messages'), await msg(code, 'One.'))).statusCode).toBe(201);
     // The same seq again (a replay) is refused.
+    const replayBody = await msg(code, 'Two.', { seq: 0 });
     moderation.chats.get(code)!.seq = 0;
-    const replay = await mod.b.post(url(code, '/messages'), { text: 'Two.' });
+    const replay = await mod.b.post(url(code, '/messages'), replayBody);
     expect({ status: replay.statusCode, error: errorOf(replay) }).toEqual({ status: 502, error: 'moderation-unavailable' });
     const { rows } = await deps.db.query("select count(*)::int as n from chat_envelopes where chat = $1 and sender_role = 'mod'", [chat]);
     expect(rows[0]).toEqual({ n: 1 });
@@ -948,20 +1130,52 @@ describe('g62: maintenance holds the freeze clock', () => {
 describe('Task 11 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
-  it('NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is read through the proof pipeline once its storage lands', async () => {
-    // @x2f/proof (sealProofEnvelope, `proof.unblurred` sealed to the mod only, decryptProof) is on
-    // main, but no API table stores a proof's ciphertext yet (Plan 5 Tasks 13-15). When one lands:
-    // the moderator's unblurred view follows the key-membership design (the proof key re-wrapped to
-    // the staff device key, decrypted in staff-web; NEVER bytes relayed through this API, review
-    // 8 Nov I-1), and the proof-request route asks the trader who uploaded the proof instead of the
-    // side the moderator names.
+  it('NEEDS_P4_CHAT_MEMBERSHIP (was NEEDS_P5_PROOF_ENVELOPE): proof storage has landed, and still no route relays a proof to staff', async () => {
+    // Plan 5 Task 14 (wip/lead-proof-store, 12 Nov) stores proof ciphertexts (migration 580,
+    // apps/api/src/proofs). The moderator's unblurred view still follows the key-membership design
+    // (the proof key re-wrapped to the staff device key, decrypted in staff-web; NEVER bytes relayed
+    // through this API, review 8 Nov I-1): until it lands there is no staff proof route and no
+    // internal proof read, and a trader's GET of an `unblurred` proof is 404 (proofs.test.ts).
+    // OPEN (lead): the proof-request route still asks the side the moderator names; whether it
+    // should instead ask only a side that has uploaded a proof is a decision, not made here.
     const { readdirSync, readFileSync } = await import('node:fs');
     const dir = `${ROOT}apps/api/migrations/`;
     const sql = readdirSync(dir).map((f) => readFileSync(dir + f, 'utf8')).join('\n');
-    // The blur check's bookkeeping (migration 367, P-012/P-013: `blur_check_proofs` holds only a
-    // trade code, a proof id and whether to ask) stores no proof, so it is not the storage meant here.
-    expect(/create table\s+(?!blur_check_)\w*proof/i.test(sql), 'a proof table landed: wire the ProofSource (see this test)').toBe(false);
+    expect(/create table\s+trade_proofs\b/i.test(sql)).toBe(true);
+    const staff = readFileSync(`${ROOT}apps/api/src/disputes/staffRoutes.ts`, 'utf8');
+    expect(staff).not.toMatch(/['`]\/staff\/v1\/disputes\/:code\/proof['`]/);
+    // Review I2: the whole API tree, not only staffRoutes.ts and src/internal: only proofs/ and the
+    // retention job list may name the proof tables, the store or a proof route (src/staff/*,
+    // trades/held.ts and disputes/moderationClient.ts included).
+    const SRC = `${ROOT}apps/api/src/`;
+    const files = (readdirSync(SRC, { recursive: true }) as string[]).filter((f) => /\.ts$/.test(f)).map((f) => f.replace(/\\/g, '/'));
+    expect(files).toEqual(expect.arrayContaining(['staff/app.ts', 'trades/held.ts', 'disputes/moderationClient.ts', 'disputes/staffRoutes.ts']));
+    expect(files.some((f) => f.startsWith('internal/'))).toBe(true);
+    for (const f of files) {
+      if (f.startsWith('proofs/') || f === 'retentionJobs.ts') continue;
+      const c = readFileSync(SRC + f, 'utf8');
+      // Proof stack: the blur check's announce asks only whether a stored proof exists
+      // (isStoredProof from the store, existence only); it names no table and reads no ciphertext.
+      if (f === 'proof/blurCheck.ts') {
+        expect(c, f).toMatch(/import \{ isStoredProof \} from '\.\.\/proofs\/store\.js';/);
+        expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|ciphertext/);
+        // Stack review S-M1: that one import and nothing else from the store (no second named import,
+        // no namespace import), and no dynamic import(.
+        expect(c.match(/proofs\/store/g), f).toHaveLength(1);
+        expect(c, f).not.toMatch(/\bimport\s*\(/);
+        continue;
+      }
+      expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|proofs\/store/);
+      // The route lists (auth/frontDoor.ts, auth/hold.ts) name the trader's proof route; staff,
+      // internal and dispute code never does.
+      if (/^(staff|internal|disputes)\//.test(f) || f === 'trades/held.ts') expect(c, f).not.toMatch(/proofs\/:id/);
+    }
+    // Review I1: the GET's kind filter itself (a match on the import of readableProof proved nothing).
+    const store = readFileSync(`${SRC}proofs/store.ts`, 'utf8');
+    const readable = /export async function readableProof\b[\s\S]*?\n}/.exec(store)?.[0] ?? '';
+    expect(readable).toMatch(/\bkind in \('proof', 'evidence'\)/);
     expect(existsSync(`${ROOT}packages/proof`)).toBe(true);
   });
+
 
 });

@@ -1,16 +1,15 @@
 import { GRANTABLE_PERMS, can, type GrantablePerm } from '@x2f/staff';
-import { useEffect, useState } from 'react';
-import { members as fetchMembers, setGrants, type Member } from '../api.js';
+import { useState } from 'react';
+import { setGrants, type Member } from '../api.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { CantDoThat, Button, Notice } from '../ui/kit.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { ROLE_LABELS } from '../ui/RoleChip.js';
-import { PageTitle } from '../ui/StaffShell.js';
 import '../ui/staff.css';
 
 // DESIGN: not drawn. The role checkboxes have no board yet (J-21; design draws them on StaffList):
-// plain kit pieces until then. Plan 4 Task 17 builds the rest of StaffList (invites, hours, switch
-// off) around them. Every sentence on this page is draft copy. COPY-UNSIGNED
+// plain kit pieces until then, under StaffList's table (Plan 4 Task 17). Every sentence here is
+// draft copy, the heading "Extra access" (the staff tour's P3 title) included. COPY-UNSIGNED
 
 /** Each per-person checkbox (GRANTABLE_PERMS, owner Q60 and Plan 4 Task 30), as the page words it. */
 export const GRANT_LABELS: Readonly<Record<GrantablePerm, { title: string; help: string }>> = {
@@ -27,40 +26,23 @@ const sorted = (g: readonly GrantablePerm[]) => [...new Set(g)].sort() as Granta
 const same = (a: readonly GrantablePerm[], b: readonly GrantablePerm[]) => sorted(a).join() === sorted(b).join();
 
 /**
- * The owner's Staff page, for now the per-person checkboxes only (owner Q60, 6 Nov: moderators'
- * and helpers' permissions are granular; a senior moderator always has Feedback). One row per staff
- * member who is not the owner (invites get their boxes once they join). A box the role already
- * holds is ticked and fixed. "Save" opens the key tap bound to the person and the exact sorted list
- * (`set-grants`), and only then `PUT /staff/v1/members/:id/grants` stores it; the API checks both
- * the tap and the list (apps/api/src/staff/members.ts), so the page decides nothing.
+ * The per-person checkboxes (owner Q60, 6 Nov: moderators' and helpers' permissions are granular;
+ * a senior moderator always has Feedback), shown on the Staff page under the table (StaffList.tsx,
+ * Plan 4 Task 17). One card per staff member who is not the owner (invites get their boxes once
+ * they join). A box the role already holds is ticked and fixed. "Save" opens the key tap bound to
+ * the person and the exact sorted list (`set-grants`), and only then `PUT
+ * /staff/v1/members/:id/grants` stores it; the API checks both the tap and the list
+ * (apps/api/src/staff/members.ts), so the page decides nothing.
  */
-export function StaffGrants() {
-  const [list, setList] = useState<Member[] | null>(null);
-  const [fault, setFault] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    fetchMembers().then(
-      (r) => {
-        if (live) setList(r.members.filter((m) => m.accountId !== null && m.role !== 'owner'));
-      },
-      (e: unknown) => {
-        if (live) setFault(faultText(e, 'X2F could not load the staff list just now. Reload to try again.'));
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
-
+export function StaffGrantsSection({ members }: { members: readonly Member[] }) {
+  if (members.length === 0) return null;
   return (
-    <section data-screen="staff">
-      <PageTitle title="Staff">
-        <p className="x2f-staff-page__lead">Tick what each person may do on top of their role. Each change needs a tap of your security key.</p>
-      </PageTitle>
-      {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
-      {list !== null && list.length === 0 ? <p>No staff yet.</p> : null}
-      {list?.map((m) => <MemberGrants key={m.accountId} member={m} />)}
+    <section aria-label="Extra access" className="x2f-stack x2f-staff-grants">
+      <h2 className="x2f-h2">Extra access</h2>
+      <p className="x2f-staff-page__lead">Tick what each person may do on top of their role. Each change needs a tap of your security key.</p>
+      {members.map((m) => (
+        <MemberGrants key={m.accountId} member={m} />
+      ))}
     </section>
   );
 }
@@ -140,6 +122,8 @@ function MemberGrants({ member }: { member: Member }) {
           intent={{ kind: 'set-grants', accountId: id, grants: draft }}
           title={`Change what ${name} may do`}
           body="Tap your security key to save this change."
+          // X3: the person's name next to the account id the key signs. COPY-UNSIGNED.
+          labels={{ accountId: name }}
           onDone={(tapId) => void save(tapId)}
           onCancel={() => setTapping(false)}
         />

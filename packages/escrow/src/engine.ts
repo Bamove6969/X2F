@@ -13,7 +13,13 @@ export type EscrowErrorCode =
   /** The daemon did not answer in time (DAEMON_TIMEOUT_MS) or could not be reached: retry later. */
   | 'daemon-unavailable'
   /** A peer's post-release multisig info (PartyHandle.importSpendInfo) is malformed, too big, or not for this escrow. */
-  | 'bad-spend-info';
+  | 'bad-spend-info'
+  /**
+   * The multisig is not a 2-of-3 of three distinct signers: a peer's setup message that is not a
+   * round-1 kex message or names a signer key already taken, or a finished wallet of another shape.
+   * No address is given.
+   */
+  | 'bad-multisig';
 
 /** Every daemon call (wallet sync, tx lookup, submit, building a tx) gives up after this long. */
 export const DAEMON_TIMEOUT_MS = 15_000;
@@ -78,6 +84,10 @@ export interface EscrowSession {
   prepare(): Promise<string>;
   make(peers: string[]): Promise<string>;
   exchange(peers: string[]): Promise<{ hex: string; ready: boolean }>;
+  /**
+   * The escrow address, only from a finished 2-of-3 wallet: EscrowError('not-ready') before setup
+   * ends, EscrowError('bad-multisig') for a wallet of any other shape.
+   */
   address(): Promise<string>;
   /** Throws EscrowError('daemon-unavailable') when the daemon times out or can't be reached. */
   sync(): Promise<{ balance: bigint; unlocked: bigint }>;
@@ -98,6 +108,20 @@ export interface EscrowSession {
    * engine). Optional for test doubles.
    */
   proveTx?(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[]; spendsEscrow: boolean } | null>;
+  /**
+   * With a tx's secret key, what each address received (monero check_tx_key, through this wallet's
+   * own daemon connection only, so it works in the web bundle too) and whether the tx is still in
+   * the pool. Null when the key does not fit the tx or the tx is unknown. Unlike proveTx it says
+   * nothing about the inputs: the caller pairs it with spentBy (this wallet's own view of the
+   * escrow spent by that tx in a block). `feeAtomic` is the tx's own network fee, from the daemon's
+   * copy of the tx (review N-m1: payout 0 may be short by exactly that); with `knownFeeAtomic` (the
+   * fee the builder saved from buildRelease, review r-m1) that one is returned and the daemon is not
+   * asked for it. Review M1/m4 (20 Nov). 'unavailable' when wallet2 could not
+   * read the tx from its daemon (a network error, or a node proxy that refused the read): nothing was
+   * checked, and the caller never counts it as proven. In the web app the read goes through the
+   * node proxy's `/gettransactions` (allowed again, lead 2026-11-20). Optional for test doubles.
+   */
+  txKeyPays?(txHash: string, txKey: string, addresses: string[], knownFeeAtomic?: bigint): Promise<{ inPool: boolean; received: bigint[]; feeAtomic: bigint } | null | 'unavailable'>;
   exportState(): Promise<string>;
   /** Import every peer's state in one call; importing them separately leaves stale data. */
   importState(peers: string[]): Promise<void>;
@@ -106,13 +130,22 @@ export interface EscrowSession {
    * tx's secret key when the engine gives it: the builder's wallet does not store it (only the
    * submitter's does), so the party keeps it to prove the payment later (review I1).
    */
-  buildRelease(payouts: Payout[]): Promise<{ txSet: string; payouts: Payout[]; txKey?: string }>;
+  buildRelease(payouts: Payout[]): Promise<{ txSet: string; payouts: Payout[]; txKey?: string; feeAtomic?: bigint }>;
   /** Check the tx set against `expected`, then sign exactly that set and broadcast it. */
   cosign(txSet: string, expected: Payout[]): Promise<string>;
-  /** Decode and check a tx set without signing. Any failure is EscrowError('payout-mismatch'). */
-  checkRelease(txSet: string, expected: Payout[]): Promise<void>;
-  /** cosign's first half: check, then sign. Nothing is signed if the check fails. */
-  signRelease(txSet: string, expected: Payout[]): Promise<{ signedHex: string; txHash: string }>;
+  /**
+   * Decode and check a tx set without signing. Any failure is EscrowError('payout-mismatch'), except
+   * a daemon that gives no fee estimate to bound the network fee by: EscrowError('daemon-unavailable').
+   * Resolves with the network fee bound it checked against (MAX_NETWORK_FEE at most); with `maxFee`,
+   * that bound is used and the daemon is not asked.
+   */
+  checkRelease(txSet: string, expected: Payout[], maxFee?: bigint): Promise<bigint>;
+  /**
+   * cosign's first half: check, then sign. Nothing is signed if the check fails. `maxFee` is the
+   * bound the earlier checkRelease of this set resolved with (review M3): the re-check then asks
+   * the daemon nothing. Without it, the bound is read again (a state saved before it was kept).
+   */
+  signRelease(txSet: string, expected: Payout[], maxFee?: bigint): Promise<{ signedHex: string; txHash: string }>;
   /** cosign's second half: broadcast a signed set; returns its tx hash. */
   submit(signedHex: string): Promise<string>;
   /** Where the daemon has this tx. Throws EscrowError('daemon-unavailable') on a timeout. */

@@ -1,7 +1,9 @@
 import { Link } from 'react-router';
 import { Released } from '../Released.js';
 import { SellerConfirm } from '../SellerConfirm.js';
-import { methodOf, type ReleaseEscrow, type ReleaseTrade } from './view.js';
+import { TradeReview } from '../../review/TradeReview.js';
+import { SellerProofSlot } from '../../proof/SmartProofCard.js';
+import { amounts, methodOf, publicName, type ReleaseEscrow, type ReleaseTrade } from './view.js';
 
 /**
  * Task 24's screens in the trade room (TradeRoom routes role × state; lead's plan: "Task 24:
@@ -48,8 +50,17 @@ function ChatLink({ code }: { code: string }) {
 /** SellerConfirm or Released for the room's view; nothing for a state that is not Task 24's. */
 export function ReleaseRoomScreen({ code, view, escrow, refresh, serverClock }: ReleaseRoomProps) {
   const screen = releaseScreenOf(view);
-  if (screen === 'released') return <Released trade={view} escrow={escrow} />;
+  if (screen === 'released') {
+    // Plan 5 Task 6: the rating card under Released once the trade is released (not while the
+    // buyer's device still co-signs in `settling`); TradeReview asks the API whether this side may rate.
+    const review =
+      view.state === 'released' ? <TradeReview code={code} counterparty={publicName(view.counterparty)} rated={view.role === 'buyer' ? 'seller' : 'buyer'} /> : undefined;
+    return <Released trade={view} escrow={escrow} reviewSlot={review} />;
+  }
   if (screen === 'seller-confirm') {
+    // Plan 5 Task 16: the smart proof card, from the buyer's newest payment proof in the chat, checked
+    // on this device against the total THIS device accepts (behind VITE_X2F_PROOF_UPLOAD).
+    const total = amounts(view, escrow)?.fiat ?? null;
     return (
       <SellerConfirm
         escrowCode={code}
@@ -59,6 +70,7 @@ export function ReleaseRoomScreen({ code, view, escrow, refresh, serverClock }: 
         onTrade={() => void refresh()}
         serverClock={serverClock}
         headerAction={<ChatLink code={code} />}
+        proofSlot={<SellerProofSlot code={code} trade={view} fiatCents={escrow.fiatCents} total={total} clock={serverClock} />}
       />
     );
   }

@@ -18,6 +18,7 @@ import { appealWaiting, syncNoReviewerAlert } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, startDispute, withDispute } from './store.js';
 import { refuseHeldTradeEvent } from '../trades/held.js';
+import { disputeGrant } from '../chat/grants.js';
 
 /**
  * Trader-side disputes (Plan 3 Task 27; spec 2.3, 6.6), on Plan 4's dispute machine (Task 10):
@@ -92,7 +93,8 @@ export interface DisputeView {
    * Plan 4 Task 11: the moderator's latest request for this trader's unblurred proof (only the side
    * it names sees it), from server records only.
    */
-  proofRequest: { username: string; at: string } | null;
+  /** `sentAt`: when this side's unblurred copy answering the request was stored (Plan 5 Task 15), or null. */
+  proofRequest: { username: string; at: string; sentAt: string | null } | null;
   /** The appeal window's length in hours, from the owner's settings. */
   appealWindowH: number;
   /**
@@ -163,8 +165,8 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
   const rec = await loadDisputeRecord(q, row.code);
   if (rec === null) return null;
   const d = rec.dispute;
-  const extra = (await q.query<{ incident_id: string; proof_request_side: Party | null; proof_requested_at: Date | null; proof_requested_by: string | null }>(
-    'select incident_id, proof_request_side, proof_requested_at, proof_requested_by from disputes where code = $1 and seq = $2',
+  const extra = (await q.query<{ incident_id: string; proof_request_side: Party | null; proof_requested_at: Date | null; proof_requested_by: string | null; proof_request_sent_at: Date | null }>(
+    'select incident_id, proof_request_side, proof_requested_at, proof_requested_by, proof_request_sent_at from disputes where code = $1 and seq = $2',
     [row.code, d.seq],
   )).rows[0]!;
   const r = (await q.query<RulingRow>('select * from dispute_rulings where code = $1 and seq = $2 order by round desc limit 1', [row.code, d.seq])).rows[0];
@@ -219,7 +221,7 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
     appealWaiting: await appealWaiting(q, d),
     proofRequest:
       extra.proof_request_side === side && extra.proof_requested_at !== null && extra.proof_requested_by !== null
-        ? { username: extra.proof_requested_by, at: extra.proof_requested_at.toISOString() }
+        ? { username: extra.proof_requested_by, at: extra.proof_requested_at.toISOString(), sentAt: extra.proof_request_sent_at?.toISOString() ?? null }
         : null,
     // Lead review 7 Nov: the appeal window's length as the owner set it (settings), for the ruling page.
     appealWindowH: (await disputeSettings(q)).appealWindowH,
@@ -306,16 +308,27 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
   // `dispute` is set (by a trader or the system) a new one is refused, whatever rows exist, so a
   // purge of old dispute rows can never re-open a decided case.
   app.post('/v1/trades/:code/dispute', { preHandler: owner }, async (req) => {
-    const b = bodyOf(req, ['reason', 'note']);
+    // Design build task 6: `grant`, the disputer's signed grant of the chat key to the moderator
+    // (chat/grants.ts), required once the trade's chat has a key record.
+    const b = bodyOf(req, ['reason', 'note', 'grant']);
     if (!isReason(b.reason)) throw new ApiError(400, 'bad-request');
     if (!isText(b.note, NOTE_MAX)) throw new ApiError(400, 'bad-request');
     const reason = b.reason;
     const note = b.note;
     const { row, side } = await participant(req);
     const deps = req.server.deps;
+    const keepGrant = await disputeGrant(deps.db, row.code, side, b.grant, deps.clock());
     try {
       await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, { type: 'open-dispute' }, side, async (client, prev, _next, now) => {
         if (prev.dispute !== null) throw new ApiError(409, 'dispute-exists');
+        if (keepGrant !== null) await keepGrant(client);
+        else {
+          // Review F5: a key record posted after the check above (the key route holds the chat row's
+          // lock while it inserts) still needs the disputer's grant.
+          await client.query('select 1 from chats where trade_code = $1 for share', [row.code]);
+          const keyed = await client.query('select 1 from chat_keys k join chats c on c.code = k.chat where c.trade_code = $1', [row.code]);
+          if (keyed.rows.length > 0) throw new ApiError(400, 'grant-required');
+        }
         // A held trade: the held account's own sessions are refused (403 recovery-hold); the
         // partner may open one (owner G7; lead hold v3 review item 5 and minor).
         await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');
@@ -375,7 +388,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
           d.code,
           { beforeId: entry.id },
         );
-        // NEEDS_TASK_25_LIEN_ON_APPEAL: the appellant's round-1 lien is suspended here (Task 25).
+        // Task 25 (J-06): the appellant's own round-1 lien is suspended by withDispute's lien rules
+        // (disputes/lien.ts) in this same transaction, once this change is accepted.
         const next = applyDispute(d, { type: 'appeal', involved: [...involved] }, by, now, s);
         // D-011 (lead default): nobody may review it. It waits in the queue (no involved person is
         // let in instead, R37) and the owner is alerted in this transaction, marked so the dispute

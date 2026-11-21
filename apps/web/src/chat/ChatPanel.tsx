@@ -44,6 +44,7 @@
  * pre-trade chat on an offer (the quote's Chat button).
  */
 import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
+import { ChatProof } from '../screens/proof/ChatProof.js';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
@@ -74,9 +75,13 @@ const SEND_ERRORS: Record<ChatFailure, string> = {
   'bad-text': 'Type a message first, and leave out hidden characters.',
   // COPY-UNSIGNED (J-08): the worker refused the package (a box the page's own check let through).
   'bad-details': 'Check the details and try again.',
+  // COPY-UNSIGNED (Plan 5 Task 15): the worker refused a proof's envelope (the composer never sends one).
+  'bad-proof': "Couldn't send this proof. Try again.",
   'too-large': 'This message is too long.',
   'slow-down': "You're sending messages too fast. Wait a minute and try again.",
   refused: "Couldn't send. Check your connection and try again.",
+  // COPY-UNSIGNED (proof review M2): only a proof's send is ever uncertain, and the composer never sends one.
+  uncertain: 'This may have been sent. Check the chat before you send it again.',
   unavailable: "Couldn't send. Check your connection and try again.",
   'not-found': CHAT_CLOSED,
 };
@@ -110,6 +115,9 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   const [announce, setAnnounce] = useState('');
   const alive = useRef(true);
   const seq = useRef(0);
+  /** The chat whose sync is running (null: none), and whether another was asked for meanwhile. */
+  const inFlight = useRef<string | null>(null);
+  const again = useRef(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const list = useRef<HTMLOListElement>(null);
   /** The newest line id seen so far (null before the first snapshot: the history is never announced). */
@@ -134,20 +142,35 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   }, []);
 
   const sync = useCallback(async (): Promise<void> => {
-    const mine = ++seq.current;
+    // One sync in flight per chat; a poll, live event or read-on asked for meanwhile runs once after
+    // it. Starting each one at once let a newer one discard every older result (`seq`), so on a
+    // device where a sync takes longer than the poll (CHAT_POLL_MS.waiting) none ever landed.
+    if (inFlight.current === chat) {
+      again.current = true;
+      return;
+    }
+    inFlight.current = chat;
     try {
-      const s = await chatClient().sync(chat);
-      if (alive.current && mine === seq.current) {
-        const grew = take(s);
-        setSnap(s);
-        if (tradeCode) publishPaySnapshot(tradeCode, s);
-        setLoadFailed(null);
-        // Stopped at the page cap: read on at once, but only while it keeps finding new lines.
-        if (s.more && grew) void sync();
-      }
-    } catch (e) {
-      // A failed re-sync keeps the last lines on screen.
-      if (alive.current && mine === seq.current) setLoadFailed(failureOf(e));
+      do {
+        again.current = false;
+        const mine = ++seq.current;
+        try {
+          const s = await chatClient().sync(chat);
+          if (alive.current && mine === seq.current) {
+            const grew = take(s);
+            setSnap(s);
+            if (tradeCode) publishPaySnapshot(tradeCode, s);
+            setLoadFailed(null);
+            // Stopped at the page cap: read on at once, but only while it keeps finding new lines.
+            if (s.more && grew) again.current = true;
+          }
+        } catch (e) {
+          // A failed re-sync keeps the last lines on screen.
+          if (alive.current && mine === seq.current) setLoadFailed(failureOf(e));
+        }
+      } while (again.current && alive.current && inFlight.current === chat);
+    } finally {
+      if (inFlight.current === chat) inFlight.current = null;
     }
   }, [chat, take, tradeCode]);
 
@@ -228,6 +251,12 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
     <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={phase ?? 'loading'}>
       <p className="x2f-chat__notice">{CHAT_NOTICE}</p>
       <BlockAction displayName={name} onBlocked={() => void sync()} />
+      {snap?.systemCalled ? (
+        // Design build task 7 (T2): this device handed the chat key to the moderator on the system's dispute. COPY-UNSIGNED
+        <p className="x2f-chat__system" data-system="system-dispute">
+          A moderator has been called by the system.
+        </p>
+      ) : null}
       {snap?.disputeOpen && dispute === undefined ? (
         <p className="x2f-chat__system" data-system="dispute">
           A dispute is open. A moderator can read this conversation and write here.
@@ -257,7 +286,10 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
                 <span className="x2f-chat__hidden">: </span>
               </span>
               {/* A line this device showed before that the server no longer serves (review I2): a gap, not a silence. */}
-              {l.notice !== undefined ? (
+              {l.proof !== undefined ? (
+                // NEEDS_PROOF_RECEIVE: a proof is fetched and decrypted here, shown only through ProofThumb.
+                tradeCode ? <ChatProof tradeCode={tradeCode} proof={l.proof} /> : null
+              ) : l.notice !== undefined ? (
                 <span className="x2f-chat__autonotice">{CHAT_NOTICES[l.notice]}</span>
               ) : l.pay !== undefined ? (
                 <PayCard pay={l.pay} />
@@ -515,6 +547,8 @@ type Resolved =
   | { kind: 'loading' }
   | { kind: 'ready'; chat: string }
   | { kind: 'failed'; message: string }
+  // Lead call (20 Nov): a closed trade that never had a chat (409 trade-closed). Not an error.
+  | { kind: 'empty' }
   // A rule of X2F's (Plan 5 Task 21): shown in CantDoThat, then only the notice stays.
   | { kind: 'refused'; code: CantDoCode };
 
@@ -531,6 +565,11 @@ function useResolvedChat(open: () => Promise<string>, key: string): Resolved {
       .catch((e: unknown) => {
         if (!live) return;
         const code = e instanceof ApiCallError ? e.code : null;
+        // Before the CantDoThat codes: 'trade-closed' is one of them, but here it is not a refusal.
+        if (code === 'trade-closed') {
+          setR({ kind: 'empty' });
+          return;
+        }
         if (isCantDoCode(code)) {
           setR({ kind: 'refused', code });
           return;
@@ -554,9 +593,16 @@ function Resolving({ r, name, tradeCode, dispute, pay }: { r: Resolved; name: st
   const [closed, setClosed] = useState(false);
   if (r.kind === 'ready') return <ChatPanel chat={r.chat} name={name} tradeCode={tradeCode} dispute={dispute} pay={pay} />;
   return (
-    <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={r.kind === 'loading' ? 'loading' : 'failed'}>
+    <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={r.kind === 'loading' || r.kind === 'empty' ? r.kind : 'failed'}>
       <p className="x2f-chat__notice">{CHAT_NOTICE}</p>
-      {r.kind === 'loading' ? (
+      {r.kind === 'empty' ? (
+        <div className="x2f-chat__statusbox" role="status">
+          {/* COPY-UNSIGNED (lead call 20 Nov): the closed trade's empty chat, not a refusal. not-a-refusal */}
+          <p className="x2f-chat__status" data-chat-empty="">
+            This trade has no chat.
+          </p>
+        </div>
+      ) : r.kind === 'loading' ? (
         <div className="x2f-chat__statusbox" role="status">
           <p className="x2f-chat__status">Opening the chat…</p>
         </div>

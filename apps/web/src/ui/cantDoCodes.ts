@@ -20,6 +20,8 @@ export const LAUNCH_CAP_TEXT = `$${(LAUNCH_TRADE_CAP_USD_CENTS / 100n).toLocaleS
 export const CANT_DO_CODES = [
   // Plan 3 Task 5 (take; on the main line since 2026-10-29).
   'starter-limit',
+  // Plan 4 Task 26: the account's own limit, approved by a senior moderator (the cap only, never why).
+  'account-limit',
   'not-enough-trades',
   'own-offer',
   'already-waiting',
@@ -35,6 +37,12 @@ export const CANT_DO_CODES = [
   'security-key-limit',
   'login-name-set',
   'last-login-method',
+  // Owner, 16 Nov 2026: the authenticator app goes only with a password (no TOTP without one, no
+  // password removal while TOTP is on), and a password never stands alone. totp-needs-password is
+  // API only, no words here: the web offers the authenticator app only with a password.
+  'totp-needs-password',
+  'password-has-totp',
+  'password-alone',
   'method-not-allowed',
   'account-disabled',
   // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key
@@ -78,9 +86,10 @@ export const CANT_DO_CODES = [
   'vendor-needs-key',
   // Plan 5 Task 3: rate (or skip rating) your last trade first (the rate-first gate, spec 5.1).
   'review-pending',
-  // Guessed for refusals whose API tasks are not on the main line yet (Plan 4's lien and trade
-  // ban): check them when those land.
+  // Plan 4 Task 25 (J-06): an active lien from a dispute (409 `lien` on post, relist, take and set-up).
   'lien',
+  // Guessed for a refusal whose API task is not on the main line yet (Plan 4's trade ban): check it
+  // when it lands.
   'trade-ban',
   // Plan 4 Task 4: a staff member's login hours (a staff login, and a staff session when the
   // window closes). Classified here for the error-code test; its words come with the staff web app
@@ -101,6 +110,11 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 4 Tasks 5 and 7: staff-API answers traders never get (their words come with the staff web
   // app, Plan 4 Task 16).
   'tap-invalid': 'a staff security-key tap (staff app only)',
+  // Plan 4 Task 12 (J-06): the staff ruling routes.
+  'reason-too-short': "a ruling's reason under 40 characters (staff app only)",
+  'same-person': 'a ruling approved by its own proposer (staff app only)',
+  'account-action-unavailable': 'an account action on the ruling card (staff app only)',
+  'dispute-paused': 'a ruling while maintenance pauses the dispute (staff app only)',
   'invite-invalid': 'a staff invite link that is used, expired or cancelled (staff app only)',
   'security-key-required': 'a staff sign-up step: a security key must be added (staff app only)',
   'two-factors-required': 'a staff sign-up step: a second login method must be added (staff app only)',
@@ -115,13 +129,23 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'quote-invalid': 'a staff clock-out sheet that is not this session\'s (staff app only)',
   'quote-expired': 'a staff clock-out sheet shown too long ago: it is shown again (staff app only)',
   'quote-changed': 'a staff clock-out sheet whose pay changed meanwhile: it is shown again (staff app only)',
+  // Plan 4 Task 19 (re-review 3 m1): the training case changed after the curator opened it.
+  'case-changed': 'a training case that changed after the curator opened it: reload and review again (staff app only)',
   'both-owner-keys-required': "a change to the owner's keys is tapped with both owner keys (staff app only)",
   'passkey-is-security-key': 'a staff passkey must be another device than the security key (staff app only)',
+  // Plan 5 Task 11 (P5-A23): the moderator's fingerprint tick box on the past-reputation page.
+  'confirm-fingerprint': 'an input check: the moderator must tick that the archive shows the fingerprint (staff app only)',
+  'confirm-profile': "an input check: the moderator must tick that the archive is the trader's profile on the site (staff app only)",
+  'reviewer-own-key': "a moderator's approval of a claim backed by their own login key (staff app only; the staff app shows it with CantDoThat)",
   'bad-request': 'a malformed request (a fault)',
   // Hold model v3: the drafts submitted are not the ones there are (another tab changed them): reload and review again.
   'changes-changed': 'a state conflict: the list changed since it was reviewed',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',
+  // Plan 5 Task 15: a picked proof image that can't be read (ProofInputError); shown as PROOF_CANT_USE.
+  unsupported: 'an input check on the picked proof image',
+  // Proof review M2: a proof's post got no answer (it may have been stored); shown as PROOF_SEND_UNCERTAIN.
+  uncertain: 'a fault: no answer, so the send may have gone through',
   internal: 'a server fault',
   busy: 'the server is busy (try again)',
   'display-name-invalid': 'an input check on a typed name',
@@ -187,12 +211,18 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   maintenance: "the site is in maintenance: the Maintenance screen with the owner's message",
   'out-of-range': 'an input check on the amount',
   'ad-busy': 'someone else is taking the offer (try again)',
-  'wallet-not-ready': 'pick another wallet (the wait is explained on Wallets)',
+  'wallet-not-ready': 'pick another wallet (the wait is explained on Wallets); Make default is never offered on a waiting wallet',
+  'wallet-one-time': 'an input check: the app never offers Make default on a one-time wallet',
   'event-not-allowed': 'the trade state machine (the trade has moved on)',
   'wrong-state': 'the trade state machine (the trade has moved on)',
   'wrong-party': 'the trade state machine (not this side)',
   'too-early': "the trade's own clock",
   'too-late': "the trade's own clock",
+  // Plan 4 Task 12 (A6): the seller's payment proof for a ruling.
+  'proof-invalid': 'an input check on the payment proof (the tx and key do not show the payment)',
+  'proof-replayed': 'an input check on the payment proof (that tx was already used, or predates the dispute)',
+  'proof-pending': 'a wait: the proof sent earlier is waiting for its confirmations',
+  'node-unavailable': "X2F's Monero node could not be asked (a fault; try again)",
   'not-releasable': 'the escrow is not unlocked yet (wait)',
   'total-changed': 'the trade grew (re-read and confirm)',
   'identity-exists': 'a device step already done (a fault)',
@@ -205,6 +235,11 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 5 Task 3: reviews.
   'not-reviewable': 'the trade cannot be rated (its state: not released, or a dispute not yet over)',
   'review-exists': 'already rated (a double submit)',
+  // Plan 5 Task 19: review disputes. The Dispute button shows only on a review that can still be
+  // disputed, so each is a race or a stale screen, never X2F's rule refusing the user.
+  'not-disputable': 'the review was removed or is on hold (its state)',
+  'review-disputed': 'already disputed (a double submit or a stale screen)',
+  'dispute-decided': 'a moderator already decided this review dispute (staff only)',
   'bad-shape': 'an input check on the review form',
   'bad-stars': 'an input check on the review form',
   'bad-phrase': 'an input check on the review form',
@@ -227,6 +262,28 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 3 Task 20 (encrypted chat): the chat's own protocol and state, never a rule about the user.
   'chat-not-ready': 'the chat is still being secured (wait)',
   'stale-seq': 'a device step out of order (the engine re-syncs; a fault)',
+  // Design build task 4 (chat membership keys): the chat's signed key record; device faults or races, never refusals.
+  'bad-key-record': 'a device check on the chat key (a fault)',
+  'key-exists': 'the other side made the chat key first (the engine reads it)',
+  'no-key': 'the chat has no key yet (the engine makes one)',
+  'grant-required': 'the dispute needs the chat key grant (the app adds it and asks again)',
+  'bad-grant': 'a device check on the dispute grant (a fault)',
+  'grant-not-needed': 'no fallback grant is needed (the engine moves on)',
+  // Design build task 9: the moderation process's refusals of a moderator's read or message; staff app only.
+  'device-not-certified': 'a staff answer: this staff device is not confirmed (staff app only)',
+  'not-on-case': 'a staff answer: the moderation process does not see this person on the case (staff app only)',
+  'not-disputed': 'a staff answer: the moderation process does not see the trade disputed (staff app only)',
+  'no-grant': 'a staff answer: no trader has handed the chat key to the moderator yet (staff app only)',
+  replayed: 'a staff answer: that moderator message was already sent (staff app only)',
+  'stale-countersign': 'a staff answer: the moderator message was signed too long ago (staff app only)',
+  'bad-countersign': 'a staff device check on the moderator message (a fault; staff app only)',
+  'gate-unavailable': 'a staff answer: the moderation process has no ruling gate (staff app only)',
+  // Design build task 8: staff device certification; staff app only, never a trader answer.
+  'device-exists': 'a staff answer: that staff device key is already certified (staff app only)',
+  'device-limit': 'a staff answer: the staff member already has 3 certified devices (staff app only)',
+  'chat-keyed': 'a staff answer: the dev-only moderator send cannot write to a keyed chat (staff app only)',
+  // Plan 5 Task 15: @x2f/protocol's open() on an envelope sealed past this reader (the unblurred copy for the moderator); the chat engine keeps an `away` receipt, nothing is shown.
+  'not-for-me': 'a chat envelope addressed to someone else (the moderator); never shown',
   'wrong-channel': 'a device check (a fault)',
   'wrong-sender': 'a device check (a fault)',
   'chat-unavailable': 'the trade has no chat (cannot happen since Task 5\'s offer key; a fault)',
@@ -238,6 +295,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Escrow device codes (apps/web/src/escrow), compared on `.code` too.
   'address-mismatch': 'an escrow safety check on this device',
   'bad-outcome': 'an escrow safety check on this device',
+  // AttestationError('bad-time'): issuedAt in this device's future or before the take (review F5).
+  'bad-time': 'an escrow safety check on this device',
   'daemon-unavailable': 'the Monero node is unreachable (a fault)',
   equivocation: 'an escrow safety check on this device',
   'settled-elsewhere': 'the escrow already settled',
@@ -294,6 +353,9 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       if (o.stageName === null) return 'This trade is above a trading limit right now. Try a smaller amount or another offer.';
       if (o.maxOpen !== null) return `Your account is on ${o.stageName} limits: at most ${o.maxOpen} open ${o.maxOpen === 1 ? 'trade' : 'trades'} at once. Finish one first.`;
       return `Your account is on ${o.stageName} limits${o.capText === null ? '' : ` up to ${o.capText} per trade`}. Try a smaller amount.`;
+    case 'account-limit':
+      // COPY-UNSIGNED (Plan 4 Task 26: the trader sees their own cap only, never the reason).
+      return `Your account has a limit${o.capText === null ? '' : ` of ${o.capText}`} per trade. Try a smaller amount.`;
     case 'launch-cap':
       // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
       return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Try a smaller amount.`;
@@ -303,8 +365,12 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       return `This offer needs at least ${o.minTrades} completed ${o.minTrades === 1 ? 'trade' : 'trades'}.`;
     case 'trading-hold':
       return 'Your account is on a trading hold while a dispute is open, so it cannot start trades.';
+    case 'lien':
+      return "Your account has a lien from a dispute, so it can't start trades until you pay back what the ruling says you owe."; // COPY-UNSIGNED (J-06, owner D-008: no trading until the lien is repaid)
     case 'already-waiting':
       return 'You already have a trade on this offer waiting to be funded.';
+    case 'review-pending':
+      return RATE_FIRST.inline;
     case 'offer-busy':
       // The poster's own open-trade limit; nothing says whose limit or how many (Task 5 review M6).
       return "This offer can't take more trades right now. Try again later or pick another offer.";
@@ -317,6 +383,23 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       return 'Your account cannot start this trade right now.';
   }
 }
+
+/** Plan 5 Task 6: the rate-first gate's code (409 on a take, and on the poster's wallet pick). */
+export const REVIEW_PENDING_CODE = 'review-pending' satisfies CantDoCode;
+
+/**
+ * The rate-first gate (spec 5.1; owner 2026-11-01: "submit a review or tap Skip to complete the
+ * trade and clear it"): the sheet that opens when a take or a wallet pick meets `review-pending`
+ * (RateFirstSheet.tsx), and the line left on the quote once it is closed. The title is the lead's
+ * brief's words; all COPY-UNSIGNED.
+ */
+export const RATE_FIRST = {
+  title: 'Rate your last trade to continue', // COPY-UNSIGNED (lead's brief, Plan 5 Task 6)
+  body: 'Each completed trade needs a rating, or a tap on Skip review, before your next trade starts.', // COPY-UNSIGNED
+  inline: 'Rate your last trade, or skip rating it, before you start a new one.', // COPY-UNSIGNED
+  /** Over the card while more than one trade waits. COPY-UNSIGNED */
+  count: (n: number): string => `${n} trades to rate`,
+} as const;
 
 /** What a refused chat open says (Task 20: today only 409 own-offer, a poster on their own offer). */
 export function chatCantDoText(code: CantDoCode): string {
@@ -365,6 +448,8 @@ export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null):
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
+    case 'lien':
+      return "Your account has a lien from a dispute, so you can't post offers until you pay back what the ruling says you owe."; // COPY-UNSIGNED (J-06)
     case 'too-many-offers':
       return `${offerLimitLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED (O-028)
     case 'launch-cap':
@@ -397,6 +482,18 @@ export const LAST_METHOD_CODE = 'last-login-method' satisfies CantDoCode;
 /** 409 `last-login-method` (and the client's own check before asking): the account's only way to log in. */
 export const LAST_METHOD_MESSAGE = 'That is your only way to log in. Add another login method before removing this one.';
 
+/** The code for removing the password while the authenticator app is on (owner, 16 Nov 2026). */
+export const PASSWORD_HAS_TOTP_CODE = 'password-has-totp' satisfies CantDoCode;
+
+/** 409 `password-has-totp` (and the client's own check before asking). COPY-UNSIGNED */
+export const PASSWORD_HAS_TOTP_MESSAGE = 'Your authenticator app works with your password. Remove the authenticator app first.';
+
+/** The code for a change that would leave a password alone (owner, 16 Nov 2026). */
+export const PASSWORD_ALONE_CODE = 'password-alone' satisfies CantDoCode;
+
+/** 409 `password-alone` (and the client's own check before asking). COPY-UNSIGNED */
+export const PASSWORD_ALONE_MESSAGE = 'A password needs the authenticator app or another way to log in. Add one before removing this.';
+
 /** 409 `no-extensions-left` (Plan 3 Task 6): the payment time was already extended as often as allowed. */
 export const NO_EXTENSIONS_LEFT = 'This trade has had all the extra time it can get. Cancel and get your refund, or keep waiting for the payment.';
 
@@ -427,6 +524,8 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
       return 'Only vendor accounts can turn offers on. Switch to a vendor account in Settings, Account type.';
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
+    case 'lien':
+      return 'Your account has a lien from a dispute, so your offers stay off until you pay back what the ruling says you owe.'; // COPY-UNSIGNED (J-06)
     case 'too-many-offers':
       // C2-A1: the cap is per side now (owner 2026-11-01), not per market; O-028: the owner's
       // limit pop-up words (the bulk result carries no cap, so the default 3 + 3). COPY-UNSIGNED
@@ -450,6 +549,8 @@ export function myOffersCantDoRow(code: CantDoCode): string {
       return 'Stayed off: only vendor accounts can turn offers on.';
     case 'trading-hold':
       return 'Stayed off: your account has a trading hold.';
+    case 'lien':
+      return 'Stayed off: your account has a lien.'; // COPY-UNSIGNED (J-06)
     case 'too-many-offers':
       return 'Stayed off: over the offer limit.'; // C2-A1: per side, not per market. COPY-UNSIGNED
     case 'outside-trade-band':
@@ -499,6 +600,7 @@ export const TRADING_HOLD_CODE = 'trading-hold' satisfies CantDoCode;
 export const MY_OFFERS_HIDDEN = {
   'trading-paused': 'On, hidden while trading is paused',
   'trading-hold': 'On, hidden while your account has a trading hold',
+  'lien': 'On, hidden while your account has a lien', // COPY-UNSIGNED (J-06, owner D-008)
   'review-pending': 'On, hidden until you rate your last trade', // COPY-UNSIGNED (Plan 5 Task 3 review M3)
   'method-unavailable': "On, hidden: this payment method isn't available right now",
   // COPY-UNSIGNED (J-16; Task 34 review M4): none of the offer's currencies has a market price now.
@@ -643,6 +745,14 @@ export function accountTypeCantDoText(code: CantDoCode): string {
       return "Your account can't switch to a vendor account right now.";
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Security keys (owner demo 13 Nov 2026: "Unable to add security key").
+
+/** 403 `method-not-allowed` when a security key is added: the server turned this key's model away (staff, owner and member allowlists). */
+export const KEY_MODEL_REFUSED_CODE = 'method-not-allowed' satisfies CantDoCode;
+/** What setup, Backup and Settings say for it (screens/auth/keyErrors.ts). COPY-UNSIGNED */
+export const KEY_MODEL_REFUSED_TEXT = "This key model isn't accepted yet. Use a different security key.";
 
 // ---------------------------------------------------------------------------------------------
 // Hold model v3 (owner G36, 7 Nov 2026): at most 20 changes (drafts and waiting ones) per account.
