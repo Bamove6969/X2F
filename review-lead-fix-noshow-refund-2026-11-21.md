@@ -168,3 +168,67 @@ None for the owner. Both fixes are engineering and change no copy.
 For the lead:
 - Take N-M1's fix (and drop a builder's DONE in `onMessage`) and N-m1's fix (at least `received > 0`; better, the real fee).
 - Add the N-m2 tests, then ask for a short re-review.
+
+---
+
+## Re-review: 9287c6e5 (`git diff 6799d1ab 9287c6e5`), e2e twin 1b050a27, 21 Nov 2026
+
+### Verdict: APPROVE WITH MINORS
+N-M1, N-m1, N-m2 and n1 are fixed. No blockers and no majors remain. The two minors below are optional hardening. Runner G is running the full `npm run check`; I did not run it.
+
+### Checks
+
+- **N-M1: fixed.**
+  - `onMessage` drops any `release.done:` frame when this party is not the builder (party.ts:1248-1253, `ignored('done-from-builder')`). It is dropped before it is stored, and a co-signer's counterpart is always the builder.
+  - `landedNow` reads the DONE only when `rel.part === 'builder'` (party.ts:849). A co-signer's only proof is its own signed `rel.txHash`.
+  - The co-signer still resends its own DONE to the builder (`resend`), so that path is untouched.
+- **N-m1: fixed.**
+  - Every payout must have `received > 0`. Payout 0 may be short only by the tx's own `feeAtomic`, and a fee above MAX_NETWORK_FEE is refused (party.ts:825-826).
+  - `txFee` (monero.ts) checks `tx_hash`, parses `rct_signatures.txnFee` as a safe non-negative integer, maps any read failure to `'unavailable'` (never proof) and a missing tx to null.
+- **Can a lying node or proxy turn the fee into proof? No: at worst it brings back the old allowance, and only with every payout paid.**
+  - The fee is read with a plain fetch, and nothing ties `as_json` to the hash. So the node, or anything in the path, can report any fee from 0 to MAX_NETWORK_FEE.
+  - Reporting MAX gives back exactly the old 0.01 XMR shortfall on payout 0, and even then `received > 0` is still needed for every payout.
+  - A wrong key still gives `received = 0`, so the dust bypass stays closed. Mutant R5 (fee replaced by MAX) still passes the dust test, which shows this.
+  - The node is already trusted for more than this: `txSeen`, the wallet's sync and so `spentBy`/`emptyInBlock`. A node that lies can already fake the wallet's whole view. The fee adds at most 0.01 XMR of slack on top, and only on a tx the builder's own key already ties to every payout.
+  - The amounts `received` from `check_tx_key` come from the tx wallet2 fetched and matched to the txid, so the fee is the only figure here that is unbound.
+- **N-m2: the tests catch E2, E4 and W8** (table below).
+- **n1: correct.**
+  - The dead branch and its test assertion are removed. The remaining stopped lines are unchanged.
+  - Lint cap 71 is exact: with the cap at 70 the copy-lint test fails ("counts both pragmas…").
+
+### Minors (optional)
+
+- **r-m1. Take the fee from the builder's own build, not the node.** `buildRelease` already holds `txs[0].getFee()` (monero.ts:446-462). Return it, save it with `txKey` (for example `rel.feeAtomic`, persisted at party.ts:886), and use it in `keyProof` in place of the daemon read.
+  - It is the builder's own figure, so no node or proxy can widen it.
+  - It equals the true shortfall of the tx this builder built, which is exactly what "pays `o` less my fee" means for any `h` the key fits.
+  - It also drops one plain fetch per key check.
+  - Keep `txFee` only as a fallback for state saved before the field existed.
+  - The wallet's synced tx record (`getTxs`) would be no better than the daemon read: it comes from the same node.
+- **r-m2. Test gaps (defence in depth, not weaknesses).**
+  - R7: the `feeAtomic > MAX_NETWORK_FEE` cap is not pinned. Add a check through `overriding(…txKeyPays)` that returns a fee above MAX: the DONE is never accepted and `landed()` is null.
+  - R2, R4 and R5 are each covered by a second guard (R3 and R6 show the pair together is caught). That is fine as it is.
+
+### Guard reverts at 9287c6e5 (each applied alone, then restored; worktree clean)
+
+| # | Revert | Test | Result |
+|---|---|---|---|
+| R1 | onMessage builder-side DONE drop disabled | incoming N-M1 | **caught** (no `done-from-builder`) |
+| R2 | co-signer reads the DONE in landedNow (drop still on) | incoming N-M1 | not caught: R1's drop covers it |
+| R3 | R1 + R2 together | incoming N-M1 | **caught** |
+| R4 | `received > 0` dropped (real fee kept) | incoming N-m1 | not caught: the real fee covers it |
+| R5 | fee replaced by MAX_NETWORK_FEE (`> 0` kept) | incoming N-m1 | not caught: `> 0` covers it (also the lying-node case) |
+| R6 | R4 + R5 together (the old allowance) | incoming N-m1 | **caught** |
+| R7 | fee cap `> MAX_NETWORK_FEE` dropped | incoming N-m1, settleSent | not caught (r-m2) |
+| E2 | `'unavailable'` counts as proof | incoming N-m2 | **caught** (`expected 'done' to be 'built'`) |
+| E4 | outgoing path without `provenByKey` | incoming m4 | **caught** |
+| W8 | a `landed()` rejection counts as proof | attestation-flow | **caught** |
+| LINT | copy-lint cap 71 lowered to 70 | cantDoThat-lint | **caught** (cap is exact) |
+
+### Tests (9287c6e5 in rev-noshow-r4; e2e at 1b050a27 in rev-noshow-r4-e2e)
+
+- Targeted vitest outside the lock, with nice: attestation-flow, sellerRefund, cantDoThat-lint and release: **4 files, 266 passed, 0 failed**.
+- Under the lock:
+  - incoming.test.ts (regtest): **10/10 passed**. That includes the new N-M1, N-m1 and N-m2 cases.
+  - My probes: P2 passes as written. P1 at first failed only on its own wait for the DONE to be stored, which the fix now rightly drops. Rewritten to wait for `done-from-builder`, it passes. **Probes 2/2 pass.**
+  - Regtest e2e at 1b050a27, `-g "taker seller, poster buyer|before the moderator's DONE"`, phone and desktop: **4/4 passed** (20.9 min). The seller-built release and the tx-key proof after close both pass the new fee read through the node proxy in the browser.
+- Not run by me: the full `npm run check` and the other e2e specs (Runner G).
