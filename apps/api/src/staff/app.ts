@@ -26,6 +26,7 @@ import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffHoldRoutes } from './holds.js';
+import { staffBanRoutes } from './bans.js';
 import { staffLimitRoutes } from './limits.js';
 import { staffPastRepRoutes } from './pastrep.js';
 import { staffReviewDisputeRoutes } from './reviewDisputes.js';
@@ -51,7 +52,7 @@ export interface StaffDeps extends Deps {
   staffRpId?: string;
   moderation: ModerationClient;
   /** Plan 4 Task 11: the trader API's event bus (moderator-joined, proof-requested, chat); omitted, none are sent. */
-  traderEvents?: Pick<EventBus, 'publish'>;
+  traderEvents?: Pick<EventBus, 'publish' | 'closeAccount'>;
   /** The activity log's writer for the case routes (tests inject a failing one). */
   appendLog?: typeof appendLog;
   /** `X2F_STAFF_WEB_ROOT`: the built staff app (apps/staff-web/dist), served on this origin (Task 16). */
@@ -189,6 +190,8 @@ export async function buildStaffApi(
   staffHoldRoutes(app);
   // Plan 4 Task 26: account limits a moderator recommends and a senior moderator or the owner decides.
   staffLimitRoutes(app);
+  // Plan 4 Task 27: ban stages, placed and lifted by a key tap.
+  staffBanRoutes(app, deps.traderEvents ? { traderEvents: deps.traderEvents } : {});
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
   // Plan 4 Task 11: the moderator's queue, case, logged chat access, messages, proof and freeze.

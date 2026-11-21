@@ -147,8 +147,13 @@ export const bannedTagSql = (kinds: readonly BannedKind[], ids: number): string 
   `exists (select 1 from banned_identifiers b where b.kind in (${kinds.map((k) => `'${k}'`).join(', ')})
              and (b.tag_key_id, b.tag) in (select * from unnest($${ids}::smallint[], $${ids + 1}::bytea[])))`;
 
-/** True when any of `values` (already normalized) is banned as `kind`, under any key of the ring. */
-async function anyBanned(db: Queryable, config: Config, kinds: readonly BannedKind[], tagKind: BannedKind, values: readonly string[]): Promise<boolean> {
+/**
+ * True when any of `values` (already normalized) is banned as `kind`, under any key of the ring.
+ * `exceptAccountId`: rows recorded as that account's own identifiers do not count (review MF2).
+ */
+async function anyBanned(
+  db: Queryable, config: Config, kinds: readonly BannedKind[], tagKind: BannedKind, values: readonly string[], exceptAccountId: string | null = null,
+): Promise<boolean> {
   if (values.length === 0) return false;
   const ids: number[] = [];
   const tags: Buffer[] = [];
@@ -156,6 +161,15 @@ async function anyBanned(db: Queryable, config: Config, kinds: readonly BannedKi
     const t = ringTags(config, tagKind, v);
     ids.push(...t.ids);
     tags.push(...t.tags);
+  }
+  if (exceptAccountId !== null) {
+    const { rows } = await db.query<{ banned: boolean }>(
+      `select exists (select 1 from banned_identifiers b where b.kind in (${kinds.map((k) => `'${k}'`).join(', ')})
+                 and (b.tag_key_id, b.tag) in (select * from unnest($1::smallint[], $2::bytea[]))
+                 and b.account_id is distinct from $3::uuid) as banned`,
+      [ids, tags, exceptAccountId],
+    );
+    return rows[0]!.banned;
   }
   const { rows } = await db.query<{ banned: boolean }>(`select ${bannedTagSql(kinds, 1)} as banned`, [ids, tags]);
   return rows[0]!.banned;
@@ -165,9 +179,14 @@ async function anyBanned(db: Queryable, config: Config, kinds: readonly BannedKi
  * 409 `key-unavailable` when the key's primary fingerprint or any subkey's is on the ban list. Every
  * subkey counts here (a key that carries a banned key in any form is refused), unlike what a ban
  * records (`bannableFingerprints`).
+ *
+ * Review MF2 (lead call, 12 Nov): `ownAccountId` is the account a login proved the key for. The
+ * fingerprints a ban recorded as that account's own (`banned_identifiers.account_id`) never refuse
+ * its login, so a site-banned person can still log in and finish open trades (A5); a subkey banned
+ * as anyone else's still does. Only the PGP login passes it; adding a key never does.
  */
-export async function assertKeyNotBanned(db: Queryable, config: Config, armored: string): Promise<void> {
-  if (await anyBanned(db, config, ['pgp-fingerprint'], 'pgp-fingerprint', await keyFingerprints(armored))) {
+export async function assertKeyNotBanned(db: Queryable, config: Config, armored: string, o: { ownAccountId?: string } = {}): Promise<void> {
+  if (await anyBanned(db, config, ['pgp-fingerprint'], 'pgp-fingerprint', await keyFingerprints(armored), o.ownAccountId ?? null)) {
     throw new ApiError(409, 'key-unavailable');
   }
 }

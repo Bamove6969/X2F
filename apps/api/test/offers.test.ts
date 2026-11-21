@@ -9,6 +9,7 @@ import { currentLoginTag, makeVendor, seedAccount } from './helpers/accounts.js'
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { seedReviews, seedTrade } from './helpers/trades.js';
+import { insertBan } from './helpers/bans.js';
 import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 import { approvedLimit } from './helpers/limits.js';
 
@@ -288,6 +289,16 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     expect(held.json()).toEqual({ error: 'trading-hold' });
     await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1', [p.id, deps.clock()]);
     await post(p);
+    // Plan 4 Task 27: a trade ban or a site ban refuses posting (409 trade-ban), and hides the poster's offers.
+    const banned = await poster();
+    const listedId = await post(banned);
+    const banId = await insertBan(deps, banned.id, 'trade', null);
+    const refused = await banned.browser.post('/v1/offers', flexBody(BODY));
+    // Lead call (Q4): with the general reason and the end (null: lifetime), for the popup.
+    expect([refused.statusCode, refused.json()]).toEqual([409, { error: 'trade-ban', reasonCode: 'abuse', until: null }]);
+    expect((await viewer.get(`/v1/offers/${listedId}`)).statusCode).toBe(404);
+    await deps.db.query('update account_bans set lifted_at = $2 where id = $1', [banId, deps.clock()]);
+    expect((await banned.browser.post('/v1/offers', flexBody(BODY))).statusCode).toBe(201);
 
     await deps.db.query('update site_flags set trading_paused = true');
     try {

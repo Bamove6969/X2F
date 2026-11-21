@@ -12,6 +12,7 @@ import { FIAT, XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpe
 import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/hold.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { addressEnd, addressHash } from '@x2f/accounts';
+import { insertBan } from './helpers/bans.js';
 import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 5: taking an offer, and the poster's wallet route. Real Postgres (one database per
@@ -363,6 +364,12 @@ describe('POST /v1/offers/:id/take', () => {
     }
     await deps.db.query('insert into trading_holds (account_id, created_at) values ($1, $2)', [buyer.id, deps.clock()]);
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'trading-hold' });
+    // Plan 4 Task 27: a trade-banned taker is refused; past its end (by the clock) the take goes on.
+    const bannedTaker = await person();
+    const banEnds = new Date(deps.clock().getTime() + 3_600_000);
+    await insertBan(deps, bannedTaker.id, 'trade', banEnds);
+    // Lead call (Q4): the refusal carries the general reason and the end, for the popup.
+    expect(refusal(await take(bannedTaker, offer, body(bannedTaker, tenth)))).toEqual({ status: 409, error: 'trade-ban', reasonCode: 'abuse', until: banEnds.toISOString() });
 
     const other = await person();
     await renameOfferMethod(deps.db, offer, 'SBP');

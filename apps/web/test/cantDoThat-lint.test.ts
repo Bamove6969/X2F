@@ -162,7 +162,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 70 -> 71 (gap 4 no-show refund, review m5 and n1, 21 Nov 2026): SellerRefund.tsx's stopped-escrow
     // status line "stopped for good, so it can't finish this refund", a device fault reported to the
     // seller; the seller tried nothing and nothing was refused. (A second line was unreachable and removed.)
-    expect(notARefusal).toBeLessThanOrEqual(71);
+    // 71 -> 72 (Plan 4 Task 27, bans, first counted 65 -> 66 on wip/lead-bans 12 Nov 2026): the ban
+    // notice's lead (screens/account/AccountBanned.tsx, owner G39 draft) is a full-screen notice
+    // of the ban itself, not a refused action.
+    expect(notARefusal).toBeLessThanOrEqual(72);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

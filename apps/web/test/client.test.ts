@@ -54,6 +54,14 @@ describe('api()', () => {
     expect(go).toHaveBeenCalledExactlyOnceWith('/terms?returnTo=%2Fsell%2Fzelle%3Fsort%3Drate');
   });
 
+  it('Plan 4 Task 27: 403 banned goes to the ban notice', async () => {
+    const go = vi.fn();
+    setNavigator(go, () => here);
+    vi.stubGlobal('fetch', respond(403, { error: 'banned', kind: 'site', reasonCode: 'abuse', until: null }));
+    await expect(api('/v1/wallets')).rejects.toMatchObject({ code: 'banned', extra: { kind: 'site', reasonCode: 'abuse', until: null } });
+    expect(go).toHaveBeenCalledExactlyOnceWith('/account/banned?returnTo=%2Fsell%2Fzelle%3Fsort%3Drate');
+  });
+
   it('409 no-wallet goes to /wallets?add=1 with returnTo', async () => {
     const go = vi.fn();
     setNavigator(go, () => here);
