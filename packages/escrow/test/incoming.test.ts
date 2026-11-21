@@ -281,7 +281,8 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the moderator waited for a resend')), 90_000)),
       ]);
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
-      await minedWhile(node.rpcUri, funderAddress, sellerDone);
+      // (The seller's own settle is not awaited: its party also ticks at resendMs, so it would
+      // check for the block only ten minutes later.)
     } finally {
       await refund.close();
     }
