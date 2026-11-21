@@ -95,7 +95,17 @@ describe('placing a ban (Task 27, D-017)', () => {
     for (const role of ['mod', 'helper'] as const) {
       const p = await staffWithKeys(t, { role });
       const res = await p.browser.post(`/staff/v1/accounts/${id}/bans`, { banId: randomUUID(), kind: 'trade', ruleId: 'abuse', until: IN_A_WEEK, tapId: 'x' });
-      expect(res.statusCode, role).toBe(403);
+      // The route's own perm refuses first (bans onto main: pinned apart from the tap's perm below).
+      expect({ status: res.statusCode, error: (res.json() as { error?: string }).error }, role).toEqual({ status: 403, error: 'forbidden' });
+      const lifted = await p.browser.post(`/staff/v1/accounts/${id}/bans/${randomUUID()}/lift`, { tapId: 'x' });
+      expect({ status: lifted.statusCode, error: (lifted.json() as { error?: string }).error }, role).toEqual({ status: 403, error: 'forbidden' });
+      // Nor can they start the tap itself (tapPermOf: accounts.ban).
+      for (const intent of [
+        { kind: 'ban-account', accountId: id, banId: randomUUID(), banKind: 'trade', ruleId: 'abuse', until: IN_A_WEEK },
+        { kind: 'lift-ban', accountId: id, banId: randomUUID() },
+      ]) {
+        expect((await p.browser.post('/staff/v1/taps/start', intent)).statusCode, `${role} ${intent.kind}`).toBe(403);
+      }
     }
   });
 
