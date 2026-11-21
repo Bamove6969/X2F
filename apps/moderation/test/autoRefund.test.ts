@@ -16,7 +16,6 @@ import {
   acked,
   acksFor,
   DEAL,
-  drained,
   ESCROW,
   hash,
   incoming,
@@ -168,8 +167,9 @@ describe("the seller's cancel refund (owner 8 Nov: no final alert, the refund st
     net.work = [{ ...(await newTrade(OTHER_TERMS)).work, trade: l.code }];
     await m.handle.tick();
     await signal(l, l.seller, 'trade.terms', { refundAddress: OTHER_TERMS.sellerRefund, deal: DEAL });
-    await drained();
-    expect(m.logs).toContain('signal-terms-mismatch');
+    // Refused terms are never acked, so wait for the refusal itself: logging it is the last thing the
+    // desk does with that frame (desk.ts onFrame), and drained()'s fixed 50 ms ran out under load.
+    await expect.poll(() => m.logs).toContain('signal-terms-mismatch');
     await sellerCancelled(l);
     await m.handle.watch();
     expect(l.party.settles).toEqual([REFUND]);

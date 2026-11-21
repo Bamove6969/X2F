@@ -88,10 +88,27 @@ async function charBox(page: Page, field: string, index: number): Promise<{ x: n
 }
 
 /**
+ * Waits until the text has stopped moving. The app's faces are self-hosted with font-display: swap
+ * (apps/web/src/theme/fonts.css), so a face that lands after a character was measured moves every
+ * glyph after it; under load that happened between charBox and the drag, and the drag started or
+ * ended one character off. Laying the page out first makes it ask for every face its text uses;
+ * `document.fonts.ready` then waits for those loads, and two frames let the swap be laid out.
+ */
+async function layoutSettled(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    document.body.getBoundingClientRect();
+    await document.fonts.ready;
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  });
+}
+
+/**
  * Drags the mouse over [start, end) as a curator selecting it: from its first character to its last,
- * or (`backwards`, re-review 4 minor 4) from its last to its first.
+ * or (`backwards`, re-review 4 minor 4) from its last to its first. The characters are measured once
+ * the layout has settled, so the drag lands on them however loaded the machine is.
  */
 async function dragSelect(page: Page, field: string, start: number, end: number, backwards = false): Promise<string> {
+  await layoutSettled(page);
   const a = await charBox(page, field, start);
   const b = await charBox(page, field, end - 1);
   const from = { x: a.x + 1, y: a.y };
