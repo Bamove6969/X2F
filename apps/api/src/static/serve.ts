@@ -220,7 +220,8 @@ export const SERVICE_WORKER_CSP = "default-src 'none'";
 
 /**
  * Review M-1 (20 Nov): the CSP on every other script under /assets/ (re-review n-1: and on any script
- * outside /assets/, /ocr/, /monero/ and /sw.js). A `<script>` or `import` load
+ * outside /assets/, /ocr/, /monero/ and /sw.js; addendum 2 n-3: and on every other static file,
+ * whatever its extension). A `<script>` or `import` load
  * ignores a response's CSP, so the page is unaffected; but the page's `worker-src 'self'` lets page
  * code start any same-origin script as a dedicated worker, which takes its CSP from its own response
  * and so ran under none (a way round the page's connect-src). Now such a worker may reach nothing,
@@ -398,14 +399,14 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
           // monero worker, not cached for a year, since its policy follows X2F_ORIGINS, which the
           // file's hash does not cover: a tightened policy must reach browsers that hold the file.
           void reply.header('content-security-policy', escrowCsp).header('cache-control', 'no-cache');
-        } else if (/[\\/]assets[\\/]/.test(path)) {
-          // Review M-1: any other script, started as a worker, may reach nothing (ASSET_SCRIPT_CSP).
-          if (/\.m?js$/i.test(path)) void reply.header('content-security-policy', ASSET_SCRIPT_CSP);
-          void reply.header('cache-control', IMMUTABLE);
-        } else if (/\.m?js$/i.test(path)) {
-          // Re-review n-1: a script anywhere else (a future public/*.js, a changed build.assetsDir)
-          // is deny-all too, so nothing outside the branches above can start as an unpoliced worker.
+        } else {
+          // Review M-1, re-review n-1 and addendum 2 n-3: every other file is deny-all, keyed on
+          // nothing (not on its extension), so no file outside the branches above can start as an
+          // unpoliced worker: not a .js/.mjs anywhere, and not a .es or .ecma, which `mime` serves as
+          // application/ecmascript (a JavaScript MIME type). A subresource load (script, style, font,
+          // image) ignores a response's CSP, so the page is unaffected.
           void reply.header('content-security-policy', ASSET_SCRIPT_CSP);
+          if (/[\\/]assets[\\/]/.test(path)) void reply.header('cache-control', IMMUTABLE);
         }
       },
     });

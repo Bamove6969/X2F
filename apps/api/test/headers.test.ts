@@ -55,6 +55,14 @@ beforeAll(async () => {
   await mkdir(join(root, 'js'));
   await writeFile(join(root, 'js', 'extra.js'), 'console.log(10)');
   await writeFile(join(root, 'notes.txt'), 'User-agent: *');
+  // Addendum 2 n-3: `mime` serves .es and .ecma as application/ecmascript (a JavaScript MIME type,
+  // so startable as a worker); and the subresources a page loads (a font, an image).
+  await writeFile(join(root, 'z.es'), 'console.log(11)');
+  await writeFile(join(root, 'z.ecma'), 'console.log(12)');
+  await writeFile(join(root, 'assets', 'z-abc123.es'), 'console.log(13)');
+  await writeFile(join(root, 'assets', 'font-abc123.woff2'), Buffer.from('wOF2fake'));
+  await writeFile(join(root, 'assets', 'logo-abc123.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  await writeFile(join(root, 'apple-touch-icon.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   ({ app } = await testApp());
   await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] });
 });
@@ -121,18 +129,35 @@ describe('security headers', () => {
       expectBaseHeaders(res.headers);
       expect(res.headers['content-security-policy'], url).toBe(ASSET_SCRIPT_CSP);
     }
-    // A file there that is not a script keeps no CSP.
-    const txt = await app.inject({ method: 'GET', url: '/notes.txt' });
-    expect(txt.statusCode).toBe(200);
-    expect(txt.headers['content-security-policy']).toBeUndefined();
   });
 
-  it('a built asset that is not a script gets the headers, no CSP and a long cache', async () => {
-    const res = await app.inject({ method: 'GET', url: '/assets/app-abc123.css' });
-    expect(res.statusCode).toBe(200);
-    expectBaseHeaders(res.headers);
-    expect(res.headers['content-security-policy']).toBeUndefined();
-    expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+  it('addendum 2 n-3: .es and .ecma (served as application/ecmascript, startable as a worker) get the deny-all CSP', async () => {
+    for (const url of ['/z.es', '/z.ecma', '/assets/z-abc123.es']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(String(res.headers['content-type']), url).toMatch(/^application\/ecmascript/);
+      expectBaseHeaders(res.headers);
+      expect(res.headers['content-security-policy'], url).toBe(ASSET_SCRIPT_CSP);
+    }
+  });
+
+  it('addendum 2 n-3: every other static file gets the deny-all CSP too, keyed on nothing (a subresource ignores it); built ones keep the long cache', async () => {
+    const files: ReadonlyArray<readonly [string, RegExp, string | undefined]> = [
+      ['/assets/app-abc123.css', /^text\/css/, 'public, max-age=31536000, immutable'],
+      ['/assets/font-abc123.woff2', /^font\/woff2/, 'public, max-age=31536000, immutable'],
+      ['/assets/logo-abc123.svg', /^image\/svg\+xml/, 'public, max-age=31536000, immutable'],
+      ['/apple-touch-icon.png', /^image\/png/, undefined],
+      ['/notes.txt', /^text\/plain/, undefined],
+    ];
+    for (const [url, type, cache] of files) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(String(res.headers['content-type']), url).toMatch(type);
+      expectBaseHeaders(res.headers);
+      expect(res.headers['content-security-policy'], url).toBe(ASSET_SCRIPT_CSP);
+      if (cache !== undefined) expect(res.headers['cache-control'], url).toBe(cache);
+      else expect(res.headers['cache-control'], url).not.toBe('public, max-age=31536000, immutable');
+    }
   });
 
   it('the service worker is served from this origin at /sw.js, revalidated on every load (Task 19)', async () => {
