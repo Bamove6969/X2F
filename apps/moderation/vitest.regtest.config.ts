@@ -8,7 +8,8 @@ export default defineConfig({
   test: {
     name: '@x2f/moderation-regtest',
     include: ['test/regtest/**/*.test.ts'],
-    globalSetup: ['../../tools/regtest/global-setup.ts'],
+    // The trade shred's regtest (Plan 7 Task 2 follow-up) also needs the moderation database.
+    globalSetup: ['../../tools/regtest/global-setup.ts', './test/setup/postgres.ts'],
     testTimeout: 600_000,
     hookTimeout: 600_000,
     fileParallelism: false,
