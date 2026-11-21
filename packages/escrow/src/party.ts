@@ -893,6 +893,12 @@ export function runParty(a: PartyArgs): PartyHandle {
           if (txKey !== undefined) rel.txKey = txKey;
           state.sent[txSetKey(rel)] = { txSet };
           await persist(); // the set is saved before it leaves the device; never rebuilt
+          // Gap 4 e2e (21 Nov): this party's own export may have reached the co-signer before the
+          // co-signer had this release (a seller whose tap comes before the moderator arms the
+          // refund): it was ignored there, and only the resend timer (backing off to a minute) would
+          // bring it. Send the same saved export again with the set, so the co-signer holds both now
+          // and this device's part is done once they leave. A resend of saved content (R26).
+          await send(exportKey(rel), [cp]);
           await send(txSetKey(rel), [cp]);
         } catch (e) {
           if (!(e instanceof EscrowError) || !RETRYABLE.has(e.code)) throw e;
