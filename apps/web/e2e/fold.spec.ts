@@ -73,10 +73,20 @@ async function hinge(
   return { cdp, flat: () => cdp.send('Emulation.setDeviceMetricsOverride', metrics).then(() => undefined) };
 }
 
-/** Skips with the reason when this Chromium does not report viewport segments (lead default, Task 40 Step 1). */
+/**
+ * Waits for `query` to match after a CDP override. The posture or the segments reach the page a
+ * moment after the CDP call returns, later under load, so one read straight away could miss them and
+ * skip a test that would pass. Skips with the reason only when this Chromium does not know the media
+ * feature at all (lead default, Task 40 Step 1): an unknown feature matches neither the query nor its
+ * `not`. A Chromium that knows it but never reports it under the override fails: the pinned build
+ * (153, Playwright 1.63) reports all three.
+ */
 async function needSegments(page: Page, query: string): Promise<void> {
-  const ok = await page.evaluate((q) => matchMedia(q).matches, query);
-  test.skip(!ok, `this Chromium does not report ${query} under CDP emulation`);
+  const known = await page.evaluate((q) => matchMedia(q).matches || matchMedia(`not ${q}`).matches, query);
+  test.skip(!known, `this Chromium does not know ${query}`);
+  await expect
+    .poll(() => page.evaluate((q) => matchMedia(q).matches, query), { message: `${query} under CDP emulation`, timeout: 5_000 })
+    .toBe(true);
 }
 
 /** Every visible element whose box overlaps [from, to) on the axis (x for a vertical hinge, y for a horizontal one). */
