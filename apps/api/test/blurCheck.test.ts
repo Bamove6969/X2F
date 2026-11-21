@@ -262,4 +262,31 @@ describe('team members (review PC1)', () => {
     expect(done.statusCode, done.body).toBe(204);
     expect((await pending(seller, code)).map((c) => c.proofId)).not.toContain(p1);
   });
+
+  it("trades-list I1 (lead's per-part ruling): listing and answering need the box for the trade's part", async () => {
+    const { seller, buyer, code } = await pair();
+    const active = await memberOf(seller.id, ['trades-see-active']);
+    const history = await memberOf(seller.id, ['trades-see-history']);
+    const p1 = newProofId();
+    const p2 = newProofId();
+    expect((await posted(buyer, code, p1)).statusCode).toBe(200);
+    expect((await posted(buyer, code, p2)).statusCode).toBe(200);
+
+    // Open: See trade history alone is refused, and answers nothing.
+    expect((await call(history, 'GET', `/v1/trades/${code}/blur-checks`)).statusCode).toBe(403);
+    expect((await answer(history, code, p1, { correct: true })).statusCode).toBe(403);
+    expect((await pending(active, code)).map((c) => c.proofId).sort()).toEqual([p1, p2].sort());
+    expect((await answer(active, code, p1, { correct: true })).statusCode).toBe(204);
+
+    // Completed: now See active trades alone is refused, and See trade history reads and answers.
+    await deps.db.query('update trades set closed_at = $2 where code = $1', [code, deps.clock()]);
+    expect((await call(active, 'GET', `/v1/trades/${code}/blur-checks`)).statusCode).toBe(403);
+    expect((await answer(active, code, p2, { correct: true })).statusCode).toBe(403);
+    expect((await pending(history, code)).map((c) => c.proofId)).toEqual([p2]);
+    expect((await answer(history, code, p2, { correct: true })).statusCode).toBe(204);
+
+    // A stranger's trade stays 404 (the side check comes first), never a 403.
+    const other = await pair();
+    expect((await call(active, 'GET', `/v1/trades/${other.code}/blur-checks`)).statusCode).toBe(404);
+  });
 });
