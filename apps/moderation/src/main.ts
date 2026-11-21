@@ -3,15 +3,15 @@ import { noticePass } from './notices.js';
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import type { PartyHandle, Transport } from '@x2f/escrow';
-import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs, type Trade } from '@x2f/trade';
+import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channelFor, TRADE_KEEP_DAYS, WATCH_INTERVAL_MS, watchShowsEmpty, type Attestation, type ModPartyArgs, type Trade } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
 import { loadChatIdentity, loadParty, saveChatIdentity, saveParty, walletPassword } from './keystore.js';
-import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
+import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type TradeShredOrder, type WatchItem, type WorkItem } from './link.js';
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
 import { openDesk } from './desk.js';
-import { createWatcher } from './watcher.js';
+import { createWatcher, reviveWatchState } from './watcher.js';
 import type { DeskArmed, RulingExecutor } from './execute.js';
 import { startCheckpoints, type CheckpointOptions } from './checkpoint.js';
 import { recordedTerms, type GateContext, type RecordedTerms } from './gate/verify.js';
@@ -29,6 +29,43 @@ export const CHAT_SHRED_MIN_AGE_DAYS = CHAT_PRETRADE_IDLE_DAYS;
  * the owner's 90 days after a dispute closes. A dispute row older than that holds nothing anyway.
  */
 export const MOD_DISPUTE_SEEN_DAYS = CHAT_AFTER_DISPUTE_DAYS;
+/**
+ * The trade shred's own clock (Plan 7 Task 2 follow-up): no trade purge the API may make comes
+ * sooner than TRADE_KEEP_DAYS after the trade closed, which is after this service attested it, so a
+ * trade attested here more recently is never shredded, whatever the API says.
+ */
+export const TRADE_SHRED_MIN_AGE_DAYS = TRADE_KEEP_DAYS;
+/**
+ * Every moderation table with a `trade` column whose rows the trade shred deletes (tradeShredTick),
+ * in one transaction: the signed terms (both addresses and the deal), the sealed party state (the
+ * moderator's trade identity), the wallet password (R27), the escrow state (the multisig wallet),
+ * the watch state, the desk record, the counted sweeps, the dispute record and the chat links of the
+ * trade (whose chats the chat shred has already destroyed). test/tradeShred.test.ts holds this list
+ * and TRADE_SHRED_KEPT to the schema.
+ */
+export const TRADE_SHRED_TABLES = [
+  'signed_terms',
+  'mod_party_state',
+  'mod_wallet_secrets',
+  'mod_escrow_state',
+  'mod_watch',
+  'mod_trade_desk',
+  'mod_sweeps',
+  'mod_dispute_seen',
+  'mod_chat_trade',
+  'mod_chat_access',
+  'mod_chat_notices',
+] as const;
+/**
+ * Moderation tables with a `trade` column the trade shred keeps, each by a rule:
+ * - used_log_entries (007): an API activity-log entry authorises exactly one internal call, so its id
+ *   stays used for good (a deleted row would let the same entry be used again). Its trade code is the
+ *   one the API's own activity log keeps under owner p12-7; lead default, owner question: keep it
+ *   until p12-7 decides the log's life.
+ */
+export const TRADE_SHRED_KEPT = ['used_log_entries'] as const;
+/** Why the trade shred keeps a purged trade's records this pass (logged `trade-shred-held-<why>`). */
+type TradeShredHold = 'unknown' | 'listed' | 'running' | 'young' | 'dispute' | 'chat' | 'watching' | 'escrow' | 'ruling';
 /** The reports by which this service itself puts a trade in dispute (the API applies them as `escalate`). */
 const ESCALATIONS: ReadonlySet<string> = new Set(['late-funds', 'spend-unshown', 'alert-unseen', 'alert-late', 'refund-unverified']);
 const DAY_MS = 86_400_000;
@@ -64,7 +101,7 @@ export async function instanceLockHeld(client: { query: (sql: string, values: un
 export { AttestRefused, attestChat, attestTrade, BadTerms, checkChatWork, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadChatIdentity, saveChatIdentity, type ChatModIdentity } from './keystore.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
-export { createLink, relayCloseMessage, relayRegisterMessage, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
+export { createLink, relayCloseMessage, relayRegisterMessage, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type TradeShredOrder, type WatchItem, type WorkItem } from './link.js';
 export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './party.js';
 export { autoRefundStep, REFUND_UNVERIFIED_MS, type AutoRefundInputs, type AutoRefundStep } from './autoRefund.js';
 export { buyerCancelStep, type BuyerCancelInputs, type BuyerCancelStep } from './buyerCancel.js';
@@ -158,6 +195,12 @@ export interface ModerationDeps {
 export interface GateRun {
   rulings?: ModerationDeps['rulings'];
   checkpoints?: ModerationDeps['checkpoints'];
+  /**
+   * Plan 7 Task 2 follow-up: the gate's own per-trade records (the ruling payout record with its
+   * addresses, the rulings seen). `pending` while a recorded payout has not finished (the trade shred
+   * then holds the trade); `forget` deletes them once the trade's rows are gone (store.ts forgetTrade).
+   */
+  tradeRecords?: { pending(code: string): boolean; forget(code: string): Promise<void> };
   stop(): Promise<void>;
 }
 
@@ -171,6 +214,11 @@ export interface ModerationHandle {
    * the chats whose keys are gone here and whose shred the API recorded this pass.
    */
   shredTick(): Promise<string[]>;
+  /**
+   * One pass over the API's trade shred orders (Plan 7 Task 2 follow-up); resolves with the trades
+   * whose records are gone here and whose shred the API recorded this pass.
+   */
+  tradeShredTick(): Promise<string[]>;
   /** One pass over the API's unaccepted dispute grants (design build task 6); resolves with the chats accepted. */
   grantTick(): Promise<string[]>;
   /** One pass signing dispute notices (design build task 7, T2); resolves with the chats noticed. */
@@ -609,6 +657,94 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     return done;
   };
 
+  /**
+   * The trade shred (Plan 7 Task 2, lead follow-up): for each trade the API purged, delete every row
+   * this service keeps for it (TRADE_SHRED_TABLES: the signed terms, all key material, the watch
+   * state and the rest) in one transaction, forget the gate's own records of it, then report
+   * `trade-shredded` (the API keeps the order until it hears so; a repeat is harmless: the deletes
+   * find nothing). The order is only a trigger. A trade is held, and asked again next pass, while
+   * this service's own records say it may still matter:
+   * - the watch list unreadable this pass (`unknown`), or still listing the trade (`listed`: the API
+   *   lists every open attested trade, and a closed one for its watch window);
+   * - its moderator party running or starting in this process (`running`);
+   * - attested here less than TRADE_SHRED_MIN_AGE_DAYS ago (`young`);
+   * - seen disputed here within CHAT_AFTER_DISPUTE_DAYS (`dispute`);
+   * - a chat linked to it whose keys are still here (`chat`: the chat shred, with its own holds, goes first);
+   * - its watch still running (`watching`), or its escrow never shown EMPTY by that watch
+   *   (`escrow`: watchShowsEmpty; an escrow state with no watch row, or a watch state that does not
+   *   read back, counts as never shown empty). The key material is never destroyed on the API's word
+   *   (review-p7-retention round 2, R2-I2): unknown means coins may remain;
+   * - a ruling payout the gate recorded and has not finished (`ruling`).
+   * Each trade's check and delete run between two watcher passes (`between`), never during one. A
+   * held order is skipped, never a stop. Kept by rule: TRADE_SHRED_KEPT, and the gate's used nonces.
+   */
+  const tradeShredTick = async (): Promise<string[]> => {
+    const done: string[] = [];
+    let orders: TradeShredOrder[];
+    try {
+      orders = await link.pullTradeShred();
+    } catch {
+      log({ reason: 'trade-shred-unavailable' });
+      return done;
+    }
+    if (orders.length === 0) return done;
+    let watch: Map<string, WatchItem> | null = null;
+    try {
+      watch = await link.pullWatch();
+    } catch {
+      watch = null;
+    }
+    const records = gate?.tradeRecords;
+    for (const x of orders) {
+      const trade = normalizeTradeCode(x.trade);
+      if (trade === null) {
+        log({ reason: 'bad-trade-shred' });
+        continue;
+      }
+      try {
+        const held = await watcher.between(async (): Promise<TradeShredHold | null> => {
+          const at = now();
+          const why =
+            watch === null ? 'unknown'
+            : watch.has(trade) ? 'listed'
+            : watcher.active(trade) ? 'running'
+            : records?.pending(trade) ? 'ruling'
+            : await tradeShredHold(o.db, trade, at);
+          if (why !== null) return why;
+          const client = await o.db.connect();
+          try {
+            await client.query('begin');
+            // The table names are the constant list above, never input.
+            for (const t of TRADE_SHRED_TABLES) await client.query(`delete from ${t} where trade = $1`, [trade]);
+            await client.query('commit');
+          } catch (e) {
+            await client.query('rollback');
+            throw e;
+          } finally {
+            client.release();
+          }
+          started.delete(trade);
+          return null;
+        });
+        if (held !== null) {
+          log({ reason: `trade-shred-held-${held}` });
+          continue;
+        }
+        await records?.forget(trade);
+        const status = await link.postReport({ kind: 'trade-shredded', trade });
+        if (status !== 201) {
+          log({ reason: `trade-shred-report-refused-${status}` });
+          continue;
+        }
+        log({ reason: 'trade-shredded' });
+        done.push(trade);
+      } catch {
+        log({ reason: 'trade-shred-failed' });
+      }
+    }
+    return done;
+  };
+
   const grantTick = (): Promise<string[]> => grantPass({ link, db: o.db, keystoreKey: o.keystoreKey, now, log });
   const noticeTick = (): Promise<string[]> => noticePass({ link, db: o.db, keystoreKey: o.keystoreKey, now, log });
 
@@ -623,6 +759,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     running = tick()
       .then(chatTick)
       .then(shredTick)
+      .then(tradeShredTick)
       .then(grantTick)
       .then(noticeTick)
       .catch(() => log({ reason: 'work-pass-failed' }))
@@ -683,6 +820,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     tick,
     chatTick,
     shredTick,
+    tradeShredTick,
     grantTick,
     noticeTick,
     // Through the watcher's own queue: never a pass alongside the loop's (finding 2).
@@ -786,6 +924,47 @@ async function shredHold(db: pg.Pool, chat: string, trade: string | null, watch:
   if (watch === null) return 'unknown';
   const item = watch.get(trade);
   if (item !== undefined && !CLOSED_STATES.includes(item.state as (typeof CLOSED_STATES)[number])) return 'open';
+  return null;
+}
+
+/**
+ * Why the trade shred keeps a purged trade's records this pass, from this service's own records
+ * only, or null when nothing holds it. See `tradeShredTick` (the list, the process and the gate
+ * holds are checked there first).
+ */
+async function tradeShredHold(db: pg.Pool, trade: string, at: Date): Promise<'young' | 'dispute' | 'chat' | 'watching' | 'escrow' | null> {
+  const { rows } = await db.query<{ made: Date | null; disputed: Date | null; chat: boolean; escrow: boolean; watching: boolean | null; state: unknown }>(
+    `select least((select created_at from signed_terms where trade = $1), (select created_at from mod_wallet_secrets where trade = $1)) as made,
+            (select last_seen_at from mod_dispute_seen where trade = $1) as disputed,
+            exists (select 1 from (select chat from mod_chat_trade where trade = $1
+                                   union select chat from mod_chat_access where trade = $1
+                                   union select chat from mod_chat_notices where trade = $1) c
+                     where exists (select 1 from mod_chat_identities i where i.chat = c.chat)
+                        or exists (select 1 from signed_chats s where s.chat = c.chat)) as chat,
+            exists (select 1 from mod_escrow_state where trade = $1) as escrow,
+            (select watching from mod_watch where trade = $1) as watching,
+            (select state from mod_watch where trade = $1) as state`,
+    [trade],
+  );
+  const r = rows[0]!;
+  if (r.made !== null && at.getTime() - r.made.getTime() < TRADE_SHRED_MIN_AGE_DAYS * DAY_MS) return 'young';
+  if (r.disputed !== null && at.getTime() - r.disputed.getTime() < CHAT_AFTER_DISPUTE_DAYS * DAY_MS) return 'dispute';
+  if (r.chat) return 'chat';
+  if (r.watching === true) return 'watching';
+  if (r.watching === false) {
+    let empty = false;
+    try {
+      empty = watchShowsEmpty(reviveWatchState(r.state));
+    } catch {
+      empty = false;
+    }
+    if (!empty) return 'escrow';
+  } else if (r.escrow) {
+    // An escrow state with no watch row was never watched, so never shown empty. With neither, no
+    // moderator party ever ran from this database (runParty records the watch row first), so no
+    // escrow holds this moderator's key.
+    return 'escrow';
+  }
   return null;
 }
 
@@ -958,9 +1137,23 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
               // Review F8: the internal server asks this same gate who is staff and which devices are certified.
               gateParts = { store, source, ctx: gateCtx };
               const rulings = rulingExecutor({ store, source, ctx: gateCtx, signingSecret, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
+              const { forgetTrade, tradeRulingPending } = await import('./gate/store.js');
+              // A save that failed is made again on the next forget, so a forgotten trade never stays in gate.bin.
+              let unsaved = false;
               return {
                 rulings,
                 checkpoints: { store, reader },
+                tradeRecords: {
+                  pending: (code: string) => tradeRulingPending(store.state, code),
+                  forget: (code: string) =>
+                    store.exclusive(async () => {
+                      if (forgetTrade(store.state, code) || unsaved) {
+                        unsaved = true;
+                        await store.save();
+                        unsaved = false;
+                      }
+                    }),
+                },
                 stop: async () => {
                   await sync.stop();
                   await store.close();

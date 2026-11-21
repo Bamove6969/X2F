@@ -38,6 +38,12 @@ export interface ChatShredOrder {
   trade: string | null;
 }
 
+/** A trade the API purged (`GET /internal/v1/trade-shred`, API migration 761): only a trigger, untrusted. */
+export interface TradeShredOrder {
+  /** The trade code as the API sent it; '' when it was not a string (logged and skipped). */
+  trade: string;
+}
+
 /** A trader's dispute grant the API lists as not accepted (build task 6), with its chat's key record; both untrusted. */
 export interface ChatGrantItem {
   chat: string;
@@ -73,6 +79,8 @@ export interface Link {
   pullChatWork(): Promise<ChatWorkItem[]>;
   /** The API's chat shred orders; malformed items come back as `{ chat: '', trade: null }` (logged and skipped). */
   pullChatShred(): Promise<ChatShredOrder[]>;
+  /** Plan 7 Task 2 follow-up: the API's trade shred orders; a malformed item comes back as `{ trade: '' }`. */
+  pullTradeShred(): Promise<TradeShredOrder[]>;
   /** Build task 6: unaccepted dispute grants; malformed items come back with chat ''. */
   pullChatGrants(): Promise<ChatGrantItem[]>;
   /** Build task 7: dispute notice candidates; malformed fields come back empty (logged and skipped). */
@@ -156,6 +164,13 @@ export function createLink(o: {
           ? { chat: x.chat, trade: x.trade }
           : { chat: '', trade: null },
       );
+    },
+    async pullTradeShred() {
+      const res = await internal('GET', '/internal/v1/trade-shred');
+      if (res.status !== 200) throw new LinkError(res.status, 'pull trade shred');
+      const body = (await res.json()) as { orders?: unknown };
+      if (!Array.isArray(body.orders)) return [];
+      return (body.orders as Array<{ trade?: unknown }>).map((x) => ({ trade: typeof x?.trade === 'string' ? x.trade : '' }));
     },
     async pullChatGrants() {
       const res = await internal('GET', '/internal/v1/chat-grants');

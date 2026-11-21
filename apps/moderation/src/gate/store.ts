@@ -154,6 +154,37 @@ export interface RulingExecution {
   settledTx: string | null;
 }
 
+/**
+ * Plan 7 Task 2 follow-up (the trade shred): a ruling payout recorded for the trade and not yet
+ * finished. The trade's records are then never deleted (the payout may still have to be sent).
+ */
+export function tradeRulingPending(g: GateState, code: string): boolean {
+  const ex = Object.hasOwn(g.executions, code) ? g.executions[code] : undefined;
+  return ex !== undefined && ex.settledAt === null;
+}
+
+/**
+ * Plan 7 Task 2 follow-up: forgets a shredded trade in the gate's state: its ruling payout record
+ * (which holds the payout addresses) and every ruling seen for it. Returns whether anything changed
+ * (the caller saves then). Kept: every used tap nonce (a nonce once relied on stays used; its value
+ * names a ruling id, never the trade), the registry and everything of other trades. Throws while a
+ * payout is pending (`tradeRulingPending`); the shred holds such a trade first.
+ */
+export function forgetTrade(g: GateState, code: string): boolean {
+  if (tradeRulingPending(g, code)) throw new Error('gate: a ruling payout is pending for this trade');
+  let changed = false;
+  if (Object.hasOwn(g.executions, code)) {
+    delete g.executions[code];
+    changed = true;
+  }
+  for (const [id, seen] of Object.entries(g.rulingsSeen)) {
+    if (seen.code !== code) continue;
+    delete g.rulingsSeen[id];
+    changed = true;
+  }
+  return changed;
+}
+
 /** The API's defaults (`settings` in migration 206) until the owner taps a change. */
 export const DEFAULT_LIMIT_USD_CENTS = 100_000n;
 export const DEFAULT_APPEAL_WINDOW_H = 48;

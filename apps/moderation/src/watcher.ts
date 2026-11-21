@@ -71,6 +71,13 @@ export interface Watcher {
   tick(): Promise<void>;
   /** Stops every running party. */
   stop(): Promise<void>;
+  /**
+   * Runs `fn` between two watcher passes, never during one (the trade shred, Plan 7 Task 2 follow-up:
+   * a pass never reads or writes a trade's rows while they are being deleted).
+   */
+  between<T>(fn: () => Promise<T>): Promise<T>;
+  /** Whether this process runs, or is starting, the trade's moderator party. */
+  active(code: string): boolean;
 }
 
 /** The first back-off after the API answered `settle-kind-unknown`; doubles up to SETTLE_BACKOFF_MAX_MS. */
@@ -627,6 +634,16 @@ export function createWatcher(o: WatcherOptions): Watcher {
       const next = ticking.then(() => pass());
       ticking = next.catch(() => undefined);
       return next;
+    },
+
+    between(fn) {
+      const next = ticking.then(fn);
+      ticking = next.then(() => undefined, () => undefined);
+      return next;
+    },
+
+    active(code) {
+      return running.has(code) || starting.has(code);
     },
 
     async stop() {

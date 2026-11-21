@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { emptyGate, forgetTrade, tradeRulingPending } from '../src/gate/store.js';
 import { loadEscrow, saveEscrow } from '../src/keystore.js';
 import { loadParty, saveParty, TRADE_SHRED_KEPT, TRADE_SHRED_TABLES, walletPassword, type GateRun } from '../src/main.js';
-import { fakeNetwork, hash, inFunding, makeCtx, moderation, secured, stopAll, type Ctx } from './harness.js';
+import { fakeNetwork, hash, inFunding, makeCtx, moderation, outcomeJson, secured, stopAll, type Ctx } from './harness.js';
 
 const DAY = 86_400_000;
 const ctxs: Ctx[] = [];
@@ -26,7 +26,7 @@ async function setup(opts: { gate?: () => Promise<GateRun> } = {}) {
   ctxs.push(ctx);
   const { net, fetch } = fakeNetwork(ctx);
   const m = await moderation(ctx, fetch, opts.gate ? { gate: opts.gate } : {});
-  return { ctx, net, m };
+  return { ctx, net, m, fetch };
 }
 
 /** The rows were made by the database clock; this service's own clock is ctx.clock. */
@@ -134,8 +134,8 @@ describe('the trade shred: what goes', () => {
 });
 
 describe('the trade shred: what is kept', () => {
-  it('an open trade is never touched, whatever the API orders: listed (open), or hidden from the list by a lying API (still watched here)', async () => {
-    const { ctx, net, m } = await setup();
+  it('an open trade is never touched, whatever the API orders: listed (open), or hidden from the list by a lying API (its party runs, or its watch still watches)', async () => {
+    const { ctx, net, m, fetch } = await setup();
     const l = await inFunding(ctx, m, net);
     await secured(ctx, l);
     await saveEscrow(ctx.db, ctx.keystoreKey, l.code, { escrow: 'state' });
@@ -148,9 +148,15 @@ describe('the trade shred: what is kept', () => {
     net.tradeShred = [order(ctx, l.code)];
     expect(await m.handle.tradeShredTick()).toEqual([]);
     expect(m.logs).toContain('trade-shred-held-listed');
+    // Hidden from the list: its party still runs here.
     net.states.delete(l.code);
     expect(await m.handle.tradeShredTick()).toEqual([]);
-    expect(m.logs).toContain('trade-shred-held-watching');
+    expect(m.logs).toContain('trade-shred-held-running');
+    // After a restart (no party started yet): its own watch row still watches it.
+    await m.handle.stop();
+    const again = await moderation(ctx, fetch);
+    expect(await again.handle.tradeShredTick()).toEqual([]);
+    expect(again.logs).toContain('trade-shred-held-watching');
 
     expect(await rowsOf(ctx, l.code)).toEqual(before);
     expect(await loadParty(ctx.db, ctx.keystoreKey, l.code)).toEqual(party);
@@ -320,7 +326,7 @@ describe("the ruling gate's per-trade records (gate.bin)", () => {
     expect(Object.keys(g.executions)).toEqual([other]);
     expect(Object.keys(g.rulingsSeen)).toEqual(['r2']);
     expect(g.usedNonces).toEqual({ n1: 'ruling:r1:propose' });
-    expect(JSON.stringify(g)).not.toContain(code);
+    expect(outcomeJson(g)).not.toContain(code);
     expect(forgetTrade(g, code)).toBe(false);
   });
 
