@@ -232,3 +232,48 @@ N-M1, N-m1, N-m2 and n1 are fixed. No blockers and no majors remain. The two min
   - My probes: P2 passes as written. P1 at first failed only on its own wait for the DONE to be stored, which the fix now rightly drops. Rewritten to wait for `done-from-builder`, it passes. **Probes 2/2 pass.**
   - Regtest e2e at 1b050a27, `-g "taker seller, poster buyer|before the moderator's DONE"`, phone and desktop: **4/4 passed** (20.9 min). The seller-built release and the tx-key proof after close both pass the new fee read through the node proxy in the browser.
 - Not run by me: the full `npm run check` and the other e2e specs (Runner G).
+
+---
+
+## Re-review: wip/lead-fix-noshow-fee d293bb02 (`git diff 770e0df5 d293bb02`), r-m1 and r-m2, 21 Nov 2026
+
+### Verdict: APPROVE
+No blockers, majors or minors. One nit (n-f1). Runner G is running the full `npm run check`; I did not run it.
+
+### Checks
+
+- **The stored fee cannot be set by a peer.**
+  - `rel.txFee` has exactly one writer, party.ts:921. It is set from `session.buildRelease(o.to)` in the builder's own `export → built` step, saved with `txKey`, and persisted before the set leaves the device.
+  - No message handler, spend.info, history or import path writes it.
+  - `buildRelease` takes it from `txs[0].getFee()` of the tx this wallet just created (monero.ts:465-470), and only when it is a bigint ≥ 0.
+  - `keyProof` re-checks the saved string (`/^(?:0|[1-9][0-9]{0,30})$/`). A malformed value counts as absent, which falls back to the daemon.
+  - The cap `fee <= MAX_NETWORK_FEE` applies to whichever fee is used.
+  - A stored `0` stays `0n` (`??`, not `||`), which errs the strict way: payout 0 must then be paid in full.
+- **The fee is dropped when a new attempt starts.** `nextAttempt` deletes `txFee` along with `txKey`, `txSet` and `feeCeiling` (party.ts:683). A later release starts from a fresh ReleaseState.
+- **The daemon fallback runs only when no fee is stored.**
+  - monero.ts:312 reads `knownFeeAtomic ?? (await this.txFee(txHash))`, so it never fetches when the party passes one.
+  - party.ts:836 uses `stored ?? r.feeAtomic`, so even a session that ignored the argument could not replace the stored figure.
+- **The cap test catches its mutant.** R7 (cap removed) fails the r-m2 test: `expected 'done' to be 'built'`.
+
+### Nit
+
+- **n-f1. Dropping `delete rel.txFee` on a new attempt (F3) is not caught by any test.**
+  - Today it is harmless: `txKey` is deleted with it, so `keyProof` returns false. The Monero engine always returns the key and the fee together, so the next build overwrites both.
+  - Even a stale fee would be this device's own build fee for the same outcome, and capped.
+  - Optional fix: in a refused-attempt test (for example later-release or followups), assert that `txFee` is absent after `nextAttempt`.
+
+### Guard reverts at d293bb02 (each applied alone, then restored; worktree clean)
+
+| # | Revert | Test | Result |
+|---|---|---|---|
+| R4 | `received > 0` dropped | incoming N-m1 | not caught: the stored real fee covers it (as before) |
+| R5 | fee replaced by MAX_NETWORK_FEE (`> 0` kept) | incoming N-m1 | not caught: `> 0` covers it (as before) |
+| R6 | R4 + R5 (the old allowance) | incoming N-m1 | **caught** |
+| R7 | fee cap removed | incoming r-m2 | **caught** |
+| F2 | builder does not store its fee | incoming settleSent/landed | **caught** (savedFee undefined) |
+| F3 | fee kept on a new attempt | incoming settleSent, m4, N-m1 | not caught (n-f1, harmless) |
+
+### Tests (rev-noshow-r5 at d293bb02)
+
+- Under ~/x2f-comms/check.lock: incoming.test.ts (regtest, now 11 tests, including r-m2) plus my probes P1 and P2: **13/13 passed**. The settleSent test now also pins that a real build stores a fee in the range 1 to MAX_NETWORK_FEE.
+- Not re-run: web vitest (no web change in this diff), the e2e suite and the full check (Runner G).
