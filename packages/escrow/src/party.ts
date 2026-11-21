@@ -72,6 +72,12 @@ interface ReleaseState {
   feeCeiling?: string;
   /** Builder: the secret key of the tx in `txSet` (its wallet stores none), sent with spend.info (review I1). */
   txKey?: string;
+  /**
+   * Builder: the network fee of the tx in `txSet` as built (buildRelease), a decimal string, saved
+   * with `txKey` (review r-m1). The key check bounds payout 0's shortfall by it. Absent in states
+   * saved before it: the daemon's copy of the tx gives the fee instead.
+   */
+  txFee?: string;
   signedHex?: string;
   txHash?: string;
 }
@@ -674,6 +680,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     rel.committed = false;
     delete rel.txSet;
     delete rel.txKey;
+    delete rel.txFee;
     delete rel.feeCeiling;
     if (rel.attempt > MAX_ATTEMPT) {
       // Give up on this outcome only; the party stays alive and can settle another.
@@ -816,16 +823,20 @@ export function runParty(a: PartyArgs): PartyHandle {
    * Through the wallet's own daemon connection only (txKeyPays, not proveTx: that one reads the
    * daemon through a client that cannot send in the web bundle). False when the engine cannot.
    */
-  const keyProof = async (key: string, o: Outcome, h: string): Promise<boolean | 'unavailable'> => {
-    if (!session.txKeyPays) return false;
+  const keyProof = async (rel: ReleaseState, o: Outcome, h: string): Promise<boolean | 'unavailable'> => {
+    const key = rel.txKey;
+    if (!session.txKeyPays || key === undefined) return false;
     if (!TX_HASH.test(h)) return false;
-    const r = await bounded('check tx key', () => session.txKeyPays!(h, key, o.to.map((p) => p.address)));
+    // Review r-m1: the fee this builder saved from buildRelease, else (older state) the daemon's.
+    const stored = rel.txFee !== undefined && /^(?:0|[1-9][0-9]{0,30})$/.test(rel.txFee) ? BigInt(rel.txFee) : undefined;
+    const r = await bounded('check tx key', () => session.txKeyPays!(h, key, o.to.map((p) => p.address), stored));
     if (r === 'unavailable') return 'unavailable';
     if (r === null || r.inPool || r.received.length !== o.to.length) return false;
-    if (r.feeAtomic < 0n || r.feeAtomic > MAX_NETWORK_FEE) return false;
-    return o.to.every((p, i) => r.received[i]! > 0n && r.received[i]! + (i === 0 ? r.feeAtomic : 0n) >= p.amountAtomic);
+    const fee = stored ?? r.feeAtomic;
+    if (fee < 0n || fee > MAX_NETWORK_FEE) return false;
+    return o.to.every((p, i) => r.received[i]! > 0n && r.received[i]! + (i === 0 ? fee : 0n) >= p.amountAtomic);
   };
-  const provenByKey = async (key: string, o: Outcome, h: string): Promise<boolean> => (await keyProof(key, o, h)) === true;
+  const provenByKey = async (rel: ReleaseState, o: Outcome, h: string): Promise<boolean> => (await keyProof(rel, o, h)) === true;
   /**
    * Review m4: a builder that kept its tx key accepts only its own tx: the key must be checked and
    * fit. A read that failed or was refused ('unavailable') is never taken as proof: the step waits
@@ -834,7 +845,7 @@ export function runParty(a: PartyArgs): PartyHandle {
    */
   const keyAllows = async (rel: ReleaseState, o: Outcome, h: string): Promise<boolean> => {
     if (rel.part !== 'builder' || rel.txKey === undefined || !session.txKeyPays) return true;
-    return (await keyProof(rel.txKey, o, h)) === true;
+    return (await keyProof(rel, o, h)) === true;
   };
 
   /** See PartyHandle.landed. Runs in the work queue. */
@@ -854,7 +865,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (rel.part !== 'builder' || rel.txKey === undefined || !session.outgoing) return null;
     for (const out of await session.outgoing()) {
       if (out.height === null || named.includes(out.txHash)) continue;
-      if ((await daemon.spentBy(out.txHash)) && (await daemon.txSeen(out.txHash)) && (await provenByKey(rel.txKey, o, out.txHash))) return out.txHash;
+      if ((await daemon.spentBy(out.txHash)) && (await daemon.txSeen(out.txHash)) && (await provenByKey(rel, o, out.txHash))) return out.txHash;
     }
     return null;
   };
@@ -902,11 +913,12 @@ export function runParty(a: PartyArgs): PartyHandle {
         try {
           await importPeer(exp);
           if (!(await fundsReady(o))) throw new EscrowError('not-ready');
-          const { txSet, txKey } = await session.buildRelease(o.to);
+          const { txSet, txKey, feeAtomic } = await session.buildRelease(o.to);
           rel.phase = 'built';
           rel.committed = true;
           rel.txSet = txSet;
           if (txKey !== undefined) rel.txKey = txKey;
+          if (feeAtomic !== undefined) rel.txFee = feeAtomic.toString();
           state.sent[txSetKey(rel)] = { txSet };
           await persist(); // the set is saved before it leaves the device; never rebuilt
           // Gap 4 e2e (21 Nov): this party's own export may have reached the co-signer before the
