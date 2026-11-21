@@ -6,7 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Trades, TRADES_PATH } from '../src/screens/Trades.js';
 import { parseTradeList, type TradeListItem } from '../src/screens/trades/api.js';
-import { STATE_LABEL, sideLine, whenLine } from '../src/screens/trades/model.js';
+import { STATE_LABEL, lastActedLine, sideLine, whenLine } from '../src/screens/trades/model.js';
 import { TRADE_STATES } from '../src/api/trade.js';
 import { BottomNav } from '../src/ui/BottomNav.js';
 import { DesktopRail, railPageName } from '../src/ui/DesktopShell.js';
@@ -99,6 +99,17 @@ describe('parseTradeList', () => {
     ]) {
       expect(() => parseTradeList(bad), JSON.stringify(bad)).toThrow();
     }
+  });
+
+  it("Plan 3 Task 42: keeps the owner's lastActedBy (a member's name and when), only in its own form", () => {
+    const by = { memberName: 'Aurora', at: '2026-11-10T09:41:00.000Z' };
+    const p = parseTradeList({ trades: [{ ...OPEN, lastActedBy: by }, { ...OPEN2, lastActedBy: null }, DONE], next: null });
+    expect(p.trades.map((t) => t.lastActedBy)).toEqual([by, null, undefined]);
+    expect(p.trades[2]).not.toHaveProperty('lastActedBy');
+    for (const bad of [{ memberName: '', at: by.at }, { memberName: 'Aurora', at: 'today' }, { memberName: 7, at: by.at }, 'Aurora', { at: by.at }]) {
+      expect(() => parseTradeList({ trades: [{ ...OPEN, lastActedBy: bad }], next: null }), JSON.stringify(bad)).toThrow();
+    }
+    expect(lastActedLine(by)).toBe('Last action by Aurora, 10 Nov 2026, 09:41 UTC');
   });
 
   it('every trade state has words', () => {
@@ -201,6 +212,22 @@ describe('My trades screen', () => {
     expect(row.querySelector('[data-part="appeal"]')!.textContent).toBe('Appeal Z9Y8-X7W6-V5T4-S3R2');
     // Outside the room link, so pressing it never opens the trade.
     expect(row.querySelector('a [data-part="appeal"]')).toBeNull();
+  });
+});
+
+describe("the member who last acted (Plan 3 Task 42, the account owner's Open rows)", () => {
+  it('shows the line on a row that has it, and nothing on the others', async () => {
+    answer = (u) =>
+      u.searchParams.get('status') === 'open'
+        ? { status: 200, json: { trades: [{ ...OPEN, lastActedBy: { memberName: 'Aurora', at: '2026-11-10T09:41:00.000Z' } }, { ...OPEN2, lastActedBy: null }], next: null } }
+        : { status: 200, json: { trades: [DONE], next: null } };
+    const { host } = await screen();
+    const [first, second] = rows(host);
+    expect(first!.querySelector('[data-part="last-acted"]')!.textContent).toBe('Last action by Aurora, 10 Nov 2026, 09:41 UTC');
+    expect(second!.querySelector('[data-part="last-acted"]')).toBeNull();
+    fire(tab(host, 'Completed'), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(host.querySelector('[data-part="last-acted"]')).toBeNull();
   });
 });
 

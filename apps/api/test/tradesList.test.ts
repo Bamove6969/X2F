@@ -75,6 +75,24 @@ async function member(teamId: string, abilities: string[]): Promise<Browser> {
   return browser;
 }
 
+/** A team member row (no login), for audit rows: its id and name. */
+async function teamMember(teamId: string): Promise<{ id: string; name: string }> {
+  const name = `Actor${String(++n).padStart(4, '0')}`;
+  const { rows } = await deps.db.query<{ id: string }>(
+    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+     values ($1, $2, $3, $4, $5, $5) returning id`,
+    [teamId, name, name.toLowerCase(), ['trades-see-active'], deps.clock()],
+  );
+  return { id: rows[0]!.id, name };
+}
+
+/** One row of the account's team log (migration 015), as `auditMember` / `auditLead` write it. */
+async function audit(accountId: string, memberId: string | null, code: string, action: string, when: Date): Promise<void> {
+  await deps.db.query('insert into team_audit (account_id, member_id, at, action, trade_code) values ($1, $2, $3, $4, $5)', [
+    accountId, memberId, when, action, code,
+  ]);
+}
+
 describe('GET /v1/trades', () => {
   it("lists the caller's own trades, newest first, with only the list's fields", async () => {
     const me = await trader();
@@ -104,6 +122,8 @@ describe('GET /v1/trades', () => {
       counterparty: { displayName: b.displayName },
       takenAt: t2.trade.takenAt.toISOString(),
       closedAt: null,
+      // Plan 3 Task 42: the account owner's open rows say which member last acted (none here).
+      lastActedBy: null,
     });
     expect(p.trades[1]).toEqual({
       code: t1.code,
@@ -236,6 +256,51 @@ describe('GET /v1/trades', () => {
     expect([await room(owner.browser, open.code), await room(owner.browser, done.code)]).toEqual([200, 200]);
     const stranger = await seedTrade(deps, { sellerId: other.id, buyerId: (await trader()).id, poster: 'seller' });
     expect(await room(both, stranger.code)).toEqual({ status: 404, error: 'not-found' });
+  });
+
+  it("Plan 3 Task 42: the account owner's open rows say which member last acted (team_audit); nobody else gets the field", async () => {
+    const owner = await trader();
+    await makeVendor(deps, owner.id);
+    const other = await trader();
+    await makeVendor(deps, other.id);
+    tick();
+    const acted = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
+    tick();
+    const quiet = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    tick();
+    const done = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
+    await driveTo(deps, done.trade, 'released');
+    const first = await teamMember(owner.id);
+    const second = await teamMember(owner.id);
+    const theirs = await teamMember(other.id);
+    const t = (min: number) => new Date(at + min * 60_000);
+    await audit(owner.id, first.id, acted.code, 'mark-paid', t(1));
+    await audit(owner.id, second.id, acted.code, 'extend', t(2));
+    // The lead's own row (member null) is not a member acting.
+    await audit(owner.id, null, acted.code, 'release-started', t(3));
+    // The other side's team log on the same trade is theirs: never on this account's row.
+    await audit(other.id, theirs.id, acted.code, 'mark-paid', t(4));
+    await audit(owner.id, first.id, done.code, 'mark-paid', t(1));
+
+    const open = (await page(owner.browser, '?status=open')).trades;
+    expect(open.map((r) => [r.code, r.lastActedBy])).toEqual([
+      [quiet.code, null],
+      [acted.code, { memberName: second.name, at: t(2).toISOString() }],
+    ]);
+    // The Active trades list only (the plan's words): a completed row has no such field.
+    const completed = (await page(owner.browser, '?status=completed')).trades;
+    expect(completed.map((r) => r.code)).toEqual([done.code]);
+    expect(completed[0]).not.toHaveProperty('lastActedBy');
+    // The other account's owner sees their own member, never this account's.
+    expect((await page(other.browser, '?status=open')).trades.find((r) => r.code === acted.code)?.lastActedBy).toEqual({
+      memberName: theirs.name, at: t(4).toISOString(),
+    });
+    // Visible to the account owner only: a member, even with both trades boxes, gets no such field.
+    const both = await member(owner.id, ['trades-see-active', 'trades-see-history']);
+    const seen = (await page(both)).trades;
+    expect(seen.map((r) => r.code).sort()).toEqual([acted.code, quiet.code, done.code].sort());
+    for (const r of seen) expect(r).not.toHaveProperty('lastActedBy');
+    expect(JSON.stringify(seen)).not.toContain(second.name);
   });
 
   it('a trade deleted by the retention rule (R36) is simply gone: no row, no stub', async () => {
