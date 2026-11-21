@@ -3,7 +3,7 @@ import { BLUR_CHECK_EVERY_NTH_DEFAULT, BLUR_CHECK_EVERY_NTH_MAX, BLUR_KINDS, Blu
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
-import { TRADE_READ } from '../team/perms.js';
+import { assertMemberMay, TRADE_READ, tradePartAbility } from '../team/perms.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { isStoredProof } from '../proofs/store.js';
@@ -62,7 +62,7 @@ export async function loadBlurCheckSchedule(db: Queryable): Promise<BlurCheckSch
 
 // Security review PC1: a team member works the account's trades, so the routes take the member
 // boxes the other trade routes use: listing and answering the asks read the trade (TRADE_READ, as
-// the trade room); announcing a proof posts to the trade's chat (`chat-reply`). Without the box a
+// the trade room, then the box for the trade's part: trades-list I1); announcing a proof posts to the trade's chat (`chat-reply`). Without the box a
 // member gets 403 `forbidden`; the account owner is unaffected.
 const readTrade = requireSession({ kinds: ['trader'], member: TRADE_READ });
 const postChat = requireSession({ kinds: ['trader'], member: 'chat-reply' });
@@ -77,14 +77,14 @@ function paramsOf(req: FastifyRequest): { code: string; proofId: string | null }
 }
 
 /** The caller's side on the trade (locked when `lock`), or 404 for a stranger or an unknown trade. */
-async function sideOf(q: Queryable, code: string, accountId: string, lock = false): Promise<{ side: 'buyer' | 'seller'; methodId: string }> {
-  const { rows } = await q.query<{ buyer_account_id: string; seller_account_id: string; method_id: string }>(
-    `select buyer_account_id, seller_account_id, method_id from trades where code = $1${lock ? ' for update' : ''}`,
+async function sideOf(q: Queryable, code: string, accountId: string, lock = false): Promise<{ side: 'buyer' | 'seller'; methodId: string; closedAt: Date | null }> {
+  const { rows } = await q.query<{ buyer_account_id: string; seller_account_id: string; method_id: string; closed_at: Date | null }>(
+    `select buyer_account_id, seller_account_id, method_id, closed_at from trades where code = $1${lock ? ' for update' : ''}`,
     [code],
   );
   const t = rows[0];
-  if (t?.buyer_account_id === accountId) return { side: 'buyer', methodId: t.method_id };
-  if (t?.seller_account_id === accountId) return { side: 'seller', methodId: t.method_id };
+  if (t?.buyer_account_id === accountId) return { side: 'buyer', methodId: t.method_id, closedAt: t.closed_at };
+  if (t?.seller_account_id === accountId) return { side: 'seller', methodId: t.method_id, closedAt: t.closed_at };
   throw new ApiError(404, 'not-found');
 }
 
@@ -141,7 +141,9 @@ export function blurCheckRoutes(app: FastifyInstance): void {
   app.get('/v1/trades/:code/blur-checks', { preHandler: readTrade }, async (req) => {
     const { code } = paramsOf(req);
     const db = req.server.deps.db;
-    const { side } = await sideOf(db, code, req.auth.accountId);
+    const { side, closedAt } = await sideOf(db, code, req.auth.accountId);
+    // Trades-list I1 (lead's per-part ruling): after the side check, so a stranger stays 404.
+    assertMemberMay(req.auth, tradePartAbility(closedAt));
     const { rows } = await db.query<{ proof_id: string; role: string }>(
       'select proof_id, role from blur_check_asks where trade_code = $1 and side = $2 order by proof_id',
       [code, side],
@@ -160,7 +162,8 @@ export function blurCheckRoutes(app: FastifyInstance): void {
     }
     const deps = req.server.deps;
     await inTx(deps.db, async (c) => {
-      const { side, methodId } = await sideOf(c, code, req.auth.accountId);
+      const { side, methodId, closedAt } = await sideOf(c, code, req.auth.accountId);
+      assertMemberMay(req.auth, tradePartAbility(closedAt));
       const asked = await c.query<{ role: string; blur: string }>(
         'delete from blur_check_asks where trade_code = $1 and proof_id = $2 and side = $3 returning role, blur',
         [code, proofId, side],
