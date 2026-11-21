@@ -24,6 +24,15 @@ export interface TradeListItem {
   counterparty: { displayName: string };
   takenAt: string;
   closedAt: string | null;
+  /**
+   * Plan 3 Task 42: "The account's Active trades list shows which member last acted on each trade
+   * (from `team_audit`), visible to the account owner only." Only on an open row, only for the
+   * account owner's session (never a member's): the newest row of the account's own team log by a
+   * member on this trade (its name as the lead's list shows it, `team_members.display_name`, and
+   * when), or null when no member has acted on it. The lead's own rows (`auditLead`, member null)
+   * are not a member acting, and the other side's team log is never read.
+   */
+  lastActedBy?: { memberName: string; at: string } | null;
 }
 
 /** What `GET /v1/trades` answers: newest first; `next` is the cursor for the page after, null at the end. */
@@ -106,6 +115,25 @@ interface ListRow {
 }
 
 /**
+ * Plan 3 Task 42: for each of these trades, the newest action a member of this account logged on it
+ * (`team_audit`, the account's own log only; ties by the log's id), with the member's name. A
+ * removed member keeps their row in `team_members`, so the name stays.
+ */
+async function lastMemberActions(req: FastifyRequest, accountId: string, codes: string[]): Promise<Map<string, { memberName: string; at: string }>> {
+  const out = new Map<string, { memberName: string; at: string }>();
+  if (codes.length === 0) return out;
+  const { rows } = await req.server.deps.db.query<{ trade_code: string; display_name: string; at: Date }>(
+    `select distinct on (l.trade_code) l.trade_code, m.display_name, l.at
+       from team_audit l join team_members m on m.id = l.member_id and m.account_id = l.account_id
+      where l.account_id = $1 and l.member_id is not null and l.trade_code = any($2::text[])
+      order by l.trade_code, l.at desc, l.id desc`,
+    [accountId, codes],
+  );
+  for (const r of rows) out.set(r.trade_code, { memberName: r.display_name, at: r.at.toISOString() });
+  return out;
+}
+
+/**
  * `GET /v1/trades?status=open|completed&cursor&limit` (lead job, register D-005: the completed-trades
  * list the appeal button sits on). The caller's account's own trades as buyer or seller, newest
  * taken first (ties by code), `limit` a page (default 20, at most 100). Completed is every trade
@@ -115,7 +143,8 @@ interface ListRow {
  * The same sessions as the trade room (FINISH_OPEN_TRADES: a trader session, a backup session and a
  * held one too) and the same boxes for members (TRADE_READ), each part then needing its own box (a
  * part asked for without it: 403 `forbidden`). The list reads only the live `trades` table: a trade
- * the retention rule deleted (R36) is gone, with no stub.
+ * the retention rule deleted (R36) is gone, with no stub. The account owner's open rows also say which
+ * member last acted (`lastActedBy`, Plan 3 Task 42).
  */
 export function tradeListRoute(app: FastifyInstance): void {
   const session = requireSession({ ...FINISH_OPEN_TRADES, member: TRADE_READ });
@@ -148,6 +177,7 @@ export function tradeListRoute(app: FastifyInstance): void {
     );
     const shown = rows.slice(0, limit);
     const last = shown[shown.length - 1];
+    const acted = req.auth.memberId === null ? await lastMemberActions(req, me, shown.filter((r) => r.closed_at === null).map((r) => r.code)) : null;
     return {
       trades: shown.map((r) => ({
         code: r.code,
@@ -159,6 +189,7 @@ export function tradeListRoute(app: FastifyInstance): void {
         counterparty: { displayName: r.counterparty_name },
         takenAt: r.taken_at.toISOString(),
         closedAt: r.closed_at === null ? null : r.closed_at.toISOString(),
+        ...(acted !== null && r.closed_at === null ? { lastActedBy: acted.get(r.code) ?? null } : {}),
       })),
       next: rows.length > limit && last !== undefined ? encodeCursor(last.taken_key, last.code) : null,
     };

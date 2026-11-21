@@ -19,6 +19,11 @@ export interface TradeListItem {
   counterparty: { displayName: string };
   takenAt: string;
   closedAt: string | null;
+  /**
+   * Plan 3 Task 42: on the account owner's open rows only, the team member who last acted on the
+   * trade and when (null: no member has); absent everywhere else.
+   */
+  lastActedBy?: { memberName: string; at: string } | null;
 }
 
 export interface TradeListPage {
@@ -53,6 +58,12 @@ function iso(v: unknown): string {
   return v;
 }
 
+function lastActedBy(v: unknown): { memberName: string; at: string } | null {
+  if (v === null) return null;
+  if (!isRecord(v)) throw shape();
+  return { memberName: str(v.memberName), at: iso(v.at) };
+}
+
 function item(raw: unknown): TradeListItem {
   if (!isRecord(raw) || !isRecord(raw.counterparty)) throw shape();
   if (raw.role !== 'buyer' && raw.role !== 'seller') throw shape();
@@ -68,6 +79,7 @@ function item(raw: unknown): TradeListItem {
     counterparty: { displayName: str(raw.counterparty.displayName) },
     takenAt: iso(raw.takenAt),
     closedAt: raw.closedAt === null ? null : iso(raw.closedAt),
+    ...(raw.lastActedBy !== undefined ? { lastActedBy: lastActedBy(raw.lastActedBy) } : {}),
   };
 }
 

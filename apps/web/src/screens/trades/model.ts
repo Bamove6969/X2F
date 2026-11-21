@@ -49,6 +49,15 @@ export function whenLine(t: Pick<TradeListItem, 'takenAt' | 'closedAt'>): string
   return t.closedAt !== null ? `Ended ${formatDateTime(t.closedAt)}` : `Started ${formatDateTime(t.takenAt)}`;
 }
 
+/**
+ * Plan 3 Task 42: "Last action by Aurora, 10 Nov 2026, 09:41 UTC", the team member who last acted on
+ * an open trade, shown to the account owner only (the API sends it to nobody else). COPY-UNSIGNED,
+ * DESIGNER-REVIEW (no board draws it).
+ */
+export function lastActedLine(by: { memberName: string; at: string }): string {
+  return `Last action by ${by.memberName}, ${formatDateTime(by.at)}`;
+}
+
 /** An empty tab. COPY-UNSIGNED */
 export const EMPTY: Readonly<Record<TradeListStatus, { title: string; text: string }>> = {
   open: { title: 'No open trades', text: 'Trades you start or that start on your offers show here until they end.' },

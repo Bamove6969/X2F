@@ -27,7 +27,7 @@ import { EmptyState } from '../ui/EmptyState.js';
 import { Notice } from '../ui/Notice.js';
 import { StatusChip } from '../ui/StatusChip.js';
 import { fetchTradeList, type TradeListItem, type TradeListStatus } from './trades/api.js';
-import { EMPTY, LOAD_FAILED, RETRY, SHOW_MORE, STATE_LABEL, TAB_LABEL, TRADES_TITLE, fiatLine, sideLine, whenLine } from './trades/model.js';
+import { EMPTY, LOAD_FAILED, RETRY, SHOW_MORE, STATE_LABEL, TAB_LABEL, TRADES_TITLE, fiatLine, lastActedLine, sideLine, whenLine } from './trades/model.js';
 import './browse/browse.css';
 import './screens.css';
 import './trades/trades.css';
@@ -198,6 +198,11 @@ function TradeRow({ trade: t, action }: { trade: TradeListItem; action: ReactNod
         <span className="x2f-trades__line">
           <span className="x2f-trades__mono">{t.code}</span> · {whenLine(t)}
         </span>
+        {t.lastActedBy ? (
+          <span className="x2f-trades__line" data-part="last-acted">
+            {lastActedLine(t.lastActedBy)}
+          </span>
+        ) : null}
         <StateChip state={t.state} />
       </Link>
       {action ? <div className="x2f-trades__action">{action}</div> : null}
