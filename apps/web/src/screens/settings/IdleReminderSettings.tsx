@@ -2,7 +2,7 @@
  * The idle reminder setting (owner, Q75, 6 Nov 2026): at /settings/idle-reminder, the person's own
  * setting, a team member's included (it is stored on their own login). Off by default; on, with
  * one of IDLE_REMINDER_MINUTES. A change saves at once. Linked from Settings → Security and from the
- * question after every login (where a team member, who has no Security screen, finds it).
+ * question after every login (a team member finds it in both places).
  * Placement and words: DESIGN (no board yet; IDLE_COPY).
  */
 import { useEffect, useId, useState } from 'react';

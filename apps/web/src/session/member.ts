@@ -33,6 +33,16 @@ export function mayPostOffers(session: Session): boolean {
 }
 
 /**
+ * Whether this session may open Wallets: the account owner alone (Wallets.tsx is OwnerOnly).
+ * While the session loads the member state is not known yet, so the link waits (order #2 M1:
+ * avoid flicker on each cold load).
+ */
+export function mayViewWallets(session: Session): boolean {
+  if (session.status === 'loading') return false;
+  return memberOf(session) === null;
+}
+
+/**
  * Owner 2 Nov 2026: the signed-in account's type, 'trader' or 'vendor'; null when signed out,
  * loading, or the API sent none (an older build: the API still refuses a trader's post).
  */

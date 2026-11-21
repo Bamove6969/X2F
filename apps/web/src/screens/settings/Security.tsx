@@ -5,7 +5,7 @@
  * replaced the inactivity logout timer, owner 2 Nov 2026), and the alerts list. All confirm-it's-you prompts across the screen use one shared `ConfirmSheet` (via
  * `useConfirm`), so there is a single confirm UI (X-4).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
@@ -23,7 +23,8 @@ import { PayoutWait } from './PayoutWait.js';
 import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
 import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './accountTypeCopy.js';
 import '../screens.css';
-import { OwnerOnly } from './OwnerOnly.js';
+import { memberOf } from '../../session/member.js';
+import { useSession } from '../../session/useSession.js';
 import { WELCOME_PATH } from '../../tour/welcomeSeen.js';
 import { FIRST_TRADE_TOUR } from '../../tour/firstTradeTour.js';
 import { REPLAY_COPY, replayLabel } from '../../tour/progress.js';
@@ -37,22 +38,24 @@ export const WELCOME_LINK = 'Welcome screen';
  * "Carry on the tour" while one is left half done on this device, and the way back to the welcome
  * screen. DESIGNER-REVIEW: placement (Security stands in for Settings until its board lands).
  */
-function HelpCard() {
+function HelpCard({ member = false }: { member?: boolean }) {
   const tour = useTour();
   const label = replayLabel(FIRST_TRADE_TOUR.id);
   return (
     <section className="x2f-card" data-part="help" aria-label={REPLAY_COPY.help}>
       <h2 className="x2f-section-title">{REPLAY_COPY.help}</h2>
       <ul className="x2f-list">
-        <li className="x2f-list__row">
-          <button type="button" className="x2f-row-link x2f-tour-replay" data-part="tour-replay" onClick={() => tour.start(FIRST_TRADE_TOUR, { resume: true })}>
-            <span className="x2f-tour-replay__text">
-              <span>{label}</span>
-              <small>{REPLAY_COPY.sub}</small>
-            </span>
-            <Icon name="chevron-right" size={20} />
-          </button>
-        </li>
+        {!member ? (
+          <li className="x2f-list__row">
+            <button type="button" className="x2f-row-link x2f-tour-replay" data-part="tour-replay" onClick={() => tour.start(FIRST_TRADE_TOUR, { resume: true })}>
+              <span className="x2f-tour-replay__text">
+                <span>{label}</span>
+                <small>{REPLAY_COPY.sub}</small>
+              </span>
+              <Icon name="chevron-right" size={20} />
+            </button>
+          </li>
+        ) : null}
         <li className="x2f-list__row">
           <Link className="x2f-button x2f-button--quiet" to={WELCOME_PATH} data-part="welcome-link">
             {WELCOME_LINK}
@@ -99,65 +102,83 @@ function HoldBanner() {
   );
 }
 
-/** Plan 2 Task 18: the account owner's screen; a team member gets the owner-only refusal. */
+/** Plan 2 Task 18, order #2 M3: Settings screen. Owner sees full security settings; team members see member settings. */
 export function Security() {
-  return (
-    <OwnerOnly screen="security">
-      <SecurityScreen />
-    </OwnerOnly>
-  );
+  return <SecurityScreen />;
 }
 
 function SecurityScreen() {
   const { prove, confirmUi, open } = useConfirm();
+  const session = useSession();
+  const known = useRef<{ ready: boolean; member: boolean }>({ ready: false, member: false });
+  if (session.status === 'signed-in') {
+    known.current = { ready: true, member: memberOf(session) !== null };
+  } else if (session.status === 'signed-out') {
+    known.current = { ready: false, member: false };
+  }
+  const { ready, member } = known.current;
 
   return (
     <ConfirmOpenProvider value={open}>
       <main className="x2f-screen" data-screen="security">
         <h1 className="x2f-screen__title">Security</h1>
-        <HoldBanner />
-        {/* Hold model v3 (lead review item 3): a new recovery code to write down, and the account's changes. */}
-        <NewRecoveryCode />
-        <AccountChanges />
-        <Methods prove={prove} />
-        <PayoutWait />
-        {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it. */}
-        <section className="x2f-card" data-part="devices-link" aria-label={DEVICES_TITLE}>
-          <Link className="x2f-row-link" to={DEVICES_PATH}>
-            <span>{DEVICES_TITLE}</span>
-            <Icon name="chevron-right" size={20} />
-          </Link>
-        </section>
-        <Alerts />
-        {/* Task 37 review M3: the way to the Blocked list until Plan 5's Profile tab (Block board's Settings, Blocked traders). */}
-        <section className="x2f-card" data-part="blocked-link" aria-label={BLOCK_COPY.title}>
-          <ul className="x2f-list">
-            <li className="x2f-list__row">
-              <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
-                {BLOCK_COPY.title}
-              </Link>
-            </li>
-            {/* Owner Q75: the idle reminder, until a board places it (DESIGN: placement). */}
-            <li className="x2f-list__row">
-              <Link className="x2f-button x2f-button--quiet" to={IDLE_REMINDER_PATH} data-part="idle-reminder-link">
-                {IDLE_COPY.link}
-              </Link>
-            </li>
-            {/* Owner 2 Nov 2026: Settings > Account type (Trader or Vendor), until the Settings board places it. */}
-            <li className="x2f-list__row">
-              <Link className="x2f-button x2f-button--quiet" to={ACCOUNT_TYPE_PATH} data-part="account-type-link">
-                {ACCOUNT_TYPE_COPY.title}
-              </Link>
-            </li>
-            {/* Plan 2 Task 18: the way to the Team screen until a board places it (NEEDS_DESIGN_TEAM). */}
-            <li className="x2f-list__row">
-              <Link className="x2f-button x2f-button--quiet" to={TEAM_PATH} data-part="team-link">
-                {TEAM_COPY.title}
-              </Link>
-            </li>
-          </ul>
-        </section>
-        <HelpCard />
+        {!ready ? null : (
+          <>
+            {!member ? (
+              <>
+                <HoldBanner />
+                {/* Hold model v3 (lead review item 3): a new recovery code to write down, and the account's changes. */}
+                <NewRecoveryCode />
+                <AccountChanges />
+                <Methods prove={prove} />
+                <PayoutWait />
+                {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it. */}
+                <section className="x2f-card" data-part="devices-link" aria-label={DEVICES_TITLE}>
+                  <Link className="x2f-row-link" to={DEVICES_PATH}>
+                    <span>{DEVICES_TITLE}</span>
+                    <Icon name="chevron-right" size={20} />
+                  </Link>
+                </section>
+              </>
+            ) : null}
+            <Alerts member={member} />
+            {/* Task 37 review M3: the way to the Blocked list until Plan 5's Profile tab (Block board's Settings, Blocked traders). */}
+            <section className="x2f-card" data-part="blocked-link" aria-label={BLOCK_COPY.title}>
+              <ul className="x2f-list">
+                {!member ? (
+                  <li className="x2f-list__row">
+                    <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
+                      {BLOCK_COPY.title}
+                    </Link>
+                  </li>
+                ) : null}
+                {/* Owner Q75: the idle reminder, until a board places it (DESIGN: placement). */}
+                <li className="x2f-list__row">
+                  <Link className="x2f-button x2f-button--quiet" to={IDLE_REMINDER_PATH} data-part="idle-reminder-link">
+                    {IDLE_COPY.link}
+                  </Link>
+                </li>
+                {!member ? (
+                  <>
+                    {/* Owner 2 Nov 2026: Settings > Account type (Trader or Vendor), until the Settings board places it. */}
+                    <li className="x2f-list__row">
+                      <Link className="x2f-button x2f-button--quiet" to={ACCOUNT_TYPE_PATH} data-part="account-type-link">
+                        {ACCOUNT_TYPE_COPY.title}
+                      </Link>
+                    </li>
+                    {/* Plan 2 Task 18: the way to the Team screen until a board places it (NEEDS_DESIGN_TEAM). */}
+                    <li className="x2f-list__row">
+                      <Link className="x2f-button x2f-button--quiet" to={TEAM_PATH} data-part="team-link">
+                        {TEAM_COPY.title}
+                      </Link>
+                    </li>
+                  </>
+                ) : null}
+              </ul>
+            </section>
+            <HelpCard member={member} />
+          </>
+        )}
         {confirmUi}
       </main>
     </ConfirmOpenProvider>

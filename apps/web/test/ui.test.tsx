@@ -5,7 +5,7 @@ import { Amount } from '../src/ui/Amount.js';
 import { BadgePill } from '../src/ui/BadgePill.js';
 import { ActionBar } from '../src/ui/ActionBar.js';
 import { BottomNav } from '../src/ui/BottomNav.js';
-import { mayPostOffers } from '../src/session/member.js';
+import { mayPostOffers, mayViewWallets } from '../src/session/member.js';
 import type { Session } from '../src/session/useSession.js';
 import { Button } from '../src/ui/Button.js';
 import { Checkbox } from '../src/ui/Checkbox.js';
@@ -400,6 +400,16 @@ describe('BottomNav', () => {
     expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile']);
   });
 
+  // Order #2 M2: hide Wallets on phone for team members
+  it('hides Wallets when wallets is false', () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/sell']}>
+        <BottomNav wallets={false} />
+      </MemoryRouter>,
+    );
+    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Profile']);
+  });
+
   it('mayPostOffers: the account owner and an Offers member may; a Trades-only member may not', () => {
     const me = (member: unknown) => ({ status: 'signed-in', me: { displayName: 'Calcium', member } }) as unknown as Session;
     expect(mayPostOffers(me(null))).toBe(true);
@@ -413,6 +423,17 @@ describe('BottomNav', () => {
     // Review N2: while the session loads the role is not known, so the tab waits (a Trades-only
     // member never sees it appear and vanish on a cold load).
     expect(mayPostOffers({ status: 'loading' })).toBe(false);
+  });
+
+  // Order #2 M1 & M2: mayViewWallets hides Wallets from team members and during loading
+  it('mayViewWallets: the account owner may; team members and loading sessions may not', () => {
+    const me = (member: unknown) => ({ status: 'signed-in', me: { displayName: 'Calcium', member } }) as unknown as Session;
+    expect(mayViewWallets(me(null))).toBe(true);
+    expect(mayViewWallets(me(undefined))).toBe(true);
+    expect(mayViewWallets(me({ name: 'Aurora', roles: ['offers'] }))).toBe(false);
+    expect(mayViewWallets(me({ name: 'Aurora', roles: ['trades'] }))).toBe(false);
+    expect(mayViewWallets({ status: 'signed-out' } as Session)).toBe(true);
+    expect(mayViewWallets({ status: 'loading' } as Session)).toBe(false);
   });
 
   it('the tab bar carries no data-primary: the Main and BuyMain boards have no primary action', () => {

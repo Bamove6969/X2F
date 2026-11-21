@@ -99,11 +99,12 @@ export function alertWords(kind: string): string {
   return Object.hasOwn(KIND_WORDS, kind) ? KIND_WORDS[kind]! : 'Security alert';
 }
 
-export function Alerts() {
+export function Alerts({ member = false }: { member?: boolean | undefined } = {}) {
   const [alerts, setAlerts] = useState<AlertEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (member) return;
     let live = true;
     void authApi.listAlerts().then(
       (list) => {
@@ -118,43 +119,45 @@ export function Alerts() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [member]);
 
   return (
     <>
-    <AlarmSettingsCard />
-    <JabberAlerts />
-    <section className="x2f-card" data-part="alerts" aria-labelledby="alerts-h">
-      <h2 className="x2f-card__title" id="alerts-h">
-        Alerts
-      </h2>
-      {error !== null ? (
-        <p className="x2f-error" role="alert">
-          {error}
-        </p>
+      <AlarmSettingsCard />
+      {!member ? <JabberAlerts /> : null}
+      {!member ? (
+        <section className="x2f-card" data-part="alerts" aria-labelledby="alerts-h">
+          <h2 className="x2f-card__title" id="alerts-h">
+            Alerts
+          </h2>
+          {error !== null ? (
+            <p className="x2f-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {alerts !== null && alerts.length === 0 ? <p className="x2f-note">No alerts.</p> : null}
+          <ul className="x2f-list" data-part="alert-list">
+            {(alerts ?? []).map((a) => (
+              <li className="x2f-list__row" key={a.id} data-kind={a.kind} data-unseen={a.seenAt === null ? 'true' : 'false'}>
+                <span className="x2f-list__label">
+                  {alertWords(a.kind)}
+                  {alertDetail(a.kind, a.detail) !== null ? (
+                    <>
+                      <br />
+                      <span className="x2f-list__time" data-part="alert-detail">
+                        {alertDetail(a.kind, a.detail)}
+                      </span>
+                    </>
+                  ) : null}
+                </span>
+                <time className="x2f-list__time x2f-when" dateTime={a.createdAt}>
+                  {formatDateTime(a.createdAt)}
+                </time>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
-      {alerts !== null && alerts.length === 0 ? <p className="x2f-note">No alerts.</p> : null}
-      <ul className="x2f-list" data-part="alert-list">
-        {(alerts ?? []).map((a) => (
-          <li className="x2f-list__row" key={a.id} data-kind={a.kind} data-unseen={a.seenAt === null ? 'true' : 'false'}>
-            <span className="x2f-list__label">
-              {alertWords(a.kind)}
-              {alertDetail(a.kind, a.detail) !== null ? (
-                <>
-                  <br />
-                  <span className="x2f-list__time" data-part="alert-detail">
-                    {alertDetail(a.kind, a.detail)}
-                  </span>
-                </>
-              ) : null}
-            </span>
-            <time className="x2f-list__time x2f-when" dateTime={a.createdAt}>
-              {formatDateTime(a.createdAt)}
-            </time>
-          </li>
-        ))}
-      </ul>
-    </section>
     </>
   );
 }

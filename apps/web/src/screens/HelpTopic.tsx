@@ -10,7 +10,7 @@ import { LIBRARY_TOPICS, type HelpTopicId } from './help/helpLibrary.js';
  * Support and Settings, linked from /login, /session-length and the welcome screen. They are on the
  * front door, so they are read both by someone who is not logged in yet and by someone who is: each
  * topic has a line for each (review 12 Nov, L4), and only a signed-in reader gets links behind the
- * door. A team member gets no link to Settings, which is the account owner's (OwnerOnly).
+ * door. A team member gets member-level Settings (alarm settings and idle reminder), while owner-only settings remain gated.
  * The one help page (review L3: /help/:topic wins over a separate signed-in /help).
  * COPY-UNSIGNED and DESIGNER-REVIEW: every word here is a placeholder until the owner writes the pages.
  *
@@ -53,8 +53,9 @@ export const HELP_TOPICS: Record<string, TopicCopy> = {
     title: 'Settings',
     out: 'Your settings are in the app once you are logged in.',
     in: 'Your security, devices and team are in Settings.',
-    member: 'The account owner looks after the settings of the account you work for.',
-    link: { label: 'Open Settings', to: '/settings/security', owner: true },
+    // COPY-UNSIGNED (rail-members r3 review, M1): members have their own alarm and idle reminder in Settings.
+    member: 'Your alarm and idle reminder are in Settings. The account owner looks after the rest.',
+    link: { label: 'Open Settings', to: '/settings/security' },
   },
 };
 

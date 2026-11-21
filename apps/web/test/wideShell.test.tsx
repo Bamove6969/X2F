@@ -14,10 +14,10 @@ import { render } from './render.js';
 // happy-dom's import.meta.url is not a file URL; the directory is.
 const SRC = join(import.meta.dirname, '..', 'src');
 
-function rail(path: string, postOffers = true) {
+function rail(path: string, postOffers = true, wallets = true) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <DesktopRail postOffers={postOffers} />
+      <DesktopRail postOffers={postOffers} wallets={wallets} />
     </MemoryRouter>,
   ).host;
 }
@@ -92,9 +92,58 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     }
   });
 
-  it('leaves out Post offer for a team member without the Offers role, as the phone tab bar does', () => {
-    const host = rail('/sell', false);
+  it('leaves out Post offer for a trader/vendor without the Offers role', () => {
+    const host = rail('/sell', false, true);
     expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile', 'Settings', 'Help']);
+  });
+
+  it('leaves out owner-only routes (Wallets) for a team member while keeping Settings (Order #2 M3)', () => {
+    // Member with offers role (wallets=false): Trade, Post offer, Profile, Settings, Help (never Wallets)
+    const hostWithOffers = rail('/sell', true, false);
+    expect([...hostWithOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
+      'Trade',
+      'Post offer',
+      'Profile',
+      'Settings',
+      'Help',
+    ]);
+    expect([...hostWithOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.getAttribute('href'))).toEqual([
+      '/sell',
+      '/post',
+      '/profile',
+      '/settings/security',
+      '/feedback',
+    ]);
+
+    // Member without offers role (postOffers=false, wallets=false): Trade, Profile, Settings, Help
+    const hostWithoutOffers = rail('/sell', false, false);
+    expect([...hostWithoutOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
+      'Trade',
+      'Profile',
+      'Settings',
+      'Help',
+    ]);
+
+    // Account owner (wallets=true): all 6 links present
+    const hostOwner = rail('/sell', true, true);
+    expect([...hostOwner.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
+      'Trade',
+      'Post offer',
+      'Wallets',
+      'Profile',
+      'Settings',
+      'Help',
+    ]);
+
+    // Cold load / loading session (wallets=false): leaves out Wallets to avoid flicker (M1)
+    const hostLoading = rail('/sell', true, false);
+    expect([...hostLoading.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
+      'Trade',
+      'Post offer',
+      'Profile',
+      'Settings',
+      'Help',
+    ]);
   });
 });
 

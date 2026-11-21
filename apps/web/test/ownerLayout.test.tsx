@@ -135,7 +135,8 @@ describe('help links on /login and /session-length (owner #38, #42)', () => {
   });
 
   // Review 12 Nov, L4: the same page is read logged out and logged in, so it says the right thing to
-  // each, and only a signed-in reader gets links behind the door; a team member gets none to Settings.
+  // each, and only a signed-in reader gets links behind the door. A team member has member-level
+  // Settings (alarm and idle reminder), so it gets the Settings link too (rail-members r3 review, M1).
   const FULL = { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
   const page = (path: string) =>
     render(
@@ -172,11 +173,12 @@ describe('help links on /login and /session-length (owner #38, #42)', () => {
     expect(read1(page('/help/settings')).action).toBe('/settings/security');
   });
 
-  it('a team member: no link to the owner-only Settings', () => {
+  it('a team member: the member Settings line and the link to its member-level Settings', () => {
     state.session = { status: 'signed-in', me: { ...FULL, member: { name: 'Ana', roles: ['trades'] } } };
     const s = read1(page('/help/settings'));
-    expect(s.action).toBeNull();
+    expect(s.action).toBe('/settings/security');
     expect(s.body).toBe(HELP_TOPICS.settings!.member);
+    expect(s.body).toBe('Your alarm and idle reminder are in Settings. The account owner looks after the rest.');
     expect(read1(page('/help/support')).action).toBe('/feedback');
   });
 });
