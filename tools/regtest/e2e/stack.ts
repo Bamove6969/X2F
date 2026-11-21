@@ -25,7 +25,6 @@ import * as openpgp from 'openpgp';
 import pg from 'pg';
 import { migrate } from '../../../apps/api/src/db/migrate.js';
 import { TERMS_TEXT_VERSION } from '../../../apps/web/src/screens/setup/termsText.js';
-import { verifyOcrAssets } from '../../copy-ocr-assets.js';
 import { startRegtest, type Regtest } from '../regtest.js';
 
 export const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
@@ -391,7 +390,14 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
     // Plan 5 Task 17: the smart proof card reads the buyer's screenshot with the self-hosted OCR
     // under /ocr/ (Task 13). The build copies those files (vite.config.ts `ocrAssets`); the copy the
     // API serves must be exactly the pinned set (tools/ocr-assets.sha256), checked here once.
-    await verifyOcrAssets(join(webDist, 'ocr'));
+    // (Read here, not through tools/copy-ocr-assets.ts: its top-level await makes it ESM-only, which
+    // Playwright's loader cannot require.)
+    const pinned = readFileSync(join(ROOT, 'tools/ocr-assets.sha256'), 'utf8').split('\n').filter((l) => l.trim() !== '' && !l.startsWith('#')).map((l) => l.trim().split(/\s+/));
+    const served = readdirSync(join(webDist, 'ocr')).sort();
+    if (served.join() !== pinned.map(([, name]) => name).sort().join()) throw new Error(`stack: the build's /ocr/ holds ${served.join(', ')}, not the pinned set`);
+    for (const [hash, name] of pinned) {
+      if (createHash('sha256').update(readFileSync(join(webDist, 'ocr', name!))).digest('hex') !== hash) throw new Error(`stack: the build's /ocr/${name} differs from tools/ocr-assets.sha256`);
+    }
 
     // ── services ──
     procs.push(startTs(logDir, 'relay', 'apps/relay/src/main.ts', {
