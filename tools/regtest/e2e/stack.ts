@@ -26,6 +26,7 @@ import pg from 'pg';
 import { migrate } from '../../../apps/api/src/db/migrate.js';
 import { TERMS_TEXT_VERSION } from '../../../apps/web/src/screens/setup/termsText.js';
 import { startRegtest, type Regtest } from '../regtest.js';
+import { prepareStaff, type StaffInfo, type StaffPrep } from './staffStack.js';
 
 export const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const PG_IMAGE = 'postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24';
@@ -47,6 +48,8 @@ export interface StackInfo {
    * moderator's sealed party state with it, so a spec can act at a protocol step (gap 4 review M1).
    */
   modKeystoreKey: string;
+  /** Plan 4 Task 21: the staff API, staff-web, the owner and the ruling gate (startStack `staff`; staffStack.ts). */
+  staff?: StaffInfo;
 }
 
 export interface Stack extends StackInfo {
@@ -305,7 +308,7 @@ async function makeSecrets(dir: string) {
   };
 }
 
-export async function startStack(o: { logDir: string }): Promise<Stack> {
+export async function startStack(o: { logDir: string; staff?: boolean }): Promise<Stack> {
   const logDir = o.logDir;
   mkdirSync(logDir, { recursive: true });
   for (const what of sweepStale()) console.log(`stack: removed ${what} left by an earlier run`);
@@ -320,9 +323,11 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
   let chain: Regtest | null = null;
   const container = `x2f-e2e-${process.pid}`;
   containerName = container;
+  let staffPrep: StaffPrep | null = null;
 
   const stop = async () => {
     for (const p of [...procs].reverse()) await stopProc(p);
+    await staffPrep?.close();
     await chain?.stop();
     monerod = null;
     try {
@@ -387,6 +392,9 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
       },
     });
 
+    // ── the staff side (Plan 4 Task 21), when asked for: built and fronted before the API starts ──
+    if (o.staff) staffPrep = await prepareStaff({ root: ROOT, work, logDir, modSigningPublic: s.modSigningPublic });
+
     // ── services ──
     procs.push(startTs(logDir, 'relay', 'apps/relay/src/main.ts', {
       RELAY_MOD_SIGNING_PUBLIC: s.modSigningPublic, RELAY_HOST: HOST, RELAY_PORT: String(ports.relay), RELAY_ADMIN_HOST: HOST, RELAY_ADMIN_PORT: String(ports.relayAdmin),
@@ -426,9 +434,13 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
       X2F_MONEROD_URL: chain.restrictedRpcUri!,
       PRICE_SOURCES: 'kraken,bitfinex,coingecko',
       FX_SOURCES: 'coinbase',
+      ...staffPrep?.apiEnv,
     }, [fileURLToPath(new URL('./fixed-prices.mjs', import.meta.url))]));
     await waitFor('the API', async () => (await fetch(`${origin}/v1/site`)).status < 500, procs);
     await waitFor('the node proxy', async () => (await fetch(`${proxyUrl}/get_info`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{}' })).ok, procs);
+
+    // The owner is set up and pinned into a new ruling gate before the moderation process starts.
+    const staffUp = staffPrep ? await staffPrep.afterApi({ apiDatabaseUrl: pgUrl('x2f'), modKeystoreKey: s.modKeystoreKey }) : null;
 
     procs.push(startTs(logDir, 'moderation', 'apps/moderation/src/main.ts', {
       MOD_DATABASE_URL: pgUrl('x2f_moderation'),
@@ -440,6 +452,7 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
       MONERO_DAEMON_URI: chain.rpcUri,
       MONERO_NETWORK: 'regtest',
       X2F_FEE_WALLET: s.feeWallet.address,
+      ...staffUp?.modEnv,
     }));
     // The moderation process migrates its database, takes its instance lock, then pulls
     // /internal/v1/work every 5 s. It logs only failures (work-unavailable when a pull fails), so
@@ -459,6 +472,7 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
       modDatabaseUrl: pgUrl('x2f_moderation'),
       logDir,
       modKeystoreKey: s.modKeystoreKey,
+      ...(staffUp ? { staff: staffUp.info } : {}),
     };
     return { ...info, stop };
   } catch (e) {
