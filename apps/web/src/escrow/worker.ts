@@ -10,6 +10,7 @@
 import { MoneroMultisigEngine, runParty, wsTransport, type EscrowNetwork } from '@x2f/escrow';
 import { generateBoxKeyPair, generateIdentity } from '@x2f/protocol';
 import { httpEscrowApi } from './adapters.js';
+import { installMoneroWorker } from './moneroWorker.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowAction, type EscrowRuntime, type EscrowStatus, type RuntimeDeps } from './runtime.js';
 import { openEscrowStore } from './store.js';
 import { createAckKeeper } from '../chat/ack.js';
@@ -163,6 +164,8 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
   serveChat(globalThis as unknown as ChatPort, sharedChatEngine);
   // J-23 groundwork: the account chat key keeper (chat/ack.ts); keys never leave this worker.
   serveChatKeys(globalThis as unknown as ChatKeysPort, async () => createAckKeeper({ store: await sharedChatStore(), newBoxKeyPair: generateBoxKeyPair }));
+  // Before any wallet exists: monero-ts's own wallet worker, served by this origin (moneroWorker.ts).
+  installMoneroWorker();
   serveEscrow(globalThis as unknown as Port, async (onStatus) => {
     // Each key is named, so the build inlines only these five and never the whole env object
     // (which would carry VITE_FIXTURES and any other VITE_ variable into the production worker).

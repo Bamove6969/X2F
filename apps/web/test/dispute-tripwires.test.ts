@@ -25,6 +25,18 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     expect(/'mod'|rulingAllowsCosign/.test(runtime), 'the runtime settles mod-built sets: gate them with rulingAllowsCosign').toBe(false);
   });
 
+  it('NEEDS_PLAN_4_MOD_COSIGN (growth-binding review m4): the buyer\'s ruling co-sign must not be blocked by releaseRebindRefused', () => {
+    // docs/security/growth-before-paid-2026-11-20.md. Under releaseRebindRefused (and paidRefused)
+    // acceptedAmount() returns null, so any outcome built through context() without refundOnly is
+    // refused. When the runtime gains the mod-built co-sign path (the tripwire above), a
+    // buyer-favouring ruling (dispute-buyer) must not go through that null: decide it on purpose
+    // (the ruling statement, not the release bound, sets the amount), add a test for a ruling
+    // co-sign under the flag, remove the TODO(m4) at acceptedAmount and delete this check.
+    const runtime = readFileSync(ROOT + 'apps/web/src/escrow/runtime.ts', 'utf8');
+    expect(runtime, 'the TODO(m4) note stands at acceptedAmount').toMatch(/TODO\(m4\)/);
+    expect(/'mod'|rulingAllowsCosign|dispute-buyer/.test(runtime), 'the ruling co-sign is wired: decide releaseRebindRefused for it (review m4)').toBe(false);
+  });
+
   it('NEEDS_PLAN_4_RULING_PAYOUT: the ruling page says where the XMR goes until the API reports the payout executed', () => {
     // C11 review I1. Spec / Plan 4 ("A1 dropped", Revision 2026-10-29c) and owner Q37 (6 Nov): the
     // coins move at the ruling. rulingAllowsCosign (screens/dispute/rules.ts) allows the co-sign from

@@ -11,6 +11,7 @@ export {
   type TxStatus,
 } from './engine.js';
 export { FEE_BOUND_FLOOR, FEE_ESTIMATE_MULTIPLIER, MAX_NETWORK_FEE, MAX_QUANTIZATION_MASK, checkPayouts, checkTxSet, estimateTxWeight, feeCeiling, parseFeeEstimate, type DescribedTx, type FeeEstimate } from './verify.js';
+export { setMoneroWorkerPath } from './moneroWorker.js';
 export { MoneroMultisigEngine, MoneroMultisigSession, TX_KEY, isScalar, isTxKey, kexSignerKey, type EscrowNetwork } from './monero.js';
 export {
   autoRefundDecision,

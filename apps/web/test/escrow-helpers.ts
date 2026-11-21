@@ -129,6 +129,28 @@ export class Parties {
   /** Per role, the tx hash landed(o) proves (review M1), else null; and every outcome it was asked about. */
   landedFor: Partial<Record<Role, string | null>> = {};
   landedAsked: { role: Role; o: Outcome }[] = [];
+  /** When set, decides landed(o) per role and outcome (else landedFor). */
+  landedFn: ((role: Role, o: Outcome) => string | null) | null = null;
+  /**
+   * What each role's party answers to committedBuilder() (the builder of a tx set it built or
+   * accepted, so it can no longer switch outcomes); null when absent. A role in `noCommittedBuilder`
+   * gets a party without the method (an older party: counts as committed, fail closed).
+   */
+  committedBuilders: Partial<Record<Role, Role | null>> = {};
+  noCommittedBuilder = new Set<Role>();
+  /**
+   * acceptedOutcome(): the outcome the party's queued settle() job took (switched to). A settle is
+   * taken at once unless its role is in `acceptHeld` (the job still waits behind the party's work, or
+   * will be refused); `accept(role)` then takes the role's latest settle. A role in
+   * `noCommittedBuilder` gets neither method.
+   */
+  accepted: Partial<Record<Role, Outcome | null>> = {};
+  acceptHeld = new Set<Role>();
+  accept(role: Role): void {
+    this.acceptHeld.delete(role);
+    const last = this.settles.filter((x) => x.role === role).at(-1);
+    this.accepted[role] = last ? last.o : null;
+  }
   /** When set for a role, that role's next ready() rejects with it (once). */
   readyError: Partial<Record<Role, unknown>> = {};
   /** When set for a role, every funds() of that role rejects with it until cleared (a dead party). */
@@ -148,7 +170,11 @@ export class Parties {
     this.calls.push({ role: args.role, args });
     // Saved like a real party's first save; a run stopped at once refuses it (no writes after stop).
     args.store.save({ v: 1, session: { v: 1, keys: 'k', cache: 'c' }, guard: { trade: args.trade, seen: {} }, seq: 1, step: 'msig.prepare:0', address: null, sent: {}, received: {}, release: null }).catch(() => undefined);
+    const committedBuilder = this.noCommittedBuilder.has(args.role)
+      ? {}
+      : { committedBuilder: (): Role | null => this.committedBuilders[args.role] ?? null, acceptedOutcome: (): Outcome | null => this.accepted[args.role] ?? null };
     return {
+      ...committedBuilder,
       ready: async () => {
         if (this.readyError[args.role] !== undefined) {
           const e = this.readyError[args.role];
@@ -161,6 +187,7 @@ export class Parties {
       },
       settle: (o) => {
         this.settles.push({ role: args.role, o });
+        if (!this.acceptHeld.has(args.role)) this.accepted[args.role] = o;
         const closed = this.relayClosed[args.role];
         if (closed !== undefined) return Promise.reject(new TransportClosedError(closed));
         return new Promise((resolve, reject) => this.pending.push({ role: args.role, o, resolve, reject }));
@@ -168,6 +195,7 @@ export class Parties {
       settleSent: () => this.sent[args.role] === true,
       landed: async (o) => {
         this.landedAsked.push({ role: args.role, o });
+        if (this.landedFn) return this.landedFn(args.role, o);
         return this.landedFor[args.role] ?? null;
       },
       // The runtime never calls these: the escrow party sends its post-release info to the mod itself (Task 9 I/O).

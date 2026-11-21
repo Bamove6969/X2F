@@ -855,6 +855,37 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
   });
 });
 
+describe("the seller after the time to fund ran out (lapsed; Gap 6: the room showed the bare 'State: lapsed')", () => {
+  const button = (host: HTMLElement, label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent === label);
+
+  it('nothing sent: a neutral Cancelled chip, why, nothing to go back, no funding left on screen', async () => {
+    current = { ...base, state: 'lapsed', closedAt: '2026-10-25T11:40:30.000Z', serverNow: '2026-10-25T11:41:00.000Z' };
+    const host = await room();
+    expect(host.querySelector('[data-seller-lapsed]')).not.toBeNull();
+    expect(host.textContent).not.toContain('State:');
+    expect(host.querySelector('.x2f-chip')?.getAttribute('data-tone')).toBe('neutral');
+    expect(host.querySelector('.x2f-chip')?.textContent).toBe('Cancelled');
+    expect(host.querySelector('h1')?.textContent).toBe('The time to fund ran out');
+    expect(host.textContent).toContain(
+      "You didn't fund the escrow in time, so X2F cancelled this trade. Nothing was funded, so nothing needs to go back. Don't send any XMR to this trade.",
+    );
+    expect(host.textContent).not.toContain('refund address');
+    noFundingTraces(host);
+    expect(button(host, 'Cancel trade')).toBeUndefined();
+  });
+
+  it('with XMR already sent: it goes back to the refund address, and this page stays open while it does', async () => {
+    current = { ...base, state: 'lapsed', receivedAtomic: '600000000000', closedAt: null, serverNow: '2026-10-25T11:41:00.000Z' };
+    const host = await room();
+    expect(host.querySelector('h1')?.textContent).toBe('The time to fund ran out');
+    expect(host.textContent).toContain(
+      "You didn't fund the escrow in time, so X2F cancelled this trade. The XMR you already sent goes back to your refund address. Keep this page open until it's sent. Don't send any more XMR to this trade.",
+    );
+    expect(host.textContent).not.toContain('Nothing was funded');
+    noFundingTraces(host);
+  });
+});
+
 describe('the room shell', () => {
   it('a 404 shows "Trade not found."', async () => {
     current = { status: 404, error: 'not-found' };
