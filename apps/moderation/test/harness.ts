@@ -78,6 +78,10 @@ export function fakeNetwork(ctx: Ctx) {
     /** settleKindFor at the API, per trade (default null). */
     settleKinds: new Map<string, string>(),
     reports: [] as Report[],
+    /** The API's trade shred orders (Plan 7 Task 2 follow-up), served on GET /internal/v1/trade-shred. */
+    tradeShred: [] as Array<{ trade: unknown; purgedAt: string }>,
+    /** While set, the watch list answers 503 (unreadable). */
+    watchDown: false,
     unsigned: [] as string[],
     answer: (_r: Report): { status: number; error?: string } => ({ status: 201 }),
   };
@@ -94,7 +98,9 @@ export function fakeNetwork(ctx: Ctx) {
         return reply(401);
       }
       if (init.method === 'GET' && u.pathname === '/internal/v1/work') return reply(200, { work: net.work });
+      if (init.method === 'GET' && u.pathname === '/internal/v1/trade-shred') return reply(200, { orders: net.tradeShred });
       if (init.method === 'GET' && u.pathname === '/internal/v1/watch') {
+        if (net.watchDown) return reply(503);
         return reply(200, {
           trades: [...net.states].map(([trade, state]) => ({
             trade,
