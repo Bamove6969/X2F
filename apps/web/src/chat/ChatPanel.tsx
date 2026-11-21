@@ -115,6 +115,9 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   const [announce, setAnnounce] = useState('');
   const alive = useRef(true);
   const seq = useRef(0);
+  /** The chat whose sync is running (null: none), and whether another was asked for meanwhile. */
+  const inFlight = useRef<string | null>(null);
+  const again = useRef(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const list = useRef<HTMLOListElement>(null);
   /** The newest line id seen so far (null before the first snapshot: the history is never announced). */
@@ -139,20 +142,35 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   }, []);
 
   const sync = useCallback(async (): Promise<void> => {
-    const mine = ++seq.current;
+    // One sync in flight per chat; a poll, live event or read-on asked for meanwhile runs once after
+    // it. Starting each one at once let a newer one discard every older result (`seq`), so on a
+    // device where a sync takes longer than the poll (CHAT_POLL_MS.waiting) none ever landed.
+    if (inFlight.current === chat) {
+      again.current = true;
+      return;
+    }
+    inFlight.current = chat;
     try {
-      const s = await chatClient().sync(chat);
-      if (alive.current && mine === seq.current) {
-        const grew = take(s);
-        setSnap(s);
-        if (tradeCode) publishPaySnapshot(tradeCode, s);
-        setLoadFailed(null);
-        // Stopped at the page cap: read on at once, but only while it keeps finding new lines.
-        if (s.more && grew) void sync();
-      }
-    } catch (e) {
-      // A failed re-sync keeps the last lines on screen.
-      if (alive.current && mine === seq.current) setLoadFailed(failureOf(e));
+      do {
+        again.current = false;
+        const mine = ++seq.current;
+        try {
+          const s = await chatClient().sync(chat);
+          if (alive.current && mine === seq.current) {
+            const grew = take(s);
+            setSnap(s);
+            if (tradeCode) publishPaySnapshot(tradeCode, s);
+            setLoadFailed(null);
+            // Stopped at the page cap: read on at once, but only while it keeps finding new lines.
+            if (s.more && grew) again.current = true;
+          }
+        } catch (e) {
+          // A failed re-sync keeps the last lines on screen.
+          if (alive.current && mine === seq.current) setLoadFailed(failureOf(e));
+        }
+      } while (again.current && alive.current && inFlight.current === chat);
+    } finally {
+      if (inFlight.current === chat) inFlight.current = null;
     }
   }, [chat, take, tradeCode]);
 

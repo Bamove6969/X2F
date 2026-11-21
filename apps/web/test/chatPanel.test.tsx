@@ -273,6 +273,32 @@ describe('ChatPanel', () => {
     expect(client.sync.mock.calls.length).toBe(2);
   });
 
+  it('a sync slower than the waiting poll still lands: a poll never starts while one is in flight (it runs once after), so no result is discarded for ever', async () => {
+    vi.useFakeTimers();
+    const line = { id: '1', from: 'seller' as const, text: 'Hello', at: null, mine: false, gapBefore: false };
+    let inFlight = 0;
+    let most = 0;
+    // A slow device: every sync takes longer than CHAT_POLL_MS.waiting (3 s).
+    client.sync.mockImplementation(
+      () =>
+        new Promise((r) => {
+          most = Math.max(most, ++inFlight);
+          setTimeout(() => {
+            inFlight--;
+            r(snap({ lines: [line] }));
+          }, 4_000);
+        }),
+    );
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    for (let t = 0; t < 20; t++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+    }
+    expect([...host.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Sam: Hello']);
+    expect(most).toBe(1);
+  });
+
   it('a rate-limited send says to wait', async () => {
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
     await flush();
