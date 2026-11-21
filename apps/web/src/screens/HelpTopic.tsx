@@ -53,8 +53,9 @@ export const HELP_TOPICS: Record<string, TopicCopy> = {
     title: 'Settings',
     out: 'Your settings are in the app once you are logged in.',
     in: 'Your security, devices and team are in Settings.',
-    member: 'The account owner looks after the settings of the account you work for.',
-    link: { label: 'Open Settings', to: '/settings/security', owner: true },
+    // COPY-UNSIGNED (rail-members r3 review, M1): members have their own alarm and idle reminder in Settings.
+    member: 'Your alarm and idle reminder are in Settings. The account owner looks after the rest.',
+    link: { label: 'Open Settings', to: '/settings/security' },
   },
 };
 
