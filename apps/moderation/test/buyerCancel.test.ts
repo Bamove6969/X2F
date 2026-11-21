@@ -11,7 +11,6 @@ import { NO_DESK_FACTS, sweepKindAgrees, type DeskRecord } from '../src/desk.js'
 import {
   acked,
   DEAL,
-  drained,
   ESCROW,
   fakeNetwork,
   FUNDS,
@@ -88,7 +87,10 @@ describe('the buyer-cancel refund', () => {
     await signal(l, l.seller, 'trade.cancel', {});
     const stranger = { role: 'buyer' as const, id: await generateIdentity(), seq: 50 };
     await signal(l, stranger, 'trade.cancel', {});
-    await drained();
+    // Refused frames are never acked, so wait for both refusals themselves: logging one is the last
+    // thing the desk does with that frame (desk.ts onFrame); drained()'s fixed 50 ms can run out under load.
+    await expect.poll(() => m.logs).toContain('signal-malformed');
+    await expect.poll(() => m.logs).toContain('signal-bad-signature');
     await m.handle.watch();
     expect(m.logs).toContain('signal-malformed');
     expect(m.logs).toContain('signal-bad-signature');
@@ -624,7 +626,9 @@ describe('a lost device (spec 9)', () => {
     // (and any mutual cancel it would co-sign) cannot be from the attested buyer.
     const reborn = { role: 'buyer' as const, id: await generateIdentity(), seq: 0 };
     await signal(l, reborn, 'trade.cancel', {});
-    await drained();
+    // Wait until the desk has refused it (never acked; the log is its last step), so the checks below
+    // see the frame handled rather than not yet read.
+    await expect.poll(() => m.logs).toContain('signal-bad-signature');
     await m.handle.watch();
     expect((await record(l.code)).cancelSeen).toBe(false);
     expect(l.party.settles).toEqual([]);

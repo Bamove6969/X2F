@@ -143,9 +143,13 @@ test('parity with DisputeRoom at 390x844', async ({ page }) => {
 test('parity with DisputeRuling at 390x844', async ({ page }) => {
   await stub(page, { trade: disputed('buyer', T('14:32')), dispute: disputeView({ status: 'ruled', ruling: RULING, serverNow: T('14:32') }) });
   await open(page);
-  await expectParity(page, 'DisputeRuling', { primary: false });
+  // expectParity reads the page once, as it is. The screen renders only after both GETs (the trade,
+  // then its dispute) have answered, so wait for the ruling itself first: under load the parity read
+  // ran on the still-empty <main> and found none of the board's copy.
+  await expect(page.getByRole('region', { name: 'Ruling' })).toBeVisible();
   // The appeal countdown's board texts are KNOWN_EXCEPTIONS (a mask cannot stand for "47 h 58 min"); its shape:
   await expect(page.locator('.dispute-window-open')).toHaveText(/^Open · \d+ h \d+ min left$/);
+  await expectParity(page, 'DisputeRuling', { primary: false });
 });
 
 // --- Behaviour ----------------------------------------------------------------------------------

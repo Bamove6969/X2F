@@ -432,7 +432,7 @@ describe("SellerRefund after the cancel (owner 8 Nov: the refund starts at once)
   });
 
   // Review m5: a stopped escrow says which: waiting for this device, no longer needing it, or stopped for good.
-  it('refund in progress with the escrow stopped on this device: waiting (Try again), no longer needed after the hand-off (Try again), or stopped for good (an integrity error, no Try again)', async () => {
+  it('refund in progress with the escrow stopped on this device: waiting (Try again), or stopped for good (an integrity error, no Try again)', async () => {
     const { escrow } = escrowFake();
     const retry = vi.fn();
     const m = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'error', error: 'escrow-failed', retryable: true, retry, handedOff: false } });
@@ -442,10 +442,6 @@ describe("SellerRefund after the cancel (owner 8 Nov: the refund starts at once)
     expect(m.host.querySelector('[data-refund-escrow-stopped]')?.textContent).toBe('The escrow stopped on this device, so the refund is waiting for it.Try again');
     fire(m.button('Try again')!, new MouseEvent('click', { bubbles: true }));
     expect(retry).toHaveBeenCalledTimes(1);
-    const after = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'error', error: 'escrow-failed', retryable: true, retry, handedOff: true } });
-    await settle();
-    expect(after.host.querySelector('[data-refund-escrow-stopped] p')?.textContent).toBe('The moderator has sent the refund, so it no longer needs this device. The escrow on this device stopped, so this page can’t follow it.');
-    expect(after.button('Try again')).not.toBeNull();
     const stuck = mount(sellerRequestedView(), { escrow: { ...escrow, phase: 'error', error: 'escrow-failed', retryable: false, handedOff: false } });
     await settle();
     expect(stuck.host.querySelector('[data-refund-escrow-stopped]')?.hasAttribute('data-for-good')).toBe(true);

@@ -807,7 +807,10 @@ export function runParty(a: PartyArgs): PartyHandle {
 
   /**
    * The tx secret key `key` (the builder's own, saved at build) fits `h` and `h` pays each payout
-   * of `o` (payout 0 bears the network fee, up to MAX_NETWORK_FEE), out of the pool. A key fits only
+   * of `o`, out of the pool: every payout receives something (review N-m1: wallet2's check_tx_key
+   * answers "good" with 0 received for a key of another tx, so on a dust payout a fee allowance alone
+   * proved nothing), and payout 0 is short by at most the tx's own network fee (which buildRelease
+   * takes off it; as the moderator's sweepMinimums), itself at most MAX_NETWORK_FEE. A key fits only
    * the tx built with it, so this names "the tx this builder built"; the callers pair it with
    * `spentBy` + `txSeen` (this wallet's escrow spent by `h` in a block, and the daemon has it).
    * Through the wallet's own daemon connection only (txKeyPays, not proveTx: that one reads the
@@ -819,7 +822,8 @@ export function runParty(a: PartyArgs): PartyHandle {
     const r = await bounded('check tx key', () => session.txKeyPays!(h, key, o.to.map((p) => p.address)));
     if (r === 'unavailable') return 'unavailable';
     if (r === null || r.inPool || r.received.length !== o.to.length) return false;
-    return o.to.every((p, i) => r.received[i]! + (i === 0 ? MAX_NETWORK_FEE : 0n) >= p.amountAtomic);
+    if (r.feeAtomic < 0n || r.feeAtomic > MAX_NETWORK_FEE) return false;
+    return o.to.every((p, i) => r.received[i]! > 0n && r.received[i]! + (i === 0 ? r.feeAtomic : 0n) >= p.amountAtomic);
   };
   const provenByKey = async (key: string, o: Outcome, h: string): Promise<boolean> => (await keyProof(key, o, h)) === true;
   /**
@@ -839,7 +843,11 @@ export function runParty(a: PartyArgs): PartyHandle {
     const rel = allReleases().filter((r) => r.outcome === digest).at(-1);
     if (!rel) return null;
     await daemon.sync();
-    const named = [rel.txHash, state.received[doneKey(rel)]?.[rel.counterpart]?.payload.txHash].filter((h): h is string => typeof h === 'string' && TX_HASH.test(h));
+    // Review N-M1 (21 Nov): a DONE is the co-signer's report to the builder. A co-signer's only
+    // proof is the tx it signed itself (rel.txHash, whose payouts it checked before signing); a
+    // DONE from the builder is never stored (onMessage) and never read here.
+    const done = rel.part === 'builder' ? state.received[doneKey(rel)]?.[rel.counterpart]?.payload.txHash : undefined;
+    const named = [rel.txHash, done].filter((h): h is string => typeof h === 'string' && TX_HASH.test(h));
     for (const h of new Set(named)) {
       if ((await daemon.spentBy(h)) && (await daemon.txSeen(h)) && (await keyAllows(rel, o, h))) return h;
     }
@@ -1235,6 +1243,12 @@ export function runParty(a: PartyArgs): PartyHandle {
       const rel = state.release;
       if (!rel || from !== rel.counterpart || !key.includes(`:${tagOf(rel.outcome)}.`)) {
         ignored('not-current-release');
+        return;
+      }
+      // Review N-M1 (21 Nov): only a co-signer sends a DONE (it submitted the tx); one from the
+      // builder side is dropped, never stored, so no path can read it as proof.
+      if (key.startsWith('release.done:') && rel.part !== 'builder') {
+        ignored('done-from-builder');
         return;
       }
     }
