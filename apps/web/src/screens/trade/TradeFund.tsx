@@ -541,7 +541,40 @@ export function BuyerFundEnded({ view }: TradeScreenProps) {
   );
 }
 
+/**
+ * The seller's trade after the time to fund ran out (`lapsed`, the server's timer): Gap 6, the room
+ * showed the bare "State: lapsed". The buyer's BuyerFundEnded pattern from the seller's side: the
+ * neutral "Cancelled" chip, why, and what happens to anything already sent (the lapse refund to the
+ * seller's refund address, which this device builds: runtime `autoKind`). No funding address, QR or
+ * actions remain. COPY-UNSIGNED (no board draws it).
+ */
+export function SellerFundLapsed({ view }: TradeScreenProps) {
+  const coins = view.receivedAtomic !== '0';
+  return (
+    <div className="x2f-trade" data-seller-lapsed="">
+      <Header view={view} selling />
+      <div className="x2f-trade-body">
+        <div className="x2f-trade-chip-row">
+          <StatusChip tone="neutral" icon="check" label="Cancelled" />
+        </div>
+        <section className="x2f-trade-intro">
+          <h1 className="x2f-trade-title">The time to fund ran out</h1>
+          <p className="x2f-trade-lead">
+            You didn't fund the escrow in time, so X2F cancelled this trade.
+            {coins ? (
+              <> The XMR you already sent goes back to your refund address. Keep this page open until it's sent. Don't send any more XMR to this trade.</>
+            ) : (
+              <> Nothing was funded, so nothing needs to go back. Don't send any XMR to this trade.</>
+            )}
+          </p>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 registerTradeScreen({ owner: 'Task 22', role: 'seller', states: ['setup', 'funding', 'securing'], screen: TradeFund });
+registerTradeScreen({ owner: 'Gap 6', role: 'seller', states: ['lapsed'], screen: SellerFundLapsed });
 registerTradeScreen({ owner: 'Task 22', role: 'buyer', states: ['setup', 'funding'], screen: BuyerWaitFund });
 registerTradeScreen({ owner: 'Task 22', role: 'buyer', states: ['cancelled', 'lapsed'], screen: BuyerFundEnded });
 setIntegrityScreen(IntegrityFailed);

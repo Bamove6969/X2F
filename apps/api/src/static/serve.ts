@@ -1,6 +1,7 @@
+import { readdir } from 'node:fs/promises';
 import type { Socket } from 'node:net';
 import { join, resolve, sep } from 'node:path';
-import { SITE_SCHEMES, plainOrigin } from '../origins.js';
+import { SITE_SCHEMES, clearTextAllowed, plainOrigin } from '../origins.js';
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -66,7 +67,8 @@ export interface WebOptions {
   nodeProxyOrigin: string;
   /**
    * This site's own exact origins (X2F_ORIGINS), e.g. https://x2f.example.org. The OCR worker may
-   * fetch only under each one's /ocr/ (lead call 20 Nov, `ocrWorkerCspFor`).
+   * fetch only under each one's /ocr/ (lead call 20 Nov, `ocrWorkerCspFor`), and the escrow worker
+   * may start only monero-ts's worker on each (`escrowWorkerCspFor`: 'self' cannot carry a path).
    */
   siteOrigins: readonly string[];
   /**
@@ -84,22 +86,41 @@ const SECURE_SCHEMES = new Set(['https:', 'wss:']);
 export const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost']);
 
 /**
- * An exact origin with a plain host (origins.ts `plainOrigin`, review m-1), so nothing else can ride
- * into the policy: no `;`, `,`, `'`, `*` or space.
+ * The one check for every origin that goes into a policy here: an exact origin with a plain host
+ * (origins.ts `plainOrigin`, review m-1), so nothing else can ride into the policy (no `;`, `,`, `'`,
+ * `*` or space), and clear text only where origins.ts `clearTextAllowed` allows it, exactly as
+ * config.ts checks X2F_ORIGINS.
+ * - `site`: this site's own origins (X2F_ORIGINS), http(s); a .onion host may be http.
+ * - `connect`: the relay and node proxy, http(s) or ws(s). A .onion relay or node proxy in clear text
+ *   is still refused unless the operator opts in (lead default, owner question: it was not allowed
+ *   before and needs its own deliberate exception).
  */
-function origin(value: string, name: string, allowInsecure: boolean): string {
-  if (plainOrigin(value, CONNECT_SCHEMES) === null) {
-    throw new Error(`web: ${name} must be an exact origin such as wss://relay.example.org`);
+function exactOrigin(value: string, name: string, kind: 'site' | 'connect', allowInsecure: boolean): string {
+  const example = kind === 'site' ? 'https://x2f.example' : 'wss://relay.example.org';
+  if (plainOrigin(value, kind === 'site' ? SITE_SCHEMES : CONNECT_SCHEMES) === null) {
+    throw new Error(`web: ${name} must be an exact origin such as ${example}`);
   }
   const url = new URL(value);
-  // Decided by host, not by NODE_ENV (which nothing sets): the browser may connect in clear text
-  // only to this machine, unless the operator opts in with X2F_ALLOW_INSECURE_ORIGINS=1.
-  // A future .onion relay or node proxy (http:/ws: over Tor) will need its own deliberate
-  // exception here; it is not allowed yet.
-  if (!SECURE_SCHEMES.has(url.protocol) && !LOOPBACK_HOSTS.has(url.hostname) && !allowInsecure) {
-    throw new Error(`web: ${name} must use https or wss (http and ws only for 127.0.0.1, [::1] or localhost)`);
+  const clear = !SECURE_SCHEMES.has(url.protocol);
+  const onionOnly = clear && !allowInsecure && !LOOPBACK_HOSTS.has(url.hostname);
+  if (!clearTextAllowed(value, allowInsecure) || (kind === 'connect' && onionOnly)) {
+    throw new Error(
+      kind === 'site'
+        ? `web: ${name} must use https (http only for 127.0.0.1, [::1], localhost or a .onion host)`
+        : `web: ${name} must use https or wss (http and ws only for 127.0.0.1, [::1] or localhost)`,
+    );
   }
   return value;
+}
+
+function origin(value: string, name: string, allowInsecure: boolean): string {
+  return exactOrigin(value, name, 'connect', allowInsecure);
+}
+
+/** This site's own origins (X2F_ORIGINS), each through `exactOrigin`; at least one. */
+function siteOriginsOf(o: Pick<WebOptions, 'siteOrigins' | 'allowInsecureOrigins'>, why: string): string[] {
+  if (!Array.isArray(o.siteOrigins) || o.siteOrigins.length === 0) throw new Error(`web: the site origins (X2F_ORIGINS) are needed for ${why}`);
+  return o.siteOrigins.map((v) => exactOrigin(v, 'a site origin (X2F_ORIGINS)', 'site', o.allowInsecureOrigins === true));
 }
 
 /** The Content-Security-Policy for HTML responses (Global Constraints). */
@@ -140,16 +161,92 @@ export function cspFor(o: ConnectOrigins): string {
  * importScripts its core from /ocr/), and worker-src 'none' (it starts no worker). The worker's own
  * script is checked against the page's worker-src 'self'. Tested in apps/web/e2e/proof-ocr.spec.ts.
  */
-export function ocrWorkerCspFor(o: Pick<WebOptions, 'siteOrigins'>): string {
-  if (!Array.isArray(o.siteOrigins) || o.siteOrigins.length === 0) throw new Error('web: the site origins (X2F_ORIGINS) are needed for the OCR worker CSP');
-  // Review m-4: exactly what config.ts accepts for X2F_ORIGINS (the same helper), so a site origin
+export function ocrWorkerCspFor(o: Pick<WebOptions, 'siteOrigins' | 'allowInsecureOrigins'>): string {
+  // Review m-4: exactly what config.ts accepts for X2F_ORIGINS (the same helpers), so a site origin
   // the API runs with never fails here, and an onion's http: origin gets its /ocr/ too.
-  const sources = o.siteOrigins.map((v) => {
-    if (plainOrigin(v, SITE_SCHEMES) === null) throw new Error('web: a site origin (X2F_ORIGINS) must be an exact origin such as https://x2f.example');
-    return `${v}/ocr/`;
-  });
+  const sources = siteOriginsOf(o, 'the OCR worker CSP').map((v) => `${v}/ocr/`);
   const ocr = sources.join(' ');
   return `default-src 'none'; script-src ${ocr} 'wasm-unsafe-eval'; connect-src ${ocr}; worker-src 'none'`;
+}
+
+/** Where the web build serves monero-ts's own wallet worker (Gap 1, tools/copy-monero-worker.ts). */
+export const MONERO_WORKER_PATH = '/monero/monero.worker.js';
+
+/**
+ * The CSP on every `/monero/*` response (Gap 1). A dedicated worker takes its CSP from its own
+ * response, not from the page, so monero-ts's wallet worker (where every escrow wallet's keys live)
+ * gets this one: it may compile its inline WebAssembly and reach the node proxy, and nothing else:
+ * no script loads at all (it is one self-contained file), no relay, not even this origin.
+ */
+export function moneroWorkerCspFor(o: ConnectOrigins): string {
+  const node = origin(o.nodeProxyOrigin, 'node proxy origin', o.allowInsecureOrigins === true);
+  return ["default-src 'none'", "script-src 'wasm-unsafe-eval'", `connect-src ${node}`].join('; ');
+}
+
+/**
+ * The CSP on the escrow worker (lead call 20 Nov), where every trader's multisig key shares, chat
+ * identity and chat keys live. A dedicated worker takes its CSP from its own response, so without
+ * this it ran under no policy at all. What it really reaches (read from the code, proved by the
+ * regtest e2e and apps/web/e2e/worker-csp.spec.ts):
+ * - connect-src 'self': the API (escrow, chat and news under /v1, all relative URLs);
+ * - the relay (escrow signals and the multisig rounds, wsTransport over VITE_RELAY_URL);
+ * - the node proxy (MoneroMultisigEngine's fee and tx reads, and in-process wallets' daemon calls);
+ * - script-src 'self' 'wasm-unsafe-eval': libsodium's and monero-ts's WebAssembly, never JS eval;
+ * - worker-src: only monero-ts's own wallet worker, by full URL on each site origin.
+ */
+export function escrowWorkerCspFor(o: ConnectOrigins & Pick<WebOptions, 'siteOrigins'>): string {
+  const insecure = o.allowInsecureOrigins === true;
+  const relay = origin(o.relayOrigin, 'relay origin', insecure);
+  const node = origin(o.nodeProxyOrigin, 'node proxy origin', insecure);
+  const workers = siteOriginsOf(o, 'the escrow worker CSP').map((w) => `${w}${MONERO_WORKER_PATH}`);
+  return [
+    "default-src 'none'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    `worker-src ${workers.join(' ')}`,
+    `connect-src 'self' ${relay} ${node}`,
+  ].join('; ');
+}
+
+/**
+ * The CSP on the service worker (/sw.js, Task 19): it shows a notification, posts the kind to open
+ * windows and opens or focuses the site, none of which CSP governs; it fetches and loads nothing.
+ */
+export const SERVICE_WORKER_CSP = "default-src 'none'";
+
+/**
+ * Review M-1 (20 Nov): the CSP on every other script under /assets/. A `<script>` or `import` load
+ * ignores a response's CSP, so the page is unaffected; but the page's `worker-src 'self'` lets page
+ * code start any same-origin script as a dedicated worker, which takes its CSP from its own response
+ * and so ran under none (a way round the page's connect-src). Now such a worker may reach nothing,
+ * and an escrow worker that a build ever named otherwise fails closed instead of running unpoliced.
+ */
+export const ASSET_SCRIPT_CSP = "default-src 'none'";
+
+/**
+ * The escrow worker's file, exactly as apps/web/vite.config.ts `ESCROW_WORKER_FILE_NAMES` emits it
+ * (assets/escrow-worker-<8-character hash>.js; apps/web/test/bundle.test.ts pins both), so a rename
+ * can never silently leave it without its CSP.
+ */
+export const ESCROW_WORKER_FILE = /[\\/]assets[\\/]escrow-worker-[A-Za-z0-9_-]{8}\.js$/;
+
+/**
+ * Review m-3: when the build has an assets folder, it must hold exactly one file named as
+ * ESCROW_WORKER_FILE says, or serveWeb refuses to start (bundle.test pins this at build time; this
+ * catches a build or rename that slipped past it before any trader's keys run unpoliced).
+ */
+async function checkEscrowWorker(root: string): Promise<void> {
+  const assets = join(resolve(root), 'assets');
+  let names: string[];
+  try {
+    names = await readdir(assets);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+  const found = names.filter((n) => ESCROW_WORKER_FILE.test(join(assets, n)));
+  if (found.length !== 1) {
+    throw new Error(`web: ${assets} must hold exactly one escrow worker (escrow-worker-<8-character hash>.js); found ${found.length}`);
+  }
 }
 
 /** The web settings from the environment; `null` when this process does not serve the web app. */
@@ -168,6 +265,7 @@ export function webOptionsFromEnv(env: Record<string, string | undefined>): WebO
   const o: WebOptions = { root, relayOrigin, nodeProxyOrigin, siteOrigins, ...(allowInsecureOrigins ? { allowInsecureOrigins } : {}) };
   cspFor(o);
   ocrWorkerCspFor(o);
+  escrowWorkerCspFor(o);
   return o;
 }
 
@@ -247,7 +345,11 @@ export function badOcrPath(rawUrl: string): boolean {
 export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<void> {
   const csp = cspFor(o);
   const ocrCsp = ocrWorkerCspFor(o);
+  const moneroCsp = moneroWorkerCspFor(o);
+  const escrowCsp = escrowWorkerCspFor(o);
+  await checkEscrowWorker(o.root);
   const ocrDir = join(resolve(o.root), 'ocr') + sep;
+  const moneroDir = join(resolve(o.root), 'monero') + sep;
   await app.register(async (scope) => {
     scope.addHook('onRequest', addSecurityHeaders);
     scope.addHook('onRequest', async (req, reply) => {
@@ -262,12 +364,22 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
         if (resolve(path).startsWith(ocrDir)) {
           // Plan 5 Task 13: the OCR worker, its engine and model get the worker's own CSP.
           void reply.header('content-security-policy', ocrCsp);
+        } else if (resolve(path).startsWith(moneroDir)) {
+          // Gap 1: monero-ts's wallet worker gets its own CSP; its name is fixed, so revalidated.
+          void reply.header('content-security-policy', moneroCsp).header('cache-control', 'no-cache');
         } else if (path.endsWith('.html')) {
           void reply.header('content-security-policy', csp).header('cache-control', 'no-cache');
         } else if (/[\\/]sw\.js$/.test(path) && !/[\\/]assets[\\/]/.test(path)) {
           // The service worker (Task 19) keeps its name across releases: always revalidated.
-          void reply.header('cache-control', 'no-cache');
+          void reply.header('content-security-policy', SERVICE_WORKER_CSP).header('cache-control', 'no-cache');
+        } else if (ESCROW_WORKER_FILE.test(path)) {
+          // The escrow worker (lead call 20 Nov): its own CSP. Review m-1: revalidated (ETag) like the
+          // monero worker, not cached for a year, since its policy follows X2F_ORIGINS, which the
+          // file's hash does not cover: a tightened policy must reach browsers that hold the file.
+          void reply.header('content-security-policy', escrowCsp).header('cache-control', 'no-cache');
         } else if (/[\\/]assets[\\/]/.test(path)) {
+          // Review M-1: any other script, started as a worker, may reach nothing (ASSET_SCRIPT_CSP).
+          if (/\.m?js$/i.test(path)) void reply.header('content-security-policy', ASSET_SCRIPT_CSP);
           void reply.header('cache-control', IMMUTABLE);
         }
       },
