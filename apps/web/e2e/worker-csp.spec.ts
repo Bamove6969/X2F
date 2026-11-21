@@ -33,11 +33,11 @@ interface Verdict {
 }
 
 /**
- * Runs one request inside `w` and reports whether the CSP refused it. `kind` is fetch, a WebSocket or
- * a nested Worker. The listener is attached first; a refused request fires its event before or as
+ * Runs one request inside `w` and reports whether the CSP refused it. `kind` is fetch, a WebSocket,
+ * a nested Worker or a dynamic import(). The listener is attached first; a refused request fires its event before or as
  * the request fails, and an allowed one to an unreachable stand-in fails without any event.
  */
-async function tryIn(w: Worker, kind: 'fetch' | 'ws' | 'worker', url: string): Promise<Verdict> {
+async function tryIn(w: Worker, kind: 'fetch' | 'ws' | 'worker' | 'import', url: string): Promise<Verdict> {
   return w.evaluate(
     async ([k, u]) => {
       const seen: string[] = [];
@@ -50,6 +50,7 @@ async function tryIn(w: Worker, kind: 'fetch' | 'ws' | 'worker', url: string): P
       self.addEventListener('securitypolicyviolation', onViolation);
       try {
         if (k === 'fetch') await fetch(u).catch(() => undefined);
+        else if (k === 'import') await import(u).catch(() => undefined);
         else if (k === 'ws') {
           try {
             const s = new WebSocket(u);
@@ -98,8 +99,9 @@ test.describe('worker CSPs (lead call 20 Nov)', () => {
     const escrow = await request.get(escrowWorkerFile());
     expect(escrow.headers()['content-type']).toMatch(/^application\/javascript/);
     expect(escrow.headers()['content-security-policy']).toBe(
-      "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-        `worker-src ${origins.map((o) => `${o}/monero/monero.worker.js`).join(' ')}; connect-src 'self' ${RELAY} ${NODE}`,
+      "default-src 'none'; script-src 'wasm-unsafe-eval'; " +
+        `worker-src ${origins.map((o) => `${o}/monero/monero.worker.js`).join(' ')}; ` +
+        `connect-src ${origins.map((o) => `${o}/v1/`).join(' ')} ${RELAY} ${NODE}`,
     );
     const monero = await request.get('/monero/monero.worker.js');
     expect(monero.headers()['content-type']).toMatch(/^application\/javascript/);
@@ -140,8 +142,14 @@ test.describe('worker CSPs (lead call 20 Nov)', () => {
       }, escrowPath),
     );
 
-    // The escrow worker: the API, the relay and the node proxy only.
+    // The escrow worker: the API (under /v1/ only, review m-2), the relay and the node proxy only.
     expect(await tryIn(escrow, 'fetch', `${UNLISTED}/x`)).toEqual({ refused: true, directive: 'connect-src' });
+    expect(await tryIn(escrow, 'fetch', `${origin}/ocr/eng.traineddata.gz`)).toEqual({ refused: true, directive: 'connect-src' });
+    expect(await tryIn(escrow, 'fetch', `${origin}${escrowPath}`)).toEqual({ refused: true, directive: 'connect-src' });
+    // Review m-2: no script of this origin can be pulled into it (no 'self' in script-src).
+    const imported = await tryIn(escrow, 'import', `${origin}${pageEntryFile()}`);
+    expect(imported.refused).toBe(true);
+    expect(imported.directive).toMatch(/^script-src/);
     expect(await tryIn(escrow, 'ws', 'wss://unlisted.x2f.invalid/v1/trade/x')).toEqual({ refused: true, directive: 'connect-src' });
     expect((await tryIn(escrow, 'fetch', `${origin}/v1/news`)).refused).toBe(false);
     expect((await tryIn(escrow, 'fetch', `${NODE}/json_rpc`)).refused).toBe(false);

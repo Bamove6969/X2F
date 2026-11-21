@@ -188,22 +188,27 @@ export function moneroWorkerCspFor(o: ConnectOrigins): string {
  * identity and chat keys live. A dedicated worker takes its CSP from its own response, so without
  * this it ran under no policy at all. What it really reaches (read from the code, proved by the
  * regtest e2e and apps/web/e2e/worker-csp.spec.ts):
- * - connect-src 'self': the API (escrow, chat and news under /v1, all relative URLs);
+ * - connect-src <site>/v1/ on each site origin: the API (escrow, chat and news under /v1, all
+ *   relative URLs), and nothing else on this origin (review m-2: not 'self');
  * - the relay (escrow signals and the multisig rounds, wsTransport over VITE_RELAY_URL);
  * - the node proxy (MoneroMultisigEngine's fee and tx reads, and in-process wallets' daemon calls);
- * - script-src 'self' 'wasm-unsafe-eval': libsodium's and monero-ts's WebAssembly, never JS eval;
+ * - script-src 'wasm-unsafe-eval': libsodium's and monero-ts's WebAssembly, never JS eval, and
+ *   (review m-2: no 'self') no script loads at all: it is one self-contained module worker, so no
+ *   same-origin script can be pulled into the worker that holds the keys;
  * - worker-src: only monero-ts's own wallet worker, by full URL on each site origin.
  */
 export function escrowWorkerCspFor(o: ConnectOrigins & Pick<WebOptions, 'siteOrigins'>): string {
   const insecure = o.allowInsecureOrigins === true;
   const relay = origin(o.relayOrigin, 'relay origin', insecure);
   const node = origin(o.nodeProxyOrigin, 'node proxy origin', insecure);
-  const workers = siteOriginsOf(o, 'the escrow worker CSP').map((w) => `${w}${MONERO_WORKER_PATH}`);
+  const sites = siteOriginsOf(o, 'the escrow worker CSP');
+  const workers = sites.map((w) => `${w}${MONERO_WORKER_PATH}`);
+  const api = sites.map((w) => `${w}/v1/`);
   return [
     "default-src 'none'",
-    "script-src 'self' 'wasm-unsafe-eval'",
+    "script-src 'wasm-unsafe-eval'",
     `worker-src ${workers.join(' ')}`,
-    `connect-src 'self' ${relay} ${node}`,
+    `connect-src ${api.join(' ')} ${relay} ${node}`,
   ].join('; ');
 }
 

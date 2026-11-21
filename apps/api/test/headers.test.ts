@@ -260,15 +260,19 @@ describe("monero-ts's wallet worker (Gap 1: no escrow wallet could start in a br
 });
 
 describe('every worker script carries its own CSP (lead call 20 Nov: a worker takes its CSP from its own response)', () => {
+  // Review m-2: no script loads ('wasm-unsafe-eval' only, no 'self'), and on this origin only /v1/.
   const ESCROW_CSP =
-    "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; " +
-    `worker-src ${SITE}/monero/monero.worker.js; connect-src 'self' ${RELAY} ${NODE}`;
+    "default-src 'none'; script-src 'wasm-unsafe-eval'; " +
+    `worker-src ${SITE}/monero/monero.worker.js; connect-src ${SITE}/v1/ ${RELAY} ${NODE}`;
 
-  it("the escrow worker's policy (multisig and chat keys): the API on this origin, the relay, the node proxy; only monero-ts's worker may be started", () => {
+  it("the escrow worker's policy (multisig and chat keys): the API under /v1/ on each site origin, the relay, the node proxy; no script loads; only monero-ts's worker may be started", () => {
     expect(escrowWorkerCspFor({ siteOrigins: [SITE], relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(ESCROW_CSP);
-    expect(escrowWorkerCspFor({ siteOrigins: [SITE, 'http://x2fexample.onion'], relayOrigin: RELAY, nodeProxyOrigin: NODE })).toContain(
-      `worker-src ${SITE}/monero/monero.worker.js http://x2fexample.onion/monero/monero.worker.js;`,
+    expect(escrowWorkerCspFor({ siteOrigins: [SITE, 'http://x2fexample.onion'], relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(
+      "default-src 'none'; script-src 'wasm-unsafe-eval'; " +
+        `worker-src ${SITE}/monero/monero.worker.js http://x2fexample.onion/monero/monero.worker.js; ` +
+        `connect-src ${SITE}/v1/ http://x2fexample.onion/v1/ ${RELAY} ${NODE}`,
     );
+    expect(ESCROW_CSP).not.toContain("'self'");
   });
 
   it('the escrow worker file is exactly assets/escrow-worker-<8-character hash>.js (vite.config.ts names it so)', () => {
