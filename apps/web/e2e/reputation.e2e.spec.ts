@@ -36,10 +36,18 @@ for (const [label, size] of SIZES) {
         await expect(editor).toContainText('Check your proof');
         await o.buyerPage.locator('[data-part="send-proof"]').click();
         await expect(editor).toHaveCount(0, { timeout: 60_000 });
+        // Gap 5: the seller never opened the chat, yet its chat identity is registered and the chat attested.
+        const att = await sql<{ n: string }>(
+          "select count(*) as n from chats c join chat_attestations a on a.chat = c.code join chat_identities s on s.chat = c.code and s.role = 'seller' where c.trade_code = $1",
+          [o.code],
+        );
+        expect(Number(att[0]!.n)).toBe(1);
         await markPaid(o.buyerPage);
         await shows(o.sellerPage, /PAYMENT RECEIVED/i, 2 * 60_000);
         // The seller sees it in the trade chat (the smart card on SellerConfirm is Plan 5 Task 16, not built).
-        await o.sellerPage.getByRole('button', { name: 'Chat' }).first().click();
+        // The release screen's Chat is a link (release/slots.tsx), hidden where the chat has a pane of its own.
+        const chatLink = o.sellerPage.locator('[data-chat-link]:visible').first();
+        if ((await chatLink.count()) > 0) await chatLink.click();
         await expect(o.sellerPage.locator('[data-part="chat-proof"]').first()).toBeVisible({ timeout: 2 * 60_000 });
       });
     });

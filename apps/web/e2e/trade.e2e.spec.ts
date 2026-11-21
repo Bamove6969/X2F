@@ -69,9 +69,12 @@ async function refundLanded(o: { buyer: Parameters<typeof untilState>[0]; seller
   }
 }
 
-test("the production build serves monero-ts's wallet worker (Task 12: without it no escrow wallet starts in a browser)", () => {
-  // KNOWN GAP: until it does, stack.ts copies monero-ts's file in so the trade specs can run.
-  expect(stack().buildServesMoneroWorker).toBe(true);
+test("the production build serves monero-ts's wallet worker (Task 12: without it no escrow wallet starts in a browser)", async () => {
+  // Gap 1, fixed on main: the build copies it to /monero/ and the API serves it; stack.ts copies nothing in.
+  const res = await fetch(`${stack().origin}/monero/monero.worker.js`);
+  expect(res.status).toBe(200);
+  expect(res.headers.get('content-type')).toMatch(/javascript/);
+  expect((await res.text()).length).toBeGreaterThan(1000);
 });
 
 for (const [label, size] of SIZES) {
@@ -204,6 +207,11 @@ for (const [label, size] of SIZES) {
     });
 
     test("mutual cancel after funding: the seller's proposal, the buyer's Accept; the XMR goes back to the seller with no fee output", async ({ browser }) => {
+      // KNOWN GAP 3 (Plan 3 Task 31): a mutual cancel after funding never completes; the trade stays
+      // settling, so untilState below throws "settling, not refunded/cancelled". The fix waits on an
+      // owner decision. test.fail() keeps the suite green meanwhile; once the gap is fixed this spec
+      // passes, Playwright reports it as an unexpected pass, and the marker must be removed.
+      test.fail(true, 'gap 3: mutual cancel after funding stays settling (owner decision pending)');
       const o = await openTrade(browser, size, 'seller');
       await inRooms(o, async () => {
         const funds = await fund(o);

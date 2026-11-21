@@ -15,7 +15,7 @@
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createECDH, createHash, randomBytes } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,14 +42,6 @@ export interface StackInfo {
   apiDatabaseUrl: string;
   modDatabaseUrl: string;
   logDir: string;
-  /**
-   * Whether the production build itself serves monero-ts's wallet worker at /monero.worker.js.
-   * KNOWN GAP (Task 12, found by the demo 8 Nov, fix f7a28d2a on wip/lead-demo-r4, never landed):
-   * it does not, so every escrow wallet fails to start in a real browser. When it is missing the
-   * stack copies monero-ts's own file there, so the trade specs can run past escrow set-up, and the
-   * first spec stays red on this flag until the build serves it.
-   */
-  buildServesMoneroWorker: boolean;
   /**
    * The moderation process's keystore key (base64), random per run. Test-only: modState.ts reads the
    * moderator's sealed party state with it, so a spec can act at a protocol step (gap 4 review M1).
@@ -272,10 +264,6 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
       },
     });
 
-    // At the root (monero-ts's default path) or bundled as an asset (the demo's fix).
-    const buildServesMoneroWorker = readdirSync(webDist, { recursive: true }).some((f) => String(f).includes('monero.worker'));
-    if (!buildServesMoneroWorker) copyFileSync(join(ROOT, 'node_modules/monero-ts/dist/monero.worker.js'), join(webDist, 'monero.worker.js'));
-
     // ── services ──
     procs.push(startTs(logDir, 'relay', 'apps/relay/src/main.ts', {
       RELAY_MOD_SIGNING_PUBLIC: s.modSigningPublic, RELAY_HOST: HOST, RELAY_PORT: String(ports.relay), RELAY_ADMIN_HOST: HOST, RELAY_ADMIN_PORT: String(ports.relayAdmin),
@@ -347,7 +335,6 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
       apiDatabaseUrl: pgUrl('x2f'),
       modDatabaseUrl: pgUrl('x2f_moderation'),
       logDir,
-      buildServesMoneroWorker,
       modKeystoreKey: s.modKeystoreKey,
     };
     return { ...info, stop };

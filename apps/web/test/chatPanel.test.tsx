@@ -642,3 +642,30 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     expect(host.textContent).not.toContain('DE00999');
   });
 });
+
+describe('ChatPanel: one sync in flight (review rev-small-fu, 21 Nov)', () => {
+  const said = (id: string, text: string) => ({ id, from: 'seller' as const, text, at: null, mine: false, gapBefore: false });
+  let pending: Array<(s: ChatSnapshot) => void>;
+
+  beforeEach(() => {
+    pending = [];
+    client.sync = vi.fn(() => new Promise<ChatSnapshot>((res) => pending.push(res)));
+  });
+
+  it('live events during an in-flight sync coalesce into exactly one sync after it, whose result shows', async () => {
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    act(() => emitChatLive(CHAT));
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(client.sync).toHaveBeenCalledTimes(1);
+    pending[0]!(snap({ lines: [said('1', 'old')] }));
+    await flush();
+    // The live events asked for another sync while the first was out (ChatPanel's `again.current = true`).
+    expect(client.sync).toHaveBeenCalledTimes(2);
+    pending[1]!(snap({ lines: [said('1', 'old'), said('2', 'new')] }));
+    await flush();
+    expect(client.sync).toHaveBeenCalledTimes(2);
+    expect([...host.querySelectorAll('li')].map((l) => l.textContent)).toEqual(['Sam: old', 'Sam: new']);
+  });
+});
