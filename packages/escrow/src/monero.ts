@@ -288,7 +288,7 @@ export class MoneroMultisigSession implements EscrowSession {
     }
   }
 
-  async txKeyPays(txHash: string, txKey: string, addresses: string[]): Promise<{ inPool: boolean; received: bigint[]; feeAtomic: bigint } | null | 'unavailable'> {
+  async txKeyPays(txHash: string, txKey: string, addresses: string[], knownFeeAtomic?: bigint): Promise<{ inPool: boolean; received: bigint[]; feeAtomic: bigint } | null | 'unavailable'> {
     // As proveTx: a key that is not a reduced scalar would abort the WebAssembly.
     if (!TX_HASH.test(txHash) || !isTxKey(txKey)) return null;
     const received: bigint[] = [];
@@ -307,7 +307,9 @@ export class MoneroMultisigSession implements EscrowSession {
         return null; // a key that does not fit, or an address of another network
       }
     }
-    const feeAtomic = await this.txFee(txHash);
+    // Review r-m1: the builder's own fee from buildRelease when it saved one; the daemon's copy of
+    // the tx only for saved state from before that (no stored fee).
+    const feeAtomic = knownFeeAtomic ?? (await this.txFee(txHash));
     if (feeAtomic === 'unavailable') return 'unavailable';
     if (feeAtomic === null) return null;
     return { inPool, received, feeAtomic };
@@ -459,7 +461,14 @@ export class MoneroMultisigSession implements EscrowSession {
     const decoded = (await this.wallet.describeMultisigTxSet(txSet)).getTxs().map(describe);
     checkTxSet(decoded, payouts, balance);
     const txKey = txs[0]!.getKey();
-    return { txSet, payouts: decoded.flatMap((tx) => tx.destinations), ...(typeof txKey === 'string' && TX_KEY.test(txKey) ? { txKey } : {}) };
+    // Review r-m1: the tx's network fee as built (it is fixed in the tx; signing does not change it).
+    const fee = txs[0]!.getFee();
+    return {
+      txSet,
+      payouts: decoded.flatMap((tx) => tx.destinations),
+      ...(typeof txKey === 'string' && TX_KEY.test(txKey) ? { txKey } : {}),
+      ...(typeof fee === 'bigint' && fee >= 0n ? { feeAtomic: fee } : {}),
+    };
   }
 
   /**
