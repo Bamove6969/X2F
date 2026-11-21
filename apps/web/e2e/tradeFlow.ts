@@ -70,7 +70,6 @@ export async function openTrade(browser: Browser, size: Size, taker: 'seller' | 
   await t.page.locator('input[type=text]:visible').first().fill('0.2');
   await t.page.locator('input[type=radio][name=wallet]').first().check();
   const trade = t.page.getByRole('button', { name: 'Trade', exact: true });
-  if (!(await trade.isEnabled())) console.log(`quote (${taker}):\n${await t.page.evaluate(() => document.body.innerText)}\n${await t.page.evaluate(() => [...document.querySelectorAll('input')].map((i) => `${i.type}:${i.name}:${i.checked}:${i.value}`).join(' | '))}`);
   await trade.click();
   await t.page.waitForURL(/\/trade\//);
   await o.beforeAccept?.(codeOf(t.page));

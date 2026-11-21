@@ -15,7 +15,7 @@
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createECDH, createHash, randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,9 +89,119 @@ interface Proc {
   log: string;
 }
 
+/**
+ * A process's start time (/proc/<pid>/stat field 22, clock ticks since boot), or null when no such
+ * process runs. A pid and its start time together name one process: a reused pid has another.
+ */
+function startTime(pid: number): string | null {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** True while the process `pid` that started at `start` still runs (any process at `pid` when `start` is unknown). */
+function alive(pid: number, start: string | undefined): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 1) return false;
+  const now = startTime(pid);
+  return now !== null && (start === undefined || start === '' || now === start);
+}
+
+interface Started {
+  pid: number;
+  start: string;
+}
+
+/**
+ * What a run owns, written to `<work>/owner.json` as it starts things, so a later run can clean up
+ * after one that died by SIGKILL (no exit handler ran): the owning process, its detached process
+ * groups, monerod and monerod's data dir.
+ */
+interface Owner extends Started {
+  groups: Started[];
+  monerod: (Started & { dataDir: string }) | null;
+}
+
+const OWNER_FILE = 'owner.json';
+const ME: Started = { pid: process.pid, start: startTime(process.pid) ?? '' };
+
+/**
+ * Removes what earlier runs left when they died without cleaning up: the `x2f-e2e` containers, the
+ * process groups and monerod named in each `.regtest/e2e-*` work dir's owner.json, and those work
+ * dirs. Only a run whose owning process is gone is touched (pid and start time), so a run still
+ * going on this machine keeps everything; a process is killed only if its pid still has the start
+ * time recorded for it.
+ */
+export function sweepStale(): string[] {
+  const swept: string[] = [];
+  let rows: string[] = [];
+  try {
+    rows = execFileSync('docker', ['ps', '-a', '--filter', 'label=x2f-e2e', '--format', '{{.Names}}\t{{.Label "x2f-e2e"}}\t{{.Label "x2f-e2e-start"}}'], { encoding: 'utf8' }).split('\n').filter(Boolean);
+  } catch {
+    // no docker: startStack fails on its own below
+  }
+  for (const row of rows) {
+    const [name, pid, start] = row.split('\t');
+    if (!name || alive(Number(pid), start)) continue;
+    try {
+      execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+      swept.push(`container ${name}`);
+    } catch {
+      // gone meanwhile
+    }
+  }
+  const base = join(ROOT, '.regtest');
+  const dirs = existsSync(base) ? readdirSync(base).filter((d) => d.startsWith('e2e-')) : [];
+  for (const d of dirs) {
+    const work = join(base, d);
+    let owner: Owner;
+    try {
+      owner = JSON.parse(readFileSync(join(work, OWNER_FILE), 'utf8')) as Owner;
+    } catch {
+      continue; // not a work dir (e2e-logs, e2e-results), or one still being made
+    }
+    if (alive(owner.pid, owner.start)) continue;
+    for (const g of owner.groups) {
+      if (!alive(g.pid, g.start)) continue;
+      try {
+        process.kill(-g.pid, 'SIGKILL');
+        swept.push(`process group ${g.pid}`);
+      } catch {
+        // gone
+      }
+    }
+    if (owner.monerod) {
+      if (alive(owner.monerod.pid, owner.monerod.start)) {
+        try {
+          process.kill(owner.monerod.pid, 'SIGKILL');
+          swept.push(`monerod ${owner.monerod.pid}`);
+        } catch {
+          // gone
+        }
+      }
+      rmSync(owner.monerod.dataDir, { recursive: true, force: true });
+    }
+    rmSync(work, { recursive: true, force: true });
+    swept.push(`work dir ${d}`);
+  }
+  return swept;
+}
+
 /** Every started process group, killed when this process ends however it ends (as tools/regtest does for monerod). */
 const groups = new Set<number>();
 let containerName: string | null = null;
+/** This run's work dir (secrets, the web build), removed when this process ends however it ends. */
+let workDir: string | null = null;
+let monerod: Owner['monerod'] = null;
+
+function writeOwner(): void {
+  if (!workDir) return;
+  const owner: Owner = { ...ME, groups: [...groups].map((pid) => ({ pid, start: startTime(pid) ?? '' })), monerod };
+  writeFileSync(join(workDir, OWNER_FILE), JSON.stringify(owner));
+}
+
 function killAll(): void {
   for (const pid of groups) {
     try {
@@ -107,6 +217,7 @@ function killAll(): void {
       // gone
     }
   }
+  if (workDir) rmSync(workDir, { recursive: true, force: true });
 }
 process.on('exit', killAll);
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
@@ -126,7 +237,10 @@ function startTs(logDir: string, name: string, file: string, env: Record<string,
     // A clean environment: PATH and HOME, plus what the process needs.
     env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env },
   });
-  if (child.pid !== undefined) groups.add(child.pid);
+  if (child.pid !== undefined) {
+    groups.add(child.pid);
+    writeOwner();
+  }
   return { name, child, log };
 }
 
@@ -148,6 +262,7 @@ async function stopProc(p: Proc): Promise<void> {
   await gone;
   clearTimeout(t);
   groups.delete(p.child.pid);
+  writeOwner();
 }
 
 /** Throwaway secrets for one run, in `dir` (chmod 600). */
@@ -193,7 +308,11 @@ async function makeSecrets(dir: string) {
 export async function startStack(o: { logDir: string }): Promise<Stack> {
   const logDir = o.logDir;
   mkdirSync(logDir, { recursive: true });
+  for (const what of sweepStale()) console.log(`stack: removed ${what} left by an earlier run`);
+  mkdirSync(join(ROOT, '.regtest'), { recursive: true });
   const work = mkdtempSync(join(ROOT, '.regtest', 'e2e-'));
+  workDir = work;
+  writeOwner();
   const secretsDir = join(work, 'secrets');
   mkdirSync(secretsDir, { mode: 0o700 });
   const webDist = join(work, 'web');
@@ -205,6 +324,7 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
   const stop = async () => {
     for (const p of [...procs].reverse()) await stopProc(p);
     await chain?.stop();
+    monerod = null;
     try {
       execFileSync('docker', ['rm', '-f', container], { stdio: 'ignore' });
     } catch {
@@ -212,13 +332,14 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
     }
     containerName = null;
     rmSync(work, { recursive: true, force: true });
+    workDir = null;
   };
 
   try {
     const s = await makeSecrets(secretsDir);
 
     // ── PostgreSQL ──
-    execFileSync('docker', ['run', '-d', '--name', container, '--label', `x2f-e2e=${process.pid}`, '-p', `${HOST}::5432`,
+    execFileSync('docker', ['run', '-d', '--name', container, '--label', `x2f-e2e=${process.pid}`, '--label', `x2f-e2e-start=${ME.start}`, '-p', `${HOST}::5432`,
       '-e', `POSTGRES_PASSWORD=${s.pgPassword}`, '--tmpfs', '/var/lib/postgresql/data', PG_IMAGE], { stdio: 'ignore' });
     const pgPort = execFileSync('docker', ['port', container, '5432/tcp'], { encoding: 'utf8' }).trim().split('\n')[0]!.split(':').pop()!;
     const pgUrl = (db: string) => `postgres://postgres:${s.pgPassword}@${HOST}:${pgPort}/${db}`;
@@ -241,6 +362,8 @@ export async function startStack(o: { logDir: string }): Promise<Stack> {
 
     // ── monerod (regtest) ──
     chain = await startRegtest({ restrictedRpc: true });
+    monerod = { pid: chain.pid, start: startTime(chain.pid) ?? '', dataDir: chain.dataDir };
+    writeOwner();
 
     // ── ports, then the web build (it carries the relay and node proxy URLs) ──
     const ports = { api: await freePort(), internal: await freePort(), relay: await freePort(), relayAdmin: await freePort(), proxy: await freePort() };
