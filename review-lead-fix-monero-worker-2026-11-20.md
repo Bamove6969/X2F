@@ -203,3 +203,86 @@ Revert R5 below (ignore every readdir error) passes the tests. Add a case where 
   - An earlier run of it together with my 304 probe also passed 5/5. It overlapped in time with my guard-revert edits, so I re-ran worker-csp.spec alone.
   - The 304 probe's request log (a plain 200, then a conditional request answered 304) shows the `no-cache` path was the one in force during it.
 - **Full set:** the lead's cloud runner.
+
+---
+
+## Addendum 2: wip/lead-fix-csp-followups 99ff0996 (`git diff e10aca29 99ff0996`), 21 Nov 2026, about 00:55 to 02:35 BC
+
+**Verdict: APPROVE.** n-1, n-2 and m-2 are fixed.
+- One new latent gap (n-3): the catch-all goes by file extension, so `.es` and `.ecma` slip past it.
+- Mutual cancel is red in the regtest e2e. I checked it, and **m-2 is not the cause**: it fails the same way with m-2 reverted, and no CSP refusal was logged in any regtest test.
+
+### n-1 / n-2: fixed
+
+- **The catch-all is case-insensitive and does not depend on URL encoding.** It is keyed on the file's path on disk (`/\.m?js$/i`), so the request URL's spelling does not matter.
+  - Probe against a root with `x.JS`, `lib/y.mjs`, `lib/Y.Mjs` and `lib/sw.js`: each was deny-all under `/x.JS`, `/x%2EJS`, `/%78.JS`, `/l%69b/y.mjs` and `?a=1`.
+  - `/lib%2Fy.mjs` is a 404.
+- **Start-up is refused** when index.html exists without `assets/`, and when `assets` is a file. Reverts R3 and R4 below are caught.
+
+### n-3 (minor, latent): `.es` and `.ecma` are served as `application/ecmascript` with no CSP
+
+- **Problem:** `@fastify/send`'s `mime` v3 maps `es` and `ecma` to `application/ecmascript`. That is a JavaScript MIME type in the HTML spec's list, so such a file can be started as a worker.
+  - The catch-all only matches `.js`/`.mjs`, so in my probe `/z.es` and `/z.ecma` came back with no CSP.
+  - These are the only other JavaScript-typed extensions in mime's tables. `.cjs` is `application/node` and `.jsx` is `text/jsx`; neither is runnable as a worker.
+- **Exposure today:** none; the build has no such files.
+- **Fix:** put deny-all on every static response that has no policy of its own, keyed on nothing. A subresource (CSS, font, image, script) ignores a response CSP, so this changes nothing for the page. Alternatively, widen the regex to `\.(m?js|es|ecma)$`.
+
+### m-2: what the narrowed escrow policy still lets through
+
+I read every network call in the built `escrow-worker-*.js`. Each one is still allowed:
+
+| Call | Covered by |
+|------|------------|
+| API: `/v1/trades/…` and `/v1/chats/…` (`httpEscrowApi`, `httpChatApi`, `httpOpenTradeChat`), all relative, `credentials: 'same-origin'`, `redirect: 'error'` | `<site>/v1/` |
+| relay: `new WebSocket(\`${relayUrl}/v1/trade/…\`)` | the relay origin |
+| node proxy: `${daemonUri}/json_rpc` fee reads, and the in-process wallet's fetch, which refuses any URI that is not the configured daemon | the node proxy origin |
+| WebAssembly: libsodium and monero-ts are inlined, so nothing is fetched | `'wasm-unsafe-eval'` |
+
+- The bundle has no `import()`, and `importScripts` would throw in a module worker anyway.
+- It has no EventSource or `sendBeacon`.
+- Its XMLHttpRequest uses are library fallbacks that the live paths never take.
+- `redirect: 'error'` on the API calls means a redirect cannot carry a request outside `/v1/`.
+
+**Paths it now refuses that would matter in production:** none found.
+- The page's relative URLs resolve against the page's origin. That origin must already be in X2F_ORIGINS for the API's Origin check and for `worker-src`, so an origin that is not listed was already broken before this change.
+- A relay on the same origin is still matched, because an https source also allows wss to that host.
+
+### Regtest e2e on a scratch merge (99ff0996 with origin/wip/lead-p3t31-regtest-e2e 0dc70076, the stack's worker copy removed)
+
+I ran the no-show, lapse and cancel flows at both sizes, under the lock. Chromium was wrapped to log console output, which records CSP refusals from workers. Result: **9 passed, 2 failed** (24 min).
+
+| Spec | Phone | Desktop |
+|------|-------|---------|
+| the build serves monero-ts's worker | ✓ (once) | |
+| buyer cancel before "I've paid" | ✓ | ✓ |
+| buyer cancel ignored (closes 48 h later) | ✓ | ✓ |
+| buyer no-show, the seller's Cancel and get refund | ✓ | ✓ |
+| lapse | ✓ | ✓ |
+| mutual cancel after funding | ✘ | ✘ |
+
+- **The failure:** "trade … is settling, not refunded/cancelled" (`tradeFlow.ts:192`).
+- **Not m-2:**
+  - **No CSP refusal was logged in the regtest run.** The same logging recorded 21 refusals in worker-csp.spec, so it does catch them.
+  - **Control:** with m-2 reverted (escrow `script-src 'self'`, `connect-src 'self'`), phone mutual cancel fails the same way.
+- **Not settled here:** whether mutual cancel is red on main plus the e2e branch with no worker CSPs at all. I did not run that third control. The e2e branch's commits are marked WIP, and the stack logs gave no hint. **Lead:** have Runner H, or whoever owns Task 31, run mutual cancel on main plus p3t31 before treating it as a CSP regression.
+
+### Guard reverts at 99ff0996 (headers.test, 132 tests; each restored)
+
+| # | Revert | Result |
+|---|--------|--------|
+| R1 | catch-all dropped | 1 failed |
+| R2 | catch-all case-sensitive | 1 failed |
+| R3 | index.html without `assets/` allowed | 1 failed |
+| R4 | readdir errors other than ENOENT ignored | 1 failed |
+| R5 | escrow `script-src` gets `'self'` back | 2 failed |
+| R6 | escrow `connect-src` back to `'self'` | 2 failed |
+
+### Tests run at 99ff0996
+
+- **vitest** (nice, outside the lock):
+  - @x2f/api headers + schema: 214/214.
+  - @x2f/web monero-worker + bundle: 11/11.
+- **`tsc -p apps/api`:** clean.
+- **worker-csp.spec under the lock:** 4/4. This includes the new escrow cases: `/ocr/`, the worker's own file, and a dynamic `import()` of a page chunk, each refused.
+- **Regtest:** as above.
+- **Full set:** Runner H.
