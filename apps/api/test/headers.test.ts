@@ -47,6 +47,14 @@ beforeAll(async () => {
   await writeFile(join(root, 'assets', 'worker-CzS2KofQ.js'), 'console.log(4)');
   await writeFile(join(root, 'assets', 'escrow-worker-CzS2Ko.js'), 'console.log(5)');
   await writeFile(join(root, 'assets', 'x-escrow-worker-CzS2KofQ.js'), 'console.log(6)');
+  // Re-review n-1: scripts outside /assets/, /ocr/, /monero/ and /sw.js (a future public/*.js), and
+  // a file that is not a script there.
+  await writeFile(join(root, 'escrow-worker-AAAAAAAA.js'), 'console.log(7)');
+  await writeFile(join(root, 'other.mjs'), 'console.log(8)');
+  await writeFile(join(root, 'UPPER.JS'), 'console.log(9)');
+  await mkdir(join(root, 'js'));
+  await writeFile(join(root, 'js', 'extra.js'), 'console.log(10)');
+  await writeFile(join(root, 'notes.txt'), 'User-agent: *');
   ({ app } = await testApp());
   await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] });
 });
@@ -104,6 +112,19 @@ describe('security headers', () => {
       expect(res.headers['content-security-policy'], url).toBe("default-src 'none'");
       expect(res.headers['cache-control'], url).toBe('public, max-age=31536000, immutable');
     }
+  });
+
+  it('re-review n-1: a script anywhere outside /assets/, /ocr/, /monero/ and /sw.js gets the deny-all CSP too', async () => {
+    for (const url of ['/escrow-worker-AAAAAAAA.js', '/other.mjs', '/UPPER.JS', '/js/extra.js', '/js/%65xtra.js', '/other.mjs?x=1']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expectBaseHeaders(res.headers);
+      expect(res.headers['content-security-policy'], url).toBe(ASSET_SCRIPT_CSP);
+    }
+    // A file there that is not a script keeps no CSP.
+    const txt = await app.inject({ method: 'GET', url: '/notes.txt' });
+    expect(txt.statusCode).toBe(200);
+    expect(txt.headers['content-security-policy']).toBeUndefined();
   });
 
   it('a built asset that is not a script gets the headers, no CSP and a long cache', async () => {
@@ -298,15 +319,46 @@ describe('every worker script carries its own CSP (lead call 20 Nov: a worker ta
         await rm(dir, { recursive: true, force: true });
       }
     }
-    // A root with no assets folder at all (nothing built to serve as the escrow worker) still starts.
+    // A root with no app page and no assets folder (nothing built, e.g. API-only use) still starts.
     const bare = await mkdtemp(join(tmpdir(), 'x2f-web-m3-'));
     const ok = (await testApp()).app;
     try {
-      await writeFile(join(bare, 'index.html'), '<!doctype html>');
+      await writeFile(join(bare, 'robots.txt'), 'User-agent: *');
       await expect(serveWeb(ok, { root: bare, ...opts })).resolves.toBeUndefined();
     } finally {
       await ok.close();
       await rm(bare, { recursive: true, force: true });
+    }
+  });
+
+  it('re-review n-1: serveWeb refuses to start when index.html exists but assets/ does not (a changed build.assetsDir cannot skip the check)', async () => {
+    const opts = { relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] };
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-web-n1-'));
+    const other = (await testApp()).app;
+    try {
+      await writeFile(join(dir, 'index.html'), '<!doctype html>');
+      await mkdir(join(dir, 'static'));
+      await writeFile(join(dir, 'static', 'escrow-worker-CzS2KofQ.js'), 'x');
+      await expect(serveWeb(other, { root: dir, ...opts })).rejects.toThrow(/index\.html but no assets folder/);
+    } finally {
+      await other.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('re-review n-2: serveWeb refuses to start when assets/ cannot be read for any reason but ENOENT (here: it is a file)', async () => {
+    const opts = { relayOrigin: RELAY, nodeProxyOrigin: NODE, siteOrigins: [SITE] };
+    for (const withPage of [true, false]) {
+      const dir = await mkdtemp(join(tmpdir(), 'x2f-web-n2-'));
+      const other = (await testApp()).app;
+      try {
+        if (withPage) await writeFile(join(dir, 'index.html'), '<!doctype html>');
+        await writeFile(join(dir, 'assets'), 'not a folder');
+        await expect(serveWeb(other, { root: dir, ...opts }), `index.html: ${withPage}`).rejects.toThrow(/ENOTDIR/);
+      } finally {
+        await other.close();
+        await rm(dir, { recursive: true, force: true });
+      }
     }
   });
 

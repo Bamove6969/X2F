@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import type { Socket } from 'node:net';
 import { join, resolve, sep } from 'node:path';
 import { SITE_SCHEMES, clearTextAllowed, plainOrigin } from '../origins.js';
@@ -214,7 +214,8 @@ export function escrowWorkerCspFor(o: ConnectOrigins & Pick<WebOptions, 'siteOri
 export const SERVICE_WORKER_CSP = "default-src 'none'";
 
 /**
- * Review M-1 (20 Nov): the CSP on every other script under /assets/. A `<script>` or `import` load
+ * Review M-1 (20 Nov): the CSP on every other script under /assets/ (re-review n-1: and on any script
+ * outside /assets/, /ocr/, /monero/ and /sw.js). A `<script>` or `import` load
  * ignores a response's CSP, so the page is unaffected; but the page's `worker-src 'self'` lets page
  * code start any same-origin script as a dedicated worker, which takes its CSP from its own response
  * and so ran under none (a way round the page's connect-src). Now such a worker may reach nothing,
@@ -233,6 +234,8 @@ export const ESCROW_WORKER_FILE = /[\\/]assets[\\/]escrow-worker-[A-Za-z0-9_-]{8
  * Review m-3: when the build has an assets folder, it must hold exactly one file named as
  * ESCROW_WORKER_FILE says, or serveWeb refuses to start (bundle.test pins this at build time; this
  * catches a build or rename that slipped past it before any trader's keys run unpoliced).
+ * Re-review n-1: a root with the app page (index.html) must have that folder too, so a changed
+ * `build.assetsDir` cannot skip this check. A root with neither (no app at all) still starts.
  */
 async function checkEscrowWorker(root: string): Promise<void> {
   const assets = join(resolve(root), 'assets');
@@ -240,12 +243,25 @@ async function checkEscrowWorker(root: string): Promise<void> {
   try {
     names = await readdir(assets);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw err;
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    if (await exists(join(resolve(root), 'index.html'))) {
+      throw new Error(`web: ${root} has index.html but no assets folder (the escrow worker must be ${assets}/escrow-worker-<8-character hash>.js)`);
+    }
+    return;
   }
   const found = names.filter((n) => ESCROW_WORKER_FILE.test(join(assets, n)));
   if (found.length !== 1) {
     throw new Error(`web: ${assets} must hold exactly one escrow worker (escrow-worker-<8-character hash>.js); found ${found.length}`);
+  }
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
   }
 }
 
@@ -381,6 +397,10 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
           // Review M-1: any other script, started as a worker, may reach nothing (ASSET_SCRIPT_CSP).
           if (/\.m?js$/i.test(path)) void reply.header('content-security-policy', ASSET_SCRIPT_CSP);
           void reply.header('cache-control', IMMUTABLE);
+        } else if (/\.m?js$/i.test(path)) {
+          // Re-review n-1: a script anywhere else (a future public/*.js, a changed build.assetsDir)
+          // is deny-all too, so nothing outside the branches above can start as an unpoliced worker.
+          void reply.header('content-security-policy', ASSET_SCRIPT_CSP);
         }
       },
     });
