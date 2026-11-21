@@ -260,6 +260,33 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
     }
   });
 
+  // Gap 4 e2e (21 Nov): the seller taps before the moderator arms the refund, so the seller's first
+  // export reaches a moderator with no release yet and is ignored there. The builder sends its saved
+  // export again with its tx set, so the moderator co-signs at once, not after the seller's resend
+  // timer (here set to ten minutes: without the resend this test times out).
+  it("the builder's export ignored by a co-signer that had no release yet goes again with the tx set: the moderator co-signs without waiting for a resend", async () => {
+    const t = await kit.newTrade({ seller: { resendMs: 600_000, resendMaxMs: 600_000 } });
+    const escrow = await ready(t);
+    await pay(escrow, XMR);
+    await mine(node.rpcUri, 12, funderAddress);
+    const refund = await newTestWallet(node.rpcUri);
+    try {
+      const o: Outcome = { kind: 'release', to: [{ address: await refund.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'mod' };
+      const sellerDone = t.parties.seller.settle(o);
+      sellerDone.catch(() => undefined);
+      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 60_000 }).toBe('export');
+      await expect.poll(() => kit.ignoredBy.mod.includes('not-current-release'), { timeout: 30_000 }).toBe(true);
+      const hash = await Promise.race([
+        t.parties.mod.settle(o),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the moderator waited for a resend')), 90_000)),
+      ]);
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      await minedWhile(node.rpcUri, funderAddress, sellerDone);
+    } finally {
+      await refund.close();
+    }
+  });
+
   it('a late surplus before signing: both re-derive, and the sweep pays it to the poster after it unlocks', async () => {
     const t = await kit.newTrade();
     const escrow = await ready(t);
