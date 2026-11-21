@@ -94,14 +94,16 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
 
   it('leaves out Post offer for a trader/vendor without the Offers role', () => {
     const host = rail('/sell', false, true);
-    expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile', 'Settings', 'Help']);
+    expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Wallets', 'Profile', 'Settings', 'Help']);
   });
 
   it('leaves out owner-only routes (Wallets) for a team member while keeping Settings (Order #2 M3)', () => {
+    // `trades` is left at its default (true) here: My trades has its own case below (review trades-list m1).
     // Member with offers role (wallets=false): Trade, Post offer, Profile, Settings, Help (never Wallets)
     const hostWithOffers = rail('/sell', true, false);
     expect([...hostWithOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
+      'My trades',
       'Post offer',
       'Profile',
       'Settings',
@@ -109,6 +111,7 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     ]);
     expect([...hostWithOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.getAttribute('href'))).toEqual([
       '/sell',
+      '/trades',
       '/post',
       '/profile',
       '/settings/security',
@@ -119,6 +122,7 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     const hostWithoutOffers = rail('/sell', false, false);
     expect([...hostWithoutOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
+      'My trades',
       'Profile',
       'Settings',
       'Help',
@@ -128,6 +132,7 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     const hostOwner = rail('/sell', true, true);
     expect([...hostOwner.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
+      'My trades',
       'Post offer',
       'Wallets',
       'Profile',
@@ -139,6 +144,7 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     const hostLoading = rail('/sell', true, false);
     expect([...hostLoading.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
+      'My trades',
       'Post offer',
       'Profile',
       'Settings',

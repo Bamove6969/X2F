@@ -847,7 +847,7 @@ const ENTRIES: readonly Entry[] = [
     q: 'Who can see my profile?',
     a: 'Anyone signed in to X2F can open your profile at /u/ followed by your display name, except a trader you blocked. It shows when you joined and whether you are online, your completed trades, your typical payment time, disputes won and lost, how much XMR you have traded if you chose to show it, your reviews with only their month and year and never who left them, the badges you show, and "Account protected with PGP" unless you hide that badge. You can also make a signed record of your trades under Settings: it stays private unless you show it on your profile, and only a copy you save can carry your PGP fingerprint, if you tick it.',
     sources: [
-      'apps/web/src/App.tsx:280 path="/u/:name"',
+      'apps/web/src/App.tsx:287 path="/u/:name"',
       'apps/api/src/reputation/profile.ts:16-17 only a set-up trader (or a member of',
       'apps/api/src/reputation/profile.ts:19-20 a trader who blocked the viewer',
       `${WEB}/profile/Profile.tsx:9-13 Reviews show month and year`,

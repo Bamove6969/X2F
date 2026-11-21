@@ -44,7 +44,8 @@ const LABEL = 'Browser on Linux';
  * read by apps/web/src/escrow/adapters.ts; Plan 5 Tasks 14-15: a proof's ciphertext, read by
  * apps/web/src/screens/proof/ChatProof.tsx and put by apps/web/src/proof/upload.ts; Plan 4 Task 12: the seller's payment proof for a ruling;
  * chat membership design tasks 4 and 6: the chat key record and the counterparty's fallback grant, called by the chat
- * engine through apps/web/src/chat/http.ts like the other /v1/chats routes). Any other new route still needs a client method.
+ * engine through apps/web/src/chat/http.ts like the other /v1/chats routes; D-005: My trades' list, read by
+ * apps/web/src/screens/trades/api.ts). Any other new route still needs a client method.
  * Param names are spelled as the route tree reports them (srv.serverRoutes): the proof stack's
  * proofs/:id and the blur check's proofs/:proofId share one node, so all three of those routes read
  * proofs/:id|:proofId; blur-checks/:proofId has no other name at its node and keeps :proofId.
@@ -81,6 +82,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/team/permissions',
   'GET /v1/traders/:name',
   'GET /v1/traders/:name/record',
+  'GET /v1/trades',
   'GET /v1/trades/:code',
   'GET /v1/trades/:code/attestation',
   'GET /v1/trades/:code/blur-checks',

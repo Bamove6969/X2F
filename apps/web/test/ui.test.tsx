@@ -407,7 +407,7 @@ describe('BottomNav', () => {
         <BottomNav wallets={false} />
       </MemoryRouter>,
     );
-    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Profile']);
+    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Post offer', 'Profile']);
   });
 
   it('mayPostOffers: the account owner and an Offers member may; a Trades-only member may not', () => {
