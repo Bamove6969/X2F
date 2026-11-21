@@ -238,8 +238,11 @@ test.describe('the rule popup explains what adding does for this account', () =>
       await page.getByRole('button', { name: 'Add a wallet' }).click();
       const popup = page.getByRole('dialog', { name: 'Before you add a wallet' });
       await expect(popup).toBeVisible();
+      // The popup can open before GET /v1/wallets/rule has answered; it then shows the general line
+      // (ruleNote(null)) and swaps in this account's rule when it arrives. Wait for the rule's own
+      // lines, then read the popup as it settled for what must never be in it.
+      for (const s of c.says) await expect(popup).toContainText(s);
       const text = await popup.innerText();
-      for (const s of c.says) expect(text).toMatch(s);
       for (const n of c.never) expect(text).not.toMatch(n);
       if (!c.rule.firstWallet) expect(text).toMatch(/One confirm covers several wallets/);
     });
