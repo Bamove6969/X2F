@@ -33,7 +33,7 @@ export interface Staffer {
   pgp: PgpPair;
   client: StaffClient;
   /** The browser contexts holding this person's keys (their counters are kept in step). */
-  browsers: Array<{ cdp: CDPSession; authenticatorId: string }>;
+  browsers: Array<{ cdp: CDPSession; authenticatorId: string; /** Only these keys (credential ids) are in this browser; null: all. */ only: string[] | null }>;
 }
 
 let ownerP: Staffer | null = null;
@@ -63,7 +63,7 @@ async function pull(p: Staffer): Promise<void> {
 /** Writes each key's counter into the browsers holding it. */
 async function push(p: Staffer): Promise<void> {
   for (const b of p.browsers) {
-    for (const k of p.keys) {
+    for (const k of p.keys.filter((x) => b.only === null || b.only.includes(x.credentialId))) {
       const credentialId = b64(k.credentialId);
       await b.cdp.send('WebAuthn.removeCredential', { authenticatorId: b.authenticatorId, credentialId }).catch(() => undefined);
       await b.cdp.send('WebAuthn.addCredential', {
@@ -133,7 +133,7 @@ export async function hire(role: 'mod' | 'senior', o: { hours?: LoginHours } = {
  * A browser context on the staff origin, logged in as `p` (their staff session cookie), whose
  * virtual authenticator holds `p`'s security keys. The staff boards are 1280 wide.
  */
-export async function staffPage(browser: Browser, p: Staffer, size: Size = DESKTOP): Promise<{ context: BrowserContext; page: Page }> {
+export async function staffPage(browser: Browser, p: Staffer, size: Size = DESKTOP, o: { keys?: number[] } = {}): Promise<{ context: BrowserContext; page: Page }> {
   const s = staffInfo();
   const context = await browser.newContext({ baseURL: s.origin, viewport: size, ignoreHTTPSErrors: true });
   await context.addCookies([...p.client.jar].map(([name, value]) => ({ name, value, url: s.origin, secure: true, httpOnly: true, sameSite: 'Strict' as const })));
@@ -144,7 +144,7 @@ export async function staffPage(browser: Browser, p: Staffer, size: Size = DESKT
     options: { protocol: 'ctap2', transport: 'usb', hasResidentKey: false, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
   })) as { authenticatorId: string };
   await pull(p);
-  p.browsers.push({ cdp, authenticatorId });
+  p.browsers.push({ cdp, authenticatorId, only: o.keys?.map((i) => p.keys[i]!.credentialId) ?? null });
   await push(p);
   context.on('close', () => {
     p.browsers = p.browsers.filter((b) => b.cdp !== cdp);

@@ -17,6 +17,8 @@ const executablePath = process.env.X2F_CHROMIUM_PATH;
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
+  // The regtest dispute flows (Plan 4 Task 21) run under playwright.regtest.config.ts, against the whole stack.
+  testIgnore: '*.e2e.spec.ts',
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,
