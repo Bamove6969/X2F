@@ -123,7 +123,7 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     change: `update account_blocks set created_at = now() + interval '1 s' where account_id = $1`,
     where: 'account_id = $1',
   },
-  // Plan 4 Task 27 (migration 770): a ban placed (here by the account itself, as placed_by must name an account), then lifted.
+  // Plan 4 Task 27 (migration 780): a ban placed (here by the account itself, as placed_by must name an account), then lifted.
   account_bans: {
     insert: `insert into account_bans (id, account_id, kind, rule_id, reason_code, until, placed_by, created_at) values (gen_random_uuid(), $1, 'trade', 'abuse', 'abuse', null, $1, now())`,
     change: `update account_bans set lifted_at = now() + interval '1 s' where account_id = $1`,

@@ -1,6 +1,6 @@
 /**
  * Plan 4 Task 27 (Revision 2026-10-29, 2026-10-29b), with D-017's rule list (owner Q15) and D-020's
- * notice (owner G39). Migration 770 (`account_bans`); the trader-side checks are banState.ts.
+ * notice (owner G39). Migration 780 (`account_bans`); the trader-side checks are banState.ts.
  *
  * Staff side (perm `accounts.ban`: senior moderators and the owner; a moderator cannot ban):
  * - `GET /staff/v1/accounts/:id/bans` → `{ priorOffences, bans }`: every ban of the account, newest

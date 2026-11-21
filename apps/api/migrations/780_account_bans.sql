@@ -9,7 +9,7 @@
 -- `rule_id` is D-017's rule (`@x2f/staff` BAN_RULES), `reason_code` the general reason the trader
 -- sees; `note` is staff-only and never logged (the activity log holds no staff notes) nor shown to
 -- the trader. A row outlives nothing but its account: earlier bans are the offence count D-017
--- reads. 770 (first written as 560 on wip/lead-bans; renumbered after main's 760 when brought onto main).
+-- reads. 780 (first written as 560 on wip/lead-bans; renumbered after main's 760 and wip/lead-sanctions' 770_no_russia when brought onto main).
 create table account_bans (
   id uuid primary key,
   account_id uuid not null references accounts (id) on delete cascade,

@@ -1,5 +1,5 @@
 /**
- * Plan 4 Task 27: what a ban (account_bans, migration 770) means on the trader side. Both kinds stop
+ * Plan 4 Task 27: what a ban (account_bans, migration 780) means on the trader side. Both kinds stop
  * trading: a trade ban is no new trades or offers, and a site ban includes that. A ban stands
  * until `until` by the server clock (null = lifetime), or until staff lift it; `settleEndedBans`
  * (staff/bans.ts) then writes `ended_at` and the log entry.

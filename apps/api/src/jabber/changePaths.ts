@@ -171,7 +171,7 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     bookkeeping: {},
   },
   {
-    // Plan 4 Task 27 (migration 770): a ban placed, ended by its time or lifted (lead default, as
+    // Plan 4 Task 27 (migration 780): a ban placed, ended by its time or lifted (lead default, as
     // trading_holds). The staff note is part of the row; the notice never says what changed.
     table: 'account_bans', accountColumn: 'account_id', ops: ALL,
     changes: ['id', 'account_id', 'kind', 'rule_id', 'reason_code', 'until', 'note', 'placed_by', 'tap_id', 'created_at', 'ended_at', 'lifted_at', 'lifted_by'],
