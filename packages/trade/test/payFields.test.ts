@@ -280,3 +280,19 @@ describe('the 12 Nov recheck (research-payee-fields-confirm-2026-11-12; lead 12 
     for (const [id, r] of rechecked) expect(/recheck 2026-11-12 \((high|medium|low)[^)]*\)/.test(r.source), id).toBe(true);
   });
 });
+
+describe('a trade taken before the 12 Nov ban (owner: Russian anything is banned; lead default, owner question)', () => {
+  it('SBP, MIR and YOOMONEY have no row: the payee of a trade still running gets the one free-text box', () => {
+    for (const id of ['SBP', 'MIR', 'YOOMONEY']) {
+      expect(Object.prototype.hasOwnProperty.call(PAY_FIELDS, id), id).toBe(false);
+      expect(payFieldsFor(id).map((f) => f.key), id).toEqual(['details']);
+      expect(payeeGivesNothing(id), id).toBe(false);
+      expect(checkPayDetails(id, { details: '+7 900 000 00 00, any bank' }), id).toEqual([{ key: 'details', value: '+7 900 000 00 00, any bank' }]);
+    }
+  });
+
+  it("a package sealed with SBP's old boxes (an older bundle) is refused for its contents (unknown-field), never shown", () => {
+    const old = { v: PAY_DETAILS_V, method: 'SBP', fields: [{ key: 'phone', value: '+79000000000' }, { key: 'bankName', value: 'Bank' }] };
+    expect(codeOf(() => parsePayDetails(old))).toBe('unknown-field:phone');
+  });
+});

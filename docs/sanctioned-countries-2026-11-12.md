@@ -14,7 +14,7 @@ This is engineering, not legal advice. The borderline list below is for the owne
 |---|---|---|
 | RUB | `apps/api/src/price/currencies.ts` (price list 45 to 44) | Owner: Russia banned |
 | SBP, MIR, YOOMONEY | `data/payment-methods.json` (127 to 124), `packages/trade/src/payFields.ts` | Owner: Russia banned |
-| Existing offers in RUB or with SBP, MIR or YOOMONEY | migration `770_no_russia.sql`: status `removed`, payment details blanked | Nothing usable is left. An offer's parts are written once (J-16), so an offer that is only partly Russian is removed whole. |
+| Existing offers in RUB or with SBP, MIR or YOOMONEY | migration `770_no_russia.sql`: status `removed`, payment details blanked | Nothing usable is left. An offer's parts are written once (J-16), so an offer that is only partly Russian is removed whole. Lead default, owner question: the ruling does not say; no notice is sent and no audit row is written (review m-3). |
 
 Guards, so these cannot come back by accident:
 
@@ -52,5 +52,12 @@ OFAC FAQ 10 (updated 26 Oct 2026) lists these jurisdictions as under broad (comp
 - **OCR and text:** `packages/proof` keeps the `₽` symbol, RUB, IRR, KPW and CUP in its ISO 4217 detection tables. Owner: Cyrillic OCR stays. Reading a figure on a proof is not offering a currency.
 - **Gift-card countries** (lead, 12 Nov, following the owner's rule): no gift card from RU, IR, KP or CU. `BANNED_GIFT_CARD_COUNTRIES` in `packages/trade/src/giftCards.ts` makes `giftCardCurrencyOk` false for them, so the API refuses such an offer with 400. The web picker (`apps/web/src/screens/post/countries.ts`) lists 245 countries instead of 249. The ISO table itself still maps those four to their currencies, as an ISO record.
 - **Research and history** (`research/`, past plans and reviews): left as written records.
-- **Trades already running** in RUB or on SBP, MIR or YOOMONEY when this deploys finish normally (lead, 12 Nov, review m-2). A funded escrow can only be stopped by a moderator, so only new offers and new takes are refused. A dispute on such a trade fails closed: with no RUB price, the trade's USD value is set to the limit and the two-person rule applies (`disputeUsdCents`). Release and refund need no price. Test: `events-route.test.ts`, "a trade taken before the ban ... finishes normally".
+- **Trades already running** in RUB or on SBP, MIR or YOOMONEY when this deploys finish normally (lead, 12 Nov, review m-2; lead default, owner question: the ruling does not say). A funded escrow can only be stopped by a moderator, so only new offers and new takes are refused. A dispute on such a trade fails closed: with no RUB price, the trade's USD value is set to the limit and the two-person rule applies (`disputeUsdCents`). Release and refund need no price. Test: `events-route.test.ts`, "a trade taken before the ban ... finishes normally". Payment details on such a trade: the payee's chat card falls back to the one free-text box, since the method has no row in `payFields.ts` any more; a package an older bundle sealed with SBP's old boxes is refused for its contents and the payer sees "Their payment details couldn't be shown. Ask them to send again." (payee-fields-2 m-4). The offer's instructions locked on the trade (`trades.method_instructions`) stay until the trade's own retention purge. Tests: `packages/trade/test/payFields.test.ts`, "a trade taken before the 12 Nov ban".
 - **Reviews and the revenue ledger:** past rows keep their method and currency. Nothing there can be posted or taken.
+
+## Owner questions (lead defaults until he answers)
+
+- **Existing offers** in RUB or with SBP, MIR or YOOMONEY: removed whole by migration 770 and their payment details blanked, with no notice to the poster (review m-3). Alternative: a one-line notice to affected accounts.
+- **Trades already running**: they finish (review m-2). This includes a trade taken but not yet funded at deploy time, which the seller can still fund afterwards. Alternative: a moderator refunds funded ones, and unfunded ones are cancelled.
+- **Gift cards from RU, IR, KP or CU** are refused: the lead's reading of "block their currencies and payment methods that are unique to areas on sanction lists" (a gift card for one of those countries is unique to it).
+- **Myanmar (MMK)** stays, as a borderline list-based programme, until the owner or the lawyer rules.

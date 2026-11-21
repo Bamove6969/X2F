@@ -143,7 +143,7 @@ describe('POST /v1/trades/:code/events', () => {
 
   it('lead 12 Nov (review m-2): a trade taken before the ban, in RUB or on SBP, MIR or YOOMONEY, finishes normally', async () => {
     // owner 12 Nov: Russian anything is banned, but a funded escrow can only be stopped by a moderator:
-    // only new offers and takes are refused (docs/sanctioned-countries-2026-11-12.md).
+    // only new offers and takes are refused (docs/sanctioned-countries-2026-11-12.md). Lead default, owner question.
     for (const [methodId, lockedCurrency] of [['SBP', 'RUB'], ['MIR', 'RUB'], ['YOOMONEY', 'RUB'], ['zelle', 'RUB'], ['SBP', 'USD']] as const) {
       const seller = await trader();
       const buyer = await trader();
