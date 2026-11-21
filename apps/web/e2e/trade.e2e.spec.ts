@@ -7,7 +7,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { foreignIdentityRegistration } from '../../../tools/regtest/e2e/foreignIdentity.js';
-import { modReceivedKeys } from '../../../tools/regtest/e2e/modState.js';
+import { modHoldsSellerSet } from '../../../tools/regtest/e2e/modState.js';
 import { contextFor, DESKTOP, feeWallet, mine, pay, PHONE, sql, stack, tradeView, txFee, type Size } from './regtestKit.js';
 import { AMOUNT, buyerCancels, copiedFunding, dismissTips, FEE, fund, holdToRelease, inRooms, incomingTxs, LONG, markPaid, openTrade, receivedIn, shows, untilState, XMR, type TradeView } from './tradeFlow.js';
 
@@ -331,7 +331,8 @@ for (const [label, size] of SIZES) {
     });
 
     // Security review M1, the builder's own follow-up (lead 20 Nov): the seller's tab closes the moment
-    // its tx set reached the moderator, before the moderator signed, submitted or sent its DONE. The
+    // the moderator holds the seller's export and tx set for its current attempt, before it signed,
+    // submitted or sent its DONE. The
     // trade closes without the seller (its relay channels with it, so no DONE is ever delivered), and
     // the trade opened again later proves its own refund by its tx key (check_tx_key through the node
     // proxy): done, never an escrow failure, also past the 5-minute settled-elsewhere grace.
@@ -341,7 +342,7 @@ for (const [label, size] of SIZES) {
         const funds = await fund(o);
         await cancelAndRefund(o.sellerPage);
         const until = Date.now() + 3 * 60_000;
-        while (!(await modReceivedKeys(stack(), o.code)).some((k) => k.startsWith('release.txset'))) {
+        while (!(await modHoldsSellerSet(stack(), o.code))) {
           if (Date.now() > until) throw new Error('the seller\'s tx set never reached the moderator');
           await new Promise((r) => setTimeout(r, 100));
         }
