@@ -6,6 +6,7 @@ import {
   WATCH_INTERVAL_MS,
   newWatchState,
   settleKindFor,
+  watchShowsEmpty,
   watchStep,
   type EscrowFunds,
   type SpendEvidence,
@@ -731,5 +732,58 @@ describe('settleKindFor', () => {
     for (const state of ['secured', 'paid', 'disputed'] as const) {
       expect(settleKindFor({ state, settling: null })).toBeNull();
     }
+  });
+});
+
+/**
+ * The moderation trade shred (Plan 7 Task 2, lead follow-up; review-p7-retention round 2, R2-I2):
+ * the moderator's escrow keys go only once its OWN watch shows the escrow empty, never on the
+ * API's word. Unknown is "may hold coins".
+ */
+describe('watchShowsEmpty', () => {
+  const DAY = 24 * 60;
+  test('an escrow the API closed before any coin came: empty once the watch closed it', () => {
+    const s = step({ apiState: 'cancelled', f: funds([]) }).state;
+    expect(s.channelsClosed).toBe(true);
+    expect(watchShowsEmpty(s)).toBe(true);
+  });
+
+  test('a released escrow whose shown sweep took every coin: empty', () => {
+    const s = step({ apiState: 'settling', f: funds([inc(HASH_A, 100n, 50)]), spend: sweep(100n, 20) }).state;
+    expect(s.settledTx).toBe(SETTLE);
+    expect(watchShowsEmpty(s)).toBe(true);
+  });
+
+  test('never while the watch has not seen the trade close (a fresh or open escrow)', () => {
+    expect(watchShowsEmpty(newWatchState())).toBe(false);
+    expect(watchShowsEmpty(step({ apiState: 'secured', f: funds([inc(HASH_A, 100n, 50)]) }).state)).toBe(false);
+  });
+
+  test('never for an escrow the API closed with coins in it and no sweep shown (they are late)', () => {
+    const s = step({ apiState: 'released', f: funds([inc(HASH_A, 100n, 50)]) }).state;
+    expect(s.lateReported).toEqual([HASH_A]);
+    expect(watchShowsEmpty(s)).toBe(false);
+    // Even once its 30 days ran out with the escalation confirmed and the trade closed again.
+    const later = { ...s, escalationPending: false };
+    const dropped = step({ state: later, apiState: 'released', f: funds([inc(HASH_A, 100n, 50)]), now: at((WATCH_CLOSED_DAYS + 1) * DAY) });
+    expect(dropped.watching).toBe(false);
+    expect(watchShowsEmpty(dropped.state)).toBe(false);
+  });
+
+  test('never once a coin came after the sweep, until a later sweep took it', () => {
+    const closed = step({ apiState: 'settling', f: funds([inc(HASH_A, 100n, 50)]), spend: sweep(100n, 20) }).state;
+    const late = step({ state: closed, apiState: 'released', f: funds([inc(HASH_A, 100n, 50), inc(LATE, 7n, 5)]), spend: sweep(100n, 20) }).state;
+    expect(late.lateReported).toEqual([LATE]);
+    expect(watchShowsEmpty(late)).toBe(false);
+    const ruled = step({ state: { ...late, escalationPending: false }, apiState: 'released', f: funds([inc(HASH_A, 100n, 50), inc(LATE, 7n, 25)]), spend: sweep(7n, 12, B2) }).state;
+    expect(ruled.sweepTxs).toEqual([SETTLE, B2]);
+    expect(watchShowsEmpty(ruled)).toBe(true);
+  });
+
+  test('never while an escalation is unconfirmed or the trade was seen open again', () => {
+    const s = step({ apiState: 'cancelled', f: funds([]) }).state;
+    expect(watchShowsEmpty({ ...s, escalationPending: true })).toBe(false);
+    expect(watchShowsEmpty({ ...s, reopened: true })).toBe(false);
+    expect(watchShowsEmpty({ ...s, channelsClosed: false })).toBe(false);
   });
 });
