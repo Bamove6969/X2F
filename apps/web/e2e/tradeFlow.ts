@@ -181,6 +181,9 @@ export async function holdToRelease(page: Page): Promise<void> {
   await expect(hold).toBeVisible({ timeout: 2 * 60_000 });
   await page.locator('input[type=checkbox]:visible').first().check();
   await expect(hold).toBeEnabled();
+  // The mouse holds at page coordinates, so the button must be on screen (a phone room with the
+  // smart proof card is taller than the viewport).
+  await hold.scrollIntoViewIfNeeded();
   const bb = (await hold.boundingBox())!;
   await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
   await page.mouse.down();
