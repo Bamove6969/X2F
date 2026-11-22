@@ -133,7 +133,7 @@ export async function contextFor(browser: Browser, t: Trader, size: Size): Promi
     });
     context.on('requestfailed', (r) => console.log(`[${who} reqfailed] ${r.url().slice(0, 100)} ${r.failure()?.errorText}`));
     context.on('response', (r) => {
-      if (r.status() >= 400) console.log(`[${who} http ${r.status()}] ${r.request().method()} ${r.url().slice(0, 120)}`);
+      if (r.status() >= 400) void r.text().then((b) => console.log(`[${who} http ${r.status()}] ${r.request().method()} ${r.url().slice(0, 120)} ${b.slice(0, 200)}`), () => undefined);
     });
   }
   return { context, page };

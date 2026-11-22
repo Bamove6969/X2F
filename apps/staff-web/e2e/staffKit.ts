@@ -41,7 +41,10 @@ let ownerP: Staffer | null = null;
 export async function owner(): Promise<Staffer> {
   if (ownerP) return ownerP;
   const s = staffInfo();
-  const o: Staffer = { ...s.owner, role: 'owner', keys: s.owner.keys.map((k) => ({ ...k })), client: new StaffClient(s.api, s.origin), browsers: [] };
+  // Each Playwright worker (and a rerun on a reused stack) starts from the stack's copy of the keys,
+  // so their counters restart from a clock reading: always above what an earlier worker reached.
+  const counter = Math.floor(Date.now() / 1000) - 1_700_000_000;
+  const o: Staffer = { ...s.owner, role: 'owner', keys: s.owner.keys.map((k) => ({ ...k, counter })), client: new StaffClient(s.api, s.origin), browsers: [] };
   await staffLogin(o.client, { loginName: o.loginName, key: o.keys[0]!, pgp: o.pgp });
   ownerP = o;
   return o;
@@ -153,8 +156,17 @@ export async function staffPage(browser: Browser, p: Staffer, size: Size = DESKT
     page.on('console', (m) => console.log(`[staff ${p.displayName} ${m.type()}] ${m.text().slice(0, 300)}`));
     page.on('pageerror', (e) => console.log(`[staff ${p.displayName} pageerror] ${e.message.slice(0, 300)}`));
     context.on('response', (r) => {
-      if (r.status() >= 400) console.log(`[staff ${p.displayName} http ${r.status()}] ${r.request().method()} ${r.url().slice(0, 120)}`);
+      if (r.status() >= 400) void r.text().then((t) => console.log(`[staff ${p.displayName} http ${r.status()}] ${r.request().method()} ${r.url().slice(0, 120)} ${t.slice(0, 200)}`), () => undefined);
     });
   }
   return { context, page };
+}
+
+/** The owner changes the large-trade limit (a tapped `settings` change, as StaffSettings does); returns the old limit. */
+export async function setLargeTradeLimit(usd: number): Promise<number> {
+  const o = await owner();
+  const s = await o.client.ok<{ largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number }>('GET', '/staff/v1/settings');
+  const tapId = await tap(o, { kind: 'settings', largeTradeLimitUsd: usd, firstResponseH: s.firstResponseH, appealWindowH: s.appealWindowH });
+  await o.client.ok('PUT', '/staff/v1/settings', { largeTradeLimitUsd: usd, tapId });
+  return s.largeTradeLimitUsd;
 }

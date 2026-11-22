@@ -26,8 +26,9 @@ export async function pastConfirmBy(code: string): Promise<void> {
 /** The buyer's room: Open dispute, the reason, a note, Open dispute. Ends on the dispute room. */
 export async function openDispute(page: Page, code: string, o: { reason: RegExp; note: string }): Promise<void> {
   await page.goto(`/trade/${encodeURIComponent(code)}`);
-  const open = page.getByRole('button', { name: 'Open dispute', exact: true });
-  await expect(open).toBeEnabled({ timeout: LONG });
+  // Past confirmBy the room's Open dispute is a link to the dispute page (DisputeLocked's button before).
+  const open = page.getByRole('link', { name: 'Open dispute', exact: true });
+  await expect(open).toBeVisible({ timeout: LONG });
   await open.click();
   await page.waitForURL(/\/dispute$/);
   await page.getByRole('radio', { name: o.reason }).check();
@@ -38,8 +39,11 @@ export async function openDispute(page: Page, code: string, o: { reason: RegExp;
 
 /** The staff page shows the case; the moderator takes it when it is not theirs yet. */
 export async function takeCase(page: Page, code: string): Promise<void> {
-  await page.goto(caseUrl(code));
-  await expect(page.locator('[data-part="case-chips"]')).toBeVisible({ timeout: LONG });
+  const chips = page.locator('[data-part="case-chips"]');
+  await expect(async () => {
+    await page.goto(caseUrl(code));
+    await expect(chips).toBeVisible({ timeout: 10_000 });
+  }).toPass({ timeout: LONG });
   const take = page.getByRole('button', { name: 'Take this case' });
   if (await take.isVisible()) {
     await take.click();
@@ -67,9 +71,19 @@ export async function openChat(page: Page): Promise<void> {
   }
   await expect(chat.locator('[data-part="device-certified"]')).toBeVisible({ timeout: LONG });
   const open = chat.getByRole('button', { name: 'Open the full chat' });
-  await expect(open).toBeEnabled({ timeout: LONG });
-  await open.click();
-  await expect(chat.locator('[data-part="chat-lines"]')).toBeVisible({ timeout: LONG });
+  const lines = chat.locator('[data-part="chat-lines"]');
+  // The moderation process learns of a new dispute on its next pull of work (a few seconds); until
+  // then it refuses the read (409 not-disputed) and the card says to try again, as a person would.
+  const until = Date.now() + LONG;
+  for (;;) {
+    await expect(open).toBeEnabled({ timeout: LONG });
+    await open.click();
+    // The list is there once the chat is open (empty when nobody wrote yet).
+    await expect(lines.or(chat.getByRole('alert'))).toBeAttached({ timeout: LONG });
+    if ((await lines.count()) > 0) return;
+    if (Date.now() > until) throw new Error(`the chat never opened: ${await chat.innerText()}`);
+    await page.waitForTimeout(5000);
+  }
 }
 
 /** "Message both traders": the text, Send, "Sent and logged." */
@@ -86,7 +100,7 @@ export const REASON = 'The buyer showed the payment and the seller never answere
 export async function proposeRuling(page: Page, outcome: string, reason = REASON): Promise<void> {
   const card = page.locator('[data-part="ruling"]');
   await expect(card).toBeVisible({ timeout: LONG });
-  await card.locator('[data-part="ruling-outcome"]').getByText(outcome, { exact: true }).click();
+  await card.locator('[data-part="ruling-outcome"]').getByRole('radio', { name: new RegExp(`^${outcome}`) }).check();
   await card.getByLabel('Reason (required, both traders see it)').fill(reason);
   await card.getByRole('button', { name: /^Send ruling/ }).click();
   await tapKey(page);
