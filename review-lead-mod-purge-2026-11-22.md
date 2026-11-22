@@ -183,3 +183,99 @@ Each mutation was applied alone, the named test file(s) were run, and the code w
 
 - **Q-A (Q4).** Coins sent to an escrow after its trade self-destructed. Today they can be moved only by both traders together, and staff lose the moderator key that could help. Recommend: keep the moderator's sealed escrow keys (only those) for a longer key-only window, for example 1 year, and add a Privacy line (COPY-UNSIGNED).
 - **Q-B.** `used_log_entries.trade`: blank it at shred? Only the id is needed for safety. Recommend blanking. Otherwise it follows p12-7.
+
+---
+
+## Re-review: 9a24ac57 to 1d8c4b34 (22 Nov, about 06:30 UTC)
+
+Commits: 9fe6f905 (RED), f676673d (fixes; the lead's message says 7b8a8bbd, but the branch has f676673d) and 1d8c4b34 (merge of main a8cfc6ac).
+- The merge brings in only main's 770 and 780 migrations next to the branch's files, and nothing else under apps/moderation, the purge or the internal routes.
+- schema.test lists 761, 770 and 780 in order.
+- Worktrees: `.claude/worktrees/rev-mod-purge2`, plus a clean one, `rev-mod-purge2-rt`, for the regtest, so the mutations could not touch its source. Both have been removed.
+
+### Verdict: APPROVE WITH MINORS (test pins only; no code defect found)
+
+**M1. The release rule (main.ts:1014, with `escrowNeverFinalised` at :952 and `watchSawNothing` at :968) cannot release a trade that ever had an escrow address or a chain fact.**
+- All of these must hold:
+  - a watch row exists;
+  - `mod_watch.escrow_address` is null and `setup_done_at` is null;
+  - the watch state reads back and shows no `lastChain`, close, settled tx, sweep or late coin;
+  - the sealed escrow state is absent, or it opens and has `address === null` (an undefined field is not taken as null), no `msig.addr:0` or `msig.ready:0` in `sent`, and no release or shown tx.
+- An escrow state that does not open, or a watch state that does not read back, holds the trade.
+- These checks can be trusted because the escrow party persists before it sends (packages/escrow party.ts:633-636 for msig.addr, :650-652 for msig.ready). A moderator that ever told the peers the address has it in its sealed state.
+  - One residual remains. The mod's last kex message lets both peers compute the address before the mod records it. But honest peers fund only after all three `msig.ready`, and coins funded anyway are 2-of-3 under the peers who funded them. The moderator's key adds no recourse there.
+- The `young` hold (30 days, now on the service's own clock) and `running` still come first, so a live setup is never released.
+- The new watcher stop rule (watcher.ts:593-603) applies only to a party that is not running and not starting, with no address, `!plan.start`, and the API showing the trade closed.
+  - A closed trade whose address sits only in the sealed state stays held (`escrow`).
+  - The `closed` condition is redundant with `!plan.start`, since an open trade always gets `plan.start`.
+
+**M2. The HMAC tag. Derivation and handling are correct.**
+- `modSubkey(key, 'sweeps')` is HKDF-SHA-256 with info `x2f/mod/sweeps`. That is a separate output from `wallet` and `gate`, so no key is reused, and the subkey is never stored.
+- The tag is HMAC-SHA256 over a versioned, domain-separated string, `x2f/mod/sweep-spent/v1|<tx>`, and it is 32 bytes (checked in the 022 schema).
+- Forgery or matching needs MOD_KEYSTORE_KEY:
+  - A DB dump holds neither the tx nor the trade (tested).
+  - Another instance with a different key can neither match nor plant a usable tag.
+  - Someone with DB write access could plant random tags, which only fails closed: the sweep is refused and the trade escalates through `spend-unshown`. That person could already delete `mod_sweeps`.
+- The tags are written in the shred's transaction, before the `mod_sweeps` delete. `claimSweep` (watcher.ts:262) checks the tag first, and the shred and the claim are serialised through `watcher.between`.
+- Note (no action needed now): rotating MOD_KEYSTORE_KEY would orphan the old tags. A rotation already has to re-seal everything, so the procedure should re-tag too.
+
+m1 to m5 and Q-B are done and pinned (see the table). Lead call noted: a closed escrow with unswept coins keeps its keys.
+
+### Minor: guards still unpinned (code correct by inspection; add tests)
+
+- **r1. `watchSawNothing` has no test.** Rows 6 to 10 survive, including the whole check. Add cases to "never for a trade that ever had an escrow address": watch states with `lastChain` set, with `closedAt` set, with a sweep tx, and with a `lateReported` tx. Each should be held. The lead asked for exactly this guarantee, so it should be pinned.
+- **r2. `escrowNeverFinalised` ignoring a release or shown tx survives (row 16).** Add a case with a sealed state carrying `release`, `releases` or `shown`.
+- **r3. The watcher stop rule's `escrow_address === null` survives (row 18).** Without it, after a restart a closed trade WITH an address would stop being watched, with no watch step and no 30-day late-coin watch. Keys would be kept, but late coins would go unreported. Add a test: restart, API `cancelled`, row with an address, and the row keeps watching. (Row 19, the closed check, is redundant, as above.)
+- **r4. No known-answer test for `sweepTag` (rows 22 to 24 survive).** Tag and check share the function, so moving it to the `gate` subkey, dropping the domain prefix, or using a fixed public key goes unseen. Add one check:
+  - `sweepTag(k, tx)` equals HMAC-SHA256(HKDF-SHA-256(k, salt empty, info `x2f/mod/sweeps`, 32), `x2f/mod/sweep-spent/v1|` + tx);
+  - and it is not equal to the HMAC under `modSubkey(k, 'gate')` or `modSubkey(k, 'wallet')`.
+
+### Guard reverts (re-review)
+
+| # | Mutation | Result |
+|---|---|---|
+| 0 | (old 12) `watchShowsEmpty` without the `closedAt` check | CAUGHT (1) |
+| 1 | (old 22) no transaction around the deletes | CAUGHT (1) |
+| 2 | (old 23) shred outside `watcher.between` | CAUGHT (2) |
+| 3 | M1 release rule removed | CAUGHT (3) |
+| 4 | M1 without the watch-row address check | CAUGHT (1) |
+| 5 | M1 without the setup-done check | CAUGHT (1) |
+| 6 | `watchSawNothing` always true | SURVIVED (r1) |
+| 7 | ignores `lastChain` (chain facts) | SURVIVED (r1) |
+| 8 | ignores `closedAt` | SURVIVED (r1) |
+| 9 | ignores sweeps | SURVIVED (r1) |
+| 10 | ignores `lateReported` | SURVIVED (r1) |
+| 11 | unreadable watch state taken as "nothing" | CAUGHT (1) |
+| 12 | `escrowNeverFinalised` always true | CAUGHT (1) |
+| 13 | unopenable sealed state taken as never finalised | CAUGHT (1) |
+| 14 | ignores the sealed address | CAUGHT (1) |
+| 15 | ignores sent msig.addr / msig.ready | CAUGHT (1) |
+| 16 | ignores release / releases / shown | SURVIVED (r2) |
+| 17 | watcher stop rule removed | CAUGHT (1) |
+| 18 | stop rule without the `escrow_address === null` check | SURVIVED (r3) |
+| 19 | stop rule without the closed check | SURVIVED (redundant) |
+| 20 | `claimSweep` ignores tags | CAUGHT (1) |
+| 21 | shred writes no tags | CAUGHT (1) |
+| 22 | `sweepTag` under the `gate` subkey | SURVIVED (r4) |
+| 23 | `sweepTag` without the domain prefix | SURVIVED (r4) |
+| 24 | `sweepTag` under a fixed public key | SURVIVED (r4) |
+| 25 | Q-B: `used_log_entries` not blanked | CAUGHT (1) |
+| 26 | m5: `mod_chat_seq` not deleted | CAUGHT (1) |
+| 27 | m3: `signed_terms` stamped by the DB clock | CAUGHT (3) |
+
+All three earlier survivors are now caught. Of the 25 new mutations, 15 are caught; the 10 survivors are r1 to r4, and row 19 is redundant.
+
+### Tests (re-review, at 1d8c4b34)
+
+- Targeted vitest, `nice -n 10`, outside the lock:
+  - moderation tradeShred 26/26
+  - moderation shred 13/13
+  - moderation watcher 31/31
+  - api tradeShred 6/6
+  - api tradePurge 26/26
+  - api schema 82/82
+  - trade watch 69/69
+  - 7 files, 253/253 passed.
+- `tsc --noEmit` for apps/moderation, apps/api and packages/trade: clean.
+- Under `~/x2f-comms/check.lock`: `vitest run --project @x2f/moderation-regtest apps/moderation/test/regtest/tradeShred.regtest.test.ts`: 1 file, 2/2 passed (the new release, sweep, drop, shred case included), 125 s. The lock was taken after an 11-minute wait.
+- Not run: the full `npm run check` (the cloud runner is doing the full set, per the lead).
