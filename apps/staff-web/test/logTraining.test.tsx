@@ -155,6 +155,10 @@ describe('describeLog', () => {
     expect(d('staff.invite-created', { inviteId: 'i', role: 'mod' })).toBe('Created an invite link for a new moderator');
     expect(d('staff.switched-off', { staffId: '22222222-2222-4222-8222-222222222222' })).toBe('Switched off a staff member');
     expect(d('chat.read', {})).toBe('Opened the trade chat');
+    // Ruling-winner reasons (lead 22 Nov), from the moderation process.
+    expect(d('ruling.payout-waiting', { reason: 'winner-committed' })).toBe("The ruling's payout waits: the winner's app is committed to an earlier payout");
+    expect(d('ruling.payout-waiting', { reason: 'winner-offline' })).toBe("The ruling's payout waits: the winner's app has not taken part");
+    expect(d('ruling.payout-waiting', { reason: 'none' })).toBe("The winner's app is taking part in the ruling's payout");
     // A withheld entry says so.
     expect(describeLog({ action: 'chat.read', detail: {}, actor: { kind: 'system', role: null, id: null, name: null }, withheld: true })).toMatch(/not shown\)$/);
   });

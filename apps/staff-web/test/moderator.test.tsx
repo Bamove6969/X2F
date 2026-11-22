@@ -457,6 +457,30 @@ describe('ModCase (board ModCase)', () => {
     }
   });
 
+  it("ruling-winner reasons (lead 22 Nov): the case says why the ruling's payout waits on the winner, with the time; nothing when it does not", async () => {
+    const since = new Date(Date.now() - 2 * H).toISOString();
+    const published = (payoutWait: unknown) =>
+      kase({ status: 'published', assignedToYou: false }, { publishedAt: new Date(Date.now() - 3 * H).toISOString(), draft: { id: 'r1', outcome: 'release-to-buyer' }, payoutWait } as never);
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: published({ reason: 'winner-committed', since }) } });
+    await open(`/disputes/${CODE}`);
+    expect(text('payout-waiting')).toBe(
+      `The payout has waited since ${hhmm(since)}: the winner's app is committed to an earlier payout it built, so it will not sign this ruling's payout.`,
+    );
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: published({ reason: 'winner-offline', since }) } });
+    await open(`/disputes/${CODE}`);
+    expect(text('payout-waiting')).toBe(
+      `The payout has waited since ${hhmm(since)}: the winner's app has not taken part. Either it has not been opened, or it is committed to an earlier payout the moderator takes no part in.`,
+    );
+    // None (or an older API without the field): no line.
+    for (const payoutWait of [null, undefined]) {
+      document.body.innerHTML = '';
+      fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: published(payoutWait) } });
+      await open(`/disputes/${CODE}`);
+      expect(part('payout-waiting')).toBeNull();
+    }
+  });
+
   it('in an appeal, a senior who took part in round 1 (mayWork false) is offered neither the approval nor Take (review M2)', async () => {
     const waiting = kase(
       { round: 2, status: 'awaiting-approval', assignedToYou: false, assignee: 'sarah.v', mayWork: false },
