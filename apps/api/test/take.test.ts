@@ -609,6 +609,31 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     await taken(buyer, offer, body(buyer, tenth));
   });
 
+  // Security review of bans onto main, m1: the poster's side of a take. A trade-banned or a
+  // site-banned poster's offer, taken by its id, is hidden (poster_ok, take.ts OFFER_SQL) and starts
+  // no trade; once the ban is lifted the same offer is taken.
+  it('a trade-banned or site-banned poster\'s offer taken by id is hidden (404) and writes no trade (bans review m1)', async () => {
+    const seen: Record<string, unknown> = {};
+    const lifts: (() => Promise<void>)[] = [];
+    for (const kind of ['trade', 'site'] as const) {
+      const seller = await person();
+      const offer = await postOffer(seller);
+      const buyer = await person();
+      const banId = await insertBan(deps, seller.id, kind, null);
+      const answer = refusal(await take(buyer, offer, body(buyer, tenth)));
+      const { rows } = await deps.db.query<{ n: number }>('select count(*)::int as n from trades where offer_id = $1', [offer]);
+      seen[kind] = { answer, trades: rows[0]!.n };
+      lifts.push(async () => {
+        await deps.db.query('update account_bans set lifted_at = $2, lifted_by = account_id where id = $1', [banId, deps.clock()]);
+        await taken(buyer, offer, body(buyer, tenth));
+      });
+    }
+    // Both kinds checked before either is asserted, so a mutant shows on each.
+    const hidden = { answer: { status: 404, error: 'not-found' }, trades: 0 };
+    expect(seen).toEqual({ trade: hidden, site: hidden });
+    for (const lift of lifts) await lift();
+  });
+
   it("a Starter poster's open-trade count holds under a race, and the taker learns nothing of it (offer-busy, review M6)", async () => {
     // Probabilistic on its own (review M2): released together, the racers reach the count read at
     // slightly different times. Three rounds make a missing lock show; the next test is the
