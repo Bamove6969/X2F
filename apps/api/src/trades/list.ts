@@ -2,6 +2,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import type { Party, TradeState } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
+import { UNFINISHED_SQL } from '../banState.js';
 import { ApiError } from '../errors.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { hasAbility } from '../team/abilities.js';
@@ -144,7 +145,10 @@ async function lastMemberActions(req: FastifyRequest, accountId: string, codes: 
  * The same sessions as the trade room (FINISH_OPEN_TRADES: a trader session, a backup session and a
  * held one too) and the same boxes for members (TRADE_READ), each part then needing its own box (a
  * part asked for without it: 403 `forbidden`). The list reads only the live `trades` table: a trade
- * the retention rule deleted (R36) is gone, with no stub. The account owner's open rows also say which
+ * the retention rule deleted (R36) is gone, with no stub. Under a site ban (Plan 4 Task 27; the gate,
+ * banState.ts, lets the list through only while something is unfinished) it lists only the
+ * unfinished trades: open ones, and closed ones whose dispute is not closed; the finished history is
+ * left out. The account owner's open rows also say which
  * member last acted (`lastActedBy`, Plan 3 Task 42).
  */
 export function tradeListRoute(app: FastifyInstance): void {
@@ -161,7 +165,7 @@ export function tradeListRoute(app: FastifyInstance): void {
     const open = parts.includes('open');
     const completed = parts.includes('completed');
     const me = req.auth.accountId;
-    // The name column is a constant, never input.
+    // The name column and UNFINISHED_SQL are constants, never input.
     const { rows } = await req.server.deps.db.query<ListRow>(
       `select t.code, case when t.buyer_account_id = $1 then 'buyer' else 'seller' end as role, t.state,
               t.amount_atomic::text as amount_atomic, t.fiat_cents::text as fiat_cents, t.locked_currency,
@@ -172,9 +176,10 @@ export function tradeListRoute(app: FastifyInstance): void {
         where (t.buyer_account_id = $1 or t.seller_account_id = $1)
           and (($2::boolean and t.closed_at is null) or ($3::boolean and t.closed_at is not null))
           and ($4::timestamp is null or (t.taken_at, t.code) < (($4::timestamp at time zone 'UTC'), $5::text))
+          and (not $7::boolean or ${UNFINISHED_SQL})
         order by t.taken_at desc, t.code desc
         limit $6`,
-      [me, open, completed, cursor?.takenKey ?? null, cursor?.code ?? null, limit + 1],
+      [me, open, completed, cursor?.takenKey ?? null, cursor?.code ?? null, limit + 1, req.auth.siteBanned],
     );
     const shown = rows.slice(0, limit);
     const last = shown[shown.length - 1];

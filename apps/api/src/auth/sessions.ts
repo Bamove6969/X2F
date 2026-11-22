@@ -81,6 +81,12 @@ export interface AuthContext {
   memberAbilities: readonly string[];
   /** The member's name as the chat label shows it; null for the account owner. */
   memberName: string | null;
+  /**
+   * Plan 4 Task 27: the account has a site ban in force (its team members' sessions included); the
+   * gate (banState.ts) already let this request through, and a route that lists may narrow to what
+   * finishes the unfinished (D-005: GET /v1/trades).
+   */
+  siteBanned: boolean;
 }
 
 declare module 'fastify' {
@@ -521,6 +527,7 @@ export function requireSession(
       memberId: row.member_id,
       memberAbilities: row.member_id !== null ? (row.member_abilities ?? []) : [],
       memberName: row.member_id !== null ? row.member_name : null,
+      siteBanned: row.kind === 'trader' && row.site_ban_reason !== null,
     };
   };
   (handler as unknown as Record<symbol, true>)[SESSION_HOOK] = true;

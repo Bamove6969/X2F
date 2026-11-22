@@ -53,7 +53,7 @@ export async function tradeBanned(db: Queryable, accountId: string, now: Date): 
 }
 
 /** SQL: true while trade `t` is unfinished: open (`closed_at` null), or with a dispute not closed (an open appeal included). */
-const UNFINISHED_SQL = `(t.closed_at is null or exists (select 1 from disputes d where d.code = t.code and d.status <> 'closed'))`;
+export const UNFINISHED_SQL = `(t.closed_at is null or exists (select 1 from disputes d where d.code = t.code and d.status <> 'closed'))`;
 
 /** An open trade or a dispute not closed (an open appeal included): what a site-banned person may still finish. */
 export async function hasUnfinished(db: Queryable, accountId: string): Promise<boolean> {
@@ -129,11 +129,11 @@ async function unfinishedChat(db: Queryable, accountId: string, raw: unknown): P
  *   chat only: the chat key record, read and posted (chat membership design task 4), and the
  *   fallback grant to the moderator (task 6).
  *
- * NEEDS_TRADES_LIST: lead call 1 also lets `GET /v1/trades` (D-005, wip/lead-trades-list, not on
- * main) through while anything is unfinished, AND has that list return only the unfinished trades
- * while the caller is site-banned (`and (not <siteBanned> or UNFINISHED_SQL)`, with `siteBanned`
- * set on req.auth from the session query's ban; batch 10a a1a75df1). Add both together when the
- * list lands, never the gate entry alone (it would show a banned person their whole history).
+ * - D-005, My trades (was NEEDS_TRADES_LIST; lead call 1, batch 10a a1a75df1): `GET /v1/trades`
+ *   passes while anything is unfinished, AND the list itself then returns only the unfinished trades
+ *   (trades/list.ts: `and (not siteBanned or UNFINISHED_SQL)`, `siteBanned` from the session
+ *   query's ban on req.auth), for the account owner and its members alike. The two go together:
+ *   the gate entry alone would show a banned person their whole history.
  * NEEDS_DEVICE_BOUND: batch 10a OQ-1 (lead call, e2af08d5) puts S-085's proof pair, `POST
  * /v1/account/session/proof` and `/challenge` (wip/lead-device-bound, not on main), in ALWAYS: it
  * renews only the caller's own bound cookie and starts nothing, so a banned person with nothing
@@ -154,6 +154,8 @@ const ACCOUNT: readonly RegExp[] = [
   /^GET \/v1\/account\/approvals(\/:id)?$/,
   /^POST \/v1\/account\/approvals\/:id$/,
   /^GET \/v1\/account\/freeze$/,
+  // D-005: the trades list, filtered to the unfinished trades under a site ban (trades/list.ts).
+  /^GET \/v1\/trades$/,
 ];
 const TRADE: readonly RegExp[] = [
   /^GET \/v1\/trades\/:code(\/(attestation|confirmations|dispute))?$/,
