@@ -48,6 +48,12 @@ export interface StoredIntent {
   done: boolean;
   /** Chosen by the runtime (standing release co-sign, lapse refund), not by a tap. */
   auto: boolean;
+  /**
+   * `ruling` only (security review 22 Nov, M2): the intent the ruling replaced, restored when the
+   * party turns out committed to it (another builder's outcome it can no longer switch from), and
+   * asked for at the close (`landed`). Absent or null: there was none.
+   */
+  prior?: Omit<StoredIntent, 'prior'> | null;
 }
 
 export interface EscrowRecord {
@@ -91,6 +97,13 @@ export interface EscrowRecord {
   /** The moderator acknowledged our trade.terms. */
   termsAcked: boolean;
   intent: StoredIntent | null;
+  /**
+   * Security review 22 Nov, M1: this device verified the moderation service's signed ruling statement
+   * for this trade and its own escrow address naming the OTHER side the winner. Only then does it
+   * count a ruling close (released or refunded with no settlement kind) as settled without it.
+   * Absent: never verified (fail closed).
+   */
+  rulingLost?: boolean;
   /**
    * The trade amount this device fixed (security fix, 2026-10-24): the buyer at its own "I've
    * paid" tap (with the fiat total it confirmed); the seller from the buyer's signed trade.paid

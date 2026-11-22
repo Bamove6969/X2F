@@ -2731,7 +2731,7 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     const want = { kind: 'release', to: setFor('buyer'), builder: 'mod', cosigner: 'buyer' };
     expect(modBuilt(t, 'buyer')[0]!.o).toEqual(want);
     // Saved before the hand-over: a reload hands the same outcome again.
-    expect((await t.buyer.store.load(CODE))?.intent).toEqual({ kind: 'ruling', outcome: { to: want.to, builder: 'mod', cosigner: 'buyer' }, done: false, auto: true });
+    expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'ruling', outcome: { to: want.to, builder: 'mod', cosigner: 'buyer' }, done: false, auto: true, prior: { kind: 'release', auto: true } });
     const first = t.parties.settles.length;
     await Promise.all([t.parties.ticks('buyer', 4), t.parties.ticks('seller', 4)]);
     // No seller-built release (the standing co-sign) is handed to the party over the ruling.
@@ -2963,7 +2963,7 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     t.state.view = tradeView({ state: 'disputed', settling: 'auto-refund', dispute: { by: 'buyer', at: '2026-10-24T12:00:00.000Z' } });
     t.state.rulingStatement = await statement(t.mod.secret, 'seller');
     await t.parties.ticks('seller', 4);
-    expect(modBuilt(t, 'seller')).toEqual([]);
+    expect(t.parties.settles.filter((x) => x.role === 'seller' && x.o.builder === 'mod')).toEqual([]);
     // The mod lands the committed refund.
     t.parties.landedFn = (role, o) => (role === 'seller' && JSON.stringify(o.to.map((p) => p.address)) === JSON.stringify(refund.to.map((p) => p.address)) ? 'ef'.repeat(32) : null);
     t.state.view = tradeView({ state: 'refunded', settling: 'auto-refund' });
@@ -3017,7 +3017,8 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
 
   // The security reviewer's two probes (22 Nov), committed as they reproduced M1 and M2.
   it('review probe A (M1): the buyer won, its ruling co-sign still open, the escrow emptied and the API says refunded (settling null): never settled-without-device', async () => {
-    const t = await disputed();
+    // No grace for its own open settle, so the verdict comes at once (the probe waited 5 min otherwise).
+    const t = await disputed({ settledElsewhereMs: 0 });
     t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
     await until(() => modBuilt(t, 'buyer').length > 0);
     t.state.view = tradeView({ state: 'refunded', paidAt, settling: null });

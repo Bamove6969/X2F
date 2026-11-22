@@ -23,8 +23,8 @@
  * then the exact fee) and `payoutsFor('dispute-seller')` for the seller (a full reversal: the whole
  * balance, no fee), so no split can move this side's share to the counterparty or add a fee. The
  * runtime builds that set with `rulingOutcomeFor` once the signed statement verified (Plan 4 Task 21
- * fix); the statement, not the API's unsigned dispute view (screens/dispute/rules.ts
- * `rulingAllowsCosign`), is what allows it.
+ * fix). The signed statement is the only thing that allows a mod-built set: the API's unsigned
+ * dispute view never does (its old gate, rulingAllowsCosign, was deleted in review m2, 22 Nov).
  *
  * The trade's size is bounded by this device, never set by the API alone: `deal` is what this
  * device stored at trade start and both sides signed in trade.terms (amount at take, poster,

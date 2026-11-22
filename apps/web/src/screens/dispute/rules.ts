@@ -293,8 +293,8 @@ export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: stri
  *
  * NEEDS_PLAN_4_RULING_PAYOUT (C11 review I1): the spec, Plan 4 ("A1 dropped", Revision 2026-10-29c)
  * and the owner (Q37, 6 Nov: "at once, with a lien covering a reversal") move the coins at the
- * ruling, and rulingAllowsCosign below allows the co-sign from the ruling on, appeal or not. Nothing
- * executes a ruling's payout yet, though, so the page still says "Goes to …". When the API reports
+ * ruling, and the escrow worker co-signs it from the ruling on, appeal or not (escrow/runtime.ts,
+ * against the signed ruling statement). The dispute view does not say the payout executed yet, so the page still says "Goes to …". When the API reports
  * the payout executed (DisputeView has no such flag today), the destination line flips to the
  * board's "Sent to …" and the appeal line may say the XMR has moved.
  * Tripwire NEEDS_PLAN_4_RULING_PAYOUT in test/dispute-tripwires.test.ts.
@@ -387,41 +387,6 @@ export function appealSentText(d: DisputeView, me: Party, other: string): string
         ? " If they overturn the ruling, you get a lien until you pay the trade's XMR back." // COPY-UNSIGNED (review I1)
         : " If they overturn the ruling, the other trader gets a lien until they pay the trade's XMR back."; // COPY-UNSIGNED (review I1)
   return `${who} A second moderator will look at it.${lien}`;
-}
-
-/** A Plan 1 `Outcome` as the escrow runtime hands it over (structural, so this file needs no escrow import). */
-export interface SettleOutcome {
-  kind: 'release';
-  to: { address: string; amountAtomic: bigint }[];
-  builder: 'buyer' | 'seller' | 'mod';
-  cosigner: 'buyer' | 'seller' | 'mod';
-}
-
-/**
- * The ruling gate in front of co-signing a moderator-built transaction (Plan 3 Task 27): only a
- * set the moderator built for this side to co-sign, only when the ruling pays this side, and only
- * when `cosignPolicy` (Task 12, which checks the exact payouts against this device's own facts)
- * agrees. The money moves at the ruling, during the appeal window and during an appeal too: an
- * overturn puts a lien on whoever received the coins (owner Q37, 6 Nov; spec Revision 2026-10-29c
- * "Liens"). An after-refund ruling moves nothing from the escrow. Anything else is refused. Never
- * throws.
- */
-export function rulingAllowsCosign(a: {
-  role: Party;
-  dispute: DisputeView | null;
-  now: Date;
-  outcome: SettleOutcome;
-  cosignPolicy: (o: SettleOutcome) => boolean;
-}): boolean {
-  try {
-    const d = a.dispute;
-    if (d === null || d.ruling === null || d.afterRefund) return false;
-    if (paidSide(d.ruling.outcome) !== a.role) return false;
-    if (a.outcome.kind !== 'release' || a.outcome.builder !== 'mod' || a.outcome.cosigner !== a.role) return false;
-    return a.cosignPolicy(a.outcome) === true;
-  } catch {
-    return false;
-  }
 }
 
 /**

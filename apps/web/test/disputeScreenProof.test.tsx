@@ -14,6 +14,20 @@ import { DisputeScreen } from '../src/screens/dispute/DisputeScreen.js';
 import { SERVER_NOW, sellerView } from '../e2e/refundViews.js';
 import { render } from './render.js';
 
+// Review m5, G18: the payTo DisputeScreen hands DisputeRuling, seen directly (DisputeRuling checks the
+// amount again itself, so only this shows the route's own check).
+const handed = vi.hoisted(() => ({ payTo: [] as unknown[] }));
+vi.mock('../src/screens/dispute/DisputeRuling.js', async (orig) => {
+  const real = await orig<typeof import('../src/screens/dispute/DisputeRuling.js')>();
+  return {
+    ...real,
+    DisputeRuling: (p: Parameters<typeof real.DisputeRuling>[0]) => {
+      handed.payTo.push(p.payTo ?? null);
+      return real.DisputeRuling(p);
+    },
+  };
+});
+
 const MIN = 60_000;
 const at = (ms: number) => new Date(Date.parse(SERVER_NOW) + ms).toISOString();
 const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -113,6 +127,17 @@ describe('/trade/:code/dispute: the seller of an after-refund seller-sends-xmr r
       const host = await screen();
       expect(host.textContent).toContain('You must send');
       expect(host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+    }
+  });
+
+  it('G18: the route hands DisputeRuling a payTo only when the attested amount is the trade amount', async () => {
+    const attested = { address: '4AttestedBuyerAddressXyz', amountAtomic: BigInt(view.amountAtomic) };
+    for (const [amountAtomic, want] of [[attested.amountAtomic + 1n, null], [attested.amountAtomic - 1n, null], [attested.amountAtomic, attested]] as const) {
+      handed.payTo = [];
+      status = { restitution: { ...attested, amountAtomic } };
+      await screen();
+      expect(handed.payTo.length).toBeGreaterThan(0);
+      expect(handed.payTo.at(-1)).toEqual(want);
     }
   });
 });

@@ -18,9 +18,8 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     // pinned modSigningPublic; the set comes from policy.ts rulingOutcomeFor (worked out on the
     // device, never the statement's own list), saved as the `ruling` intent before the hand-over.
     // Behaviour: test/attestation-flow.test.ts "Plan 4 rulings", test/policy.test.ts rulingOutcomeFor.
-    // Lead default (security review): the signed statement replaces rulingAllowsCosign over the
-    // API's unsigned dispute view as the gate in front of cosignPolicy (the worker never reads the
-    // dispute view); the statement already binds the ruling, round 1 and the winner.
+    // The signed statement is the gate in front of cosignPolicy (the worker never reads the API's
+    // unsigned dispute view); it binds the ruling, round 1 and the winner.
     const runtime = readFileSync(ROOT + 'apps/web/src/escrow/runtime.ts', 'utf8');
     expect(runtime).toMatch(/deps\.api\.getRulingStatement\(/);
     expect(runtime).toMatch(/verifyRulingStatement\(/);
@@ -29,6 +28,11 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     // Every hand-over still goes through settle(), the one place cosignPolicy runs.
     expect(runtime.match(/this\.party\.settle\(/g)?.length).toBe(1);
     expect(readFileSync(ROOT + 'apps/web/src/escrow/adapters.ts', 'utf8')).toMatch(/\/ruling-statement/);
+    // Review m2 (22 Nov): the weaker gate over the unsigned dispute view is gone, so no caller can
+    // wire it in place of the signed statement.
+    const src = ['apps/web/src/screens/dispute/rules.ts', 'apps/web/src/escrow/runtime.ts', 'apps/web/src/escrow/policy.ts', 'apps/web/src/screens/dispute/DisputeSlot.tsx', 'apps/web/src/screens/dispute/DisputeRuling.tsx'];
+    for (const f of src) expect(readFileSync(ROOT + f, 'utf8'), f).not.toMatch(/function rulingAllowsCosign/);
+    expect(readFileSync(ROOT + 'apps/web/src/screens/dispute/rules.ts', 'utf8')).not.toMatch(/rulingAllowsCosign/);
   });
 
   it('PLAN_4_MOD_COSIGN LANDED (growth-binding review m4, decided): the release-binding flags never block a ruling co-sign', () => {

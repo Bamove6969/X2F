@@ -18,13 +18,11 @@ import {
   waitPart,
   disputeEntry,
   inTime,
-  rulingAllowsCosign,
   rulingCopy,
   rulingFinal,
   paidOutAtomic,
   xmrInText,
   xmrInTextExact,
-  type SettleOutcome,
 } from '../src/screens/dispute/rules.js';
 import { fire, render } from './render.js';
 
@@ -214,65 +212,6 @@ describe('copy helpers', () => {
   });
 });
 
-describe('rulingAllowsCosign: a moderator-built transaction is co-signed only through the ruling and cosignPolicy', () => {
-  // The facts a buyer's device holds (Task 12's cosignPolicy derives the exact payouts from them).
-  const amountAtomic = 1_250_000_000_000n;
-  const plan = escrowPlan({ amountAtomic, poster: 'seller' });
-  const facts = {
-    amountAtomic,
-    feeAtomic: plan.feeAtomic,
-    poster: 'seller' as const,
-    sellerFundsAtomic: plan.sellerFundsAtomic,
-    balanceAtomic: plan.sellerFundsAtomic,
-    buyerPayout: '5buyer',
-    sellerRefund: '5seller',
-    feeWallet: '5fee',
-  };
-  const same = (a: SettleOutcome['to'], b: SettleOutcome['to']) => a.length === b.length && a.every((p, i) => p.address === b[i]!.address && p.amountAtomic === b[i]!.amountAtomic);
-  // A stand-in with the rule Task 12's cosignPolicy applies to a mod-built set (exact payouts), so
-  // the gate is exercised against it until the real one lands (NEEDS_TASK_12 tripwire).
-  const exactPolicy = (role: 'buyer' | 'seller') => (o: SettleOutcome) =>
-    same(o.to, payoutsFor({ ...facts, kind: role === 'buyer' ? 'dispute-buyer' : 'dispute-seller' }));
-  const buyerWin: SettleOutcome = { kind: 'release', to: payoutsFor({ ...facts, kind: 'release' }), builder: 'mod', cosigner: 'buyer' };
-  const final = new Date(T0 + (400 + 48 * 60) * MIN);
-
-  it('co-signs the buyer-win release once the appeal window has closed with no appeal', () => {
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: buyerWin, cosignPolicy: exactPolicy('buyer') })).toBe(true);
-  });
-
-  it('co-signs at the ruling, inside the appeal window and during an appeal (owner Q37: a lien covers a reversal)', () => {
-    const atRuling = new Date(T0 + 401 * MIN);
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: atRuling, outcome: buyerWin, cosignPolicy: exactPolicy('buyer') })).toBe(true);
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({}, { appeal: { by: 'seller', at: iso(500) } }), now: final, outcome: buyerWin, cosignPolicy: exactPolicy('buyer') })).toBe(true);
-    // Still only the exact set: the policy decides inside the window as well.
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: atRuling, outcome: buyerWin, cosignPolicy: () => false })).toBe(false);
-  });
-
-  it('refuses a mod-built set paying the counterparty from this side\'s share', () => {
-    const skim: SettleOutcome = {
-      ...buyerWin,
-      to: buyerWin.to.map((p) => (p.address === '5buyer' ? { ...p, amountAtomic: p.amountAtomic - 100_000_000n } : p)).concat({ address: '5seller', amountAtomic: 100_000_000n }),
-    };
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: skim, cosignPolicy: exactPolicy('buyer') })).toBe(false);
-    const fee: SettleOutcome = { ...buyerWin, to: buyerWin.to.map((p) => (p.address === '5fee' ? { ...p, amountAtomic: p.amountAtomic + 1n } : p)) };
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: fee, cosignPolicy: exactPolicy('buyer') })).toBe(false);
-  });
-
-  it('refuses whatever the policy says when there is no ruling or it pays the other side', () => {
-    const yes = () => true;
-    expect(rulingAllowsCosign({ role: 'seller', dispute: ruled(), now: final, outcome: { ...buyerWin, cosigner: 'seller' }, cosignPolicy: yes })).toBe(false);
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({ outcome: 'refund-to-seller' }), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: { ...buyerWin, builder: 'seller' }, cosignPolicy: yes })).toBe(false);
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: dispute(), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: buyerWin, cosignPolicy: () => { throw new Error('x'); } })).toBe(false);
-    // An after-refund ruling moves nothing from the escrow.
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({}, { afterRefund: true }), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
-    // The appeal round is final at once.
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({ round: 2, appealUntil: null }), now: new Date(T0), outcome: buyerWin, cosignPolicy: yes })).toBe(true);
-    expect(rulingFinal(ruled({ round: 2, appealUntil: null }), new Date(T0))).toBe(true);
-  });
-});
-
 describe('ModeratorTag: the violet badge only inside a disputed trade', () => {
   it('draws the badge for a moderator message in a dispute with a recorded moderator', () => {
     const { host } = render(<ModeratorTag from="mod" inDispute moderator="sarah.v" />);
@@ -452,7 +391,7 @@ describe('DisputeRuling appeal form', () => {
 
   // Design review fix 2 (shot 59; spec Revision 2026-10-29c "Liens"): an overturned ruling puts a
   // lien on whoever received the coins. C11 review I1 (NEEDS_PLAN_4_RULING_PAYOUT): nothing executes a
-  // ruling's payout yet, and rulingAllowsCosign still holds it for the appeal window, so the page says
+  // ruling's payout is not reported executed on the dispute view yet, so the page says
   // where the XMR goes, never that it was sent or has moved, until the API reports the payout executed.
   it('says where the XMR goes (not that it was sent), and that an overturned ruling puts a lien on whoever received it', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });

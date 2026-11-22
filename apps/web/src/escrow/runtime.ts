@@ -238,6 +238,11 @@ export interface RuntimeDeps {
    * trade, or one the API answers 404 or 410 (purged) for.
    */
   prepareChat?: (code: string) => Promise<void>;
+  /**
+   * Review m4: a disputed trade asks for the ruling statement at most this often (default
+   * RULING_POLL_MS); it has none for the whole open dispute before a ruling.
+   */
+  rulingPollMs?: number;
   onStatus(code: string, s: EscrowStatus): void;
 }
 
@@ -254,6 +259,8 @@ export interface EscrowRuntime {
 }
 
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+/** Review m4: how often a disputed trade asks for the ruling statement until one verifies. */
+export const RULING_POLL_MS = 30_000;
 /** Gap 5, lead call 20 Nov: the trade states in which no chat is made or registered (every terminal one). */
 const CHAT_CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled', 'lapsed'];
 /** The escrow store outlives the trade by at least this long (lead 2026-10-24). */
@@ -357,6 +364,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
   const pollMs = deps.pollMs ?? 5000;
   const now = deps.now ?? (() => Date.now());
   const settledElsewhereMs = deps.settledElsewhereMs ?? 5 * 60 * 1000;
+  const rulingPollMs = deps.rulingPollMs ?? RULING_POLL_MS;
   const lock = deps.lock ?? navigatorLock;
   const runs = new Map<string, TradeRun>();
 
@@ -374,11 +382,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
      * Plan 4 rulings (Haveno finding 2): the moderation service's ruling statement as the API served
      * it, kept only once it verified on this device for this trade, the escrow address this device's
      * own party derived and this side as the winner (`loadRuling`). cosignPolicy verifies it again,
-     * with the exact payouts, before every hand-over. `lost`: a verified statement names the other
-     * side the winner, so nothing is asked again in this run.
+     * with the exact payouts, before every hand-over. A verified statement naming the other side the
+     * winner is kept in the record instead (`rulingLost`, review M1), and nothing is asked again.
      */
     private ruling: { statement: unknown; sig: unknown } | null = null;
-    private rulingLost = false;
+    /** Review m4: when this run last asked for the ruling statement (device clock, ms). */
+    private rulingAskedAt: number | null = null;
     private view: EscrowTradeView | null = null;
     /** The view's payment instructions as last checked against the attested hash (review I1); null while the view has none. */
     private instructions: { text: string | null; ok: boolean } | null = null;
@@ -1119,6 +1128,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
             if (/already signed/.test(e.message)) {
               this.refused.add(k);
               void this.rebindRefused(o);
+              void this.rulingRefused(o);
             } else if (/used up/.test(e.message)) {
               this.exhausted.add(k);
               this.refusal = 'attempts-exhausted';
@@ -1336,7 +1346,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const tapped = r.intent !== null && !r.intent.auto;
       const tapHolds = tapped && (r.intent!.done || (r.intent!.kind !== 'ruling' && viewSupports(r.intent!.kind, v)));
       // Once closed nothing new is chosen: an open settle stays as it is (settled elsewhere is judged in afterClose).
-      if (!CLOSED.includes(v.state) && !tapHolds && !(r.intent?.auto && r.intent.done)) {
+      // Review M2: an open outcome the party is committed to holds too (its builder's): the party can
+      // finish only that one, and the close must still ask whether it landed.
+      const committedHold = r.intent !== null && r.intent.outcome !== null && !r.intent.done && this.committedTo(r.intent.outcome.builder);
+      if (!CLOSED.includes(v.state) && !tapHolds && !committedHold && !(r.intent?.auto && r.intent.done)) {
         const kind = this.autoKind(v);
         if (kind && (tapped || r.intent?.kind !== kind)) {
           r.intent = { kind, outcome: null, done: false, auto: true };
@@ -1435,7 +1448,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         // resumePrior hands back: that outcome is the one that can have landed, so it is asked too
         // and, when proven, recorded as the settled outcome (as settle() does when it resolves).
         const prior = r.releaseRebindRefused === true ? (r.releasePrior?.outcome ?? null) : null;
-        const candidates = [r.intent!.outcome!, ...(prior !== null ? [prior] : [])];
+        // Review M2: the intent a ruling replaced may be the one the party was committed to.
+        const replaced = r.intent!.kind === 'ruling' ? (r.intent!.prior?.outcome ?? null) : null;
+        const candidates = [r.intent!.outcome!, ...(prior !== null ? [prior] : []), ...(replaced !== null ? [replaced] : [])];
         let proven: string | null = null;
         let landedAs: (typeof candidates)[number] | null = null;
         for (const c of candidates) {
@@ -1446,7 +1461,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           }
         }
         if (proven !== null && landedAs !== null && r.intent !== null && r.intent.outcome !== null && !r.intent.done) {
-          r.intent = { ...r.intent, outcome: landedAs, done: true };
+          const was = r.intent.kind === 'ruling' && landedAs === replaced ? r.intent.prior! : r.intent;
+          r.intent = { kind: was.kind, outcome: landedAs, done: true, auto: was.auto };
           this.emptiedWhileSettling = null;
           ownDone = true;
           ownOpen = false;
@@ -1465,8 +1481,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const tappedOpen = r.intent !== null && !r.intent.auto && r.intent.outcome !== null && !r.intent.done;
       // Plan 4 rulings (Task 21 fix): a ruling's payout closes the disputed trade with `settling` null
       // (the machine's `settled` for a RulingKind): released pays the buyer, refunded the seller, and
-      // the loser's device takes no part (the moderator builds, the winner co-signs).
-      const rulingByOthers = v.settling === null && ((r.role === 'seller' && v.state === 'released') || (r.role === 'buyer' && v.state === 'refunded'));
+      // the loser's device takes no part (the moderator builds, the winner co-signs). Review M1: only
+      // for a device that verified the signed statement naming the OTHER side the winner
+      // (`rulingLost`) and has no ruling intent of its own open; a winner, or a loser that never
+      // verified one, is judged as any emptying below (escrow-failed, fail closed: lead call 22 Nov).
+      // The same TODO(lead, pending) as above: an OutProof from the moderator's signed txHash and tx
+      // key would prove this close instead of the API's kind.
+      const ownRulingOpen = r.intent?.kind === 'ruling' && !r.intent.done;
+      const rulingByOthers =
+        r.rulingLost === true && !ownRulingOpen && v.settling === null && ((r.role === 'seller' && v.state === 'released') || (r.role === 'buyer' && v.state === 'refunded'));
       const byOthers =
         rulingByOthers ||
         (v.state === 'refunded' &&
@@ -1501,7 +1524,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
      * ends the asking for this run (this side co-signs nothing).
      */
     private async loadRuling(): Promise<void> {
-      if (this.ruling !== null || this.rulingLost || this.address === null) return;
+      if (this.ruling !== null || this.rec.rulingLost === true || this.address === null) return;
+      const t = now();
+      if (this.rulingAskedAt !== null && t - this.rulingAskedAt < rulingPollMs) return;
+      this.rulingAskedAt = t;
       let got: { statement: unknown; sig: unknown } | null;
       try {
         got = await deps.api.getRulingStatement(this.code);
@@ -1512,7 +1538,11 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const want = { trade: this.code, escrowAddress: this.address, winner: this.rec.role };
       const check = await verifyRulingStatement(got.statement, got.sig, deps.config.modSigningPublic, want);
       if (check.ok) this.ruling = { statement: got.statement, sig: got.sig };
-      else if (check.reason === 'not-winner') this.rulingLost = true;
+      else if (check.reason === 'not-winner') {
+        // Review M1: only this verdict lets the close of a ruling count as settled without this device.
+        this.rec.rulingLost = true;
+        await this.persist();
+      }
     }
 
     /**
@@ -1531,6 +1561,17 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         if (changed) await this.persist();
         return true;
       }
+      // Review M2: a party committed to another builder's outcome can finish only that one, so no
+      // ruling intent replaces it, and one saved before the party committed gives the earlier
+      // intent back: the old path keeps handing it, and the close asks for it.
+      if (this.committedElsewhere()) {
+        if (saved !== null) {
+          r.intent = saved.prior ?? null;
+          changed = true;
+        }
+        if (changed) await this.persist();
+        return false;
+      }
       await this.loadRuling();
       const ctx = this.ruling !== null && f.balance > 0n && f.balance === f.unlocked ? this.context(f.balance, r.role === 'seller', true) : null;
       const o = ctx ? rulingOutcomeFor(ctx) : null;
@@ -1540,12 +1581,49 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         return true;
       }
       if (saved === null || key(saved.outcome) !== key(o)) {
-        r.intent = { kind: 'ruling', outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner }, done: false, auto: true };
+        const prior = saved !== null ? (saved.prior ?? null) : r.intent === null ? null : { kind: r.intent.kind, outcome: r.intent.outcome, done: r.intent.done, auto: r.intent.auto };
+        r.intent = { kind: 'ruling', outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner }, done: false, auto: true, prior };
         changed = true;
       }
       if (changed) await this.persist();
       this.settle(o);
       return true;
+    }
+
+    /**
+     * Review M2: the party is committed to an outcome another builder than the moderator built (it
+     * can no longer switch to a ruling). A party without `committedBuilder` counts as committed
+     * (fail closed, as `partyUncommitted`).
+     */
+    private committedElsewhere(): boolean {
+      const c = this.party?.committedBuilder;
+      if (typeof c !== 'function') return true;
+      const b = c.call(this.party);
+      return b !== null && b !== 'mod';
+    }
+
+    /** The party is committed to an outcome `builder` built (false for a party without `committedBuilder`). */
+    private committedTo(builder: Role): boolean {
+      const c = this.party?.committedBuilder;
+      return typeof c === 'function' && c.call(this.party) === builder;
+    }
+
+    /**
+     * Review M2: the party refused the ruling set ("already signed": it committed to another outcome
+     * meanwhile). The ruling intent gives the earlier intent back, saved, so that outcome is handed
+     * again (this run and after a reload) and asked for at the close.
+     */
+    private async rulingRefused(o: Outcome): Promise<void> {
+      const r = this.rec;
+      if (o.builder !== 'mod' || r.intent?.kind !== 'ruling' || r.intent.done || key(r.intent.outcome) !== key(o)) return;
+      r.intent = r.intent.prior ?? null;
+      try {
+        await this.persist();
+      } catch {
+        if (!this.stopped) this.fail('escrow-failed');
+        return;
+      }
+      this.poke();
     }
 
     private autoKind(v: EscrowTradeView): SettleKind | null {
