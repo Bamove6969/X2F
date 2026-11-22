@@ -175,3 +175,81 @@ Each change was applied alone, then the set below was run, then the change was r
 - **Probes** (scratch, not committed): M1 probe FAILS at head (confirms the finding); M2 probe FAILS at head after the second reload (confirms the finding).
 - **Staff dispute regtest** (apps/staff-web/e2e/playwright.regtest.config.ts, under ~/x2f-comms/check.lock): **13/13 passed** (29.1 min, both sizes: buyer wins, above the limit, appeal overturns, winner offline, dispute after refund, emergency stop, plus login hours). The happy paths do not exercise M1 or M2.
 - **Full `npm run check`:** not run, since the verdict is CHANGES NEEDED; it is needed on the fixed head before APPROVED.
+
+---
+
+## Re-review: wip/lead-fix-ruling-pay at ceeb902a (22 Nov 2026)
+
+Scope: `git diff b9988ded ceeb902a`.
+
+- **2172f144** merges main b77cf2fb. It touches none of the reviewed code: `git diff b9988ded 2172f144` over apps/web/src/escrow, screens/dispute, packages/escrow and rulingStatement.ts is empty.
+- **31e30b3b** adds the red tests, including both of my probes.
+- **ceeb902a** is the fix: runtime.ts, store.ts, policy.ts comment, rules.ts.
+
+Worktree `.claude/worktrees/rev-ruling-pay2`. The branch was not changed.
+
+### Verdict: APPROVE WITH MINORS
+
+This verdict is subject to the full `npm run check` on ceeb902a, which the cloud runner owns.
+
+### M1: fixed
+
+- `rulingLost` is now a field on the record (store.ts). It is set and saved only when `verifyRulingStatement` answers `not-winner`, which means this trade and this device's own escrow address are bound in. That is runtime.ts `loadRuling`.
+- `rulingByOthers` now needs all of these:
+  - `rulingLost === true`;
+  - no own ruling intent open;
+  - `settling` null;
+  - released for the seller, or refunded for the buyer.
+- A winner, or a loser that never verified a statement, falls through to escrow-failed. That is the lead's fail-closed call, and it is pinned by a test.
+- The chain-proof TODO stays and names the rule.
+- Guard-reverts:
+  - dropping `rulingLost` fails a test (N1);
+  - not saving it fails a test (N3);
+  - dropping the own-ruling-open check alone passes (N2). That is acceptable: `rulingLost` and a ruling intent of one's own exclude each other, because only the winner saves a ruling intent and only the loser sets `rulingLost`.
+
+### M2: fixed
+
+- **No overwrite while committed elsewhere.** `committedElsewhere()` stops a ruling intent being saved while the party is committed to an outcome another builder built. A party without the method counts as committed (fail closed). A ruling intent saved earlier gives its `prior` back.
+- **Prior kept and restored.** The ruling intent keeps `prior`, and `rulingRefused` restores it on "already signed".
+- **Committed intent holds.** `committedHold` stops `autoKind` dropping an open outcome the party is committed to.
+- **Prior asked at the close.** The close asks `landed()` for the replaced prior, and records the prior's kind once it is proven.
+- **Probes and tests.** My probe B, across two reloads, now passes. So do the tests for the seller's auto-refund false alarm and for a party without the method.
+- **Guard-reverts:**
+  - Pinned: N4 (6 fail), N5, N6, N7 (3 fail), N9.
+  - **N8** (`rulingRefused` not called) passes. It is redundant: a party that answers "already signed" is committed, so the next tick's `committedElsewhere()` restores the prior anyway. Acceptable.
+  - **N10 and N12** (prior not asked at the close; landed kind kept as `ruling`) pass. That case needs the trade to close while the ruling intent still stands over a committed prior. A disputed tick nearly always restores the prior first, so it is narrow, but it is real: the device stops between the party committing and the refusal arriving, and the co-signer lands the prior while the device is closed. **Minor (m6):** add a test that closes the trade on that record (ruling intent with prior, `landed` true for the prior), and pin both lines.
+
+### m1, m2, m4, m5
+
+- **m1: done.** The vacuous seller half of the TODO(m4) test is dropped. G14 still fails the buyer half.
+- **m2: done.** `rulingAllowsCosign` and its tests are deleted, and the comments and tripwire are updated.
+- **m4: done.** `RULING_POLL_MS` is 30 s, configurable with `rulingPollMs` and pinned (N11). One note: the throttle is per run and is reset on a reload, which is fine.
+- **m5: mostly done.**
+  - G16 (save before the hand-over) and G18 (`payTo` amount check) are now pinned.
+  - G1 is now pinned too (3 fail).
+  - G11 is still unpinned by a single revert. I also reverted **G11 and G12 together**: 195/195 attestation-flow still pass. The real precedence safety is not either guard:
+    - while disputed, `autoKind` gives the buyer no automatic kind;
+    - without a verified statement, cosignPolicy refuses every mod-built set;
+    - so nothing other than the verified ruling can be handed.
+  - G11 and G12 are liveness and clarity guards with a test of what can be observed. **Acceptable.**
+  - G20 (the `settling` null check) is now unpinned (303 pass). Now that `rulingLost` is required, its only effect is that a verified loser would count any released or refunded close as the ruling's. Minor; pin it with a verified-loser close that carries `settling: 'release'`.
+
+### Builder's question 1: a winner committed to the losing outcome
+
+The behaviour: a winner whose party is already committed to the outcome that pays the other side never pays the ruling from its own device. **It is an acceptable fail-safe.** Do **not** add a moderator-plus-loser path. It would make a trader device co-sign mod-built sets when it is not the winner, which is the attack surface Haveno finding 2 closed. A committed party must also never sign a second set.
+
+The two real cases:
+
+- **(a) The seller wins, but its party had built and sent a seller-built release.** The buyer holds that tx set and can co-sign and submit it alone at any time. The coins are not stuck: they go to the buyer under a release the seller signed itself.
+  - A buyer who only holds the set back hurts nobody but itself, and can still take the coins later.
+  - **Owner or lead follow-up:** should a ruling against a release the seller already gave out become a lien on the buyer, as an overturn does?
+- **(b) The buyer wins, but its party had built a buyer-cancel or mutual cancel that refunds the seller.** This can only happen before `paidAt`, because both are refused after "I've paid", so it is rare.
+  - For a buyer-cancel the moderator is the co-signer and can complete the committed cancel; coins are stuck only while the moderator doesn't.
+  - **Engineering follow-up:** when the winner never sends an export, the moderation process should log a reason staff can see (for example `ruling-winner-committed`) instead of waiting at `ruling-signing` with no reason. Where the moderator is the co-signer of the committed outcome, staff should be able to complete it. This is not a blocker for this branch.
+
+### Tests run at ceeb902a
+
+- **Targeted vitest** (nice -n 10, no lock): policy, attestation-flow, dispute-tripwires, dispute, disputeScreenProof and packages/trade rulingStatement, **303/303 passed**.
+- **Guard-reverts:** the 20 original G1-G20 plus N1-N12 for the fix, each applied alone. The table is above; the passes are explained in the M1, M2 and m5 sections.
+- **Staff dispute regtest** under ~/x2f-comms/check.lock: **13/13 passed** (33.3 min).
+- **Full `npm run check`:** not run by me. The cloud runner owns it, and approval holds only if it is green.
