@@ -995,20 +995,20 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
   it('review payee-fields-2 m-4: a package this reader cannot open (a box its table does not know) is a neutral line for the payer, never its contents', async () => {
     await engine().sync(chat);
     const parts = attest();
-    const newer = { v: 2, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }, { key: 'futureBox', value: 'X1' }] };
-    api.add('seller', await sellerRaw({ text: `${TEXT}\nFuture box: X1`, pay: newer }, 0, parts));
+    const newer = { v: 2, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }, { key: 'futureBox', value: 'future-box-secret' }] };
+    api.add('seller', await sellerRaw({ text: `${TEXT}\nFuture box: future-box-secret`, pay: newer }, 0, parts));
     await fromSeller('did you get them?', parts, 'seller', 1);
     const s = await engine().sync(chat);
     expect(s.lines.map((l) => [l.from, l.text, l.unreadablePay ?? false, l.pay ?? null])).toEqual([
       ['seller', '', true, null],
       ['seller', 'did you get them?', false, null],
     ]);
-    for (const v of ['Jane Doe', 'jane@example.ca', 'X1']) expect(JSON.stringify(store.records.get(chat)), v).not.toContain(v);
+    for (const v of ['Jane Doe', 'jane@example.ca', 'future-box-secret']) expect(JSON.stringify(store.records.get(chat)), v).not.toContain(v);
   });
 
   /** A package this reader's table cannot show (a box it does not know), sealed as the seller at `seq`. */
   const unknownBoxPackage = (seq: number, parts: Participants) =>
-    sellerRaw({ text: `${TEXT}\nFuture box: X1`, pay: { v: 2, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }, { key: 'futureBox', value: 'X1' }] } }, seq, parts);
+    sellerRaw({ text: `${TEXT}\nFuture box: future-box-secret`, pay: { v: 2, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }, { key: 'futureBox', value: 'future-box-secret' }] } }, seq, parts);
 
   it('review sanctions m-1: an unshowable package that came before the escrow was secured is no line until it is, then the neutral line in its place', async () => {
     api.view.tradeSecuredAt = null;
@@ -1025,7 +1025,7 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     // Secured: the payer is told, in the package's place, and nothing of it is on the device.
     api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
     expect((await engine().sync(chat)).lines.map(line)).toEqual([['', true, false], ['later', false, false]]);
-    for (const v of ['Jane Doe', 'jane@example.ca', 'X1']) expect(JSON.stringify(store.records.get(chat)), v).not.toContain(v);
+    for (const v of ['Jane Doe', 'jane@example.ca', 'future-box-secret']) expect(JSON.stringify(store.records.get(chat)), v).not.toContain(v);
   });
 
   it('review sanctions m-2: the line after an unshowable package has no gap marker (in this sync and a later one), but a real gap before or after it still shows', async () => {
