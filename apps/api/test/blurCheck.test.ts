@@ -289,4 +289,28 @@ describe('team members (review PC1)', () => {
     const other = await pair();
     expect((await call(active, 'GET', `/v1/trades/${other.code}/blur-checks`)).statusCode).toBe(404);
   });
+
+  it("lead call (review lead-trades-list-2): announcing a proof needs the box for the trade's part too; a stranger stays 404", async () => {
+    const { seller, code } = await pair();
+    const active = await memberOf(seller.id, ['trades-see-active', 'chat-reply']);
+    // The Start set: See trade history and chat-reply, no See active trades.
+    const history = await memberOf(seller.id, ['trades-see-history', 'chat-reply']);
+    const stored = async () => (await deps.db.query('select 1 from blur_check_proofs where trade_code = $1', [code])).rowCount;
+
+    expect((await posted(history, code, newProofId())).statusCode).toBe(403);
+    expect(await stored()).toBe(0);
+    const ok = await posted(active, code, newProofId());
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(await stored()).toBe(1);
+
+    await deps.db.query('update trades set closed_at = $2 where code = $1', [code, deps.clock()]);
+    expect((await posted(active, code, newProofId())).statusCode).toBe(403);
+    expect(await stored()).toBe(1);
+    expect((await posted(history, code, newProofId())).statusCode).toBe(200);
+
+    // A stranger's trade (open, so the history-only member's box does not match it): 404, not 403,
+    // and an unstored id says nothing more than a stored one would.
+    const other = await pair();
+    expect((await posted(history, other.code, newProofId(), 'auto', { store: false })).statusCode).toBe(404);
+  });
 });

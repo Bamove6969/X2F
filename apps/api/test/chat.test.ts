@@ -13,7 +13,7 @@ import {
 } from '@x2f/trade';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import sodium from 'libsodium-wrappers';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { CHAT_PURGED_MARK_DAYS, purgeChats } from '../src/chat/retention.js';
 import { CHAT_OPEN_BUCKET, CHAT_POST_BUCKET } from '../src/limits.js';
@@ -347,6 +347,27 @@ describe('chat identities and the attestation', () => {
 });
 
 describe('envelopes', () => {
+  it("review lead-trades-list-2 m3 (G19): a trade chat's line is published with the trade's part; an offer chat's with none", async () => {
+    const r = await readyChat();
+    const spy = vi.spyOn(app.events, 'publish');
+    const partsOf = () => spy.mock.calls.filter(([, ev]) => (ev as { chat?: string }).chat === r.chat).map(([, , o]) => o);
+    try {
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0))).statusCode).toBe(201);
+      expect(partsOf()).toEqual([{}, {}]);
+      const { code } = await seedTrade(deps, { sellerId: r.poster.id, buyerId: r.taker.id, poster: 'seller', offerId: r.offerId });
+      expect((await r.taker.b.post(`/v1/trades/${code}/chat`, {})).json()).toMatchObject({ chat: r.chat });
+      spy.mockClear();
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 1))).statusCode).toBe(201);
+      expect(partsOf()).toEqual([{ closed: false }, { closed: false }]);
+      await deps.db.query("update trades set state = 'released', closed_at = $2 where code = $1", [code, now]);
+      spy.mockClear();
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 2))).statusCode).toBe(201);
+      expect(partsOf()).toEqual([{ closed: true }, { closed: true }]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('waits for the attestation', async () => {
     const o = await openChat();
     const res = await o.taker.b.post(`/v1/chats/${o.chat}/envelopes`, {});

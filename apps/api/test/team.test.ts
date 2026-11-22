@@ -31,6 +31,7 @@ import { tradeApp } from './helpers/tradeApp.js';
 import { SIG } from './helpers/signature.js';
 import { openTermsSignature } from '../src/termsSignature.js';
 import { flexBody } from './helpers/offers.js';
+import { newProofId } from '@x2f/proof';
 
 // Plan 2 Task 18: team members (spec 6.7, R44). Real Postgres, one database for the file; each
 // test makes its own team accounts.
@@ -1894,6 +1895,8 @@ describe('S-105 (owner p11-25): a member shows in chats as "<lead display name> 
 describe('a member reads each part of the trades only with its box (review trades-list I1)', () => {
   const ACTIVE = ['trades-see-active'];
   const HISTORY = ['trades-see-history'];
+  /** A well-formed proof id no trade has (the blur-check routes check the trade first). */
+  const PROOF_ID = newProofId();
   const status = (res: { statusCode: number; json(): unknown }) => (res.statusCode === 403 ? (res.json() as { error: string }).error : res.statusCode);
 
   /** An open trade of `owner`'s (secured) and a completed one (refunded on a buyer's cancel, its tx confirmed). */
@@ -1959,6 +1962,72 @@ describe('a member reads each part of the trades only with its box (review trade
     expect(status(await active.browser.get(`/v1/trades/${done}/attestation`))).toBe('forbidden');
     expect(status(await history.browser.get(`/v1/trades/${done}/attestation`))).not.toBe('forbidden');
     expect(status(await history.browser.get(`/v1/trades/${open}/attestation`))).toBe('forbidden');
+  });
+
+  it('review lead-trades-list-2 B1: the signed ruling statement needs the box for the part; a stranger gets 404', async () => {
+    const owner = await team();
+    const { open, done } = await twoTrades(owner);
+    const active = await member(owner.id, { abilities: ACTIVE });
+    const history = await member(owner.id, { abilities: HISTORY });
+    // No statement is stored, so a read that gets through is 204.
+    expect(status(await active.browser.get(`/v1/trades/${open}/ruling-statement`))).toBe(204);
+    expect(status(await active.browser.get(`/v1/trades/${done}/ruling-statement`))).toBe('forbidden');
+    expect(status(await history.browser.get(`/v1/trades/${done}/ruling-statement`))).toBe(204);
+    expect(status(await history.browser.get(`/v1/trades/${open}/ruling-statement`))).toBe('forbidden');
+    const stranger = await twoTrades(await team());
+    expect(status(await active.browser.get(`/v1/trades/${stranger.open}/ruling-statement`))).toBe(404);
+  });
+
+  it("review lead-trades-list-2 m2: 404 before 403: a member whose box does not match a stranger's trade's part gets 404 on every trade route", async () => {
+    const owner = await team();
+    const stranger = await twoTrades(await team());
+    const acts = ['trades-mark-paid', 'disputes-appeal', 'disputes-answer', 'chat-reply'];
+    // See active trades only, on the stranger's completed trade; See trade history only, on its open one.
+    const cases = [
+      { m: await member(owner.id, { abilities: [...ACTIVE, ...acts] }), code: stranger.done },
+      { m: await member(owner.id, { abilities: [...HISTORY, ...acts] }), code: stranger.open },
+    ];
+    for (const { m, code } of cases) {
+      expect((await m.browser.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+      const b = m.browser;
+      const got = {
+        room: status(await b.get(`/v1/trades/${code}`)),
+        attestation: status(await b.get(`/v1/trades/${code}/attestation`)),
+        confirmations: status(await b.get(`/v1/trades/${code}/confirmations`)),
+        rulingStatement: status(await b.get(`/v1/trades/${code}/ruling-statement`)),
+        dispute: status(await b.get(`/v1/trades/${code}/dispute`)),
+        blurChecks: status(await b.get(`/v1/trades/${code}/blur-checks`)),
+        blurAnswer: status(await b.post(`/v1/trades/${code}/blur-checks/${PROOF_ID}`, { correct: true })),
+        announce: status(await b.post(`/v1/trades/${code}/proofs/${PROOF_ID}/blur-check`, { blur: 'auto' })),
+        events: status(await b.post(`/v1/trades/${code}/events`, { type: 'mark-paid', fiatCents: '1' })),
+        appeal: status(await b.post(`/v1/trades/${code}/appeal`, { why: 'The moderator missed my bank statement.' })),
+      };
+      expect(got).toEqual(Object.fromEntries(Object.keys(got).map((k) => [k, 404])));
+    }
+  });
+
+  it("review lead-trades-list-2 m3 (G20): the dispute store's publish says the trade's part", async () => {
+    const owner = await team();
+    const other = await team();
+    const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    expect((await owner.browser.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
+    const opened = await owner.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'x' });
+    expect(opened.statusCode, opened.body).toBe(200);
+    await publishRuling(deps, d.code, { outcome: 'release-to-buyer' });
+    const closed = (await loadTrade(deps.db, d.code))!.closedAt !== null;
+    // The appeal is a dispute-store change (withDispute), published to both sides with the part.
+    const spy = vi.spyOn(app.events, 'publish');
+    try {
+      const appealed = await owner.browser.post(`/v1/trades/${d.code}/appeal`, { why: 'The moderator missed my bank statement.' });
+      expect(appealed.statusCode, appealed.body).toBe(200);
+      const mine = spy.mock.calls.filter(([, ev]) => (ev as { code?: string }).code === d.code);
+      expect(mine.length).toBeGreaterThanOrEqual(2);
+      for (const [, , o] of mine) expect(o).toEqual({ closed });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('the confirmations of a completed trade need See trade history', async () => {

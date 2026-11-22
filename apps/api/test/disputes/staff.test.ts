@@ -13,7 +13,7 @@ import { chatKeyHash, encryptChat, makeModCountersign, newChatKey, openChat, Rep
 import { channelFor } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { isIncidentId } from '@x2f/staff';
 import { ModerationError, NO_MODERATION, type ModCaseCall, type ModCountersigned } from '../../src/disputes/moderationClient.js';
@@ -458,6 +458,21 @@ describe('who works a case', () => {
     }
     const view = (await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { moderator: { name: string } | null };
     expect(view.moderator?.name).toBe(senior.name);
+  });
+
+  it("review lead-trades-list-2 m3 (G21): the staff routes' trader events say the trade's part", async () => {
+    const { code } = await disputed();
+    const mod = await staff('mod');
+    const spy = vi.spyOn(trader.events, 'publish');
+    try {
+      await mod.b.post(url(code, '/take'), {});
+      expect((await mod.b.post(url(code, '/messages'), await msg(code, 'Hello.'))).statusCode).toBe(201);
+      // moderator-joined, the trade and the chat line: each to both traders, each with the open part.
+      expect(spy.mock.calls.length).toBeGreaterThanOrEqual(4);
+      for (const [, , o] of spy.mock.calls) expect(o).toEqual({ closed: false });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('round 2: a moderator involved in round 1 gets forbidden-case, even as a senior', async () => {
