@@ -10,14 +10,15 @@
 import type { Role } from '@x2f/core';
 import { MoneroMultisigEngine, runParty, type PartyHandle, type PartyState, type PartyStore, type Transport } from '@x2f/escrow';
 import type { Participants } from '@x2f/protocol';
-import { fundedWallet, mine, startRegtest, type Regtest } from '@x2f/regtest';
-import { channelFor } from '@x2f/trade';
+import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@x2f/regtest';
+import { channelFor, escrowPlan, sweepMinimums, type AttestedTerms } from '@x2f/trade';
 import type { MoneroWalletFull } from 'monero-ts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { escrowStore, loadParty, startModeration, walletPassword, TRADE_SHRED_TABLES, type ModerationHandle, type PartyIO } from '../../src/main.js';
+import { claimSweep } from '../../src/watcher.js';
 import { loadEscrow } from '../../src/keystore.js';
 import { memoryRelay } from '../chain.js';
-import { API, FEE_WALLET, fakeNetwork, makeCtx, newTrade, RELAY, type Ctx, type Trader } from '../harness.js';
+import { API, FEE_WALLET, fakeNetwork, makeCtx, newTrade, RELAY, TERMS, type Ctx, type Trader } from '../harness.js';
 
 const DAY = 86_400_000;
 const FUNDED = 1_000_000_000_000n; // 1 XMR
@@ -251,5 +252,124 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
     expect(await resumed.ready()).toBe(bAddress);
     await expect.poll(async () => (await resumed.funds()).balance, { timeout: 120_000, interval: 1000 }).toBe(FUNDED);
     step('done');
+  }, 1_500_000);
+
+  /** Keeps mining while `p` runs: a release counts as done only once it is in a block. */
+  async function mining<T>(p: Promise<T>): Promise<T> {
+    let done = false;
+    const address = await funder.getPrimaryAddress();
+    const miner = (async () => {
+      while (!done) {
+        await new Promise((r) => setTimeout(r, 1000));
+        if (!done) await mine(node.rpcUri, 1, address).catch(() => undefined);
+      }
+    })();
+    try {
+      return await p;
+    } finally {
+      done = true;
+      await miner;
+    }
+  }
+
+  // Review lead-mod-purge m4: the R2-I2 path end to end. A real release, seller-built and
+  // buyer-co-signed, swept to real wallets; the moderator's watcher proves and counts the sweep,
+  // closes the escrow and drops it 30 days later; then the shred destroys every key and row, and
+  // leaves only the sweep's keyed tag, so no other trade can count that tx (review M2).
+  it('a released, swept escrow: shown empty by its own watch, dropped, then every key and row goes and its sweep is tagged spent', async () => {
+    const wallets = await Promise.all([newTestWallet(node.rpcUri), newTestWallet(node.rpcUri), newTestWallet(node.rpcUri)]);
+    try {
+      const [buyerW, sellerW, feeW] = wallets as [MoneroWalletFull, MoneroWalletFull, MoneroWalletFull];
+      const feeWallet = await feeW.getPrimaryAddress();
+      const terms: AttestedTerms = { ...TERMS, buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress() };
+      const { net, fetch } = fakeNetwork(ctx);
+      const logs: string[] = [];
+      const io: PartyIO = {
+        relayUrl: 'ws://relay.test',
+        engine,
+        run: (a) => runParty({ ...a, resendMs: 500, resendMaxMs: 2000 }),
+        transport: ({ code, role }) => relayOf(code).transport(role),
+      };
+      ctx.clock.now = new Date();
+      mod = await startModeration(
+        { apiInternalUrl: API, relayAdminUrl: RELAY, relayUrl: 'ws://relay.test', network: 'regtest', daemonUri: node.rpcUri, db: ctx.db, keystoreKey: ctx.keystoreKey, signingSecret: ctx.modSign.secret, feeWallet },
+        { fetch, now: () => ctx.clock.now, intervalMs: 0, watchIntervalMs: 0, partyIO: io, signalsTransport: () => idleTransport(), log: (e) => logs.push(e.reason) },
+      );
+      const t = await newTrade(terms);
+      net.work = [t.work];
+      expect(await mod.tick()).toEqual([t.code]);
+      net.work = [];
+      const p = await traders(t.code, t.buyer, t.seller);
+      const [address] = await Promise.all([p.buyer.ready(), p.seller.ready()]);
+      net.states.set(t.code, 'setup');
+      await expect
+        .poll(async () => {
+          await mod!.watch();
+          return net.reports.some((r) => r.kind === 'setup-done' && r.trade === t.code);
+        }, { timeout: 300_000, interval: 1000 })
+        .toBe(true);
+      step('released trade: escrow ready');
+
+      // Funded with exactly what the deal needs, then released: buyer and fee wallet paid, the whole escrow swept.
+      net.states.set(t.code, 'funding');
+      const funds = escrowPlan({ amountAtomic: BigInt(terms.deal.takeAmountAtomic), poster: terms.deal.poster }).sellerFundsAtomic;
+      await funder.setDaemonConnection({ uri: node.rpcUri });
+      await funder.sync();
+      await funder.createTx({ accountIndex: 0, address, amount: funds, relay: true });
+      await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
+      await expect
+        .poll(async () => {
+          await mod!.watch();
+          return net.reports.some((r) => r.kind === 'chain' && r.trade === t.code && r.receivedAtomic === funds.toString());
+        }, { timeout: 300_000, interval: 1000 })
+        .toBe(true);
+      net.states.set(t.code, 'settling');
+      net.settleKinds.set(t.code, 'release');
+      const to = sweepMinimums({ kind: 'release', terms, feeWallet, sweptAtomic: funds })!;
+      // The co-signer (buyer) submits, so its settle() answers the tx hash (as packages/escrow's spend-info regtest).
+      const [sweepTx] = await mining(Promise.all([p.buyer.settle({ kind: 'release', to, builder: 'seller', cosigner: 'buyer' }), p.seller.settle({ kind: 'release', to, builder: 'seller', cosigner: 'buyer' })]));
+      step('released trade: release mined');
+      const txHash = sweepTx ?? null;
+      await expect
+        .poll(async () => {
+          await mine(node.rpcUri, 1, await funder.getPrimaryAddress());
+          await mod!.watch();
+          return net.reports.find((r) => r.kind === 'settled' && r.trade === t.code)?.txHash ?? null;
+        }, { timeout: 300_000, interval: 2000 })
+        .not.toBeNull();
+      const settled = net.reports.find((r) => r.kind === 'settled' && r.trade === t.code)!.txHash as string;
+      if (txHash !== null) expect(settled).toBe(txHash);
+      expect((await ctx.db.query('select trade from mod_sweeps where tx_hash = $1', [settled])).rows).toEqual([{ trade: t.code }]);
+      step('released trade: sweep counted');
+
+      // The API shows it released; the watch closes the escrow (shown empty) and drops it 30 days later.
+      net.states.set(t.code, 'released');
+      net.settleKinds.delete(t.code);
+      await mod.watch();
+      const { rows } = await ctx.db.query<{ state: { closedAt: string | null; channelsClosed: boolean; settledTx: string | null } }>('select state from mod_watch where trade = $1', [t.code]);
+      expect(rows[0]!.state.closedAt).not.toBeNull();
+      expect(rows[0]!.state.channelsClosed).toBe(true);
+      expect(rows[0]!.state.settledTx).toBe(settled);
+      ctx.clock.now = new Date(ctx.clock.now.getTime() + 31 * DAY);
+      await mod.watch();
+      expect((await ctx.db.query('select watching from mod_watch where trade = $1', [t.code])).rows).toEqual([{ watching: false }]);
+
+      net.states.delete(t.code);
+      net.tradeShred = [{ trade: t.code, purgedAt: ctx.clock.now.toISOString() }];
+      expect(await mod.tradeShredTick()).toEqual([t.code]);
+      for (const [tbl, r] of Object.entries(await rowsOf(t.code))) expect(r, tbl).toEqual([]);
+      expect(await loadEscrow(ctx.db, ctx.keystoreKey, t.code)).toBeNull();
+      expect(await loadParty(ctx.db, ctx.keystoreKey, t.code)).toBeNull();
+      const dump = await dumpAll();
+      expect(dump).not.toContain(t.code);
+      expect(dump).not.toContain(settled);
+      // Its sweep can never be counted for another trade.
+      expect(await claimSweep(ctx.db, 'ZZZZ-ZZZZ-ZZZZ-ZZZZ', settled, ctx.keystoreKey)).toBe(false);
+      await mod.stop();
+      mod = null;
+      step('released trade: done');
+    } finally {
+      for (const w of wallets) await w.close().catch(() => undefined);
+    }
   }, 1_500_000);
 });

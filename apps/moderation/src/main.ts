@@ -7,7 +7,7 @@ import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channe
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
-import { loadChatIdentity, loadParty, saveChatIdentity, saveParty, walletPassword } from './keystore.js';
+import { loadChatIdentity, loadEscrow, loadParty, saveChatIdentity, saveParty, sweepTag, walletPassword } from './keystore.js';
 import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type TradeShredOrder, type WatchItem, type WorkItem } from './link.js';
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
 import { openDesk } from './desk.js';
@@ -59,9 +59,10 @@ export const TRADE_SHRED_TABLES = [
 /**
  * Moderation tables with a `trade` column the trade shred keeps, each by a rule:
  * - used_log_entries (007): an API activity-log entry authorises exactly one internal call, so its id
- *   stays used for good (a deleted row would let the same entry be used again). Its trade code is the
- *   one the API's own activity log keeps under owner p12-7; lead default, owner question: keep it
- *   until p12-7 decides the log's life.
+ *   stays used for good (a deleted row would let the same entry be used again). Only the id is read;
+ *   the shred blanks the trade code (lead call on review Q-B, 22 Nov).
+ * Also kept, holding no trade code: mod_sweeps_spent (022), the keyed tags of the trade's counted
+ * sweeps (review M2), and the gate's used nonces.
  */
 export const TRADE_SHRED_KEPT = ['used_log_entries'] as const;
 /** Why the trade shred keeps a purged trade's records this pass (logged `trade-shred-held-<why>`). */
@@ -360,6 +361,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
         });
   const watcher = createWatcher({
     db: o.db,
+    keystoreKey: o.keystoreKey,
     link,
     startParty,
     argsFor: (code) => partyArgsFor(o, code),
@@ -416,7 +418,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     const client = await o.db.connect();
     try {
       await client.query('begin');
-      await client.query('insert into signed_terms (trade, attestation, sig) values ($1, $2, $3)', [code, a.attestation, a.sig]);
+      // Stamped with this service's clock (review lead-mod-purge m3): the trade shred's `young` compares it with the same clock.
+      await client.query('insert into signed_terms (trade, attestation, sig, created_at) values ($1, $2, $3, $4)', [code, a.attestation, a.sig, now()]);
       await saveParty(client, o.keystoreKey, code, sealed);
       await walletPassword(client, o.keystoreKey, code);
       await client.query('commit');
@@ -636,6 +639,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           await client.query('delete from mod_chat_grants where chat = $1', [chat]);
           await client.query('delete from mod_chat_notices where chat = $1', [chat]);
           await client.query('delete from mod_countersign_requests where chat = $1', [chat]);
+          // Review lead-mod-purge m5: the moderator's next chat seq for the chat.
+          await client.query('delete from mod_chat_seq where chat = $1', [chat]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');
@@ -709,13 +714,21 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
             : watch.has(trade) ? 'listed'
             : watcher.active(trade) ? 'running'
             : records?.pending(trade) ? 'ruling'
-            : await tradeShredHold(o.db, trade, at);
+            : await tradeShredHold(o.db, o.keystoreKey, trade, at);
           if (why !== null) return why;
           const client = await o.db.connect();
           try {
             await client.query('begin');
             // The table names are the constant list above, never input.
+            // Review lead-mod-purge M2: each counted sweep leaves its keyed tag, so no other trade can
+            // ever count it, before the trade's mod_sweeps rows go.
+            const sweeps = await client.query<{ tx_hash: string }>('select tx_hash from mod_sweeps where trade = $1', [trade]);
+            for (const r of sweeps.rows) {
+              await client.query('insert into mod_sweeps_spent (tag) values ($1) on conflict (tag) do nothing', [sweepTag(o.keystoreKey, r.tx_hash)]);
+            }
             for (const t of TRADE_SHRED_TABLES) await client.query(`delete from ${t} where trade = $1`, [trade]);
+            // Q-B (lead 22 Nov): the used API log entries keep their ids (one use each) and lose the code.
+            await client.query(`update used_log_entries set trade = '' where trade = $1`, [trade]);
             await client.query('commit');
           } catch (e) {
             await client.query('rollback');
@@ -927,14 +940,60 @@ async function shredHold(db: pg.Pool, chat: string, trade: string | null, watch:
   return null;
 }
 
+/** The escrow party's setup messages that carry or confirm the escrow address (packages/escrow party.ts). */
+const SETUP_ADDRESS_KEYS = ['msig.addr:0', 'msig.ready:0'] as const;
+
+/**
+ * Review lead-mod-purge M1: whether this moderator's sealed escrow state shows its multisig was never
+ * finalised: no state at all, or one with no address, no address or ready message ever sent to the
+ * peers and no release. Peers fund only after all three confirmed the address (msig.ready), so such
+ * an escrow never had an address anyone was shown. A state that does not open or read is never this.
+ */
+async function escrowNeverFinalised(db: pg.Pool, keystoreKey: Uint8Array, trade: string): Promise<boolean> {
+  let st: { address?: unknown; sent?: unknown; release?: unknown; releases?: unknown; shown?: unknown } | null;
+  try {
+    st = await loadEscrow(db, keystoreKey, trade);
+  } catch {
+    return false;
+  }
+  if (st === null) return true;
+  if (typeof st !== 'object' || st.address !== null) return false;
+  if (typeof st.sent !== 'object' || st.sent === null) return false;
+  if (SETUP_ADDRESS_KEYS.some((k) => Object.hasOwn(st!.sent as object, k))) return false;
+  if ((st.release ?? null) !== null || (Array.isArray(st.releases) && st.releases.length > 0) || (Array.isArray(st.shown) && st.shown.length > 0)) return false;
+  return true;
+}
+
+/** Review M1: the watch state reads back and its watch never saw chain facts, a close or a sweep. */
+function watchSawNothing(state: unknown): boolean {
+  try {
+    const w = reviveWatchState(state);
+    return w.lastChain === null && w.closedAt === null && w.settledTx === null && w.sweepTxs.length === 0 && w.lateReported.length === 0;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Why the trade shred keeps a purged trade's records this pass, from this service's own records
  * only, or null when nothing holds it. See `tradeShredTick` (the list, the process and the gate
- * holds are checked there first).
+ * holds are checked there first). `young` goes by the attestation's own stamp, written with this
+ * service's clock (review m3).
+ *
+ * Review M1: a trade cancelled in setup before any escrow address existed has nothing that could
+ * hold coins: its watch row (watching or not: after a restart modPartyPlan never stops it) has no
+ * escrow address and no setup-done, its watch state reads back and never saw a chain fact, a close
+ * or a sweep, and its sealed escrow state is absent or never finalised. Such
+ * a row is not held. A trade that ever had an address (in the watch row, in the sealed state, or
+ * sent to the peers) or reported setup-done never takes this path. A watching row of this kind is
+ * past its own TRADE_SHRED_MIN_AGE_DAYS (young, above), far beyond the setup window (TIMERS.setupMin),
+ * and its party does not run here (`running` is checked first).
  */
-async function tradeShredHold(db: pg.Pool, trade: string, at: Date): Promise<'young' | 'dispute' | 'chat' | 'watching' | 'escrow' | null> {
-  const { rows } = await db.query<{ made: Date | null; disputed: Date | null; chat: boolean; escrow: boolean; watching: boolean | null; state: unknown }>(
-    `select least((select created_at from signed_terms where trade = $1), (select created_at from mod_wallet_secrets where trade = $1)) as made,
+async function tradeShredHold(db: pg.Pool, keystoreKey: Uint8Array, trade: string, at: Date): Promise<'young' | 'dispute' | 'chat' | 'watching' | 'escrow' | null> {
+  const { rows } = await db.query<{
+    made: Date | null; disputed: Date | null; chat: boolean; escrow: boolean; watching: boolean | null; state: unknown; address: string | null; setup_done: Date | null;
+  }>(
+    `select (select created_at from signed_terms where trade = $1) as made,
             (select last_seen_at from mod_dispute_seen where trade = $1) as disputed,
             exists (select 1 from (select chat from mod_chat_trade where trade = $1
                                    union select chat from mod_chat_access where trade = $1
@@ -943,13 +1002,16 @@ async function tradeShredHold(db: pg.Pool, trade: string, at: Date): Promise<'yo
                         or exists (select 1 from signed_chats s where s.chat = c.chat)) as chat,
             exists (select 1 from mod_escrow_state where trade = $1) as escrow,
             (select watching from mod_watch where trade = $1) as watching,
-            (select state from mod_watch where trade = $1) as state`,
+            (select state from mod_watch where trade = $1) as state,
+            (select escrow_address from mod_watch where trade = $1) as address,
+            (select setup_done_at from mod_watch where trade = $1) as setup_done`,
     [trade],
   );
   const r = rows[0]!;
   if (r.made !== null && at.getTime() - r.made.getTime() < TRADE_SHRED_MIN_AGE_DAYS * DAY_MS) return 'young';
   if (r.disputed !== null && at.getTime() - r.disputed.getTime() < CHAT_AFTER_DISPUTE_DAYS * DAY_MS) return 'dispute';
   if (r.chat) return 'chat';
+  if (r.watching !== null && r.address === null && r.setup_done === null && watchSawNothing(r.state) && (await escrowNeverFinalised(db, keystoreKey, trade))) return null;
   if (r.watching === true) return 'watching';
   if (r.watching === false) {
     let empty = false;

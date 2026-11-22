@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,11 +29,20 @@ function assertKey(key: Uint8Array): void {
 
 /**
  * A purpose-bound subkey of MOD_KEYSTORE_KEY: HKDF-SHA-256, info `x2f/mod/<label>`, 32 bytes.
- * `wallet`: the escrow wallet passwords (R27); `gate`: the ruling gate's `gate.bin` (Plan 4 Task 13).
+ * `wallet`: the escrow wallet passwords (R27); `gate`: the ruling gate's `gate.bin` (Plan 4 Task 13);
+ * `sweeps`: the tags of a shredded trade's counted sweeps (`sweepTag`, migration 022).
  */
-export function modSubkey(keystoreKey: Uint8Array, label: 'wallet' | 'gate'): Uint8Array {
+export function modSubkey(keystoreKey: Uint8Array, label: 'wallet' | 'gate' | 'sweeps'): Uint8Array {
   assertKey(keystoreKey);
   return new Uint8Array(hkdfSync('sha256', keystoreKey, new Uint8Array(0), `x2f/mod/${label}`, KEY_LEN));
+}
+
+/**
+ * Review lead-mod-purge M2 (migration 022): the keyed tag of a sweep tx a shredded trade had
+ * counted. HMAC-SHA256 under the `sweeps` subkey of 'x2f/mod/sweep-spent/v1|<tx hash>', 32 bytes.
+ */
+export function sweepTag(keystoreKey: Uint8Array, txHash: string): Buffer {
+  return createHmac('sha256', modSubkey(keystoreKey, 'sweeps')).update(`x2f/mod/sweep-spent/v1|${txHash}`, 'utf8').digest();
 }
 
 /** AES-256-GCM: nonce (12) || ciphertext || tag (16), with `aad` bound in. */

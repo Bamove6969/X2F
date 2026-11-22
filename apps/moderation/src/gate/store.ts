@@ -155,6 +155,16 @@ export interface RulingExecution {
 }
 
 /**
+ * Review lead-mod-purge m2: every GateState field, classed. The fields that hold a trade code are
+ * the ones `forgetTrade` clears; a new field must be added to one list (test/tradeShred.test.ts).
+ */
+export const GATE_TRADE_FIELDS = ['executions', 'rulingsSeen'] as const satisfies ReadonlyArray<keyof GateState>;
+export const GATE_OTHER_FIELDS = [
+  'v', 'ownerAccountId', 'ownerCreds', 'staff', 'limitUsdCents', 'appealWindowH', 'usedNonces', 'checkpoints',
+  'logVerifiedAt', 'logOverdueAlarmAt', 'invites', 'resets', 'removedIds', 'stopped', 'applied', 'devices', 'devicesRevokedAt',
+] as const satisfies ReadonlyArray<keyof GateState>;
+
+/**
  * Plan 7 Task 2 follow-up (the trade shred): a ruling payout recorded for the trade and not yet
  * finished. The trade's records are then never deleted (the payout may still have to be sent).
  */

@@ -1,5 +1,6 @@
 import type { Funds, Outgoing, PartyHandle } from '@x2f/escrow';
 import {
+  CLOSED_STATES,
   channelFor,
   modPartyPlan,
   newWatchState,
@@ -19,6 +20,7 @@ import {
 import type pg from 'pg';
 import { NO_DESK_FACTS, sweepKindAgrees, WATCH_FRESH_MS, type Desk } from './desk.js';
 import type { DeskArmed } from './execute.js';
+import { sweepTag } from './keystore.js';
 import type { Link, WatchItem } from './link.js';
 
 /**
@@ -35,6 +37,8 @@ import type { Link, WatchItem } from './link.js';
  */
 export interface WatcherOptions {
   db: pg.Pool;
+  /** MOD_KEYSTORE_KEY: the shredded trades' sweep tags (claimSweep, review lead-mod-purge M2). */
+  keystoreKey: Uint8Array;
   link: Link;
   /** Starts one moderator party (the real one is `startModParty` with the production I/O). */
   startParty: (a: ModPartyArgs) => Promise<PartyHandle>;
@@ -250,8 +254,13 @@ export async function spendEvidence(f: Funds, state: WatchState, ctx: SweepConte
   return null;
 }
 
-/** mod_sweeps (migration 005): records `txHash` for `trade` unless another trade has it; true when it is this trade's. */
-export async function claimSweep(db: pg.Pool, trade: string, txHash: string): Promise<boolean> {
+/**
+ * mod_sweeps (migration 005): records `txHash` for `trade` unless another trade has it; true when it
+ * is this trade's. A tx a shredded trade had counted (its tag in mod_sweeps_spent, 022) is never
+ * this trade's (review lead-mod-purge M2: the rule outlives the shred).
+ */
+export async function claimSweep(db: pg.Pool, trade: string, txHash: string, keystoreKey: Uint8Array): Promise<boolean> {
+  if ((await db.query('select 1 from mod_sweeps_spent where tag = $1', [sweepTag(keystoreKey, txHash)])).rows.length > 0) return false;
   await db.query('insert into mod_sweeps (tx_hash, trade) values ($1, $2) on conflict (tx_hash) do nothing', [txHash, trade]);
   const { rows } = await db.query<{ trade: string }>('select trade from mod_sweeps where tx_hash = $1', [txHash]);
   return rows[0]?.trade === trade;
@@ -440,7 +449,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
       terms: args.terms,
       feeWallet: args.feeWallet,
       ...(handle.proveSweep ? { prove: (h, k, m) => handle.proveSweep!(h, k, m) } : {}),
-      claim: (txHash) => claimSweep(o.db, row.trade, txHash),
+      claim: (txHash) => claimSweep(o.db, row.trade, txHash, o.keystoreKey),
       log: o.log,
     });
     // The wallet sync and the proof above can take long (finding 1): the trade's state and pause
@@ -582,6 +591,14 @@ export function createWatcher(o: WatcherOptions): Watcher {
           await stopParty(row.trade);
           await o.db.query('update mod_watch set watching = false, updated_at = now() where trade = $1', [row.trade]);
           o.log({ reason: 'party-stopped' });
+          continue;
+        }
+        // Review lead-mod-purge M1: a trade the API shows closed before any escrow address existed
+        // here has nothing to watch. modPartyPlan stops only a running party, so after a restart such
+        // a row would watch for good; it stops watching the same way.
+        if (!plan.start && !running.has(row.trade) && !starting.has(row.trade) && row.escrow_address === null && CLOSED_STATES.includes(apiState as (typeof CLOSED_STATES)[number])) {
+          await o.db.query('update mod_watch set watching = false, updated_at = now() where trade = $1', [row.trade]);
+          o.log({ reason: 'watch-ended-no-escrow' });
           continue;
         }
         if (plan.start) {
