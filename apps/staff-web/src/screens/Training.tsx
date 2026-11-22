@@ -79,7 +79,7 @@ function TrainingList() {
     <section data-screen="training">
       <PageTitle title="Training library">
         <p className="x2f-staff-page__lead">
-          {/* Review m6: no purge period is promised until Task 23 deletes dispute records (NEEDS_P4_TASK23). COPY-UNSIGNED */}
+          {/* Review m6: no purge period is named here. The purge does delete a case's dispute records now (Task 23, 90 days after it closed); naming the period is copy for the owner. COPY-UNSIGNED */}
           Closed disputes the owner has reviewed, with the traders, staff, trade code and private details taken out. Use them to learn how cases are decided. Amounts are rounded.
         </p>
         {curator ? (

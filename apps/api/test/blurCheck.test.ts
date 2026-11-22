@@ -243,11 +243,15 @@ describe('team members (review PC1)', () => {
     const p1 = newProofId();
     expect((await posted(buyer, code, p1)).statusCode).toBe(200);
 
-    // Announcing: the chat-reply member may, the others may not.
+    // Announcing: the chat-reply member may, the others may not. Lead call (review
+    // lead-trades-list-2): the chat-reply member needs the box for the trade's part too, so
+    // chat-reply alone is refused now, and chat-reply with See active trades announces on this open trade.
     expect((await posted(reader, code, newProofId())).statusCode).toBe(403);
     expect((await posted(neither, code, newProofId())).statusCode).toBe(403);
+    expect((await posted(poster, code, newProofId())).statusCode).toBe(403);
+    const announcer = await memberOf(seller.id, ['chat-reply', 'trades-see-active']);
     const p2 = newProofId();
-    const ok = await posted(poster, code, p2);
+    const ok = await posted(announcer, code, p2);
     expect(ok.statusCode, ok.body).toBe(200);
 
     // Listing: the trade reader sees the seller side's asks; the others are refused.
@@ -261,5 +265,56 @@ describe('team members (review PC1)', () => {
     const done = await answer(reader, code, p1, { correct: true });
     expect(done.statusCode, done.body).toBe(204);
     expect((await pending(seller, code)).map((c) => c.proofId)).not.toContain(p1);
+  });
+
+  it("trades-list I1 (lead's per-part ruling): listing and answering need the box for the trade's part", async () => {
+    const { seller, buyer, code } = await pair();
+    const active = await memberOf(seller.id, ['trades-see-active']);
+    const history = await memberOf(seller.id, ['trades-see-history']);
+    const p1 = newProofId();
+    const p2 = newProofId();
+    expect((await posted(buyer, code, p1)).statusCode).toBe(200);
+    expect((await posted(buyer, code, p2)).statusCode).toBe(200);
+
+    // Open: See trade history alone is refused, and answers nothing.
+    expect((await call(history, 'GET', `/v1/trades/${code}/blur-checks`)).statusCode).toBe(403);
+    expect((await answer(history, code, p1, { correct: true })).statusCode).toBe(403);
+    expect((await pending(active, code)).map((c) => c.proofId).sort()).toEqual([p1, p2].sort());
+    expect((await answer(active, code, p1, { correct: true })).statusCode).toBe(204);
+
+    // Completed: now See active trades alone is refused, and See trade history reads and answers.
+    await deps.db.query('update trades set closed_at = $2 where code = $1', [code, deps.clock()]);
+    expect((await call(active, 'GET', `/v1/trades/${code}/blur-checks`)).statusCode).toBe(403);
+    expect((await answer(active, code, p2, { correct: true })).statusCode).toBe(403);
+    expect((await pending(history, code)).map((c) => c.proofId)).toEqual([p2]);
+    expect((await answer(history, code, p2, { correct: true })).statusCode).toBe(204);
+
+    // A stranger's trade stays 404 (the side check comes first), never a 403.
+    const other = await pair();
+    expect((await call(active, 'GET', `/v1/trades/${other.code}/blur-checks`)).statusCode).toBe(404);
+  });
+
+  it("lead call (review lead-trades-list-2): announcing a proof needs the box for the trade's part too; a stranger stays 404", async () => {
+    const { seller, code } = await pair();
+    const active = await memberOf(seller.id, ['trades-see-active', 'chat-reply']);
+    // The Start set: See trade history and chat-reply, no See active trades.
+    const history = await memberOf(seller.id, ['trades-see-history', 'chat-reply']);
+    const stored = async () => (await deps.db.query('select 1 from blur_check_proofs where trade_code = $1', [code])).rowCount;
+
+    expect((await posted(history, code, newProofId())).statusCode).toBe(403);
+    expect(await stored()).toBe(0);
+    const ok = await posted(active, code, newProofId());
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(await stored()).toBe(1);
+
+    await deps.db.query('update trades set closed_at = $2 where code = $1', [code, deps.clock()]);
+    expect((await posted(active, code, newProofId())).statusCode).toBe(403);
+    expect(await stored()).toBe(1);
+    expect((await posted(history, code, newProofId())).statusCode).toBe(200);
+
+    // A stranger's trade (open, so the history-only member's box does not match it): 404, not 403,
+    // and an unstored id says nothing more than a stored one would.
+    const other = await pair();
+    expect((await posted(history, other.code, newProofId(), 'auto', { store: false })).statusCode).toBe(404);
   });
 });

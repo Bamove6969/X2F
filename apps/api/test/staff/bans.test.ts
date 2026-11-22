@@ -484,9 +484,88 @@ describe('a site ban and the trade room\'s later routes (batch 10a, lead call 1)
     }
   });
 
-  // On main the trades list (D-005) and the session-proof pair (S-085) are not routes yet
-  // (banState.ts NEEDS_TRADES_LIST, NEEDS_DEVICE_BOUND), so lead call 1's account-wide addition
-  // here is the freeze read alone.
+  // D-005 (banState.ts, was NEEDS_TRADES_LIST): GET /v1/trades passes the gate while something is
+  // unfinished, and then lists only the unfinished trades: open ones, and closed ones whose dispute
+  // is not closed. The finished history is left out, for the account owner and its members alike.
+  type Row = { code: string; lastActedBy?: unknown };
+  const list = async (call: Awaited<ReturnType<typeof asTrader>>, q = '') => {
+    const res = await call('GET', `/v1/trades${q}`);
+    expect(res.statusCode, res.body).toBe(200);
+    return (res.json() as { trades: Row[] }).trades;
+  };
+  const codes = (rows: Row[]) => rows.map((r) => r.code).sort();
+  /** A joined team member of `teamId` with these boxes, as a trader-app caller (its own session row). */
+  async function asMember(teamId: string, abilities: string[]) {
+    const name = `Bm${randomBytes(4).toString('hex')}`;
+    const loginId = await seedAccount(t.deps, { loginName: name.toLowerCase(), kind: 'member' });
+    const now = t.deps.clock();
+    const m = await t.deps.db.query<{ id: string }>(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
+      [teamId, name, name.toLowerCase(), abilities, now, loginId],
+    );
+    const { token, sessionId } = await insertSession(t.deps, teamId, 'trader');
+    await t.deps.db.query('update sessions set member_id = $2 where id = $1', [sessionId, m.rows[0]!.id]);
+    return (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: unknown) =>
+      t.trader.inject({ method, url, headers: { origin: 'https://x2f.test' }, cookies: { '__Host-x2f_session': token }, ...(payload !== undefined ? { payload: payload as object } : {}) });
+  }
+
+  it('D-005: a site-banned owner lists only their unfinished trades (open, or a dispute not closed); lastActedBy stays the owner\'s', async () => {
+    const { open, closed, disputed, theirs, me } = await bannedWithTrades();
+    const all = await list(me);
+    expect(codes(all)).toEqual([open.code, disputed.code].sort());
+    expect(codes(await list(me, '?status=open'))).toEqual([open.code]);
+    // The owner's open row still says which member last acted (none here).
+    expect((await list(me, '?status=open'))[0]).toHaveProperty('lastActedBy', null);
+    const body = JSON.stringify(all);
+    for (const c of [closed.code, theirs.code]) expect(body).not.toContain(c);
+  });
+
+  it('D-005: the history tab under a site ban: the finished trades are left out; a closed trade whose dispute is open stays', async () => {
+    const { closed, disputed, me } = await bannedWithTrades();
+    const done = await list(me, '?status=completed');
+    expect(codes(done)).toEqual([disputed.code]);
+    expect(JSON.stringify(done)).not.toContain(closed.code);
+    // With nothing unfinished the list is behind the gate like every account-wide read: 403 banned.
+    const idle = await trader();
+    const other = await trader();
+    const past = await seedTrade(t.deps, { sellerId: idle, buyerId: other, poster: 'seller' });
+    await driveTo(t.deps, past.trade, 'released');
+    expect((await ban(senior, idle, { kind: 'site', ruleId: 'abuse', until: IN_A_WEEK })).res.statusCode).toBe(201);
+    const none = await (await asTrader(idle))('GET', '/v1/trades?status=completed');
+    expect(isBanned(none), none.body).toBe(true);
+  });
+
+  it("D-005: a site-banned account's team members get the same unfinished trades, by their boxes, and never lastActedBy", async () => {
+    const { id, open, closed, disputed } = await bannedWithTrades();
+    const both = await asMember(id, ['trades-see-active', 'trades-see-history']);
+    const rows = await list(both);
+    expect(codes(rows)).toEqual([open.code, disputed.code].sort());
+    for (const r of rows) expect(r).not.toHaveProperty('lastActedBy');
+    expect(JSON.stringify(rows)).not.toContain(closed.code);
+    // The part boxes still hold: See active trades only gets the open trade, and the history tab is 403 forbidden.
+    const active = await asMember(id, ['trades-see-active']);
+    expect(codes(await list(active))).toEqual([open.code]);
+    const refused = await active('GET', '/v1/trades?status=completed');
+    expect({ status: refused.statusCode, error: errorOf(refused) }).toEqual({ status: 403, error: 'forbidden' });
+    const history = await asMember(id, ['trades-see-history']);
+    expect(codes(await list(history, '?status=completed'))).toEqual([disputed.code]);
+  });
+
+  it('D-005: a trade ban alone changes nothing in the list: the whole history, both tabs', async () => {
+    const id = await trader();
+    const other = await trader();
+    const open = await seedTrade(t.deps, { sellerId: id, buyerId: other, poster: 'seller' });
+    const closed = await seedTrade(t.deps, { sellerId: id, buyerId: other, poster: 'seller' });
+    await driveTo(t.deps, closed.trade, 'released');
+    expect((await ban(senior, id, { kind: 'trade', ruleId: 'abuse', until: IN_A_WEEK })).res.statusCode).toBe(201);
+    const me = await asTrader(id);
+    expect(codes(await list(me))).toEqual([open.code, closed.code].sort());
+    expect(codes(await list(me, '?status=completed'))).toEqual([closed.code]);
+  });
+
+  // The session-proof pair (S-085) is not a route yet (banState.ts NEEDS_DEVICE_BOUND), so lead call
+  // 1's other account-wide addition here is the freeze read.
   it('the freeze read passes while something is unfinished, and is 403 banned with nothing unfinished', async () => {
     const { me } = await bannedWithTrades();
     const idle = await trader();

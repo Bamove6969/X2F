@@ -397,7 +397,12 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
   const snapshot = (rec: ChatRecord | null, view: ChatApiView, phase: ChatPhase, problem: ChatSnapshot['problem'] = null, more = false): ChatSnapshot => {
     const session = rec ? sessions.get(rec.chat) : undefined;
     /** Review payee-fields-2 m-4: the other side's package this device refused for its contents. */
-    const unshowable = (m: StoredChatReceipt): boolean => m.refused === true && m.refusedPay === true && m.from !== view.role && m.from !== 'mod';
+    const refusedPkg = (m: StoredChatReceipt): boolean => m.refused === true && m.refusedPay === true && m.from !== view.role && m.from !== 'mod';
+    /**
+     * Review sanctions m-1: its neutral line is shown only once the escrow is secured, like a package
+     * that can be shown (owner Q12): before that the payee could not send it again.
+     */
+    const unshowable = (m: StoredChatReceipt): boolean => refusedPkg(m) && view.tradeSecuredAt !== null;
     /** A receipt the reads went past without showing it again: a placeholder (review I2). */
     const judged = (id: string): boolean => session !== undefined && (session.reached === 'all' || BigInt(id) <= session.reached);
     /**
@@ -413,12 +418,22 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     const gaps = new Map<string, boolean>();
     const carried = new Set<Role>();
     for (const m of sorted) {
-      if (m.refused === true && !unshowable(m)) continue;
+      if (m.refused === true && !unshowable(m)) {
+        // Review sanctions m-2: a gap before a package held so (m-1) goes onto the sender's next shown line.
+        if (refusedPkg(m) && m.gapBefore) carried.add(m.from);
+        continue;
+      }
       if (m.away === true) {
         if (m.gapBefore) carried.add(m.from);
         continue;
       }
-      if (withheld(m) || !(session?.texts.has(m.id) === true || judged(m.id))) continue;
+      if (withheld(m)) {
+        // Review sanctions m-2: a package or evidence held until it may be shown keeps a gap before
+        // it on the sender's next shown line meanwhile (its seq was taken, so that line has none).
+        if (m.gapBefore) carried.add(m.from);
+        continue;
+      }
+      if (!(session?.texts.has(m.id) === true || judged(m.id))) continue;
       gaps.set(m.id, m.gapBefore || carried.has(m.from));
       carried.delete(m.from);
     }
@@ -604,8 +619,11 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     const known = new Map(receipts.map((r) => [r.id, r]));
     let unread = false;
     const lastSeq = new Map<Role, number>();
-    // A refused envelope's seq was never taken (the sender may reuse it), so it does not count.
-    for (const m of receipts) if (m.refused !== true) lastSeq.set(m.from, Math.max(lastSeq.get(m.from) ?? -1, m.seq));
+    // A refused envelope's seq was never taken (the sender may reuse it), so it does not count, except
+    // a package refused for its contents (review sanctions m-2): it is a line the payer sees, so the
+    // sender's next line does not follow a gap. For the gap markers only; the guard never took it.
+    // Never this device's own (review small-fu2 M-1): that one is no line, so it must not hide a gap.
+    for (const m of receipts) if (m.refused !== true || (m.refusedPay === true && m.from !== rec.role)) lastSeq.set(m.from, Math.max(lastSeq.get(m.from) ?? -1, m.seq));
     for (let page = 0, total = 0; page < MAX_PAGES && total < MAX_TOTAL_PAGES; total++) {
       const { envelopes, more } = await d.api.listEnvelopes(rec.chat, after);
       if (envelopes.some((e) => BigInt(e.id) > start)) page++;
@@ -695,19 +713,26 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
             // Decided for good (pay-details review M1): a receipt marks it refused so a re-read never
             // opens it again, and the cursor passes it. The guard did not move: the sender may reuse the seq.
             const h = headerOf(e.envelope, channel) ?? headerV1(e.envelope, channel);
-            if (h !== null) {
-              const pkgFrom = err.refusedPackageFrom;
+            const pkgFrom = err.refusedPackageFrom;
+            // Review small-fu2 n-2: the signer and the server's record must agree, as for a valid
+            // line ("sender mismatch" above): a package filed under another sender is skipped outright.
+            if (h !== null && (pkgFrom === undefined || pkgFrom === e.senderRole)) {
+              const from = pkgFrom ?? h.from;
+              const prev = lastSeq.get(from);
               const m: StoredChatReceipt = {
                 id: e.id,
-                from: pkgFrom ?? h.from,
+                from,
                 seq: h.seq,
                 sig: sigOf(e.envelope),
                 at: typeof e.at === 'string' ? e.at : null,
-                gapBefore: false,
+                // Review sanctions m-2: a package refused for its contents is a line, so a gap before
+                // it shows on it, and its seq counts for the sender's next line (never for the guard).
+                gapBefore: pkgFrom !== undefined && h.seq > (prev ?? -1) + 1,
                 refused: true,
                 // Review payee-fields-2 m-4: a package refused for its contents is told to the payer.
                 ...(pkgFrom !== undefined ? { refusedPay: true as const } : {}),
               };
+              if (pkgFrom !== undefined && pkgFrom !== rec.role) lastSeq.set(from, Math.max(prev ?? -1, m.seq));
               receipts.push(m);
               known.set(m.id, m);
             }

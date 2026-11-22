@@ -5,7 +5,7 @@ import { Amount } from '../src/ui/Amount.js';
 import { BadgePill } from '../src/ui/BadgePill.js';
 import { ActionBar } from '../src/ui/ActionBar.js';
 import { BottomNav } from '../src/ui/BottomNav.js';
-import { mayPostOffers, mayViewWallets } from '../src/session/member.js';
+import { mayOpenLiveEvents, mayPostOffers, mayReadTrades, mayViewWallets } from '../src/session/member.js';
 import type { Session } from '../src/session/useSession.js';
 import { Button } from '../src/ui/Button.js';
 import { Checkbox } from '../src/ui/Checkbox.js';
@@ -385,7 +385,7 @@ describe('BottomNav', () => {
     );
     const nav = host.querySelector('nav[aria-label="Main"]')!;
     const links = [...nav.querySelectorAll('a')];
-    expect(links.map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile']);
+    expect(links.map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Post offer', 'Wallets', 'Profile']);
     expect(links[0]!.getAttribute('aria-current')).toBe('page');
     expect(links.slice(1).every((a) => !a.hasAttribute('aria-current'))).toBe(true);
   });
@@ -397,7 +397,7 @@ describe('BottomNav', () => {
         <BottomNav postOffers={false} />
       </MemoryRouter>,
     );
-    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile']);
+    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Wallets', 'Profile']);
   });
 
   // Order #2 M2: hide Wallets on phone for team members
@@ -407,7 +407,7 @@ describe('BottomNav', () => {
         <BottomNav wallets={false} />
       </MemoryRouter>,
     );
-    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Profile']);
+    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Post offer', 'Profile']);
   });
 
   it('mayPostOffers: the account owner and an Offers member may; a Trades-only member may not', () => {
@@ -434,6 +434,49 @@ describe('BottomNav', () => {
     expect(mayViewWallets(me({ name: 'Aurora', roles: ['trades'] }))).toBe(false);
     expect(mayViewWallets({ status: 'signed-out' } as Session)).toBe(true);
     expect(mayViewWallets({ status: 'loading' } as Session)).toBe(false);
+  });
+
+  // Review m1 (trades-list, 12 Nov 2026; design review shot 26): no tab that only leads to a refusal.
+  it('hides My trades when the session may read no part of the trades list', () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/sell']}>
+        <BottomNav trades={false} />
+      </MemoryRouter>,
+    );
+    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile']);
+  });
+
+  it('mayReadTrades: the account owner, and a member with See active trades or See trade history', () => {
+    const me = (member: unknown) => ({ status: 'signed-in', me: { displayName: 'Calcium', member } }) as unknown as Session;
+    expect(mayReadTrades(me(null))).toBe(true);
+    expect(mayReadTrades(me(undefined))).toBe(true);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: [], abilities: ['trades-see-active'] }))).toBe(true);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: [], abilities: ['trades-see-history'] }))).toBe(true);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: ['offers'], abilities: ['offers-see', 'offers-post'] }))).toBe(false);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: [], abilities: [] }))).toBe(false);
+    // An older API with roles only: the Trades role reads trades.
+    expect(mayReadTrades(me({ name: 'Aurora', roles: ['trades'] }))).toBe(true);
+    expect(mayReadTrades(me({ name: 'Aurora', roles: ['offers'] }))).toBe(false);
+    expect(mayReadTrades({ status: 'signed-out' })).toBe(true);
+    // As for Post offer (review N2): while the session loads, the tab waits.
+    expect(mayReadTrades({ status: 'loading' })).toBe(false);
+  });
+
+  it('mayOpenLiveEvents: a full trader session, the owner or a member with either trades box (lead, after review trades-list I1)', () => {
+    const me = (over: Record<string, unknown>) => ({ status: 'signed-in', me: { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, member: null, ...over } }) as unknown as Session;
+    expect(mayOpenLiveEvents(me({}))).toBe(true);
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: [], abilities: ['trades-see-history'] } }))).toBe(true);
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: ['trades'], abilities: ['trades-see-active'] } }))).toBe(true);
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: ['offers'], abilities: ['offers-see'] } }))).toBe(false);
+    // An older API with roles only.
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: ['trades'] } }))).toBe(true);
+    expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: ['offers'] } }))).toBe(false);
+    // Not a full, current trader session: no stream (the API's requireTrader).
+    expect(mayOpenLiveEvents(me({ level: 'recovery' }))).toBe(false);
+    expect(mayOpenLiveEvents(me({ termsCurrent: false }))).toBe(false);
+    expect(mayOpenLiveEvents(me({ kind: 'staff' }))).toBe(false);
+    expect(mayOpenLiveEvents({ status: 'signed-out' })).toBe(false);
+    expect(mayOpenLiveEvents({ status: 'loading' })).toBe(false);
   });
 
   it('the tab bar carries no data-primary: the Main and BuyMain boards have no primary action', () => {
@@ -476,7 +519,7 @@ describe('DesktopShell', () => {
     );
     expect(host.querySelector('[data-shell="desktop"]')).not.toBeNull();
     const nav = host.querySelector('nav[aria-label="Main"]')!;
-    expect([...nav.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+    expect([...nav.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
     expect(nav.querySelector('a[aria-current="page"]')!.textContent).toBe('Trade');
     expect(nav.querySelector('svg')).not.toBeNull();
     expect(host.textContent).toContain('room');

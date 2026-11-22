@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { emptyDb } from './helpers/db.js';
 import { insertOffer } from './helpers/offers.js';
+import { seedTrade } from './helpers/trades.js';
 
 /** A database migrated up to (not including) `before`; `run` gets it, then the rest is applied by the test. */
 async function migratedBefore(before: string, run: (db: pg.Pool) => Promise<void>): Promise<void> {
@@ -184,8 +185,17 @@ describe('migration 770: owner 12 Nov: Russian anything is banned (RUB, SBP, MIR
       await db.query(`update offer_method_currencies set instructions = 'usd only' where offer_id = $1`, [keep]);
       await db.query('alter table offer_method_currencies enable trigger offer_method_currencies_written_once');
       const gone = [rub, sbp, mir, yoo, mixed];
+      // Review sanctions n-1: a running trade on a Russian offer keeps its record, the instructions
+      // locked on it included (it finishes normally).
+      const buyer = await account(db);
+      const running = await seedTrade({ db, clock: () => at }, { sellerId: a, buyerId: buyer, poster: 'seller', offerId: sbp, methodId: 'SBP', lockedCurrency: 'RUB', methodInstructions: 'sbp +7 900 000 00 00' });
+      const tradeRow = async () => (await db.query('select * from trades where code = $1', [running.code])).rows[0] as Record<string, unknown>;
+      const tradeBefore = await tradeRow();
+      expect(tradeBefore).toMatchObject({ method_id: 'SBP', method_instructions: 'sbp +7 900 000 00 00' });
 
       await migrate(db);
+
+      expect(await tradeRow()).toEqual(tradeBefore);
 
       const offers = await db.query<{ id: string; status: string; updated_at: Date }>('select id, status, updated_at from offers');
       for (const o of offers.rows) {

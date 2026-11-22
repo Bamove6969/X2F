@@ -19,6 +19,9 @@ import './ui.css';
 const LINKS: { to: string; label: string; icon: IconName; match: (path: string) => boolean }[] = [
   // Trade covers both browse sides, a quote, a trade and its dispute, and site news (News-Wide).
   { to: '/sell', label: 'Trade', icon: 'trade', match: (p) => /^\/(sell|buy|trade|news)(\/|$)/.test(p) },
+  // My trades (register D-005): not on the *-Wide boards yet (the Desktop board left its "My trades"
+  // card out until the list existed). DESIGNER-REVIEW, COPY-UNSIGNED
+  { to: '/trades', label: 'My trades', icon: 'list-check', match: (p) => /^\/trades(\/|$)/.test(p) },
   // MyOffers-Wide: My offers sits under Post offer.
   { to: '/post', label: 'Post offer', icon: 'plus-circle', match: (p) => /^\/(post|profile\/offers)(\/|$)/.test(p) },
   { to: '/wallets', label: 'Wallets', icon: 'wallet', match: (p) => /^\/wallets(\/|$)/.test(p) },
@@ -47,6 +50,7 @@ const NAMES: [RegExp, string][] = [
   [/^\/(sell|buy)\/[^/]+\/?$/, 'Offers'],
   [/^\/post(\/|$)/, 'Post an offer'],
   [/^\/profile\/offers(\/|$)/, 'My offers'],
+  [/^\/trades(\/|$)/, 'My trades'],
   [/^\/wallets(\/|$)/, 'Wallets'],
   [/^\/settings\/security(\/|$)/, 'Security'],
   [/^\/settings\/devices(\/|$)/, 'Devices'],
@@ -90,15 +94,12 @@ function PageName({ name }: { name: RailPageName }) {
 /**
  * The left rail. `postOffers` false leaves out Post offer, as the phone tab bar does for a member
  * without the Offers role. `member` true or `wallets` false leaves out owner-only routes (Wallets).
- * Members keep Settings (order #2 M3).
+ * Members keep Settings (order #2 M3). `trades` false leaves out My trades (review trades-list m1).
  */
-export function DesktopRail({ postOffers = true, wallets = true }: { postOffers?: boolean; wallets?: boolean | undefined }) {
+export function DesktopRail({ postOffers = true, wallets = true, trades = true }: { postOffers?: boolean; wallets?: boolean | undefined; trades?: boolean }) {
   const { pathname } = useLocation();
-  let links = postOffers ? LINKS : LINKS.filter((l) => l.to !== '/post');
-  if (!wallets) {
-    // Owner-only routes (Wallets) cannot be opened by team members (OwnerOnly.tsx).
-    links = links.filter((l) => l.to !== '/wallets');
-  }
+  // Owner-only routes (Wallets) cannot be opened by team members (OwnerOnly.tsx).
+  const links = LINKS.filter((l) => (postOffers || l.to !== '/post') && (wallets || l.to !== '/wallets') && (trades || l.to !== '/trades'));
   // Without the Offers role Post offer is not listed, so /profile/offers sits under Profile.
   const isCurrent = (l: (typeof LINKS)[number]) =>
     l.match(pathname) || (!postOffers && l.to === '/profile' && /^\/profile\/offers(\/|$)/.test(pathname));
@@ -145,16 +146,18 @@ export function DesktopShell({
   children,
   postOffers = true,
   wallets = true,
+  trades = true,
 }: {
   children: ReactNode;
   postOffers?: boolean;
   wallets?: boolean | undefined;
+  trades?: boolean;
 }) {
   const { pathname } = useLocation();
   const frame = wideFrameOf(pathname);
   return (
     <div data-shell="desktop" data-wide-frame={frame} className="x2f-desktop">
-      {frame === 'rail' ? <DesktopRail postOffers={postOffers} wallets={wallets} /> : <WideTop />}
+      {frame === 'rail' ? <DesktopRail postOffers={postOffers} wallets={wallets} trades={trades} /> : <WideTop />}
       <div className="x2f-desktop__body">{children}</div>
     </div>
   );

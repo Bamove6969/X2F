@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { ownerDeviceOnly, TRADE_READ } from '../team/perms.js';
+import { assertMemberMay, ownerDeviceOnly, TRADE_READ, tradePartAbility } from '../team/perms.js';
 
 /** Reading the attestation: the account owner, or a team member with Trades (Plan 2 Task 18). */
 const requireTradesRead = requireSession({ kinds: ['trader'], member: TRADE_READ });
@@ -42,17 +42,17 @@ function identityBody(req: FastifyRequest): { signPublic: string; boxPublic: str
  * the caller is 404 `not-found` (a trader cannot probe other people's trades, and a buyer can
  * never register the seller slot). Also normalizes and returns the stored trade code.
  */
-async function roleInTrade(db: Queryable, rawCode: string, accountId: string): Promise<{ code: string; role: TraderRole }> {
+async function roleInTrade(db: Queryable, rawCode: string, accountId: string): Promise<{ code: string; role: TraderRole; closedAt: Date | null }> {
   const code = normalizeTradeCode(rawCode);
   if (code === null) throw new ApiError(404, 'not-found');
-  const { rows } = await db.query<{ buyer_account_id: string; seller_account_id: string }>(
-    'select buyer_account_id, seller_account_id from trades where code = $1',
+  const { rows } = await db.query<{ buyer_account_id: string; seller_account_id: string; closed_at: Date | null }>(
+    'select buyer_account_id, seller_account_id, closed_at from trades where code = $1',
     [code],
   );
   const trade = rows[0];
   if (!trade) throw new ApiError(404, 'not-found');
-  if (trade.buyer_account_id === accountId) return { code, role: 'buyer' };
-  if (trade.seller_account_id === accountId) return { code, role: 'seller' };
+  if (trade.buyer_account_id === accountId) return { code, role: 'buyer', closedAt: trade.closed_at };
+  if (trade.seller_account_id === accountId) return { code, role: 'seller', closedAt: trade.closed_at };
   throw new ApiError(404, 'not-found');
 }
 
@@ -106,7 +106,9 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
   app.get('/v1/trades/:code/ruling-statement', { preHandler: requireTradesRead }, async (req, reply) => {
     const deps = req.server.deps;
     const { code } = req.params as { code: string };
-    const { code: normalized } = await roleInTrade(deps.db, code, req.auth.accountId);
+    const { code: normalized, closedAt } = await roleInTrade(deps.db, code, req.auth.accountId);
+    // Review lead-trades-list-2 B1: the part's box, after the participant check (a stranger stays 404).
+    assertMemberMay(req.auth, tradePartAbility(closedAt));
     const { rows } = await deps.db.query<{ statement: unknown; sig: string }>('select statement, sig from ruling_statements where code = $1', [normalized]);
     const row = rows[0];
     if (!row) return reply.code(204).send();
@@ -116,7 +118,9 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
   app.get('/v1/trades/:code/attestation', { preHandler: requireTradesRead }, async (req, reply) => {
     const deps = req.server.deps;
     const { code } = req.params as { code: string };
-    const { code: normalized } = await roleInTrade(deps.db, code, req.auth.accountId);
+    const { code: normalized, closedAt } = await roleInTrade(deps.db, code, req.auth.accountId);
+    // Review trades-list I1: a member reads an open trade's with See active trades, a completed one's with See trade history.
+    assertMemberMay(req.auth, tradePartAbility(closedAt));
     const { rows } = await deps.db.query<{ attestation: unknown; sig: string }>(
       'select attestation, sig from trade_attestations where code = $1',
       [normalized],

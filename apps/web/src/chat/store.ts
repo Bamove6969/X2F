@@ -79,7 +79,9 @@ export interface StoredChatReceipt {
   refused?: true;
   /**
    * With `refused` (review payee-fields-2 m-4): the envelope was the counterparty's package, signed
-   * and allowed, refused for its contents. Shown as a neutral line ("couldn't be shown"), never its text.
+   * and allowed, refused for its contents. Shown as a neutral line ("couldn't be shown"), never its text,
+   * and only once the escrow is secured (review sanctions m-1, as owner Q12 holds a package). Its seq
+   * counts for the gap markers (review sanctions m-2), never for the guard.
    */
   refusedPay?: true;
 }

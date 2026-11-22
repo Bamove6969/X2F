@@ -608,7 +608,8 @@ export function pgGateSource(db: Pick<pg.Pool, 'query'>): PgGateSource {
       let involved: string[] = [];
       if (d.round === 2) {
         const { rows: log } = await db.query<{ id: string; trade_code: string | null; actor_kind: 'staff' | 'trader' | 'system'; actor_id: string | null; action: string }>(
-          'select id::text as id, trade_code, actor_kind, actor_id, action from activity_log where trade_code = $1 order by id',
+          // By the bigint id: `order by id` would sort by the text alias ('10' before '9').
+          'select id::text as id, trade_code, actor_kind, actor_id, action from activity_log where trade_code = $1 order by activity_log.id',
           [code],
         );
         const appeal = [...log].reverse().find((e) => e.action === 'appeal.opened');

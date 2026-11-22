@@ -13,7 +13,7 @@ import { chatKeyHash, encryptChat, makeModCountersign, newChatKey, openChat, Rep
 import { channelFor } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { isIncidentId } from '@x2f/staff';
 import { ModerationError, NO_MODERATION, type ModCaseCall, type ModCountersigned } from '../../src/disputes/moderationClient.js';
@@ -460,6 +460,21 @@ describe('who works a case', () => {
     expect(view.moderator?.name).toBe(senior.name);
   });
 
+  it("review lead-trades-list-2 m3 (G21): the staff routes' trader events say the trade's part", async () => {
+    const { code } = await disputed();
+    const mod = await staff('mod');
+    const spy = vi.spyOn(trader.events, 'publish');
+    try {
+      await mod.b.post(url(code, '/take'), {});
+      expect((await mod.b.post(url(code, '/messages'), await msg(code, 'Hello.'))).statusCode).toBe(201);
+      // moderator-joined, the trade and the chat line: each to both traders, each with the open part.
+      expect(spy.mock.calls.length).toBeGreaterThanOrEqual(4);
+      for (const [, , o] of spy.mock.calls) expect(o).toEqual({ closed: false });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('round 2: a moderator involved in round 1 gets forbidden-case, even as a senior', async () => {
     const senior = await staff('senior');
     const { code } = await disputed();
@@ -543,13 +558,34 @@ describe('who works a case', () => {
        select $1, 'buyer', 1000 + g, jsonb_build_object('n', g), $2 from generate_series(0, $3) g`,
       [chat, deps.clock(), CHAT_READ_MAX],
     );
-    const { rows } = await deps.db.query<{ id: string }>('select id::text as id from chat_envelopes where chat = $1 order by id', [chat]);
+    const { rows } = await deps.db.query<{ id: string }>('select id::text as id from chat_envelopes where chat = $1 order by chat_envelopes.id', [chat]);
     const res = await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
     const a = res.json() as { olderNotShown: boolean; envelopes: Array<{ id: string }> };
     expect(a.olderNotShown).toBe(true);
     expect(a.envelopes).toHaveLength(CHAT_READ_MAX);
     // The newest, oldest first.
     expect(a.envelopes.map((e) => e.id)).toEqual(rows.slice(-CHAT_READ_MAX).map((r) => r.id));
+  });
+
+  it('the read returns the envelopes in id order across a digit boundary (ids ordered as numbers, never as their text)', async () => {
+    const mod = await staff('mod');
+    const { code, chat } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    // Move the id sequence forward (never back) so this chat's next ids cross from 4 to 5 digits.
+    const { rows: top } = await deps.db.query<{ m: string }>('select coalesce(max(id), 0)::text as m from chat_envelopes');
+    await deps.db.query(`select setval(pg_get_serial_sequence('chat_envelopes', 'id'), $1)`, [Math.max(9998, Number(top[0]!.m))]);
+    await deps.db.query(
+      `insert into chat_envelopes (chat, sender_role, seq, envelope, created_at)
+       select $1, 'buyer', 2000 + g, jsonb_build_object('n', g), $2 from generate_series(0, 2) g`,
+      [chat, deps.clock()],
+    );
+    const { rows } = await deps.db.query<{ id: string }>('select id::text as id from chat_envelopes where chat = $1 order by chat_envelopes.id', [chat]);
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    const res = await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
+    expect(res.statusCode, res.body).toBe(200);
+    const a = res.json() as { olderNotShown: boolean; envelopes: Array<{ id: string }> };
+    expect(a.olderNotShown).toBe(false);
+    expect(a.envelopes.map((e) => e.id)).toEqual(rows.map((r) => r.id));
   });
 
   it('reads are logged before any key is granted: with logging failing nothing is granted, and someone not on the case is refused first', async () => {

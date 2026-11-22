@@ -41,7 +41,8 @@ OFAC FAQ 10 (updated 26 Oct 2026) lists these jurisdictions as under broad (comp
 | Country | Code on our list? | OFAC programme | Recommendation |
 |---|---|---|---|
 | Myanmar (Burma) | **MMK, yes** | Burma-Related Sanctions, EO 14014 (list-based; state banks MFTB and MICB designated). https://ofac.treasury.gov/sanctions-programs-and-country-information/burma | Keep until the lawyer rules. Research-o041 suggests holding MMK because of the FATF black list and the designated state banks. |
-| Venezuela | VES, no | Venezuela-Related Sanctions: government blocking (EO 13884), list-based otherwise. Named in FAQ 10 as a blocked government, not as a comprehensive jurisdiction. https://ofac.treasury.gov/faqs/10 | Nothing to remove. Do not add VES without lawyer sign-off. |
+| Venezuela | VES, no | Venezuela-Related Sanctions: government blocking (EO 13884), list-based otherwise. Named in FAQ 10 as a blocked government, not as a comprehensive jurisdiction. https://ofac.treasury.gov/faqs/10 | No currency to remove (see Pago Móvil below). Do not add VES without lawyer sign-off. |
+| Venezuela: **Pago Móvil** | method `PAGO_MOVIL`, **yes** (`data/payment-methods.json`, `packages/trade/src/payFields.ts`) | Same programme. A Venezuela-only interbank mobile payment in VES; research/payment-methods/latam-africa-me.md flags its US-sanctions exposure (partly eased by GL 57, Apr 2026). | **Kept pending owner or lawyer** (review sanctions m-3). Venezuela is list-based, not comprehensive, so the ruling does not remove it; the lawyer may say otherwise. |
 | Belarus | BYN, no | Belarus Sanctions, EO 14038 (list-based). https://ofac.treasury.gov/sanctions-programs-and-country-information | Nothing to remove. Do not add BYN without lawyer sign-off. |
 | Syria | SYP, no | PAARSS (list-based since 1 Jul 2025), sources above | Nothing to remove. |
 | Nicaragua, Sudan, South Sudan, Libya, Somalia, Yemen, Mali, CAR, DRC, Iraq, Lebanon, Afghanistan, Balkans | none on our list | List-based country programmes. https://ofac.treasury.gov/sanctions-programs-and-country-information | Nothing to remove. Re-check before adding any of their currencies. |
@@ -61,3 +62,4 @@ OFAC FAQ 10 (updated 26 Oct 2026) lists these jurisdictions as under broad (comp
 - **Trades already running**: they finish (review m-2). This includes a trade taken but not yet funded at deploy time, which the seller can still fund afterwards. Alternative: a moderator refunds funded ones, and unfunded ones are cancelled.
 - **Gift cards from RU, IR, KP or CU** are refused: the lead's reading of "block their currencies and payment methods that are unique to areas on sanction lists" (a gift card for one of those countries is unique to it).
 - **Myanmar (MMK)** stays, as a borderline list-based programme, until the owner or the lawyer rules.
+- **Pago Móvil (Venezuela)** stays, as a borderline list-based programme, until the owner or the lawyer rules (review sanctions m-3).
