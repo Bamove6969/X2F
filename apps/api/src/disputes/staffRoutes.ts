@@ -560,7 +560,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     )).rows[0]!;
     // Review N11 (f): the newest CHAT_READ_MAX envelopes, oldest first, and whether older ones exist.
     const { rows: newest } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
-      'select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 order by id desc limit $2',
+      'select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 order by chat_envelopes.id desc limit $2',
       [chat, CHAT_READ_MAX + 1],
     );
     const olderNotShown = newest.length > CHAT_READ_MAX;
