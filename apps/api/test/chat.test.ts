@@ -13,7 +13,7 @@ import {
 } from '@x2f/trade';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import sodium from 'libsodium-wrappers';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { CHAT_PURGED_MARK_DAYS, purgeChats } from '../src/chat/retention.js';
 import { CHAT_OPEN_BUCKET, CHAT_POST_BUCKET } from '../src/limits.js';
@@ -348,6 +348,27 @@ describe('chat identities and the attestation', () => {
 });
 
 describe('envelopes', () => {
+  it("review lead-trades-list-2 m3 (G19): a trade chat's line is published with the trade's part; an offer chat's with none", async () => {
+    const r = await readyChat();
+    const spy = vi.spyOn(app.events, 'publish');
+    const partsOf = () => spy.mock.calls.filter(([, ev]) => (ev as { chat?: string }).chat === r.chat).map(([, , o]) => o);
+    try {
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0))).statusCode).toBe(201);
+      expect(partsOf()).toEqual([{}, {}]);
+      const { code } = await seedTrade(deps, { sellerId: r.poster.id, buyerId: r.taker.id, poster: 'seller', offerId: r.offerId });
+      expect((await r.taker.b.post(`/v1/trades/${code}/chat`, {})).json()).toMatchObject({ chat: r.chat });
+      spy.mockClear();
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 1))).statusCode).toBe(201);
+      expect(partsOf()).toEqual([{ closed: false }, { closed: false }]);
+      await deps.db.query("update trades set state = 'released', closed_at = $2 where code = $1", [code, now]);
+      spy.mockClear();
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 2))).statusCode).toBe(201);
+      expect(partsOf()).toEqual([{ closed: true }, { closed: true }]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('waits for the attestation', async () => {
     const o = await openChat();
     const res = await o.taker.b.post(`/v1/chats/${o.chat}/envelopes`, {});
@@ -423,6 +444,19 @@ describe('envelopes', () => {
     const unknown = await stranger.b.get(`/v1/chats/${newTradeCode()}/envelopes`);
     expect([post.statusCode, get.statusCode, unknown.statusCode]).toEqual([404, 404, 404]);
     expect(get.json()).toEqual(unknown.json());
+  });
+
+  it('pages in id order across a digit boundary (ids ordered as numbers, never as their text)', async () => {
+    const r = await readyChat();
+    // Move the id sequence forward (never back) so this chat's ids go from 4 to 5 digits.
+    const { rows: top } = await deps.db.query<{ m: string }>('select coalesce(max(id), 0)::text as m from chat_envelopes');
+    await deps.db.query(`select setval(pg_get_serial_sequence('chat_envelopes', 'id'), $1)`, [Math.max(9998, Number(top[0]!.m))]);
+    for (let i = 0; i < 3; i++) expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', i))).statusCode).toBe(201);
+    const ids = (await deps.db.query<{ id: string }>('select id::text as id from chat_envelopes where chat = $1 order by chat_envelopes.id', [r.chat])).rows.map((x) => x.id);
+    const all = (await r.taker.b.get(`/v1/chats/${r.chat}/envelopes`)).json() as { envelopes: { id: string }[] };
+    expect(all.envelopes.map((e) => e.id)).toEqual(ids);
+    const rest = (await r.taker.b.get(`/v1/chats/${r.chat}/envelopes?after=${ids[0]}`)).json() as { envelopes: { id: string }[] };
+    expect(rest.envelopes.map((e) => e.id)).toEqual(ids.slice(1));
   });
 
   it('pages with after= and updates last_message_at', async () => {

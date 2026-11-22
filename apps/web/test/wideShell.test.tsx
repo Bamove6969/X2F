@@ -52,7 +52,7 @@ describe('Logo (logo D, docs/brand/svg on wip/design-brief)', () => {
 });
 
 describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards)', () => {
-  it('has the logo as the home link, the page name under it, then the six pages in board order', () => {
+  it('has the logo as the home link, the page name under it, then the pages in board order, with My trades after Trade (not on the boards yet)', () => {
     const host = rail('/sell');
     const nav = host.querySelector('nav[aria-label="Main"].x2f-rail')!;
     // The rail head carries the logo link and the Site news bell beside it (lead default 9 Nov; HEAD's
@@ -62,8 +62,8 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     expect(home.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     expect(nav.querySelector('.x2f-rail__page')!.textContent).toBe('Find a trade');
     const links = [...nav.querySelectorAll('a.x2f-rail__link')];
-    expect(links.map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
-    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/sell', '/post', '/wallets', '/profile', '/settings/security', '/feedback']);
+    expect(links.map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/sell', '/trades', '/post', '/wallets', '/profile', '/settings/security', '/feedback']);
     for (const a of links) expect(a.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     // The words "X2F" never stand in for the mark.
     expect(nav.textContent).not.toContain('X2F');
@@ -94,14 +94,16 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
 
   it('leaves out Post offer for a trader/vendor without the Offers role', () => {
     const host = rail('/sell', false, true);
-    expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile', 'Settings', 'Help']);
+    expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'My trades', 'Wallets', 'Profile', 'Settings', 'Help']);
   });
 
   it('leaves out owner-only routes (Wallets) for a team member while keeping Settings (Order #2 M3)', () => {
+    // `trades` is left at its default (true) here: My trades has its own case below (review trades-list m1).
     // Member with offers role (wallets=false): Trade, Post offer, Profile, Settings, Help (never Wallets)
     const hostWithOffers = rail('/sell', true, false);
     expect([...hostWithOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
+      'My trades',
       'Post offer',
       'Profile',
       'Settings',
@@ -109,6 +111,7 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     ]);
     expect([...hostWithOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.getAttribute('href'))).toEqual([
       '/sell',
+      '/trades',
       '/post',
       '/profile',
       '/settings/security',
@@ -119,6 +122,7 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     const hostWithoutOffers = rail('/sell', false, false);
     expect([...hostWithoutOffers.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
+      'My trades',
       'Profile',
       'Settings',
       'Help',
@@ -128,6 +132,7 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     const hostOwner = rail('/sell', true, true);
     expect([...hostOwner.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
+      'My trades',
       'Post offer',
       'Wallets',
       'Profile',
@@ -139,11 +144,21 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
     const hostLoading = rail('/sell', true, false);
     expect([...hostLoading.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual([
       'Trade',
+      'My trades',
       'Post offer',
       'Profile',
       'Settings',
       'Help',
     ]);
+  });
+
+  it('leaves out My trades for a session that may read no part of the trades list (review m1), as the phone tab bar does', () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/sell']}>
+        <DesktopRail trades={false} />
+      </MemoryRouter>,
+    );
+    expect([...host.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
   });
 });
 

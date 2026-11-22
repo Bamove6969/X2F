@@ -5,7 +5,7 @@ import type { Deps } from '../src/app.js';
 import { EventBus, type LiveEvent } from '../src/events/bus.js';
 import { PUBLIC_NAME_COLUMN, acceptedEvent, publicName } from '../src/events/publicName.js';
 import { SECURITY_HEADERS } from '../src/static/serve.js';
-import { seedAccount } from './helpers/accounts.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { openEvents, until, type SseStream } from './helpers/sse.js';
 import { Browser, ORIGIN } from './helpers/totp.js';
@@ -452,6 +452,37 @@ describe('a session revoked between requireTrader and attach (security review ME
     const started = Date.now();
     await Promise.race([s.ended, new Promise((_, fail) => setTimeout(() => fail(new Error('stream outlived the shortened session')), 2000))]);
     expect(Date.now() - started).toBeLessThan(1500);
+  });
+
+  it("review lead-trades-list-2 m4: a member's trades boxes changed in that window end the stream (401); other boxes do not", async () => {
+    const owner = await trader();
+    await makeVendor(deps, owner.id);
+    const memberStream = async (after: string[] | null) => {
+      const name = `Evm${String(++n).padStart(4, '0')}`;
+      const loginId = await seedAccount(deps, { loginName: `${name}.lg`, displayName: `${name}-placeholder`, kind: 'member' });
+      const now = deps.clock();
+      const { rows } = await deps.db.query<{ id: string }>(
+        `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+         values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
+        [owner.id, name, name.toLowerCase(), ['trades-see-active'], now, loginId],
+      );
+      const b = new Browser(app);
+      expect((await b.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+      // A boxes write whose closeSession ran before this stream was attached (so it closed nothing).
+      afterAttach = async () => {
+        if (after !== null) await deps.db.query('update team_members set abilities = $2 where id = $1', [rows[0]!.id, after]);
+      };
+      return stream(b);
+    };
+    for (const after of [['trades-see-active', 'trades-see-history'], ['trades-see-history'], ['offers-see']]) {
+      const s = await memberStream(after);
+      expect([after, s.status], after.join()).toEqual([after, 401]);
+      await until(() => app.events.size === 0);
+    }
+    // A change that leaves both trades boxes as they were keeps the stream.
+    const kept = await memberStream(['trades-see-active', 'offers-see']);
+    expect(kept.status).toBe(200);
+    kept.close();
   });
 
   it('an event published before the headers go out is delivered after them, in order', async () => {

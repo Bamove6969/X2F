@@ -13,7 +13,7 @@ import {
 } from '@x2f/trade';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import sodium from 'libsodium-wrappers';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { CHAT_PURGED_MARK_DAYS, purgeChats } from '../src/chat/retention.js';
 import { CHAT_OPEN_BUCKET, CHAT_POST_BUCKET } from '../src/limits.js';
@@ -184,6 +184,23 @@ describe('the chat key record', () => {
       expect(v).toEqual(rec);
       const mine = await openChatKeyRecord(v, by, by === 'buyer' ? r.buyer : r.seller);
       expect(sodium.memcmp(mine, tk)).toBe(true);
+    }
+  });
+
+  it("review lead-trades-list-2 n1: the key's publish says the linked trade's part (open or completed)", async () => {
+    for (const closed of [false, true]) {
+      const r = await readyChat();
+      const { code } = await seedTrade(deps, { sellerId: r.poster.id, buyerId: r.taker.id, poster: 'seller', offerId: r.offerId });
+      expect((await r.taker.b.post(`/v1/trades/${code}/chat`, {})).json()).toMatchObject({ chat: r.chat });
+      if (closed) await deps.db.query("update trades set state = 'released', closed_at = $2 where code = $1", [code, now]);
+      const spy = vi.spyOn(app.events, 'publish');
+      try {
+        expect((await side(r, 'seller').b.post(`/v1/chats/${r.chat}/key`, await keyRecord(r, 'seller', await newChatKey()))).statusCode).toBe(201);
+        const parts = spy.mock.calls.filter(([, ev]) => (ev as { chat?: string }).chat === r.chat).map(([, , o]) => o);
+        expect(parts).toEqual([{ closed }, { closed }]);
+      } finally {
+        spy.mockRestore();
+      }
     }
   });
 

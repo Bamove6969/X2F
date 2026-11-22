@@ -31,6 +31,7 @@ import { tradeApp } from './helpers/tradeApp.js';
 import { SIG } from './helpers/signature.js';
 import { openTermsSignature } from '../src/termsSignature.js';
 import { flexBody } from './helpers/offers.js';
+import { newProofId } from '@x2f/proof';
 
 // Plan 2 Task 18: team members (spec 6.7, R44). Real Postgres, one database for the file; each
 // test makes its own team accounts.
@@ -1884,5 +1885,275 @@ describe('S-105 (owner p11-25): a member shows in chats as "<lead display name> 
        values ($1, 'Clashing1', 'clashing1', '{offers-see}', $2, $2, 1)`,
       [owner.id, deps.clock()],
     )).rejects.toThrow();
+  });
+});
+
+// Review trades-list I1, applied to every per-trade read (lead, 12 Nov 2026): a member reads an open
+// trade's attestation, confirmations and dispute with See active trades, and a completed trade's
+// with See trade history, as the room and the trades list do; the live stream carries a member only
+// the events of the parts their boxes allow.
+describe('a member reads each part of the trades only with its box (review trades-list I1)', () => {
+  const ACTIVE = ['trades-see-active'];
+  const HISTORY = ['trades-see-history'];
+  /** A well-formed proof id no trade has (the blur-check routes check the trade first). */
+  const PROOF_ID = newProofId();
+  const status = (res: { statusCode: number; json(): unknown }) => (res.statusCode === 403 ? (res.json() as { error: string }).error : res.statusCode);
+
+  /** An open trade of `owner`'s (secured) and a completed one (refunded on a buyer's cancel, its tx confirmed). */
+  async function twoTrades(owner: Who): Promise<{ open: string; done: string }> {
+    const other = await team();
+    const o = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
+    await driveTo(deps, o.trade, 'secured');
+    const d = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
+    await driveTo(deps, d.trade, 'secured');
+    expect((await other.browser.post(`/v1/trades/${d.code}/events`, { type: 'buyer-cancel' })).statusCode).toBe(200);
+    const tx = randomBytes(32).toString('hex');
+    await applyEvent(deps, d.code, { type: 'settled', kind: 'buyer-cancel', txHash: tx }, 'system');
+    nodeCounts.set(tx, 10);
+    expect((await loadTrade(deps.db, d.code))!.closedAt).not.toBeNull();
+    return { open: o.code, done: d.code };
+  }
+
+  it('the bus: a member sink gets an event of a part only with its box; an event of no part needs See active trades', () => {
+    const bus = new EventBus({ perAccount: 5, global: 10 });
+    const owner = fakeSink();
+    const a = fakeSink();
+    const h = fakeSink();
+    const both = fakeSink();
+    const legacy = fakeSink();
+    bus.attach('team', owner, 'o');
+    bus.attach('team', a, 'a', { member: true, abilities: ACTIVE });
+    bus.attach('team', h, 'h', { member: true, abilities: HISTORY });
+    bus.attach('team', both, 'b', { member: true, abilities: [...ACTIVE, ...HISTORY] });
+    expect(bus.publish('team', { type: 'trade', code: 'O', state: 'paid' }, { closed: false })).toBe(1);
+    bus.publish('team', { type: 'trade', code: 'C', state: 'released' }, { closed: true });
+    bus.publish('team', { type: 'nudge', from: 'x', context: 'offer' });
+    const seen = (k: { got: string[] }) => k.got.map((d) => (JSON.parse(d.slice(6)) as { code?: string; type: string }).code ?? 'nudge');
+    expect(seen(owner)).toEqual(['O', 'C', 'nudge']);
+    expect(seen(a)).toEqual(['O', 'nudge']);
+    expect(seen(h)).toEqual(['C']);
+    expect(seen(both)).toEqual(['O', 'C', 'nudge']);
+    // A sink attached with no boxes named (an older caller) is not widened: it gets none of a part's.
+    bus.attach('team', legacy, 'l', { member: true, abilities: [] });
+    bus.publish('team', { type: 'trade', code: 'C2', state: 'released' }, { closed: true });
+    expect(legacy.got).toEqual([]);
+  });
+
+  it('the trade event publisher says which part each event is: open or completed', async () => {
+    const calls: Array<[string, unknown, unknown]> = [];
+    const events = { publish: (id: string, ev: unknown, o?: unknown) => (calls.push([id, ev, o]), 0) };
+    const publish = tradeEventPublisher({ events: events as never, push: { send: async () => true } });
+    await publish({ code: 'A', state: 'paid', sellerId: 's', buyerId: 'b', closedAt: null } as never, { type: 'mark-paid' } as never, 'buyer');
+    await publish({ code: 'B', state: 'released', sellerId: 's', buyerId: 'b', closedAt: new Date() } as never, { type: 'settled' } as never, 'system');
+    await publish({ code: 'C', state: 'refunded', sellerId: 's', buyerId: 'b', closedAt: new Date() } as never, { type: 'return-confirmed' } as never, 'system');
+    expect(calls.map(([, ev, o]) => [(ev as { code: string }).code, o])).toEqual([
+      ['A', { closed: false }], ['A', { closed: false }],
+      ['B', { closed: true }], ['B', { closed: true }],
+      ['C', { closed: true }], ['C', { closed: true }],
+    ]);
+  });
+
+  it('the attestation: open with See active trades, completed with See trade history', async () => {
+    const owner = await team();
+    const { open, done } = await twoTrades(owner);
+    const active = await member(owner.id, { abilities: ACTIVE });
+    const history = await member(owner.id, { abilities: HISTORY });
+    expect(status(await active.browser.get(`/v1/trades/${open}/attestation`))).not.toBe('forbidden');
+    expect(status(await active.browser.get(`/v1/trades/${done}/attestation`))).toBe('forbidden');
+    expect(status(await history.browser.get(`/v1/trades/${done}/attestation`))).not.toBe('forbidden');
+    expect(status(await history.browser.get(`/v1/trades/${open}/attestation`))).toBe('forbidden');
+  });
+
+  it('review lead-trades-list-2 B1: the signed ruling statement needs the box for the part; a stranger gets 404', async () => {
+    const owner = await team();
+    const { open, done } = await twoTrades(owner);
+    const active = await member(owner.id, { abilities: ACTIVE });
+    const history = await member(owner.id, { abilities: HISTORY });
+    // No statement is stored, so a read that gets through is 204.
+    expect(status(await active.browser.get(`/v1/trades/${open}/ruling-statement`))).toBe(204);
+    expect(status(await active.browser.get(`/v1/trades/${done}/ruling-statement`))).toBe('forbidden');
+    expect(status(await history.browser.get(`/v1/trades/${done}/ruling-statement`))).toBe(204);
+    expect(status(await history.browser.get(`/v1/trades/${open}/ruling-statement`))).toBe('forbidden');
+    const stranger = await twoTrades(await team());
+    expect(status(await active.browser.get(`/v1/trades/${stranger.open}/ruling-statement`))).toBe(404);
+  });
+
+  it("review lead-trades-list-2 m2: 404 before 403: a member whose box does not match a stranger's trade's part gets 404 on every trade route", async () => {
+    const owner = await team();
+    const stranger = await twoTrades(await team());
+    const acts = ['trades-mark-paid', 'disputes-appeal', 'disputes-answer', 'chat-reply'];
+    // See active trades only, on the stranger's completed trade; See trade history only, on its open one.
+    const cases = [
+      { m: await member(owner.id, { abilities: [...ACTIVE, ...acts] }), code: stranger.done },
+      { m: await member(owner.id, { abilities: [...HISTORY, ...acts] }), code: stranger.open },
+    ];
+    for (const { m, code } of cases) {
+      expect((await m.browser.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+      const b = m.browser;
+      const got = {
+        room: status(await b.get(`/v1/trades/${code}`)),
+        attestation: status(await b.get(`/v1/trades/${code}/attestation`)),
+        confirmations: status(await b.get(`/v1/trades/${code}/confirmations`)),
+        rulingStatement: status(await b.get(`/v1/trades/${code}/ruling-statement`)),
+        dispute: status(await b.get(`/v1/trades/${code}/dispute`)),
+        blurChecks: status(await b.get(`/v1/trades/${code}/blur-checks`)),
+        blurAnswer: status(await b.post(`/v1/trades/${code}/blur-checks/${PROOF_ID}`, { correct: true })),
+        announce: status(await b.post(`/v1/trades/${code}/proofs/${PROOF_ID}/blur-check`, { blur: 'auto' })),
+        events: status(await b.post(`/v1/trades/${code}/events`, { type: 'mark-paid', fiatCents: '1' })),
+        appeal: status(await b.post(`/v1/trades/${code}/appeal`, { why: 'The moderator missed my bank statement.' })),
+      };
+      expect(got).toEqual(Object.fromEntries(Object.keys(got).map((k) => [k, 404])));
+    }
+  });
+
+  it("review lead-trades-list-2 m3 (G20): the dispute store's publish says the trade's part", async () => {
+    const owner = await team();
+    const other = await team();
+    const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    expect((await owner.browser.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
+    const opened = await owner.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'x' });
+    expect(opened.statusCode, opened.body).toBe(200);
+    await publishRuling(deps, d.code, { outcome: 'release-to-buyer' });
+    const closed = (await loadTrade(deps.db, d.code))!.closedAt !== null;
+    // The appeal is a dispute-store change (withDispute), published to both sides with the part.
+    const spy = vi.spyOn(app.events, 'publish');
+    try {
+      const appealed = await owner.browser.post(`/v1/trades/${d.code}/appeal`, { why: 'The moderator missed my bank statement.' });
+      expect(appealed.statusCode, appealed.body).toBe(200);
+      const mine = spy.mock.calls.filter(([, ev]) => (ev as { code?: string }).code === d.code);
+      expect(mine.length).toBeGreaterThanOrEqual(2);
+      for (const [, , o] of mine) expect(o).toEqual({ closed });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('the confirmations of a completed trade need See trade history', async () => {
+    const owner = await team();
+    const { done } = await twoTrades(owner);
+    const active = await member(owner.id, { abilities: ACTIVE });
+    const history = await member(owner.id, { abilities: HISTORY });
+    expect(status(await active.browser.get(`/v1/trades/${done}/confirmations`))).toBe('forbidden');
+    // Nothing recorded by the refused read.
+    expect((await loadTrade(deps.db, done))!.cancelConfirmableAt).toBeNull();
+    expect(status(await history.browser.get(`/v1/trades/${done}/confirmations`))).toBe(200);
+    expect(status(await owner.browser.get(`/v1/trades/${done}/confirmations`))).toBe(200);
+  });
+
+  it("the dispute of an open (disputed) trade needs See active trades besides the disputes box", async () => {
+    const owner = await team();
+    const other = await team();
+    const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    expect((await owner.browser.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+    const withActive = await member(owner.id, { abilities: ['disputes-answer', ...ACTIVE] });
+    const withHistory = await member(owner.id, { abilities: ['disputes-answer', ...HISTORY] });
+    for (const m of [withActive, withHistory]) expect((await m.browser.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
+    const opened = await owner.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'x' });
+    expect(opened.statusCode, opened.body).toBe(200);
+    expect(status(await withActive.browser.get(`/v1/trades/${d.code}/dispute`))).toBe(200);
+    expect(status(await withHistory.browser.get(`/v1/trades/${d.code}/dispute`))).toBe('forbidden');
+  });
+
+  it('re-verify m3: a member acts on a trade (POST events) only with the box for its part, besides the event\'s own', async () => {
+    const owner = await team();
+    const seller = await team();
+    // An open trade where the owner is the buyer, secured: mark-paid is the owner side's event.
+    const o = await seedTrade(deps, { sellerId: seller.id, buyerId: owner.id, poster: 'seller' });
+    const secured = await driveTo(deps, o.trade, 'secured');
+    const paidHistory = await member(owner.id, { abilities: ['trades-mark-paid', ...HISTORY] });
+    const paidActive = await member(owner.id, { abilities: ['trades-mark-paid', ...ACTIVE] });
+    const markPaid = { type: 'mark-paid', fiatCents: secured.fiatCents.toString() };
+    expect(err(await paidHistory.browser.post(`/v1/trades/${o.code}/events`, markPaid))).toEqual({ status: 403, error: 'forbidden' });
+    expect((await loadTrade(deps.db, o.code))!.state).toBe('secured');
+    const ok = await paidActive.browser.post(`/v1/trades/${o.code}/events`, markPaid);
+    expect(ok.statusCode, ok.body).toBe(200);
+
+    // A completed trade (refunded on the buyer's cancel): Confirm cancel needs See trade history.
+    const { done } = await twoTrades(owner);
+    const cancelActive = await member(owner.id, { abilities: ['trades-confirm-cancel', ...ACTIVE] });
+    const cancelHistory = await member(owner.id, { abilities: ['trades-confirm-cancel', ...HISTORY] });
+    expect(err(await cancelActive.browser.post(`/v1/trades/${done}/events`, { type: 'confirm-cancel' }))).toEqual({ status: 403, error: 'forbidden' });
+    expect((await loadTrade(deps.db, done))!.cancelConfirmedAt).toBeNull();
+    const confirmed = await cancelHistory.browser.post(`/v1/trades/${done}/events`, { type: 'confirm-cancel' });
+    expect(confirmed.statusCode, confirmed.body).toBe(200);
+  });
+
+  it('re-verify m3: a member appeals only with the box for the trade\'s part, besides the appeal box', async () => {
+    const owner = await team();
+    const other = await team();
+    const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    const withActive = await member(owner.id, { abilities: ['disputes-appeal', ...ACTIVE] });
+    const withHistory = await member(owner.id, { abilities: ['disputes-appeal', ...HISTORY] });
+    for (const b of [owner.browser, withActive.browser, withHistory.browser]) expect((await b.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
+    const opened = await owner.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'x' });
+    expect(opened.statusCode, opened.body).toBe(200);
+    await publishRuling(deps, d.code, { outcome: 'release-to-buyer' });
+    // Whichever part the ruled trade is in now, the other part's box alone is refused, and writes nothing.
+    const closed = (await loadTrade(deps.db, d.code))!.closedAt !== null;
+    const [right, wrong] = closed ? [withHistory, withActive] : [withActive, withHistory];
+    const why = { why: 'The moderator missed my bank statement.' };
+    expect(err(await wrong.browser.post(`/v1/trades/${d.code}/appeal`, why))).toEqual({ status: 403, error: 'forbidden' });
+    expect((await deps.db.query('select 1 from dispute_appeals where code = $1', [d.code])).rowCount).toBe(0);
+    const appealed = await right.browser.post(`/v1/trades/${d.code}/appeal`, why);
+    // Main's appeals review S1: a member without the Answer the moderator box gets 204, no dispute view.
+    expect(appealed.statusCode, appealed.body).toBe(204);
+    expect((await deps.db.query('select 1 from dispute_appeals where code = $1', [d.code])).rowCount).toBe(1);
+  });
+
+  it("a trade's review stays the account owner's: a member is refused whatever their boxes", async () => {
+    const owner = await team();
+    const { done } = await twoTrades(owner);
+    const m = await member(owner.id, { abilities: [...ACTIVE, ...HISTORY] });
+    expect(err(await m.browser.get(`/v1/trades/${done}/review`))).toEqual({ status: 403, error: 'owner-only' });
+  });
+
+  it('the live stream: a member with See trade history only may open it, and gets only completed trades\' events', async () => {
+    const owner = await team();
+    const history = await member(owner.id, { abilities: HISTORY });
+    const active = await member(owner.id, { abilities: ACTIVE });
+    try {
+      const h = await stream(history.browser);
+      expect(h.status).toBe(200);
+      const a = await stream(active.browser);
+      expect(a.status).toBe(200);
+      const own = await stream(owner.browser);
+      app.events.publish(owner.id, { type: 'trade', code: 'OPEN-ONE', state: 'secured' }, { closed: false });
+      app.events.publish(owner.id, { type: 'trade', code: 'DONE-ONE', state: 'refunded' }, { closed: true });
+      // An event of no part (a nudge) goes where it always went: the See active trades box.
+      app.events.publish(owner.id, { type: 'nudge', from: 'someone', context: 'offer' });
+      app.events.publish(owner.id, { type: 'trade', code: 'LAST', state: 'paid' }, { closed: false });
+      await own.waitFor((e) => (e as { code?: string }).code === 'LAST');
+      await a.waitFor((e) => (e as { code?: string }).code === 'LAST');
+      app.events.publish(owner.id, { type: 'trade', code: 'LAST-DONE', state: 'released' }, { closed: true });
+      await h.waitFor((e) => (e as { code?: string }).code === 'LAST-DONE');
+      await own.waitFor((e) => (e as { code?: string }).code === 'LAST-DONE');
+      const codes = (st: SseStream) => st.events.map((e) => (e as { code?: string; type: string }).code ?? (e as { type: string }).type);
+      expect(codes(own)).toEqual(['OPEN-ONE', 'DONE-ONE', 'nudge', 'LAST', 'LAST-DONE']);
+      expect(codes(a)).toEqual(['OPEN-ONE', 'nudge', 'LAST']);
+      expect(codes(h)).toEqual(['DONE-ONE', 'LAST-DONE']);
+    } finally {
+      for (const st of streams.splice(0)) st.close();
+      await until(() => !app.events.delivered(owner.id));
+    }
+  });
+
+  it("a change to a member's trades boxes ends their live stream, so it reopens with the new parts", async () => {
+    const owner = await team();
+    const m = await member(owner.id, { abilities: [...ACTIVE, ...HISTORY] });
+    const st = await stream(m.browser);
+    expect(st.status).toBe(200);
+    // Dropping See trade history keeps See active trades, so the stream may reopen, with the new parts.
+    const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: ACTIVE.join(',') });
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities: ACTIVE, confirmToken });
+    expect(res.statusCode, res.body).toBe(200);
+    await st.ended;
+    expect((await stream(m.browser)).status).toBe(200);
+    for (const s of streams.splice(0)) s.close();
   });
 });

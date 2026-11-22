@@ -2,7 +2,8 @@ import { Link, useLocation } from 'react-router';
 import { Icon, type IconName } from './icons.js';
 import './ui.css';
 
-// The phone tab bar from the Main board: Trade, Post offer, Wallets, Profile. Trade covers both
+// The phone tab bar from the Main board: Trade, Post offer, Wallets, Profile, with My trades after
+// Trade (the trades list, not on the board yet). Trade covers both
 // the Sell and the Buy browse screens. The boards with the tab bar (Main, BuyMain) have no primary
 // action, so the bar carries no data-primary (their parity runs with { primary: false }). Each tab
 // carries where it was pressed (router state `from`), so PostOffer's Close can return there.
@@ -10,15 +11,17 @@ import './ui.css';
 // review 2026-11-01, shot 26: no tab that only leads to a refusal).
 const TABS: { to: string; label: string; icon: IconName; match: (path: string) => boolean }[] = [
   { to: '/sell', label: 'Trade', icon: 'trade', match: (p) => /^\/(sell|buy)(\/|$)/.test(p) },
+  // My trades (register D-005; DESIGNER-REVIEW: no board has a fifth tab yet). COPY-UNSIGNED
+  { to: '/trades', label: 'My trades', icon: 'list-check', match: (p) => /^\/trades(\/|$)/.test(p) },
   { to: '/post', label: 'Post offer', icon: 'plus-circle', match: (p) => /^\/post(\/|$)/.test(p) },
   { to: '/wallets', label: 'Wallets', icon: 'wallet', match: (p) => /^\/wallets(\/|$)/.test(p) },
   { to: '/profile', label: 'Profile', icon: 'user', match: (p) => /^\/profile(\/|$)/.test(p) },
 ];
 
-export function BottomNav({ postOffers = true, wallets = true }: { postOffers?: boolean; wallets?: boolean | undefined }) {
+/** `postOffers` false leaves out Post offer; `wallets` false leaves out Wallets; `trades` false leaves out My trades (review trades-list m1: a session that may read no part of the list). */
+export function BottomNav({ postOffers = true, wallets = true, trades = true }: { postOffers?: boolean; wallets?: boolean | undefined; trades?: boolean }) {
   const { pathname } = useLocation();
-  let tabs = postOffers ? TABS : TABS.filter((t) => t.to !== '/post');
-  if (!wallets) tabs = tabs.filter((t) => t.to !== '/wallets');
+  const tabs = TABS.filter((t) => (postOffers || t.to !== '/post') && (wallets || t.to !== '/wallets') && (trades || t.to !== '/trades'));
   return (
     <nav aria-label="Main" className="x2f-bottom-nav">
       {tabs.map((t) => {

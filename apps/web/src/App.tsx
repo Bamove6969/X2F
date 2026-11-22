@@ -17,6 +17,7 @@ import { BadgeSettings } from './screens/profile/BadgeSettings.js';
 import { MyProfile, TraderProfileRoute } from './screens/profile/Profile.js';
 import { DisputeReview } from './screens/review/DisputeReview.js';
 import { PublicRecord, RecordExport } from './screens/profile/Record.js';
+import { Trades } from './screens/Trades.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
 import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
@@ -53,7 +54,7 @@ import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
 import { BehindTheDoor, isInside } from './session/frontDoor.js';
-import { mayPostOffers, mayViewWallets, memberOf } from './session/member.js';
+import { mayOpenLiveEvents, mayPostOffers, mayReadTrades, mayViewWallets, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { ScreenHeader, screenName } from './ui/ScreenHeader.js';
@@ -104,7 +105,7 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
   const helpInside = HELP.test(pathname) && isInside(session);
   const frame = outside ? 'centred' : helpInside ? 'rail' : wideFrameOf(pathname);
   let top: ReactNode = null;
-  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} wallets={mayViewWallets(session)} />;
+  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} wallets={mayViewWallets(session)} trades={mayReadTrades(session)} />;
   else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop name={screenName(pathname)} />;
   return (
     <div data-shell={wide ? 'desktop' : 'phone'} data-wide-frame={wide ? frame : undefined} className={wide ? 'x2f-desktop' : undefined}>
@@ -125,7 +126,7 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
         <Outlet />
       </div>
       <ChangesCapPopup />
-      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} wallets={mayViewWallets(session)} /> : null}
+      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} wallets={mayViewWallets(session)} trades={mayReadTrades(session)} /> : null}
     </div>
   );
 }
@@ -213,7 +214,11 @@ function LiveAccepted({ member }: { member: boolean }) {
   );
 }
 
-/** Only full trader sessions have live events (`GET /v1/events` is `requireTrader`). */
+
+/**
+ * A full trader session (`kind` trader, `level` full, current Terms), for the alarm listener and the
+ * freeze watch; a member needs the Trades role. The live stream uses `mayOpenLiveEvents` instead.
+ */
 function isTrader(session: ReturnType<typeof useSession>): boolean {
   if (session.status !== 'signed-in') return false;
   const me = session.me;
@@ -263,7 +268,8 @@ export function App() {
       <RouterBridge />
       <SessionPrompt />
       <IdleReminder />
-      {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
+      {/* Live events: full trader sessions; a member's with either trades box (session/member.ts). */}
+      {mayOpenLiveEvents(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       {/* W-006: the loud alarm rings in an open tab when a push arrives (off until turned on). */}
       {isTrader(session) ? <AlarmListener /> : null}
       {/* D-016: a frozen account owner gets the notice once per freeze after a login (GET /v1/account/freeze is the owner's alone). */}
@@ -288,6 +294,7 @@ export function App() {
             <Route path="/buy/:methodId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
             <Route path="/sell/:methodId/:offerId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
             <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+            <Route path="/trades" element={<Trades />} />
             <Route path="/trade/:code" element={<TradeRoom />} />
             {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
             <Route path="/trade/:code/dispute" element={<DisputeScreen />} />

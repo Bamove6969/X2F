@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
-import { STREAM_ABILITY } from '../team/perms.js';
+import { hasAbility } from '../team/abilities.js';
+import { STREAM_ABILITY, TRADE_PART_ABILITY } from '../team/perms.js';
 import { ApiError } from '../errors.js';
 import type { EventBus } from './bus.js';
 
@@ -38,7 +39,8 @@ const RETRY_MS = 3000;
 export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamOptions = {}): void {
   const heartbeatMs = o.heartbeatMs ?? HEARTBEAT_MS;
   const maxStreamMs = o.maxStreamMs ?? MAX_STREAM_MS;
-  // The account owner, or a team member with Trades (Plan 2 Task 18): the stream carries the account's trade events.
+  // The account owner, or a team member with either trades box (Plan 2 Task 18; review trades-list I1):
+  // the stream carries the account's trade events, a member's only those of the parts their boxes allow.
   const requireTrader = requireSession({ kinds: ['trader'], touch: false, member: STREAM_ABILITY });
 
   app.get('/v1/events', { preHandler: requireTrader }, async (req: FastifyRequest, reply: FastifyReply) => {
@@ -73,7 +75,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
         else pending.push(data);
       },
       close: end,
-    }, req.auth.sessionId, { member: req.auth.memberId !== null });
+    }, req.auth.sessionId, { member: req.auth.memberId !== null, abilities: req.auth.memberAbilities });
     if (!detach) throw new ApiError(429, 'busy');
 
     // Check the session again now that the stream is attached (security review, TOCTOU): a
@@ -93,6 +95,14 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
       );
       live = rows.length > 0;
       if (rows[0] && rows[0].expires_at.getTime() < endsAt.getTime()) endsAt = rows[0].expires_at;
+      // Review lead-trades-list-2 m4: a member's trades boxes changed after requireTrader read them
+      // (that write's closeSession found no stream yet) would leave this stream on the old parts, so
+      // the boxes are read again too; any change to the parts ends it and the reconnect takes the new.
+      if (live && req.auth.memberId !== null) {
+        const m = await db.query<{ abilities: string[] }>('select abilities from team_members where id = $1 and removed_at is null', [req.auth.memberId]);
+        const parts = (set: readonly string[]) => Object.values(TRADE_PART_ABILITY).map((a) => hasAbility(set, a)).join();
+        live = m.rows[0] !== undefined && parts(m.rows[0].abilities) === parts(req.auth.memberAbilities);
+      }
     } catch (e) {
       end();
       throw e;
