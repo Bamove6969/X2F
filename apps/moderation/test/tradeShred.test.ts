@@ -5,12 +5,12 @@
 // links) only when its OWN records say the trade is over, past its own clock, out of any dispute, its
 // chats already shredded, and its escrow shown EMPTY by its own watch (review-p7-retention round 2,
 // R2-I2: never on the API's word). An open trade is never touched, whatever the API says.
-import { randomBytes } from 'node:crypto';
+import { createHmac, hkdfSync, randomBytes } from 'node:crypto';
 import { newTradeCode } from '@x2f/core';
 import { TRADE_KEEP_DAYS, CHAT_AFTER_DISPUTE_DAYS, newWatchState } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
 import { emptyGate, forgetTrade, GATE_OTHER_FIELDS, GATE_TRADE_FIELDS, tradeRulingPending } from '../src/gate/store.js';
-import { loadEscrow, saveEscrow } from '../src/keystore.js';
+import { loadEscrow, saveEscrow, sweepTag } from '../src/keystore.js';
 import { loadParty, saveParty, TRADE_SHRED_KEPT, TRADE_SHRED_TABLES, walletPassword, type GateRun } from '../src/main.js';
 import { claimSweep } from '../src/watcher.js';
 import { fakeNetwork, hash, inFunding, makeCtx, moderation, newTrade, outcomeJson, secured, stopAll, type Ctx } from './harness.js';
@@ -541,5 +541,78 @@ describe('review 22 Nov m3 and Q-B', () => {
     expect(await m.handle.tradeShredTick()).toEqual([t]);
     expect((await ctx.db.query('select id::text, trade from used_log_entries where id = $1', [id])).rows).toEqual([{ id, trade: '' }]);
     expect(await dumpAll(ctx)).not.toContain(t);
+  });
+});
+
+describe('re-review 22 Nov r1-r4: the never-release guards', () => {
+  /** A dropped watch row with no escrow address and no setup-done, its watch state as given, and no escrow state unless given. */
+  async function heldWith(state: ReturnType<typeof newWatchState>, escrow?: ReturnType<typeof escrowState>): Promise<string[]> {
+    const { ctx, net, m } = await setup();
+    const t = await attestedOnly(ctx);
+    await ctx.db.query('insert into mod_watch (trade, state, watching) values ($1, $2, false)', [t, JSON.stringify(dumpWatchState(state))]);
+    if (escrow) await saveEscrow(ctx.db, ctx.keystoreKey, t, escrow);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 400 * DAY);
+    net.tradeShred = [order(ctx, t)];
+    const done = await m.handle.tradeShredTick();
+    const kept = (await ctx.db.query('select 1 from signed_terms where trade = $1', [t])).rowCount;
+    await stopAll();
+    return [...done, kept === 1 && m.logs.includes('trade-shred-held-escrow') ? 'held' : 'gone'];
+  }
+
+  it('r1: a watch that ever saw a chain fact, a close, a sweep or a late coin never takes the no-escrow path', async () => {
+    const tx = hash('3');
+    const cases: Record<string, ReturnType<typeof newWatchState>> = {
+      lastChain: { ...newWatchState(), lastChain: { receivedAtomic: 0n, unlockedAtomic: 0n, confirmations: 0 } },
+      closedAt: { ...newWatchState(), closedAt: new Date('2026-10-01T00:00:00Z') },
+      settledTx: { ...newWatchState(), settledTx: tx },
+      sweepTxs: { ...newWatchState(), sweepTxs: [tx] },
+      lateReported: { ...newWatchState(), lateReported: [tx] },
+    };
+    for (const [name, state] of Object.entries(cases)) expect(await heldWith(state), name).toEqual(['held']);
+    // The control: an untouched watch state with nothing else does take it.
+    expect(await heldWith(newWatchState())).toHaveLength(2);
+  });
+
+  it('r2: a sealed escrow state with a release, earlier releases or a shown sweep is never taken as never finalised', async () => {
+    const cases: Record<string, ReturnType<typeof escrowState>> = {
+      release: { ...escrowState(), release: { phase: 'built' } as unknown as null },
+      releases: { ...escrowState(), releases: [{ phase: 'done' }] } as ReturnType<typeof escrowState>,
+      shown: { ...escrowState(), shown: [{ txHash: hash('4'), height: 10, spentAtomic: '1' }] } as ReturnType<typeof escrowState>,
+    };
+    for (const [name, escrow] of Object.entries(cases)) expect(await heldWith(newWatchState(), escrow), name).toEqual(['held']);
+    expect(await heldWith(newWatchState(), escrowState())).toHaveLength(2);
+  });
+
+  it('r3: after a restart with the API showing cancelled, a row that has an escrow address keeps watching', async () => {
+    // Any stored address counts, even one modPartyPlan itself would not read as one (''): only a row
+    // with NO address stops here. With a real address the party is started again and watched.
+    for (const address of ['5'.padEnd(95, 'E'), '']) {
+      const { ctx, net, m, fetch } = await setup();
+      const t = await newTradeFor(m, net);
+      await ctx.db.query('update mod_watch set escrow_address = $2 where trade = $1', [t, address]);
+      await m.handle.stop();
+      const again = await moderation(ctx, fetch);
+      net.states.set(t, 'cancelled');
+      await again.handle.watch();
+      expect((await ctx.db.query('select watching from mod_watch where trade = $1', [t])).rows, `address '${address.slice(0, 4)}'`).toEqual([{ watching: true }]);
+      expect(again.logs).not.toContain('watch-ended-no-escrow');
+      await stopAll();
+    }
+  });
+
+  it('r4: sweepTag is HMAC-SHA256 under HKDF(key, info x2f/mod/sweeps) of x2f/mod/sweep-spent/v1|<tx>, and not under the gate or wallet subkeys', () => {
+    const key = new Uint8Array(32).fill(7);
+    const tx = 'ab'.repeat(32);
+    const under = (label: string): string =>
+      createHmac('sha256', Buffer.from(hkdfSync('sha256', key, new Uint8Array(0), `x2f/mod/${label}`, 32))).update(`x2f/mod/sweep-spent/v1|${tx}`, 'utf8').digest('hex');
+    const tag = sweepTag(key, tx).toString('hex');
+    // Known answer (computed once with node:crypto, 22 Nov).
+    expect(tag).toBe('e7b20b720ceefdc0a252c4d39bfa9105d230c891a7823527f8745ee0e20eac9a');
+    expect(tag).toBe(under('sweeps'));
+    expect(tag).not.toBe(under('gate'));
+    expect(tag).not.toBe(under('wallet'));
+    expect(under('gate')).toBe('de3e14a5d82a1546bfecc874433b75f9e59e359c9b16c006822cca75998489b1');
+    expect(under('wallet')).toBe('4bf5daaf6a124a5808c83840fe1a1ea56b211be35eb3a0b4c398815291b84bf4');
+    expect(sweepTag(key, 'cd'.repeat(32)).toString('hex')).not.toBe(tag);
   });
 });
