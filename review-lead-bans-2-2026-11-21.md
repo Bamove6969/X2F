@@ -128,3 +128,49 @@ No test was weakened. The removed test lines are:
 - **OQ3.** A lifetime *trade* ban records no identifiers.
 - **OQ4.** During a timed ban, re-registering with a new name and key is possible (brief item 3).
 - **Lead default (21 Nov).** The ruling card carries no ban. Whether a ruling should ban, and whom, is an owner call.
+
+---
+
+## Addendum (22 Nov): `wip/lead-trades-list-2` b7fb9969, `git diff 6a4d0fed b7fb9969` (main a8cfc6ac bans merged; NEEDS_TRADES_LIST resolved)
+
+Reviewer: the same, in a detached worktree, `.claude/worktrees/rev-tl2`. No changes to the branch. The commits in scope are 3b79f2dd (the merge of main a8cfc6ac), 881ddf8a (the RED tests) and b7fb9969 (the fix).
+
+### Verdict: APPROVE
+
+There are no findings. m1 and m2 above still apply on this branch, because the bans code is unchanged.
+
+### What was checked
+- **The gate.** `GET /v1/trades` joins `ACCOUNT` (banState.ts:158), so it passes only while `hasUnfinished`. With nothing unfinished it answers 403 `banned` (tested).
+- **The session flag.** `req.auth.siteBanned` is `row.kind === 'trader' && row.site_ban_reason !== null` (sessions.ts:530). It comes from the same session-query ban the gate reads, on `s.account_id`, so team members' sessions get it too.
+- **The list filter.** list.ts adds `and (not $7::boolean or ${UNFINISHED_SQL})` on top of the party filter it already had, `(t.buyer_account_id = $1 or t.seller_account_id = $1)`, with `$1` = `req.auth.accountId`.
+  - A site-banned owner or member can therefore list only the account's own unfinished trades.
+  - **Finished trades:** never listed. A closed trade with an open dispute stays, which matches what the gate already lets the trade room open.
+  - **Anyone else's trades:** never listed, because of the party filter.
+  - The SQL fragment is a constant. Its `t` alias is `trades`, and its `d` alias does not collide with anything.
+- **Policy choice.** Leaving finished trades out, rather than answering 403, is consistent:
+  - the trade-room gate already serves exactly the unfinished set;
+  - the per-trade `GET /v1/trades/:code` on a finished trade stays 403 `banned`, so the list cannot be used to reach one.
+
+  I agree with it.
+- **The part boxes and lastActedBy.**
+  - `partsFor` and the `status` 403 `forbidden` check come before the query and are unchanged.
+  - `lastActedBy` still requires `memberId === null && level === 'full'`.
+  - The tests pin all of it: owner; members with both boxes, with active only, and with history only; history 403 for active-only; members never get `lastActedBy`.
+- **The merge resolutions.**
+  - For app.ts, frontDoor.ts, take.ts, App.tsx and flows.test, every line either parent added since the merge base 2da4f93d is present in 3b79f2dd. No line either parent removed has come back.
+  - `git diff --cc` shows no hand-edited hunks except the comment in flows.test, which now names both reads. Its `NOT_AUTH_CLIENT` list keeps both `GET /v1/account/ban` and `GET /v1/trades`.
+
+### Guard-reverts (staff/bans.test)
+
+| Guard reverted | Result |
+|---|---|
+| The list filter removed | caught (3) |
+| `siteBanned` forced false | caught (3) |
+| The `GET /v1/trades` gate entry removed | caught (3) |
+| `GET /v1/trades` moved to `ALWAYS` | caught (1: idle banned account must get 403) |
+
+### Tests at b7fb9969 (no lock, nice 10)
+- api `staff/bans`, `tradesList`, `frontDoor`, `take`, `sessions`, `team`, `schema`: **354/354** (7 files).
+- auth-client `flows`: **15/15**.
+- `tsc --noEmit` for apps/api and apps/web: clean.
+- Not run: Playwright (the lead said to skip it; a cloud runner covers it), and the full `npm run check`.
