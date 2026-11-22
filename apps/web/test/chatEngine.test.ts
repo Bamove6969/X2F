@@ -1006,6 +1006,119 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     for (const v of ['Jane Doe', 'jane@example.ca', 'X1']) expect(JSON.stringify(store.records.get(chat)), v).not.toContain(v);
   });
 
+  /** A package this reader's table cannot show (a box it does not know), sealed as the seller at `seq`. */
+  const unknownBoxPackage = (seq: number, parts: Participants) =>
+    sellerRaw({ text: `${TEXT}\nFuture box: X1`, pay: { v: 2, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }, { key: 'futureBox', value: 'X1' }] } }, seq, parts);
+
+  it('review sanctions m-1: an unshowable package that came before the escrow was secured is no line until it is, then the neutral line in its place', async () => {
+    api.view.tradeSecuredAt = null;
+    await engine().sync(chat);
+    const parts = attest();
+    api.add('seller', await unknownBoxPackage(0, parts));
+    await fromSeller('later', parts, 'seller', 1);
+    const line = (l: { text: string; unreadablePay?: true; gapBefore: boolean }) => [l.text, l.unreadablePay ?? false, l.gapBefore];
+    const early = await engine().sync(chat);
+    expect(early.paySecured).toBe(false);
+    expect(early.lines.map(line)).toEqual([['later', false, false]]);
+    // Still not secured after a reopen: still no line.
+    expect((await engine().sync(chat)).lines.map(line)).toEqual([['later', false, false]]);
+    // Secured: the payer is told, in the package's place, and nothing of it is on the device.
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    expect((await engine().sync(chat)).lines.map(line)).toEqual([['', true, false], ['later', false, false]]);
+    for (const v of ['Jane Doe', 'jane@example.ca', 'X1']) expect(JSON.stringify(store.records.get(chat)), v).not.toContain(v);
+  });
+
+  it('review sanctions m-2: the line after an unshowable package has no gap marker (in this sync and a later one), but a real gap before or after it still shows', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    const e = engine();
+    const gaps = async () => (await e.sync(chat)).lines.map((l) => [l.text, l.unreadablePay ?? false, l.gapBefore]);
+    // In one sync: the package at seq 0, the next line at seq 1.
+    api.add('seller', await unknownBoxPackage(0, parts));
+    await fromSeller('did you get them?', parts, 'seller', 1);
+    expect(await gaps()).toEqual([['', true, false], ['did you get them?', false, false]]);
+    // A later sync (and a reopened app) reads its seq from the stored receipt: another package at seq 2, then seq 3.
+    api.add('seller', await unknownBoxPackage(2, parts));
+    expect((await gaps()).at(-1)).toEqual(['', true, false]);
+    await fromSeller('and again?', parts, 'seller', 3);
+    expect((await gaps()).at(-1)).toEqual(['and again?', false, false]);
+    // Seq 4 never came: the package at 5 shows the gap; seq 6 does not; seq 8 after it (7 missing) does.
+    api.add('seller', await unknownBoxPackage(5, parts));
+    await fromSeller('six', parts, 'seller', 6);
+    await fromSeller('eight', parts, 'seller', 8);
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.unreadablePay ?? false, l.gapBefore])).toEqual([
+      ['', true, false],
+      ['did you get them?', false, false],
+      ['', true, false],
+      ['and again?', false, false],
+      ['', true, true],
+      ['six', false, false],
+      ['eight', false, true],
+    ]);
+  });
+
+  it('review sanctions m-2: before the escrow is secured, a gap before a held unshowable package shows on the next line, and moves back onto it once secured', async () => {
+    api.view.tradeSecuredAt = null;
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('hi', parts, 'seller', 0);
+    // Seq 1 never came.
+    api.add('seller', await unknownBoxPackage(2, parts));
+    await fromSeller('later', parts, 'seller', 3);
+    const line = (l: { text: string; unreadablePay?: true; gapBefore: boolean }) => [l.text, l.unreadablePay ?? false, l.gapBefore];
+    expect((await engine().sync(chat)).lines.map(line)).toEqual([['hi', false, false], ['later', false, true]]);
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    expect((await engine().sync(chat)).lines.map(line)).toEqual([['hi', false, false], ['', true, true], ['later', false, false]]);
+  });
+
+  it('review sanctions m-2: a gap before a package held until the escrow is secured (owner Q12) is never hidden', async () => {
+    api.view.tradeSecuredAt = null;
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('hi', parts, 'seller', 0);
+    // Seq 1 never came.
+    sellerState = { ...sellerState, nextSeq: 2 };
+    await sellerPay(INTERAC, parts);
+    await fromSeller('later', parts);
+    const line = (l: { text: string; pay?: unknown; gapBefore: boolean }) => [l.text, l.pay !== undefined, l.gapBefore];
+    expect((await engine().sync(chat)).lines.map(line)).toEqual([['hi', false, false], ['later', false, true]]);
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    expect((await engine().sync(chat)).lines.map(line)).toEqual([['hi', false, false], [TEXT, true, true], ['later', false, false]]);
+  });
+
+  it("review sanctions n-3 (GR18): this device's own package refused for its contents is never the payer's neutral line", async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    const buyer = made[0]!;
+    // A package this buyer's own identity signed (another bundle of its own app, say) that its table cannot show.
+    api.add('buyer', await sealChat({ trade: channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'Payment details\nFull name: Jane Doe\nEmail: other@example.ca', pay: INTERAC }, tk: await tkOf(parts), me: buyer }));
+    await fromSeller('hello', parts);
+    const s = await engine().sync(chat);
+    expect((await store.load(chat))!.receipts.map((r) => [r.from, r.refused === true, r.refusedPay === true])).toEqual([['buyer', true, true], ['seller', false, false]]);
+    expect(s.lines.map((l) => [l.from, l.text, l.unreadablePay ?? false])).toEqual([['seller', 'hello', false]]);
+  });
+
+  it('review sanctions n-3 (GR20): a refused package is stored under its signer, never what its header says when read again', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    const sealed = await unknownBoxPackage(0, parts);
+    // The same envelope, whose header names the seller while chatCrypto opens it (so its signature
+    // checks out) and this reader, the buyer, on any other read (the engine's own look at the header).
+    let opening = 0;
+    let other = 0;
+    const lying = { ...sealed };
+    Object.defineProperty(lying, 'from', {
+      enumerable: true,
+      get: () => (/openChatMessage/.test(new Error().stack ?? '') ? (opening++, 'seller') : (other++, 'buyer')),
+    });
+    api.add('seller', lying);
+    const s = await engine().sync(chat);
+    expect(opening).toBeGreaterThan(0);
+    expect(other).toBeGreaterThan(0);
+    expect((await store.load(chat))!.receipts.map((r) => [r.from, r.refusedPay === true])).toEqual([['seller', true]]);
+    expect(s.lines.map((l) => [l.from, l.unreadablePay ?? false])).toEqual([['seller', true]]);
+  });
+
   it('review M1 (pay details): only what may become valid later is tried again: a moderator line outside a dispute, a package before the escrow is secured', async () => {
     api.view.tradeSecuredAt = null;
     await engine().sync(chat);
