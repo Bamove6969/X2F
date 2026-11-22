@@ -3015,6 +3015,37 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     expect(t.state.rulingReads?.buyer).toBe(1);
   });
 
+  // Re-review 22 Nov, m6 (N10, N12): a device that comes back after the close with its ruling intent
+  // still open, while the outcome that landed is the one the ruling replaced (the party was
+  // committed to it): the close proves the prior, and records it as the settled outcome, of its kind.
+  it('m6: the close of a record whose ruling intent replaced an outcome that then landed proves that prior and records it, of its own kind', async () => {
+    const t = await disputed({ settledElsewhereMs: 0 });
+    const release = t.parties.settles.filter((x) => x.role === 'buyer' && x.o.builder === 'seller').at(-1)!.o;
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    await t.buyer.runtime.stopAll();
+    expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'ruling', done: false, prior: { kind: 'release' } });
+    // Meanwhile the seller-built release the party was committed to landed and the trade closed.
+    const same = (o: { to: readonly { address: string; amountAtomic: bigint }[] }) => json(o.to) === json(release.to);
+    t.parties.landedFn = (role, o) => (role === 'buyer' && o.builder === 'seller' && same(o) ? 'cd'.repeat(32) : null);
+    t.state.view = tradeView({ state: 'released', paidAt, settling: 'release' });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    const again = await t.mk('buyer', { idb: t.buyer.idb, settledElsewhereMs: 0 });
+    await again.runtime.resumeAll();
+    expect(await again.status((s) => s.phase === 'done' || s.phase === 'error')).toMatchObject({ phase: 'done', error: null });
+    expect((await again.store.load(CODE))?.intent).toMatchObject({ kind: 'release', done: true, auto: true, outcome: { builder: 'seller', to: release.to } });
+  });
+
+  // Re-review 22 Nov, m5 (G20): the loser rule trusts only a ruling's own close (no settlement kind).
+  it('G20: a verified loser whose trade closes as a seller-built release (settling: release) is escrow-failed, never settled without its device', async () => {
+    const t = await disputed({ settledElsewhereMs: 0 });
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(async () => (await t.seller.store.load(CODE))?.rulingLost === true);
+    t.state.view = tradeView({ state: 'released', paidAt, settling: 'release' });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    expect(await t.seller.status((s) => s.phase === 'settled-without-device' || s.phase === 'error')).toMatchObject({ phase: 'error', error: 'escrow-failed' });
+  });
+
   // The security reviewer's two probes (22 Nov), committed as they reproduced M1 and M2.
   it('review probe A (M1): the buyer won, its ruling co-sign still open, the escrow emptied and the API says refunded (settling null): never settled-without-device', async () => {
     // No grace for its own open settle, so the verdict comes at once (the probe waited 5 min otherwise).

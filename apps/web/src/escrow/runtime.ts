@@ -1435,6 +1435,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const emptyInBlock = f.balance === 0n && f.unlocked === 0n && f.incoming.every((x) => x.confirmations > 0);
       let ownDone = r.intent?.done === true;
       let ownOpen = r.intent !== null && r.intent.outcome !== null && !r.intent.done;
+      let provenDone = false;
       // Fail closed: every sign of coins counts, and a record without the field is unknown.
       const coins = r.fundedSeen === true || r.intent?.outcome != null || r.paidSeen === true || (r.acceptedAtomic ?? null) !== null || f.balance > 0n || f.incoming.length > 0;
       const neverFunded = r.fundedSeen === false && !coins;
@@ -1463,6 +1464,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         if (proven !== null && landedAs !== null && r.intent !== null && r.intent.outcome !== null && !r.intent.done) {
           const was = r.intent.kind === 'ruling' && landedAs === replaced ? r.intent.prior! : r.intent;
           r.intent = { kind: was.kind, outcome: landedAs, done: true, auto: was.auto };
+          // As settle() does (the 20 Nov flake): no refresh shows `done` before this record is saved.
+          this.doneUnsaved = true;
+          provenDone = true;
           this.emptiedWhileSettling = null;
           ownDone = true;
           ownOpen = false;
@@ -1507,6 +1511,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         if (!this.error && t - this.emptiedWhileSettling >= settledElsewhereMs) this.fail('escrow-failed', { integrity: true }); // confirmed settled elsewhere
       } else this.emptiedWhileSettling = null;
       if (changed) await this.persist();
+      if (provenDone) this.doneUnsaved = false;
       const settled = r.settleSeenAt != null || neverFunded || r.settledWithoutDevice === true;
       if (!this.error && emptyInBlock && settled && t >= r.closedSeenAt + KEEP_AFTER_CLOSE_MS) {
         await this.close();
