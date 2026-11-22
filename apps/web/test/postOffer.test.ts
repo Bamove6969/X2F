@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { GIFT_CARD_TERMS } from '@x2f/trade';
 import { CURRENCIES } from '../src/screens/browse/api.js';
 import { parseMethods, parsePrice } from '../src/screens/post/api.js';
-import { COUNTRIES } from '../src/screens/post/countries.js';
+import { COUNTRIES, isCountryCode } from '../src/screens/post/countries.js';
 import {
   COUNTRY_REQUIRED,
   GIFT_CARD_TERMS_UNTICKED,
@@ -197,9 +197,15 @@ describe('formatting', () => {
 });
 
 describe('countries (the gift card\'s country, Revision 2026-10-21)', () => {
-  it('lists every ISO 3166-1 alpha-2 code once, named in English and sorted by name', () => {
-    expect(COUNTRIES).toHaveLength(249);
-    expect(new Set(COUNTRIES.map((c) => c.code)).size).toBe(249);
+  it('lists every ISO 3166-1 alpha-2 code once but RU, IR, KP and CU, named in English and sorted by name', () => {
+    // owner 12 Nov (Russia, Iran; US sanction laws): no gift card from Russia, Iran, North Korea or Cuba.
+    expect(COUNTRIES).toHaveLength(245);
+    expect(new Set(COUNTRIES.map((c) => c.code)).size).toBe(245);
+    for (const banned of ['RU', 'IR', 'KP', 'CU']) {
+      expect(COUNTRIES.map((c) => c.code), banned).not.toContain(banned);
+      expect(isCountryCode(banned), banned).toBe(false);
+    }
+    expect(isCountryCode('UA')).toBe(true);
     for (const c of COUNTRIES) {
       expect(c.code).toMatch(/^[A-Z]{2}$/);
       expect(c.name.length).toBeGreaterThan(2);

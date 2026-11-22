@@ -16,7 +16,7 @@ import type { ImportedLine } from '../traders/tradedTotal.js';
  * Behind the front door (owner, 8 Nov 2026: no free tours), so only a set-up trader (or a member of
  * one) reads it. `:name` is the PUBLIC display name, matched on `display_key`; a private login name
  * never matches. Only live trader accounts have profiles (never staff, the owner, a member's login,
- * or a disabled, banned or closed account: `traderIdByName`).
+ * or a disabled, site-banned or closed account: `traderIdByName`).
  * An unknown name, and a trader who blocked the viewer (traders/blocks.ts `hasBlocked`), get the
  * same 404 `not-found`; the blocker still opens the blocked person's profile.
  *
@@ -73,13 +73,19 @@ export interface TraderProfile {
 
 /**
  * A live trader account by its public display name, or null: unknown, not a trader, or disabled or
- * closed (a ban, a staff switch-off, the inactivity close: lead call 18 Nov on OQ1). Each answers
- * exactly as an unknown name; the rows stay for moderators.
+ * closed (a ban, a staff switch-off, the inactivity close: lead call 18 Nov on OQ1), or site-banned
+ * at `now` (Plan 4 Task 27: a site ban in force, timed or lifetime, read by the clock as the gate
+ * reads it; lead, 21 Nov). Each answers exactly as an unknown name; the rows stay for moderators.
+ * A trade ban alone keeps the profile (it hides only the offers).
  */
-export async function traderIdByName(q: Queryable, name: string): Promise<string | null> {
+export async function traderIdByName(q: Queryable, name: string, now: Date): Promise<string | null> {
   const { rows } = await q.query<{ id: string }>(
-    "select id from accounts where display_key = lower($1) and kind = 'trader' and disabled_at is null and closed_at is null",
-    [name],
+    `select a.id from accounts a
+      where a.display_key = lower($1) and a.kind = 'trader' and a.disabled_at is null and a.closed_at is null
+        and not exists (select 1 from account_bans b
+                         where b.account_id = a.id and b.kind = 'site' and b.ended_at is null and b.lifted_at is null
+                           and (b.until is null or b.until > $2))`,
+    [name, now],
   );
   return rows[0]?.id ?? null;
 }
@@ -91,7 +97,7 @@ export async function traderIdByName(q: Queryable, name: string): Promise<string
 export async function visibleTrader(q: Queryable, req: FastifyRequest): Promise<string> {
   const raw = (req.params as { name?: unknown }).name;
   if (typeof raw !== 'string' || raw.length < 1 || raw.length > NAME_MAX) throw new ApiError(404, 'not-found');
-  const id = await traderIdByName(q, raw);
+  const id = await traderIdByName(q, raw, req.server.deps.clock());
   if (id === null || (await hasBlocked(q, id, req.auth.accountId))) throw new ApiError(404, 'not-found');
   return id;
 }

@@ -154,6 +154,8 @@ export async function api<T = unknown>(path: string, init: ApiInit = {}): Promis
   const { error, ...extra } = body;
   const err = new ApiCallError(res.status, typeof error === 'string' ? error : 'internal', extra);
   if (err.status === 403 && err.code === 'terms-required') redirect('/terms', '');
+  // Plan 4 Task 27: a site ban answers every other trader route 403 `banned`; show the notice.
+  if (err.status === 403 && err.code === 'banned') redirect('/account/banned', '');
   if (err.status === 409 && err.code === 'no-wallet') redirect('/wallets', 'add=1');
   // Plan 4 Task 8: the site went into maintenance; the shell re-reads GET /v1/site and shows it.
   if (err.status === 503 && err.code === 'maintenance') maintenanceListener?.();

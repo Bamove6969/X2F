@@ -72,6 +72,10 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'DELETE', url: '/staff/v1/members/:id', perm: 'staff.manage', allowed: OWNER },
   // D-032 (owner G60): the owner's tapped reset of a staff member's security.
   { method: 'POST', url: '/staff/v1/members/:id/reset-security', perm: 'staff.manage', allowed: OWNER, body: {} },
+  // Plan 4 Task 27: bans (senior moderators and the owner).
+  { method: 'GET', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.ban', allowed: ['owner', 'senior'] },
+  { method: 'POST', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.ban', allowed: ['owner', 'senior'], body: {} },
+  { method: 'POST', url: '/staff/v1/accounts/:id/bans/:banId/lift', perm: 'accounts.ban', allowed: ['owner', 'senior'], body: {} },
   { method: 'GET', url: '/staff/v1/terms', perm: 'public-invite', allowed: 'public' },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { displayName: 'Matrix1', loginName: 'matrix1' } },

@@ -158,6 +158,8 @@ describe('tapChallenge', () => {
       { kind: 'reset-staff-security', accountId: 'a1', inviteId: 'i2', tokenHash: 'e'.repeat(64), expiresAt: '2027-01-01T00:00:00.000Z' },
       { kind: 'add-owner-key', credentialId: 'cred', publicKeySha256: 'd'.repeat(64) },
       { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 },
+      { kind: 'ban-account', accountId: 'a1', banId: 'b1', banKind: 'site', ruleId: 'abuse', until: null },
+      { kind: 'lift-ban', accountId: 'a1', banId: 'b1' },
       ruling,
       { ...ruling, outcome: 'seller-sends-xmr' },
     ].map((i) => stampIssuedAt(i as KeyTapIntent, AT));
@@ -170,6 +172,12 @@ describe('tapChallenge', () => {
     expect(hasIssuedAt('fee-sweep')).toBe(false);
     // Lead call on the D-032 reset gap: the gate orders the owner's tapped reset like the other registry taps.
     expect(hasIssuedAt('reset-staff-security')).toBe(true);
+    // Lead call (18 Nov, batch 10a merge): a tapped ban and its lift are stamped and ordered like the other tapped actions.
+    expect(hasIssuedAt('ban-account')).toBe(true);
+    expect(hasIssuedAt('lift-ban')).toBe(true);
+    const banTap: KeyTapIntent = { kind: 'ban-account', accountId: 'a1', banId: 'b1', banKind: 'trade', ruleId: 'abuse', until: null };
+    expect(() => tapChallenge(banTap, nonce)).toThrow(TypeError);
+    expect(hex(tapChallenge(stampIssuedAt(banTap, AT), nonce))).not.toBe(hex(tapChallenge(stampIssuedAt(banTap, new Date(AT.getTime() + 1)), nonce)));
     const stop: KeyTapIntent = { kind: 'emergency-stop' };
     expect(stampIssuedAt(stop, AT)).toEqual({ kind: 'emergency-stop', issuedAt: AT.toISOString() });
     expect(stampIssuedAt(ruling, AT)).toEqual(ruling);

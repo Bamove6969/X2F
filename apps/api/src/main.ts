@@ -17,6 +17,7 @@ import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
 import { settleDueHolds } from './auth/hold.js';
+import { settleEndedBans } from './staff/bans.js';
 import { settleDueChanges } from './auth/holdChanges.js';
 import { syncHeldTradesJob } from './trades/held.js';
 import { startDisputeTimers } from './disputes/timers.js';
@@ -123,6 +124,8 @@ const stopHolds = startRetention(
     settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log, app.push), syncHeldTradesJob(app.tradePublish),
     // J-20 (owner p7-11): members' sessions end when their working hours do.
     endMemberSessionsOutsideHours(app.events),
+    // Plan 4 Task 27: a timed ban that reached its end is written ended and logged reinstated.
+    settleEndedBans,
   ],
   60_000,
 );

@@ -305,7 +305,7 @@ describe('POST /v1/account/offers/status', () => {
   it('an offer whose method went under legal review cannot go back on (method-unavailable)', async () => {
     const p = await poster();
     const a = await post(p);
-    // As if SBP had been available when posted.
+    // As if SBP (removed, owner 12 Nov: Russian anything is banned) had been available when posted.
     await renameOfferMethod(deps.db, a, 'SBP');
     await deps.db.query(`update offers set status = 'paused' where id = $1`, [a]);
     expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'paused', refused: 'method-unavailable' }]);

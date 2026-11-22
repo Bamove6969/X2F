@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { siteBanAllows } from '../banState.js';
 import { UNCHOSEN_SESSION_HOURS, type AccountKind } from '@x2f/accounts';
+import type { BanReasonCode } from '@x2f/staff';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
@@ -364,6 +366,12 @@ interface SessionRow {
   app: SessionRealm['app'];
   /** Set when the request carried the token before the last extend (review S-m1): its own end. */
   prev_until: Date | null;
+  /**
+   * Plan 4 Task 27: the account's site ban in force at the request's time (one at most: placing a
+   * second of the same kind is refused), read in this same query (batch 10a: one round trip).
+   */
+  site_ban_reason: BanReasonCode | null;
+  site_ban_until: Date | null;
 }
 
 /** Marks the preHandlers `requireSession` returns, so the app can list the routes that run with a session. */
@@ -413,21 +421,28 @@ export function requireSession(
     const deps = req.server.deps;
     const token = presentedToken(req);
     if (!token) throw new ApiError(401, 'not-authenticated');
+    const now = deps.clock();
     const { rows } = await deps.db.query<SessionRow>(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
               s.hold_until, a.kind, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
               tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
               ma.terms_version as member_terms_version, tm.hours as member_hours, s.app,
-              case when s.token_hash = $1 then null else s.prev_token_until end as prev_until
+              case when s.token_hash = $1 then null else s.prev_token_until end as prev_until,
+              sb.reason_code as site_ban_reason, sb.until as site_ban_until
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
          left join accounts ma on ma.id = tm.member_account_id
+         left join lateral (
+           select b.reason_code, b.until from account_bans b
+            where b.account_id = s.account_id and b.kind = 'site' and b.ended_at is null and b.lifted_at is null
+              and (b.until is null or b.until > $2)
+            limit 1
+         ) sb on true
         where s.token_hash = $1 or s.prev_token_hash = $1`,
-      [tokenHash(token)],
+      [tokenHash(token), now],
     );
     const found = rows[0];
-    const now = deps.clock();
     if (!found || found.revoked_at !== null) throw new ApiError(401, 'not-authenticated');
     // Review S-m1: the token before the last extend lasts to the end it had then, never longer
     // than the session itself (a later shortening or expiry ends it too).
@@ -464,6 +479,15 @@ export function requireSession(
       throw new ApiError(403, 'recovery-hold', { holdUntil: row.hold_until.toISOString() });
     }
     if (opts.kinds && !opts.kinds.includes(row.kind)) throw new ApiError(403, 'wrong-account-kind');
+    // Plan 4 Task 27 (2026-10-29b): a site-banned account (its team members' sessions included)
+    // reaches only the notice, and while something is unfinished what finishes it (banState.ts);
+    // every other route is 403 `banned` with the kind, the general reason and the end (null: lifetime).
+    // The ban comes from the session query above (sb), so an account without one costs no extra read.
+    if (row.kind === 'trader' && row.site_ban_reason !== null) {
+      if (!(await siteBanAllows(deps.db, row.account_id, { method: req.method, url: req.routeOptions.url ?? '', params: req.params, body: req.body }))) {
+        throw new ApiError(403, 'banned', { kind: 'site', reasonCode: row.site_ban_reason, until: row.site_ban_until?.toISOString() ?? null });
+      }
+    }
     // Review 2026-11-08 F1 (the front door: nobody gets in without signing the agreement): a team
     // member must have accepted the current Terms on their own login account too; the team
     // account's acceptance is the account owner's and never stands in for theirs.
