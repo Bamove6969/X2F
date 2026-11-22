@@ -789,5 +789,7 @@ describe('watchShowsEmpty', () => {
     expect(watchShowsEmpty({ ...s, escalationPending: true })).toBe(false);
     expect(watchShowsEmpty({ ...s, reopened: true })).toBe(false);
     expect(watchShowsEmpty({ ...s, channelsClosed: false })).toBe(false);
+    // Review 22 Nov m1: never before the watch saw the trade close, even with the channels closed.
+    expect(watchShowsEmpty({ ...newWatchState(), channelsClosed: true })).toBe(false);
   });
 });

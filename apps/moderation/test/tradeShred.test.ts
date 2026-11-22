@@ -7,12 +7,14 @@
 // R2-I2: never on the API's word). An open trade is never touched, whatever the API says.
 import { randomBytes } from 'node:crypto';
 import { newTradeCode } from '@x2f/core';
-import { TRADE_KEEP_DAYS, CHAT_AFTER_DISPUTE_DAYS } from '@x2f/trade';
+import { TRADE_KEEP_DAYS, CHAT_AFTER_DISPUTE_DAYS, newWatchState } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
-import { emptyGate, forgetTrade, tradeRulingPending } from '../src/gate/store.js';
+import { emptyGate, forgetTrade, GATE_OTHER_FIELDS, GATE_TRADE_FIELDS, tradeRulingPending } from '../src/gate/store.js';
 import { loadEscrow, saveEscrow } from '../src/keystore.js';
 import { loadParty, saveParty, TRADE_SHRED_KEPT, TRADE_SHRED_TABLES, walletPassword, type GateRun } from '../src/main.js';
-import { fakeNetwork, hash, inFunding, makeCtx, moderation, outcomeJson, secured, stopAll, type Ctx } from './harness.js';
+import { claimSweep } from '../src/watcher.js';
+import { fakeNetwork, hash, inFunding, makeCtx, moderation, newTrade, outcomeJson, secured, stopAll, type Ctx } from './harness.js';
+import { dumpWatchState } from '../src/watcher.js';
 
 const DAY = 86_400_000;
 const ctxs: Ctx[] = [];
@@ -54,6 +56,15 @@ async function dumpAll(ctx: Ctx): Promise<string> {
     parts.push(...rows.map((r) => r.j));
   }
   return parts.join('\n');
+}
+
+/** A trade attested through the work list (tick), its party started by the watcher; returns its code. */
+async function newTradeFor(m: Awaited<ReturnType<typeof moderation>>, net: ReturnType<typeof fakeNetwork>['net']): Promise<string> {
+  const t = await newTrade();
+  net.work = [t.work];
+  expect(await m.handle.tick()).toEqual([t.code]);
+  net.work = [];
+  return t.code;
 }
 
 const order = (ctx: Ctx, trade: unknown) => ({ trade, purgedAt: new Date(ctx.clock.now.getTime() - 1000).toISOString() });
@@ -306,6 +317,14 @@ describe('the list of what goes and what stays', () => {
       `select table_name as t from information_schema.columns where table_schema = 'public' and column_name = 'trade' order by 1`,
     );
     expect(rows.map((r) => r.t).sort()).toEqual([...TRADE_SHRED_TABLES, ...TRADE_SHRED_KEPT].sort());
+    // Review 22 Nov m2: any column that can name a trade or its escrow (a trade code under another
+    // name, an escrow address, a sweep tx) is in a table the shred reaches by its `trade` column.
+    const { rows: hits } = await ctx.db.query<{ t: string; c: string }>(
+      `select table_name as t, column_name as c from information_schema.columns
+        where table_schema = 'public' and column_name in ('trade', 'trade_code', 'code', 'escrow_address', 'tx_hash') order by 1, 2`,
+    );
+    const known = new Set<string>([...TRADE_SHRED_TABLES, ...TRADE_SHRED_KEPT]);
+    expect(hits.filter((h) => !known.has(h.t)).map((h) => `${h.t}.${h.c}`)).toEqual([]);
     // The trade-keyed key material is all on the delete list.
     for (const t of ['mod_party_state', 'mod_wallet_secrets', 'mod_escrow_state', 'signed_terms', 'mod_watch', 'mod_sweeps']) expect(TRADE_SHRED_TABLES).toContain(t);
   });
@@ -343,3 +362,184 @@ describe("the ruling gate's per-trade records (gate.bin)", () => {
   });
 });
 
+
+describe("review 22 Nov m2: gate.bin's fields", () => {
+  it('every GateState field is classed as holding a trade (forgetTrade clears it) or not', () => {
+    expect(Object.keys(emptyGate()).sort()).toEqual([...GATE_TRADE_FIELDS, ...GATE_OTHER_FIELDS].sort());
+    expect([...GATE_TRADE_FIELDS].sort()).toEqual(['executions', 'rulingsSeen']);
+  });
+});
+
+/** A sealed escrow state as the escrow party saves it, with just the fields the M1 rule reads. */
+const escrowState = (o: { address?: string | null; sent?: Record<string, unknown> } = {}) => ({ v: 1, step: 'msig.make:1', address: o.address ?? null, sent: o.sent ?? {}, received: {}, release: null });
+
+describe('review 22 Nov M1: a trade cancelled in setup before any escrow address existed', () => {
+  it('without a restart: the watch stops it, and once past its own clock every row and key goes', async () => {
+    const { ctx, net, m } = await setup();
+    const t = await newTradeFor(m, net);
+    await saveEscrow(ctx.db, ctx.keystoreKey, t, escrowState());
+    net.states.set(t, 'setup');
+    await m.handle.watch();
+    net.states.set(t, 'cancelled');
+    await m.handle.watch();
+    expect((await ctx.db.query('select watching, escrow_address, setup_done_at from mod_watch where trade = $1', [t])).rows).toEqual([{ watching: false, escrow_address: null, setup_done_at: null }]);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 31 * DAY);
+    net.states.delete(t);
+    net.tradeShred = [order(ctx, t)];
+    expect(await m.handle.tradeShredTick()).toEqual([t]);
+    for (const [tbl, rows] of Object.entries(await rowsOf(ctx, t))) expect(rows, tbl).toEqual([]);
+  });
+
+  it('after a restart, listed cancelled: the watch row stops watching; listed or not, it goes once past its own clock', async () => {
+    for (const listed of [true, false]) {
+      const { ctx, net, m, fetch } = await setup();
+      const t = await newTradeFor(m, net);
+      net.states.set(t, 'setup');
+      await m.handle.watch();
+      await m.handle.stop();
+      const again = await moderation(ctx, fetch);
+      if (listed) {
+        net.states.set(t, 'cancelled');
+        await again.handle.watch();
+        expect((await ctx.db.query('select watching from mod_watch where trade = $1', [t])).rows).toEqual([{ watching: false }]);
+      } else {
+        net.states.delete(t);
+        await again.handle.watch();
+      }
+      ctx.clock.now = new Date(ctx.clock.now.getTime() + 31 * DAY);
+      net.states.delete(t);
+      net.tradeShred = [order(ctx, t)];
+      expect(await again.handle.tradeShredTick(), `listed ${listed}`).toEqual([t]);
+      expect(await loadParty(ctx.db, ctx.keystoreKey, t)).toBeNull();
+      await stopAll();
+    }
+  });
+
+  it('never for a trade that ever had an escrow address: in the watch row, in the sealed escrow state, or sent to the peers', async () => {
+    const cases: Array<{ name: string; row?: { escrow_address?: string; setup_done?: boolean }; escrow?: ReturnType<typeof escrowState> }> = [
+      { name: 'watch row address', row: { escrow_address: '5'.padEnd(95, 'E') } },
+      { name: 'setup-done reported', row: { setup_done: true } },
+      { name: 'sealed state address', escrow: escrowState({ address: '5'.padEnd(95, 'E') }) },
+      { name: 'sent msig.addr', escrow: escrowState({ sent: { 'msig.addr:0': { address: '5'.padEnd(95, 'E') } } }) },
+      { name: 'sent msig.ready', escrow: escrowState({ sent: { 'msig.ready:0': { address: '5'.padEnd(95, 'E') } } }) },
+    ];
+    for (const c of cases) {
+      const { ctx, net, m } = await setup();
+      const t = await attestedOnly(ctx);
+      await ctx.db.query(`insert into mod_watch (trade, state, watching, escrow_address, setup_done_at) values ($1, $2, false, $3, $4)`, [
+        t, JSON.stringify(dumpWatchState(newWatchState())), c.row?.escrow_address ?? null, c.row?.setup_done ? ctx.clock.now : null,
+      ]);
+      if (c.escrow) await saveEscrow(ctx.db, ctx.keystoreKey, t, c.escrow);
+      ctx.clock.now = new Date(ctx.clock.now.getTime() + 400 * DAY);
+      net.tradeShred = [order(ctx, t)];
+      expect(await m.handle.tradeShredTick(), c.name).toEqual([]);
+      expect(m.logs, c.name).toContain('trade-shred-held-escrow');
+      expect((await ctx.db.query('select 1 from signed_terms where trade = $1', [t])).rowCount, c.name).toBe(1);
+      await stopAll();
+    }
+  });
+
+  it('a sealed escrow state that does not open is never taken as never finalised', async () => {
+    const { ctx, net, m } = await setup();
+    const t = await attestedOnly(ctx);
+    await ctx.db.query(`insert into mod_watch (trade, state, watching) values ($1, $2, false)`, [t, JSON.stringify(dumpWatchState(newWatchState()))]);
+    await ctx.db.query('insert into mod_escrow_state (trade, sealed) values ($1, $2)', [t, randomBytes(80)]);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 400 * DAY);
+    net.tradeShred = [order(ctx, t)];
+    expect(await m.handle.tradeShredTick()).toEqual([]);
+    expect(m.logs).toContain('trade-shred-held-escrow');
+  });
+});
+
+describe('review 22 Nov M2: a shredded trade\'s sweep can never be counted for another trade', () => {
+  it('the shred leaves a keyed tag of each counted sweep; claimSweep refuses a tagged tx for any trade', async () => {
+    const { ctx, net, m } = await setup();
+    const a = await attestedOnly(ctx);
+    const b = newTradeCode();
+    const tx = hash('7');
+    expect(await claimSweep(ctx.db, a, tx, ctx.keystoreKey)).toBe(true);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 31 * DAY);
+    net.tradeShred = [order(ctx, a)];
+    expect(await m.handle.tradeShredTick()).toEqual([a]);
+    expect((await ctx.db.query('select 1 from mod_sweeps where tx_hash = $1', [tx])).rowCount).toBe(0);
+    // The re-claim: trade B presents A's old sweep.
+    expect(await claimSweep(ctx.db, b, tx, ctx.keystoreKey)).toBe(false);
+    // The tag names neither the tx nor the trade.
+    const dump = await dumpAll(ctx);
+    expect(dump).not.toContain(tx);
+    expect(dump).not.toContain(a);
+    expect((await ctx.db.query('select count(*)::int as n from mod_sweeps_spent')).rows[0]!.n).toBe(1);
+  });
+});
+
+describe('review 22 Nov m1: the shred transaction and the watcher pass', () => {
+  it('a failure part-way through the deletes leaves every row in place (one transaction)', async () => {
+    const { ctx, net, m } = await setup();
+    const t = await attestedOnly(ctx);
+    await ctx.db.query(`insert into mod_watch (trade, state, watching) values ($1, $2, false)`, [t, JSON.stringify(dumpWatchState(newWatchState()))]);
+    await ctx.db.query(`create function x2f_test_fail_delete() returns trigger language plpgsql as $$ begin raise exception 'injected'; end $$`);
+    await ctx.db.query('create trigger x2f_test_fail_delete before delete on mod_watch for each row execute function x2f_test_fail_delete()');
+    const before = await rowsOf(ctx, t);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 31 * DAY);
+    net.tradeShred = [order(ctx, t)];
+    try {
+      expect(await m.handle.tradeShredTick()).toEqual([]);
+      expect(m.logs).toContain('trade-shred-failed');
+      expect(await rowsOf(ctx, t)).toEqual(before);
+      expect(before.signed_terms).toHaveLength(1);
+    } finally {
+      await ctx.db.query('drop trigger x2f_test_fail_delete on mod_watch');
+    }
+  });
+
+  it('runs between two watcher passes: a shred asked during a pass waits for it to end', async () => {
+    const { ctx, net, m } = await setup();
+    const l = await inFunding(ctx, m, net);
+    const t = await attestedOnly(ctx);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 31 * DAY);
+    await madeAt(ctx, l.code, ctx.clock.now);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let inPass = false;
+    l.party.onFunds = async () => {
+      inPass = true;
+      await gate;
+    };
+    const pass = m.handle.watch();
+    await expect.poll(() => inPass).toBe(true);
+    net.tradeShred = [order(ctx, t)];
+    let shredDone = false;
+    const shred = m.handle.tradeShredTick().then((r) => {
+      shredDone = true;
+      return r;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(shredDone).toBe(false);
+    expect((await ctx.db.query('select 1 from signed_terms where trade = $1', [t])).rowCount).toBe(1);
+    l.party.onFunds = null;
+    release();
+    await pass;
+    expect(await shred).toEqual([t]);
+  });
+});
+
+describe('review 22 Nov m3 and Q-B', () => {
+  it('young goes by this service\'s own clock: the attestation row is stamped with it', async () => {
+    const { ctx, net, m } = await setup();
+    const t = await newTradeFor(m, net);
+    const { rows } = await ctx.db.query<{ at: Date }>('select created_at as at from signed_terms where trade = $1', [t]);
+    expect(rows[0]!.at.toISOString()).toBe(ctx.clock.now.toISOString());
+  });
+
+  it('the shred blanks the trade code on the used API log entries and keeps their ids (one use each)', async () => {
+    const { ctx, net, m } = await setup();
+    const t = await attestedOnly(ctx);
+    const id = String(2_000_000 + Math.floor(Math.random() * 1_000_000_000));
+    await ctx.db.query("insert into used_log_entries (id, action, trade) values ($1, 'chat.read', $2)", [id, t]);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 31 * DAY);
+    net.tradeShred = [order(ctx, t)];
+    expect(await m.handle.tradeShredTick()).toEqual([t]);
+    expect((await ctx.db.query('select id::text, trade from used_log_entries where id = $1', [id])).rows).toEqual([{ id, trade: '' }]);
+    expect(await dumpAll(ctx)).not.toContain(t);
+  });
+});
