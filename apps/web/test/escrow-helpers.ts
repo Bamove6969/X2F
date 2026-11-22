@@ -241,6 +241,10 @@ export interface ApiState {
    * identity was made). Per device, as tests may give the two devices different clocks.
    */
   issuedAt?: string;
+  /** What GET /v1/trades/:code/ruling-statement serves (Haveno finding 2); absent or null: 204. */
+  rulingStatement?: { statement: unknown; sig: unknown } | null;
+  /** How many times each role asked for the ruling statement. */
+  rulingReads?: Partial<Record<'buyer' | 'seller', number>>;
 }
 
 export function tradeView(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -304,6 +308,11 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
     /** The registering device's clock, as device() reports it before each registration. */
     clockAt: (ms: number) => {
       registeredAt[role] = ms;
+    },
+    getRulingStatement: async () => {
+      state.rulingReads ??= {};
+      state.rulingReads[role] = (state.rulingReads[role] ?? 0) + 1;
+      return state.rulingStatement ?? null;
     },
     getAttestation: async () => {
       if (state.refuse?.attestation) throw Object.assign(new Error('api 409'), { status: 409, code: state.refuse.attestation });

@@ -1,7 +1,7 @@
 import { ROLES, type Role } from '@x2f/core';
 import { EscrowError, PartyError, TransportClosedError } from '@x2f/escrow';
 import { open, ReplayGuard, seal, type Participants } from '@x2f/protocol';
-import { channelFor, escrowPlan, fiatCents, instructionsSha256 } from '@x2f/trade';
+import { channelFor, escrowPlan, fiatCents, instructionsSha256, payoutsFor, signRulingStatement, type RulingStatement } from '@x2f/trade';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Attestation } from '@x2f/trade';
 import { cosignPolicy } from '../src/escrow/policy.js';
@@ -2673,5 +2673,197 @@ describe('the trade chat identity is registered when the device runs the trade (
     await until(() => lone.last()?.error === 'not-confirmed');
     await new Promise((r) => setTimeout(r, 30));
     expect(asks).toBe(0);
+  });
+});
+
+// Plan 4 Task 21's regtest e2e found that no ruling ever paid out: the runtime never fetched the
+// moderation service's signed ruling statement, so policy.ts `ruled()` was always false and the
+// winner's device never co-signed the moderator-built set. While the trade is disputed the runtime
+// now reads GET /v1/trades/:code/ruling-statement, keeps it only once it verifies for this trade,
+// the escrow address its own party derived and this side as the winner, and hands the party the
+// set cosignPolicy passes against it (builder mod, this side the co-signer), saved first as the
+// record's `ruling` intent. TODO(m4) decided: the release-binding flags never block a ruling.
+describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-built set only against the signed statement', () => {
+  const paidAt = '2026-10-23T12:30:00.000Z';
+  const disputedView = (over: Record<string, unknown> = {}) => tradeView({ state: 'disputed', paidAt, dispute: { by: 'buyer', at: '2026-10-23T13:00:00.000Z' }, ...over });
+  const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
+  const balance = (): bigint => funded().balance;
+  const setFor = (winner: 'buyer' | 'seller') =>
+    winner === 'buyer'
+      ? payoutsFor({ kind: 'dispute-buyer', amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, poster: 'seller', sellerFundsAtomic: plan.sellerFundsAtomic, balanceAtomic: balance(), buyerPayout: ADDR.buyer, sellerRefund: ADDR.seller, feeWallet: FEE_WALLET })
+      : [{ address: ADDR.seller, amountAtomic: balance() }];
+  async function statement(secret: Uint8Array, winner: 'buyer' | 'seller', over: Partial<RulingStatement> = {}, to: { address: string; amountAtomic: bigint }[] = setFor(winner)) {
+    const s: RulingStatement = {
+      v: 1, trade: CODE, escrowAddress: ESCROW_ADDRESS, round: 1, rulingId: 'r-1',
+      outcome: winner === 'buyer' ? 'release-to-buyer' : 'refund-to-seller', winner,
+      payouts: to.map((p) => ({ address: p.address, amountAtomic: p.amountAtomic.toString() })),
+      issuedAt: '2026-10-23T14:00:00.000Z',
+      ...over,
+    };
+    return { statement: s, sig: await signRulingStatement(s, secret) };
+  }
+  type T = Awaited<ReturnType<typeof setup>> & { buyer: Device; seller: Device };
+  const modBuilt = (t: T, role: 'buyer' | 'seller') => t.parties.settles.filter((x) => x.role === role && x.o.builder === 'mod');
+  /** Funded, the buyer's "I've paid" on its own device, then disputed (the statement not served yet). */
+  async function disputed(): Promise<T> {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => (await buyer.store.load(CODE))?.theirDeal != null && (await seller.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'secured' });
+    t.parties.funds = funded();
+    await t.parties.ticks('buyer', 2);
+    await pay(buyer);
+    t.state.view = tradeView({ state: 'paid', paidAt });
+    await until(async () => (await seller.store.load(CODE))?.acceptedAtomic === AMOUNT);
+    t.state.view = disputedView();
+    await Promise.all([t.parties.ticks('buyer', 2), t.parties.ticks('seller', 2)]);
+    return { ...t, buyer, seller };
+  }
+
+  it('a valid buyer-win statement: the buyer co-signs exactly its set (the mod builds), saved as its ruling intent; nothing else replaces it; the seller co-signs nothing', async () => {
+    const t = await disputed();
+    expect(modBuilt(t, 'buyer')).toEqual([]);
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    const want = { kind: 'release', to: setFor('buyer'), builder: 'mod', cosigner: 'buyer' };
+    expect(modBuilt(t, 'buyer')[0]!.o).toEqual(want);
+    // Saved before the hand-over: a reload hands the same outcome again.
+    expect((await t.buyer.store.load(CODE))?.intent).toEqual({ kind: 'ruling', outcome: { to: want.to, builder: 'mod', cosigner: 'buyer' }, done: false, auto: true });
+    const first = t.parties.settles.length;
+    await Promise.all([t.parties.ticks('buyer', 4), t.parties.ticks('seller', 4)]);
+    // No seller-built release (the standing co-sign) is handed to the party over the ruling.
+    expect(t.parties.settles.slice(first).filter((x) => x.role === 'buyer' && x.o.builder !== 'mod')).toEqual([]);
+    expect(modBuilt(t, 'seller')).toEqual([]);
+    // The party finishes it: the intent is done, and the device keeps it open meanwhile.
+    expect(t.buyer.last()).toMatchObject({ keepOpen: true });
+    t.parties.pending.find((p) => p.role === 'buyer' && p.o.builder === 'mod')!.resolve('ab'.repeat(32));
+    await until(async () => (await t.buyer.store.load(CODE))?.intent?.done === true);
+    expect((await t.buyer.store.load(CODE))?.intent?.kind).toBe('ruling');
+  });
+
+  it('a valid seller-win statement: the seller co-signs the whole balance to its refund address; the buyer co-signs nothing', async () => {
+    const t = await disputed();
+    t.state.rulingStatement = await statement(t.mod.secret, 'seller');
+    await until(() => modBuilt(t, 'seller').length > 0);
+    expect(modBuilt(t, 'seller')[0]!.o).toEqual({ kind: 'release', to: [{ address: ADDR.seller, amountAtomic: balance() }], builder: 'mod', cosigner: 'seller' });
+    await t.parties.ticks('buyer', 4);
+    expect(modBuilt(t, 'buyer')).toEqual([]);
+  });
+
+  const BAD: Array<[string, (t: T) => Promise<{ statement: unknown; sig: unknown }>]> = [
+    ['signed by another key', async () => statement((await modKey()).secret, 'buyer')],
+    ['a signature over other bytes', async (t) => ({ ...(await statement(t.mod.secret, 'buyer')), sig: (await statement(t.mod.secret, 'buyer', { rulingId: 'r-2' })).sig })],
+    ['another escrow address', async (t) => statement(t.mod.secret, 'buyer', { escrowAddress: '5AnotherEscrow' })],
+    ['other outputs (the buyer short 1, the fee 1 more)', async (t) => statement(t.mod.secret, 'buyer', {}, [{ address: ADDR.buyer, amountAtomic: AMOUNT - 1n }, { address: FEE_WALLET, amountAtomic: plan.feeAtomic + 1n }])],
+    ['other outputs (the whole balance to the buyer, no fee)', async (t) => statement(t.mod.secret, 'buyer', {}, [{ address: ADDR.buyer, amountAtomic: balance() }])],
+    ['another payout address', async (t) => statement(t.mod.secret, 'buyer', {}, [{ address: '4Attacker', amountAtomic: AMOUNT }, { address: FEE_WALLET, amountAtomic: plan.feeAtomic }])],
+    ["another trade's statement", async (t) => statement(t.mod.secret, 'buyer', { trade: 'AAAA-BBBB-CCCC-DDDD' })],
+    ['round 2 (an overturn moves no coins)', async (t) => statement(t.mod.secret, 'buyer', { round: 2 })],
+    ['the other side the winner, with this side\'s set', async (t) => statement(t.mod.secret, 'seller', {}, setFor('buyer'))],
+    ['malformed', async () => ({ statement: { v: 1, trade: CODE }, sig: 'zz' })],
+  ];
+  it.each(BAD)('refused: %s; the buyer co-signs no mod-built set and keeps no ruling intent', async (_n, make) => {
+    const t = await disputed();
+    t.state.rulingStatement = await make(t);
+    await until(() => (t.state.rulingReads?.buyer ?? 0) >= 2);
+    await t.parties.ticks('buyer', 4);
+    expect(modBuilt(t, 'buyer')).toEqual([]);
+    expect((await t.buyer.store.load(CODE))?.intent?.kind).not.toBe('ruling');
+  });
+
+  it('not disputed: a valid statement is never asked for nor co-signed (paid, then secured)', async () => {
+    const t = await disputed();
+    t.state.view = tradeView({ state: 'paid', paidAt });
+    await t.parties.ticks('buyer', 2);
+    const reads = t.state.rulingReads?.buyer ?? 0;
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await Promise.all([t.parties.ticks('buyer', 4), t.parties.ticks('seller', 4)]);
+    expect(modBuilt(t, 'buyer')).toEqual([]);
+    expect(modBuilt(t, 'seller')).toEqual([]);
+    expect(t.state.rulingReads?.buyer ?? 0).toBe(reads);
+    // Disputed again: now it is.
+    t.state.view = disputedView();
+    await until(() => modBuilt(t, 'buyer').length > 0);
+  });
+
+  it('a statement is checked against the escrow address this device derived: until its party is ready, nothing is co-signed', async () => {
+    const t = await disputed();
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer', { escrowAddress: ESCROW_ADDRESS });
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    expect(modBuilt(t, 'buyer')[0]!.o.to).toEqual(setFor('buyer'));
+  });
+
+  it('TODO(m4) decided: a refused release rebind (buyer) or a refused signed paid amount (seller) never blocks a ruling for that side', async () => {
+    for (const [winner, flag] of [['buyer', { releaseRebindRefused: true }], ['seller', { paidRefused: true }]] as const) {
+      const t = await disputed();
+      const d = t[winner];
+      await d.runtime.stopAll();
+      const rec = (await d.store.load(CODE))!;
+      await d.store.save({ ...rec, ...flag });
+      t.state.rulingStatement = await statement(t.mod.secret, winner);
+      const again = await t.mk(winner, { idb: d.idb });
+      await again.runtime.resumeAll();
+      await until(() => modBuilt(t, winner).length > 0);
+      expect(modBuilt(t, winner).at(-1)!.o).toEqual({ kind: 'release', to: setFor(winner), builder: 'mod', cosigner: winner });
+      // The flag still holds for what it guards: no amount for a release, no form.
+      expect((await again.store.load(CODE))).toMatchObject(flag);
+    }
+  });
+
+  it('a reload hands the saved ruling to the party again (once the statement verifies again), the same outcome', async () => {
+    const t = await disputed();
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    await t.buyer.runtime.stopAll();
+    const n = modBuilt(t, 'buyer').length;
+    const again = await t.mk('buyer', { idb: t.buyer.idb });
+    await again.runtime.resumeAll();
+    await until(() => modBuilt(t, 'buyer').length > n);
+    expect(modBuilt(t, 'buyer').at(-1)!.o).toEqual(modBuilt(t, 'buyer')[0]!.o);
+  });
+
+  it('after the ruling paid out (released), the buyer counts its own ruling settle as done, never as settled elsewhere', async () => {
+    const t = await disputed();
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    t.parties.pending.find((p) => p.role === 'buyer' && p.o.builder === 'mod')!.resolve('ab'.repeat(32));
+    await until(async () => (await t.buyer.store.load(CODE))?.intent?.done === true);
+    t.state.view = tradeView({ state: 'released', paidAt });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    expect(await t.buyer.status((s) => s.phase === 'done')).toMatchObject({ error: null });
+  });
+});
+
+describe('Plan 4 Task 21 bug 2: the seller of an after-refund dispute keeps the attested restitution', () => {
+  it('a refunded trade disputed by the buyer: the seller\'s status still carries the attested buyer address and the trade amount, also after a reload with the relay closed', async () => {
+    const t = await setup();
+    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'secured' });
+    t.parties.funds = funded();
+    await t.parties.ticks('seller', 2);
+    t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
+    await seller.runtime.act(CODE, { type: 'build-refund' });
+    await until(() => t.parties.pending.some((p) => p.role === 'seller'));
+    t.parties.pending.find((p) => p.role === 'seller')!.resolve('ab'.repeat(32));
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    t.state.view = tradeView({ state: 'refunded', settling: 'auto-refund' });
+    await t.parties.ticks('seller', 2);
+    // The buyer disputes the refund: the trade is disputed again, with an empty escrow.
+    t.state.view = tradeView({ state: 'disputed', settling: 'auto-refund', dispute: { by: 'buyer', at: '2026-10-24T12:00:00.000Z' } });
+    t.parties.closeRelay('seller');
+    await t.parties.ticks('seller', 3);
+    expect(seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: AMOUNT });
+    await seller.runtime.stopAll();
+    const again = await t.mk('seller', { idb: seller.idb });
+    await again.runtime.resumeAll();
+    await t.parties.ticks('seller', 3);
+    expect(again.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: AMOUNT });
   });
 });
