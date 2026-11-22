@@ -110,6 +110,8 @@ export interface Funds {
 export class Parties {
   calls: { role: Role; args: PartyArgs }[] = [];
   settles: { role: Role; o: Outcome }[] = [];
+  /** Called synchronously on every settle() hand-over, before it is recorded (review m5, G16: what the store held then). */
+  onSettle: ((role: Role, o: Outcome) => void) | null = null;
   funds: Funds = { balance: 0n, unlocked: 0n, incoming: [] };
   /** Per-role readings that override `funds` (one wallet lagging behind the other). */
   fundsFor: Partial<Record<Role, Funds>> = {};
@@ -186,6 +188,7 @@ export class Parties {
         return ESCROW_ADDRESS;
       },
       settle: (o) => {
+        this.onSettle?.(args.role, o);
         this.settles.push({ role: args.role, o });
         if (!this.acceptHeld.has(args.role)) this.accepted[args.role] = o;
         const closed = this.relayClosed[args.role];
@@ -354,6 +357,8 @@ export async function device(
     settledElsewhereMs?: number;
     /** Gap 5: the trade chat's identity step (the worker's chat/prepare.ts). */
     prepareChat?: (code: string) => Promise<void>;
+    /** How often the ruling statement may be asked for (default here 0: every tick; the runtime's own default is 30 s). */
+    rulingPollMs?: number;
   },
 ): Promise<Device> {
   const idb = o.idb ?? new IDBFactory();
@@ -393,6 +398,7 @@ export async function device(
     ...(o.now ? { now: o.now } : {}),
     ...(o.settledElsewhereMs !== undefined ? { settledElsewhereMs: o.settledElsewhereMs } : {}),
     ...(o.prepareChat ? { prepareChat: o.prepareChat } : {}),
+    rulingPollMs: o.rulingPollMs ?? 0,
     onStatus: (_c, s) => onStatus(s),
   });
   const rawStart = runtime.start.bind(runtime);

@@ -2705,10 +2705,10 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
   type T = Awaited<ReturnType<typeof setup>> & { buyer: Device; seller: Device };
   const modBuilt = (t: T, role: 'buyer' | 'seller') => t.parties.settles.filter((x) => x.role === role && x.o.builder === 'mod');
   /** Funded, the buyer's "I've paid" on its own device, then disputed (the statement not served yet). */
-  async function disputed(): Promise<T> {
+  async function disputed(opts: { settledElsewhereMs?: number } = {}): Promise<T> {
     const t = await setup();
-    const buyer = await t.mk('buyer');
-    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer', opts);
+    const seller = await t.mk('seller', opts);
     await buyer.runtime.start(CODE);
     await seller.runtime.start(CODE);
     await until(async () => (await buyer.store.load(CODE))?.theirDeal != null && (await seller.store.load(CODE))?.theirDeal != null);
@@ -2789,21 +2789,22 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     await until(() => modBuilt(t, 'buyer').length > 0);
   });
 
-  it('TODO(m4) decided: a refused release rebind (buyer) or a refused signed paid amount (seller) never blocks a ruling for that side', async () => {
-    for (const [winner, flag] of [['buyer', { releaseRebindRefused: true }], ['seller', { paidRefused: true }]] as const) {
-      const t = await disputed();
-      const d = t[winner];
-      await d.runtime.stopAll();
-      const rec = (await d.store.load(CODE))!;
-      await d.store.save({ ...rec, ...flag });
-      t.state.rulingStatement = await statement(t.mod.secret, winner);
-      const again = await t.mk(winner, { idb: d.idb });
-      await again.runtime.resumeAll();
-      await until(() => modBuilt(t, winner).length > 0);
-      expect(modBuilt(t, winner).at(-1)!.o).toEqual({ kind: 'release', to: setFor(winner), builder: 'mod', cosigner: winner });
-      // The flag still holds for what it guards: no amount for a release, no form.
-      expect((await again.store.load(CODE))).toMatchObject(flag);
-    }
+  it('TODO(m4) decided: a refused release rebind (releaseRebindRefused) never blocks the buyer\'s ruling co-sign', async () => {
+    // Review m1: only the buyer half. paidRefused is a seller-only flag and the seller's ruling (a full
+    // reversal, refund-shaped) never consults an amount at all, so a seller case would pass whatever
+    // rulingAmount did; the seller's ruling under every flag is the refund-shaped context's.
+    const t = await disputed();
+    await t.buyer.runtime.stopAll();
+    const rec = (await t.buyer.store.load(CODE))!;
+    await t.buyer.store.save({ ...rec, releaseRebindRefused: true });
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    const again = await t.mk('buyer', { idb: t.buyer.idb });
+    await again.runtime.resumeAll();
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    expect(modBuilt(t, 'buyer').at(-1)!.o).toEqual({ kind: 'release', to: setFor('buyer'), builder: 'mod', cosigner: 'buyer' });
+    // The flag still holds for what it guards: no amount for a release.
+    expect(await again.store.load(CODE)).toMatchObject({ releaseRebindRefused: true });
+    expect(again.last()?.amountAtomic ?? null).toBeNull();
   });
 
   it('a reload hands the saved ruling to the party again (once the statement verifies again), the same outcome', async () => {
@@ -2840,6 +2841,215 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     t.state.view = tradeView(closed);
     t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
     expect(await t[loser].status((s) => s.phase === 'settled-without-device' || s.phase === 'error')).toMatchObject({ phase: 'settled-without-device', error: null });
+  });
+
+  // Security review 22 Nov, M1: the loser rule trusts the API's ruling close only for a device that
+  // verified a statement naming the OTHER side the winner and holds no ruling intent of its own open.
+  it('M1: the winner whose ruling set never landed (the mod and the loser refunded the escrow) is escrow-failed, never settled without its device', async () => {
+    const t = await disputed({ settledElsewhereMs: 0 });
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    t.state.view = tradeView({ state: 'refunded', paidAt, settling: null });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    expect(await t.buyer.status((s) => s.phase === 'settled-without-device' || s.phase === 'error')).toMatchObject({ phase: 'error', error: 'escrow-failed' });
+  });
+
+  it('M1 (lead call, fail closed): a loser that never verified a statement is escrow-failed when the API says a ruling paid out', async () => {
+    const t = await disputed({ settledElsewhereMs: 0 });
+    // No statement is ever served: the seller cannot know a ruling paid the buyer.
+    t.state.view = tradeView({ state: 'released', paidAt, settling: null });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    expect(await t.seller.status((s) => s.phase === 'settled-without-device' || s.phase === 'error')).toMatchObject({ phase: 'error', error: 'escrow-failed' });
+  });
+
+  it('M1: the verified loser\'s verdict is kept in its record, so a reload after the close still counts the payout as the ruling\'s', async () => {
+    const t = await disputed({ settledElsewhereMs: 0 });
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(async () => (await t.seller.store.load(CODE))?.rulingLost === true);
+    await t.seller.runtime.stopAll();
+    t.state.rulingStatement = null;
+    t.state.view = tradeView({ state: 'released', paidAt, settling: null });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    const again = await t.mk('seller', { idb: t.seller.idb, settledElsewhereMs: 0 });
+    await again.runtime.resumeAll();
+    expect(await again.status((s) => s.phase === 'settled-without-device' || s.phase === 'error')).toMatchObject({ phase: 'settled-without-device', error: null });
+  });
+
+  // Security review 22 Nov, M2: a party already committed to another builder's outcome can only
+  // finish that one; a ruling intent must never replace it, or the committed outcome is never handed
+  // again after a reload and the coins stay in the escrow.
+  it('M2: a buyer committed to the seller-built release keeps handing that release across two reloads; no ruling intent replaces it', async () => {
+    const t = await disputed();
+    t.parties.committedBuilders.buyer = 'seller';
+    const release = t.parties.settles.filter((x) => x.role === 'buyer' && x.o.builder === 'seller').at(-1)!.o;
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    let d = t.buyer;
+    for (let n = 0; n < 2; n++) {
+      await d.runtime.stopAll();
+      const seen = t.parties.settles.length;
+      d = await t.mk('buyer', { idb: d.idb });
+      await d.runtime.resumeAll();
+      await until(() => t.parties.settles.slice(seen).some((x) => x.role === 'buyer' && x.o.builder === 'seller'));
+      await t.parties.ticks('buyer', 3);
+      expect(t.parties.settles.slice(seen).filter((x) => x.role === 'buyer').map((x) => x.o)).toEqual(t.parties.settles.slice(seen).filter((x) => x.role === 'buyer').map(() => release));
+      expect((await d.store.load(CODE))?.intent?.kind).toBe('release');
+    }
+  });
+
+  it('M2: a ruling intent the party refuses ("already signed": it committed meanwhile) gives the earlier outcome back, which is handed again after a reload', async () => {
+    const t = await disputed();
+    const release = t.parties.settles.filter((x) => x.role === 'buyer' && x.o.builder === 'seller').at(-1)!.o;
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'ruling', prior: { kind: 'release', outcome: { to: release.to, builder: 'seller' } } });
+    t.parties.committedBuilders.buyer = 'seller';
+    t.parties.pending.find((p) => p.role === 'buyer' && p.o.builder === 'mod')!.reject(new PartyError('bad-outcome', 'already signed for another outcome'));
+    await until(async () => (await t.buyer.store.load(CODE))?.intent?.kind === 'release');
+    await t.buyer.runtime.stopAll();
+    const seen = t.parties.settles.length;
+    const again = await t.mk('buyer', { idb: t.buyer.idb });
+    await again.runtime.resumeAll();
+    await until(() => t.parties.settles.slice(seen).some((x) => x.role === 'buyer' && x.o.builder === 'seller'));
+    await t.parties.ticks('buyer', 3);
+    expect(t.parties.settles.slice(seen).filter((x) => x.role === 'buyer' && x.o.builder === 'mod')).toEqual([]);
+  });
+
+  it('M2: a ruling intent saved before the party committed elsewhere: the earlier outcome is restored once the party says so, and is asked for at the close', async () => {
+    const t = await disputed({ settledElsewhereMs: 0 });
+    const release = t.parties.settles.filter((x) => x.role === 'buyer' && x.o.builder === 'seller').at(-1)!.o;
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    await t.buyer.runtime.stopAll();
+    t.parties.committedBuilders.buyer = 'seller';
+    const again = await t.mk('buyer', { idb: t.buyer.idb, settledElsewhereMs: 0 });
+    await again.runtime.resumeAll();
+    await until(async () => (await again.store.load(CODE))?.intent?.kind === 'release');
+    // The committed release lands: done, no alarm.
+    t.parties.landedFn = (role, o) => (role === 'buyer' && o.to[0]!.address === release.to[0]!.address && o.to.length === release.to.length ? 'cd'.repeat(32) : null);
+    t.state.view = tradeView({ state: 'released', paidAt });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    expect(await again.status((s) => s.phase === 'done' || s.phase === 'error')).toMatchObject({ phase: 'done', error: null });
+  });
+
+  it('M2: a party without committedBuilder counts as committed: no ruling intent is saved, the earlier outcome stays', async () => {
+    const t = await disputed();
+    await t.buyer.runtime.stopAll();
+    t.parties.noCommittedBuilder.add('buyer');
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    const again = await t.mk('buyer', { idb: t.buyer.idb });
+    await again.runtime.resumeAll();
+    await until(() => (t.state.rulingReads?.buyer ?? 0) >= 1);
+    await t.parties.ticks('buyer', 4);
+    expect(modBuilt(t, 'buyer')).toEqual([]);
+    expect((await again.store.load(CODE))?.intent?.kind).toBe('release');
+  });
+
+  it('M2: the seller whose committed auto-refund lands while the dispute is open counts it as its own, no false alarm', async () => {
+    const t = await setup();
+    const seller = await t.mk('seller', { settledElsewhereMs: 0 });
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'secured' });
+    t.parties.funds = funded();
+    await t.parties.ticks('seller', 2);
+    t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
+    await seller.runtime.act(CODE, { type: 'build-refund' });
+    await until(() => t.parties.settles.some((x) => x.role === 'seller' && x.o.cosigner === 'mod'));
+    const refund = t.parties.settles.filter((x) => x.role === 'seller' && x.o.cosigner === 'mod').at(-1)!.o;
+    t.parties.committedBuilders.seller = 'seller';
+    // The buyer disputes before the refund lands; a seller-win ruling is even served.
+    t.state.view = tradeView({ state: 'disputed', settling: 'auto-refund', dispute: { by: 'buyer', at: '2026-10-24T12:00:00.000Z' } });
+    t.state.rulingStatement = await statement(t.mod.secret, 'seller');
+    await t.parties.ticks('seller', 4);
+    expect(modBuilt(t, 'seller')).toEqual([]);
+    // The mod lands the committed refund.
+    t.parties.landedFn = (role, o) => (role === 'seller' && JSON.stringify(o.to.map((p) => p.address)) === JSON.stringify(refund.to.map((p) => p.address)) ? 'ef'.repeat(32) : null);
+    t.state.view = tradeView({ state: 'refunded', settling: 'auto-refund' });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    expect(await seller.status((s) => s.phase === 'done' || s.phase === 'error')).toMatchObject({ phase: 'done', error: null });
+  });
+
+  // Review m5.
+  it('G11: a saved ruling intent holds the tick while the API no longer serves the statement: no other outcome is handed over', async () => {
+    const t = await disputed();
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    await t.buyer.runtime.stopAll();
+    t.state.rulingStatement = null;
+    const seen = t.parties.settles.length;
+    const again = await t.mk('buyer', { idb: t.buyer.idb });
+    await again.runtime.resumeAll();
+    await until(() => (t.state.rulingReads?.buyer ?? 0) >= 3);
+    await t.parties.ticks('buyer', 4);
+    expect(t.parties.settles.slice(seen).filter((x) => x.role === 'buyer')).toEqual([]);
+    expect((await again.store.load(CODE))?.intent?.kind).toBe('ruling');
+  });
+
+  it('G16: the ruling intent is in the store before the party gets the mod-built set', async () => {
+    const t = await disputed();
+    let stored: Promise<unknown> | null = null;
+    t.parties.onSettle = (role, o) => {
+      if (role === 'buyer' && o.builder === 'mod' && stored === null) stored = t.buyer.store.load(CODE).then((r) => r?.intent ?? null);
+    };
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => stored !== null);
+    expect(await stored).toMatchObject({ kind: 'ruling', outcome: { builder: 'mod', cosigner: 'buyer' } });
+  });
+
+  it('m4: before any ruling the statement is asked for at most once per ruling poll interval, not on every tick', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer', { rulingPollMs: 60_000 });
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => (await buyer.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'secured' });
+    t.parties.funds = funded();
+    await t.parties.ticks('buyer', 2);
+    await pay(buyer);
+    t.state.view = disputedView();
+    await until(() => (t.state.rulingReads?.buyer ?? 0) >= 1);
+    await t.parties.ticks('buyer', 10);
+    expect(t.state.rulingReads?.buyer).toBe(1);
+  });
+
+  // The security reviewer's two probes (22 Nov), committed as they reproduced M1 and M2.
+  it('review probe A (M1): the buyer won, its ruling co-sign still open, the escrow emptied and the API says refunded (settling null): never settled-without-device', async () => {
+    const t = await disputed();
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    t.state.view = tradeView({ state: 'refunded', paidAt, settling: null });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    const s = await t.buyer.status((x) => x.phase === 'settled-without-device' || x.phase === 'error');
+    expect(s.phase).not.toBe('settled-without-device');
+  });
+
+  it('review probe B (M2): the buyer committed to the seller-built release before the ruling; after a reload the committed release is handed again', async () => {
+    const t = await disputed();
+    // The buyer's standing release co-sign (seller-built) was handed while paid.
+    const rel = t.parties.settles.filter((x) => x.role === 'buyer' && x.o.builder === 'seller').at(-1);
+    expect(rel).toBeDefined();
+    t.parties.committedBuilders.buyer = 'seller';
+    await t.buyer.runtime.stopAll();
+    t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
+    const again = await t.mk('buyer', { idb: t.buyer.idb });
+    const n = t.parties.settles.length;
+    await again.runtime.resumeAll();
+    await until(() => t.parties.settles.slice(n).some((x) => x.role === 'buyer'));
+    for (const p of t.parties.pending.filter((x) => x.role === 'buyer' && x.o.builder === 'mod')) p.reject(new PartyError('bad-outcome', 'already signed for another outcome'));
+    await t.parties.ticks('buyer', 6);
+    const after = t.parties.settles.slice(n).filter((x) => x.role === 'buyer');
+    expect(after.some((x) => x.o.builder === 'seller')).toBe(true);
+    // A second reload (the party is still committed to the seller-built release).
+    await again.runtime.stopAll();
+    const third = await t.mk('buyer', { idb: t.buyer.idb });
+    const m = t.parties.settles.length;
+    await third.runtime.resumeAll();
+    await t.parties.ticks('buyer', 8);
+    const after2 = t.parties.settles.slice(m).filter((x) => x.role === 'buyer');
+    expect(after2.some((x) => x.o.builder === 'seller')).toBe(true);
   });
 });
 
