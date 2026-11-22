@@ -2,7 +2,7 @@ import type { Outcome, Payout } from '@x2f/escrow';
 import { escrowPlan, payoutsFor, rulingStatementBytes, type RulingKind, type RulingStatement, type SettleKind, type TradeState } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext } from '../src/escrow/policy.js';
+import { cosignPolicy, deviceAmount, outcomeFor, rulingOutcomeFor, type Deal, type PolicyContext } from '../src/escrow/policy.js';
 
 const BUYER = '4BuyerPayoutAddress';
 const SELLER = '4SellerRefundAddress';
@@ -403,5 +403,37 @@ describe('outcomeFor', () => {
     expect(outcomeFor('release', ctx('seller', { state: 'paid' }))).toEqual(out(expected('release', b), 'seller', 'buyer'));
     expect(outcomeFor('buyer-cancel', ctx('seller', { state: 'paid' }))).toBeNull();
     expect(outcomeFor('release', { ...b, balance: 1n })).toBeNull();
+  });
+});
+
+describe('rulingOutcomeFor (Plan 4 Task 21: the runtime\'s ruling co-sign)', () => {
+  it.each(['buyer', 'seller'] as const)('%s, disputed, with its verified statement: the mod-built set this side worked out, this side the co-signer', (role) => {
+    const c = ctx(role, { state: 'disputed' });
+    expect(rulingOutcomeFor(c)).toEqual(out(expected(role === 'buyer' ? 'dispute-buyer' : 'dispute-seller', c), 'mod', role));
+  });
+
+  it.each(['buyer', 'seller'] as const)('%s: null when not disputed, without a statement, for the other side, another trade, escrow or round, other payouts or another key', (role) => {
+    const base = ctx(role, { state: 'disputed' });
+    const other = role === 'buyer' ? 'seller' : 'buyer';
+    const theirs = expected(other === 'buyer' ? 'dispute-buyer' : 'dispute-seller', base);
+    for (const state of ['secured', 'paid', 'settling', 'released', 'refunded'] as const) expect(rulingOutcomeFor({ ...ctx(role, { state }), ruling: statementFor(base) }), state).toBeNull();
+    for (const ruling of [
+      null,
+      statementFor(base, { winner: other, to: theirs }),
+      statementFor(base, { over: { trade: 'ZZ99-ZZ99-ZZ99-ZZ99' } }),
+      statementFor(base, { over: { escrowAddress: '5OtherEscrow' } }),
+      statementFor(base, { over: { round: 2 } }),
+      statementFor(base, { to: [{ address: role === 'buyer' ? BUYER : SELLER, amountAtomic: base.balance - 1n }, { address: FEE, amountAtomic: 1n }] }),
+      statementFor(base, { key: sodium.crypto_sign_keypair().privateKey }),
+      { ...statementFor(base), code: 'ZZ99-ZZ99-ZZ99-ZZ99' },
+      { ...statementFor(base), escrowAddress: '5OtherEscrow' },
+    ]) {
+      expect(rulingOutcomeFor({ ...base, ruling })).toBeNull();
+    }
+  });
+
+  it('the buyer: an API amount that disagrees with this device\'s size gets no ruling set', () => {
+    const c = ctx('buyer', { state: 'disputed' });
+    expect(rulingOutcomeFor({ ...c, trade: { ...c.trade, amountAtomic: AMOUNT + 1n } })).toBeNull();
   });
 });

@@ -2768,7 +2768,7 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
   it.each(BAD)('refused: %s; the buyer co-signs no mod-built set and keeps no ruling intent', async (_n, make) => {
     const t = await disputed();
     t.state.rulingStatement = await make(t);
-    await until(() => (t.state.rulingReads?.buyer ?? 0) >= 2);
+    await until(() => (t.state.rulingReads?.buyer ?? 0) >= 1);
     await t.parties.ticks('buyer', 4);
     expect(modBuilt(t, 'buyer')).toEqual([]);
     expect((await t.buyer.store.load(CODE))?.intent?.kind).not.toBe('ruling');
@@ -2787,13 +2787,6 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     // Disputed again: now it is.
     t.state.view = disputedView();
     await until(() => modBuilt(t, 'buyer').length > 0);
-  });
-
-  it('a statement is checked against the escrow address this device derived: until its party is ready, nothing is co-signed', async () => {
-    const t = await disputed();
-    t.state.rulingStatement = await statement(t.mod.secret, 'buyer', { escrowAddress: ESCROW_ADDRESS });
-    await until(() => modBuilt(t, 'buyer').length > 0);
-    expect(modBuilt(t, 'buyer')[0]!.o.to).toEqual(setFor('buyer'));
   });
 
   it('TODO(m4) decided: a refused release rebind (buyer) or a refused signed paid amount (seller) never blocks a ruling for that side', async () => {

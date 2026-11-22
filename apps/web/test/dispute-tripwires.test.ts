@@ -10,31 +10,36 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 27 seams still stand in for parts other tasks build', () => {
-  it('NEEDS_PLAN_4_MOD_COSIGN: moderator-built transactions go through rulingAllowsCosign and cosignPolicy', () => {
-    // Task 12's runtime (escrow/runtime.ts) settles only the trader routes today: outcomeFor never
-    // builds a mod-built set, so rulingAllowsCosign (screens/dispute/rules.ts) is not reachable yet.
-    // When the runtime gains a path that settles a set whose builder is 'mod' (Plan 4), that path
-    // must call rulingAllowsCosign with the real cosignPolicy closed over its PolicyContext
-    // ((o) => cosignPolicy(ctx, o)), and the stand-in policy in test/dispute.test.tsx goes.
-    // Haveno review 2026-11-12, finding 2 (lead call): that PolicyContext must carry `ruling`, the
-    // moderation service's signed statement from GET /v1/trades/:code/ruling-statement
-    // (adapters.ts httpEscrowApi.getRulingStatement) with this trade's code, the escrow address the
-    // device's own party derived and the pinned modSigningPublic: without it cosignPolicy refuses
-    // every mod-built set (policy.ts `ruled`).
+  it('PLAN_4_MOD_COSIGN LANDED (Task 21 fix): the runtime co-signs a mod-built set only through cosignPolicy with the signed ruling statement', () => {
+    // The regtest e2e (Plan 4 Task 21) found no ruling ever paid out: context() carried no `ruling`
+    // and nothing called getRulingStatement. Now, while the trade is disputed, the runtime reads
+    // GET /v1/trades/:code/ruling-statement, keeps it once it verifies for this trade, its own
+    // derived escrow address and this side as the winner, and puts it in the PolicyContext with the
+    // pinned modSigningPublic; the set comes from policy.ts rulingOutcomeFor (worked out on the
+    // device, never the statement's own list), saved as the `ruling` intent before the hand-over.
+    // Behaviour: test/attestation-flow.test.ts "Plan 4 rulings", test/policy.test.ts rulingOutcomeFor.
+    // Lead default (security review): the signed statement replaces rulingAllowsCosign over the
+    // API's unsigned dispute view as the gate in front of cosignPolicy (the worker never reads the
+    // dispute view); the statement already binds the ruling, round 1 and the winner.
     const runtime = readFileSync(ROOT + 'apps/web/src/escrow/runtime.ts', 'utf8');
-    expect(/'mod'|rulingAllowsCosign/.test(runtime), 'the runtime settles mod-built sets: gate them with rulingAllowsCosign').toBe(false);
+    expect(runtime).toMatch(/deps\.api\.getRulingStatement\(/);
+    expect(runtime).toMatch(/verifyRulingStatement\(/);
+    expect(runtime).toMatch(/modSigningPublic: deps\.config\.modSigningPublic, statement:/);
+    expect(runtime).toMatch(/rulingOutcomeFor\(ctx\)/);
+    // Every hand-over still goes through settle(), the one place cosignPolicy runs.
+    expect(runtime.match(/this\.party\.settle\(/g)?.length).toBe(1);
+    expect(readFileSync(ROOT + 'apps/web/src/escrow/adapters.ts', 'utf8')).toMatch(/\/ruling-statement/);
   });
 
-  it('NEEDS_PLAN_4_MOD_COSIGN (growth-binding review m4): the buyer\'s ruling co-sign must not be blocked by releaseRebindRefused', () => {
-    // docs/security/growth-before-paid-2026-11-20.md. Under releaseRebindRefused (and paidRefused)
-    // acceptedAmount() returns null, so any outcome built through context() without refundOnly is
-    // refused. When the runtime gains the mod-built co-sign path (the tripwire above), a
-    // buyer-favouring ruling (dispute-buyer) must not go through that null: decide it on purpose
-    // (the ruling statement, not the release bound, sets the amount), add a test for a ruling
-    // co-sign under the flag, remove the TODO(m4) at acceptedAmount and delete this check.
+  it('PLAN_4_MOD_COSIGN LANDED (growth-binding review m4, decided): the release-binding flags never block a ruling co-sign', () => {
+    // docs/security/growth-before-paid-2026-11-20.md. acceptedAmount() still returns null under
+    // releaseRebindRefused and paidRefused for every release; a mod-built ruling set takes its amount
+    // from rulingAmount() (the same rules without the two flags), and the seller's full reversal is
+    // refund-shaped. Behaviour: attestation-flow.test.ts "TODO(m4) decided".
     const runtime = readFileSync(ROOT + 'apps/web/src/escrow/runtime.ts', 'utf8');
-    expect(runtime, 'the TODO(m4) note stands at acceptedAmount').toMatch(/TODO\(m4\)/);
-    expect(/'mod'|rulingAllowsCosign|dispute-buyer/.test(runtime), 'the ruling co-sign is wired: decide releaseRebindRefused for it (review m4)').toBe(false);
+    expect(runtime, 'the TODO(m4) note is resolved').not.toMatch(/TODO\(m4\)/);
+    expect(runtime).toMatch(/refundOnly \? \(r\.acceptedAtomic \?\? r\.sizeAtomic\) : ruling \? this\.rulingAmount\(v\) : this\.acceptedAmount\(v\)/);
+    expect(runtime).toMatch(/this\.context\(sumOf\(o\.to\), refundShaped, o\.builder === 'mod'\)/);
   });
 
   it('NEEDS_PLAN_4_RULING_PAYOUT: the ruling page says where the XMR goes until the API reports the payout executed', () => {

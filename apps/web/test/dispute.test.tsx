@@ -707,3 +707,37 @@ describe('the dispute screen names the method from the catalog (re-verify R3)', 
     expect(api.fetchMethodName).toBeUndefined();
   });
 });
+
+// Plan 4 Review Focus 4 (Task 21's "winner offline" row): a round-1 escrow ruling pays out only once
+// the winner's app co-signs the moderator-built set, so until the trade leaves `disputed` the other
+// trader is told who it waits for. Smallest version (COPY-UNSIGNED): the line on the ruling page.
+describe('DisputeRuling: "Waiting for <winner> to open X2F" (Review Focus 4)', () => {
+  const waiting = (host: HTMLElement) => host.querySelector('[data-part="waiting-for-winner"]');
+  const disputed = { state: 'disputed', dispute: { by: 'buyer' as const, at: iso(130) } };
+  it('the seller, after a release-to-buyer ruling, while the trade is still disputed: waits for the buyer by name', () => {
+    const t = trade({ ...disputed, role: 'seller', counterparty: 'mira.k' });
+    const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled()} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(waiting(host)?.textContent).toContain('Waiting for mira.k to open X2F');
+  });
+
+  it('the buyer, after a refund-to-seller ruling: waits for the seller by name', () => {
+    const t = trade({ ...disputed, role: 'buyer', counterparty: 'satoshi_ghost' });
+    const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled({ outcome: 'refund-to-seller' })} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(waiting(host)?.textContent).toContain('Waiting for satoshi_ghost to open X2F');
+  });
+
+  it('not for the winner, not once the payout moved the trade on, not after a refund, not for a ruling that moves no escrow coins, not for round 2', () => {
+    const cases: Array<[DisputeTrade, DisputeView]> = [
+      [trade({ ...disputed, role: 'buyer' }), ruled()],
+      [trade({ ...disputed, role: 'seller', counterparty: 'mira.k' }), ruled({ outcome: 'refund-to-seller' })],
+      [trade({ ...disputed, state: 'released', role: 'seller', counterparty: 'mira.k' }), ruled()],
+      [trade({ ...disputed, state: 'refunded', role: 'buyer' }), ruled({ outcome: 'refund-to-seller' })],
+      [trade({ ...disputed, role: 'seller', counterparty: 'mira.k' }), { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true }), complyBy: iso(2000) }],
+      [trade({ ...disputed, role: 'seller', counterparty: 'mira.k' }), ruled({ round: 2 })],
+    ];
+    for (const [t, d] of cases) {
+      const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
+      expect(waiting(host), `${t.role} ${t.state} ${d.ruling?.outcome} r${d.ruling?.round}`).toBeNull();
+    }
+  });
+});
