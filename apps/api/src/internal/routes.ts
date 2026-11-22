@@ -646,6 +646,50 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.code(201).send({ ok: true });
   };
 
+  /**
+   * Ruling-winner reasons (lead 22 Nov; review-lead-fix-ruling-pay, builder's question 1):
+   * `{ kind: 'ruling-wait', trade, reason }`, why the moderation process's handed ruling payout waits
+   * on its winner: `winner-committed` (the winner's party sent the moderator a built set for another
+   * outcome), `winner-offline` (it has not taken part, as far as the moderator can tell), or null
+   * (it did, now). Only for a disputed trade whose ruling statement is kept (`wrong-state`,
+   * `no-statement`). Each change is logged as `ruling.payout-waiting` (system; `none` for null), the
+   * same reason again is 201 and logs nothing, and the staff case view shows the latest. Nothing
+   * about the payout changes.
+   */
+  const rulingWait = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'trade', 'reason'])) throw new Refused(400, 'bad-body');
+    const reason = body.reason;
+    if (reason !== null && reason !== 'winner-committed' && reason !== 'winner-offline') throw new Refused(400, 'bad-body');
+    const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const t = await loadTrade(o.db, code);
+    if (t === null) throw new Refused(404, 'not-found');
+    if (t.state !== 'disputed') throw new Refused(409, 'wrong-state');
+    const kept = await o.db.query('select 1 from ruling_statements where code = $1', [code]);
+    if (kept.rows.length === 0) throw new Refused(409, 'no-statement');
+    const next = reason ?? 'none';
+    const client = await o.db.connect();
+    try {
+      await client.query('begin');
+      // The trade's row lock: two reports never log the same change twice.
+      await client.query('select 1 from trades where code = $1 for update', [code]);
+      const last = await client.query<{ detail: string }>(
+        "select detail from activity_log where trade_code = $1 and action = 'ruling.payout-waiting' order by id desc limit 1",
+        [code],
+      );
+      const was = last.rows[0] === undefined ? 'none' : (JSON.parse(last.rows[0].detail) as { reason: string }).reason;
+      if (was !== next) await appendLog(client, { at: o.clock?.() ?? new Date(now()), actor: { kind: 'system' }, tradeCode: code, action: 'ruling.payout-waiting', detail: { reason: next } });
+      await client.query('commit');
+    } catch (e) {
+      await client.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+    log({ reason: 'internal-ruling-wait' });
+    return reply.code(201).send({ ok: true });
+  };
+
   /** Plan 4 Task 14: the moderation process's daily verification failed: `site_flags.log_alarm` (the first time stays). */
   const logAlarm = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind'])) throw new Refused(400, 'bad-body');
@@ -849,6 +893,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'log-checkpoint') return logCheckpoint(body, reply);
     if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
     if (isPlainObject(body) && body.kind === 'ruling-statement') return rulingStatement(body, reply);
+    if (isPlainObject(body) && body.kind === 'ruling-wait') return rulingWait(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;

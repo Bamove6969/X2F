@@ -528,6 +528,11 @@ export interface CaseRuling {
     proof: { txHash: string; status: 'pending' | 'accepted' | 'refused'; confirmations: number | null; submittedAt: string } | null;
     failedChecks?: Array<{ at: string; reason: 'node-unavailable' | 'busy' }>;
   };
+  /**
+   * Ruling-winner reasons (lead 22 Nov): why the moderation process's payout of this ruling waits on
+   * its winner, since when, while the trade is disputed; null when it does not. Absent from an older API.
+   */
+  payoutWait?: { reason: 'winner-committed' | 'winner-offline'; since: string } | null;
 }
 export interface DisputeCase {
   code: string;

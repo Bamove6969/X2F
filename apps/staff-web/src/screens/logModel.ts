@@ -123,6 +123,11 @@ function sentence(
     case 'appeal.waiting': return 'The appeal is waiting for a reviewer who was not involved';
     case 'ruling.final': return d.overturned === true ? 'Appeal decided: decision overruled' : 'Decision final';
     case 'ruling.executed': return 'The ruling was carried out';
+    // Ruling-winner reasons (lead 22 Nov), from the moderation process. COPY-UNSIGNED
+    case 'ruling.payout-waiting':
+      return d.reason === 'winner-committed' ? "The ruling's payout waits: the winner's app is committed to an earlier payout"
+        : d.reason === 'winner-offline' ? "The ruling's payout waits: the winner's app has not taken part"
+        : "The winner's app is taking part in the ruling's payout";
     // Accounts.
     case 'hold.placed': return `Put a trading hold on ${side()}`;
     case 'hold.lifted': return `Lifted the trading hold on ${side()}`;

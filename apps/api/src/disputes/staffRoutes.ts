@@ -487,6 +487,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         complyBy: d.complyBy?.toISOString() ?? null,
         // Plan 4 Task 12 (A6): the seller's payment proof, and whether the comply time lapsed without one.
         compliance: await complianceOf(deps.db, d),
+        // Ruling-winner reasons (lead 22 Nov): why the moderation process's payout waits on its winner, while disputed.
+        payoutWait: t.state === 'disputed' ? await payoutWaitOf(deps.db, code) : null,
       },
       freezes: await freezesOf(deps.db, t, code),
     };
@@ -807,6 +809,21 @@ async function freezeAllowed(q: Queryable, d: Dispute, side: Side, reason: 'no-r
   const deadlineH = d.round === 2 ? APPEAL_GOAL_H : RULING_DEADLINE_H;
   const pausedMs = Math.max(0, d.rulingDueAt.getTime() - since.getTime() - deadlineH * H);
   return now.getTime() - last.getTime() >= FREEZE_NO_REPLY_H * H + pausedMs;
+}
+
+/**
+ * Ruling-winner reasons (lead 22 Nov): the latest `ruling.payout-waiting` the moderation process
+ * reported for the trade (internal `ruling-wait`), with when it was logged, or null (none, or `none`).
+ */
+async function payoutWaitOf(q: Queryable, code: string): Promise<{ reason: 'winner-committed' | 'winner-offline'; since: string } | null> {
+  const { rows } = await q.query<{ detail: string; at: Date }>(
+    "select detail, at from activity_log where trade_code = $1 and action = 'ruling.payout-waiting' order by id desc limit 1",
+    [code],
+  );
+  const r = rows[0];
+  if (r === undefined) return null;
+  const reason = (JSON.parse(r.detail) as { reason?: unknown }).reason;
+  return reason === 'winner-committed' || reason === 'winner-offline' ? { reason, since: r.at.toISOString() } : null;
 }
 
 async function freezesOf(q: Queryable, t: Pick<CaseTrade, 'buyer' | 'seller'>, code: string): Promise<Record<Side, boolean>> {

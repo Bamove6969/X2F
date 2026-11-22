@@ -100,6 +100,9 @@ export const LOG_ACTIONS = {
   'appeal.waiting': {},
   'ruling.final': { rulingId: 'id', round: 'number', overturned: 'bool' },
   'ruling.executed': { rulingId: 'id', txHash: 'hex64' },
+  // Ruling-winner reasons (lead 22 Nov): why the moderation process's ruling payout waits on its
+  // winner (`winner-committed`, `winner-offline`), or `none` once the winner took part (system).
+  'ruling.payout-waiting': { reason: 'id' },
   'dispute.complied': { txHash: 'hex64' },
   // Plan 4 Task 12 (A6): the seller's payment proof waits for its confirmations, or was refused on a
   // later check; the seller let the comply time pass with no proof (the case goes to a senior).
