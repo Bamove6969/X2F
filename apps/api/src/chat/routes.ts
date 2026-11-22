@@ -535,7 +535,7 @@ export function chatRoutes(app: FastifyInstance): void {
     if (raw !== undefined && (typeof raw !== 'string' || !AFTER.test(raw))) throw new ApiError(400, 'bad-request');
     const after = raw ?? '0';
     const { rows } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
-      `select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 and id > $2 order by id limit $3`,
+      `select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 and chat_envelopes.id > $2 order by chat_envelopes.id limit $3`,
       [row.code, after, ENVELOPE_PAGE + 1],
     );
     const page = rows.slice(0, ENVELOPE_PAGE);
