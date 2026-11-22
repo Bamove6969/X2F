@@ -99,6 +99,19 @@ describe('peerRelease: what the moderator heard from a trader about settling (re
     await p.stop();
   });
 
+  it('review R3: a set counts for its own tag only; a message for another tag starts again without it', async () => {
+    const { p, ids, participants, push } = await modParty();
+    const tag = releaseTag(CANCEL);
+    push(await frame('buyer', ids, participants, `release.txset:${tag}.1`, { txSet: 'buyer-set' }));
+    await expect.poll(() => p.peerRelease!('buyer')?.elsewhere?.txSet ?? null).toBe(true);
+    const other = releaseTag({ ...CANCEL, to: [{ address: 'SELLER2', amountAtomic: 100n }] });
+    expect(other).not.toBe(tag);
+    push(await frame('buyer', ids, participants, `state.export:${other}.1`, { hex: 'buyer-export-2' }));
+    await expect.poll(() => p.peerRelease!('buyer')?.elsewhere?.tag ?? null).toBe(other);
+    expect(p.peerRelease!('buyer')!.elsewhere!.txSet).toBe(false);
+    await p.stop();
+  });
+
   it('a message of the current release from that trader counts as current (its export for the ruling)', async () => {
     const { p, ids, participants, push } = await modParty();
     push(await frame('buyer', ids, participants, `state.export:${releaseTag(RULING)}.1`, { hex: 'buyer-ruling-export' }));

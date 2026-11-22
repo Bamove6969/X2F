@@ -464,13 +464,13 @@ describe('ModCase (board ModCase)', () => {
     fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: published({ reason: 'winner-committed', since }) } });
     await open(`/disputes/${CODE}`);
     expect(text('payout-waiting')).toBe(
-      `The payout has waited since ${hhmm(since)}: the winner's app is committed to an earlier payout it built, so it will not sign this ruling's payout.`,
+      `Since ${hhmm(since)}, the payout has been waiting: the winner's app reports it is committed to an earlier payout it built (it sent the moderator a built set for another outcome), so it will not sign this ruling's payout.`,
     );
     document.body.innerHTML = '';
     fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: published({ reason: 'winner-offline', since }) } });
     await open(`/disputes/${CODE}`);
     expect(text('payout-waiting')).toBe(
-      `The payout has waited since ${hhmm(since)}: the winner's app has not taken part. Either it has not been opened, or it is committed to an earlier payout the moderator takes no part in.`,
+      `Since ${hhmm(since)}, the payout has been waiting: the winner's app has not taken part. Either it has not been opened, or it is committed to an earlier payout the moderator takes no part in.`,
     );
     // None (or an older API without the field): no line.
     for (const payoutWait of [null, undefined]) {

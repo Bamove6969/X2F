@@ -13,7 +13,7 @@ import type { Outcome, PartyHandle } from '@x2f/escrow';
 import { escrowPlan, verifyRulingStatement, type RulingStatement } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { rulingExecutor, RULING_WINNER_WAIT_MS, type RulingStepInput } from '../src/execute.js';
+import { rulingExecutor, RULING_WAIT_REPORT_MS, RULING_WINNER_WAIT_MS, type RulingStepInput } from '../src/execute.js';
 import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, syncRegistry, type GateStore } from '../src/gate/index.js';
 import { BALANCE, ctx, newGate, recorded, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
 import { DEAL, ESCROW, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
@@ -446,6 +446,21 @@ describe('why a ruling payout waits on its winner (ruling-winner-committed / -of
     await exec.step(step(s, p.handle, { reportWait }));
     await exec.step(step(s, p.handle, { reportWait }));
     expect(sent).toEqual(['winner-committed', 'winner-committed', 'winner-committed']);
+  });
+
+  it('review m2: a report that never answers does not hold the pass; it counts as refused and is sent again', async () => {
+    const s = await setup();
+    const p = viewingParty(COMMITTED);
+    const sent: Array<string | null> = [];
+    const exec = rulingExecutor({ store: s.store, source: s.w.api, ctx: ctx(), log: () => {}, signingSecret: modKey.privateKey, winnerWaitMs: 0, reportWaitMs: 50 });
+    const hang = async (x: 'winner-committed' | 'winner-offline' | null) => (sent.push(x), new Promise<boolean>(() => {}));
+    await exec.step(step(s, p.handle, { reportWait: hang }));
+    const t0 = Date.now();
+    expect(await exec.step(step(s, p.handle, { reportWait: hang }))).toBe('in-flight');
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    expect(await exec.step(step(s, p.handle, { reportWait: hang }))).toBe('in-flight');
+    expect(sent).toEqual(['winner-committed', 'winner-committed']);
+    expect(RULING_WAIT_REPORT_MS).toBe(15_000);
   });
 
   it('a party without the read says nothing (it cannot tell), and nothing is said once the payout is settled', async () => {
