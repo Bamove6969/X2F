@@ -283,16 +283,55 @@ export function markDates(text: string, keep: boolean[]): void {
   }
 }
 
-/** A pattern for one trade code as OCR may show it: any case, O for 0, I or L for 1, any grouping (also Task 9's reference check). */
-export function codePattern(normalized: string): RegExp {
-  const chars = [...normalized.replace(/-/g, '')].map((c) => {
-    if (c === '0') return '[0Oo]';
-    if (c === '1') return '[1IiLl]';
-    if (/[A-Z]/.test(c)) return `[${c}${c.toLowerCase()}]`;
-    return c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * What OCR may show for each character of a trade code (Crockford alphabet), beyond the letter in
+ * either case. The reference rule (plan Task 9): with or without dashes, with the look-alikes O/0 and
+ * I/L/1. Lead call 22 Nov (T17 e2e: a clean memo "4VC0-…-6EJ7" read as "4VCO0-…-6E)7"): also J as
+ * ), ] or 1, and B/8, S/5, Z/2, G/6 both ways. Only this trade's own code is ever looked for.
+ */
+export const CODE_CONFUSIONS: Readonly<Record<string, string>> = Object.freeze({
+  '0': '0Oo',
+  '1': '1IiLl',
+  J: 'Jj)]1',
+  B: 'Bb8',
+  '8': '8Bb',
+  S: 'Ss5',
+  '5': '5Ss',
+  Z: 'Zz2',
+  '2': '2Zz',
+  G: 'Gg6',
+  '6': '6Gg',
+});
+
+/** Between any two characters of the code: nothing, or up to 3 spaces and dashes; never a line break. */
+const CODE_SEP = '[ -]{0,3}';
+
+function codeCharClass(c: string): string {
+  const set = CODE_CONFUSIONS[c] ?? (/[A-Z]/.test(c) ? `${c}${c.toLowerCase()}` : null);
+  if (set === null) return c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return `[${set.replace(/[\]\\^-]/g, '\\$&')}]`;
+}
+
+/** One group of the code, with at most one extra character: a 0 read twice ("O0" or "0O"). */
+function codeGroup(group: string): string {
+  const classes = [...group].map(codeCharClass);
+  const alts = [classes.join(CODE_SEP)];
+  [...group].forEach((c, i) => {
+    if (c !== '0') return;
+    alts.push(classes.map((k, j) => (j === i ? `${k}${k}` : k)).join(CODE_SEP));
   });
+  return alts.length === 1 ? alts[0]! : `(?:${alts.join('|')})`;
+}
+
+/**
+ * A pattern for one trade code as OCR may show it: any case, the look-alikes in CODE_CONFUSIONS, any
+ * grouping (missing or extra dashes and spaces, never a line break), its groups in order, and at most
+ * one extra character per group (a doubled 0). Also Task 9's reference check.
+ */
+export function codePattern(normalized: string): RegExp {
+  const groups = normalized.split('-').filter((g) => g !== '');
   // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- every character is a class built here or escaped above
-  return new RegExp(`${B}${chars.join('[ -]?')}${E}`, 'g');
+  return new RegExp(`${B}${groups.map(codeGroup).join(CODE_SEP)}${E}`, 'g');
 }
 
 /** Any well-formed trade code (grouped, with at least one letter), for review notes. */

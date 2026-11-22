@@ -116,14 +116,9 @@ for (const [label, size] of SIZES) {
         const lines = card.locator('[data-part="smart-proof-line"]');
         await expect(lines.nth(0)).toHaveText(`Shows ${total}, the right amount`);
         await expect(lines.nth(0)).toHaveAttribute('data-tone', 'escrow');
-        // The code line. KNOWN APP GAP (reported, p5t17): the seller's OCR misreads some codes on a
-        // clean, unblurred memo line (e.g. 4VC0-…-6EJ7 read as "4VCO0-…-6E)7"), and @x2f/proof
-        // codePattern tolerates only 0/O and 1/I/l, so the card then says the code "isn't in the
-        // note". Until that is fixed the line is either one, and a miss is annotated on the run.
-        const codeLine = (await lines.nth(1).textContent())!.trim();
-        expect([`Note says ${o.code}, this trade's code`, "This trade's code isn't in the note"]).toContain(codeLine);
-        if (codeLine.startsWith('Note says')) await expect(lines.nth(1)).toHaveAttribute('data-tone', 'escrow');
-        else test.info().annotations.push({ type: 'known-gap', description: `smart card missed code ${o.code} on a clean receipt` });
+        // The code line, read through the OCR's usual misreads (@x2f/proof CODE_CONFUSIONS).
+        await expect(lines.nth(1)).toHaveText(`Note says ${o.code}, this trade's code`);
+        await expect(lines.nth(1)).toHaveAttribute('data-tone', 'escrow');
         await expect(card.locator('[data-part="smart-proof-closing"]')).toHaveText(new RegExp(`^Look for a \\${total} payment with the note ${o.code} in your bank\\.`));
         await expect(card.locator('img[data-part="proof-image"]')).toHaveAttribute('src', /^data:image\/png;base64,/);
         // It ran in the self-hosted worker, under the worker CSP (connect-src only this site's /ocr/).
