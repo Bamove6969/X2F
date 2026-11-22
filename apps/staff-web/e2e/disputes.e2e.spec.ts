@@ -59,7 +59,7 @@ const RULING_COSIGN_BUG = "BUG (money/rulings): the winner's app never co-signs 
 /** X2F_E2E_SEE_FAILURES=1 runs the expected failures as plain tests, to see where each one stops. */
 const SEE_FAILURES = process.env.X2F_E2E_SEE_FAILURES === '1';
 /** How long a row waits for a ruling's payout while RULING_COSIGN_BUG stands (a release on regtest takes 2-3 minutes). */
-const PAYOUT_WAIT = 6 * 60_000;
+const PAYOUT_WAIT = 4 * 60_000;
 
 const NOTE = 'I paid by Zelle and the seller stopped answering.';
 
