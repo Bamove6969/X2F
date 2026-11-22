@@ -188,7 +188,7 @@ Why:
 | W4 | `mayOpenLiveEvents` back to the Trades role only | web ui | **red** |
 | W5 | owner's last-acted line not rendered | web tradesList | **red** |
 
-**21 of 26 guard reverts go red.** The 4 survivors are the test gaps in m2 and m3. Approved m3
+**22 of 26 guard reverts go red** (corrected 22 Nov: the first version said 21). The 4 survivors are the test gaps in m2 and m3. Approved m3
 (per-part writes) is G07 and G11; approved I1 is G05 and G08 to G10. The ruling-statement route
 (B1) has no guard to revert.
 
@@ -234,3 +234,149 @@ Why:
    should be owner-only until C-019.
 4. **Optional:** m4 (re-read the boxes in the stream's attach re-check) and n1.
 5. Then a full `npm run check` under the lock on the fixed head.
+
+---
+
+## Addendum (22 Nov 2026): re-review of 6a4d0fed (`git diff d5b673c0 6a4d0fed`)
+
+**Commits on the branch** (the lead's message named 5e6e1e09, d2fad13a and 2d68edfb for the first
+three; the branch has these):
+
+| Commit | What it does |
+|---|---|
+| 199ca353 (RED) | Tests for B1, m1, m4, n1 and the announce; pins for m2, G19, G20 and G21 |
+| 0e7c888b | The fixes for the above |
+| 527660e1 (RED) | Chat envelopes page by id as a number; the PC1 announce test follows the lead's part call |
+| b5856b3a | The fix for the trader route's paging |
+| a582cbcd (RED) | The staff chat read returns envelopes in numeric id order |
+| 6a4d0fed | The fix for the staff read's ordering |
+
+13 files changed, +272/-16. Only the API changed.
+
+### Verdict: APPROVE WITH MINORS
+
+Every finding is fixed at its cause. Each new test was red before its fix: I reverted each fix and
+its test went red. The four guard reverts that survived last time are now red. No test was weakened.
+
+The minors are info only and need no change on this branch. **The full `npm run check` was not run
+(the lock queue is deep);** per the reviewer rule it must be green before this lands.
+
+### Item by item
+
+**B1: fixed.** `GET /v1/trades/:code/ruling-statement` now calls
+`assertMemberMay(req.auth, tradePartAbility(closedAt))` after `roleInTrade`
+(`apps/api/src/trades/identity.ts:109-111`), so a stranger stays 404. Tested in team.test.ts in
+both directions plus the stranger case. Revert R1 turns it red.
+
+**m1: fixed (lead's call).** `lastActedBy` goes only to `memberId === null && level === 'full'`
+(`apps/api/src/trades/list.ts:183`).
+- That excludes held sessions as well: a hold exists only on a recovery-level session
+  (`apps/api/src/auth/sessions.ts:463`).
+- So the field now has exactly the session set of `GET /v1/team/audit`.
+- The test covers a recovery session and a held one, checks that the member's name appears nowhere
+  in the body, and still pins the full owner case. Revert R2 turns it red.
+
+**m2: pinned.** The new team.test.ts case sends a See-active-only member to a stranger's completed
+trade, and a See-history-only member to a stranger's open one. Each holds the action boxes too, so
+only the part check differs. All ten routes answer 404. G06 (moving the room's part check above the
+participant 404) is now **red**.
+
+**m3: pinned.**
+- G19 (the trade chat line) is **red** in chat.test.ts. The test also pins that an offer chat's
+  line has no part.
+- G20 (the dispute store, via the appeal) is **red** in team.test.ts.
+- G21 (the staff publisher: moderator-joined, the trade, the chat line) is **red** in
+  disputes/staff.test.ts.
+
+**m4: fixed.** After attach, the re-check now also re-reads the member's boxes and ends the stream
+with 401 if the parts differ from those `requireTrader` read (`apps/api/src/events/routes.ts:98-105`).
+- The read is `team_members where id = $1 and removed_at is null`, so a member removed in that
+  window is also refused. The comparison uses the same `hasAbility` parts key as `updateAbilities`.
+- The web client is not signed out by this 401. It uses EventSource, which never sees the status:
+  the source closes and the client reconnects after about 1 s (`apps/web/src/api/events.ts:83-88`).
+  The existing attach-window 401s take the same path.
+- Tested in events.test.ts: gaining a box, swapping parts and losing both all end the stream; a
+  change outside the trades boxes keeps it. Revert R3 turns it red.
+
+**n1: fixed.** The chat key's publish carries the linked trade's part
+(`apps/api/src/chat/routes.ts:505-507`), computed as the chat line's is. Tested open and completed
+in chatKeyRecord.test.ts. Revert R4 turns it red.
+
+**The announce (lead's call): fixed, in the place recommended.**
+- `assertMemberMay(req.auth, tradePartAbility(closedAt))` sits after `sideOf` (under the trade row
+  lock) and before `isStoredProof` (`apps/api/src/proof/blurCheck.ts:118-122`).
+- The new test: a Start-set member (history plus chat-reply) is refused on an open trade, and no
+  `blur_check_proofs` row is written. An active-plus-chat-reply member announces on an open trade
+  but is refused once it closes. The history member then announces on the closed trade. A stranger
+  gets 404 with an unstored id.
+- Revert R5 turns two tests red.
+
+**The existing test that changed.** Only one assertion changed, in PC1
+("announcing a proof needs chat-reply…", `apps/api/test/blurCheck.test.ts:246-255`). The
+chat-reply-only `poster` now expects **403** (it was 200), which is the lead's call. A new
+`announcer` with chat-reply and See active trades takes over the 200 case. Nothing was loosened: a
+refusal assertion was added. The other test edits fix those tests' own reference queries (chat.test
+and disputes/staff.test), which had the same text ordering. Each now orders by
+`chat_envelopes.id`. That is correct, and it is why R7 also turns the N11 (f) test red.
+
+**Paging fix 1 (trader `GET /v1/chats/:chat/envelopes`): correct.**
+- The query selected `id::text as id … order by id`. In Postgres, ORDER BY resolves a bare name to
+  the output column first, so the page was sorted as text: "10000" before "9999". WHERE resolves to
+  the input column, so `id > $2` was already numeric.
+- Now both say `chat_envelopes.id` (`apps/api/src/chat/routes.ts:538`).
+- The test moves the shared sequence forward only (never back) so this chat's ids cross from 4 to
+  5 digits. It then checks the full page and an `after=` page against the numeric order. Revert R6
+  turns it red.
+
+**Paging fix 2 (staff chat read, review N11 (f)): correct.**
+- Same cause, in `order by id desc limit` (`apps/api/src/disputes/staffRoutes.ts:563`). The newest
+  `CHAT_READ_MAX` window was chosen by text, so near a digit boundary the staff read could show the
+  wrong envelopes and set `olderNotShown` wrongly.
+- Tested across the boundary. Revert R7 turns two tests red.
+
+### Info (no change asked on this branch)
+
+- **i1: the same pattern in the moderation app.** `apps/moderation/src/gate/registry.ts:611` has
+  `select id::text as id … from activity_log … order by id`, so it sorts as text.
+  - It is harmless today. `involvedIn` (`packages/staff/src/appealReviewers.ts:28-38`) compares ids
+    as numbers (`logId`) and returns a set, so order doesn't matter there. The `reverse().find`
+    for `appeal.opened` matters only with two appeals on one trade.
+  - Worth the same one-word fix (`activity_log.id`) as cleanup, on main.
+  - A repo-wide search for `X::text as X … order by X` found only these three sites.
+- **i2: the shas in the lead's message don't match the branch.** See the commit table above.
+  a582cbcd and 6a4d0fed match.
+
+### Guard reverts at 6a4d0fed (each applied alone in a separate worktree, then restored)
+
+| # | Guard removed | Suite | Result |
+|---|---|---|---|
+| G06 | room part check moved before the participant 404 | api team + tradesList | **red** (the m2 test) |
+| G19 | chat line publish drops its part | api chat | **red** |
+| G20 | dispute store publish drops its part | api team | **red** |
+| G21 | staff dispute publisher drops its part | api disputes/staff | **red** |
+| R1 | B1: ruling-statement part check | api team | **red** |
+| R2 | m1: `level === 'full'` | api tradesList | **red** |
+| R3 | m4: boxes re-read after attach | api events | **red** |
+| R4 | n1: the key publish's part | api chatKeyRecord | **red** |
+| R5 | the announce's part check | api blurCheck + team | **red** (2 failed) |
+| R6 | trader envelopes ordered by the alias | api chat | **red** |
+| R7 | staff read ordered by the alias | api disputes/staff | **red** (2 failed) |
+
+**11 of 11 red.** Together with the 22 that were already red at d5b673c0, every guard reverted in
+this review now goes red.
+
+### Tests at 6a4d0fed
+
+| Run | Result |
+|---|---|
+| api vitest, 15 files: tradesList, team, blurCheck, events, chat, chatKeyRecord, disputes/staff, disputes/trader, disputes/rulings, disputes/appeals, frontDoor, take, identity, teamAbilities, disputes (`nice -n 10`, no lock) | **484 passed**, 0 failed |
+| web vitest, 5 files: tradesList, ui, wideShell, moderator-badge-scope, frontDoor | **196 passed**, 0 failed |
+| auth-client flows.test | **15 passed**, 0 failed |
+| `tsc --noEmit` apps/api | exit 0 (no web source changed since d5b673c0) |
+| Playwright trades, shell and team specs (under the lock, `--trace off`) | **55 passed**, 0 failed |
+| Full `npm run check` | **not run** (lock queue); required before landing |
+
+### To land
+
+1. A green full `npm run check` under the lock on 6a4d0fed.
+2. Optional, on main: i1.
