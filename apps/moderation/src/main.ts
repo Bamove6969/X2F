@@ -108,7 +108,7 @@ export { autoRefundStep, REFUND_UNVERIFIED_MS, type AutoRefundInputs, type AutoR
 export { buyerCancelStep, type BuyerCancelInputs, type BuyerCancelStep } from './buyerCancel.js';
 export { openDesk, type Desk, type DeskRecord, type DeskStep } from './desk.js';
 export { CHECKPOINT_INTERVAL_MS, startCheckpoints, VERIFY_EVERY_MS, type CheckpointOptions, type Checkpoints } from './checkpoint.js';
-export { rulingExecutor, type RulingExecutor, type RulingExecutorOptions, type RulingSource, type RulingStepInput, type RulingStepResult } from './execute.js';
+export { rulingExecutor, RULING_WINNER_WAIT_MS, type RulingExecutor, type RulingWait, type RulingExecutorOptions, type RulingSource, type RulingStepInput, type RulingStepResult } from './execute.js';
 export * from './gate/index.js';
 export { newShadow } from './shadow.js';
 export { readSignal, sealAck, termsMatch, type ModSignal } from './signals.js';
@@ -397,6 +397,12 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
               announce: async (r) => {
                 const res = await link.report({ kind: 'ruling-statement', trade: x.code, statement: r.statement, sig: r.sig });
                 if (res.status !== 201 && res.status !== 200) log({ reason: `ruling-statement-refused-${res.status}` });
+                return res.status === 201 || res.status === 200;
+              },
+              // Ruling-winner reasons (lead 22 Nov): why the payout waits on its winner, for the staff case view.
+              reportWait: async (reason) => {
+                const res = await link.report({ kind: 'ruling-wait', trade: x.code, reason });
+                if (res.status !== 201 && res.status !== 200) log({ reason: `ruling-wait-refused-${res.status}` });
                 return res.status === 201 || res.status === 200;
               },
             }),

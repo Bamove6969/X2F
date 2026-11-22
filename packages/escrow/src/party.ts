@@ -1272,7 +1272,7 @@ export function runParty(a: PartyArgs): PartyHandle {
         const m = RELEASE_KEY.exec(key);
         if (m && (!rel || m[2] !== tagOf(rel.outcome))) {
           const was = heardElsewhere.get(from);
-          heardElsewhere.set(from, { tag: m[2]!, txSet: m[1] === 'release.txset' || (was?.tag === m[2] && was.txSet), at: Date.now() });
+          heardElsewhere.set(from, { tag: m[2]!, txSet: m[1] === 'release.txset' || (was !== undefined && was.tag === m[2] && was.txSet), at: Date.now() });
         }
         ignored('not-current-release');
         return;

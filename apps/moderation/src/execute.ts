@@ -41,6 +41,21 @@ import { gateCheck, type GateContext, type GateRuling, type GateSource, type Gat
  * in this process is not withdrawn by a later stop or pause (`PartyHandle` has no withdraw); a
  * restart then holds it until the stop or pause ends.
  *
+ * Ruling-winner reasons (lead 22 Nov; review-lead-fix-ruling-pay, builder's question 1): a winner
+ * whose party is already committed to another outcome never exports for the mod-built set, and the
+ * payout used to wait at `ruling-signing` with no reason. On an `in-flight` pass at least
+ * `winnerWaitMs` (RULING_WINNER_WAIT_MS) after the payout was recorded, the executor says why, from
+ * this process's own party alone (`peerRelease`, the winner's own signed release messages to the
+ * moderator; never the API's or a trader's word): `winner-committed` when the winner sent a built tx
+ * set for another outcome (a builder commits when it builds: a buyer-built cancel, or a seller-built
+ * refund, that the moderator co-signs), else `winner-offline` (nothing from the winner for this
+ * payout: its app is not open, or it is committed to an outcome the moderator takes no part in, such
+ * as a seller-built release the buyer co-signs; the moderator cannot tell which). Null once the
+ * winner's export for the payout came. Each change is logged (`ruling-winner-committed`,
+ * `ruling-winner-offline`, `ruling-winner-joined`) and reported (`reportWait`) for the staff case
+ * view; a refused report is sent again on the next pass. A party without the read says nothing.
+ * Nothing here changes what is handed to the party or signed.
+ *
  * R-M2: the watcher's `settled` report for the mod-built sweep names the ruling's own kind
  * (`kindFor`, from this record), and the API applies it to the disputed trade in one transaction
  * (released or refunded, the dispute's execution recorded, `ruling.executed` logged:
@@ -51,10 +66,16 @@ export type RulingSource = GateSource & { storedRulings(code: string): Promise<S
 /** The refund this trade's desk armed (`DeskRecord.armed`), or null (security review 2026-11-12 M5). */
 export type DeskArmed = { kind: 'auto-refund' | 'buyer-cancel'; blocked?: string | null } | null;
 
+/** Why a handed ruling payout waits on its winner (see above), or null once the winner took part. */
+export type RulingWait = 'winner-committed' | 'winner-offline';
+
+/** How long after the payout was recorded a winner that has not taken part is named (lead default, owner question). */
+export const RULING_WINNER_WAIT_MS = 60 * 60_000;
+
 export interface RulingStepInput {
   code: string;
-  /** The trade's moderator party (only its settle() is used). */
-  handle: Pick<PartyHandle, 'settle'>;
+  /** The trade's moderator party: its settle(), and its read-only peerRelease() for why a payout waits. */
+  handle: Pick<PartyHandle, 'settle' | 'peerRelease'>;
   /** The API's watch-list item: a brake only (state and maintenance), never a reason to pay. */
   api: { state: string; paused?: boolean };
   /** The escrow as this process's party reads it. */
@@ -75,6 +96,8 @@ export interface RulingStepInput {
    * signed link); true once the API accepted it.
    */
   announce(r: { statement: RulingStatement; sig: string }): Promise<boolean>;
+  /** Ruling-winner reasons: posts why the payout waits (or null: no longer) to the API; true once it took it. */
+  reportWait?(reason: RulingWait | null): Promise<boolean>;
 }
 
 export type RulingStepResult = 'none' | 'settled' | 'paused' | 'no-terms' | 'waiting-funds' | 'desk-armed' | 'no-escrow' | 'announce-failed' | `refused-${string}` | 'mismatch' | 'handed' | 'in-flight';
@@ -97,6 +120,8 @@ export interface RulingExecutorOptions {
   log: (e: { reason: string }) => void;
   /** MOD_SIGNING_SECRET (64-byte Ed25519): signs the ruling statements (Haveno finding 2). */
   signingSecret: Uint8Array;
+  /** Ruling-winner reasons: RULING_WINNER_WAIT_MS unless set (tests). */
+  winnerWaitMs?: number;
 }
 
 const isEscrow = (r: GateRuling): boolean => r.round === 1 && (ESCROW_OUTCOMES as readonly string[]).includes(r.outcome);
@@ -108,6 +133,39 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
   const inFlight = new Map<string, string>();
   /** The statement the API accepted in this process, per trade code (its payout key). */
   const announced = new Map<string, string>();
+  /** The wait reason the API took in this process, per trade code (absent: none reported yet). */
+  const waitReported = new Map<string, RulingWait | null>();
+  const waitMs = o.winnerWaitMs ?? RULING_WINNER_WAIT_MS;
+
+  /**
+   * Why the recorded payout `ex` waits on its winner, from this process's own party only, or null
+   * when the winner took part; undefined before the set time, or when the party cannot tell.
+   */
+  const waitOf = (s: RulingStepInput, ex: RulingExecution): RulingWait | null | undefined => {
+    if (o.ctx.now().getTime() - Date.parse(ex.recordedAt) < waitMs) return undefined;
+    const view = s.handle.peerRelease?.(ex.winner);
+    if (view === undefined) return undefined;
+    if (view.current) return null;
+    return view.elsewhere?.txSet === true ? 'winner-committed' : 'winner-offline';
+  };
+
+  /** Logs and reports a change of the wait reason (never anything else); a refused report is tried again. */
+  const waitPass = async (s: RulingStepInput, ex: RulingExecution): Promise<void> => {
+    const why = waitOf(s, ex);
+    if (why === undefined || !s.reportWait) return;
+    const was = waitReported.get(s.code);
+    if (was === why) return;
+    if (was === undefined && why === null) {
+      // Nothing was said in this process: one clear, in case an earlier process reported a reason.
+      const took = await s.reportWait(null).catch(() => false);
+      if (took) waitReported.set(s.code, null);
+      return;
+    }
+    const took = await s.reportWait(why).catch(() => false);
+    if (!took) return;
+    waitReported.set(s.code, why);
+    o.log({ reason: why === null ? 'ruling-winner-joined' : `ruling-${why}` });
+  };
 
   const step = async (s: RulingStepInput): Promise<RulingStepResult> => {
     const done = o.store.state.executions[s.code];
@@ -172,7 +230,10 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
       }
       announced.set(s.code, key);
     }
-    if (inFlight.get(s.code) === key) return 'in-flight';
+    if (inFlight.get(s.code) === key) {
+      await waitPass(s, o.store.state.executions[s.code]!);
+      return 'in-flight';
+    }
     inFlight.set(s.code, key);
     const outcome: Outcome = { kind: 'release', to: auth.settle.payouts, builder: 'mod', cosigner: winner };
     o.log({ reason: 'ruling-signing' });
