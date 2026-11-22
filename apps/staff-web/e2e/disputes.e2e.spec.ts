@@ -39,26 +39,11 @@ import { hire, owner, setLargeTradeLimit, staffPage, type Staffer } from './staf
 const SIZES: Array<[string, Size]> = [['phone 390×844', PHONE], ['desktop 1280×800', DESKTOP]];
 
 /**
- * Found by this spec (22 Nov 2026), in money and rulings, so not fixed here: the trader app never
- * co-signs a moderator-built ruling set. apps/web/src/escrow/runtime.ts `context()` builds the
- * PolicyContext without `ruling`, and nothing calls adapters.ts `getRulingStatement` (GET
- * /v1/trades/:code/ruling-statement), so policy.ts `ruled()` is always false and the winner's device
- * refuses the set (see the TODO(m4) in runtime.ts). The moderation process logs `ruling-signing` and
- * waits; no ruling ever pays out. The rows that need a ruling's payout are expected to fail until it is fixed.
+ * Found by this spec (22 Nov 2026) and fixed on wip/lead-fix-ruling-pay: the winner's app never
+ * co-signed the moderator-built ruling set (no ruling statement reached cosignPolicy), and after a
+ * refund the seller's /dispute page showed a seller-sends-xmr ruling without the tx-proof form.
  */
-/**
- * Found by this spec (22 Nov 2026), in rulings and money, so not fixed here: after a refund, the
- * seller of a `seller-sends-xmr` ruling sees the ruling but never the "Send the XMR, then prove it"
- * form. DisputeSlot.tsx takes `payTo` only from the room escrow's `restitution`
- * (escrow/runtime.ts emit()), which is null on the seller's device for a refunded trade, so the
- * seller cannot submit the tx proof in the app and the case can only lapse (comply-lapsed).
- */
-const AFTER_REFUND_PROOF_BUG = "BUG (rulings/money): after a refund the seller's ruling card never shows the tx-proof form (DisputeSlot payTo comes only from the escrow's restitution, null for a refunded trade), so the seller cannot prove the payment in the app";
-
-const RULING_COSIGN_BUG = "BUG (money/rulings): the winner's app never co-signs the moderator-built ruling set (escrow/runtime.ts context() passes no ruling statement to cosignPolicy; getRulingStatement has no caller), so no ruling pays out";
-/** X2F_E2E_SEE_FAILURES=1 runs the expected failures as plain tests, to see where each one stops. */
-const SEE_FAILURES = process.env.X2F_E2E_SEE_FAILURES === '1';
-/** How long a row waits for a ruling's payout while RULING_COSIGN_BUG stands (a release on regtest takes 2-3 minutes). */
+/** How long a row waits for a ruling's payout (a mod-built release on regtest takes 2-3 minutes). */
 const PAYOUT_WAIT = 4 * 60_000;
 
 const NOTE = 'I paid by Zelle and the seller stopped answering.';
@@ -97,7 +82,6 @@ async function buyerPaid(o: Open, tx: string, toBuyer: bigint, fee: bigint): Pro
 for (const [label, size] of SIZES) {
   test.describe(label, () => {
     test('below the limit, buyer wins: the buyer disputes past confirmBy; the moderator takes it, joins the chat, messages both and rules with a tap; the traders see the ruling and the 48 h appeal window; the buyer receives amount − 1% − network fee, the fee wallet exactly 1%; the log has every step in order', async ({ browser }) => {
-      test.fail(!SEE_FAILURES, RULING_COSIGN_BUG);
       const mod = await hire('mod');
       // Taker seller, poster buyer: the poster pays the 1% out of the escrow.
       const o = await openTrade(browser, size, 'seller');
@@ -132,7 +116,6 @@ for (const [label, size] of SIZES) {
     });
 
     test('above the limit (the owner lowers it to 30 USD for this 40 USD trade): the moderator proposes, nothing moves before approval; the owner approves with the spare key; the buyer receives amount − 1% − network fee, the fee wallet exactly 1%', async ({ browser }) => {
-      test.fail(!SEE_FAILURES, RULING_COSIGN_BUG);
       const mod = await hire('mod');
       // New traders are held to the starter limit ($200 a trade), so the trade stays $40 and the
       // owner lowers the large-trade limit to $30 for this row (a tapped settings change), then
@@ -177,7 +160,6 @@ for (const [label, size] of SIZES) {
     });
 
     test('appeal overturns: the seller appeals inside the window; a fresh senior moderator reviews and overturns; the round-1 payout stands (no second tx, Revision 2026-10-29) and the moderator\'s round-1 ruling counts as overturned on Performance', async ({ browser }) => {
-      test.fail(!SEE_FAILURES, RULING_COSIGN_BUG);
       const mod = await hire('mod');
       const senior = await hire('senior');
       const o = await openTrade(browser, size, 'seller');
@@ -215,9 +197,6 @@ for (const [label, size] of SIZES) {
     });
 
     test('winner offline: the buyer closes X2F before the ruling; the seller\'s room says it waits for the buyer to open X2F; the buyer opens it again and the release completes; exactly one tx, the buyer paid amount − 1% − network fee, the fee wallet exactly 1%', async ({ browser }) => {
-      test.fail(!SEE_FAILURES, RULING_COSIGN_BUG);
-      // Also missing (Review Focus 4): no trader screen says "Waiting for <winner> to open X2F"; this row stops there first.
-      test.info().annotations.push({ type: 'issue', description: 'no "Waiting for <winner> to open X2F" text exists in apps/web (Review Focus 4)' });
       const mod = await hire('mod');
       const o = await openTrade(browser, size, 'seller');
       await inRooms(o, async () => {
@@ -247,7 +226,6 @@ for (const [label, size] of SIZES) {
     });
 
     test('dispute after refund: the auto-refund fires; the buyer disputes; the seller is held (Post offer refused); the moderator rules seller-sends-xmr; the seller sends exactly the trade\'s XMR from a regtest wallet and submits the tx proof; the hold lifts and the case closes', async ({ browser }) => {
-      test.fail(!SEE_FAILURES, AFTER_REFUND_PROOF_BUG);
       const mod = await hire('mod');
       const o = await openTrade(browser, size, 'seller', { beforeAccept: oneMinuteToPay });
       // Lead default, owner question: liens (the hold of Task 25) are switched off in a new database
