@@ -13,7 +13,7 @@ import type { Outcome, PartyHandle } from '@x2f/escrow';
 import { escrowPlan, verifyRulingStatement, type RulingStatement } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { rulingExecutor, type RulingStepInput } from '../src/execute.js';
+import { rulingExecutor, RULING_WINNER_WAIT_MS, type RulingStepInput } from '../src/execute.js';
 import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, syncRegistry, type GateStore } from '../src/gate/index.js';
 import { BALANCE, ctx, newGate, recorded, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
 import { DEAL, ESCROW, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
@@ -71,7 +71,7 @@ beforeAll(async () => {
 const announced: Array<{ statement: RulingStatement; sig: string }> = [];
 const accept = async (r: { statement: RulingStatement; sig: string }) => (announced.push(r), true);
 
-const step = (s: Setup, handle: Pick<PartyHandle, 'settle'>, over: Partial<RulingStepInput> = {}): RulingStepInput => ({
+const step = (s: Setup, handle: Pick<PartyHandle, 'settle' | 'peerRelease'>, over: Partial<RulingStepInput> = {}): RulingStepInput => ({
   code: s.c.ruling.code,
   handle,
   api: { state: 'disputed', paused: false },
@@ -271,6 +271,13 @@ describe('the watcher hands each disputed trade to the executor', () => {
     const statement = { v: 1, trade: l.code } as unknown as RulingStatement;
     await last.announce({ statement, sig: 'ab' });
     expect(net.reports.filter((r) => r.kind === 'ruling-statement')).toEqual([{ kind: 'ruling-statement', trade: l.code, statement, sig: 'ab' }]);
+    // Ruling-winner reasons (lead 22 Nov): why the payout waits goes to the API over the same link, for staff.
+    expect(await last.reportWait!('winner-committed')).toBe(true);
+    expect(await last.reportWait!(null)).toBe(true);
+    expect(net.reports.filter((r) => r.kind === 'ruling-wait')).toEqual([
+      { kind: 'ruling-wait', trade: l.code, reason: 'winner-committed' },
+      { kind: 'ruling-wait', trade: l.code, reason: null },
+    ]);
     expect(last.recorded).toEqual(
       gateRecordedTerms({
         terms: TERMS,
@@ -319,5 +326,143 @@ describe('the watcher hands each disputed trade to the executor', () => {
     l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic: FUNDS }], ownTxs: [tx] };
     await m.handle.watch();
     expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: tx, settleKind: 'dispute-buyer' }]);
+  });
+});
+
+/**
+ * Ruling-winner reasons (lead 22 Nov; review-lead-fix-ruling-pay builder's question 1): a winner whose
+ * party is committed to another outcome never exports for the mod-built ruling set, and the payout
+ * waited at `ruling-signing` with no reason. Once the winner has not taken part for the set time, the
+ * executor says why, from its own party's view only (`peerRelease`: the winner's own signed release
+ * messages), logs it, and reports it for the staff case view. What the moderator signs is unchanged.
+ */
+describe('why a ruling payout waits on its winner (ruling-winner-committed / -offline)', () => {
+  type View = ReturnType<NonNullable<PartyHandle['peerRelease']>>;
+  /** A recording party whose peerRelease the test sets; every view asked is recorded with its role. */
+  function viewingParty(view: View) {
+    const p = recordingParty();
+    const asked: string[] = [];
+    const v = { now: view };
+    const handle: Pick<PartyHandle, 'settle' | 'peerRelease'> = { settle: p.handle.settle, peerRelease: (from) => (asked.push(from), structuredClone(v.now)) };
+    return { ...p, handle, asked, set: (x: View) => (v.now = x) };
+  }
+  const reporter = (answer = true) => {
+    const sent: Array<string | null> = [];
+    return { sent, reportWait: async (r: 'winner-committed' | 'winner-offline' | null) => (sent.push(r), answer) };
+  };
+  const waiting = (s: Setup, logs: string[], o: { waitMs?: number; at?: () => Date } = {}) =>
+    rulingExecutor({ store: s.store, source: s.w.api, ctx: o.at ? { ...ctx(), now: o.at } : ctx(), log: (e) => logs.push(e.reason), signingSecret: modKey.privateKey, ...(o.waitMs !== undefined ? { winnerWaitMs: o.waitMs } : {}) });
+  const COMMITTED: View = { current: false, elsewhere: { tag: '0123456789abcdef', txSet: true, at: 1 } };
+  const SILENT: View = { current: false, elsewhere: null };
+
+  it('a winner that sent the moderator a built set for another outcome is committed to it: logged and reported once', async () => {
+    const s = await setup();
+    const p = viewingParty(COMMITTED);
+    const r = reporter();
+    const logs: string[] = [];
+    const exec = waiting(s, logs, { waitMs: 0 });
+    expect(await exec.step(step(s, p.handle, { reportWait: r.reportWait }))).toBe('handed');
+    expect(await exec.step(step(s, p.handle, { reportWait: r.reportWait }))).toBe('in-flight');
+    expect(await exec.step(step(s, p.handle, { reportWait: r.reportWait }))).toBe('in-flight');
+    expect(r.sent).toEqual(['winner-committed']);
+    expect(logs.filter((x) => x.startsWith('ruling-winner-'))).toEqual(['ruling-winner-committed']);
+    // The winner's view, never the loser's.
+    expect(new Set(p.asked)).toEqual(new Set(['buyer']));
+    // Nothing more or other was handed.
+    expect(p.settles).toHaveLength(1);
+    expect(p.settles[0]).toMatchObject({ builder: 'mod', cosigner: 'buyer' });
+  });
+
+  it("the seller's ruling asks the seller's view", async () => {
+    const s = await setup({ outcome: 'refund-to-seller' });
+    const p = viewingParty(SILENT);
+    const r = reporter();
+    const exec = waiting(s, [], { waitMs: 0 });
+    await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+    await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+    expect(new Set(p.asked)).toEqual(new Set(['seller']));
+    expect(r.sent).toEqual(['winner-offline']);
+  });
+
+  it('a winner the moderator heard nothing from (or only an export for another outcome: not committed) is offline as far as it can tell', async () => {
+    for (const view of [SILENT, { current: false, elsewhere: { tag: '0123456789abcdef', txSet: false, at: 1 } }] satisfies View[]) {
+      const s = await setup();
+      const p = viewingParty(view);
+      const r = reporter();
+      const logs: string[] = [];
+      const exec = waiting(s, logs, { waitMs: 0 });
+      await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+      await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+      expect(r.sent).toEqual(['winner-offline']);
+      expect(logs).toContain('ruling-winner-offline');
+    }
+  });
+
+  it('nothing before the set time (lead default one hour from the recorded payout), then the reason', async () => {
+    const s = await setup();
+    const p = viewingParty(COMMITTED);
+    const r = reporter();
+    let now = ctx().now();
+    const exec = waiting(s, [], { at: () => now });
+    const recordedAt = now;
+    await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+    now = new Date(recordedAt.getTime() + RULING_WINNER_WAIT_MS - 1);
+    expect(await exec.step(step(s, p.handle, { reportWait: r.reportWait }))).toBe('in-flight');
+    expect(r.sent).toEqual([]);
+    now = new Date(recordedAt.getTime() + RULING_WINNER_WAIT_MS);
+    expect(await exec.step(step(s, p.handle, { reportWait: r.reportWait }))).toBe('in-flight');
+    expect(r.sent).toEqual(['winner-committed']);
+    expect(RULING_WINNER_WAIT_MS).toBe(60 * 60_000);
+  });
+
+  it('once the winner takes part (its export for the ruling came), the reason is cleared, once; a change is reported again', async () => {
+    const s = await setup();
+    const p = viewingParty(SILENT);
+    const r = reporter();
+    const logs: string[] = [];
+    const exec = waiting(s, logs, { waitMs: 0 });
+    await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+    await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+    p.set(COMMITTED);
+    await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+    p.set({ current: true, elsewhere: COMMITTED.elsewhere });
+    await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+    await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+    expect(r.sent).toEqual(['winner-offline', 'winner-committed', null]);
+    expect(logs.filter((x) => x.startsWith('ruling-winner-'))).toEqual(['ruling-winner-offline', 'ruling-winner-committed', 'ruling-winner-joined']);
+  });
+
+  it('a report the API refused is sent again on the next pass', async () => {
+    const s = await setup();
+    const p = viewingParty(COMMITTED);
+    const sent: Array<string | null> = [];
+    let ok = false;
+    const reportWait = async (x: 'winner-committed' | 'winner-offline' | null) => (sent.push(x), ok);
+    const exec = waiting(s, [], { waitMs: 0 });
+    await exec.step(step(s, p.handle, { reportWait }));
+    await exec.step(step(s, p.handle, { reportWait }));
+    ok = true;
+    await exec.step(step(s, p.handle, { reportWait: async (x) => (sent.push(x), Promise.reject(new Error('down'))) }));
+    await exec.step(step(s, p.handle, { reportWait }));
+    await exec.step(step(s, p.handle, { reportWait }));
+    expect(sent).toEqual(['winner-committed', 'winner-committed', 'winner-committed']);
+  });
+
+  it('a party without the read says nothing (it cannot tell), and nothing is said once the payout is settled', async () => {
+    const s = await setup();
+    const p = recordingParty();
+    const r = reporter();
+    const exec = waiting(s, [], { waitMs: 0 });
+    await exec.step(step(s, p.handle, { reportWait: r.reportWait }));
+    expect(await exec.step(step(s, p.handle, { reportWait: r.reportWait }))).toBe('in-flight');
+    expect(r.sent).toEqual([]);
+    const v = viewingParty(SILENT);
+    const s2 = await setup();
+    const exec2 = waiting(s2, [], { waitMs: 0 });
+    await exec2.step(step(s2, v.handle, { reportWait: r.reportWait }));
+    v.answer(null);
+    await expect.poll(() => s2.store.state.executions[s2.c.ruling.code]?.settledAt ?? null).not.toBeNull();
+    expect(await exec2.step(step(s2, v.handle, { reportWait: r.reportWait }))).toBe('settled');
+    expect(r.sent).toEqual([]);
   });
 });
