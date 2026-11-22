@@ -664,12 +664,12 @@ function RulingCard({
           {`Ruling published at ${hhmm(r.publishedAt)}${r.draft !== null ? `: ${OUTCOME_LABELS[r.draft.outcome]}` : ''}.`}
         </p>
       ) : null}
-      {/* Ruling-winner reasons (lead 22 Nov): why the moderation process's payout waits on the winner. COPY-UNSIGNED; DESIGNER-REVIEW (no board). */}
+      {/* Ruling-winner reasons (lead 22 Nov): why the moderation process's payout waits on the winner. Review m1: "committed" is the winner's own report; m3: `since` is when the reason was logged, not when the payout was recorded. COPY-UNSIGNED; DESIGNER-REVIEW (no board). */}
       {r.payoutWait ? (
         <p className="x2f-staff-hint" data-part="payout-waiting">
           {r.payoutWait.reason === 'winner-committed'
-            ? `The payout has waited since ${hhmm(r.payoutWait.since)}: the winner's app is committed to an earlier payout it built, so it will not sign this ruling's payout.`
-            : `The payout has waited since ${hhmm(r.payoutWait.since)}: the winner's app has not taken part. Either it has not been opened, or it is committed to an earlier payout the moderator takes no part in.`}
+            ? `Since ${hhmm(r.payoutWait.since)}, the payout has been waiting: the winner's app reports it is committed to an earlier payout it built (it sent the moderator a built set for another outcome), so it will not sign this ruling's payout.`
+            : `Since ${hhmm(r.payoutWait.since)}, the payout has been waiting: the winner's app has not taken part. Either it has not been opened, or it is committed to an earlier payout the moderator takes no part in.`}
         </p>
       ) : null}
       {/* RC-4 (lead default): the seller's proofs X2F's checker could not take, so a senior deciding a lapse sees X2F's fault. COPY-UNSIGNED; DESIGNER-REVIEW (no board). */}

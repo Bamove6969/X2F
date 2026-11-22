@@ -46,14 +46,16 @@ import { gateCheck, type GateContext, type GateRuling, type GateSource, type Gat
  * payout used to wait at `ruling-signing` with no reason. On an `in-flight` pass at least
  * `winnerWaitMs` (RULING_WINNER_WAIT_MS) after the payout was recorded, the executor says why, from
  * this process's own party alone (`peerRelease`, the winner's own signed release messages to the
- * moderator; never the API's or a trader's word): `winner-committed` when the winner sent a built tx
+ * moderator; never the API's word): `winner-committed` when the winner sent a built tx
  * set for another outcome (a builder commits when it builds: a buyer-built cancel, or a seller-built
- * refund, that the moderator co-signs), else `winner-offline` (nothing from the winner for this
+ * refund, that the moderator co-signs; review m1: the winner's own report, the set is never opened
+ * or checked here, so it words what staff see and nothing more), else `winner-offline` (nothing from the winner for this
  * payout: its app is not open, or it is committed to an outcome the moderator takes no part in, such
  * as a seller-built release the buyer co-signs; the moderator cannot tell which). Null once the
  * winner's export for the payout came. Each change is logged (`ruling-winner-committed`,
  * `ruling-winner-offline`, `ruling-winner-joined`) and reported (`reportWait`) for the staff case
- * view; a refused report is sent again on the next pass. A party without the read says nothing.
+ * view; a refused report (or one with no answer in RULING_WAIT_REPORT_MS, review m2) is sent again
+ * on the next pass. A party without the read says nothing.
  * Nothing here changes what is handed to the party or signed.
  *
  * R-M2: the watcher's `settled` report for the mod-built sweep names the ruling's own kind
@@ -71,6 +73,12 @@ export type RulingWait = 'winner-committed' | 'winner-offline';
 
 /** How long after the payout was recorded a winner that has not taken part is named (lead default, owner question). */
 export const RULING_WINNER_WAIT_MS = 60 * 60_000;
+
+/**
+ * Review m2: the longest an in-flight pass waits on its wait report (the link's own fetch timeout,
+ * LINK_FETCH_TIMEOUT_MS, as a backstop for any link); one that does not answer counts as refused.
+ */
+export const RULING_WAIT_REPORT_MS = 15_000;
 
 export interface RulingStepInput {
   code: string;
@@ -122,6 +130,8 @@ export interface RulingExecutorOptions {
   signingSecret: Uint8Array;
   /** Ruling-winner reasons: RULING_WINNER_WAIT_MS unless set (tests). */
   winnerWaitMs?: number;
+  /** Review m2: RULING_WAIT_REPORT_MS unless set (tests). */
+  reportWaitMs?: number;
 }
 
 const isEscrow = (r: GateRuling): boolean => r.round === 1 && (ESCROW_OUTCOMES as readonly string[]).includes(r.outcome);
@@ -136,6 +146,15 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
   /** The wait reason the API took in this process, per trade code (absent: none reported yet). */
   const waitReported = new Map<string, RulingWait | null>();
   const waitMs = o.winnerWaitMs ?? RULING_WINNER_WAIT_MS;
+  /** Review m2: a report bounded in time; no answer, a refusal and an error are all false. */
+  const bounded = async (send: () => Promise<boolean>): Promise<boolean> => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([send().catch(() => false), new Promise<boolean>((r) => (t = setTimeout(() => r(false), o.reportWaitMs ?? RULING_WAIT_REPORT_MS)))]);
+    } finally {
+      clearTimeout(t);
+    }
+  };
 
   /**
    * Why the recorded payout `ex` waits on its winner, from this process's own party only, or null
@@ -157,11 +176,11 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     if (was === why) return;
     if (was === undefined && why === null) {
       // Nothing was said in this process: one clear, in case an earlier process reported a reason.
-      const took = await s.reportWait(null).catch(() => false);
+      const took = await bounded(() => s.reportWait!(null));
       if (took) waitReported.set(s.code, null);
       return;
     }
-    const took = await s.reportWait(why).catch(() => false);
+    const took = await bounded(() => s.reportWait!(why));
     if (!took) return;
     waitReported.set(s.code, why);
     o.log({ reason: why === null ? 'ruling-winner-joined' : `ruling-${why}` });

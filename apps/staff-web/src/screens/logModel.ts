@@ -125,7 +125,7 @@ function sentence(
     case 'ruling.executed': return 'The ruling was carried out';
     // Ruling-winner reasons (lead 22 Nov), from the moderation process. COPY-UNSIGNED
     case 'ruling.payout-waiting':
-      return d.reason === 'winner-committed' ? "The ruling's payout waits: the winner's app is committed to an earlier payout"
+      return d.reason === 'winner-committed' ? "The ruling's payout waits: the winner's app reports it is committed to an earlier payout"
         : d.reason === 'winner-offline' ? "The ruling's payout waits: the winner's app has not taken part"
         : "The winner's app is taking part in the ruling's payout";
     // Accounts.

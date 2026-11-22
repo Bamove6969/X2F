@@ -2,7 +2,7 @@
 
 Lead task, 22 Nov 2026, branch wip/lead-ruling-committed. Source: review-lead-fix-ruling-pay-2026-11-22.md (comms), re-review section "Builder's question 1", case (b).
 
-**Status: proposal only. Nothing in this note is built.** It needs a security review and lead or owner sign-off first, because every option widens what the moderator signs or changes the escrow protocol.
+**Status: decided, option C (lead call, 22 Nov, after the security review at comms 88d2453b, APPROVE WITH MINORS).** Nothing more is built for case (b): staff see the reason this branch adds (`ruling-winner-committed`), and the coins wait. Options A and B below are kept as the record of what was weighed. The review found that option B as proposed would rebuild at once, and recommended C. Review m1 also applies to any later option A: `winner-committed` is the winner's own report (a set under another tag, never opened or checked by the moderator), so A would have to check the set itself (`checkRelease` against the buyer-cancel payouts the moderator computes), not only its tag.
 
 ## The case
 
@@ -13,7 +13,7 @@ Lead task, 22 Nov 2026, branch wip/lead-ruling-committed. Source: review-lead-fi
 5. The buyer's party will never export for the ruling. The coins stay in the escrow.
 
 What staff see since this branch:
-- The moderation process names the case `ruling-winner-committed`. The buyer's party keeps sending the moderator its built set for another outcome, signed by the buyer's trade identity.
+- The moderation process names the case `ruling-winner-committed`. The buyer's party keeps sending the moderator its built set for another outcome, signed by the buyer's trade identity. That is the buyer's own report (review m1): the moderator never opens or checks the set, so the case view words it as what the winner's app reports.
 - It is shown on the case view (`ruling.payoutWait`) and logged as `ruling.payout-waiting`.
 
 ## Can staff already complete it? No.
@@ -73,10 +73,8 @@ Cost: a protocol change in packages/escrow and its own security review. But the 
 
 Staff see `ruling-winner-committed`. The coins wait until the buyer's party is reset or restored without that commitment, or until a person acts outside the product.
 
-## Lead recommendation
+## Decision
 
-Option B is the only one that keeps "the moderator signs only the ruling's payout". It also pays the winner. Option A carries out the opposite of the ruling.
-
-Either is an owner question once a reviewer has scoped B's protocol change. Until then, C with the new staff reason is the safe default.
+Option C (lead call, 22 Nov). The builder had recommended B, because it keeps "the moderator signs only the ruling's payout" and pays the winner. The security review (comms 88d2453b) found that B as proposed would rebuild at once and recommended C. Option A carries out the opposite of the ruling and widens what the moderator signs. Neither is built; reopening either needs its own design and review.
 
 The mutual cancel is the other form of case (b): the buyer builds and the seller co-signs. The moderator takes no part in it, so it shows as `ruling-winner-offline`. Like case (a), the loser can complete it alone. Whether that becomes a lien on the seller is the same question as RP-3, and is not decided here.
