@@ -279,10 +279,16 @@ for (const [label, size] of SIZES) {
           await expect(o.sellerPage.locator('[data-part="tx-proof-sent"]')).toBeVisible({ timeout: LONG });
           await mine(12);
           expect(await receivedIn(o.buyer.wallet, txHash)).toBe(AMOUNT);
-          // Accepted at 10 confirmations (the dispute timer checks again); the hold lifts and the case closes.
-          await expect.poll(async () => (await caseOf(o.code)).status, { timeout: 2 * LONG, intervals: [10_000] }).toBe('closed');
+          // Accepted at 10 confirmations (the dispute timer checks again): `complied`, and the hold lifts.
+          await expect.poll(async () => (await logFor(o.code)).includes('dispute.complied'), { timeout: 2 * LONG, intervals: [10_000] }).toBe(true);
           const free = await o.seller.api.call('POST', '/v1/offers', { side: 'sell', currencies: [{ currency: 'USD', bands: [{ min: '20', max: '150', marginBps: 0, minTrades: null }] }], methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: 'x' }], terms: 'x' });
           expect(free.status, JSON.stringify(free.body)).toBeLessThan(300);
+          // The case closes once the 48 h appeal window ends (packages/staff dispute.ts: `complied`
+          // inside the window only records the payment; `window-closed` then closes it). The row
+          // ends the window now in this run's database instead of waiting two days.
+          expect((await caseOf(o.code)).status).toBe('published');
+          await sql("update disputes set appeal_ends_at = now() - interval '1 second' where code = $1 and status = 'published'", [o.code]);
+          await expect.poll(async () => (await caseOf(o.code)).status, { timeout: 2 * LONG, intervals: [10_000] }).toBe('closed');
         });
       } finally {
         await sql('update site_flags set liens_enabled = false');
