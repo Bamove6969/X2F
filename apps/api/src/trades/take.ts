@@ -19,6 +19,7 @@ import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
+import { banHidesSql, tradeBanRefusal } from '../banState.js';
 import { ACTIVE_LIEN_SQL, hasActiveLien } from '../disputes/lien.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
@@ -148,7 +149,8 @@ const OFFER_SQL = `select o.account_id, o.side, o.amount_unit, o.status,
     (a.kind = 'trader' and a.disabled_at is null
       and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
       and not ${ACTIVE_LIEN_SQL('o.account_id')}
-      and not ${recoveryHoldHidesSql('o.account_id')}) as poster_ok
+      and not ${recoveryHoldHidesSql('o.account_id')}
+      and not ${banHidesSql('o.account_id')}) as poster_ok
   from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`;
 
 /**
@@ -328,6 +330,9 @@ export function takeRoutes(app: FastifyInstance): void {
       if (flags.held) throw new ApiError(409, 'trading-hold');
       // Task 25 (J-06): an active lien takes away every trading privilege until it is repaid.
       if (flags.lien) throw new ApiError(409, 'lien');
+      // Plan 4 Task 27: a trade-banned (or site-banned) taker starts nothing new.
+      const banned = await tradeBanRefusal(c, takerId, now);
+      if (banned !== null) throw banned;
       // Plan 5 Task 3, the rate-first gate (spec 5.1, P5-A4), for both sides, under the account locks
       // above (a review submitted meanwhile is seen at the next take). The taker's own pending review
       // is named (409 `review-pending`); the poster's is the generic `offer-busy`, so a taker learns
@@ -428,7 +433,8 @@ export function takeRoutes(app: FastifyInstance): void {
     setImmediate(() => {
       void (async () => {
         const ev = await acceptedEvent(deps.db, trade.code, takerId);
-        if (app.events.publish(posterId, ev) === 0) await app.push.send(posterId, 'trade');
+        // A just-taken trade is open (review trades-list I1: members' streams by part).
+        if (app.events.publish(posterId, ev, { closed: false }) === 0) await app.push.send(posterId, 'trade');
       })().catch((err: unknown) => app.log.error({ err }, 'accepted publish failed'));
     });
     return {

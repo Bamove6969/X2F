@@ -16,7 +16,8 @@
  *
  * Design's stops whose screen does not work for a member on main are PENDING_MEMBER_STOPS, each
  * saying what it waits for, and are in no tour until it does: Wallets and Settings → Security are
- * owner-only screens for members (settings/OwnerOnly.tsx), there is no My trades page, the dispute
+ * owner-only screens for members (settings/OwnerOnly.tsx), My trades (/trades) has no tour page id yet and
+ * its tabs are not design's names, the dispute
  * room needs the Example dispute design ruled for, the extend button and the replay row are not
  * built, and Post an offer's stops are "as V1", which the rebuilt brief no longer has.
  *
@@ -117,8 +118,8 @@ export function memberTour(abilities: readonly string[], code: string | null = n
 
 export const PENDING_MEMBER_STOPS: readonly PendingMemberStop[] = [
   { page: 'Post an offer /post', element: 'stops 1–4, "as V1"', shows: 'offers-post', title: '', explanation: "Stop 4's last line: The account pays the fee once it's posted.", waitsFor: "design's V1 stops (the rebuilt brief, the first-trade tour, dropped them)" },
-  { page: 'My trades', element: '"Active trades"', shows: 'trades-see-active', title: 'Open trades', explanation: "The account's trades that are in progress right now.", waitsFor: 'a My trades page (no route on main)' },
-  { page: 'My trades', element: '"Recent"', shows: 'trades-see-history', title: 'Past trades', explanation: 'Finished trades: amounts, partners and dates.', waitsFor: 'a My trades page (no route on main)' },
+  { page: 'My trades', element: '"Active trades"', shows: 'trades-see-active', title: 'Open trades', explanation: "The account's trades that are in progress right now.", waitsFor: "a My trades page id in the tour engine, and design naming the target: My trades (/trades, D-005) has Open and Completed tabs, not design's \"Active trades\" and \"Recent\"" },
+  { page: 'My trades', element: '"Recent"', shows: 'trades-see-history', title: 'Past trades', explanation: 'Finished trades: amounts, partners and dates.', waitsFor: 'the same as "Active trades" (the Completed tab is the target)' },
   { page: 'Trade room /trade/:code', element: 'Give more time (SellerRefund extend)', shows: 'trades-extend', title: 'More time', explanation: 'Give the buyer 30 more minutes to pay when they ask.', waitsFor: "a member's extend button (the member room has none on main)" },
   { page: 'Dispute room /trade/:code/dispute', element: '[aria-label="Dispute status"], .dispute-deadline', shows: 'disputes-answer', title: 'The dispute', explanation: 'Where it stands and when the next reply is due.', waitsFor: "the Example dispute design ruled for (apps/web/src/fixtures has none yet)" },
   { page: 'Dispute room /trade/:code/dispute', element: '[aria-label="Evidence"].dispute-evidence-chips', shows: 'disputes-answer', title: 'Evidence', explanation: 'What each side has shown the moderator.', waitsFor: 'the Example dispute' },

@@ -9,6 +9,7 @@ import { currentLoginTag, makeVendor, seedAccount } from './helpers/accounts.js'
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { seedReviews, seedTrade } from './helpers/trades.js';
+import { insertBan } from './helpers/bans.js';
 import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 import { approvedLimit } from './helpers/limits.js';
 
@@ -272,12 +273,15 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     expect((await anon.post('/v1/offers', flexBody(BODY))).statusCode).toBe(401);
   });
 
-  it('SBP (legal review) → 409 method-unavailable; an unknown method → 400', async () => {
+  it('owner 12 Nov (Russian anything is banned): SBP, MIR, YOOMONEY and RUB → 400, like an unknown method; nothing is stored', async () => {
     const p = await poster();
-    const res = await p.browser.post('/v1/offers', flexBody({ ...BODY, methodId: 'SBP' }));
-    expect(res.statusCode).toBe(409);
-    expect(res.json()).toEqual({ error: 'method-unavailable' });
-    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, methodId: 'NOPE' }))).statusCode).toBe(400);
+    for (const methodId of ['SBP', 'MIR', 'YOOMONEY', 'NOPE']) {
+      const res = await p.browser.post('/v1/offers', flexBody({ ...BODY, methodId }));
+      expect(res.statusCode, methodId).toBe(400);
+    }
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'RUB' }))).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, methodId: 'AMAZON_GIFT_CARD', currency: 'RUB', country: 'RU' }))).statusCode).toBe(400);
+    expect((await deps.db.query('select 1 from offers where account_id = $1', [p.id])).rowCount).toBe(0);
   });
 
   it('a held account and a paused site cannot post', async () => {
@@ -288,6 +292,16 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     expect(held.json()).toEqual({ error: 'trading-hold' });
     await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1', [p.id, deps.clock()]);
     await post(p);
+    // Plan 4 Task 27: a trade ban or a site ban refuses posting (409 trade-ban), and hides the poster's offers.
+    const banned = await poster();
+    const listedId = await post(banned);
+    const banId = await insertBan(deps, banned.id, 'trade', null);
+    const refused = await banned.browser.post('/v1/offers', flexBody(BODY));
+    // Lead call (Q4): with the general reason and the end (null: lifetime), for the popup.
+    expect([refused.statusCode, refused.json()]).toEqual([409, { error: 'trade-ban', reasonCode: 'abuse', until: null }]);
+    expect((await viewer.get(`/v1/offers/${listedId}`)).statusCode).toBe(404);
+    await deps.db.query('update account_bans set lifted_at = $2 where id = $1', [banId, deps.clock()]);
+    expect((await banned.browser.post('/v1/offers', flexBody(BODY))).statusCode).toBe(201);
 
     await deps.db.query('update site_flags set trading_paused = true');
     try {
@@ -887,7 +901,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     await deps.db.query('update accounts set disabled_at = $2 where id = $1', [off.id, deps.clock()]);
     expect((await viewer.get(`/v1/offers/${h}`)).statusCode).toBe(404);
     expect((await viewer.get(`/v1/offers/${d}`)).statusCode).toBe(404);
-    // An SBP offer (only possible from before the method went under review) is hidden too.
+    // An SBP offer (only possible from before the method was removed, owner 12 Nov: Russian anything is banned) is hidden too.
     const p = await poster();
     const sbp = await post(p, { currency: 'BDT' });
     await renameOfferMethod(deps.db, sbp, 'SBP');

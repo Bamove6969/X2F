@@ -12,6 +12,7 @@ import { FIAT, XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpe
 import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/hold.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { addressEnd, addressHash } from '@x2f/accounts';
+import { insertBan } from './helpers/bans.js';
 import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 5: taking an offer, and the poster's wallet route. Real Postgres (one database per
@@ -363,8 +364,15 @@ describe('POST /v1/offers/:id/take', () => {
     }
     await deps.db.query('insert into trading_holds (account_id, created_at) values ($1, $2)', [buyer.id, deps.clock()]);
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'trading-hold' });
+    // Plan 4 Task 27: a trade-banned taker is refused; past its end (by the clock) the take goes on.
+    const bannedTaker = await person();
+    const banEnds = new Date(deps.clock().getTime() + 3_600_000);
+    await insertBan(deps, bannedTaker.id, 'trade', banEnds);
+    // Lead call (Q4): the refusal carries the general reason and the end, for the popup.
+    expect(refusal(await take(bannedTaker, offer, body(bannedTaker, tenth)))).toEqual({ status: 409, error: 'trade-ban', reasonCode: 'abuse', until: banEnds.toISOString() });
 
     const other = await person();
+    // A row from before SBP was removed (owner 12 Nov: Russian anything is banned): unknown now, so unavailable.
     await renameOfferMethod(deps.db, offer, 'SBP');
     expect(refusal(await take(other, offer, body(other, tenth, undefined, { methodId: 'SBP' })))).toEqual({ status: 409, error: 'method-unavailable' });
     await renameOfferMethod(deps.db, offer, 'ZELLE');
@@ -455,7 +463,7 @@ describe('POST /v1/offers/:id/take', () => {
     const publish = vi.spyOn(app.events, 'publish');
     try {
       const code = await taken(buyer, offer, body(buyer, tenth));
-      await vi.waitFor(() => expect(publish).toHaveBeenCalledWith(seller.id, { type: 'accepted', code, by: buyer.displayName }));
+      await vi.waitFor(() => expect(publish).toHaveBeenCalledWith(seller.id, { type: 'accepted', code, by: buyer.displayName }, { closed: false }));
       // Nothing to the taker.
       expect(publish.mock.calls.filter(([id]) => id === buyer.id)).toEqual([]);
     } finally {
@@ -600,6 +608,31 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 404, error: 'not-found' });
     await deps.db.query('delete from account_holds where account_id = $1', [seller.id]);
     await taken(buyer, offer, body(buyer, tenth));
+  });
+
+  // Security review of bans onto main, m1: the poster's side of a take. A trade-banned or a
+  // site-banned poster's offer, taken by its id, is hidden (poster_ok, take.ts OFFER_SQL) and starts
+  // no trade; once the ban is lifted the same offer is taken.
+  it('a trade-banned or site-banned poster\'s offer taken by id is hidden (404) and writes no trade (bans review m1)', async () => {
+    const seen: Record<string, unknown> = {};
+    const lifts: (() => Promise<void>)[] = [];
+    for (const kind of ['trade', 'site'] as const) {
+      const seller = await person();
+      const offer = await postOffer(seller);
+      const buyer = await person();
+      const banId = await insertBan(deps, seller.id, kind, null);
+      const answer = refusal(await take(buyer, offer, body(buyer, tenth)));
+      const { rows } = await deps.db.query<{ n: number }>('select count(*)::int as n from trades where offer_id = $1', [offer]);
+      seen[kind] = { answer, trades: rows[0]!.n };
+      lifts.push(async () => {
+        await deps.db.query('update account_bans set lifted_at = $2, lifted_by = account_id where id = $1', [banId, deps.clock()]);
+        await taken(buyer, offer, body(buyer, tenth));
+      });
+    }
+    // Both kinds checked before either is asserted, so a mutant shows on each.
+    const hidden = { answer: { status: 404, error: 'not-found' }, trades: 0 };
+    expect(seen).toEqual({ trade: hidden, site: hidden });
+    for (const lift of lifts) await lift();
   });
 
   it("a Starter poster's open-trade count holds under a race, and the taker learns nothing of it (offer-busy, review M6)", async () => {

@@ -20,6 +20,7 @@ import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
 import { startCancelReturnWatch } from './trades/cancelReturn.js';
 import { confirmationsRoute, tradeRoutes } from './trades/routes.js';
+import { tradeListRoute } from './trades/list.js';
 import { disputeRoutes } from './disputes/routes.js';
 import { complyRoutes } from './disputes/comply.js';
 import type { TxProofCheck } from './disputes/txProof.js';
@@ -41,6 +42,7 @@ import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
+import { traderBanRoutes } from './staff/bans.js';
 import { teamRoutes } from './routes/team.js';
 import { accountTypeRoutes } from './routes/accountType.js';
 import { jabberRoutes } from './jabber/routes.js';
@@ -313,6 +315,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
+  // Plan 4 Task 27: the trader's own ban notice (staff/bans.ts).
+  traderBanRoutes(app);
   // Owner 2 Nov 2026: Trader and Vendor accounts.
   accountTypeRoutes(app);
   // Plan 2 Task 16: new-device approval (the new device's poll and the logged-in device's decision).
@@ -335,6 +339,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
   tradeRoutes(app, { publish: tradePublish, ...(options.txConfirmations ? { txConfirmations: options.txConfirmations } : {}) });
+  // GET /v1/trades: the account's own trades list (register D-005).
+  tradeListRoute(app);
   // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
   disputeRoutes(app, { publish: tradePublish });
   complyRoutes(app);

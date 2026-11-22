@@ -153,7 +153,10 @@ describe('startKeyTap', () => {
       return JSON.parse((await deps.db.query<{ intent: string }>('select intent from key_taps where id = $1', [tapId])).rows[0]!.intent) as Record<string, unknown>;
     };
     const acct = '7d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
-    for (const i of [STOP, RESUME, { kind: 'switch-on', accountId: acct, role: 'mod' }, { kind: 'set-role', accountId: acct, role: 'senior' }, { kind: 'remove-staff', accountId: acct }, { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 }] as KeyTapIntent[]) {
+    for (const i of [STOP, RESUME, { kind: 'switch-on', accountId: acct, role: 'mod' }, { kind: 'set-role', accountId: acct, role: 'senior' }, { kind: 'remove-staff', accountId: acct }, { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 },
+      // Lead call (18 Nov, batch 10a merge): a ban and its lift are stamped like the other tapped actions.
+      { kind: 'ban-account', accountId: acct, banId: '0b0e8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d', banKind: 'trade', ruleId: 'abuse', until: null },
+      { kind: 'lift-ban', accountId: acct, banId: '0b0e8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d' }] as KeyTapIntent[]) {
       expect((await read(i)).issuedAt, i.kind).toBe(T0.toISOString());
     }
     expect((await read(RULING)).issuedAt).toBeUndefined();

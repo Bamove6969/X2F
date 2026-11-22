@@ -556,12 +556,12 @@ describe('the launch cap over a flexible offer (owner p11-6 on J-16; launch-rule
   it('posting fails closed when any currency of the offer has no price to count its bands with', async () => {
     const p = await person(0);
     market.unpriced = new Set(['EUR']);
-    expect(refusal(await p.browser.post('/v1/offers', withEur('RUB', '4500')))).toEqual(NO_PRICE);
+    expect(refusal(await p.browser.post('/v1/offers', withEur('SEK', '4500')))).toEqual(NO_PRICE);
     // A priced band over the cap is named first: the poster has to lower it either way.
-    expect(refusal(await p.browser.post('/v1/offers', withEur('RUB', '4500', { currencies: [{ currency: 'RUB', bands: [band('10', '5001')] }, { currency: 'EUR', bands: [band('10', '4500')] }] })))).toEqual(CAP);
+    expect(refusal(await p.browser.post('/v1/offers', withEur('SEK', '4500', { currencies: [{ currency: 'SEK', bands: [band('10', '5001')] }, { currency: 'EUR', bands: [band('10', '4500')] }] })))).toEqual(CAP);
     expect((await deps.db.query('select 1 from offers where account_id = $1', [p.id])).rowCount).toBe(0);
     market.unpriced = new Set();
-    await post(p, withEur('RUB', '4500'));
+    await post(p, withEur('SEK', '4500'));
   });
 
   it('relisting checks every band again at the rates now: a euro band the rate moved above $5,000 keeps the offer off, in PATCH and in the bulk switch', async () => {

@@ -1,6 +1,9 @@
 // The country a gift-card offer names (Revision 2026-10-21; plan Task 4 Revision 2026-10-27): every
-// ISO 3166-1 alpha-2 code, named in English by the browser's own region names (the code itself
+// ISO 3166-1 alpha-2 code but RU, IR, KP and CU (owner 12 Nov: Russia, Iran; US sanction laws:
+// BANNED_GIFT_CARD_COUNTRIES in @x2f/trade), named in English by the browser's own region names (the code itself
 // where a browser has none), sorted by name for the picker.
+
+import { BANNED_GIFT_CARD_COUNTRIES } from '@x2f/trade';
 
 /** The 249 officially assigned ISO 3166-1 alpha-2 codes. */
 export const COUNTRY_CODES: readonly string[] = (
@@ -28,8 +31,9 @@ function regionName(code: string): string {
 }
 
 /** The countries by English name, for the Country select of a gift-card offer. */
-export const COUNTRIES: readonly Country[] = COUNTRY_CODES.map((code) => ({ code, name: regionName(code) })).sort((a, b) =>
+export const COUNTRIES: readonly Country[] = COUNTRY_CODES.filter((code) => !BANNED_GIFT_CARD_COUNTRIES.has(code)).map((code) => ({ code, name: regionName(code) })).sort((a, b) =>
   a.name.localeCompare(b.name, 'en'),
 );
 
-export const isCountryCode = (v: unknown): v is string => typeof v === 'string' && COUNTRY_CODES.includes(v);
+export const isCountryCode = (v: unknown): v is string =>
+  typeof v === 'string' && COUNTRY_CODES.includes(v) && !BANNED_GIFT_CARD_COUNTRIES.has(v);

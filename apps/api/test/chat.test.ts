@@ -13,7 +13,7 @@ import {
 } from '@x2f/trade';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import sodium from 'libsodium-wrappers';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { CHAT_PURGED_MARK_DAYS, purgeChats } from '../src/chat/retention.js';
 import { CHAT_OPEN_BUCKET, CHAT_POST_BUCKET } from '../src/limits.js';
@@ -24,6 +24,7 @@ import { testApp } from './helpers/app.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { insertOffer } from './helpers/offers.js';
+import { insertBan } from './helpers/bans.js';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -347,6 +348,27 @@ describe('chat identities and the attestation', () => {
 });
 
 describe('envelopes', () => {
+  it("review lead-trades-list-2 m3 (G19): a trade chat's line is published with the trade's part; an offer chat's with none", async () => {
+    const r = await readyChat();
+    const spy = vi.spyOn(app.events, 'publish');
+    const partsOf = () => spy.mock.calls.filter(([, ev]) => (ev as { chat?: string }).chat === r.chat).map(([, , o]) => o);
+    try {
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0))).statusCode).toBe(201);
+      expect(partsOf()).toEqual([{}, {}]);
+      const { code } = await seedTrade(deps, { sellerId: r.poster.id, buyerId: r.taker.id, poster: 'seller', offerId: r.offerId });
+      expect((await r.taker.b.post(`/v1/trades/${code}/chat`, {})).json()).toMatchObject({ chat: r.chat });
+      spy.mockClear();
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 1))).statusCode).toBe(201);
+      expect(partsOf()).toEqual([{ closed: false }, { closed: false }]);
+      await deps.db.query("update trades set state = 'released', closed_at = $2 where code = $1", [code, now]);
+      spy.mockClear();
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 2))).statusCode).toBe(201);
+      expect(partsOf()).toEqual([{ closed: true }, { closed: true }]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('waits for the attestation', async () => {
     const o = await openChat();
     const res = await o.taker.b.post(`/v1/chats/${o.chat}/envelopes`, {});
@@ -422,6 +444,19 @@ describe('envelopes', () => {
     const unknown = await stranger.b.get(`/v1/chats/${newTradeCode()}/envelopes`);
     expect([post.statusCode, get.statusCode, unknown.statusCode]).toEqual([404, 404, 404]);
     expect(get.json()).toEqual(unknown.json());
+  });
+
+  it('pages in id order across a digit boundary (ids ordered as numbers, never as their text)', async () => {
+    const r = await readyChat();
+    // Move the id sequence forward (never back) so this chat's ids go from 4 to 5 digits.
+    const { rows: top } = await deps.db.query<{ m: string }>('select coalesce(max(id), 0)::text as m from chat_envelopes');
+    await deps.db.query(`select setval(pg_get_serial_sequence('chat_envelopes', 'id'), $1)`, [Math.max(9998, Number(top[0]!.m))]);
+    for (let i = 0; i < 3; i++) expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', i))).statusCode).toBe(201);
+    const ids = (await deps.db.query<{ id: string }>('select id::text as id from chat_envelopes where chat = $1 order by chat_envelopes.id', [r.chat])).rows.map((x) => x.id);
+    const all = (await r.taker.b.get(`/v1/chats/${r.chat}/envelopes`)).json() as { envelopes: { id: string }[] };
+    expect(all.envelopes.map((e) => e.id)).toEqual(ids);
+    const rest = (await r.taker.b.get(`/v1/chats/${r.chat}/envelopes?after=${ids[0]}`)).json() as { envelopes: { id: string }[] };
+    expect(rest.envelopes.map((e) => e.id)).toEqual(ids.slice(1));
   });
 
   it('pages with after= and updates last_message_at', async () => {
@@ -931,6 +966,33 @@ describe('the purge leaves a shred order for moderation and a purged mark for de
     expect((await r.taker.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(410);
     await purgeChats(deps.db, new Date(r.purgedAt.getTime() + CHAT_PURGED_MARK_DAYS * DAY + 1));
     expect((await r.taker.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(404);
+  });
+});
+
+// Security review of bans onto main, m2: a banned poster's offer is not listed (chat/routes.ts
+// LISTED), so a new offer chat on it gets the hidden-offer answer, the same 404 as an unknown offer.
+describe('bans (Plan 4 Task 27): no new offer chat on a banned poster\'s offer', () => {
+  it('a trade-banned or site-banned poster\'s offer: POST /v1/chats is the unknown offer\'s 404 and opens no chat; once lifted it opens', async () => {
+    const seen: Record<string, unknown> = {};
+    const lifts: (() => Promise<void>)[] = [];
+    for (const kind of ['trade', 'site'] as const) {
+      const poster = await trader();
+      const taker = await trader();
+      const offerId = await seedOffer(poster.id);
+      const banId = await insertBan(deps, poster.id, kind, null);
+      const res = await taker.b.post('/v1/chats', { offerId });
+      const unknown = await taker.b.post('/v1/chats', { offerId: randomUUID() });
+      const { rows } = await deps.db.query<{ n: number }>('select count(*)::int as n from chats where offer_id = $1', [offerId]);
+      seen[kind] = { status: res.statusCode, sameAsUnknown: res.body === unknown.body, chats: rows[0]!.n };
+      lifts.push(async () => {
+        await deps.db.query('update account_bans set lifted_at = $2, lifted_by = account_id where id = $1', [banId, deps.clock()]);
+        expect((await taker.b.post('/v1/chats', { offerId })).statusCode, kind).toBe(201);
+      });
+    }
+    // Both kinds checked before either is asserted, so a mutant shows on each.
+    const hidden = { status: 404, sameAsUnknown: true, chats: 0 };
+    expect(seen).toEqual({ trade: hidden, site: hidden });
+    for (const lift of lifts) await lift();
   });
 });
 

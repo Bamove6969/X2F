@@ -55,6 +55,7 @@ import { isPlainObject, ProtocolError, verifyChatKeyRecord } from '@x2f/protocol
 import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope, checkChatEnvelopeV2 } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
+import { banHidesSql } from '../banState.js';
 import { ACTIVE_LIEN_SQL } from '../disputes/lien.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
@@ -131,7 +132,8 @@ const CHAT_LIST_LIMIT = 200;
 const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
   and not ${ACTIVE_LIEN_SQL('o.account_id')}
-  and not ${recoveryHoldHidesSql('o.account_id')}`;
+  and not ${recoveryHoldHidesSql('o.account_id')}
+  and not ${banHidesSql('o.account_id')}`;
 
 interface ChatRow {
   code: string;
@@ -469,7 +471,9 @@ export function chatRoutes(app: FastifyInstance): void {
       await q.query('update chats set last_message_at = $2 where code = $1', [row.code, now]);
       return ins.rows[0]!.id;
     });
-    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
+    // Review trades-list I1: a trade's chat is that trade's part for members' streams; an offer chat has none.
+    const part = row.trade_code === null ? {} : { closed: !(await tradeOpen(req.server.deps.db, row.trade_code)) };
+    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code }, part);
     return reply.code(201).send({ id });
   });
 
@@ -500,7 +504,9 @@ export function chatRoutes(app: FastifyInstance): void {
       [row.code, rec.tkh, rec.by, rec.wrapBuyer, rec.wrapSeller, rec.sig, deps.clock()],
     ));
     if (rowCount === 0) throw new ApiError(409, 'key-exists');
-    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
+    // Review lead-trades-list-2 n1: the linked trade's part, as the chat line's publish says it.
+    const part = row.trade_code === null ? {} : { closed: !(await tradeOpen(deps.db, row.trade_code)) };
+    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code }, part);
     return reply.code(201).send({ ok: true });
   });
 
@@ -531,7 +537,7 @@ export function chatRoutes(app: FastifyInstance): void {
     if (raw !== undefined && (typeof raw !== 'string' || !AFTER.test(raw))) throw new ApiError(400, 'bad-request');
     const after = raw ?? '0';
     const { rows } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
-      `select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 and id > $2 order by id limit $3`,
+      `select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 and chat_envelopes.id > $2 order by chat_envelopes.id limit $3`,
       [row.code, after, ENVELOPE_PAGE + 1],
     );
     const page = rows.slice(0, ENVELOPE_PAGE);
