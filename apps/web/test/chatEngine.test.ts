@@ -1086,16 +1086,62 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     expect((await engine().sync(chat)).lines.map(line)).toEqual([['hi', false, false], [TEXT, true, true], ['later', false, false]]);
   });
 
+  /** A line this buyer's own identity sealed at `seq` (as another tab or bundle of its own app would). */
+  async function fromBuyer(text: string, seq: number, parts: Participants): Promise<void> {
+    const r = await sealChatMessage({ role: 'buyer', me: made[0]!, participants: parts, state: { ...newChatState(channel), nextSeq: seq }, text, tk: await tkOf(parts) });
+    api.add('buyer', r.envelope);
+  }
+  /** A package this buyer's own identity signed at `seq` whose text is not its boxes' rendering. */
+  const ownLyingPackage = async (seq: number, parts: Participants) =>
+    sealChat({ trade: channel, from: 'buyer', seq, type: 'chat.msg', payload: { text: 'Payment details\nFull name: Jane Doe\nEmail: other@example.ca', pay: INTERAC }, tk: await tkOf(parts), me: made[0]! });
+
   it("review sanctions n-3 (GR18): this device's own package refused for its contents is never the payer's neutral line", async () => {
     await engine().sync(chat);
     const parts = attest();
-    const buyer = made[0]!;
     // A package this buyer's own identity signed (another bundle of its own app, say) that its table cannot show.
-    api.add('buyer', await sealChat({ trade: channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'Payment details\nFull name: Jane Doe\nEmail: other@example.ca', pay: INTERAC }, tk: await tkOf(parts), me: buyer }));
+    api.add('buyer', await ownLyingPackage(0, parts));
     await fromSeller('hello', parts);
+    await fromBuyer('mine', 1, parts);
     const s = await engine().sync(chat);
-    expect((await store.load(chat))!.receipts.map((r) => [r.from, r.refused === true, r.refusedPay === true])).toEqual([['buyer', true, true], ['seller', false, false]]);
-    expect(s.lines.map((l) => [l.from, l.text, l.unreadablePay ?? false])).toEqual([['seller', 'hello', false]]);
+    expect((await store.load(chat))!.receipts.map((r) => [r.from, r.refused === true, r.refusedPay === true])).toEqual([['buyer', true, true], ['seller', false, false], ['buyer', false, false]]);
+    // Review small-fu2 M-1: an own refused seq is not taken for the gap markers, as before m-2: the
+    // own line after it still shows that nothing of this device's seq 0 is shown.
+    expect(s.lines.map((l) => [l.from, l.text, l.unreadablePay ?? false, l.gapBefore])).toEqual([['seller', 'hello', false, false], ['buyer', 'mine', false, true]]);
+  });
+
+  it("review small-fu2 M-1: a real gap on this device's own lines is never hidden by its own refused package", async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromBuyer('zero', 0, parts);
+    // Own seq 1 never came; own seq 2 is a package refused for its contents; own seq 3 follows.
+    api.add('buyer', await ownLyingPackage(2, parts));
+    await fromBuyer('three', 3, parts);
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.mine, l.unreadablePay ?? false, l.gapBefore])).toEqual([['zero', true, false, false], ['three', true, false, true]]);
+    // A later sync reads the stored receipts the same way.
+    await fromBuyer('four', 4, parts);
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['zero', false], ['three', true], ['four', false]]);
+  });
+
+  it("review small-fu2 M-1: the same across syncs: an own refused package stored by an earlier sync does not hide the gap before the next own line", async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    const e = engine();
+    await fromBuyer('zero', 0, parts);
+    api.add('buyer', await ownLyingPackage(2, parts));
+    expect((await e.sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['zero', false]]);
+    await fromBuyer('three', 3, parts);
+    expect((await e.sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['zero', false], ['three', true]]);
+  });
+
+  it("review small-fu2 n-2: a refused package the server files under another sender than its signer is refused outright, as a valid one is", async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    // Signed by the seller, filed by the server as the buyer's.
+    api.add('buyer', await unknownBoxPackage(0, parts));
+    await fromSeller('next', parts, 'seller', 1);
+    const s = await engine().sync(chat);
+    expect((await store.load(chat))!.receipts.map((r) => [r.id, r.from, r.refusedPay === true])).toEqual([['2', 'seller', false]]);
+    expect(s.lines.map((l) => [l.from, l.text, l.unreadablePay ?? false])).toEqual([['seller', 'next', false]]);
   });
 
   it('review sanctions n-3 (GR20): a refused package is stored under its signer, never what its header says when read again', async () => {

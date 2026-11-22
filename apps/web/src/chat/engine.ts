@@ -622,7 +622,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     // A refused envelope's seq was never taken (the sender may reuse it), so it does not count, except
     // a package refused for its contents (review sanctions m-2): it is a line the payer sees, so the
     // sender's next line does not follow a gap. For the gap markers only; the guard never took it.
-    for (const m of receipts) if (m.refused !== true || m.refusedPay === true) lastSeq.set(m.from, Math.max(lastSeq.get(m.from) ?? -1, m.seq));
+    // Never this device's own (review small-fu2 M-1): that one is no line, so it must not hide a gap.
+    for (const m of receipts) if (m.refused !== true || (m.refusedPay === true && m.from !== rec.role)) lastSeq.set(m.from, Math.max(lastSeq.get(m.from) ?? -1, m.seq));
     for (let page = 0, total = 0; page < MAX_PAGES && total < MAX_TOTAL_PAGES; total++) {
       const { envelopes, more } = await d.api.listEnvelopes(rec.chat, after);
       if (envelopes.some((e) => BigInt(e.id) > start)) page++;
@@ -712,8 +713,10 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
             // Decided for good (pay-details review M1): a receipt marks it refused so a re-read never
             // opens it again, and the cursor passes it. The guard did not move: the sender may reuse the seq.
             const h = headerOf(e.envelope, channel) ?? headerV1(e.envelope, channel);
-            if (h !== null) {
-              const pkgFrom = err.refusedPackageFrom;
+            const pkgFrom = err.refusedPackageFrom;
+            // Review small-fu2 n-2: the signer and the server's record must agree, as for a valid
+            // line ("sender mismatch" above): a package filed under another sender is skipped outright.
+            if (h !== null && (pkgFrom === undefined || pkgFrom === e.senderRole)) {
               const from = pkgFrom ?? h.from;
               const prev = lastSeq.get(from);
               const m: StoredChatReceipt = {
@@ -729,7 +732,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
                 // Review payee-fields-2 m-4: a package refused for its contents is told to the payer.
                 ...(pkgFrom !== undefined ? { refusedPay: true as const } : {}),
               };
-              if (pkgFrom !== undefined) lastSeq.set(from, Math.max(prev ?? -1, m.seq));
+              if (pkgFrom !== undefined && pkgFrom !== rec.role) lastSeq.set(from, Math.max(prev ?? -1, m.seq));
               receipts.push(m);
               known.set(m.id, m);
             }
