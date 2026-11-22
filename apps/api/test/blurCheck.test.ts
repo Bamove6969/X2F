@@ -243,11 +243,15 @@ describe('team members (review PC1)', () => {
     const p1 = newProofId();
     expect((await posted(buyer, code, p1)).statusCode).toBe(200);
 
-    // Announcing: the chat-reply member may, the others may not.
+    // Announcing: the chat-reply member may, the others may not. Lead call (review
+    // lead-trades-list-2): the chat-reply member needs the box for the trade's part too, so
+    // chat-reply alone is refused now, and chat-reply with See active trades announces on this open trade.
     expect((await posted(reader, code, newProofId())).statusCode).toBe(403);
     expect((await posted(neither, code, newProofId())).statusCode).toBe(403);
+    expect((await posted(poster, code, newProofId())).statusCode).toBe(403);
+    const announcer = await memberOf(seller.id, ['chat-reply', 'trades-see-active']);
     const p2 = newProofId();
-    const ok = await posted(poster, code, p2);
+    const ok = await posted(announcer, code, p2);
     expect(ok.statusCode, ok.body).toBe(200);
 
     // Listing: the trade reader sees the seller side's asks; the others are refused.

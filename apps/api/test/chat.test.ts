@@ -445,6 +445,19 @@ describe('envelopes', () => {
     expect(get.json()).toEqual(unknown.json());
   });
 
+  it('pages in id order across a digit boundary (ids ordered as numbers, never as their text)', async () => {
+    const r = await readyChat();
+    // Move the id sequence forward (never back) so this chat's ids go from 4 to 5 digits.
+    const { rows: top } = await deps.db.query<{ m: string }>('select coalesce(max(id), 0)::text as m from chat_envelopes');
+    await deps.db.query(`select setval(pg_get_serial_sequence('chat_envelopes', 'id'), $1)`, [Math.max(9998, Number(top[0]!.m))]);
+    for (let i = 0; i < 3; i++) expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', i))).statusCode).toBe(201);
+    const ids = (await deps.db.query<{ id: string }>('select id::text as id from chat_envelopes where chat = $1 order by chat_envelopes.id', [r.chat])).rows.map((x) => x.id);
+    const all = (await r.taker.b.get(`/v1/chats/${r.chat}/envelopes`)).json() as { envelopes: { id: string }[] };
+    expect(all.envelopes.map((e) => e.id)).toEqual(ids);
+    const rest = (await r.taker.b.get(`/v1/chats/${r.chat}/envelopes?after=${ids[0]}`)).json() as { envelopes: { id: string }[] };
+    expect(rest.envelopes.map((e) => e.id)).toEqual(ids.slice(1));
+  });
+
   it('pages with after= and updates last_message_at', async () => {
     const r = await readyChat();
     for (let i = 0; i < 3; i++) expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', i))).statusCode).toBe(201);
