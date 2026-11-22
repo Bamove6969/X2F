@@ -282,8 +282,11 @@ test('the buyer adds a payment proof, checks the blur and sends it: the seller d
   expect(new URL(put.url).search).toBe('?kind=proof');
   expect(put.headers['content-type']).toBe('application/octet-stream');
   expect(JSON.stringify(put.headers)).not.toContain('bank-labelled');
-  expect(put.body.includes(Buffer.from([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
-  expect(put.body.includes(Buffer.from([0xff, 0xd8, 0xff]))).toBe(false);
+  // Ciphertext is random: a short byte run turns up somewhere in it by chance now and then, so check
+  // that it does not start with an image header (a file's magic is at its start), not that the bytes
+  // appear nowhere. The seller's decrypt below proves the plaintext is the blurred copy.
+  expect(put.body.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
+  expect(put.body.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))).toBe(false);
 
   // The chat: one proof.attached, envelope v2 under the chat key (decision 16), which the seller
   // opens with its own copy of the key (the key and facts only).
