@@ -14,8 +14,8 @@
  * 20th graduates it.
  */
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { contextFor, DESKTOP, PHONE, signUp, sql, tradeView, type Size, type Trader } from './regtestKit.js';
-import { fund, holdToRelease, inRooms, LONG, markPaid, offer, openTrade, shows, untilState } from './tradeFlow.js';
+import { contextFor, DESKTOP, feeWallet, mine, PHONE, signUp, sql, tradeView, txFee, type Size, type Trader } from './regtestKit.js';
+import { AMOUNT, FEE, fund, holdToRelease, inRooms, LONG, markPaid, offer, openTrade, receivedIn, shows, untilState, type Open, type TradeView } from './tradeFlow.js';
 
 const SIZES: Array<[string, Size]> = [['phone 390×844', PHONE], ['desktop 1280×800', DESKTOP]];
 
@@ -40,6 +40,24 @@ async function receipt(browser: Browser, o: { amount: string; code: string }): P
   const shot = await page.locator('#r').screenshot({ type: 'png' });
   await page.close();
   return shot;
+}
+
+/**
+ * The release paid out exactly (as trade.e2e.spec.ts checks it): the buyer gets the amount less the
+ * 1% fee and the whole network fee, the fee wallet exactly 1% (a buy ad: the poster pays the fee).
+ */
+async function payoutLanded(o: Open, v: TradeView): Promise<void> {
+  expect(v.txHash).toMatch(/^[0-9a-f]{64}$/);
+  await mine(12);
+  const network = await txFee(v.txHash!);
+  expect(network).toBeGreaterThan(0n);
+  expect(await receivedIn(o.buyer.wallet, v.txHash!)).toBe(AMOUNT - FEE - network);
+  const fw = await feeWallet();
+  try {
+    expect(await receivedIn(fw, v.txHash!)).toBe(FEE);
+  } finally {
+    await fw.close();
+  }
 }
 
 /** `cents` as the app writes a USD total ("$40.00"). */
@@ -86,7 +104,7 @@ for (const [label, size] of SIZES) {
         if (u.pathname.startsWith('/ocr/')) ocr.set(u.pathname, r.headers()['content-security-policy'] ?? '');
       });
       await inRooms(o, async () => {
-        await fund(o);
+        expect(await fund(o)).toBe(AMOUNT); // a buy ad: the poster (buyer) pays the fee
         const v = await tradeView<{ fiatCents: string }>(o.buyer, o.code);
         const total = usd(v.fiatCents);
         expect(total).toBe('$40.00'); // 0.2 XMR at the stack's fixed $200
@@ -147,7 +165,7 @@ for (const [label, size] of SIZES) {
         await holdToRelease(o.sellerPage);
         await shows(o.sellerPage, /RELEASED/, LONG, { mining: true });
         await shows(o.buyerPage, /RELEASED/, LONG, { mining: true });
-        await untilState(o.seller, o.code, ['released']);
+        await payoutLanded(o, await untilState(o.seller, o.code, ['released']));
         await shows(o.sellerPage, new RegExp(`How was trading with ${o.buyer.displayName}`));
         await shows(o.buyerPage, new RegExp(`How was trading with ${o.seller.displayName}`));
       });
@@ -247,11 +265,11 @@ for (const [label, size] of SIZES) {
       // The 20th, a real trade on its own offer: released, it graduates and New is gone everywhere.
       const o = await openTrade(browser, size, 'seller', { poster: fresh });
       await inRooms(o, async () => {
-        await fund(o);
+        expect(await fund(o)).toBe(AMOUNT); // a buy ad: the poster (buyer) pays the fee
         await markPaid(o.buyerPage);
         await holdToRelease(o.sellerPage);
         await shows(o.sellerPage, /RELEASED/, LONG, { mining: true });
-        await untilState(o.seller, o.code, ['released']);
+        await payoutLanded(o, await untilState(o.seller, o.code, ['released']));
         // Its offer is listed again once it has rated (Task 3, P5-A4: a poster with a pending review
         // is left out of every list); the seller rates too, so its own browsing is not gated.
         await shows(o.buyerPage, new RegExp(`How was trading with ${o.seller.displayName}`));

@@ -312,7 +312,7 @@ function codeCharClass(c: string): string {
   return `[${set.replace(/[\]\\^-]/g, '\\$&')}]`;
 }
 
-/** One group of the code, with at most one extra character: a 0 read twice ("O0" or "0O"). */
+/** One group of the code, with at most one extra character: a 0 read twice ("O0" or "0O"), with nothing between the two (review M3). */
 function codeGroup(group: string): string {
   const classes = [...group].map(codeCharClass);
   const alts = [classes.join(CODE_SEP)];

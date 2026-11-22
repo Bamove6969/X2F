@@ -1108,6 +1108,18 @@ describe('codePattern: OCR confusions (lead call 22 Nov, T17 finding)', () => {
       expect(at('4VC0-9AXP-E7EV-6EJ7', t), t).toBe(true);
     }
   });
+  it('review M1: at most 3 separators between two characters', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0 - 9AXP-E7EV-6EJ7')).toBe(true);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0 -- 9AXP-E7EV-6EJ7')).toBe(false);
+  });
+  it('review M2: only a 0 may be doubled', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VVC0-9AXP-E7EV-6EJ7')).toBe(false);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '44VC0-9AXP-E7EV-6EJ7')).toBe(false);
+  });
+  it('review M3: no separator inside a doubled 0', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0 O-9AXP-E7EV-6EJ7')).toBe(false);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-O-9AXP-E7EV-6EJ7')).toBe(false);
+  });
   it('a code differing in one real character is not a match', () => {
     expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-9AXP-E7EV-6EK7')).toBe(false);
     expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-9AXP-E7EW-6EJ7')).toBe(false);
