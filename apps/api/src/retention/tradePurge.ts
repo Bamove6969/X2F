@@ -27,7 +27,10 @@ import { PURGE_ROLE } from '../trades/purge.js';
  * identities, attestation, refusal, moderation work row, ruling statement and events, then the
  * trade row itself; the rows with `on delete cascade` (review skips, the totals' and the ledger's
  * per-trade marks, blur checks) go with it, and staff pay items lose the code (set null). Nothing
- * is kept per trade. Every delete runs as x2f_purge (`set local role`, 104 and 701).
+ * is kept per trade. Every delete runs as x2f_purge (`set local role`, 104 and 701). The trade row's
+ * delete writes the trade's shred order for the moderation service in the same statement (761):
+ * moderation destroys its own per-trade records (signed terms, keys, watch state) on its own checks,
+ * then reports `trade-shredded`, which removes the order (internal/routes.ts).
  *
  * What it never deletes, whatever the date:
  * - an open trade (no `closed_at`), or one whose dispute or appeal is open (`tradeDeleteDue`);
@@ -232,8 +235,15 @@ async function purgeOne(db: pg.Pool, code: string, now: Date): Promise<boolean> 
         // The table names are the constant list below, never input.
         await client.query(`delete from ${table} where code = $1`, [code]);
       }
-      const gone = await client.query('delete from trades where code = $1', [code]);
-      if (gone.rowCount !== 1) throw new Error('trade purge: trade row not deleted');
+      // The trade goes with its shred order for the moderation service, in one statement (761): no
+      // trade is ever gone without it (moderation then destroys its own records on its own checks).
+      const gone = await client.query<{ n: number }>(
+        `with gone as (delete from trades where code = $1 returning code),
+              ordered as (insert into trade_shred_orders (trade, purged_at) select code, $2 from gone on conflict (trade) do nothing)
+         select count(*)::int as n from gone`,
+        [code, now],
+      );
+      if (gone.rows[0]?.n !== 1) throw new Error('trade purge: trade row not deleted');
       // Back to the API's role for the running totals (x2f_purge deletes; it never writes a total).
       await client.query(`select set_config('role', $1, true)`, [role[0]!.r]);
 
