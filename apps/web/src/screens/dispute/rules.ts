@@ -237,6 +237,21 @@ export function paidSide(outcome: RulingView['outcome']): Party | null {
   return null;
 }
 
+/**
+ * Plan 4 Review Focus 4 (Task 21's "winner offline" row), smallest version: a round-1 ruling that
+ * pays from the escrow completes only once the winner's own app co-signs the moderator-built set,
+ * so while the trade is still `disputed` the other trader reads whom it waits for. Null for the
+ * winner, once the payout moved the trade on, after a refund, for round 2 and for a ruling that
+ * moves no escrow coins.
+ */
+export function waitingForWinner(d: DisputeView, trade: Pick<DisputeTrade, 'role' | 'state' | 'counterparty'>): string | null {
+  const r = d.ruling;
+  if (r === null || r.round !== 1 || d.afterRefund || trade.state !== 'disputed') return null;
+  const winner = paidSide(r.outcome);
+  if (winner === null || winner === trade.role) return null;
+  return `Waiting for ${trade.counterparty} to open X2F. The payout completes when they do.`; // COPY-UNSIGNED
+}
+
 /** Who lost (the ruling shows on their profile as a lost dispute); none for no-action. */
 export function loserOf(outcome: RulingView['outcome']): Party | null {
   if (outcome === 'release-to-buyer' || outcome === 'seller-sends-xmr' || outcome === 'seller-returns-fiat') return 'seller';

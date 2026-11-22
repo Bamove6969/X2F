@@ -37,7 +37,11 @@ export interface StoredPayout {
 
 /** What this side asked to settle, kept so a reload settles the same outcome again (Review Focus 1). */
 export interface StoredIntent {
-  kind: 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-refund' | 'lapse-refund';
+  /**
+   * `ruling` (Plan 4): the moderator-built ruling set this side co-signs as the winner, chosen by
+   * the runtime (always `auto`) only once the moderation service's signed ruling statement verified.
+   */
+  kind: 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-refund' | 'lapse-refund' | 'ruling';
   /** The outcome last passed to settle(), if any. */
   outcome: { to: StoredPayout[]; builder: 'buyer' | 'seller' | 'mod'; cosigner: 'buyer' | 'seller' | 'mod' } | null;
   /** settle() resolved for this outcome. */

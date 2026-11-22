@@ -4,7 +4,8 @@
 // The room owns the trade view, its live re-reads (useTradeLive, POLL_MS) and the escrow; these
 // screens never fetch the trade or start the escrow. The disputed slot reads only
 // GET /v1/trades/:code/dispute, again whenever the room hands it a fresh view. A Plan 4 mod-built
-// co-sign runs through the room's `escrow` handle and rulingAllowsCosign (NEEDS_PLAN_4_MOD_COSIGN).
+// co-sign needs nothing from this screen: the escrow worker co-signs it against the moderation
+// service's signed ruling statement (escrow/runtime.ts loadRuling, policy.ts rulingOutcomeFor).
 import { useEffect, useState } from 'react';
 import { methodOf } from '../../api/trade.js';
 import { registerTradeScreen, type TradeScreenProps } from '../trade/TradeRoom.js';

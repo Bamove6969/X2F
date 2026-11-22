@@ -23,6 +23,7 @@ import {
   identityProofBytes,
   instructionsMatch,
   verifyAttestation,
+  verifyRulingStatement,
   type Attestation,
   type AttestedTerms,
   type SettleKind,
@@ -30,7 +31,7 @@ import {
 } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { parseTradeView, type EscrowTradeView } from './adapters.js';
-import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext } from './policy.js';
+import { cosignPolicy, deviceAmount, outcomeFor, rulingOutcomeFor, type Deal, type PolicyContext } from './policy.js';
 import { runSignals, sameDeal, type SignalsHandle, type UserSignal } from './signals.js';
 import type { EscrowRecord, EscrowStore, StoredIntent } from './store.js';
 
@@ -193,6 +194,12 @@ export interface EscrowApi {
   registerIdentity(code: string, body: { signPublic: string; boxPublic: string; proof: string }): Promise<void>;
   /** GET /v1/trades/:code/attestation; null while it answers 202. */
   getAttestation(code: string): Promise<{ attestation: unknown; sig: unknown } | null>;
+  /**
+   * Haveno review finding 2: GET /v1/trades/:code/ruling-statement, the moderation service's signed
+   * statement of a round-1 ruling's payout (untrusted: verified on this device); null while it
+   * answers 204. Asked only while the trade is disputed.
+   */
+  getRulingStatement(code: string): Promise<{ statement: unknown; sig: unknown } | null>;
 }
 
 export interface RuntimeConfig {
@@ -363,6 +370,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private participants: Participants | null = null;
     /** The moderator-attested terms, from the attestation verified in this run. */
     private attested: AttestedTerms | null = null;
+    /**
+     * Plan 4 rulings (Haveno finding 2): the moderation service's ruling statement as the API served
+     * it, kept only once it verified on this device for this trade, the escrow address this device's
+     * own party derived and this side as the winner (`loadRuling`). cosignPolicy verifies it again,
+     * with the exact payouts, before every hand-over. `lost`: a verified statement names the other
+     * side the winner, so nothing is asked again in this run.
+     */
+    private ruling: { statement: unknown; sig: unknown } | null = null;
+    private rulingLost = false;
     private view: EscrowTradeView | null = null;
     /** The view's payment instructions as last checked against the attested hash (review I1); null while the view has none. */
     private instructions: { text: string | null; ok: boolean } | null = null;
@@ -433,7 +449,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         paidRecorded: this.rec?.role === 'buyer' && this.rec.paidSeen === true && (this.rec.acceptedAtomic ?? null) !== null,
         intentKind: (() => {
           const i = (this.rec as EscrowRecord | undefined)?.intent ?? null;
-          return i !== null && !i.auto ? i.kind : null;
+          return i !== null && !i.auto && i.kind !== 'ruling' ? i.kind : null;
         })(),
         handedOff: (() => {
           if (this.error) return false;
@@ -833,13 +849,18 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
      * `refundOnly`: the outcome pays the whole balance to the seller's signed refund address, which
      * does not depend on the trade amount, so the API's amount is not consulted (an amount lie
      * never blocks a refund or cancel); the device's own size is used for the policy's maths.
+     * `ruling`: a moderator-built ruling set (growth-binding review m4, decided): its amount is `rulingAmount`, which
+     * the release-binding flags do not touch (a seller's full reversal is refund-shaped as well).
+     * While the trade is disputed the context carries the verified ruling statement (`ruling`), with
+     * this trade's code, the escrow address this device's own party derived and the pinned key.
      */
-    private context(balance: bigint, refundOnly = false): PolicyContext | null {
+    private context(balance: bigint, refundOnly = false, ruling = false): PolicyContext | null {
       const v = this.view;
       const r = this.rec;
       if (!v || r.ownAddress === null || r.theirAddress === null || !r.theirDeal || !sameDeal(r.deal, r.theirDeal) || !this.theirAddressAttested()) return null;
-      const size = refundOnly ? (r.acceptedAtomic ?? r.sizeAtomic) : this.acceptedAmount(v);
+      const size = refundOnly ? (r.acceptedAtomic ?? r.sizeAtomic) : ruling ? this.rulingAmount(v) : this.acceptedAmount(v);
       if (size === null) return null;
+      const statement = v.state === 'disputed' && this.ruling !== null && this.address !== null ? this.ruling : null;
       const payout = r.role === 'buyer' ? r.ownAddress : r.theirAddress;
       const refund = r.role === 'seller' ? r.ownAddress : r.theirAddress;
       return {
@@ -849,6 +870,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt, settling: v.settling },
         deal: { poster: r.deal.poster, amountAtomic: size },
         signedTerms: { payout, refund },
+        ruling: statement === null ? null : { code: this.code, escrowAddress: this.address!, modSigningPublic: deps.config.modSigningPublic, statement: statement.statement, sig: statement.sig },
       };
     }
 
@@ -975,10 +997,24 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
      */
     private acceptedAmount(v: EscrowTradeView): bigint | null {
       const r = this.rec;
-      // TODO(m4): when the buyer's ruling co-sign (a moderator-built set) is wired through
-      // context(), decide on purpose whether releaseRebindRefused (and paidRefused) may block it: a
-      // buyer-favouring ruling must not be refused here (test/dispute-tripwires.test.ts).
       if (r.paidRefused === true || r.releaseRebindRefused === true) return null;
+      return this.rulingAmount(v);
+    }
+
+    /**
+     * The trade's size for a moderator-built ruling set (growth-binding review m4, decided 22 Nov, lead default for
+     * the security review): acceptedAmount's rules without its two refusal flags. Those guard the
+     * releases the counterparty builds (paidRefused: a seller-built release at the buyer's refused
+     * signed amount; releaseRebindRefused: a seller-built release whose amount the party committed
+     * to before a rebind), never a ruling: the ruling's set is the one the moderation service signed
+     * (verified in cosignPolicy against the pinned key, this trade, this escrow, round 1, this side)
+     * and must also be exactly the set this device works out for this size, so a refused flag cannot
+     * keep a winner from its ruling. The seller's full reversal is refund-shaped (no amount at all).
+     * The rest fails closed as before: a fixed amount must be the view's, a seller or a buyer that
+     * knows of paid without a fixed amount has none, otherwise the API's amount within [take, size].
+     */
+    private rulingAmount(v: EscrowTradeView): bigint | null {
+      const r = this.rec;
       const fixed = r.acceptedAtomic ?? null;
       if (fixed !== null) return v.amountAtomic === fixed ? fixed : null;
       // Fail closed (I1, I7): the seller releases only the amount the buyer's signed trade.paid
@@ -1058,7 +1094,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (!approvedPrior) {
         const refundAddress = this.rec.role === 'seller' ? this.rec.ownAddress : this.rec.theirAddress;
         const refundShaped = o.to.length === 1 && o.to[0]!.address === refundAddress;
-        const ctx = this.context(sumOf(o.to), refundShaped);
+        const ctx = this.context(sumOf(o.to), refundShaped, o.builder === 'mod');
         if (!ctx || !cosignPolicy(ctx, o)) return;
       }
       this.inflight = k;
@@ -1141,7 +1177,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (!this.isReady) return this.set('setting-up');
       if (i?.done && !this.doneUnsaved) return this.set('done'); // only from this device's own settle, once stored
       if (this.rec.settledWithoutDevice === true) return this.set('settled-without-device');
-      const active = i !== null && i.outcome !== null && (!i.auto || this.view?.state === 'settling' || this.view?.state === 'lapsed');
+      const active = i !== null && i.outcome !== null && (!i.auto || i.kind === 'ruling' || this.view?.state === 'settling' || this.view?.state === 'lapsed');
       this.set(active ? 'signing' : 'ready');
     }
 
@@ -1292,10 +1328,13 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       this.resumePrior();
       // An amount this device does not accept is refused visibly (never silently) until it fits.
       this.refusal = this.refusalFor(v) ?? (r.intent?.outcome && this.exhausted.has(key(r.intent.outcome)) ? 'attempts-exhausted' : null);
+      // Plan 4 rulings: while disputed, a verified ruling for this side is the one outcome this
+      // device works toward; once saved as the `ruling` intent nothing else replaces it.
+      if (v.state === 'disputed' && (await this.rulingTick(f, changed))) return this.refresh();
       // A tapped choice holds while the view supports it (or once it settled); otherwise the
       // automatic choice takes over, so an old tap never blocks the outcome the trade reached.
       const tapped = r.intent !== null && !r.intent.auto;
-      const tapHolds = tapped && (r.intent!.done || viewSupports(r.intent!.kind, v));
+      const tapHolds = tapped && (r.intent!.done || (r.intent!.kind !== 'ruling' && viewSupports(r.intent!.kind, v)));
       // Once closed nothing new is chosen: an open settle stays as it is (settled elsewhere is judged in afterClose).
       if (!CLOSED.includes(v.state) && !tapHolds && !(r.intent?.auto && r.intent.done)) {
         const kind = this.autoKind(v);
@@ -1308,7 +1347,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         }
       }
       const i = r.intent;
-      if (i && !i.done && f.balance > 0n && f.balance === f.unlocked) {
+      if (i && i.kind !== 'ruling' && !i.done && f.balance > 0n && f.balance === f.unlocked) {
         const ctx = this.context(f.balance, i.kind !== 'release');
         let o = ctx ? outcomeFor(i.kind, ctx) : null;
         // I1: a release is bound to the amount of the first release ever handed over; another
@@ -1424,10 +1463,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // TODO(lead, pending): prove it with the builder's signed txHash and an OutProof checked on
       // this device's own daemon (needs a Task 10 signal); until then the API's closed kind decides.
       const tappedOpen = r.intent !== null && !r.intent.auto && r.intent.outcome !== null && !r.intent.done;
+      // Plan 4 rulings (Task 21 fix): a ruling's payout closes the disputed trade with `settling` null
+      // (the machine's `settled` for a RulingKind): released pays the buyer, refunded the seller, and
+      // the loser's device takes no part (the moderator builds, the winner co-signs).
+      const rulingByOthers = v.settling === null && ((r.role === 'seller' && v.state === 'released') || (r.role === 'buyer' && v.state === 'refunded'));
       const byOthers =
-        v.state === 'refunded' &&
-        ((r.role === 'seller' && v.settling === 'buyer-cancel') ||
-          (r.role === 'buyer' && (v.settling === 'auto-refund' || v.settling === 'lapse-refund') && (r.acceptedAtomic ?? null) === null));
+        rulingByOthers ||
+        (v.state === 'refunded' &&
+          ((r.role === 'seller' && v.settling === 'buyer-cancel') ||
+            (r.role === 'buyer' && (v.settling === 'auto-refund' || v.settling === 'lapse-refund') && (r.acceptedAtomic ?? null) === null)));
       if (emptyInBlock && !ownDone && byOthers && !tappedOpen && !this.error) {
         this.emptiedWhileSettling = null;
         if (r.settledWithoutDevice !== true) {
@@ -1446,6 +1490,62 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         return true;
       }
       return false;
+    }
+
+    /**
+     * Plan 4 rulings (Haveno review finding 2; Task 21 found this missing): reads the moderation
+     * service's signed ruling statement while the trade is disputed, and keeps it only once it
+     * verifies for this trade, the escrow address this device's own party derived (none before
+     * `ready()`) and this side as the winner. A statement that fails is asked for again next tick
+     * (the API may serve the right one later); one that verifies with the other side the winner
+     * ends the asking for this run (this side co-signs nothing).
+     */
+    private async loadRuling(): Promise<void> {
+      if (this.ruling !== null || this.rulingLost || this.address === null) return;
+      let got: { statement: unknown; sig: unknown } | null;
+      try {
+        got = await deps.api.getRulingStatement(this.code);
+      } catch {
+        return;
+      }
+      if (got === null || this.stopped) return;
+      const want = { trade: this.code, escrowAddress: this.address, winner: this.rec.role };
+      const check = await verifyRulingStatement(got.statement, got.sig, deps.config.modSigningPublic, want);
+      if (check.ok) this.ruling = { statement: got.statement, sig: got.sig };
+      else if (check.reason === 'not-winner') this.rulingLost = true;
+    }
+
+    /**
+     * The disputed tick's ruling part. With a verified statement for this side and the escrow
+     * wholly unlocked, the set cosignPolicy passes against it (`rulingOutcomeFor`: worked out on this
+     * device, the statement's own list never used) is saved as the `ruling` intent, then handed to
+     * the party (the moderator builds, this side co-signs). True when the ruling owns this tick (a
+     * ruling intent exists, done or waiting), so no other outcome is chosen or handed over: the
+     * party would otherwise switch between the ruling and the standing release co-sign. False with
+     * no ruling for this side: the tick goes on as before.
+     */
+    private async rulingTick(f: { balance: bigint; unlocked: bigint }, changed: boolean): Promise<boolean> {
+      const r = this.rec;
+      const saved = r.intent?.kind === 'ruling' ? r.intent : null;
+      if (saved?.done) {
+        if (changed) await this.persist();
+        return true;
+      }
+      await this.loadRuling();
+      const ctx = this.ruling !== null && f.balance > 0n && f.balance === f.unlocked ? this.context(f.balance, r.role === 'seller', true) : null;
+      const o = ctx ? rulingOutcomeFor(ctx) : null;
+      if (o === null) {
+        if (saved === null) return false;
+        if (changed) await this.persist();
+        return true;
+      }
+      if (saved === null || key(saved.outcome) !== key(o)) {
+        r.intent = { kind: 'ruling', outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner }, done: false, auto: true };
+        changed = true;
+      }
+      if (changed) await this.persist();
+      this.settle(o);
+      return true;
     }
 
     private autoKind(v: EscrowTradeView): SettleKind | null {

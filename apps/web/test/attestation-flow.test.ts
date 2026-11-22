@@ -2828,6 +2828,19 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
     expect(await t.buyer.status((s) => s.phase === 'done')).toMatchObject({ error: null });
   });
+  it.each([
+    ['the seller, after a buyer-win ruling paid out (released, no settling)', 'seller', 'buyer', { state: 'released', paidAt, settling: null }],
+    ['the buyer, after a seller-win ruling paid out (refunded, no settling)', 'buyer', 'seller', { state: 'refunded', paidAt, settling: null }],
+  ] as const)('%s: settled without this device, never escrow-failed', async (_n, loser, winner, closed) => {
+    const t = await disputed();
+    t.state.rulingStatement = await statement(t.mod.secret, winner);
+    await until(() => modBuilt(t, winner).length > 0);
+    await t.parties.ticks(loser, 2);
+    expect(modBuilt(t, loser)).toEqual([]);
+    t.state.view = tradeView(closed);
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    expect(await t[loser].status((s) => s.phase === 'settled-without-device' || s.phase === 'error')).toMatchObject({ phase: 'settled-without-device', error: null });
+  });
 });
 
 describe('Plan 4 Task 21 bug 2: the seller of an after-refund dispute keeps the attested restitution', () => {

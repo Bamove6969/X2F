@@ -128,6 +128,23 @@ export interface UseEscrow {
 const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, methodId: null, paymentInstructions: null, instructionsMismatch: false, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null, handedOff: false };
 
 /**
+ * Plan 4 Task 21 bug 2: the seller's `restitution` (EscrowStatus.restitution: the attested buyer
+ * address and this device's accepted amount) for a page outside the trade room, such as
+ * /trade/:code/dispute. It only subscribes to the escrow worker's status (the worker resumes every
+ * stored trade by itself): it never starts a trade, so it is not a second escrow handle.
+ */
+export function useEscrowRestitution(code: string): { address: string; amountAtomic: bigint } | null {
+  const [r, setR] = useState<{ address: string; amountAtomic: bigint } | null>(null);
+  const c = useMemo(() => escrowClient(), []);
+  useEffect(() => {
+    setR(null);
+    const off = c.subscribe(code, (s) => setR(s.restitution ?? null));
+    return () => void off();
+  }, [c, code]);
+  return r;
+}
+
+/**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
  * needed the first time a trade starts on this device and ignored once it is stored.
  */

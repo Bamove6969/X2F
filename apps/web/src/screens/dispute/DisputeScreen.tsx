@@ -1,7 +1,8 @@
 // /trade/:code/dispute (Plan 3 Task 27): loads the trade and its dispute, then shows DisputeOpen
 // (no dispute yet), DisputeRoom (open, or ?view=chat) or DisputeRuling (once there is a ruling).
 // Inside the trade room a disputed trade shows the same screens through DisputeSlot.tsx; this route
-// stays for DisputeOpen and the ?view=chat link. It re-reads on the room's one live source
+// stays for DisputeOpen and the ?view=chat link, and shows a seller-sends-xmr ruling's tx-proof form
+// from the escrow's attested restitution (Task 21 bug 2). It re-reads on the room's one live source
 // (useTradeLive: Task 19's connection fanned out, never a second EventSource), when the page comes
 // back into view, and every POLL_MS (a moderator's join or ruling is Plan 4's, no live event yet).
 import { useCallback, useEffect, useState } from 'react';
@@ -9,10 +10,11 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useServerClock } from '../../api/client.js';
 import { POLL_MS, useTradeLive } from '../trade/seams.js';
 import { useResumeSync } from '../../session/syncFirst.js';
-import { disputeMethodName, fetchDispute, fetchTrade, openDispute, refusalText, sendAppeal, type DisputeTrade, type DisputeView } from './api.js';
+import { useEscrowRestitution } from '../../escrow/useEscrow.js';
+import { disputeMethodName, fetchDispute, fetchTrade, openDispute, proofRefusalText, refusalText, sendAppeal, sendPaymentProof, type DisputeTrade, type DisputeView } from './api.js';
 import { DisputeOpen } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
-import { DisputeRuling } from './DisputeRuling.js';
+import { DisputeRuling, sameAmount } from './DisputeRuling.js';
 import './dispute.css';
 
 interface Loaded {
@@ -63,6 +65,9 @@ function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void;
     return () => clearInterval(id);
   }, []);
 
+  // Task 21 bug 2: the seller's payment a seller-sends-xmr ruling orders, from the escrow's
+  // attested terms only (as DisputeSlot), never an API field, and only at the trade amount.
+  const restitution = useEscrowRestitution(trade.code);
   const screen = disputeScreenFor(trade, dispute, params.get('view') === 'chat');
   if (screen.kind === 'open') {
     return (
@@ -94,6 +99,17 @@ function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void;
           } catch (err) {
             throw new Error(refusalText(err));
           }
+        }}
+        payTo={restitution !== null && sameAmount(restitution.amountAtomic, trade.amountAtomic) ? restitution : null}
+        onTxProof={async (txHash, txKey) => {
+          let sent;
+          try {
+            sent = await sendPaymentProof(trade.code, txHash, txKey);
+          } catch (err) {
+            throw new Error(proofRefusalText(err));
+          }
+          reload();
+          return sent;
         }}
       />
     );

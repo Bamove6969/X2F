@@ -21,8 +21,10 @@
  * set for this side at its own address (Plan 4 Task 15; owner g63, 7 Nov: the poster pays the 1%
  * only when the trade completes): `payoutsFor('dispute-buyer')` for the buyer (its payout first,
  * then the exact fee) and `payoutsFor('dispute-seller')` for the seller (a full reversal: the whole
- * balance, no fee), so no split can move this side's share to the counterparty or add a fee. Whether the ruling allows it at all is
- * screens/dispute/rules.ts `rulingAllowsCosign`, in front of this.
+ * balance, no fee), so no split can move this side's share to the counterparty or add a fee. The
+ * runtime builds that set with `rulingOutcomeFor` once the signed statement verified (Plan 4 Task 21
+ * fix); the statement, not the API's unsigned dispute view (screens/dispute/rules.ts
+ * `rulingAllowsCosign`), is what allows it.
  *
  * The trade's size is bounded by this device, never set by the API alone: `deal` is what this
  * device stored at trade start and both sides signed in trade.terms (amount at take, poster,
@@ -201,6 +203,24 @@ export function cosignPolicy(ctx: PolicyContext, outcome: Outcome): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Plan 4 rulings: the moderator-built set this side co-signs as the winner (`dispute-buyer` for the
+ * buyer, `dispute-seller` for the seller), worked out from this side's own facts, or null when
+ * cosignPolicy refuses it (not disputed, no verified statement for this trade, escrow, round 1 and
+ * this side, or a statement paying anything else). Never built from the statement's own list.
+ */
+export function rulingOutcomeFor(ctx: PolicyContext): Outcome | null {
+  const kind: RulingKind = ctx.role === 'buyer' ? 'dispute-buyer' : 'dispute-seller';
+  let to: Payout[];
+  try {
+    to = expected(kind, ctx);
+  } catch {
+    return null;
+  }
+  const o: Outcome = { kind: 'release', to, builder: 'mod', cosigner: ctx.role };
+  return cosignPolicy(ctx, o) ? o : null;
 }
 
 /** The outcome for `kind` from this side's facts, or null when cosignPolicy would refuse it. */

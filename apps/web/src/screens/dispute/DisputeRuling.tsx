@@ -1,7 +1,8 @@
 // DisputeRuling (Plan 3 Task 27), board design/x2f-app/DisputeRuling.dc.html: the moderator's
 // ruling card (outcome, the destination ending for the side it pays, reason, evidence used), the
 // appeal window with its countdown, and the appeal form. Everything comes from the server's ruling
-// record (Plan 4 writes it). Co-signing the moderator-built payout is gated by rulingAllowsCosign.
+// record (Plan 4 writes it). The escrow worker co-signs the moderator-built payout against the signed
+// ruling statement (escrow/runtime.ts), not from this screen.
 // The board has no orange action until the appeal form holds 10 characters, so "Send appeal" is
 // this screen's only data-primary and the default state has none (lead question in the report).
 import { useId, useState } from 'react';
@@ -16,7 +17,7 @@ import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
 import { ModeratorTag } from './ModeratorTag.js';
 import { TradeReview } from '../review/TradeReview.js';
-import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, feeOwedLine, isTxHex, isTxKeyHex, overturnLien, rulingCopy, rulingFinal, utcDateTime, xmrInTextExact } from './rules.js';
+import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, feeOwedLine, isTxHex, isTxKeyHex, overturnLien, rulingCopy, rulingFinal, utcDateTime, waitingForWinner, xmrInTextExact } from './rules.js';
 import './dispute.css';
 
 function AppealSection({
@@ -255,6 +256,7 @@ export function DisputeRuling({
   // Review B1: and only when the attested amount equals the trade amount the server checks a proof
   // against (the dispute view's `amountAtomic`). Otherwise no form: one the server would refuse is
   // never shown. The server's figure is only compared here, never shown as the sum to send.
+  const waiting = waitingForWinner(dispute, trade);
   const proofDue =
     r.outcome === 'seller-sends-xmr' && trade.role === 'seller' && onTxProof !== undefined && payTo !== null && sameAmount(payTo.amountAtomic, trade.amountAtomic);
   return (
@@ -316,6 +318,12 @@ export function DisputeRuling({
             </div>
           ) : null}
         </section>
+        {waiting !== null ? (
+          // Review Focus 4: the payout waits for the winner's app (COPY-UNSIGNED, rules.ts waitingForWinner).
+          <Notice tone="info" data-part="waiting-for-winner">
+            {waiting}
+          </Notice>
+        ) : null}
         {dispute.feeOwedAtomic ? (
           // Revision 2026-10-29c: only the side the server says owes the fee gets this line (Task 12's fees_owed).
           <Notice tone="caution" live="off" data-part="fee-owed">
