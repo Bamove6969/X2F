@@ -130,7 +130,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await setPhone(page, viewport);
     await page.goto('/sell');
     const bar = page.getByRole('navigation', { name: 'Main' });
-    await expect(bar.getByRole('link', { name: 'Trade' })).toBeVisible();
+    await expect(bar.getByRole('link', { name: 'Trade', exact: true })).toBeVisible();
     await expect(bar.getByRole('link', { name: 'My trades' })).toHaveCount(0);
     await expectPhoneLayout(page);
 

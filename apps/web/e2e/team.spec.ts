@@ -466,7 +466,7 @@ test('a Trades-only member has no Post offer tab; an Offers member has it', asyn
   await postApi(page, ['trades'], { status: 403, body: { error: 'forbidden' } });
   await page.goto('/sell');
   const nav = page.getByRole('navigation', { name: 'Main' });
-  await expect(nav.getByRole('link', { name: 'Trade' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Trade', exact: true })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Post offer' })).toHaveCount(0);
   await page.unroute('**/v1/account/me');
   await page.route('**/v1/account/me', json(memberMe(['offers'])));

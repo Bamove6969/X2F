@@ -381,7 +381,7 @@ test('26 a Trades-only member: no Post offer tab (review shot 26)', async ({ pag
   await page.route('**/v1/account/me', json(memberMe(['trades'])));
   await page.goto('/sell');
   const nav = page.getByRole('navigation', { name: 'Main' });
-  await expect(nav.getByRole('link', { name: 'Trade' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Trade', exact: true })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Post offer' })).toHaveCount(0);
   await shot(page, '26-team-member-trades-only-nav');
 });
