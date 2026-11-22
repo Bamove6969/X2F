@@ -154,7 +154,7 @@ export interface LogLine {
 /** The activity log for `code`, oldest first, as the owner reads it (GET /staff/v1/log?code=). */
 export async function logFor(code: string): Promise<string[]> {
   const o = await owner();
-  const r = await o.client.ok<{ entries: Array<{ action: string; at: string }> }>('GET', `/staff/v1/log?code=${encodeURIComponent(code)}&limit=200`);
+  const r = await o.client.ok<{ entries: Array<{ action: string; at: string }> }>('GET', `/staff/v1/log?code=${encodeURIComponent(code)}&limit=100`); // LOG_LIMIT_MAX (staff/activityLog.ts)
   return r.entries.map((e) => e.action).reverse();
 }
 
