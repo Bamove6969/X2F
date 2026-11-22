@@ -136,7 +136,7 @@ export async function hire(role: 'mod' | 'senior', o: { hours?: LoginHours } = {
  * A browser context on the staff origin, logged in as `p` (their staff session cookie), whose
  * virtual authenticator holds `p`'s security keys. The staff boards are 1280 wide.
  */
-export async function staffPage(browser: Browser, p: Staffer, size: Size = DESKTOP, o: { keys?: number[] } = {}): Promise<{ context: BrowserContext; page: Page }> {
+export async function staffPage(browser: Browser, p: Staffer, size: Size = DESKTOP, o: { keys?: number[] } = {}): Promise<{ context: BrowserContext; page: Page; close(): Promise<void> }> {
   const s = staffInfo();
   const context = await browser.newContext({ baseURL: s.origin, viewport: size, ignoreHTTPSErrors: true });
   await context.addCookies([...p.client.jar].map(([name, value]) => ({ name, value, url: s.origin, secure: true, httpOnly: true, sameSite: 'Strict' as const })));
@@ -159,7 +159,15 @@ export async function staffPage(browser: Browser, p: Staffer, size: Size = DESKT
       if (r.status() >= 400) void r.text().then((t) => console.log(`[staff ${p.displayName} http ${r.status()}] ${r.request().method()} ${r.url().slice(0, 120)} ${t.slice(0, 200)}`), () => undefined);
     });
   }
-  return { context, page };
+  return {
+    context,
+    page,
+    // The browser's counters are read back before it goes, so Node's next tap with the key moves on from them.
+    close: async () => {
+      await pull(p);
+      await context.close();
+    },
+  };
 }
 
 /** The owner changes the large-trade limit (a tapped `settings` change, as StaffSettings does); returns the old limit. */

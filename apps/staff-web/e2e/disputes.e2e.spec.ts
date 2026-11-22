@@ -80,7 +80,7 @@ async function withStaff<T>(browser: Browser, p: Staffer, body: (page: Page) => 
   try {
     return await body(s.page);
   } finally {
-    await s.context.close();
+    await s.close();
   }
 }
 
