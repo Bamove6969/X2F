@@ -106,7 +106,9 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
   app.get('/v1/trades/:code/ruling-statement', { preHandler: requireTradesRead }, async (req, reply) => {
     const deps = req.server.deps;
     const { code } = req.params as { code: string };
-    const { code: normalized } = await roleInTrade(deps.db, code, req.auth.accountId);
+    const { code: normalized, closedAt } = await roleInTrade(deps.db, code, req.auth.accountId);
+    // Review lead-trades-list-2 B1: the part's box, after the participant check (a stranger stays 404).
+    assertMemberMay(req.auth, tradePartAbility(closedAt));
     const { rows } = await deps.db.query<{ statement: unknown; sig: string }>('select statement, sig from ruling_statements where code = $1', [normalized]);
     const row = rows[0];
     if (!row) return reply.code(204).send();

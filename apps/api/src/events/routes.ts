@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
-import { STREAM_ABILITY } from '../team/perms.js';
+import { hasAbility } from '../team/abilities.js';
+import { STREAM_ABILITY, TRADE_PART_ABILITY } from '../team/perms.js';
 import { ApiError } from '../errors.js';
 import type { EventBus } from './bus.js';
 
@@ -94,6 +95,14 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
       );
       live = rows.length > 0;
       if (rows[0] && rows[0].expires_at.getTime() < endsAt.getTime()) endsAt = rows[0].expires_at;
+      // Review lead-trades-list-2 m4: a member's trades boxes changed after requireTrader read them
+      // (that write's closeSession found no stream yet) would leave this stream on the old parts, so
+      // the boxes are read again too; any change to the parts ends it and the reconnect takes the new.
+      if (live && req.auth.memberId !== null) {
+        const m = await db.query<{ abilities: string[] }>('select abilities from team_members where id = $1 and removed_at is null', [req.auth.memberId]);
+        const parts = (set: readonly string[]) => Object.values(TRADE_PART_ABILITY).map((a) => hasAbility(set, a)).join();
+        live = m.rows[0] !== undefined && parts(m.rows[0].abilities) === parts(req.auth.memberAbilities);
+      }
     } catch (e) {
       end();
       throw e;

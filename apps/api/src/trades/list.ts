@@ -27,7 +27,8 @@ export interface TradeListItem {
   /**
    * Plan 3 Task 42: "The account's Active trades list shows which member last acted on each trade
    * (from `team_audit`), visible to the account owner only." Only on an open row, only for the
-   * account owner's session (never a member's): the newest row of the account's own team log by a
+   * account owner's full session (never a member's, nor a recovery or held one, which may not read
+   * the team log either): the newest row of the account's own team log by a
    * member on this trade (its name as the lead's list shows it, `team_members.display_name`, and
    * when), or null when no member has acted on it. The lead's own rows (`auditLead`, member null)
    * are not a member acting, and the other side's team log is never read.
@@ -177,7 +178,9 @@ export function tradeListRoute(app: FastifyInstance): void {
     );
     const shown = rows.slice(0, limit);
     const last = shown[shown.length - 1];
-    const acted = req.auth.memberId === null ? await lastMemberActions(req, me, shown.filter((r) => r.closed_at === null).map((r) => r.code)) : null;
+    // Review lead-trades-list-2 m1 (lead call): only a full owner session, the sessions that may read
+    // GET /v1/team/audit; a recovery session (held or not) gets no such field.
+    const acted = req.auth.memberId === null && req.auth.level === 'full' ? await lastMemberActions(req, me, shown.filter((r) => r.closed_at === null).map((r) => r.code)) : null;
     return {
       trades: shown.map((r) => ({
         code: r.code,

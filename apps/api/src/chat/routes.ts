@@ -502,7 +502,9 @@ export function chatRoutes(app: FastifyInstance): void {
       [row.code, rec.tkh, rec.by, rec.wrapBuyer, rec.wrapSeller, rec.sig, deps.clock()],
     ));
     if (rowCount === 0) throw new ApiError(409, 'key-exists');
-    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
+    // Review lead-trades-list-2 n1: the linked trade's part, as the chat line's publish says it.
+    const part = row.trade_code === null ? {} : { closed: !(await tradeOpen(deps.db, row.trade_code)) };
+    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code }, part);
     return reply.code(201).send({ ok: true });
   });
 

@@ -62,7 +62,7 @@ export async function loadBlurCheckSchedule(db: Queryable): Promise<BlurCheckSch
 
 // Security review PC1: a team member works the account's trades, so the routes take the member
 // boxes the other trade routes use: listing and answering the asks read the trade (TRADE_READ, as
-// the trade room, then the box for the trade's part: trades-list I1); announcing a proof posts to the trade's chat (`chat-reply`). Without the box a
+// the trade room, then the box for the trade's part: trades-list I1); announcing a proof posts to the trade's chat (`chat-reply`, then the part's box: review lead-trades-list-2). Without the box a
 // member gets 403 `forbidden`; the account owner is unaffected.
 const readTrade = requireSession({ kinds: ['trader'], member: TRADE_READ });
 const postChat = requireSession({ kinds: ['trader'], member: 'chat-reply' });
@@ -115,7 +115,11 @@ export function blurCheckRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     return inTx(deps.db, async (c) => {
       // The trade row lock serialises a trade's announcements (the cap and the idempotent repeat).
-      const { side } = await sideOf(c, code, req.auth.accountId, true);
+      const { side, closedAt } = await sideOf(c, code, req.auth.accountId, true);
+      // Lead call (review lead-trades-list-2): announcing acts on the trade, so it needs the box for
+      // its part too; after the side check (a stranger stays 404) and before the stored-proof check
+      // (a member who may not see the part learns nothing about its proofs).
+      assertMemberMay(req.auth, tradePartAbility(closedAt));
       // Proof stack: only a proof this side stored for this trade is announced (isStoredProof:
       // existence only, never the image bytes), so the site's proof count and the asks follow real
       // proofs. Any other id is 404, like an unknown trade.
