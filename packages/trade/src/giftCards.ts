@@ -145,6 +145,19 @@ export const GIFT_CARD_CURRENCIES: Readonly<Record<string, readonly string[]>> =
   ]),
 );
 
+/**
+ * Countries a gift card may not come from (owner 12 Nov: Russian anything is banned; anything
+ * Iranian too; "I'm sticking to the US sanction laws": Cuba, Iran and North Korea are under
+ * comprehensive OFAC sanctions, OFAC FAQ 10). The table above keeps their ISO currencies as fact;
+ * no offer may name them (docs/sanctioned-countries-2026-11-12.md).
+ */
+export const BANNED_GIFT_CARD_COUNTRIES: ReadonlySet<string> = Object.freeze(new Set(['RU', 'IR', 'KP', 'CU']));
+
+/** A known ISO country a gift-card offer may name: not one of BANNED_GIFT_CARD_COUNTRIES. */
+export function giftCardCountryAllowed(country: string): boolean {
+  return Object.hasOwn(GIFT_CARD_CURRENCIES, country) && !BANNED_GIFT_CARD_COUNTRIES.has(country);
+}
+
 /** The currencies a card from `country` is in; empty for an unknown code. */
 export function giftCardCurrencies(country: string): readonly string[] {
   return Object.hasOwn(GIFT_CARD_CURRENCIES, country) ? GIFT_CARD_CURRENCIES[country]! : [];
@@ -152,5 +165,5 @@ export function giftCardCurrencies(country: string): readonly string[] {
 
 /** T-081: a gift-card offer's currency must be one its card's country uses. */
 export function giftCardCurrencyOk(country: string, currency: string): boolean {
-  return giftCardCurrencies(country).includes(currency);
+  return giftCardCountryAllowed(country) && giftCardCurrencies(country).includes(currency);
 }

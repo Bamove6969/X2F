@@ -41,8 +41,8 @@ import { noTxProofCheck, TX_HASH, TxProofUnavailable, type TxProofCheck, type Tx
  *   `dispute.comply-lapsed` and the owner is alerted (`dispute-comply-lapsed`, in-app and pushed to
  *   the phone by the dispute timer); the restitution lien
  *   stays in force, and the case is listed in the staff queue for senior moderators and the owner,
- *   who decide the suspension (Task 27's ban stages: NEEDS_BANS_MERGE, not on this branch; a
- *   moderator's freeze for an ignored ruling is staffRoutes.ts `freezeAllowed`). The buyer can still
+ *   who decide the suspension (Task 27's ban stages: a tapped `POST /staff/v1/accounts/:id/bans`,
+ *   staff/bans.ts; a moderator's freeze for an ignored ruling is staffRoutes.ts `freezeAllowed`). The buyer can still
  *   appeal "They paid too little or nothing" within the window (Task 24).
  */
 

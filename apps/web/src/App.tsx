@@ -21,6 +21,7 @@ import { Trades } from './screens/Trades.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
 import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
+import { AccountBannedRoute, BANNED_PATH } from './screens/account/AccountBanned.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -318,6 +319,8 @@ export function App() {
             <Route path="/feedback" element={<Feedback />} />
             {/* D-016: the frozen-account notice, from GET /v1/account/freeze (home while not frozen). */}
             <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
+            {/* Plan 4 Task 27, D-020: the ban notice (api/client.ts sends a 403 banned here). */}
+            <Route path={BANNED_PATH} element={<AccountBannedRoute />} />
           </Route>
         </Route>
         {/* The front door: open to anyone (FRONT_DOOR in session/frontDoor.tsx lists the same paths). */}

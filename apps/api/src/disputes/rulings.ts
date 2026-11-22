@@ -57,11 +57,15 @@ import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staf
  * `ruling_drafts` (401) until published, then go to the trader-visible `dispute_rulings`.
  *
  * Account actions on the ruling card are refused (409 `account-action-unavailable`): a freeze is a
- * separate act, never on the ruling card (owner D-015), and the ban stages are Task 27's
- * (NEEDS_BANS_MERGE: wip/lead-bans adds `account_bans` and the staff route's insert helper; once it is
- * merged, accept `trade-ban`/`site-ban` here and have `publishDecided` call that same helper in this
- * transaction when the ruling is published, never a copy of it). So every ruling here carries
- * `{kind: 'none'}`.
+ * separate act, never on the ruling card (owner D-015), and so is a ban. Task 27's ban stages are on
+ * this branch (`account_bans`, staff/bans.ts): a senior moderator or the owner bans a party with its
+ * own tapped act, `POST /staff/v1/accounts/:id/bans` (the `ban-account` tap binds the account, the
+ * ban, its kind, D-017's rule and its end; D-017's offence count and term rules are checked there).
+ * Lead default, owner question (bans onto main, 21 Nov): the ruling card does not carry a ban.
+ * `AccountAction`'s ban shape names neither the party to ban nor D-017's rule, and a ruling's taps
+ * (re-verified by the moderation gate) would then also be a ban's; until the owner says a ruling
+ * should ban, and whom, every ruling here carries `{kind: 'none'}`. If it should, `publishDecided`
+ * calls staff/bans.ts's own insert in this transaction, never a copy of it.
  *
  * Plan 4 Task 13: the moderation process's ruling gate (`apps/moderation/src/gate`) re-verifies these
  * taps itself, against the owner's pinned keys, and computes the payouts from its own records; it
@@ -158,7 +162,6 @@ const decided = (prev: Dispute, next: Dispute) =>
  * `ruling.final` ("Decision overruled" when it differs from round 1). The payout is the moderation
  * process's (Plan 4 Task 14), recorded on the watcher's report (disputes/execution.ts).
  */
-// NEEDS_BANS_MERGE: the ruling's ban (see the top) is inserted here, through the bans helper.
 async function publishDecided(client: pg.PoolClient, next: Dispute, draft: DraftRow, amountAtomic: string, now: Date, actor: ReturnType<typeof actorOf>): Promise<void> {
   const r = next.ruling!;
   const name = (await client.query<{ name: string }>(`select ${PUBLIC_NAME_COLUMN} as name from accounts where id = $1`, [r.proposer])).rows[0]?.name;

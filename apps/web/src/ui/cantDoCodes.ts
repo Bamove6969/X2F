@@ -13,6 +13,7 @@
  * piece by piece, and passes it here. A plain module (no React, no CSS) so the lint can read it.
  */
 import { LAUNCH_TRADE_CAP_USD_CENTS } from '@x2f/trade';
+import { formatDateTime } from './dates.js';
 
 /** The launch cap as words ("$5,000"), from the one constant the API enforces. */
 export const LAUNCH_CAP_TEXT = `$${(LAUNCH_TRADE_CAP_USD_CENTS / 100n).toLocaleString('en-US')}`;
@@ -184,6 +185,14 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wallet-exists': 'an input check (already linked)',
   'terms-not-accepted': 'sends the person to the Terms',
   'terms-required': 'sends the person to the Terms',
+  // Plan 4 Task 27: a site ban sends the person to the ban notice (screens/account/AccountBanned.tsx).
+  banned: 'sends the person to the ban notice',
+  'already-banned': 'a staff ban action (staff app only)',
+  'lifetime-required': 'a staff ban action: D-017 term rules (staff app only)',
+  'lifetime-not-allowed': 'a staff ban action: D-017 term rules (staff app only)',
+  // mod-rules: D-070 moderator methods and D-064's channel check (staff app only).
+  'moderator-methods-required': 'a moderator keeps a PGP key and a passkey (staff app only)',
+  'no-secure-jabber': 'ending a recovery hold via secure Jabber (staff app only)',
   // Owner, 8 Nov 2026: the signature given with the Terms; the pad never sends these.
   'signature-required': 'an input check on the Terms signature',
   'signature-invalid': 'an input check on the Terms signature',
@@ -345,8 +354,52 @@ export const CANT_DO_TITLE = {
   changes: "This change can't be saved yet",
 } as const;
 
+/**
+ * Plan 4 Task 27: a trade ban on take and post. COPY-UNSIGNED. The plan wants the ban's reason and
+ * end on this popup too; the popup texts take only the code today (lead question), so it points to
+ * the notice that has them.
+ */
+export const TRADE_BAN_TEXT = 'Your account has been banned from trading for now. Trades you already started carry on. See Account banned for the reason and when it ends.';
+
+/** The general reasons a ban shows (Revision 2026-10-29b, lead default list). COPY-UNSIGNED */
+export const BAN_REASON_TEXT = {
+  terms: 'Breaking the Terms of Service',
+  'trade-problems': 'Problems in trades',
+  abuse: 'Abuse of other traders',
+  'account-security': 'Account security',
+} as const;
+export type BanReasonCode = keyof typeof BAN_REASON_TEXT;
+
+/** What a 409 `trade-ban` carries (lead call, Task 27 Q4): the general reason and the end (null: lifetime). */
+export interface TradeBan {
+  reasonCode: BanReasonCode;
+  until: string | null;
+}
+
+const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/** The ban in a refusal's extra fields, or null when the API sent none (or nonsense). */
+export function tradeBanOf(extra: Record<string, unknown> | undefined): TradeBan | null {
+  if (!extra || typeof extra.reasonCode !== 'string' || !Object.hasOwn(BAN_REASON_TEXT, extra.reasonCode)) return null;
+  const until = extra.until;
+  if (until !== null && (typeof until !== 'string' || !ISO_MS.test(until) || !Number.isFinite(Date.parse(until)))) return null;
+  return { reasonCode: extra.reasonCode as BanReasonCode, until };
+}
+
+/** The trade-ban popup with the reason and the end, else the general words. COPY-UNSIGNED */
+export function tradeBanText(ban: TradeBan | null): string {
+  if (ban === null) return TRADE_BAN_TEXT;
+  const reason = `Reason: ${BAN_REASON_TEXT[ban.reasonCode]}. Trades you already started carry on.`;
+  return ban.until === null
+    ? `Your account is permanently banned from trading. ${reason}`
+    : `Your account is banned from trading until ${formatDateTime(new Date(ban.until))}. ${reason}`;
+}
+
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
-export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; capText: string | null; maxOpen: number | null; minTrades: number }): string {
+export function takeCantDoText(
+  code: CantDoCode,
+  o: { stageName: string | null; capText: string | null; maxOpen: number | null; minTrades: number; ban?: TradeBan | null },
+): string {
   switch (code) {
     case 'starter-limit':
       // No stage: the limit is the other side's, which is never named (Task 5 sends nothing about it).
@@ -367,6 +420,8 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       return 'Your account is on a trading hold while a dispute is open, so it cannot start trades.';
     case 'lien':
       return "Your account has a lien from a dispute, so it can't start trades until you pay back what the ruling says you owe."; // COPY-UNSIGNED (J-06, owner D-008: no trading until the lien is repaid)
+    case 'trade-ban':
+      return tradeBanText(o.ban ?? null);
     case 'already-waiting':
       return 'You already have a trade on this offer waiting to be funded.';
     case 'review-pending':
@@ -444,12 +499,14 @@ export function offerLimitLine(caps: OfferCaps | null): string {
 }
 
 /** What a refused Post offer says; `caps` from the API's refusal (offerCapsOf). */
-export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null): string {
+export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null, ban: TradeBan | null = null): string {
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'lien':
       return "Your account has a lien from a dispute, so you can't post offers until you pay back what the ruling says you owe."; // COPY-UNSIGNED (J-06)
+    case 'trade-ban':
+      return tradeBanText(ban);
     case 'too-many-offers':
       return `${offerLimitLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED (O-028)
     case 'launch-cap':
@@ -601,6 +658,7 @@ export const MY_OFFERS_HIDDEN = {
   'trading-paused': 'On, hidden while trading is paused',
   'trading-hold': 'On, hidden while your account has a trading hold',
   'lien': 'On, hidden while your account has a lien', // COPY-UNSIGNED (J-06, owner D-008)
+  'trade-ban': 'On, hidden while your account is banned from trading', // COPY-UNSIGNED (Plan 4 Task 27)
   'review-pending': 'On, hidden until you rate your last trade', // COPY-UNSIGNED (Plan 5 Task 3 review M3)
   'method-unavailable': "On, hidden: this payment method isn't available right now",
   // COPY-UNSIGNED (J-16; Task 34 review M4): none of the offer's currencies has a market price now.

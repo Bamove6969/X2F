@@ -65,7 +65,7 @@ export interface StartOptions {
   /** Plan 4 Task 11: the moderation process's internal API (`moderationFromEnv`); omitted, none. */
   moderation?: ModerationClient;
   /** Plan 4 Task 11: the trader API's event bus, for moderator-joined, proof-requested and chat. */
-  traderEvents?: Pick<EventBus, 'publish'>;
+  traderEvents?: Pick<EventBus, 'publish' | 'closeAccount'>;
   /** Hold model v3: the trader app's trade publisher, so a staff hold end's resumed trades reach the live views. */
   tradePublish?: TradePublisher;
   /** Where the setup code line goes: stderr (default). Never the structured logger. */

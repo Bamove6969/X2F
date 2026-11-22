@@ -141,6 +141,25 @@ describe('POST /v1/trades/:code/events', () => {
     expect((await loadTrade(deps.db, t.code))!.state).toBe('secured');
   });
 
+  it('lead 12 Nov (review m-2): a trade taken before the ban, in RUB or on SBP, MIR or YOOMONEY, finishes normally', async () => {
+    // owner 12 Nov: Russian anything is banned, but a funded escrow can only be stopped by a moderator:
+    // only new offers and takes are refused (docs/sanctioned-countries-2026-11-12.md). Lead default, owner question.
+    for (const [methodId, lockedCurrency] of [['SBP', 'RUB'], ['MIR', 'RUB'], ['YOOMONEY', 'RUB'], ['zelle', 'RUB'], ['SBP', 'USD']] as const) {
+      const seller = await trader();
+      const buyer = await trader();
+      const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId, lockedCurrency });
+      const t = await driveTo(deps, trade, 'secured');
+      const paid = await buyer.browser.post(events(t.code), { type: 'mark-paid', fiatCents: FIAT.toString() });
+      expect(paid.statusCode, `${methodId} ${lockedCurrency}`).toBe(200);
+      expect((paid.json() as { state: string }).state).toBe('paid');
+      const release = await seller.browser.post(events(t.code), { type: 'release-started' });
+      expect(release.statusCode, `${methodId} ${lockedCurrency}`).toBe(200);
+      expect((release.json() as { state: string }).state).toBe('settling');
+      const row = await loadTrade(deps.db, t.code);
+      expect([row!.methodId, row!.lockedRate.currency]).toEqual([methodId, lockedCurrency]);
+    }
+  });
+
   it('accepts a code in any spelling normalizeTradeCode accepts', async () => {
     const { buyer, t } = await tradeIn('secured');
     const res = await buyer.browser.post(events(t.code.toLowerCase().replaceAll('-', '')), { type: 'propose-cancel' });

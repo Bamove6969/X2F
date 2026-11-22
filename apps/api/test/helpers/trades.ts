@@ -56,6 +56,8 @@ export async function seedTrade(
     payWindowMin?: number;
     /** A fixed trade code (default a fresh random one), for a test that must read the same texts every run. */
     code?: string;
+    /** The trade's locked currency (default RATE's USD), e.g. a RUB trade from before migration 770. */
+    lockedCurrency?: string;
   } & Partial<TradeSides>,
 ): Promise<SeededTrade> {
   const offerId = a.offerId ?? (await seedOffer(deps, a.poster === 'seller' ? a.sellerId : a.buyerId, a.poster));
@@ -68,7 +70,7 @@ export async function seedTrade(
       buyerId: a.buyerId,
       methodId: a.methodId ?? 'zelle',
       amountAtomic: a.amountAtomic ?? AMOUNT,
-      lockedRate: RATE,
+      lockedRate: a.lockedCurrency === undefined ? RATE : { ...RATE, currency: a.lockedCurrency },
       confirmWindowMin: 120,
       ...(a.payWindowMin === undefined ? {} : { payWindowMin: a.payWindowMin }),
       minFiatCents: a.minFiatCents ?? 1_000n,
