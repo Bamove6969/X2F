@@ -644,7 +644,8 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
       const refreshedArmored = openKey(deps.config, Buffer.from(refreshed.keyEnc, 'base64'), refreshed.fingerprint);
       // Lead review 6 Nov item 2: the refreshed (merged) key may carry a subkey that is banned; the
       // ban list is checked here, after proof, before anything is stored (409 key-unavailable).
-      await assertKeyNotBanned(deps.db, deps.config, refreshedArmored);
+      // Review MF2: never the account's own banned key (a site-banned person logs in to finish trades).
+      await assertKeyNotBanned(deps.db, deps.config, refreshedArmored, { ownAccountId: account.id });
       await assertNoSubkeyInUse(deps.db, refreshedArmored, refreshed.fingerprint);
       // I1: the code proved the subkey the challenge went to (the pasted key's choice).
       const proved = typeof row.payload.recipient === 'string' ? [row.payload.recipient] : [];

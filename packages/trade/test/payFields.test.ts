@@ -7,6 +7,7 @@ import {
   checkPayDetails,
   parsePayDetails,
   payFieldsFor,
+  payNoteFor,
   payeeGivesNothing,
   payTextMatches,
   renderPayDetailsText,
@@ -33,8 +34,9 @@ describe('the payee fields table', () => {
         expect(/^[a-z][a-zA-Z0-9]*$/.test(f.key), `${id}.${f.key}`).toBe(true);
         expect(f.label.trim().length, `${id}.${f.key}`).toBeGreaterThan(0);
       }
-      // Something must be filled: a required field or a one-of group (Amazon: one optional email box, lead 10 Nov).
-      if (id !== 'AMAZON_GIFT_CARD') expect(spec.fields.some((f) => f.need !== 'no'), id).toBe(true);
+      // Something must be filled: a required field or a one-of group (Amazon: one optional email box, lead 10 Nov;
+      // ATM cash: one optional phone box, only for banks that text the code, lead 12 Nov).
+      if (id !== 'AMAZON_GIFT_CARD' && id !== 'CASH_AT_ATM') expect(spec.fields.some((f) => f.need !== 'no'), id).toBe(true);
     }
   });
 
@@ -55,7 +57,7 @@ describe('the payee fields table', () => {
   });
 
   it('a gift card, ATM or face-to-face cash method has no boxes: the payee gives nothing', () => {
-    for (const id of ['STEAM_GIFT_CARD', 'F2F', 'CASH_AT_ATM']) {
+    for (const id of ['STEAM_GIFT_CARD', 'F2F']) {
       expect(payFieldsFor(id), id).toEqual([]);
       expect(payeeGivesNothing(id), id).toBe(true);
     }
@@ -66,8 +68,7 @@ describe('the payee fields table', () => {
     expect(() => parsePayDetails({ v: PAY_DETAILS_V, method: 'STEAM_GIFT_CARD', fields: [] })).toThrow(PayDetailsError);
   });
 
-  it('lead decisions (10 Nov): SPEI is CLABE only, IMPS carries IFSC with the account, PayNow and Postepay take no personal ID', () => {
-    expect(payFieldsFor('SPEI').map((f) => [f.key, f.need])).toEqual([['name', 'yes'], ['clabe', 'yes'], ['bankName', 'no']]);
+  it('lead decisions (10 Nov): IMPS carries IFSC with the account, PayNow and Postepay take no personal ID', () => {
     expect(payFieldsFor('IMPS').some((f) => f.key === 'ifsc')).toBe(false);
     expect(payFieldsFor('IMPS').find((f) => f.key === 'accountIfsc')?.need).toEqual({ oneOf: 'reach' });
     expect(payFieldsFor('PAYNOW').some((f) => f.key === 'nric')).toBe(false);
@@ -233,5 +234,65 @@ describe('the packaged message', () => {
     const custom: PayDetailsPayload = { v: PAY_DETAILS_V, method: 'NOT_A_METHOD', fields: [{ key: 'details', value: '070-123 45 67' }] };
     expect(parsePayDetails(custom)).toEqual(custom);
     expect(renderPayDetailsText(custom)).toBe('Payment details\nPayment details: 070-123 45 67');
+  });
+});
+
+describe('the 12 Nov recheck (research-payee-fields-confirm-2026-11-12; lead 12 Nov)', () => {
+  it('SPEI: the CLABE, plus optional 16-digit debit card and 10-digit mobile (Banxico Circular 10/2026, Art. 17 Ter IV)', () => {
+    expect(payFieldsFor('SPEI').map((f) => [f.key, f.kind, f.need])).toEqual([
+      ['name', 'text', 'yes'], ['clabe', 'account', 'yes'], ['bankName', 'text', 'no'], ['cardNumber', 'account', 'no'], ['phone', 'phone', 'no'],
+    ]);
+    expect(checkPayDetails('SPEI', { name: 'Ana', clabe: '002010077777777771', cardNumber: '4152313800000000', phone: '5512345678' }).map((f) => f.key)).toEqual(['name', 'clabe', 'cardNumber', 'phone']);
+  });
+
+  it('ATM cash: one optional box for a phone that receives the cash code; no longer nothing-to-send', () => {
+    expect(payeeGivesNothing('CASH_AT_ATM')).toBe(false);
+    expect(payFieldsFor('CASH_AT_ATM').map((f) => [f.key, f.kind, f.need])).toEqual([['phone', 'phone', 'no']]);
+  });
+
+  it('Nequi: the Bre-B key label names what a key may be, never the personal ID', () => {
+    expect(payFieldsFor('NEQUI').find((f) => f.key === 'breBKey')?.label).toBe('Bre-B key (phone, email or the key your bank gave you)');
+  });
+
+  it('WorldRemit takes an optional address; Lydia a username in its reach group; Postepay P2P a mobile number or alias', () => {
+    expect(payFieldsFor('WORLDREMIT').find((f) => f.key === 'address')).toEqual({ key: 'address', label: 'Address', kind: 'postal', need: 'no' });
+    expect(payFieldsFor('LYDIA').find((f) => f.key === 'username')).toEqual({ key: 'username', label: 'Lydia username', kind: 'account', need: { oneOf: 'reach' } });
+    const p2p = payFieldsFor('POSTEPAY').find((f) => f.key === 'phone');
+    expect(p2p).toEqual({ key: 'phone', label: 'Mobile number or Postepay alias (P2P)', kind: 'account', need: { oneOf: 'reach' } });
+    expect(checkPayDetails('POSTEPAY', { name: 'Mario Rossi', phone: 'mario.rossi' })).toEqual([{ key: 'name', value: 'Mario Rossi' }, { key: 'phone', value: 'mario.rossi' }]);
+  });
+
+  it('Alipay and Weixin Pay: the name is the registered one, in pinyin', () => {
+    expect(payFieldsFor('ALI_PAY').find((f) => f.key === 'name')?.label).toBe('Full name as registered on Alipay (in pinyin or Latin letters)');
+    expect(payFieldsFor('WECHAT_PAY').find((f) => f.key === 'name')).toEqual({ key: 'name', label: 'Real name as verified in Weixin Pay (pinyin)', kind: 'text', need: 'no' });
+  });
+
+  it('a method may carry a note for the payee: Monese and cash deposit do; others do not', () => {
+    expect(payNoteFor('MONESE')).toMatch(/Monese ID/);
+    expect(payNoteFor('CASH_DEPOSIT')).toMatch(/cash deposits/);
+    expect(payNoteFor('ZELLE')).toBeUndefined();
+    expect(payNoteFor('NOT_A_METHOD')).toBeUndefined();
+  });
+
+  it('every rechecked row records the recheck and its new confidence', () => {
+    const rechecked = Object.entries(PAY_FIELDS).filter(([, r]) => r.source.includes('recheck 2026-11-12'));
+    expect(rechecked).toHaveLength(60);
+    for (const [id, r] of rechecked) expect(/recheck 2026-11-12 \((high|medium|low)[^)]*\)/.test(r.source), id).toBe(true);
+  });
+});
+
+describe('a trade taken before the 12 Nov ban (owner: Russian anything is banned; lead default, owner question)', () => {
+  it('SBP, MIR and YOOMONEY have no row: the payee of a trade still running gets the one free-text box', () => {
+    for (const id of ['SBP', 'MIR', 'YOOMONEY']) {
+      expect(Object.prototype.hasOwnProperty.call(PAY_FIELDS, id), id).toBe(false);
+      expect(payFieldsFor(id).map((f) => f.key), id).toEqual(['details']);
+      expect(payeeGivesNothing(id), id).toBe(false);
+      expect(checkPayDetails(id, { details: '+7 900 000 00 00, any bank' }), id).toEqual([{ key: 'details', value: '+7 900 000 00 00, any bank' }]);
+    }
+  });
+
+  it("a package sealed with SBP's old boxes (an older bundle) is refused for its contents (unknown-field), never shown", () => {
+    const old = { v: PAY_DETAILS_V, method: 'SBP', fields: [{ key: 'phone', value: '+79000000000' }, { key: 'bankName', value: 'Bank' }] };
+    expect(codeOf(() => parsePayDetails(old))).toBe('unknown-field:phone');
   });
 });

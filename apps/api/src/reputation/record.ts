@@ -135,7 +135,7 @@ export function recordRoutes(app: FastifyInstance): void {
   app.get('/v1/traders/:name/record', { preHandler: requireInside }, async (req: FastifyRequest) => {
     const deps = req.server.deps;
     const raw = (req.params as { name: string }).name;
-    const id = raw.length > 64 ? null : await traderIdByName(deps.db, raw);
+    const id = raw.length > 64 ? null : await traderIdByName(deps.db, raw, deps.clock());
     // A trader who blocked the viewer answers as an unknown name does (traders/blocks.ts).
     if (id === null || (await hasBlocked(deps.db, id, req.auth.accountId))) throw new ApiError(404, 'not-found');
     const { rows } = await deps.db.query<{ on: boolean }>('select portable_public as on from badge_prefs where account_id = $1', [id]);

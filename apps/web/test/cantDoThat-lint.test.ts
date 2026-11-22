@@ -162,7 +162,11 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 70 -> 71 (gap 4 no-show refund, review m5 and n1, 21 Nov 2026): SellerRefund.tsx's stopped-escrow
     // status line "stopped for good, so it can't finish this refund", a device fault reported to the
     // seller; the seller tried nothing and nothing was refused. (A second line was unreachable and removed.)
-    expect(notARefusal).toBeLessThanOrEqual(71);
+    // 71 -> 72 (wip/lead-sanctions, payee-fields-2 m-4): ChatPanel.tsx's UNREADABLE_PAY_LINE ("Their payment details couldn't be shown. Ask them to send again."), a status line in place of a package this device refused for its contents; the payer tried nothing and nothing was refused.
+    // 72 -> 73 (Plan 4 Task 27, bans, counted 71 -> 72 on wip/lead-bans-2 and first counted 65 -> 66 on wip/lead-bans 12 Nov 2026): the ban
+    // notice's lead (screens/account/AccountBanned.tsx, owner G39 draft) is a full-screen notice
+    // of the ban itself, not a refused action.
+    expect(notARefusal).toBeLessThanOrEqual(73);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

@@ -213,6 +213,14 @@ export type ApiErrorCode =
   | 'moderator-methods-required'
   // D-064: ending a recovery hold `via: 'secure-jabber'` on an account with no Jabber address proven before the hold.
   | 'no-secure-jabber'
+  // Plan 4 Task 27: a trade ban refuses posting and taking (409); a site ban refuses the trader app
+  // but the notice and what finishes open trades (403, with kind, reasonCode, until); a second
+  // standing ban of a kind (409); D-017's term rules (409).
+  | 'trade-ban'
+  | 'banned'
+  | 'already-banned'
+  | 'lifetime-required'
+  | 'lifetime-not-allowed'
   // Owner G4 (7 Nov): adding or removing an owner key needs taps by both owner keys.
   | 'both-owner-keys-required'
   // Owner G3 (review P-m1): a staff passkey that reports a security-key model is that key again.

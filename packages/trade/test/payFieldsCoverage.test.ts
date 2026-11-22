@@ -15,15 +15,27 @@ const BAD_LABEL = /password|passcode|passphrase|\bpin\b|\bcvv\b|\bcvc\b|\bcvv2\b
 const CPF = /\bcpf\b/i;
 /** The lead's exceptions (10 Nov): a box that is the method's own payee identifier. */
 const ID_EXEMPT = new Set(['PAGO_MOVIL.idNumber']);
-/** Receiving to a card number is allowed only where it is the method's route (lead, 10 Nov). */
-const CARD_METHODS = new Set(['MIR', 'UKRAINE_CARD', 'PAYSEND', 'POSTEPAY']);
+/**
+ * Receiving to a card number is allowed only where it is the method's route (lead, 10 Nov). SPEI since
+ * 12 Nov: Banxico Circular 10/2026 (Art. 17 Ter IV) makes a debit card's 16 digits a receiving identifier.
+ * MIR removed (owner 12 Nov: Russian anything is banned).
+ */
+const CARD_METHODS = new Set(['UKRAINE_CARD', 'PAYSEND', 'POSTEPAY', 'SPEI']);
 const CARD = /card ?number/i;
 const BAD_WORDS = new Set(['password', 'passcode', 'pin', 'cvv', 'cvc', 'expiry', 'expiration', 'exp', 'tax', 'nric', 'ssn', 'login']);
 
 describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)', () => {
-  it('the catalogue is the 127 methods the research covered', () => {
-    expect(CATALOG.length).toBe(127);
+  it('the catalogue is the 124 methods the research covered, less the three Russian ones', () => {
+    // owner 12 Nov: Russian anything is banned (SBP, MIR and YOOMONEY removed: 127 to 124).
+    expect(CATALOG.length).toBe(124);
     expect(new Set(CATALOG).size).toBe(CATALOG.length);
+  });
+
+  it('owner 12 Nov: Russian anything is banned: no SBP, MIR or YOOMONEY in the catalogue or the table', () => {
+    for (const id of ['SBP', 'MIR', 'YOOMONEY']) {
+      expect(CATALOG, id).not.toContain(id);
+      expect(Object.prototype.hasOwnProperty.call(PAY_FIELDS, id), id).toBe(false);
+    }
   });
 
   it('every catalogue method has its own row: boxes, or explicitly nothing to send', () => {
@@ -54,10 +66,15 @@ describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)
         if (id !== 'PIX') expect(CPF.test(f.label), `${id}.${f.key} label "${f.label}"`).toBe(false);
         expect(words(f.key).filter((w) => BAD_WORDS.has(w)), `${id}.${f.key}`).toEqual([]);
       }
+      // Review payee-fields-2 m-2: a row's note for the payee is held to the same terms as its labels.
+      if (row.note !== undefined) {
+        expect(BAD_LABEL.test(row.note), `${id} note "${row.note}"`).toBe(false);
+        if (id !== 'PIX') expect(CPF.test(row.note), `${id} note "${row.note}"`).toBe(false);
+      }
     }
   });
 
-  it('review F4: a card-number box appears only in MIR, UKRAINE_CARD, PAYSEND and POSTEPAY', () => {
+  it('review F4: a card-number box appears only in UKRAINE_CARD, PAYSEND, POSTEPAY and SPEI (MIR removed, owner 12 Nov)', () => {
     const where = new Set<string>();
     for (const [id, row] of Object.entries(PAY_FIELDS)) for (const f of row.fields) if (CARD.test(f.key) || CARD.test(f.label)) where.add(id);
     expect([...where].sort()).toEqual([...CARD_METHODS].sort());
@@ -91,5 +108,11 @@ describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)
       expect(new Set(keys).size, id).toBe(keys.length);
       for (const f of row.fields) expect(/^[a-z][a-zA-Z0-9]*$/.test(f.key), `${id}.${f.key}`).toBe(true);
     }
+  });
+
+  it('review payee-fields-2 m-2: the note check would catch a note that invites a secret or a tax ID', () => {
+    for (const n of ['Ask the buyer for the PIN sent by your bank', 'Give your CPF so the transfer clears', 'Send your online banking login']) expect(BAD_LABEL.test(n) || CPF.test(n), n).toBe(true);
+    const noted = Object.entries(PAY_FIELDS).filter(([, r]) => r.note !== undefined).map(([id]) => id).sort();
+    expect(noted).toEqual(['CASH_AT_ATM', 'CASH_DEPOSIT', 'MONESE']);
   });
 });

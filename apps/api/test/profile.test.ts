@@ -10,6 +10,7 @@ import { traderProfile } from '../src/reputation/profile.js';
 import { insertReview } from '../src/reviews/store.js';
 import { traderSummaries } from '../src/traders/summary.js';
 import { makeVendor } from './helpers/accounts.js';
+import { insertBan } from './helpers/bans.js';
 import { testDb } from './helpers/db.js';
 import { flexBody } from './helpers/offers.js';
 import { spySql } from './helpers/sqlSpy.js';
@@ -157,6 +158,49 @@ describe('GET /v1/traders/:name', () => {
       expect([gone.statusCode, gone.body], how).toEqual([404, unknown.body]);
       const goneRecord = await viewer.browser.get(`/v1/traders/${p.displayName}/record`);
       expect([goneRecord.statusCode, goneRecord.body], how).toEqual([404, unknownRecord.body]);
+    }
+  });
+
+  // Bans onto main (lead, 21 Nov): a site-banned account (Plan 4 Task 27) has no public profile or
+  // record while the ban is in force, as a disabled one; a trade ban hides only its offers.
+  it('a site ban in force (timed or lifetime) answers as an unknown name; a trade ban, a lifted ban or a timed ban past its end does not', async () => {
+    const viewer = await trader();
+    const unknown = await profile(viewer, 'NoSuchTrader9');
+    const unknownRecord = await viewer.browser.get('/v1/traders/NoSuchTrader9/record');
+    const setUp = async () => {
+      const p = await trader();
+      expect((await p.browser.put('/v1/account/record/public', { on: true })).statusCode).toBe(200);
+      return p;
+    };
+    const seen = async (p: Who) => {
+      const prof = await profile(viewer, p.displayName);
+      const rec = await viewer.browser.get(`/v1/traders/${p.displayName}/record`);
+      return [prof.statusCode === 200 ? 'shown' : [prof.statusCode, prof.body], rec.statusCode === 200 ? 'shown' : [rec.statusCode, rec.body]];
+    };
+    const gone = [[404, unknown.body], [404, unknownRecord.body]];
+    for (const until of [null, new Date(deps.clock().getTime() + 86_400_000)]) {
+      const p = await setUp();
+      expect(await seen(p)).toEqual(['shown', 'shown']);
+      await insertBan(deps, p.id, 'site', until);
+      expect(await seen(p), `site ban until ${until?.toISOString() ?? 'lifetime'}`).toEqual(gone);
+    }
+    const traded = await setUp();
+    await insertBan(deps, traded.id, 'trade', null);
+    expect(await seen(traded), 'trade ban').toEqual(['shown', 'shown']);
+    const lifted = await setUp();
+    const banId = await insertBan(deps, lifted.id, 'site', null);
+    await deps.db.query('update account_bans set lifted_at = $2, lifted_by = account_id where id = $1', [banId, deps.clock()]);
+    expect(await seen(lifted), 'lifted').toEqual(['shown', 'shown']);
+    // A timed site ban whose end has passed is over at once, before the settle job writes ended_at.
+    const ended = await setUp();
+    await insertBan(deps, ended.id, 'site', new Date(deps.clock().getTime() + 60_000));
+    expect(await seen(ended)).toEqual(gone);
+    const was = deps.clock();
+    setNow(new Date(was.getTime() + 60_000));
+    try {
+      expect(await seen(ended), 'past its end').toEqual(['shown', 'shown']);
+    } finally {
+      setNow(was);
     }
   });
 });

@@ -84,6 +84,15 @@ function bad(file: string, why: string): Error {
   return new Error(`data/${file}: ${why}`);
 }
 
+/**
+ * Payment methods X2F never lists, offers or takes (owner 12 Nov: Russian anything is banned): the
+ * Russian SBP, Mir and YooMoney, removed from data/payment-methods.json (127 to 124). The catalog
+ * refuses to load with one of them, so a re-added row fails at startup. An old offer row naming one
+ * is unknown, so never available (migration 770 removed them). No catalog method is specific to
+ * Iran, Cuba or North Korea (docs/sanctioned-countries-2026-11-12.md).
+ */
+export const BANNED_METHOD_IDS: ReadonlySet<string> = Object.freeze(new Set(['SBP', 'MIR', 'YOOMONEY']));
+
 /** Reads and checks the catalog; throws at startup on a malformed entry rather than serving it. */
 export function loadCatalog(raw: unknown): CatalogMethod[] {
   const file = 'payment-methods.json';
@@ -94,6 +103,7 @@ export function loadCatalog(raw: unknown): CatalogMethod[] {
       throw bad(file, 'an entry needs an upper-case id, a name and a group');
     }
     if (seen.has(m.id)) throw bad(file, `duplicate id ${m.id}`);
+    if (BANNED_METHOD_IDS.has(m.id)) throw bad(file, `${m.id} is banned (owner 12 Nov: Russian anything is banned)`);
     seen.add(m.id);
     const giftCard = m.giftCard === true;
     if (m.giftCard !== undefined && typeof m.giftCard !== 'boolean') throw bad(file, `${m.id}: giftCard must be a boolean`);

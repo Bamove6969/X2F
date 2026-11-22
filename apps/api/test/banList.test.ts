@@ -247,6 +247,33 @@ describe('a banned PGP key can never be used again', () => {
     expect((await deps.db.query('select 1 from sessions where account_id = $1', [id])).rowCount).toBe(0);
   });
 
+  it('review MF2 (lead call): a banned account\'s own registered key is never refused at login, even refreshed; a banned new subkey still is', async () => {
+    const k = await genKey();
+    const loginName = uniq('ownkey');
+    const id = await seedAccount(deps, { loginName });
+    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
+    // A lifetime site ban put the account's own key on the ban list.
+    await recordBan(deps, id);
+    expect((await deps.db.query("select 1 from banned_identifiers where account_id = $1 and kind = 'pgp-fingerprint'", [id])).rowCount).toBeGreaterThan(0);
+    const priv = await openpgp.readPrivateKey({ armoredKey: k.privateKey });
+    const grown = await priv.addSubkey({ sign: true, date: new Date(deps.clock().getTime() - 60_000) });
+    const login = async (armor: string, secret: string) => {
+      const b = new Browser(app);
+      const start = await b.post('/v1/login/pgp/start', { key: armor, loginName });
+      expect(start.statusCode, start.body).toBe(200);
+      const code = codeOf(await decrypt(start.json().encryptedMessage, secret, undefined, deps.clock()));
+      return b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk' });
+    };
+    // The refreshed key (a new, clean subkey) carries the banned primary: still the account's own.
+    const ok = await login(grown.toPublic().armor(), grown.armor());
+    expect(ok.statusCode, ok.body).toBe(200);
+    // A subkey banned as someone else's is still refused, own primary or not.
+    const again = await (await openpgp.readPrivateKey({ armoredKey: grown.armor() })).addSubkey({ sign: true, date: new Date(deps.clock().getTime() - 30_000) });
+    await recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [again.getSubkeys().at(-1)!.getFingerprint()], accountId: null, now: deps.clock() });
+    const refused = await login(again.toPublic().armor(), again.armor());
+    expect([refused.statusCode, refused.json()]).toEqual([409, { error: 'key-unavailable' }]);
+  });
+
   it('as a new key on another account: POST /v1/account/pgp/start answers as for any key; finish refuses 409 key-unavailable and adds nothing', async () => {
     const b = await banned();
     const other = await seedAccount(deps, { loginName: uniq('keyadder') });

@@ -268,15 +268,25 @@ describe('a proposal under the large-trade limit', () => {
     expect({ status: misfit.res.statusCode, error: errorOf(misfit.res) }).toEqual({ status: 409, error: 'wrong-state' });
   });
 
-  it('an account action on the ruling card is refused: a freeze is its own act (D-015), bans are not built (Task 27)', async () => {
-    const mod = await staff('mod');
-    const { code } = await disputed();
-    await take(mod, code);
-    for (const accountAction of [{ kind: 'freeze' }, { kind: 'trade-ban', until: null, reasonCode: 'terms' }] as AccountAction[]) {
-      const r = await propose(mod, code, { outcome: 'release-to-buyer', accountAction });
-      expect({ status: r.res.statusCode, error: errorOf(r.res) }, accountAction.kind).toEqual({ status: 409, error: 'account-action-unavailable' });
+  it('an account action on the ruling card is refused: a freeze is its own act (D-015), and so is a ban (Task 27, lead default)', async () => {
+    // A senior moderator holds accounts.ban and still cannot ban from the ruling card: a ban is
+    // placed with its own tapped act, POST /staff/v1/accounts/:id/bans (staff/bans.ts).
+    for (const role of ['mod', 'senior'] as const) {
+      const mod = await staff(role);
+      const { buyer, seller, code } = await disputed();
+      await take(mod, code);
+      for (const accountAction of [
+        { kind: 'freeze' },
+        { kind: 'trade-ban', until: null, reasonCode: 'terms' },
+        { kind: 'site-ban', until: new Date(START.getTime() + 7 * 86_400_000).toISOString(), reasonCode: 'trade-problems' },
+      ] as AccountAction[]) {
+        const r = await propose(mod, code, { outcome: 'release-to-buyer', accountAction });
+        expect({ status: r.res.statusCode, error: errorOf(r.res) }, `${role} ${accountAction.kind}`).toEqual({ status: 409, error: 'account-action-unavailable' });
+      }
+      expect(await actions(code)).toEqual([]);
+      const { rows } = await deps.db.query('select 1 from account_bans where account_id = any($1::uuid[])', [[buyer.id, seller.id]]);
+      expect(rows).toEqual([]);
     }
-    expect(await actions(code)).toEqual([]);
   });
 
   it('a seller-sends-xmr ruling after a refund puts its lien on the seller at once (Task 25 through withDispute)', async () => {
