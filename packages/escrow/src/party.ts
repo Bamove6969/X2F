@@ -171,6 +171,18 @@ export interface PartyHandle {
    */
   committedBuilder?(): Role | null;
   /**
+   * Ruling-winner reasons (lead, 22 Nov): what this party has heard from `from` about settling, read
+   * only and never acted on. `current`: a message of this party's current release came from `from`
+   * (its export, its set or its DONE, as saved). `elsewhere`: the latest release message `from` sent
+   * this party for any other outcome, opened under the trade's participants (so signed by `from`'s
+   * own trade identity), in memory only, or null: the outcome's tag (releaseTag), whether a tx set
+   * for it came (then `from` built it and is committed to it: a builder commits when it builds), and
+   * when it last came (this process's clock, ms). Such a message is never stored, imported, signed
+   * or answered (`not-current-release`). The moderation process words why a ruling's payout waits
+   * from it; it changes nothing this party signs.
+   */
+  peerRelease?(from: Role): { current: boolean; elsewhere: { tag: string; txSet: boolean; at: number } | null };
+  /**
    * This party's own part of the settle of `o` is finished, as far as this party knows: the
    * co-signer has submitted the signed tx itself, or (for the builder) the co-signer REPORTED that it
    * did, in a signed DONE for this release that is not yet checked on the chain (the builder checks
@@ -707,6 +719,8 @@ export function runParty(a: PartyArgs): PartyHandle {
   const priorDoneTx = (): string | null => history().filter((r) => r.phase === 'done' && r.txHash).at(-1)?.txHash ?? null;
   /** The co-signer's export this process already imported before building (re-verify gap (b)), by message key. */
   let importedEarly: string | null = null;
+  /** peerRelease: per sender, its latest release message for another outcome than the current release (in memory only). */
+  const heardElsewhere = new Map<Role, { tag: string; txSet: boolean; at: number }>();
 
   /**
    * Before this party exports for an attempt. Review M2 / lead call: the full check (the escrow
@@ -1254,6 +1268,12 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (!isSetupKey(key)) {
       const rel = state.release;
       if (!rel || from !== rel.counterpart || !key.includes(`:${tagOf(rel.outcome)}.`)) {
+        // peerRelease: remembered, never stored or acted on. A set for that outcome stays counted.
+        const m = RELEASE_KEY.exec(key);
+        if (m && (!rel || m[2] !== tagOf(rel.outcome))) {
+          const was = heardElsewhere.get(from);
+          heardElsewhere.set(from, { tag: m[2]!, txSet: m[1] === 'release.txset' || (was?.tag === m[2] && was.txSet), at: Date.now() });
+        }
         ignored('not-current-release');
         return;
       }
@@ -1422,6 +1442,13 @@ export function runParty(a: PartyArgs): PartyHandle {
     acceptedOutcome() {
       const o = settleOutcome;
       return o === null ? null : { ...o, to: o.to.map((p) => ({ ...p })) };
+    },
+    peerRelease(from) {
+      const rel = (state as PartyState | undefined)?.release ?? null;
+      const tag = rel === null ? null : `:${tagOf(rel.outcome)}.`;
+      const current = tag !== null && Object.entries((state as PartyState | undefined)?.received ?? {}).some(([k, slot]) => RELEASE_KEY.test(k) && k.includes(tag) && slot?.[from] !== undefined);
+      const e = heardElsewhere.get(from);
+      return { current, elsewhere: e === undefined ? null : { ...e } };
     },
     committedBuilder() {
       const rel = state.release;
