@@ -1077,6 +1077,68 @@ describe('review RV4-M3: name labels', () => {
   });
 });
 
+describe('codePattern: OCR confusions (lead call 22 Nov, T17 finding)', () => {
+  const at = (code: string, text: string) => {
+    const re = codePattern(code);
+    re.lastIndex = 0;
+    return re.test(text);
+  };
+  it('matches the misread seen on the regtest stack: "4VCO0-9AXP-E7EV-6E)7" for 4VC0-9AXP-E7EV-6EJ7', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', 'Memo 4VCO0-9AXP-E7EV-6E)7')).toBe(true);
+  });
+  it('J read as ), ] or 1', () => {
+    for (const t of ['6EJ7', '6E)7', '6E]7', '6E17', '6Ej7']) expect(at('AAAA-BBBB-CCCC-6EJ7', `AAAA-8BBB-CCCC-${t}`), t).toBe(true);
+  });
+  it('a doubled 0 as O0 or 0O, at most one extra character per group', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0O-9AXP-E7EV-6EJ7')).toBe(true);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VCO0-9AXP-E7EV-6EJ7')).toBe(true);
+    // Two extras in one group is not the code.
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VCO0O-9AXP-E7EV-6EJ7')).toBe(false);
+    // A doubled glyph is the only extra: any other character is not.
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0X-9AXP-E7EV-6EJ7')).toBe(false);
+  });
+  it('B/8, S/5, Z/2, G/6 both ways, in any case', () => {
+    const code = 'B8S5-Z2G6-0000-1111';
+    for (const t of ['B8S5-Z2G6-0000-1111', '8BS5-Z2G6-0000-1111', 'B85S-Z2G6-0000-1111', 'B8S5-2ZG6-0000-1111', 'B8S5-Z26G-0000-1111', 'b8s5-z2g6-0000-1111']) {
+      expect(at(code, t), t).toBe(true);
+    }
+  });
+  it('missing or extra dashes and spaces', () => {
+    for (const t of ['4VC09AXPE7EV6EJ7', '4VC0 9AXP E7EV 6EJ7', '4VC0--9AXP-E7EV-6EJ7', '4VC0 - 9AXP - E7EV - 6EJ7', '4V C0-9AXP-E7EV-6EJ7']) {
+      expect(at('4VC0-9AXP-E7EV-6EJ7', t), t).toBe(true);
+    }
+  });
+  it('review M1: at most 3 separators between two characters', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0 - 9AXP-E7EV-6EJ7')).toBe(true);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0 -- 9AXP-E7EV-6EJ7')).toBe(false);
+  });
+  it('review M2: only a 0 may be doubled', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VVC0-9AXP-E7EV-6EJ7')).toBe(false);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '44VC0-9AXP-E7EV-6EJ7')).toBe(false);
+  });
+  it('review M3: no separator inside a doubled 0', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0 O-9AXP-E7EV-6EJ7')).toBe(false);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-O-9AXP-E7EV-6EJ7')).toBe(false);
+  });
+  it('a code differing in one real character is not a match', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-9AXP-E7EV-6EK7')).toBe(false);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-9AXP-E7EW-6EJ7')).toBe(false);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-9AXP-E7EV-6E)')).toBe(false);
+  });
+  it('groups out of order are not a match', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '9AXP-4VC0-E7EV-6EJ7')).toBe(false);
+  });
+  it('a code split across two lines is not a match (no line break in a separator)', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-9AXP\nE7EV-6EJ7')).toBe(false);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-9AXP-\nE7EV-6EJ7')).toBe(false);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-9AXP- \r\nE7EV-6EJ7')).toBe(false);
+  });
+  it('still not inside a longer run', () => {
+    expect(at('4VC0-9AXP-E7EV-6EJ7', 'X4VC0-9AXP-E7EV-6EJ7')).toBe(false);
+    expect(at('4VC0-9AXP-E7EV-6EJ7', '4VC0-9AXP-E7EV-6EJ7X')).toBe(false);
+  });
+});
+
 describe('codePattern: regex metacharacters', () => {
   it('matches them literally', () => {
     const re = codePattern('A.*B');

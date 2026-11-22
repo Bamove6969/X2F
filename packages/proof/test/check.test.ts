@@ -143,6 +143,16 @@ describe('reference', () => {
     }
   });
 
+  it('matches common OCR misreads of the code (lead call 22 Nov, T17 finding)', () => {
+    const code = '4VC0-9AXP-E7EV-6EJ7';
+    for (const note of ['4VCO0-9AXP-E7EV-6E)7', '4VC0-9AXP-E7EV-6E]7', '4VC0-9AXP-E7EV-6E17']) {
+      expect(check(receipt({ note }), ['name'], { tradeCode: code }).reference, note).toBe('match');
+    }
+    expect(check(receipt({ note: 'B8S5-Z2G6-0000-1111' }), ['name'], { tradeCode: '8BS5-2ZG6-0000-1111' }).reference).toBe('match');
+    // One real character different is still another code.
+    expect(check(receipt({ note: '4VC0-9AXP-E7EV-6EK7' }), ['name'], { tradeCode: code }).reference).toBe('not-found');
+  });
+
   it('a code inside a longer run is not a match', () => {
     expect(check(receipt({ note: 'XK7M29QXA4FTR8WPN' })).reference).toBe('not-found');
     expect(check(receipt({ note: 'K7M29QXA4FTR8WPN7' })).reference).toBe('not-found');
