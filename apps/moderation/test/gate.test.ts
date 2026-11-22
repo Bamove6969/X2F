@@ -1317,6 +1317,35 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
       c.release();
     }
   });
+
+  it("R37's list runs to the trade's latest appeal by the log's numeric order, across a digit boundary (9 before 10)", async () => {
+    const code = 'BCDE-FGHJ-KMNP-QRST';
+    const [modId, helper, late] = [randomUUID(), randomUUID(), randomUUID()];
+    const c = await owner.connect();
+    try {
+      await c.query('set session_replication_role = replica');
+      const r1 = { id: randomUUID(), outcome: 'release-to-buyer', accountAction: { kind: 'none' }, proposer: modId, approver: null, needsSecond: false };
+      const r2 = { id: randomUUID(), outcome: 'refund-to-seller', accountAction: { kind: 'none' }, proposer: randomUUID(), approver: null, needsSecond: false };
+      await c.query(
+        `insert into disputes (code, seq, opened_by, reason, note, opened_at, after_refund, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents, round, ruling, round1)
+         values ($1, 2, 'buyer', 'paid', '', now(), false, 'published', now(), now(), 0, 100000, 2, $2, $3)`,
+        [code, JSON.stringify(r2), JSON.stringify({ ...r1, firstReplyAt: null, involved: [modId] })],
+      );
+      // An earlier dispute's appeal at 8, this one's at 10: as text, '10' sorts before '8', so the
+      // latest appeal would be taken as 8 and the helper at 9 left out.
+      for (const [id, actor, action] of [[7, modId, 'case.opened'], [8, null, 'appeal.opened'], [9, helper, 'chat.read'], [10, null, 'appeal.opened'], [11, late, 'case.opened']] as const) {
+        await c.query(
+          `insert into activity_log (id, at, actor_kind, actor_id, actor_role, trade_code, action, detail, prev_hash, hash) values ($1, now(), $2, $3, $4, $5, $6, '{}', $7, $8)`,
+          [id, actor === null ? 'system' : 'staff', actor, actor === null ? null : 'mod', code, action, Buffer.alloc(32, id - 1), Buffer.alloc(32, id)],
+        );
+      }
+      const stored = await pgGateSource(reader).storedRulings(code);
+      expect([...stored.involved].sort()).toEqual([modId, helper].sort());
+      expect(stored.involved).not.toContain(late);
+    } finally {
+      c.release();
+    }
+  });
 });
 
 describe('gateFromEnv', () => {

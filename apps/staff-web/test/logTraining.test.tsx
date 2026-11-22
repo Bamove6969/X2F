@@ -188,7 +188,7 @@ describe('Training library', () => {
     expect(document.querySelector('[data-screen="training"]')).not.toBeNull();
     // Review m1: the closing month only, and the amount the API rounded, shown as rounded.
     expect(rows('Training cases')).toEqual([['2026-11', 'Revolut', 'about 1.30 XMR', 'Release to buyer', 'Read the case']]);
-    // Review m6: no purge is promised before Task 23 deletes dispute records.
+    // Review m6: the page names no purge period (the purge deletes dispute records now; a period on the page is the owner's copy).
     const lead = document.querySelector('[data-screen="training"] .x2f-staff-page__lead')!.textContent!;
     expect(lead).not.toMatch(/90 days|\bdays?\b/);
     expect(lead).toContain('Closed disputes');

@@ -13,9 +13,10 @@ import { requireStaff } from './guard.js';
  * training library is the closed dispute records themselves, read through the anonymizer
  * (`@x2f/staff` `anonymizeText`); no separate copy is made or stored, so a case leaves the library
  * when the purge deletes its dispute (Task 23, 90 days from closing). Perm `training.read`.
- * NEEDS_P4_TASK23 (review m6): no job deletes `disputes` rows yet (trades/purge.ts only nulls payout
- * addresses), so until Task 23 lands every closed case stays in the library; the page does not
- * promise the 90 days.
+ * Task 23 has landed: the whole-trade purge (`purgeTradesJob`, retention/tradePurge.ts) deletes a
+ * disputed trade's dispute records (`deleteDisputeRecords`, disputes/purge.ts) DISPUTE_KEEP_DAYS
+ * after its last dispute closed, and its `training_cases` row goes with them (on delete cascade,
+ * 750). The page still names no period (review m6); saying one is copy for the owner.
  *
  * - A case is named by an opaque id (`trainingId`: HMAC-SHA-256 under the server's own
  *   `X2F_TRAINING_ID_KEY` of the trade code and the dispute's seq, review m1), never by its trade
