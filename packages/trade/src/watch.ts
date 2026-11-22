@@ -207,6 +207,21 @@ type InBlock<T> = T & { height: number };
 const sweepOf = (sp: SpendEvidence | null): InBlock<SpendEvidence> | null =>
   sp !== null && sp.height !== null && typeof sp.txHash === 'string' && TX_HASH.test(sp.txHash) ? (sp as InBlock<SpendEvidence>) : null;
 
+/**
+ * Whether this watcher's own state shows the escrow EMPTY (Plan 7 Task 2, the moderation trade
+ * shred; review-p7-retention round 2, R2-I2): the moderator's escrow key material may be destroyed
+ * only on this, never on the API's word. True only when the watch saw the trade close, is not
+ * waiting on an escalation, has not seen it open again, closed both channels (which it does only on
+ * a step with no late coin, after a shown sweep or for an escrow that never received one), and every
+ * late coin it ever reported was taken by a later shown sweep. Anything else, a state from before a
+ * field existed included, may hold coins: false.
+ */
+export function watchShowsEmpty(s: WatchState): boolean {
+  if (s.closedAt === null || s.escalationPending || s.reopened || !s.channelsClosed) return false;
+  const taken = new Set([...(s.swept ?? []), ...s.sweepTxs]);
+  return s.lateReported.every((tx) => taken.has(tx));
+}
+
 /** The incoming txs `sweep` spent: the exact oldest-first, whole-height prefix (see the module comment), else none. */
 function sweptBy(incoming: readonly WatchIncoming[], sweep: InBlock<SpendEvidence>): string[] {
   const inBlock = incoming.filter((i): i is InBlock<WatchIncoming> => i.height !== null);

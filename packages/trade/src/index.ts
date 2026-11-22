@@ -89,6 +89,7 @@ export {
   WATCH_INTERVAL_MS,
   newWatchState,
   settleKindFor,
+  watchShowsEmpty,
   watchStep,
   type ChainFacts,
   type EscrowFunds,

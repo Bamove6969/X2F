@@ -547,6 +547,26 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.send({ orders: rows.map((r) => ({ chat: r.chat, trade: r.trade_code, purgedAt: r.purged_at.toISOString() })) });
   }));
 
+  // ── Trade shred (Plan 7 Task 2, lead follow-up: the moderation-database purge) ──────────
+  // The trades the whole-trade purge deleted whose moderation records (signed terms, keys, watch
+  // state) the moderation service has not yet reported destroyed (761). Moderation checks its own
+  // records first and destroys nothing on this list alone. Least recently served first, as the chat
+  // shred list, so an order moderation holds does not keep the ones behind it waiting.
+  app.get('/internal/v1/trade-shred', guard('/internal/v1/trade-shred', async (_req, reply) => {
+    const { rows } = await o.db.query<{ trade: string; purged_at: Date }>(
+      `with picked as (
+         select trade, purged_at, served_at from trade_shred_orders
+          order by served_at nulls first, purged_at, trade
+          limit $1
+       ), served as (
+         update trade_shred_orders s set served_at = $2 from picked p where s.trade = p.trade
+       )
+       select trade, purged_at from picked order by served_at nulls first, purged_at, trade`,
+      [o.workLimit ?? WORK_LIMIT, new Date(now())],
+    );
+    return reply.send({ orders: rows.map((r) => ({ trade: r.trade, purgedAt: r.purged_at.toISOString() })) });
+  }));
+
   /**
    * `{ kind: 'chat-shredded', chat }`: the moderation service destroyed its copy of the chat's keys.
    * The order is removed; a repeat (or a chat with no order) is still 201, so the report is idempotent.
@@ -694,6 +714,20 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   };
 
   /**
+   * `{ kind: 'trade-shredded', trade }` (761): the moderation service destroyed its records of a
+   * purged trade. Only the order is removed (nothing else of a trade is left to remove); a repeat, or
+   * a trade with no order, is still 201, so the report is idempotent.
+   */
+  const tradeShredded = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'trade'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    await o.db.query('delete from trade_shred_orders where trade = $1', [code]);
+    log({ reason: 'internal-trade-shredded' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /**
    * `{ kind: 'chat-notice-stopped', chat, disputeSeq, status }` (re-review m5): the moderation
    * service stopped re-posting a dispute notice this API refused for good. One owner alert.
    */
@@ -807,6 +841,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'chat-refused') return refuseChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
+    if (isPlainObject(body) && body.kind === 'trade-shredded') return tradeShredded(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-grant-accepted') return chatGrantAccepted(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-dispute-notice') return chatDisputeNotice(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-notice-stopped') return chatNoticeStopped(body, reply);
