@@ -307,6 +307,14 @@
   color: var(--x2f-ink-muted);
 }
 
+/* Owner demo note #142 (23 Nov): the "New to PGP?" explainer bright and bold, so it sticks out. */
+.x2f-start__help--loud {
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 700;
+  color: var(--x2f-ink);
+}
+
 .x2f-start__small {
   margin: 0;
   font-size: 14px;
