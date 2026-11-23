@@ -254,10 +254,13 @@ export function Login() {
       </button>
       {explain ? (
         <p className="x2f-start__help" data-part="pgp-explainer">
-          PGP is free software that locks and unlocks messages with a pair of keys: a public key you can share and a private key only you keep. You
+          {/* Owner demo note #141 (23 Nov): his first and last sentences; the app list in between is unchanged. */}
+          PGP uses free, open-source encryption to lock and unlock messages with a cryptographic key pair: a public key you share with X2F, and a
+          private key that stays strictly on your device. You
           {/* COPY-UNSIGNED (owner, 16 Nov 2026: PGPony is the recommendation for Android; OpenKeychain also works) */}
           need a PGP app each time you log in, such as Kleopatra on Windows, GPG Suite on a Mac, or on Android PGPony (we recommend it; on
-          F-Droid: com.pgpony.android) or OpenKeychain. X2F never makes keys for you, so your private key never leaves your app.
+          F-Droid: com.pgpony.android) or OpenKeychain. Because X2F never generates keys on your behalf, your private key never leaves your
+          control.
         </p>
       ) : null}
     </SetupFrame>
