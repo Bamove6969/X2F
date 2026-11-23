@@ -94,6 +94,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/trades/:code/proofs/:id|:proofId',
   'GET /v1/trades/:code/review',
   'GET /v1/trades/:code/ruling-statement',
+  'GET /v1/trades/:code/after-refund-statement',
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
   'POST /v1/account/notes',
