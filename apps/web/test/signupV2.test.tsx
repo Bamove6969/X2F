@@ -126,7 +126,7 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     // Owner 16 Nov 2026: PGPony is the recommendation for Android (it need not come first overall).
     const t = byPart(host, 'pgp-explainer')!.textContent!;
     expect(t).toContain('com.pgpony.android');
-    expect(t).toContain('on Android PGPony (we recommend it');
+    expect(t).toContain('PGPony (com.pgpony.android on F-Droid, our top Android pick)');
   });
 
   // Owner decision, 16 Nov 2026 (to-lead.log 17:38): the authenticator app is the password login's

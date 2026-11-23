@@ -176,7 +176,7 @@ for (const v of VIEWPORTS) {
     await expect(page.locator('[data-method="totp"]')).toContainText('Goes with a password: tick Password to add it.');
     await expect(page.locator('[data-part="totp-no-password"]')).toHaveCount(0);
     await page.click('[data-part="pgp-explain"]');
-    await expect(page.locator('[data-part="pgp-explainer"]')).toContainText('on Android PGPony (we recommend it; on F-Droid: com.pgpony.android) or OpenKeychain');
+    await expect(page.locator('[data-part="pgp-explainer"]')).toContainText('PGPony (com.pgpony.android on F-Droid, our top Android pick) and OpenKeychain on Android');
     await page.click('[data-method="password"]');
     await expect(tick(page, 'password')).toBeChecked();
     await expect(tick(page, 'totp')).toBeEnabled();

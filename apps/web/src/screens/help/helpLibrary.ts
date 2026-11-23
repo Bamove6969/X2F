@@ -156,7 +156,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'getting-started',
     q: 'Which PGP keys does X2F accept?',
     a: 'RSA keys of 4096 bits or more, Ed25519 keys and Ed448 keys. X2F never makes keys for you and never sees your private key.',
-    sources: ['packages/accounts/src/pgp.ts:28 MIN_RSA_BITS', 'packages/accounts/src/pgp.ts:158 Ed25519 and Ed448', `${WEB}/setup/Login.tsx:262 X2F never generates keys on your behalf`, `${SPEC}:42 users' PGP private keys`],
+    sources: ['packages/accounts/src/pgp.ts:28 MIN_RSA_BITS', 'packages/accounts/src/pgp.ts:158 Ed25519 and Ed448', `${WEB}/setup/Login.tsx:261 X2F never generates keys on your behalf`, `${SPEC}:42 users' PGP private keys`],
     facts: ['pgpRsaBits'],
   },
   {
@@ -707,7 +707,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'safety',
     q: 'What will X2F never ask me for?',
     a: 'Your PGP private key, your escrow key, your email or your phone number. X2F does not need any of them, so anyone asking for them in X2F\'s name is not X2F.',
-    sources: [`${SPEC}:38-43 X2F never holds`, `${SPEC}:15 X2F asks for no name, email or phone`, `${WEB}/setup/Login.tsx:262 X2F never generates keys on your behalf`],
+    sources: [`${SPEC}:38-43 X2F never holds`, `${SPEC}:15 X2F asks for no name, email or phone`, `${WEB}/setup/Login.tsx:261 X2F never generates keys on your behalf`],
   },
 
   // ---- Teams -----------------------------------------------------------------------------------
