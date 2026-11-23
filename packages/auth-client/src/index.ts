@@ -48,11 +48,15 @@ export {
   type WebAuthnKind,
 } from './api.js';
 export {
+  KEY_TEST_ACTION,
+  KeyTestError,
   addWebAuthnKey,
+  addWebAuthnKeyWithId,
   confirmWithWebAuthn,
   loginWithPasskey,
   loginWithSecurityKey,
   registerWithWebAuthn,
+  testWebAuthnKey,
   type AuthenticationCeremony,
   type RegistrationCeremony,
 } from './webauthn.js';

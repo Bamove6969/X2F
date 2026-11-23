@@ -98,10 +98,67 @@ export async function addWebAuthnKey(
   o: { label?: string; confirmToken?: string | undefined } = {},
   ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
 ): Promise<Staged | undefined> {
+  return (await addWebAuthnKeyWithId(api, kind, o, ceremony)).staged;
+}
+
+/**
+ * `addWebAuthnKey`, also answering the new credential's id (the registration response's `id`, the
+ * base64url credential ID the authenticator made), so the key can be tested at once
+ * (`testWebAuthnKey`, owner demo note #94).
+ */
+export async function addWebAuthnKeyWithId(
+  api: AuthApi,
+  kind: WebAuthnKind,
+  o: { label?: string; confirmToken?: string | undefined } = {},
+  ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
+): Promise<{ staged: Staged | undefined; credentialId: string }> {
   const { challengeId, options } = await api.addWebAuthnStart({
     kind, ...(o.confirmToken !== undefined ? { confirmToken: o.confirmToken } : {}),
   });
   const response = await ceremony.startRegistration({ optionsJSON: options });
   // Hold model v3: `Staged` when the new key is a draft to review and submit.
-  return api.addWebAuthnFinish({ challengeId, response, ...(o.label !== undefined ? { label: o.label } : {}) });
+  const staged = await api.addWebAuthnFinish({ challengeId, response, ...(o.label !== undefined ? { label: o.label } : {}) });
+  return { staged, credentialId: response.id };
+}
+
+/**
+ * The confirm action a key test asks for (owner demo note #94). The test reuses the confirm
+ * ceremony (`/v1/confirm/webauthn/start|finish`, the server's own assertion check, bound to this
+ * session); the token it earns is dropped unspent. "Stay logged in?" is the least a token can do
+ * (it would only extend this same session, and only if redeemed), so nothing new is trusted.
+ */
+export const KEY_TEST_ACTION: ConfirmAction = { kind: 'extend-session' };
+
+/** Why a key test did not pass, besides the browser's and the server's own errors. */
+export class KeyTestError extends Error {
+  constructor(
+    /** `not-listed`: the server did not offer the new key for a confirm; `other-key`: another credential answered. */
+    readonly code: 'not-listed' | 'other-key',
+  ) {
+    super(code);
+    this.name = 'KeyTestError';
+  }
+}
+
+/**
+ * Tests a key just added (owner demo note #94: "it should even have you test it after adding it to
+ * make sure it functions correctly"): a real WebAuthn assertion by exactly `credentialId`, checked
+ * by the server. The confirm options are narrowed to that one credential (the server listed it;
+ * nothing is added), the browser is asked for it alone, an answer from any other credential is
+ * refused here, and the server verifies the answer against the stored public key (signature,
+ * challenge, origin, user verification and counter, `verifyAssertion`) and that it was listed.
+ * Resolves when the key works; throws the ceremony's or the API's error, or a `KeyTestError`.
+ */
+export async function testWebAuthnKey(
+  api: AuthApi,
+  credentialId: string,
+  ceremony: AuthenticationCeremony = BROWSER_AUTHENTICATION,
+): Promise<void> {
+  const { challengeId, options } = await api.confirmWebAuthnStart({ action: KEY_TEST_ACTION });
+  const listed = (options.allowCredentials ?? []).filter((c) => c.id === credentialId);
+  if (listed.length === 0) throw new KeyTestError('not-listed');
+  const response = await ceremony.startAuthentication({ optionsJSON: { ...options, allowCredentials: listed } });
+  if (response.id !== credentialId || response.rawId !== credentialId) throw new KeyTestError('other-key');
+  // The server's check; the confirm token it answers with is not kept.
+  await api.confirmWebAuthnFinish({ challengeId, response });
 }

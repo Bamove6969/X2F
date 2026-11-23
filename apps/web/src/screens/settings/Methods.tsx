@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   AuthApiError,
-  addWebAuthnKey,
+  addWebAuthnKeyWithId,
   isStaged,
   partnerMissing,
   partnerNeededBy,
@@ -25,6 +25,7 @@ import {
   type WebAuthnKind,
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { KeyTest } from '../auth/KeyTest.js';
 import { Notice } from '../../ui/Notice.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import {
@@ -104,11 +105,22 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
     void refresh().catch(() => setError('Could not load your login methods.'));
   }, [refresh]);
 
+  /** The security key just added here, offered for a test (owner demo note #94); null otherwise. */
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+
   const addWebAuthn = async (kind: WebAuthnKind) => {
     setBusy(true);
     setError(null);
+    setJustAdded(null);
     try {
-      noteStaged(await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove));
+      const { staged: h, credentialId } = await withConfirm(
+        { kind: 'add-method', method: kind },
+        (t) => addWebAuthnKeyWithId(authApi, kind, t !== undefined ? { confirmToken: t } : {}),
+        prove,
+      );
+      noteStaged(h);
+      // A staged key (hold model v3) is not a login method yet, so only a key added now is tested.
+      if (kind === 'security-key' && !(h !== undefined && isStaged(h))) setJustAdded(credentialId);
       await refresh();
     } catch (e) {
       if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(keyErrorText(e, kind));
@@ -118,6 +130,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   };
 
   const remove = async (m: MethodEntry) => {
+    setJustAdded(null);
     if (methods !== null && isOnlyLogin(m, methods)) {
       setLastMethod(true);
       return;
@@ -160,6 +173,15 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
         </p>
       ) : null}
       {staged > 0 ? <StagedNote key={staged} /> : null}
+      {justAdded !== null ? (
+        <div data-part="key-just-added">
+          {/* COPY-UNSIGNED */}
+          <p className="x2f-note" role="status">
+            Security key added.
+          </p>
+          <KeyTest key={justAdded} credentialId={justAdded} />
+        </div>
+      ) : null}
       {lastMethod ? <CantDoThat title={CANT_DO_TITLE.methods} body={LAST_METHOD_MESSAGE} from={LAST_METHOD_CODE} onClose={() => setLastMethod(false)} /> : null}
       {leavesAlone ? <CantDoThat title={CANT_DO_TITLE.methods} body={PASSWORD_ALONE_MESSAGE} from={PASSWORD_ALONE_CODE} onClose={() => setLeavesAlone(false)} /> : null}
       {keepsPassword ? (

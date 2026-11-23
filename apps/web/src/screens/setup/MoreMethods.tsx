@@ -8,12 +8,13 @@
  * asked to confirm rather than refused. "Set up later" goes on without it (Settings can add it).
  */
 import { useEffect, useState } from 'react';
-import { STANDS_ALONE, addWebAuthnKey, isStaged, withConfirm, type Staged } from '@x2f/auth-client';
+import { STANDS_ALONE, addWebAuthnKeyWithId, isStaged, withConfirm, type Staged } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { StatusIcon } from '../../ui/icons.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { keyErrorText } from '../auth/keyErrors.js';
+import { KeyTest } from '../auth/KeyTest.js';
 import { HOLD_COPY } from '../settings/holdCopy.js';
 import { Totp } from '../settings/Totp.js';
 import { SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
@@ -67,7 +68,8 @@ export function keyNameShown(name: string): string {
  * like his 13 Nov note for the authenticator app, the step turns green, shows a security key and the
  * name it was given, and he moves on himself with Continue.
  */
-function KeyAdded({ name, onNext }: { name: string; onNext: () => void }) {
+/** "Security key added", its name, the test (owner demo note #94) and Continue. */
+function KeyAdded({ name, credentialId, onNext }: { name: string; credentialId: string; onNext: () => void }) {
   return (
     <section className="x2f-start__keydone" data-tone="escrow" data-part="key-done" aria-labelledby="key-done-h">
       {/* DESIGN: needs drawing (a picture of a security key; the kit's security-key icon for now). */}
@@ -81,6 +83,7 @@ function KeyAdded({ name, onNext }: { name: string; onNext: () => void }) {
       <p className="x2f-start__keyname" data-part="key-name">
         {name}
       </p>
+      <KeyTest credentialId={credentialId} />
       <Button variant="primary" onClick={onNext} data-part="key-continue">
         Continue
       </Button>
@@ -102,8 +105,8 @@ export function KeyStep({ kind }: { kind: 'security-key' | 'passkey' }) {
   const [error, setError] = useState<string | null>(null);
   /** The security key's name, typed before the tap (sent as its label). */
   const [name, setName] = useState('');
-  /** The added key's name as shown; null until a key is added. */
-  const [added, setAdded] = useState<string | null>(null);
+  /** The added key's name as shown and its credential id (for the test, note #94); null until a key is added. */
+  const [added, setAdded] = useState<{ name: string; credentialId: string } | null>(null);
   const words = KEY_WORDS[kind];
 
   const add = async () => {
@@ -111,13 +114,13 @@ export function KeyStep({ kind }: { kind: 'security-key' | 'passkey' }) {
     setError(null);
     const label = kind === 'security-key' && name.trim() !== '' ? { label: name.trim() } : {};
     try {
-      const staged = await withConfirm(
+      const { staged, credentialId } = await withConfirm(
         { kind: 'add-method', method: kind },
-        (t) => addWebAuthnKey(authApi, kind, { ...label, ...(t !== undefined ? { confirmToken: t } : {}) }),
+        (t) => addWebAuthnKeyWithId(authApi, kind, { ...label, ...(t !== undefined ? { confirmToken: t } : {}) }),
         prove,
       );
-      // A security key added now says so and waits for Continue (owner 16 Nov); a staged one says it is waiting.
-      if (kind === 'security-key' && !(staged !== undefined && isStaged(staged))) setAdded(keyNameShown(name));
+      // A security key added now says so, offers its test (note #94) and waits for Continue (owner 16 Nov); a staged one says it is waiting.
+      if (kind === 'security-key' && !(staged !== undefined && isStaged(staged))) setAdded({ name: keyNameShown(name), credentialId });
       else finish.done(staged);
     } catch (e) {
       // Why it failed, when the browser or the server says (owner demo 13 Nov).
@@ -152,7 +155,7 @@ export function KeyStep({ kind }: { kind: 'security-key' | 'passkey' }) {
             <input className="x2f-input" id="key-name" maxLength={KEY_NAME_MAX} autoComplete="off" placeholder="Security key" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
         ) : null}
-        {added !== null ? <KeyAdded name={added} onNext={finish.next} /> : null}
+        {added !== null ? <KeyAdded name={added.name} credentialId={added.credentialId} onNext={finish.next} /> : null}
         {error !== null ? (
           <p className="x2f-error" role="alert">
             {error}

@@ -3,7 +3,10 @@
 // next step, so he could not tell it was set up. Like his 13 Nov note for the authenticator app
 // ("it should turn green and say you have successfully setup..."): /setup/security-key now turns
 // green, shows a security key, says it was added with the name the key was given, and waits for
-// Continue. The ceremony itself is stubbed (addWebAuthnKey).
+// Continue. The ceremony itself is stubbed (addWebAuthnKeyWithId).
+// Owner demo note #94 (16 Nov): "it should even have you test it after adding it": the added
+// screen offers "Test this key now" (testWebAuthnKey, stubbed here; its real run against the API is
+// packages/auth-client/test/keyTest.test.ts) and shows the result inline.
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,17 +16,25 @@ import { fire, render } from './render.js';
 
 const added: { kind: string; o: { label?: string } }[] = [];
 let result: () => Promise<unknown> = async () => undefined;
+const tested: string[] = [];
+let testResult: () => Promise<void> = async () => undefined;
 vi.mock('@x2f/auth-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@x2f/auth-client')>()),
-  addWebAuthnKey: async (_api: unknown, kind: string, o: { label?: string }) => {
+  addWebAuthnKeyWithId: async (_api: unknown, kind: string, o: { label?: string }) => {
     added.push({ kind, o });
-    return result();
+    return { staged: await result(), credentialId: 'CRED-NEW' };
+  },
+  testWebAuthnKey: async (_api: unknown, credentialId: string) => {
+    tested.push(credentialId);
+    return testResult();
   },
 }));
 
 beforeEach(() => {
   added.length = 0;
+  tested.length = 0;
   result = async () => undefined;
+  testResult = async () => undefined;
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -106,5 +117,81 @@ describe('owner 16 Nov: a security key that was added says so before going on', 
     await flush();
     expect(byPart(host, 'key-done')).toBeNull();
     expect(host.querySelector('[role="alert"]')!.textContent).toMatch(/this page's address/);
+  });
+});
+
+describe('owner note #94: test the security key right after adding it', () => {
+  async function addedScreen() {
+    const api = setup();
+    const host = show(api);
+    click(byPart(host, 'key-add'));
+    await flush();
+    return { api, host, done: byPart(host, 'key-done')! };
+  }
+
+  it('offers "Test this key now", tests exactly the key just added, and says it works', async () => {
+    let pass!: () => void;
+    testResult = () => new Promise<void>((r) => (pass = r));
+    const { api, done } = await addedScreen();
+    const run = byPart(done, 'key-test-run')!;
+    expect(run.textContent).toBe('Test this key now');
+    expect(byPart(done, 'key-test-result')).toBeNull();
+    click(run);
+    await flush();
+    expect(tested).toEqual(['CRED-NEW']);
+    expect(byPart(done, 'key-test-result')!.getAttribute('data-result')).toBe('waiting');
+    expect((byPart(done, 'key-test-run') as HTMLButtonElement).disabled).toBe(true);
+    pass();
+    await flush();
+    const ok = byPart(done, 'key-test-result')!;
+    expect(ok.getAttribute('data-result')).toBe('ok');
+    expect(ok.getAttribute('role')).toBe('status');
+    expect(ok.textContent).toBe('Your security key works. It answered and X2F checked its answer.');
+    expect(byPart(done, 'key-test-run')!.textContent).toBe('Test it again');
+    // Testing changes nothing about the step: Continue still moves on.
+    expect(api.go).not.toHaveBeenCalled();
+    click(byPart(done, 'key-continue'));
+    expect(api.go).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows why a test did not pass, inline, and lets it run again', async () => {
+    const { KeyTestError } = await import('@x2f/auth-client');
+    testResult = async () => {
+      throw new KeyTestError('other-key');
+    };
+    const { done } = await addedScreen();
+    click(byPart(done, 'key-test-run'));
+    await flush();
+    let r = byPart(done, 'key-test-result')!;
+    expect(r.getAttribute('data-result')).toBe('fail');
+    expect(r.getAttribute('role')).toBe('alert');
+    expect(r.textContent).toBe('A different key answered. Test again with the key you just added.');
+
+    // No tap in time (the browser's NotAllowedError): the key error words.
+    testResult = async () => {
+      throw Object.assign(new Error('x'), { name: 'NotAllowedError', code: 'ERROR_CEREMONY_ABORTED' });
+    };
+    click(byPart(done, 'key-test-run'));
+    await flush();
+    r = byPart(done, 'key-test-result')!;
+    expect(r.textContent).toMatch(/didn't respond/);
+
+    // The server's check failed (401 webauthn-failed).
+    testResult = async () => {
+      throw Object.assign(new Error('webauthn-failed'), { code: 'webauthn-failed', status: 401 });
+    };
+    click(byPart(done, 'key-test-run'));
+    await flush();
+    expect(byPart(done, 'key-test-result')!.textContent).toBe("The key's answer couldn't be checked. Try again, or use a different key.");
+    expect(tested).toEqual(['CRED-NEW', 'CRED-NEW', 'CRED-NEW']);
+  });
+
+  it('a staged key (hold model v3) is not offered a test: it is not a login method yet', async () => {
+    result = async () => ({ status: 'staged', changeId: 'c1' });
+    const api = setup();
+    const host = show(api);
+    click(byPart(host, 'key-add'));
+    await flush();
+    expect(byPart(host, 'key-test-run')).toBeNull();
   });
 });
