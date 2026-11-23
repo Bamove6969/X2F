@@ -170,7 +170,7 @@ export function Wallet() {
           </p>
         ) : null}
         <p className="x2f-start__help" data-part="first-wallet-rule">
-          This is your first payout wallet, so it works at once. Wallets you add later ask you to confirm it's you, and X2F always shows an alert when
+          This is your first payout wallet, so it works right away. Wallets you add later ask you to confirm it's you, and X2F always shows an alert when
           one is added.
         </p>
         <p className="x2f-start__small">
