@@ -148,10 +148,16 @@
 }
 
 /*
- * The public key box (owner demo note, 12 Nov 2026, /setup/pgp-key: "lots of screen real estate
- * here so make the box MUCH wider so they can see their key fit"): the column's full width and
- * about half the screen's height, so a whole key shows.
+ * The public key box (owner demo note, 12 Nov 2026 #26, /setup/pgp-key: "lots of screen real estate
+ * here so make the box MUCH wider so they can see their key fit"): the PGP key screen widens past
+ * 480 px so 64-character armored PGP lines fit across on wide screens and tablets without wrapping
+ * (wip/agy-layout e82c136b), and the textarea takes the column's full width and about half the
+ * screen's height, so a whole key shows.
  */
+.x2f-start[data-screen='setup-pgp-key'] {
+  max-width: 680px;
+}
+
 .x2f-start .x2f-textarea--key {
   width: 100%;
   box-sizing: border-box;

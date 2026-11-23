@@ -47,13 +47,21 @@ describe('screenName: the name beside the logo, one per route', () => {
   it('names the front door, the browse boards and the screens behind the door', () => {
     for (const [p, name] of [
       ['/login', 'Log in'], ['/login/backup', 'Use a backup'], ['/session-length', 'Session length'],
-      ['/setup', 'Create account'], ['/setup/welcome', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
+      ['/setup', 'Create account'], ['/setup/pgp-key', 'Adding your public PGP key'], ['/setup/welcome', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
       ['/buy', 'Find a trade'], ['/sell', 'Find a trade'], ['/wallets', 'Wallets'], ['/settings/security', 'Security'],
       ['/help/faq', 'FAQ'], ['/help/getting-started', 'Getting started'], ['/help/support', 'Support'], ['/help/settings', 'Settings'],
     ] as const) expect([p, screenName(p)]).toEqual([p, name]);
     expect(screenName('/trade/K7M29QXA4FTR8WPN')).toEqual({ label: 'Trade', code: 'K7M2' });
     // The Landing board draws its own large logo: no header there.
     expect(screenName('/')).toBe('');
+  });
+});
+
+describe('/setup/pgp-key layout (owner #26)', () => {
+  it('widens /setup/pgp-key past 480 px so 64-character PGP lines fit across on wide screens', () => {
+    const css = read('screens/setup/setup.css');
+    const pgp = /\.x2f-start\[data-screen='setup-pgp-key'\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(pgp).toContain('max-width: 680px;');
   });
 });
 
