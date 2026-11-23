@@ -29,9 +29,9 @@ describe('/session-length (owner, 12 Nov)', () => {
 
 describe('/setup/welcome (owner, 12 Nov)', () => {
   it('the lead line, the line under the checklist and the fee note are his words, typos fixed', () => {
-    expect(WELCOME_COPY.lead).toBe(
-      'Your account is ready. Trade Monero for cash, bank transfers, gift cards, or whatever payment method you choose, with every trade protected by escrow. If the site is missing a payment method, please leave feedback so we can add it quickly: include what detail you can, or a link with information on it.',
-    );
+    // Owner demo note #166 (23 Nov): his two paragraphs replace the 12 Nov lead.
+    expect(WELCOME_COPY.lead).toBe('Your account is ready. Buy and sell Monero using cash, bank transfers, gift cards, or any payment method you prefer, with every trade protected by 2-of-3 escrow.');
+    expect(WELCOME_COPY.leadMore).toBe('Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.');
     expect(WELCOME_COPY.loginItem).toBe('Configured your secure methods of logging into X2F');
     expect(WELCOME_COPY.recoveryItem).toBe('Emergency login method: recovery code documented');
     expect(WELCOME_COPY.walletItem).toBe('Connected your wallet');
