@@ -294,18 +294,37 @@ test('a computer screen (1239x675, demo note #99): each stop scrolls its target 
   // Stop 4: the payment list, low on Find a trade.
   await goTo(page, 4);
   await expect.poll(() => inView(stage(page).locator('[data-tour="methods"]'))).toBe(true);
-  // Stop 16: the chat, below the people in the trade room.
+  // Stop 13: the QR code, below the fold of the pay screen at this height (the stage is taller than
+  // the screen), so the tour really scrolls the stage's own scroller to bring it into view. Wait
+  // for the stage to settle (the smooth scroll ends) before measuring.
+  await goTo(page, 13);
+  const scroller = stage(page).locator('[data-tour-scroll]');
+  const qr = stage(page).locator('[data-tour="qr"]');
+  await expect.poll(() => scroller.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => inView(qr)).toBe(true);
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expectRingOn(page, qr);
+  // The wheel over the tour moves the screen behind it, and the ring follows.
+  let settled = -1;
+  await expect
+    .poll(async () => {
+      const t = await scroller.evaluate((el) => el.scrollTop);
+      const still = t === settled;
+      settled = t;
+      return still;
+    })
+    .toBe(true);
+  const before = settled;
+  await page.mouse.move(300, 300);
+  await page.mouse.wheel(0, before > 0 ? -200 : 200);
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).not.toBe(before);
+  await expect(count(page)).toHaveText('13 of 19');
+  await expectRingOn(page, qr);
+  // Stop 16: the chat in the trade room, on the screen (it fits at this height, so no scroll is owed).
   await goTo(page, 16);
   const chat = stage(page).locator('[data-tour="chat"]');
   await expect.poll(() => inView(chat)).toBe(true);
   await expectRingOn(page, chat);
-  // The wheel over the tour moves the screen behind it, and the ring follows.
-  const scroller = stage(page).locator('[data-tour-scroll]');
-  const before = await scroller.evaluate((el) => el.scrollTop);
-  await page.mouse.move(300, 300);
-  await page.mouse.wheel(0, before > 0 ? -200 : 200);
-  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).not.toBe(before);
-  await expect(count(page)).toHaveText('16 of 19');
   await noSidewaysScroll(page);
 });
 
