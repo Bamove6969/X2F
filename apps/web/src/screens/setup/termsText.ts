@@ -43,7 +43,9 @@ export const TERMS_DRAFT_NOTE = "[Placeholder: the final text comes from X2F's l
 
 /** The board's key points, shown above the full text. */
 export const KEY_POINTS: readonly string[] = [
-  'X2F never holds your coins.',
+  // Owner demo note #115 (23 Nov, on this key point): his explanation added after it, in his words;
+  // "The coins sit are held" tidied to "The coins are held". COPY-UNSIGNED.
+  'X2F never holds your coins. The coins are held directly on the blockchain inside a special smart address (a multisig address) that is mathematically locked by three separate private keys: one held by the buyer, one by the seller, and one by X2F (the mediator). To move the coins out of that address, any two of those three keys must cryptographically sign off on the transaction.',
   'If you post an ad, you pay a 1% fee when the trade completes.',
   'Moderators can read your trade chat only if a dispute is opened.',
   // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling): two lines in place of
