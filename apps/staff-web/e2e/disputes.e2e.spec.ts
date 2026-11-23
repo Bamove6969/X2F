@@ -205,6 +205,10 @@ for (const [label, size] of SIZES) {
           await takeCase(staff, o.code);
           await proposeRuling(staff, 'Release to buyer');
         });
+        // Review p4t22 m1 (lead default, owner question OQ2): round 1's payout stands once it ran;
+        // an appeal decided before it ran pays round 2 instead (covered by the unit and API tests).
+        // So this row waits for round 1's payout before the appeal is decided.
+        const tx = await settled(o.buyer, o.code, 'released', PAYOUT_WAIT);
 
         await o.sellerPage.goto(disputeUrl(o.code));
         await appeal(o.sellerPage, 'I never received the Zelle payment; my bank statement shows nothing that day.');
@@ -223,7 +227,6 @@ for (const [label, size] of SIZES) {
         });
         // Revision 2026-10-29: the round-1 ruling paid out at once, exactly once, and the overturn moves
         // no coins again (a lien goes on the buyer instead, Task 25).
-        const tx = await settled(o.buyer, o.code, 'released', PAYOUT_WAIT);
         await buyerPaid(o, tx, AMOUNT - FEE, FEE);
         for (let i = 0; i < 4; i++) await mine(1);
         expect([...(await incomingTxs(o.buyer.wallet))].filter((h) => !before.buyer.has(h))).toEqual([tx]);
