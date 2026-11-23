@@ -151,7 +151,8 @@ describe('setupError (review fix round M1, M2, I1)', () => {
 
 describe('SetupTerms key points (build spec j33a section 1, S-043)', () => {
   it('ends with the 60-day line, saying why: X2F is for people who trade regularly', () => {
-    expect(KEY_POINTS.at(-1)).toBe('X2F is built to last, for people who trade regularly, so an account not signed into for 60 days is closed.');
+    // Owner demo note #123 (23 Nov), his words.
+    expect(KEY_POINTS.at(-1)).toBe('X2F is built as a lasting community, for people who trade regularly, so an account not signed into for 60 days is closed automatically.');
   });
 });
 

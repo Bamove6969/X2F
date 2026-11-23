@@ -476,14 +476,17 @@
   line-height: 18px;
 }
 
-/* Owner demo note #129 (23 Nov): "Recommended bigger, brighter, and all caps". */
+/* Owner demo note #129 (23 Nov): "Recommended bigger, brighter, and all caps". Brighter is the
+ * pill's own escrow tone as a solid fill (was escrow text on a raised surface), ground ink on it as
+ * on .x2f-hold[data-done]: orange stays on the primary action (selection-ink.test), and 700 is the
+ * heaviest DM Sans face loaded (fonts.test). */
 .x2f-start__rec {
   padding: 3px 12px;
   border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-monero);
-  color: var(--x2f-on-monero);
+  background: var(--x2f-escrow);
+  color: var(--x2f-ground);
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }

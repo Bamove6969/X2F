@@ -32,6 +32,8 @@ interface MethodDef {
   name: string;
   cta: string;
   desc: string;
+  /** A second paragraph under the description (owner demo note #137). */
+  more?: string;
   strength: Strength;
   rec?: boolean;
   /** A sentence of warning under the description. */
@@ -87,7 +89,11 @@ export const METHODS: MethodDef[] = [
     strength: 'medium',
     cta: 'Continue',
     // Owner demo note #135 (23 Nov), his words; "below" made "on the next screen", since the code box is there.
+    // not-a-refusal: explains how authenticator-app setup works
     desc: 'Scan the QR code using your preferred authenticator app to generate a 6-digit code that refreshes every 30 seconds. Enter the current code on the next screen to finish setup. Going forward, you will use these rotating codes whenever you log in. If you cannot scan the QR code, you can enter the setup key manually.',
+    // Owner demo note #137 (23 Nov), his second paragraph, in his words. COPY-UNSIGNED.
+    // not-a-refusal: advice on choosing login methods
+    more: 'Security Level: Medium. We strongly recommend using an authenticator app alongside a strong password at a minimum, or opting for one of our stronger login methods (such as a PGP key, hardware security key, or passkey) for maximum account protection.',
     // Owner decision, 16 Nov 2026: only with a password (@x2f/accounts METHOD_PARTNERS).
     needs: ['password'],
     // COPY-UNSIGNED (the pre-round-3 sentence, restored)
@@ -211,6 +217,13 @@ export function Login() {
               </span>
               <span className="x2f-start__choice-desc" id={`${id}-${m.id}`}>
                 {m.desc}
+                {m.more !== undefined ? (
+                  <>
+                    <br />
+                    <br />
+                    <span data-part="method-more">{m.more}</span>
+                  </>
+                ) : null}
                 {m.warn !== undefined ? <span className="x2f-start__choice-warn"> {m.warn}</span> : null}
                 {off && m.needsText !== undefined ? <span className="x2f-start__choice-needs"> {m.needsText}</span> : null}
               </span>
