@@ -474,6 +474,100 @@
   letter-spacing: 6px;
   color: var(--x2f-ink-muted);
 }
+/* The trade room (demo note #100): the two people in the chat, and the chat as the room draws it
+   (chat.css: their lines on the raised surface, yours outlined on the right). */
+.x2f-ex__members h2 {
+  margin: 0;
+}
+.x2f-ex__people {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.x2f-ex__person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.x2f-ex__chat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+  border: 1px solid var(--x2f-surface-raised);
+}
+.x2f-ex__notice {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.x2f-ex__line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  overflow-wrap: anywhere;
+}
+.x2f-ex__line[data-from='me'] {
+  align-self: flex-end;
+  background: var(--x2f-ground);
+  border: 1px solid var(--x2f-line);
+}
+.x2f-ex__by {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+}
+.x2f-ex__by small {
+  font-weight: 400;
+}
+.x2f-ex__bubble {
+  font-size: 15px;
+  line-height: 21px;
+}
+.x2f-ex__compose {
+  display: flex;
+  gap: 8px;
+}
+.x2f-ex__input {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 12px;
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-line);
+  color: var(--x2f-ink-muted);
+  font-size: 15px;
+}
+.x2f-ex__send {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-ink);
+  color: var(--x2f-ground);
+  font-weight: 600;
+}
 @media (max-height: 720px) {
   .x2f-ex__qr {
     width: 160px;

@@ -6,13 +6,17 @@
  *
  * COPY-UNSIGNED: the 17 card texts are design's, used exactly as written (tour-stops.md §2, "must be
  * used exactly as written"). Do not edit them here; change them on the design branch first.
+ *
+ * The trade room (owner, 16 Nov 2026, demo note #100: the tour showed no trading window with its
+ * chat): two stops after Fund, on the pretend trade's room, the two people in the chat and a few
+ * lines back and forth. 19 stops in all.
  */
 import type { TourDef, TourStep } from './engine.js';
 import { FirstTradeStage } from './FirstTradeStage.js';
 
 const t = (sel: string) => `[data-part="tour-stage"] [data-tour="${sel}"]`;
 
-/** The 17 stops, in order (tour-stops.md §2). */
+/** Design's 17 stops, in order (tour-stops.md §2). */
 export const FIRST_TRADE_TEXT = [
   "First, decide why you're here: to buy Monero or to sell it.",
   "Let's pretend we're selling. Tap Sell.",
@@ -33,7 +37,17 @@ export const FIRST_TRADE_TEXT = [
   "That's your first trade. Rate the buyer, and you're done. Buying works the same way, the other way round.",
 ] as const;
 
+/**
+ * COPY-UNSIGNED: the trade room's two cards (demo note #100), written by the lead, not by design;
+ * awaiting design and the owner.
+ */
+export const TRADE_ROOM_TEXT = [
+  'Every trade gets its own room. The chat is just for the two of you: you and the buyer.',
+  'Agree the details here. The buyer says when the money is on its way, and you reply. Chats are encrypted; a moderator reads one only if a dispute is opened.',
+] as const;
+
 const at = (i: number, s: Omit<TourStep, 'id' | 'body'>): TourStep => ({ id: `first-trade-${i + 1}`, body: FIRST_TRADE_TEXT[i]!, ...s });
+const room = (i: number, s: Omit<TourStep, 'id' | 'body'>): TourStep => ({ id: `trade-room-${i + 1}`, body: TRADE_ROOM_TEXT[i]!, ...s });
 
 export const FIRST_TRADE_TOUR: TourDef = {
   id: 'first-trade',
@@ -85,6 +99,16 @@ export const FIRST_TRADE_TOUR: TourDef = {
       steps: [
         at(12, { target: t('qr'), placement: 'auto' }),
         at(13, { target: t('status'), placement: 'auto' }),
+      ],
+    },
+    {
+      id: 'room',
+      name: 'Trade room',
+      path: null,
+      stage: FirstTradeStage,
+      steps: [
+        room(0, { target: t('members'), placement: 'auto' }),
+        room(1, { target: t('chat'), placement: 'auto' }),
       ],
     },
     {
