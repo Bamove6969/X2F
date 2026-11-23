@@ -55,7 +55,8 @@ export const KEY_POINTS: readonly string[] = [
   'Moderators can read your trade chat only if their presence is requested and a dispute is opened.',
   // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling): two lines in place of
   // "Dispute records are kept for 30 days." COPY-UNSIGNED.
-  'Completed trades are erased on day 30.',
+  // Owner demo note #119 (23 Nov, on this key point), his words. COPY-UNSIGNED.
+  'To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion.',
   'Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators.',
   'No IP addresses are logged.',
   // Owner demo note #102 (17 Nov, f0aabdaf, on this key point): "... with what very little information
