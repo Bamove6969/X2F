@@ -128,6 +128,12 @@ function sentence(
       return d.reason === 'winner-committed' ? "The ruling's payout waits: the winner's app reports it is committed to an earlier payout"
         : d.reason === 'winner-offline' ? "The ruling's payout waits: the winner's app has not taken part"
         : "The winner's app is taking part in the ruling's payout";
+    // Review p4t22 M1 (d, e), from the moderation process and the rescue. COPY-UNSIGNED
+    case 'ruling.gate-refused':
+      return d.reason === 'none' ? 'The moderation service accepts the ruling again'
+        : d.reason === 'needs-second' ? 'The moderation service will not carry out the ruling: it needs a second person\'s approval'
+        : `The moderation service will not carry out the ruling (${String(d.reason)})`;
+    case 'ruling.second-approved': return 'Added the second approval the moderation service asked for';
     // Accounts.
     case 'hold.placed': return `Put a trading hold on ${side()}`;
     case 'hold.lifted': return `Lifted the trading hold on ${side()}`;

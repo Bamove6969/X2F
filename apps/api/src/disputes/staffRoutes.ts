@@ -498,7 +498,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         payoutWait: t.state === 'disputed' ? await payoutWaitOf(deps.db, code) : null,
         // Review p4t22 M1 (d, e): the moderation gate's latest refusal of a ruling of this dispute,
         // and, for `needs-second` on round 1 before its payout ran, what a second approval taps.
-        gateRefusal: await gateRefusalOf(deps.db, d),
+        gateRefusal: await gateRefusalOf(deps.db, d, me.id),
       },
       freezes: await freezesOf(deps.db, t, code),
     };
@@ -846,7 +846,8 @@ async function payoutWaitOf(q: Queryable, code: string): Promise<{ reason: 'winn
 async function gateRefusalOf(
   q: Queryable,
   d: Dispute,
-): Promise<{ rulingId: string; reason: string; since: string; secondApproval: { rulingId: string; outcome: RulingOutcome; reason: string; evidence: string[] } | null } | null> {
+  viewer: string,
+): Promise<{ rulingId: string; reason: string; since: string; secondApproval: { rulingId: string; outcome: RulingOutcome; reason: string; evidence: string[]; proposedByYou: boolean } | null } | null> {
   const { rows } = await q.query<{ detail: string; at: Date }>(
     "select detail, at from activity_log where trade_code = $1 and action = 'ruling.gate-refused' order by id desc limit 1",
     [d.code],
@@ -861,7 +862,7 @@ async function gateRefusalOf(
   if (x.reason === 'needs-second' && r1 !== null && r1.id === x.rulingId && r1.approver === null && d.executedAt === null && d.publishedAt !== null && d.status !== 'closed') {
     const pub = await q.query<{ reason: string; evidence: string[] }>('select reason, evidence from dispute_rulings where code = $1 and seq = $2 and round = 1', [d.code, d.seq]);
     const p = pub.rows[0];
-    if (p) secondApproval = { rulingId: r1.id, outcome: r1.outcome, reason: p.reason, evidence: p.evidence };
+    if (p) secondApproval = { rulingId: r1.id, outcome: r1.outcome, reason: p.reason, evidence: p.evidence, proposedByYou: r1.proposer === viewer };
   }
   return { rulingId: x.rulingId, reason: x.reason, since: r.at.toISOString(), secondApproval };
 }

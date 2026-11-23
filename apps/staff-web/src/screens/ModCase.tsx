@@ -3,6 +3,7 @@ import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import {
   approveRuling,
+  secondApproveRuling,
   codeOf,
   disputeCase,
   messageTraders,
@@ -151,6 +152,9 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
   const proposing = c.assignedToYou && ((c.round === 1 && c.status === 'open') || (c.round === 2 && c.status === 'appealed'));
   // Review M2: in an appeal, someone involved in round 1 (mayWork false) never decides it (R37).
   const approving = c.status === 'awaiting-approval' && isApprover(role) && !c.proposedByYou && c.ruling.proposal !== null && (c.round === 1 || c.mayWork);
+  // Review p4t22 M1 (e): a senior or the owner who did not propose it adds the second approval the gate asks for.
+  const second = c.ruling.gateRefusal?.secondApproval ?? null;
+  const rescuing = live && second !== null && isApprover(role) && !second.proposedByYou;
   // Review X3-1 (a): no ruling tap opens for a case that is not the one in the address.
   const matches = caseMatchesAddress(code, c);
   const openTap = (t: Tap) => {
@@ -192,7 +196,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
           <EscrowCard c={c} buyer={buyer} seller={seller} />
           {c.mayWork ? <FreezeCard c={c} buyer={buyer} seller={seller} onChange={(freezes) => setC({ ...c, freezes })} /> : null}
           {c.mayWork ? <LimitsCard c={c} buyer={buyer} seller={seller} /> : null}
-          <RulingCard c={c} proposing={proposing} approving={approving} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
+          <RulingCard c={c} proposing={proposing} approving={approving} rescuing={rescuing} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
         </div>
       </div>
 
@@ -629,6 +633,7 @@ function RulingCard({
   c,
   proposing,
   approving,
+  rescuing,
   buyer,
   seller,
   setTap,
@@ -637,6 +642,7 @@ function RulingCard({
   c: DisputeCase;
   proposing: boolean;
   approving: boolean;
+  rescuing: boolean;
   buyer: string;
   seller: string;
   setTap: (t: Tap) => void;
@@ -672,6 +678,15 @@ function RulingCard({
             : `Since ${hhmm(r.payoutWait.since)}, the payout has been waiting: the winner's app has not taken part. Either it has not been opened, or it is committed to an earlier payout the moderator takes no part in.`}
         </p>
       ) : null}
+      {/* Review p4t22 M1 (d): the moderation gate will not carry out a ruling, and why. COPY-UNSIGNED; DESIGNER-REVIEW (no board). */}
+      {r.gateRefusal ? (
+        <p className="x2f-staff-hint" data-part="gate-refused">
+          {r.gateRefusal.reason === 'needs-second'
+            ? `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: it needs a second person's approval (a senior moderator or the owner).`
+            : `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling (${r.gateRefusal.reason}).`}
+        </p>
+      ) : null}
+      {rescuing ? <SecondApprovalPanel c={c} setTap={setTap} reload={reload} /> : null}
       {/* RC-4 (lead default): the seller's proofs X2F's checker could not take, so a senior deciding a lapse sees X2F's fault. COPY-UNSIGNED; DESIGNER-REVIEW (no board). */}
       {(r.compliance?.failedChecks ?? []).length > 0 ? (
         <ul className="x2f-staff-hint" data-part="proof-check-failed">
@@ -694,6 +709,8 @@ const rulingFault = (e: unknown, fallback: string) => {
   if (code === 'dispute-paused') return 'Rulings wait while maintenance pauses this dispute. Try again when it ends.';
   // not-a-refusal: a wait, not a rule against this person (lead call Q1): the emergency stop.
   if (code === 'trading-paused') return 'Rulings wait while trading is stopped. Try again when it resumes.';
+  // not-a-refusal: review p4t22 M1 (e), the moderation service no longer asks for the second approval (it was added, or the case moved on).
+  if (code === 'not-refused') return 'The moderation service no longer asks for a second approval. Reload the case.';
   // not-a-refusal: R37, someone involved in round 1 never decides the appeal.
   if (code === 'forbidden-case') return 'You took part in this case before, so you cannot decide it.';
   return faultText(e, fallback);
@@ -778,6 +795,52 @@ function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buy
             ? 'Write the reason to continue.'
             : 'Pick an outcome and write the reason.'}
       </p>
+      {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
+    </section>
+  );
+}
+
+/**
+ * Review p4t22 M1 (e), the rescue: a ruling published on one tap that the moderation gate refuses
+ * for want of a second person. The tap is the very approve tap of that ruling (its outcome, the
+ * trade's XMR, its published reason and evidence), so the key signs nothing a normal approval would
+ * not. COPY-UNSIGNED; DESIGNER-REVIEW (no board).
+ */
+function SecondApprovalPanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) => void; reload: () => Promise<void> }) {
+  const p = c.ruling.gateRefusal!.secondApproval!;
+  const [fault, setFault] = useState<string | null>(null);
+  const approve = () => {
+    setFault(null);
+    setTap({
+      intent: rulingIntent('approve', { rulingId: p.rulingId, code: c.code, round: 1, round1Id: null, outcome: p.outcome, amountAtomic: c.escrow.amountAtomic, reason: p.reason, evidence: p.evidence }),
+      title: 'Add the second approval',
+      body: `Tap your security key to approve this published ruling: ${OUTCOME_LABELS[p.outcome]}. The moderation service then carries it out.`,
+      labels: rulingLabels(c, p.outcome),
+      onDone: async (tapId) => {
+        try {
+          await secondApproveRuling(c.code, p.rulingId, tapId);
+          await reload();
+        } catch (e) {
+          setFault(rulingFault(e, 'The approval did not go through. Try again.'));
+        }
+      },
+    });
+  };
+  return (
+    <section className="x2f-card" data-part="second-approval">
+      <h2 className="x2f-h2">Published ruling waiting for a second approval</h2>
+      <p>{OUTCOME_LABELS[p.outcome]}</p>
+      <p>{p.reason}</p>
+      {p.evidence.length > 0 ? (
+        <ul>
+          {p.evidence.map((e, i) => (
+            <li key={i}>{e}</li>
+          ))}
+        </ul>
+      ) : null}
+      <Button variant="primary" onClick={approve}>
+        Add the second approval
+      </Button>
       {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
     </section>
   );

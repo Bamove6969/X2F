@@ -533,6 +533,18 @@ export interface CaseRuling {
    * its winner, since when, while the trade is disputed; null when it does not. Absent from an older API.
    */
   payoutWait?: { reason: 'winner-committed' | 'winner-offline'; since: string } | null;
+  /**
+   * Review p4t22 M1 (d, e): the moderation ruling gate's latest refusal of a ruling of this dispute
+   * (`reason`: its refusal code), since when; null when it does not refuse one. `secondApproval`: for
+   * `needs-second` on round 1 before its payout ran, the published ruling a second approval taps
+   * (the rescue). Absent from an older API.
+   */
+  gateRefusal?: {
+    rulingId: string;
+    reason: string;
+    since: string;
+    secondApproval: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; proposedByYou: boolean } | null;
+  } | null;
 }
 export interface DisputeCase {
   code: string;
@@ -612,6 +624,9 @@ export const proposeRuling = (
 ) => staffApi<{ code: string; ruling: CaseRuling }>(casePath(code, '/rulings'), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
 export const approveRuling = (code: string, rulingId: string, tapId: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/approve`), { method: 'POST', body: { tapId } });
+/** Review p4t22 M1 (e): a second approval for a ruling published on one tap that the gate refuses `needs-second`. */
+export const secondApproveRuling = (code: string, rulingId: string, tapId: string) =>
+  staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/second-approval`), { method: 'POST', body: { tapId } });
 export const sendBackRuling = (code: string, rulingId: string, note: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/send-back`), { method: 'POST', body: { note } });
 
