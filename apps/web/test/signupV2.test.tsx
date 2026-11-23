@@ -113,6 +113,10 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     // The authenticator app is there with its explanation.
     expect(host.querySelector('[data-method="totp"]')!.textContent).toMatch(/6-digit code/);
     expect(METHODS.find((m) => m.id === 'totp')!.strength).toBe('medium');
+    // Owner demo note #137: his second paragraph under the authenticator app's explanation.
+    expect(host.querySelector('[data-method="totp"] [data-part="method-more"]')!.textContent).toBe(
+      'Security Level: Medium. We strongly recommend using an authenticator app alongside a strong password at a minimum, or opting for one of our stronger login methods (such as a PGP key, hardware security key, or passkey) for maximum account protection.',
+    );
   });
 
   it('recommends PGPony for PGP on Android', () => {

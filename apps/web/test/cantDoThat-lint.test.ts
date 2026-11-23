@@ -172,7 +172,13 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 72 -> 73 (wip/lead-notes-all, Terms v2026-11-23, owner demo note #106, 17 Nov): setup/termsText.ts's
     // late-payment bullet in the owner's own words ("you can't figure it out amicably ... call upon a
     // moderator"), Terms text that explains, not a refusal (counted 69 -> 70 on wip/lead-note-terms).
-    expect(notARefusal).toBeLessThanOrEqual(73);
+    // 73 -> 75 (wip/lead-note-landing, owner demo notes #122 and #135, 23 Nov): setup/termsText.ts's
+    // zero-log paragraph ("we do not collect or retain ..."), Terms text that explains, not a refusal;
+    // and setup/Login.tsx's authenticator-app explanation ("If you cannot scan the QR code, you can
+    // enter the setup key manually."), how setup works; nothing was tried and refused. 75 -> 76
+    // (owner demo note #137, 23 Nov): setup/Login.tsx's authenticator-app second paragraph ("Security
+    // Level: Medium. We strongly recommend ..."), advice on choosing login methods, not a refusal.
+    expect(notARefusal).toBeLessThanOrEqual(76);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

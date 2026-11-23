@@ -64,6 +64,7 @@ export const KEY_POINTS: readonly string[] = [
   // Owner demo note #102 (17 Nov, f0aabdaf, on this key point): "... with what very little information
   // we collect." COPY-UNSIGNED
   // Owner demo note #122 (23 Nov, on this key point): his paragraph in place of the #102 line. COPY-UNSIGNED.
+  // not-a-refusal: Terms text
   'Our zero-log architecture is designed so that we do not collect or retain IP addresses, message contents, or personal identifying records. While we comply with valid, binding legal orders from courts of competent jurisdiction, any disclosure is strictly limited to the minimal, non-identifying operational data technically present on our servers at the time of the request. Furthermore, our corporate entity and server infrastructure are domiciled in privacy-focused jurisdictions with strong statutory data-protection laws and rigorous judicial standards for cross-border legal requests.',
   // S-043 (owner p4-6, build spec j33a section 1, 9 Nov): the 60-day rule, last, saying why. COPY-UNSIGNED
   // Owner demo note #123 (23 Nov, on this key point), his words. COPY-UNSIGNED.
