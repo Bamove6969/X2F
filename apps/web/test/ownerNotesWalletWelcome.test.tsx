@@ -72,7 +72,7 @@ describe('/setup/wallet (owner #32, #96)', () => {
     expect(list.querySelectorAll('button, a, [role="radio"], input')).toHaveLength(0);
     expect(host.querySelector('[role="radiogroup"]')).toBeNull();
     expect([...host.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Finish setup']);
-    expect(host.querySelector('label[for="xmr-payout"]')!.textContent).toContain('Use your favourite wallet and enter a receive address from it');
+    expect(host.querySelector('label[for="xmr-payout"]')!.textContent).toContain('Enter your receiving wallet address below.');
   });
 
   it("the Edge tip names Edge's own setting (Wallet Settings, Full Node), not a Full Sync that Edge does not have", () => {
