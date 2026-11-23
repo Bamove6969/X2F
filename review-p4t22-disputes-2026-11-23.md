@@ -359,3 +359,96 @@ All targeted vitest ran with nice -n 10, outside the lock.
   - **No double payout.** The moderation log shows exactly one `ruling-signing` per ruling trade (10 for 10). Nothing points to two payouts on one trade.
   - **Rerun.** The same three desktop rows alone, under the lock: **3/3 passed** (6.3 min).
   - **Reading:** timing flakes in the desktop sequence, cascading from the slow EUR co-sign. They are not a security defect. A lead follow-up would make the `before` snapshots robust (refresh the wallet before snapshotting) and give the EUR row the same wait as the above-limit row.
+
+---
+
+## Follow-up review: wip/lead-p4t22-fu at 60171b97 (23 Nov 2026)
+
+Scope: `git diff a03297ef 60171b97`, 11 commits and 48 files. Worktree `.claude/worktrees/rev-p4t22c`, detached; the branch was not changed.
+
+### Verdict: APPROVE WITH ONE MUST-FIX BEFORE LAUNCH (F1)
+
+The N1, N2, (a) and (b) changes are sound, and none of them widens what the moderator key signs. F1 is the builder's residual 1, plus the same case after a key reset. It is a stuck-coins case for an everyday action, removing or resetting a moderator. The fix is small, so it should land before launch, though it does not block landing this branch.
+
+The full `npm run check` belongs to the cloud runner, and approval holds only if it is green.
+
+### The parts
+
+- **N1, gate (`signersOnly`): sound.**
+  - **How round 1 is read.** `examine()` is the whole tap check of `authorizeRuling`, minus R37 and the payouts. The only change is `pastSigner`, which lets the keys kept for switched-off or removed (joined) staff verify. It runs on the round 1 that the round-2 taps name (`round1Id`, round 1, same trade code).
+  - **What it is used for.** It is used only to learn round 1's signers. Round 1 is recorded as `signersOnly` with its nonces bound, and only after round 2 itself passed, R37 included.
+  - **Round 1 still never pays.** Asked about itself, round 1 still verifies with `pastSigner: false`, so it stays `revoked`.
+  - **Executor and after-refund pass.** Both fall through only on `revoked`; every other refusal still stops.
+  - **The registry.** It is unchanged: creds survive removal, never a reset.
+  - **No new power.** A compromised API gains nothing it lacked: it still needs real staff taps for both rounds, and someone with no part in round 1 for round 2.
+- **N1, re-propose: sound.**
+  - **Who may use it.** `rulings.approve` (a senior or the owner), only when the gate's latest report for that exact ruling is `revoked`, round 1 only, not after-refund, before the payout ran and before any appeal.
+  - **What is tapped.** The caller's own `propose` tap for a new ruling id, rebuilt the way the proposal route builds it, with the same two-person rule (`GateValue`).
+  - **What the gate sees.** A new round 1 it never saw, so `stale-round` rejects it if the old one was ever authorised, which is the safe direction.
+  - **What a senior alone can and can't do.** A senior cannot create the precondition: switching off and removal are the owner's tapped acts. A compromised API that fakes the `revoked` report gets, with a senior's tap, only what it could already get: a senior's round-1 tap on an unpaid trade the gate has not authorised a round 1 for.
+  - **A note to check.** The withdrawn moderator's round-1 pay (`accrueDisputePay`) should follow the re-proposal. That is not a security matter.
+- **N2: fixed.**
+  - `maintenance-planned` binds start, end and the message as sent.
+  - A planned switch-on now binds the message it actually shows (`shown`).
+- **(a): sound.**
+  - **Every decided round is signed.** Every decided after-refund round is signed, whatever its outcome. The statement's shape now allows the three after-refund outcomes. Migration 791 gives the moderation process's reader only `closed_at` and `ruling_id`.
+  - **What the device keeps.** It persists the highest round it verified, and shows the form only for a `seller-sends-xmr` statement at or above that round.
+- **(b): sound.**
+  - **The report.** `no-terms` travels the refusal channel (`RULING_REFUSALS`, enum-checked at the API) from both the executor and the after-refund pass.
+  - **No penalty without a statement.** `runComplyLapses` skips a dispute whose ruling in force has no stored statement, both in its candidate query and again under the lock. So there is no lapse, and no `ignored-ruling` freeze.
+
+### The builder's residuals: my call
+
+1. **A round 1 already authorised, whose signer is then removed: MUST FIX BEFORE LAUNCH (F1).**
+   - **Probe:** `probe-p4t22c-recorded-revoked.test.ts`, kept in the scratchpad. It passes, which confirms the case:
+     1. the payout is recorded and handed;
+     2. the proposer is removed;
+     3. after a restart the executor returns `refused-revoked` and hands nothing.
+   - **Why nothing else can pay.** Every pass runs `gateCheck` before it matches the record. Neither later path can reach the trade:
+     - re-propose: refused, because the old round 1 is in `rulingsSeen` (`stale-round`);
+     - an appeal: `pay` stays round 1, because the record is round 1's.
+   - **When it happens.** This is the ordinary case: the winner is offline, and the moderator is let go that week. It also covers the narrower authorised-but-not-recorded case (an armed desk refund waiting) once no appeal comes.
+   - **Fix.** A ruling the gate authorised (in `rulingsSeen` without `signersOnly`, or with an execution record) stays authorised. On later passes, re-check only the stop, pause and terms, not the signers' standing. Stopping a payout from a moderator fired for fraud is what the emergency stop is for.
+   - **Tests:** the probe, plus the same case without a record.
+   - **Owner question:** this needs a one-line owner call ("a removed moderator's already-authorised payout still completes; use the stop to hold it"). I recommend yes.
+2. **A round 1 whose signer's keys were reset stays `round1-unseen`: MUST FIX BEFORE LAUNCH (it is F1's twin).**
+   - **What happens.** A reset empties `creds`. The old round-1 taps are then `unknown-key`, not `revoked`. Round 2 can't pay (`round1-unseen`), and re-propose refuses (it needs `revoked`).
+   - **When it happens.** A moderator who loses their key while a winner is offline strands the trade with no staff path at all. Lost keys are routine.
+   - **Fix.**
+     - On a reset, keep the old creds in a `retiredCreds` list, never trusted for anything but `pastSigner`.
+     - Let `pastSigner` read them.
+     - Let re-propose also accept `unknown-key` for a signer the gate knows was reset after the tap.
+     - F1's rule then covers an already-authorised round 1.
+3. **The device's highest-round memory has no dispute seq: ACCEPTABLE.**
+   - **Why there is only one after-refund dispute.** A trade has at most one: the trader route refuses `open-dispute` once the trade has any dispute (`dispute-exists`), and system escalations are never after-refund.
+   - **A cheap hardening for later:** add `seq` to the statement and to the memory key.
+4. **A signer switched off and later switched on makes round 1 authorisable again: ACCEPTABLE.**
+   - **Why it's fine.** A switch-off is not a judgement on the ruling, so paying it once they're back is the right recovery.
+   - **It can't pay twice or beat round 2.** Once round 2 is decided, `pay` is round 2 (or whichever payout was already recorded). Only one round 1 is ever authorised per trade: `stale-round` means a re-proposed one and the old one can't both pass.
+   - **Where it could otherwise matter.** It matters only if a re-proposal is still waiting, and there the gate takes whichever round 1 it sees first. The API stores only the new one, so an honest API presents only that.
+
+### The intermittent co-sign bug
+
+I did not investigate it; a separate investigator is on it. Two things I saw that may help:
+
+- **The earlier regtest run.** In my a03297ef full staff regtest, two rows had the payout `ruling-signing`/`desk-ruling-recorded` with no `ruling-settled` until shutdown (`ruling-settle-failed`): the desktop EUR row and the desktop winner-offline row. Their phone twins passed. A rerun passed.
+- **A web unit test under load.** `attestation-flow.test.ts` › "after a refused rebind, a device back after the trade closed proves the prior release landed" failed once under load at 60171b97 (`expected 'ready' to be 'done'`, :1154). It passed 3/3 alone. It is timing-sensitive in the runtime's close and resume path, which may be worth a look for the same race.
+
+### Tests run at 60171b97
+
+All targeted vitest ran with nice -n 10, outside the lock.
+
+| Project | Files | Result |
+|---|---|---|
+| packages/staff | all 14 | **382/382 passed** |
+| packages/trade | 2 statement suites | **10/10 passed** |
+| apps/moderation | afterRefund, execute, gate, internal, gateDevices | **145/145 passed** |
+| apps/web | policy, attestation-flow, dispute, disputeScreenProof | **296/297** (the timing failure above; it passes 3/3 alone) |
+| apps/staff-web | moderator, ownerPages, webauthnTripwire | **59/59 passed** |
+| apps/api | 17 files: test/disputes/*, schema, site, keyTap, matrix | **527/527 passed** |
+
+- **Moderation regtest** (`@x2f/moderation-regtest`, under ~/x2f-comms/check.lock): **5/7.**
+  - execute.regtest, including the branch's new N1 rows, and rulingWinner.regtest passed.
+  - **tradeShred.regtest, 2 failed.** The first is "an open funded one is untouched": the `mod_escrow_state` sealed blob of the open trade B was re-saved, with the same row but a new seal, during the pass. That is a wallet-state save, not a shred. The second failed on the instance lock left by the first.
+  - The branch does not touch the shred or that test. It looks like a fragile "rows unchanged" assertion; compare rows minus the sealed state, or freeze B's party first. A rerun of tradeShred.regtest alone was queued behind the co-sign investigator's lock and had not run when I wrote this.
+- **Probe** F1: passes (confirms it). Scratch only, removed from the worktree.
