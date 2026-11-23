@@ -67,6 +67,15 @@
   max-width: var(--x2f-fold-a);
 }
 
+/* The shared header (logo D and the screen name, drawn in the `two` layout since owner demo note
+   #147) stays in the first pane beside a second pane, hinge reported or not: it would otherwise
+   straddle the gutter in the middle (design reviews 53, 54). The logo and the name stay in view;
+   a long name is cut with its ellipsis. */
+:root[data-fold='two'] [data-shell='phone'] > [data-shell-body]:has(> .x2f-panes[data-side]) > .x2f-screen-header,
+:root[data-fold='three'] [data-shell='phone'] > [data-shell-body]:has(> .x2f-panes[data-side]) > .x2f-screen-header {
+  max-width: var(--x2f-fold-a);
+}
+
 /* ---- Panes (src/ui/Panes.tsx) ---- */
 
 :root:not([data-fold='two'], [data-fold='three'], [data-fold='tabletop'], [data-fold='cover']) [data-pane='main'],

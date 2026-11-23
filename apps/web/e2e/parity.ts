@@ -385,6 +385,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: "Whenever you add a payout wallet, we'll ask you to confirm it's you, and we'll show an alert. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.",
       why: 'Superseded by spec 6.3 "Decided 2026-10-23" and "Wallet rules refined" (owner 2026-10-24): there is no 24-hour setting any more, and the first wallet in setup needs no confirm and never waits. The page says so instead; the canvas copy is for the lead to update (Task 28).',
     },
+    {
+      text: 'Monero addresses never expire, so reusing one will never make you miss a payout. For extra privacy, you can paste a fresh address from your wallet for each trade.',
+      why: 'Owner demo note #160 (23 Nov 2026), his words (dash made a full stop), in a noticeable colour: the page reads "Monero addresses never expire. Reusing one will never lose a payout. For stronger privacy, generate and paste a fresh subaddress for each trade." The board predates the note.',
+    },
   ],
   SellOffers: [
     {
