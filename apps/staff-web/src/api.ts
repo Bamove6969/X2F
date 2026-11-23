@@ -314,8 +314,9 @@ export const pastRepSetUsd = (id: string, usdCents: number | null) =>
 
 
 export const newsList = () => staffApi<{ items: NewsItem[] }>('/staff/v1/news');
-export const newsAdd = (d: { title: string; body: string }) => staffApi<NewsItem>('/staff/v1/news', { method: 'POST', body: d });
-export const newsEdit = (id: number, d: { title: string; body: string }) => staffApi<NewsItem>(`/staff/v1/news/${id}`, { method: 'PUT', body: d });
+/** Review p4t22 m2: publishing or editing News is tapped (`news-publish`). */
+export const newsAdd = (d: { title: string; body: string }, tapId: string) => staffApi<NewsItem>('/staff/v1/news', { method: 'POST', body: { ...d, tapId } });
+export const newsEdit = (id: number, d: { title: string; body: string }, tapId: string) => staffApi<NewsItem>(`/staff/v1/news/${id}`, { method: 'PUT', body: { ...d, tapId } });
 export const newsDelete = (id: number) => staffApi<unknown>(`/staff/v1/news/${id}`, { method: 'DELETE' });
 
 // ---------------------------------------------------------------------------------------------
@@ -456,9 +457,11 @@ export interface StaffSite {
 export const site = () => staffApi<StaffSite>('/staff/v1/site');
 export const stopTrading = (tapId: string) => staffApi<StaffSite>('/staff/v1/site/stop', { method: 'POST', body: { tapId } });
 export const resumeTrading = (tapId: string) => staffApi<StaffSite>('/staff/v1/site/resume', { method: 'POST', body: { tapId } });
-export const setBanner = (text: string, kind: 'info' | 'warning') => staffApi<StaffSite>('/staff/v1/site/banner', { method: 'PUT', body: { text, kind } });
+/** Review p4t22 m2: showing the banner is tapped (`banner-publish`). */
+export const setBanner = (text: string, kind: 'info' | 'warning', tapId: string) => staffApi<StaffSite>('/staff/v1/site/banner', { method: 'PUT', body: { text, kind, tapId } });
 export const removeBanner = () => staffApi<unknown>('/staff/v1/site/banner', { method: 'DELETE' });
-export const setMaintenance = (b: { on: true; kind: MaintenanceKind; message: string | null } | { on: false }) =>
+/** Review p4t22 m2: switching maintenance on is tapped (`maintenance-on`); off is not. */
+export const setMaintenance = (b: { on: true; kind: MaintenanceKind; message: string | null; tapId: string } | { on: false }) =>
   staffApi<StaffSite>('/staff/v1/site/maintenance', { method: 'PUT', body: b });
 
 export interface RevenueBucket {

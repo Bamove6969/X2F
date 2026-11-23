@@ -129,6 +129,16 @@ export type KeyTapIntent =
   // account limits, bound to the recommendation and to what it would set (a cap in whole US dollars
   // or a stage; exactly one is non-null).
   | { kind: 'account-limit'; recId: string; accountId: string; approve: boolean; capUsd: number | null; stage: LimitStage | null }
+  // Review p4t22 m2 (lead default; owner question OQ3 for the rest): what a stolen owner session
+  // without the key could otherwise do to every user at once. Maintenance switched on (the whole
+  // trader API on 503, every trade and dispute timer paused), bound to its kind, the message as sent
+  // (SHA-256 of its UTF-8, null for none) and the back-by time as sent (null for none); a News message
+  // published or edited (`newsId` null for a new one), bound to its title and body as sent; the
+  // site banner shown, bound to its kind and text as sent. Switching maintenance off and removing a
+  // banner or a message stay untapped.
+  | { kind: 'maintenance-on'; maintenanceKind: 'planned' | 'unplanned'; messageSha256: string | null; backBy: string | null }
+  | { kind: 'news-publish'; newsId: string | null; titleSha256: string; bodySha256: string }
+  | { kind: 'banner-publish'; bannerKind: 'info' | 'warning'; textSha256: string }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -173,8 +183,31 @@ export const KEY_TAP_KINDS = [
   'certify-device',
   'revoke-device',
   'account-limit',
+  'maintenance-on',
+  'news-publish',
+  'banner-publish',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
+
+/** Review p4t22 m2: SHA-256 of a text's UTF-8 bytes, lower-case hex (what the publish taps bind). */
+export function textSha256(text: string): string {
+  if (typeof text !== 'string') throw new TypeError('textSha256: text must be a string');
+  return toHex(sha256(utf8(text)));
+}
+
+/**
+ * Review p4t22 m2: the tap intents of the owner's publishing acts, built one way by the staff site
+ * and the API (which rebuilds them from the request body as sent).
+ */
+export function maintenanceOnIntent(a: { maintenanceKind: 'planned' | 'unplanned'; message: string | null; backBy: string | null }): KeyTapIntent {
+  return { kind: 'maintenance-on', maintenanceKind: a.maintenanceKind, messageSha256: a.message === null ? null : textSha256(a.message), backBy: a.backBy };
+}
+export function newsPublishIntent(a: { newsId: number | null; title: string; body: string }): KeyTapIntent {
+  return { kind: 'news-publish', newsId: a.newsId === null ? null : String(a.newsId), titleSha256: textSha256(a.title), bodySha256: textSha256(a.body) };
+}
+export function bannerPublishIntent(a: { bannerKind: 'info' | 'warning'; text: string }): KeyTapIntent {
+  return { kind: 'banner-publish', bannerKind: a.bannerKind, textSha256: textSha256(a.text) };
+}
 
 /**
  * Lead 18 Nov (design task 8): a staff device key's id, SHA-256 of its 32-byte Ed25519 signing

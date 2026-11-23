@@ -1,7 +1,9 @@
+import { newsPublishIntent, type KeyTapIntent } from '@x2f/staff';
 import { useEffect, useId, useState } from 'react';
 import { codeOf, newsAdd, newsDelete, newsEdit, newsList } from '../api.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Notice, NewsMessage, NewsPost, Sheet, type NewsItem } from '../ui/kit.js';
+import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { PageTitle } from '../ui/StaffShell.js';
 import '../ui/staff.css';
 
@@ -32,6 +34,8 @@ export function NewsEditor() {
   const [deleting, setDeleting] = useState<NewsItem | null>(null);
   // The preview post opens like the trader's; it starts open so the message is read at once.
   const [previewOpen, setPreviewOpen] = useState(true);
+  // Review p4t22 m2 (lead default): publishing or editing a message takes the owner's key tap.
+  const [tap, setTap] = useState<{ intent: KeyTapIntent; run: (tapId: string) => Promise<void> } | null>(null);
 
   const load = () =>
     newsList().then(
@@ -59,16 +63,24 @@ export function NewsEditor() {
     }
   };
 
-  const save = () =>
-    run(async () => {
-      const draft = { title: title.trim(), body: body.trim() };
-      if (editing === null) await newsAdd(draft);
-      else await newsEdit(editing.id, draft);
-      setDone(editing === null ? 'Published. Traders see it in News.' : 'Saved. Traders see the new text in News.');
-      setEditing(null);
-      setTitle('');
-      setBody('');
-    }, 'That message was not saved. Try again.');
+  const save = () => {
+    const draft = { title: title.trim(), body: body.trim() };
+    const target = editing;
+    setTap({
+      // Bound to the title and the message exactly as sent (and to the message being edited).
+      intent: newsPublishIntent({ newsId: target === null ? null : target.id, ...draft }),
+      run: (tapId) =>
+        run(async () => {
+          if (target === null) await newsAdd(draft, tapId);
+          else await newsEdit(target.id, draft, tapId);
+          setDone(target === null ? 'Published. Traders see it in News.' : 'Saved. Traders see the new text in News.');
+          setEditing(null);
+          setTitle('');
+          setBody('');
+        }, 'That message was not saved. Try again.'),
+    });
+    return Promise.resolve();
+  };
 
   const remove = (item: NewsItem) =>
     run(async () => {
@@ -171,6 +183,22 @@ export function NewsEditor() {
           </Button>
         </div>
       </Sheet>
+      {tap !== null ? (
+        <KeyTapDialog
+          intent={tap.intent}
+          // COPY-UNSIGNED
+          title={editing === null ? 'Publish to News' : 'Save the edited message'}
+          body="Tap your security key to publish this message to every trader."
+          tapLabel="Tap key and publish"
+          labels={{ titleSha256: 'the title above', bodySha256: 'the message above', newsId: 'the message you are editing' }}
+          onDone={(tapId) => {
+            const t = tap;
+            setTap(null);
+            void t.run(tapId);
+          }}
+          onCancel={() => setTap(null)}
+        />
+      ) : null}
       {refusal !== null ? <CantDoThat body={refusal.text} from={refusal.code} onClose={() => setRefusal(null)} /> : null}
     </section>
   );

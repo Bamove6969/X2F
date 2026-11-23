@@ -8,6 +8,7 @@ import type { LogAction } from '../log/actions.js';
 import { MAINTENANCE_KINDS, readSiteState, type SiteState } from '../site/routes.js';
 import { requireStaff } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
+import { bannerPublishIntent, maintenanceOnIntent } from '@x2f/staff';
 
 /** The banner's limit (Task 8; migration 206 checks the same, in characters). */
 export const BANNER_MAX = 140;
@@ -74,9 +75,12 @@ export async function readStaffSiteState(db: Queryable): Promise<StaffSiteState>
  * - `POST /staff/v1/site/stop { tapId }` (tap intent `emergency-stop`): `trading_paused` on and
  *   `stopped_at`. Plan 3 then refuses new offers and takes with `trading-paused`; existing trades go on.
  * - `POST /staff/v1/site/resume { tapId }` (tap intent `resume-trading`).
- * - `PUT /staff/v1/site/banner { text, kind: 'info' | 'warning' }`: over 140 characters → 400
- *   `banner-too-long`; `DELETE /staff/v1/site/banner` → 204.
- * - `PUT /staff/v1/site/maintenance { on, message?, kind?, backBy? }`: on sets `maintenance_since`
+ * - `PUT /staff/v1/site/banner { text, kind: 'info' | 'warning', tapId }` (review p4t22 m2, lead
+ *   default: tap intent `banner-publish`, bound to the kind and the text as sent): over 140
+ *   characters → 400 `banner-too-long`; `DELETE /staff/v1/site/banner` → 204 (untapped).
+ * - `PUT /staff/v1/site/maintenance { on, message?, kind?, backBy?, tapId }` (on: review p4t22 m2,
+ *   lead default, tap intent `maintenance-on`, bound to the kind, the message and backBy as sent;
+ *   off: no tap): on sets `maintenance_since`
  *   (kept if already on, so the timers shift by the whole maintenance), the message, the kind and
  *   when it should be back; off clears them all. The kind is `planned` or `unplanned` and required
  *   (owner G19: no default, "emergency" is known only internally and is no kind). `backBy` (an ISO
@@ -132,13 +136,19 @@ export function staffSiteRoutes(app: FastifyInstance): void {
   });
 
   app.put('/staff/v1/site/banner', opts, async (req) => {
-    const b = bodyOf(req, ['text', 'kind']);
+    const b = bodyOf(req, ['text', 'kind', 'tapId']);
     if (b.kind !== 'info' && b.kind !== 'warning') throw badRequest('kind');
     if (typeof b.text !== 'string') throw badRequest('text');
+    const raw = b.text;
+    const bannerKind = b.kind;
     const text = b.text.trim();
     if (text === '' || CONTROL.test(text)) throw badRequest('text');
     if (chars(text) > BANNER_MAX) throw new ApiError(400, 'banner-too-long', { max: BANNER_MAX });
     return tx(req, async (c) => {
+      // Review p4t22 m2 (lead default): text shown to every user is tapped, bound to the text as sent.
+      await consumeKeyTap(c, typeof b.tapId === 'string' ? b.tapId : '', req.staff.accountId, bannerPublishIntent({ bannerKind, text: raw }), req.server.deps.clock(), {
+        sessionId: req.auth.sessionId,
+      });
       await c.query('update site_flags set banner_text = $1, banner_kind = $2', [text, b.kind]);
       await log(c, req, 'site.banner-set', { kind: b.kind });
       return readStaffSiteState(c);
@@ -154,11 +164,11 @@ export function staffSiteRoutes(app: FastifyInstance): void {
   });
 
   app.put('/staff/v1/site/maintenance', opts, async (req) => {
-    const b = bodyOf(req, ['on', 'message', 'kind', 'backBy']);
+    const b = bodyOf(req, ['on', 'message', 'kind', 'backBy', 'tapId']);
     if (typeof b.on !== 'boolean') throw badRequest('on');
     const now = req.server.deps.clock();
     if (!b.on) {
-      if (b.message !== undefined || b.kind !== undefined || b.backBy !== undefined) throw badRequest();
+      if (b.message !== undefined || b.kind !== undefined || b.backBy !== undefined || b.tapId !== undefined) throw badRequest();
       return tx(req, async (c) => {
         const { rowCount } = await c.query(
           `update site_flags set maintenance_since = null, maintenance_message = null, maintenance_kind = null, maintenance_back_by = null
@@ -174,7 +184,15 @@ export function staffSiteRoutes(app: FastifyInstance): void {
     const message = messageOf(b.message);
     let backBy: Date | null = null;
     if (b.backBy !== undefined && b.backBy !== null) backBy = futureTime(b.backBy, now, 'backBy');
+    const rawMessage = typeof b.message === 'string' ? b.message : null;
+    const rawBackBy = typeof b.backBy === 'string' ? b.backBy : null;
+    const maintenanceKind = kind as 'planned' | 'unplanned';
     return tx(req, async (c) => {
+      // Review p4t22 m2 (lead default): switching maintenance on is tapped, bound to its kind, the
+      // message and the back-by time as sent. Switching it off is not.
+      await consumeKeyTap(c, typeof b.tapId === 'string' ? b.tapId : '', req.staff.accountId, maintenanceOnIntent({ maintenanceKind, message: rawMessage, backBy: rawBackBy }), now, {
+        sessionId: req.auth.sessionId,
+      });
       const { rows } = await c.query<{ was: boolean; planned_end: Date | null; planned_message: string | null }>(
         'select maintenance_since is not null as was, planned_end, planned_message from site_flags for update',
       );

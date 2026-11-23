@@ -1,4 +1,4 @@
-import type { KeyTapIntent } from '@x2f/staff';
+import { bannerPublishIntent, maintenanceOnIntent, type KeyTapIntent } from '@x2f/staff';
 import { useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
 import {
@@ -59,7 +59,7 @@ function revenueRange(now: Date): { by: 'month'; from: string; to: string } {
 
 const monthKey = (d: Date, back: number) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - back, 1)).toISOString().slice(0, 7);
 
-type Tap = { intent: KeyTapIntent; title: string; body: string; tapLabel: string; run: (tapId: string) => Promise<StaffSite> };
+type Tap = { intent: KeyTapIntent; title: string; body: string; tapLabel: string; labels?: Readonly<Record<string, string>>; run: (tapId: string) => Promise<StaffSite> };
 
 export function StaffOverview() {
   const [state, setState] = useState<StaffSite | null>(null);
@@ -133,7 +133,17 @@ export function StaffOverview() {
   const tooLong = chars(text) > BANNER_MAX;
   const shown = state?.banner ?? null;
   const unchanged = shown !== null && shown.text === trimmed && shown.kind === kind;
-  const showBanner = () => run(() => setBanner(trimmed, kind), 'The banner was not shown. Try again.');
+  // Review p4t22 m2 (lead default): text shown to every user takes the owner's key tap, bound to it.
+  const showBanner = () =>
+    setTap({
+      intent: bannerPublishIntent({ bannerKind: kind, text: trimmed }),
+      // COPY-UNSIGNED
+      title: 'Show the banner',
+      body: 'Tap your security key to show this banner to everyone.',
+      tapLabel: 'Tap key and show',
+      labels: { textSha256: 'the banner text above' },
+      run: (tapId) => setBanner(trimmed, kind, tapId),
+    });
   const hideBanner = () =>
     run(async () => {
       await removeBanner();
@@ -143,11 +153,22 @@ export function StaffOverview() {
   // Maintenance.
   const on = state?.maintenance !== null && state?.maintenance !== undefined;
   const msgTooLong = chars(message) > MAINTENANCE_MESSAGE_MAX;
-  const toggleMaintenance = () =>
-    run(
-      () => (on ? setMaintenance({ on: false }) : setMaintenance({ on: true, kind: mKind!, message: message.trim() === '' ? null : message.trim() })),
-      'Maintenance mode was not changed. Try again.',
-    );
+  // Review p4t22 m2 (lead default): switching maintenance on takes the owner's key tap; off does not.
+  const toggleMaintenance = () => {
+    if (on) return run(() => setMaintenance({ on: false }), 'Maintenance mode was not changed. Try again.');
+    const sent = message.trim() === '' ? null : message.trim();
+    const maintenanceKind = mKind!;
+    setTap({
+      intent: maintenanceOnIntent({ maintenanceKind, message: sent, backBy: null }),
+      // COPY-UNSIGNED
+      title: 'Turn maintenance mode on',
+      body: 'Tap your security key to turn maintenance mode on. Traders cannot use X2F until you turn it off.',
+      tapLabel: 'Tap key and turn on',
+      labels: { messageSha256: 'the message above' },
+      run: (tapId) => setMaintenance({ on: true, kind: maintenanceKind, message: sent, tapId }),
+    });
+    return Promise.resolve();
+  };
 
   const now = serverNow();
   const month = earn?.buckets.find((b) => b.period === monthKey(now, 0)) ?? null;
@@ -298,6 +319,7 @@ export function StaffOverview() {
           title={tap.title}
           body={tap.body}
           tapLabel={tap.tapLabel}
+          {...(tap.labels ? { labels: tap.labels } : {})}
           onDone={(tapId) => {
             const t = tap;
             setTap(null);

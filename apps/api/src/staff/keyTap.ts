@@ -488,6 +488,26 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         stage,
       };
     }
+    // Review p4t22 m2: the owner's publishing acts (maintenance on, News, the banner).
+    case 'maintenance-on':
+      exactKeys(r, ['kind', 'maintenanceKind', 'messageSha256', 'backBy']);
+      return {
+        kind: 'maintenance-on',
+        maintenanceKind: oneOf(r, 'maintenanceKind', ['planned', 'unplanned'] as const),
+        messageSha256: r.messageSha256 === null ? null : match(r, 'messageSha256', HEX64),
+        backBy: r.backBy === null ? null : match(r, 'backBy', ISO_UTC),
+      };
+    case 'news-publish':
+      exactKeys(r, ['kind', 'newsId', 'titleSha256', 'bodySha256']);
+      return {
+        kind: 'news-publish',
+        newsId: r.newsId === null ? null : match(r, 'newsId', /^[1-9]\d{0,15}$/),
+        titleSha256: match(r, 'titleSha256', HEX64),
+        bodySha256: match(r, 'bodySha256', HEX64),
+      };
+    case 'banner-publish':
+      exactKeys(r, ['kind', 'bannerKind', 'textSha256']);
+      return { kind: 'banner-publish', bannerKind: oneOf(r, 'bannerKind', ['info', 'warning'] as const), textSha256: match(r, 'textSha256', HEX64) };
     case 'ruling': {
       exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256', 'round1Id']);
       const code = typeof r.code === 'string' ? normalizeTradeCode(r.code) : null;
@@ -535,6 +555,10 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return 'rulings.approve';
     case 'emergency-stop':
     case 'resume-trading':
+    // Review p4t22 m2: the owner's publishing acts.
+    case 'maintenance-on':
+    case 'news-publish':
+    case 'banner-publish':
       return 'site.control';
     case 'create-invite':
     case 'switch-on':
