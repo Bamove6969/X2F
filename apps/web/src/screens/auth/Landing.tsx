@@ -23,7 +23,8 @@ export const LANDING_COPY = {
   sloganBottom: 'to believe it.',
   promises: [
     // not-a-refusal: a reassurance about escrow, not a rule the user ran into
-    'Your coins sit in 2-of-3 escrow. X2F can’t move them alone.',
+    // COPY: owner's demo note #109 (23 Nov), his words; comma splice made two sentences.
+    'Your coins are protected by a modern 2-of-3 escrow wallet where you and the person you trade with will agree to release and complete the trade. Even X2F cannot unilaterally move the coins. It is a mutually agreed upon decision.',
     'No IP addresses logged. Chats are end-to-end encrypted.',
     'Members only. Nothing here is public.',
   ],
