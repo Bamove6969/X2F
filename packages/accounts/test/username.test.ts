@@ -287,7 +287,9 @@ describe('review B1 and M1 on main: invisible and look-alike characters in a dis
   test.each(['admın.bob', 'ᴀᴅᴍɪɴ_bob', 'ɑdmin.bob', 'Admın_Desk', 'ꜱᴜᴘᴘᴏʀᴛ', 'ꜱᴛᴀꜰꜰ_1', 'x2ꜰ.team', 'ʀᴏᴏᴛ.user', 'ɢuest.ʜelp'])(
     'refused, a Latin look-alike NFKD does not fold: %s',
     (name) => {
-      expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'characters' });
+      // Since signup round 3 (merged onto main, notes-integ) these are Latin letters a display name
+      // may hold, so the refusal is the reserved-word fold (LOOK_ALIKE_LETTERS), no longer the ASCII rule.
+      expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'reserved' });
     },
   );
 });
