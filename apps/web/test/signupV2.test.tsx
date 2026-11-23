@@ -105,8 +105,8 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
       expect(chip(id).textContent).toBe('RATED-STRONG');
       expect(chip(id).getAttribute('data-strength')).toBe('strong');
     }
-    expect(chip('totp').textContent).toBe('Medium');
-    expect(chip('password').textContent).toBe('Weak');
+    expect(chip('totp').textContent).toBe('RATED-MEDIUM');
+    expect(chip('password').textContent).toBe('RATED-WEAK');
     expect(host.querySelector('[data-method="password"]')!.textContent).toContain(
       'It is strongly recommended you do not choose this as the only security method you use.',
     );
